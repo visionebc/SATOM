@@ -53,7 +53,7 @@
             <span class="fw-card-title"><i class="bi bi-sliders me-2 text-accent"></i>General Configuration</span>
           </div>
           <div class="fw-card-body">
-            <form method="POST" action="{{ url_for('settings.save_general') if 'settings' in dir() else '/settings/general' }}">
+            <form method="POST" action="{{ url_for('settings.save_general') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
               <div class="mb-4">
@@ -227,7 +227,7 @@
               </div>
             </div>
             <div class="mt-3">
-              <a href="{{ url_for('auth.logout') if 'auth' in dir() else '/logout' }}"
+              <a href="{{ url_for('auth.logout') }}"
                  class="btn btn-outline-danger btn-sm">
                 <i class="bi bi-box-arrow-right me-1"></i>Sign Out
               </a>
@@ -247,7 +247,7 @@
             <span class="fw-card-title"><i class="bi bi-key me-2 text-accent"></i>Change Password</span>
           </div>
           <div class="fw-card-body">
-            <form method="POST" action="{{ url_for('auth.profile') if 'auth' in dir() else '/profile' }}"
+            <form method="POST" action="{{ url_for('auth.profile') }}"
                   id="changePasswordForm">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 

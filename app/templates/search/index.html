@@ -21,7 +21,7 @@
 <!-- Search Form -->
 <div class="fw-card mb-4">
   <div class="fw-card-body">
-    <form method="GET" action="{{ url_for('search.results') if 'search' in dir() else '/search/results' }}" id="searchForm">
+    <form method="GET" action="{{ url_for('search.results') }}" id="searchForm">
       <div class="row g-3">
         <div class="col-lg-6">
           <label class="fw-form-label">Search Query</label>
@@ -129,12 +129,12 @@
             </td>
             <td class="actions-col">
               {% if r.object_type == 'policy' %}
-                <a href="{{ url_for('workspace.policy_detail', appliance_id=r.appliance_id, policy_name=r.name) if 'workspace' in dir() else '#' }}"
+                <a href="{{ url_for('workspace.policy_detail', appliance_id=r.appliance_id, name=r.name) }}"
                    class="btn btn-sm btn-outline-primary btn-sm-icon" title="View Policy">
                   <i class="bi bi-eye"></i>
                 </a>
               {% else %}
-                <a href="{{ url_for('api_explorer.index') if 'api_explorer' in dir() else '/api-explorer' }}?id={{ r.appliance_id }}&path={{ r.api_path if r.api_path else '' }}"
+                <a href="{{ url_for('api_explorer.index') }}?id={{ r.appliance_id }}&path={{ r.api_path if r.api_path else '' }}"
                    class="btn btn-sm btn-outline-primary btn-sm-icon" title="View in API Explorer">
                   <i class="bi bi-code-square"></i>
                 </a>

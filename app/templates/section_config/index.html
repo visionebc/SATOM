@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}FortiWeb Configuration — Fortinet Manager Web{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>Configuration</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-sliders me-2 text-accent"></i>FortiWeb Configuration</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Every config GUI section as a registry-derived catalog of object types, with a
+      per-section template library. The catalog renders without a device; selecting one
+      is optional.
+    </p>
+  </div>
+</div>
+
+<!-- Optional device picker (the catalog is registry-derived; a device is not required) -->
+<form method="get" action="{{ url_for('section_config.index') }}" class="fw-toolbar" style="gap:.5rem;">
+  <label class="fw-form-label mb-0 me-1" style="align-self:center;">
+    <i class="bi bi-hdd-network me-1"></i>Device
+  </label>
+  <select class="form-select form-select-sm" style="width:auto;" name="device"
+          onchange="this.form.submit()">
+    <option value="">No device — catalog only</option>
+    {% for a in appliances %}
+    <option value="{{ a.id }}" {{ 'selected' if device_id == a.id else '' }}>{{ a.name }}</option>
+    {% endfor %}
+  </select>
+  <span class="ms-auto" style="font-size:12px;color:#6C757D;align-self:center;">
+    {{ sections|length }} sections
+  </span>
+</form>
+
+<!-- Section grid -->
+<div class="row g-3 mt-1">
+  {% for s in sections %}
+  <div class="col-12 col-sm-6 col-lg-4">
+    <a class="fw-card h-100 text-decoration-none d-block"
+       href="{{ url_for('section_config.section', section_key=s.key, device=device_id) }}"
+       style="color:inherit;">
+      <div class="fw-card-body">
+        <div class="d-flex align-items-start justify-content-between">
+          <div class="d-flex align-items-center gap-2">
+            <span style="font-size:24px;line-height:1;">{{ s.emoji }}</span>
+            <span class="fw-card-title mb-0">{{ s.label }}</span>
+          </div>
+          <span class="fw-badge fw-badge-secondary" title="Object types in this section">
+            {{ s.count }}
+          </span>
+        </div>
+        <div class="mt-2 d-flex gap-1 flex-wrap">
+          {% if s.danger %}
+          <span class="fw-badge fw-badge-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>danger</span>
+          {% endif %}
+          {% if s.readonly %}
+          <span class="fw-badge fw-badge-secondary"><i class="bi bi-eye me-1"></i>read-only</span>
+          {% endif %}
+          <span class="text-muted" style="font-size:12px;align-self:center;">
+            {{ s.count }} object type{{ '' if s.count == 1 else 's' }}
+          </span>
+        </div>
+      </div>
+    </a>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

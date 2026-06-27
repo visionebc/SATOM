@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% block title %}Rediscovery - {{ appliance.name }}{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center">
+  <h4><i class="bi bi-arrow-repeat me-2"></i>Rediscovery — {{ appliance.name }}</h4>
+  <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; Back</a>
+</div>
+<p class="text-muted">A full read-only sweep of every CMDB endpoint ({{ plan_size }} in the registry) — refreshes the whole appliance's object inventory in one pass and writes a config snapshot.</p>
+
+<div class="card shadow-sm mb-3">
+  <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+      {% if snapshot %}
+        <div class="small text-muted">Last sweep: <b>{{ snapshot.generated_at }}</b></div>
+        <div class="small">{{ snapshot.objects }} object(s) across {{ snapshot.sections }} section(s)</div>
+      {% else %}
+        <div class="small text-muted">No rediscovery has been run yet.</div>
+      {% endif %}
+    </div>
+    <button id="redisc-start" class="btn fw-btn-primary"><i class="bi bi-play-fill me-1"></i>Start rediscovery</button>
+  </div>
+</div>
+
+<div id="redisc-progress" class="card shadow-sm {{ '' if progress else 'd-none' }}">
+  <div class="card-header fw-card-header">Progress</div>
+  <div class="card-body">
+    <div class="progress mb-2" style="height: 22px;">
+      <div id="redisc-bar" class="progress-bar" role="progressbar" style="width: {{ progress.percent if progress else 0 }}%;">
+        {{ progress.percent if progress else 0 }}%
+      </div>
+    </div>
+    <div id="redisc-line" class="small text-muted">{{ progress.summary if progress and progress.summary else '' }}</div>
+    <div id="redisc-errors" class="small text-danger mt-2"></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const token = document.querySelector('meta[name="csrf-token"]').content;
+  const startBtn = document.getElementById('redisc-start');
+  const wrap = document.getElementById('redisc-progress');
+  const bar = document.getElementById('redisc-bar');
+  const line = document.getElementById('redisc-line');
+  const errs = document.getElementById('redisc-errors');
+  let timer = null;
+
+  function paint(p) {
+    if (!p || p.state === 'idle') return;
+    wrap.classList.remove('d-none');
+    const pct = p.percent || 0;
+    bar.style.width = pct + '%'; bar.textContent = pct + '%';
+    bar.classList.toggle('bg-success', p.state === 'done');
+    if (p.state === 'running') {
+      line.textContent = `${p.done}/${p.total} endpoints · ${p.objects} objects · ${p.section || ''}`;
+    } else if (p.state === 'done') {
+      line.textContent = p.summary || `${p.objects} objects across ${p.section_count} sections`;
+      startBtn.disabled = false;
+    }
+    errs.textContent = (p.errors && p.errors.length) ? (p.errors.length + ' endpoint error(s)') : '';
+  }
+  async function poll() {
+    try {
+      const r = await fetch('{{ url_for("appliances.rediscover_status", id=appliance.id) }}');
+      const p = await r.json();
+      paint(p);
+      if (p.state === 'running') return;
+    } catch (e) { /* keep polling */ return; }
+    clearInterval(timer); timer = null;
+  }
+  async function start() {
+    startBtn.disabled = true;
+    errs.textContent = '';
+    const r = await fetch('{{ url_for("appliances.rediscover_start", id=appliance.id) }}', {
+      method: 'POST', headers: {'X-CSRFToken': token}
+    });
+    const j = await r.json();
+    if (!j.started) { line.textContent = j.reason || 'could not start'; }
+    paint(j.progress);
+    if (!timer) timer = setInterval(poll, 1500);
+  }
+  startBtn.addEventListener('click', start);
+  {% if progress and progress.state == 'running' %}if (!timer) timer = setInterval(poll, 1500); startBtn.disabled = true;{% endif %}
+})();
+</script>
+{% endblock %}

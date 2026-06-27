@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}Policy Inspector - {{ appliance.name }}{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center">
+  <h4><i class="bi bi-diagram-2 me-2"></i>Policy Inspector — {{ appliance.name }}</h4>
+  <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; Back</a>
+</div>
+<p class="text-muted">Per server-policy tree (virtual server + VIPs, server pool + back-ends, health check, web-protection profile), composed live over REST.</p>
+
+{% if error %}
+  <div class="fw-alert fw-alert-danger">{{ error }}</div>
+{% elif result %}
+  <div class="mb-3 text-muted small">
+    {{ result.count }} server polic{{ 'y' if result.count == 1 else 'ies' }} inspected
+    {% if one_policy %}<a href="{{ url_for('appliances.inspector', id=appliance.id) }}" class="ms-2">show all</a>{% endif %}
+    {% if result.errors %}· <span class="text-danger">{{ result.errors|length }} failed</span>{% endif %}
+  </div>
+  {% for p in result.policies %}
+    <div class="card shadow-sm mb-3">
+      <div class="card-header fw-card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-shield-check me-2"></i>{{ p.name }}</span>
+        <button class="btn fw-btn-secondary btn-sm" type="button" data-bs-toggle="collapse"
+                data-bs-target="#json-{{ loop.index }}">Raw JSON</button>
+      </div>
+      <div class="card-body">
+        <pre class="fw-tree mb-0">{{ p.tree }}</pre>
+        <div class="collapse mt-3" id="json-{{ loop.index }}">
+          <pre class="fw-pre mb-0">{{ p.full | tojson(indent=2) }}</pre>
+        </div>
+      </div>
+    </div>
+  {% else %}
+    <div class="fw-alert fw-alert-info">No server policies found on this appliance.</div>
+  {% endfor %}
+  {% if result.errors %}
+    <div class="card shadow-sm">
+      <div class="card-header fw-card-header text-danger">Failed policies</div>
+      <div class="card-body p-0"><table class="table table-sm fw-table mb-0">
+        <thead><tr><th>Policy</th><th>Error</th></tr></thead>
+        <tbody>{% for e in result.errors %}<tr><td>{{ e.name }}</td><td class="text-danger small">{{ e.error }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+    </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

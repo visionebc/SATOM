@@ -30,6 +30,24 @@
     </div>
   </div></div>
 </div>
+{% if appliance.kind == 'fortiweb' %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-card-header"><i class="bi bi-tools me-2"></i>Appliance Actions</div>
+  <div class="card-body">
+    <div class="d-flex flex-wrap gap-2">
+      <a href="{{ url_for('appliances.inspector', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm"><i class="bi bi-diagram-2 me-1"></i>Policy Inspector</a>
+      <a href="{{ url_for('appliances.rediscover', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm"><i class="bi bi-arrow-repeat me-1"></i>Rediscovery</a>
+      <a href="{{ url_for('appliances.console', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm"><i class="bi bi-terminal me-1"></i>Console</a>
+      {% if current_user.can('backup') %}
+      <a href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm"><i class="bi bi-clipboard-check me-1"></i>Upgrade Prep</a>
+      {% endif %}
+      {% if current_user.can('config_write') %}
+      <a href="{{ url_for('appliances.upgrade', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm text-warning"><i class="bi bi-cloud-arrow-up me-1"></i>Upgrade</a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
 <div id="conn-result" class="alert d-none mb-3"></div>
 <div class="card shadow-sm">
   <div class="card-header fw-card-header">Recent Audit Events</div>

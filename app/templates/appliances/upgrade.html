@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block title %}Upgrade - {{ appliance.name }}{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center">
+  <h4><i class="bi bi-cloud-arrow-up me-2"></i>Firmware Upgrade — {{ appliance.name }}</h4>
+  <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; Back</a>
+</div>
+
+<div class="fw-alert fw-alert-danger d-flex align-items-center gap-2">
+  <i class="bi bi-exclamation-octagon-fill"></i>
+  A live upgrade <b>reboots the appliance</b> and interrupts every service it fronts. Always run
+  <a href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}" class="alert-link">Upgrade Preparation</a>
+  first. Leave <b>Dry run</b> checked to validate without sending anything.
+</div>
+
+{% if result %}
+<div class="card shadow-sm mb-3">
+  <div class="card-header fw-card-header">Result — {{ 'DRY RUN' if result.dry_run else 'LIVE PUSH' }}</div>
+  <div class="card-body">
+    <div class="fw-alert fw-alert-{{ 'success' if result.ok else 'warning' }} mb-2">{{ result.message }}</div>
+    <dl class="row mb-0 small">
+      <dt class="col-sm-3">Image</dt><dd class="col-sm-9">{{ result.image }} ({{ '{:,}'.format(result.size) }} bytes)</dd>
+      <dt class="col-sm-3">Firmware before</dt><dd class="col-sm-9">{{ result.firmware_before or '?' }}</dd>
+      <dt class="col-sm-3">Maintenance permission</dt><dd class="col-sm-9">{{ result.permitted if result.permitted is not none else 'unknown' }}</dd>
+      {% if result.maturity %}<dt class="col-sm-3 text-warning">Maturity prompt</dt><dd class="col-sm-9 text-warning">{{ result.maturity }} — re-submit with "Confirm maturity change" checked to install.</dd>{% endif %}
+      {% if result.warning %}<dt class="col-sm-3 text-warning">Warning</dt><dd class="col-sm-9 text-warning">{{ result.warning }}</dd>{% endif %}
+    </dl>
+  </div>
+</div>
+{% endif %}
+
+<div class="card shadow-sm">
+  <div class="card-header fw-card-header">Upload firmware</div>
+  <div class="card-body">
+    <p class="small text-muted mb-3">Current firmware: <b>{{ firmware or 'unknown' }}</b></p>
+    <form method="POST" enctype="multipart/form-data" action="{{ url_for('appliances.upgrade_push', id=appliance.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="mb-3">
+        <label class="form-label">Firmware image (<code>.out</code>)</label>
+        <input class="form-control" type="file" name="image" accept=".out" required>
+      </div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" name="dry_run" id="dry_run" checked onchange="document.getElementById('live-fields').classList.toggle('d-none', this.checked)">
+        <label class="form-check-label" for="dry_run">Dry run (validate only — no image is sent)</label>
+      </div>
+      <div id="live-fields" class="d-none border rounded p-3 mb-3" style="background:rgba(248,113,113,.06)">
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" name="confirm_maturity" id="confirm_maturity">
+          <label class="form-check-label" for="confirm_maturity">Confirm maturity change (Mature&harr;Feature, e.g. 7.6&rarr;8.0)</label>
+        </div>
+        <label class="form-label small">Type the appliance name <code>{{ appliance.name }}</code> to authorise the live reboot:</label>
+        <input class="form-control" type="text" name="confirm_name" autocomplete="off" placeholder="{{ appliance.name }}">
+      </div>
+      <button class="btn fw-btn-primary" type="submit"><i class="bi bi-cloud-arrow-up me-1"></i>Submit</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

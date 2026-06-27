@@ -845,3 +845,53 @@ a:hover { color: var(--fw-accent-hover); text-decoration: underline; }
   overflow-y: auto;
   margin: 0;
 }
+
+/* ===== Appliance Actions: Policy Inspector tree, Console, Service validation ===== */
+.fw-tree {
+  background: rgba(0,0,0,0.28);
+  border: 1px solid rgba(148,163,184,0.15);
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  font-family: Menlo, Monaco, Consolas, monospace;
+  color: #cbd5e1;
+  white-space: pre;
+  overflow-x: auto;
+  margin: 0;
+}
+.fw-console {
+  background: #0b1120;
+  border: 1px solid rgba(148,163,184,0.18);
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-family: Menlo, Monaco, Consolas, monospace;
+  color: #86efac;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 320px;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin: 0;
+}
+.fw-console.console-error { color: #fca5a5; }
+.console-preset { cursor: pointer; }
+
+.sp-badge {
+  display: inline-block; padding: 6px 14px; border-radius: 8px;
+  font-weight: 600; margin-bottom: 8px;
+}
+.sp-badge.ok { background: rgba(52,211,153,.15); color: #34d399; border: 1px solid #34d399; }
+.sp-badge.bad { background: rgba(248,113,113,.15); color: #f87171; border: 1px solid #f87171; }
+.sp-meta { margin-bottom: 12px; }
+.sp-table .pill {
+  display: inline-block; padding: 2px 9px; border-radius: 20px;
+  font-size: 12px; font-weight: 600;
+}
+.sp-table .pill.ok { background: rgba(52,211,153,.15); color: #34d399; }
+.sp-table .pill.warn { background: rgba(245,158,11,.15); color: #f59e0b; }
+.sp-table .pill.bad { background: rgba(248,113,113,.15); color: #f87171; }
+.sp-table .ok { color: #34d399; } .sp-table .warn { color: #f59e0b; } .sp-table .bad { color: #f87171; }
+.sp-table .muted { color: #8aa0c0; } .sp-table .small { font-size: 12px; } .sp-table .mono { font-family: Menlo, Monaco, Consolas, monospace; }

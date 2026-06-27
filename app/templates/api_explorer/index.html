@@ -23,7 +23,76 @@
   </a>
 </div>
 
+<style>
+  /* API Menu tree (left sidebar) — caret rotates with Bootstrap collapse state */
+  #apiTree .api-tree-section-header .api-tree-caret { transition: transform .15s ease; }
+  #apiTree .api-tree-section-header:not(.collapsed) .api-tree-caret { transform: rotate(90deg); }
+  #apiTree .api-tree-leaf { border-bottom: 1px solid #F4F5F7; }
+  #apiTree .api-tree-leaf:hover { background: #FAFBFC; }
+  #apiTree .api-tree-leaf-btn { color: inherit; }
+  #apiTree .api-tree-leaf-btn:focus { box-shadow: none; }
+  #apiTree .api-tree-copy { opacity: 0; transition: opacity .12s ease; }
+  #apiTree .api-tree-leaf:hover .api-tree-copy { opacity: 1; }
+</style>
+
 <div class="row g-3">
+  <!-- API Menu: registry-backed section > endpoint tree (mirrors the desktop API Menu) -->
+  <div class="col-lg-3">
+    <div class="fw-card mb-3">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>API Menu</span>
+        <span class="fw-badge fw-badge-secondary">{{ api_tree.descendant_count() if api_tree else 0 }}</span>
+      </div>
+      <div class="fw-card-body p-0">
+        <div class="fw-search-box" style="padding:10px 12px; border-bottom:1px solid #F0F2F5;">
+          <i class="bi bi-search search-icon" style="left:22px;"></i>
+          <input type="text" id="apiTreeSearch" placeholder="Filter endpoints…"
+                 style="padding-left:34px; font-size:13px;" oninput="filterApiTree(this.value)">
+        </div>
+        <div id="apiTree" style="max-height:640px; overflow-y:auto;">
+          {% if api_tree and api_tree.child_nodes() %}
+            {% for section in api_tree.child_nodes() %}
+              {% set sid = 'apisec-' ~ loop.index %}
+              <div class="api-tree-section">
+                <button class="api-tree-section-header list-group-item list-group-item-action d-flex align-items-center justify-content-between {{ '' if loop.first else 'collapsed' }}"
+                        type="button" data-bs-toggle="collapse" data-bs-target="#{{ sid }}"
+                        aria-expanded="{{ 'true' if loop.first else 'false' }}" aria-controls="{{ sid }}"
+                        style="font-size:13px; font-weight:600; padding:8px 12px; border:none; background:#FAFBFC;">
+                  <span class="text-truncate">
+                    <i class="bi bi-caret-right-fill me-1 api-tree-caret" style="font-size:10px;"></i>{{ section.label }}
+                  </span>
+                  <span class="fw-badge fw-badge-secondary">{{ section.descendant_count() }}</span>
+                </button>
+                <div class="collapse {{ 'show' if loop.first else '' }}" id="{{ sid }}">
+                  {% for ep in section.endpoints %}
+                    {% set method = ep.method or 'GET' %}
+                    <div class="api-tree-leaf d-flex align-items-center"
+                         data-search="{{ (ep.name ~ ' ' ~ (ep.urn or ep.path or ''))|lower }}">
+                      <button type="button" class="btn btn-link text-start flex-grow-1 text-decoration-none api-tree-leaf-btn"
+                              onclick='loadEndpoint({{ method|tojson }}, {{ (ep.urn or ep.path or "")|tojson }})'
+                              style="padding:6px 8px 6px 24px;">
+                        <span class="fw-api-method fw-api-method-{{ method|lower }} me-1" style="font-size:9px;">{{ method }}</span>
+                        <span style="font-size:12.5px;">{{ ep.name }}</span>
+                        <br><code class="text-muted" style="font-size:10.5px;">{{ ep.urn or ep.path }}</code>
+                      </button>
+                      <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy me-1"
+                              title="Copy URN" onclick='copyUrn({{ (ep.urn or ep.path or "")|tojson }})'
+                              style="padding:2px 7px;">
+                        <i class="bi bi-clipboard" style="font-size:11px;"></i>
+                      </button>
+                    </div>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="p-3 text-muted text-center" style="font-size:13px;">No endpoints loaded</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Request Panel -->
   <div class="col-lg-4">
     <div class="fw-card mb-3">
@@ -63,6 +132,7 @@
                    placeholder="api/v2.0/system/status.systemstatus"
                    value="{{ request.args.get('path','') if request else '' }}">
           </div>
+          <div id="selected-urn" class="text-muted mt-1" style="font-size:11px;"></div>
           <div class="mt-1">
             <small class="text-muted">Common paths:</small>
             <div class="d-flex flex-wrap gap-1 mt-1">
@@ -119,7 +189,7 @@
   </div>
 
   <!-- Response Panel -->
-  <div class="col-lg-8">
+  <div class="col-lg-5">
     <div class="fw-card h-100">
       <div class="fw-card-header">
         <span class="fw-card-title"><i class="bi bi-arrow-down-circle me-2 text-accent"></i>Response</span>
@@ -260,6 +330,46 @@ function copyResponse() {
   navigator.clipboard.writeText(text)
     .then(() => window.FW.toast('Response copied', 'success'))
     .catch(() => window.FW.toast('Copy failed', 'danger'));
+}
+
+// --- API Menu tree (left sidebar) ----------------------------------------
+
+// Fill the executor's method + path inputs from a tree leaf and surface the URN.
+// runRequest() strips any leading "/" off the path, so passing the raw URN
+// (e.g. "/api/v2.0/cmdb/server-policy/policy") is consistent with the manual
+// "Common paths" buttons and the History entries.
+function loadEndpoint(method, path) {
+  const methodEl = document.getElementById('sel-method');
+  const pathEl   = document.getElementById('inp-path');
+  const urnEl    = document.getElementById('selected-urn');
+  if (methodEl) methodEl.value = method;
+  if (pathEl)   pathEl.value   = path;
+  if (urnEl)    urnEl.textContent = 'URN: ' + path;
+  if (pathEl)   pathEl.focus();
+}
+
+// Copy a leaf's URN to the clipboard ("Copy URN" affordance).
+function copyUrn(urn) {
+  navigator.clipboard.writeText(urn)
+    .then(() => window.FW.toast('URN copied', 'success'))
+    .catch(() => window.FW.toast('Copy failed', 'danger'));
+}
+
+// Live-filter the tree by endpoint name / URN; hide empty sections and
+// auto-expand the ones that still have matches while a query is active.
+function filterApiTree(q) {
+  q = (q || '').toLowerCase().trim();
+  document.querySelectorAll('#apiTree .api-tree-section').forEach(function (sec) {
+    let any = false;
+    sec.querySelectorAll('.api-tree-leaf').forEach(function (leaf) {
+      const hit = !q || (leaf.dataset.search || '').includes(q);
+      leaf.style.display = hit ? '' : 'none';
+      if (hit) any = true;
+    });
+    sec.style.display = any ? '' : 'none';
+    const body = sec.querySelector('.collapse');
+    if (body && q) body.classList.toggle('show', any);
+  });
 }
 
 // Ctrl+Enter to submit

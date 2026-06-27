@@ -5,6 +5,7 @@ from ..models import Appliance, db, Permission
 from ..clients.fortiweb import FortiWebClient
 from ..clients.fortiadc import FortiADCClient
 from ..services.audit import log_action
+from ..registry import loader, tree
 
 bp = Blueprint('api_explorer', __name__, url_prefix='/api-explorer')
 
@@ -15,7 +16,15 @@ WRITE_METHODS = {'POST', 'PUT', 'DELETE', 'PATCH'}
 @login_required
 def index():
     appliances = Appliance.query.order_by(Appliance.name).all()
-    return render_template('api_explorer/index.html', appliances=appliances)
+    # Registry-backed section > endpoint tree for the left-hand "API Menu"
+    # sidebar (mirrors the desktop API Menu). Built from the same loader the
+    # Endpoint Registry uses; purely additive to the executor context below.
+    api_tree = tree.build_category_tree(loader.get_all_endpoints())
+    return render_template(
+        'api_explorer/index.html',
+        appliances=appliances,
+        api_tree=api_tree,
+    )
 
 
 @bp.route('/execute', methods=['POST'])

@@ -22,7 +22,9 @@ def login():
 
         user = User.query.filter_by(username=username).first()
 
-        if user and user.check_password(password):
+        if user and not user.is_active:
+            flash('This account is disabled.', 'danger')
+        elif user and user.check_password(password):
             login_user(user, remember=False)
             user.last_login = datetime.utcnow()
             db.session.commit()

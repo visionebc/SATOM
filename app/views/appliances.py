@@ -148,6 +148,7 @@ def _fortiweb_or_404(id):
 # -- 1. Policy Inspector -----------------------------------------------------
 @bp.route('/<int:id>/inspector')
 @login_required
+@require_permission('appliances.view')
 def inspector(id):
     appliance, _ = _fortiweb_or_404(id)
     if appliance is None:
@@ -172,6 +173,7 @@ def inspector(id):
 # -- 2. Rediscovery ----------------------------------------------------------
 @bp.route('/<int:id>/rediscover')
 @login_required
+@require_permission('appliances.view')
 def rediscover(id):
     appliance, _ = _fortiweb_or_404(id)
     if appliance is None:
@@ -185,6 +187,7 @@ def rediscover(id):
 
 @bp.route('/<int:id>/rediscover/start', methods=['POST'])
 @login_required
+@require_permission('appliances.apply')
 def rediscover_start(id):
     appliance, _ = _fortiweb_or_404(id)
     if appliance is None:
@@ -199,6 +202,7 @@ def rediscover_start(id):
 
 @bp.route('/<int:id>/rediscover/status')
 @login_required
+@require_permission('appliances.view')
 def rediscover_status(id):
     Appliance.query.get_or_404(id)
     from ..services import rediscovery
@@ -208,6 +212,7 @@ def rediscover_status(id):
 # -- 3. Console (read-only SSH) ---------------------------------------------
 @bp.route('/<int:id>/console')
 @login_required
+@require_permission('appliances.view')
 def console(id):
     appliance, _ = _fortiweb_or_404(id)
     if appliance is None:
@@ -219,6 +224,7 @@ def console(id):
 
 @bp.route('/<int:id>/console/run', methods=['POST'])
 @login_required
+@require_permission('appliances.apply')
 def console_run(id):
     appliance, _ = _fortiweb_or_404(id)
     if appliance is None:

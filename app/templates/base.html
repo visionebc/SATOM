@@ -232,6 +232,13 @@
         <i class="bi bi-people fw-nav-icon"></i>
         <span>Users</span>
       </a>
+      {% if current_user.can('profiles.manage') %}
+      <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('profiles.') else '' }}"
+         href="{{ url_for('profiles.index') }}">
+        <i class="bi bi-person-badge fw-nav-icon"></i>
+        <span>Profiles</span>
+      </a>
+      {% endif %}
       <a class="fw-nav-item"
          href="{{ url_for('audit.index') }}">
         <i class="bi bi-clipboard-check fw-nav-icon"></i>

@@ -277,3 +277,18 @@ def git_console():
     transcript = git_service.run_git_script(script)
     log_action("settings.git_console", detail=f"{len(script.splitlines())} line(s)")
     return jsonify({"transcript": transcript})
+
+
+@bp.route("/git/configure", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def git_configure():
+    data = request.get_json(silent=True) or {}
+    remote_url = data.get("remote_url", "").strip()
+    token = data.get("token", "").strip()
+    branch = data.get("branch", "").strip()
+    if not remote_url and not branch:
+        return jsonify({"error": "Provide at least a remote URL or branch"}), 400
+    transcript = git_service.git_configure(remote_url, token, branch)
+    log_action("settings.git_configure", detail=f"remote={bool(remote_url)} branch={branch!r}")
+    return jsonify({"transcript": transcript})

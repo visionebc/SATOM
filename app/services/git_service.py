@@ -150,3 +150,29 @@ def run_git_script(script: str) -> str:
             continue
         _run_git(root, tuple(args), lines, redact)
     return "\n\n".join(lines)
+
+
+def git_configure(remote_url: str, token: str, branch: str) -> str:
+    """Update remote URL (with optional embedded token) and/or switch branch."""
+    root = _repo_root()
+    lines: list[str] = []
+
+    # Build final remote URL
+    if token and remote_url:
+        m = re.match(r"(https?://)(.*)", remote_url)
+        if m:
+            final_url = f"{m.group(1)}{token}@{m.group(2)}"
+        else:
+            final_url = remote_url
+    else:
+        final_url = remote_url
+
+    if final_url:
+        _run_git(root, ("remote", "set-url", "origin", final_url), lines, (token,) if token else ())
+    if branch:
+        current = _git_out(root, "rev-parse", "--abbrev-ref", "HEAD")
+        if current != branch:
+            _run_git(root, ("checkout", "-B", branch, f"origin/{branch}"), lines)
+        else:
+            lines.append(f"# branch is already {branch!r}")
+    return "\n\n".join(lines)

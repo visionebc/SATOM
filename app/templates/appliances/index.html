@@ -216,15 +216,24 @@
             </div>
             <div class="col-md-4">
               <label class="fw-form-label">Zone</label>
-              <input type="text" class="form-control fw-form-control" name="zone" list="cls-zones" placeholder="(none)">
+              <select class="form-select fw-form-control" name="zone">
+                <option value="">(none)</option>
+                {% for v in (classification.zones if classification else []) %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+              </select>
             </div>
             <div class="col-md-4">
               <label class="fw-form-label">Line</label>
-              <input type="text" class="form-control fw-form-control" name="line" list="cls-lines" placeholder="(none)">
+              <select class="form-select fw-form-control" name="line">
+                <option value="">(none)</option>
+                {% for v in (classification.lines if classification else []) %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+              </select>
             </div>
             <div class="col-md-4">
               <label class="fw-form-label">Department</label>
-              <input type="text" class="form-control fw-form-control" name="department" list="cls-departments" placeholder="(none)">
+              <select class="form-select fw-form-control" name="department">
+                <option value="">(none)</option>
+                {% for v in (classification.departments if classification else []) %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+              </select>
             </div>
             <div class="col-12">
               <div class="form-check">
@@ -297,15 +306,24 @@
             </div>
             <div class="col-md-4">
               <label class="fw-form-label">Zone</label>
-              <input type="text" class="form-control" name="zone" id="edit-zone" list="cls-zones" placeholder="(none)">
+              <select class="form-select" name="zone" id="edit-zone">
+                <option value="">(none)</option>
+                {% for v in (classification.zones if classification else []) %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+              </select>
             </div>
             <div class="col-md-4">
               <label class="fw-form-label">Line</label>
-              <input type="text" class="form-control" name="line" id="edit-line" list="cls-lines" placeholder="(none)">
+              <select class="form-select" name="line" id="edit-line">
+                <option value="">(none)</option>
+                {% for v in (classification.lines if classification else []) %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+              </select>
             </div>
             <div class="col-md-4">
               <label class="fw-form-label">Department</label>
-              <input type="text" class="form-control" name="department" id="edit-department" list="cls-departments" placeholder="(none)">
+              <select class="form-select" name="department" id="edit-department">
+                <option value="">(none)</option>
+                {% for v in (classification.departments if classification else []) %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+              </select>
             </div>
             <div class="col-12">
               <div class="form-check">
@@ -325,9 +343,6 @@
 </div>
 
 <!-- Classification catalogs (Settings → Classification) for Zone/Line/Department fields -->
-<datalist id="cls-zones">{% for z in (classification.zones if classification else []) %}<option value="{{ z }}">{% endfor %}</datalist>
-<datalist id="cls-lines">{% for l in (classification.lines if classification else []) %}<option value="{{ l }}">{% endfor %}</datalist>
-<datalist id="cls-departments">{% for d in (classification.departments if classification else []) %}<option value="{{ d }}">{% endfor %}</datalist>
 {% endblock %}
 
 {% block scripts %}
@@ -352,9 +367,10 @@ function openEditModal(appliance) {
   document.getElementById('edit-username').value = appliance.username || '';
   document.getElementById('edit-vdom').value     = appliance.vdom || '';
   document.getElementById('edit-tags').value     = (Array.isArray(appliance.tags) ? appliance.tags.join(', ') : (appliance.tags || ''));
-  document.getElementById('edit-zone').value     = appliance.zone || '';
-  document.getElementById('edit-line').value     = appliance.line || '';
-  document.getElementById('edit-department').value = appliance.department || '';
+  const setClsSelect = (id, v) => { const sel = document.getElementById(id); if (!sel) return; v = v || ''; if (v && !Array.from(sel.options).some(function(o){ return o.value === v; })) sel.add(new Option(v + ' (unregistered)', v)); sel.value = v; };
+  setClsSelect('edit-zone', appliance.zone);
+  setClsSelect('edit-line', appliance.line);
+  setClsSelect('edit-department', appliance.department);
   document.getElementById('edit-verify-ssl').checked = appliance.verify_ssl !== false;
 
   const form = document.getElementById('formEditAppliance');

@@ -206,9 +206,34 @@ def create_app(config_override: object | None = None) -> Flask:
         else:
             print('Database already contains users — skipping seed.')
 
+    def _ensure_columns():
+        """Idempotently add columns introduced after a table already existed.
+
+        ``db.create_all()`` never ALTERs existing tables, so a new column on a
+        pre-existing table (e.g. ``templates.exceptions``) must be added here.
+        Safe on every boot — a column that is already present is a no-op.
+        """
+        from sqlalchemy import inspect, text
+        adds = {
+            'templates': [('exceptions', 'TEXT')],
+        }
+        insp = inspect(db.engine)
+        for table, cols in adds.items():
+            try:
+                if not insp.has_table(table):
+                    continue
+                existing = {c['name'] for c in insp.get_columns(table)}
+                for col, ddl in cols:
+                    if col not in existing:
+                        db.session.execute(text(f'ALTER TABLE {table} ADD COLUMN {col} {ddl}'))
+                        db.session.commit()
+            except Exception:  # noqa: BLE001 — never block boot on a migration
+                db.session.rollback()
+
     # -- database & seed --------------------------------------------------
     with app.app_context():
         db.create_all()
+        _ensure_columns()
         _seed_admin()
 
     return app

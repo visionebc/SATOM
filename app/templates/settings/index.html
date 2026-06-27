@@ -13,20 +13,37 @@
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-gear me-2 text-accent"></i>Settings</h1>
+    <h1 class="fw-page-title"><i class="bi bi-gear me-2 text-accent"></i>{{ 'Admin Console' if is_admin else 'Settings' }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">Application configuration and security settings</p>
   </div>
 </div>
 
 <!-- Tab navigation -->
 <ul class="nav nav-tabs mb-4" id="settingsTabs" role="tablist">
+  {% if is_admin %}
   <li class="nav-item" role="presentation">
     <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-general" type="button">
       <i class="bi bi-sliders me-1"></i>General
     </button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-security" type="button">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-naming" type="button">
+      <i class="bi bi-tag me-1"></i>Naming
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-classification" type="button">
+      <i class="bi bi-diagram-2 me-1"></i>Classification
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-segments" type="button">
+      <i class="bi bi-hdd-network me-1"></i>Network Segments
+    </button>
+  </li>
+  {% endif %}
+  <li class="nav-item" role="presentation">
+    <button class="nav-link {{ 'active' if not is_admin else '' }}" data-bs-toggle="tab" data-bs-target="#tab-security" type="button">
       <i class="bi bi-shield-lock me-1"></i>Security
     </button>
   </li>
@@ -44,6 +61,7 @@
 
 <div class="tab-content">
 
+  {% if is_admin %}
   <!-- GENERAL TAB -->
   <div class="tab-pane fade show active" id="tab-general">
     <div class="row g-3">
@@ -59,45 +77,52 @@
               <div class="mb-4">
                 <label class="fw-form-label">Application Name</label>
                 <input type="text" name="app_name" class="form-control fw-form-control"
-                       value="{{ settings.get('app_name','Fortinet Manager Web') if settings else 'Fortinet Manager Web' }}">
+                       value="{{ settings.app_name }}">
                 <div class="form-text">Displayed in the browser title and top bar</div>
               </div>
 
               <div class="mb-4">
                 <label class="fw-form-label">Default Appliance Platform</label>
                 <select name="default_kind" class="form-select fw-form-control">
-                  <option value="FortiWeb" {{ 'selected' if settings and settings.get('default_kind') == 'FortiWeb' else '' }}>
-                    FortiWeb (Hardware / VM)
-                  </option>
-                  <option value="FortiWeb-Cloud" {{ 'selected' if settings and settings.get('default_kind') == 'FortiWeb-Cloud' else '' }}>
-                    FortiWeb-Cloud
-                  </option>
+                  <option value="FortiWeb" {{ 'selected' if settings.default_kind == 'FortiWeb' else '' }}>FortiWeb (Hardware / VM)</option>
+                  <option value="FortiWeb-Cloud" {{ 'selected' if settings.default_kind == 'FortiWeb-Cloud' else '' }}>FortiWeb-Cloud</option>
+                  <option value="FortiADC" {{ 'selected' if settings.default_kind == 'FortiADC' else '' }}>FortiADC</option>
                 </select>
               </div>
 
               <div class="mb-4">
-                <label class="fw-form-label">Session Timeout (minutes)</label>
+                <label class="fw-form-label">Session Lock (minutes)</label>
                 <input type="number" name="session_timeout" class="form-control fw-form-control"
-                       value="{{ settings.get('session_timeout', 60) if settings else 60 }}"
-                       min="5" max="1440" style="max-width:160px;">
-                <div class="form-text">Users are logged out after this period of inactivity</div>
+                       value="{{ settings.session_timeout }}" min="5" max="1440" style="max-width:160px;">
+                <div class="form-text">Inactivity before the session expires and re-asks for the password</div>
               </div>
 
               <div class="mb-4">
                 <label class="fw-form-label">Status Poll Interval (seconds)</label>
                 <input type="number" name="poll_interval" class="form-control fw-form-control"
-                       value="{{ settings.get('poll_interval', 30) if settings else 30 }}"
-                       min="10" max="3600" style="max-width:160px;">
+                       value="{{ settings.poll_interval }}" min="10" max="3600" style="max-width:160px;">
                 <div class="form-text">How often appliance online/offline status is checked</div>
+              </div>
+
+              <div class="mb-4">
+                <label class="fw-form-label">Log Levels</label>
+                <div class="d-flex flex-wrap gap-3">
+                  {% for lv in log_levels_all %}
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="log_levels" value="{{ lv }}"
+                           id="lvl-{{ lv }}" {{ 'checked' if lv in settings.log_levels else '' }}>
+                    <label class="form-check-label" for="lvl-{{ lv }}">{{ lv }}</label>
+                  </div>
+                  {% endfor %}
+                </div>
+                <div class="form-text">Which severities are written to the application log</div>
               </div>
 
               <div class="mb-4">
                 <div class="form-check form-switch">
                   <input class="form-check-input" type="checkbox" name="show_raw_config" id="chk-raw"
-                         {{ 'checked' if settings and settings.get('show_raw_config') else '' }}>
-                  <label class="form-check-label" for="chk-raw">
-                    Show raw JSON config on policy detail pages
-                  </label>
+                         {{ 'checked' if settings.show_raw_config else '' }}>
+                  <label class="form-check-label" for="chk-raw">Show raw JSON config on policy detail pages</label>
                 </div>
               </div>
 
@@ -117,46 +142,13 @@
           <div class="fw-card-body">
             <table class="table table-sm" style="font-size:13px;">
               <tbody>
-                <tr>
-                  <td class="text-muted" style="width:50%;">Application</td>
-                  <td>Fortinet Manager Web</td>
-                </tr>
-                <tr>
-                  <td class="text-muted">Version</td>
-                  <td><span class="fw-badge fw-badge-primary">v1.0</span></td>
-                </tr>
-                <tr>
-                  <td class="text-muted">API Target</td>
-                  <td>FortiWeb 7.6 REST API</td>
-                </tr>
-                <tr>
-                  <td class="text-muted">Framework</td>
-                  <td>Flask + SQLAlchemy</td>
-                </tr>
-                <tr>
-                  <td class="text-muted">Appliances</td>
-                  <td>{{ appliance_count if appliance_count is defined else '—' }}</td>
-                </tr>
-                <tr>
-                  <td class="text-muted">Users</td>
-                  <td>{{ user_count if user_count is defined else '—' }}</td>
-                </tr>
-                <tr>
-                  <td class="text-muted">Logged in as</td>
-                  <td><strong>{{ current_user.username if current_user else '—' }}</strong></td>
-                </tr>
-                <tr>
-                  <td class="text-muted">Role</td>
-                  <td>
-                    {% if current_user and current_user.role == 'admin' %}
-                      <span class="fw-badge fw-badge-danger">Admin</span>
-                    {% elif current_user and current_user.role == 'operator' %}
-                      <span class="fw-badge fw-badge-primary">Operator</span>
-                    {% else %}
-                      <span class="fw-badge fw-badge-secondary">Read Only</span>
-                    {% endif %}
-                  </td>
-                </tr>
+                <tr><td class="text-muted" style="width:50%;">Application</td><td>{{ settings.app_name }}</td></tr>
+                <tr><td class="text-muted">Version</td><td><span class="fw-badge fw-badge-primary">v1.0</span></td></tr>
+                <tr><td class="text-muted">Default platform</td><td>{{ settings.default_kind }}</td></tr>
+                <tr><td class="text-muted">Session lock</td><td>{{ settings.session_timeout }} min</td></tr>
+                <tr><td class="text-muted">Status poll</td><td>{{ settings.poll_interval }} s</td></tr>
+                <tr><td class="text-muted">Log levels</td><td>{{ settings.log_levels | join(', ') }}</td></tr>
+                <tr><td class="text-muted">Settings store</td><td>SQLite&nbsp;<code>app_settings</code></td></tr>
               </tbody>
             </table>
           </div>
@@ -165,8 +157,148 @@
     </div>
   </div>
 
+  <!-- NAMING TAB -->
+  <div class="tab-pane fade" id="tab-naming">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-tag me-2 text-accent"></i>Naming Scheme</span>
+      </div>
+      <div class="fw-card-body">
+        <p class="text-muted" style="font-size:13px;">
+          Define the name pattern of each object in a Server Policy. When creating a new policy the operator only
+          types the web address and the system derives every name from these patterns. Use the token
+          <code>{name}</code> as the site identifier — it is sanitised automatically
+          (<code>shop.example.com → shop-example-com</code>). Clearing a field restores its default pattern.
+        </p>
+
+        <div class="row g-2 align-items-center mb-3" style="max-width:560px;">
+          <div class="col-auto"><label class="fw-form-label mb-0">Sample web address</label></div>
+          <div class="col">
+            <input type="text" id="naming-sample" class="form-control fw-form-control" value="shop.example.com"
+                   oninput="refreshNaming()">
+          </div>
+          <div class="col-auto"><span class="text-muted" id="naming-slug" style="font-size:12px;"></span></div>
+        </div>
+
+        <form method="POST" action="{{ url_for('settings.save_naming') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% for section, elements in naming_sections.items() %}
+          <div class="fw-section-separator my-3"></div>
+          <h6 class="text-muted text-uppercase" style="font-size:12px; letter-spacing:.5px;">{{ section }}</h6>
+          <div class="row g-2">
+            {% for e in elements %}
+            <div class="col-lg-6">
+              <label class="fw-form-label mb-1">{{ e.label }}</label>
+              <div class="input-group input-group-sm">
+                <input type="text" class="form-control fw-form-control naming-input"
+                       name="nm_{{ e.key }}" data-key="{{ e.key }}"
+                       value="{{ naming_scheme[e.key] }}" placeholder="{{ e.default }}"
+                       oninput="refreshNaming()" {% if e.note %}title="{{ e.note }}"{% endif %}>
+                <span class="input-group-text">→</span>
+                <span class="input-group-text text-muted" id="pv_{{ e.key }}" style="min-width:140px; justify-content:flex-start;"></span>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% endfor %}
+          <div class="mt-3 d-flex gap-2">
+            <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save Naming</button>
+            <button type="submit" name="action" value="reset" class="btn btn-outline-secondary">Restore defaults</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- CLASSIFICATION TAB -->
+  <div class="tab-pane fade" id="tab-classification">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-diagram-2 me-2 text-accent"></i>Device Classification</span>
+      </div>
+      <div class="fw-card-body">
+        <p class="text-muted" style="font-size:13px;">
+          Catalogs used to classify appliances — <strong>Zones</strong> (network zones),
+          <strong>Lines</strong> (service lines / environments) and <strong>Departments</strong>.
+          Each appliance is assigned one value per catalog on its Edit page. One entry per line.
+        </p>
+        <form method="POST" action="{{ url_for('settings.save_classification') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="fw-form-label">Network Zones</label>
+              <textarea name="zones" class="form-control fw-form-control" rows="8"
+                        placeholder="dmz&#10;internal&#10;external">{{ classification.zones | join('\n') }}</textarea>
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">Lines</label>
+              <textarea name="lines" class="form-control fw-form-control" rows="8"
+                        placeholder="production&#10;staging&#10;lab">{{ classification.lines | join('\n') }}</textarea>
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">Departments</label>
+              <textarea name="departments" class="form-control fw-form-control" rows="8"
+                        placeholder="IT&#10;Finance&#10;Sales">{{ classification.departments | join('\n') }}</textarea>
+            </div>
+          </div>
+          <div class="mt-3">
+            <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save Classification</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- NETWORK SEGMENTS TAB -->
+  <div class="tab-pane fade" id="tab-segments">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>Network Segments</span>
+      </div>
+      <div class="fw-card-body">
+        <p class="text-muted" style="font-size:13px;">
+          Named back-end networks (CIDR + interface + gateway) from which a new policy builds its server pool.
+          Each segment can be scoped to a classification value (leave blank for "any").
+        </p>
+        <form method="POST" action="{{ url_for('settings.save_segments') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="fw-table-wrapper">
+            <table class="fw-table" id="segments-table">
+              <thead>
+                <tr><th>Name</th><th>Zone</th><th>Line</th><th>Department</th><th>CIDR</th><th>Interface</th><th>Gateway</th><th>Note</th><th></th></tr>
+              </thead>
+              <tbody id="segments-body">
+                {% for s in segments %}
+                <tr>
+                  <td><input class="form-control form-control-sm" name="seg_name[]" value="{{ s.name }}"></td>
+                  <td><input class="form-control form-control-sm" name="seg_zone[]" value="{{ s.zone }}" list="cls-zones"></td>
+                  <td><input class="form-control form-control-sm" name="seg_line[]" value="{{ s.line }}" list="cls-lines"></td>
+                  <td><input class="form-control form-control-sm" name="seg_department[]" value="{{ s.department }}" list="cls-departments"></td>
+                  <td><input class="form-control form-control-sm" name="seg_cidr[]" value="{{ s.cidr }}" placeholder="192.0.2.0/24"></td>
+                  <td><input class="form-control form-control-sm" name="seg_interface[]" value="{{ s.interface }}" placeholder="port1"></td>
+                  <td><input class="form-control form-control-sm" name="seg_gateway[]" value="{{ s.gateway }}"></td>
+                  <td><input class="form-control form-control-sm" name="seg_note[]" value="{{ s.note }}"></td>
+                  <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()"><i class="bi bi-trash"></i></button></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <datalist id="cls-zones">{% for z in classification.zones %}<option value="{{ z }}">{% endfor %}</datalist>
+          <datalist id="cls-lines">{% for l in classification.lines %}<option value="{{ l }}">{% endfor %}</datalist>
+          <datalist id="cls-departments">{% for d in classification.departments %}<option value="{{ d }}">{% endfor %}</datalist>
+          <div class="mt-3 d-flex gap-2">
+            <button type="button" class="btn btn-outline-secondary" onclick="addSegmentRow()"><i class="bi bi-plus-lg me-1"></i>Add segment</button>
+            <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save Segments</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- SECURITY TAB -->
-  <div class="tab-pane fade" id="tab-security">
+  <div class="tab-pane fade {{ 'show active' if not is_admin else '' }}" id="tab-security">
     <div class="row g-3">
       <div class="col-lg-7">
         <div class="fw-card">
@@ -180,18 +312,15 @@
               ('Security Headers', True, 'X-Frame-Options, X-Content-Type, CSP, HSTS enabled'),
               ('Rate Limiting', True, '5 login attempts per minute per IP'),
               ('Credential Encryption', True, 'API credentials encrypted with Fernet at rest'),
-              ('Password Hashing', True, 'bcrypt / scrypt with cost factor ≥ 12'),
+              ('Password Hashing', True, 'scrypt with strong cost parameters'),
               ('Audit Logging', True, 'All user actions logged with timestamp and IP'),
               ('TLS Verification', True, 'SSL cert verification enabled by default per appliance'),
             ] %}
             {% for name, ok, desc in checks %}
             <div class="d-flex align-items-start gap-3 py-2" style="border-bottom:1px solid #F0F2F5;">
               <div class="mt-1">
-                {% if ok %}
-                  <i class="bi bi-check-circle-fill" style="color:var(--fw-success); font-size:16px;"></i>
-                {% else %}
-                  <i class="bi bi-x-circle-fill" style="color:var(--fw-danger); font-size:16px;"></i>
-                {% endif %}
+                {% if ok %}<i class="bi bi-check-circle-fill" style="color:var(--fw-success); font-size:16px;"></i>
+                {% else %}<i class="bi bi-x-circle-fill" style="color:var(--fw-danger); font-size:16px;"></i>{% endif %}
               </div>
               <div>
                 <div style="font-size:13.5px; font-weight:500;">{{ name }}</div>
@@ -209,26 +338,19 @@
             <span class="fw-card-title"><i class="bi bi-lock me-2 text-accent"></i>Active Sessions</span>
           </div>
           <div class="fw-card-body">
-            <p class="text-muted" style="font-size:13px;">
-              Your current session. Use Sign Out to end it securely.
-            </p>
+            <p class="text-muted" style="font-size:13px;">Your current session. Use Sign Out to end it securely.</p>
             <div class="d-flex align-items-center gap-3 p-3" style="background:#F4F5F7; border-radius:8px;">
-              <div class="fw-avatar">
-                {{ current_user.username[0].upper() if current_user and current_user.username else 'U' }}
-              </div>
+              <div class="fw-avatar">{{ current_user.username[0].upper() if current_user and current_user.username else 'U' }}</div>
               <div>
                 <div style="font-size:13.5px; font-weight:500;">{{ current_user.username if current_user else '—' }}</div>
                 <div class="text-muted" style="font-size:12px;">Current session</div>
               </div>
               <div class="ms-auto">
-                <span class="fw-status fw-status-online" style="font-size:12px;">
-                  <span class="fw-status-dot"></span>Active
-                </span>
+                <span class="fw-status fw-status-online" style="font-size:12px;"><span class="fw-status-dot"></span>Active</span>
               </div>
             </div>
             <div class="mt-3">
-              <a href="{{ url_for('auth.logout') }}"
-                 class="btn btn-outline-danger btn-sm">
+              <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-danger btn-sm">
                 <i class="bi bi-box-arrow-right me-1"></i>Sign Out
               </a>
             </div>
@@ -247,10 +369,8 @@
             <span class="fw-card-title"><i class="bi bi-key me-2 text-accent"></i>Change Password</span>
           </div>
           <div class="fw-card-body">
-            <form method="POST" action="{{ url_for('auth.profile') }}"
-                  id="changePasswordForm">
+            <form method="POST" action="{{ url_for('settings.change_password') }}" id="changePasswordForm">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
               <div class="mb-3">
                 <label class="fw-form-label">Current Password <span class="text-danger">*</span></label>
                 <input type="password" name="current_password" class="form-control fw-form-control"
@@ -271,10 +391,7 @@
                 <input type="password" name="confirm_password" class="form-control fw-form-control"
                        placeholder="Repeat new password" required autocomplete="new-password">
               </div>
-
-              <button type="submit" class="btn btn-fw-primary w-100">
-                <i class="bi bi-check-lg me-1"></i>Update Password
-              </button>
+              <button type="submit" class="btn btn-fw-primary w-100"><i class="bi bi-check-lg me-1"></i>Update Password</button>
             </form>
           </div>
         </div>
@@ -294,7 +411,7 @@
             <div class="d-flex align-items-center gap-3 mb-4">
               <div class="fw-logo-mark" style="width:52px;height:52px;font-size:20px;border-radius:10px;">FW</div>
               <div>
-                <h5 class="mb-0" style="font-weight:700;">Fortinet Manager Web</h5>
+                <h5 class="mb-0" style="font-weight:700;">{{ settings.app_name }}</h5>
                 <span class="fw-badge fw-badge-primary">v1.0</span>
               </div>
             </div>
@@ -304,19 +421,13 @@
             </p>
             <dl class="row" style="font-size:13px;">
               <dt class="col-sm-4 text-muted">Repository</dt>
-              <dd class="col-sm-8">
-                <a href="http://192.0.2.53:3000/visionebc/fortinet-manager-web" target="_blank">
-                  visionebc/fortinet-manager-web
-                </a>
-              </dd>
+              <dd class="col-sm-8"><a href="http://192.0.2.53:3000/visionebc/fortinet-manager-web" target="_blank">visionebc/fortinet-manager-web</a></dd>
               <dt class="col-sm-4 text-muted">RBAC Roles</dt>
               <dd class="col-sm-8">readonly, operator, admin</dd>
               <dt class="col-sm-4 text-muted">API Target</dt>
               <dd class="col-sm-8">FortiWeb 7.6 REST API</dd>
               <dt class="col-sm-4 text-muted">UI Framework</dt>
               <dd class="col-sm-8">Bootstrap 5.3 + Custom FortiWeb 7.6 Theme</dd>
-              <dt class="col-sm-4 text-muted">Charts</dt>
-              <dd class="col-sm-8">Chart.js 4.4</dd>
             </dl>
           </div>
         </div>
@@ -329,18 +440,9 @@
           <div class="fw-card-body">
             <table class="table table-sm" style="font-size:13px;">
               <tbody>
-                <tr>
-                  <td><kbd>/</kbd></td>
-                  <td>Focus global search</td>
-                </tr>
-                <tr>
-                  <td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td>
-                  <td>Execute API Explorer request</td>
-                </tr>
-                <tr>
-                  <td><kbd>Esc</kbd></td>
-                  <td>Close modal dialogs</td>
-                </tr>
+                <tr><td><kbd>/</kbd></td><td>Focus global search</td></tr>
+                <tr><td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td>Execute API Explorer request</td></tr>
+                <tr><td><kbd>Esc</kbd></td><td>Close modal dialogs</td></tr>
               </tbody>
             </table>
           </div>
@@ -354,26 +456,76 @@
 
 {% block scripts %}
 <script>
-function checkStrength(pwd) {
-  const fill = document.getElementById('pwd-strength-fill');
-  const text = document.getElementById('pwd-strength-text');
-  if (!fill || !text) return;
+// --- activate the tab named in the URL hash (after a save redirect) ---
+(function () {
+  var hash = window.location.hash;
+  if (hash) {
+    var btn = document.querySelector('[data-bs-target="' + hash + '"]');
+    if (btn && window.bootstrap) { new bootstrap.Tab(btn).show(); }
+  }
+})();
 
-  let score = 0;
+// --- Naming live preview (mirrors services.naming.slugify / render_one) ---
+function namingSlugify(addr) {
+  var s = (addr || '').trim().toLowerCase();
+  s = s.replace(/^[a-z][a-z0-9+.\-]*:\/\//, '');
+  s = s.split('/')[0].split('?')[0].split(':')[0];
+  s = s.replace(/[^a-z0-9]+/g, '-');
+  return s.replace(/^-+|-+$/g, '');
+}
+function refreshNaming() {
+  var sampleEl = document.getElementById('naming-sample');
+  if (!sampleEl) return;
+  var slug = namingSlugify(sampleEl.value);
+  var slugEl = document.getElementById('naming-slug');
+  if (slugEl) slugEl.textContent = 'slug: ' + (slug || '∅');
+  document.querySelectorAll('.naming-input').forEach(function (inp) {
+    var key = inp.getAttribute('data-key');
+    var pv = document.getElementById('pv_' + key);
+    if (!pv) return;
+    var pat = inp.value.trim() || inp.getAttribute('placeholder') || '';
+    pv.textContent = pat ? pat.replace('{name}', slug).substring(0, 63) : '(default)';
+  });
+}
+
+// --- Network segment row add ---
+function addSegmentRow() {
+  var body = document.getElementById('segments-body');
+  if (!body) return;
+  var tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td><input class="form-control form-control-sm" name="seg_name[]"></td>' +
+    '<td><input class="form-control form-control-sm" name="seg_zone[]" list="cls-zones"></td>' +
+    '<td><input class="form-control form-control-sm" name="seg_line[]" list="cls-lines"></td>' +
+    '<td><input class="form-control form-control-sm" name="seg_department[]" list="cls-departments"></td>' +
+    '<td><input class="form-control form-control-sm" name="seg_cidr[]" placeholder="192.0.2.0/24"></td>' +
+    '<td><input class="form-control form-control-sm" name="seg_interface[]" placeholder="port1" value="port1"></td>' +
+    '<td><input class="form-control form-control-sm" name="seg_gateway[]"></td>' +
+    '<td><input class="form-control form-control-sm" name="seg_note[]"></td>' +
+    '<td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest(\'tr\').remove()"><i class="bi bi-trash"></i></button></td>';
+  body.appendChild(tr);
+}
+
+// --- password strength meter (Change Password tab) ---
+function checkStrength(pwd) {
+  var fill = document.getElementById('pwd-strength-fill');
+  var text = document.getElementById('pwd-strength-text');
+  if (!fill || !text) return;
+  var score = 0;
   if (pwd.length >= 8) score++;
   if (pwd.length >= 12) score++;
   if (/[A-Z]/.test(pwd) && /[a-z]/.test(pwd)) score++;
   if (/\d/.test(pwd)) score++;
   if (/[^A-Za-z0-9]/.test(pwd)) score++;
-
-  const pcts   = [0, 25, 50, 75, 100];
-  const colors = ['transparent', '#DC3545', '#FFC107', '#17A2B8', '#28A745'];
-  const labels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
-
-  fill.style.width      = pcts[score] + '%';
+  var pcts = [0, 25, 50, 75, 100];
+  var colors = ['transparent', '#DC3545', '#FFC107', '#17A2B8', '#28A745'];
+  var labels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
+  fill.style.width = pcts[score] + '%';
   fill.style.background = colors[score];
-  text.textContent      = score > 0 ? 'Password strength: ' + labels[score] : '';
-  text.style.color      = colors[score];
+  text.textContent = score > 0 ? 'Password strength: ' + labels[score] : '';
+  text.style.color = colors[score];
 }
+
+document.addEventListener('DOMContentLoaded', refreshNaming);
 </script>
 {% endblock %}

@@ -9,6 +9,20 @@ from ..services.audit import log_action
 bp = Blueprint('exceptions', __name__, url_prefix='/exceptions')
 
 
+def _results(resp):
+    """Extract the object list from a FortiWeb cmdb response.
+
+    FortiWeb 7.6 wraps cmdb GET payloads as ``{"results": [...]}`` (some paths
+    use ``"data"``). Returns [] for error envelopes so the view never iterates a
+    raw Response object.
+    """
+    j = resp.json()
+    if isinstance(j, dict):
+        out = j.get('results', j.get('data', []))
+        return out if isinstance(out, list) else ([out] if out else [])
+    return j if isinstance(j, list) else []
+
+
 @bp.route('/')
 @login_required
 def index():
@@ -24,7 +38,7 @@ def list_exceptions(id):
     error = None
     try:
         client = FortiWebClient(appliance)
-        exceptions = client.api_call('GET', '/WebProtection/Exception/ExceptionURL') or []
+        exceptions = _results(client.api_call('GET', '/api/v2.0/cmdb/waf/url-access.url-access-rule'))
     except Exception as exc:
         error = str(exc)
     return render_template(

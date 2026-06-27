@@ -37,7 +37,7 @@
 <div class="row g-3">
   {% for a in appliances %}
   <div class="col-xl-3 col-lg-4 col-md-6">
-    <a href="{{ url_for('exceptions.index', id=a.id) }}" class="text-decoration-none">
+    <a href="{{ url_for('exceptions.list_exceptions', id=a.id) }}" class="text-decoration-none">
       <div class="fw-appliance-card">
         <div class="d-flex align-items-start justify-content-between mb-3">
           <div class="fw-stat-icon fw-stat-icon-primary" style="width:40px;height:40px;font-size:18px;">

@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Exceptions — {{ appliance.name }}{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('exceptions.index') }}">Exceptions</a>
+  <span class="separator">/</span>
+  <span>{{ appliance.name }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-slash-circle me-2 text-accent"></i>WAF Exceptions</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">Exception rules on <strong>{{ appliance.name }}</strong></p>
+  </div>
+  <a href="{{ url_for('exceptions.index') }}" class="btn btn-secondary btn-sm">
+    <i class="bi bi-chevron-left me-1"></i>Change Appliance
+  </a>
+</div>
+
+{% if error %}
+<div class="fw-alert fw-alert-danger d-flex align-items-center gap-2 mb-3">
+  <i class="bi bi-exclamation-triangle-fill"></i>
+  <div>Could not load exceptions from <strong>{{ appliance.name }}</strong>: {{ error }}</div>
+</div>
+{% endif %}
+
+<div class="fw-toolbar mb-2">
+  <div class="fw-search-box">
+    <i class="bi bi-search search-icon"></i>
+    <input type="text" placeholder="Search exceptions…" oninput="filterTable('exceptions-table', this.value)">
+  </div>
+</div>
+
+<div class="fw-table-wrapper">
+  <table class="fw-table" id="exceptions-table">
+    <thead>
+      <tr>
+        <th>Exception Name</th>
+        <th>Type</th>
+        <th>Scope</th>
+        <th>URL Pattern</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if exceptions %}
+        {% for e in exceptions %}
+        <tr>
+          <td><strong>{{ e.get('name') or e.get('mkey') or '—' }}</strong></td>
+          <td><span class="fw-badge fw-badge-info">{{ e.get('type') or 'URL-Based' }}</span></td>
+          <td>{{ e.get('scope') or 'All' }}</td>
+          <td class="mono" style="font-size:12px;">{{ e.get('url-pattern') or e.get('url') or '—' }}</td>
+          <td>
+            {% if e.get('status') == 'enable' %}
+              <span class="fw-status fw-status-online" style="font-size:12px;"><span class="fw-status-dot"></span>Enabled</span>
+            {% else %}
+              <span class="fw-status fw-status-offline" style="font-size:12px;"><span class="fw-status-dot"></span>Disabled</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{{ url_for('api_explorer.index') }}?id={{ appliance.id }}&path=api/v2.0/cmdb/waf/url-access.rule&mkey={{ e.get('name','') }}"
+               class="btn btn-sm btn-outline-primary btn-sm-icon" title="View in API Explorer">
+              <i class="bi bi-code-square"></i>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="6"><div class="fw-empty-state py-5">
+          <div class="fw-empty-state-icon"><i class="bi bi-slash-circle"></i></div>
+          <div class="fw-empty-state-title">No exceptions configured</div>
+          <div class="fw-empty-state-text">All WAF rules apply globally with no exceptions.</div>
+        </div></td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterTable(tableId, q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('#' + tableId + ' tbody tr').forEach(function (row) {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

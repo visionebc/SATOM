@@ -214,6 +214,18 @@
               <label class="fw-form-label">Tags (comma-separated)</label>
               <input type="text" class="form-control fw-form-control" name="tags" placeholder="production, datacenter-a">
             </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">Zone</label>
+              <input type="text" class="form-control fw-form-control" name="zone" list="cls-zones" placeholder="(none)">
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">Line</label>
+              <input type="text" class="form-control fw-form-control" name="line" list="cls-lines" placeholder="(none)">
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">Department</label>
+              <input type="text" class="form-control fw-form-control" name="department" list="cls-departments" placeholder="(none)">
+            </div>
             <div class="col-12">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="verify_ssl" id="verify_ssl" checked>
@@ -283,6 +295,18 @@
               <label class="fw-form-label">Tags</label>
               <input type="text" class="form-control" name="tags" id="edit-tags">
             </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">Zone</label>
+              <input type="text" class="form-control" name="zone" id="edit-zone" list="cls-zones" placeholder="(none)">
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">Line</label>
+              <input type="text" class="form-control" name="line" id="edit-line" list="cls-lines" placeholder="(none)">
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">Department</label>
+              <input type="text" class="form-control" name="department" id="edit-department" list="cls-departments" placeholder="(none)">
+            </div>
             <div class="col-12">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="verify_ssl" id="edit-verify-ssl">
@@ -299,6 +323,11 @@
     </div>
   </div>
 </div>
+
+<!-- Classification catalogs (Settings → Classification) for Zone/Line/Department fields -->
+<datalist id="cls-zones">{% for z in (classification.zones if classification else []) %}<option value="{{ z }}">{% endfor %}</datalist>
+<datalist id="cls-lines">{% for l in (classification.lines if classification else []) %}<option value="{{ l }}">{% endfor %}</datalist>
+<datalist id="cls-departments">{% for d in (classification.departments if classification else []) %}<option value="{{ d }}">{% endfor %}</datalist>
 {% endblock %}
 
 {% block scripts %}
@@ -322,7 +351,10 @@ function openEditModal(appliance) {
   document.getElementById('edit-port').value     = appliance.port || 443;
   document.getElementById('edit-username').value = appliance.username || '';
   document.getElementById('edit-vdom').value     = appliance.vdom || '';
-  document.getElementById('edit-tags').value     = appliance.tags || '';
+  document.getElementById('edit-tags').value     = (Array.isArray(appliance.tags) ? appliance.tags.join(', ') : (appliance.tags || ''));
+  document.getElementById('edit-zone').value     = appliance.zone || '';
+  document.getElementById('edit-line').value     = appliance.line || '';
+  document.getElementById('edit-department').value = appliance.department || '';
   document.getElementById('edit-verify-ssl').checked = appliance.verify_ssl !== false;
 
   const form = document.getElementById('formEditAppliance');

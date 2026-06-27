@@ -1,10 +1,12 @@
 from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for
 from flask_login import login_required
 from ..auth.decorators import require_permission
+from sqlalchemy.exc import IntegrityError
 from ..models import Appliance, AuditLog, db, Permission
 from ..clients.fortiweb import FortiWebClient
 from ..clients.fortiadc import FortiADCClient
 from ..services.audit import log_action
+from ..services import settings_store as store
 
 bp = Blueprint('appliances', __name__, url_prefix='/appliances')
 
@@ -13,7 +15,8 @@ bp = Blueprint('appliances', __name__, url_prefix='/appliances')
 @login_required
 def index():
     appliances = Appliance.query.order_by(Appliance.name).all()
-    return render_template('appliances/index.html', appliances=appliances)
+    return render_template('appliances/index.html', appliances=appliances,
+                           classification=store.all_classification())
 
 
 @bp.route('/<int:id>')
@@ -41,6 +44,7 @@ def create():
     tags = request.form.get('tags', '').strip() or None
     department = request.form.get('department', '').strip() or None
     zone = request.form.get('zone', '').strip() or None
+    line = request.form.get('line', '').strip() or None
 
     if not name or not host:
         flash('Name and host are required.', 'danger')
@@ -49,12 +53,17 @@ def create():
     appliance = Appliance(
         name=name, kind=kind, host=host, port=port,
         username=username, verify_ssl=verify_ssl,
-        vdom=vdom, tags=tags, department=department, zone=zone,
+        vdom=vdom, tags=tags, department=department, zone=zone, line=line,
         password_enc='placeholder',
     )
     appliance.set_password(password)
     db.session.add(appliance)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash(f'Appliance name {name!r} already exists.', 'danger')
+        return redirect(url_for('appliances.index'))
     log_action('appliance.create', target=name)
     flash(f'Appliance {name} created.', 'success')
     return redirect(url_for('appliances.detail', id=appliance.id))
@@ -65,7 +74,8 @@ def create():
 @require_permission(Permission.CONFIG_WRITE)
 def edit(id):
     appliance = Appliance.query.get_or_404(id)
-    return render_template('appliances/edit.html', appliance=appliance)
+    return render_template('appliances/edit.html', appliance=appliance,
+                           classification=store.all_classification())
 
 
 @bp.route('/<int:id>/edit', methods=['POST'])
@@ -83,6 +93,7 @@ def edit_save(id):
     appliance.tags = request.form.get('tags', appliance.tags or '').strip() or None
     appliance.department = request.form.get('department', appliance.department or '').strip() or None
     appliance.zone = request.form.get('zone', appliance.zone or '').strip() or None
+    appliance.line = request.form.get('line', appliance.line or '').strip() or None
     password = request.form.get('password', '')
     if password:
         appliance.set_password(password)

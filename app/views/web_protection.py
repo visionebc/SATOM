@@ -8,6 +8,19 @@ from ..services.audit import log_action
 
 bp = Blueprint('web_protection', __name__, url_prefix='/web-protection')
 
+# Real FortiWeb 7.6 cmdb endpoints (verified against the live appliance).
+EP_INLINE = '/api/v2.0/cmdb/waf/web-protection-profile.inline-protection'
+EP_SIGNATURE = '/api/v2.0/cmdb/waf/signature'
+
+
+def _results(resp):
+    """Extract the object list from a FortiWeb cmdb response (``{"results": …}``)."""
+    j = resp.json()
+    if isinstance(j, dict):
+        out = j.get('results', j.get('data', []))
+        return out if isinstance(out, list) else ([out] if out else [])
+    return j if isinstance(j, list) else []
+
 
 @bp.route('/')
 @login_required
@@ -27,8 +40,8 @@ def overview(id):
     error = None
     try:
         client = FortiWebClient(appliance)
-        wpp_profiles = client.api_call('GET', '/WebProtection/Profile/InlineProtection') or []
-        signatures = client.api_call('GET', '/WebProtection/Signature/MainSignatures') or []
+        wpp_profiles = _results(client.api_call('GET', EP_INLINE))
+        signatures = _results(client.api_call('GET', EP_SIGNATURE))
     except Exception as exc:
         error = str(exc)
     return render_template(
@@ -50,17 +63,12 @@ def wpp_detail(id, name):
     error = None
     try:
         client = FortiWebClient(appliance)
-        wpp = client.api_call('GET', f'/WebProtection/Profile/InlineProtection/{name}')
-        if wpp:
-            sub_policy_keys = [
-                ('signature', '/WebProtection/Signature/MainSignatures'),
-                ('bot_detection', '/WebProtection/BotMitigation/BotDetectionPolicy'),
-                ('ip_reputation', '/WebProtection/IPReputation/IPReputationPolicy'),
-                ('data_loss', '/WebProtection/DataLossPrevention/DataLossPreventionPolicy'),
-            ]
-            for key, endpoint in sub_policy_keys:
+        result = _results(client.api_call('GET', f'{EP_INLINE}?mkey={name}'))
+        wpp = result[0] if result else None
+        if isinstance(wpp, dict):
+            for key, endpoint in [('signature', EP_SIGNATURE)]:
                 try:
-                    sub_policies[key] = client.api_call('GET', endpoint) or []
+                    sub_policies[key] = _results(client.api_call('GET', endpoint))
                 except Exception:
                     sub_policies[key] = []
     except Exception as exc:

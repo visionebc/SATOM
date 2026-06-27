@@ -127,13 +127,25 @@
 
       <div class="fw-nav-divider"></div>
 
-      <!-- NETWORK -->
-      <div class="fw-nav-section">Network</div>
+      <!-- ARCHITECTURE -->
+      <div class="fw-nav-section">Architecture</div>
       <a class="fw-nav-item"
          href="{{ url_for('architecture.index') }}">
         <i class="bi bi-hdd-network fw-nav-icon"></i>
-        <span>Architecture</span>
+        <span>Topology</span>
       </a>
+      {% if current_user and current_user.can('user_manage') %}
+      <a class="fw-nav-item"
+         href="{{ url_for('architecture.classification') }}">
+        <i class="bi bi-diagram-2 fw-nav-icon"></i>
+        <span>Device Classification</span>
+      </a>
+      <a class="fw-nav-item"
+         href="{{ url_for('architecture.segments') }}">
+        <i class="bi bi-bounding-box-circles fw-nav-icon"></i>
+        <span>Network Segments</span>
+      </a>
+      {% endif %}
       <a class="fw-nav-item"
          href="{{ url_for('analysis.index') }}">
         <i class="bi bi-graph-up fw-nav-icon"></i>

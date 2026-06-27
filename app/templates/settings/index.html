@@ -31,16 +31,6 @@
       <i class="bi bi-tag me-1"></i>Naming
     </button>
   </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-classification" type="button">
-      <i class="bi bi-diagram-2 me-1"></i>Classification
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-segments" type="button">
-      <i class="bi bi-hdd-network me-1"></i>Network Segments
-    </button>
-  </li>
   {% endif %}
   <li class="nav-item" role="presentation">
     <button class="nav-link {{ 'active' if not is_admin else '' }}" data-bs-toggle="tab" data-bs-target="#tab-security" type="button">
@@ -210,91 +200,6 @@
     </div>
   </div>
 
-  <!-- CLASSIFICATION TAB -->
-  <div class="tab-pane fade" id="tab-classification">
-    <div class="fw-card">
-      <div class="fw-card-header">
-        <span class="fw-card-title"><i class="bi bi-diagram-2 me-2 text-accent"></i>Device Classification</span>
-      </div>
-      <div class="fw-card-body">
-        <p class="text-muted" style="font-size:13px;">
-          Catalogs used to classify appliances — <strong>Zones</strong> (network zones),
-          <strong>Lines</strong> (service lines / environments) and <strong>Departments</strong>.
-          Each appliance is assigned one value per catalog on its Edit page. One entry per line.
-        </p>
-        <form method="POST" action="{{ url_for('settings.save_classification') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div class="row g-3">
-            <div class="col-md-4">
-              <label class="fw-form-label">Network Zones</label>
-              <textarea name="zones" class="form-control fw-form-control" rows="8"
-                        placeholder="dmz&#10;internal&#10;external">{{ classification.zones | join('\n') }}</textarea>
-            </div>
-            <div class="col-md-4">
-              <label class="fw-form-label">Lines</label>
-              <textarea name="lines" class="form-control fw-form-control" rows="8"
-                        placeholder="production&#10;staging&#10;lab">{{ classification.lines | join('\n') }}</textarea>
-            </div>
-            <div class="col-md-4">
-              <label class="fw-form-label">Departments</label>
-              <textarea name="departments" class="form-control fw-form-control" rows="8"
-                        placeholder="IT&#10;Finance&#10;Sales">{{ classification.departments | join('\n') }}</textarea>
-            </div>
-          </div>
-          <div class="mt-3">
-            <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save Classification</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  <!-- NETWORK SEGMENTS TAB -->
-  <div class="tab-pane fade" id="tab-segments">
-    <div class="fw-card">
-      <div class="fw-card-header">
-        <span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>Network Segments</span>
-      </div>
-      <div class="fw-card-body">
-        <p class="text-muted" style="font-size:13px;">
-          Named back-end networks (CIDR + interface + gateway) from which a new policy builds its server pool.
-          Each segment can be scoped to a classification value (leave blank for "any").
-        </p>
-        <form method="POST" action="{{ url_for('settings.save_segments') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div class="fw-table-wrapper">
-            <table class="fw-table" id="segments-table">
-              <thead>
-                <tr><th>Name</th><th>Zone</th><th>Line</th><th>Department</th><th>CIDR</th><th>Interface</th><th>Gateway</th><th>Note</th><th></th></tr>
-              </thead>
-              <tbody id="segments-body">
-                {% for s in segments %}
-                <tr>
-                  <td><input class="form-control form-control-sm" name="seg_name[]" value="{{ s.name }}"></td>
-                  <td><input class="form-control form-control-sm" name="seg_zone[]" value="{{ s.zone }}" list="cls-zones"></td>
-                  <td><input class="form-control form-control-sm" name="seg_line[]" value="{{ s.line }}" list="cls-lines"></td>
-                  <td><input class="form-control form-control-sm" name="seg_department[]" value="{{ s.department }}" list="cls-departments"></td>
-                  <td><input class="form-control form-control-sm" name="seg_cidr[]" value="{{ s.cidr }}" placeholder="192.0.2.0/24"></td>
-                  <td><input class="form-control form-control-sm" name="seg_interface[]" value="{{ s.interface }}" placeholder="port1"></td>
-                  <td><input class="form-control form-control-sm" name="seg_gateway[]" value="{{ s.gateway }}"></td>
-                  <td><input class="form-control form-control-sm" name="seg_note[]" value="{{ s.note }}"></td>
-                  <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()"><i class="bi bi-trash"></i></button></td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-          <datalist id="cls-zones">{% for z in classification.zones %}<option value="{{ z }}">{% endfor %}</datalist>
-          <datalist id="cls-lines">{% for l in classification.lines %}<option value="{{ l }}">{% endfor %}</datalist>
-          <datalist id="cls-departments">{% for d in classification.departments %}<option value="{{ d }}">{% endfor %}</datalist>
-          <div class="mt-3 d-flex gap-2">
-            <button type="button" class="btn btn-outline-secondary" onclick="addSegmentRow()"><i class="bi bi-plus-lg me-1"></i>Add segment</button>
-            <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save Segments</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
   {% endif %}
 
   <!-- SECURITY TAB -->

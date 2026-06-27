@@ -447,6 +447,17 @@
           <div class="col-auto"><span class="text-muted" id="db-rowcount" style="font-size:12px;"></span></div>
         </div>
 
+        <div class="mb-3">
+          <button type="button" class="btn btn-fw-outline btn-sm" onclick="loadDbRelations()">
+            <i class="bi bi-diagram-3 me-1"></i>Relational model
+          </button>
+        </div>
+        <div id="db-er-wrap" style="display:none;" class="mb-4">
+          <h6 class="text-muted text-uppercase" style="font-size:12px; letter-spacing:.5px;">Relational model (foreign keys)</h6>
+          <div id="db-er-edges" class="fw-table-wrapper mb-3"></div>
+          <div id="db-er-tables" class="row g-2"></div>
+        </div>
+
         <div id="db-schema-wrap" style="display:none;">
           <h6 class="text-muted text-uppercase" style="font-size:12px; letter-spacing:.5px;">Schema</h6>
           <div class="fw-table-wrapper mb-4">
@@ -678,6 +689,46 @@ function dbEsc(v) {
   d.textContent = (v === null || v === undefined) ? '' : String(v);
   return d.innerHTML;
 }
+function loadDbRelations() {
+  var wrap = document.getElementById('db-er-wrap');
+  fetch('/settings/database/relations', {headers: {'Accept': 'application/json'}})
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function (data) {
+      wrap.style.display = '';
+      var edges = data.edges || [];
+      var et = document.getElementById('db-er-edges');
+      if (!edges.length) {
+        et.innerHTML = '<div class="text-muted" style="font-size:13px;">No foreign-key relationships defined.</div>';
+      } else {
+        et.innerHTML = '<table class="fw-table"><thead><tr><th>From</th><th></th><th>To</th></tr></thead><tbody>' +
+          edges.map(function (e) {
+            return '<tr><td><code>' + dbEsc(e.from_table) + '.' + dbEsc(e.from_col) + '</code></td>' +
+              '<td><i class="bi bi-arrow-right text-accent"></i></td>' +
+              '<td><code>' + dbEsc(e.to_table) + '.' + dbEsc(e.to_col) + '</code></td></tr>';
+          }).join('') + '</tbody></table>';
+      }
+      var tables = data.tables || [];
+      var refsByTable = {};
+      edges.forEach(function (e) {
+        (refsByTable[e.from_table] = refsByTable[e.from_table] || []).push(e.to_table);
+      });
+      var tt = document.getElementById('db-er-tables');
+      tt.innerHTML = tables.map(function (t) {
+        var outRefs = refsByTable[t.name] || [];
+        var uniq = outRefs.filter(function (v, i) { return outRefs.indexOf(v) === i; });
+        return '<div class="col-md-4 col-sm-6"><div class="fw-card"><div class="fw-card-body" style="padding:10px 12px;">' +
+          '<strong>' + dbEsc(t.name) + '</strong> <span class="fw-badge" style="opacity:.7;">' + t.columns + ' cols</span>' +
+          (uniq.length ? '<div class="text-muted" style="font-size:12px; margin-top:4px;">&rarr; ' + uniq.map(dbEsc).join(', ') + '</div>' : '') +
+          '</div></div></div>';
+      }).join('');
+    })
+    .catch(function (err) {
+      wrap.style.display = '';
+      document.getElementById('db-er-edges').innerHTML =
+        '<div class="text-danger" style="font-size:13px;">' + dbEsc(String(err)) + '</div>';
+    });
+}
+
 function loadDbTable(name) {
   var wrap = document.getElementById('db-schema-wrap');
   var empty = document.getElementById('db-empty');

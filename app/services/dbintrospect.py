@@ -106,3 +106,29 @@ def table_info(name: str) -> dict[str, Any]:
         "limit": _ROW_LIMIT,
         "error": "",
     }
+
+
+def relations() -> dict[str, Any]:
+    """Foreign-key edges across all tables, for the relational-model (ER) view.
+
+    Returns ``{tables: [{name, columns, pk}], edges: [{from_table, from_col,
+    to_table, to_col}]}``. Schema introspection only — no row data is read.
+    """
+    insp = inspect(db.engine)
+    tables: list[dict[str, Any]] = []
+    edges: list[dict[str, str]] = []
+    for name in sorted(insp.get_table_names()):
+        cols = insp.get_columns(name)
+        pk = sorted(insp.get_pk_constraint(name).get("constrained_columns") or [])
+        tables.append({"name": name, "columns": len(cols), "pk": pk})
+        for fk in insp.get_foreign_keys(name):
+            target = fk.get("referred_table", "")
+            ccols = fk.get("constrained_columns") or []
+            rcols = fk.get("referred_columns") or []
+            for i, col in enumerate(ccols):
+                ref = rcols[i] if i < len(rcols) else (rcols[0] if rcols else "")
+                edges.append({
+                    "from_table": name, "from_col": col,
+                    "to_table": target, "to_col": ref,
+                })
+    return {"tables": tables, "edges": edges}

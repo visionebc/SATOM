@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block title %}Templates — Fortinet Manager Web{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>Templates</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-collection me-2 text-accent"></i>Templates</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">Reusable desired-state profiles (Web Protection, System, Server Policy, Structure) — authored once, pushed on demand</p>
+  </div>
+  <button class="btn btn-fw-primary" data-bs-toggle="modal" data-bs-target="#modalAddTemplate">
+    <i class="bi bi-plus-lg me-1"></i>New Template
+  </button>
+</div>
+
+<!-- Kind filter -->
+<div class="fw-toolbar">
+  <div class="fw-search-box">
+    <i class="bi bi-search search-icon"></i>
+    <input type="text" id="tplSearch" placeholder="Search templates…" oninput="filterTemplates(this.value)">
+  </div>
+  <div class="d-flex gap-1 flex-wrap">
+    <a href="{{ url_for('templates.index') }}" class="btn btn-sm {{ 'btn-fw-primary' if not active_kind else 'btn-outline-secondary' }}">All</a>
+    {% for k in kinds %}
+    <a href="{{ url_for('templates.index', kind=k) }}"
+       class="btn btn-sm {{ 'btn-fw-primary' if active_kind == k else 'btn-outline-secondary' }}">{{ kind_labels[k] }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Templates table -->
+<div class="fw-table-wrapper">
+  <table class="fw-table" id="tplTable">
+    <thead>
+      <tr>
+        <th>Kind</th>
+        <th>Name</th>
+        <th>Version</th>
+        <th>Note</th>
+        <th>Author</th>
+        <th>Created</th>
+        <th class="actions-col">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if templates %}
+        {% for t in templates %}
+        <tr>
+          <td><span class="fw-badge fw-badge-primary">{{ kind_labels.get(t.kind, t.kind) }}</span></td>
+          <td><strong>{{ t.name }}</strong>{% if t.locked %} <i class="bi bi-lock-fill text-muted" title="Locked"></i>{% endif %}</td>
+          <td>v{{ t.version }}</td>
+          <td style="font-size:13px; max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t.note or '—' }}</td>
+          <td style="font-size:13px;">{{ t.author or '—' }}</td>
+          <td style="font-size:13px;">{{ t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '—' }}</td>
+          <td class="actions-col">
+            <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1" title="View"
+                    onclick="viewTemplate({{ t.id }})"><i class="bi bi-eye"></i></button>
+            <form method="POST" action="{{ url_for('templates.delete', template_id=t.id) }}" style="display:inline;"
+                  data-fw-confirm-form="Delete template '{{ t.name }}' (v{{ t.version }})? This cannot be undone.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-outline-danger btn-sm-icon" title="Delete"
+                      {{ 'disabled' if t.locked else '' }}><i class="bi bi-trash"></i></button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="7">
+            <div class="fw-empty-state">
+              <div class="fw-empty-state-icon"><i class="bi bi-collection"></i></div>
+              <div class="fw-empty-state-title">No templates yet</div>
+              <div class="fw-empty-state-text">Create a reusable desired-state profile to push to your appliances on demand.</div>
+              <button class="btn btn-fw-primary mt-2" data-bs-toggle="modal" data-bs-target="#modalAddTemplate">
+                <i class="bi bi-plus-lg me-1"></i>New Template
+              </button>
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<!-- ADD TEMPLATE MODAL -->
+<div class="modal fade fw-modal" id="modalAddTemplate" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-plus-lg me-2"></i>New Template</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('templates.create') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-5">
+              <label class="fw-form-label">Kind <span class="text-danger">*</span></label>
+              <select class="form-select" name="kind" required>
+                {% for k in kinds %}<option value="{{ k }}">{{ kind_labels[k] }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-md-7">
+              <label class="fw-form-label">Name <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" name="name" placeholder="e.g. baseline-wpp" required autocomplete="off">
+            </div>
+          </div>
+          <div class="mb-2 mt-3">
+            <label class="fw-form-label">Note</label>
+            <input type="text" class="form-control" name="note" placeholder="Optional description">
+          </div>
+          <div class="mb-1">
+            <label class="fw-form-label">Body (JSON) <span class="text-danger">*</span></label>
+            <textarea class="form-control" name="body" rows="12" spellcheck="false"
+                      style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;">{}</textarea>
+            <div class="form-text">Desired-state payload. Validated as JSON on save. Secrets are entered at apply-time, never stored here.</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save Template</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- VIEW TEMPLATE MODAL -->
+<div class="modal fade fw-modal" id="modalViewTemplate" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-eye me-2"></i><span id="vt-title">Template</span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2 text-muted" style="font-size:13px;" id="vt-meta"></div>
+        <pre style="background:#0d1626; color:#e2e8f0; padding:12px; border-radius:8px; max-height:480px; overflow:auto; font-size:12.5px;"><code id="vt-body"></code></pre>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterTemplates(q) {
+  q = (q || '').toLowerCase();
+  document.querySelectorAll('#tplTable tbody tr').forEach(function (row) {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+function vtEsc(v) {
+  var d = document.createElement('div');
+  d.textContent = (v === null || v === undefined) ? '' : String(v);
+  return d.innerHTML;
+}
+
+function viewTemplate(id) {
+  fetch('/templates/' + id, {headers: {'Accept': 'application/json'}})
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function (t) {
+      document.getElementById('vt-title').textContent = t.name + ' (v' + t.version + ')';
+      document.getElementById('vt-meta').innerHTML =
+        'Kind: <strong>' + vtEsc(t.kind) + '</strong> · Author: ' + vtEsc(t.author || '—') +
+        ' · Created: ' + vtEsc((t.created_at || '').replace('T', ' ').substring(0, 16)) +
+        (t.note ? '<br>Note: ' + vtEsc(t.note) : '');
+      document.getElementById('vt-body').textContent = t.body;
+      if (window.API && API.openModal) { API.openModal('modalViewTemplate'); }
+      else if (window.bootstrap) { new bootstrap.Modal(document.getElementById('modalViewTemplate')).show(); }
+    })
+    .catch(function (e) { alert('Could not load template: ' + e.message); });
+}
+</script>
+{% endblock %}

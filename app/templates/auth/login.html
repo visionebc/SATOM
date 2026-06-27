@@ -195,7 +195,7 @@
         </div>
       {% endif %}
 
-      <form method="POST" action="{{ url_for('auth.login') if 'auth' in dir() else '/login' }}" novalidate>
+      <form method="POST" action="{{ url_for('auth.login') }}" novalidate>
         {{ form.hidden_tag() if form and form.hidden_tag else '' }}
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 

@@ -134,7 +134,7 @@
               <i class="bi bi-pencil"></i>
             </button>
             <form method="POST"
-                  action="{{ url_for('appliances.delete', id=a.id) if 'appliances' in dir() else '#' }}"
+                  action="{{ url_for('appliances.delete', id=a.id) }}"
                   style="display:inline;"
                   data-fw-confirm-form="Delete appliance '{{ a.name }}'? This cannot be undone.">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -175,7 +175,7 @@
         </h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <form method="POST" action="{{ url_for('appliances.create') if 'appliances' in dir() else '#' }}" id="formAddAppliance">
+      <form method="POST" action="{{ url_for('appliances.create') }}" id="formAddAppliance">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-body">
           <div class="row g-3">

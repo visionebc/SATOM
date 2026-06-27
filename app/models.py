@@ -10,6 +10,7 @@ from typing import Any
 from flask_login import UserMixin
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from . import permissions as _perm
 from .extensions import db
 
 
@@ -54,13 +55,20 @@ class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(256), nullable=False)
+    # ``role`` is retained for back-compat and display (badges/counters). The
+    # authoritative permission source is ``profile`` when one is assigned.
     role = db.Column(db.String(16), nullable=False, default=Role.readonly.value)
+    profile_id = db.Column(
+        db.Integer, db.ForeignKey("profiles.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     last_login = db.Column(db.DateTime, nullable=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
 
     # audit relationship (back-ref from AuditLog)
     audit_logs = db.relationship("AuditLog", backref="user", lazy="dynamic")
+    profile = db.relationship("Profile", lazy="joined", foreign_keys=[profile_id])
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password, method="scrypt")
@@ -68,15 +76,101 @@ class User(db.Model, UserMixin):
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
 
+    @property
+    def effective_permissions(self) -> set[str]:
+        """The authoritative permission set for this user.
+
+        Profile assigned  -> the profile's granular keys plus the legacy coarse
+                             keys they imply (so old gates keep working).
+        No profile        -> fall back to the legacy ``role`` table, expanded
+                             with the granular keys those coarse keys imply.
+        """
+        if self.profile is not None:
+            return self.profile.effective
+        # No profile (un-migrated / freshly built object): treat the legacy
+        # role as its equivalent system profile so both granular and coarse
+        # gates resolve exactly like a migrated user would.
+        gran = _perm.SYSTEM_PROFILES.get(_perm.role_to_profile_name(self.role), set())
+        return _perm.expand(gran)
+
     def can(self, permission: str) -> bool:
-        return permission in ROLE_PERMISSIONS.get(self.role, set())
+        return permission in self.effective_permissions
 
     @property
     def permissions(self) -> set[str]:
-        return ROLE_PERMISSIONS.get(self.role, set())
+        return self.effective_permissions
+
+    @property
+    def is_admin_capable(self) -> bool:
+        """True if this user can administer access itself (manage users AND
+        profiles). Drives the capability-based anti-lockout guard."""
+        return _perm.ADMIN_CAPABILITIES <= self.effective_permissions
 
     def __repr__(self) -> str:
-        return f"<User {self.username!r} role={self.role!r}>"
+        return f"<User {self.username!r} role={self.role!r} profile_id={self.profile_id}>"
+
+
+# ---------------------------------------------------------------------------
+# Profile — admin-definable permission profile (granular keys)
+# ---------------------------------------------------------------------------
+
+class Profile(db.Model):
+    """A named set of granular permission keys an admin composes once and
+    assigns to users. The three seeded ``is_system`` profiles (readonly /
+    operator / admin) reproduce the legacy 3-role behavior and cannot be
+    renamed or deleted; custom profiles are fully editable."""
+
+    __tablename__ = "profiles"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    description = db.Column(db.Text, nullable=True, default="")
+    permissions = db.Column(db.Text, nullable=False, default="[]")  # JSON list of keys
+    is_system = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    @property
+    def permission_set(self) -> set[str]:
+        try:
+            raw = json.loads(self.permissions or "[]")
+        except (ValueError, TypeError):
+            return set()
+        if not isinstance(raw, list):
+            return set()
+        # Only keep keys that exist in the current catalog — drops stale/bogus.
+        return {k for k in raw if _perm.is_valid_key(k)}
+
+    @permission_set.setter
+    def permission_set(self, value) -> None:
+        clean = sorted({k for k in (value or set()) if _perm.is_valid_key(k)})
+        self.permissions = json.dumps(clean)
+
+    def has(self, key: str) -> bool:
+        return key in self.permission_set
+
+    @property
+    def effective(self) -> set[str]:
+        """Granular keys plus the legacy coarse keys they imply."""
+        return _perm.expand(self.permission_set)
+
+    @property
+    def derived_coarse(self) -> set[str]:
+        return _perm.derive_coarse(self.permission_set)
+
+    @property
+    def is_admin_capable(self) -> bool:
+        return _perm.ADMIN_CAPABILITIES <= self.effective
+
+    @property
+    def role_label(self) -> str:
+        """Best-effort legacy role string for display."""
+        return _perm.coarse_for_role_label(self.effective)
+
+    def __repr__(self) -> str:
+        return f"<Profile {self.name!r} system={self.is_system} perms={len(self.permission_set)}>"
 
 
 # ---------------------------------------------------------------------------

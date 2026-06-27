@@ -13,11 +13,16 @@ from .models import ROLE_PERMISSIONS, Permission  # noqa: F401 — re-exported
 def has_permission(user: object, perm: str) -> bool:
     """Return True if *user* holds *perm*.
 
-    Works with both authenticated User ORM instances and anonymous proxies
-    (which have no ``role`` attribute).
+    Delegates to ``User.can`` so the AUTHORITATIVE source — the user's assigned
+    profile (falling back to the legacy role) — is honoured. Works with both
+    authenticated User ORM instances and anonymous proxies.
     """
     if not getattr(user, "is_authenticated", False):
         return False
+    can = getattr(user, "can", None)
+    if callable(can):
+        return bool(can(perm))
+    # Last-resort fallback for objects without a ``can`` method.
     role = getattr(user, "role", None)
     if role is None:
         return False

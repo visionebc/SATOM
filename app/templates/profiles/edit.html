@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}{{ profile.name }} — Profile — Fortinet Manager Web{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('profiles.index') }}">Profiles</a>
+  <span class="separator">/</span>
+  <span>{{ profile.name }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-person-badge me-2 text-accent"></i>{{ profile.name }}
+      {% if profile.is_system %}<span class="fw-badge fw-badge-info ms-2">System</span>{% endif %}
+    </h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {% if profile.is_system %}
+        System profiles are managed automatically and shown read-only.
+      {% else %}
+        Tick exactly what this profile may do. Assigned to {{ user_count }} user(s).
+      {% endif %}
+    </p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('profiles.index') }}">
+    <i class="bi bi-arrow-left me-1"></i>Back
+  </a>
+</div>
+
+{% set disabled = profile.is_system %}
+<form method="POST" action="{{ url_for('profiles.edit_save', id=profile.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-4">
+      <label class="fw-form-label">Name</label>
+      <input type="text" class="form-control" name="name" value="{{ profile.name }}" {{ 'disabled' if disabled }}>
+    </div>
+    <div class="col-md-8">
+      <label class="fw-form-label">Description</label>
+      <input type="text" class="form-control" name="description" value="{{ profile.description or '' }}" {{ 'disabled' if disabled }}>
+    </div>
+  </div>
+
+  {% if not disabled %}
+  <div class="d-flex gap-2 mb-3">
+    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setAllPerms(true)"><i class="bi bi-check2-all me-1"></i>Select all</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setAllPerms(false)"><i class="bi bi-x-lg me-1"></i>Clear all</button>
+  </div>
+  {% endif %}
+
+  <div class="row g-3">
+    {% for area in areas %}
+    {% set area_perms = catalog | selectattr('area','equalto', area.key) | list %}
+    {% if area_perms %}
+    <div class="col-lg-6">
+      <div class="fw-card h-100">
+        <div class="fw-card-header d-flex align-items-center gap-2">
+          <i class="bi {{ area.icon }} text-accent"></i>
+          <strong>{{ area.label }}</strong>
+        </div>
+        <div class="fw-card-body">
+          <p class="text-muted" style="font-size:12px;">{{ area.desc }}</p>
+          {% for perm in area_perms %}
+          <div class="form-check mb-2">
+            <input class="form-check-input perm-check" type="checkbox" name="perms" value="{{ perm.key }}"
+                   id="perm-{{ perm.key }}"
+                   {{ 'checked' if perm.key in selected }} {{ 'disabled' if disabled }}>
+            <label class="form-check-label" for="perm-{{ perm.key }}">
+              {{ perm.label }}
+              {% if perm.admin_only %}<i class="bi bi-shield-lock-fill text-warning ms-1" title="Administrative capability"></i>{% endif %}
+              <div class="text-muted" style="font-size:11px;">{{ perm.desc }}</div>
+            </label>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+
+  {% if not disabled %}
+  <div class="mt-4 d-flex justify-content-end gap-2">
+    <a class="btn btn-secondary" href="{{ url_for('profiles.index') }}">Cancel</a>
+    <button type="submit" class="btn btn-fw-primary"><i class="bi bi-save me-1"></i>Save permissions</button>
+  </div>
+  {% endif %}
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function setAllPerms(state) {
+  document.querySelectorAll('.perm-check:not([disabled])').forEach(function (c) { c.checked = state; });
+}
+</script>
+{% endblock %}

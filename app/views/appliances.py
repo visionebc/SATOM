@@ -130,3 +130,196 @@ def test_connection(id):
         return jsonify({'ok': True, 'status': status})
     except Exception as exc:
         return jsonify({'ok': False, 'status': str(exc)})
+
+
+# ===========================================================================
+# Appliance actions (ported from the desktop app): Policy Inspector,
+# Rediscovery, Console, Upgrade Preparation, Upgrade. FortiWeb only.
+# ===========================================================================
+
+def _fortiweb_or_404(id):
+    appliance = Appliance.query.get_or_404(id)
+    if appliance.kind != 'fortiweb':
+        flash('This action is only available for FortiWeb appliances.', 'warning')
+        return None, appliance
+    return appliance, appliance
+
+
+# -- 1. Policy Inspector -----------------------------------------------------
+@bp.route('/<int:id>/inspector')
+@login_required
+def inspector(id):
+    appliance, _ = _fortiweb_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import inspector as insp
+    policy = request.args.get('policy', '').strip()
+    result, error = None, None
+    try:
+        client = appliance.build_client()
+        if policy:
+            result = {'policies': [insp.inspect_policy(client, policy)], 'errors': [], 'count': 1}
+        else:
+            result = insp.inspect_all(client)
+        log_action('appliance.inspect', target=appliance.name,
+                   extra={'policies': result.get('count'), 'one': policy or None})
+    except Exception as exc:
+        error = f'{type(exc).__name__}: {exc}'
+    return render_template('appliances/inspector.html', appliance=appliance,
+                           result=result, error=error, one_policy=policy)
+
+
+# -- 2. Rediscovery ----------------------------------------------------------
+@bp.route('/<int:id>/rediscover')
+@login_required
+def rediscover(id):
+    appliance, _ = _fortiweb_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import rediscovery
+    return render_template('appliances/rediscover.html', appliance=appliance,
+                           progress=rediscovery.status(appliance.id),
+                           snapshot=rediscovery.latest_snapshot_meta(appliance.id),
+                           plan_size=len(rediscovery.sweep_plan()))
+
+
+@bp.route('/<int:id>/rediscover/start', methods=['POST'])
+@login_required
+def rediscover_start(id):
+    appliance, _ = _fortiweb_or_404(id)
+    if appliance is None:
+        return jsonify({'started': False, 'reason': 'not a FortiWeb'}), 400
+    from ..services import rediscovery
+    from flask_login import current_user
+    res = rediscovery.start(appliance, by=getattr(current_user, 'username', ''))
+    if res.get('started'):
+        log_action('appliance.rediscover', target=appliance.name)
+    return jsonify(res)
+
+
+@bp.route('/<int:id>/rediscover/status')
+@login_required
+def rediscover_status(id):
+    Appliance.query.get_or_404(id)
+    from ..services import rediscovery
+    return jsonify(rediscovery.status(id) or {'state': 'idle'})
+
+
+# -- 3. Console (read-only SSH) ---------------------------------------------
+@bp.route('/<int:id>/console')
+@login_required
+def console(id):
+    appliance, _ = _fortiweb_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import ssh_ops
+    return render_template('appliances/console.html', appliance=appliance,
+                           presets=ssh_ops.TROUBLESHOOT)
+
+
+@bp.route('/<int:id>/console/run', methods=['POST'])
+@login_required
+def console_run(id):
+    appliance, _ = _fortiweb_or_404(id)
+    if appliance is None:
+        return jsonify({'ok': False, 'error': 'not a FortiWeb'}), 400
+    from ..services import ssh_ops
+    command = (request.json or {}).get('command', '') if request.is_json \
+        else request.form.get('command', '')
+    try:
+        cmd = ssh_ops.assert_readonly(command)  # fail fast, before connecting
+    except ssh_ops.ReadOnlyViolation as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+    try:
+        output = ssh_ops.run_command(appliance, cmd)
+        log_action('appliance.console', target=appliance.name, extra={'cmd': cmd})
+        return jsonify({'ok': True, 'command': cmd, 'output': output})
+    except Exception as exc:
+        return jsonify({'ok': False, 'error': f'{type(exc).__name__}: {exc}'})
+
+
+# -- 4. Upgrade Preparation (read-only) -------------------------------------
+@bp.route('/<int:id>/upgrade/prep')
+@login_required
+@require_permission(Permission.BACKUP)
+def upgrade_prep(id):
+    appliance, _ = _fortiweb_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    return render_template('appliances/upgrade_prep.html', appliance=appliance)
+
+
+@bp.route('/<int:id>/upgrade/prep/run', methods=['POST'])
+@login_required
+@require_permission(Permission.BACKUP)
+def upgrade_prep_run(id):
+    appliance, _ = _fortiweb_or_404(id)
+    if appliance is None:
+        return jsonify({'ok': False, 'error': 'not a FortiWeb'}), 400
+    from ..services import upgrade
+    opts = request.json or {}
+    try:
+        result = upgrade.prepare(
+            appliance,
+            do_backup=opts.get('backup', True),
+            do_health=opts.get('health', True),
+            do_services=opts.get('services', True),
+        )
+        log_action('appliance.upgrade_prep', target=appliance.name)
+        return jsonify({'ok': True, 'result': result})
+    except Exception as exc:
+        return jsonify({'ok': False, 'error': f'{type(exc).__name__}: {exc}'})
+
+
+# -- 5. Upgrade (firmware push — WRITE, dry-run by default) ------------------
+@bp.route('/<int:id>/upgrade')
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def upgrade(id):
+    appliance, _ = _fortiweb_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    fw = ''
+    try:
+        from ..services import upgrade as upg
+        fw = upg.firmware_version(appliance.build_client(timeout=8))
+    except Exception:
+        fw = ''
+    return render_template('appliances/upgrade.html', appliance=appliance, firmware=fw)
+
+
+@bp.route('/<int:id>/upgrade', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def upgrade_push(id):
+    appliance, _ = _fortiweb_or_404(id)
+    if appliance is None:
+        flash('Not a FortiWeb appliance.', 'danger')
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import upgrade as upg
+
+    image = request.files.get('image')
+    if not image or not image.filename:
+        flash('Select a firmware .out image first.', 'danger')
+        return redirect(url_for('appliances.upgrade', id=id))
+    dry_run = request.form.get('dry_run', 'on') == 'on'
+    confirm_maturity = request.form.get('confirm_maturity') == 'on'
+
+    # A live push requires typing the exact appliance name (defence against a
+    # mis-click rebooting the wrong box).
+    if not dry_run and request.form.get('confirm_name', '').strip() != appliance.name:
+        flash('Live upgrade requires typing the exact appliance name to confirm.', 'danger')
+        return redirect(url_for('appliances.upgrade', id=id))
+
+    image_bytes = image.read()
+    try:
+        result = upg.push_firmware(
+            appliance, image_bytes, image.filename,
+            dry_run=dry_run, confirm_maturity=confirm_maturity,
+        )
+    except Exception as exc:
+        flash(f'Upgrade failed: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(url_for('appliances.upgrade', id=id))
+
+    return render_template('appliances/upgrade.html', appliance=appliance,
+                           firmware=result.get('firmware_before', ''), result=result)

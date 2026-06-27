@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% block title %}Upgrade Preparation - {{ appliance.name }}{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center">
+  <h4><i class="bi bi-clipboard-check me-2"></i>Upgrade Preparation — {{ appliance.name }}</h4>
+  <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; Back</a>
+</div>
+<p class="text-muted">A read-only pre-flight before a firmware upgrade: take a config backup, capture the SSH health battery, check maintenance permission, and HTTP-validate every published service. Nothing is changed.</p>
+
+<div class="card shadow-sm mb-3">
+  <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div class="d-flex gap-3 flex-wrap">
+      <label class="form-check"><input class="form-check-input" type="checkbox" id="opt-backup" checked> <span class="form-check-label">Config backup</span></label>
+      <label class="form-check"><input class="form-check-input" type="checkbox" id="opt-health" checked> <span class="form-check-label">Health battery (SSH)</span></label>
+      <label class="form-check"><input class="form-check-input" type="checkbox" id="opt-services" checked> <span class="form-check-label">Service validation</span></label>
+    </div>
+    <button id="prep-run" class="btn fw-btn-primary"><i class="bi bi-play-fill me-1"></i>Run preparation</button>
+  </div>
+</div>
+
+<div id="prep-out" class="d-none">
+  <div class="row g-3 mb-3">
+    <div class="col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="text-muted small">Firmware</div><div id="r-fw" class="h5 mb-0">—</div></div></div></div>
+    <div class="col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="text-muted small">Maintenance permission</div><div id="r-perm" class="h5 mb-0">—</div></div></div></div>
+    <div class="col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="text-muted small">Backup</div><div id="r-backup" class="h5 mb-0">—</div></div></div></div>
+    <div class="col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="text-muted small">Services validated</div><div id="r-svc-count" class="h5 mb-0">—</div></div></div></div>
+  </div>
+  <div class="card shadow-sm mb-3"><div class="card-header fw-card-header">Service validation</div><div class="card-body p-0"><div id="r-services" class="p-3"></div></div></div>
+  <div class="card shadow-sm"><div class="card-header fw-card-header">Health battery (SSH)</div><div class="card-body"><pre id="r-health" class="fw-pre mb-0">—</pre></div></div>
+</div>
+
+<script>
+(function() {
+  const token = document.querySelector('meta[name="csrf-token"]').content;
+  const btn = document.getElementById('prep-run');
+  const out = document.getElementById('prep-out');
+  function pill(ok, t) { return `<span class="badge bg-${ok ? 'success' : 'danger'}">${t}</span>`; }
+  function svcTable(probes) {
+    if (!probes || !probes.length) return '<div class="text-muted">No services resolved.</div>';
+    let h = '<table class="table table-sm fw-table mb-0"><thead><tr><th>Policy</th><th>URL</th><th>Back-end</th><th>Result</th></tr></thead><tbody>';
+    for (const p of probes) {
+      const t = p.target, r = p.result;
+      const res = r.ok ? `<span class="text-success">${r.status} ${r.reason || ''}</span>` : `<span class="text-danger">unreachable</span>`;
+      h += `<tr><td><b>${t.policy}</b></td><td class="small">${t.url || '<span class=text-muted>'+(t.note||'—')+'</span>'}</td><td class="small">${(t.backends||[]).join(', ')||'—'}</td><td>${res}</td></tr>`;
+    }
+    return h + '</tbody></table>';
+  }
+  btn.addEventListener('click', async () => {
+    btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Running…';
+    try {
+      const r = await fetch('{{ url_for("appliances.upgrade_prep_run", id=appliance.id) }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
+        body: JSON.stringify({
+          backup: document.getElementById('opt-backup').checked,
+          health: document.getElementById('opt-health').checked,
+          services: document.getElementById('opt-services').checked
+        })
+      });
+      const j = await r.json();
+      if (!j.ok) { out.classList.remove('d-none'); document.getElementById('r-health').textContent = 'ERROR: ' + j.error; return; }
+      const d = j.result;
+      out.classList.remove('d-none');
+      document.getElementById('r-fw').textContent = d.firmware || '—';
+      document.getElementById('r-perm').innerHTML = d.permission === null ? '<span class="text-muted">unknown</span>' : pill(d.permission, d.permission ? 'granted' : 'denied');
+      document.getElementById('r-backup').innerHTML = d.backup ? pill(d.backup.ok, d.backup.ok ? (d.backup.name||'ok') : 'failed') : '<span class="text-muted">skipped</span>';
+      const probes = (d.services && d.services.probes) || [];
+      document.getElementById('r-svc-count').textContent = probes.length || (d.services && d.services.ok ? 0 : '—');
+      document.getElementById('r-services').innerHTML = (d.services && d.services.ok) ? svcTable(probes) : ('<div class="text-danger">'+((d.services&&d.services.error)||'skipped')+'</div>');
+      document.getElementById('r-health').textContent = (d.health && d.health.ok) ? (d.health.text || '(empty)') : ('SSH health unavailable: ' + ((d.health&&d.health.error)||'skipped'));
+    } catch (e) {
+      out.classList.remove('d-none'); document.getElementById('r-health').textContent = 'ERROR: ' + e.message;
+    } finally {
+      btn.disabled = false; btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Run preparation';
+    }
+  });
+})();
+</script>
+{% endblock %}

@@ -128,5 +128,19 @@ class FortiWebClient(BaseClient):
     def api_call(self, method: str, path: str, data=None):
         return self._request(method, path, headers=self._headers(), json=data)
 
+    def upload(self, path, files, data=None, timeout: float | None = None):
+        """Multipart POST (e.g. firmware ``imageFile`` upload).
+
+        Only the Authorization header is sent — httpx sets the multipart
+        ``Content-Type`` + boundary itself, so we must NOT pin
+        ``application/json`` here as the JSON helpers do.
+        """
+        kwargs = {"headers": {"Authorization": self._auth_token()}, "files": files}
+        if data is not None:
+            kwargs["data"] = data
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+        return self._request('POST', path, **kwargs)
+
     def download_backup(self, name: str) -> bytes:
         return self._request('GET', f'/System/Maintenance/Backup/{name}', headers=self._headers()).content

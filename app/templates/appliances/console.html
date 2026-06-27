@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block title %}Console - {{ appliance.name }}{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center">
+  <h4><i class="bi bi-terminal me-2"></i>Console — {{ appliance.name }}</h4>
+  <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; Back</a>
+</div>
+<div class="fw-alert fw-alert-warning d-flex align-items-center gap-2">
+  <i class="bi bi-shield-lock-fill"></i>
+  Read-only console over SSH ({{ appliance.host }}:{{ appliance.ssh_port or 22 }}). Only
+  <code>get</code>, <code>show</code> and <code>diagnose</code> commands are accepted — anything
+  that could change or reboot the appliance is refused before it is sent.
+</div>
+
+<div class="row g-3">
+  <div class="col-md-3">
+    <div class="card shadow-sm">
+      <div class="card-header fw-card-header">Presets</div>
+      <div class="list-group list-group-flush">
+        {% for label, cmd in presets.items() %}
+        <button class="list-group-item list-group-item-action small console-preset" data-cmd="{{ cmd }}">{{ label }}</button>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-9">
+    <div class="input-group mb-2">
+      <span class="input-group-text">$</span>
+      <input id="console-cmd" type="text" class="form-control" autocomplete="off" spellcheck="false"
+             placeholder="get system status" value="get system status">
+      <button id="console-run" class="btn fw-btn-primary">Run</button>
+    </div>
+    <pre id="console-out" class="fw-console mb-0">Output will appear here…</pre>
+  </div>
+</div>
+
+<script>
+(function() {
+  const token = document.querySelector('meta[name="csrf-token"]').content;
+  const out = document.getElementById('console-out');
+  const inp = document.getElementById('console-cmd');
+  const btn = document.getElementById('console-run');
+  async function run() {
+    const command = inp.value.trim();
+    if (!command) return;
+    btn.disabled = true; out.textContent = '$ ' + command + '\n…running…';
+    try {
+      const r = await fetch('{{ url_for("appliances.console_run", id=appliance.id) }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
+        body: JSON.stringify({command})
+      });
+      const j = await r.json();
+      out.textContent = '$ ' + command + '\n' + (j.ok ? (j.output || '(no output)') : ('ERROR: ' + j.error));
+      out.classList.toggle('console-error', !j.ok);
+    } catch (e) {
+      out.textContent = '$ ' + command + '\nERROR: ' + e.message;
+      out.classList.add('console-error');
+    }
+    btn.disabled = false;
+  }
+  btn.addEventListener('click', run);
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+  document.querySelectorAll('.console-preset').forEach(b =>
+    b.addEventListener('click', () => { inp.value = b.dataset.cmd; run(); }));
+})();
+</script>
+{% endblock %}

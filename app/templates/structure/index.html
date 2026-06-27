@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+
+{% block title %}Structure{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>Structure</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-diagram-3 me-2 text-accent"></i>Object Structure &amp; Dependencies
+    </h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      The FortiWeb object dependency tree (the in-repo exporter capture) cross-referenced
+      against the endpoint registry. Shows what depends on what, and how much of the tree
+      the endpoint library covers.
+    </p>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    {% if show_urn %}
+      <a class="btn btn-fw-outline btn-sm" href="{{ url_for('structure.index') }}">
+        <i class="bi bi-eye-slash me-1"></i>Hide URNs
+      </a>
+    {% else %}
+      <a class="btn btn-fw-outline btn-sm" href="{{ url_for('structure.index', urns=1) }}">
+        <i class="bi bi-eye me-1"></i>Show URNs
+      </a>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Coverage stats -->
+<div class="row g-3 mb-3">
+  <div class="col-md-3 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-success"><i class="bi bi-check2-circle"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ matched }}</div>
+        <div class="fw-stat-label">In registry</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-diagram-2"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ fetchable }}</div>
+        <div class="fw-stat-label">Fetchable (URN) nodes</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-danger"><i class="bi bi-exclamation-triangle"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ missing|length }}</div>
+        <div class="fw-stat-label">Missing from registry</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-info"><i class="bi bi-percent"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ pct }}%</div>
+        <div class="fw-stat-label">Coverage ({{ total_nodes }} total nodes)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Box tree -->
+  <div class="col-lg-5">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-list-nested me-2"></i>Dependency Tree</span>
+        <button class="btn btn-fw-outline btn-sm" onclick="copyTree()">
+          <i class="bi bi-clipboard me-1"></i>Copy
+        </button>
+      </div>
+      <div class="fw-card-body p-0">
+        <pre id="boxTree" style="margin:0; padding:14px; font-size:12px; line-height:1.5;
+             overflow:auto; max-height:760px; white-space:pre; background:#FAFBFC;">{{ box }}</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cross-reference table -->
+  <div class="col-lg-7">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-table me-2"></i>Registry Cross-Reference</span>
+        <span class="fw-badge fw-badge-secondary">{{ rows|length }} objects</span>
+      </div>
+      <div class="fw-card-header" style="background:#FAFBFC; border-top:none; padding:10px 16px;">
+        <div class="fw-search-box" style="max-width:100%;">
+          <i class="bi bi-search search-icon"></i>
+          <input type="text" id="xrefSearch" placeholder="Filter objects by name, URN or section…"
+                 oninput="filterXref(this.value)" style="max-width:420px;">
+        </div>
+      </div>
+      <div class="fw-card-body p-0">
+        <table class="fw-table" id="xrefTable">
+          <thead>
+            <tr>
+              <th style="width:34%;">FortiWeb object</th>
+              <th>URN (REST)</th>
+              <th style="width:130px;">In registry?</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+            <tr>
+              <td style="padding-left:{{ 6 + r.depth * 18 }}px;">
+                <span style="font-size:13px; {{ 'font-weight:600;' if r.depth == 0 else '' }}">
+                  {{ r.label }}
+                </span>
+                {% if r.via %}<br><span class="fw-tag" style="font-size:10px;">via {{ r.via }}</span>{% endif %}
+                {% if r.section %}<span class="text-muted" style="font-size:10px;"> · {{ r.section }}</span>{% endif %}
+              </td>
+              <td>
+                {% if r.urn %}
+                  <code style="background:#F4F5F7; padding:2px 6px; border-radius:3px; font-size:11px;">{{ r.urn }}</code>
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if r.status == 'matched' %}
+                  <span class="fw-badge fw-badge-success" title="{{ r.endpoint }}">
+                    <i class="bi bi-check-lg"></i> {{ r.endpoint }}
+                  </span>
+                {% elif r.status == 'missing' %}
+                  <span class="fw-badge fw-badge-danger"><i class="bi bi-x-lg"></i> Missing</span>
+                {% else %}
+                  <span class="fw-badge fw-badge-secondary">grouping</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Missing URNs -->
+{% if missing %}
+<div class="fw-card mt-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-exclamation-triangle me-2 text-danger"></i>URNs not covered by the registry</span>
+    <span class="fw-badge fw-badge-danger">{{ missing|length }}</span>
+  </div>
+  <div class="fw-card-body">
+    <p class="text-muted" style="font-size:12px;">
+      These dependency-tree URNs have no matching entry in <code>endpoints.yaml</code> —
+      gaps the endpoint library does not cover yet.
+    </p>
+    <div class="d-flex flex-wrap gap-2">
+      {% for urn in missing %}
+        <code style="background:#F4F5F7; padding:2px 6px; border-radius:3px; font-size:11px;">{{ urn }}</code>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Exporter function inventory -->
+<div class="fw-card mt-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-braces me-2"></i>Exporter Function Inventory</span>
+    <span class="fw-badge fw-badge-secondary">{{ functions|length }}</span>
+  </div>
+  <div class="fw-card-body p-0">
+    <table class="fw-table">
+      <thead>
+        <tr>
+          <th style="width:28%;">Function (exporter)</th>
+          <th>Role</th>
+          <th style="width:26%;">Ported in the repo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for fn in functions %}
+        <tr>
+          <td><code style="font-size:11px;">{{ fn.name }}</code></td>
+          <td style="font-size:12px;">{{ fn.role }}</td>
+          <td>
+            {% if fn.ported %}
+              <span style="font-size:11px;">{{ fn.ported }}</span>
+            {% else %}
+              <span class="fw-badge fw-badge-warning">not ported</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Admin overlay editor -->
+{% if current_user and current_user.can('user_manage') %}
+<div class="fw-card mt-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-pencil-square me-2"></i>Structure Overlay (admin)</span>
+    {% if has_overlay %}<span class="fw-badge fw-badge-info">active</span>{% endif %}
+  </div>
+  <div class="fw-card-body">
+    <p class="text-muted" style="font-size:12px;">
+      Optional JSON overlay merged on top of the built-in seed: keys
+      <code>added</code>, <code>edited</code>, <code>removed</code>, <code>order</code>,
+      <code>functions</code>. Leave empty to use the built-in tree as-is.
+      <strong>Do not store secrets here.</strong>
+    </p>
+    <form method="POST" action="{{ url_for('structure.save') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <textarea name="overlay" class="form-control" rows="8" spellcheck="false"
+                style="font-family:monospace; font-size:12px;"
+                placeholder='{
+  "added": [{"parent": "", "node": {"label": "My Object", "urn": "cmdb/waf/my-object"}}],
+  "removed": ["web-protection-profile/waiting-room"]
+}'>{{ overlay_json }}</textarea>
+      <div class="d-flex gap-2 mt-2">
+        <button type="submit" name="action" value="save" class="btn btn-fw-primary btn-sm">
+          <i class="bi bi-save me-1"></i>Save overlay
+        </button>
+        <button type="submit" name="action" value="reset" class="btn btn-fw-outline btn-sm"
+                onclick="return confirm('Reset the structure overlay to the built-in defaults?');">
+          <i class="bi bi-arrow-counterclockwise me-1"></i>Restore defaults
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterXref(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('#xrefTable tbody tr').forEach(function (row) {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+function copyTree() {
+  const txt = document.getElementById('boxTree').textContent;
+  navigator.clipboard.writeText(txt)
+    .then(function () { if (window.FW && window.FW.toast) window.FW.toast('Tree copied', 'success'); })
+    .catch(function () { if (window.FW && window.FW.toast) window.FW.toast('Copy failed', 'danger'); });
+}
+</script>
+{% endblock %}

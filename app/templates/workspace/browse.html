@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}API Browse — {{ appliance.name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('workspace.index') }}">Workspace</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}">{{ appliance.name }}</a></li>
+    <li class="breadcrumb-item active">Browse: /{{ endpoint_path }}</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">API Browse</h4>
+  <span class="badge bg-secondary">{{ appliance.kind }}</span>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">
+    <strong>Endpoint:</strong> <code>/{{ endpoint_path }}</code>
+    on <strong>{{ appliance.name }}</strong> ({{ appliance.host }})
+  </div>
+  <div class="card-body">
+    {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+    {% elif data is none %}
+      <div class="text-muted">No data returned.</div>
+    {% else %}
+      <pre class="bg-dark text-light p-3 rounded" style="max-height:600px;overflow:auto;font-size:0.8rem;">{{ data | tojson(indent=2) }}</pre>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

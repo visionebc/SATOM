@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Network Architecture{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>Architecture</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-hdd-network me-2 text-accent"></i>Network Architecture</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">Topology view of appliances, virtual servers, and network interfaces</p>
+  </div>
+  <button class="btn btn-fw-outline btn-sm" onclick="window.location.reload()">
+    <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+  </button>
+</div>
+
+<!-- Topology Diagram Placeholder -->
+<div class="fw-card mb-4">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-diagram-2 me-2 text-accent"></i>Topology Overview</span>
+    <div class="d-flex gap-2 align-items-center">
+      <span class="fw-badge fw-badge-secondary">{{ appliances|length if appliances else 0 }} Appliances</span>
+    </div>
+  </div>
+  <div class="fw-card-body" style="min-height: 280px; display:flex; align-items:center; justify-content:center; background: #F8FAFC;">
+    <div id="topology-container" style="width:100%; min-height:260px; position:relative;">
+      <!-- SVG topology diagram -->
+      <svg width="100%" height="260" viewBox="0 0 800 260" style="font-family:var(--fw-font);">
+        <!-- Internet cloud -->
+        <ellipse cx="100" cy="130" rx="70" ry="45" fill="#E9ECEF" stroke="#CED4DA" stroke-width="1.5"/>
+        <text x="100" y="125" text-anchor="middle" font-size="12" fill="#6C757D">Internet</text>
+        <text x="100" y="140" text-anchor="middle" font-size="20">☁</text>
+
+        <!-- Arrow Internet -> FW -->
+        <line x1="170" y1="130" x2="230" y2="130" stroke="#ADB5BD" stroke-width="2" marker-end="url(#arrow)"/>
+
+        <!-- FortiWeb box -->
+        <rect x="230" y="95" width="130" height="70" rx="8" fill="#1D3452" stroke="#EF5424" stroke-width="2"/>
+        <text x="295" y="122" text-anchor="middle" font-size="11" fill="#FFFFFF" font-weight="600">FortiWeb</text>
+        <text x="295" y="140" text-anchor="middle" font-size="10" fill="#B8C8D8">WAF / Reverse Proxy</text>
+        <text x="295" y="155" text-anchor="middle" font-size="9" fill="#B8C8D8">
+          {{ appliances[0].host if appliances else '192.0.2.1' }}
+        </text>
+
+        <!-- Arrow FW -> Pool -->
+        <line x1="360" y1="130" x2="430" y2="130" stroke="#ADB5BD" stroke-width="2" marker-end="url(#arrow)"/>
+
+        <!-- Server Pool box -->
+        <rect x="430" y="95" width="120" height="70" rx="8" fill="#FFFFFF" stroke="#DEE2E6" stroke-width="1.5"/>
+        <text x="490" y="120" text-anchor="middle" font-size="11" fill="#212529" font-weight="600">Server Pool</text>
+        <text x="490" y="138" text-anchor="middle" font-size="10" fill="#6C757D">Backend Servers</text>
+
+        <!-- Backend servers -->
+        <line x1="550" y1="100" x2="620" y2="70" stroke="#ADB5BD" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <line x1="550" y1="130" x2="620" y2="130" stroke="#ADB5BD" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <line x1="550" y1="160" x2="620" y2="185" stroke="#ADB5BD" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+        <rect x="620" y="48" width="90" height="40" rx="6" fill="#F8F9FA" stroke="#DEE2E6"/>
+        <text x="665" y="68" text-anchor="middle" font-size="10" fill="#212529">Server 1</text>
+        <text x="665" y="80" text-anchor="middle" font-size="9" fill="#6C757D">:8080</text>
+
+        <rect x="620" y="108" width="90" height="40" rx="6" fill="#F8F9FA" stroke="#DEE2E6"/>
+        <text x="665" y="128" text-anchor="middle" font-size="10" fill="#212529">Server 2</text>
+        <text x="665" y="140" text-anchor="middle" font-size="9" fill="#6C757D">:8080</text>
+
+        <rect x="620" y="165" width="90" height="40" rx="6" fill="#F8F9FA" stroke="#DEE2E6"/>
+        <text x="665" y="185" text-anchor="middle" font-size="10" fill="#212529">Server 3</text>
+        <text x="665" y="197" text-anchor="middle" font-size="9" fill="#6C757D">:8080</text>
+
+        <!-- Arrow marker -->
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#ADB5BD"/>
+          </marker>
+        </defs>
+
+        <!-- Legend -->
+        <rect x="10" y="215" width="14" height="10" fill="#1D3452" rx="2"/>
+        <text x="28" y="224" font-size="10" fill="#6C757D">FortiWeb Appliance</text>
+        <rect x="130" y="215" width="14" height="10" fill="#FFFFFF" stroke="#DEE2E6" rx="2"/>
+        <text x="148" y="224" font-size="10" fill="#6C757D">Backend Pool</text>
+        <rect x="240" y="215" width="14" height="10" fill="#F8F9FA" stroke="#DEE2E6" rx="2"/>
+        <text x="258" y="224" font-size="10" fill="#6C757D">Real Server</text>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<!-- Appliance Cards -->
+<div class="row g-3">
+  {% if appliances %}
+    {% for a in appliances %}
+    <div class="col-xl-4 col-md-6">
+      <div class="fw-card">
+        <div class="fw-card-header">
+          <span class="fw-card-title">
+            <i class="bi bi-server me-2 text-accent"></i>{{ a.name }}
+          </span>
+          <span class="fw-status fw-status-unknown" data-status-id="{{ a.id }}" style="font-size:12px;">
+            <span class="fw-status-dot"></span>Checking…
+          </span>
+        </div>
+        <div class="fw-card-body">
+          <table class="table table-sm mb-3" style="font-size:13px;">
+            <tbody>
+              <tr>
+                <td class="text-muted" style="width:40%;">Type</td>
+                <td><span class="fw-badge fw-badge-secondary">{{ a.kind }}</span></td>
+              </tr>
+              <tr>
+                <td class="text-muted">Host</td>
+                <td class="mono" style="font-size:12px;">{{ a.host }}</td>
+              </tr>
+              <tr>
+                <td class="text-muted">Management Port</td>
+                <td>{{ a.port }}</td>
+              </tr>
+              <tr>
+                <td class="text-muted">VDOM</td>
+                <td>{{ a.vdom or 'root' }}</td>
+              </tr>
+              {% if a.tags %}
+              <tr>
+                <td class="text-muted">Tags</td>
+                <td>
+                  {% for tag in a.tags.split(',') %}
+                    <span class="fw-tag">{{ tag.strip() }}</span>
+                  {% endfor %}
+                </td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+          <div class="d-flex gap-2">
+            <a href="{{ url_for('workspace.policies', appliance_id=a.id) }}"
+               class="btn btn-fw-primary btn-sm flex-fill">
+              <i class="bi bi-shield-check me-1"></i>Policies
+            </a>
+            <a href="{{ url_for('server_objects.index', id=a.id) }}"
+               class="btn btn-fw-outline btn-sm flex-fill">
+              <i class="bi bi-diagram-3 me-1"></i>Objects
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="col-12">
+      <div class="fw-empty-state">
+        <div class="fw-empty-state-icon"><i class="bi bi-hdd-network"></i></div>
+        <div class="fw-empty-state-title">No appliances configured</div>
+        <div class="fw-empty-state-text">Add FortiWeb appliances to visualize network topology.</div>
+        <a href="{{ url_for('appliances.index') }}" class="btn btn-fw-primary mt-2">
+          <i class="bi bi-plus-lg me-1"></i>Add Appliance
+        </a>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

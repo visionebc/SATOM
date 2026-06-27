@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Registry Search{% endblock %}
+
+{% block breadcrumb %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('registry.index') }}">Registry</a></li>
+    <li class="breadcrumb-item active">Search</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h4 class="mb-3">Registry Search{% if term %} — "{{ term }}"{% endif %}</h4>
+
+<form method="get" action="{{ url_for('registry.search') }}" class="mb-3 d-flex gap-2">
+  <input name="q" value="{{ term }}" class="form-control" placeholder="Search endpoints...">
+  <button class="btn btn-primary">Search</button>
+</form>
+
+{% if term %}
+  {% if results %}
+  <p class="text-muted">{{ results|length }} result(s) found.</p>
+  <div class="card">
+    <div class="card-body p-0">
+      <table class="table table-hover mb-0">
+        <thead><tr><th>Section</th><th>Name</th><th>Path</th><th>Methods</th></tr></thead>
+        <tbody>
+          {% for r in results %}
+          <tr>
+            <td><a href="{{ url_for('registry.section_detail', section=r.section) }}">{{ r.section }}</a></td>
+            <td>{{ r.endpoint.name }}</td>
+            <td><code>{{ r.endpoint.path }}</code></td>
+            <td>{% for m in r.endpoint.methods %}<span class="badge bg-secondary me-1">{{ m }}</span>{% endfor %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="text-muted">No endpoints matched "{{ term }}".</div>
+  {% endif %}
+{% endif %}
+{% endblock %}

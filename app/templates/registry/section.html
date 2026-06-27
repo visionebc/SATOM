@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ section }} — Registry{% endblock %}
+
+{% block breadcrumb %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('registry.index') }}">Registry</a></li>
+    <li class="breadcrumb-item active">{{ section }}</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h4 class="mb-3">{{ section }}</h4>
+<div class="card">
+  <div class="card-body p-0">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Path</th>
+          <th>Methods</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ep in endpoints %}
+        <tr>
+          <td>{{ ep.name }}</td>
+          <td><code>{{ ep.path }}</code></td>
+          <td>
+            {% for m in ep.methods %}
+            <span class="badge bg-{% if m == 'GET' %}success{% elif m == 'POST' %}primary{% elif m in ['PUT','PATCH'] %}warning text-dark{% elif m == 'DELETE' %}danger{% else %}secondary{% endif %} me-1">{{ m }}</span>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

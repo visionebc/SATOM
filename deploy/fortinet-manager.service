@@ -1,0 +1,15 @@
+[Unit]
+Description=Fortinet Manager Web App
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/fortinet-manager
+EnvironmentFile=/opt/fortinet-manager/.env
+ExecStart=/opt/fortinet-manager/venv/bin/gunicorn --workers 4 --bind 127.0.0.1:8000 --timeout 120 --access-logfile /var/log/fortinet-manager/access.log --error-logfile /var/log/fortinet-manager/error.log wsgi:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

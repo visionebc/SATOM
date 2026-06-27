@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block title %}{{ appliance.name }} - Fortinet Manager{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center">
+  <h4><i class="bi bi-server me-2"></i>{{ appliance.name }}</h4>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('appliances.edit', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">Edit</a>
+    <button class="btn fw-btn-primary btn-sm" onclick="testConn({{ appliance.id }}, this)">Test Connection</button>
+  </div>
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-md-6"><div class="card shadow-sm">
+    <div class="card-header fw-card-header">Details</div>
+    <div class="card-body"><dl class="row mb-0">
+      <dt class="col-sm-4">Kind</dt><dd class="col-sm-8"><span class="badge bg-primary">{{ appliance.kind }}</span></dd>
+      <dt class="col-sm-4">Host</dt><dd class="col-sm-8">{{ appliance.host }}:{{ appliance.port }}</dd>
+      <dt class="col-sm-4">Username</dt><dd class="col-sm-8">{{ appliance.username }}</dd>
+      <dt class="col-sm-4">SSL Verify</dt><dd class="col-sm-8">{{ 'Yes' if appliance.verify_ssl else 'No' }}</dd>
+      {% if appliance.vdom %}<dt class="col-sm-4">VDOM</dt><dd class="col-sm-8">{{ appliance.vdom }}</dd>{% endif %}
+      {% if appliance.department %}<dt class="col-sm-4">Dept</dt><dd class="col-sm-8">{{ appliance.department }}</dd>{% endif %}
+      {% if appliance.zone %}<dt class="col-sm-4">Zone</dt><dd class="col-sm-8">{{ appliance.zone }}</dd>{% endif %}
+    </dl></div>
+  </div></div>
+  <div class="col-md-6"><div class="card shadow-sm">
+    <div class="card-header fw-card-header">Quick Actions</div>
+    <div class="card-body d-grid gap-2">
+      <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}" class="btn fw-btn-primary">Browse Server Policies</a>
+      <a href="{{ url_for('backups.list_backups', id=appliance.id) }}" class="btn fw-btn-secondary">View Backups</a>
+      <a href="{{ url_for('analysis.dashboard', id=appliance.id) }}" class="btn fw-btn-secondary">Analysis / FortiView</a>
+    </div>
+  </div></div>
+</div>
+<div id="conn-result" class="alert d-none mb-3"></div>
+<div class="card shadow-sm">
+  <div class="card-header fw-card-header">Recent Audit Events</div>
+  <div class="card-body p-0">
+    <table class="table table-hover mb-0 fw-table">
+      <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Target</th></tr></thead>
+      <tbody>{% for e in audit_entries %}<tr>
+        <td>{{ e.timestamp.strftime('%Y-%m-%d %H:%M') if e.timestamp else '' }}</td>
+        <td>{{ e.username }}</td><td>{{ e.action }}</td><td>{{ e.target }}</td>
+      </tr>{% else %}<tr><td colspan="4" class="text-muted text-center py-3">No audit events</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<script>
+async function testConn(id, btn) {
+  btn.disabled = true; btn.textContent = 'Testing…';
+  try {
+    const r = await apiFetch(`/api/fw/${id}/proxy/api/v2.0/system/status.systemstatus`);
+    document.getElementById('conn-result').className = 'alert alert-success';
+    document.getElementById('conn-result').textContent = 'Connection OK';
+  } catch(e) {
+    document.getElementById('conn-result').className = 'alert alert-danger';
+    document.getElementById('conn-result').textContent = 'Connection failed: ' + e.message;
+  }
+  document.getElementById('conn-result').classList.remove('d-none');
+  btn.disabled = false; btn.textContent = 'Test Connection';
+}
+</script>
+{% endblock %}

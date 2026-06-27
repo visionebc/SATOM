@@ -1,0 +1,97 @@
+# FortiWeb REST API endpoint registry
+# Format:  friendly_key: /api/v2.0/<path>
+# Representative subset of the full 71 KB registry.
+
+# ── Dashboard / Monitor ──────────────────────────────────────────────────────
+fortiview_sources:           /api/v2.0/wvs/source
+fortiview_attacks:           /api/v2.0/wvs/attack-event-count
+log_traffic:                 /api/v2.0/wvs/traffic-log
+log_attack:                  /api/v2.0/wvs/attack-log
+wvs_threat_weight:           /api/v2.0/wvs/threat-weight
+wvs_top_threats:             /api/v2.0/wvs/top-threat
+
+# ── System ───────────────────────────────────────────────────────────────────
+system_status:               /api/v2.0/system/status.systemstatus
+system_admin:                /api/v2.0/cmdb/system/admin
+system_settings:             /api/v2.0/cmdb/system/settings
+system_ha:                   /api/v2.0/cmdb/system/ha
+system_snmp_community:       /api/v2.0/cmdb/system/snmp.community
+system_snmp_sysinfo:         /api/v2.0/cmdb/system/snmp.sysinfo
+system_alert_email:          /api/v2.0/cmdb/system/alertmail
+local_backup:                /api/v2.0/system/maintenance.localbackup
+local_backup_list:           /api/v2.0/system/maintenance.localbackuplist
+system_restore:              /api/v2.0/system/maintenance.restore
+certificate:                 /api/v2.0/cmdb/system/certificate.local
+certificate_intermediate:    /api/v2.0/cmdb/system/certificate.intermediate
+certificate_letsencrypt:     /api/v2.0/cmdb/system/certificate.letsencrypt
+
+# ── Network ──────────────────────────────────────────────────────────────────
+interface:                   /api/v2.0/cmdb/system/network.interface
+route:                       /api/v2.0/cmdb/router/static
+route_policy:                /api/v2.0/cmdb/router/policy
+dns:                         /api/v2.0/cmdb/system/dns
+ntp:                         /api/v2.0/cmdb/system/ntp
+
+# ── Server Policy ────────────────────────────────────────────────────────────
+server_policy:               /api/v2.0/cmdb/server-policy/policy
+content_routing:             /api/v2.0/cmdb/server-policy/content-routing
+http_service:                /api/v2.0/cmdb/server-policy/http-service
+https_service:               /api/v2.0/cmdb/server-policy/https-service
+
+# ── Server Objects ───────────────────────────────────────────────────────────
+vserver:                     /api/v2.0/cmdb/server-policy/vserver
+server_pool:                 /api/v2.0/cmdb/server-policy/server-pool
+server_pool_rule:            /api/v2.0/cmdb/server-policy/server-pool.server-balance-rule
+
+# ── Application Delivery ─────────────────────────────────────────────────────
+health_check:                /api/v2.0/cmdb/server-policy/health-check
+persistence_policy:          /api/v2.0/cmdb/waf/persistence-policy
+load_balance:                /api/v2.0/cmdb/waf/load-balance
+compression_rule:            /api/v2.0/cmdb/waf/compression-rule
+cache_policy:                /api/v2.0/cmdb/waf/cache-policy
+rewrite_policy:              /api/v2.0/cmdb/waf/rewrite-policy
+redirect_policy:             /api/v2.0/cmdb/waf/redirect-policy
+x_forwarded_for:             /api/v2.0/cmdb/waf/x-forwarded-for
+
+# ── Web Protection ───────────────────────────────────────────────────────────
+web_protection_profile:      /api/v2.0/cmdb/waf/web-protection-profile
+signature:                   /api/v2.0/cmdb/waf/signature
+custom_access:               /api/v2.0/cmdb/waf/custom-access
+url_access:                  /api/v2.0/cmdb/waf/url-access
+http_protocol:               /api/v2.0/cmdb/waf/http-protocol-parameter-restriction
+file_upload_restriction:     /api/v2.0/cmdb/waf/file-upload-restriction
+cookie_security:             /api/v2.0/cmdb/waf/cookie-security
+csrf_protection:             /api/v2.0/cmdb/waf/csrf-protection
+brute_force:                 /api/v2.0/cmdb/waf/brute-force-login
+web_scraping:                /api/v2.0/cmdb/waf/web-scraping-detection
+
+# ── Bot Mitigation ───────────────────────────────────────────────────────────
+bot_detection:               /api/v2.0/cmdb/waf/bot-mitigation-exception
+bot_allow_list:              /api/v2.0/cmdb/waf/bot-allow-list
+bot_mitigation_policy:       /api/v2.0/cmdb/waf/bot-mitigation-policy
+
+# ── DoS Protection ───────────────────────────────────────────────────────────
+dos_policy:                  /api/v2.0/cmdb/waf/application-layer-dos-prevention
+tcp_flood:                   /api/v2.0/cmdb/waf/tcp-connection-flood-prevention
+http_flood:                  /api/v2.0/cmdb/waf/http-request-flood-prevention
+http_access_limit:           /api/v2.0/cmdb/waf/http-access-limit
+
+# ── IP Protection ────────────────────────────────────────────────────────────
+ip_list:                     /api/v2.0/cmdb/waf/ip-list
+geo_block:                   /api/v2.0/cmdb/waf/geo-block-list
+ip_intel:                    /api/v2.0/cmdb/waf/ip-intelligence
+trusted_ip:                  /api/v2.0/cmdb/waf/trusted-ip
+
+# ── Machine Learning ─────────────────────────────────────────────────────────
+ml_policy:                   /api/v2.0/cmdb/waf/machine-learning-policy
+ml_anomaly_detection:        /api/v2.0/cmdb/waf/ml-based-anomaly-detection
+
+# ── Tracking ─────────────────────────────────────────────────────────────────
+user_auth:                   /api/v2.0/cmdb/waf/user-tracking
+session_management:          /api/v2.0/cmdb/waf/session-management
+
+# ── Log & Report ─────────────────────────────────────────────────────────────
+log_syslog:                  /api/v2.0/cmdb/log/syslogd
+log_fortiguard:              /api/v2.0/cmdb/log/fortiguard
+log_disk:                    /api/v2.0/cmdb/log/disk
+log_memory:                  /api/v2.0/cmdb/log/memory

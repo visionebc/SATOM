@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Log — Fortinet Manager Web{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>Audit Log</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-clipboard-check me-2 text-accent"></i>Audit Log</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">All user actions are recorded for compliance and accountability</p>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-fw-outline btn-sm" onclick="window.location.reload()">
+      <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+    </button>
+    <a href="{{ url_for('audit.export') if 'audit' in dir() else '/audit/export' }}"
+       class="btn btn-secondary btn-sm">
+      <i class="bi bi-download me-1"></i>Export CSV
+    </a>
+  </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-funnel me-2"></i>Filters</span>
+    <a href="{{ url_for('audit.index') }}" class="btn btn-sm btn-secondary">
+      <i class="bi bi-x-lg me-1"></i>Clear
+    </a>
+  </div>
+  <div class="fw-card-body">
+    <form method="GET" action="{{ url_for('audit.index') }}" class="row g-3 align-items-end">
+      <div class="col-md-3">
+        <label class="fw-form-label">Username</label>
+        <input type="text" name="user" class="form-control form-control-sm"
+               placeholder="Filter by user" value="{{ request.args.get('user','') if request else '' }}">
+      </div>
+      <div class="col-md-3">
+        <label class="fw-form-label">Action</label>
+        <select name="action" class="form-select form-select-sm">
+          <option value="">All Actions</option>
+          <option value="login" {{ 'selected' if request and request.args.get('action') == 'login' }}>Login</option>
+          <option value="logout" {{ 'selected' if request and request.args.get('action') == 'logout' }}>Logout</option>
+          <option value="create" {{ 'selected' if request and request.args.get('action') == 'create' }}>Create</option>
+          <option value="update" {{ 'selected' if request and request.args.get('action') == 'update' }}>Update</option>
+          <option value="delete" {{ 'selected' if request and request.args.get('action') == 'delete' }}>Delete</option>
+          <option value="backup" {{ 'selected' if request and request.args.get('action') == 'backup' }}>Backup</option>
+          <option value="api_call" {{ 'selected' if request and request.args.get('action') == 'api_call' }}>API Call</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label">From Date</label>
+        <input type="date" name="date_from" class="form-control form-control-sm"
+               value="{{ request.args.get('date_from','') if request else '' }}">
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label">To Date</label>
+        <input type="date" name="date_to" class="form-control form-control-sm"
+               value="{{ request.args.get('date_to','') if request else '' }}">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-fw-primary btn-sm w-100">
+          <i class="bi bi-search me-1"></i>Apply
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Results count -->
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <span class="text-muted" style="font-size:13px;">
+    Showing <strong>{{ entries|length if entries else 0 }}</strong> entries
+    {% if request and (request.args.get('user') or request.args.get('action') or request.args.get('date_from')) %}
+      (filtered)
+    {% endif %}
+  </span>
+  <div class="fw-search-box" style="max-width:240px;">
+    <i class="bi bi-search search-icon"></i>
+    <input type="text" id="auditSearch" placeholder="Quick search…" oninput="filterAudit(this.value)">
+  </div>
+</div>
+
+<!-- Audit Table -->
+<div class="fw-table-wrapper">
+  <table class="fw-table" id="auditTable">
+    <thead>
+      <tr>
+        <th>Timestamp</th>
+        <th>User</th>
+        <th>Action</th>
+        <th>Target</th>
+        <th>Detail</th>
+        <th>IP Address</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if entries %}
+        {% for e in entries %}
+        <tr>
+          <td class="text-nowrap mono" style="font-size:12px;">
+            {{ e.timestamp.strftime('%Y-%m-%d %H:%M:%S') if e.timestamp else '—' }}
+          </td>
+          <td>
+            <div class="fw-avatar d-inline-flex" style="width:22px;height:22px;font-size:9px;border-radius:50%;background:#1D3452;color:#fff;align-items:center;justify-content:center;vertical-align:middle;margin-right:6px;">
+              {{ e.username[0].upper() if e.username else '?' }}
+            </div>
+            {{ e.username or '—' }}
+          </td>
+          <td>
+            {% set action_lower = e.action|lower if e.action else '' %}
+            {% if 'delete' in action_lower %}
+              <span class="fw-badge fw-badge-danger">{{ e.action }}</span>
+            {% elif 'create' in action_lower or 'login' in action_lower %}
+              <span class="fw-badge fw-badge-success">{{ e.action }}</span>
+            {% elif 'update' in action_lower or 'backup' in action_lower %}
+              <span class="fw-badge fw-badge-primary">{{ e.action }}</span>
+            {% else %}
+              <span class="fw-badge fw-badge-secondary">{{ e.action or '—' }}</span>
+            {% endif %}
+          </td>
+          <td style="font-size:13px;">{{ e.target or '—' }}</td>
+          <td style="font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ e.detail or '' }}">
+            {{ e.detail or '—' }}
+          </td>
+          <td class="mono" style="font-size:12px;">{{ e.ip_address or '—' }}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="6">
+            <div class="fw-empty-state">
+              <div class="fw-empty-state-icon"><i class="bi bi-clipboard"></i></div>
+              <div class="fw-empty-state-title">No audit entries</div>
+              <div class="fw-empty-state-text">
+                Audit entries will appear here as users interact with the system.
+              </div>
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Pagination -->
+{% if page is defined and (page > 1 or has_next) %}
+<div class="d-flex justify-content-between align-items-center mt-3">
+  <span class="text-muted" style="font-size:13px;">Page {{ page }}</span>
+  <div class="d-flex gap-2">
+    {% if page > 1 %}
+      <a href="?page={{ page - 1 }}&{{ request.query_string.decode() if request else '' }}"
+         class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-chevron-left"></i> Previous
+      </a>
+    {% endif %}
+    {% if has_next %}
+      <a href="?page={{ page + 1 }}&{{ request.query_string.decode() if request else '' }}"
+         class="btn btn-outline-secondary btn-sm">
+        Next <i class="bi bi-chevron-right"></i>
+      </a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterAudit(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('#auditTable tbody tr').forEach(function (row) {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

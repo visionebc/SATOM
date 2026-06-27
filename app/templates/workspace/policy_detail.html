@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+
+{% block title %}{{ policy.name if policy else 'Policy Detail' }} — Server Policy{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('workspace.index') }}">Server Policy</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('workspace.policies', appliance_id=appliance.id) if appliance else '#' }}">
+    {{ appliance.name if appliance else 'Appliance' }}
+  </a>
+  <span class="separator">/</span>
+  <span>{{ policy.name if policy else 'Policy Detail' }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-shield-fill-check me-2 text-accent"></i>
+      {{ policy.name if policy else 'Policy Detail' }}
+    </h1>
+    <div class="d-flex align-items-center gap-2 mt-1">
+      {% if policy and policy.enable %}
+        <span class="fw-status fw-status-online"><span class="fw-status-dot"></span>Enabled</span>
+      {% else %}
+        <span class="fw-status fw-status-offline"><span class="fw-status-dot"></span>Disabled</span>
+      {% endif %}
+      <span class="text-muted" style="font-size:12px;">on {{ appliance.name if appliance else '' }}</span>
+    </div>
+  </div>
+  <a href="{{ url_for('workspace.policies', appliance_id=appliance.id) if appliance else '#' }}"
+     class="btn btn-secondary btn-sm">
+    <i class="bi bi-chevron-left me-1"></i>Back to Policies
+  </a>
+</div>
+
+<!-- Linked Object Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="fw-card h-100">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-hdd-stack me-2 text-accent"></i>Virtual Server</span>
+      </div>
+      <div class="fw-card-body">
+        {% if policy and policy.vserver %}
+          <p class="mb-1"><strong>{{ policy.vserver }}</strong></p>
+          {% if vserver_detail %}
+            <div class="d-flex flex-column gap-1" style="font-size:13px;">
+              <div><span class="text-muted">Interface:</span> {{ vserver_detail.interface or '—' }}</div>
+              <div><span class="text-muted">Address:</span>
+                <span class="mono">{{ vserver_detail.vip or '—' }}</span>
+              </div>
+            </div>
+          {% endif %}
+        {% else %}
+          <span class="text-muted">Not configured</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div class="fw-card h-100">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>Server Pool</span>
+      </div>
+      <div class="fw-card-body">
+        {% if policy and (policy.server_pool or policy.pool) %}
+          <p class="mb-2"><strong>{{ policy.server_pool or policy.pool }}</strong></p>
+          {% if pool_detail and pool_detail.members %}
+            <div style="font-size:12.5px;">
+              <div class="text-muted mb-1">Members ({{ pool_detail.members|length }}):</div>
+              {% for m in pool_detail.members[:5] %}
+                <div class="d-flex align-items-center gap-2 py-1" style="border-bottom:1px solid #F0F2F5;">
+                  <span class="mono">{{ m.ip or m.address or '?' }}:{{ m.port or 80 }}</span>
+                  <span class="fw-badge fw-badge-{{ 'success' if m.status == 'enable' else 'secondary' }}">
+                    {{ m.status or 'enable' }}
+                  </span>
+                </div>
+              {% endfor %}
+              {% if pool_detail.members|length > 5 %}
+                <div class="text-muted mt-1" style="font-size:11.5px;">
+                  +{{ pool_detail.members|length - 5 }} more members
+                </div>
+              {% endif %}
+            </div>
+          {% endif %}
+        {% else %}
+          <span class="text-muted">Not configured</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div class="fw-card h-100">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-shield-exclamation me-2 text-accent"></i>Protection Profile</span>
+      </div>
+      <div class="fw-card-body">
+        {% if policy and (policy.web_protection_profile or policy.wpp) %}
+          <p class="mb-2"><strong>{{ policy.web_protection_profile or policy.wpp }}</strong></p>
+          {% if wpp_detail %}
+            <div style="font-size:12.5px;">
+              <div class="mb-1">
+                <span class="text-muted">Signature:</span>
+                <span class="fw-badge fw-badge-{{ 'success' if wpp_detail.signature_rule else 'secondary' }}">
+                  {{ wpp_detail.signature_rule or 'None' }}
+                </span>
+              </div>
+              <div class="mb-1">
+                <span class="text-muted">Bot Detection:</span>
+                <span class="fw-badge fw-badge-{{ 'primary' if wpp_detail.bot_detection else 'secondary' }}">
+                  {{ 'Enabled' if wpp_detail.bot_detection else 'Disabled' }}
+                </span>
+              </div>
+            </div>
+          {% endif %}
+        {% else %}
+          <span class="text-muted">No protection profile linked</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Traffic Settings + Policy Info -->
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-ethernet me-2 text-accent"></i>Traffic Settings</span>
+      </div>
+      <div class="fw-card-body">
+        <table class="table table-sm mb-0" style="font-size:13px;">
+          <tbody>
+            <tr><td class="text-muted" style="width:45%;">HTTP Port</td>
+              <td>{{ policy.http_port if policy and policy.http_port else '—' }}</td></tr>
+            <tr><td class="text-muted">HTTPS Port</td>
+              <td>{{ policy.https_port if policy and policy.https_port else '—' }}</td></tr>
+            <tr><td class="text-muted">SSL Offloading</td>
+              <td>
+                {% if policy and policy.ssl_offloading %}
+                  <span class="fw-badge fw-badge-success">Enabled</span>
+                {% else %}
+                  <span class="fw-badge fw-badge-secondary">Disabled</span>
+                {% endif %}
+              </td>
+            </tr>
+            <tr><td class="text-muted">Deployment Mode</td>
+              <td>{{ policy.deployment_mode or policy.mode or 'Reverse Proxy' if policy else '—' }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>Policy Info</span>
+      </div>
+      <div class="fw-card-body">
+        <table class="table table-sm mb-0" style="font-size:13px;">
+          <tbody>
+            <tr><td class="text-muted" style="width:45%;">Policy Name</td>
+              <td><strong>{{ policy.name if policy else '—' }}</strong></td></tr>
+            <tr><td class="text-muted">Comment</td>
+              <td>{{ policy.comment if policy and policy.comment else '—' }}</td></tr>
+            <tr><td class="text-muted">Appliance</td>
+              <td>{{ appliance.name if appliance else '—' }}</td></tr>
+            <tr><td class="text-muted">VDOM</td>
+              <td>{{ appliance.vdom if appliance and appliance.vdom else 'root' }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Raw JSON -->
+<div class="fw-card">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-code-square me-2 text-accent"></i>Raw Configuration</span>
+    <button class="btn btn-sm btn-fw-outline" onclick="copyRawConfig()">
+      <i class="bi bi-clipboard me-1"></i>Copy JSON
+    </button>
+  </div>
+  <div class="fw-card-body p-0">
+    <pre class="fw-code-block m-0" id="rawConfig">{{ policy | tojson(indent=2) if policy else '{}' }}</pre>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyRawConfig() {
+  navigator.clipboard.writeText(document.getElementById('rawConfig').textContent)
+    .then(() => window.FW.toast('Copied to clipboard', 'success'))
+    .catch(() => window.FW.toast('Copy failed', 'danger'));
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  const pre = document.getElementById('rawConfig');
+  if (!pre) return;
+  try {
+    const json = JSON.parse(pre.textContent);
+    pre.innerHTML = syntaxHighlight(JSON.stringify(json, null, 2));
+  } catch (_) {}
+});
+
+function syntaxHighlight(json) {
+  return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+    let cls = 'json-number';
+    if (/^"/.test(match)) { cls = /:$/.test(match) ? 'json-key' : 'json-string'; }
+    else if (/true|false/.test(match)) { cls = 'json-bool'; }
+    else if (/null/.test(match)) { cls = 'json-null'; }
+    return '<span class="' + cls + '">' + match + '</span>';
+  });
+}
+</script>
+{% endblock %}

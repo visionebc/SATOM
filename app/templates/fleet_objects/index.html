@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block title %}Fleet objects{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>Fleet objects</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- ============================ PAGE HEADER ============================ -->
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-box-seam me-2 text-accent"></i>Fleet objects
+    </h1>
+    <div class="d-flex align-items-center gap-2 mt-1">
+      <span class="mono" style="font-size:12px;color:#6C757D;">
+        Live object browser aggregated across every FortiWeb appliance
+        (cached {{ '~60s' }}). Pick a type to filter by its columns, or
+        «Search (any field)» to find any value in any object.
+      </span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ TYPE SWITCHER ========================== -->
+<div class="d-flex flex-wrap gap-2 mb-3">
+  {% for key, label in type_choices %}
+  <a href="{{ url_for('fleet_objects.index', type=key) }}"
+     class="btn btn-sm {{ 'btn-fw-primary' if key == type_key else 'btn-fw-outline' }}">
+    {% if key == 'search' %}<i class="bi bi-search me-1"></i>{% endif %}{{ label }}
+  </a>
+  {% endfor %}
+</div>
+
+<!-- ===================== PER-DEVICE ERROR BANNER ====================== -->
+{% if errors %}
+<div class="fw-alert fw-alert-warning mb-3">
+  <i class="bi bi-exclamation-triangle me-2"></i>
+  <strong>{{ errors|length }}</strong> appliance(s) could not be read and were
+  skipped:
+  <span class="ms-1">
+    {% for e in errors %}
+      <span class="fw-badge fw-badge-secondary" title="{{ e.error }}">{{ e.device }}</span>
+    {% endfor %}
+  </span>
+</div>
+{% endif %}
+
+<!-- ============================ TOOLBAR / FORM ======================== -->
+<form method="get" action="{{ url_for('fleet_objects.index') }}" class="fw-toolbar"
+      style="flex-wrap:wrap;gap:.5rem;">
+  <input type="hidden" name="type" value="{{ type_key }}">
+
+  <div class="fw-search-box">
+    <i class="bi bi-search search-icon"></i>
+    <input type="text" name="q" value="{{ q }}"
+           placeholder="{{ 'search any field across the fleet…' if is_search else 'filter rows…' }}">
+  </div>
+
+  {% if not is_search %}
+    {% for fkey, flabel in filters %}
+    <select class="form-select form-select-sm" style="width:auto;"
+            name="f_{{ fkey }}" onchange="this.form.submit()">
+      <option value="">{{ flabel }}: (any)</option>
+      {% for val in filter_options.get(fkey, []) %}
+      <option value="{{ val }}" {{ 'selected' if selected.get(fkey) == val else '' }}>{{ val }}</option>
+      {% endfor %}
+    </select>
+    {% endfor %}
+  {% endif %}
+
+  <button type="submit" class="btn btn-fw-primary btn-sm">
+    <i class="bi bi-funnel me-1"></i>{{ 'Search' if is_search else 'Apply' }}
+  </button>
+
+  <a href="{{ url_for('fleet_objects.index', format='csv', **query_args) }}"
+     class="btn btn-fw-outline btn-sm">
+    <i class="bi bi-download me-1"></i>Export CSV
+  </a>
+
+  <span class="ms-auto" style="font-size:12px;color:#6C757D;align-self:center;">
+    {% if is_search %}
+      {{ shown }} match{{ '' if shown == 1 else 'es' }}
+    {% else %}
+      {{ shown }} shown / {{ total }} total
+    {% endif %}
+  </span>
+</form>
+
+<!-- ============================ RESULTS TABLE ========================= -->
+<div class="fw-table-wrapper">
+  <table class="fw-table">
+    <thead>
+      <tr>
+        {% for ckey, clabel in columns %}<th>{{ clabel }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% if rows %}
+        {% for row in rows %}
+        <tr>
+          {% for ckey, clabel in columns %}
+          <td>
+            {% set value = row.get(ckey, '') %}
+            {% if ckey == 'device' %}
+              <span class="fw-badge fw-badge-info">{{ value }}</span>
+            {% elif ckey == 'status' %}
+              {% if value in ['enable', 'enabled'] %}
+                <span class="fw-status fw-status-online" style="font-size:12px;">
+                  <span class="fw-status-dot"></span>Enabled
+                </span>
+              {% elif value %}
+                <span class="fw-status fw-status-offline" style="font-size:12px;">
+                  <span class="fw-status-dot"></span>{{ value }}
+                </span>
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            {% else %}
+              {{ value if value else '' }}{% if not value %}<span class="text-muted">—</span>{% endif %}
+            {% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="{{ columns|length }}">
+            <div class="fw-empty-state">
+              <div class="fw-empty-state-icon"><i class="bi bi-box-seam"></i></div>
+              {% if is_search and not q %}
+                <div class="fw-empty-state-title">Type a term to search</div>
+                <div class="fw-empty-state-text">
+                  The Find box is the query in this mode — enter any value to find
+                  it across every object on every appliance.
+                </div>
+              {% elif is_search %}
+                <div class="fw-empty-state-title">No matches for “{{ q }}”</div>
+                <div class="fw-empty-state-text">
+                  No object field on any reachable appliance contains that value.
+                </div>
+              {% else %}
+                <div class="fw-empty-state-title">No objects found</div>
+                <div class="fw-empty-state-text">
+                  No appliances are configured, none are reachable, or none has
+                  objects of this type matching the current filters.
+                </div>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

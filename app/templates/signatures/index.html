@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}Signatures{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>Signatures</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-fingerprint me-2 text-accent"></i>Signatures</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Sync the FortiWeb signature database — every category &rsaquo; sub-class &rsaquo;
+      individual signature, with its description — from a base device into the local
+      reference (<code>data/signatures.json</code>). Read-only against the box.
+    </p>
+  </div>
+</div>
+
+<!-- Cached status -->
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-database me-2 text-accent"></i>Cached database</span>
+  </div>
+  <div class="fw-card-body">
+    {% if db and db.signatures %}
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <span class="fw-badge fw-badge-success"><i class="bi bi-check-circle me-1"></i>Cached</span>
+        <span class="fw-badge fw-badge-primary">{{ db.signatures | length }} signatures</span>
+        <span class="fw-badge fw-badge-secondary">{{ db.subclass_count }} sub-classes</span>
+        <span class="fw-badge fw-badge-secondary">firmware {{ db.firmware or '?' }}</span>
+        {% if db.signature_set %}<span class="fw-badge fw-badge-info">set {{ db.signature_set }}</span>{% endif %}
+      </div>
+      <p class="text-muted mb-0" style="font-size:13px;">
+        Synced at <strong>{{ db.generated_at or '?' }}</strong>. Re-run a sync to pick up
+        new firmware or new signatures.
+      </p>
+    {% else %}
+      <div class="fw-empty-state py-4">
+        <div class="fw-empty-state-icon"><i class="bi bi-fingerprint"></i></div>
+        <div class="fw-empty-state-title">No signature database yet</div>
+        <div class="fw-empty-state-text">
+          Pick a base FortiWeb below and sync to read the whole signature catalog.
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Sync from a base device -->
+<div class="fw-card">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-arrow-repeat me-2 text-accent"></i>Sync from a base device</span>
+  </div>
+  <div class="fw-card-body">
+    {% if appliances %}
+    <p class="text-muted" style="font-size:13px;">
+      The same FortiGuard signature package is on every box, so any reachable FortiWeb
+      can serve as the base for the sync. The read is <strong>read-only</strong>.
+    </p>
+    <form method="POST" action="{{ url_for('signatures.sync') }}" class="row g-2 align-items-end" style="max-width:640px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-sm">
+        <label class="fw-form-label mb-1" for="appliance_id">Base FortiWeb</label>
+        <select class="form-select" id="appliance_id" name="appliance_id" required>
+          {% for a in appliances %}
+          <option value="{{ a.id }}">{{ a.name }} ({{ a.host }}:{{ a.port }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-sm-auto">
+        <button type="submit" class="btn btn-fw-primary">
+          <i class="bi bi-download me-1"></i>Sync now
+        </button>
+      </div>
+    </form>
+    {% else %}
+    <div class="fw-empty-state py-4">
+      <div class="fw-empty-state-icon"><i class="bi bi-server"></i></div>
+      <div class="fw-empty-state-title">No FortiWeb appliances configured</div>
+      <div class="fw-empty-state-text">Add a FortiWeb appliance to sync the signature database.</div>
+      <a href="{{ url_for('appliances.index') }}" class="btn btn-fw-primary mt-2">Add Appliance</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

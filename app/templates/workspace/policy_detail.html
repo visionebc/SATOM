@@ -8,7 +8,7 @@
   <span class="separator">/</span>
   <a href="{{ url_for('workspace.index') }}">Server Policy</a>
   <span class="separator">/</span>
-  <a href="{{ url_for('workspace.policies', appliance_id=appliance.id) if appliance else '#' }}">
+  <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) if appliance else '#' }}">
     {{ appliance.name if appliance else 'Appliance' }}
   </a>
   <span class="separator">/</span>
@@ -32,7 +32,7 @@
       <span class="text-muted" style="font-size:12px;">on {{ appliance.name if appliance else '' }}</span>
     </div>
   </div>
-  <a href="{{ url_for('workspace.policies', appliance_id=appliance.id) if appliance else '#' }}"
+  <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) if appliance else '#' }}"
      class="btn btn-secondary btn-sm">
     <i class="bi bi-chevron-left me-1"></i>Back to Policies
   </a>

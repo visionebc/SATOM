@@ -130,7 +130,7 @@
             </button>
             <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1"
                     title="Edit"
-                    onclick="openEditModal({{ a|tojson }})">
+                    onclick="openEditModal({{ a.to_dict()|tojson }})">
               <i class="bi bi-pencil"></i>
             </button>
             <form method="POST"

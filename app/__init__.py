@@ -125,6 +125,7 @@ def _register_blueprints(app: Flask) -> None:
 def _seed_admin() -> None:
     """Create a default admin user if the users table is empty."""
     from .models import Role, User
+    from sqlalchemy.exc import IntegrityError
 
     if User.query.first() is not None:
         return
@@ -137,10 +138,8 @@ def _seed_admin() -> None:
     )
     admin.set_password("Sopas123.-")
     db.session.add(admin)
-    db.session.commit()
-
-    import logging
-    logging.getLogger(__name__).warning(
-        "Seeded default admin user (username=admin, password=admin). "
-        "Change this password immediately."
-    )
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return  # Another worker seeded first — that's fine

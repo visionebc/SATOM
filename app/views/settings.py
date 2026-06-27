@@ -84,6 +84,14 @@ def database_table(name: str):
     return jsonify(info)
 
 
+@bp.route('/database/relations')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def database_relations():
+    """Foreign-key relationships across the local store (relational-model / ER view)."""
+    return jsonify(dbintrospect.relations())
+
+
 @bp.route('/general', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)

@@ -2,12 +2,12 @@ from .base import BaseClient
 
 
 class FortiADCClient(BaseClient):
-    def __init__(self, appliance):
+    def __init__(self, appliance, timeout: float = 30.0):
         """
         appliance: Appliance model instance with attributes:
             host, port, verify_ssl, username, password (decrypted)
         """
-        super().__init__(appliance.host, appliance.port, appliance.verify_ssl)
+        super().__init__(appliance.host, appliance.port, appliance.verify_ssl, timeout)
         self._username = appliance.username
         self._password = appliance.password
         self._token = None

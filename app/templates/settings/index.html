@@ -41,6 +41,16 @@
       <i class="bi bi-hdd-network me-1"></i>Network Segments
     </button>
   </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-access" type="button">
+      <i class="bi bi-shield-lock me-1"></i>Access Control
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-database" type="button" id="db-tab-btn">
+      <i class="bi bi-database me-1"></i>Database
+    </button>
+  </li>
   {% endif %}
   <li class="nav-item" role="presentation">
     <button class="nav-link {{ 'active' if not is_admin else '' }}" data-bs-toggle="tab" data-bs-target="#tab-security" type="button">
@@ -50,11 +60,6 @@
   <li class="nav-item" role="presentation">
     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-password" type="button">
       <i class="bi bi-key me-1"></i>Change Password
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-about" type="button">
-      <i class="bi bi-info-circle me-1"></i>About
     </button>
   </li>
 </ul>
@@ -260,6 +265,39 @@
           Named back-end networks (CIDR + interface + gateway) from which a new policy builds its server pool.
           Each segment can be scoped to a classification value (leave blank for "any").
         </p>
+
+        <!-- Classification reference (read-only) — the catalogs each segment can be scoped to.
+             Edit the values in the Classification tab. -->
+        <div class="fw-section-separator my-2"></div>
+        <h6 class="text-muted text-uppercase" style="font-size:12px; letter-spacing:.5px;">
+          <i class="bi bi-diagram-2 me-1"></i>Classification reference
+        </h6>
+        <div class="row g-3 mb-2" style="font-size:12.5px;">
+          <div class="col-md-4">
+            <div class="text-muted mb-1">Zones</div>
+            <div class="d-flex flex-wrap gap-1">
+              {% for z in classification.zones %}<span class="fw-badge fw-badge-primary">{{ z }}</span>{% else %}<span class="text-muted">— none —</span>{% endfor %}
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="text-muted mb-1">Lines</div>
+            <div class="d-flex flex-wrap gap-1">
+              {% for l in classification.lines %}<span class="fw-badge fw-badge-primary">{{ l }}</span>{% else %}<span class="text-muted">— none —</span>{% endfor %}
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="text-muted mb-1">Departments</div>
+            <div class="d-flex flex-wrap gap-1">
+              {% for d in classification.departments %}<span class="fw-badge fw-badge-primary">{{ d }}</span>{% else %}<span class="text-muted">— none —</span>{% endfor %}
+            </div>
+          </div>
+        </div>
+
+        <div class="fw-section-separator my-3"></div>
+        <h6 class="text-muted text-uppercase" style="font-size:12px; letter-spacing:.5px;">
+          <i class="bi bi-hdd-network me-1"></i>Segments
+        </h6>
+
         <form method="POST" action="{{ url_for('settings.save_segments') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="fw-table-wrapper">
@@ -271,9 +309,27 @@
                 {% for s in segments %}
                 <tr>
                   <td><input class="form-control form-control-sm" name="seg_name[]" value="{{ s.name }}"></td>
-                  <td><input class="form-control form-control-sm" name="seg_zone[]" value="{{ s.zone }}" list="cls-zones"></td>
-                  <td><input class="form-control form-control-sm" name="seg_line[]" value="{{ s.line }}" list="cls-lines"></td>
-                  <td><input class="form-control form-control-sm" name="seg_department[]" value="{{ s.department }}" list="cls-departments"></td>
+                  <td>
+                    <select class="form-select form-select-sm" name="seg_zone[]">
+                      <option value="">— any —</option>
+                      {% for z in classification.zones %}<option value="{{ z }}" {{ 'selected' if s.zone == z else '' }}>{{ z }}</option>{% endfor %}
+                      {% if s.zone and s.zone not in classification.zones %}<option value="{{ s.zone }}" selected>{{ s.zone }} (custom)</option>{% endif %}
+                    </select>
+                  </td>
+                  <td>
+                    <select class="form-select form-select-sm" name="seg_line[]">
+                      <option value="">— any —</option>
+                      {% for l in classification.lines %}<option value="{{ l }}" {{ 'selected' if s.line == l else '' }}>{{ l }}</option>{% endfor %}
+                      {% if s.line and s.line not in classification.lines %}<option value="{{ s.line }}" selected>{{ s.line }} (custom)</option>{% endif %}
+                    </select>
+                  </td>
+                  <td>
+                    <select class="form-select form-select-sm" name="seg_department[]">
+                      <option value="">— any —</option>
+                      {% for d in classification.departments %}<option value="{{ d }}" {{ 'selected' if s.department == d else '' }}>{{ d }}</option>{% endfor %}
+                      {% if s.department and s.department not in classification.departments %}<option value="{{ s.department }}" selected>{{ s.department }} (custom)</option>{% endif %}
+                    </select>
+                  </td>
                   <td><input class="form-control form-control-sm" name="seg_cidr[]" value="{{ s.cidr }}" placeholder="192.0.2.0/24"></td>
                   <td><input class="form-control form-control-sm" name="seg_interface[]" value="{{ s.interface }}" placeholder="port1"></td>
                   <td><input class="form-control form-control-sm" name="seg_gateway[]" value="{{ s.gateway }}"></td>
@@ -292,6 +348,122 @@
             <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save Segments</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+  <!-- ACCESS CONTROL TAB -->
+  <div class="tab-pane fade" id="tab-access">
+    <form method="POST" action="{{ url_for('settings.save_access') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row g-3">
+
+        <!-- IP whitelist -->
+        <div class="col-lg-7">
+          <div class="fw-card">
+            <div class="fw-card-header">
+              <span class="fw-card-title"><i class="bi bi-hdd-network-fill me-2 text-accent"></i>IP Whitelist</span>
+            </div>
+            <div class="fw-card-body">
+              <p class="text-muted" style="font-size:13px;">
+                Only these source IPs / CIDRs may reach the app. <strong>Leave empty to allow all.</strong>
+                Loopback and admins are always allowed so a typo can't lock you out.
+              </p>
+              <div class="fw-table-wrapper">
+                <table class="fw-table" id="ipwl-table">
+                  <thead><tr><th>IP / CIDR</th><th>Note</th><th></th></tr></thead>
+                  <tbody id="ipwl-body">
+                    {% for ip in ip_whitelist %}
+                    <tr>
+                      <td><input class="form-control form-control-sm" name="wl_ip[]" value="{{ ip.ip }}" placeholder="192.0.2.0/24 or 1.2.3.4"></td>
+                      <td><input class="form-control form-control-sm" name="wl_note[]" value="{{ ip.note }}" placeholder="office / vpn"></td>
+                      <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()"><i class="bi bi-trash"></i></button></td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              <button type="button" class="btn btn-outline-secondary mt-3" onclick="addIpRow()"><i class="bi bi-plus-lg me-1"></i>Add IP</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Allowed users -->
+        <div class="col-lg-5">
+          <div class="fw-card">
+            <div class="fw-card-header">
+              <span class="fw-card-title"><i class="bi bi-people-fill me-2 text-accent"></i>Allowed Users</span>
+            </div>
+            <div class="fw-card-body">
+              <p class="text-muted" style="font-size:13px;">
+                Only the checked users may sign in. <strong>Check none to allow all.</strong>
+                Admins are always allowed.
+              </p>
+              <div class="d-flex flex-column gap-2">
+                {% for u in all_users %}
+                <label class="d-flex align-items-center gap-2" style="font-size:14px;">
+                  <input type="checkbox" class="form-check-input mt-0" name="allowed_users[]" value="{{ u.username }}"
+                         {{ 'checked' if u.username in allowed_users else '' }}
+                         {{ 'disabled title="admins are always allowed"' | safe if u.is_admin else '' }}>
+                  <span>{{ u.username }}</span>
+                  {% if u.is_admin %}<span class="fw-badge fw-badge-primary">admin</span>{% endif %}
+                  {% if not u.is_active %}<span class="fw-badge" style="opacity:.6;">disabled</span>{% endif %}
+                </label>
+                {% else %}
+                <span class="text-muted">— no users —</span>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <div class="mt-3">
+        <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save Access Control</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- DATABASE TAB (read-only) -->
+  <div class="tab-pane fade" id="tab-database">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-database me-2 text-accent"></i>Database</span>
+      </div>
+      <div class="fw-card-body">
+        <p class="text-muted" style="font-size:13px;">
+          Read-only view of the local SQLite store (<code>app_settings</code>, users, appliances,
+          audit log, …). Pick a table to inspect its schema and a capped sample of rows. Sensitive
+          columns (password hashes, encrypted credentials, tokens) are masked — the store never
+          holds appliance secrets in the clear.
+        </p>
+        <div class="row g-2 align-items-center mb-3" style="max-width:520px;">
+          <div class="col-auto"><label class="fw-form-label mb-0">Table</label></div>
+          <div class="col">
+            <select id="db-table-select" class="form-select fw-form-control" onchange="loadDbTable(this.value)">
+              <option value="">— select a table —</option>
+              {% for t in db_tables %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-auto"><span class="text-muted" id="db-rowcount" style="font-size:12px;"></span></div>
+        </div>
+
+        <div id="db-schema-wrap" style="display:none;">
+          <h6 class="text-muted text-uppercase" style="font-size:12px; letter-spacing:.5px;">Schema</h6>
+          <div class="fw-table-wrapper mb-4">
+            <table class="fw-table">
+              <thead><tr><th>Column</th><th>Type</th><th>Nullable</th><th>PK</th><th>References</th></tr></thead>
+              <tbody id="db-schema-body"></tbody>
+            </table>
+          </div>
+          <h6 class="text-muted text-uppercase" style="font-size:12px; letter-spacing:.5px;">Rows</h6>
+          <div class="fw-table-wrapper" style="max-height:480px; overflow:auto;">
+            <table class="fw-table" style="font-size:12.5px;">
+              <thead id="db-data-head"></thead>
+              <tbody id="db-data-body"></tbody>
+            </table>
+          </div>
+        </div>
+        <div id="db-empty" class="text-muted" style="font-size:13px;">Select a table above to inspect it.</div>
       </div>
     </div>
   </div>
@@ -399,58 +571,6 @@
     </div>
   </div>
 
-  <!-- ABOUT TAB -->
-  <div class="tab-pane fade" id="tab-about">
-    <div class="row g-3">
-      <div class="col-lg-6">
-        <div class="fw-card">
-          <div class="fw-card-header">
-            <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>About Fortinet Manager Web</span>
-          </div>
-          <div class="fw-card-body">
-            <div class="d-flex align-items-center gap-3 mb-4">
-              <div class="fw-logo-mark" style="width:52px;height:52px;font-size:20px;border-radius:10px;">FW</div>
-              <div>
-                <h5 class="mb-0" style="font-weight:700;">{{ settings.app_name }}</h5>
-                <span class="fw-badge fw-badge-primary">v1.0</span>
-              </div>
-            </div>
-            <p style="font-size:13.5px; color:#495057;">
-              Multi-user FortiWeb &amp; FortiADC management console built on Flask + SQLAlchemy.
-              OWASP-hardened with full audit logging, RBAC, and encrypted credential storage.
-            </p>
-            <dl class="row" style="font-size:13px;">
-              <dt class="col-sm-4 text-muted">Repository</dt>
-              <dd class="col-sm-8"><a href="http://192.0.2.53:3000/visionebc/fortinet-manager-web" target="_blank">visionebc/fortinet-manager-web</a></dd>
-              <dt class="col-sm-4 text-muted">RBAC Roles</dt>
-              <dd class="col-sm-8">readonly, operator, admin</dd>
-              <dt class="col-sm-4 text-muted">API Target</dt>
-              <dd class="col-sm-8">FortiWeb 7.6 REST API</dd>
-              <dt class="col-sm-4 text-muted">UI Framework</dt>
-              <dd class="col-sm-8">Bootstrap 5.3 + Custom FortiWeb 7.6 Theme</dd>
-            </dl>
-          </div>
-        </div>
-      </div>
-      <div class="col-lg-6">
-        <div class="fw-card">
-          <div class="fw-card-header">
-            <span class="fw-card-title"><i class="bi bi-keyboard me-2 text-accent"></i>Keyboard Shortcuts</span>
-          </div>
-          <div class="fw-card-body">
-            <table class="table table-sm" style="font-size:13px;">
-              <tbody>
-                <tr><td><kbd>/</kbd></td><td>Focus global search</td></tr>
-                <tr><td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td>Execute API Explorer request</td></tr>
-                <tr><td><kbd>Esc</kbd></td><td>Close modal dialogs</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
 </div>
 {% endblock %}
 
@@ -489,19 +609,43 @@ function refreshNaming() {
 }
 
 // --- Network segment row add ---
+var CLS = {
+  zones: {{ classification.zones | tojson }},
+  lines: {{ classification.lines | tojson }},
+  departments: {{ classification.departments | tojson }}
+};
+function clsSelect(name, items) {
+  var opts = '<option value="">— any —</option>';
+  (items || []).forEach(function (v) {
+    opts += '<option value="' + v + '">' + v + '</option>';
+  });
+  return '<select class="form-select form-select-sm" name="' + name + '">' + opts + '</select>';
+}
 function addSegmentRow() {
   var body = document.getElementById('segments-body');
   if (!body) return;
   var tr = document.createElement('tr');
   tr.innerHTML =
     '<td><input class="form-control form-control-sm" name="seg_name[]"></td>' +
-    '<td><input class="form-control form-control-sm" name="seg_zone[]" list="cls-zones"></td>' +
-    '<td><input class="form-control form-control-sm" name="seg_line[]" list="cls-lines"></td>' +
-    '<td><input class="form-control form-control-sm" name="seg_department[]" list="cls-departments"></td>' +
+    '<td>' + clsSelect('seg_zone[]', CLS.zones) + '</td>' +
+    '<td>' + clsSelect('seg_line[]', CLS.lines) + '</td>' +
+    '<td>' + clsSelect('seg_department[]', CLS.departments) + '</td>' +
     '<td><input class="form-control form-control-sm" name="seg_cidr[]" placeholder="192.0.2.0/24"></td>' +
     '<td><input class="form-control form-control-sm" name="seg_interface[]" placeholder="port1" value="port1"></td>' +
     '<td><input class="form-control form-control-sm" name="seg_gateway[]"></td>' +
     '<td><input class="form-control form-control-sm" name="seg_note[]"></td>' +
+    '<td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest(\'tr\').remove()"><i class="bi bi-trash"></i></button></td>';
+  body.appendChild(tr);
+}
+
+// --- IP whitelist row add ---
+function addIpRow() {
+  var body = document.getElementById('ipwl-body');
+  if (!body) return;
+  var tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td><input class="form-control form-control-sm" name="wl_ip[]" placeholder="192.0.2.0/24 or 1.2.3.4"></td>' +
+    '<td><input class="form-control form-control-sm" name="wl_note[]" placeholder="office / vpn"></td>' +
     '<td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest(\'tr\').remove()"><i class="bi bi-trash"></i></button></td>';
   body.appendChild(tr);
 }
@@ -527,5 +671,64 @@ function checkStrength(pwd) {
 }
 
 document.addEventListener('DOMContentLoaded', refreshNaming);
+
+// --- Database tab (read-only schema + row browser) ---
+function dbEsc(v) {
+  var d = document.createElement('div');
+  d.textContent = (v === null || v === undefined) ? '' : String(v);
+  return d.innerHTML;
+}
+function loadDbTable(name) {
+  var wrap = document.getElementById('db-schema-wrap');
+  var empty = document.getElementById('db-empty');
+  var count = document.getElementById('db-rowcount');
+  if (!name) {
+    if (wrap) wrap.style.display = 'none';
+    if (empty) { empty.style.display = ''; empty.textContent = 'Select a table above to inspect it.'; }
+    if (count) count.textContent = '';
+    return;
+  }
+  fetch('/settings/database/table/' + encodeURIComponent(name), {headers: {'Accept': 'application/json'}})
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function (info) {
+      if (empty) empty.style.display = 'none';
+      if (wrap) wrap.style.display = '';
+      if (count) {
+        count.textContent = info.error
+          ? ('error: ' + info.error)
+          : (info.shown + ' of ' + info.row_count + ' row(s)' +
+             (info.row_count > info.limit ? ' (capped at ' + info.limit + ')' : ''));
+      }
+      // Schema
+      var sb = document.getElementById('db-schema-body');
+      sb.innerHTML = (info.columns || []).map(function (c) {
+        return '<tr>' +
+          '<td>' + dbEsc(c.name) + (c.sensitive ? ' <span class="fw-badge" style="opacity:.7;">masked</span>' : '') + '</td>' +
+          '<td><code>' + dbEsc(c.type) + '</code></td>' +
+          '<td>' + (c.nullable ? '' : '<span class="text-muted">NOT NULL</span>') + '</td>' +
+          '<td>' + (c.pk ? '<i class="bi bi-key-fill text-accent"></i>' : '') + '</td>' +
+          '<td>' + (c.fk ? '<code>' + dbEsc(c.fk) + '</code>' : '') + '</td>' +
+          '</tr>';
+      }).join('');
+      // Data header + rows
+      var head = document.getElementById('db-data-head');
+      var body = document.getElementById('db-data-body');
+      head.innerHTML = '<tr>' + (info.columns || []).map(function (c) {
+        return '<th>' + dbEsc(c.name) + '</th>';
+      }).join('') + '</tr>';
+      if (!info.rows || !info.rows.length) {
+        body.innerHTML = '<tr><td colspan="' + (info.columns || []).length + '" class="text-muted">— no rows —</td></tr>';
+      } else {
+        body.innerHTML = info.rows.map(function (row) {
+          return '<tr>' + row.map(function (cell) { return '<td>' + dbEsc(cell) + '</td>'; }).join('') + '</tr>';
+        }).join('');
+      }
+    })
+    .catch(function (e) {
+      if (count) count.textContent = 'failed to load: ' + e.message;
+      if (wrap) wrap.style.display = 'none';
+      if (empty) { empty.style.display = ''; empty.textContent = 'Could not load table: ' + e.message; }
+    });
+}
 </script>
 {% endblock %}

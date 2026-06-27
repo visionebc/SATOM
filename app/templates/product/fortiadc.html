@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ product.title }}{% endblock %}
+
+{% block content %}
+<div class="fw-page-header d-flex align-items-center gap-3 mb-4">
+  <img src="{{ url_for('static', filename='img/fortiadc-mark.svg') }}"
+       alt="FortiADC" style="width:42px;height:42px;">
+  <div>
+    <h1 class="h4 mb-0">FortiADC-Manager</h1>
+    <div class="text-muted" style="font-size:13px;">Application Delivery Controller</div>
+  </div>
+</div>
+
+<div class="fw-card" style="background:#fff;border:1px solid var(--fw-border);border-radius:var(--fw-radius-lg);padding:48px 24px;text-align:center;">
+  <i class="bi bi-cone-striped" style="font-size:40px;color:var(--fw-accent);"></i>
+  <h2 class="h5 mt-3 mb-2">Basic structure ready</h2>
+  <p class="text-muted mb-4" style="max-width:460px;margin-inline:auto;">
+    The FortiADC manager scaffold is in place. Modules
+    (virtual servers, real servers, load-balancing pools, health checks)
+    will be added here.
+  </p>
+  <a href="{{ url_for('product.switch') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left-right me-1"></i>Switch product
+  </a>
+</div>
+{% endblock %}

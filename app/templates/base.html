@@ -4,7 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="{{ csrf_token() }}">
-  <title>{% block title %}Fortinet Manager Web{% endblock %}</title>
+  <title>{% block title %}{{ product.title if product else 'Fortinet Manager' }}{% endblock %}</title>
+
+  <!-- Favicon (Fortinet) -->
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
 
   <!-- Bootstrap 5.3 (vendored locally) -->
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}">
@@ -20,23 +23,34 @@
 <!-- ============================================================
      TOP BAR
      ============================================================ -->
-<nav class="fw-topbar">
+<nav class="fw-topbar" style="background: {{ banner_bg or '#162940' }};">
   <button id="fw-sidebar-toggle" class="fw-sidebar-toggle" type="button" aria-label="Toggle sidebar">
     <i class="bi bi-list"></i>
   </button>
 
-  <a href="{{ url_for('workspace.index') }}" class="fw-topbar-brand">
-    <div class="fw-logo-mark">FW</div>
-    <span>Fortinet Manager</span>
+  <a href="{{ url_for('product.fortiadc_home') if product.key == 'fortiadc' else url_for('workspace.index') }}"
+     class="fw-topbar-brand">
+    <img src="{{ url_for('static', filename=product.mark) }}" alt="{{ product.name }}"
+         style="width:28px;height:28px;flex-shrink:0;">
+    <span>{{ product.title }}</span>
   </a>
 
   <div class="fw-topbar-spacer"></div>
 
   <div class="fw-topbar-actions">
+    {% if product.key == 'fortiweb' %}
     <!-- Global search shortcut -->
     <a href="{{ url_for('search.index') }}"
        class="fw-topbar-btn" title="Search (/)">
       <i class="bi bi-search"></i>
+    </a>
+    {% endif %}
+
+    <!-- Switch Product (mini product logo + switch icon) -->
+    <a href="{{ url_for('product.switch') }}"
+       class="fw-topbar-btn fw-switch-product" title="Switch Product">
+      <img src="{{ url_for('static', filename=product.mark) }}" alt="" class="fw-switch-mark">
+      <i class="bi bi-arrow-left-right"></i>
     </a>
 
     <!-- Notifications placeholder -->
@@ -91,6 +105,18 @@
   <!-- SIDEBAR -->
   <aside id="fw-sidebar" class="fw-sidebar">
     <nav class="fw-nav">
+      <div class="fw-nav-top">
+
+      {% if product.key == 'fortiadc' %}
+      <!-- ===== FortiADC (placeholder) ===== -->
+      <div class="fw-nav-section">FortiADC</div>
+      <a class="fw-nav-item" href="{{ url_for('product.fortiadc_home') }}">
+        <i class="bi bi-hdd-rack fw-nav-icon"></i>
+        <span>Dashboard</span>
+      </a>
+
+      {% else %}
+      <!-- ===== FortiWeb ===== -->
 
       <!-- MONITORING -->
       <div class="fw-nav-section">Monitoring</div>
@@ -192,13 +218,21 @@
       </a>
       {% endif %}
 
-      <div class="fw-nav-divider"></div>
+      {% endif %}
 
-      <a class="fw-nav-item"
-         href="{{ url_for('settings.index') }}">
-        <i class="bi bi-gear fw-nav-icon"></i>
-        <span>Settings</span>
-      </a>
+      </div><!-- /.fw-nav-top -->
+
+      <div class="fw-nav-spacer"></div>
+
+      <!-- PROJECT SETTINGS — pinned to the bottom of the sidebar -->
+      <div class="fw-nav-bottom">
+        <div class="fw-nav-divider"></div>
+        <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('settings.') else '' }}"
+           href="{{ url_for('settings.index') }}">
+          <i class="bi bi-gear fw-nav-icon"></i>
+          <span>Settings</span>
+        </a>
+      </div>
 
     </nav>
   </aside>
@@ -234,9 +268,9 @@
 
 <!-- FOOTER -->
 <footer id="fw-footer" class="fw-footer">
-  Fortinet Manager Web v1.0 &nbsp;&mdash;&nbsp;
+  {{ product.title }} v1.0 &nbsp;&mdash;&nbsp;
   &copy; {{ now.year if now else '2026' }} &nbsp;
-  <span class="text-muted">Built on FortiWeb 7.6 API</span>
+  <span class="text-muted">{{ product.tagline }}</span>
 </footer>
 
 <!-- Bootstrap 5.3 JS Bundle -->

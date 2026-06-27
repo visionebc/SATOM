@@ -2,9 +2,10 @@ from datetime import datetime
 from flask import render_template, redirect, url_for, flash, request
 from flask_login import login_user, logout_user, login_required, current_user
 from . import bp
-from ..models import User
+from ..models import User, Permission
 from ..extensions import db, limiter
 from ..services.audit import log_action
+from ..services import settings_store as store
 
 
 @bp.route('/login', methods=['GET', 'POST'])
@@ -64,4 +65,11 @@ def profile():
             flash('Password updated successfully.', 'success')
             return redirect(url_for('auth.profile'))
 
-    return render_template('auth/profile.html')
+    is_admin = bool(current_user and current_user.can(Permission.USER_MANAGE))
+    return render_template(
+        'auth/profile.html',
+        is_admin=is_admin,
+        settings=store.general(),
+        banner_templates=store.BANNER_TEMPLATES,
+        banners=store.all_banners(),
+    )

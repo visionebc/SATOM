@@ -21,12 +21,13 @@ from __future__ import annotations
 
 import ipaddress
 
-from flask import (Blueprint, render_template, request, flash, redirect, url_for)
+from flask import (Blueprint, render_template, request, flash, redirect, url_for,
+                   jsonify, abort)
 from flask_login import login_required, current_user
 
 from ..auth.decorators import require_permission
-from ..models import db, Permission
-from ..services import naming, settings_store as store
+from ..models import db, Permission, User, Role
+from ..services import naming, settings_store as store, dbintrospect
 from ..services.audit import log_action
 
 bp = Blueprint('settings', __name__, url_prefix='/settings')
@@ -40,6 +41,14 @@ def _is_admin() -> bool:
 @login_required
 def index():
     scheme = naming.effective_scheme(store.naming_overrides())
+    all_users = []
+    if _is_admin():
+        for u in User.query.order_by(User.username).all():
+            all_users.append({
+                'username': u.username,
+                'is_admin': u.role == Role.admin.value,
+                'is_active': bool(u.is_active),
+            })
     return render_template(
         'settings/index.html',
         settings=store.general(),
@@ -48,8 +57,30 @@ def index():
         naming_scheme=scheme,
         classification=store.all_classification(),
         segments=store.segments(),
+        ip_whitelist=store.ip_whitelist(),
+        allowed_users=store.allowed_users(),
+        all_users=all_users,
+        banner_templates=store.BANNER_TEMPLATES,
+        banners=store.all_banners(),
+        db_tables=dbintrospect.list_tables() if _is_admin() else [],
         is_admin=_is_admin(),
     )
+
+
+@bp.route('/database/table/<name>')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def database_table(name: str):
+    """Read-only schema + row sample for a single local store table (JSON).
+
+    Mirrors the desktop Settings → Database browser. The name is validated
+    against the live table list inside ``table_info`` (404 otherwise); sensitive
+    columns are masked there.
+    """
+    info = dbintrospect.table_info(name)
+    if not info:
+        abort(404)
+    return jsonify(info)
 
 
 @bp.route('/general', methods=['POST'])
@@ -137,6 +168,55 @@ def save_segments():
         flash(f"Skipped invalid CIDR(s): {', '.join(bad_cidr)}", 'warning')
     flash(f'{len(rows)} network segment(s) saved.', 'success')
     return redirect(url_for('settings.index') + '#tab-segments')
+
+
+@bp.route('/access', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_access():
+    # IP whitelist — validate each entry as an IP or CIDR.
+    ips = request.form.getlist('wl_ip[]')
+    notes = request.form.getlist('wl_note[]')
+    rows, bad = [], []
+    for i, ip in enumerate(ips):
+        ip = (ip or '').strip()
+        if not ip:
+            continue
+        try:
+            ipaddress.ip_network(ip, strict=False)
+        except ValueError:
+            bad.append(ip)
+            continue
+        rows.append({'ip': ip, 'note': notes[i] if i < len(notes) else ''})
+    store.save_ip_whitelist(rows)
+
+    # Allowed users — only persist usernames that actually exist and are non-admin
+    # (admins are always allowed and never restricted).
+    chosen = set(request.form.getlist('allowed_users[]'))
+    valid = {u.username for u in User.query.filter(User.role != Role.admin.value).all()}
+    store.save_allowed_users(sorted(chosen & valid))
+
+    log_action('settings.access',
+               detail=f'{len(rows)} whitelisted IP(s), {len(chosen & valid)} allowed user(s)')
+    if bad:
+        flash(f"Skipped invalid IP/CIDR(s): {', '.join(bad)}", 'warning')
+    flash('Access control saved.', 'success')
+    return redirect(url_for('settings.index') + '#tab-access')
+
+
+@bp.route('/banners', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_banners():
+    mapping = {
+        'fortiweb': request.form.get('banner_fortiweb', ''),
+        'fortiadc': request.form.get('banner_fortiadc', ''),
+    }
+    store.save_banners(mapping)
+    log_action('settings.banners',
+               detail="fortiweb=" + mapping['fortiweb'] + ", fortiadc=" + mapping['fortiadc'])
+    flash('Banner templates saved.', 'success')
+    return redirect(url_for('auth.profile'))
 
 
 @bp.route('/change-password', methods=['POST'])

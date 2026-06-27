@@ -4,12 +4,48 @@ from . import bp
 from ..models import Appliance, db, Permission
 from ..auth.decorators import require_permission
 from ..services.audit import log_action
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+
+
+_STATUS_TTL_SECONDS = 20  # re-probe a cached status once it is older than this
+
+
+def _is_stale(a):
+    if a.last_checked_at is None:
+        return True
+    return (datetime.utcnow() - a.last_checked_at).total_seconds() >= _STATUS_TTL_SECONDS
 
 
 @bp.route('/appliances', methods=['GET'])
 @login_required
 def list_appliances():
+    """List appliances with a live-but-cached connectivity status.
+
+    ``status`` is what the badge poller (main.js) renders. Stale appliances are
+    probed concurrently (network only -- no DB writes inside the threads); the
+    cache is then persisted with a single bulk UPDATE that intentionally does
+    NOT bump ``updated_at`` (a status poll must not look like a config edit)."""
     appliances = Appliance.query.order_by(Appliance.name).all()
+    status_map = {a.id: (a.last_status or 'unknown') for a in appliances}
+
+    stale = [a for a in appliances if _is_stale(a)]
+    if stale:
+        with ThreadPoolExecutor(max_workers=min(8, len(stale))) as pool:
+            probed = dict(zip(
+                [a.id for a in stale],
+                pool.map(lambda a: a.probe_status(timeout=6.0), stale),
+            ))
+        now = datetime.utcnow()
+        for a in stale:
+            st = probed.get(a.id, 'unknown')
+            status_map[a.id] = st
+            db.session.query(Appliance).filter(Appliance.id == a.id).update(
+                {'last_status': st, 'last_checked_at': now},
+                synchronize_session=False,
+            )
+        db.session.commit()
+
     return jsonify([
         {
             'id': a.id,
@@ -17,7 +53,7 @@ def list_appliances():
             'kind': a.kind,
             'host': a.host,
             'port': a.port,
-            'status': getattr(a, 'last_status', None),
+            'status': status_map[a.id],
         }
         for a in appliances
     ])
@@ -138,10 +174,18 @@ def test_appliance(id):
         else:
             client = FortiWebClient(appliance)
         client.status_check()
-        log_action('api.appliance.test', appliance_id=appliance.id,
-                   detail=f'Tested {appliance.name}: online')
-        return jsonify({'ok': True, 'status': 'online'})
+        status, ok, detail = 'online', True, None
     except Exception as exc:
-        log_action('api.appliance.test', appliance_id=appliance.id,
-                   detail=f'Tested {appliance.name}: offline ({exc})')
-        return jsonify({'ok': False, 'status': 'offline', 'detail': str(exc)})
+        status, ok, detail = 'offline', False, str(exc)
+
+    db.session.query(Appliance).filter(Appliance.id == id).update(
+        {'last_status': status, 'last_checked_at': datetime.utcnow()},
+        synchronize_session=False,
+    )
+    db.session.commit()
+    log_action('api.appliance.test', appliance_id=appliance.id,
+               detail=f'Tested {appliance.name}: {status}' + (f' ({detail})' if detail else ''))
+    resp = {'ok': ok, 'status': status}
+    if detail:
+        resp['detail'] = detail
+    return jsonify(resp)

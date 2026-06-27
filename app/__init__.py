@@ -1,6 +1,7 @@
 """Flask application factory."""
 from __future__ import annotations
 
+import ipaddress
 import os
 from datetime import datetime
 
@@ -8,6 +9,31 @@ from flask import Flask, g, request
 
 from .config import get_config
 from .extensions import csrf, db, limiter, login_manager
+
+
+def _client_ip() -> str:
+    """Real client IP — honour the first X-Forwarded-For hop (we sit behind the
+    fleet reverse proxy), else the direct peer."""
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.remote_addr or ""
+
+
+def _ip_allowed(ip: str, whitelist: list) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    if addr.is_loopback:
+        return True  # never lock out local/curl access
+    for row in whitelist:
+        try:
+            if addr in ipaddress.ip_network((row or {}).get("ip", ""), strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def create_app(config_override: object | None = None) -> Flask:
@@ -42,8 +68,99 @@ def create_app(config_override: object | None = None) -> Flask:
 
     @app.route('/')
     def index():
-        from flask import redirect, url_for
-        return redirect(url_for('workspace.index'))
+        from flask import redirect, url_for, session
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return redirect(url_for('auth.login'))
+        product = session.get('product')
+        if product == 'fortiadc':
+            return redirect(url_for('product.fortiadc_home'))
+        if product == 'fortiweb':
+            return redirect(url_for('workspace.index'))
+        return redirect(url_for('product.select'))
+
+    # -- product selection gate ------------------------------------------
+    @app.before_request
+    def _product_gate():
+        from flask import session, redirect, url_for
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return None
+        ep = request.endpoint or ''
+        always = {
+            'static', 'index',
+            'product.select', 'product.set_product', 'product.switch',
+            'product.fortiadc_home',
+        }
+        if ep in always or ep.startswith('auth.'):
+            return None
+        product = session.get('product')
+        if product not in ('fortiweb', 'fortiadc'):
+            return redirect(url_for('product.select'))
+        if product == 'fortiadc':
+            # FortiADC is a placeholder — restrict to its own + shared pages
+            adc_allowed = {'product.fortiadc_home', 'settings.index'}
+            if ep not in adc_allowed:
+                return redirect(url_for('product.fortiadc_home'))
+        return None
+
+    # -- access control gate (IP whitelist + allowed users) --------------
+    # Lockout-safe by design: empty lists = no restriction, loopback always
+    # allowed, admins are NEVER restricted (so a typo can't lock out the people
+    # who manage this), and auth/static endpoints stay reachable.
+    @app.before_request
+    def _access_gate():
+        from flask import abort
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return None
+        ep = request.endpoint or ''
+        if ep == 'static' or ep.startswith('auth.'):
+            return None
+        from .models import Permission
+        if current_user.can(Permission.USER_MANAGE):
+            return None  # admins are exempt
+        from .services import settings_store as _store
+        allowed = _store.allowed_users()
+        if allowed and current_user.username not in allowed:
+            abort(403)
+        wl = _store.ip_whitelist()
+        if wl and not _ip_allowed(_client_ip(), wl):
+            abort(403)
+        return None
+
+    # -- template globals -------------------------------------------------
+    @app.context_processor
+    def _inject_branding():
+        from flask import session
+        from .branding import get_product
+        from .services import settings_store as _store
+        prod = get_product(session.get('product'))
+        try:
+            _bg = _store.banner_bg(prod['key'])
+        except Exception:
+            _bg = '#162940'
+        return {
+            'product': prod,
+            'banner_bg': _bg,
+            'now': datetime.utcnow(),
+        }
+
+    # -- self-healing CSRF errors ----------------------------------------
+    # A stale/expired login (or any) form submitted with an old token used to
+    # dead-end on a raw 400 "CSRF tokens do not match". Instead, flash a hint
+    # and bounce back to the same form page, which re-renders a fresh token so
+    # the resubmit succeeds. (2026-06-27)
+    from flask_wtf.csrf import CSRFError
+
+    @app.errorhandler(CSRFError)
+    def _handle_csrf_error(exc):  # noqa: ANN001
+        from flask import flash, redirect, request, url_for
+        flash("Your session expired or the form was stale \u2014 please try again.", "warning")
+        ref = request.referrer or ""
+        if ref.startswith(request.host_url):
+            return redirect(ref)
+        return redirect(url_for("auth.login"))
 
     # -- security headers -------------------------------------------------
     @app.after_request
@@ -100,6 +217,7 @@ def _register_blueprints(app: Flask) -> None:
 
     blueprints = [
         ("app.auth", "bp"),
+        ("app.views.product", "bp"),
         ("app.views.appliances", "bp"),
         ("app.views.workspace", "bp"),
         ("app.views.server_objects", "bp"),

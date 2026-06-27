@@ -153,6 +153,18 @@
 
       <div class="fw-nav-divider"></div>
 
+      {% if current_user and current_user.can('config_write') %}
+      <!-- FORTIWEB -->
+      <div class="fw-nav-section">FortiWeb</div>
+      <a class="fw-nav-item"
+         href="{{ url_for('section_config.index') }}">
+        <i class="bi bi-sliders fw-nav-icon"></i>
+        <span>Configuration</span>
+      </a>
+
+      <div class="fw-nav-divider"></div>
+      {% endif %}
+
       <!-- NETWORK -->
       <div class="fw-nav-section">Network</div>
       <a class="fw-nav-item"
@@ -185,6 +197,13 @@
         <i class="bi bi-journal-text fw-nav-icon"></i>
         <span>Log Collection</span>
       </a>
+      {% if current_user and current_user.can('config_write') %}
+      <a class="fw-nav-item"
+         href="{{ url_for('provisioning.index') }}">
+        <i class="bi bi-rocket-takeoff fw-nav-icon"></i>
+        <span>Provisioning</span>
+      </a>
+      {% endif %}
       {% if current_user and current_user.can('user_manage') %}
       <a class="fw-nav-item"
          href="{{ url_for('signatures.index') }}">
@@ -237,6 +256,21 @@
          href="{{ url_for('structure.index') }}">
         <i class="bi bi-diagram-3 fw-nav-icon"></i>
         <span>Structure</span>
+      </a>
+
+      <div class="fw-nav-divider"></div>
+
+      <!-- AUTOMATION -->
+      <div class="fw-nav-section">Automation</div>
+      <a class="fw-nav-item"
+         href="{{ url_for('scheduled_actions.index') }}">
+        <i class="bi bi-clock-history fw-nav-icon"></i>
+        <span>Scheduled Actions</span>
+      </a>
+      <a class="fw-nav-item"
+         href="{{ url_for('change_requests.index') }}">
+        <i class="bi bi-clipboard2-check fw-nav-icon"></i>
+        <span>Change Requests</span>
       </a>
       {% endif %}
 

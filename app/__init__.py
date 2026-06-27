@@ -269,6 +269,10 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.fleet_objects", "bp"),
         ("app.views.import_backup", "bp"),
         ("app.views.structure", "bp"),
+        ("app.views.scheduled_actions", "bp"),
+        ("app.views.change_requests", "bp"),
+        ("app.views.provisioning", "bp"),
+        ("app.views.section_config", "bp"),
         ("app.views.settings", "bp"),
         ("app.api", "bp"),
     ]

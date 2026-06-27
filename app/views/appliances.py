@@ -1,12 +1,53 @@
-from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for
+import os
+
+from flask import (
+    Blueprint, render_template, request, jsonify, flash, redirect, url_for,
+    send_file, abort,
+)
 from flask_login import login_required
 from ..auth.decorators import require_permission
 from sqlalchemy.exc import IntegrityError
-from ..models import Appliance, AuditLog, db, Permission
+from ..models import Appliance, ApplianceInterface, AuditLog, db, Permission
 from ..clients.fortiweb import FortiWebClient
 from ..clients.fortiadc import FortiADCClient
 from ..services.audit import log_action
 from ..services import settings_store as store
+from ..services import datasheets
+
+HW_TYPES = ("hardware", "vm", "unknown")
+
+
+def _clean_hw_type(raw: str) -> str:
+    raw = (raw or "").strip().lower()
+    return raw if raw in HW_TYPES else "unknown"
+
+
+def _rebuild_interfaces(appliance) -> None:
+    """Replace-all the appliance's documented interfaces from the posted form
+    arrays (if_name[]/if_type[]/if_connected[]/if_ip[]/if_notes[]). Rows whose
+    name is blank are skipped."""
+    names = request.form.getlist("if_name")
+    types = request.form.getlist("if_type")
+    conns = request.form.getlist("if_connected")
+    ips = request.form.getlist("if_ip")
+    notes = request.form.getlist("if_notes")
+
+    ApplianceInterface.query.filter_by(appliance_id=appliance.id).delete()
+    order = 0
+    for i, raw_name in enumerate(names):
+        name = (raw_name or "").strip()
+        if not name:
+            continue
+        db.session.add(ApplianceInterface(
+            appliance_id=appliance.id,
+            name=name[:64],
+            if_type=(types[i].strip()[:64] if i < len(types) and types[i].strip() else None),
+            connected_to=(conns[i].strip()[:256] if i < len(conns) and conns[i].strip() else None),
+            ip_address=(ips[i].strip()[:64] if i < len(ips) and ips[i].strip() else None),
+            notes=(notes[i].strip() if i < len(notes) and notes[i].strip() else None),
+            sort_order=order,
+        ))
+        order += 1
 
 bp = Blueprint('appliances', __name__, url_prefix='/appliances')
 
@@ -45,6 +86,8 @@ def create():
     department = request.form.get('department', '').strip() or None
     zone = request.form.get('zone', '').strip() or None
     line = request.form.get('line', '').strip() or None
+    hw_type = _clean_hw_type(request.form.get('hw_type', 'unknown'))
+    model = request.form.get('model', '').strip() or None
 
     if not name or not host:
         flash('Name and host are required.', 'danger')
@@ -54,6 +97,7 @@ def create():
         name=name, kind=kind, host=host, port=port,
         username=username, verify_ssl=verify_ssl,
         vdom=vdom, tags=tags, department=department, zone=zone, line=line,
+        hw_type=hw_type, model=model,
         password_enc='placeholder',
     )
     appliance.set_password(password)
@@ -94,9 +138,28 @@ def edit_save(id):
     appliance.department = request.form.get('department', appliance.department or '').strip() or None
     appliance.zone = request.form.get('zone', appliance.zone or '').strip() or None
     appliance.line = request.form.get('line', appliance.line or '').strip() or None
+    appliance.hw_type = _clean_hw_type(request.form.get('hw_type', appliance.hw_type or 'unknown'))
+    appliance.model = request.form.get('model', appliance.model or '').strip() or None
     password = request.form.get('password', '')
     if password:
         appliance.set_password(password)
+
+    # -- datasheet PDF: remove, replace, or keep --------------------------
+    if request.form.get('datasheet_remove') == 'on':
+        datasheets.delete(appliance.id)
+        appliance.datasheet_filename = None
+    upload = request.files.get('datasheet')
+    if upload and (upload.filename or '').strip():
+        try:
+            appliance.datasheet_filename = datasheets.save(appliance.id, upload)
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+            return redirect(url_for('appliances.edit', id=appliance.id))
+
+    # -- physical interfaces: replace-all from posted rows ----------------
+    _rebuild_interfaces(appliance)
+
     db.session.commit()
     log_action('appliance.update', target=appliance.name)
     flash(f'Appliance {appliance.name} updated.', 'success')
@@ -109,11 +172,30 @@ def edit_save(id):
 def delete(id):
     appliance = Appliance.query.get_or_404(id)
     name = appliance.name
+    datasheets.delete(appliance.id)  # drop the PDF file (interfaces cascade via FK)
     db.session.delete(appliance)
     db.session.commit()
     log_action('appliance.delete', target=name)
     flash(f'Appliance {name} deleted.', 'success')
     return redirect(url_for('appliances.index'))
+
+
+@bp.route('/<int:id>/datasheet')
+@login_required
+def datasheet(id):
+    """Serve the appliance's datasheet PDF inline (read-only, any logged-in user)."""
+    appliance = Appliance.query.get_or_404(id)
+    if not appliance.datasheet_filename:
+        abort(404)
+    path = datasheets.path_for(appliance.id)
+    if not os.path.exists(path):
+        abort(404)
+    return send_file(
+        path,
+        mimetype='application/pdf',
+        as_attachment=False,
+        download_name=appliance.datasheet_filename,
+    )
 
 
 @bp.route('/<int:id>/test', methods=['POST'])

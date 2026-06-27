@@ -30,6 +30,48 @@
     </div>
   </div></div>
 </div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-card-header"><i class="bi bi-hdd-network me-2"></i>Physical / Interfaces</div>
+  <div class="card-body">
+    <dl class="row mb-3">
+      <dt class="col-sm-2">Type</dt>
+      <dd class="col-sm-4">
+        {% if appliance.hw_type == 'hardware' %}<span class="badge bg-info">Hardware</span>
+        {% elif appliance.hw_type == 'vm' %}<span class="badge bg-secondary">Virtual Machine</span>
+        {% else %}<span class="badge bg-dark">Unknown</span>{% endif %}
+      </dd>
+      <dt class="col-sm-2">Model</dt><dd class="col-sm-4">{{ appliance.model or '—' }}</dd>
+      <dt class="col-sm-2">Datasheet</dt>
+      <dd class="col-sm-10">
+        {% if appliance.datasheet_filename %}
+          <a href="{{ url_for('appliances.datasheet', id=appliance.id) }}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf me-1"></i>{{ appliance.datasheet_filename }}</a>
+        {% else %}<span class="text-muted">none</span>{% endif %}
+      </dd>
+    </dl>
+    {% if appliance.interfaces %}
+    <div class="table-responsive">
+      <table class="table table-sm fw-table mb-0">
+        <thead><tr><th>Interface</th><th>Type</th><th>Connected to</th><th>IP</th><th>Notes</th></tr></thead>
+        <tbody>
+        {% for i in appliance.interfaces %}
+          <tr>
+            <td><strong>{{ i.name }}</strong></td>
+            <td>{{ i.if_type or '' }}</td>
+            <td>{{ i.connected_to or '' }}</td>
+            <td>{% if i.ip_address %}<code>{{ i.ip_address }}</code>{% endif %}</td>
+            <td class="text-muted">{{ i.notes or '' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">No interfaces documented. Use <a href="{{ url_for('appliances.edit', id=appliance.id) }}">Edit</a> to add them.</p>
+    {% endif %}
+  </div>
+</div>
+
 {% if appliance.kind == 'fortiweb' %}
 <div class="card shadow-sm mb-4">
   <div class="card-header fw-card-header"><i class="bi bi-tools me-2"></i>Appliance Actions</div>

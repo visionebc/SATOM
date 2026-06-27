@@ -59,6 +59,12 @@ def create_app(config_override: object | None = None) -> Flask:
             "img-src 'self' data: https:; "
             "font-src 'self' data: https://cdn.jsdelivr.net;"
         )
+        # Never serve authenticated HTML (e.g. the nav menu) from a stale
+        # browser cache after a deploy. Static assets stay cacheable.
+        if response.mimetype == "text/html":
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
         return response
 
     # -- CLI commands -----------------------------------------------------

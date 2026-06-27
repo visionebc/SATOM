@@ -51,6 +51,11 @@
       <i class="bi bi-database me-1"></i>Database
     </button>
   </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-git" type="button">
+      <i class="bi bi-git me-1"></i>Git
+    </button>
+  </li>
   {% endif %}
   <li class="nav-item" role="presentation">
     <button class="nav-link {{ 'active' if not is_admin else '' }}" data-bs-toggle="tab" data-bs-target="#tab-security" type="button">
@@ -480,6 +485,80 @@
   </div>
   {% endif %}
 
+  <!-- GIT TAB -->
+  <div class="tab-pane fade" id="tab-git">
+    <div class="row g-4">
+      <div class="col-lg-7">
+        <!-- Repo status card -->
+        <div class="fw-card mb-3">
+          <div class="fw-card-header d-flex align-items-center justify-content-between">
+            <span class="fw-card-title"><i class="bi bi-git me-2 text-accent"></i>Repository</span>
+            <button class="btn btn-sm btn-outline-secondary" onclick="gitRefresh()">
+              <i class="bi bi-arrow-clockwise"></i>
+            </button>
+          </div>
+          <div class="fw-card-body">
+            <div id="git-info-loading" class="text-muted" style="font-size:13px;">Loading…</div>
+            <div id="git-info-body" style="display:none;">
+              <table class="table table-sm mb-0" style="font-size:13px;">
+                <tr><th class="text-muted fw-normal" style="width:110px;">Remote</th><td id="gi-remote" class="font-monospace"></td></tr>
+                <tr><th class="text-muted fw-normal">Branch</th><td id="gi-branch"><code></code></td></tr>
+                <tr><th class="text-muted fw-normal">HEAD</th><td id="gi-commit" class="font-monospace"></td></tr>
+                <tr><th class="text-muted fw-normal">Status</th><td id="gi-status"></td></tr>
+                <tr><th class="text-muted fw-normal">Sync</th><td id="gi-sync"></td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+        <!-- Pull card -->
+        <div class="fw-card mb-3">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-cloud-download me-2 text-accent"></i>Update from Gitea</span>
+          </div>
+          <div class="fw-card-body">
+            <p class="text-muted mb-3" style="font-size:13px;">Pull the latest commits from origin (fast-forward only). Restart the service after a pull to apply Python changes.</p>
+            <button class="btn btn-sm fw-btn-primary" id="git-pull-btn" onclick="gitPull()">
+              <i class="bi bi-cloud-download me-1"></i>Pull now
+            </button>
+            <div id="git-pull-out" class="mt-3" style="display:none;">
+              <pre id="git-pull-pre" class="fw-pre"></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-5">
+        <!-- Recent commits -->
+        <div class="fw-card mb-3">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-clock-history me-2 text-accent"></i>Recent Commits</span>
+          </div>
+          <div class="fw-card-body p-0">
+            <ul id="git-commits" class="list-group list-group-flush" style="font-size:12px;">
+              <li class="list-group-item text-muted">Loading…</li>
+            </ul>
+          </div>
+        </div>
+        <!-- Manual console -->
+        <div class="fw-card">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-terminal me-2 text-accent"></i>Manual Git Console</span>
+          </div>
+          <div class="fw-card-body">
+            <p class="text-muted mb-2" style="font-size:12px;">One git command per line. Leading <code>git</code> is optional. <code>#</code> lines are comments. Git-only — not an arbitrary shell.</p>
+            <textarea id="git-console-input" class="form-control fw-form-control font-monospace mb-2" rows="5"
+              placeholder="remote -v&#10;log --oneline -5&#10;fetch origin"></textarea>
+            <button class="btn btn-sm btn-outline-secondary" onclick="gitConsoleRun()">
+              <i class="bi bi-play me-1"></i>Run
+            </button>
+            <div id="git-console-out" class="mt-3" style="display:none;">
+              <pre id="git-console-pre" class="fw-pre"></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- SECURITY TAB -->
   <div class="tab-pane fade {{ 'show active' if not is_admin else '' }}" id="tab-security">
     <div class="row g-3">
@@ -781,5 +860,96 @@ function loadDbTable(name) {
       if (empty) { empty.style.display = ''; empty.textContent = 'Could not load table: ' + e.message; }
     });
 }
+
+// Git tab helpers
+function gitEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function gitRefresh() {
+  document.getElementById('git-info-loading').style.display = '';
+  document.getElementById('git-info-body').style.display = 'none';
+  document.getElementById('git-commits').innerHTML = '<li class="list-group-item text-muted">Loading...</li>';
+  fetch('/settings/git/info', {headers: {'Accept': 'application/json'}})
+    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(function(d){
+      document.getElementById('git-info-loading').style.display = 'none';
+      document.getElementById('git-info-body').style.display = '';
+      document.getElementById('gi-remote').textContent = d.remote || '-';
+      document.getElementById('gi-branch').innerHTML = '<code>' + gitEsc(d.branch) + '</code>';
+      document.getElementById('gi-commit').textContent = d.commit || '-';
+      var dirty = d.dirty;
+      document.getElementById('gi-status').innerHTML = dirty
+        ? '<span class="fw-badge fw-badge-warning">dirty</span>'
+        : '<span class="fw-badge fw-badge-success">clean</span>';
+      var sync = '';
+      if (d.ahead > 0) sync += '<span class="fw-badge fw-badge-warning me-1">↑' + d.ahead + ' ahead</span>';
+      if (d.behind > 0) sync += '<span class="fw-badge fw-badge-danger me-1">↓' + d.behind + ' behind</span>';
+      if (!sync) sync = '<span class="text-muted">up to date</span>';
+      document.getElementById('gi-sync').innerHTML = sync;
+      var ul = document.getElementById('git-commits');
+      var commits = d.recent || [];
+      if (commits.length) {
+        ul.innerHTML = commits.map(function(c){
+          return '<li class="list-group-item d-flex gap-2 align-items-start py-2">'
+            + '<code class="text-muted" style="min-width:52px;">' + gitEsc(c.hash) + '</code>'
+            + '<span class="text-muted" style="min-width:70px;">' + gitEsc(c.date) + '</span>'
+            + '<span class="text-truncate">' + gitEsc(c.subject) + '</span>'
+            + '</li>';
+        }).join('');
+      } else {
+        ul.innerHTML = '<li class="list-group-item text-muted">No commits found</li>';
+      }
+    })
+    .catch(function(e){
+      document.getElementById('git-info-loading').textContent = 'Error: ' + e.message;
+    });
+}
+
+function gitPull() {
+  var btn = document.getElementById('git-pull-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Pulling...';
+  document.getElementById('git-pull-out').style.display = '';
+  document.getElementById('git-pull-pre').textContent = '...';
+  var csrfMeta = document.querySelector('meta[name=csrf-token]');
+  var csrf = csrfMeta ? csrfMeta.content : '';
+  fetch('/settings/git/pull', {method: 'POST', headers: {'X-CSRFToken': csrf}})
+    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(function(d){
+      document.getElementById('git-pull-pre').textContent = d.transcript || '(no output)';
+      gitRefresh();
+    })
+    .catch(function(e){
+      document.getElementById('git-pull-pre').textContent = 'Error: ' + e.message;
+    })
+    .finally(function(){
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-cloud-download me-1"></i>Pull now';
+    });
+}
+
+function gitConsoleRun() {
+  var script = document.getElementById('git-console-input').value.trim();
+  if (!script) return;
+  document.getElementById('git-console-out').style.display = '';
+  document.getElementById('git-console-pre').textContent = '...';
+  var csrfMeta = document.querySelector('meta[name=csrf-token]');
+  var csrf = csrfMeta ? csrfMeta.content : '';
+  fetch('/settings/git/console', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+    body: JSON.stringify({script: script})
+  })
+    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(function(d){ document.getElementById('git-console-pre').textContent = d.transcript || '(no output)'; })
+    .catch(function(e){ document.getElementById('git-console-pre').textContent = 'Error: ' + e.message; });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  var gitTabBtn = document.querySelector('[data-bs-target="#tab-git"]');
+  if (gitTabBtn) { gitTabBtn.addEventListener('shown.bs.tab', function() { gitRefresh(); }); }
+});
 </script>
 {% endblock %}

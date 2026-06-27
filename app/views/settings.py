@@ -28,6 +28,7 @@ from flask_login import login_required, current_user
 from ..auth.decorators import require_permission
 from ..models import db, Permission, User, Role
 from ..services import naming, settings_store as store, dbintrospect
+from ..services import git_service
 from ..services import user_settings_store as user_store
 from ..services.audit import log_action
 
@@ -248,3 +249,31 @@ def change_password():
         log_action('settings.change_password', detail='Changed own password')
         flash('Password changed successfully.', 'success')
     return redirect(url_for('settings.index') + '#tab-password')
+
+
+# ── Git ───────────────────────────────────────────────────────────────────────
+
+@bp.route("/git/info")
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def git_info():
+    return jsonify(git_service.git_info())
+
+
+@bp.route("/git/pull", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def git_pull():
+    transcript = git_service.git_pull()
+    log_action("settings.git_pull", detail="manual pull")
+    return jsonify({"transcript": transcript})
+
+
+@bp.route("/git/console", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def git_console():
+    script = (request.get_json(silent=True) or {}).get("script", "")
+    transcript = git_service.run_git_script(script)
+    log_action("settings.git_console", detail=f"{len(script.splitlines())} line(s)")
+    return jsonify({"transcript": transcript})

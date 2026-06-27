@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit' if action else 'New' }} Scheduled Action — Fortinet Manager Web{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('scheduled_actions.index') }}">Scheduled Actions</a>
+  <span class="separator">/</span>
+  <span>{{ 'Edit' if action else 'New' }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-clock-history me-2 text-accent"></i>{{ 'Edit' if action else 'New' }} Scheduled Action
+    </h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Pick an automation, choose its targets, and set when it runs.
+    </p>
+  </div>
+  <a class="btn btn-fw-outline btn-sm" href="{{ url_for('scheduled_actions.index') }}">
+    <i class="bi bi-chevron-left me-1"></i>Back
+  </a>
+</div>
+
+<form method="POST"
+      action="{{ url_for('scheduled_actions.edit', id=action.id) if action else url_for('scheduled_actions.new') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="row g-3">
+    <!-- LEFT: what + where -->
+    <div class="col-lg-6">
+      <div class="fw-card">
+        <div class="fw-card-header">
+          <span class="fw-card-title"><i class="bi bi-gear me-2 text-accent"></i>Action</span>
+        </div>
+        <div class="fw-card-body">
+          <div class="mb-3">
+            <label class="fw-form-label">Name <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" name="name" required autocomplete="off"
+                   placeholder="e.g. Nightly config backup"
+                   value="{{ action.name if action else '' }}">
+          </div>
+
+          <div class="mb-3">
+            <label class="fw-form-label">Action <span class="text-danger">*</span></label>
+            <select class="form-select" name="action" id="actionSelect" required onchange="onActionChange()">
+              {% if not action %}<option value="" disabled selected>— select an action —</option>{% endif %}
+              <optgroup label="Admin maintenance">
+                {% for spec in admin_actions %}
+                <option value="{{ spec.key }}"
+                        data-scope="{{ spec.scope }}"
+                        data-danger="{{ '1' if spec.danger else '0' }}"
+                        data-forced="{{ spec.forced_schedule_kind }}"
+                        {{ 'selected' if action and action.action == spec.key else '' }}>
+                  {{ spec.label }}
+                </option>
+                {% endfor %}
+              </optgroup>
+              <optgroup label="User-scope (server policy)">
+                {% for spec in user_actions %}
+                <option value="{{ spec.key }}"
+                        data-scope="{{ spec.scope }}"
+                        data-danger="{{ '1' if spec.danger else '0' }}"
+                        data-forced="{{ spec.forced_schedule_kind }}"
+                        {{ 'selected' if action and action.action == spec.key else '' }}>
+                  {{ spec.label }}
+                </option>
+                {% endfor %}
+              </optgroup>
+            </select>
+            <div class="form-text">
+              Scope: <strong id="scopeLabel" class="text-uppercase">—</strong>
+              <span id="dangerNote" class="text-danger ms-2" style="display:none;">
+                <i class="bi bi-exclamation-triangle-fill"></i> Destructive — handle with care.
+              </span>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="fw-form-label">Targets</label>
+            <select class="form-select" name="targets" id="targetsSelect" multiple size="6">
+              {% for ap in appliances %}
+              <option value="{{ ap.id }}" {{ 'selected' if ap.id in selected_targets else '' }}>
+                {{ ap.name }}{% if ap.host %} ({{ ap.host }}){% endif %}
+              </option>
+              {% endfor %}
+            </select>
+            <div class="form-text">
+              {% if appliances %}
+                Hold Ctrl/Cmd to select several. Leave empty to target the whole FortiWeb fleet.
+              {% else %}
+                No FortiWeb appliances yet — this action will target the whole fleet when devices are added.
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="mb-2">
+            <label class="fw-form-label">Advanced params (JSON, optional)</label>
+            <textarea class="form-control" name="params_json" rows="4" spellcheck="false"
+                      style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"
+                      placeholder='{"policy": "default", "enabled": true}'>{{ params_text }}</textarea>
+            <div class="form-text">
+              User-scope ops read their inputs here (e.g. <code>policy</code>, <code>member</code>,
+              <code>certificate</code>, <code>enabled</code>). Invalid JSON is ignored.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: when -->
+    <div class="col-lg-6">
+      <div class="fw-card">
+        <div class="fw-card-header">
+          <span class="fw-card-title"><i class="bi bi-calendar-event me-2 text-accent"></i>Schedule</span>
+        </div>
+        <div class="fw-card-body">
+          <div class="mb-3">
+            <label class="fw-form-label">Frequency</label>
+            <select class="form-select" name="schedule_kind" id="scheduleKind" onchange="onScheduleKindChange()">
+              {% for k in schedule_kinds %}
+              <option value="{{ k }}"
+                      {{ 'selected' if (action and action.schedule_kind == k) or (not action and k == 'once') else '' }}>
+                {{ k|capitalize }}
+              </option>
+              {% endfor %}
+            </select>
+            <div class="form-text" id="forcedNote" style="display:none;">
+              This action is locked to a one-time (<strong>once</strong>) schedule.
+            </div>
+          </div>
+
+          <!-- ONCE -->
+          <div class="sched-group" data-kind="once">
+            <label class="fw-form-label">Run at</label>
+            <input type="datetime-local" class="form-control" name="once_at"
+                   value="{{ schedule.get('at', '')[:16] }}">
+          </div>
+
+          <!-- INTERVAL -->
+          <div class="sched-group" data-kind="interval">
+            <label class="fw-form-label">Every</label>
+            <div class="d-flex gap-2">
+              <input type="number" class="form-control" name="interval_every" min="1" style="max-width:120px;"
+                     value="{{ schedule.get('every', 1) }}">
+              <select class="form-select" name="interval_unit" style="max-width:160px;">
+                {% for u in ['minutes', 'hours', 'days'] %}
+                <option value="{{ u }}" {{ 'selected' if schedule.get('unit') == u else '' }}>{{ u }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <!-- DAILY -->
+          <div class="sched-group" data-kind="daily">
+            <label class="fw-form-label">Time of day</label>
+            <input type="time" class="form-control" name="daily_time" style="max-width:160px;"
+                   value="{{ schedule.get('time', '00:00') }}">
+          </div>
+
+          <!-- WEEKLY -->
+          <div class="sched-group" data-kind="weekly">
+            <label class="fw-form-label">Weekday &amp; time</label>
+            <div class="d-flex gap-2">
+              <select class="form-select" name="weekly_weekday" style="max-width:170px;">
+                {% for value, label in weekdays %}
+                <option value="{{ value }}"
+                        {{ 'selected' if schedule.get('weekday')|string == value|string else '' }}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              <input type="time" class="form-control" name="weekly_time" style="max-width:160px;"
+                     value="{{ schedule.get('time', '00:00') }}">
+            </div>
+          </div>
+
+          <!-- MONTHLY -->
+          <div class="sched-group" data-kind="monthly">
+            <label class="fw-form-label">Day of month &amp; time</label>
+            <div class="d-flex gap-2">
+              <input type="number" class="form-control" name="monthly_day" min="1" max="31" style="max-width:120px;"
+                     value="{{ schedule.get('day', 1) }}">
+              <input type="time" class="form-control" name="monthly_time" style="max-width:160px;"
+                     value="{{ schedule.get('time', '00:00') }}">
+            </div>
+          </div>
+
+          <hr>
+
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="enabled" id="enabledCheck"
+                   {{ 'checked' if (not action or action.enabled) else '' }}>
+            <label class="form-check-label" for="enabledCheck">
+              Enabled <span class="text-muted">— eligible to fire on its schedule</span>
+            </label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="catch_up" id="catchUpCheck"
+                   {{ 'checked' if (not action or action.catch_up) else '' }}>
+            <label class="form-check-label" for="catchUpCheck">
+              Catch up <span class="text-muted">— run a missed fire instead of skipping it</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-end gap-2 mt-3">
+        <a class="btn btn-secondary" href="{{ url_for('scheduled_actions.index') }}">Cancel</a>
+        <button type="submit" class="btn btn-fw-primary">
+          <i class="bi bi-check-lg me-1"></i>{{ 'Save changes' if action else 'Create action' }}
+        </button>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function onScheduleKindChange() {
+  var kind = document.getElementById('scheduleKind').value;
+  document.querySelectorAll('.sched-group').forEach(function (g) {
+    g.style.display = (g.getAttribute('data-kind') === kind) ? '' : 'none';
+  });
+}
+
+function onActionChange() {
+  var sel = document.getElementById('actionSelect');
+  var opt = sel.options[sel.selectedIndex];
+  if (!opt) { return; }
+  var scope = opt.getAttribute('data-scope') || '—';
+  var danger = opt.getAttribute('data-danger') === '1';
+  var forced = opt.getAttribute('data-forced') || '';
+
+  document.getElementById('scopeLabel').textContent = scope;
+  document.getElementById('dangerNote').style.display = danger ? '' : 'none';
+
+  var kindSel = document.getElementById('scheduleKind');
+  var forcedNote = document.getElementById('forcedNote');
+  if (forced) {
+    kindSel.value = forced;
+    kindSel.disabled = true;       // server enforces the forced kind regardless
+    forcedNote.style.display = '';
+  } else {
+    kindSel.disabled = false;
+    forcedNote.style.display = 'none';
+  }
+  onScheduleKindChange();
+}
+
+// Initial paint (covers edit prefill + the empty "new" form).
+document.addEventListener('DOMContentLoaded', function () {
+  if (document.getElementById('actionSelect').value) { onActionChange(); }
+  else { onScheduleKindChange(); }
+});
+</script>
+{% endblock %}

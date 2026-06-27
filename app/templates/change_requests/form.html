@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block title %}New Change Request — Fortinet Manager Web{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('change_requests.index') }}">Change Requests</a>
+  <span class="separator">/</span>
+  <span>New</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-clipboard2-plus me-2 text-accent"></i>New Change Request</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Describe the change, the devices it touches, and the maintenance window. It is created as a
+      <strong>draft</strong> and must be approved before it can be scheduled.
+    </p>
+  </div>
+  <a class="btn btn-fw-outline btn-sm" href="{{ url_for('change_requests.index') }}">
+    <i class="bi bi-chevron-left me-1"></i>Back
+  </a>
+</div>
+
+<form method="POST" action="{{ url_for('change_requests.new') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="fw-card">
+        <div class="fw-card-header">
+          <span class="fw-card-title"><i class="bi bi-pencil-square me-2 text-accent"></i>Details</span>
+        </div>
+        <div class="fw-card-body">
+          <div class="mb-3">
+            <label class="fw-form-label">Title <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" name="title" required autocomplete="off"
+                   placeholder="e.g. Upgrade edge FortiWeb cluster to 7.6.1">
+          </div>
+
+          <div class="mb-3">
+            <label class="fw-form-label">Reason</label>
+            <textarea class="form-control" name="reason" rows="3"
+                      placeholder="Why is this change needed? (shown in the maintenance notice)"></textarea>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-md-7">
+              <label class="fw-form-label">Action</label>
+              <select class="form-select" name="action">
+                {% for key, label in cr_actions %}
+                <option value="{{ key }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-5">
+              <label class="fw-form-label">Risk</label>
+              <select class="form-select" name="risk">
+                {% for r in risks %}
+                <option value="{{ r }}" {{ 'selected' if r == 'medium' else '' }}>{{ r|capitalize }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <div class="mb-1 mt-3">
+            <label class="fw-form-label">Rollback plan</label>
+            <textarea class="form-control" name="rollback" rows="3"
+                      placeholder="How will the change be reverted if it fails?"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="fw-card">
+        <div class="fw-card-header">
+          <span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>Scope &amp; window</span>
+        </div>
+        <div class="fw-card-body">
+          <div class="mb-3">
+            <label class="fw-form-label">Affected devices</label>
+            <select class="form-select" name="device_ids" multiple size="6">
+              {% for ap in appliances %}
+              <option value="{{ ap.id }}">{{ ap.name }}{% if ap.host %} ({{ ap.host }}){% endif %}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">
+              {% if appliances %}
+                Hold Ctrl/Cmd to select several. These define the clients to warn.
+              {% else %}
+                No FortiWeb appliances yet — add devices to populate this list.
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="fw-form-label">Window start (UTC)</label>
+            <input type="datetime-local" class="form-control" name="window_start">
+          </div>
+          <div class="mb-1">
+            <label class="fw-form-label">Window end (UTC)</label>
+            <input type="datetime-local" class="form-control" name="window_end">
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-end gap-2 mt-3">
+        <a class="btn btn-secondary" href="{{ url_for('change_requests.index') }}">Cancel</a>
+        <button type="submit" class="btn btn-fw-primary">
+          <i class="bi bi-check-lg me-1"></i>Create draft
+        </button>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}

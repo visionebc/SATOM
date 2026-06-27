@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtualenv
+venv/
+.venv/
+
+# App runtime / data
+data/
+instance/
+*.sqlite
+*.sqlite3
+
+# Secrets & local backups (kept on the host, not in git)
+.env
+*.bak
+*.bak-*

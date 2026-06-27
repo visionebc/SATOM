@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}Web Protection — {{ appliance.name }}{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('web_protection.index') }}">Web Protection</a>
+  <span class="separator">/</span>
+  <span>{{ appliance.name }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-shield-exclamation me-2 text-accent"></i>Web Protection Profiles</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">WAF profiles configured on <strong>{{ appliance.name }}</strong></p>
+  </div>
+  <a href="{{ url_for('web_protection.index') }}" class="btn btn-secondary btn-sm">
+    <i class="bi bi-chevron-left me-1"></i>Change Appliance
+  </a>
+</div>
+
+{% if error %}
+<div class="fw-alert fw-alert-danger d-flex align-items-center gap-2 mb-3">
+  <i class="bi bi-exclamation-triangle-fill"></i>
+  <div>Could not load web protection data from <strong>{{ appliance.name }}</strong>: {{ error }}</div>
+</div>
+{% endif %}
+
+<ul class="nav nav-tabs mb-3" role="tablist">
+  <li class="nav-item">
+    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-inline" type="button">
+      <i class="bi bi-shield-fill-check me-1"></i>Inline Profiles
+      <span class="fw-badge fw-badge-secondary ms-1">{{ wpp_profiles|length if wpp_profiles else 0 }}</span>
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-signatures" type="button">
+      <i class="bi bi-fingerprint me-1"></i>Signature Rules
+      <span class="fw-badge fw-badge-secondary ms-1">{{ signatures|length if signatures else 0 }}</span>
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content">
+  <div class="tab-pane fade show active" id="tab-inline">
+    <div class="fw-toolbar mb-2">
+      <div class="fw-search-box">
+        <i class="bi bi-search search-icon"></i>
+        <input type="text" placeholder="Search profiles…" oninput="filterTable('profiles-table', this.value)">
+      </div>
+    </div>
+    <div class="fw-table-wrapper">
+      <table class="fw-table" id="profiles-table">
+        <thead>
+          <tr>
+            <th>Profile Name</th>
+            <th>Signature Rule</th>
+            <th>Bot Detection</th>
+            <th>HTTP Flood</th>
+            <th>Exception</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if wpp_profiles %}
+            {% for p in wpp_profiles %}
+            {% set pname = p.get('name') or p.get('mkey') or '' %}
+            <tr>
+              <td><strong>{{ pname or '—' }}</strong></td>
+              <td>
+                {% if p.get('signature-rule') or p.get('signature_rule') %}
+                  <span class="fw-badge fw-badge-primary">{{ p.get('signature-rule') or p.get('signature_rule') }}</span>
+                {% else %}<span class="text-muted">None</span>{% endif %}
+              </td>
+              <td>
+                {% if p.get('bot-detection') or p.get('bot_detection') %}
+                  <span class="fw-badge fw-badge-success">Enabled</span>
+                {% else %}<span class="fw-badge fw-badge-secondary">Disabled</span>{% endif %}
+              </td>
+              <td>
+                {% if p.get('http-flood-prevention') or p.get('http_flood_prevention') %}
+                  <span class="fw-badge fw-badge-success">Enabled</span>
+                {% else %}<span class="fw-badge fw-badge-secondary">Disabled</span>{% endif %}
+              </td>
+              <td>{{ p.get('exception-name') or '—' }}</td>
+              <td>
+                {% if pname %}
+                <a href="{{ url_for('web_protection.wpp_detail', id=appliance.id, name=pname) }}"
+                   class="btn btn-sm btn-outline-primary" title="View profile detail">
+                  <i class="bi bi-eye"></i>
+                </a>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="6"><div class="fw-empty-state py-4">
+              <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi bi-shield-exclamation"></i></div>
+              <div class="fw-empty-state-title">No web protection profiles found</div>
+            </div></td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="tab-pane fade" id="tab-signatures">
+    <div class="fw-table-wrapper">
+      <table class="fw-table">
+        <thead><tr><th>Rule Name</th><th>Main Class</th><th>Action</th><th>Severity</th></tr></thead>
+        <tbody>
+          {% if signatures %}
+            {% for r in signatures %}
+            <tr>
+              <td><strong>{{ r.get('name') or r.get('mkey') or '—' }}</strong></td>
+              <td>{{ r.get('main-class-id') or '—' }}</td>
+              <td>
+                {% if r.get('action') == 'block' %}<span class="fw-badge fw-badge-danger">Block</span>
+                {% elif r.get('action') == 'alert' %}<span class="fw-badge fw-badge-warning">Alert</span>
+                {% else %}<span class="fw-badge fw-badge-secondary">{{ r.get('action') or 'Pass' }}</span>{% endif %}
+              </td>
+              <td>{{ r.get('severity') or '—' }}</td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="4" class="text-center text-muted py-3">No signature rules loaded</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterTable(tableId, q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('#' + tableId + ' tbody tr').forEach(function (row) {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

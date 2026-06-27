@@ -40,6 +40,11 @@ def create_app(config_override: object | None = None) -> Flask:
     # -- blueprints -------------------------------------------------------
     _register_blueprints(app)
 
+    @app.route('/')
+    def index():
+        from flask import redirect, url_for
+        return redirect(url_for('workspace.index'))
+
     # -- security headers -------------------------------------------------
     @app.after_request
     def set_security_headers(response):

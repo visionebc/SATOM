@@ -236,3 +236,52 @@ class AppSetting(db.Model):
 
     def __repr__(self) -> str:
         return f"<AppSetting {self.key!r}>"
+
+
+# ---------------------------------------------------------------------------
+# Template — desired-state library (web port of the desktop ``templates`` table)
+# ---------------------------------------------------------------------------
+
+class Template(db.Model):
+    """A reusable desired-state object the admin authors once and pushes on
+    demand: a Web Protection Profile, a system profile, a Server Policy skeleton
+    or a config section. The ``body`` is the JSON payload; it is desired-state
+    only and is NEVER a live mirror of a device (the device stays the source of
+    truth). Secrets are entered at apply-time and never stored here.
+    """
+
+    __tablename__ = "templates"
+    __table_args__ = (
+        db.UniqueConstraint("kind", "name", "version", name="uq_template_kind_name_version"),
+    )
+
+    # Template kinds (mirror the desktop ``services.templates`` constants).
+    KIND_WEB_PROTECTION = "web-protection-profile"
+    KIND_SERVER_POLICY = "server-policy"
+    KIND_SYSTEM = "system-profile"
+    KIND_STRUCTURE = "structure"
+    KINDS = (KIND_WEB_PROTECTION, KIND_SERVER_POLICY, KIND_SYSTEM, KIND_STRUCTURE)
+
+    id = db.Column(db.Integer, primary_key=True)
+    kind = db.Column(db.String(64), nullable=False, index=True)
+    name = db.Column(db.String(128), nullable=False)
+    version = db.Column(db.Integer, nullable=False, default=1)
+    body = db.Column(db.Text, nullable=False, default="{}")  # JSON-serialised dict
+    note = db.Column(db.Text, nullable=True, default="")
+    author = db.Column(db.String(64), nullable=True, default="")
+    locked = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    @property
+    def body_dict(self) -> dict[str, Any]:
+        try:
+            data = json.loads(self.body or "{}")
+            return data if isinstance(data, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+
+    def __repr__(self) -> str:
+        return f"<Template {self.kind}/{self.name} v{self.version}>"

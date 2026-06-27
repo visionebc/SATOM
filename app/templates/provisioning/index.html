@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}System Provisioning — Fortinet Manager Web{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>System Provisioning</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-sliders me-2 text-accent"></i>System Provisioning</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">Author a baseline system profile (DNS, NTP, RADIUS, SNMP, admins…) once, then preview &amp; push it to one device or the whole fleet. Secrets are entered at apply time, never stored.</p>
+  </div>
+  <a class="btn btn-fw-primary" href="{{ url_for('provisioning.new') }}"><i class="bi bi-plus-lg me-1"></i>New profile</a>
+</div>
+
+<!-- System profiles table -->
+<div class="fw-table-wrapper">
+  <table class="fw-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Version</th>
+        <th>Items</th>
+        <th>Note</th>
+        <th>Updated</th>
+        <th class="actions-col">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if profiles %}
+        {% for p in profiles %}
+        <tr>
+          <td><strong>{{ p.name }}</strong>{% if p.locked %} <i class="bi bi-lock-fill text-muted" title="Locked"></i>{% endif %}</td>
+          <td>v{{ p.version }}</td>
+          <td><span class="fw-badge fw-badge-primary">{{ p.body_dict.get('items', []) | length }}</span></td>
+          <td style="font-size:13px; max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ p.note or '—' }}</td>
+          <td style="font-size:13px;">{{ p.updated_at.strftime('%Y-%m-%d %H:%M') if p.updated_at else '—' }}</td>
+          <td class="actions-col">
+            <button class="btn btn-sm btn-fw-outline btn-sm-icon me-1" title="Preview &amp; apply"
+                    onclick="openApply({{ p.id }}, {{ p.name|tojson }})"><i class="bi bi-rocket-takeoff"></i></button>
+            <a class="btn btn-sm btn-outline-primary btn-sm-icon me-1" title="Edit"
+               href="{{ url_for('provisioning.edit', template_id=p.id) }}"><i class="bi bi-pencil"></i></a>
+            <form method="POST" action="{{ url_for('provisioning.delete', template_id=p.id) }}" style="display:inline;"
+                  data-fw-confirm-form="Delete system profile '{{ p.name }}' (v{{ p.version }})? This cannot be undone.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-outline-danger btn-sm-icon" title="Delete"
+                      {{ 'disabled' if p.locked else '' }}><i class="bi bi-trash"></i></button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="6">
+            <div class="fw-empty-state">
+              <div class="fw-empty-state-icon"><i class="bi bi-sliders"></i></div>
+              <div class="fw-empty-state-title">No system profiles yet</div>
+              <div class="fw-empty-state-text">Create a baseline system profile to preview and push to your appliances on demand.</div>
+              <a class="btn btn-fw-primary mt-2" href="{{ url_for('provisioning.new') }}"><i class="bi bi-plus-lg me-1"></i>New profile</a>
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<!-- APPLY MODAL (target picker -> dry-run preview) -->
+<div class="modal fade fw-modal" id="modalApply" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-rocket-takeoff me-2"></i>Apply: <span id="ap-name"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" id="applyForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-body">
+          <div class="fw-alert fw-alert-info d-flex align-items-center gap-2 mb-3" style="font-size:13px;">
+            <i class="bi bi-info-circle"></i>
+            <span>This first runs a <strong>dry-run preview</strong> — no device is touched until you confirm on the next screen.</span>
+          </div>
+
+          <label class="fw-form-label d-block mb-1">Target</label>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="mode" id="modeSelected" value="selected" checked>
+            <label class="form-check-label" for="modeSelected">Selected appliances</label>
+          </div>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="radio" name="mode" id="modeFleet" value="fleet">
+            <label class="form-check-label" for="modeFleet">Entire fleet (all appliances)</label>
+          </div>
+
+          <label class="fw-form-label">Appliances</label>
+          {% if appliances %}
+          <select class="form-select" name="device_ids" id="ap-devices" multiple size="6">
+            {% for a in appliances %}<option value="{{ a.id }}">{{ a.name }} ({{ a.kind }})</option>{% endfor %}
+          </select>
+          <div class="form-text">Ctrl/Cmd-click to select multiple. Ignored when “Entire fleet” is chosen.</div>
+          {% else %}
+          <div class="fw-alert fw-alert-warning d-flex align-items-center gap-2" style="font-size:13px;">
+            <i class="bi bi-exclamation-triangle"></i>
+            <span>No appliances registered. Add appliances first, or “Entire fleet” will simply target nothing.</span>
+          </div>
+          {% endif %}
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-eye me-1"></i>Preview</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openApply(id, name) {
+  var form = document.getElementById('applyForm');
+  form.action = '/provisioning/' + id + '/apply';
+  document.getElementById('ap-name').textContent = name;
+  if (window.API && API.openModal) { API.openModal('modalApply'); }
+  else if (window.bootstrap) { new bootstrap.Modal(document.getElementById('modalApply')).show(); }
+}
+</script>
+{% endblock %}

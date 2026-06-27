@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit' if template_id else 'New' }} System Profile — Fortinet Manager Web{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('provisioning.index') }}">System Provisioning</a>
+  <span class="separator">/</span>
+  <span>{{ 'Edit profile' if template_id else 'New profile' }}</span>
+</div>
+{% endblock %}
+
+{# ----------------------------------------------------------------------- #}
+{# Repeatable item editor row. ``idx`` is the row index; ``row`` is None for #}
+{# the JS clone template (the hidden <script> below) and a dict for          #}
+{# server-rendered rows (edit / re-render-on-error).                         #}
+{# ----------------------------------------------------------------------- #}
+{% macro render_row(idx, row) %}
+<div class="prov-row mb-2" style="border:1px solid rgba(148,163,184,.25); border-radius:8px; padding:14px;">
+  <input type="hidden" name="rows" value="{{ idx }}">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-5">
+      <label class="fw-form-label">Item</label>
+      <select class="form-select prov-key" name="key_{{ idx }}" onchange="onKeyChange(this)">
+        <option value="">— select an endpoint —</option>
+        {% for s in specs %}
+        <option value="{{ s.key }}"
+                data-singleton="{{ '1' if s.singleton else '0' }}"
+                data-sensitive="{{ '1' if s.sensitive else '0' }}"
+                title="{{ s.note }}"
+                {{ 'selected' if row and row.key == s.key else '' }}>{{ s.label }}{% if s.sensitive %} (secret){% endif %}</option>
+        {% endfor %}
+        {% if row and row.key and row.key not in spec_keys %}
+        <option value="{{ row.key }}" selected>{{ row.key }} (not in registry)</option>
+        {% endif %}
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="fw-form-label">mkey <span class="text-muted">(optional)</span></label>
+      <input type="text" class="form-control" name="mkey_{{ idx }}"
+             value="{{ row.mkey if row else '' }}" placeholder="key of object to update" autocomplete="off">
+    </div>
+    <div class="col-md-2">
+      <label class="fw-form-label d-block">Singleton</label>
+      <div class="form-check mt-1">
+        <input class="form-check-input prov-singleton" type="checkbox" name="singleton_{{ idx }}"
+               {{ 'checked' if row and row.singleton else '' }}>
+      </div>
+    </div>
+    <div class="col-md-1 text-end">
+      <button type="button" class="btn btn-sm btn-outline-danger btn-sm-icon" title="Remove item"
+              onclick="removeRow(this)"><i class="bi bi-trash"></i></button>
+    </div>
+  </div>
+  <div class="mt-2">
+    <label class="fw-form-label">Data (JSON)</label>
+    <textarea class="form-control" name="data_{{ idx }}" rows="5" spellcheck="false"
+              style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;">{{ row.data if row else '{}' }}</textarea>
+  </div>
+</div>
+{% endmacro %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-sliders me-2 text-accent"></i>{{ 'Edit' if template_id else 'New' }} system profile</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">Each item maps a system intent to a registry endpoint and a JSON payload. Saving creates a new version. Secret fields (passwords, shared secrets) are stripped on save and re-entered at apply time.</p>
+  </div>
+  <a class="btn btn-fw-outline" href="{{ url_for('provisioning.index') }}"><i class="bi bi-arrow-left me-1"></i>Back</a>
+</div>
+
+<form method="POST"
+      action="{{ url_for('provisioning.edit', template_id=template_id) if template_id else url_for('provisioning.new') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="fw-card mb-3">
+    <div class="fw-card-header"><span class="fw-card-title">Profile</span></div>
+    <div class="fw-card-body">
+      <label class="fw-form-label">Name <span class="text-danger">*</span></label>
+      <input type="text" class="form-control" name="name" value="{{ profile_name }}"
+             placeholder="e.g. fortiweb-baseline" required autocomplete="off">
+    </div>
+  </div>
+
+  <div class="fw-card mb-3">
+    <div class="fw-card-header d-flex justify-content-between align-items-center">
+      <span class="fw-card-title">Provisioning items</span>
+      <button type="button" class="btn btn-sm btn-fw-outline" onclick="addRow()"><i class="bi bi-plus-lg me-1"></i>Add item</button>
+    </div>
+    <div class="fw-card-body">
+      {% if not specs %}
+      <div class="fw-alert fw-alert-warning d-flex align-items-center gap-2 mb-3" style="font-size:13px;">
+        <i class="bi bi-exclamation-triangle"></i>
+        <span>No provisionable endpoints are available from the registry yet. Load the registry / connect an appliance, then reload this page.</span>
+      </div>
+      {% endif %}
+      <div id="rows" data-next-index="{{ rows|length }}">
+        {% for row in rows %}{{ render_row(loop.index0, row) }}{% endfor %}
+      </div>
+      <div id="emptyRows" class="text-muted" style="font-size:13px; {{ 'display:none;' if rows else '' }}">
+        No items yet — click <strong>Add item</strong> to begin.
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save profile</button>
+    <a class="btn btn-fw-outline" href="{{ url_for('provisioning.index') }}">Cancel</a>
+  </div>
+</form>
+
+<!-- Clone source for new rows (rendered with __IDX__ placeholders) -->
+<script type="text/template" id="rowTpl">{{ render_row('__IDX__', None) }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function syncEmpty() {
+  var any = document.querySelectorAll('#rows .prov-row').length > 0;
+  document.getElementById('emptyRows').style.display = any ? 'none' : '';
+}
+
+function addRow() {
+  var box = document.getElementById('rows');
+  var n = parseInt(box.getAttribute('data-next-index') || '0', 10);
+  box.setAttribute('data-next-index', n + 1);
+  var html = document.getElementById('rowTpl').innerHTML.replace(/__IDX__/g, n);
+  var tmp = document.createElement('div');
+  tmp.innerHTML = html.trim();
+  box.appendChild(tmp.firstElementChild);
+  syncEmpty();
+}
+
+function removeRow(btn) {
+  var row = btn.closest('.prov-row');
+  if (row) { row.remove(); }
+  syncEmpty();
+}
+
+function onKeyChange(sel) {
+  var opt = sel.options[sel.selectedIndex];
+  if (!opt) { return; }
+  var row = sel.closest('.prov-row');
+  var sw = row ? row.querySelector('.prov-singleton') : null;
+  var flag = opt.getAttribute('data-singleton');
+  if (sw && flag !== null) { sw.checked = (flag === '1'); }
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  syncEmpty();
+  // Start with one blank row when authoring a fresh profile.
+  if (!document.querySelectorAll('#rows .prov-row').length) { addRow(); }
+});
+</script>
+{% endblock %}

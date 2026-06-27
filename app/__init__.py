@@ -240,6 +240,8 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.registry", "bp"),
         ("app.views.api_explorer", "bp"),
         ("app.views.templates", "bp"),
+        ("app.views.signatures", "bp"),
+        ("app.views.fleet_objects", "bp"),
         ("app.views.settings", "bp"),
         ("app.api", "bp"),
     ]

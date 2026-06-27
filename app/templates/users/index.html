@@ -87,7 +87,7 @@
     <thead>
       <tr>
         <th>Username</th>
-        <th>Role</th>
+        <th>Profile</th>
         <th>Created</th>
         <th>Last Login</th>
         <th>Status</th>
@@ -112,13 +112,9 @@
             </div>
           </td>
           <td>
-            {% if u.role == 'admin' %}
-              <span class="fw-badge fw-badge-danger">Admin</span>
-            {% elif u.role == 'operator' %}
-              <span class="fw-badge fw-badge-primary">Operator</span>
-            {% else %}
-              <span class="fw-badge fw-badge-secondary">Read Only</span>
-            {% endif %}
+            <span class="fw-badge fw-badge-{{ 'danger' if u.role == 'admin' else 'primary' if u.role == 'operator' else 'secondary' }}">
+              <i class="bi bi-person-badge me-1"></i>{{ u.profile.name if u.profile else u.role }}
+            </span>
           </td>
           <td style="font-size:13px;">
             {{ u.created_at.strftime('%Y-%m-%d') if u.created_at else '—' }}
@@ -148,9 +144,9 @@
                 </button>
               </form>
               <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1"
-                      title="Change Role"
-                      onclick="openRoleModal({{ u.id }}, '{{ u.username }}', '{{ u.role }}')">
-                <i class="bi bi-person-gear"></i>
+                      title="Change Profile"
+                      onclick="openProfileModal({{ u.id }}, '{{ u.username }}', {{ u.profile_id or 'null' }})">
+                <i class="bi bi-person-badge"></i>
               </button>
               <form method="POST" action="{{ url_for('users.delete', id=u.id) }}" style="display:inline;"
                     data-fw-confirm-form="Permanently delete user '{{ u.username }}'? This cannot be undone.">
@@ -209,12 +205,17 @@
             <input type="password" class="form-control" name="confirm_password" placeholder="Repeat password" required>
           </div>
           <div class="mb-3">
-            <label class="fw-form-label">Role</label>
-            <select class="form-select" name="role">
-              <option value="readonly">Read Only — view-only access</option>
-              <option value="operator">Operator — read + manage appliances</option>
-              <option value="admin">Admin — full access</option>
+            <label class="fw-form-label">Profile</label>
+            <select class="form-select" name="profile_id">
+              {% for p in profiles %}
+              <option value="{{ p.id }}" {{ 'selected' if p.name == 'readonly' }}>
+                {{ p.name }}{% if p.is_system %} — system{% endif %}
+              </option>
+              {% endfor %}
             </select>
+            <div class="text-muted" style="font-size:11px;">
+              Defines exactly what the user can do. Manage profiles under Admin → Profiles.
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -228,27 +229,27 @@
   </div>
 </div>
 
-<!-- CHANGE ROLE MODAL -->
-<div class="modal fade fw-modal" id="modalChangeRole" tabindex="-1" aria-hidden="true">
+<!-- CHANGE PROFILE MODAL -->
+<div class="modal fade fw-modal" id="modalChangeProfile" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-sm">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-person-gear me-2"></i>Change Role</h5>
+        <h5 class="modal-title"><i class="bi bi-person-badge me-2"></i>Change Profile</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <form method="POST" id="formChangeRole">
+      <form method="POST" id="formChangeProfile">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-body">
-          <p class="mb-3">Change role for <strong id="role-username"></strong>:</p>
-          <select class="form-select" name="role" id="role-select">
-            <option value="readonly">Read Only</option>
-            <option value="operator">Operator</option>
-            <option value="admin">Admin</option>
+          <p class="mb-3">Assign a profile to <strong id="profile-username"></strong>:</p>
+          <select class="form-select" name="profile_id" id="profile-select">
+            {% for p in profiles %}
+            <option value="{{ p.id }}">{{ p.name }}{% if p.is_system %} — system{% endif %}</option>
+            {% endfor %}
           </select>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-fw-primary">Save Role</button>
+          <button type="submit" class="btn btn-fw-primary">Save Profile</button>
         </div>
       </form>
     </div>
@@ -269,11 +270,13 @@ function filterUsers(q) {
   });
 }
 
-function openRoleModal(userId, username, currentRole) {
-  document.getElementById('role-username').textContent = username;
-  document.getElementById('role-select').value         = currentRole;
-  document.getElementById('formChangeRole').action     = '/users/' + userId + '/role';
-  API.openModal('modalChangeRole');
+function openProfileModal(userId, username, currentProfileId) {
+  document.getElementById('profile-username').textContent = username;
+  if (currentProfileId !== null && currentProfileId !== undefined) {
+    document.getElementById('profile-select').value = String(currentProfileId);
+  }
+  document.getElementById('formChangeProfile').action = '/users/' + userId + '/profile';
+  API.openModal('modalChangeProfile');
 }
 </script>
 {% endblock %}

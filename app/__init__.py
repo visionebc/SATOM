@@ -216,6 +216,7 @@ def create_app(config_override: object | None = None) -> Flask:
         from sqlalchemy import inspect, text
         adds = {
             'templates': [('exceptions', 'TEXT')],
+            'users': [('profile_id', 'INTEGER')],
         }
         insp = inspect(db.engine)
         for table, cols in adds.items():
@@ -234,7 +235,9 @@ def create_app(config_override: object | None = None) -> Flask:
     with app.app_context():
         db.create_all()
         _ensure_columns()
+        _seed_profiles()
         _seed_admin()
+        _assign_missing_profiles()
 
     return app
 
@@ -261,6 +264,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.logs", "bp"),
         ("app.views.search", "bp"),
         ("app.views.users", "bp"),
+        ("app.views.profiles", "bp"),
         ("app.views.audit", "bp"),
         ("app.views.registry", "bp"),
         ("app.views.api_explorer", "bp"),
@@ -290,6 +294,48 @@ def _register_blueprints(app: Flask) -> None:
                 attr,
                 module_path,
             )
+
+
+def _seed_profiles() -> None:
+    """Upsert the three system profiles. Their permission sets are re-synced
+    from code on every boot so adding a new granular key automatically extends
+    the admin (and, where applicable, operator/readonly) system profiles."""
+    from . import permissions as perm
+    from .models import Profile
+
+    try:
+        for name, keys in perm.SYSTEM_PROFILES.items():
+            p = Profile.query.filter_by(name=name).first()
+            if p is None:
+                p = Profile(name=name, is_system=True)
+                db.session.add(p)
+            p.is_system = True
+            p.description = perm.SYSTEM_PROFILE_META.get(name, "")
+            p.permission_set = set(keys)
+        db.session.commit()
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()
+
+
+def _assign_missing_profiles() -> None:
+    """Give every user that still has no profile the system profile matching
+    their legacy ``role`` (one-time migration; new users get a profile at
+    creation time)."""
+    from . import permissions as perm
+    from .models import Profile, User
+
+    try:
+        by_name = {p.name: p for p in Profile.query.filter_by(is_system=True).all()}
+        changed = False
+        for u in User.query.filter(User.profile_id.is_(None)).all():
+            target = by_name.get(perm.role_to_profile_name(u.role))
+            if target is not None:
+                u.profile_id = target.id
+                changed = True
+        if changed:
+            db.session.commit()
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
 
 
 def _seed_admin() -> None:

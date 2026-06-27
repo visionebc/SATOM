@@ -1,6 +1,6 @@
 from collections import OrderedDict
 
-from flask import Blueprint, render_template, jsonify
+from flask import Blueprint, render_template, jsonify, url_for
 from flask_login import login_required
 
 from ..models import Appliance
@@ -33,6 +33,19 @@ def index():
                            fleet_map=groups,
                            appliances=appliances,
                            total=len(appliances))
+
+
+@bp.route('/device/<int:id>')
+@login_required
+def device_detail(id):
+    """Read-only physical-inventory payload for the Fleet Map modal."""
+    a = Appliance.query.get_or_404(id)
+    data = a.inventory_view()
+    data['detail_url'] = url_for('appliances.detail', id=a.id)
+    data['datasheet_url'] = (
+        url_for('appliances.datasheet', id=a.id) if a.datasheet_filename else None
+    )
+    return jsonify(data)
 
 
 @bp.route('/data')

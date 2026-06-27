@@ -74,8 +74,8 @@
                   </div>
                   <div class="d-flex flex-wrap gap-3">
                     {% for a in devs %}
-                    <a href="{{ url_for('workspace.appliance', appliance_id=a.id) }}"
-                       class="fm-device-card text-decoration-none"
+                    <a href="{{ url_for('appliances.detail', id=a.id) }}"
+                       class="fm-device-card fm-open-modal text-decoration-none"
                        data-id="{{ a.id }}"
                        data-name="{{ a.name|lower }}"
                        data-host="{{ a.host|lower }}">
@@ -107,6 +107,49 @@
         </div>
       </div>
     {% endif %}
+  </div>
+</div>
+
+<!-- Read-only device inventory modal -->
+<div class="modal fade" id="deviceModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content" style="background:#0e1626;border:1px solid rgba(148,163,184,0.18);color:#eaf0fb;">
+      <div class="modal-header" style="border-color:rgba(148,163,184,0.12);">
+        <h5 class="modal-title"><i class="bi bi-server me-2"></i><span id="dmName">Device</span></h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="dmLoading" class="text-muted py-4 text-center">Loading…</div>
+        <div id="dmContent" class="d-none">
+          <div class="row g-2 mb-3" style="font-size:13px;">
+            <div class="col-md-3"><div class="text-muted">Kind</div><div id="dmKind"></div></div>
+            <div class="col-md-3"><div class="text-muted">Type</div><div id="dmHwType"></div></div>
+            <div class="col-md-6"><div class="text-muted">Model</div><div id="dmModel"></div></div>
+            <div class="col-md-5"><div class="text-muted">Host</div><div id="dmHost" style="font-family:monospace;"></div></div>
+            <div class="col-md-3"><div class="text-muted">Status</div><div id="dmStatus"></div></div>
+            <div class="col-md-4"><div class="text-muted">VDOM</div><div id="dmVdom"></div></div>
+            <div class="col-md-4"><div class="text-muted">Zone</div><div id="dmZone"></div></div>
+            <div class="col-md-4"><div class="text-muted">Line</div><div id="dmLine"></div></div>
+            <div class="col-md-4"><div class="text-muted">Department</div><div id="dmDept"></div></div>
+          </div>
+          <div id="dmDatasheetWrap" class="mb-3 d-none">
+            <a id="dmDatasheet" href="#" target="_blank" rel="noopener" class="btn btn-sm fw-btn-secondary"><i class="bi bi-file-earmark-pdf me-1"></i>Datasheet (PDF)</a>
+          </div>
+          <h6 class="text-uppercase text-muted mb-2" style="font-size:11px;letter-spacing:.5px;">Interfaces / Connections</h6>
+          <div class="table-responsive">
+            <table class="table table-sm mb-0" style="color:#cdd7ea;">
+              <thead><tr><th>Interface</th><th>Type</th><th>Connected to</th><th>IP</th><th>Notes</th></tr></thead>
+              <tbody id="dmIfaces"></tbody>
+            </table>
+          </div>
+          <div id="dmNoIfaces" class="text-muted d-none" style="font-size:13px;">No interfaces documented.</div>
+        </div>
+        <div id="dmError" class="alert alert-danger d-none mb-0"></div>
+      </div>
+      <div class="modal-footer" style="border-color:rgba(148,163,184,0.12);">
+        <a id="dmDetailLink" href="#" class="btn fw-btn-primary btn-sm">Open full detail <i class="bi bi-arrow-right ms-1"></i></a>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -338,5 +381,73 @@ fetch('/architecture/data')
     document.getElementById('mapStats').textContent =
       `${total} device(s) · topology unavailable · drag to move · Ctrl+wheel = zoom · click = detail`;
   });
+</script>
+
+<script>
+// ---- Read-only device inventory modal ----
+(function () {
+  const modalEl = document.getElementById('deviceModal');
+  if (!modalEl || !window.bootstrap) return;
+  const modal = new bootstrap.Modal(modalEl);
+  const $ = (id) => document.getElementById(id);
+  const HW_LABEL = { hardware: 'Hardware', vm: 'Virtual Machine', unknown: 'Unknown' };
+
+  function setText(id, val) {
+    $(id).textContent = (val === null || val === undefined || val === '') ? '—' : val;
+  }
+
+  function open(id) {
+    $('dmLoading').classList.remove('d-none');
+    $('dmContent').classList.add('d-none');
+    $('dmError').classList.add('d-none');
+    $('dmName').textContent = 'Device';
+    modal.show();
+    fetch(`/architecture/device/${id}`, { credentials: 'same-origin' })
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(d => {
+        $('dmName').textContent = d.name || 'Device';
+        setText('dmKind', d.kind);
+        setText('dmHwType', HW_LABEL[d.hw_type] || 'Unknown');
+        setText('dmModel', d.model);
+        setText('dmHost', (d.host || '') + (d.port ? ':' + d.port : ''));
+        setText('dmStatus', d.status);
+        setText('dmVdom', d.vdom);
+        setText('dmZone', d.zone);
+        setText('dmLine', d.line);
+        setText('dmDept', d.department);
+        const dsWrap = $('dmDatasheetWrap');
+        if (d.datasheet_url) { $('dmDatasheet').href = d.datasheet_url; dsWrap.classList.remove('d-none'); }
+        else dsWrap.classList.add('d-none');
+        $('dmDetailLink').href = d.detail_url || '#';
+        const tb = $('dmIfaces'); tb.innerHTML = '';
+        const ifaces = d.interfaces || [];
+        if (ifaces.length === 0) { $('dmNoIfaces').classList.remove('d-none'); }
+        else {
+          $('dmNoIfaces').classList.add('d-none');
+          ifaces.forEach(i => {
+            const tr = document.createElement('tr');
+            [i.name, i.if_type, i.connected_to, i.ip_address, i.notes].forEach((v, idx) => {
+              const td = document.createElement('td');
+              if (idx === 3 && v) { const c = document.createElement('code'); c.textContent = v; td.appendChild(c); }
+              else td.textContent = v || '';
+              tr.appendChild(td);
+            });
+            tb.appendChild(tr);
+          });
+        }
+        $('dmLoading').classList.add('d-none');
+        $('dmContent').classList.remove('d-none');
+      })
+      .catch(err => {
+        $('dmLoading').classList.add('d-none');
+        $('dmError').textContent = 'Could not load device details: ' + err.message;
+        $('dmError').classList.remove('d-none');
+      });
+  }
+
+  document.querySelectorAll('.fm-open-modal').forEach(card => {
+    card.addEventListener('click', (e) => { e.preventDefault(); open(card.dataset.id); });
+  });
+})();
 </script>
 {% endblock %}

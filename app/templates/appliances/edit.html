@@ -5,7 +5,7 @@
 <div class="row"><div class="col-md-8">
 <div class="card shadow-sm">
 <div class="card-body">
-<form method="post" action="{{ url_for('appliances.edit_save', id=appliance.id) }}">
+<form method="post" action="{{ url_for('appliances.edit_save', id=appliance.id) }}" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="row g-3">
     <div class="col-md-6"><label class="form-label">Name</label><input type="text" name="name" class="form-control" value="{{ appliance.name }}" required></div>
@@ -25,6 +25,64 @@
     <div class="col-md-3"><label class="form-label">Department</label><select name="department" class="form-select"><option value="">(none)</option>{% if appliance.department and appliance.department not in classification.departments %}<option value="{{ appliance.department }}" selected>{{ appliance.department }} (unregistered)</option>{% endif %}{% for v in (classification.departments if classification else []) %}<option value="{{ v }}"{% if appliance.department == v %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
     <div class="col-12"><div class="form-check"><input type="checkbox" name="verify_ssl" class="form-check-input" id="verify_ssl" {{ 'checked' if appliance.verify_ssl }}>
       <label class="form-check-label" for="verify_ssl">Verify SSL Certificate</label></div></div>
+
+    <!-- ===== Physical / Inventory ===== -->
+    <div class="col-12"><hr class="my-1"><h6 class="text-uppercase text-muted mb-0" style="font-size:12px;letter-spacing:.5px;">Physical / Inventory</h6></div>
+    <div class="col-md-4"><label class="form-label">Type</label>
+      <select name="hw_type" class="form-select">
+        <option value="unknown" {{ 'selected' if (appliance.hw_type or 'unknown')=='unknown' }}>Unknown</option>
+        <option value="hardware" {{ 'selected' if appliance.hw_type=='hardware' }}>Hardware</option>
+        <option value="vm" {{ 'selected' if appliance.hw_type=='vm' }}>Virtual Machine</option>
+      </select>
+    </div>
+    <div class="col-md-8"><label class="form-label">Model</label>
+      <input type="text" name="model" class="form-control" value="{{ appliance.model or '' }}" placeholder="e.g. FortiWeb 600F"></div>
+    <div class="col-12"><label class="form-label">Datasheet (PDF)</label>
+      {% if appliance.datasheet_filename %}
+      <div class="mb-2 d-flex align-items-center gap-3 flex-wrap">
+        <a href="{{ url_for('appliances.datasheet', id=appliance.id) }}" target="_blank" class="btn btn-sm fw-btn-secondary"><i class="bi bi-file-earmark-pdf me-1"></i>{{ appliance.datasheet_filename }}</a>
+        <div class="form-check mb-0"><input type="checkbox" name="datasheet_remove" id="datasheet_remove" class="form-check-input"><label class="form-check-label" for="datasheet_remove">Remove current</label></div>
+      </div>
+      {% endif %}
+      <input type="file" name="datasheet" accept="application/pdf,.pdf" class="form-control">
+      <div class="form-text">Upload a PDF to {{ 'replace the current datasheet' if appliance.datasheet_filename else 'attach a datasheet' }} (max 25 MB).</div>
+    </div>
+
+    <!-- ===== Interfaces / Connections ===== -->
+    <div class="col-12"><hr class="my-1">
+      <div class="d-flex justify-content-between align-items-center">
+        <h6 class="text-uppercase text-muted mb-0" style="font-size:12px;letter-spacing:.5px;">Interfaces / Connections</h6>
+        <button type="button" class="btn btn-sm fw-btn-secondary" id="addIfBtn"><i class="bi bi-plus-lg me-1"></i>Add interface</button>
+      </div>
+    </div>
+    <div class="col-12">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-1" id="ifTable">
+          <thead><tr>
+            <th style="min-width:110px;">Interface</th>
+            <th style="min-width:120px;">Type</th>
+            <th style="min-width:200px;">Connected to</th>
+            <th style="min-width:120px;">IP</th>
+            <th>Notes</th>
+            <th style="width:38px;"></th>
+          </tr></thead>
+          <tbody id="ifBody">
+            {% for i in appliance.interfaces %}
+            <tr>
+              <td><input type="text" name="if_name" class="form-control form-control-sm" value="{{ i.name }}" placeholder="port1"></td>
+              <td><input type="text" name="if_type" class="form-control form-control-sm" value="{{ i.if_type or '' }}" placeholder="10G SFP+"></td>
+              <td><input type="text" name="if_connected" class="form-control form-control-sm" value="{{ i.connected_to or '' }}" placeholder="Core-SW-A / Gi1/0/24"></td>
+              <td><input type="text" name="if_ip" class="form-control form-control-sm" value="{{ i.ip_address or '' }}" placeholder="192.0.2.1"></td>
+              <td><input type="text" name="if_notes" class="form-control form-control-sm" value="{{ i.notes or '' }}"></td>
+              <td><button type="button" class="btn btn-sm btn-outline-danger if-del" title="Remove row"><i class="bi bi-trash"></i></button></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="form-text">Rows with an empty interface name are ignored. Saving replaces all interfaces for this appliance.</div>
+    </div>
+
     <div class="col-12 d-flex gap-2">
       <button type="submit" class="btn fw-btn-primary">Save Changes</button>
       <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn btn-outline-secondary">Cancel</a>
@@ -32,4 +90,33 @@
   </div>
 </form>
 </div></div></div></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const body = document.getElementById('ifBody');
+  const addBtn = document.getElementById('addIfBtn');
+  function blankRow() {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><input type="text" name="if_name" class="form-control form-control-sm" placeholder="port1"></td>' +
+      '<td><input type="text" name="if_type" class="form-control form-control-sm" placeholder="10G SFP+"></td>' +
+      '<td><input type="text" name="if_connected" class="form-control form-control-sm" placeholder="Core-SW-A / Gi1/0/24"></td>' +
+      '<td><input type="text" name="if_ip" class="form-control form-control-sm" placeholder="192.0.2.1"></td>' +
+      '<td><input type="text" name="if_notes" class="form-control form-control-sm"></td>' +
+      '<td><button type="button" class="btn btn-sm btn-outline-danger if-del" title="Remove row"><i class="bi bi-trash"></i></button></td>';
+    return tr;
+  }
+  if (addBtn) addBtn.addEventListener('click', () => {
+    const tr = blankRow();
+    body.appendChild(tr);
+    tr.querySelector('input').focus();
+  });
+  if (body) body.addEventListener('click', (e) => {
+    const del = e.target.closest('.if-del');
+    if (del) del.closest('tr').remove();
+  });
+})();
+</script>
 {% endblock %}

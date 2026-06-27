@@ -52,7 +52,7 @@
           </a>
           {% if sections %}
             {% for s in sections %}
-              <a href="{{ url_for('registry.section', name=s) }}"
+              <a href="{{ url_for('registry.section_detail', section=s) }}"
                  class="list-group-item list-group-item-action registry-section d-flex align-items-center justify-content-between {{ 'active' if current_section == s }}"
                  style="font-size:13px; padding:8px 14px; {{ 'background:#EF5424;color:#fff;border-color:#EF5424;' if current_section == s else '' }}">
                 <span>{{ s }}</span>

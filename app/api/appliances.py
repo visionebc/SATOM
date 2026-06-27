@@ -122,3 +122,26 @@ def delete_appliance(id):
     db.session.commit()
     log_action('api.appliance.delete', detail=f'Deleted appliance {name}')
     return jsonify({'deleted': True, 'id': id})
+
+
+@bp.route('/appliances/<int:id>/test', methods=['POST'])
+@login_required
+def test_appliance(id):
+    """Connectivity check used by the appliances list UI (api.js).
+    Returns {status: 'online'|'offline'} so the status badge updates."""
+    from ..clients.fortiweb import FortiWebClient
+    from ..clients.fortiadc import FortiADCClient
+    appliance = Appliance.query.get_or_404(id)
+    try:
+        if appliance.kind == 'fortiadc':
+            client = FortiADCClient(appliance)
+        else:
+            client = FortiWebClient(appliance)
+        client.status_check()
+        log_action('api.appliance.test', appliance_id=appliance.id,
+                   detail=f'Tested {appliance.name}: online')
+        return jsonify({'ok': True, 'status': 'online'})
+    except Exception as exc:
+        log_action('api.appliance.test', appliance_id=appliance.id,
+                   detail=f'Tested {appliance.name}: offline ({exc})')
+        return jsonify({'ok': False, 'status': 'offline', 'detail': str(exc)})

@@ -1,0 +1,15 @@
+[Unit]
+Description=Fortinet Manager Scheduler (fires scheduled actions; single instance)
+After=network.target fortinet-manager.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/fortinet-manager
+EnvironmentFile=/opt/fortinet-manager/.env
+ExecStart=/opt/fortinet-manager/venv/bin/python -m app.scheduler_runtime
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

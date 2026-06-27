@@ -510,6 +510,32 @@
             </div>
           </div>
         </div>
+        <!-- Configure card -->
+        <div class="fw-card mb-3">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-gear me-2 text-accent"></i>Configure Repository</span>
+          </div>
+          <div class="fw-card-body">
+            <div class="mb-3">
+              <label class="form-label" style="font-size:13px;">Remote URL <span class="text-muted">(without token)</span></label>
+              <input type="url" id="gc-remote" class="form-control fw-form-control font-monospace" placeholder="https://git.example.net/visionebc/fortinet-manager.git">
+            </div>
+            <div class="mb-3">
+              <label class="form-label" style="font-size:13px;">Token <span class="text-muted">(optional, embedded in URL)</span></label>
+              <input type="password" id="gc-token" class="form-control fw-form-control font-monospace" placeholder="Leave blank to keep current token">
+            </div>
+            <div class="mb-3">
+              <label class="form-label" style="font-size:13px;">Branch</label>
+              <input type="text" id="gc-branch" class="form-control fw-form-control font-monospace" placeholder="main">
+            </div>
+            <button class="btn btn-sm fw-btn-primary" onclick="gitConfigure()">
+              <i class="bi bi-save me-1"></i>Apply
+            </button>
+            <div id="gc-out" class="mt-3" style="display:none;">
+              <pre id="gc-pre" class="fw-pre"></pre>
+            </div>
+          </div>
+        </div>
         <!-- Pull card -->
         <div class="fw-card mb-3">
           <div class="fw-card-header">
@@ -862,6 +888,23 @@ function loadDbTable(name) {
 }
 
 // Git tab helpers
+function gitConfigure() {
+  var remote = document.getElementById("gc-remote").value.trim();
+  var token = document.getElementById("gc-token").value.trim();
+  var branch = document.getElementById("gc-branch").value.trim();
+  if (!remote && !branch) { alert("Provide at least a remote URL or branch."); return; }
+  var out = document.getElementById("gc-out");
+  var pre = document.getElementById("gc-pre");
+  out.style.display = ""; pre.textContent = "Applying…";
+  fetch("/settings/git/configure", {
+    method: "POST",
+    headers: {"Content-Type": "application/json", "X-CSRFToken": csrf},
+    body: JSON.stringify({remote_url: remote, token: token, branch: branch})
+  }).then(r=>r.json()).then(d=>{
+    pre.textContent = d.transcript || d.error || "(no output)";
+    gitRefresh();
+  }).catch(e=>{ pre.textContent = "Error: " + e.message; });
+}
 function gitEsc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -878,6 +921,8 @@ function gitRefresh() {
       document.getElementById('git-info-body').style.display = '';
       document.getElementById('gi-remote').textContent = d.remote || '-';
       document.getElementById('gi-branch').innerHTML = '<code>' + gitEsc(d.branch) + '</code>';
+      document.getElementById('gc-remote').value = (d.remote && d.remote !== '—') ? d.remote : '';
+      document.getElementById('gc-branch').value = d.branch || '';
       document.getElementById('gi-commit').textContent = d.commit || '-';
       var dirty = d.dirty;
       document.getElementById('gi-status').innerHTML = dirty

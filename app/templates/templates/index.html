@@ -63,6 +63,14 @@
           <td class="actions-col">
             <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1" title="View"
                     onclick="viewTemplate({{ t.id }})"><i class="bi bi-eye"></i></button>
+            <button class="btn btn-sm btn-fw-primary btn-sm-icon me-1" title="Apply to devices"
+                    onclick="openApply({{ t.id }}, {{ t.name|tojson }})"><i class="bi bi-upload"></i></button>
+            <button class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Edit (saves a new version)"
+                    onclick="editTemplate({{ t.id }})"><i class="bi bi-pencil"></i></button>
+            <form method="POST" action="{{ url_for('templates.clone', template_id=t.id) }}" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Clone"><i class="bi bi-files"></i></button>
+            </form>
             <form method="POST" action="{{ url_for('templates.delete', template_id=t.id) }}" style="display:inline;"
                   data-fw-confirm-form="Delete template '{{ t.name }}' (v{{ t.version }})? This cannot be undone.">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -117,11 +125,18 @@
             <label class="fw-form-label">Note</label>
             <input type="text" class="form-control" name="note" placeholder="Optional description">
           </div>
-          <div class="mb-1">
+          <div class="mb-2">
             <label class="fw-form-label">Body (JSON) <span class="text-danger">*</span></label>
-            <textarea class="form-control" name="body" rows="12" spellcheck="false"
+            <textarea class="form-control" name="body" rows="10" spellcheck="false"
                       style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;">{}</textarea>
             <div class="form-text">Desired-state payload. Validated as JSON on save. Secrets are entered at apply-time, never stored here.</div>
+          </div>
+          <div class="mb-1">
+            <label class="fw-form-label">Exceptions (JSON)</label>
+            <textarea class="form-control" name="exceptions" rows="4" spellcheck="false"
+                      placeholder="Optional — JSON object or array of exception rules"
+                      style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"></textarea>
+            <div class="form-text">Optional exception rules carried with the template (validated as JSON when present).</div>
           </div>
         </div>
         <div class="modal-footer">
@@ -143,11 +158,109 @@
       </div>
       <div class="modal-body">
         <div class="mb-2 text-muted" style="font-size:13px;" id="vt-meta"></div>
-        <pre style="background:#0d1626; color:#e2e8f0; padding:12px; border-radius:8px; max-height:480px; overflow:auto; font-size:12.5px;"><code id="vt-body"></code></pre>
+        <label class="fw-form-label">Body</label>
+        <pre style="background:#0d1626; color:#e2e8f0; padding:12px; border-radius:8px; max-height:340px; overflow:auto; font-size:12.5px;"><code id="vt-body"></code></pre>
+        <div id="vt-exc-wrap" style="display:none;">
+          <label class="fw-form-label">Exceptions</label>
+          <pre style="background:#0d1626; color:#e2e8f0; padding:12px; border-radius:8px; max-height:200px; overflow:auto; font-size:12.5px;"><code id="vt-exc"></code></pre>
+        </div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT TEMPLATE MODAL (saves a NEW version of the same kind/name) -->
+<div class="modal fade fw-modal" id="modalEditTemplate" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Template <span class="text-muted" style="font-weight:normal;font-size:13px;">→ saves a new version</span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" id="editForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-5">
+              <label class="fw-form-label">Kind</label>
+              <input type="text" class="form-control" id="et-kind" readonly>
+            </div>
+            <div class="col-md-7">
+              <label class="fw-form-label">Name <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" name="name" id="et-name" required autocomplete="off">
+            </div>
+          </div>
+          <div class="mb-2 mt-3">
+            <label class="fw-form-label">Note</label>
+            <input type="text" class="form-control" name="note" id="et-note" placeholder="Optional description">
+          </div>
+          <div class="mb-2">
+            <label class="fw-form-label">Body (JSON) <span class="text-danger">*</span></label>
+            <textarea class="form-control" name="body" id="et-body" rows="10" spellcheck="false"
+                      style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"></textarea>
+          </div>
+          <div class="mb-1">
+            <label class="fw-form-label">Exceptions (JSON)</label>
+            <textarea class="form-control" name="exceptions" id="et-exceptions" rows="4" spellcheck="false"
+                      placeholder="Optional — JSON object or array of exception rules"
+                      style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save New Version</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- APPLY TO DEVICES MODAL (dry-run preview -> confirm live write) -->
+<div class="modal fade fw-modal" id="modalApplyTemplate" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form method="POST" id="applyForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="confirm" value="1">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-upload me-2"></i>Apply <span id="ap-name"></span></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="fw-alert fw-alert-warning d-flex align-items-center gap-2 mb-3">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <span style="font-size:13px;"><strong>Live write.</strong> Confirm performs a real config
+              push (canary device first; the rest only if the canary succeeds). Preview first.</span>
+          </div>
+          <label class="fw-form-label">Target devices <span class="text-danger">*</span></label>
+          {% if appliances %}
+          <select class="form-select" name="device_ids" id="ap-devices" multiple size="6" required>
+            {% for a in appliances %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
+          </select>
+          <div class="form-text">Hold Ctrl/Cmd to select several. The first selected device is the canary.</div>
+          {% else %}
+          <div class="text-muted" style="font-size:13px;">No appliances are configured.</div>
+          {% endif %}
+          <div class="mt-3">
+            <button type="button" class="btn btn-fw-outline btn-sm" onclick="applyPreview()">
+              <i class="bi bi-search me-1"></i>Dry-run preview
+            </button>
+          </div>
+          <div id="ap-preview" class="mt-3" style="display:none;">
+            <label class="fw-form-label">Dry-run preview</label>
+            <div id="ap-preview-box" style="max-height:260px; overflow:auto; border:1px solid var(--fw-border,#dee2e6); border-radius:8px; padding:8px; font-size:12.5px;"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-fw-danger" id="ap-confirm" disabled>
+            <i class="bi bi-upload me-1"></i>Confirm live apply
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 </div>
@@ -168,6 +281,11 @@ function vtEsc(v) {
   return d.innerHTML;
 }
 
+function showModal(id) {
+  if (window.API && API.openModal) { API.openModal(id); }
+  else if (window.bootstrap) { new bootstrap.Modal(document.getElementById(id)).show(); }
+}
+
 function viewTemplate(id) {
   fetch('/templates/' + id, {headers: {'Accept': 'application/json'}})
     .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
@@ -178,10 +296,80 @@ function viewTemplate(id) {
         ' · Created: ' + vtEsc((t.created_at || '').replace('T', ' ').substring(0, 16)) +
         (t.note ? '<br>Note: ' + vtEsc(t.note) : '');
       document.getElementById('vt-body').textContent = t.body;
-      if (window.API && API.openModal) { API.openModal('modalViewTemplate'); }
-      else if (window.bootstrap) { new bootstrap.Modal(document.getElementById('modalViewTemplate')).show(); }
+      var excWrap = document.getElementById('vt-exc-wrap');
+      if (t.exceptions) { document.getElementById('vt-exc').textContent = t.exceptions; excWrap.style.display = ''; }
+      else { excWrap.style.display = 'none'; }
+      showModal('modalViewTemplate');
     })
     .catch(function (e) { alert('Could not load template: ' + e.message); });
 }
+
+function editTemplate(id) {
+  fetch('/templates/' + id, {headers: {'Accept': 'application/json'}})
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function (t) {
+      document.getElementById('editForm').action = '/templates/' + id + '/edit';
+      document.getElementById('et-kind').value = t.kind;
+      document.getElementById('et-name').value = t.name;
+      document.getElementById('et-note').value = t.note || '';
+      document.getElementById('et-body').value = t.body;
+      document.getElementById('et-exceptions').value = t.exceptions || '';
+      showModal('modalEditTemplate');
+    })
+    .catch(function (e) { alert('Could not load template: ' + e.message); });
+}
+
+function openApply(id, name) {
+  var form = document.getElementById('applyForm');
+  form.action = '/templates/' + id + '/apply';
+  document.getElementById('ap-name').textContent = name;
+  document.getElementById('ap-preview').style.display = 'none';
+  document.getElementById('ap-preview-box').innerHTML = '';
+  document.getElementById('ap-confirm').disabled = true;
+  showModal('modalApplyTemplate');
+}
+
+function applySelectedIds() {
+  var sel = document.getElementById('ap-devices');
+  var ids = [];
+  if (sel) { for (var i = 0; i < sel.options.length; i++) { if (sel.options[i].selected) ids.push(sel.options[i].value); } }
+  return ids;
+}
+
+function applyPreview() {
+  var form = document.getElementById('applyForm');
+  var ids = applySelectedIds();
+  if (!ids.length) { alert('Select at least one target device.'); return; }
+  var fd = new FormData();
+  fd.append('csrf_token', form.querySelector('input[name=csrf_token]').value);
+  fd.append('format', 'json');
+  ids.forEach(function (v) { fd.append('device_ids', v); });
+  fetch(form.action, {method: 'POST', body: fd, headers: {'Accept': 'application/json'}})
+    .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
+    .then(function (res) {
+      var box = document.getElementById('ap-preview-box');
+      if (!res.ok || !res.j.ok) { box.innerHTML = '<span class="text-danger">' + vtEsc(res.j.error || 'Preview failed') + '</span>'; }
+      else { box.innerHTML = renderPreview(res.j); document.getElementById('ap-confirm').disabled = false; }
+      document.getElementById('ap-preview').style.display = '';
+    })
+    .catch(function (e) { alert('Preview failed: ' + e.message); });
+}
+
+function renderPreview(j) {
+  var html = '<div class="mb-2 text-muted">' + j.item_count + ' push item(s) per device · ' + j.preview.length + ' device(s)</div>';
+  j.preview.forEach(function (d) {
+    html += '<div class="mb-2"><strong>' + vtEsc(d.appliance || ('device ' + d.appliance_id)) + '</strong> ' +
+            (d.ok ? '<span class="fw-badge fw-badge-success">ok</span>' : '<span class="fw-badge fw-badge-danger">error</span>') + '<ul style="margin:.25rem 0 .25rem 1rem;padding:0;">';
+    (d.results || []).forEach(function (r) {
+      var req = r.request || {};
+      html += '<li><span class="mono">' + vtEsc(r.action) + ' ' + vtEsc(req.method || '') + ' ' + vtEsc(req.path || r.endpoint || '') + '</span>' +
+              (r.error ? ' <span class="text-danger">' + vtEsc(r.error) + '</span>' : '') + '</li>';
+    });
+    html += '</ul></div>';
+  });
+  return html;
+}
+
+{% if edit_template_id %}document.addEventListener('DOMContentLoaded', function () { editTemplate({{ edit_template_id }}); });{% endif %}
 </script>
 {% endblock %}

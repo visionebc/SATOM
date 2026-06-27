@@ -97,7 +97,7 @@
         {% for a in appliances %}
         <tr>
           <td>
-            <span class="fw-appliance-name" style="font-size:14px;">{{ a.name }}</span>
+            <a href="{{ url_for('appliances.detail', id=a.id) }}" class="fw-appliance-name" style="font-size:14px;text-decoration:none;">{{ a.name }}</a>
           </td>
           <td>
             <span class="fw-badge fw-badge-secondary">{{ a.kind }}</span>
@@ -127,6 +127,17 @@
                     onclick="API.testConnection('{{ a.id }}')">
               <i class="bi bi-lightning"></i>
             </button>
+            {% if a.kind == 'fortiweb' %}
+            <a href="{{ url_for('appliances.inspector', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Policy Inspector"><i class="bi bi-diagram-2"></i></a>
+            <a href="{{ url_for('appliances.rediscover', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Rediscovery"><i class="bi bi-arrow-repeat"></i></a>
+            <a href="{{ url_for('appliances.console', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Console"><i class="bi bi-terminal"></i></a>
+            {% if current_user.can('backup') %}
+            <a href="{{ url_for('appliances.upgrade_prep', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Upgrade Preparation"><i class="bi bi-clipboard-check"></i></a>
+            {% endif %}
+            {% if current_user.can('config_write') %}
+            <a href="{{ url_for('appliances.upgrade', id=a.id) }}" class="btn btn-sm btn-outline-warning btn-sm-icon me-1" title="Upgrade Firmware"><i class="bi bi-cloud-arrow-up"></i></a>
+            {% endif %}
+            {% endif %}
             <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1"
                     title="Edit"
                     onclick='openEditModal({{ a.to_dict()|tojson }})'>

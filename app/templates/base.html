@@ -176,6 +176,11 @@
         <span>Backups</span>
       </a>
       <a class="fw-nav-item"
+         href="{{ url_for('import_backup.index') }}">
+        <i class="bi bi-file-earmark-arrow-up fw-nav-icon"></i>
+        <span>Import Backup</span>
+      </a>
+      <a class="fw-nav-item"
          href="{{ url_for('logs.index') }}">
         <i class="bi bi-journal-text fw-nav-icon"></i>
         <span>Log Collection</span>
@@ -227,6 +232,11 @@
          href="{{ url_for('templates.index') }}">
         <i class="bi bi-collection fw-nav-icon"></i>
         <span>Templates</span>
+      </a>
+      <a class="fw-nav-item"
+         href="{{ url_for('structure.index') }}">
+        <i class="bi bi-diagram-3 fw-nav-icon"></i>
+        <span>Structure</span>
       </a>
       {% endif %}
 

@@ -113,8 +113,8 @@
         <th>Virtual Server</th>
         <th>Server Pool</th>
         <th>Protection Profile</th>
-        <th>HTTP</th>
-        <th>HTTPS</th>
+        <th>HTTP Service</th>
+        <th>HTTPS Service</th>
         <th>Status</th>
         <th class="actions-col">Actions</th>
       </tr>
@@ -143,12 +143,12 @@
             {% endif %}
           </td>
           <td>
-            {% set hp = p.get('http-port','') or p.get('http_port','') %}
-            {% if hp %}<span class="fw-badge fw-badge-secondary">:{{ hp }}</span>{% else %}—{% endif %}
+            {% set svc = p.get('service','') %}
+            {% if svc %}<span class="fw-badge fw-badge-secondary">{{ svc }}</span>{% else %}—{% endif %}
           </td>
           <td>
-            {% set sp = p.get('https-port','') or p.get('https_port','') %}
-            {% if sp %}<span class="fw-badge fw-badge-secondary">:{{ sp }}</span>{% else %}—{% endif %}
+            {% set hsvc = p.get('https-service','') %}
+            {% if hsvc %}<span class="fw-badge fw-badge-secondary">{{ hsvc }}</span>{% else %}—{% endif %}
           </td>
           <td>
             {% set st = p.get('status','') or p.get('enable','') %}

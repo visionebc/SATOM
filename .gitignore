@@ -17,3 +17,6 @@ instance/
 .env
 *.bak
 *.bak-*
+
+# Host-only snapshots (may contain .env secrets) — never commit
+backups/

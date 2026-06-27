@@ -1,22 +1,138 @@
 {% extends 'base.html' %}
-{% block title %}Profile - Fortinet Manager{% endblock %}
+{% block title %}Profile - {{ product.title if product else 'Fortinet Manager' }}{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>Profile</span>
+</div>
+{% endblock %}
+
 {% block content %}
-<div class="fw-page-header"><h4>My Profile</h4></div>
-<div class="row"><div class="col-md-6">
-<div class="card shadow-sm">
-<div class="card-header fw-card-header">Change Password</div>
-<div class="card-body">
-<form method="post" action="{{ url_for('auth.profile') }}">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="mb-3"><label class="form-label">Current Password</label>
-    <input type="password" name="current_password" class="form-control" required></div>
-  <div class="mb-3"><label class="form-label">New Password</label>
-    <input type="password" name="new_password" class="form-control" required></div>
-  <div class="mb-3"><label class="form-label">Confirm New Password</label>
-    <input type="password" name="confirm_password" class="form-control" required></div>
-  <button type="submit" class="btn fw-btn-primary">Update Password</button>
-</form>
-</div></div>
-<div class="mt-3 text-muted small">Username: <strong>{{ current_user.username }}</strong> &mdash; Role: <strong>{{ current_user.role }}</strong></div>
-</div></div>
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-person-circle me-2 text-accent"></i>My Profile</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">Personal account &amp; user settings</p>
+  </div>
+</div>
+
+<!-- Account card -->
+<div class="fw-card mb-3">
+  <div class="fw-card-body">
+    <div class="d-flex align-items-center gap-3">
+      <div class="fw-avatar" style="width:46px;height:46px;font-size:18px;">
+        {{ current_user.username[0].upper() if current_user and current_user.username else 'U' }}
+      </div>
+      <div>
+        <div style="font-size:15px; font-weight:600;">{{ current_user.username }}</div>
+        <div class="text-muted" style="font-size:13px;">Role: <strong>{{ current_user.role }}</strong></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+
+  {% if is_admin %}
+  <!-- BRANDING (user setting, admin-only) -->
+  <div class="col-lg-7">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-palette me-2 text-accent"></i>Branding — Top-bar Banner</span>
+      </div>
+      <div class="fw-card-body">
+        <p class="text-muted" style="font-size:13px;">
+          Choose the top-bar banner template for each product. FortiWeb and FortiADC can use different banners.
+        </p>
+        <form method="POST" action="{{ url_for('settings.save_banners') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="row g-4">
+            {% for pkey, plabel in [('fortiweb','FortiWeb'), ('fortiadc','FortiADC')] %}
+            <div class="col-lg-6">
+              <label class="form-label fw-semibold">{{ plabel }}</label>
+              <div class="banner-options" data-product="{{ pkey }}">
+                {% for tkey, t in banner_templates.items() %}
+                <label class="banner-opt {{ 'selected' if banners[pkey] == tkey else '' }}">
+                  <input type="radio" name="banner_{{ pkey }}" value="{{ tkey }}"
+                         {{ 'checked' if banners[pkey] == tkey else '' }} hidden>
+                  <span class="banner-swatch" style="background: {{ t.bg }};"></span>
+                  <span class="banner-name">{{ t.name }}</span>
+                </label>
+                {% endfor %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          <div class="mt-3">
+            <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save Banners</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ABOUT (user setting) -->
+  <div class="col-lg-{{ '5' if is_admin else '7' }}">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>About {{ product.title if product else 'Fortinet Manager' }}</span>
+      </div>
+      <div class="fw-card-body">
+        <div class="d-flex align-items-center gap-3 mb-4">
+          <img src="{{ url_for('static', filename=product.mark) }}" alt="{{ product.name }}"
+               style="width:48px;height:48px;border-radius:10px;">
+          <div>
+            <h5 class="mb-0" style="font-weight:700;">{{ settings.app_name if settings else product.title }}</h5>
+            <span class="fw-badge fw-badge-primary">v1.0</span>
+          </div>
+        </div>
+        <p style="font-size:13.5px; color:#495057;">
+          Multi-user FortiWeb &amp; FortiADC management console built on Flask + SQLAlchemy.
+          OWASP-hardened with full audit logging, RBAC, and encrypted credential storage.
+        </p>
+        <dl class="row" style="font-size:13px;">
+          <dt class="col-sm-4 text-muted">Repository</dt>
+          <dd class="col-sm-8"><a href="http://192.0.2.53:3000/visionebc/fortinet-manager-web" target="_blank">visionebc/fortinet-manager-web</a></dd>
+          <dt class="col-sm-4 text-muted">RBAC Roles</dt>
+          <dd class="col-sm-8">readonly, operator, admin</dd>
+          <dt class="col-sm-4 text-muted">API Target</dt>
+          <dd class="col-sm-8">FortiWeb 7.6 REST API</dd>
+          <dt class="col-sm-4 text-muted">UI Framework</dt>
+          <dd class="col-sm-8">Bootstrap 5.3 + Custom FortiWeb 7.6 Theme</dd>
+        </dl>
+        <p class="text-muted mb-0" style="font-size:12px;">
+          To change your password, open <a href="{{ url_for('settings.index') }}#tab-password">Settings → Change Password</a>.
+        </p>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+  .banner-options { display: flex; flex-direction: column; gap: 8px; }
+  .banner-opt {
+    display: flex; align-items: center; gap: 12px; cursor: pointer;
+    border: 2px solid var(--fw-border); border-radius: var(--fw-radius-lg);
+    padding: 8px 12px; transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .banner-opt:hover { border-color: var(--fw-accent); }
+  .banner-opt.selected { border-color: var(--fw-accent); box-shadow: 0 0 0 3px var(--fw-accent-light); }
+  .banner-swatch { width: 80px; height: 28px; border-radius: 4px; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+  .banner-name { font-size: 13px; color: var(--fw-text-primary); }
+</style>
+<script>
+  document.querySelectorAll('.banner-options').forEach(function(group){
+    group.querySelectorAll('.banner-opt').forEach(function(opt){
+      opt.addEventListener('click', function(){
+        group.querySelectorAll('.banner-opt').forEach(function(o){ o.classList.remove('selected'); });
+        opt.classList.add('selected');
+      });
+    });
+  });
+</script>
 {% endblock %}

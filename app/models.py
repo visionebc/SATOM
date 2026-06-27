@@ -127,6 +127,10 @@ class Appliance(db.Model):
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
 
+    # Cached connectivity status, populated by status probes (see probe_status).
+    last_status = db.Column(db.String(16), nullable=False, default="unknown")
+    last_checked_at = db.Column(db.DateTime, nullable=True)
+
     @property
     def password(self) -> str:
         return _fernet().decrypt(self.password_enc.encode()).decode()
@@ -137,6 +141,23 @@ class Appliance(db.Model):
 
     def set_password(self, plaintext: str) -> None:
         self.password = plaintext
+
+    def build_client(self, timeout: float = 30.0):
+        """Return the right vendor client for this appliance's kind."""
+        from .clients.fortiweb import FortiWebClient
+        from .clients.fortiadc import FortiADCClient
+        if self.kind == "fortiadc":
+            return FortiADCClient(self, timeout=timeout)
+        return FortiWebClient(self, timeout=timeout)
+
+    def probe_status(self, timeout: float = 6.0) -> str:
+        """Live connectivity probe -> 'online' | 'offline'. No DB writes, so it
+        is safe to call from a worker thread."""
+        try:
+            self.build_client(timeout=timeout).status_check()
+            return "online"
+        except Exception:
+            return "offline"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -155,6 +176,8 @@ class Appliance(db.Model):
             "ssh_port": self.ssh_port,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "status": self.last_status or "unknown",
+            "last_checked_at": self.last_checked_at.isoformat() if self.last_checked_at else None,
         }
 
     def __repr__(self) -> str:

@@ -25,6 +25,8 @@ K_LOG_LEVELS = "general.log_levels"                # JSON list
 K_NAMING = "naming.scheme"                          # JSON dict of overrides
 K_CLS_PREFIX = "classification."                    # + zones|lines|departments -> JSON list
 K_SEGMENTS = "network.segments"                     # JSON list of dicts
+K_IP_WHITELIST = "access.ip_whitelist"              # JSON list of {ip, note}
+K_ALLOWED_USERS = "access.allowed_users"            # JSON list of usernames
 
 LOG_LEVELS_ALL = ["DEBUG", "INFO", "WARNING", "ERROR"]
 CLASSIFICATION_KINDS = ("zones", "lines", "departments")
@@ -151,3 +153,86 @@ def save_segments(rows: list[dict[str, str]]) -> None:
             continue  # skip wholly-blank rows
         clean.append({f: (row.get(f, "") or "").strip() for f in SEGMENT_FIELDS})
     set_json(K_SEGMENTS, clean)
+
+
+# ---- Access control (IP whitelist + allowed users) ------------------------
+def ip_whitelist() -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    for row in get_json(K_IP_WHITELIST, []):
+        if isinstance(row, dict) and (row.get("ip") or "").strip():
+            out.append({"ip": str(row.get("ip", "")).strip(),
+                        "note": str(row.get("note", "") or "").strip()})
+    return out
+
+
+def save_ip_whitelist(rows: list[dict[str, str]]) -> None:
+    clean: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for row in rows:
+        ip = (row.get("ip") or "").strip()
+        if not ip or ip in seen:
+            continue
+        seen.add(ip)
+        clean.append({"ip": ip, "note": (row.get("note", "") or "").strip()})
+    set_json(K_IP_WHITELIST, clean)
+
+
+def allowed_users() -> list[str]:
+    return [str(u).strip() for u in get_json(K_ALLOWED_USERS, []) if str(u).strip()]
+
+
+def save_allowed_users(usernames: list[str]) -> None:
+    seen: list[str] = []
+    for u in usernames:
+        u = (u or "").strip()
+        if u and u not in seen:
+            seen.append(u)
+    set_json(K_ALLOWED_USERS, seen)
+
+
+# ---- Branding / Banner templates -----------------------------------------
+K_BANNER_PREFIX = "branding.banner."   # + fortiweb|fortiadc -> template id
+
+BANNER_TEMPLATES = {
+    # --- Solids ---
+    "slate":    {"name": "Slate (default)", "bg": "#162940"},
+    "midnight": {"name": "Midnight",        "bg": "#0c1422"},
+    "onyx":     {"name": "Onyx",            "bg": "#111317"},
+    "forest":   {"name": "Forest",          "bg": "#10241b"},
+    "navy":     {"name": "Deep Navy",       "bg": "#0a1a3a"},
+    "plum":     {"name": "Plum",            "bg": "#241430"},
+    # --- Gradients ---
+    "ocean":    {"name": "Ocean Blue",      "bg": "linear-gradient(135deg, #0e2a47 0%, #1d63b0 100%)"},
+    "ember":    {"name": "Ember Red",       "bg": "linear-gradient(135deg, #2a0e0e 0%, #c0392b 100%)"},
+    "graphite": {"name": "Graphite",        "bg": "linear-gradient(135deg, #1b1b1f 0%, #34353b 100%)"},
+    "emerald":  {"name": "Emerald",         "bg": "linear-gradient(135deg, #06281f 0%, #10b981 100%)"},
+    "violet":   {"name": "Violet",          "bg": "linear-gradient(135deg, #1e1033 0%, #7c3aed 100%)"},
+    "sunset":   {"name": "Sunset",          "bg": "linear-gradient(135deg, #3a1020 0%, #f97316 100%)"},
+    "teal":     {"name": "Teal",            "bg": "linear-gradient(135deg, #06262b 0%, #0d9488 100%)"},
+    "indigo":   {"name": "Indigo",          "bg": "linear-gradient(135deg, #0d1238 0%, #4f46e5 100%)"},
+    "amber":    {"name": "Amber Gold",      "bg": "linear-gradient(135deg, #2b1d05 0%, #d97706 100%)"},
+    "rose":     {"name": "Rose",            "bg": "linear-gradient(135deg, #2c0d1c 0%, #e11d48 100%)"},
+    "steel":    {"name": "Steel",           "bg": "linear-gradient(135deg, #1a2230 0%, #475569 100%)"},
+    "aurora":   {"name": "Aurora",          "bg": "linear-gradient(135deg, #0b2545 0%, #1d63b0 45%, #10b981 100%)"},
+    "fortinet": {"name": "Fortinet",        "bg": "linear-gradient(135deg, #14233a 0%, #ee3124 100%)"},
+}
+BANNER_DEFAULT = {"fortiweb": "slate", "fortiadc": "ember"}
+
+
+def banner_template(product: str) -> str:
+    val = get_str(K_BANNER_PREFIX + product)
+    return val if val in BANNER_TEMPLATES else BANNER_DEFAULT.get(product, "slate")
+
+
+def banner_bg(product: str) -> str:
+    return BANNER_TEMPLATES[banner_template(product)]["bg"]
+
+
+def all_banners() -> dict:
+    return {p: banner_template(p) for p in ("fortiweb", "fortiadc")}
+
+
+def save_banners(mapping: dict) -> None:
+    for product, tpl in (mapping or {}).items():
+        if product in ("fortiweb", "fortiadc") and tpl in BANNER_TEMPLATES:
+            set_str(K_BANNER_PREFIX + product, tpl)

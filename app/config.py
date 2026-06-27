@@ -26,9 +26,11 @@ def _ensure_fernet_key() -> str:
 
 
 def _append_env(var: str, value: str) -> None:
-    env_path = Path(__file__).parent.parent / ".env"
-    with env_path.open("a") as f:
-        f.write(f"\n{var}={value}\n")
+    # NOTE (2026-06-27): intentionally does NOT write to .env anymore.
+    # Standalone/CLI/test runs that import config without the env loaded used
+    # to append a fresh SECRET_KEY/FERNET_KEY here on every start, polluting
+    # .env with duplicate keys and risking session/Fernet breakage. Now we
+    # only set the value in-process; .env stays the single source of truth.
     os.environ[var] = value
 
 

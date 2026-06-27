@@ -815,3 +815,17 @@ a:hover { color: var(--fw-accent-hover); text-decoration: underline; }
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
 }
+
+/* ============================================================
+   Sidebar: pin project Settings to the bottom (2026-06-27)
+   ============================================================ */
+.fw-nav { display: flex; flex-direction: column; min-height: 100%; }
+.fw-nav-spacer { flex: 1 1 auto; }
+.fw-nav-bottom { padding-bottom: 8px; }
+
+/* Topbar Switch Product button: mini product logo + switch icon */
+.fw-switch-product { display: inline-flex; align-items: center; gap: 6px; }
+.fw-switch-product .fw-switch-mark {
+  width: 18px; height: 18px; border-radius: 4px; display: block;
+  background: rgba(255,255,255,0.12);
+}

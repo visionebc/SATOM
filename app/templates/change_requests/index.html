@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}Change Requests — Fortinet Manager Web{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>Automation</span>
+  <span class="separator">/</span>
+  <span>Change Requests</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-clipboard2-check me-2 text-accent"></i>Change Requests</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Approval-gated maintenance windows for risky changes (firmware upgrades). An approved,
+      scheduled CR binds a one-shot action that only fires inside its window.
+    </p>
+  </div>
+  <a class="btn btn-fw-primary" href="{{ url_for('change_requests.new') }}">
+    <i class="bi bi-plus-lg me-1"></i>New Change Request
+  </a>
+</div>
+
+{% if groups %}
+  {% for group in groups %}
+  <div class="fw-card mb-3">
+    <div class="fw-card-header d-flex align-items-center justify-content-between">
+      <span class="fw-card-title text-capitalize">
+        {{ group.status|replace('_', ' ') }}
+        <span class="fw-badge {{ status_badge.get(group.status, 'fw-badge-secondary') }} ms-2">
+          {{ group['items']|length }}
+        </span>
+      </span>
+    </div>
+    <div class="fw-card-body p-0">
+      <table class="fw-table mb-0">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Action</th>
+            <th>Risk</th>
+            <th>Window</th>
+            <th>Requested by</th>
+            <th class="actions-col">&nbsp;</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for cr in group['items'] %}
+          <tr>
+            <td>
+              <a href="{{ url_for('change_requests.detail', id=cr.id) }}"><strong>{{ cr.title }}</strong></a>
+              <div class="text-muted" style="font-size:12px;">#{{ cr.id }}</div>
+            </td>
+            <td style="font-size:13px;">{{ cr.action }}</td>
+            <td>
+              <span class="fw-badge {{ risk_badge.get(cr.risk, 'fw-badge-secondary') }} text-uppercase">{{ cr.risk }}</span>
+            </td>
+            <td style="font-size:13px;">
+              {% if cr.window_start %}
+                {{ cr.window_start.strftime('%Y-%m-%d %H:%M') }}
+                {% if cr.window_end %}<span class="text-muted">→ {{ cr.window_end.strftime('%H:%M') }}</span>{% endif %}
+                <span class="text-muted">UTC</span>
+              {% else %}
+                <span class="text-muted">— not set —</span>
+              {% endif %}
+            </td>
+            <td style="font-size:13px;">{{ cr.requested_by or '—' }}</td>
+            <td class="actions-col">
+              <a class="btn btn-sm btn-outline-primary btn-sm-icon"
+                 href="{{ url_for('change_requests.detail', id=cr.id) }}" title="Open">
+                <i class="bi bi-box-arrow-up-right"></i>
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <tbody>
+        <tr>
+          <td>
+            <div class="fw-empty-state">
+              <div class="fw-empty-state-icon"><i class="bi bi-clipboard2-check"></i></div>
+              <div class="fw-empty-state-title">No change requests yet</div>
+              <div class="fw-empty-state-text">
+                Raise a change request to plan a maintenance window and gate a risky change behind an approval.
+              </div>
+              <a class="btn btn-fw-primary mt-2" href="{{ url_for('change_requests.new') }}">
+                <i class="bi bi-plus-lg me-1"></i>New Change Request
+              </a>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+{% endblock %}

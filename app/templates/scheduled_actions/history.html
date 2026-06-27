@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}History — {{ action.name }} — Fortinet Manager Web{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('scheduled_actions.index') }}">Scheduled Actions</a>
+  <span class="separator">/</span>
+  <span>{{ action.name }} — History</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-list-columns-reverse me-2 text-accent"></i>Run History</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      <strong>{{ action.name }}</strong> — {{ action_label }}
+    </p>
+  </div>
+  <a class="btn btn-fw-outline btn-sm" href="{{ url_for('scheduled_actions.index') }}">
+    <i class="bi bi-chevron-left me-1"></i>Back
+  </a>
+</div>
+
+<div class="fw-table-wrapper">
+  <table class="fw-table">
+    <thead>
+      <tr>
+        <th>Started</th>
+        <th>Finished</th>
+        <th>Status</th>
+        <th>Trigger</th>
+        <th>Summary</th>
+        <th>Log</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if runs %}
+        {% for r in runs %}
+        <tr>
+          <td style="font-size:13px;">{{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') if r.started_at else '—' }}</td>
+          <td style="font-size:13px;">{{ r.finished_at.strftime('%Y-%m-%d %H:%M:%S') if r.finished_at else '—' }}</td>
+          <td>
+            {% if r.status == 'ok' %}
+              <span class="fw-badge fw-badge-success">ok</span>
+            {% elif r.status == 'failed' %}
+              <span class="fw-badge fw-badge-danger">failed</span>
+            {% elif r.status == 'skipped' %}
+              <span class="fw-badge fw-badge-secondary">skipped</span>
+            {% elif r.status == 'running' %}
+              <span class="fw-badge fw-badge-info">running</span>
+            {% else %}
+              <span class="fw-badge fw-badge-secondary">{{ r.status }}</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="fw-badge {{ 'fw-badge-primary' if r.trigger == 'manual' else 'fw-badge-secondary' }}">
+              {{ r.trigger }}
+            </span>
+          </td>
+          <td style="font-size:13px;">{{ r.summary or '—' }}</td>
+          <td>
+            {% if r.log %}
+              <details>
+                <summary style="cursor:pointer; font-size:12px;">View</summary>
+                <pre style="background:#0d1626; color:#e2e8f0; padding:10px; border-radius:8px; margin-top:6px;
+                            max-height:320px; overflow:auto; font-size:12px; white-space:pre-wrap;">{{ r.log }}</pre>
+              </details>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="6">
+            <div class="fw-empty-state">
+              <div class="fw-empty-state-icon"><i class="bi bi-hourglass"></i></div>
+              <div class="fw-empty-state-title">No runs yet</div>
+              <div class="fw-empty-state-text">
+                This action has not fired. Use "Run now" on the list, or wait for its next scheduled run.
+              </div>
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

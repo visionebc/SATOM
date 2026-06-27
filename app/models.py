@@ -216,6 +216,10 @@ class Appliance(db.Model):
     zone = db.Column(db.String(128), nullable=True)
     line = db.Column(db.String(128), nullable=True)
     ssh_port = db.Column(db.Integer, nullable=True, default=22)
+    # Physical inventory — documentation only (not derived from the live device).
+    hw_type = db.Column(db.String(16), nullable=False, default="unknown")  # 'hardware'|'vm'|'unknown'
+    model = db.Column(db.String(128), nullable=True)        # e.g. "FortiWeb 600F"
+    datasheet_filename = db.Column(db.String(256), nullable=True)  # original PDF name; file on disk is <id>.pdf
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
@@ -224,6 +228,15 @@ class Appliance(db.Model):
     # Cached connectivity status, populated by status probes (see probe_status).
     last_status = db.Column(db.String(16), nullable=False, default="unknown")
     last_checked_at = db.Column(db.DateTime, nullable=True)
+
+    # Documented physical interfaces (manual; replace-all on edit). Cascade so
+    # deleting an appliance removes its interface rows.
+    interfaces = db.relationship(
+        "ApplianceInterface",
+        backref="appliance",
+        cascade="all, delete-orphan",  # ORM-side cascade (portable; SQLite FK enforcement is off by default)
+        order_by="ApplianceInterface.sort_order",
+    )
 
     @property
     def password(self) -> str:
@@ -268,14 +281,82 @@ class Appliance(db.Model):
             "zone": self.zone,
             "line": self.line,
             "ssh_port": self.ssh_port,
+            "hw_type": self.hw_type or "unknown",
+            "model": self.model,
+            "datasheet_filename": self.datasheet_filename,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "status": self.last_status or "unknown",
             "last_checked_at": self.last_checked_at.isoformat() if self.last_checked_at else None,
         }
 
+    def inventory_view(self) -> dict[str, Any]:
+        """Read-only physical-inventory payload for the architecture modal.
+
+        Pure data (no URLs); the view layer adds datasheet/detail URLs since
+        ``url_for`` needs an application/request context.
+        """
+        return {
+            "id": self.id,
+            "name": self.name,
+            "kind": self.kind,
+            "hw_type": self.hw_type or "unknown",
+            "model": self.model or "",
+            "host": self.host,
+            "port": self.port,
+            "vdom": self.vdom or "",
+            "zone": self.zone or "",
+            "line": self.line or "",
+            "department": self.department or "",
+            "status": self.last_status or "unknown",
+            "has_datasheet": bool(self.datasheet_filename),
+            "datasheet_filename": self.datasheet_filename or "",
+            "interfaces": [
+                i.to_dict()
+                for i in sorted(self.interfaces, key=lambda x: (x.sort_order or 0, x.id or 0))
+            ],
+        }
+
     def __repr__(self) -> str:
         return f"<Appliance {self.name!r} kind={self.kind!r} host={self.host!r}>"
+
+
+# ---------------------------------------------------------------------------
+# ApplianceInterface — documented physical port and what it connects to.
+# Manual documentation (not pulled from the device); rebuilt replace-all when
+# the appliance is edited. Removed with its appliance via ON DELETE CASCADE.
+# ---------------------------------------------------------------------------
+
+class ApplianceInterface(db.Model):
+    __tablename__ = "appliance_interfaces"
+
+    id = db.Column(db.Integer, primary_key=True)
+    appliance_id = db.Column(
+        db.Integer,
+        db.ForeignKey("appliances.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name = db.Column(db.String(64), nullable=False, default="")          # e.g. "port1"
+    if_type = db.Column(db.String(64), nullable=True)                    # e.g. "10G SFP+"
+    connected_to = db.Column(db.String(256), nullable=True)             # peer device + port
+    ip_address = db.Column(db.String(64), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name or "",
+            "if_type": self.if_type or "",
+            "connected_to": self.connected_to or "",
+            "ip_address": self.ip_address or "",
+            "notes": self.notes or "",
+            "sort_order": self.sort_order or 0,
+        }
+
+    def __repr__(self) -> str:
+        return f"<ApplianceInterface {self.name!r} of appliance={self.appliance_id}>"
 
 
 # ---------------------------------------------------------------------------

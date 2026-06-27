@@ -217,6 +217,11 @@ def create_app(config_override: object | None = None) -> Flask:
         adds = {
             'templates': [('exceptions', 'TEXT')],
             'users': [('profile_id', 'INTEGER')],
+            'appliances': [
+                ('hw_type', "VARCHAR(16) DEFAULT 'unknown'"),
+                ('model', 'VARCHAR(128)'),
+                ('datasheet_filename', 'VARCHAR(256)'),
+            ],
         }
         insp = inspect(db.engine)
         for table, cols in adds.items():

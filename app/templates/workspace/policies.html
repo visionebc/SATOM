@@ -54,7 +54,7 @@
       <div class="fw-stat-icon fw-stat-icon-success"><i class="bi bi-check2-circle"></i></div>
       <div>
         <div class="fw-stat-value">
-          {{ policies|selectattr('enable','equalto',true)|list|length if policies else 0 }}
+          {{ policies|selectattr('status','equalto','enable')|list|length if policies else 0 }}
         </div>
         <div class="fw-stat-label">Enabled</div>
       </div>
@@ -65,7 +65,7 @@
       <div class="fw-stat-icon fw-stat-icon-danger"><i class="bi bi-pause-circle"></i></div>
       <div>
         <div class="fw-stat-value">
-          {{ policies|selectattr('enable','equalto',false)|list|length if policies else 0 }}
+          {{ policies|selectattr('status','equalto','disable')|list|length if policies else 0 }}
         </div>
         <div class="fw-stat-label">Disabled</div>
       </div>

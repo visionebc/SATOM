@@ -829,3 +829,19 @@ a:hover { color: var(--fw-accent-hover); text-decoration: underline; }
   width: 18px; height: 18px; border-radius: 4px; display: block;
   background: rgba(255,255,255,0.12);
 }
+
+/* Git tab pre output */
+.fw-pre {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(148,163,184,0.15);
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-size: 12px;
+  font-family: Menlo, Monaco, Consolas, monospace;
+  color: #94a3b8;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0;
+}

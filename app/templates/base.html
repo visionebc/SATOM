@@ -130,6 +130,11 @@
         <i class="bi bi-diagram-3 fw-nav-icon"></i>
         <span>Server Objects</span>
       </a>
+      <a class="fw-nav-item"
+         href="{{ url_for('fleet_objects.index') }}">
+        <i class="bi bi-box-seam fw-nav-icon"></i>
+        <span>Fleet Objects</span>
+      </a>
 
       <div class="fw-nav-divider"></div>
 
@@ -175,6 +180,13 @@
         <i class="bi bi-journal-text fw-nav-icon"></i>
         <span>Log Collection</span>
       </a>
+      {% if current_user and current_user.can('user_manage') %}
+      <a class="fw-nav-item"
+         href="{{ url_for('signatures.index') }}">
+        <i class="bi bi-fingerprint fw-nav-icon"></i>
+        <span>Signatures</span>
+      </a>
+      {% endif %}
 
       <div class="fw-nav-divider"></div>
 

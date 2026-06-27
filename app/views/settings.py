@@ -28,6 +28,7 @@ from flask_login import login_required, current_user
 from ..auth.decorators import require_permission
 from ..models import db, Permission, User, Role
 from ..services import naming, settings_store as store, dbintrospect
+from ..services import user_settings_store as user_store
 from ..services.audit import log_action
 
 bp = Blueprint('settings', __name__, url_prefix='/settings')
@@ -206,13 +207,14 @@ def save_access():
 
 @bp.route('/banners', methods=['POST'])
 @login_required
-@require_permission(Permission.USER_MANAGE)
 def save_banners():
+    # Branding is a PER-USER preference now: every authenticated user picks
+    # their own banner, saved against their user_id in the DB (no cookie).
     mapping = {
         'fortiweb': request.form.get('banner_fortiweb', ''),
         'fortiadc': request.form.get('banner_fortiadc', ''),
     }
-    store.save_banners(mapping)
+    user_store.save_banners(current_user.id, mapping)
     log_action('settings.banners',
                detail="fortiweb=" + mapping['fortiweb'] + ", fortiadc=" + mapping['fortiadc'])
     flash('Banner templates saved.', 'success')

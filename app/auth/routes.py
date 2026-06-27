@@ -6,6 +6,7 @@ from ..models import User, Permission
 from ..extensions import db, limiter
 from ..services.audit import log_action
 from ..services import settings_store as store
+from ..services import user_settings_store as user_store
 
 
 @bp.route('/login', methods=['GET', 'POST'])
@@ -71,5 +72,5 @@ def profile():
         is_admin=is_admin,
         settings=store.general(),
         banner_templates=store.BANNER_TEMPLATES,
-        banners=store.all_banners(),
+        banners=user_store.all_banners(current_user.id),
     )

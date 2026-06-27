@@ -133,11 +133,18 @@ def create_app(config_override: object | None = None) -> Flask:
     @app.context_processor
     def _inject_branding():
         from flask import session
+        from flask_login import current_user
         from .branding import get_product
         from .services import settings_store as _store
+        from .services import user_settings_store as _ustore
         prod = get_product(session.get('product'))
         try:
-            _bg = _store.banner_bg(prod['key'])
+            # Per-user banner (DB-backed) for a logged-in user; global/default
+            # otherwise. No cookie is involved.
+            if getattr(current_user, 'is_authenticated', False):
+                _bg = _ustore.banner_bg(current_user.id, prod['key'])
+            else:
+                _bg = _store.banner_bg(prod['key'])
         except Exception:
             _bg = '#162940'
         return {

@@ -302,12 +302,26 @@ class Template(db.Model):
     KIND_SYSTEM = "system-profile"
     KIND_STRUCTURE = "structure"
     KINDS = (KIND_WEB_PROTECTION, KIND_SERVER_POLICY, KIND_SYSTEM, KIND_STRUCTURE)
+    # Per-section FortiWeb configuration templates use a ``config:<section>``
+    # kind (e.g. ``config:network``) — see the desktop SectionConfigPage.
+    KIND_CONFIG_PREFIX = "config:"
+
+    @classmethod
+    def config_kind(cls, section: str) -> str:
+        """Build the template kind for a FortiWeb config section."""
+        return f"{cls.KIND_CONFIG_PREFIX}{section}"
+
+    @classmethod
+    def is_valid_kind(cls, kind: str) -> bool:
+        """A kind is valid if it is a known kind or a ``config:<section>`` kind."""
+        return kind in cls.KINDS or (kind or "").startswith(cls.KIND_CONFIG_PREFIX)
 
     id = db.Column(db.Integer, primary_key=True)
     kind = db.Column(db.String(64), nullable=False, index=True)
     name = db.Column(db.String(128), nullable=False)
     version = db.Column(db.Integer, nullable=False, default=1)
     body = db.Column(db.Text, nullable=False, default="{}")  # JSON-serialised dict
+    exceptions = db.Column(db.Text, nullable=True, default="")  # JSON exceptions blob
     note = db.Column(db.Text, nullable=True, default="")
     author = db.Column(db.String(64), nullable=True, default="")
     locked = db.Column(db.Boolean, nullable=False, default=False)
@@ -326,3 +340,180 @@ class Template(db.Model):
 
     def __repr__(self) -> str:
         return f"<Template {self.kind}/{self.name} v{self.version}>"
+
+
+# ---------------------------------------------------------------------------
+# ChangeHistory — audit trail for live (and previewed) FortiWeb config writes
+# ---------------------------------------------------------------------------
+
+class ChangeHistory(db.Model):
+    """One row per config write attempted through ``services.fortiweb_ops``.
+
+    Records the before/after snapshot, whether it was a dry-run preview, and who
+    performed it, so every live mutation (and every preview) is auditable.
+    """
+
+    __tablename__ = "change_history"
+
+    id = db.Column(db.Integer, primary_key=True)
+    appliance_id = db.Column(
+        db.Integer, db.ForeignKey("appliances.id", ondelete="SET NULL"), nullable=True)
+    endpoint = db.Column(db.String(256), nullable=False, default="")
+    mkey = db.Column(db.String(256), nullable=True, default="")
+    action = db.Column(db.String(16), nullable=False, default="")  # create|update|delete
+    before = db.Column(db.Text, nullable=True, default="")          # JSON snapshot
+    after = db.Column(db.Text, nullable=True, default="")           # JSON payload
+    dry_run = db.Column(db.Boolean, nullable=False, default=True)
+    username = db.Column(db.String(64), nullable=True, default="")
+    ts = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    def __repr__(self) -> str:
+        return f"<ChangeHistory {self.action} {self.endpoint} dry={self.dry_run}>"
+
+
+# ---------------------------------------------------------------------------
+# ScheduledAction — the admin's automation calendar (web port of the desktop
+# ``scheduled_action`` table). Fired ONLY by the dedicated scheduler sidecar,
+# never by the gunicorn web workers (which would fire each job N times).
+# ---------------------------------------------------------------------------
+
+class ScheduledAction(db.Model):
+    __tablename__ = "scheduled_action"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(128), nullable=False, default="")
+    scope = db.Column(db.String(16), nullable=False, default="admin")  # admin|user
+    action = db.Column(db.String(64), nullable=False)                  # catalog key
+    targets = db.Column(db.Text, nullable=False, default="[]")         # JSON appliance ids ([]=fleet)
+    params = db.Column(db.Text, nullable=False, default="{}")          # JSON params
+    schedule_kind = db.Column(db.String(16), nullable=False, default="once")  # once|interval|daily|weekly|monthly
+    schedule = db.Column(db.Text, nullable=False, default="{}")        # JSON schedule spec
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    catch_up = db.Column(db.Boolean, nullable=False, default=True)
+    created_by = db.Column(db.String(64), nullable=True, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_run = db.Column(db.DateTime, nullable=True)
+    last_status = db.Column(db.String(32), nullable=True, default="")
+    next_run = db.Column(db.DateTime, nullable=True, index=True)
+    # DB-claim lease replacing the desktop's in-process lock so exactly one
+    # process (the sidecar) fires a given action even across workers.
+    running_at = db.Column(db.DateTime, nullable=True)
+
+    @property
+    def targets_list(self) -> list:
+        try:
+            v = json.loads(self.targets or "[]")
+            return v if isinstance(v, list) else []
+        except (ValueError, TypeError):
+            return []
+
+    @property
+    def params_dict(self) -> dict[str, Any]:
+        try:
+            v = json.loads(self.params or "{}")
+            return v if isinstance(v, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+
+    @property
+    def schedule_dict(self) -> dict[str, Any]:
+        try:
+            v = json.loads(self.schedule or "{}")
+            return v if isinstance(v, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+
+    def __repr__(self) -> str:
+        return f"<ScheduledAction {self.name!r} {self.action} {self.schedule_kind}>"
+
+
+class ScheduledActionRun(db.Model):
+    __tablename__ = "scheduled_action_run"
+
+    id = db.Column(db.Integer, primary_key=True)
+    action_id = db.Column(
+        db.Integer, db.ForeignKey("scheduled_action.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    started_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    finished_at = db.Column(db.DateTime, nullable=True)
+    status = db.Column(db.String(32), nullable=False, default="running")  # running|ok|failed|skipped
+    trigger = db.Column(db.String(16), nullable=False, default="schedule")  # schedule|manual
+    summary = db.Column(db.Text, nullable=True, default="")
+    log = db.Column(db.Text, nullable=True, default="")
+
+    def __repr__(self) -> str:
+        return f"<ScheduledActionRun a={self.action_id} {self.status}>"
+
+
+# ---------------------------------------------------------------------------
+# ChangeRequest — maintenance-window approval gating risky (upgrade) actions.
+# Approving + scheduling a CR creates a one-shot ScheduledAction bound back via
+# ``scheduled_action_id``; the upgrade executor refuses to run outside the window.
+# ---------------------------------------------------------------------------
+
+class ChangeRequest(db.Model):
+    __tablename__ = "change_request"
+
+    # draft -> approved -> scheduled -> in_progress -> completed|failed (or cancelled)
+    STATUSES = ("draft", "approved", "scheduled", "in_progress", "completed", "failed", "cancelled")
+    TERMINAL = ("completed", "failed", "cancelled")
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False, default="")
+    reason = db.Column(db.Text, nullable=True, default="")
+    status = db.Column(db.String(16), nullable=False, default="draft")
+    action = db.Column(db.String(64), nullable=False, default="upgrade")
+    params = db.Column(db.Text, nullable=False, default="{}")
+    device_ids = db.Column(db.Text, nullable=False, default="[]")
+    policies = db.Column(db.Text, nullable=False, default="[]")
+    window_start = db.Column(db.DateTime, nullable=True)
+    window_end = db.Column(db.DateTime, nullable=True)
+    risk = db.Column(db.String(16), nullable=False, default="medium")  # low|medium|high
+    rollback = db.Column(db.Text, nullable=True, default="")
+    requested_by = db.Column(db.String(64), nullable=True, default="")
+    approved_by = db.Column(db.String(64), nullable=True, default="")
+    approved_at = db.Column(db.DateTime, nullable=True)
+    notify_status = db.Column(db.String(16), nullable=False, default="none")  # none|drafted|sent
+    notify_log = db.Column(db.Text, nullable=True, default="")
+    scheduled_action_id = db.Column(db.Integer, nullable=True)
+    result_summary = db.Column(db.Text, nullable=True, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    @property
+    def device_ids_list(self) -> list:
+        try:
+            v = json.loads(self.device_ids or "[]")
+            return v if isinstance(v, list) else []
+        except (ValueError, TypeError):
+            return []
+
+    @property
+    def params_dict(self) -> dict[str, Any]:
+        try:
+            v = json.loads(self.params or "{}")
+            return v if isinstance(v, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+
+    def __repr__(self) -> str:
+        return f"<ChangeRequest {self.title!r} {self.status}>"
+
+
+class ChangeRequestEvent(db.Model):
+    __tablename__ = "change_request_event"
+
+    id = db.Column(db.Integer, primary_key=True)
+    cr_id = db.Column(
+        db.Integer, db.ForeignKey("change_request.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    ts = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    kind = db.Column(db.String(32), nullable=False, default="")
+    by = db.Column(db.String(64), nullable=True, default="")
+    detail = db.Column(db.Text, nullable=True, default="")
+
+    def __repr__(self) -> str:
+        return f"<ChangeRequestEvent cr={self.cr_id} {self.kind}>"

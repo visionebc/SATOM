@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+{% block title %}API Explorer{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>API Explorer</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-code-square me-2 text-accent"></i>API Explorer</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Interactively call FortiWeb REST API endpoints through the management proxy
+    </p>
+  </div>
+  <a href="{{ url_for('registry.index') }}" class="btn btn-fw-outline btn-sm">
+    <i class="bi bi-table me-1"></i>Endpoint Registry
+  </a>
+</div>
+
+<div class="row g-3">
+  <!-- Request Panel -->
+  <div class="col-lg-4">
+    <div class="fw-card mb-3">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-send me-2 text-accent"></i>Request</span>
+      </div>
+      <div class="fw-card-body">
+        <!-- Appliance selector -->
+        <div class="mb-3">
+          <label class="fw-form-label">Appliance <span class="text-danger">*</span></label>
+          <select id="sel-appliance" class="form-select fw-form-control">
+            {% if appliances %}
+              {% for a in appliances %}
+                <option value="{{ a.id }}" data-kind="{{ a.kind }}"
+                        {{ 'selected' if request and request.args.get('id') == a.id|string else '' }}>
+                  {{ a.name }} — {{ a.host }}
+                </option>
+              {% endfor %}
+            {% else %}
+              <option value="">No appliances configured</option>
+            {% endif %}
+          </select>
+        </div>
+
+        <!-- Method + Path -->
+        <div class="mb-3">
+          <label class="fw-form-label">Method & Path <span class="text-danger">*</span></label>
+          <div class="d-flex gap-2">
+            <select id="sel-method" class="form-select fw-form-control" style="width:100px; flex-shrink:0;">
+              <option>GET</option>
+              <option>POST</option>
+              <option>PUT</option>
+              <option>DELETE</option>
+              <option>PATCH</option>
+            </select>
+            <input type="text" id="inp-path" class="form-control fw-form-control"
+                   placeholder="api/v2.0/system/status.systemstatus"
+                   value="{{ request.args.get('path','') if request else '' }}">
+          </div>
+          <div class="mt-1">
+            <small class="text-muted">Common paths:</small>
+            <div class="d-flex flex-wrap gap-1 mt-1">
+              {% for path in [
+                'api/v2.0/system/status.systemstatus',
+                'api/v2.0/cmdb/server-policy.policy',
+                'api/v2.0/cmdb/server-policy.vserver',
+                'api/v2.0/cmdb/server-policy.server-pool',
+                'api/v2.0/cmdb/waf/web-protection-profile.inline-protection',
+              ] %}
+                <button class="fw-tag" style="cursor:pointer;border:none;font-size:10.5px;"
+                        onclick="document.getElementById('inp-path').value='{{ path }}'">
+                  {{ path.split('.')[-1] }}
+                </button>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        <!-- Query params -->
+        <div class="mb-3">
+          <label class="fw-form-label">Key Filter (mkey)</label>
+          <input type="text" id="inp-mkey" class="form-control fw-form-control"
+                 placeholder="Object name / mkey (optional)"
+                 value="{{ request.args.get('mkey','') if request else '' }}">
+        </div>
+
+        <!-- Request body -->
+        <div class="mb-3">
+          <label class="fw-form-label">Request Body (JSON)</label>
+          <textarea id="inp-body" class="form-control fw-form-control font-monospace"
+                    rows="6" placeholder='{"data": {}}'
+                    style="font-family:Consolas,Monaco,monospace; font-size:12.5px;"></textarea>
+        </div>
+
+        <button class="btn btn-fw-primary w-100" id="btn-execute" onclick="runRequest()">
+          <i class="bi bi-play-circle me-1"></i>Execute Request
+        </button>
+      </div>
+    </div>
+
+    <!-- Request History -->
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-clock-history me-2"></i>History</span>
+        <button class="btn btn-sm btn-secondary" onclick="clearHistory()">Clear</button>
+      </div>
+      <div id="history-list" class="fw-card-body p-0" style="max-height:200px;overflow-y:auto;">
+        <div class="text-muted text-center py-3" style="font-size:13px;" id="history-empty">
+          No requests yet
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Response Panel -->
+  <div class="col-lg-8">
+    <div class="fw-card h-100">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-arrow-down-circle me-2 text-accent"></i>Response</span>
+        <div class="d-flex align-items-center gap-3">
+          <span id="resp-time" class="text-muted" style="font-size:12px;"></span>
+          <span id="resp-status" class="fw-badge fw-badge-secondary">—</span>
+          <button class="btn btn-sm btn-fw-outline" onclick="copyResponse()">
+            <i class="bi bi-clipboard me-1"></i>Copy
+          </button>
+        </div>
+      </div>
+      <div class="fw-card-body p-0" style="height: calc(100% - 52px);">
+        <pre id="resp-body"
+             class="fw-code-block m-0"
+             style="min-height:500px; border-radius:0 0 8px 8px;">Execute a request to see the response here.</pre>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const requestHistory = [];
+
+async function runRequest() {
+  const btn      = document.getElementById('btn-execute');
+  const appId    = document.getElementById('sel-appliance').value;
+  const kind     = document.querySelector('#sel-appliance option:checked')?.dataset.kind || 'FortiWeb';
+  const method   = document.getElementById('sel-method').value;
+  let   path     = document.getElementById('inp-path').value.trim().replace(/^\//, '');
+  const mkey     = document.getElementById('inp-mkey').value.trim();
+  const bodyTxt  = document.getElementById('inp-body').value.trim();
+  const respEl   = document.getElementById('resp-body');
+  const statusEl = document.getElementById('resp-status');
+  const timeEl   = document.getElementById('resp-time');
+
+  if (!appId) { window.FW.toast('Select an appliance first', 'warning'); return; }
+  if (!path)  { window.FW.toast('Enter an API path', 'warning'); return; }
+
+  if (mkey) path += '?mkey=' + encodeURIComponent(mkey);
+
+  const prefix = (kind || '').toLowerCase().includes('adc') ? 'adc' : 'fw';
+  const url    = '/api/' + prefix + '/' + appId + '/proxy/' + path;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="fw-loading-spinner"></span> Executing…';
+  respEl.textContent = 'Loading…';
+  statusEl.textContent = '…';
+  statusEl.className = 'fw-badge fw-badge-secondary';
+  timeEl.textContent = '';
+
+  const t0 = Date.now();
+
+  try {
+    const opts = {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+      }
+    };
+    if (bodyTxt && method !== 'GET' && method !== 'DELETE') {
+      opts.body = bodyTxt;
+    }
+
+    const r    = await fetch(url, opts);
+    const ms   = Date.now() - t0;
+    const data = await r.json().catch(() => r.text());
+
+    statusEl.textContent = r.status + ' ' + r.statusText;
+    statusEl.className   = 'fw-badge ' + (r.ok ? 'fw-badge-success' : 'fw-badge-danger');
+    timeEl.textContent   = ms + 'ms';
+
+    const formatted = typeof data === 'object' ? JSON.stringify(data, null, 2) : String(data);
+    respEl.innerHTML = syntaxHighlight(formatted);
+
+    // Add to history
+    addHistory(method, path.split('?')[0], r.status);
+
+  } catch (err) {
+    statusEl.textContent = 'Error';
+    statusEl.className   = 'fw-badge fw-badge-danger';
+    respEl.textContent   = 'Request failed: ' + err.message;
+    timeEl.textContent   = '';
+    window.FW.toast('Request failed: ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-play-circle me-1"></i>Execute Request';
+  }
+}
+
+function syntaxHighlight(json) {
+  return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+    let cls = 'json-number';
+    if (/^"/.test(match)) { cls = /:$/.test(match) ? 'json-key' : 'json-string'; }
+    else if (/true|false/.test(match)) { cls = 'json-bool'; }
+    else if (/null/.test(match)) { cls = 'json-null'; }
+    return '<span class="' + cls + '">' + match + '</span>';
+  });
+}
+
+function addHistory(method, path, status) {
+  requestHistory.unshift({ method, path, status, ts: new Date().toLocaleTimeString() });
+  if (requestHistory.length > 20) requestHistory.pop();
+  renderHistory();
+}
+
+function renderHistory() {
+  const list  = document.getElementById('history-list');
+  const empty = document.getElementById('history-empty');
+
+  if (!requestHistory.length) { empty.style.display = ''; return; }
+  empty.style.display = 'none';
+
+  list.innerHTML = requestHistory.map(function (h) {
+    return '<button class="list-group-item list-group-item-action text-start" onclick="loadHistory(' + JSON.stringify(h.method) + ',' + JSON.stringify(h.path) + ')" style="font-size:12px;padding:8px 14px;border:none;">' +
+      '<span class="fw-api-method fw-api-method-' + h.method.toLowerCase() + ' me-2">' + h.method + '</span>' +
+      '<span class="text-truncate" style="max-width:260px;display:inline-block;vertical-align:middle;">' + h.path + '</span>' +
+      '<span class="float-end text-muted" style="font-size:11px;">' + h.ts + '</span>' +
+      '</button>';
+  }).join('');
+}
+
+function loadHistory(method, path) {
+  document.getElementById('sel-method').value = method;
+  document.getElementById('inp-path').value   = path;
+}
+
+function clearHistory() {
+  requestHistory.length = 0;
+  renderHistory();
+  document.getElementById('history-empty').style.display = '';
+}
+
+function copyResponse() {
+  const text = document.getElementById('resp-body').textContent;
+  navigator.clipboard.writeText(text)
+    .then(() => window.FW.toast('Response copied', 'success'))
+    .catch(() => window.FW.toast('Copy failed', 'danger'));
+}
+
+// Ctrl+Enter to submit
+document.addEventListener('keydown', function (e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    runRequest();
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>Sign In — Fortinet Manager Web</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+        crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/fortiweb.css') }}">
+
+  <style>
+    body {
+      background: #1D3452;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      font-family: var(--fw-font);
+    }
+
+    .login-wrapper {
+      width: 100%;
+      max-width: 420px;
+      padding: 20px;
+    }
+
+    .login-card {
+      background: #FFFFFF;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+      overflow: hidden;
+    }
+
+    .login-header {
+      background: #162940;
+      padding: 32px 32px 28px;
+      text-align: center;
+    }
+
+    .login-logo {
+      width: 64px;
+      height: 64px;
+      background: var(--fw-accent);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      font-weight: 700;
+      color: #fff;
+      margin: 0 auto 16px;
+      letter-spacing: -1px;
+    }
+
+    .login-brand-text {
+      color: #FFFFFF;
+      font-size: 20px;
+      font-weight: 700;
+      margin: 0 0 4px;
+      letter-spacing: 0.2px;
+    }
+
+    .login-subtitle {
+      color: #B8C8D8;
+      font-size: 13px;
+      margin: 0;
+    }
+
+    .login-body {
+      padding: 32px;
+    }
+
+    .login-body .form-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: #495057;
+      margin-bottom: 5px;
+    }
+
+    .login-body .form-control {
+      border: 1px solid #DEE2E6;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 14px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .login-body .form-control:focus {
+      border-color: var(--fw-accent);
+      box-shadow: 0 0 0 3px rgba(239,84,36,0.12);
+    }
+
+    .login-body .input-group .input-group-text {
+      background: #F8F9FA;
+      border: 1px solid #DEE2E6;
+      color: #6C757D;
+    }
+
+    .btn-login {
+      background: var(--fw-accent);
+      border-color: var(--fw-accent);
+      color: #FFFFFF;
+      font-weight: 600;
+      font-size: 14px;
+      padding: 10px;
+      border-radius: 6px;
+      width: 100%;
+      transition: background 0.2s, border-color 0.2s, transform 0.1s;
+    }
+
+    .btn-login:hover {
+      background: var(--fw-accent-hover);
+      border-color: var(--fw-accent-hover);
+      color: #FFFFFF;
+      transform: translateY(-1px);
+    }
+
+    .btn-login:active { transform: translateY(0); }
+
+    .login-footer {
+      padding: 14px 32px;
+      background: #F8F9FA;
+      border-top: 1px solid #DEE2E6;
+      text-align: center;
+    }
+
+    .login-footer p {
+      margin: 0;
+      font-size: 11.5px;
+      color: #6C757D;
+    }
+
+    .alert-login {
+      border: none;
+      border-left: 4px solid var(--fw-danger);
+      background: rgba(220,53,69,0.06);
+      color: #9B1C2A;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .password-toggle {
+      cursor: pointer;
+      background: #F8F9FA;
+      border: 1px solid #DEE2E6;
+      border-left: none;
+      padding: 10px 12px;
+      color: #6C757D;
+      border-radius: 0 6px 6px 0;
+    }
+
+    .password-toggle:hover { color: var(--fw-accent); }
+  </style>
+</head>
+<body>
+
+<div class="login-wrapper">
+  <div class="login-card">
+
+    <!-- Header -->
+    <div class="login-header">
+      <div class="login-logo">FW</div>
+      <p class="login-brand-text">Fortinet Manager Web</p>
+      <p class="login-subtitle">Centralized FortiWeb Management</p>
+    </div>
+
+    <!-- Body -->
+    <div class="login-body">
+
+      {% with messages = get_flashed_messages(with_categories=True) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="alert-login">
+              <i class="bi bi-exclamation-triangle-fill"></i>
+              {{ message }}
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      {% if error %}
+        <div class="alert-login">
+          <i class="bi bi-exclamation-triangle-fill"></i>
+          {{ error }}
+        </div>
+      {% endif %}
+
+      <form method="POST" action="{{ url_for('auth.login') if 'auth' in dir() else '/login' }}" novalidate>
+        {{ form.hidden_tag() if form and form.hidden_tag else '' }}
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="mb-3">
+          <label for="username" class="form-label">Username</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="bi bi-person"></i></span>
+            <input
+              type="text"
+              class="form-control"
+              id="username"
+              name="username"
+              placeholder="Enter username"
+              value="{{ request.form.get('username', '') if request else '' }}"
+              autocomplete="username"
+              autofocus
+              required>
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <label for="password" class="form-label">Password</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="bi bi-lock"></i></span>
+            <input
+              type="password"
+              class="form-control"
+              id="password"
+              name="password"
+              placeholder="Enter password"
+              autocomplete="current-password"
+              required>
+            <button type="button" class="password-toggle" id="pw-toggle" tabindex="-1">
+              <i class="bi bi-eye" id="pw-icon"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="mb-3 d-flex align-items-center justify-content-between">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="remember" name="remember">
+            <label class="form-check-label" for="remember" style="font-size:13px;">
+              Remember me
+            </label>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-login">
+          <i class="bi bi-box-arrow-in-right me-2"></i>Sign In
+        </button>
+      </form>
+    </div>
+
+    <!-- Footer -->
+    <div class="login-footer">
+      <p>Fortinet Manager Web v1.0 &nbsp;&bull;&nbsp; Authorized users only</p>
+    </div>
+
+  </div>
+
+  <p class="text-center mt-3" style="color: rgba(255,255,255,0.4); font-size: 11.5px;">
+    &copy; 2026 Fortinet Manager &mdash; All rights reserved
+  </p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-YvpcrYf0tY3lHB60NNkmXc4s9bIOgUxi8T/jzmB9F5f7GSuQMkEqCMbY0iH7yKB5q7"
+        crossorigin="anonymous"></script>
+<script>
+  // Password visibility toggle
+  document.getElementById('pw-toggle')?.addEventListener('click', function () {
+    const pw   = document.getElementById('password');
+    const icon = document.getElementById('pw-icon');
+    if (pw.type === 'password') {
+      pw.type = 'text';
+      icon.className = 'bi bi-eye-slash';
+    } else {
+      pw.type = 'password';
+      icon.className = 'bi bi-eye';
+    }
+  });
+</script>
+</body>
+</html>

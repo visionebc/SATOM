@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Search Results — "{{ term }}"{% endblock %}
+
+{% block breadcrumb %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('search.index') }}">Search</a></li>
+    <li class="breadcrumb-item active">Results</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h4 class="mb-3">Search Results for "{{ term }}"</h4>
+
+<form method="get" action="{{ url_for('search.results') }}" class="mb-4">
+  <div class="d-flex gap-2">
+    <input name="q" value="{{ term }}" class="form-control" placeholder="Search across appliances...">
+    <button class="btn btn-primary">Search</button>
+  </div>
+</form>
+
+{% if not search_results %}
+<div class="text-muted">No results found.</div>
+{% else %}
+  {% for entry in search_results %}
+  <div class="card mb-3">
+    <div class="card-header">
+      <strong>{{ entry.appliance.name }}</strong>
+      <span class="badge bg-secondary ms-2">{{ entry.appliance.kind }}</span>
+      <span class="text-muted ms-2">{{ entry.hits|length }} match(es)</span>
+    </div>
+    <div class="card-body p-0">
+      {% if entry.hits[0].error is defined %}
+        <div class="alert alert-warning m-3">{{ entry.hits[0].error }}</div>
+      {% else %}
+      <table class="table table-sm table-hover mb-0">
+        <thead><tr><th>Endpoint</th><th>Name</th></tr></thead>
+        <tbody>
+          {% for hit in entry.hits %}
+          <tr>
+            <td><code>{{ hit.endpoint }}</code></td>
+            <td>{{ hit.item.get('name', hit.item) if hit.item is mapping else hit.item }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block title %}Endpoint Registry{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>Registry</span>
+  {% if current_section %}
+    <span class="separator">/</span>
+    <span>{{ current_section }}</span>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-table me-2 text-accent"></i>FortiWeb Endpoint Registry</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      FortiWeb REST API endpoint catalog — browse, search, and cross-reference API paths
+    </p>
+  </div>
+  <button class="btn btn-fw-outline btn-sm" onclick="copyEndpointList()">
+    <i class="bi bi-clipboard me-1"></i>Copy List
+  </button>
+</div>
+
+<div class="row g-3">
+  <!-- Sidebar navigation -->
+  <div class="col-lg-3 col-md-4">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-list-ul me-2"></i>Sections</span>
+        <span class="fw-badge fw-badge-secondary">{{ sections|length if sections else 0 }}</span>
+      </div>
+      <div class="fw-card-body p-0">
+        <div class="fw-search-box" style="padding:10px 12px; border-bottom:1px solid #F0F2F5;">
+          <i class="bi bi-search search-icon" style="left:22px;"></i>
+          <input type="text" id="sectionSearch" placeholder="Filter sections…" style="padding-left:34px; font-size:13px;"
+                 oninput="filterSections(this.value)">
+        </div>
+        <div class="list-group list-group-flush" id="sectionList" style="max-height:520px; overflow-y:auto;">
+          <a href="{{ url_for('registry.index') }}"
+             class="list-group-item list-group-item-action d-flex align-items-center justify-content-between {{ 'active' if not current_section }}"
+             style="font-size:13px; padding:8px 14px; {{ 'background:#EF5424;color:#fff;border-color:#EF5424;' if not current_section else '' }}">
+            <span><i class="bi bi-grid me-2"></i>All Endpoints</span>
+            <span class="fw-badge {{ 'fw-badge-secondary' if current_section else '' }}" style="{{ 'background:rgba(255,255,255,0.25);color:#fff;' if not current_section else '' }}">
+              {{ endpoints|length if endpoints else 0 }}
+            </span>
+          </a>
+          {% if sections %}
+            {% for s in sections %}
+              <a href="{{ url_for('registry.section', name=s) }}"
+                 class="list-group-item list-group-item-action registry-section d-flex align-items-center justify-content-between {{ 'active' if current_section == s }}"
+                 style="font-size:13px; padding:8px 14px; {{ 'background:#EF5424;color:#fff;border-color:#EF5424;' if current_section == s else '' }}">
+                <span>{{ s }}</span>
+              </a>
+            {% endfor %}
+          {% else %}
+            <div class="p-3 text-muted text-center" style="font-size:13px;">No sections loaded</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Endpoint table -->
+  <div class="col-lg-9 col-md-8">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title">
+          {% if current_section %}
+            {{ current_section }}
+          {% else %}
+            All Endpoints
+          {% endif %}
+        </span>
+        <div class="d-flex align-items-center gap-2">
+          <span class="fw-badge fw-badge-secondary">{{ endpoints|length if endpoints else 0 }} endpoints</span>
+        </div>
+      </div>
+      <div class="fw-card-header" style="background:#FAFBFC; border-top: none; padding-top:10px; padding-bottom:10px;">
+        <div class="fw-search-box" style="max-width:100%;">
+          <i class="bi bi-search search-icon"></i>
+          <input type="text" id="endpointSearch" placeholder="Search endpoints by name or path…"
+                 oninput="filterEndpoints(this.value)" style="max-width:400px;">
+        </div>
+      </div>
+      <div class="fw-card-body p-0">
+        <table class="fw-table" id="endpointsTable">
+          <thead>
+            <tr>
+              <th style="width:35%;">Endpoint Name</th>
+              <th>API Path / URN</th>
+              <th style="width:80px;">Method</th>
+              <th style="width:80px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if endpoints %}
+              {% for e in endpoints %}
+              <tr>
+                <td>
+                  <span style="font-size:13px; font-weight:500;">{{ e.name }}</span>
+                  {% if e.section %}
+                    <br><span class="fw-tag" style="font-size:10px;">{{ e.section }}</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <code class="fw-api-path" style="background:#F4F5F7; padding:2px 6px; border-radius:3px; font-size:12px;">
+                    {{ e.urn or e.path or '—' }}
+                  </code>
+                </td>
+                <td>
+                  {% set method = e.method or 'GET' %}
+                  <span class="fw-api-method fw-api-method-{{ method|lower }}">{{ method }}</span>
+                </td>
+                <td>
+                  <a href="{{ url_for('api_explorer.index') }}?path={{ (e.urn or e.path or '')|urlencode }}"
+                     class="btn btn-sm btn-outline-primary btn-sm-icon" title="Try in API Explorer">
+                    <i class="bi bi-play-circle"></i>
+                  </a>
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="4">
+                  <div class="fw-empty-state py-5">
+                    <div class="fw-empty-state-icon"><i class="bi bi-table"></i></div>
+                    <div class="fw-empty-state-title">No endpoints in registry</div>
+                    <div class="fw-empty-state-text">
+                      The endpoint registry is populated from FortiWeb 7.6 API documentation.
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterEndpoints(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('#endpointsTable tbody tr').forEach(function (row) {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+function filterSections(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('.registry-section').forEach(function (el) {
+    el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+function copyEndpointList() {
+  const rows = document.querySelectorAll('#endpointsTable tbody tr');
+  const lines = [];
+  rows.forEach(function (row) {
+    if (row.style.display === 'none') return;
+    const name = row.querySelector('td:first-child')?.textContent.trim() || '';
+    const path = row.querySelector('td:nth-child(2) code')?.textContent.trim() || '';
+    lines.push(name + '\t' + path);
+  });
+  navigator.clipboard.writeText(lines.join('\n'))
+    .then(() => window.FW.toast('Copied ' + lines.length + ' endpoints', 'success'))
+    .catch(() => window.FW.toast('Copy failed', 'danger'));
+}
+</script>
+{% endblock %}

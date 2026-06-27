@@ -1,0 +1,379 @@
+{% extends "base.html" %}
+
+{% block title %}Settings — Fortinet Manager Web{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>Settings</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-gear me-2 text-accent"></i>Settings</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">Application configuration and security settings</p>
+  </div>
+</div>
+
+<!-- Tab navigation -->
+<ul class="nav nav-tabs mb-4" id="settingsTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-general" type="button">
+      <i class="bi bi-sliders me-1"></i>General
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-security" type="button">
+      <i class="bi bi-shield-lock me-1"></i>Security
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-password" type="button">
+      <i class="bi bi-key me-1"></i>Change Password
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-about" type="button">
+      <i class="bi bi-info-circle me-1"></i>About
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+  <!-- GENERAL TAB -->
+  <div class="tab-pane fade show active" id="tab-general">
+    <div class="row g-3">
+      <div class="col-lg-7">
+        <div class="fw-card">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-sliders me-2 text-accent"></i>General Configuration</span>
+          </div>
+          <div class="fw-card-body">
+            <form method="POST" action="{{ url_for('settings.save_general') if 'settings' in dir() else '/settings/general' }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+              <div class="mb-4">
+                <label class="fw-form-label">Application Name</label>
+                <input type="text" name="app_name" class="form-control fw-form-control"
+                       value="{{ settings.get('app_name','Fortinet Manager Web') if settings else 'Fortinet Manager Web' }}">
+                <div class="form-text">Displayed in the browser title and top bar</div>
+              </div>
+
+              <div class="mb-4">
+                <label class="fw-form-label">Default Appliance Platform</label>
+                <select name="default_kind" class="form-select fw-form-control">
+                  <option value="FortiWeb" {{ 'selected' if settings and settings.get('default_kind') == 'FortiWeb' else '' }}>
+                    FortiWeb (Hardware / VM)
+                  </option>
+                  <option value="FortiWeb-Cloud" {{ 'selected' if settings and settings.get('default_kind') == 'FortiWeb-Cloud' else '' }}>
+                    FortiWeb-Cloud
+                  </option>
+                </select>
+              </div>
+
+              <div class="mb-4">
+                <label class="fw-form-label">Session Timeout (minutes)</label>
+                <input type="number" name="session_timeout" class="form-control fw-form-control"
+                       value="{{ settings.get('session_timeout', 60) if settings else 60 }}"
+                       min="5" max="1440" style="max-width:160px;">
+                <div class="form-text">Users are logged out after this period of inactivity</div>
+              </div>
+
+              <div class="mb-4">
+                <label class="fw-form-label">Status Poll Interval (seconds)</label>
+                <input type="number" name="poll_interval" class="form-control fw-form-control"
+                       value="{{ settings.get('poll_interval', 30) if settings else 30 }}"
+                       min="10" max="3600" style="max-width:160px;">
+                <div class="form-text">How often appliance online/offline status is checked</div>
+              </div>
+
+              <div class="mb-4">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="show_raw_config" id="chk-raw"
+                         {{ 'checked' if settings and settings.get('show_raw_config') else '' }}>
+                  <label class="form-check-label" for="chk-raw">
+                    Show raw JSON config on policy detail pages
+                  </label>
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-fw-primary">
+                <i class="bi bi-check-lg me-1"></i>Save General Settings
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-5">
+        <div class="fw-card">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>System Information</span>
+          </div>
+          <div class="fw-card-body">
+            <table class="table table-sm" style="font-size:13px;">
+              <tbody>
+                <tr>
+                  <td class="text-muted" style="width:50%;">Application</td>
+                  <td>Fortinet Manager Web</td>
+                </tr>
+                <tr>
+                  <td class="text-muted">Version</td>
+                  <td><span class="fw-badge fw-badge-primary">v1.0</span></td>
+                </tr>
+                <tr>
+                  <td class="text-muted">API Target</td>
+                  <td>FortiWeb 7.6 REST API</td>
+                </tr>
+                <tr>
+                  <td class="text-muted">Framework</td>
+                  <td>Flask + SQLAlchemy</td>
+                </tr>
+                <tr>
+                  <td class="text-muted">Appliances</td>
+                  <td>{{ appliance_count if appliance_count is defined else '—' }}</td>
+                </tr>
+                <tr>
+                  <td class="text-muted">Users</td>
+                  <td>{{ user_count if user_count is defined else '—' }}</td>
+                </tr>
+                <tr>
+                  <td class="text-muted">Logged in as</td>
+                  <td><strong>{{ current_user.username if current_user else '—' }}</strong></td>
+                </tr>
+                <tr>
+                  <td class="text-muted">Role</td>
+                  <td>
+                    {% if current_user and current_user.role == 'admin' %}
+                      <span class="fw-badge fw-badge-danger">Admin</span>
+                    {% elif current_user and current_user.role == 'operator' %}
+                      <span class="fw-badge fw-badge-primary">Operator</span>
+                    {% else %}
+                      <span class="fw-badge fw-badge-secondary">Read Only</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECURITY TAB -->
+  <div class="tab-pane fade" id="tab-security">
+    <div class="row g-3">
+      <div class="col-lg-7">
+        <div class="fw-card">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-shield-check me-2 text-accent"></i>Security Status</span>
+          </div>
+          <div class="fw-card-body">
+            {% set checks = [
+              ('CSRF Protection', True, 'All form submissions require a valid CSRF token'),
+              ('Session Cookies', True, 'HttpOnly + SameSite=Lax flags enforced'),
+              ('Security Headers', True, 'X-Frame-Options, X-Content-Type, CSP, HSTS enabled'),
+              ('Rate Limiting', True, '5 login attempts per minute per IP'),
+              ('Credential Encryption', True, 'API credentials encrypted with Fernet at rest'),
+              ('Password Hashing', True, 'bcrypt / scrypt with cost factor ≥ 12'),
+              ('Audit Logging', True, 'All user actions logged with timestamp and IP'),
+              ('TLS Verification', True, 'SSL cert verification enabled by default per appliance'),
+            ] %}
+            {% for name, ok, desc in checks %}
+            <div class="d-flex align-items-start gap-3 py-2" style="border-bottom:1px solid #F0F2F5;">
+              <div class="mt-1">
+                {% if ok %}
+                  <i class="bi bi-check-circle-fill" style="color:var(--fw-success); font-size:16px;"></i>
+                {% else %}
+                  <i class="bi bi-x-circle-fill" style="color:var(--fw-danger); font-size:16px;"></i>
+                {% endif %}
+              </div>
+              <div>
+                <div style="font-size:13.5px; font-weight:500;">{{ name }}</div>
+                <div style="font-size:12px; color:#6C757D;">{{ desc }}</div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-5">
+        <div class="fw-card">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-lock me-2 text-accent"></i>Active Sessions</span>
+          </div>
+          <div class="fw-card-body">
+            <p class="text-muted" style="font-size:13px;">
+              Your current session. Use Sign Out to end it securely.
+            </p>
+            <div class="d-flex align-items-center gap-3 p-3" style="background:#F4F5F7; border-radius:8px;">
+              <div class="fw-avatar">
+                {{ current_user.username[0].upper() if current_user and current_user.username else 'U' }}
+              </div>
+              <div>
+                <div style="font-size:13.5px; font-weight:500;">{{ current_user.username if current_user else '—' }}</div>
+                <div class="text-muted" style="font-size:12px;">Current session</div>
+              </div>
+              <div class="ms-auto">
+                <span class="fw-status fw-status-online" style="font-size:12px;">
+                  <span class="fw-status-dot"></span>Active
+                </span>
+              </div>
+            </div>
+            <div class="mt-3">
+              <a href="{{ url_for('auth.logout') if 'auth' in dir() else '/logout' }}"
+                 class="btn btn-outline-danger btn-sm">
+                <i class="bi bi-box-arrow-right me-1"></i>Sign Out
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHANGE PASSWORD TAB -->
+  <div class="tab-pane fade" id="tab-password">
+    <div class="row justify-content-center">
+      <div class="col-lg-5">
+        <div class="fw-card">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-key me-2 text-accent"></i>Change Password</span>
+          </div>
+          <div class="fw-card-body">
+            <form method="POST" action="{{ url_for('auth.profile') if 'auth' in dir() else '/profile' }}"
+                  id="changePasswordForm">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+              <div class="mb-3">
+                <label class="fw-form-label">Current Password <span class="text-danger">*</span></label>
+                <input type="password" name="current_password" class="form-control fw-form-control"
+                       placeholder="Your current password" required autocomplete="current-password">
+              </div>
+              <div class="mb-3">
+                <label class="fw-form-label">New Password <span class="text-danger">*</span></label>
+                <input type="password" name="new_password" class="form-control fw-form-control"
+                       id="newPwd" placeholder="At least 8 characters" required autocomplete="new-password"
+                       oninput="checkStrength(this.value)">
+                <div class="mt-2" id="pwd-strength-bar" style="height:4px; border-radius:2px; background:#E9ECEF; overflow:hidden;">
+                  <div id="pwd-strength-fill" style="height:100%; width:0; transition:width 0.3s, background 0.3s;"></div>
+                </div>
+                <small id="pwd-strength-text" class="text-muted"></small>
+              </div>
+              <div class="mb-4">
+                <label class="fw-form-label">Confirm New Password <span class="text-danger">*</span></label>
+                <input type="password" name="confirm_password" class="form-control fw-form-control"
+                       placeholder="Repeat new password" required autocomplete="new-password">
+              </div>
+
+              <button type="submit" class="btn btn-fw-primary w-100">
+                <i class="bi bi-check-lg me-1"></i>Update Password
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ABOUT TAB -->
+  <div class="tab-pane fade" id="tab-about">
+    <div class="row g-3">
+      <div class="col-lg-6">
+        <div class="fw-card">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>About Fortinet Manager Web</span>
+          </div>
+          <div class="fw-card-body">
+            <div class="d-flex align-items-center gap-3 mb-4">
+              <div class="fw-logo-mark" style="width:52px;height:52px;font-size:20px;border-radius:10px;">FW</div>
+              <div>
+                <h5 class="mb-0" style="font-weight:700;">Fortinet Manager Web</h5>
+                <span class="fw-badge fw-badge-primary">v1.0</span>
+              </div>
+            </div>
+            <p style="font-size:13.5px; color:#495057;">
+              Multi-user FortiWeb &amp; FortiADC management console built on Flask + SQLAlchemy.
+              OWASP-hardened with full audit logging, RBAC, and encrypted credential storage.
+            </p>
+            <dl class="row" style="font-size:13px;">
+              <dt class="col-sm-4 text-muted">Repository</dt>
+              <dd class="col-sm-8">
+                <a href="http://192.0.2.53:3000/visionebc/fortinet-manager-web" target="_blank">
+                  visionebc/fortinet-manager-web
+                </a>
+              </dd>
+              <dt class="col-sm-4 text-muted">RBAC Roles</dt>
+              <dd class="col-sm-8">readonly, operator, admin</dd>
+              <dt class="col-sm-4 text-muted">API Target</dt>
+              <dd class="col-sm-8">FortiWeb 7.6 REST API</dd>
+              <dt class="col-sm-4 text-muted">UI Framework</dt>
+              <dd class="col-sm-8">Bootstrap 5.3 + Custom FortiWeb 7.6 Theme</dd>
+              <dt class="col-sm-4 text-muted">Charts</dt>
+              <dd class="col-sm-8">Chart.js 4.4</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="fw-card">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-keyboard me-2 text-accent"></i>Keyboard Shortcuts</span>
+          </div>
+          <div class="fw-card-body">
+            <table class="table table-sm" style="font-size:13px;">
+              <tbody>
+                <tr>
+                  <td><kbd>/</kbd></td>
+                  <td>Focus global search</td>
+                </tr>
+                <tr>
+                  <td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td>
+                  <td>Execute API Explorer request</td>
+                </tr>
+                <tr>
+                  <td><kbd>Esc</kbd></td>
+                  <td>Close modal dialogs</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function checkStrength(pwd) {
+  const fill = document.getElementById('pwd-strength-fill');
+  const text = document.getElementById('pwd-strength-text');
+  if (!fill || !text) return;
+
+  let score = 0;
+  if (pwd.length >= 8) score++;
+  if (pwd.length >= 12) score++;
+  if (/[A-Z]/.test(pwd) && /[a-z]/.test(pwd)) score++;
+  if (/\d/.test(pwd)) score++;
+  if (/[^A-Za-z0-9]/.test(pwd)) score++;
+
+  const pcts   = [0, 25, 50, 75, 100];
+  const colors = ['transparent', '#DC3545', '#FFC107', '#17A2B8', '#28A745'];
+  const labels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
+
+  fill.style.width      = pcts[score] + '%';
+  fill.style.background = colors[score];
+  text.textContent      = score > 0 ? 'Password strength: ' + labels[score] : '';
+  text.style.color      = colors[score];
+}
+</script>
+{% endblock %}

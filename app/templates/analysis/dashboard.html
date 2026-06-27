@@ -1,0 +1,321 @@
+{% extends "base.html" %}
+{% block head %}
+<meta name="fw-auto-refresh" content="60">
+{% endblock %}
+
+{% block title %}FortiView — {{ appliance.name if appliance else 'Analysis' }}{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('analysis.index') }}">Analysis</a>
+  <span class="separator">/</span>
+  <span>{{ appliance.name if appliance else 'Dashboard' }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-graph-up-arrow me-2 text-accent"></i>
+      FortiView — {{ appliance.name if appliance else 'Dashboard' }}
+    </h1>
+    <div class="d-flex align-items-center gap-3 mt-1">
+      <span class="text-muted" style="font-size:12px;">
+        <i class="bi bi-clock me-1"></i>Auto-refresh in <span id="fw-refresh-counter">60</span>s
+      </span>
+      <span class="fw-status fw-status-unknown" data-status-id="{{ appliance.id if appliance else '' }}" style="font-size:12px;">
+        <span class="fw-status-dot"></span>Checking…
+      </span>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-fw-outline btn-sm" id="fw-refresh-btn">
+      <i class="bi bi-arrow-clockwise me-1"></i>Refresh Now
+    </button>
+    <a href="{{ url_for('analysis.index') }}" class="btn btn-secondary btn-sm">
+      <i class="bi bi-chevron-left me-1"></i>Back
+    </a>
+  </div>
+</div>
+
+{% if error %}
+<div class="fw-alert fw-alert-warning mb-4">
+  <i class="bi bi-exclamation-triangle me-2"></i>{{ error }}
+</div>
+{% endif %}
+
+<!-- KPI Stat Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-xl-3 col-md-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-info"><i class="bi bi-activity"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.total_sessions if stats else '—' }}</div>
+        <div class="fw-stat-label">Active Sessions</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-3 col-md-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-danger"><i class="bi bi-shield-x"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.attack_events if stats else '—' }}</div>
+        <div class="fw-stat-label">Attack Events</div>
+        {% if stats and stats.attack_delta is defined %}
+          <div class="fw-stat-delta {{ 'up' if stats.attack_delta > 0 else 'down' }}">
+            {{ '+' if stats.attack_delta > 0 else '' }}{{ stats.attack_delta }}% vs last hour
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-3 col-md-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-success"><i class="bi bi-check2-all"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.allowed_requests if stats else '—' }}</div>
+        <div class="fw-stat-label">Allowed Requests</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-3 col-md-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-danger"><i class="bi bi-slash-circle"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.blocked_requests if stats else '—' }}</div>
+        <div class="fw-stat-label">Blocked Requests</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Charts row -->
+<div class="row g-3 mb-4">
+  <!-- Attack types chart -->
+  <div class="col-lg-5">
+    <div class="fw-card h-100">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-pie-chart me-2 text-accent"></i>Attack Types</span>
+        <span class="text-muted" style="font-size:12px;">Last 24 hours</span>
+      </div>
+      <div class="fw-card-body d-flex align-items-center justify-content-center">
+        <div class="fw-chart-container" style="height:260px;max-width:300px;width:100%;">
+          <canvas id="attackTypesChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Traffic trend chart -->
+  <div class="col-lg-7">
+    <div class="fw-card h-100">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-graph-up me-2 text-accent"></i>Traffic Trend</span>
+        <span class="text-muted" style="font-size:12px;">Requests per hour</span>
+      </div>
+      <div class="fw-card-body">
+        <div class="fw-chart-container">
+          <canvas id="trafficTrendChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Top Sources + Top Attacked Policies -->
+<div class="row g-3">
+  <!-- Top Sources -->
+  <div class="col-lg-6">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-geo-alt me-2 text-accent"></i>Top Traffic Sources</span>
+        <span class="fw-badge fw-badge-secondary">Top 10</span>
+      </div>
+      <div class="fw-card-body p-0">
+        <table class="fw-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Source IP</th>
+              <th>Country</th>
+              <th>Requests</th>
+              <th>Violations</th>
+              <th>Threat</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if sources %}
+              {% for s in sources %}
+              <tr>
+                <td class="text-muted" style="font-size:12px;">{{ loop.index }}</td>
+                <td class="mono" style="font-size:12.5px;">{{ s.src_ip or s.ip or '—' }}</td>
+                <td>
+                  {% if s.country %}
+                    <span title="{{ s.country }}">{{ s.country[:2].upper() }}</span>
+                  {% else %}—{% endif %}
+                </td>
+                <td>{{ s.total or s.requests or 0 }}</td>
+                <td>
+                  {% if s.violations and s.violations > 0 %}
+                    <span class="fw-badge fw-badge-danger">{{ s.violations }}</span>
+                  {% else %}
+                    <span class="text-muted">0</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% set threat = ((s.violations or 0) / (s.total or 1) * 100) | round(0) | int %}
+                  {% if threat > 50 %}
+                    <span class="fw-badge fw-badge-danger">High</span>
+                  {% elif threat > 10 %}
+                    <span class="fw-badge fw-badge-primary">Med</span>
+                  {% else %}
+                    <span class="fw-badge fw-badge-success">Low</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="6" class="text-center text-muted py-4">No traffic data available</td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Attacked Policies -->
+  <div class="col-lg-6">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-shield-exclamation me-2 text-accent"></i>Top Attacked Policies</span>
+        <span class="fw-badge fw-badge-secondary">Top 10</span>
+      </div>
+      <div class="fw-card-body p-0">
+        <table class="fw-table">
+          <thead>
+            <tr>
+              <th>Policy</th>
+              <th>Attacks</th>
+              <th>Blocked</th>
+              <th>Alert</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if attacked_policies %}
+              {% for p in attacked_policies %}
+              <tr>
+                <td>
+                  <a href="{{ url_for('workspace.policy_detail', appliance_id=appliance.id, policy_name=p.policy_name) if appliance else '#' }}"
+                     style="font-size:13px;">{{ p.policy_name }}</a>
+                </td>
+                <td>{{ p.total_attacks or 0 }}</td>
+                <td><span class="fw-badge fw-badge-danger">{{ p.blocked or 0 }}</span></td>
+                <td><span class="fw-badge fw-badge-warning">{{ p.alert or 0 }}</span></td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="4" class="text-center text-muted py-4">No attack data available</td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Attack Types Doughnut Chart
+(function () {
+  const ctx = document.getElementById('attackTypesChart');
+  if (!ctx) return;
+
+  const labels = {{ attack_type_labels | tojson if attack_type_labels else '["SQL Injection","XSS","RFI","Path Traversal","CSRF","Other"]' }};
+  const data   = {{ attack_type_counts | tojson if attack_type_counts else '[42, 28, 15, 9, 6, 12]' }};
+
+  new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: data,
+        backgroundColor: [
+          '#EF5424', '#DC3545', '#FFC107', '#17A2B8', '#1D3452', '#6C757D'
+        ],
+        borderWidth: 2,
+        borderColor: '#fff',
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { font: { size: 11 }, padding: 10 }
+        }
+      },
+      cutout: '60%'
+    }
+  });
+})();
+
+// Traffic Trend Line Chart
+(function () {
+  const ctx = document.getElementById('trafficTrendChart');
+  if (!ctx) return;
+
+  const hours = {{ trend_hours | tojson if trend_hours else '["00","01","02","03","04","05","06","07","08","09","10","11","12","13","14","15","16","17","18","19","20","21","22","23"]' }};
+  const allowed  = {{ trend_allowed  | tojson if trend_allowed  else '[120,90,60,40,35,50,180,320,410,390,450,480,420,460,490,510,530,500,460,390,300,250,200,160]' }};
+  const blocked  = {{ trend_blocked  | tojson if trend_blocked  else '[5,3,2,1,1,2,8,15,20,18,22,24,19,21,23,25,26,24,21,18,14,11,9,7]' }};
+
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: hours,
+      datasets: [
+        {
+          label: 'Allowed',
+          data: allowed,
+          borderColor: '#28A745',
+          backgroundColor: 'rgba(40,167,69,0.08)',
+          borderWidth: 2,
+          fill: true,
+          tension: 0.3,
+          pointRadius: 2,
+        },
+        {
+          label: 'Blocked',
+          data: blocked,
+          borderColor: '#EF5424',
+          backgroundColor: 'rgba(239,84,36,0.08)',
+          borderWidth: 2,
+          fill: true,
+          tension: 0.3,
+          pointRadius: 2,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 11 } } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 } } }
+      }
+    }
+  });
+})();
+</script>
+{% endblock %}

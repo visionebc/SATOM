@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+
+{% block title %}Server Policies — {{ appliance.name if appliance else 'Appliance' }}{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('workspace.index') }}">Server Policy</a>
+  <span class="separator">/</span>
+  <span>{{ appliance.name if appliance else 'Appliance' }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-shield-check me-2 text-accent"></i>Server Policies
+    </h1>
+    <div class="d-flex align-items-center gap-2 mt-1">
+      <span class="fw-badge fw-badge-secondary">{{ appliance.kind if appliance else '' }}</span>
+      <span class="mono" style="font-size:12px;color:#6C757D;">
+        {{ appliance.host if appliance else '' }}:{{ appliance.port if appliance else '' }}
+      </span>
+      <span class="fw-status fw-status-unknown" data-status-id="{{ appliance.id if appliance else '' }}" style="font-size:12px;">
+        <span class="fw-status-dot"></span>Checking…
+      </span>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-fw-outline btn-sm" onclick="window.location.reload()">
+      <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+    </button>
+    <a href="{{ url_for('workspace.index') }}" class="btn btn-secondary btn-sm">
+      <i class="bi bi-chevron-left me-1"></i>Change Appliance
+    </a>
+  </div>
+</div>
+
+<!-- Stats row -->
+<div class="row g-3 mb-4">
+  <div class="col-md-3 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-shield"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ policies|length if policies else 0 }}</div>
+        <div class="fw-stat-label">Total Policies</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-success"><i class="bi bi-check2-circle"></i></div>
+      <div>
+        <div class="fw-stat-value">
+          {{ policies|selectattr('enable','equalto',true)|list|length if policies else 0 }}
+        </div>
+        <div class="fw-stat-label">Enabled</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-danger"><i class="bi bi-pause-circle"></i></div>
+      <div>
+        <div class="fw-stat-value">
+          {{ policies|selectattr('enable','equalto',false)|list|length if policies else 0 }}
+        </div>
+        <div class="fw-stat-label">Disabled</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-info"><i class="bi bi-hdd-stack"></i></div>
+      <div>
+        <div class="fw-stat-value">
+          {{ policies|map(attribute='vserver')|unique|list|length if policies else 0 }}
+        </div>
+        <div class="fw-stat-label">Virtual Servers</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if error %}
+<div class="fw-alert fw-alert-warning mb-3">
+  <i class="bi bi-exclamation-triangle me-2"></i>{{ error }}
+</div>
+{% endif %}
+
+<!-- Toolbar -->
+<div class="fw-toolbar">
+  <div class="fw-search-box">
+    <i class="bi bi-search search-icon"></i>
+    <input type="text" id="policySearch" placeholder="Search policies…" oninput="filterPolicies(this.value)">
+  </div>
+  <select class="form-select form-select-sm" style="width:auto;" id="statusFilter"
+          onchange="filterPolicies(document.getElementById('policySearch').value)">
+    <option value="">All Status</option>
+    <option value="enabled">Enabled</option>
+    <option value="disabled">Disabled</option>
+  </select>
+</div>
+
+<!-- Policies Table -->
+<div class="fw-table-wrapper">
+  <table class="fw-table" id="policiesTable">
+    <thead>
+      <tr>
+        <th>Policy Name</th>
+        <th>Virtual Server</th>
+        <th>Server Pool</th>
+        <th>Protection Profile</th>
+        <th>HTTP</th>
+        <th>HTTPS</th>
+        <th>Status</th>
+        <th class="actions-col">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if policies %}
+        {% for p in policies %}
+        <tr data-href="{{ url_for('workspace.policy_detail', appliance_id=appliance.id, name=p.get('name','')) if appliance else '#' }}"
+            style="cursor:pointer;">
+          <td>
+            <strong>{{ p.get('name','') or p.name or '—' }}</strong>
+            {% if p.get('comment') or (p is mapping and p.comment is defined) %}
+              <br><small class="text-muted">{{ p.get('comment','') }}</small>
+            {% endif %}
+          </td>
+          <td>
+            <span class="fw-badge fw-badge-info">{{ p.get('vserver','') or p.get('vs','') or '—' }}</span>
+          </td>
+          <td>{{ p.get('server-pool','') or p.get('pool','') or '—' }}</td>
+          <td>
+            {% set wpp = p.get('web-protection-profile','') or p.get('wpp','') %}
+            {% if wpp %}
+              <span class="fw-badge fw-badge-primary">{{ wpp }}</span>
+            {% else %}
+              <span class="text-muted">None</span>
+            {% endif %}
+          </td>
+          <td>
+            {% set hp = p.get('http-port','') or p.get('http_port','') %}
+            {% if hp %}<span class="fw-badge fw-badge-secondary">:{{ hp }}</span>{% else %}—{% endif %}
+          </td>
+          <td>
+            {% set sp = p.get('https-port','') or p.get('https_port','') %}
+            {% if sp %}<span class="fw-badge fw-badge-secondary">:{{ sp }}</span>{% else %}—{% endif %}
+          </td>
+          <td>
+            {% set st = p.get('status','') or p.get('enable','') %}
+            {% if st in ['enable','enabled',true,1] %}
+              <span class="fw-status fw-status-online" style="font-size:12px;">
+                <span class="fw-status-dot"></span>Enabled
+              </span>
+            {% else %}
+              <span class="fw-status fw-status-offline" style="font-size:12px;">
+                <span class="fw-status-dot"></span>Disabled
+              </span>
+            {% endif %}
+          </td>
+          <td class="actions-col" onclick="event.stopPropagation()">
+            <a href="{{ url_for('workspace.policy_detail', appliance_id=appliance.id, name=p.get('name','')) if appliance else '#' }}"
+               class="btn btn-sm btn-outline-primary btn-sm-icon" title="View Detail">
+              <i class="bi bi-eye"></i>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="8">
+            <div class="fw-empty-state">
+              <div class="fw-empty-state-icon"><i class="bi bi-shield"></i></div>
+              <div class="fw-empty-state-title">No server policies found</div>
+              <div class="fw-empty-state-text">
+                This appliance has no server policies configured, or the connection could not be established.
+              </div>
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterPolicies(query) {
+  const q      = query.toLowerCase();
+  const status = document.getElementById('statusFilter').value.toLowerCase();
+  document.querySelectorAll('#policiesTable tbody tr[data-href]').forEach(function (row) {
+    const text      = row.textContent.toLowerCase();
+    const rowStatus = row.querySelector('td:nth-child(7)')?.textContent.toLowerCase() || '';
+    const show = text.includes(q) && (status === '' || rowStatus.includes(status));
+    row.style.display = show ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

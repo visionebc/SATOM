@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Server Pools — {{ appliance.name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('server_objects.index') }}">Server Objects</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('server_objects.overview', id=appliance.id) }}">{{ appliance.name }}</a></li>
+    <li class="breadcrumb-item active">Server Pools</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h4 class="mb-3">Server Pools — {{ appliance.name }}</h4>
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+<div class="card">
+  <div class="card-body p-0">
+    {% if items %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead><tr>{% for k in items[0].keys() %}<th>{{ k }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for item in items %}
+          <tr>{% for v in item.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="p-4 text-center text-muted">No server pools found.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

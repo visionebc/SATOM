@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block title %}Backups — {{ appliance.name if appliance else 'Appliance' }}{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('backups.index') }}">Backups</a>
+  <span class="separator">/</span>
+  <span>{{ appliance.name if appliance else 'Appliance' }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-cloud-arrow-down me-2 text-accent"></i>
+      Backups — {{ appliance.name if appliance else 'Appliance' }}
+    </h1>
+    <div class="d-flex align-items-center gap-2 mt-1">
+      <span class="mono text-muted" style="font-size:12px;">
+        {{ appliance.host if appliance else '' }}:{{ appliance.port if appliance else '' }}
+      </span>
+      <span class="fw-status fw-status-unknown" data-status-id="{{ appliance.id if appliance else '' }}" style="font-size:11px;">
+        <span class="fw-status-dot"></span>Checking…
+      </span>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('backups.index') }}" class="btn btn-secondary btn-sm">
+      <i class="bi bi-chevron-left me-1"></i>Back
+    </a>
+    <form method="POST" action="{{ url_for('backups.create_backup', id=appliance.id) if appliance else '#' }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-fw-primary btn-sm" id="btn-create-backup">
+        <i class="bi bi-plus-lg me-1"></i>Create Backup
+      </button>
+    </form>
+  </div>
+</div>
+
+{% if error %}
+<div class="fw-alert fw-alert-warning mb-3">
+  <i class="bi bi-exclamation-triangle me-2"></i>{{ error }}
+</div>
+{% endif %}
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+  <div class="col-md-3 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-cloud"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ backups|length if backups else 0 }}</div>
+        <div class="fw-stat-label">Total Backups</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-info"><i class="bi bi-calendar"></i></div>
+      <div>
+        <div class="fw-stat-value">
+          {% if backups %}
+            {{ backups[0].date[:10] if backups[0].date else '—' }}
+          {% else %}—{% endif %}
+        </div>
+        <div class="fw-stat-label">Latest Backup</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toolbar -->
+<div class="fw-toolbar">
+  <div class="fw-search-box">
+    <i class="bi bi-search search-icon"></i>
+    <input type="text" id="backupSearch" placeholder="Search backups…" oninput="filterBackups(this.value)">
+  </div>
+</div>
+
+<!-- Backups Table -->
+<div class="fw-table-wrapper">
+  <table class="fw-table" id="backupsTable">
+    <thead>
+      <tr>
+        <th>Backup Name</th>
+        <th>Date / Time</th>
+        <th>Size</th>
+        <th>Type</th>
+        <th class="actions-col">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if backups %}
+        {% for b in backups %}
+        <tr>
+          <td>
+            <i class="bi bi-file-earmark-zip text-accent me-2"></i>
+            <strong>{{ b.name if b.name else b }}</strong>
+          </td>
+          <td>
+            <span style="font-size:13px;">{{ b.date if b.date else '—' }}</span>
+          </td>
+          <td>
+            {% if b.size %}
+              {% set size_kb = (b.size / 1024) | round(1) %}
+              {% if size_kb > 1024 %}
+                {{ (size_kb / 1024) | round(2) }} MB
+              {% else %}
+                {{ size_kb }} KB
+              {% endif %}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>
+            <span class="fw-badge fw-badge-secondary">
+              {{ b.type or 'Full' }}
+            </span>
+          </td>
+          <td class="actions-col">
+            <a href="{{ url_for('backups.download_backup', id=appliance.id, name=b.name|urlencode) if appliance else '#' }}"
+               class="btn btn-sm btn-fw-outline btn-sm-icon me-1" title="Download">
+              <i class="bi bi-download"></i>
+            </a>
+            <form method="POST"
+                  action="{{ url_for('backups.delete_backup', id=appliance.id, name=b.name|urlencode) if appliance else '#' }}"
+                  style="display:inline;"
+                  data-fw-confirm-form="Delete backup '{{ b.name }}'? This cannot be undone.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-outline-danger btn-sm-icon" title="Delete">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="5">
+            <div class="fw-empty-state">
+              <div class="fw-empty-state-icon"><i class="bi bi-cloud"></i></div>
+              <div class="fw-empty-state-title">No backups found</div>
+              <div class="fw-empty-state-text">Create a backup to save the current appliance configuration.</div>
+              <form method="POST" action="{{ url_for('backups.create_backup', id=appliance.id) if appliance else '#' }}" class="mt-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-fw-primary">
+                  <i class="bi bi-plus-lg me-1"></i>Create First Backup
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterBackups(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('#backupsTable tbody tr').forEach(function (row) {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

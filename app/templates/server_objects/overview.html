@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Server Objects — {{ appliance.name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('server_objects.index') }}">Server Objects</a></li>
+    <li class="breadcrumb-item active">{{ appliance.name }}</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h4 class="mb-3">{{ appliance.name }} — Server Objects</h4>
+
+{% if error %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Virtual Servers</strong>
+        <a href="{{ url_for('server_objects.virtual_servers', id=appliance.id) }}" class="btn btn-sm btn-outline-secondary">View All</a>
+      </div>
+      <ul class="list-group list-group-flush">
+        {% for vs in virtual_servers[:10] %}
+        <li class="list-group-item">{{ vs.get('name', vs) }}</li>
+        {% else %}
+        <li class="list-group-item text-muted">None</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Server Pools</strong>
+        <a href="{{ url_for('server_objects.pools', id=appliance.id) }}" class="btn btn-sm btn-outline-secondary">View All</a>
+      </div>
+      <ul class="list-group list-group-flush">
+        {% for pool in pools[:10] %}
+        <li class="list-group-item">{{ pool.get('name', pool) }}</li>
+        {% else %}
+        <li class="list-group-item text-muted">None</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Content Routing</strong>
+        <a href="{{ url_for('server_objects.content_routing', id=appliance.id) }}" class="btn btn-sm btn-outline-secondary">View All</a>
+      </div>
+      <ul class="list-group list-group-flush">
+        {% for cr in content_routing[:10] %}
+        <li class="list-group-item">{{ cr.get('name', cr) }}</li>
+        {% else %}
+        <li class="list-group-item text-muted">None</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

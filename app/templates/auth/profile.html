@@ -34,8 +34,7 @@
 
 <div class="row g-3">
 
-  {% if is_admin %}
-  <!-- BRANDING (user setting, admin-only) -->
+  <!-- BRANDING (per-user setting, saved in the DB) -->
   <div class="col-lg-7">
     <div class="fw-card">
       <div class="fw-card-header">
@@ -43,7 +42,8 @@
       </div>
       <div class="fw-card-body">
         <p class="text-muted" style="font-size:13px;">
-          Choose the top-bar banner template for each product. FortiWeb and FortiADC can use different banners.
+          Your personal top-bar banner per product — saved to your account in the database, not shared with other users.
+          FortiWeb and FortiADC can use different banners.
         </p>
         <form method="POST" action="{{ url_for('settings.save_banners') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -71,10 +71,9 @@
       </div>
     </div>
   </div>
-  {% endif %}
 
   <!-- ABOUT (user setting) -->
-  <div class="col-lg-{{ '5' if is_admin else '7' }}">
+  <div class="col-lg-5">
     <div class="fw-card">
       <div class="fw-card-header">
         <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>About {{ product.title if product else 'Fortinet Manager' }}</span>

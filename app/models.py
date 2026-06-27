@@ -239,6 +239,47 @@ class AppSetting(db.Model):
 
 
 # ---------------------------------------------------------------------------
+# UserSetting — PER-USER preferences (branding, etc.)
+# ---------------------------------------------------------------------------
+
+class UserSetting(db.Model):
+    """Per-user key/value preferences, persisted in the DB so a user's choices
+    (e.g. their personal top-bar banner) survive logout, server restarts and are
+    NOT carried in a cookie. Composite PK (user_id, key); rows are removed with
+    the owning user via ON DELETE CASCADE."""
+
+    __tablename__ = "user_settings"
+
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    key = db.Column(db.String(128), primary_key=True)
+    value = db.Column(db.Text, nullable=True)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    @classmethod
+    def get(cls, user_id: int, key: str, default: str | None = None) -> str | None:
+        row = cls.query.get((user_id, key))
+        return row.value if row else default
+
+    @classmethod
+    def set(cls, user_id: int, key: str, value: str) -> None:
+        row = cls.query.get((user_id, key))
+        if row is None:
+            row = cls(user_id=user_id, key=key)
+            db.session.add(row)
+        row.value = value
+        row.updated_at = datetime.utcnow()
+        db.session.commit()
+
+    def __repr__(self) -> str:
+        return f"<UserSetting u={self.user_id} {self.key!r}>"
+
+
+# ---------------------------------------------------------------------------
 # Template — desired-state library (web port of the desktop ``templates`` table)
 # ---------------------------------------------------------------------------
 

@@ -69,9 +69,8 @@
   </div>
   <select class="form-select form-select-sm" style="width:auto;" id="kindFilter" onchange="filterTable(document.getElementById('tableSearch').value)">
     <option value="">All Kinds</option>
-    <option value="FortiWeb">FortiWeb</option>
-    <option value="FortiWeb-VM">FortiWeb-VM</option>
-    <option value="FortiWeb-Cloud">FortiWeb-Cloud</option>
+    <option value="fortiweb">FortiWeb</option>
+    <option value="fortiadc">FortiADC</option>
   </select>
   <button class="btn btn-fw-outline btn-sm" onclick="window.location.reload()">
     <i class="bi bi-arrow-clockwise me-1"></i>Refresh
@@ -130,7 +129,7 @@
             </button>
             <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1"
                     title="Edit"
-                    onclick="openEditModal({{ a.to_dict()|tojson }})">
+                    onclick='openEditModal({{ a.to_dict()|tojson }})'>
               <i class="bi bi-pencil"></i>
             </button>
             <form method="POST"
@@ -187,9 +186,8 @@
               <label class="fw-form-label">Kind <span class="text-danger">*</span></label>
               <select class="form-select fw-form-control" name="kind" required>
                 <option value="">Select platform…</option>
-                <option value="FortiWeb">FortiWeb (Hardware)</option>
-                <option value="FortiWeb-VM">FortiWeb-VM</option>
-                <option value="FortiWeb-Cloud">FortiWeb-Cloud</option>
+                <option value="fortiweb">FortiWeb</option>
+                <option value="fortiadc">FortiADC</option>
               </select>
             </div>
             <div class="col-md-8">
@@ -257,9 +255,8 @@
             <div class="col-md-6">
               <label class="fw-form-label">Kind</label>
               <select class="form-select" name="kind" id="edit-kind">
-                <option value="FortiWeb">FortiWeb (Hardware)</option>
-                <option value="FortiWeb-VM">FortiWeb-VM</option>
-                <option value="FortiWeb-Cloud">FortiWeb-Cloud</option>
+                <option value="fortiweb">FortiWeb</option>
+                <option value="fortiadc">FortiADC</option>
               </select>
             </div>
             <div class="col-md-8">
@@ -320,7 +317,7 @@ function filterTable(query) {
 
 function openEditModal(appliance) {
   document.getElementById('edit-name').value     = appliance.name || '';
-  document.getElementById('edit-kind').value     = appliance.kind || 'FortiWeb';
+  document.getElementById('edit-kind').value     = appliance.kind || 'fortiweb';
   document.getElementById('edit-host').value     = appliance.host || '';
   document.getElementById('edit-port').value     = appliance.port || 443;
   document.getElementById('edit-username').value = appliance.username || '';

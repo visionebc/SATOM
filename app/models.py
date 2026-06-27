@@ -92,6 +92,19 @@ def _fernet():
     return Fernet(key.encode() if isinstance(key, str) else key)
 
 
+def _parse_tags(raw):
+    """Tolerant tags parser: accepts JSON array, comma string, or empty."""
+    if not raw:
+        return []
+    raw = raw.strip()
+    if raw.startswith('['):
+        try:
+            return json.loads(raw)
+        except (ValueError, TypeError):
+            pass
+    return [t.strip() for t in raw.split(',') if t.strip()]
+
+
 class Appliance(db.Model):
     __tablename__ = "appliances"
 
@@ -135,7 +148,7 @@ class Appliance(db.Model):
             "username": self.username,
             "verify_ssl": self.verify_ssl,
             "vdom": self.vdom,
-            "tags": json.loads(self.tags) if self.tags else [],
+            "tags": _parse_tags(self.tags),
             "department": self.department,
             "zone": self.zone,
             "line": self.line,

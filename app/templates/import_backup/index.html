@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block title %}Import Backup{% if snapshot is defined and snapshot %} — {{ snapshot.device }}{% endif %}{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('import_backup.index') }}">Import Backup</a>
+  {% if snapshot is defined and snapshot %}
+    <span class="separator">/</span>
+    <span>{{ snapshot.device }}</span>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+{% if snapshot is defined and snapshot %}
+{# ===================== SNAPSHOT DETAIL VIEW ===================== #}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-file-earmark-text me-2 text-accent"></i>{{ snapshot.device }}
+    </h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Parsed config snapshot
+      {% if snapshot.origin %} from <strong>{{ snapshot.origin }}</strong>{% endif %}
+      {% if snapshot.generated_at %}
+        &nbsp;—&nbsp;<span class="mono">{{ snapshot.generated_at[:19]|replace('T', ' ') }} UTC</span>
+      {% endif %}
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('import_backup.index') }}" class="btn btn-fw-outline btn-sm">
+      <i class="bi bi-chevron-left me-1"></i>Back
+    </a>
+  </div>
+</div>
+
+<!-- Summary cards -->
+<div class="row g-3 mb-3">
+  <div class="col-md-4">
+    <div class="fw-card"><div class="fw-card-body">
+      <div class="text-muted" style="font-size:12px;">Firmware</div>
+      <div style="font-size:20px;font-weight:600;">{{ snapshot.firmware or '—' }}</div>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="fw-card"><div class="fw-card-body">
+      <div class="text-muted" style="font-size:12px;">Total objects</div>
+      <div style="font-size:20px;font-weight:600;">{{ snapshot.total_objects }}</div>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="fw-card"><div class="fw-card-body">
+      <div class="text-muted" style="font-size:12px;">Sections</div>
+      <div style="font-size:20px;font-weight:600;">{{ snapshot.section_count }}</div>
+    </div></div>
+  </div>
+</div>
+
+<!-- Per-section counts -->
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title">Objects by section</span>
+  </div>
+  <div class="fw-card-body p-0">
+    <table class="fw-table mb-0">
+      <thead>
+        <tr><th>Section</th><th style="width:140px;">Objects</th></tr>
+      </thead>
+      <tbody>
+        {% for label, count in snapshot.sections.items() %}
+        <tr>
+          <td>{{ label }}</td>
+          <td><span class="fw-badge fw-badge-secondary">{{ count }}</span></td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="2">
+            <div class="fw-empty-state py-4">
+              <div class="fw-empty-state-title">No objects parsed</div>
+              <div class="fw-empty-state-text">The config contained no recognisable sections.</div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Raw configuration text -->
+<div class="fw-card">
+  <div class="fw-card-header">
+    <span class="fw-card-title">Raw configuration</span>
+    <span class="fw-badge fw-badge-secondary">{{ raw_text|length }} chars</span>
+  </div>
+  <div class="fw-card-body">
+    <pre class="mono" style="max-height:480px;overflow:auto;font-size:12px;white-space:pre;margin:0;">{{ raw_text }}</pre>
+  </div>
+</div>
+
+{% else %}
+{# ===================== UPLOAD + IMPORT LIST ===================== #}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-cloud-arrow-up me-2 text-accent"></i>Import Backup
+    </h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Parse a FortiWeb configuration backup file offline — no appliance is contacted.
+    </p>
+  </div>
+</div>
+
+<!-- Upload form -->
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title">Import a config backup</span>
+  </div>
+  <div class="fw-card-body">
+    <form method="POST" action="{{ url_for('import_backup.index') }}"
+          enctype="multipart/form-data" class="row g-3 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-6">
+        <label class="fw-form-label" style="font-size:12px;">Backup file</label>
+        <input type="file" name="config_file" class="form-control"
+               accept=".conf,.txt,.cfg,.zip,.gz" required>
+        <small class="text-muted">
+          Accepted: .conf .txt .cfg .zip .gz — encrypted backups are rejected.
+        </small>
+      </div>
+      <div class="col-md-4">
+        <label class="fw-form-label" style="font-size:12px;">
+          Device name <span class="text-muted">(optional)</span>
+        </label>
+        <input type="text" name="device_name" class="form-control"
+               placeholder="auto-detected from the config">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-fw-primary w-100">
+          <i class="bi bi-upload me-1"></i>Import
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Previously imported snapshots -->
+<div class="fw-card">
+  <div class="fw-card-header">
+    <span class="fw-card-title">Imported snapshots</span>
+    <span class="fw-badge fw-badge-secondary">{{ imports|length }}</span>
+  </div>
+  <div class="fw-card-body p-0">
+    <table class="fw-table mb-0">
+      <thead>
+        <tr>
+          <th>Device</th>
+          <th>Firmware</th>
+          <th style="width:90px;">Objects</th>
+          <th style="width:90px;">Sections</th>
+          <th>Source file</th>
+          <th style="width:170px;">Imported (UTC)</th>
+          <th style="width:90px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for imp in imports %}
+        <tr>
+          <td><strong>{{ imp.device }}</strong></td>
+          <td>{{ imp.firmware or '—' }}</td>
+          <td><span class="fw-badge fw-badge-secondary">{{ imp.total_objects }}</span></td>
+          <td>{{ imp.section_count }}</td>
+          <td class="text-muted">{{ imp.origin or '—' }}</td>
+          <td class="text-muted mono" style="font-size:11.5px;">
+            {{ imp.generated_at[:19]|replace('T', ' ') if imp.generated_at else '—' }}
+          </td>
+          <td>
+            <a href="{{ url_for('import_backup.view', device=imp.device) }}"
+               class="btn btn-fw-outline btn-sm">
+              <i class="bi bi-eye me-1"></i>View
+            </a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7">
+            <div class="fw-empty-state py-5">
+              <div class="fw-empty-state-icon"><i class="bi bi-inbox"></i></div>
+              <div class="fw-empty-state-title">No imports yet</div>
+              <div class="fw-empty-state-text">
+                Upload a FortiWeb config backup above to create your first snapshot.
+              </div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

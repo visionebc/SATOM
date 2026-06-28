@@ -27,7 +27,8 @@
       <label class="form-check-label" for="verify_ssl">Verify SSL Certificate</label></div></div>
 
     <!-- ===== Physical / Inventory ===== -->
-    <div class="col-12"><hr class="my-1"><h6 class="text-uppercase text-muted mb-0" style="font-size:12px;letter-spacing:.5px;">Physical / Inventory</h6></div>
+    <div class="col-12"><hr class="my-1"><h6 class="text-uppercase text-muted mb-0" style="font-size:12px;letter-spacing:.5px;">Physical / Inventory</h6>
+      {% if appliance.kind == 'fortiweb' %}<div class="form-text mt-1"><i class="bi bi-magic me-1"></i>Run a <strong>Rediscovery</strong> to auto-fill interfaces (name/type/IP), model and HW/VM. Only <em>Connected to</em>, notes and the datasheet are entered by hand &mdash; discovery never overwrites them.</div>{% endif %}</div>
     <div class="col-md-4"><label class="form-label">Type</label>
       <select name="hw_type" class="form-select">
         <option value="unknown" {{ 'selected' if (appliance.hw_type or 'unknown')=='unknown' }}>Unknown</option>

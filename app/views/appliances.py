@@ -286,9 +286,18 @@ def rediscover_start(id):
 @login_required
 @require_permission('appliances.view')
 def rediscover_status(id):
-    Appliance.query.get_or_404(id)
+    appliance = Appliance.query.get_or_404(id)
     from ..services import rediscovery
-    return jsonify(rediscovery.status(id) or {'state': 'idle'})
+    st = rediscovery.status(id) or {'state': 'idle'}
+    if st.get('state') == 'done':
+        # Auto-fill physical inventory from the snapshot, once per snapshot.
+        try:
+            inv = rediscovery.maybe_apply_inventory(appliance)
+            if inv:
+                st['inventory'] = inv
+        except Exception as exc:  # noqa: BLE001 — sync must never break the poll
+            st['inventory'] = {'applied': False, 'reason': str(exc)[:120]}
+    return jsonify(st)
 
 
 # -- 3. Console (read-only SSH) ---------------------------------------------

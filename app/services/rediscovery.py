@@ -95,6 +95,140 @@ def latest_snapshot_meta(appliance_id: int) -> dict | None:
         return None
 
 
+# --- Physical-inventory sync (hybrid: auto-fill, never clobber manual data) ---
+
+def _clean_ip(v) -> str | None:
+    v = (v or "").strip()
+    if not v:
+        return None
+    head = v.split()[0].split("/")[0]
+    if head in ("0.0.0.0", "::"):
+        return None
+    return v
+
+
+def _iface_rows(snapshot: dict) -> list[dict]:
+    """All discovered ``system/interface`` rows out of a snapshot."""
+    rows: list[dict] = []
+    for section in (snapshot.get("sections") or {}).values():
+        if not isinstance(section, dict):
+            continue
+        for name, eprows in section.items():
+            if str(name).startswith("interface") and isinstance(eprows, list):
+                rows.extend(r for r in eprows if isinstance(r, dict))
+    return rows
+
+
+def _model_from_status(appliance) -> tuple[str | None, str | None]:
+    """Best-effort ``(model, hw_type)`` from a live system-status call.
+
+    Returns ``(None, None)`` on any failure so a sync never breaks on a probe.
+    """
+    try:
+        from ..clients.fortiweb import FortiWebClient
+        raw = FortiWebClient(appliance, timeout=15.0).status_check()
+        d = raw.get("results", raw) if isinstance(raw, dict) else {}
+    except Exception:  # noqa: BLE001
+        return None, None
+    fw = str(d.get("firmwareVersion") or "")
+    platform = str(d.get("platformName") or "")
+    serial = str(d.get("serialNumber") or "")
+    model = fw.split(",")[0].strip() if fw else (platform or None)
+    blob = f"{platform} {fw} {serial}".upper()
+    if "VM" in blob or "KVM" in blob:
+        hw = "vm"
+    elif platform or fw:
+        hw = "hardware"
+    else:
+        hw = None
+    return (model or None), hw
+
+
+def apply_inventory(appliance) -> dict:
+    """Merge the latest discovery snapshot into the physical-inventory tables.
+
+    Hybrid policy: add new interfaces and refresh auto-derived fields
+    (type, IP) plus model + HW/VM. NEVER deletes interfaces and NEVER overwrites
+    operator-entered fields (``connected_to``, ``notes``) or the datasheet.
+    Must run inside a Flask app context (uses the DB session).
+    """
+    from ..extensions import db
+    from ..models import ApplianceInterface
+
+    snap_path = _dev_dir(appliance.id) / "_config.json"
+    if not snap_path.exists():
+        return {"applied": False, "reason": "no snapshot"}
+    try:
+        snapshot = json.loads(snap_path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {"applied": False, "reason": "unreadable snapshot"}
+
+    existing = {i.name: i for i in appliance.interfaces}
+    next_sort = max([i.sort_order or 0 for i in appliance.interfaces], default=-1) + 1
+    added = updated = 0
+    seen: set[str] = set()
+    for row in _iface_rows(snapshot):
+        nm = (row.get("name") or row.get("intf") or row.get("mkey") or "").strip()
+        if not nm or nm in seen:
+            continue
+        seen.add(nm)
+        if_type = (row.get("type") or "").strip() or None
+        ip = _clean_ip(row.get("ip"))
+        cur = existing.get(nm)
+        if cur is None:
+            db.session.add(ApplianceInterface(
+                appliance_id=appliance.id, name=nm, if_type=if_type,
+                ip_address=ip, sort_order=next_sort))
+            next_sort += 1
+            added += 1
+        else:
+            changed = False
+            if if_type and cur.if_type != if_type:
+                cur.if_type = if_type
+                changed = True
+            if ip and cur.ip_address != ip:
+                cur.ip_address = ip
+                changed = True
+            if changed:
+                updated += 1
+
+    model, hw = _model_from_status(appliance)
+    if model:
+        appliance.model = model
+    if hw:
+        appliance.hw_type = hw
+
+    db.session.commit()
+    return {"applied": True, "interfaces_added": added, "interfaces_updated": updated,
+            "model": appliance.model, "hw_type": appliance.hw_type,
+            "generated_at": snapshot.get("generated_at")}
+
+
+def maybe_apply_inventory(appliance) -> dict | None:
+    """Apply the inventory sync once per snapshot (idempotent across status polls).
+
+    Returns the apply result the first time a given snapshot is seen, else None.
+    """
+    snap_path = _dev_dir(appliance.id) / "_config.json"
+    if not snap_path.exists():
+        return None
+    try:
+        gen = json.loads(snap_path.read_text(encoding="utf-8")).get("generated_at")
+    except Exception:  # noqa: BLE001
+        return None
+    marker = _dev_dir(appliance.id) / "_inventory_applied.json"
+    if marker.exists():
+        try:
+            if json.loads(marker.read_text(encoding="utf-8")).get("generated_at") == gen:
+                return None
+        except Exception:  # noqa: BLE001
+            pass
+    res = apply_inventory(appliance)
+    if res.get("applied"):
+        _write_json(marker, {"generated_at": gen, "result": res})
+    return res
+
+
 def _client_snapshot(appliance) -> SimpleNamespace:
     """A DB-detached copy of just the fields FortiWebClient reads, so the worker
     thread never touches the SQLAlchemy session."""
@@ -177,4 +311,5 @@ def start(appliance, by: str = "") -> dict:
     return {"started": True, "progress": init}
 
 
-__all__ = ["sweep_plan", "status", "latest_snapshot_meta", "start"]
+__all__ = ["sweep_plan", "status", "latest_snapshot_meta", "start",
+           "apply_inventory", "maybe_apply_inventory"]

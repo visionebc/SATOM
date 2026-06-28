@@ -113,10 +113,10 @@
 <!-- Read-only device inventory modal -->
 <div class="modal fade" id="deviceModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
-    <div class="modal-content" style="background:#0e1626;border:1px solid rgba(148,163,184,0.18);color:#eaf0fb;">
-      <div class="modal-header" style="border-color:rgba(148,163,184,0.12);">
-        <h5 class="modal-title"><i class="bi bi-server me-2"></i><span id="dmName">Device</span></h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+    <div class="modal-content" style="background:#fff;border:1px solid var(--fw-border);color:var(--fw-text-primary);border-radius:var(--fw-radius-lg);">
+      <div class="modal-header" style="border-color:var(--fw-border);background:var(--fw-content-bg);">
+        <h5 class="modal-title" style="color:var(--fw-text-primary);"><i class="bi bi-server me-2" style="color:var(--fw-accent);"></i><span id="dmName">Device</span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
         <div id="dmLoading" class="text-muted py-4 text-center">Loading…</div>
@@ -137,8 +137,8 @@
           </div>
           <h6 class="text-uppercase text-muted mb-2" style="font-size:11px;letter-spacing:.5px;">Interfaces / Connections</h6>
           <div class="table-responsive">
-            <table class="table table-sm mb-0" style="color:#cdd7ea;">
-              <thead><tr><th>Interface</th><th>Type</th><th>Connected to</th><th>IP</th><th>Notes</th></tr></thead>
+            <table class="table table-sm mb-0" style="color:var(--fw-text-primary);">
+              <thead><tr style="color:var(--fw-text-secondary);font-size:11px;text-transform:uppercase;letter-spacing:.5px;"><th>Interface</th><th>Type</th><th>Connected to</th><th>IP</th><th>Notes</th></tr></thead>
               <tbody id="dmIfaces"></tbody>
             </table>
           </div>
@@ -146,7 +146,7 @@
         </div>
         <div id="dmError" class="alert alert-danger d-none mb-0"></div>
       </div>
-      <div class="modal-footer" style="border-color:rgba(148,163,184,0.12);">
+      <div class="modal-footer" style="border-color:var(--fw-border);background:var(--fw-content-bg);">
         <a id="dmDetailLink" href="#" class="btn fw-btn-primary btn-sm">Open full detail <i class="bi bi-arrow-right ms-1"></i></a>
       </div>
     </div>

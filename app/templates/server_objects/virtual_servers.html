@@ -19,10 +19,10 @@
     {% if items %}
     <div class="table-responsive">
       <table class="table table-hover mb-0">
-        <thead><tr>{% for k in items[0].keys() %}<th>{{ k }}</th>{% endfor %}</tr></thead>
+        <thead><tr><th></th>{% for k in items[0].keys() %}<th>{{ k }}</th>{% endfor %}</tr></thead>
         <tbody>
           {% for item in items %}
-          <tr>{% for v in item.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+          <tr><td><a class="btn btn-sm btn-fw-outline" href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='server-policy/vserver', mkey=item.get('name',''), title='Virtual Server') }}">Edit&nbsp;▸</a></td>{% for v in item.values() %}<td>{{ v }}</td>{% endfor %}</tr>
           {% endfor %}
         </tbody>
       </table>

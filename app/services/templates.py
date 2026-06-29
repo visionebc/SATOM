@@ -8,6 +8,7 @@ library itself never touches an appliance.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 
 from ..models import Template, db
@@ -134,3 +135,31 @@ def delete_template(template_id: int) -> bool:
     db.session.delete(row)
     db.session.commit()
     return True
+
+
+def approve_template(template_id: int, reviewer: str) -> Template:
+    """Mark a template APPROVED (fleet-deployable). Clears any prior rejection
+    reason. Raises ``ValueError`` if the template does not exist."""
+    row = Template.query.get(template_id)
+    if row is None:
+        raise ValueError(f"Template {template_id} not found")
+    row.status = Template.STATUS_APPROVED
+    row.reject_reason = ""
+    row.reviewed_by = (reviewer or "").strip()
+    row.reviewed_at = datetime.utcnow()
+    db.session.commit()
+    return row
+
+
+def reject_template(template_id: int, reviewer: str, reason: str = "") -> Template:
+    """Mark a template REJECTED with an author-visible reason. Raises
+    ``ValueError`` if the template does not exist."""
+    row = Template.query.get(template_id)
+    if row is None:
+        raise ValueError(f"Template {template_id} not found")
+    row.status = Template.STATUS_REJECTED
+    row.reject_reason = (reason or "").strip()
+    row.reviewed_by = (reviewer or "").strip()
+    row.reviewed_at = datetime.utcnow()
+    db.session.commit()
+    return row

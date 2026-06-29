@@ -1,0 +1,193 @@
+{# Modern, self-contained device picker for the banner switch modal.
+   Mirrors the Architecture map's zone -> line -> department division
+   (same MAP_PALETTE colors) and its persistent filters. #}
+<style>
+  #devicePicker{--dp-surface:#0e1626;--dp-card:#111a30;--dp-muted:#93a1bd;--dp-text:#eaf0fb;}
+  #devicePicker .dp-filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;align-items:center;}
+  #devicePicker .dp-search{position:relative;flex:1 1 200px;min-width:160px;}
+  #devicePicker .dp-search i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--dp-muted);font-size:14px;}
+  #devicePicker .dp-search input{width:100%;background:#0a1120;border:1px solid rgba(148,163,184,.18);
+    color:var(--dp-text);border-radius:10px;padding:9px 12px 9px 34px;font-size:13px;outline:none;transition:border-color .15s,box-shadow .15s;}
+  #devicePicker .dp-search input:focus{border-color:rgba(79,140,255,.55);box-shadow:0 0 0 3px rgba(79,140,255,.15);}
+  #devicePicker .dp-search input::placeholder{color:#5b6b85;}
+  #devicePicker select.dp-sel{background:#0a1120;border:1px solid rgba(148,163,184,.18);color:var(--dp-text);
+    border-radius:10px;padding:8px 28px 8px 12px;font-size:12.5px;outline:none;cursor:pointer;
+    appearance:none;-webkit-appearance:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%2393a1bd' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 10px center;transition:border-color .15s,box-shadow .15s;}
+  #devicePicker select.dp-sel:focus{border-color:rgba(79,140,255,.55);box-shadow:0 0 0 3px rgba(79,140,255,.15);}
+  #devicePicker select.dp-sel.dp-set{border-color:rgba(79,140,255,.45);color:#cfe0ff;}
+  #devicePicker .dp-clear{background:transparent;border:1px solid rgba(148,163,184,.18);color:var(--dp-muted);
+    border-radius:10px;padding:8px 10px;font-size:12px;cursor:pointer;display:none;transition:color .15s,border-color .15s;}
+  #devicePicker .dp-clear:hover{color:#fca5a5;border-color:rgba(248,113,113,.4);}
+  #devicePicker .dp-clear.dp-on{display:inline-flex;align-items:center;gap:5px;}
+  #devicePicker .dp-zone{border:1px solid;border-radius:14px;padding:14px 16px 16px;margin-bottom:16px;background:rgba(255,255,255,.012);}
+  #devicePicker .dp-line{border-left:2px solid;border-radius:8px;padding:4px 0 4px 14px;margin:12px 0 4px;}
+  #devicePicker .dp-dept{margin:10px 0 4px;}
+  #devicePicker .dp-pill{display:inline-flex;align-items:center;border-radius:20px;padding:3px 12px;font-size:11px;
+    font-weight:700;letter-spacing:.4px;color:#fff;text-transform:uppercase;}
+  #devicePicker .dp-pill.dp-zpill{font-size:12px;padding:4px 14px;}
+  #devicePicker .dp-pill.dp-dpill{font-size:10px;padding:2px 10px;}
+  #devicePicker .dp-count{color:var(--dp-muted);font-size:11px;}
+  #devicePicker .dp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:10px;}
+  #devicePicker .dp-card{display:flex;flex-direction:column;gap:6px;width:100%;text-align:left;
+    background:var(--dp-card);border:1px solid rgba(148,163,184,.14);border-radius:12px;padding:12px 14px;cursor:pointer;
+    transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease;}
+  #devicePicker .dp-card:hover{transform:translateY(-2px);border-color:rgba(79,140,255,.55);box-shadow:0 6px 20px rgba(79,140,255,.18);}
+  #devicePicker .dp-card.dp-current{border-color:rgba(34,197,94,.6);box-shadow:0 0 0 1px rgba(34,197,94,.35);}
+  #devicePicker .dp-card-top{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  #devicePicker .dp-name{color:var(--dp-text);font-size:14px;font-weight:700;line-height:1.2;}
+  #devicePicker .dp-host{color:var(--dp-muted);font-size:11.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+  #devicePicker .dp-badges{display:flex;gap:6px;align-items:center;margin-top:2px;}
+  #devicePicker .dp-badge{background:rgba(148,163,184,.12);color:var(--dp-muted);border-radius:10px;padding:2px 8px;font-size:10.5px;}
+  #devicePicker .dp-badge.dp-cur{background:rgba(34,197,94,.16);color:#4ade80;font-weight:600;}
+  #devicePicker .dp-empty{color:var(--dp-muted);text-align:center;padding:32px 16px;}
+  #devicePicker .dp-noresult{color:var(--dp-muted);text-align:center;padding:24px;display:none;}
+</style>
+<div id="devicePicker">
+  <div class="dp-filters">
+    <div class="dp-search"><i class="bi bi-search"></i>
+      <input id="dpSearch" type="text" placeholder="Filter by name or host…" autocomplete="off">
+    </div>
+    {% if facet_zones %}
+    <select id="dpZone" class="dp-sel" title="Zone"><option value="">All zones</option>
+      {% for z in facet_zones %}<option value="{{ z }}">{{ z }}</option>{% endfor %}
+    </select>{% endif %}
+    {% if facet_lines %}
+    <select id="dpLine" class="dp-sel" title="Line"><option value="">All lines</option>
+      {% for l in facet_lines %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
+    </select>{% endif %}
+    {% if facet_depts %}
+    <select id="dpDept" class="dp-sel" title="Department"><option value="">All departments</option>
+      {% for d in facet_depts %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+    </select>{% endif %}
+    <button type="button" class="dp-clear" id="dpClear"><i class="bi bi-x-circle"></i> Clear</button>
+  </div>
+  {% if fleet_map %}
+    {% for zone, lines in fleet_map.items() %}
+    <div class="dp-zone" data-zone="{{ zone }}">
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="dp-pill dp-zpill" data-pill="zone" data-key="{{ zone }}">{{ zone }}</span>
+      </div>
+      {% for line, depts in lines.items() %}
+      <div class="dp-line" data-line="{{ line }}">
+        <div class="d-flex align-items-center gap-2">
+          <span class="dp-pill dp-lpill" data-pill="line" data-key="{{ line }}">{{ line }}</span>
+        </div>
+        {% for dept, devs in depts.items() %}
+        <div class="dp-dept" data-dept="{{ dept }}">
+          <div class="d-flex align-items-center gap-2">
+            <span class="dp-pill dp-dpill" data-pill="dept" data-key="{{ dept }}">{{ dept }}</span>
+            <span class="dp-count">{{ devs|length }}</span>
+          </div>
+          <div class="dp-grid">
+            {% for a in devs %}
+            <form method="post" action="{{ url_for('architecture.select', id=a.id) }}" class="dp-form"
+                  data-name="{{ a.name|lower }}" data-host="{{ a.host|lower }}" style="margin:0;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="dp-card {{ 'dp-current' if current and current.id == a.id else '' }}"
+                      title="Enter {{ a.name }} ({{ a.host }})">
+                <div class="dp-card-top">
+                  <span class="dp-name">{{ a.name }}</span>
+                  {% if current and current.id == a.id %}<i class="bi bi-check-circle-fill" style="color:#22c55e;"></i>{% endif %}
+                </div>
+                <span class="dp-host">{{ a.host }}</span>
+                <div class="dp-badges">
+                  <span class="dp-badge">{{ a.kind }}</span>
+                  {% if current and current.id == a.id %}<span class="dp-badge dp-cur">current</span>{% endif %}
+                </div>
+              </button>
+            </form>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+    <div class="dp-noresult" id="dpNoResult"><i class="bi bi-search me-1"></i>No devices match your filter.</div>
+  {% else %}
+    <div class="dp-empty">
+      <div style="font-size:36px;margin-bottom:8px;">🗺</div>
+      <div style="font-weight:600;color:#cdd7ea;">No appliances configured</div>
+      <div style="font-size:12px;margin-top:4px;">Add devices in Appliances to see the fleet here.</div>
+    </div>
+  {% endif %}
+</div>
+<script>
+(function(){
+  var root=document.getElementById('devicePicker'); if(!root) return;
+  var SAVED={{ saved_filters|tojson }}; var TOKEN={{ csrf_token()|tojson }};
+  // --- deterministic colors: exact match to the Architecture map (MAP_PALETTE + FNV-1a) ---
+  var PAL=["#4f8cff","#8b5cf6","#06b6d4","#10b981","#f59e0b","#ef4444","#ec4899","#14b8a6",
+           "#a855f7","#84cc16","#f97316","#6366f1","#0ea5e9","#22c55e","#eab308","#fb7185"];
+  function color(name){
+    if(!name||name.indexOf('(no ')===0) return '#475569';
+    var h=2166136261;
+    for(var i=0;i<name.length;i++){h=(Math.imul(h^name.charCodeAt(i),16777619))>>>0;}
+    return PAL[h%PAL.length];
+  }
+  root.querySelectorAll('.dp-pill').forEach(function(p){ p.style.background=color(p.dataset.key); });
+  root.querySelectorAll('.dp-zone').forEach(function(z){ z.style.borderColor=color(z.dataset.zone)+'55'; });
+  root.querySelectorAll('.dp-line').forEach(function(l){ l.style.borderLeftColor=color(l.dataset.line)+'66'; });
+
+  var s=document.getElementById('dpSearch'),
+      selZone=document.getElementById('dpZone'),
+      selLine=document.getElementById('dpLine'),
+      selDept=document.getElementById('dpDept'),
+      clearBtn=document.getElementById('dpClear'),
+      noRes=document.getElementById('dpNoResult');
+
+  function val(el){ return el ? (el.value||'') : ''; }
+  function collapse(sel){
+    root.querySelectorAll(sel).forEach(function(g){
+      var vis=g.querySelectorAll('.dp-form:not([style*="display: none"])').length;
+      g.style.display=vis?'':'none';
+    });
+  }
+  function markSet(el){ if(el) el.classList.toggle('dp-set', !!el.value); }
+  function refresh(){
+    var q=(val(s)).toLowerCase().trim(), z=val(selZone), l=val(selLine), d=val(selDept), any=false;
+    root.querySelectorAll('.dp-form').forEach(function(f){
+      var zone=f.closest('.dp-zone').dataset.zone,
+          line=f.closest('.dp-line').dataset.line,
+          dept=f.closest('.dp-dept').dataset.dept;
+      var hit=(!q || f.dataset.name.indexOf(q)>=0 || f.dataset.host.indexOf(q)>=0)
+            && (!z || zone===z) && (!l || line===l) && (!d || dept===d);
+      f.style.display=hit?'':'none'; if(hit) any=true;
+    });
+    collapse('.dp-dept'); collapse('.dp-line'); collapse('.dp-zone');
+    if(noRes) noRes.style.display=any?'none':'block';
+    [selZone,selLine,selDept].forEach(markSet);
+    var on=!!(q||z||l||d); if(clearBtn) clearBtn.classList.toggle('dp-on', on);
+  }
+  // persist to the SAME endpoint the Architecture map uses, so filters stay in sync per-user
+  var saveT=null;
+  function save(){
+    if(saveT) clearTimeout(saveT);
+    saveT=setTimeout(function(){
+      fetch('/architecture/filters',{method:'POST',
+        headers:{'Content-Type':'application/json','X-CSRFToken':TOKEN},
+        body:JSON.stringify({zone:val(selZone),line:val(selLine),department:val(selDept),
+                             text:val(s),status:(SAVED&&SAVED.status)||''})}).catch(function(){});
+    },350);
+  }
+  function onChange(){ refresh(); save(); }
+  if(s){ s.addEventListener('input',onChange); }
+  [selZone,selLine,selDept].forEach(function(el){ if(el) el.addEventListener('change',onChange); });
+  if(clearBtn) clearBtn.addEventListener('click',function(){
+    if(s) s.value=''; if(selZone) selZone.value=''; if(selLine) selLine.value=''; if(selDept) selDept.value='';
+    onChange();
+  });
+
+  // --- apply saved filters on load (only set values that still exist as options) ---
+  function setSel(el,v){ if(!el||!v) return; for(var i=0;i<el.options.length;i++){ if(el.options[i].value===v){ el.value=v; return; } } }
+  if(SAVED){
+    if(s && SAVED.text) s.value=SAVED.text;
+    setSel(selZone, SAVED.zone); setSel(selLine, SAVED.line); setSel(selDept, SAVED.department);
+  }
+  refresh();
+  if(s) setTimeout(function(){ s.focus(); },120);
+})();
+</script>

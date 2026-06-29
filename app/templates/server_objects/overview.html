@@ -2,66 +2,187 @@
 {% block title %}Server Objects — {{ appliance.name }}{% endblock %}
 
 {% block breadcrumb %}
-<nav aria-label="breadcrumb" class="mb-3">
-  <ol class="breadcrumb">
-    <li class="breadcrumb-item"><a href="{{ url_for('server_objects.index') }}">Server Objects</a></li>
-    <li class="breadcrumb-item active">{{ appliance.name }}</li>
-  </ol>
-</nav>
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('server_objects.index') }}">Server Objects</a>
+  <span class="separator">/</span>
+  <span>{{ appliance.name }}</span>
+  {% if selected %}<span class="separator">/</span><span>{{ selected.label }}</span>{% endif %}
+</div>
 {% endblock %}
 
 {% block content %}
-<h4 class="mb-3">{{ appliance.name }} — Server Objects</h4>
-
-{% if error %}
-<div class="alert alert-danger">{{ error }}</div>
-{% endif %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-hdd-stack me-2 text-accent"></i>Server Objects</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      <strong>{{ appliance.name }}</strong> · {{ appliance.host }}:{{ appliance.port }}
+    </p>
+  </div>
+  <a href="{{ url_for('server_objects.index') }}" class="btn btn-secondary btn-sm">
+    <i class="bi bi-chevron-left me-1"></i>Change Appliance
+  </a>
+</div>
 
 <div class="row g-3">
-  <div class="col-md-4">
-    <div class="card h-100">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <strong>Virtual Servers</strong>
-        <a href="{{ url_for('server_objects.virtual_servers', id=appliance.id) }}" class="btn btn-sm btn-outline-secondary">View All</a>
+  <!-- ───────────────── Server Objects menu (the GUI tree) ───────────────── -->
+  <div class="col-lg-3">
+    <div class="fw-card">
+      <div class="fw-card-body p-2">
+        <nav class="so-menu">
+          {% for group in menu %}
+          <details class="so-group" {{ 'open' if (not selected) or (selected.logical in group.items|map(attribute='logical')|list) }}>
+            <summary class="so-group-head">
+              <i class="bi {{ group.icon }} me-2"></i>{{ group.label }}
+            </summary>
+            <ul class="so-items">
+              {% for item in group.items %}
+              <li>
+                <a class="so-item {{ 'active' if selected and selected.logical == item.logical }}"
+                   href="{{ url_for('server_objects.overview', id=appliance.id, type=item.logical) }}">
+                  <i class="bi {{ item.icon }} me-2"></i>{{ item.label }}
+                  {% if item.read_only %}<i class="bi bi-eye ms-auto text-muted" title="Read-only (predefined)"></i>{% endif %}
+                </a>
+              </li>
+              {% endfor %}
+            </ul>
+          </details>
+          {% endfor %}
+        </nav>
       </div>
-      <ul class="list-group list-group-flush">
-        {% for vs in virtual_servers[:10] %}
-        <li class="list-group-item">{{ vs.get('name', vs) }}</li>
-        {% else %}
-        <li class="list-group-item text-muted">None</li>
-        {% endfor %}
-      </ul>
     </div>
   </div>
-  <div class="col-md-4">
-    <div class="card h-100">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <strong>Server Pools</strong>
-        <a href="{{ url_for('server_objects.pools', id=appliance.id) }}" class="btn btn-sm btn-outline-secondary">View All</a>
+
+  <!-- ───────────────── Object list for the selected type ────────────────── -->
+  <div class="col-lg-9">
+    {% if not selected %}
+      <div class="fw-empty-state py-5">
+        <div class="fw-empty-state-icon"><i class="bi bi-arrow-left-circle"></i></div>
+        <div class="fw-empty-state-title">Pick an object type from the menu</div>
+        <p class="text-muted">Choose Server, Service, Certificates, SSL Ciphers, IP Group…</p>
       </div>
-      <ul class="list-group list-group-flush">
-        {% for pool in pools[:10] %}
-        <li class="list-group-item">{{ pool.get('name', pool) }}</li>
-        {% else %}
-        <li class="list-group-item text-muted">None</li>
-        {% endfor %}
-      </ul>
-    </div>
-  </div>
-  <div class="col-md-4">
-    <div class="card h-100">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <strong>Content Routing</strong>
-        <a href="{{ url_for('server_objects.content_routing', id=appliance.id) }}" class="btn btn-sm btn-outline-secondary">View All</a>
+    {% else %}
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div>
+          <h4 class="mb-0"><i class="bi {{ selected.icon }} me-2 text-accent"></i>{{ selected.label }}</h4>
+          <code class="small text-muted">{{ selected.collection }}</code>
+          {% if selected.has_children %}<span class="fw-badge fw-badge-info ms-1">has sub-tables</span>{% endif %}
+          {% if selected.read_only %}<span class="fw-badge fw-badge-secondary ms-1">read-only</span>{% endif %}
+        </div>
+        {% if not selected.read_only %}
+        <a class="btn btn-fw-primary btn-sm"
+           href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=selected.collection, title=selected.label, create=1) }}">
+          <i class="bi bi-plus-lg me-1"></i>New {{ selected.label }}
+        </a>
+        {% endif %}
       </div>
-      <ul class="list-group list-group-flush">
-        {% for cr in content_routing[:10] %}
-        <li class="list-group-item">{{ cr.get('name', cr) }}</li>
-        {% else %}
-        <li class="list-group-item text-muted">None</li>
-        {% endfor %}
-      </ul>
-    </div>
+
+      {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+      <div class="fw-toolbar mb-2">
+        <div class="fw-search-box">
+          <i class="bi bi-search search-icon"></i>
+          <input type="text" placeholder="Filter {{ selected.label|lower }}…"
+                 oninput="soFilter('so-table', this.value)">
+        </div>
+        <span class="text-muted small ms-2">{{ rows|length }} object(s)</span>
+        {% if freshness %}
+        <span class="badge bg-dark border ms-2" title="Served from the local source of truth"><i class="bi bi-database me-1"></i>{{ freshness }}</span>
+        <form method="post" action="{{ url_for('server_objects.refresh', id=appliance.id) }}" class="d-inline ms-1">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="type" value="{{ selected.logical }}">
+          <button type="submit" class="btn btn-outline-light btn-sm" title="Pull live config from the device"><i class="bi bi-arrow-clockwise"></i></button>
+        </form>
+        {% endif %}
+      </div>
+
+      <div class="fw-table-wrapper">
+        <table class="fw-table" id="so-table">
+          <thead>
+            <tr><th>Name</th><th>Status</th><th>Details</th><th style="width:140px;">Actions</th></tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+            <tr>
+              <td><strong>{{ r.name }}</strong></td>
+              <td>
+                {% if r.status == 'enable' %}
+                  <span class="fw-status fw-status-online" style="font-size:12px;"><span class="fw-status-dot"></span>Enabled</span>
+                {% elif r.status == 'disable' %}
+                  <span class="fw-status fw-status-unknown" style="font-size:12px;"><span class="fw-status-dot"></span>Disabled</span>
+                {% elif r.status %}
+                  <span class="fw-badge fw-badge-secondary">{{ r.status }}</span>
+                {% else %}—{% endif %}
+              </td>
+              <td class="text-muted" style="font-size:12.5px;">{{ r.detail or '—' }}</td>
+              <td>
+                <a class="btn btn-sm btn-secondary"
+                   href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=selected.collection, mkey=r.name, title=selected.label) }}">
+                  <i class="bi bi-pencil"></i> {{ 'View' if selected.read_only else 'Edit' }}
+                </a>
+                {% if not selected.read_only %}
+                <button class="btn btn-sm btn-fw-danger"
+                        onclick="soDelete('{{ selected.collection }}', {{ r.name|tojson }})">
+                  <i class="bi bi-trash"></i>
+                </button>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4"><div class="fw-empty-state py-4">
+              <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi {{ selected.icon }}"></i></div>
+              <div class="fw-empty-state-title">No {{ selected.label|lower }} found</div>
+            </div></td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.so-menu .so-group { border-bottom:1px solid #F0F2F5; }
+.so-menu .so-group:last-child { border-bottom:0; }
+.so-group-head { cursor:pointer; padding:8px 10px; font-weight:600; font-size:13px;
+  list-style:none; border-radius:8px; }
+.so-group-head::-webkit-details-marker { display:none; }
+.so-group-head:hover { background:#F6F8FB; }
+.so-items { list-style:none; padding:0 0 6px 0; margin:0; }
+.so-item { display:flex; align-items:center; padding:6px 10px 6px 26px; font-size:12.5px;
+  color:#334155; text-decoration:none; border-radius:8px; }
+.so-item:hover { background:#F6F8FB; color:#0d6efd; }
+.so-item.active { background:rgba(59,130,246,.12); color:#2563eb; font-weight:600; }
+</style>
+<script>
+const SO_AID = {{ appliance.id }};
+function soFilter(tableId, q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('#' + tableId + ' tbody tr').forEach(function (row) {
+    if (!row.querySelector('td')) return;
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+function soPost(url, payload) {
+  return fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)}).then(function(r){ return r.json(); });
+}
+function soDelete(collection, mkey) {
+  if (!confirm('Delete "' + mkey + '"?\n\nA dry-run preview is shown first; nothing is removed until you confirm again.')) return;
+  const base = {collection: collection, mkey: mkey};
+  soPost('/objedit/' + SO_AID + '/delete-object', base).then(function(j){
+    if (!j.ok) { alert('Error: ' + (j.error || 'failed')); return; }
+    const req = j.request || {};
+    if (confirm('DRY-RUN ' + req.method + ' ' + req.path + '\n\nApply this delete to the device now?')) {
+      soPost('/objedit/' + SO_AID + '/delete-object', Object.assign({}, base, {apply:true})).then(function(j2){
+        if (j2.ok) { if (window.FW) FW.toast('Deleted', 'success'); location.reload(); }
+        else alert('Error: ' + (j2.error || 'failed'));
+      });
+    }
+  });
+}
+</script>
 {% endblock %}

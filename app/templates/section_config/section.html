@@ -11,6 +11,7 @@
   <a href="{{ url_for('section_config.index', device=device_id) }}">Configuration</a>
   <span class="separator">/</span>
   <span>{{ section.label }}</span>
+  {% if selected %}<span class="separator">/</span><span>{{ selected.label }}</span>{% endif %}
 </div>
 {% endblock %}
 
@@ -21,7 +22,11 @@
       <span style="font-size:24px;" class="me-1">{{ section.emoji }}</span>{{ section.label }}
     </h1>
     <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
+      {% if menu %}
+      <span class="fw-badge fw-badge-info"><i class="bi bi-hdd-network me-1"></i>live browser</span>
+      {% else %}
       <span class="fw-badge fw-badge-secondary">{{ object_types|length }} object type{{ '' if object_types|length == 1 else 's' }}</span>
+      {% endif %}
       {% if section.danger %}
       <span class="fw-badge fw-badge-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>danger</span>
       {% endif %}
@@ -47,8 +52,119 @@
 </div>
 {% endif %}
 
-<!-- ============================ OBJECT TYPES ============================ -->
-<div class="fw-card mb-3">
+{% if menu %}
+<div class="row g-3">
+  <!-- ───────────────────── Section menu (the GUI tree) ───────────────────── -->
+  <div class="col-lg-3">
+    <div class="fw-card">
+      <div class="fw-card-body p-2">
+        <nav class="so-menu">
+          {% for group in menu %}
+          <details class="so-group" {{ 'open' if (not selected) or (selected.logical in group.items|map(attribute='logical')|list) }}>
+            <summary class="so-group-head">
+              <i class="bi {{ group.icon }} me-2"></i>{{ group.label }}
+            </summary>
+            <ul class="so-items">
+              {% for item in group.items %}
+              <li>
+                <a class="so-item {{ 'active' if selected and selected.logical == item.logical }}"
+                   href="{{ url_for('section_config.section', section_key=section.key, device=appliance.id if appliance else None, type=item.logical) }}">
+                  <i class="bi {{ item.icon }} me-2"></i>{{ item.label }}
+                  {% if item.read_only %}<i class="bi bi-eye ms-auto text-muted" title="Read-only (predefined)"></i>{% endif %}
+                </a>
+              </li>
+              {% endfor %}
+            </ul>
+          </details>
+          {% endfor %}
+        </nav>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────────────────── Object list for selected type ─────────────────── -->
+  <div class="col-lg-9">
+    {% if not selected %}
+      <div class="fw-empty-state py-5">
+        <div class="fw-empty-state-icon"><i class="bi bi-arrow-left-circle"></i></div>
+        <div class="fw-empty-state-title">Pick an object type from the menu</div>
+        <p class="text-muted">{{ section.label }} objects are listed here; each opens the deep editor.</p>
+      </div>
+    {% else %}
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div>
+          <h4 class="mb-0"><i class="bi {{ selected.icon }} me-2 text-accent"></i>{{ selected.label }}</h4>
+          <code class="small text-muted">{{ selected.collection }}</code>
+          {% if selected.has_children %}<span class="fw-badge fw-badge-info ms-1">has sub-tables</span>{% endif %}
+          {% if selected.read_only %}<span class="fw-badge fw-badge-secondary ms-1">read-only</span>{% endif %}
+          {% if is_singleton %}<span class="fw-badge fw-badge-secondary ms-1">single config</span>{% endif %}
+        </div>
+        {% if not selected.read_only and not is_singleton %}
+        <a class="btn btn-fw-primary btn-sm"
+           href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=selected.collection, title=selected.label, create=1) }}">
+          <i class="bi bi-plus-lg me-1"></i>New {{ selected.label }}
+        </a>
+        {% endif %}
+      </div>
+
+      {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+      <div class="fw-toolbar mb-2">
+        <div class="fw-search-box">
+          <i class="bi bi-search search-icon"></i>
+          <input type="text" placeholder="Filter {{ selected.label|lower }}…"
+                 oninput="cfgFilter('cfg-table', this.value)">
+        </div>
+        <span class="text-muted small ms-2">{{ rows|length }} object(s)</span>
+      </div>
+
+      <div class="fw-table-wrapper">
+        <table class="fw-table" id="cfg-table">
+          <thead>
+            <tr><th>Name</th><th>Status</th><th>Details</th><th style="width:140px;">Actions</th></tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+            <tr>
+              <td><strong>{{ selected.label if is_singleton else r.name }}</strong></td>
+              <td>
+                {% if r.status == 'enable' %}
+                  <span class="fw-status fw-status-online" style="font-size:12px;"><span class="fw-status-dot"></span>Enabled</span>
+                {% elif r.status == 'disable' %}
+                  <span class="fw-status fw-status-unknown" style="font-size:12px;"><span class="fw-status-dot"></span>Disabled</span>
+                {% elif r.status %}
+                  <span class="fw-badge fw-badge-secondary">{{ r.status }}</span>
+                {% else %}—{% endif %}
+              </td>
+              <td class="text-muted" style="font-size:12.5px;">{{ r.detail or '—' }}</td>
+              <td>
+                <button type="button" class="btn btn-sm btn-secondary cfg-edit-btn"
+                   onclick='cfgInlineEdit(this, {{ selected.collection|tojson }}, {{ ('' if is_singleton else r.name)|tojson }}, {{ 1 if is_singleton else 0 }}, {{ selected.label|tojson }})'>
+                  <i class="bi bi-pencil"></i> {{ 'View' if selected.read_only else 'Edit' }}
+                </button>
+                {% if not selected.read_only and not is_singleton %}
+                <button class="btn btn-sm btn-fw-danger"
+                        onclick='cfgDelete({{ selected.collection|tojson }}, {{ r.name|tojson }})'>
+                  <i class="bi bi-trash"></i>
+                </button>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4"><div class="fw-empty-state py-4">
+              <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi {{ selected.icon }}"></i></div>
+              <div class="fw-empty-state-title">No {{ selected.label|lower }} found</div>
+            </div></td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<!-- =================== OBJECT TYPES CATALOG (no live menu yet) =================== -->
+<div class="fw-card">
   <div class="fw-card-header">
     <span class="fw-card-title"><i class="bi bi-diagram-3 me-2"></i>Object types</span>
   </div>
@@ -93,9 +209,10 @@
     </div>
   </div>
 </div>
+{% endif %}
 
 <!-- ====================== CONFIG TEMPLATE LIBRARY ====================== -->
-<div class="fw-card">
+<div class="fw-card mt-4">
   <div class="fw-card-header d-flex align-items-center justify-content-between">
     <span class="fw-card-title"><i class="bi bi-collection me-2"></i>Config template library
       <span class="text-muted" style="font-weight:normal;font-size:12px;">({{ kind }})</span>
@@ -272,10 +389,153 @@
     </div>
   </div>
 </div>
+<!-- SAVE-AS-TEMPLATE MODAL (capture an existing object as a config template) -->
+<div class="modal fade fw-modal" id="modalSaveAsTemplate" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-collection me-2"></i>Save as template</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="fw-alert fw-alert-info d-flex align-items-center gap-2 mb-3">
+          <i class="bi bi-info-circle-fill"></i>
+          <span style="font-size:13px;">Captures <strong id="stpl-obj"></strong> and its sub-tables
+            as a <span class="mono">{{ kind }}</span> template. It is saved <strong>pending approval</strong>;
+            an administrator must approve it before it can be applied to the fleet.</span>
+        </div>
+        <div class="mb-2">
+          <label class="fw-form-label">Template name <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" id="stpl-name" placeholder="e.g. baseline-{{ section.key }}" autocomplete="off">
+        </div>
+        <div class="mb-1">
+          <label class="fw-form-label">Note</label>
+          <input type="text" class="form-control" id="stpl-note" placeholder="Optional description">
+        </div>
+        <div id="stpl-result" class="mt-2"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-fw-primary" id="stpl-save" onclick="cfgTplSubmit()">
+          <i class="bi bi-check-lg me-1"></i>Save template</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
+<style>
+.so-menu .so-group { border-bottom:1px solid #F0F2F5; }
+.so-menu .so-group:last-child { border-bottom:0; }
+.so-group-head { cursor:pointer; padding:8px 10px; font-weight:600; font-size:13px;
+  list-style:none; border-radius:8px; }
+.so-group-head::-webkit-details-marker { display:none; }
+.so-group-head:hover { background:#F6F8FB; }
+.so-items { list-style:none; padding:0 0 6px 0; margin:0; }
+.so-item { display:flex; align-items:center; padding:6px 10px 6px 26px; font-size:12.5px;
+  color:#334155; text-decoration:none; border-radius:8px; }
+.so-item:hover { background:#F6F8FB; color:#0d6efd; }
+.so-item.active { background:rgba(59,130,246,.12); color:#2563eb; font-weight:600; }
+/* Inline object editor (opens in place under the row instead of a new screen) */
+tr.cfg-edit-row > td { background:#F6F8FB; border-top:0; padding:0 !important; }
+.cfg-edit-panel { border-left:3px solid var(--fw-accent,#EF5424); }
+.cfg-edit-head { display:flex; align-items:center; justify-content:space-between;
+  padding:8px 14px; background:#EEF2F7; border-bottom:1px solid #E2E8F0; font-size:13px; }
+.cfg-edit-body { padding:10px 14px 4px; }
+.cfg-edit-body .card { box-shadow:none; border-color:#E2E8F0; }
+.cfg-edit-btn.active { background:var(--fw-accent,#EF5424); color:#fff; border-color:var(--fw-accent,#EF5424); }
+</style>
 <script>
+const CFG_AID = {{ appliance.id if appliance else 'null' }};
+const SECTION_KEY = {{ section.key|tojson }};
+const CAN_SAVE_TPL = {{ ('y' if current_user.can('operations.template_save') else '')|tojson }} ? true : false;
+const SEL_READONLY = {{ 1 if (selected and selected.read_only) else 0 }};
+
+function cfgFilter(tableId, q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('#' + tableId + ' tbody tr').forEach(function (row) {
+    if (row.classList.contains('cfg-edit-row')) return;
+    if (!row.querySelector('td')) return;
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+function cfgPost(url, payload) {
+  return fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)}).then(function(r){ return r.json(); });
+}
+function cfgDelete(collection, mkey) {
+  if (CFG_AID === null) return;
+  if (!confirm('Delete "' + mkey + '"?\n\nA dry-run preview is shown first; nothing is removed until you confirm again.')) return;
+  const base = {collection: collection, mkey: mkey};
+  cfgPost('/objedit/' + CFG_AID + '/delete-object', base).then(function(j){
+    if (!j.ok) { alert('Error: ' + (j.error || 'failed')); return; }
+    const req = j.request || {};
+    if (confirm('DRY-RUN ' + req.method + ' ' + req.path + '\n\nApply this delete to the device now?')) {
+      cfgPost('/objedit/' + CFG_AID + '/delete-object', Object.assign({}, base, {apply:true})).then(function(j2){
+        if (j2.ok) { if (window.FW) FW.toast('Deleted', 'success'); location.reload(); }
+        else alert('Error: ' + (j2.error || 'failed'));
+      });
+    }
+  });
+}
+
+function cfgEsc(v){ var d=document.createElement('div'); d.textContent=(v==null?'':String(v)); return d.innerHTML; }
+function cfgCloseAllInline(){
+  document.querySelectorAll('tr.cfg-edit-row').forEach(function(r){ r.remove(); });
+  document.querySelectorAll('.cfg-edit-btn.active').forEach(function(b){ b.classList.remove('active'); });
+}
+function cfgInlineEdit(btn, collection, mkey, singleton, title){
+  if (CFG_AID === null) return;
+  var tr = btn.closest('tr');
+  var next = tr.nextElementSibling;
+  var reopen = next && next.classList.contains('cfg-edit-row') && next.getAttribute('data-mkey') === String(mkey);
+  cfgCloseAllInline();
+  if (reopen) return;                       // re-clicking the open editor closes it
+  var colspan = tr.children.length;
+  var er = document.createElement('tr');
+  er.className = 'cfg-edit-row';
+  er.setAttribute('data-mkey', String(mkey));
+  er.innerHTML =
+    '<td colspan="' + colspan + '" class="p-0">' +
+      '<div class="cfg-edit-panel">' +
+        '<div class="cfg-edit-head">' +
+          '<span><i class="bi bi-pencil-square me-2"></i>Editing <strong>' + cfgEsc(mkey || title) + '</strong></span>' +
+          '<span class="d-flex gap-2">' +
+            ((CAN_SAVE_TPL && !SEL_READONLY) ? '<button type="button" class="btn btn-sm btn-fw-outline cfg-tpl-btn" title="Capture this object (and its sub-tables) as a config template"><i class="bi bi-collection me-1"></i>Save as template</button>' : '') +
+            '<button type="button" class="btn btn-sm btn-fw-outline cfg-edit-close"><i class="bi bi-x-lg me-1"></i>Close</button>' +
+          '</span>' +
+        '</div>' +
+        '<div class="cfg-edit-body"><div class="text-muted p-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading editor…</div></div>' +
+      '</div>' +
+    '</td>';
+  tr.after(er);
+  btn.classList.add('active');
+  er.querySelector('.cfg-edit-close').onclick = function(){ cfgCloseAllInline(); };
+  var _tplBtn = er.querySelector('.cfg-tpl-btn');
+  if (_tplBtn) _tplBtn.onclick = function(){ cfgSaveAsTemplate(collection, mkey, singleton); };
+  var url = '/objedit/' + CFG_AID + '/edit?partial=1' +
+    '&collection=' + encodeURIComponent(collection) +
+    '&mkey=' + encodeURIComponent(mkey) +
+    '&title=' + encodeURIComponent(title) +
+    (singleton ? '&singleton=1' : '');
+  fetch(url).then(function(r){ return r.text(); }).then(function(html){
+    var body = er.querySelector('.cfg-edit-body');
+    body.innerHTML = html;
+    body.querySelectorAll('script').forEach(function(old){
+      var sc = document.createElement('script');
+      if (old.src) sc.src = old.src; else sc.textContent = old.textContent;
+      old.parentNode.replaceChild(sc, old);
+    });
+    if (window.objeditPopulateRefs) window.objeditPopulateRefs(body);
+    er.scrollIntoView({behavior:'smooth', block:'nearest'});
+  }).catch(function(e){
+    er.querySelector('.cfg-edit-body').innerHTML =
+      '<div class="alert alert-danger m-3">Failed to load editor: ' + cfgEsc(e.message) + '</div>';
+  });
+}
+
 function vtEsc(v) {
   var d = document.createElement('div');
   d.textContent = (v === null || v === undefined) ? '' : String(v);
@@ -353,4 +613,61 @@ function renderPreview(j) {
   return html;
 }
 </script>
+
+<script>
+// Section sub-menu (.so-menu) accordion — one group open at a time (2026-06-29)
+(function () {
+  var menu = document.querySelector('.so-menu');
+  if (!menu) return;
+  var groups = Array.prototype.slice.call(menu.querySelectorAll('details.so-group'));
+  if (!groups.length) return;
+  // On load, if several are open, keep only the active one (else the first).
+  var open = groups.filter(function (d) { return d.open; });
+  if (open.length > 1) {
+    var act = menu.querySelector('.so-item.active');
+    var keep = act ? act.closest('details.so-group') : groups[0];
+    groups.forEach(function (d) { d.open = (d === keep); });
+  }
+  // Accordion: opening one closes the others.
+  groups.forEach(function (d) {
+    d.addEventListener('toggle', function () {
+      if (d.open) groups.forEach(function (o) { if (o !== d) o.open = false; });
+    });
+  });
+})();
+</script>
+
+
+<script>
+// Capture an existing config object (+ its sub-tables) as a PENDING config
+// template (services side: /objedit/<aid>/save-template). Config-area scoped.
+var _stplCtx = null;
+function cfgSaveAsTemplate(collection, mkey, singleton){
+  if (CFG_AID === null) return;
+  _stplCtx = {collection: collection, mkey: mkey, singleton: singleton ? 1 : 0};
+  document.getElementById('stpl-obj').textContent = mkey || SECTION_KEY;
+  document.getElementById('stpl-name').value = '';
+  document.getElementById('stpl-note').value = '';
+  document.getElementById('stpl-result').innerHTML = '';
+  document.getElementById('stpl-save').disabled = false;
+  if (window.bootstrap) new bootstrap.Modal(document.getElementById('modalSaveAsTemplate')).show();
+}
+function cfgTplSubmit(){
+  if (!_stplCtx) return;
+  var name = (document.getElementById('stpl-name').value || '').trim();
+  var res = document.getElementById('stpl-result');
+  if (!name){ res.innerHTML = '<div class="text-danger" style="font-size:13px;">A template name is required.</div>'; return; }
+  var btn = document.getElementById('stpl-save'); btn.disabled = true;
+  var payload = {collection: _stplCtx.collection, mkey: _stplCtx.mkey,
+                 singleton: _stplCtx.singleton, section: SECTION_KEY,
+                 name: name, note: (document.getElementById('stpl-note').value || '').trim()};
+  cfgPost('/objedit/' + CFG_AID + '/save-template', payload).then(function(j){
+    if (!j.ok){ res.innerHTML = '<div class="text-danger" style="font-size:13px;">' + vtEsc(j.error || 'failed') + '</div>'; btn.disabled = false; return; }
+    res.innerHTML = '<div class="text-success" style="font-size:13px;">Saved <strong>' + vtEsc(j.name) + '</strong> (v' + j.version + ', ' + j.item_count + ' item(s)) — <strong>pending approval</strong>.</div>';
+    if (window.FW) FW.toast('Template saved (pending approval)', 'success');
+    setTimeout(function(){ location.reload(); }, 1200);
+  }).catch(function(e){ res.innerHTML = '<div class="text-danger" style="font-size:13px;">' + vtEsc(e.message) + '</div>'; btn.disabled = false; });
+}
+</script>
+
 {% endblock %}

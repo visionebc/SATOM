@@ -1,0 +1,164 @@
+"""Sync orchestration — populate the local cache (source of truth) from a device
+and keep a git-backable per-device JSON backup.
+
+Three triggers converge here: manual ⟳, scheduled (Automation → Actions), and
+write-through after an approved edit. Live reads are read-only REST sweeps.
+
+The per-device JSON backup lives at ``reports/<slug>/_config.json`` (git-tracked,
+human-readable). Pushing it to git is opt-in (``publish=True``). Override the
+reports root with ``FORTINET_REPORTS_DIR`` (tests).
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+from datetime import datetime
+from pathlib import Path
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _reports_dir() -> Path:
+    d = Path(os.environ.get("FORTINET_REPORTS_DIR") or (_repo_root() / "reports"))
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def slugify(name: str) -> str:
+    s = re.sub(r"[^a-zA-Z0-9_.-]+", "-", (name or "").strip()).strip("-")
+    return s or "device"
+
+
+def device_json_path(appliance) -> Path:
+    d = _reports_dir() / slugify(getattr(appliance, "name", str(appliance)))
+    d.mkdir(parents=True, exist_ok=True)
+    return d / "_config.json"
+
+
+def write_device_json(appliance, snapshot: dict) -> Path:
+    """Atomic write of the per-device JSON backup."""
+    p = device_json_path(appliance)
+    tmp = p.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(snapshot, indent=2, default=str), encoding="utf-8")
+    os.replace(tmp, p)
+    return p
+
+
+def snapshot_from_device(appliance, *, timeout: float = 20.0) -> dict:
+    """Live, read-only sweep of every top-level cmdb section -> snapshot dict."""
+    from .rediscovery import sweep_plan
+    from ..clients.fortiweb import FortiWebClient
+
+    client = FortiWebClient(appliance, timeout=timeout)
+    plan = sweep_plan()
+    sections: dict = {}
+    total = 0
+    errors: list[dict] = []
+    for ep in plan:
+        try:
+            rows = client._results_list(client.get(ep["urn"]).json())
+            rows = [r for r in rows if isinstance(r, dict)]
+            if rows:
+                sections.setdefault(ep["section"], {})[ep["name"]] = rows
+                total += len(rows)
+        except Exception as exc:  # noqa: BLE001 — one endpoint never sinks the sweep
+            errors.append({"endpoint": ep["name"],
+                           "error": f"{type(exc).__name__}: {exc}"[:160]})
+    return {
+        "device": appliance.name, "appliance_id": appliance.id,
+        "generated_at": datetime.utcnow().isoformat(), "total_objects": total,
+        "section_count": len(sections), "sections": sections, "errors": errors,
+    }
+
+
+def persist_snapshot(appliance, snapshot: dict, *, source: str = "live",
+                     trigger: str = "manual", user_label: str | None = None,
+                     publish: bool = False, session=None):
+    """Ingest into the cache, write the JSON backup, optionally git-publish it,
+    and record a SyncRun. Returns the SyncRun (committed)."""
+    from ..extensions import db
+    from ..models_cache import SyncRun
+    from . import device_store
+
+    session = session or db.session
+    run = SyncRun(appliance_id=getattr(appliance, "id", None), section="_all",
+                  trigger=trigger, user_label=user_label, status="ok")
+    session.add(run)
+    session.flush()
+    try:
+        res = device_store.ingest_snapshot(appliance.id, snapshot, source=source,
+                                           session=session)
+        changed = sum(1 for v in res.values() if v.get("changed"))
+        p = write_device_json(appliance, snapshot)
+        run.changed = changed
+        run.detail = (f"{snapshot.get('total_objects', 0)} objects, "
+                      f"{len(res)} sections, json={p.name}")
+        if publish:
+            from . import git_service
+            rel = os.path.relpath(str(p), str(_repo_root()))
+            try:
+                git_service.git_publish(f"device sync: {appliance.name}", [rel])
+                run.detail += " | git: published"
+            except Exception as exc:  # noqa: BLE001 — git never sinks the sync
+                run.detail += f" | git error: {type(exc).__name__}"
+        run.status = "ok"
+    except Exception as exc:  # noqa: BLE001
+        run.status = "error"
+        run.detail = f"{type(exc).__name__}: {exc}"[:240]
+    run.finished_at = datetime.utcnow()
+    session.commit()
+    return run
+
+
+def sync_device(appliance, *, publish: bool = False, user_label: str | None = None,
+                trigger: str = "manual", session=None):
+    """Live sync one device: sweep -> ingest -> JSON -> (git) -> SyncRun."""
+    snapshot = snapshot_from_device(appliance)
+    return persist_snapshot(appliance, snapshot, source="live", trigger=trigger,
+                            user_label=user_label, publish=publish, session=session)
+
+
+def sync_fleet(appliances, *, publish: bool = False, user_label: str | None = None):
+    """Sync several devices serially; one git publish at the end if requested."""
+    runs = []
+    for a in appliances:
+        runs.append(sync_device(a, publish=False, user_label=user_label,
+                                trigger="scheduled"))
+    if publish:
+        from . import git_service
+        try:
+            git_service.git_publish("device sync: fleet", ["reports"])
+        except Exception:  # noqa: BLE001
+            pass
+    return runs
+
+
+def backfill_from_git(*, session=None) -> dict:
+    """Seed the cache from existing reports/<slug>/_config.json files (no box)."""
+    from ..extensions import db
+    from ..models import Appliance
+    from . import device_store
+
+    session = session or db.session
+    out: dict = {}
+    appliances = Appliance.query.all()
+    by_slug = {slugify(a.name): a for a in appliances}
+    by_id = {a.id: a for a in appliances}
+    for cfg in sorted(_reports_dir().glob("*/_config.json")):
+        try:
+            snap = json.loads(cfg.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            out[cfg.parent.name] = "unreadable"
+            continue
+        aid = snap.get("appliance_id")
+        appliance = by_id.get(aid) or by_slug.get(cfg.parent.name)
+        if appliance is None:
+            out[cfg.parent.name] = "no matching appliance"
+            continue
+        res = device_store.ingest_snapshot(appliance.id, snap, source="git",
+                                           session=session)
+        out[cfg.parent.name] = {"appliance_id": appliance.id, "sections": len(res)}
+    return out

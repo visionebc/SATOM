@@ -27,14 +27,13 @@ def log_action(
     try:
         user_id = current_user.id if current_user.is_authenticated else None
         username = current_user.username if current_user.is_authenticated else "anonymous"
-    except RuntimeError:
-        # Outside application/request context
+    except Exception:  # noqa: BLE001 — audit is best-effort, never fatal
         user_id = None
         username = "system"
 
     try:
         ip = request.remote_addr
-    except RuntimeError:
+    except Exception:  # noqa: BLE001 — audit is best-effort, never fatal
         ip = None
 
     entry = AuditLog(

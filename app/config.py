@@ -47,6 +47,9 @@ class Config:
     FERNET_KEY: str = _ensure_fernet_key()
     WTF_CSRF_TIME_LIMIT: int = 3600
     RATELIMIT_STORAGE_URL: str = "memory://"
+    # Firmware/backup uploads — cap so a runaway upload 413s instead of
+    # OOMing a gunicorn worker. Real FortiWeb .out images are ~100-500 MB.
+    MAX_CONTENT_LENGTH: int = int(os.environ.get("MAX_UPLOAD_MB", "600")) * 1024 * 1024
 
 
 class DevelopmentConfig(Config):

@@ -15,29 +15,12 @@
   <div>
     <h1 class="fw-page-title"><i class="bi bi-sliders me-2 text-accent"></i>FortiWeb Configuration</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      Every config GUI section as a registry-derived catalog of object types, with a
-      per-section template library. The catalog renders without a device; selecting one
-      is optional.
+      Every config GUI section. Sections marked <span class="fw-badge fw-badge-info"><i class="bi bi-hdd-network me-1"></i>live browser</span>
+      open a device → GUI menu → live object list → deep editor; the rest show a
+      registry-derived object-type catalog. Each section keeps a template library.
     </p>
   </div>
 </div>
-
-<!-- Optional device picker (the catalog is registry-derived; a device is not required) -->
-<form method="get" action="{{ url_for('section_config.index') }}" class="fw-toolbar" style="gap:.5rem;">
-  <label class="fw-form-label mb-0 me-1" style="align-self:center;">
-    <i class="bi bi-hdd-network me-1"></i>Device
-  </label>
-  <select class="form-select form-select-sm" style="width:auto;" name="device"
-          onchange="this.form.submit()">
-    <option value="">No device — catalog only</option>
-    {% for a in appliances %}
-    <option value="{{ a.id }}" {{ 'selected' if device_id == a.id else '' }}>{{ a.name }}</option>
-    {% endfor %}
-  </select>
-  <span class="ms-auto" style="font-size:12px;color:#6C757D;align-self:center;">
-    {{ sections|length }} sections
-  </span>
-</form>
 
 <!-- Section grid -->
 <div class="row g-3 mt-1">
@@ -57,6 +40,9 @@
           </span>
         </div>
         <div class="mt-2 d-flex gap-1 flex-wrap">
+          {% if s.live %}
+          <span class="fw-badge fw-badge-info" title="Live device browser (menu → objects → editor)"><i class="bi bi-hdd-network me-1"></i>live browser</span>
+          {% endif %}
           {% if s.danger %}
           <span class="fw-badge fw-badge-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>danger</span>
           {% endif %}

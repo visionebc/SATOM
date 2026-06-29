@@ -52,6 +52,8 @@ class FortiWebClient(BaseClient):
         """A single cmdb object out of a (possibly mkey-scoped) response."""
         if isinstance(raw, dict):
             res = raw.get('results', raw.get('data'))
+            if isinstance(res, dict) and res.get('errcode') not in (None, 0):
+                return {}  # error envelope (e.g. errcode -3 "not found") -> empty
             if isinstance(res, list):
                 return res[0] if res else {}
             if isinstance(res, dict):
@@ -63,6 +65,8 @@ class FortiWebClient(BaseClient):
     def _results_list(raw):
         if isinstance(raw, dict):
             res = raw.get('results', raw.get('data'))
+            if isinstance(res, dict) and res.get('errcode') not in (None, 0):
+                return []  # error envelope -> no rows
             if isinstance(res, list):
                 return res
             if isinstance(res, dict):
@@ -102,7 +106,8 @@ class FortiWebClient(BaseClient):
         wpp = policy.get('web-protection-profile')
         if vs:
             out['vserver'] = self._safe_one('/api/v2.0/cmdb/server-policy/vserver?mkey=%s' % q(vs))
-            out['vips'] = self._safe_list('/api/v2.0/cmdb/server-policy/vserver/vip-list?mkey=%s' % q(vs))
+            out['vips'] = self._resolve_vip_ips(
+                self._safe_list('/api/v2.0/cmdb/server-policy/vserver/vip-list?mkey=%s' % q(vs)))
         if sp:
             pool = self._safe_one('/api/v2.0/cmdb/server-policy/server-pool?mkey=%s' % q(sp))
             out['pool'] = pool
@@ -123,7 +128,58 @@ class FortiWebClient(BaseClient):
         return self.get('/api/v2.0/cmdb/server-policy/server-pool').json()
 
     def list_wpp(self):
-        return self.get('/api/v2.0/cmdb/waf/web-protection-profile').json()
+        return self.get('/api/v2.0/cmdb/waf/web-protection-profile.inline-protection').json()
+
+    # --- reference-option + interface helpers (for the editable workspace) ----
+    def cmdb_names(self, endpoint: str):
+        """Object names from one or more cmdb collections ('a|b' = merged),
+        for populating a reference <select>. Never raises (returns [])."""
+        seen, out = set(), []
+        for ep in (endpoint or '').split('|'):
+            ep = ep.strip()
+            if not ep:
+                continue
+            path = ep if ep.startswith('/api/') else '/api/v2.0/cmdb/' + ep.lstrip('/')
+            for o in self._safe_list(path):
+                n = o.get('name') if isinstance(o, dict) else None
+                if n and n not in seen:
+                    seen.add(n)
+                    out.append(n)
+        return out
+
+    def interface_ip(self, name: str):
+        """Resolve a system interface's configured IP (CIDR), cached per client.
+        Returns '' for unset (0.0.0.0/0) or unknown interfaces."""
+        if not name:
+            return ''
+        cache = getattr(self, '_iface_ip_cache', None)
+        if cache is None:
+            cache = self._iface_ip_cache = {}
+        if name in cache:
+            return cache[name]
+        obj = self._safe_one('/api/v2.0/cmdb/system/interface?mkey=%s' % quote(name, safe=''))
+        ip = (obj.get('ip') or '').strip() if isinstance(obj, dict) else ''
+        if ip.startswith('0.0.0.0'):
+            ip = ''
+        cache[name] = ip
+        return ip
+
+    def _resolve_vip_ips(self, vips):
+        """Annotate each VIP row with the IP it actually answers on — the
+        interface IP when use-interface-ip=enable (otherwise the explicit vip).
+        Fixes the 'VIP shows no IP' case where the address comes from the port."""
+        for v in vips or []:
+            use_if = str(v.get('use-interface-ip', '')).lower() in ('enable', 'enabled', '1', 'true')
+            if use_if and v.get('interface'):
+                v['effective_ip'] = self.interface_ip(v['interface'])
+                v['ip_source'] = 'interface (%s)' % v['interface']
+            elif v.get('vip'):
+                v['effective_ip'] = v['vip']
+                v['ip_source'] = 'static'
+            else:
+                v['effective_ip'] = ''
+                v['ip_source'] = ''
+        return vips
 
     def api_call(self, method: str, path: str, data=None):
         return self._request(method, path, headers=self._headers(), json=data)

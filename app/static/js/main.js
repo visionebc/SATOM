@@ -1,3 +1,27 @@
+// ── CSRF guard: inject X-CSRFToken into every same-origin state-changing
+//    fetch() so JSON POST/PUT/DELETE calls aren't rejected (302→login) by
+//    Flask-WTF CSRFProtect. Pages used to hand-roll this header and some
+//    omitted it, silently breaking saves; doing it here once covers every
+//    page and any future call. (2026-06-28)
+(function () {
+  var _fetch = window.fetch;
+  window.fetch = function (input, init) {
+    init = init || {};
+    var method = (init.method || (input && input.method) || 'GET').toUpperCase();
+    var url = (typeof input === 'string') ? input : (input && input.url) || '';
+    var sameOrigin = url.indexOf('/') === 0 || url.indexOf(location.origin) === 0;
+    if (sameOrigin && method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+      var h = new Headers(init.headers || (typeof input === 'object' && input && input.headers) || {});
+      if (!h.has('X-CSRFToken')) {
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        if (meta && meta.content) h.set('X-CSRFToken', meta.content);
+      }
+      init.headers = h;
+    }
+    return _fetch.call(this, input, init);
+  };
+})();
+
 /* ============================================================
    Fortinet Manager Web — main.js
    ============================================================ */
@@ -321,3 +345,131 @@ window.FW = {
     }, 3500);
   }
 };
+
+// ============================================================
+// On/off toggle switches (.fw-toggle-sw, rendered by the `switch` macro)
+// ------------------------------------------------------------
+// Keep the underlying checkbox's .value canonical ('enable'/'disable') so the
+// existing save / dirty-tracking / live-visibility code (which reads
+// input.value) works unchanged, and reflect the state in the adjacent label.
+// Called inline (oninput/onchange) by the macro, so a switch behaves correctly
+// on EVERY page that renders it — no per-page wiring needed. Global on purpose.
+// ============================================================
+function fwSync(el) {
+  if (!el) return;
+  el.value = el.checked ? 'enable' : 'disable';
+  var t = el.parentElement && el.parentElement.querySelector('.fw-toggle-sw-text');
+  if (t) t.textContent = el.checked ? (el.dataset.on || 'Enabled') : (el.dataset.off || 'Disabled');
+}
+window.fwSync = fwSync;
+
+// ============================================================
+// Collapsible sidebar nav groups (accordion) — 2026-06-29
+// One group open at a time. On load, open the group holding the
+// active item and keep it in view, so a full-page navigation no
+// longer "scrolls to the top" away from the link you clicked.
+// Runs after the active-highlighting IIFE above (so .active is set).
+// ============================================================
+(function () {
+  var sidebar = document.getElementById('fw-sidebar');
+  if (!sidebar) return;
+  var groups = Array.prototype.slice.call(sidebar.querySelectorAll('.fw-nav-group'));
+  if (!groups.length) return;
+
+  var OPEN_KEY = 'fw_nav_open_group';
+  var SCROLL_KEY = 'fw_nav_scroll';
+
+  function nameOf(g) { return g.getAttribute('data-nav-group') || ''; }
+  function bodyOf(g) { return g.querySelector('.fw-nav-group-body'); }
+
+  // Set a group open/closed with NO animation (initial render, etc.).
+  function setOpenInstant(g, open) {
+    var b = bodyOf(g);
+    g.classList.toggle('collapsed', !open);
+    if (!b) return;
+    b.style.transition = 'none';
+    b.style.maxHeight = open ? 'none' : '0px';
+    b.style.opacity = open ? '1' : '0';
+    void b.offsetHeight;          // flush styles before re-enabling transitions
+    b.style.transition = '';
+  }
+
+  // Animate a group OPEN by easing to its real content height, then release
+  // the cap to 'none' so nested/resized content isn't clipped.
+  function animateOpen(g) {
+    var b = bodyOf(g);
+    g.classList.remove('collapsed');
+    if (!b) return;
+    b.style.maxHeight = b.scrollHeight + 'px';
+    b.style.opacity = '1';
+    var done = function (e) {
+      if (e.propertyName !== 'max-height') return;
+      b.removeEventListener('transitionend', done);
+      if (!g.classList.contains('collapsed')) b.style.maxHeight = 'none';
+    };
+    b.addEventListener('transitionend', done);
+  }
+
+  // Animate a group CLOSED: pin the current real height (it may be 'none'),
+  // force a reflow, then ease down to 0 so the motion is proportional.
+  function animateClose(g) {
+    var b = bodyOf(g);
+    if (b) {
+      b.style.maxHeight = b.scrollHeight + 'px';
+      void b.offsetHeight;
+      b.style.opacity = '0';
+      b.style.maxHeight = '0px';
+    }
+    g.classList.add('collapsed');
+  }
+
+  function openOnly(group) {
+    groups.forEach(function (g) {
+      if (g === group) animateOpen(g); else animateClose(g);
+    });
+    if (group) localStorage.setItem(OPEN_KEY, nameOf(group));
+  }
+
+  // Header click → accordion toggle
+  groups.forEach(function (g) {
+    var head = g.querySelector('.fw-nav-toggle');
+    if (!head) return;
+    head.addEventListener('click', function () {
+      if (g.classList.contains('collapsed')) {
+        openOnly(g);
+      } else {
+        animateClose(g);
+        localStorage.removeItem(OPEN_KEY);
+      }
+    });
+  });
+
+  // Initial state: active group wins, else persisted, else first
+  var activeItem = sidebar.querySelector('.fw-nav-item.active');
+  var initial = activeItem ? activeItem.closest('.fw-nav-group') : null;
+  if (!initial) {
+    var saved = localStorage.getItem(OPEN_KEY);
+    if (saved) {
+      initial = groups.filter(function (g) { return nameOf(g) === saved; })[0] || null;
+    }
+  }
+  if (!initial) initial = groups[0];
+  groups.forEach(function (g) { setOpenInstant(g, g === initial); });
+
+  // Restore the sidebar's own scroll position from the previous page,
+  // then guarantee the active link is visible within the sidebar.
+  var sc = sessionStorage.getItem(SCROLL_KEY);
+  if (sc !== null) sidebar.scrollTop = parseInt(sc, 10) || 0;
+  if (activeItem) {
+    var ir = activeItem.getBoundingClientRect();
+    var sr = sidebar.getBoundingClientRect();
+    if (ir.top < sr.top || ir.bottom > sr.bottom) {
+      activeItem.scrollIntoView({ block: 'center' });
+    }
+  }
+
+  // Persist the sidebar scroll so navigation keeps context
+  sidebar.addEventListener('scroll', function () {
+    sessionStorage.setItem(SCROLL_KEY, sidebar.scrollTop);
+  });
+})();

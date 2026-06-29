@@ -60,7 +60,7 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-rocket-takeoff me-2 text-accent"></i>Apply: {{ prof_name }}</h1>
-    <p class="text-muted mb-0" style="font-size:13px;">Target: <strong>{{ target_desc }}</strong> — {{ target_count }} device(s)</p>
+    <p class="text-muted mb-0" style="font-size:13px;">Target: <strong>{{ target_desc }}</strong> — {{ target_count }} device(s) &nbsp;·&nbsp; Host: <strong>{{ target_hostname }}</strong> &nbsp;·&nbsp; Change: <code>{{ change_id }}</code></p>
   </div>
   <a class="btn btn-fw-outline" href="{{ url_for('provisioning.index') }}"><i class="bi bi-arrow-left me-1"></i>Back</a>
 </div>
@@ -83,6 +83,8 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="confirm" value="1">
       <input type="hidden" name="mode" value="{{ mode }}">
+      <input type="hidden" name="target_hostname" value="{{ target_hostname }}">
+      <input type="hidden" name="change_id" value="{{ change_id }}">
       {% for did in device_ids %}<input type="hidden" name="device_ids" value="{{ did }}">{% endfor %}
       <button type="submit" class="btn btn-fw-danger"><i class="bi bi-exclamation-octagon me-1"></i>Confirm &amp; apply to live devices</button>
       <a class="btn btn-fw-outline ms-2" href="{{ url_for('provisioning.index') }}">Cancel</a>

@@ -259,6 +259,25 @@ a:hover { color: var(--fw-accent-hover); text-decoration: underline; }
 
 .fw-nav-item.active .fw-nav-icon { opacity: 1; }
 
+/* FortiWeb config sections — indented sub-items under "Configuration" */
+.fw-nav-subitem {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  padding-left: 40px;
+  font-size: 12.5px;
+  color: var(--fw-sidebar-section);
+}
+.fw-nav-subitem .fw-nav-emoji {
+  width: 18px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+.fw-nav-subitem:hover { color: var(--fw-sidebar-text-hover); }
+.fw-nav-subitem.active .fw-nav-emoji { opacity: 1; }
+
 .fw-nav-divider {
   height: 1px;
   background: rgba(255,255,255,0.06);
@@ -895,3 +914,170 @@ a:hover { color: var(--fw-accent-hover); text-decoration: underline; }
 .sp-table .pill.bad { background: rgba(248,113,113,.15); color: #f87171; }
 .sp-table .ok { color: #34d399; } .sp-table .warn { color: #f59e0b; } .sp-table .bad { color: #f87171; }
 .sp-table .muted { color: #8aa0c0; } .sp-table .small { font-size: 12px; } .sp-table .mono { font-family: Menlo, Monaco, Consolas, monospace; }
+
+/* ============================================================
+   On/off toggle switch — replaces the enable/disable <select>s
+   in the Server Policy editor (and every page using the `fld`
+   / `switch` macro). The hidden checkbox stays the real control
+   (keyboard + focus); fwSync() keeps its .value = enable/disable.
+   ============================================================ */
+.fw-toggle-sw {
+  position: relative; display: inline-flex; align-items: center; gap: 9px;
+  cursor: pointer; user-select: none; padding: 2px 0; line-height: 1;
+}
+.fw-toggle-sw input {
+  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 38px; height: 20px; margin: 0; opacity: 0; cursor: pointer; z-index: 2;
+}
+.fw-toggle-sw-track {
+  position: relative; flex: 0 0 auto; width: 38px; height: 20px; border-radius: 20px;
+  background: #cbd2d9; border: 1px solid rgba(0,0,0,.10);
+  transition: background var(--fw-transition), border-color var(--fw-transition);
+}
+.fw-toggle-sw-track::before {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.35);
+  transition: transform var(--fw-transition);
+}
+.fw-toggle-sw input:checked ~ .fw-toggle-sw-track { background: var(--fw-accent); border-color: var(--fw-accent); }
+.fw-toggle-sw input:checked ~ .fw-toggle-sw-track::before { transform: translateX(18px); }
+.fw-toggle-sw input:focus-visible ~ .fw-toggle-sw-track { box-shadow: 0 0 0 3px var(--fw-accent-light); }
+.fw-toggle-sw input:disabled ~ .fw-toggle-sw-track { opacity: .5; cursor: not-allowed; }
+.fw-toggle-sw input:disabled { cursor: not-allowed; }
+.fw-toggle-sw-text { font-size: 12px; color: var(--fw-text-secondary); min-width: 52px; white-space: nowrap; }
+.fw-toggle-sw input:checked ~ .fw-toggle-sw-text { color: var(--fw-text-primary); font-weight: 500; }
+/* unsaved-change cue (the page's change tracker adds .fw-dirty to the input) */
+.fw-toggle-sw input.fw-dirty ~ .fw-toggle-sw-track { box-shadow: 0 0 0 2px rgba(251,191,36,.65); }
+/* compact variant for table cells (back-end servers, content-routing rows) */
+.fw-toggle-sw-sm { gap: 7px; }
+.fw-toggle-sw-sm .fw-toggle-sw-text { min-width: 30px; font-size: 11.5px; }
+
+
+/* --- banner device classification meta (zone/line/dept/host) ----------- */
+.fw-device-switch { display: inline-flex; align-items: center; gap: 2px; }
+.fw-dev-meta { align-items: center; gap: 0; margin-left: 4px; }
+.fw-dev-seg {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  font-size: 12px; font-weight: 600; color: var(--fw-topbar-text);
+  white-space: nowrap; padding: 0 9px;
+}
+.fw-dev-seg + .fw-dev-seg { border-left: 1px solid rgba(255,255,255,0.16); }
+.fw-dev-k {
+  font-style: normal; font-size: 8.5px; letter-spacing: 0.06em;
+  text-transform: uppercase; font-weight: 700; opacity: 0.5;
+}
+.fw-dev-host { color: var(--fw-accent); }
+.fw-dev-host .fw-dev-k { opacity: 0.6; }
+
+@media (max-width: 700px) {
+  .fw-dev-meta .fw-dev-seg:not(.fw-dev-host) { display: none; }
+  .fw-dev-seg + .fw-dev-host { border-left: none; padding-left: 4px; }
+}
+
+/* ============================================================
+   Collapsible sidebar nav groups (accordion) — 2026-06-29
+   Section labels become toggle buttons; one group open at a time.
+   ============================================================ */
+button.fw-nav-section.fw-nav-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  /* typography/padding inherited from .fw-nav-section */
+}
+button.fw-nav-section.fw-nav-toggle:hover { color: var(--fw-sidebar-text-hover); }
+button.fw-nav-section.fw-nav-toggle:focus { outline: none; }
+button.fw-nav-section.fw-nav-toggle > span { flex: 1 1 auto; text-align: left; }
+.fw-nav-caret {
+  font-size: 10px;
+  opacity: .65;
+  flex-shrink: 0;
+  transition: transform .28s cubic-bezier(.4, 0, .2, 1);
+}
+.fw-nav-group.collapsed .fw-nav-caret { transform: rotate(-90deg); }
+
+.fw-nav-group-body {
+  max-height: 1600px;
+  overflow: hidden;
+  opacity: 1;
+  transition: max-height .28s cubic-bezier(.4, 0, .2, 1), opacity .2s ease;
+}
+.fw-nav-group.collapsed .fw-nav-group-body {
+  max-height: 0;
+  opacity: 0;
+}
+
+/* ============================================================
+   Object-editor field grid — 2026-06-29
+   Fields were stacking full-width (huge text inputs). Lay them
+   out in responsive columns; compact label + input per cell.
+   Used by objedit/editor.html (.fw-fld-grid > .fw-fld) and the
+   workspace _fields.html macro.
+   ============================================================ */
+.fw-fld-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px 18px;
+  align-items: start;
+}
+.fw-fld-grid + .fw-fld-grid { margin-top: 12px; }
+
+.fw-fld {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;            /* let inputs shrink inside the grid cell */
+}
+.fw-fld-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fw-text-primary);
+  line-height: 1.3;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.fw-fld-label .fw-key {
+  font-family: var(--bs-font-monospace, monospace);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--fw-text-secondary);
+  opacity: .7;
+}
+/* every control fills its own cell — no more page-wide text boxes */
+.fw-fld .form-control,
+.fw-fld .form-select,
+.fw-fld .fw-ref { width: 100%; }
+
+/* ref dropdown + ✎ / ＋ buttons sit on one row, select takes the slack */
+.fw-fld .fw-ref { display: flex; gap: 6px; align-items: center; }
+.fw-fld .fw-ref .form-select { flex: 1 1 auto; min-width: 0; }
+.fw-fld .fw-ref .btn { flex: 0 0 auto; }
+
+/* collapsible field groups inside the editor card */
+.fw-group { border-top: 1px solid var(--fw-border-light); padding: 10px 0; }
+.fw-group:first-of-type { border-top: 0; padding-top: 0; }
+.fw-group-head {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fw-text-primary);
+  padding: 4px 0;
+  list-style: none;
+}
+.fw-group-head::-webkit-details-marker { display: none; }
+.fw-group-head::before {
+  content: "\25B8";        /* ▸ */
+  display: inline-block;
+  margin-right: 7px;
+  font-size: 10px;
+  color: var(--fw-text-secondary);
+  transition: transform .2s ease;
+}
+details[open] > .fw-group-head::before { transform: rotate(90deg); }
+.fw-group > .fw-fld-grid { margin-top: 10px; }

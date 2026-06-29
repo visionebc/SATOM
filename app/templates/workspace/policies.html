@@ -26,12 +26,25 @@
       <span class="fw-status fw-status-unknown" data-status-id="{{ appliance.id if appliance else '' }}" style="font-size:12px;">
         <span class="fw-status-dot"></span>Checking…
       </span>
+      {% if cache_meta is defined %}
+      <span class="fw-badge {{ 'fw-badge-success' if cache_meta.generated_at else 'fw-badge-warning' }}"
+            title="Local source of truth (PostgreSQL). Use 'Refresh from device' to pull live config.">
+        <i class="bi bi-database me-1"></i>{{ cache_freshness }}
+      </span>
+      {% endif %}
     </div>
   </div>
   <div class="d-flex gap-2">
-    <button class="btn btn-fw-outline btn-sm" onclick="window.location.reload()">
-      <i class="bi bi-arrow-clockwise me-1"></i>Refresh
-    </button>
+    {% if appliance %}<a href="{{ url_for('workspace.new_policy', appliance_id=appliance.id) }}" class="btn btn-fw-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>New Server Policy</a>{% endif %}
+    {% if appliance %}
+    <form method="post" action="{{ url_for('workspace.refresh', appliance_id=appliance.id) }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-fw-outline btn-sm"
+              title="Pull live config from the device into the local source of truth">
+        <i class="bi bi-arrow-clockwise me-1"></i>Refresh from device
+      </button>
+    </form>
+    {% endif %}
     <a href="{{ url_for('workspace.index') }}" class="btn btn-secondary btn-sm">
       <i class="bi bi-chevron-left me-1"></i>Change Appliance
     </a>
@@ -122,8 +135,7 @@
     <tbody>
       {% if policies %}
         {% for p in policies %}
-        <tr data-href="{{ url_for('workspace.policy_detail', appliance_id=appliance.id, name=p.get('name','')) if appliance else '#' }}"
-            style="cursor:pointer;">
+        <tr data-policy-row data-href="{{ url_for('workspace.policy_detail', appliance_id=appliance.id, name=p.get('name','')) if appliance else '#' }}">
           <td>
             <strong>{{ p.get('name','') or p.name or '—' }}</strong>
             {% if p.get('comment') or (p is mapping and p.comment is defined) %}
@@ -193,7 +205,7 @@
 function filterPolicies(query) {
   const q      = query.toLowerCase();
   const status = document.getElementById('statusFilter').value.toLowerCase();
-  document.querySelectorAll('#policiesTable tbody tr[data-href]').forEach(function (row) {
+  document.querySelectorAll('#policiesTable tbody tr[data-policy-row]').forEach(function (row) {
     const text      = row.textContent.toLowerCase();
     const rowStatus = row.querySelector('td:nth-child(7)')?.textContent.toLowerCase() || '';
     const show = text.includes(q) && (status === '' || rowStatus.includes(status));

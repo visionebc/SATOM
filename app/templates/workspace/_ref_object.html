@@ -1,0 +1,18 @@
+{# Rendered fragment for the ✎ edit-referenced-object modal. Built from the live
+   object's own keys (same descriptor pipeline as the policy form), scoped to the
+   object's cmdb collection so saves go straight to it through the audited path.
+   Nested ref fields render as plain selects (actions=false) — no infinite drill. #}
+{% from "workspace/_fields.html" import fld, savebar %}
+<div class="fw-scope" data-endpoint="{{ endpoint }}" data-mkey="{{ mkey }}">
+  {% if groups %}
+    {% for sec in groups %}
+      <details class="fw-group" {{ 'open' if loop.first }}>
+        <summary class="fw-group-head">{{ sec.title }} <span class="text-muted">({{ sec.fields|length }})</span></summary>
+        <div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false) }}{% endfor %}</div>
+      </details>
+    {% endfor %}
+    {{ savebar('Review & save', 'saveRefScope') }}
+  {% else %}
+    <p class="text-muted">This object exposes no editable fields.</p>
+  {% endif %}
+</div>

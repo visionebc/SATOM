@@ -143,6 +143,7 @@ route:          /api/v2.0/cmdb/router/static
 route_policy:   /api/v2.0/cmdb/router/policy
 dns:            /api/v2.0/cmdb/system/dns
 ntp:            /api/v2.0/cmdb/system/ntp
+ntp_server:     /api/v2.0/cmdb/system/ntp/ntpserver
 interface_2:    /api/v2.0/cmdb/system/interface
 network_option: /api/v2.0/cmdb/system/network-option
 router_setting: /api/v2.0/cmdb/router/setting

@@ -27,8 +27,12 @@ K_CLS_PREFIX = "classification."                    # + zones|lines|departments 
 K_SEGMENTS = "network.segments"                     # JSON list of dicts
 K_IP_WHITELIST = "access.ip_whitelist"              # JSON list of {ip, note}
 K_ALLOWED_USERS = "access.allowed_users"            # JSON list of usernames
+K_TIMEZONE = "general.timezone"                     # IANA tz name, e.g. Europe/Zurich
+K_LOG_FORMAT = "general.log_format"                 # plain | detailed | json
 
 LOG_LEVELS_ALL = ["DEBUG", "INFO", "WARNING", "ERROR"]
+LOG_FORMATS = ["plain", "detailed", "json"]
+DEFAULT_TIMEZONE = "Europe/Zurich"
 CLASSIFICATION_KINDS = ("zones", "lines", "departments")
 SEGMENT_FIELDS = ("name", "zone", "line", "department", "cidr", "interface", "gateway", "note")
 
@@ -38,6 +42,8 @@ DEFAULTS = {
     K_SESSION_TIMEOUT: "60",
     K_POLL_INTERVAL: "30",
     K_SHOW_RAW: "0",
+    K_TIMEZONE: DEFAULT_TIMEZONE,
+    K_LOG_FORMAT: "plain",
 }
 
 
@@ -74,6 +80,29 @@ def _to_int(val: Any, fallback: int) -> int:
         return fallback
 
 
+def _valid_tz(name: Any) -> str:
+    name = (str(name).strip() if name else "")
+    if not name:
+        return DEFAULT_TIMEZONE
+    try:
+        from zoneinfo import ZoneInfo
+        ZoneInfo(name)  # raises if unknown
+        return name
+    except Exception:
+        return DEFAULT_TIMEZONE
+
+
+def timezones() -> list[str]:
+    """Sorted IANA timezone names for the Settings dropdown."""
+    try:
+        from zoneinfo import available_timezones
+        names = sorted(available_timezones())
+        return names or [DEFAULT_TIMEZONE]
+    except Exception:
+        return [DEFAULT_TIMEZONE, "UTC", "America/Mexico_City",
+                "America/New_York", "Europe/London", "Europe/Zurich"]
+
+
 # ---- General --------------------------------------------------------------
 def general() -> dict[str, Any]:
     return {
@@ -83,34 +112,45 @@ def general() -> dict[str, Any]:
         "poll_interval": _to_int(get_str(K_POLL_INTERVAL), 30),
         "show_raw_config": get_str(K_SHOW_RAW) == "1",
         "log_levels": [lv for lv in get_json(K_LOG_LEVELS, LOG_LEVELS_ALL) if lv in LOG_LEVELS_ALL],
+        "timezone": _valid_tz(get_str(K_TIMEZONE)),
+        "log_format": (get_str(K_LOG_FORMAT) or "plain") if (get_str(K_LOG_FORMAT) or "plain") in LOG_FORMATS else "plain",
     }
 
 
 def save_general(app_name: str, default_kind: str, session_timeout: Any,
                  poll_interval: Any, show_raw_config: bool,
-                 log_levels: list[str]) -> None:
+                 log_levels: list[str], timezone: str = "",
+                 log_format: str = "plain") -> None:
     set_str(K_APP_NAME, (app_name or "Fortinet Manager Web").strip())
     set_str(K_DEFAULT_KIND, default_kind if default_kind in ("FortiWeb", "FortiWeb-Cloud", "FortiADC") else "FortiWeb")
     set_str(K_SESSION_TIMEOUT, max(5, min(1440, _to_int(session_timeout, 60))))
     set_str(K_POLL_INTERVAL, max(10, min(3600, _to_int(poll_interval, 30))))
     set_str(K_SHOW_RAW, "1" if show_raw_config else "0")
     set_json(K_LOG_LEVELS, [lv for lv in log_levels if lv in LOG_LEVELS_ALL] or ["INFO", "WARNING", "ERROR"])
+    set_str(K_TIMEZONE, _valid_tz(timezone))
+    set_str(K_LOG_FORMAT, log_format if log_format in LOG_FORMATS else "plain")
 
 
 # ---- Naming ---------------------------------------------------------------
-def naming_overrides() -> dict[str, str]:
-    return get_json(K_NAMING, {})
+def _naming_key(product: str = "fortiweb") -> str:
+    # FortiWeb keeps the original key for backward compatibility with already
+    # saved overrides; other products are namespaced under it.
+    return K_NAMING if product == "fortiweb" else f"{K_NAMING}.{product}"
 
 
-def save_naming(scheme: dict[str, str]) -> None:
+def naming_overrides(product: str = "fortiweb") -> dict[str, str]:
+    return get_json(_naming_key(product), {})
+
+
+def save_naming(scheme: dict[str, str], product: str = "fortiweb") -> None:
     # Store only non-empty overrides; empties revert to the default pattern via
     # naming.effective_scheme(), exactly like the desktop's "clear → default".
     clean = {k: v.strip() for k, v in (scheme or {}).items() if isinstance(v, str) and v.strip()}
-    set_json(K_NAMING, clean)
+    set_json(_naming_key(product), clean)
 
 
-def reset_naming() -> None:
-    set_json(K_NAMING, {})
+def reset_naming(product: str = "fortiweb") -> None:
+    set_json(_naming_key(product), {})
 
 
 # ---- Classification (zones / lines / departments) -------------------------

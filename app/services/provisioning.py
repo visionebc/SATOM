@@ -103,17 +103,19 @@ class SystemProfile:
 
     name: str
     items: list[ProvisionItem] = field(default_factory=list)
+    line: str = "8.0"               # firmware line the profile was authored against
 
     def to_body(self) -> dict[str, Any]:
         """Faithful round-trip body (``from_body`` is its inverse). Secrets are
         retained here; strip them with :func:`save_profile` before persisting."""
-        return {"items": [it.to_dict() for it in self.items]}
+        return {"line": self.line, "items": [it.to_dict() for it in self.items]}
 
     @classmethod
     def from_body(cls, name: str, body: dict[str, Any] | None) -> "SystemProfile":
         body = body or {}
         return cls(
             name=name,
+            line=body.get("line") or "8.0",
             items=[ProvisionItem.from_dict(d) for d in body.get("items", [])
                    if isinstance(d, dict) and d.get("endpoint")],
         )
@@ -149,10 +151,10 @@ PROVISION_CATALOG: list[ProvisionSpec] = [
     # ── Network ──────────────────────────────────────────────────────────
     ProvisionSpec("interface", "Network interface", "interface", False,
                   note="collection keyed by interface name (port1, …)"),
-    ProvisionSpec("static_route", "Static route", "static_route", False),
+    ProvisionSpec("static_route", "Static route", "route", False),
     # ── SNMP ─────────────────────────────────────────────────────────────
-    ProvisionSpec("snmp_sysinfo", "SNMP (sysinfo)", "snmp_sysinfo", True),
-    ProvisionSpec("snmp_community", "SNMP community", "snmp_community", False),
+    ProvisionSpec("snmp_sysinfo", "SNMP (sysinfo)", "system_snmp_sysinfo", True),
+    ProvisionSpec("snmp_community", "SNMP community", "system_snmp_community", False),
     ProvisionSpec("snmp_user", "SNMP user (v3)", "snmp_user", False, sensitive=True,
                   note="v3 auth/priv passwords — captured at apply time, not stored"),
     # ── Authentication / administrators ──────────────────────────────────
@@ -163,7 +165,7 @@ PROVISION_CATALOG: list[ProvisionSpec] = [
     ProvisionSpec("user_group", "User groups", "user_group", False),
     ProvisionSpec("accprofile", "Admin access profile", "accprofile", False,
                   note="cmdb/system/accprofile — administrator permissions"),
-    ProvisionSpec("admin", "Administrators", "admin", False, sensitive=True),
+    ProvisionSpec("admin", "Administrators", "system_admin", False, sensitive=True),
     # ── Logging ──────────────────────────────────────────────────────────
     ProvisionSpec("syslog", "Syslog", "syslog_policy", False,
                   note="cmdb/log/syslog-policy (+ its server list)"),
@@ -349,7 +351,7 @@ def save_profile(profile: SystemProfile, *, note: str = "", author: str = "",
         if _item_is_sensitive(it):
             d["data"] = _strip_secret_fields(d.get("data") or {})
         items.append(d)
-    body = {"items": items}
+    body = {"line": profile.line, "items": items}
     return save_template(Template.KIND_SYSTEM, profile.name, body,
                          note=note, author=author, new_version=new_version)
 

@@ -26,8 +26,8 @@ from flask import (Blueprint, render_template, request, flash, redirect, url_for
 from flask_login import login_required, current_user
 
 from ..auth.decorators import require_permission
-from ..models import db, Permission, User, Role
-from ..services import naming, settings_store as store, dbintrospect
+from ..models import db, Permission, User, Role, Profile
+from ..services import naming, settings_store as store
 from ..services import git_service
 from ..services import user_settings_store as user_store
 from ..services.audit import log_action
@@ -55,6 +55,8 @@ def index():
         'settings/index.html',
         settings=store.general(),
         log_levels_all=store.LOG_LEVELS_ALL,
+        log_formats_all=store.LOG_FORMATS,
+        timezones_all=store.timezones(),
         naming_sections=naming.elements_by_section(),
         naming_scheme=scheme,
         classification=store.all_classification(),
@@ -62,35 +64,19 @@ def index():
         ip_whitelist=store.ip_whitelist(),
         allowed_users=store.allowed_users(),
         all_users=all_users,
+        users=(User.query.order_by(User.username).all() if _is_admin() else []),
+        profiles=(Profile.query.order_by(Profile.is_system.desc(), Profile.name).all() if _is_admin() else []),
+        profiles_counts=({p.id: User.query.filter_by(profile_id=p.id).count()
+                          for p in Profile.query.all()} if _is_admin() else {}),
         banner_templates=store.BANNER_TEMPLATES,
         banners=store.all_banners(),
-        db_tables=dbintrospect.list_tables() if _is_admin() else [],
         is_admin=_is_admin(),
     )
 
 
-@bp.route('/database/table/<name>')
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def database_table(name: str):
-    """Read-only schema + row sample for a single local store table (JSON).
-
-    Mirrors the desktop Settings → Database browser. The name is validated
-    against the live table list inside ``table_info`` (404 otherwise); sensitive
-    columns are masked there.
-    """
-    info = dbintrospect.table_info(name)
-    if not info:
-        abort(404)
-    return jsonify(info)
-
-
-@bp.route('/database/relations')
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def database_relations():
-    """Foreign-key relationships across the local store (relational-model / ER view)."""
-    return jsonify(dbintrospect.relations())
+# NOTE: the read-only Database browser (schema + relational model + SQL console)
+# moved out of Settings into its own top-level section — see app/views/database.py
+# (blueprint ``database``, /database). Its backend is app/services/dbintrospect.py.
 
 
 @bp.route('/general', methods=['POST'])
@@ -105,6 +91,8 @@ def save_general():
             poll_interval=request.form.get('poll_interval', 30),
             show_raw_config=request.form.get('show_raw_config') == 'on',
             log_levels=request.form.getlist('log_levels'),
+            timezone=request.form.get('timezone', ''),
+            log_format=request.form.get('log_format', 'plain'),
         )
         log_action('settings.general', detail='Updated general settings')
         flash('General settings saved.', 'success')

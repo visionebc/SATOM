@@ -20,3 +20,9 @@ instance/
 
 # Host-only snapshots (may contain .env secrets) — never commit
 backups/
+
+# Phase 9 system backup bundles (binary, large)
+data/system_backups/
+
+# editor/session backup snapshots (never commit/ship)
+*.pre-*

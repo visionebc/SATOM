@@ -18,9 +18,18 @@
     <h1 class="fw-page-title"><i class="bi bi-shield-exclamation me-2 text-accent"></i>Web Protection Profiles</h1>
     <p class="text-muted mb-0" style="font-size:13px;">WAF profiles configured on <strong>{{ appliance.name }}</strong></p>
   </div>
-  <a href="{{ url_for('web_protection.index') }}" class="btn btn-secondary btn-sm">
-    <i class="bi bi-chevron-left me-1"></i>Change Appliance
-  </a>
+  <div class="d-flex align-items-center gap-2">
+    <span class="badge bg-dark border" title="Served from the local source of truth">
+      <i class="bi bi-database me-1"></i>{{ freshness or 'no local data' }}</span>
+    <form method="post" action="{{ url_for('web_protection.refresh', id=appliance.id) }}" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-outline-light btn-sm" title="Pull live config from the device into the cache">
+        <i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+    </form>
+    <a href="{{ url_for('web_protection.index') }}" class="btn btn-secondary btn-sm">
+      <i class="bi bi-chevron-left me-1"></i>Change Appliance
+    </a>
+  </div>
 </div>
 
 {% if error %}
@@ -47,11 +56,17 @@
 
 <div class="tab-content">
   <div class="tab-pane fade show active" id="tab-inline">
-    <div class="fw-toolbar mb-2">
+    <div class="fw-toolbar mb-2 d-flex align-items-center gap-3 flex-wrap">
       <div class="fw-search-box">
         <i class="bi bi-search search-icon"></i>
-        <input type="text" placeholder="Search profiles…" oninput="filterTable('profiles-table', this.value)">
+        <input type="text" id="wpp-search" placeholder="Search profiles…" oninput="applyWppFilters()">
       </div>
+      <label class="d-flex align-items-center gap-2 mb-0" style="font-size:13px;cursor:pointer;user-select:none;"
+             title="Hide the FortiWeb predefined (default) profiles, leaving only your custom profiles. Saved to your preferences.">
+        <input type="checkbox" id="hide-default-toggle" class="form-check-input mt-0"
+               {% if hide_default %}checked{% endif %} onchange="onHideDefaultChange(this)">
+        Hide default (predefined) profiles
+      </label>
     </div>
     <div class="fw-table-wrapper">
       <table class="fw-table" id="profiles-table">
@@ -69,8 +84,11 @@
           {% if wpp_profiles %}
             {% for p in wpp_profiles %}
             {% set pname = p.get('name') or p.get('mkey') or '' %}
-            <tr>
-              <td><strong>{{ pname or '—' }}</strong></td>
+            {% set is_default = (p.get('can_view') == 1) %}
+            <tr data-default="{{ 1 if is_default else 0 }}">
+              <td><strong>{{ pname or '—' }}</strong>
+                {% if is_default %}<span class="fw-badge fw-badge-secondary ms-1" title="FortiWeb predefined profile">Default</span>{% endif %}
+              </td>
               <td>
                 {% if p.get('signature-rule') or p.get('signature_rule') %}
                   <span class="fw-badge fw-badge-primary">{{ p.get('signature-rule') or p.get('signature_rule') }}</span>
@@ -93,6 +111,15 @@
                    class="btn btn-sm btn-outline-primary" title="View profile detail">
                   <i class="bi bi-eye"></i>
                 </a>
+                <a href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/web-protection-profile.inline-protection', mkey=pname, title='Web Protection Profile') }}"
+                   class="btn btn-sm btn-outline-secondary" title="Edit profile">
+                  <i class="bi bi-pencil"></i>
+                </a>
+                <button type="button" class="btn btn-sm btn-outline-info"
+                        title="Clone this profile (deep) or save it as a template"
+                        onclick="openCloneModal('{{ pname|e }}')">
+                  <i class="bi bi-files"></i>
+                </button>
                 {% endif %}
               </td>
             </tr>
@@ -134,15 +161,170 @@
     </div>
   </div>
 </div>
+
+<!-- Clone / Save-as-template modal -->
+<div class="modal fade fw-modal" id="modalCloneWpp" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-files me-2"></i>Clone Web Protection Profile</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted" style="font-size:13px;">
+          Source profile: <strong id="clone-source"></strong> &mdash; on <strong>{{ appliance.name }}</strong>.
+          A <strong>deep clone</strong> walks the whole profile (its ~40 sub-policies and their
+          rules); objects that already exist on this device are validated and reused, only the
+          missing ones are created.
+        </p>
+        <div class="mb-3">
+          <label class="fw-form-label">New name <span class="text-danger">*</span></label>
+          <input type="text" class="form-control fw-form-control" id="clone-new-name"
+                 placeholder="e.g. WPP-Ecommerce-Strict-copy">
+        </div>
+
+        <div class="d-flex gap-2 flex-wrap mb-3">
+          <button type="button" class="btn btn-outline-info btn-sm" id="clone-preview-btn" onclick="cloneWppPreview()">
+            <i class="bi bi-search me-1"></i>Preview plan
+          </button>
+          <button type="button" class="btn btn-fw-primary btn-sm" id="clone-apply-btn" onclick="cloneWppApply()" disabled>
+            <i class="bi bi-diagram-3 me-1"></i>Deep clone on this device
+          </button>
+          <button type="button" class="btn btn-outline-light btn-sm" id="clone-tpl-btn" onclick="cloneWppSaveTemplate()">
+            <i class="bi bi-bookmark-plus me-1"></i>Save as template (needs admin approval)
+          </button>
+        </div>
+
+        <div id="clone-status" class="mb-2" style="font-size:13px;"></div>
+        <pre id="clone-plan" class="mb-0" style="display:none;max-height:320px;overflow:auto;background:rgba(0,0,0,.25);
+             border:1px solid rgba(148,163,184,.15);border-radius:8px;padding:10px;font-size:12px;line-height:1.5;"></pre>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+var APPLIANCE_ID = {{ appliance.id }};
+var URL_CLONE_PLAN = "{{ url_for('web_protection.clone_plan', id=appliance.id) }}";
+var URL_CLONE = "{{ url_for('web_protection.clone_apply', id=appliance.id) }}";
+var URL_SAVE_TPL = "{{ url_for('web_protection.save_as_template', id=appliance.id) }}";
+var URL_TEMPLATES = "{{ url_for('templates.index') }}";
+
 function filterTable(tableId, q) {
-  q = q.toLowerCase();
+  q = (q || '').toLowerCase();
   document.querySelectorAll('#' + tableId + ' tbody tr').forEach(function (row) {
     row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
   });
+}
+
+function applyWppFilters() {
+  var qel = document.getElementById('wpp-search');
+  var q = (qel ? qel.value : '').toLowerCase();
+  var cb = document.getElementById('hide-default-toggle');
+  var hideDefault = cb ? cb.checked : false;
+  document.querySelectorAll('#profiles-table tbody tr').forEach(function (row) {
+    if (!('default' in row.dataset)) return;  // skip the empty-state row
+    var isDefault = row.dataset.default === '1';
+    var matchesText = row.textContent.toLowerCase().includes(q);
+    row.style.display = (matchesText && !(hideDefault && isDefault)) ? '' : 'none';
+  });
+}
+
+function onHideDefaultChange(cb) {
+  applyWppFilters();
+  fetch('{{ url_for("web_protection.set_pref") }}', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key: 'hide_default', value: cb.checked })
+  }).catch(function () {});
+}
+
+document.addEventListener('DOMContentLoaded', applyWppFilters);
+
+// ── Clone modal ───────────────────────────────────────────────────────────
+var CLONE_SOURCE = '';
+
+function openCloneModal(name) {
+  CLONE_SOURCE = name;
+  document.getElementById('clone-source').textContent = name;
+  document.getElementById('clone-new-name').value = name + '-copy';
+  document.getElementById('clone-status').innerHTML = '';
+  var pre = document.getElementById('clone-plan');
+  pre.style.display = 'none'; pre.textContent = '';
+  document.getElementById('clone-apply-btn').disabled = true;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('modalCloneWpp')).show();
+}
+
+function _cloneStatus(html, kind) {
+  var el = document.getElementById('clone-status');
+  var cls = kind === 'error' ? 'fw-alert-danger' : (kind === 'ok' ? 'fw-alert-success' : 'fw-alert-info');
+  el.innerHTML = '<div class="fw-alert ' + cls + ' d-flex align-items-center gap-2 mb-0">' + html + '</div>';
+}
+
+function _newName() { return (document.getElementById('clone-new-name').value || '').trim(); }
+
+function _busy(btnId, on, label) {
+  var b = document.getElementById(btnId);
+  if (!b) return;
+  b.disabled = on;
+  if (on) { b.dataset._html = b.innerHTML; b.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>' + (label || 'Working…'); }
+  else if (b.dataset._html) { b.innerHTML = b.dataset._html; }
+}
+
+function cloneWppPreview() {
+  var nn = _newName();
+  if (!nn) { _cloneStatus('Enter a new name first.', 'error'); return; }
+  _busy('clone-preview-btn', true, 'Planning…');
+  fetch(URL_CLONE_PLAN, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source: CLONE_SOURCE, new_name: nn })
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    _busy('clone-preview-btn', false);
+    if (!d.ok) { _cloneStatus('Plan failed: ' + (d.error || 'unknown'), 'error'); return; }
+    var s = d.summary || {};
+    var create = s.create || 0, exists = s.exists || 0;
+    _cloneStatus('<i class="bi bi-info-circle"></i><div>Plan: <strong>' + create +
+      '</strong> to create, <strong>' + exists + '</strong> already exist (reused). Review below, then clone.</div>', 'info');
+    var pre = document.getElementById('clone-plan');
+    pre.textContent = d.plan || ''; pre.style.display = 'block';
+    document.getElementById('clone-apply-btn').disabled = (create === 0);
+  }).catch(function (e) { _busy('clone-preview-btn', false); _cloneStatus('Plan error: ' + e, 'error'); });
+}
+
+function cloneWppApply() {
+  var nn = _newName();
+  if (!nn) { _cloneStatus('Enter a new name first.', 'error'); return; }
+  if (!confirm('Deep-clone "' + CLONE_SOURCE + '" as "' + nn + '" on {{ appliance.name }}?\nMissing referenced objects will be created on the device.')) return;
+  _busy('clone-apply-btn', true, 'Cloning…');
+  fetch(URL_CLONE, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source: CLONE_SOURCE, new_name: nn })
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    _busy('clone-apply-btn', false);
+    if (!d.ok && d.created === undefined) { _cloneStatus('Clone failed: ' + (d.error || 'unknown'), 'error'); return; }
+    var msg = 'Created <strong>' + (d.created || 0) + '</strong> object(s)' +
+      (d.failed ? ', <strong>' + d.failed + '</strong> failed' : '') + ' for "' + nn + '".';
+    _cloneStatus('<i class="bi bi-check-circle"></i><div>' + msg + ' Refresh to see it.</div>', d.failed ? 'error' : 'ok');
+    var pre = document.getElementById('clone-plan'); pre.textContent = d.plan || pre.textContent;
+    if (!d.failed) { setTimeout(function () { window.location.reload(); }, 1500); }
+  }).catch(function (e) { _busy('clone-apply-btn', false); _cloneStatus('Clone error: ' + e, 'error'); });
+}
+
+function cloneWppSaveTemplate() {
+  var nn = _newName() || CLONE_SOURCE;
+  _busy('clone-tpl-btn', true, 'Saving…');
+  fetch(URL_SAVE_TPL, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source: CLONE_SOURCE, name: nn })
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    _busy('clone-tpl-btn', false);
+    if (!d.ok) { _cloneStatus('Save failed: ' + (d.error || 'unknown'), 'error'); return; }
+    _cloneStatus('<i class="bi bi-bookmark-check"></i><div>Saved template <strong>' + d.name +
+      '</strong> (v' + d.version + ') as <strong>' + d.status + '</strong>. An admin can approve it in ' +
+      '<a href="' + URL_TEMPLATES + '" class="alert-link">WPP Templates</a>.</div>', 'ok');
+  }).catch(function (e) { _busy('clone-tpl-btn', false); _cloneStatus('Save error: ' + e, 'error'); });
 }
 </script>
 {% endblock %}

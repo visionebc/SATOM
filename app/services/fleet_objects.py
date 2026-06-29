@@ -202,19 +202,36 @@ def _fortiweb_appliances() -> list[Appliance]:
     return [a for a in rows if (a.kind or "fortiweb") == "fortiweb"]
 
 
-def _fetch_objects(appl: Appliance, spec: dict) -> list:
-    """Live-list a type's objects for one appliance, memoised per (appliance, type).
+# DB-FIRST: each fleet type maps to one or more cached logical names in the
+# Postgres source-of-truth (device_objects). The appliance is NEVER touched on a
+# page load — refresh happens explicitly (the section pages' ⟳) or via the
+# Automation device_sync action. Keyed by the type's stable cache_key.
+_DB_LOGICALS: dict[str, list[str]] = {
+    "fleet:server_policies": ["server_policy"],
+    "fleet:wpp": ["webprotection_profile_inline", "webprotection_profile_offline"],
+    "fleet:server_pools": ["server_pool"],
+}
 
-    Raises on connection/auth failure — callers wrap this per-device."""
-    key = spec["cache_key"]
-    cached = cache_get(appl.id, key)
-    if cached is not None:
-        return cached
-    client = FortiWebClient(appl)
-    raw = getattr(client, spec["method"])()
-    objs = _as_list(raw)
-    cache_set(appl.id, key, objs, ttl=CACHE_TTL)
-    return objs
+
+def _fetch_objects(appl: Appliance, spec: dict) -> list:
+    """DB-FIRST read of a type's objects for one appliance, from the local
+    Postgres cache (device_objects) — no network. Payloads keep the raw
+    hyphenated FortiWeb shape so _pick/_flatten render unchanged. A device with
+    no cached data simply yields nothing (run a refresh / Automation sync)."""
+    from . import read_layer
+    logicals = _DB_LOGICALS.get(spec.get("cache_key", ""), [])
+    out: list = []
+    for logical in logicals:
+        payloads, _meta = read_layer.read_objects(appl.id, logical)
+        if logical.startswith("webprotection_profile_"):
+            kind = "inline-protection" if "inline" in logical else "offline-protection"
+            for p in payloads:
+                if isinstance(p, dict) and not p.get("kind"):
+                    p = {**p, "kind": kind}
+                out.append(p)
+        else:
+            out.extend(payloads)
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -234,7 +251,7 @@ def columns_for(type_key: str) -> list[tuple[str, str]]:
 
 
 def collect_objects(type_key: str) -> tuple[list[dict], list[dict]]:
-    """Live-aggregate a typed object across the whole fleet.
+    """DB-first aggregate a typed object across the whole fleet (Postgres cache).
 
     Returns (rows, errors). Each row is a flat dict keyed by the type's column
     keys plus ``device``. ``errors`` is a list of {device, error} for any

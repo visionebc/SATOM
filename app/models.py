@@ -477,6 +477,12 @@ class Template(db.Model):
     KIND_SYSTEM = "system-profile"
     KIND_STRUCTURE = "structure"
     KINDS = (KIND_WEB_PROTECTION, KIND_SERVER_POLICY, KIND_SYSTEM, KIND_STRUCTURE)
+    # Approval lifecycle (separate from ``locked``: locked == curated/read-only,
+    # status == approval state). A template is fleet-deployable only when APPROVED.
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_REJECTED = "rejected"
+    STATUSES = (STATUS_PENDING, STATUS_APPROVED, STATUS_REJECTED)
     # Per-section FortiWeb configuration templates use a ``config:<section>``
     # kind (e.g. ``config:network``) — see the desktop SectionConfigPage.
     KIND_CONFIG_PREFIX = "config:"
@@ -500,6 +506,10 @@ class Template(db.Model):
     note = db.Column(db.Text, nullable=True, default="")
     author = db.Column(db.String(64), nullable=True, default="")
     locked = db.Column(db.Boolean, nullable=False, default=False)
+    status = db.Column(db.String(16), nullable=False, default="pending", index=True)
+    reject_reason = db.Column(db.Text, nullable=True, default="")
+    reviewed_by = db.Column(db.String(64), nullable=True, default="")
+    reviewed_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
@@ -512,6 +522,10 @@ class Template(db.Model):
             return data if isinstance(data, dict) else {}
         except (ValueError, TypeError):
             return {}
+
+    @property
+    def is_approved(self) -> bool:
+        return self.status == self.STATUS_APPROVED
 
     def __repr__(self) -> str:
         return f"<Template {self.kind}/{self.name} v{self.version}>"
@@ -692,3 +706,79 @@ class ChangeRequestEvent(db.Model):
 
     def __repr__(self) -> str:
         return f"<ChangeRequestEvent cr={self.cr_id} {self.kind}>"
+
+
+# ---------------------------------------------------------------------------
+# WppException — desired-state WAF / signature carve-outs authored here.
+# A Web Protection Profile is usually SHARED by several Server Policies, so an
+# exception on it applies to every policy that binds it and FortiWeb has no
+# record of which policy a carve-out was authored for. This records that intent
+# (which policies it belongs to lives in wpp_exception_policies). NEVER secrets;
+# the device stays the source of truth. Web port of the desktop store v7/v8.
+# ---------------------------------------------------------------------------
+
+class WppException(db.Model):
+    __tablename__ = "wpp_exceptions"
+
+    CAT_EXCEPTION = "exception"     # a WAF carve-out (HTTP-constraints, geo, …)
+    CAT_SIGNATURE = "signature"     # a signature customisation (per-id exception…)
+
+    id = db.Column(db.Integer, primary_key=True)
+    appliance_id = db.Column(
+        db.Integer, db.ForeignKey("appliances.id", ondelete="CASCADE"),
+        nullable=True, index=True)
+    wpp_mkey = db.Column(db.String(128), nullable=False, default="")
+    category = db.Column(db.String(16), nullable=False,
+                         default=CAT_EXCEPTION, index=True)
+    exc_type = db.Column(db.String(64), nullable=False, default="")  # spec/form key
+    name = db.Column(db.String(128), nullable=True, default="")
+    payload = db.Column(db.Text, nullable=False, default="{}")       # FortiWeb-shaped entry
+    reason = db.Column(db.Text, nullable=True, default="")
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    author = db.Column(db.String(64), nullable=True, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    policies = db.relationship(
+        "WppExceptionPolicy", backref="exception",
+        cascade="all, delete-orphan", lazy="selectin")
+
+    @property
+    def payload_dict(self) -> dict[str, Any]:
+        try:
+            d = json.loads(self.payload or "{}")
+            return d if isinstance(d, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+
+    @property
+    def policy_names(self) -> list[str]:
+        return sorted(p.server_policy for p in (self.policies or []) if p.server_policy)
+
+    def __repr__(self) -> str:
+        return f"<WppException {self.category}/{self.exc_type} wpp={self.wpp_mkey}>"
+
+
+class WppExceptionPolicy(db.Model):
+    """Junction: one carve-out → one Server Policy it is authored for (a carve-out
+    may bind to several policies — the relationship FortiWeb itself can't record)."""
+
+    __tablename__ = "wpp_exception_policies"
+    __table_args__ = (
+        db.UniqueConstraint("exception_id", "server_policy", name="uq_wpp_exc_policy"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    exception_id = db.Column(
+        db.Integer, db.ForeignKey("wpp_exceptions.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    server_policy = db.Column(db.String(128), nullable=False, default="")
+
+    def __repr__(self) -> str:
+        return f"<WppExceptionPolicy exc={self.exception_id} pol={self.server_policy}>"
+
+
+# Device-structure cache models (source-of-truth substrate) — import so
+# create_all()/Alembic register them.
+from . import models_cache  # noqa: E402,F401

@@ -19,9 +19,17 @@
   <a class="btn btn-fw-primary" href="{{ url_for('provisioning.new') }}"><i class="bi bi-plus-lg me-1"></i>New profile</a>
 </div>
 
+<!-- Toolbar -->
+<div class="fw-toolbar mb-2">
+  <div class="form-check d-flex align-items-center gap-2 mb-0">
+    <input class="form-check-input" type="checkbox" id="hideOldVersions">
+    <label class="form-check-label" style="font-size:13px;cursor:pointer;" for="hideOldVersions">Hide old versions</label>
+  </div>
+</div>
+
 <!-- System profiles table -->
 <div class="fw-table-wrapper">
-  <table class="fw-table">
+  <table class="fw-table" id="provTable">
     <thead>
       <tr>
         <th>Name</th>
@@ -35,15 +43,19 @@
     <tbody>
       {% if profiles %}
         {% for p in profiles %}
-        <tr>
+        <tr data-profile-name="{{ p.name|e }}">
           <td><strong>{{ p.name }}</strong>{% if p.locked %} <i class="bi bi-lock-fill text-muted" title="Locked"></i>{% endif %}</td>
           <td>v{{ p.version }}</td>
           <td><span class="fw-badge fw-badge-primary">{{ p.body_dict.get('items', []) | length }}</span></td>
           <td style="font-size:13px; max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ p.note or '—' }}</td>
           <td style="font-size:13px;">{{ p.updated_at.strftime('%Y-%m-%d %H:%M') if p.updated_at else '—' }}</td>
           <td class="actions-col">
-            <button class="btn btn-sm btn-fw-outline btn-sm-icon me-1" title="Preview &amp; apply"
-                    onclick="openApply({{ p.id }}, {{ p.name|tojson }})"><i class="bi bi-rocket-takeoff"></i></button>
+            <button type="button" class="btn btn-sm btn-fw-outline btn-sm-icon me-1"
+                    title="Preview &amp; deploy"
+                    data-bs-toggle="modal" data-bs-target="#modalApply"
+                    data-id="{{ p.id }}" data-name="{{ p.name|e }}">
+              <i class="bi bi-rocket-takeoff"></i>
+            </button>
             <a class="btn btn-sm btn-outline-primary btn-sm-icon me-1" title="Edit"
                href="{{ url_for('provisioning.edit', template_id=p.id) }}"><i class="bi bi-pencil"></i></a>
             <form method="POST" action="{{ url_for('provisioning.delete', template_id=p.id) }}" style="display:inline;"
@@ -71,12 +83,12 @@
   </table>
 </div>
 
-<!-- APPLY MODAL (target picker -> dry-run preview) -->
+<!-- DEPLOY MODAL -->
 <div class="modal fade fw-modal" id="modalApply" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-rocket-takeoff me-2"></i>Apply: <span id="ap-name"></span></h5>
+        <h5 class="modal-title"><i class="bi bi-rocket-takeoff me-2"></i>Deploy: <span id="ap-name"></span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="POST" id="applyForm">
@@ -85,6 +97,22 @@
           <div class="fw-alert fw-alert-info d-flex align-items-center gap-2 mb-3" style="font-size:13px;">
             <i class="bi bi-info-circle"></i>
             <span>This first runs a <strong>dry-run preview</strong> — no device is touched until you confirm on the next screen.</span>
+          </div>
+
+          <!-- Deployment metadata -->
+          <div class="row g-3 mb-3">
+            <div class="col-sm-7">
+              <label class="fw-form-label" for="ap-hostname">Hostname <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="ap-hostname" name="target_hostname"
+                     placeholder="e.g. fw01.example.com" required autocomplete="off">
+              <div class="form-text">Target device hostname for this deployment.</div>
+            </div>
+            <div class="col-sm-5">
+              <label class="fw-form-label" for="ap-change-id">Change ID <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="ap-change-id" name="change_id"
+                     placeholder="e.g. CHG-0042" required autocomplete="off">
+              <div class="form-text">Reference ID for messages &amp; audit log.</div>
+            </div>
           </div>
 
           <label class="fw-form-label d-block mb-1">Target</label>
@@ -102,11 +130,11 @@
           <select class="form-select" name="device_ids" id="ap-devices" multiple size="6">
             {% for a in appliances %}<option value="{{ a.id }}">{{ a.name }} ({{ a.kind }})</option>{% endfor %}
           </select>
-          <div class="form-text">Ctrl/Cmd-click to select multiple. Ignored when “Entire fleet” is chosen.</div>
+          <div class="form-text">Ctrl/Cmd-click to select multiple. Ignored when "Entire fleet" is chosen.</div>
           {% else %}
           <div class="fw-alert fw-alert-warning d-flex align-items-center gap-2" style="font-size:13px;">
             <i class="bi bi-exclamation-triangle"></i>
-            <span>No appliances registered. Add appliances first, or “Entire fleet” will simply target nothing.</span>
+            <span>No appliances registered. Add appliances first, or "Entire fleet" will simply target nothing.</span>
           </div>
           {% endif %}
         </div>
@@ -122,12 +150,46 @@
 
 {% block scripts %}
 <script>
-function openApply(id, name) {
-  var form = document.getElementById('applyForm');
-  form.action = '/provisioning/' + id + '/apply';
-  document.getElementById('ap-name').textContent = name;
-  if (window.API && API.openModal) { API.openModal('modalApply'); }
-  else if (window.bootstrap) { new bootstrap.Modal(document.getElementById('modalApply')).show(); }
-}
+(function () {
+  // Populate apply modal on show using Bootstrap event (reliable, no manual openModal needed)
+  var modalEl = document.getElementById('modalApply');
+  if (modalEl) {
+    modalEl.addEventListener('show.bs.modal', function (e) {
+      var btn = e.relatedTarget;
+      if (!btn) return;
+      var id   = btn.getAttribute('data-id');
+      var name = btn.getAttribute('data-name');
+      document.getElementById('applyForm').action = '/provisioning/' + id + '/apply';
+      document.getElementById('ap-name').textContent = name;
+      // Reset fields each open
+      var hostnameEl  = document.getElementById('ap-hostname');
+      var changeIdEl  = document.getElementById('ap-change-id');
+      if (hostnameEl)  hostnameEl.value = '';
+      if (changeIdEl)  changeIdEl.value = '';
+    });
+  }
+
+  // Hide old versions checkbox
+  var chk = document.getElementById('hideOldVersions');
+  if (chk) {
+    chk.addEventListener('change', function () {
+      var rows  = document.querySelectorAll('#provTable tbody tr[data-profile-name]');
+      var seen  = new Set();
+      rows.forEach(function (row) {
+        var nm = row.getAttribute('data-profile-name');
+        if (chk.checked) {
+          if (seen.has(nm)) {
+            row.style.display = 'none';
+          } else {
+            seen.add(nm);
+            row.style.display = '';
+          }
+        } else {
+          row.style.display = '';
+        }
+      });
+    });
+  }
+})();
 </script>
 {% endblock %}

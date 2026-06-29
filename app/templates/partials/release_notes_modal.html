@@ -1,0 +1,216 @@
+{# Release Notes — top-banner modal. Same logic as the desktop Release Notes page:
+   two buttons (Scan from Fortinet / Sync from git) + three tabs (Issues / Upgrade
+   advisor / Notes). Backend: app/views/release_notes.py. JS: static/js/release_notes.js #}
+<style>
+  /* Bigger by default + user-resizable (drag the bottom-right corner) */
+  #releaseNotesModal .modal-dialog.rn-modal-dialog{
+    max-width:none;
+    width:92vw;
+    margin:1.5rem auto;
+  }
+  #releaseNotesModal .modal-content{
+    display:flex;
+    flex-direction:column;
+    height:88vh;
+    min-width:520px;
+    min-height:440px;
+    max-width:98vw;
+    max-height:96vh;
+    resize:both;          /* drag handle */
+    overflow:hidden;
+  }
+  #releaseNotesModal .modal-body{
+    flex:1 1 auto;
+    overflow-y:auto;
+  }
+  #releaseNotesModal .modal-header{ flex:0 0 auto; }
+  /* visual affordance for the resize corner */
+  #releaseNotesModal .modal-content::after{
+    content:"";
+    position:absolute;
+    right:3px; bottom:3px;
+    width:12px; height:12px;
+    border-right:2px solid var(--bs-border-color,#adb5bd);
+    border-bottom:2px solid var(--bs-border-color,#adb5bd);
+    opacity:.6; pointer-events:none;
+  }
+</style>
+<div class="modal fade" id="releaseNotesModal" tabindex="-1" aria-hidden="true"
+     data-rn-admin="{{ 'true' if current_user.can('user_manage') else 'false' }}">
+  <div class="modal-dialog rn-modal-dialog">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title mb-0">
+          <i class="bi bi-journal-richtext me-2"></i>Release Notes
+        </h5>
+        <div class="d-flex align-items-center gap-2 ms-auto me-2">
+          {% if current_user.can('user_manage') %}
+          <button type="button" class="btn btn-sm btn-primary" id="rnScanToggle">
+            <i class="bi bi-search"></i> Scan from Fortinet…
+          </button>
+          {% endif %}
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="rnSyncBtn">
+            <i class="bi bi-arrow-down-circle"></i> Sync from git
+          </button>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body">
+        <p class="text-muted small">
+          Search FortiWeb known &amp; resolved issues across versions and plan upgrades.
+          Data is harvested from docs.fortinet.com into the git-shared reference; use the
+          Upgrade advisor to diff your current firmware against a target.
+        </p>
+        <div id="rnStatus" class="small mb-3 text-muted">Loading…</div>
+
+        {% if current_user.can('user_manage') %}
+        {# ---- Scan panel (collapsible, admin only) ---- #}
+        <div id="rnScanPanel" class="border rounded p-3 mb-3 d-none bg-body-tertiary">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-4">
+              <label class="form-label small mb-1">Versions (major.minor)</label>
+              <input type="text" class="form-control form-control-sm" id="rnMajors"
+                     value="7.0,7.2,7.4,7.6,8.0">
+            </div>
+            <div class="col-md-3">
+              <div class="form-check mt-3">
+                <input class="form-check-input" type="checkbox" id="rnAll">
+                <label class="form-check-label small" for="rnAll">All discovered (slow)</label>
+              </div>
+            </div>
+            <div class="col-md-5">
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="rnDirect" checked>
+                <label class="form-check-label small" for="rnDirect">Direct (httpx)</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="rnFc" checked>
+                <label class="form-check-label small" for="rnFc">Firecrawl fallback</label>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small mb-1">Firecrawl endpoint</label>
+              <input type="text" class="form-control form-control-sm" id="rnFcEndpoint"
+                     placeholder="http://192.0.2.66:3002">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small mb-1">Firecrawl key (optional)</label>
+              <input type="password" class="form-control form-control-sm" id="rnFcKey"
+                     autocomplete="off">
+            </div>
+            <div class="col-md-2">
+              <div class="form-check mt-3">
+                <input class="form-check-input" type="checkbox" id="rnPublish" checked>
+                <label class="form-check-label small" for="rnPublish">Publish to git</label>
+              </div>
+            </div>
+            <div class="col-12">
+              <button type="button" class="btn btn-sm btn-primary" id="rnScanStart">
+                <i class="bi bi-search"></i> Start scan
+              </button>
+              <span class="text-muted small ms-2">
+                Reads docs.fortinet.com — no appliance needed. New versions merge in.
+              </span>
+            </div>
+          </div>
+          <pre id="rnScanOut" class="mt-3 mb-0 p-2 small bg-dark text-light rounded d-none"
+               style="max-height:200px;overflow:auto;white-space:pre-wrap;"></pre>
+        </div>
+        {% endif %}
+
+        {# ---- Tabs ---- #}
+        <ul class="nav nav-tabs" id="rnTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" data-bs-toggle="tab"
+                    data-bs-target="#rnTabIssues" type="button">Issues</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" data-bs-toggle="tab"
+                    data-bs-target="#rnTabAdvisor" type="button">Upgrade advisor</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" data-bs-toggle="tab"
+                    data-bs-target="#rnTabNotes" type="button">Notes</button>
+          </li>
+        </ul>
+
+        <div class="tab-content pt-3">
+
+          {# Issues #}
+          <div class="tab-pane fade show active" id="rnTabIssues" role="tabpanel">
+            <div class="row g-2 mb-2">
+              <div class="col-auto">
+                <select class="form-select form-select-sm" id="rnIssueVersion"></select>
+              </div>
+              <div class="col-auto">
+                <select class="form-select form-select-sm" id="rnIssueStatus">
+                  <option value="">(all status)</option>
+                  <option value="known">Known</option>
+                  <option value="resolved">Resolved</option>
+                </select>
+              </div>
+              <div class="col-auto">
+                <select class="form-select form-select-sm" id="rnIssueTopic"></select>
+              </div>
+              <div class="col">
+                <input type="text" class="form-control form-control-sm" id="rnIssueQuery"
+                       placeholder="Search bug id / description / workaround …">
+              </div>
+            </div>
+            <div class="table-responsive" style="max-height:46vh;overflow:auto;">
+              <table class="table table-sm table-hover align-middle mb-1">
+                <thead class="sticky-top bg-body">
+                  <tr>
+                    <th>Version</th><th>Status</th><th>Bug ID</th>
+                    <th>Topic</th><th>Description</th>
+                  </tr>
+                </thead>
+                <tbody id="rnIssueRows"></tbody>
+              </table>
+            </div>
+            <div class="small text-muted" id="rnIssueCount"></div>
+            <div id="rnIssueDetail" class="border rounded p-3 mt-2 d-none bg-body-tertiary"></div>
+          </div>
+
+          {# Upgrade advisor #}
+          <div class="tab-pane fade" id="rnTabAdvisor" role="tabpanel">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+              <label class="small mb-0">Current:</label>
+              <select class="form-select form-select-sm w-auto" id="rnAdvCurrent"></select>
+              <label class="small mb-0">→ Target:</label>
+              <select class="form-select form-select-sm w-auto" id="rnAdvTarget"></select>
+              <button type="button" class="btn btn-sm btn-primary" id="rnAdvShow">Show advisory</button>
+            </div>
+            <div id="rnAdvView" class="small text-muted">
+              Pick a current and target version, then Show advisory.
+            </div>
+          </div>
+
+          {# Notes #}
+          <div class="tab-pane fade" id="rnTabNotes" role="tabpanel">
+            <div class="row g-2 mb-2">
+              <div class="col-auto">
+                <select class="form-select form-select-sm" id="rnNoteVersion"></select>
+              </div>
+              <div class="col-auto">
+                <select class="form-select form-select-sm" id="rnNoteSection">
+                  <option value="">(all sections)</option>
+                </select>
+              </div>
+              <div class="col">
+                <input type="text" class="form-control form-control-sm" id="rnNoteQuery"
+                       placeholder="Search the prose (what's new / upgrade notes …)">
+              </div>
+            </div>
+            <div id="rnNoteView" class="small" style="max-height:52vh;overflow:auto;">
+              <span class="text-muted">Matching sections appear here.</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -19,6 +19,16 @@
       Click a device to see policies and objects. Drag to move, Ctrl+wheel to zoom, search an IP to highlight it.
     </p>
   </div>
+  {% if current %}
+  <div class="d-flex align-items-center gap-2">
+    <span class="fm-stat-badge" style="background:rgba(34,197,94,.15);color:#22c55e;">
+      <i class="bi bi-hdd-rack me-1"></i>Current: <strong>{{ current.name }}</strong>
+    </span>
+    <a href="{{ url_for('workspace.index') }}" class="btn btn-sm fw-btn-primary">
+      Open Server Policy <i class="bi bi-arrow-right ms-1"></i>
+    </a>
+  </div>
+  {% endif %}
 </div>
 
 <!-- Search -->
@@ -74,6 +84,7 @@
                   </div>
                   <div class="d-flex flex-wrap gap-3">
                     {% for a in devs %}
+                    <div class="fm-card-wrap" style="position:relative;display:flex;flex-direction:column;">
                     <a href="{{ url_for('appliances.detail', id=a.id) }}"
                        class="fm-device-card fm-open-modal text-decoration-none"
                        data-id="{{ a.id }}"
@@ -89,6 +100,13 @@
                         <span class="fm-pol-badge" data-id="{{ a.id }}">— pol</span>
                       </div>
                     </a>
+                    <form method="post" action="{{ url_for('architecture.select', id=a.id) }}"
+                          class="fm-enter-form" style="margin:6px 0 0;text-align:right;">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="btn btn-sm fw-btn-primary"
+                              style="padding:1px 8px;font-size:11px;" title="Enter this device">Enter ▶</button>
+                    </form>
+                    </div>
                     {% endfor %}
                   </div>
                 </div>
@@ -147,6 +165,10 @@
         <div id="dmError" class="alert alert-danger d-none mb-0"></div>
       </div>
       <div class="modal-footer" style="border-color:var(--fw-border);background:var(--fw-content-bg);">
+        <form id="dmEnterForm" method="post" action="" class="me-auto" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn fw-btn-primary btn-sm"><i class="bi bi-box-arrow-in-right me-1"></i>Enter device</button>
+        </form>
         <a id="dmDetailLink" href="#" class="btn fw-btn-primary btn-sm">Open full detail <i class="bi bi-arrow-right ms-1"></i></a>
       </div>
     </div>
@@ -324,7 +346,7 @@ function applyT() {
   canvas.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`;
 }
 viewport.addEventListener('mousedown', e => {
-  if (e.target.closest('a')) return;
+  if (e.target.closest('a, form, button')) return;
   dragging = true;
   sx = e.clientX; sy = e.clientY; stx = tx; sty = ty;
   viewport.style.cursor = 'grabbing';
@@ -448,6 +470,53 @@ fetch('/architecture/data')
   document.querySelectorAll('.fm-open-modal').forEach(card => {
     card.addEventListener('click', (e) => { e.preventDefault(); open(card.dataset.id); });
   });
+})();
+</script>
+
+<script>
+// ---- device-first: saved filters + modal Enter ----
+(function(){
+  const SAVED = {{ saved_filters|tojson }};
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  const TOKEN = meta ? meta.getAttribute('content') : '';
+
+  // Wire the inventory-modal Enter button to the clicked device.
+  document.querySelectorAll('.fm-device-card').forEach(function(card){
+    card.addEventListener('click', function(){
+      const f = document.getElementById('dmEnterForm');
+      if (f) f.action = '/architecture/select/' + card.dataset.id;
+    });
+  });
+
+  let t=null;
+  function saveFilters(){
+    if(t) clearTimeout(t);
+    t=setTimeout(function(){
+      const active={zone:'',line:'',dept:''};
+      document.querySelectorAll('#mapFilters .fm-filter-pill.active').forEach(function(p){
+        active[p.dataset.attr]=p.dataset.val;
+      });
+      const ms=document.getElementById('mapSearch');
+      fetch('/architecture/filters',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':TOKEN},
+        body:JSON.stringify({zone:active.zone,line:active.line,department:active.dept,text:ms?ms.value:'',status:''})}).catch(function(){});
+    },600);
+  }
+  const mf=document.getElementById('mapFilters');
+  if(mf) mf.addEventListener('click', function(e){ if(e.target.classList.contains('fm-filter-pill')) saveFilters(); });
+  const ms=document.getElementById('mapSearch');
+  if(ms) ms.addEventListener('input', saveFilters);
+
+  // Apply saved filters on load.
+  function clickPill(attr,val){
+    if(!val) return;
+    document.querySelectorAll('#mapFilters .fm-filter-pill').forEach(function(p){
+      if(p.dataset.attr===attr && p.dataset.val===val) p.click();
+    });
+  }
+  if(SAVED){
+    if(SAVED.text && ms){ ms.value=SAVED.text; ms.dispatchEvent(new Event('input')); }
+    clickPill('zone',SAVED.zone); clickPill('line',SAVED.line); clickPill('dept',SAVED.department);
+  }
 })();
 </script>
 {% endblock %}

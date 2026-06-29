@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}Firmware{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('firmware.index') }}">Firmware</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-hdd-stack me-2 text-accent"></i>Firmware
+    </h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Upload and keep FortiWeb / FortiADC firmware images (<span class="mono">.out</span>)
+      for use in appliance upgrades.
+    </p>
+  </div>
+</div>
+
+<!-- Upload form -->
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title">Add a firmware image</span>
+  </div>
+  <div class="fw-card-body">
+    <form method="POST" action="{{ url_for('firmware.upload') }}"
+          enctype="multipart/form-data" class="row g-3 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-5">
+        <label class="fw-form-label" style="font-size:12px;">
+          Firmware file <span class="text-muted">(.out, up to 600&nbsp;MB)</span>
+        </label>
+        <input type="file" name="image" class="form-control" accept=".out" required>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label" style="font-size:12px;">Product</label>
+        <select name="product" class="form-select">
+          <option value="fortiweb" selected>FortiWeb</option>
+          <option value="fortiadc">FortiADC</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label" style="font-size:12px;">Version</label>
+        <input type="text" name="version" class="form-control" placeholder="7.6.4" required>
+      </div>
+      <div class="col-md-3">
+        <label class="fw-form-label" style="font-size:12px;">
+          Model <span class="text-muted">(optional)</span>
+        </label>
+        <input type="text" name="model" class="form-control" placeholder="FortiWeb-VM / 100F">
+      </div>
+      <div class="col-md-2">
+        <label class="fw-form-label" style="font-size:12px;">
+          Build <span class="text-muted">(optional)</span>
+        </label>
+        <input type="text" name="build" class="form-control" placeholder="1234">
+      </div>
+      <div class="col-md-8">
+        <label class="fw-form-label" style="font-size:12px;">
+          Notes <span class="text-muted">(optional)</span>
+        </label>
+        <input type="text" name="notes" class="form-control" placeholder="Release notes / source / GA build">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-fw-primary w-100">
+          <i class="bi bi-upload me-1"></i>Upload
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Stored images -->
+<div class="fw-card">
+  <div class="fw-card-header">
+    <span class="fw-card-title">Stored firmware</span>
+    <span class="fw-badge fw-badge-secondary">{{ images|length }}</span>
+  </div>
+  <div class="fw-card-body p-0">
+    <table class="fw-table mb-0">
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Version</th>
+          <th>Model</th>
+          <th>Build</th>
+          <th>File</th>
+          <th style="width:80px;">Size</th>
+          <th>SHA-256</th>
+          <th>Uploaded by</th>
+          <th style="width:160px;">Uploaded (UTC)</th>
+          <th style="width:160px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for img in images %}
+        <tr>
+          <td><span class="fw-badge fw-badge-secondary">{{ img.product }}</span></td>
+          <td><strong>{{ img.version }}</strong></td>
+          <td class="text-muted">{{ img.model or '—' }}</td>
+          <td class="text-muted">{{ img.build or '—' }}</td>
+          <td class="mono" style="font-size:11.5px;">{{ img.filename }}</td>
+          <td>{{ img.size_mb() }} MB</td>
+          <td class="mono text-muted" style="font-size:11px;" title="{{ img.sha256 }}">
+            {{ img.sha256[:12] }}{% if img.sha256 %}…{% endif %}
+          </td>
+          <td class="text-muted">{{ img.uploaded_by or '—' }}</td>
+          <td class="text-muted mono" style="font-size:11.5px;">
+            {{ img.created_at.strftime('%Y-%m-%d %H:%M') if img.created_at else '—' }}
+          </td>
+          <td>
+            <div class="d-flex gap-2">
+              <a href="{{ url_for('firmware.download', image_id=img.id) }}"
+                 class="btn btn-fw-outline btn-sm">
+                <i class="bi bi-download me-1"></i>Download
+              </a>
+              <form method="POST" action="{{ url_for('firmware.delete', image_id=img.id) }}"
+                    onsubmit="return confirm('Delete firmware {{ img.version }} ({{ img.filename }})? This removes the file from disk.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-fw-danger btn-sm">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="10">
+            <div class="fw-empty-state py-5">
+              <div class="fw-empty-state-icon"><i class="bi bi-hdd-stack"></i></div>
+              <div class="fw-empty-state-title">No firmware uploaded yet</div>
+              <div class="fw-empty-state-text">
+                Add a FortiWeb/FortiADC <span class="mono">.out</span> image above.
+              </div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

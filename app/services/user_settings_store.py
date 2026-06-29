@@ -42,3 +42,34 @@ def save_banners(user_id: int, mapping: dict[str, Any]) -> None:
     for product, tpl in (mapping or {}).items():
         if product in PRODUCTS and tpl in _g.BANNER_TEMPLATES:
             UserSetting.set(user_id, K_BANNER_PREFIX + product, tpl)
+
+
+# ---------------------------------------------------------------------------
+# Architecture / Fleet-map filters (per user, DB-backed JSON)
+# ---------------------------------------------------------------------------
+import json as _json
+
+K_ARCH_FILTERS = "architecture.filters"
+_ARCH_KEYS = ("zone", "line", "department", "text", "status")
+
+
+def architecture_filters(user_id: int) -> dict:
+    """The user's saved Fleet-map filters, or empty strings. Tolerant of a
+    missing/corrupt row."""
+    raw = UserSetting.get(user_id, K_ARCH_FILTERS)
+    out = {k: "" for k in _ARCH_KEYS}
+    if raw:
+        try:
+            data = _json.loads(raw)
+            for k in _ARCH_KEYS:
+                v = data.get(k)
+                if isinstance(v, str):
+                    out[k] = v
+        except Exception:
+            pass
+    return out
+
+
+def save_architecture_filters(user_id: int, mapping: dict) -> None:
+    clean = {k: str((mapping or {}).get(k) or "") for k in _ARCH_KEYS}
+    UserSetting.set(user_id, K_ARCH_FILTERS, _json.dumps(clean))

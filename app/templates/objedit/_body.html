@@ -1,0 +1,206 @@
+{% from "workspace/_fields.html" import fld %}
+{# ===================================================================== #}
+{#  Object editor BODY — shared by the full page (objedit/editor.html)   #}
+{#  AND the inline panel served with ?partial=1 (loaded by AJAX into the  #}
+{#  Configuration / Server Objects list, so editing happens in place).    #}
+{# ===================================================================== #}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">{{ 'New ' ~ title if create else title }} <span class="text-muted">{{ mkey }}</span></h4>
+  <code class="small text-muted">{{ collection }}</code>
+</div>
+
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+{# ── object scalar fields ─────────────────────────────────────────────── #}
+<div class="card mb-3">
+  <div class="card-header"><strong>Settings</strong></div>
+  <div class="card-body">
+    <div class="fw-scope" data-collection="{{ collection }}" data-mkey="{{ mkey }}">
+      {% if create %}
+        <div class="mb-3">
+          <label class="form-label small fw-bold">Name <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" id="fw-new-name" placeholder="object name" autocomplete="off">
+          <div class="form-text">The object's unique name (mkey). Sub-tables (members, rules…) are added after it's created.</div>
+        </div>
+      {% endif %}
+      {% for sec in obj_groups %}
+        <details class="fw-group" {{ 'open' if loop.first }}>
+          <summary class="fw-group-head">{{ sec.title }} <span class="text-muted">({{ sec.fields|length }})</span></summary>
+          <div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false) }}{% endfor %}</div>
+        </details>
+      {% else %}
+        {% if not create %}<p class="text-muted mb-0">This object exposes no editable scalar fields.</p>{% endif %}
+      {% endfor %}
+      <div class="mt-2">
+        {% if create %}
+          <button type="button" class="btn btn-sm btn-fw-primary" onclick="createObject(this)">
+            <i class="bi bi-plus-circle me-1"></i>Review &amp; create</button>
+        {% elif obj_groups %}
+          <button type="button" class="btn btn-sm btn-fw-primary" onclick="saveObject(this)">
+            <i class="bi bi-check2-circle me-1"></i>Review &amp; save</button>
+        {% endif %}
+      </div>
+      <div class="fw-result"></div>
+    </div>
+  </div>
+</div>
+
+{# ── by-parent sub-tables (pool→members, vserver→VIPs, SNI→members, …) ─── #}
+{% for st in subtables %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>{{ st.label }}</strong>
+    <span class="text-muted small">{{ st.rows|length }} row(s) · <code>{{ st.seg }}</code></span>
+  </div>
+  <div class="card-body">
+    {% for row in st.rows %}
+      <details class="fw-row-scope mb-2 border rounded p-2" data-collection="{{ st.collection }}"
+               data-parent="{{ mkey }}" data-sub-id="{{ row.sub_id }}">
+        <summary class="fw-group-head">{{ row.label or ('row ' ~ row.sub_id) }}</summary>
+        {% for sec in row.groups %}<div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false) }}{% endfor %}</div>{% endfor %}
+        <div class="mt-2">
+          <button type="button" class="btn btn-sm btn-fw-primary" onclick="saveRow(this)">Save row</button>
+          <button type="button" class="btn btn-sm btn-fw-danger" onclick="deleteRow(this)">Delete</button>
+        </div>
+        <div class="fw-result"></div>
+      </details>
+    {% else %}
+      <p class="text-muted">No rows yet.</p>
+    {% endfor %}
+
+    <details class="fw-row-scope fw-row-new mt-2 border rounded p-2 border-primary-subtle"
+             data-collection="{{ st.collection }}" data-parent="{{ mkey }}">
+      <summary class="fw-group-head text-primary">＋ Add {{ st.label }} row</summary>
+      {% for sec in st.blank_groups %}<div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false) }}{% endfor %}</div>{% endfor %}
+      <div class="mt-2"><button type="button" class="btn btn-sm btn-fw-primary" onclick="createRow(this)">Create row</button></div>
+      <div class="fw-result"></div>
+    </details>
+  </div>
+</div>
+{% endfor %}
+
+<script>
+// OBJEDIT_AID is global so the inline-injected editor and the full page share it.
+window.OBJEDIT_AID = {{ appliance.id }};
+function fwCollectChanged(scope){
+  const out = {};
+  scope.querySelectorAll('.fw-input').forEach(function(el){
+    const k = el.dataset.key; if (!k) return;
+    if (el.value !== el.dataset.orig) out[k] = el.value;
+  });
+  return out;
+}
+function fwPost(url, payload){
+  return fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)}).then(function(r){ return r.json(); });
+}
+function fwShow(el, j, applyFn){
+  if (!j.ok){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">'+(j.error||'failed')+'</div>'; return; }
+  if (j.dry_run){
+    const req = j.request || {};
+    let diffHtml = '';
+    if (j.diff && Object.keys(j.diff).length){
+      let rows = '';
+      Object.keys(j.diff).forEach(function(k){
+        const d = j.diff[k];
+        rows += '<tr><td class="small fw-bold">'+k+'</td>'
+          + '<td class="small text-muted"><del>'+(d.before===null||d.before===undefined?'∅':JSON.stringify(d.before))+'</del></td>'
+          + '<td class="small text-success">'+JSON.stringify(d.after)+'</td></tr>';
+      });
+      diffHtml = '<div class="small fw-bold mb-1">Changes vs local source of truth</div>'
+        + '<table class="table table-sm mb-2"><thead><tr><th class="small">Field</th><th class="small">Before</th><th class="small">After</th></tr></thead><tbody>'
+        + rows + '</tbody></table>';
+    }
+    el.innerHTML = '<div class="alert alert-info mt-2 mb-0">'
+      + diffHtml
+      + '<div class="small text-muted mb-1">'+req.method+' '+req.path+'</div>'
+      + '<pre class="mb-2 small" style="max-height:200px;overflow:auto">'+JSON.stringify(req.body, null, 2)+'</pre>'
+      + '<button type="button" class="btn btn-sm btn-fw-danger fw-apply">Apply to device</button></div>';
+    el.querySelector('.fw-apply').onclick = applyFn;
+  } else {
+    el.innerHTML = '<div class="alert alert-success mt-2 mb-0">Applied to device.</div>';
+    if (window.FW) FW.toast('Saved to device', 'success');
+    setTimeout(function(){ location.reload(); }, 800);
+  }
+}
+function saveObject(btn){
+  const scope = btn.closest('.fw-scope'), el = scope.querySelector('.fw-result');
+  const fields = fwCollectChanged(scope);
+  if (!Object.keys(fields).length){ el.innerHTML = '<div class="text-muted mt-2">No changes to save.</div>'; return; }
+  const base = {collection: scope.dataset.collection, mkey: scope.dataset.mkey, fields: fields};
+  fwPost('/objedit/'+window.OBJEDIT_AID+'/save-object', base).then(function(j){
+    fwShow(el, j, function(){ fwPost('/objedit/'+window.OBJEDIT_AID+'/save-object',
+      Object.assign({}, base, {apply:true})).then(function(j2){ fwShow(el, j2); }); });
+  });
+}
+// ── Create a NEW top-level object, then open it in the editor to add sub-tables.
+function createObject(btn){
+  const scope = btn.closest('.fw-scope'), el = scope.querySelector('.fw-result');
+  const nameEl = document.getElementById('fw-new-name');
+  const name = (nameEl ? nameEl.value : '').trim();
+  if (!name){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">Name is required.</div>'; if(nameEl) nameEl.focus(); return; }
+  const coll = scope.dataset.collection;
+  const base = {collection: coll, mkey: name, fields: fwCollectChanged(scope)};
+  fwPost('/objedit/'+window.OBJEDIT_AID+'/create-object', base).then(function(j){
+    if (!j.ok){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">'+(j.error||'failed')+'</div>'; return; }
+    const req = j.request || {};
+    el.innerHTML = '<div class="alert alert-info mt-2 mb-0">'
+      + '<div class="small text-muted mb-1">'+req.method+' '+req.path+'</div>'
+      + '<pre class="mb-2 small" style="max-height:200px;overflow:auto">'+JSON.stringify(req.body, null, 2)+'</pre>'
+      + '<button type="button" class="btn btn-sm btn-fw-danger fw-apply">Create on device</button></div>';
+    el.querySelector('.fw-apply').onclick = function(){
+      fwPost('/objedit/'+window.OBJEDIT_AID+'/create-object', Object.assign({}, base, {apply:true})).then(function(j2){
+        if (!j2.ok){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">'+(j2.error||'failed')+'</div>'; return; }
+        el.innerHTML = '<div class="alert alert-success mt-2 mb-0">Created. Opening editor…</div>';
+        if (window.FW) FW.toast('Created on device', 'success');
+        setTimeout(function(){
+          location.href = '/objedit/'+window.OBJEDIT_AID+'/edit?collection='+encodeURIComponent(coll)
+            + '&mkey='+encodeURIComponent(name)+'&title='+encodeURIComponent('{{ title }}');
+        }, 700);
+      });
+    };
+  });
+}
+function fwRowBase(scope){
+  return {collection: scope.dataset.collection, parent: scope.dataset.parent,
+          sub_id: scope.dataset.subId || '', fields: fwCollectChanged(scope)};
+}
+function saveRow(btn){
+  const scope = btn.closest('.fw-row-scope'), el = scope.querySelector('.fw-result');
+  const base = fwRowBase(scope);
+  if (!Object.keys(base.fields).length){ el.innerHTML = '<div class="text-muted mt-2">No changes to save.</div>'; return; }
+  fwPost('/objedit/'+window.OBJEDIT_AID+'/save-row', base).then(function(j){
+    fwShow(el, j, function(){ fwPost('/objedit/'+window.OBJEDIT_AID+'/save-row',
+      Object.assign({}, base, {apply:true})).then(function(j2){ fwShow(el, j2); }); });
+  });
+}
+function createRow(btn){ saveRow(btn); }
+// Populate every reference <select> from the device so bindings are CHANGEABLE
+// (the current value is already an option; we only append the rest). Best-effort
+// — a dead device just leaves the select with its current value. Exposed as a
+// function so the inline-injected editor can re-run it on its own subtree.
+window.objeditPopulateRefs = function(root){
+  (root || document).querySelectorAll('select.fw-ref-select[data-ref]').forEach(function(sel){
+    const ref = sel.dataset.ref; if (!ref) return;
+    fetch('/objedit/'+window.OBJEDIT_AID+'/ref-options?endpoint='+encodeURIComponent(ref))
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        (j.names || []).forEach(function(n){
+          if (Array.prototype.some.call(sel.options, function(o){ return o.value === n; })) return;
+          const o = document.createElement('option'); o.value = n; o.textContent = n; sel.appendChild(o);
+        });
+      }).catch(function(){});
+  });
+};
+document.addEventListener('DOMContentLoaded', function(){ window.objeditPopulateRefs(document); });
+function deleteRow(btn){
+  const scope = btn.closest('.fw-row-scope'), el = scope.querySelector('.fw-result');
+  const base = {collection: scope.dataset.collection, parent: scope.dataset.parent, sub_id: scope.dataset.subId || ''};
+  if (!base.sub_id){ el.innerHTML = '<div class="text-muted mt-2">Row not saved yet.</div>'; return; }
+  if (!confirm('Delete this row?')) return;
+  fwPost('/objedit/'+window.OBJEDIT_AID+'/delete-row', base).then(function(j){
+    fwShow(el, j, function(){ fwPost('/objedit/'+window.OBJEDIT_AID+'/delete-row',
+      Object.assign({}, base, {apply:true})).then(function(j2){ fwShow(el, j2); }); });
+  });
+}
+</script>

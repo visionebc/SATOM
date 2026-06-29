@@ -108,27 +108,166 @@ def table_info(name: str) -> dict[str, Any]:
     }
 
 
-def relations() -> dict[str, Any]:
-    """Foreign-key edges across all tables, for the relational-model (ER) view.
+_TYPE_ALIASES = {
+    "character varying": "varchar", "timestamp without time zone": "timestamp",
+    "timestamp with time zone": "timestamptz", "double precision": "double",
+}
 
-    Returns ``{tables: [{name, columns, pk}], edges: [{from_table, from_col,
-    to_table, to_col}]}``. Schema introspection only — no row data is read.
+
+def _short_type(t: str) -> str:
+    """Compact a SQLAlchemy column type for the diagram (VARCHAR(255) -> varchar)."""
+    low = (t or "").strip().lower()
+    if low in _TYPE_ALIASES:
+        return _TYPE_ALIASES[low]
+    base = low.split("(")[0].strip()
+    return _TYPE_ALIASES.get(base, base or "?")
+
+
+def relations() -> dict[str, Any]:
+    """The full relational model for the ER diagram.
+
+    Returns ``{tables: [{name, columns, cols:[{name,type,pk,fk,sensitive}], pk}],
+    edges: [{from_table, from_col, to_table, to_col}]}``. Each table carries its
+    real COLUMNS so the diagram can render a database SCHEMA (table header + a row
+    per column with PK/FK markers), not just a labelled box. Schema introspection
+    only — no row data is read.
     """
     insp = inspect(db.engine)
     tables: list[dict[str, Any]] = []
     edges: list[dict[str, str]] = []
     for name in sorted(insp.get_table_names()):
-        cols = insp.get_columns(name)
-        pk = sorted(insp.get_pk_constraint(name).get("constrained_columns") or [])
-        tables.append({"name": name, "columns": len(cols), "pk": pk})
+        pk_cols = set(insp.get_pk_constraint(name).get("constrained_columns") or [])
+        fk_map: dict[str, str] = {}
         for fk in insp.get_foreign_keys(name):
             target = fk.get("referred_table", "")
             ccols = fk.get("constrained_columns") or []
             rcols = fk.get("referred_columns") or []
             for i, col in enumerate(ccols):
                 ref = rcols[i] if i < len(rcols) else (rcols[0] if rcols else "")
+                fk_map[col] = f"{target}.{ref}" if target else ""
                 edges.append({
                     "from_table": name, "from_col": col,
                     "to_table": target, "to_col": ref,
                 })
+        cols = []
+        for c in insp.get_columns(name):
+            cname = c["name"]
+            cols.append({
+                "name": cname,
+                "type": _short_type(str(c.get("type", ""))),
+                "pk": cname in pk_cols,
+                "fk": fk_map.get(cname, ""),
+                "sensitive": _is_sensitive(cname),
+            })
+        tables.append({
+            "name": name,
+            "columns": len(cols),   # kept for the accessible row-fallback (a count)
+            "cols": cols,           # the real schema, drives the ER diagram
+            "pk": sorted(pk_cols),
+        })
     return {"tables": tables, "edges": edges}
+
+
+# --------------------------------------------------------------------------- #
+#  Phase 8 — paginated browse + read-only SQL console                          #
+# --------------------------------------------------------------------------- #
+import re as _re
+
+# Write / DDL keywords that must never appear, even buried in a CTE
+# (e.g. ``WITH t AS (DELETE ... RETURNING *) SELECT * FROM t`` — Postgres allows
+# data-modifying CTEs). Deliberately NARROW: only verbs that genuinely mutate, so
+# legitimate column names like ``comment`` / ``set`` / ``do`` / ``replace`` (the
+# REPLACE() function) are NOT false-rejected. Statement-leading writes (COPY,
+# PRAGMA, VACUUM as the first token) are already blocked by ``_ALLOWED_START``,
+# and run_query also pins a Postgres READ ONLY transaction as the hard guarantee.
+_FORBIDDEN = _re.compile(
+    r"\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|"
+    r"merge|upsert|reindex|vacuum|attach)\b", _re.IGNORECASE)
+_ALLOWED_START = ("select", "with", "explain", "table", "values", "show")
+_CONSOLE_MAX = 1000
+
+
+def table_page(name, page=1, per_page=50):
+    """Paginated row browse for one table (sensitive columns masked)."""
+    insp = inspect(db.engine)
+    if name not in set(insp.get_table_names()):
+        return {"name": name, "columns": [], "rows": [], "row_count": 0,
+                "page": 1, "pages": 1, "error": "unknown table"}
+    page = max(1, int(page or 1)); per_page = min(500, max(1, int(per_page or 50)))
+    cols = [c["name"] for c in insp.get_columns(name)]
+    sens = {i for i, k in enumerate(cols) if _is_sensitive(k)}
+    total = db.session.execute(text(f'SELECT COUNT(*) FROM "{name}"')).scalar() or 0
+    result = db.session.execute(
+        text(f'SELECT * FROM "{name}" LIMIT :lim OFFSET :off'),
+        {"lim": per_page, "off": (page - 1) * per_page})
+    rows = []
+    for record in result:
+        cells = []
+        for i, v in enumerate(record):
+            if i in sens and v not in (None, ""):
+                cells.append("••• (hidden)")
+            elif v is None:
+                cells.append("")
+            else:
+                t = str(v); cells.append(t[:300] + "…" if len(t) > 300 else t)
+        rows.append(cells)
+    pages = max(1, (total + per_page - 1) // per_page)
+    return {"name": name, "columns": cols, "rows": rows, "row_count": total,
+            "page": page, "pages": pages, "per_page": per_page, "error": ""}
+
+
+def is_read_only(sql):
+    """True if ``sql`` is a single read-only statement (SELECT/WITH/EXPLAIN…)."""
+    q = (sql or "").strip().rstrip(";").strip()
+    if not q:
+        return False, "empty query"
+    # collapse to detect multiple statements (a ';' with following non-space)
+    if ";" in q:
+        return False, "only a single statement is allowed"
+    low = q.lower()
+    if not low.startswith(_ALLOWED_START):
+        return False, "only SELECT / WITH / EXPLAIN queries are allowed"
+    if _FORBIDDEN.search(q):
+        return False, "write/DDL keywords are not allowed in the read-only console"
+    return True, ""
+
+
+def run_query(sql, max_rows=_CONSOLE_MAX):
+    """Execute a READ-ONLY query in a rolled-back transaction with a statement
+    timeout. Returns {columns, rows, truncated, row_count, error}."""
+    ok, why = is_read_only(sql)
+    if not ok:
+        return {"columns": [], "rows": [], "truncated": False, "error": why}
+    q = (sql or "").strip().rstrip(";").strip()
+    try:
+        with db.engine.connect() as conn:
+            trans = conn.begin()
+            try:
+                if db.engine.dialect.name == "postgresql":
+                    # Hard, DB-enforced guarantee: any write (even a sneaky
+                    # data-modifying CTE) errors out with "cannot execute ... in a
+                    # read-only transaction"; the timeout caps runaway scans.
+                    conn.execute(text("SET TRANSACTION READ ONLY"))
+                    conn.execute(text("SET LOCAL statement_timeout = '8s'"))
+                result = conn.execute(text(q))
+                cols = list(result.keys())
+                fetched = result.fetchmany(max_rows + 1)
+                truncated = len(fetched) > max_rows
+                data = fetched[:max_rows]
+                sens = {i for i, k in enumerate(cols) if _is_sensitive(k)}
+                rows = []
+                for rec in data:
+                    cells = []
+                    for i, v in enumerate(rec):
+                        if i in sens and v not in (None, ""):
+                            cells.append("••• (hidden)")
+                        else:
+                            cells.append("" if v is None else str(v))
+                    rows.append(cells)
+            finally:
+                trans.rollback()
+        return {"columns": cols, "rows": rows, "truncated": truncated,
+                "row_count": len(rows), "error": ""}
+    except Exception as exc:  # noqa: BLE001
+        return {"columns": [], "rows": [], "truncated": False,
+                "error": str(exc)[:500]}

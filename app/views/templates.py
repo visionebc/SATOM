@@ -12,10 +12,10 @@ from urllib.parse import urlparse
 
 from flask import (Blueprint, render_template, request, jsonify, flash,
                    redirect, url_for, abort)
-from flask_login import login_required
+from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
-from ..models import Appliance, Permission, Template
+from ..models import Appliance, Template
 from ..services import templates as lib
 from ..services.audit import log_action
 from ..services.bulk import BulkRunner, iter_push_items
@@ -49,7 +49,7 @@ def _pretty_json(raw: str) -> str:
 
 @bp.route('/')
 @login_required
-@require_permission(Permission.USER_MANAGE)
+@require_permission('operations.view')
 def index():
     kind = request.args.get('kind') or None
     if kind and kind not in Template.KINDS:
@@ -67,7 +67,7 @@ def index():
 
 @bp.route('/', methods=['POST'])
 @login_required
-@require_permission(Permission.USER_MANAGE)
+@require_permission('operations.template_save')
 def create():
     kind = request.form.get('kind', '')
     name = request.form.get('name', '')
@@ -75,7 +75,8 @@ def create():
     note = request.form.get('note', '')
     exceptions = request.form.get('exceptions', '')
     try:
-        row = lib.save_template(kind, name, body, note=note, exceptions=exceptions)
+        row = lib.save_template(kind, name, body, note=note, exceptions=exceptions,
+                                author=current_user.username)
         log_action('template.create', target=f'{row.kind}/{row.name}',
                    detail=f'version {row.version}')
         flash(f'Template "{row.name}" saved (v{row.version}).', 'success')
@@ -87,7 +88,7 @@ def create():
 
 @bp.route('/<int:template_id>')
 @login_required
-@require_permission(Permission.USER_MANAGE)
+@require_permission('operations.view')
 def detail(template_id: int):
     """Return a single template (incl. pretty-printed body) as JSON for the
     view/inspect modal."""
@@ -106,7 +107,7 @@ def detail(template_id: int):
 
 @bp.route('/<int:template_id>/delete', methods=['POST'])
 @login_required
-@require_permission(Permission.USER_MANAGE)
+@require_permission('operations.template_save')
 def delete(template_id: int):
     row = lib.get_template(template_id)
     label = f'{row.kind}/{row.name}' if row else str(template_id)
@@ -120,7 +121,7 @@ def delete(template_id: int):
 
 @bp.route('/<int:template_id>/clone', methods=['POST'])
 @login_required
-@require_permission(Permission.USER_MANAGE)
+@require_permission('operations.template_save')
 def clone(template_id: int):
     """Clone a template (body + exceptions) under a new name (default '<name>
     (copy)'). The clone is unlocked and versioned for its name."""
@@ -137,7 +138,7 @@ def clone(template_id: int):
 
 @bp.route('/<int:template_id>/edit', methods=['GET', 'POST'])
 @login_required
-@require_permission(Permission.USER_MANAGE)
+@require_permission('operations.template_save')
 def edit(template_id: int):
     """Load an existing template's body + exceptions into the editor and save a
     NEW version of the same kind/name (the original version is preserved)."""
@@ -151,7 +152,8 @@ def edit(template_id: int):
         exceptions = request.form.get('exceptions', '')
         try:
             new = lib.save_template(row.kind, name, body, note=note,
-                                    exceptions=exceptions, new_version=True)
+                                    exceptions=exceptions, new_version=True,
+                                    author=current_user.username)
             log_action('template.edit', target=f'{new.kind}/{new.name}',
                        detail=f'version {new.version} (from {template_id})')
             flash(f'Template "{new.name}" saved as v{new.version}.', 'success')
@@ -172,7 +174,7 @@ def edit(template_id: int):
 
 @bp.route('/<int:template_id>/apply', methods=['POST'])
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
+@require_permission('operations.template_apply')
 def apply(template_id: int):
     """Apply a template to selected appliances.
 
@@ -193,6 +195,23 @@ def apply(template_id: int):
     confirm = request.form.get('confirm') == '1'
     wants_json = (request.form.get('format') == 'json'
                   or 'application/json' in (request.headers.get('Accept') or ''))
+    # Single-device apply works on any status (operations.template_apply, already
+    # enforced above). Multi-device = fleet rollout: needs operations.apply AND an
+    # APPROVED template. This is the "approved != deployed; fleet rollout is a
+    # separate, gated action" rule.
+    if len(device_ids) > 1:
+        if not current_user.can('operations.apply'):
+            if wants_json:
+                return jsonify({'ok': False,
+                                'error': 'Fleet rollout requires the Run operations '
+                                         'permission.'}), 403
+            abort(403)
+        if row.status != Template.STATUS_APPROVED:
+            if wants_json:
+                return jsonify({'ok': False,
+                                'error': 'Template must be APPROVED before a '
+                                         'multi-device (fleet) rollout.'}), 403
+            abort(403)
     items = iter_push_items(row.body_dict)
 
     if not device_ids:
@@ -231,4 +250,37 @@ def apply(template_id: int):
     else:
         flash(f'Applied "{row.name}" v{row.version} to {ok_count}/{total} device(s) '
               '— some writes failed.', 'warning')
+    return redirect(_safe_next(url_for('templates.index')))
+
+
+@bp.route('/<int:template_id>/approve', methods=['POST'])
+@login_required
+@require_permission('operations.template_approve')
+def approve(template_id: int):
+    """Approve a pending template, making it eligible for fleet rollout."""
+    try:
+        row = lib.approve_template(template_id, reviewer=current_user.username)
+        log_action('template.approve', target=f'{row.kind}/{row.name}',
+                   detail=f'version {row.version}')
+        flash(f'Approved "{row.name}" v{row.version} — now fleet-deployable.',
+              'success')
+    except ValueError as exc:
+        flash(f'Could not approve template: {exc}', 'danger')
+    return redirect(_safe_next(url_for('templates.index')))
+
+
+@bp.route('/<int:template_id>/reject', methods=['POST'])
+@login_required
+@require_permission('operations.template_approve')
+def reject(template_id: int):
+    """Reject a template with an author-visible reason."""
+    reason = (request.form.get('reason') or '').strip()
+    try:
+        row = lib.reject_template(template_id, reviewer=current_user.username,
+                                  reason=reason)
+        log_action('template.reject', target=f'{row.kind}/{row.name}',
+                   detail=f'version {row.version}: {reason[:120]}')
+        flash(f'Rejected "{row.name}" v{row.version}.', 'warning')
+    except ValueError as exc:
+        flash(f'Could not reject template: {exc}', 'danger')
     return redirect(_safe_next(url_for('templates.index')))

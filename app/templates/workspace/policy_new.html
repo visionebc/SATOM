@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}New Server Policy{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a><span class="separator">/</span>
+  <a href="{{ url_for('workspace.index') }}">Server Policy</a><span class="separator">/</span>
+  <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}">{{ appliance.name }}</a>
+  <span class="separator">/</span><span>New</span>
+</div>
+{% endblock %}
+{% from "workspace/_fields.html" import fld %}
+{% block content %}
+<div class="fw-page-header"><h1 class="fw-h1"><i class="bi bi-plus-square me-2 text-accent"></i>New Server Policy <span class="mono text-muted">{{ appliance.name }}</span></h1></div>
+
+<div class="fw-card mb-3"><div class="fw-card-header"><span class="fw-card-title">Identity</span></div>
+  <div class="fw-card-body"><div class="fw-fld-grid" style="grid-template-columns:minmax(280px,460px);">
+    <div class="fw-fld"><label class="fw-fld-label">Policy name <span class="fw-key">name</span></label>
+      <input type="text" class="form-control form-control-sm" id="policyName" placeholder="e.g. pol-myapp" required></div>
+  </div></div>
+</div>
+
+{# ── Virtual Server + VIP ── #}
+<div class="fw-card mb-3" id="vsScope"><div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>Virtual Server &amp; VIP</span></div>
+  <div class="fw-card-body">
+    <div class="fw-fld-grid" style="grid-template-columns:minmax(280px,460px);">
+      <div class="fw-fld"><label class="fw-fld-label">Virtual Server name <span class="fw-key">name</span></label>
+        <input type="text" class="form-control form-control-sm" id="vserverName" placeholder="e.g. vs-myapp"></div>
+    </div>
+    <div id="vipRows" class="mt-2"></div>
+    <button type="button" class="btn btn-sm btn-fw-outline mt-2" onclick="addVip()">＋ Add VIP</button>
+  </div>
+</div>
+
+{# ── Server Pool + members ── #}
+<div class="fw-card mb-3"><div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>Server Pool</span></div>
+  <div class="fw-card-body" id="poolScope">
+    <div class="fw-fld-grid" style="grid-template-columns:minmax(280px,460px);">
+      <div class="fw-fld"><label class="fw-fld-label">Server Pool name <span class="fw-key">name</span></label>
+        <input type="text" class="form-control form-control-sm" id="poolName" placeholder="e.g. pool-myapp"></div>
+    </div>
+    {% for g in pool_groups %}<div class="fw-group"><div class="fw-group-title">{{ g.title }}</div>
+      <div class="fw-fld-grid">{% for f in g.fields %}{{ fld(f) }}{% endfor %}</div></div>{% endfor %}
+    <div class="fw-group"><div class="fw-group-title">Pool members</div>
+      <table class="table table-sm fw-table"><thead><tr><th>Type</th><th>IP / Domain</th><th>Port</th><th>Weight</th><th>SSL</th><th>Status</th><th></th></tr></thead>
+        <tbody id="psRows"></tbody></table>
+      <button type="button" class="btn btn-sm btn-fw-outline" onclick="addPs()">＋ Add member</button>
+    </div>
+  </div>
+</div>
+
+{# ── Policy fields ── #}
+<div class="fw-card mb-3"><div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-shield-lock me-2 text-accent"></i>Policy settings</span></div>
+  <div class="fw-card-body" id="policyScope">
+    {% for g in policy_groups %}<details class="fw-group" {{ 'open' if g.title in ['Network Configuration','HTTPS/SSL','Security'] }}>
+      <summary class="fw-group-title">{{ g.title }} <span class="text-muted">({{ g.fields|length }})</span></summary>
+      <div class="fw-fld-grid mt-2">{% for f in g.fields %}{{ fld(f) }}{% endfor %}</div></details>{% endfor %}
+  </div>
+</div>
+
+<div class="fw-savebar mb-4" style="justify-content:flex-end;gap:10px;">
+  <button type="button" class="btn btn-fw-outline" onclick="doCreate(false)"><i class="bi bi-eye me-1"></i>Preview (dry-run)</button>
+  <button type="button" class="btn btn-fw-primary" id="applyBtn" onclick="doCreate(true)" disabled><i class="bi bi-check2-circle me-1"></i>Create on device</button>
+</div>
+<div id="result"></div>
+{% endblock %}
+
+{% block scripts %}
+<script type="text/template" id="vipTpl">
+<div class="fw-row-card vip-row" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:8px;">
+  <div class="fw-fld"><label class="fw-fld-label">vip</label><select class="form-select form-select-sm vipf fw-ref-select" data-key="vip" data-ref="system/vip"><option value="">— select VIP —</option></select></div>
+  <div class="fw-fld"><label class="fw-fld-label">interface</label><select class="form-select form-select-sm vipf fw-ref-select" data-key="interface" data-ref="system/interface"><option value="">— none —</option></select></div>
+  <div class="fw-fld"><label class="fw-fld-label">use-interface-ip</label><select class="form-select form-select-sm vipf" data-key="use-interface-ip"><option value="">—</option><option value="enable">enable</option><option value="disable">disable</option></select></div>
+  <div class="fw-fld"><label class="fw-fld-label">status</label><select class="form-select form-select-sm vipf" data-key="status"><option value="enable">enable</option><option value="disable">disable</option></select></div>
+  <button type="button" class="btn btn-sm btn-fw-outline" onclick="this.closest('.vip-row').remove()">✕</button>
+</div>
+</script>
+<script type="text/template" id="psTpl">
+<tr class="ps-row">
+  <td><select class="form-select form-select-sm psf" data-key="server-type"><option value="physical">physical</option><option value="domain">domain</option><option value="sdn">sdn</option></select></td>
+  <td><input class="form-control form-control-sm psf" data-key="ip" placeholder="192.0.2.50"></td>
+  <td style="width:80px"><input type="number" class="form-control form-control-sm psf" data-key="port" placeholder="80"></td>
+  <td style="width:80px"><input type="number" class="form-control form-control-sm psf" data-key="weight" placeholder="1"></td>
+  <td><select class="form-select form-select-sm psf" data-key="ssl"><option value="disable">disable</option><option value="enable">enable</option></select></td>
+  <td><select class="form-select form-select-sm psf" data-key="status"><option value="enable">enable</option><option value="disable">disable</option><option value="maintenance">maintenance</option></select></td>
+  <td><button type="button" class="btn btn-sm btn-fw-outline" onclick="this.closest('.ps-row').remove()">✕</button></td>
+</tr>
+</script>
+<script>
+const APPL_ID = {{ appliance.id }};
+function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+async function loadRef(sel){
+  if(sel.dataset.loaded) return; sel.dataset.loaded='1';
+  try{const names=(await (await fetch(`/workspace/${APPL_ID}/cmdb-options?endpoint=${encodeURIComponent(sel.dataset.ref)}`)).json()).names||[];
+    names.forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;sel.appendChild(o);});}catch(e){}
+}
+document.addEventListener('focusin',e=>{if(e.target.classList&&e.target.classList.contains('fw-ref-select'))loadRef(e.target);});
+function addVip(){const t=document.getElementById('vipTpl').innerHTML;const d=document.createElement('div');d.innerHTML=t;document.getElementById('vipRows').appendChild(d.firstElementChild);}
+function addPs(){const t=document.getElementById('psTpl').innerHTML;const d=document.createElement('div');d.innerHTML=t;document.getElementById('psRows').appendChild(d.querySelector('tr'));}
+function collect(scopeSel){const o={};document.querySelectorAll(`${scopeSel} .fw-input`).forEach(el=>{const k=el.dataset.key;if(k&&el.value!=='')o[k]=el.value;});return o;}
+function collectRows(rowSel,fSel){return [...document.querySelectorAll(rowSel)].map(r=>{const o={};r.querySelectorAll(fSel).forEach(el=>{if(el.value!=='')o[el.dataset.key]=el.value;});return o;}).filter(o=>Object.keys(o).length);}
+async function doCreate(apply){
+  const pname=document.getElementById('policyName').value.trim();
+  if(!pname){alert('Policy name is required');return;}
+  const body={apply, policy:collect('#policyScope'),
+    vserver_name:document.getElementById('vserverName').value.trim(),
+    vips:collectRows('.vip-row','.vipf'),
+    pool_name:document.getElementById('poolName').value.trim(),
+    pool:collect('#poolScope'), pservers:collectRows('.ps-row','.psf')};
+  body.policy.name=pname;
+  const r=await (await fetch(`/workspace/${APPL_ID}/create-policy`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  const box=document.getElementById('result');
+  if(r.ok&&r.dry_run){
+    box.innerHTML=`<div class="fw-card"><div class="fw-card-header"><span class="fw-card-title">Preview — ${r.steps.length} object(s) will be created (dependency order)</span></div><div class="fw-card-body"><pre class="fw-code-block">${esc(JSON.stringify(r.steps,null,2))}</pre></div></div>`;
+    document.getElementById('applyBtn').disabled=false;
+  } else if(r.ok){
+    box.innerHTML=`<div class="fw-alert fw-alert-ok">✓ Created. <a href="/workspace/${APPL_ID}/policy/${encodeURIComponent(pname)}">Open ${esc(pname)}</a></div><pre class="fw-code-block">${esc(JSON.stringify(r.steps,null,2))}</pre>`;
+  } else {
+    box.innerHTML=`<div class="fw-alert fw-alert-err">✗ ${esc(r.error||'failed')}</div><pre class="fw-code-block">${esc(JSON.stringify(r.applied||r,null,2))}</pre>`;
+  }
+  box.scrollIntoView({behavior:'smooth'});
+}
+</script>
+{% endblock %}

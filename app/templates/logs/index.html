@@ -1,21 +1,12 @@
 {% extends "base.html" %}
-{% block head %}
-{% if appliance %}
-<meta name="fw-auto-refresh" content="30">
-{% endif %}
-{% endblock %}
 
-{% block title %}Log Collection{% if appliance %} — {{ appliance.name }}{% endif %}{% endblock %}
+{% block title %}Log Collection{% endblock %}
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
   <a href="/">Home</a>
   <span class="separator">/</span>
   <span>Log Collection</span>
-  {% if appliance %}
-    <span class="separator">/</span>
-    <span>{{ appliance.name }}</span>
-  {% endif %}
 </div>
 {% endblock %}
 
@@ -24,190 +15,251 @@
   <div>
     <h1 class="fw-page-title"><i class="bi bi-journal-text me-2 text-accent"></i>Log Collection</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      {% if appliance %}
-        Live logs from <strong>{{ appliance.name }}</strong>
-        &nbsp;—&nbsp;
-        <span class="text-muted">Auto-refreshing in <span id="fw-refresh-counter">30</span>s</span>
-      {% else %}
-        Select an appliance to collect and view logs
-      {% endif %}
+      Collect a read-only diagnostic battery (<code>get</code>/<code>diagnose</code>:
+      status, HA, hardware, disk, network…) from one or more FortiWeb appliances
+      over SSH. It modifies nothing — every command is asserted read-only.
     </p>
   </div>
-  <div class="d-flex gap-2">
-    {% if appliance %}
-      <button class="btn btn-fw-outline btn-sm" id="fw-refresh-btn">
-        <i class="bi bi-arrow-clockwise me-1"></i>Refresh
-      </button>
-      <a href="{{ url_for('logs.index') }}" class="btn btn-secondary btn-sm">
-        <i class="bi bi-chevron-left me-1"></i>Back
-      </a>
-    {% endif %}
-  </div>
 </div>
 
-{% if not appliance %}
-<!-- Appliance selector -->
 <div class="row g-3">
-  {% for a in appliances %}
-  <div class="col-xl-3 col-lg-4 col-md-6">
-    <a href="{{ url_for('logs.view_logs', id=a.id) }}" class="text-decoration-none">
-      <div class="fw-appliance-card">
-        <div class="d-flex align-items-start justify-content-between mb-3">
-          <div class="fw-stat-icon fw-stat-icon-primary" style="width:40px;height:40px;font-size:18px;">
-            <i class="bi bi-journal-text"></i>
-          </div>
-          <span class="fw-status fw-status-unknown" data-status-id="{{ a.id }}">
-            <span class="fw-status-dot"></span><span style="font-size:11px;">Checking…</span>
-          </span>
-        </div>
-        <div class="fw-appliance-name">{{ a.name }}</div>
-        <div class="fw-appliance-host mb-2">{{ a.host }}:{{ a.port }}</div>
-        <span class="fw-badge fw-badge-secondary">{{ a.kind }}</span>
-        <div class="mt-3 pt-2" style="border-top:1px solid #F0F2F5;">
-          <small class="text-muted"><i class="bi bi-arrow-right-circle me-1 text-accent"></i>View logs</small>
+  <!-- Left: device picker + options -->
+  <div class="col-lg-5">
+    <div class="fw-card mb-3">
+      <div class="fw-card-header d-flex align-items-center justify-content-between">
+        <span><i class="bi bi-server me-2 text-accent"></i>Devices (FortiWeb)</span>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-fw-outline btn-sm" id="selAll">Select all</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="selNone">None</button>
         </div>
       </div>
-    </a>
-  </div>
-  {% else %}
-  <div class="col-12">
-    <div class="fw-empty-state">
-      <div class="fw-empty-state-icon"><i class="bi bi-server"></i></div>
-      <div class="fw-empty-state-title">No appliances configured</div>
-      <a href="{{ url_for('appliances.index') }}" class="btn btn-fw-primary mt-2">Add Appliance</a>
+      <div class="fw-card-body">
+        {% if appliances %}
+        <div id="deviceList" style="max-height:320px;overflow:auto;">
+          {% for a in appliances %}
+          <label class="d-flex align-items-center gap-2 py-1" style="cursor:pointer;">
+            <input type="checkbox" class="form-check-input mt-0 dev-check" value="{{ a.id }}">
+            <span class="fw-appliance-name" style="font-size:13px;">{{ a.name }}</span>
+            <span class="text-muted" style="font-size:12px;">{{ a.host }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="fw-empty-state py-4">
+          <div class="fw-empty-state-icon"><i class="bi bi-server"></i></div>
+          <div class="fw-empty-state-title">No FortiWeb appliances configured</div>
+          <a href="{{ url_for('appliances.index') }}" class="btn btn-fw-primary mt-2">Add Appliance</a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="fw-card mb-3">
+      <div class="fw-card-body">
+        <label class="fw-form-label" style="font-size:12px;">Label</label>
+        <input type="text" class="form-control form-control-sm mb-3" id="labelInput"
+               value="manual" placeholder="e.g. before / after / incident">
+
+        <details id="customWrap" class="mb-3">
+          <summary style="cursor:pointer;font-size:13px;font-weight:600;">
+            <i class="bi bi-terminal me-1"></i>Custom commands (optional)
+          </summary>
+          <p class="text-muted mt-2 mb-1" style="font-size:12px;">
+            One command per line. Only read-only commands are allowed
+            (<code>get</code> / <code>show</code> / <code>diagnose</code>) — anything
+            else is rejected. Blank lines and lines starting with <code>#</code> are
+            ignored. Leave empty to run the standard
+            {{ battery|length }}-command battery.
+          </p>
+          <textarea class="form-control form-control-sm mono" id="commandsInput" rows="5"
+                    placeholder="get system status&#10;diagnose hardware cpu&#10;diagnose network arp list"></textarea>
+        </details>
+
+        <button type="button" class="btn btn-fw-primary w-100" id="collectBtn"
+                {% if not appliances %}disabled{% endif %}>
+          <i class="bi bi-download me-1"></i>Collect logs
+        </button>
+        <div id="collectErr" class="fw-alert fw-alert-warning mt-2 d-none" style="font-size:12.5px;"></div>
+      </div>
     </div>
   </div>
-  {% endfor %}
-</div>
 
-{% else %}
-<!-- Log type filters -->
-<div class="fw-card mb-3">
-  <div class="fw-card-body py-2">
-    <form method="GET" class="row g-2 align-items-end">
-      <input type="hidden" name="id" value="{{ appliance.id }}">
-      <div class="col-md-3">
-        <label class="fw-form-label" style="font-size:12px;">Log Type</label>
-        <select name="log_type" class="form-select form-select-sm" onchange="this.form.submit()">
-          <option value="traffic" {{ 'selected' if request and request.args.get('log_type','traffic')=='traffic' }}>Traffic</option>
-          <option value="attack"  {{ 'selected' if request and request.args.get('log_type')=='attack' }}>Attack</option>
-          <option value="event"   {{ 'selected' if request and request.args.get('log_type')=='event' }}>Event</option>
-        </select>
+  <!-- Right: progress + history -->
+  <div class="col-lg-7">
+    <div class="fw-card mb-3" id="progressCard" style="display:none;">
+      <div class="fw-card-header"><i class="bi bi-activity me-2 text-accent"></i>Progress</div>
+      <div class="fw-card-body">
+        <div class="d-flex align-items-center justify-content-between mb-1">
+          <span id="progLabel" class="text-muted" style="font-size:12.5px;">—</span>
+          <span id="progPct" class="fw-badge fw-badge-secondary">0%</span>
+        </div>
+        <div class="progress mb-2" style="height:8px;">
+          <div class="progress-bar" id="progBar" role="progressbar" style="width:0%;"></div>
+        </div>
+        <pre id="progLog" class="mono" style="font-size:11.5px;max-height:200px;overflow:auto;background:#0d1117;color:#c9d1d9;padding:10px;border-radius:6px;margin:0;"></pre>
+        <div id="progResults" class="mt-2"></div>
       </div>
-      <div class="col-md-2">
-        <label class="fw-form-label" style="font-size:12px;">Level</label>
-        <select name="level" class="form-select form-select-sm" onchange="this.form.submit()">
-          <option value="">All Levels</option>
-          <option value="alert">Alert</option>
-          <option value="warning">Warning</option>
-          <option value="notice">Notice</option>
-          <option value="info">Info</option>
-        </select>
+    </div>
+
+    <div class="fw-card">
+      <div class="fw-card-header d-flex align-items-center justify-content-between">
+        <span><i class="bi bi-clock-history me-2 text-accent"></i>Existing logs</span>
+        <button type="button" class="btn btn-fw-outline btn-sm" id="refreshHist">
+          <i class="bi bi-arrow-clockwise"></i>
+        </button>
       </div>
-      <div class="col-md-3">
-        <label class="fw-form-label" style="font-size:12px;">Search</label>
-        <input type="text" name="q" class="form-control form-control-sm" placeholder="IP, URL, msg…"
-               value="{{ request.args.get('q','') if request else '' }}">
+      <div class="fw-card-body p-0">
+        <div class="fw-table-wrapper">
+          <table class="fw-table" style="font-size:12.5px;margin:0;">
+            <thead>
+              <tr>
+                <th>Label</th><th>File</th><th style="width:160px;">When</th>
+                <th style="width:80px;">Size</th><th style="width:120px;"></th>
+              </tr>
+            </thead>
+            <tbody id="histBody">
+              {% if history %}
+                {% for h in history %}
+                <tr>
+                  <td><span class="fw-badge fw-badge-secondary">{{ h.label }}</span></td>
+                  <td class="mono" style="font-size:11.5px;word-break:break-all;">{{ h.name }}</td>
+                  <td class="text-nowrap" style="font-size:11.5px;">{{ h.modified|replace('T',' ') }}</td>
+                  <td>{{ (h.size / 1024)|round(1) }} KB</td>
+                  <td>
+                    <a class="btn btn-fw-outline btn-sm" target="_blank"
+                       href="{{ url_for('logs.view_file', name=h.name) }}">View</a>
+                    <a class="btn btn-secondary btn-sm"
+                       href="{{ url_for('logs.view_file', name=h.name) }}?download=1">↓</a>
+                  </td>
+                </tr>
+                {% endfor %}
+              {% else %}
+                <tr><td colspan="5">
+                  <div class="fw-empty-state py-4">
+                    <div class="fw-empty-state-icon"><i class="bi bi-journal"></i></div>
+                    <div class="fw-empty-state-title">No logs collected yet</div>
+                  </div>
+                </td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
       </div>
-      <div class="col-md-2">
-        <button type="submit" class="btn btn-fw-primary btn-sm w-100">Apply</button>
-      </div>
-      <div class="col-md-2">
-        <a href="?id={{ appliance.id }}" class="btn btn-secondary btn-sm w-100">Clear</a>
-      </div>
-    </form>
+    </div>
   </div>
 </div>
+{% endblock %}
 
-{% if error %}
-<div class="fw-alert fw-alert-warning mb-3">
-  <i class="bi bi-exclamation-triangle me-2"></i>{{ error }}
-</div>
-{% endif %}
+{% block scripts %}
+<script>
+(function () {
+  const token = document.querySelector('meta[name="csrf-token"]').content;
+  const $ = (id) => document.getElementById(id);
+  const checks = () => Array.from(document.querySelectorAll('.dev-check'));
+  let timer = null;
 
-<!-- Log Table -->
-<div class="fw-table-wrapper">
-  <table class="fw-table" id="logsTable" style="font-size:12.5px;">
-    <thead>
-      <tr>
-        <th style="width:150px;">Date / Time</th>
-        <th style="width:70px;">Level</th>
-        <th style="width:100px;">Source IP</th>
-        <th style="width:70px;">Policy</th>
-        <th>Message</th>
-        <th style="width:80px;">Action</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% if logs %}
-        {% for l in logs %}
-        <tr>
-          <td class="text-nowrap mono" style="font-size:11.5px;">
-            {{ (l.get('date','') + ' ' + l.get('time','')) | trim or '—' }}
-          </td>
-          <td>
-            {% set level = l.get('level','info')|lower %}
-            {% if level == 'alert' or level == 'emergency' or level == 'critical' %}
-              <span class="fw-badge fw-badge-danger">{{ level|upper }}</span>
-            {% elif level == 'warning' or level == 'error' %}
-              <span class="fw-badge fw-badge-primary">{{ level|upper }}</span>
-            {% elif level == 'notice' %}
-              <span class="fw-badge fw-badge-info">{{ level|upper }}</span>
-            {% else %}
-              <span class="fw-badge fw-badge-secondary">{{ level|upper }}</span>
-            {% endif %}
-          </td>
-          <td class="mono" style="font-size:11.5px;">{{ l.get('src','') or l.get('srcip','') or '—' }}</td>
-          <td style="font-size:11.5px;">{{ l.get('policy','') or l.get('policyid','') or '—' }}</td>
-          <td style="word-break:break-word; max-width:400px;">{{ l.get('msg','') or l.get('message','') or '—' }}</td>
-          <td>
-            {% set action = l.get('action','') | lower %}
-            {% if action in ['block','deny','drop'] %}
-              <span class="fw-badge fw-badge-danger">{{ action|capitalize }}</span>
-            {% elif action in ['allow','pass'] %}
-              <span class="fw-badge fw-badge-success">{{ action|capitalize }}</span>
-            {% elif action == 'alert' %}
-              <span class="fw-badge fw-badge-warning">Alert</span>
-            {% else %}
-              <span class="text-muted">{{ action or '—' }}</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      {% else %}
-        <tr>
-          <td colspan="6">
-            <div class="fw-empty-state py-5">
-              <div class="fw-empty-state-icon"><i class="bi bi-journal"></i></div>
-              <div class="fw-empty-state-title">No log entries</div>
-              <div class="fw-empty-state-text">No logs match the current filters or the appliance returned no data.</div>
-            </div>
-          </td>
-        </tr>
-      {% endif %}
-    </tbody>
-  </table>
-</div>
+  $('selAll')?.addEventListener('click', () => checks().forEach(c => c.checked = true));
+  $('selNone')?.addEventListener('click', () => checks().forEach(c => c.checked = false));
 
-{% if logs %}
-<div class="d-flex align-items-center justify-content-between mt-3">
-  <span class="text-muted" style="font-size:12px;">{{ logs|length }} entries shown</span>
-  <div class="d-flex gap-2">
-    {% if page is defined and page > 1 %}
-      <a href="?{{ request.query_string.decode() | replace('page=' + page|string, 'page=' + (page-1)|string) if request else '' }}"
-         class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-chevron-left"></i> Previous
-      </a>
-    {% endif %}
-    {% if has_next is defined and has_next %}
-      <a href="?{{ request.query_string.decode() if request else '' }}&page={{ (page or 1) + 1 }}"
-         class="btn btn-outline-secondary btn-sm">
-        Next <i class="bi bi-chevron-right"></i>
-      </a>
-    {% endif %}
-  </div>
-</div>
-{% endif %}
+  function fmtSize(b) { return (b / 1024).toFixed(1) + ' KB'; }
 
-{% endif %}
+  function paint(p) {
+    if (!p || p.state === 'idle') { $('progressCard').style.display = 'none'; return; }
+    $('progressCard').style.display = '';
+    const pct = p.percent || 0;
+    $('progPct').textContent = pct + '%';
+    $('progBar').style.width = pct + '%';
+    const customN = p.command_count ? (' · ' + p.command_count + ' cmd') : '';
+    $('progLabel').textContent =
+      (p.state === 'running' ? 'Running' : 'Done') +
+      ' — label "' + (p.label || 'manual') + '"' + customN +
+      ' (' + (p.done || 0) + '/' + (p.total || 0) + ')' +
+      (p.current ? ' · ' + p.current : '');
+    $('progLog').textContent = (p.log || []).join('\n');
+    if (p.results && p.results.length) {
+      $('progResults').innerHTML = p.results.map(r =>
+        r.ok
+          ? '<div style="font-size:12px;"><span class="fw-badge fw-badge-success">OK</span> ' +
+            r.device + ' → <span class="mono">' + r.file + '</span></div>'
+          : '<div style="font-size:12px;"><span class="fw-badge fw-badge-danger">FAIL</span> ' +
+            r.device + ' — ' + (r.error || '') + '</div>'
+      ).join('');
+    }
+    if (p.state === 'done') {
+      if (timer) { clearInterval(timer); timer = null; }
+      $('collectBtn').disabled = false;
+      loadHistory();
+    }
+  }
+
+  async function poll() {
+    try {
+      const r = await fetch('{{ url_for("logs.status") }}');
+      paint(await r.json());
+    } catch (e) { /* keep polling */ }
+  }
+
+  async function loadHistory() {
+    try {
+      const r = await fetch('{{ url_for("logs.history") }}');
+      const j = await r.json();
+      if (!j.ok) return;
+      const body = $('histBody');
+      if (!j.files.length) return;
+      body.innerHTML = j.files.map(h =>
+        '<tr>' +
+        '<td><span class="fw-badge fw-badge-secondary">' + h.label + '</span></td>' +
+        '<td class="mono" style="font-size:11.5px;word-break:break-all;">' + h.name + '</td>' +
+        '<td class="text-nowrap" style="font-size:11.5px;">' + (h.modified || '').replace('T', ' ') + '</td>' +
+        '<td>' + fmtSize(h.size) + '</td>' +
+        '<td>' +
+          '<a class="btn btn-fw-outline btn-sm" target="_blank" href="/logs/file/' + encodeURIComponent(h.name) + '">View</a> ' +
+          '<a class="btn btn-secondary btn-sm" href="/logs/file/' + encodeURIComponent(h.name) + '?download=1">↓</a>' +
+        '</td></tr>'
+      ).join('');
+    } catch (e) { /* ignore */ }
+  }
+
+  $('refreshHist')?.addEventListener('click', loadHistory);
+
+  $('collectBtn')?.addEventListener('click', async () => {
+    const ids = checks().filter(c => c.checked).map(c => c.value);
+    const err = $('collectErr');
+    err.classList.add('d-none');
+    if (!ids.length) { err.textContent = 'Select at least one FortiWeb.'; err.classList.remove('d-none'); return; }
+
+    const fd = new FormData();
+    ids.forEach(id => fd.append('appliance_ids', id));
+    fd.append('label', $('labelInput').value.trim() || 'manual');
+    fd.append('commands', $('commandsInput').value);
+
+    $('collectBtn').disabled = true;
+    try {
+      const r = await fetch('{{ url_for("logs.collect") }}', {
+        method: 'POST', headers: { 'X-CSRFToken': token }, body: fd
+      });
+      const j = await r.json();
+      if (!j.ok) {
+        err.textContent = j.error || 'Could not start collection.';
+        err.classList.remove('d-none');
+        $('collectBtn').disabled = false;
+        return;
+      }
+      paint(j.progress);
+      if (!timer) timer = setInterval(poll, 1500);
+    } catch (e) {
+      err.textContent = 'Request failed: ' + e.message;
+      err.classList.remove('d-none');
+      $('collectBtn').disabled = false;
+    }
+  });
+
+  // Resume polling if a run is already in flight when the page loads.
+  {% if progress and progress.state == 'running' %}
+  paint({{ progress|tojson }});
+  $('collectBtn').disabled = true;
+  if (!timer) timer = setInterval(poll, 1500);
+  {% endif %}
+})();
+</script>
 {% endblock %}

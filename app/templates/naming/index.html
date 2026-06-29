@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}Naming{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>Naming</span>
+  <span class="separator">/</span>
+  <span>{{ product_label }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-tag me-2 text-accent"></i>Naming Scheme
+    </h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Define the name pattern of each object. When creating a new object the operator only
+      types the web address and the system derives every name from these patterns. Use the token
+      <code>{name}</code> as the site identifier — it is sanitised automatically
+      (<code>shop.example.com → shop-example-com</code>). Clearing a field restores its default pattern.
+      Patterns are kept separately per product.
+    </p>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <span class="fw-card-title"><i class="bi bi-tag me-2 text-accent"></i>Patterns — {{ product_label }}</span>
+    <div class="d-flex align-items-center gap-2">
+      <label class="fw-form-label mb-0" for="naming-product" style="font-size:12px;">Product</label>
+      <select id="naming-product" class="form-select fw-form-control form-select-sm" style="width:auto;"
+              onchange="window.location.href='{{ url_for('naming.index') }}?product=' + this.value">
+        {% for pkey, plabel in products %}
+        <option value="{{ pkey }}" {{ 'selected' if pkey == current_product else '' }}>{{ plabel }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <div class="fw-card-body">
+    <div class="row g-2 align-items-center mb-3" style="max-width:560px;">
+      <div class="col-auto"><label class="fw-form-label mb-0">Sample web address</label></div>
+      <div class="col">
+        <input type="text" id="naming-sample" class="form-control fw-form-control" value="shop.example.com"
+               oninput="refreshNaming()">
+      </div>
+      <div class="col-auto"><span class="text-muted" id="naming-slug" style="font-size:12px;"></span></div>
+    </div>
+
+    <form method="POST" action="{{ url_for('naming.save') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="product" value="{{ current_product }}">
+      {% for section, elements in naming_sections.items() %}
+      <div class="fw-section-separator my-3"></div>
+      <h6 class="text-muted text-uppercase" style="font-size:12px; letter-spacing:.5px;">{{ section }}</h6>
+      <div class="row g-2">
+        {% for e in elements %}
+        <div class="col-lg-6">
+          <label class="fw-form-label mb-1">{{ e.label }}</label>
+          <div class="input-group input-group-sm">
+            <input type="text" class="form-control fw-form-control naming-input"
+                   name="nm_{{ e.key }}" data-key="{{ e.key }}"
+                   value="{{ naming_scheme[e.key] }}" placeholder="{{ e.default }}"
+                   oninput="refreshNaming()" {% if e.note %}title="{{ e.note }}"{% endif %}>
+            <span class="input-group-text">→</span>
+            <span class="input-group-text text-muted" id="pv_{{ e.key }}" style="min-width:140px; justify-content:flex-start;"></span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+      <div class="mt-3 d-flex gap-2">
+        <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save Naming</button>
+        <button type="submit" name="action" value="reset" class="btn btn-outline-secondary">Restore defaults</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function namingSlugify(addr) {
+  var s = (addr || '').trim().toLowerCase();
+  s = s.replace(/^[a-z][a-z0-9+.\-]*:\/\//, '');
+  s = s.split('/')[0].split('?')[0].split(':')[0];
+  s = s.replace(/[^a-z0-9]+/g, '-');
+  return s.replace(/^-+|-+$/g, '');
+}
+function refreshNaming() {
+  var sampleEl = document.getElementById('naming-sample');
+  if (!sampleEl) return;
+  var slug = namingSlugify(sampleEl.value);
+  var slugEl = document.getElementById('naming-slug');
+  if (slugEl) slugEl.textContent = 'slug: ' + (slug || '∅');
+  document.querySelectorAll('.naming-input').forEach(function (inp) {
+    var key = inp.getAttribute('data-key');
+    var pv = document.getElementById('pv_' + key);
+    if (!pv) return;
+    var pat = inp.value.trim() || inp.getAttribute('placeholder') || '';
+    pv.textContent = pat ? pat.replace('{name}', slug).substring(0, 63) : '(default)';
+  });
+}
+document.addEventListener('DOMContentLoaded', refreshNaming);
+</script>
+{% endblock %}

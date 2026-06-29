@@ -82,9 +82,31 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "appliance (services.backup).",
     ),
     ActionSpec(
+        "device_sync", "Sync device to local source of truth", "admin",
+        needs_targets=True,
+        summary="Read each target FortiWeb's full config over REST and refresh "
+                "the local Postgres source-of-truth cache + per-device JSON "
+                "backup (services.device_sync). DB-first reads serve the UI from "
+                "this. Read-only against the box.",
+    ),
+    ActionSpec(
+        "device_inspect", "Sync device + publish backup to git", "admin",
+        needs_targets=True,
+        summary="Like Sync, plus PUBLISH each device's JSON backup to the git "
+                "repo (off-box versioned backup). Use for the scheduled, "
+                "git-backed source-of-truth snapshot.",
+    ),
+    ActionSpec(
         "signature_sync", "Sync signature database", "admin", needs_targets=True,
         summary="Refresh the FortiWeb signature catalog from a target device and "
                 "cache it as the shared reference DB (services.signature_catalog).",
+    ),
+    ActionSpec(
+        "system_backup", "System backup (Postgres + JSON)", "admin",
+        needs_targets=False,
+        summary="Back up the whole instance: a Postgres pg_dump + the per-device "
+                "JSON tree, bundled to a downloadable archive (services.system_backup). "
+                "No device call.",
     ),
     ActionSpec(
         "stats", "Build statistics summary", "admin", needs_targets=False,
@@ -158,8 +180,14 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
     try:
         if key == "backup":
             return _do_backup(appliance, dry_run)
+        if key == "device_sync":
+            return _do_device_sync(appliance, params, dry_run, publish=False)
+        if key == "device_inspect":
+            return _do_device_sync(appliance, params, dry_run, publish=True)
         if key == "signature_sync":
             return _do_signature_sync(appliance, dry_run)
+        if key == "system_backup":
+            return _do_system_backup(params, dry_run)
         if key == "stats":
             return _do_stats(dry_run)
         if key == "upgrade_prep":
@@ -178,6 +206,23 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
 
 
 # --- admin read / file writers --------------------------------------------- #
+def _do_device_sync(appliance, params: dict, dry_run: bool, *, publish: bool) -> dict:
+    """Refresh the local source-of-truth cache (and JSON backup) from a device.
+    ``publish`` also commits the JSON to git. Read-only against the appliance."""
+    if appliance is None:
+        return {"ok": False, "summary": "device_sync needs a target device.", "log": ""}
+    if dry_run:
+        verb = "sync + git publish" if publish else "sync"
+        return {"ok": True,
+                "summary": f"[dry-run] would {verb} {appliance.name}.", "log": ""}
+    from . import device_sync as _ds
+    run = _ds.sync_device(appliance, publish=publish, trigger="scheduled")
+    ok = getattr(run, "status", "") == "ok"
+    return {"ok": ok,
+            "summary": f"{appliance.name}: {getattr(run, 'detail', '')}",
+            "log": getattr(run, "detail", "") or ""}
+
+
 def _do_backup(appliance, dry_run: bool) -> dict:
     if appliance is None:
         return {"ok": False, "summary": "backup needs a target device.", "log": ""}
@@ -216,6 +261,21 @@ def _do_signature_sync(appliance, dry_run: bool) -> dict:
     return {"ok": True,
             "summary": f"{count} signatures synced from {appliance.name}.",
             "log": log}
+
+
+def _do_system_backup(params: dict, dry_run: bool) -> dict:
+    if dry_run:
+        return {"ok": True, "summary": "[dry-run] would back up Postgres + JSON.",
+                "log": ""}
+    from . import system_backup
+    res = system_backup.create_backup(
+        include_reports=True,
+        publish_git=bool((params or {}).get("publish_git")),
+        label="scheduled")
+    return {"ok": res["ok"],
+            "summary": (f"Backup {res['name']} ({res['size']//1024} KB)"
+                        if res["ok"] else f"Backup failed: {res['detail']}"),
+            "log": res.get("detail", "")}
 
 
 def _do_stats(dry_run: bool) -> dict:

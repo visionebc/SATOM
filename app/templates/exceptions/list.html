@@ -1,95 +1,349 @@
 {% extends "base.html" %}
-
 {% block title %}Exceptions — {{ appliance.name }}{% endblock %}
 
 {% block breadcrumb %}
-<div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
-  <span class="separator">/</span>
-  <a href="{{ url_for('exceptions.index') }}">Exceptions</a>
-  <span class="separator">/</span>
-  <span>{{ appliance.name }}</span>
-</div>
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('exceptions.index') }}">Exceptions</a></li>
+    <li class="breadcrumb-item active">{{ appliance.name }}</li>
+  </ol>
+</nav>
 {% endblock %}
 
 {% block content %}
-<div class="fw-page-header">
-  <div>
-    <h1 class="fw-page-title"><i class="bi bi-slash-circle me-2 text-accent"></i>WAF Exceptions</h1>
-    <p class="text-muted mb-0" style="font-size:13px;">Exception rules on <strong>{{ appliance.name }}</strong></p>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Exceptions &amp; Signature Carve-outs — {{ appliance.name }}</h4>
+  <button class="btn btn-sm btn-outline-primary" onclick="openDetect()"><i class="bi bi-search me-1"></i>Detect on device</button>
+</div>
+<p class="text-muted">Desired-state carve-outs authored in the manager and bound to a Server Policy.
+  FortiWeb can't record which policy a shared-profile carve-out is for — this does.
+  <strong>Authoring only</strong>; pushing to the device is a separate step.</p>
+
+{# ── existing carve-outs ───────────────────────────────────────────────── #}
+<div class="card mb-4">
+  <div class="card-header"><strong>Authored carve-outs</strong> <span class="text-muted">({{ items|length }})</span></div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead><tr><th>Category</th><th>Type</th><th>WPP</th><th>Server Policies</th><th>Reason</th><th></th></tr></thead>
+        <tbody>
+          {% for it in items %}
+          <tr data-exc-id="{{ it.id }}" data-type="{{ it.exc_type }}" data-wpp="{{ it.wpp_mkey }}"
+              data-name="{{ it.name }}" data-reason="{{ it.reason }}"
+              data-policies="{{ it.policy_names|join(',') }}"
+              data-payload='{{ it.payload_dict|tojson }}'>
+            <td><span class="badge bg-{{ 'info' if it.category == cat_exception else 'warning' }}">{{ it.category }}</span></td>
+            <td>{{ it.exc_type }}</td>
+            <td>{{ it.wpp_mkey or '—' }}</td>
+            <td>{% for p in it.policy_names %}<span class="badge bg-secondary me-1">{{ p }}</span>{% else %}<span class="text-muted">unbound</span>{% endfor %}</td>
+            <td class="small text-muted">{{ it.reason or '' }}</td>
+            <td class="text-nowrap">
+              <button class="btn btn-sm btn-outline-secondary" onclick="editExc(this)">Edit</button>
+              <button class="btn btn-sm btn-outline-primary" onclick="injectExc(this)" title="Push to device">Inject</button>
+              <button class="btn btn-sm btn-outline-danger" onclick="deleteExc({{ it.id }})">Delete</button>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-center text-muted p-4">No carve-outs authored yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
-  <a href="{{ url_for('exceptions.index') }}" class="btn btn-secondary btn-sm">
-    <i class="bi bi-chevron-left me-1"></i>Change Appliance
-  </a>
 </div>
 
-{% if error %}
-<div class="fw-alert fw-alert-danger d-flex align-items-center gap-2 mb-3">
-  <i class="bi bi-exclamation-triangle-fill"></i>
-  <div>Could not load exceptions from <strong>{{ appliance.name }}</strong>: {{ error }}</div>
-</div>
-{% endif %}
+{# ── author / edit ─────────────────────────────────────────────────────── #}
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong id="form-title">New carve-out</strong>
+    <button class="btn btn-sm btn-outline-secondary" onclick="resetForm()">Reset</button>
+  </div>
+  <div class="card-body">
+    <input type="hidden" id="exc-id">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">Type</label>
+        <select id="exc-type" class="form-select form-select-sm" onchange="loadFields()">
+          <option value="">— choose —</option>
+          <optgroup label="WAF Exceptions">
+            {% for t in exception_types %}<option value="{{ t.key }}">{{ t.group }} · {{ t.label }}</option>{% endfor %}
+          </optgroup>
+          <optgroup label="Signature Carve-outs">
+            {% for t in signature_types %}<option value="{{ t.key }}">{{ t.label }}</option>{% endfor %}
+          </optgroup>
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Web Protection Profile</label>
+        <select id="exc-wpp" class="form-select form-select-sm">
+          <option value="">— none —</option>
+          {% for w in wpps %}<option value="{{ w }}">{{ w }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Name (optional)</label>
+        <input id="exc-name" class="form-control form-control-sm">
+      </div>
+    </div>
 
-<div class="fw-toolbar mb-2">
-  <div class="fw-search-box">
-    <i class="bi bi-search search-icon"></i>
-    <input type="text" placeholder="Search exceptions…" oninput="filterTable('exceptions-table', this.value)">
+    <div class="row g-3 mt-1" id="exc-fields"><!-- dynamic fields per type --></div>
+
+    <div class="row g-3 mt-1">
+      <div class="col-md-6">
+        <label class="form-label">Bind to Server Policies</label>
+        <select id="exc-policies" class="form-select form-select-sm" multiple size="5">
+          {% for p in policies %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+        </select>
+        <div class="form-text">Hold Ctrl/Cmd to select several.</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Reason</label>
+        <textarea id="exc-reason" class="form-control form-control-sm" rows="3"></textarea>
+      </div>
+    </div>
+
+    <div class="mt-3">
+      <button class="btn btn-sm btn-fw-primary" onclick="saveExc()"><i class="bi bi-check2-circle me-1"></i>Save carve-out</button>
+      <span id="exc-msg" class="ms-2 small"></span>
+    </div>
   </div>
 </div>
 
-<div class="fw-table-wrapper">
-  <table class="fw-table" id="exceptions-table">
-    <thead>
-      <tr>
-        <th>Exception Name</th>
-        <th>Type</th>
-        <th>Scope</th>
-        <th>URL Pattern</th>
-        <th>Status</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% if exceptions %}
-        {% for e in exceptions %}
-        <tr>
-          <td><strong>{{ e.get('name') or e.get('mkey') or '—' }}</strong></td>
-          <td><span class="fw-badge fw-badge-info">{{ e.get('type') or 'URL-Based' }}</span></td>
-          <td>{{ e.get('scope') or 'All' }}</td>
-          <td class="mono" style="font-size:12px;">{{ e.get('url-pattern') or e.get('url') or '—' }}</td>
-          <td>
-            {% if e.get('status') == 'enable' %}
-              <span class="fw-status fw-status-online" style="font-size:12px;"><span class="fw-status-dot"></span>Enabled</span>
-            {% else %}
-              <span class="fw-status fw-status-offline" style="font-size:12px;"><span class="fw-status-dot"></span>Disabled</span>
-            {% endif %}
-          </td>
-          <td>
-            <a href="{{ url_for('api_explorer.index') }}?id={{ appliance.id }}&path=api/v2.0/cmdb/waf/url-access.rule&mkey={{ e.get('name','') }}"
-               class="btn btn-sm btn-outline-primary btn-sm-icon" title="View in API Explorer">
-              <i class="bi bi-code-square"></i>
-            </a>
-          </td>
-        </tr>
-        {% endfor %}
-      {% else %}
-        <tr><td colspan="6"><div class="fw-empty-state py-5">
-          <div class="fw-empty-state-icon"><i class="bi bi-slash-circle"></i></div>
-          <div class="fw-empty-state-title">No exceptions configured</div>
-          <div class="fw-empty-state-text">All WAF rules apply globally with no exceptions.</div>
-        </div></td></tr>
-      {% endif %}
-    </tbody>
-  </table>
+{# ── purge (clean migration) ───────────────────────────────────────────── #}
+<div class="card border-danger-subtle">
+  <div class="card-header text-danger"><strong>Purge (clean migration)</strong></div>
+  <div class="card-body">
+    <p class="text-muted small mb-2">Remove every carve-out bound to a Server Policy (e.g. before migrating it to another box).</p>
+    <div class="d-flex gap-2 align-items-end">
+      <div>
+        <label class="form-label">Server Policy</label>
+        <select id="purge-policy" class="form-select form-select-sm">
+          <option value="">— choose —</option>
+          {% for p in policies %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-sm btn-outline-danger" onclick="purgePolicy()">Purge</button>
+    </div>
+  </div>
 </div>
-{% endblock %}
 
-{% block scripts %}
+{# ── inject to device ── #}
+<div class="card mb-4 d-none border-primary-subtle" id="inject-panel">
+  <div class="card-header d-flex justify-content-between align-items-center text-primary">
+    <strong>⬆ Inject to device</strong>
+    <button class="btn btn-sm btn-outline-secondary" onclick="closeInject()">Close</button>
+  </div>
+  <div class="card-body">
+    <p class="small text-muted mb-2" id="inject-summary"></p>
+    <div class="row g-3 align-items-end">
+      <div class="col-md-6">
+        <label class="form-label">Target object on device</label>
+        <select id="inject-target" class="form-select form-select-sm"><option value="">— loading… —</option></select>
+        <div class="form-text" id="inject-target-help"></div>
+      </div>
+      <div class="col-md-6">
+        <div class="form-check" id="inject-create-wrap">
+          <input class="form-check-input" type="checkbox" id="inject-create">
+          <label class="form-check-label small" for="inject-create">Create the target object if it doesn't exist</label>
+        </div>
+      </div>
+    </div>
+    <div class="mt-3">
+      <button class="btn btn-sm btn-outline-primary" onclick="injectRun(false)">Dry-run preview</button>
+      <button class="btn btn-sm btn-fw-primary" onclick="injectRun(true)"><i class="bi bi-upload me-1"></i>Push to device</button>
+    </div>
+    <pre class="mt-3 p-2 bg-light small d-none" id="inject-out" style="white-space:pre-wrap;"></pre>
+  </div>
+</div>
+
+{# ── detect on device ── #}
+<div class="card mb-4 d-none border-primary-subtle" id="detect-panel">
+  <div class="card-header d-flex justify-content-between align-items-center text-primary">
+    <strong>🔎 Detect signature carve-outs on device</strong>
+    <button class="btn btn-sm btn-outline-secondary" onclick="closeDetect()">Close</button>
+  </div>
+  <div class="card-body">
+    <p class="small text-muted">Reads per-signature exceptions live off the box (server policy → WPP → signature set → filter list) and imports the ones you select, bound to their policy.</p>
+    <button class="btn btn-sm btn-outline-primary" onclick="detectRun()"><i class="bi bi-search me-1"></i>Run detect</button>
+    <span id="detect-msg" class="ms-2 small text-muted"></span>
+    <div id="detect-results" class="mt-3"></div>
+  </div>
+</div>
+
 <script>
-function filterTable(tableId, q) {
-  q = q.toLowerCase();
-  document.querySelectorAll('#' + tableId + ' tbody tr').forEach(function (row) {
-    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+const EXC_AID = {{ appliance.id }};
+function fwPost(url, payload){
+  return fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}).then(r=>r.json());
+}
+function fieldInput(f, val){
+  val = (val === undefined || val === null) ? '' : val;
+  if (f.widget === 'toggle'){
+    const on = (val === 'enable' || val === true || val === 'true');
+    return '<select class="form-select form-select-sm exc-fld" data-key="'+f.key+'">'
+      + '<option value="enable"'+(on?' selected':'')+'>Enabled</option>'
+      + '<option value="disable"'+(!on?' selected':'')+'>Disabled</option></select>';
+  }
+  if (f.widget === 'enum'){
+    let html = '<select class="form-select form-select-sm exc-fld" data-key="'+f.key+'"><option value="">—</option>';
+    (f.options||[]).forEach(function(o){ html += '<option'+(o==val?' selected':'')+'>'+o+'</option>'; });
+    if (val && (f.options||[]).indexOf(val) < 0) html += '<option selected>'+val+'</option>';
+    return html + '</select>';
+  }
+  return '<input class="form-control form-control-sm exc-fld" data-key="'+f.key+'" value="'+String(val).replace(/"/g,'&quot;')+'">';
+}
+function renderFields(fields, payload){
+  payload = payload || {};
+  const box = document.getElementById('exc-fields');
+  box.innerHTML = '';
+  fields.forEach(function(f){
+    const col = document.createElement('div'); col.className = 'col-md-4';
+    col.innerHTML = '<label class="form-label small">'+f.label+' <code class="text-muted">'+f.key+'</code></label>' + fieldInput(f, payload[f.key]);
+    box.appendChild(col);
+  });
+  if (!fields.length) box.innerHTML = '<div class="col-12 text-muted small">This type has no curated fields — bind it and add details in the reason.</div>';
+}
+function loadFields(payload){
+  const t = document.getElementById('exc-type').value;
+  if (!t){ document.getElementById('exc-fields').innerHTML = ''; return Promise.resolve(); }
+  return fetch('/exceptions/type-fields?type='+encodeURIComponent(t)).then(r=>r.json())
+    .then(function(j){ renderFields(j.fields||[], payload); });
+}
+function collectFields(){
+  const out = {};
+  document.querySelectorAll('#exc-fields .exc-fld').forEach(function(el){
+    if (el.value !== '') out[el.dataset.key] = el.value;
+  });
+  return out;
+}
+function setMulti(id, names){
+  const sel = document.getElementById(id), want = new Set(names||[]);
+  Array.prototype.forEach.call(sel.options, function(o){ o.selected = want.has(o.value); });
+}
+function getMulti(id){
+  return Array.prototype.filter.call(document.getElementById(id).options, o=>o.selected).map(o=>o.value);
+}
+function resetForm(){
+  document.getElementById('exc-id').value = '';
+  document.getElementById('exc-type').value = '';
+  document.getElementById('exc-type').disabled = false;
+  document.getElementById('exc-wpp').value = '';
+  document.getElementById('exc-name').value = '';
+  document.getElementById('exc-reason').value = '';
+  setMulti('exc-policies', []);
+  document.getElementById('exc-fields').innerHTML = '';
+  document.getElementById('form-title').textContent = 'New carve-out';
+  document.getElementById('exc-msg').textContent = '';
+}
+function editExc(btn){
+  const tr = btn.closest('tr');
+  document.getElementById('exc-id').value = tr.dataset.excId;
+  const typeSel = document.getElementById('exc-type');
+  typeSel.value = tr.dataset.type; typeSel.disabled = true;   // type is identity, not editable
+  document.getElementById('exc-wpp').value = tr.dataset.wpp || '';
+  document.getElementById('exc-name').value = tr.dataset.name || '';
+  document.getElementById('exc-reason').value = tr.dataset.reason || '';
+  setMulti('exc-policies', (tr.dataset.policies||'').split(',').filter(Boolean));
+  document.getElementById('form-title').textContent = 'Edit carve-out #'+tr.dataset.excId;
+  let payload = {}; try { payload = JSON.parse(tr.dataset.payload || '{}'); } catch(e){}
+  loadFields(payload);
+  window.scrollTo(0, document.body.scrollHeight);
+}
+function saveExc(){
+  const payload = {
+    exc_id: document.getElementById('exc-id').value || null,
+    exc_type: document.getElementById('exc-type').value,
+    wpp_mkey: document.getElementById('exc-wpp').value,
+    name: document.getElementById('exc-name').value,
+    reason: document.getElementById('exc-reason').value,
+    policies: getMulti('exc-policies'),
+    fields: collectFields(),
+  };
+  if (!payload.exc_type){ document.getElementById('exc-msg').innerHTML = '<span class="text-danger">Choose a type.</span>'; return; }
+  fwPost('/exceptions/'+EXC_AID+'/save', payload).then(function(j){
+    if (j.ok){ if (window.FW) FW.toast('Carve-out saved','success'); location.reload(); }
+    else document.getElementById('exc-msg').innerHTML = '<span class="text-danger">'+(j.error||'failed')+'</span>';
+  });
+}
+function deleteExc(id){
+  if (!confirm('Delete this carve-out?')) return;
+  fwPost('/exceptions/'+EXC_AID+'/delete', {exc_id:id}).then(function(j){ if (j.ok) location.reload(); });
+}
+function purgePolicy(){
+  const p = document.getElementById('purge-policy').value;
+  if (!p){ return; }
+  if (!confirm('Remove ALL carve-outs bound to '+p+'?')) return;
+  fwPost('/exceptions/'+EXC_AID+'/purge', {server_policy:p}).then(function(j){
+    if (j.ok){ if (window.FW) FW.toast('Purged '+j.deleted+' carve-out(s)','success'); location.reload(); }
+  });
+}
+// ── inject to device ──
+let INJECT_EXC = null;
+function injectExc(btn){
+  const tr = btn.closest('tr');
+  INJECT_EXC = {id: tr.dataset.excId, type: tr.dataset.type};
+  document.getElementById('inject-panel').classList.remove('d-none');
+  document.getElementById('inject-summary').textContent =
+    'Carve-out #'+INJECT_EXC.id+' ('+INJECT_EXC.type+') — choose the target object on the device.';
+  document.getElementById('inject-out').classList.add('d-none');
+  const sel = document.getElementById('inject-target');
+  sel.innerHTML = '<option value="">— loading… —</option>';
+  fetch('/exceptions/'+EXC_AID+'/inject-targets?type='+encodeURIComponent(INJECT_EXC.type))
+    .then(r=>r.json()).then(function(j){
+      sel.innerHTML = '<option value="">— choose —</option>';
+      (j.targets||[]).forEach(function(t){ const o=document.createElement('option'); o.value=t; o.textContent=t; sel.appendChild(o); });
+      document.getElementById('inject-create-wrap').style.display = j.can_create ? '' : 'none';
+      document.getElementById('inject-target-help').textContent = !j.ok ? (j.error||'') :
+        (j.inline ? 'Inline carve-out: the target is the sub-policy/rule it lives on.'
+                  : (j.can_create ? 'Container carve-out: pick an existing container or tick create.' : ''));
+    });
+  document.getElementById('inject-panel').scrollIntoView({behavior:'smooth'});
+}
+function closeInject(){ document.getElementById('inject-panel').classList.add('d-none'); }
+function injectRun(apply){
+  if (!INJECT_EXC) return;
+  const target = document.getElementById('inject-target').value;
+  if (!target){ if(window.FW) FW.toast('Choose a target object','warning'); return; }
+  if (apply && !confirm('Push this carve-out onto the device?')) return;
+  fwPost('/exceptions/'+EXC_AID+'/inject', {
+    exc_id: INJECT_EXC.id, target: target, apply: apply,
+    create_container: document.getElementById('inject-create').checked,
+  }).then(function(j){
+    const out = document.getElementById('inject-out');
+    out.classList.remove('d-none');
+    const plan = j.plan || {};
+    out.textContent = (j.dry_run ? 'DRY-RUN ' : 'APPLIED ') + (j.ok?'OK':'FAILED') + '\n'
+      + 'plan: ' + (plan.status||'') + ' ' + (plan.method||'') + ' ' + (plan.endpoint||'') + '\n'
+      + (j.steps||[]).map(s=>'  '+s.step+': '+(s.ok?'ok':'FAIL')+(s.error?(' — '+s.error):'')).join('\n');
+    if (window.FW) FW.toast(j.ok ? (j.dry_run?'Dry-run OK':'Pushed to device') : 'Inject failed', j.ok?'success':'danger');
+  });
+}
+// ── detect on device ──
+function openDetect(){ const p=document.getElementById('detect-panel'); p.classList.remove('d-none'); p.scrollIntoView({behavior:'smooth'}); }
+function closeDetect(){ document.getElementById('detect-panel').classList.add('d-none'); }
+function detectRun(){
+  document.getElementById('detect-msg').textContent = 'Reading device…';
+  document.getElementById('detect-results').innerHTML = '';
+  fwPost('/exceptions/'+EXC_AID+'/detect', {}).then(function(j){
+    if (!j.ok){ document.getElementById('detect-msg').innerHTML = '<span class="text-danger">'+(j.error||'failed')+'</span>'; return; }
+    window.DETECTED = j.found || [];
+    document.getElementById('detect-msg').textContent = j.found.length + ' carve-out(s) across ' + (j.policies||0) + ' policies';
+    if (!j.found.length){ document.getElementById('detect-results').innerHTML = '<div class="text-muted small">No per-signature exceptions on the device.</div>'; return; }
+    let html = '<table class="table table-sm"><thead><tr><th></th><th>Policy</th><th>Set</th><th>Signature</th><th>Element</th></tr></thead><tbody>';
+    j.found.forEach(function(f, i){
+      html += '<tr><td><input type="checkbox" class="det-pick" data-i="'+i+'" checked></td>'
+        + '<td>'+f.policy+'</td><td>'+f.signature_set+'</td><td>'+f.signature_id+'</td>'
+        + '<td class="small">'+((f.payload||{})['match-target']||'')+'</td></tr>';
+    });
+    html += '</tbody></table><button class="btn btn-sm btn-fw-primary" onclick="detectImport()">Import selected</button>';
+    document.getElementById('detect-results').innerHTML = html;
+  });
+}
+function detectImport(){
+  const picks = Array.prototype.filter.call(document.querySelectorAll('.det-pick'), c=>c.checked).map(c=>window.DETECTED[+c.dataset.i]);
+  if (!picks.length){ if(window.FW) FW.toast('Nothing selected','warning'); return; }
+  fwPost('/exceptions/'+EXC_AID+'/detect-import', {found: picks}).then(function(j){
+    if (window.FW) FW.toast('Imported '+j.imported+' (skipped '+(j.skipped||0)+')', j.imported?'success':'info');
+    if (j.imported) location.reload();
   });
 }
 </script>

@@ -8,7 +8,7 @@ from datetime import datetime
 from flask import Flask, g, request
 
 from .config import get_config
-from .extensions import csrf, db, limiter, login_manager
+from .extensions import csrf, db, limiter, login_manager, migrate
 
 
 def _client_ip() -> str:
@@ -50,6 +50,7 @@ def create_app(config_override: object | None = None) -> Flask:
 
     # -- extensions -------------------------------------------------------
     db.init_app(app)
+    migrate.init_app(app, db)
     login_manager.init_app(app)
     csrf.init_app(app)
     limiter.init_app(app)
@@ -76,7 +77,10 @@ def create_app(config_override: object | None = None) -> Flask:
         if product == 'fortiadc':
             return redirect(url_for('product.fortiadc_home'))
         if product == 'fortiweb':
-            return redirect(url_for('workspace.index'))
+            from .services import device_context
+            if device_context.current_appliance() is not None:
+                return redirect(url_for('workspace.index'))
+            return redirect(url_for('architecture.index'))
         return redirect(url_for('product.select'))
 
     # -- product selection gate ------------------------------------------
@@ -129,6 +133,34 @@ def create_app(config_override: object | None = None) -> Flask:
             abort(403)
         return None
 
+    # -- device-first gate: per-device pages need a selected device ------
+    @app.before_request
+    def _device_gate():
+        from flask import session, redirect, url_for
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return None
+        if session.get('product') != 'fortiweb':
+            return None
+        ep = request.endpoint or ''
+        bp_name = ep.split('.', 1)[0]
+        device_bps = {'workspace', 'server_objects', 'web_protection',
+                      'exceptions', 'backups'}
+        if bp_name not in device_bps:
+            return None
+        from .services import device_context
+        va = request.view_args or {}
+        did = va.get('appliance_id', va.get('id'))
+        if did is not None:
+            try:
+                device_context.set_current(did)
+            except Exception:
+                pass
+            return None
+        if device_context.current_appliance() is None:
+            return redirect(url_for('architecture.index'))
+        return None
+
     # -- template globals -------------------------------------------------
     @app.context_processor
     def _inject_branding():
@@ -147,11 +179,54 @@ def create_app(config_override: object | None = None) -> Flask:
                 _bg = _store.banner_bg(prod['key'])
         except Exception:
             _bg = '#162940'
+        # FortiWeb config sections for the sidebar (live browsers only). Sourced
+        # from the catalog so it stays in sync; server_objects (own page) and the
+        # read-only Monitor have no menu → excluded.
+        try:
+            from .services import config_catalog as _cc
+            from .services import config_sections as _cs
+            # These 5 WAF protection areas were promoted to the top-level
+            # WAF group in the sidebar, so exclude them here to avoid showing
+            # them twice (WAF group + admin Configuration submenu).
+            _promoted = {'application_delivery', 'api_protection',
+                         'bot_mitigation', 'dos_protection', 'ip_protection'}
+            _cfg_nav = [
+                {'key': s.key, 'label': s.label, 'emoji': s.emoji}
+                for s in _cc.CONFIG_SECTIONS
+                if _cs.has_menu(s.key) and s.key not in _promoted
+            ]
+        except Exception:
+            _cfg_nav = []
+        try:
+            from .services import device_context as _dc
+            _cur_appl = _dc.current_appliance()
+        except Exception:
+            _cur_appl = None
         return {
             'product': prod,
+            'current_appliance': _cur_appl,
             'banner_bg': _bg,
             'now': datetime.utcnow(),
+            'config_sections_nav': _cfg_nav,
         }
+
+    # -- timezone-aware timestamp filter ---------------------------------
+    @app.template_filter('localtime')
+    def _localtime(dt, fmt='%Y-%m-%d %H:%M:%S'):
+        if not dt:
+            return '—'
+        try:
+            from datetime import timezone as _utc
+            from zoneinfo import ZoneInfo
+            from .services import settings_store as _store
+            tzname = _store.general().get('timezone') or 'UTC'
+            aware = dt.replace(tzinfo=_utc.utc) if dt.tzinfo is None else dt
+            return aware.astimezone(ZoneInfo(tzname)).strftime(fmt)
+        except Exception:
+            try:
+                return dt.strftime(fmt)
+            except Exception:
+                return str(dt)
 
     # -- self-healing CSRF errors ----------------------------------------
     # A stale/expired login (or any) form submitted with an old token used to
@@ -162,7 +237,16 @@ def create_app(config_override: object | None = None) -> Flask:
 
     @app.errorhandler(CSRFError)
     def _handle_csrf_error(exc):  # noqa: ANN001
-        from flask import flash, redirect, request, url_for
+        from flask import flash, redirect, request, url_for, jsonify
+        # JSON/XHR callers (the editor save/inject fetch calls) must get a JSON
+        # error, not a 302 redirect they can't parse (which silently aborts the
+        # save). Browsers carry the token via the global fetch wrapper; this is
+        # the defense-in-depth so a miss surfaces loudly. (2026-06-28)
+        wants_json = (request.is_json
+                      or "application/json" in (request.headers.get("Accept") or "")
+                      or request.headers.get("X-Requested-With") == "XMLHttpRequest")
+        if wants_json:
+            return jsonify(ok=False, error="CSRF token missing or expired \u2014 reload the page and retry"), 400
         flash("Your session expired or the form was stale \u2014 please try again.", "warning")
         ref = request.referrer or ""
         if ref.startswith(request.host_url):
@@ -215,7 +299,13 @@ def create_app(config_override: object | None = None) -> Flask:
         """
         from sqlalchemy import inspect, text
         adds = {
-            'templates': [('exceptions', 'TEXT')],
+            'templates': [
+                ('exceptions', 'TEXT'),
+                ('status', "VARCHAR(16) DEFAULT 'pending'"),
+                ('reject_reason', 'TEXT'),
+                ('reviewed_by', 'VARCHAR(64)'),
+                ('reviewed_at', 'DATETIME'),
+            ],
             'users': [('profile_id', 'INTEGER')],
             'appliances': [
                 ('hw_type', "VARCHAR(16) DEFAULT 'unknown'"),
@@ -224,6 +314,7 @@ def create_app(config_override: object | None = None) -> Flask:
             ],
         }
         insp = inspect(db.engine)
+        added: set[tuple[str, str]] = set()
         for table, cols in adds.items():
             try:
                 if not insp.has_table(table):
@@ -233,16 +324,32 @@ def create_app(config_override: object | None = None) -> Flask:
                     if col not in existing:
                         db.session.execute(text(f'ALTER TABLE {table} ADD COLUMN {col} {ddl}'))
                         db.session.commit()
+                        added.add((table, col))
             except Exception:  # noqa: BLE001 — never block boot on a migration
                 db.session.rollback()
 
+        # When the approval column is first introduced, existing templates
+        # predate the workflow (admin-authored) -> treat them as APPROVED so the
+        # fleet keeps working; new saves still default to 'pending'.
+        if ('templates', 'status') in added:
+            try:
+                db.session.execute(text(
+                    "UPDATE templates SET status='approved' "
+                    "WHERE status IS NULL OR status='' OR status='pending'"))
+                db.session.commit()
+            except Exception:  # noqa: BLE001
+                db.session.rollback()
+
     # -- database & seed --------------------------------------------------
-    with app.app_context():
-        db.create_all()
-        _ensure_columns()
-        _seed_profiles()
-        _seed_admin()
-        _assign_missing_profiles()
+    # Skippable so Alembic migration commands (and CI that manages its own
+    # schema) can import the app without create_all racing the migration.
+    if not os.environ.get("FORTINET_SKIP_DB_BOOTSTRAP"):
+        with app.app_context():
+            db.create_all()
+            _ensure_columns()
+            _seed_profiles()
+            _seed_admin()
+            _assign_missing_profiles()
 
     return app
 
@@ -259,7 +366,10 @@ def _register_blueprints(app: Flask) -> None:
         ("app.auth", "bp"),
         ("app.views.product", "bp"),
         ("app.views.appliances", "bp"),
+        ("app.views.firmware", "bp"),
+        ("app.views.release_notes", "bp"),
         ("app.views.workspace", "bp"),
+        ("app.views.objedit", "bp"),
         ("app.views.server_objects", "bp"),
         ("app.views.web_protection", "bp"),
         ("app.views.exceptions", "bp"),
@@ -278,11 +388,17 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.fleet_objects", "bp"),
         ("app.views.import_backup", "bp"),
         ("app.views.structure", "bp"),
+        ("app.views.classification", "bp"),
+        ("app.views.segments", "bp"),
+        ("app.views.naming", "bp"),
         ("app.views.scheduled_actions", "bp"),
         ("app.views.change_requests", "bp"),
         ("app.views.provisioning", "bp"),
         ("app.views.section_config", "bp"),
         ("app.views.settings", "bp"),
+        ("app.views.locks", "bp"),
+        ("app.views.database", "bp"),
+        ("app.views.system_backup", "bp"),
         ("app.api", "bp"),
     ]
 

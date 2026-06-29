@@ -1,9 +1,10 @@
 """Fleet objects — fleet-wide FortiWeb object browser (read-only).
 
 Web port of the desktop ``settings_page._fleet_objects_page``. Unlike the
-desktop (which reads a local object cache), this view aggregates the objects
-**live** across every FortiWeb appliance on each request — see
-``app/services/fleet_objects.py`` for the aggregation + short-TTL caching.
+desktop (which reads a local object cache), this view reads the objects
+**DB-first** from the local Postgres source of truth (device_objects) — the
+appliance is touched only by an explicit refresh / the Automation device_sync
+action, never on a page load. See ``app/services/fleet_objects.py``.
 
 Routes
   GET /fleet-objects?type=server_policy|wpp|server_pool|search&q=...

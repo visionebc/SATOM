@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Database — Source of Truth{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-database me-2 text-accent"></i>Database</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">The PostgreSQL source of truth — relational model, tables &amp; a read-only SQL console.</p>
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-3" id="dbTabs" role="tablist">
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-model" type="button">Relational model</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-tables" type="button">Tables</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-console" type="button">SQL console</button></li>
+</ul>
+
+<div class="tab-content">
+  <!-- Relational model — interactive ER DIAGRAM (nodes + FK lines) -->
+  <div class="tab-pane fade show active" id="tab-model">
+    <div class="card"><div class="card-body">
+      <div class="d-flex align-items-center mb-2">
+        <p class="text-muted small mb-0">{{ tables|length }} tables · {{ edges|length }} foreign-key relationships.
+          <span class="text-muted">Drag a table to move it, scroll to zoom, drag the canvas to pan; hover a table to highlight its relationships.</span></p>
+        <button class="btn btn-outline-light btn-sm ms-auto" type="button" data-bs-toggle="collapse" data-bs-target="#er-list">
+          <i class="bi bi-list-ul me-1"></i>Show as list</button>
+      </div>
+      <div id="er-diagram" style="width:100%;min-height:640px;"></div>
+
+      <!-- text fallback / accessible list -->
+      <div class="collapse mt-3" id="er-list">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover">
+            <thead><tr><th>Table</th><th>Columns</th><th>Primary key</th><th>References (FK → table.col)</th></tr></thead>
+            <tbody>
+            {% for t in tables %}
+              <tr>
+                <td class="fw-bold"><i class="bi bi-table me-1 text-muted"></i>{{ t.name }}</td>
+                <td>{{ t.columns }}</td>
+                <td><code>{{ t.pk|join(', ') }}</code></td>
+                <td class="small">
+                  {% for e in edges if e.from_table == t.name %}
+                    <span class="badge bg-dark border me-1">{{ e.from_col }} → {{ e.to_table }}.{{ e.to_col }}</span>
+                  {% endfor %}
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- Tables browser -->
+  <div class="tab-pane fade" id="tab-tables">
+    <div class="card"><div class="card-body">
+      <div class="d-flex gap-2 align-items-center mb-3">
+        <label class="small text-muted">Table</label>
+        <select id="tbl-select" class="form-select form-select-sm" style="max-width:300px">
+          <option value="">— pick a table —</option>
+          {% for n in table_names %}<option value="{{ n }}">{{ n }}</option>{% endfor %}
+        </select>
+        <span id="tbl-meta" class="small text-muted"></span>
+        <div class="ms-auto btn-group btn-group-sm">
+          <button id="tbl-prev" class="btn btn-outline-light" disabled>&laquo; Prev</button>
+          <button id="tbl-next" class="btn btn-outline-light" disabled>Next &raquo;</button>
+        </div>
+      </div>
+      <div class="table-responsive"><table class="table table-sm table-striped" id="tbl-data">
+        <thead></thead><tbody></tbody></table></div>
+    </div></div>
+  </div>
+
+  <!-- SQL console -->
+  <div class="tab-pane fade" id="tab-console">
+    <div class="card"><div class="card-body">
+      <div class="alert alert-info py-2 small mb-2"><i class="bi bi-shield-lock me-1"></i>
+        Read-only: only <code>SELECT</code> / <code>WITH</code> / <code>EXPLAIN</code> run. Writes &amp; DDL are rejected; queries run in a rolled-back, time-limited transaction.</div>
+      <textarea id="sql-input" class="form-control font-monospace mb-2" rows="5"
+        placeholder="SELECT name, deployment_mode, status FROM device_server_policies LIMIT 50;"></textarea>
+      <div class="d-flex gap-2 mb-2">
+        <button id="sql-run" class="btn btn-fw-primary btn-sm"><i class="bi bi-play-fill me-1"></i>Run</button>
+        <form id="sql-csv-form" method="post" action="{{ url_for('database.query_csv') }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="sql" id="sql-csv-field">
+          <button type="submit" class="btn btn-outline-light btn-sm"><i class="bi bi-download me-1"></i>Export CSV</button>
+        </form>
+        <span id="sql-meta" class="small text-muted align-self-center"></span>
+      </div>
+      <div id="sql-error" class="alert alert-danger py-2 small d-none"></div>
+      <div class="table-responsive"><table class="table table-sm table-striped" id="sql-data">
+        <thead></thead><tbody></tbody></table></div>
+    </div></div>
+  </div>
+</div>
+
+<script id="er-data" type="application/json">{"tables": {{ tables|tojson }}, "edges": {{ edges|tojson }}}</script>
+<script src="{{ url_for('static', filename='js/er_diagram.js') }}"></script>
+<script>
+(function(){
+  function tok(){ var m=document.querySelector('meta[name="csrf-token"]'); return m?m.content:''; }
+
+  // ----- ER diagram -----
+  var erData=JSON.parse(document.getElementById('er-data').textContent);
+  var erRendered=false;
+  function renderER(){
+    if(erRendered) return; erRendered=true;
+    window.initERDiagram('er-diagram', erData.tables, erData.edges);
+  }
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', renderER); }
+  else { renderER(); }
+
+  // ----- Tables browser -----
+  var sel=document.getElementById('tbl-select'), meta=document.getElementById('tbl-meta');
+  var prev=document.getElementById('tbl-prev'), next=document.getElementById('tbl-next');
+  var page=1, pages=1, cur='';
+  function loadTable(){
+    if(!cur){ return; }
+    fetch('{{ url_for("database.table") }}?name='+encodeURIComponent(cur)+'&page='+page)
+      .then(function(r){return r.json();}).then(function(j){
+        page=j.page; pages=j.pages;
+        meta.textContent=j.row_count+' rows · page '+j.page+'/'+j.pages;
+        prev.disabled=(page<=1); next.disabled=(page>=pages);
+        var th='<tr>'+(j.columns||[]).map(function(c){return '<th class="small">'+c+'</th>';}).join('')+'</tr>';
+        document.querySelector('#tbl-data thead').innerHTML=th;
+        document.querySelector('#tbl-data tbody').innerHTML=(j.rows||[]).map(function(row){
+          return '<tr>'+row.map(function(c){return '<td class="small">'+(c===''?'<span class="text-muted">∅</span>':escapeHtml(c))+'</td>';}).join('')+'</tr>';
+        }).join('');
+      });
+  }
+  sel.onchange=function(){ cur=sel.value; page=1; loadTable(); };
+  prev.onclick=function(){ if(page>1){page--; loadTable();} };
+  next.onclick=function(){ if(page<pages){page++; loadTable();} };
+
+  // ----- SQL console -----
+  var input=document.getElementById('sql-input'), errBox=document.getElementById('sql-error'),
+      smeta=document.getElementById('sql-meta');
+  document.getElementById('sql-run').onclick=function(){
+    errBox.classList.add('d-none');
+    document.getElementById('sql-csv-field').value=input.value;
+    fetch('{{ url_for("database.query") }}',{method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':tok()},
+      body:JSON.stringify({sql:input.value})}).then(function(r){return r.json();}).then(function(j){
+        if(j.error){ errBox.textContent=j.error; errBox.classList.remove('d-none');
+          document.querySelector('#sql-data thead').innerHTML='';
+          document.querySelector('#sql-data tbody').innerHTML=''; smeta.textContent=''; return; }
+        smeta.textContent=j.row_count+' rows'+(j.truncated?' (truncated)':'');
+        document.querySelector('#sql-data thead').innerHTML='<tr>'+(j.columns||[]).map(function(c){return '<th class="small">'+escapeHtml(c)+'</th>';}).join('')+'</tr>';
+        document.querySelector('#sql-data tbody').innerHTML=(j.rows||[]).map(function(row){
+          return '<tr>'+row.map(function(c){return '<td class="small">'+(c===''?'<span class="text-muted">∅</span>':escapeHtml(c))+'</td>';}).join('')+'</tr>';
+        }).join('');
+      });
+  };
+  function escapeHtml(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+})();
+</script>
+{% endblock %}

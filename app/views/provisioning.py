@@ -22,6 +22,7 @@ from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
 from ..models import Appliance, Permission, Template
+from ..services import field_catalog as fc
 from ..services import provisioning as prov
 from ..services.audit import log_action
 from ..services.templates import delete_template, get_template, list_templates
@@ -40,42 +41,62 @@ def _system_template_or_404(template_id: int) -> Template:
     return template
 
 
-def _render_form(*, profile_name: str = '', rows=None, template_id=None):
+def _render_form(*, profile_name: str = '', rows=None, template_id=None, line: str = '8.0'):
     """Render the profile builder (shared by /new and /<id>/edit)."""
     specs = prov.available_specs()
+    product = 'fortiweb'
+    lines = fc.available_lines(product) or ['8.0']
+    if line not in lines:
+        line = lines[0]
+    keys = [s.key for s in specs]
+    schemas_by_line = {lin: fc.schemas_for_line(product, lin, keys) for lin in lines}
     return render_template(
         'provisioning/form.html',
         specs=specs,
-        spec_keys=[s.key for s in specs],
+        spec_keys=keys,
         profile_name=profile_name,
         rows=rows or [],
         template_id=template_id,
+        line=line,
+        available_lines=lines,
+        schemas_by_line=schemas_by_line,
     )
 
 
 def _collect_rows():
-    """Read the repeatable item editor into ``(name, rows)``.
+    """Read the repeatable item editor into ``(name, line, rows)``.
 
-    Each row of the form declares itself via a hidden ``rows`` input carrying its
-    index; the per-field names are ``key_<i>``/``mkey_<i>``/``data_<i>``/
-    ``singleton_<i>``. Pure form-reading — never raises, so the builder can be
-    re-rendered with the operator's input intact on a validation error.
+    Each row declares its index via a hidden ``rows`` input; per-field names are
+    ``key_<i>``/``mkey_<i>``/``data_<i>``/``singleton_<i>`` plus typed schema
+    inputs ``f_<i>_<fieldname>``. Pure form-reading — never raises, so the
+    builder can be re-rendered with the operator's input intact on an error.
     """
     name = (request.form.get('name') or '').strip()
+    line = (request.form.get('line') or '8.0').strip()
     rows = []
     for idx in request.form.getlist('rows'):
+        prefix = f'f_{idx}_'
+        fields = {k[len(prefix):]: v for k, v in request.form.items()
+                  if k.startswith(prefix)}
         rows.append({
             'key': (request.form.get(f'key_{idx}') or '').strip(),
             'mkey': (request.form.get(f'mkey_{idx}') or '').strip(),
             'data': request.form.get(f'data_{idx}') or '',
             'singleton': request.form.get(f'singleton_{idx}') is not None,
+            'fields': fields,
         })
-    return name, rows
+    return name, line, rows
 
 
-def _build_items(rows):
-    """Turn collected rows into ``ProvisionItem``s. Raises ``ValueError`` on a bad
-    catalog key or malformed JSON so the caller can flash and re-render."""
+def _build_items(rows, line, product='fortiweb'):
+    """Turn collected rows into ``ProvisionItem``s.
+
+    If the row's object has a field schema for ``line`` AND the operator filled
+    typed inputs, the payload is built + validated via ``field_catalog.coerce``;
+    otherwise the raw ``data`` JSON is parsed (back-compat / schemaless objects).
+    Raises ``ValueError`` (bad key / bad JSON / failed validation) so the caller
+    can flash and re-render.
+    """
     items = []
     for row in rows:
         key = row['key']
@@ -84,12 +105,16 @@ def _build_items(rows):
         spec = prov.CATALOG_BY_KEY.get(key)
         if spec is None:
             raise ValueError(f"Unknown provisioning item: {key}")
-        try:
-            data = json.loads(row['data'] or '{}')
-        except ValueError as exc:
-            raise ValueError(f"Item '{spec.label}': data is not valid JSON ({exc})") from exc
-        if not isinstance(data, dict):
-            raise ValueError(f"Item '{spec.label}': data must be a JSON object")
+        schema = fc.load_object_schema(product, line, key)
+        if schema is not None and row.get('fields'):
+            data = fc.coerce(schema, row['fields'])        # typed + validated
+        else:
+            try:
+                data = json.loads(row['data'] or '{}')
+            except ValueError as exc:
+                raise ValueError(f"Item '{spec.label}': data is not valid JSON ({exc})") from exc
+            if not isinstance(data, dict):
+                raise ValueError(f"Item '{spec.label}': data must be a JSON object")
         item = prov.ProvisionItem.from_spec(spec, data, mkey=row['mkey'] or None)
         item.singleton = row['singleton']  # honour the explicit checkbox
         items.append(item)
@@ -98,18 +123,18 @@ def _build_items(rows):
 
 def _save(*, template_id):
     """Validate + persist the builder form. On error re-renders with input kept."""
-    name, rows = _collect_rows()
+    name, line, rows = _collect_rows()
     try:
         if not name:
             raise ValueError("Profile name is required")
-        items = _build_items(rows)
+        items = _build_items(rows, line)
         if not items:
             raise ValueError("Add at least one provisioning item")
-        profile = prov.SystemProfile(name, items)
+        profile = prov.SystemProfile(name, items, line=line)
         row = prov.save_profile(profile, author=getattr(current_user, 'username', '') or '')
     except ValueError as exc:
         flash(f"Could not save profile: {exc}", 'danger')
-        return _render_form(profile_name=name, rows=rows, template_id=template_id)
+        return _render_form(profile_name=name, rows=rows, template_id=template_id, line=line)
     log_action('provisioning.save', target=row.name,
                detail=f'v{row.version}, {len(items)} item(s)')
     flash(f'System profile "{row.name}" saved (v{row.version}).', 'success')
@@ -138,7 +163,7 @@ def new():
     """Author a new system profile."""
     if request.method == 'POST':
         return _save(template_id=None)
-    return _render_form()
+    return _render_form(line=(request.args.get('line') or '8.0'))
 
 
 @bp.route('/<int:template_id>/edit', methods=['GET', 'POST'])
@@ -156,7 +181,8 @@ def edit(template_id: int):
         'singleton': it.singleton,
         'data': json.dumps(it.data, indent=2, sort_keys=True) if it.data else '{}',
     } for it in profile.items]
-    return _render_form(profile_name=profile.name, rows=rows, template_id=template_id)
+    return _render_form(profile_name=profile.name, rows=rows,
+                        template_id=template_id, line=profile.line)
 
 
 @bp.route('/<int:template_id>/apply', methods=['POST'])
@@ -172,6 +198,12 @@ def apply(template_id: int):
     """
     template = _system_template_or_404(template_id)
     profile = prov.SystemProfile.from_template(template)
+
+    target_hostname = (request.form.get('target_hostname') or '').strip()
+    change_id = (request.form.get('change_id') or '').strip()
+    if not target_hostname or not change_id:
+        flash('Hostname and Change ID are required.', 'warning')
+        return redirect(url_for('provisioning.index'))
 
     mode = request.form.get('mode', 'selected')
     selected_ids = []
@@ -203,26 +235,28 @@ def apply(template_id: int):
     if not confirmed:
         preview = prov.apply(profile, device_ids, dry_run=True)
         log_action('provisioning.preview', target=profile.name,
-                   detail=f'{mode}, {len(target_appliances)} device(s)')
+                   detail=f'{mode}, {len(target_appliances)} device(s), host={target_hostname}, change={change_id}')
         return render_template(
             'provisioning/apply.html',
             phase='preview', prof_name=profile.name, template_id=template_id,
             preview=preview, result=None,
             mode=mode, device_ids=device_ids,
             target_desc=target_desc, target_count=len(target_appliances),
+            target_hostname=target_hostname, change_id=change_id,
         )
 
     # Confirmed -> real canary-gated write to live devices.
-    flash('Applying system profile to LIVE devices — canary device writes first.', 'warning')
+    flash(f'Deploying [{change_id}] to {target_hostname} — canary device writes first.', 'warning')
     result = prov.apply(profile, device_ids, dry_run=False, canary=1)
     log_action('provisioning.apply', target=profile.name,
-               detail=f'{mode}, aborted={result.get("aborted")}')
+               detail=f'{mode}, host={target_hostname}, change={change_id}, aborted={result.get("aborted")}')
     return render_template(
         'provisioning/apply.html',
         phase='result', prof_name=profile.name, template_id=template_id,
         preview=None, result=result,
         mode=mode, device_ids=device_ids,
         target_desc=target_desc, target_count=len(target_appliances),
+        target_hostname=target_hostname, change_id=change_id,
     )
 
 

@@ -63,7 +63,13 @@ GRANULAR_PERMISSIONS: list[dict] = [
     _p("network.apply", "Apply network", "Push network-object changes to a device"),
 
     _p("operations.view", "View operations", "See provisioning, templates, schedules, change requests"),
-    _p("operations.apply", "Run operations", "Provision, apply templates, run scheduled actions"),
+    _p("operations.apply", "Run operations", "Provision, run scheduled actions, roll a template out to the fleet"),
+    _p("operations.template_save", "Save templates",
+       "Create or edit a template (saved as a pending draft)"),
+    _p("operations.template_apply", "Apply template to a device",
+       "Push a template's config to a single appliance (any approval status)"),
+    _p("operations.template_approve", "Approve templates",
+       "Approve or reject a pending template, making it fleet-deployable", admin_only=True),
 
     _p("backups.view", "View backups", "List existing backups"),
     _p("backups.create", "Create backups", "Download configuration backups"),
@@ -113,6 +119,8 @@ _DERIVE: dict[str, set[str]] = {
         "protection.edit", "protection.apply",
         "network.edit", "network.apply",
         "operations.apply",
+        "operations.template_save", "operations.template_apply",
+        "operations.template_approve",
         "appliances.edit", "appliances.apply",
     },
     "registry_edit": {"registry.edit"},
@@ -161,6 +169,7 @@ _OPERATOR_EXTRA = {
     "protection.edit", "protection.apply",
     "network.edit", "network.apply",
     "operations.apply",
+    "operations.template_save", "operations.template_apply",
     "appliances.edit", "appliances.apply",
 }
 

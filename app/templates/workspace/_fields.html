@@ -1,0 +1,76 @@
+{# Shared FortiWeb field-input macros for the editable Server Policy workspace.
+
+   fld(f, actions): render one device field as its FortiWeb-equivalent widget.
+   The wrapper carries the field's conditional-visibility rule (f.vis) as a
+   data-vis attribute the page evaluates live (mirrors the desktop GUI's
+   show/hide as Deployment Mode / a driver toggle changes). Reference (ref)
+   fields get the native FortiWeb dropdown affordances:
+     ✎  edit the selected object        ＋  create a new one
+   actions=false (used inside the ref-edit modal) hides ✎/＋ so editing a
+   referenced object doesn't recurse modal-in-modal. #}
+{# switch(): an on/off toggle that REPLACES the old enable/disable <select>.
+   It is a styled checkbox whose .value is kept canonical ('enable'/'disable')
+   by the inline fwSync() (static/js/main.js) on every input/change — so the
+   save / dirty-tracking / live-visibility code that reads input.value keeps
+   working unchanged, and it behaves identically on every page that renders the
+   `fld` macro (no per-page JS wiring). `key`='' omits data-key (e.g. the
+   content-routing default switch read by class instead). `input_cls` lets a
+   caller swap the marker class (default `fw-input` = tracked by a scope save). #}
+{% macro switch(key, on, on_label='Enabled', off_label='Disabled', cls='', input_cls='fw-input') %}
+<label class="fw-toggle-sw {{ cls }}">
+  <input type="checkbox" class="{{ input_cls }} fw-toggle"{% if key %} data-key="{{ key }}"{% endif %}
+         value="{{ 'enable' if on else 'disable' }}" data-orig="{{ 'enable' if on else 'disable' }}"
+         data-on="{{ on_label }}" data-off="{{ off_label }}"
+         oninput="fwSync(this)" onchange="fwSync(this)"{{ ' checked' if on else '' }}>
+  <span class="fw-toggle-sw-track" aria-hidden="true"></span>
+  <span class="fw-toggle-sw-text">{{ on_label if on else off_label }}</span>
+</label>
+{% endmacro %}
+
+{% macro fld(f, actions=true) %}
+<div class="fw-fld"{% if f.vis %} data-vis='{{ f.vis|tojson }}' data-field="{{ f.key }}"{% endif %}>
+  <label class="fw-fld-label">{{ f.label }} <span class="fw-key">{{ f.key }}</span></label>
+  {% if f.widget == 'toggle' %}
+    {{ switch(f.key, f.on) }}
+  {% elif f.widget == 'deploy' %}
+    <select class="form-select form-select-sm fw-input fw-deploy" data-key="{{ f.key }}" data-orig="{{ f.value }}">
+      {% for o in f.options %}<option value="{{ o.value }}" {{ 'selected' if o.value == f.value }}>{{ o.label }}</option>{% endfor %}
+    </select>
+  {% elif f.widget == 'enum' %}
+    {% set vals = f.options or [] %}
+    <select class="form-select form-select-sm fw-input" data-key="{{ f.key }}" data-orig="{{ f.value }}">
+      {% if not f.value %}<option value="" selected>— choose —</option>{% endif %}
+      {% if f.value and f.value not in vals %}<option value="{{ f.value }}" selected>{{ f.value }}</option>{% endif %}
+      {% for o in vals %}<option value="{{ o }}" {{ 'selected' if o == f.value }}>{{ o }}</option>{% endfor %}
+    </select>
+  {% elif f.widget == 'ref' %}
+    <div class="fw-ref">
+      <select class="form-select form-select-sm fw-input fw-ref-select" data-key="{{ f.key }}" data-orig="{{ f.value }}" data-ref="{{ f.ref }}">
+        <option value="">— none —</option>
+        {% if f.value %}<option value="{{ f.value }}" selected>{{ f.value }}</option>{% endif %}
+      </select>
+      {% if actions %}
+        <button type="button" class="btn btn-sm btn-fw-outline fw-edit-ref" data-ref="{{ f.ref }}" data-key="{{ f.key }}" title="Edit the selected object">✎</button>
+        {% if f.create_new %}<button type="button" class="btn btn-sm btn-fw-outline fw-create" data-ref="{{ f.ref }}" data-key="{{ f.key }}" title="Create new">＋</button>{% endif %}
+      {% endif %}
+    </div>
+  {% elif f.widget == 'combo' %}
+    {% set vals = f.options or [] %}
+    <input type="text" class="form-control form-control-sm fw-input" data-key="{{ f.key }}" data-orig="{{ f.value }}" value="{{ f.value }}" list="dl-{{ f.key }}" autocomplete="off" placeholder="type or pick a value">
+    <datalist id="dl-{{ f.key }}">{% for o in vals %}<option value="{{ o }}">{% endfor %}</datalist>
+  {% elif f.widget == 'number' %}
+    <input type="number" class="form-control form-control-sm fw-input" data-key="{{ f.key }}" data-orig="{{ f.value }}" value="{{ f.value }}">
+  {% else %}
+    <input type="text" class="form-control form-control-sm fw-input" data-key="{{ f.key }}" data-orig="{{ f.value }}" value="{{ f.value }}">
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% macro savebar(label, fn) %}
+<div class="fw-savebar">
+  <span class="fw-dirty-note text-muted">No unsaved changes</span>
+  <button type="button" class="btn btn-sm btn-fw-primary fw-save" onclick="{{ fn or 'saveScope' }}(this)">
+    <i class="bi bi-check2-circle me-1"></i>{{ label or 'Review & save' }}
+  </button>
+</div>
+{% endmacro %}

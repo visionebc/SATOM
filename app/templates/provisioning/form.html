@@ -54,10 +54,18 @@
               onclick="removeRow(this)"><i class="bi bi-trash"></i></button>
     </div>
   </div>
+  {# Typed fields (rendered by JS from the embedded schema for the active line). #}
+  <div class="prov-fields mt-2" data-idx="{{ idx }}"></div>
+
+  {# Advanced / fallback raw-JSON editor (shown for schemaless objects or on demand). #}
   <div class="mt-2">
-    <label class="fw-form-label">Data (JSON)</label>
-    <textarea class="form-control" name="data_{{ idx }}" rows="5" spellcheck="false"
-              style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;">{{ row.data if row else '{}' }}</textarea>
+    <a href="javascript:void(0)" class="prov-json-toggle" style="font-size:12px;"
+       onclick="toggleJson('{{ idx }}')"><i class="bi bi-braces me-1"></i>Advanced (JSON)</a>
+    <div class="prov-json mt-1" data-idx="{{ idx }}" style="display:none;">
+      <label class="fw-form-label">Data (JSON)</label>
+      <textarea class="form-control prov-data" name="data_{{ idx }}" rows="5" spellcheck="false"
+                style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;">{{ row.data if row else '{}' }}</textarea>
+    </div>
   </div>
 </div>
 {% endmacro %}
@@ -81,6 +89,15 @@
       <label class="fw-form-label">Name <span class="text-danger">*</span></label>
       <input type="text" class="form-control" name="name" value="{{ profile_name }}"
              placeholder="e.g. fortiweb-baseline" required autocomplete="off">
+      <div class="mt-3">
+        <label class="fw-form-label">Firmware line <span class="text-muted">(field schema source)</span></label>
+        <select class="form-select" name="line" id="lineSelect" style="max-width:240px;" onchange="onLineChange(this.value)">
+          {% for l in available_lines %}
+          <option value="{{ l }}" {{ 'selected' if l == line else '' }}>{{ l }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">fw1 = 8.0 (internal), fw2 = 7.6 (external). Switching re-renders fields; entered values are kept by name.</div>
+      </div>
     </div>
   </div>
 
@@ -117,41 +134,146 @@
 
 {% block scripts %}
 <script>
+window.__FIELD_SCHEMAS = {{ schemas_by_line | tojson }};   // {line: {objectKey: schema|null}}
+window.__SCHEMA_LINE   = {{ line | tojson }};
+
+function _schemaFor(key) {
+  var byLine = window.__FIELD_SCHEMAS[window.__SCHEMA_LINE] || {};
+  return byLine[key] || null;
+}
+
+function _esc(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+
+function _inputFor(idx, f, value) {
+  var id = 'f_' + idx + '_' + f.name, nm = id;
+  var v = (value === undefined || value === null) ? (f.default || '') : value;
+  if (f.type === 'bool') {
+    var on = (String(v) !== '' && String(v) !== f.false_value && String(v) !== '0' && String(v) !== 'false');
+    return '<div class="form-check mt-1"><input class="form-check-input prov-f" type="checkbox" id="' + id +
+           '" name="' + nm + '"' + (on ? ' checked' : '') + ' oninput="syncJson(this)" onchange="syncJson(this)"></div>';
+  }
+  if (f.type === 'select') {
+    var opts = (f.options || []).map(function (o) {
+      var sel = (String(o.value) === String(v)) ? ' selected' : '';
+      return '<option value="' + _esc(o.value) + '"' + sel + '>' + _esc(o.label || o.value) + '</option>';
+    }).join('');
+    return '<select class="form-select prov-f" id="' + id + '" name="' + nm + '" onchange="syncJson(this)"><option value="">—</option>' + opts + '</select>';
+  }
+  if (f.type === 'json' || f.type === 'csv') {
+    var ph = (f.type === 'csv') ? 'comma,separated,values' : 'JSON';
+    return '<textarea class="form-control prov-f" id="' + id + '" name="' + nm + '" rows="2" spellcheck="false" placeholder="' + ph + '" oninput="syncJson(this)" style="font-family:ui-monospace,monospace;font-size:12px;">' + _esc(v || '') + '</textarea>';
+  }
+  var itype = (f.type === 'password') ? 'password' : 'text';
+  return '<input class="form-control prov-f" type="' + itype + '" id="' + id + '" name="' + nm +
+         '" value="' + _esc(v) + '" placeholder="' + _esc(f.help || '') + '" oninput="syncJson(this)" autocomplete="off">';
+}
+
+function _readData(rowEl) {
+  var ta = rowEl.querySelector('.prov-data');
+  try { return JSON.parse(ta && ta.value ? ta.value : '{}'); } catch (e) { return {}; }
+}
+
+function renderFields(rowEl) {
+  var box = rowEl.querySelector('.prov-fields');
+  var idx = box.getAttribute('data-idx');
+  var key = rowEl.querySelector('.prov-key').value;
+  var jsonBox = rowEl.querySelector('.prov-json');
+  var schema = key ? _schemaFor(key) : null;
+  var current = _readData(rowEl);
+  if (!schema) {                      // no schema -> JSON editor is the primary UI
+    box.innerHTML = '';
+    if (jsonBox) { jsonBox.style.display = key ? 'block' : 'none'; }
+    return;
+  }
+  var groups = {};
+  (schema.fields || []).forEach(function (f) {
+    if ((schema.readonly || []).indexOf(f.name) !== -1) { return; }
+    var g = f.group || 'Basic';
+    (groups[g] = groups[g] || []).push(f);
+  });
+  var html = '';
+  ['Basic', 'Advanced'].forEach(function (g) {
+    if (!groups[g]) { return; }
+    html += '<div class="fw-form-label" style="margin-top:6px;font-weight:600;">' + g + '</div><div class="row g-2">';
+    groups[g].forEach(function (f) {
+      html += '<div class="col-md-6"><label class="fw-form-label">' + _esc(f.label) +
+              (f.required ? ' <span class="text-danger">*</span>' : '') + '</label>' +
+              _inputFor(idx, f, current[f.name]) +
+              (f.help ? '<div class="form-text">' + _esc(f.help) + '</div>' : '') + '</div>';
+    });
+    html += '</div>';
+  });
+  box.innerHTML = html;
+  if (jsonBox) { jsonBox.style.display = 'none'; }   // hidden but reachable via toggle
+  syncRow(rowEl);
+}
+
+// Serialize a row's typed inputs into its data_<i> JSON (keeps Advanced view truthful).
+function syncRow(rowEl) {
+  var key = rowEl.querySelector('.prov-key').value;
+  var schema = key ? _schemaFor(key) : null;
+  var ta = rowEl.querySelector('.prov-data');
+  var box = rowEl.querySelector('.prov-fields');
+  if (!schema || !ta || !box) { return; }
+  var idx = box.getAttribute('data-idx');
+  var obj = {};
+  (schema.fields || []).forEach(function (f) {
+    if ((schema.readonly || []).indexOf(f.name) !== -1) { return; }
+    var el = rowEl.querySelector('[name="f_' + idx + '_' + f.name + '"]');
+    if (!el) { return; }
+    if (f.type === 'bool') { obj[f.name] = el.checked ? f.true_value : f.false_value; return; }
+    var val = el.value.trim();
+    if (val === '') { return; }
+    if (f.type === 'number') { obj[f.name] = isNaN(+val) ? val : +val; }
+    else if (f.type === 'csv') { obj[f.name] = val.split(',').map(function (s) { return s.trim(); }).filter(Boolean); }
+    else if (f.type === 'json') { try { obj[f.name] = JSON.parse(val); } catch (e) { return; } }
+    else { obj[f.name] = val; }
+  });
+  ta.value = JSON.stringify(obj, null, 2);
+}
+function syncJson(el) { var r = el.closest('.prov-row'); if (r) { syncRow(r); } }
+
+function toggleJson(idx) {
+  var box = document.querySelector('.prov-json[data-idx="' + idx + '"]');
+  if (box) { box.style.display = (box.style.display === 'none') ? 'block' : 'none'; }
+}
+
+function onLineChange(line) {
+  window.__SCHEMA_LINE = line;
+  document.querySelectorAll('#rows .prov-row').forEach(function (r) { syncRow(r); renderFields(r); });
+}
+
 function syncEmpty() {
   var any = document.querySelectorAll('#rows .prov-row').length > 0;
   document.getElementById('emptyRows').style.display = any ? 'none' : '';
 }
-
 function addRow() {
   var box = document.getElementById('rows');
   var n = parseInt(box.getAttribute('data-next-index') || '0', 10);
   box.setAttribute('data-next-index', n + 1);
   var html = document.getElementById('rowTpl').innerHTML.replace(/__IDX__/g, n);
-  var tmp = document.createElement('div');
-  tmp.innerHTML = html.trim();
-  box.appendChild(tmp.firstElementChild);
-  syncEmpty();
+  var tmp = document.createElement('div'); tmp.innerHTML = html.trim();
+  var rowEl = tmp.firstElementChild;
+  box.appendChild(rowEl); renderFields(rowEl); syncEmpty();
 }
-
-function removeRow(btn) {
-  var row = btn.closest('.prov-row');
-  if (row) { row.remove(); }
-  syncEmpty();
-}
-
+function removeRow(btn) { var r = btn.closest('.prov-row'); if (r) { r.remove(); } syncEmpty(); }
 function onKeyChange(sel) {
-  var opt = sel.options[sel.selectedIndex];
-  if (!opt) { return; }
+  var opt = sel.options[sel.selectedIndex]; if (!opt) { return; }
   var row = sel.closest('.prov-row');
   var sw = row ? row.querySelector('.prov-singleton') : null;
   var flag = opt.getAttribute('data-singleton');
   if (sw && flag !== null) { sw.checked = (flag === '1'); }
+  if (row) { renderFields(row); }
 }
 
 document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('#rows .prov-row').forEach(function (r) { renderFields(r); });
   syncEmpty();
-  // Start with one blank row when authoring a fresh profile.
   if (!document.querySelectorAll('#rows .prov-row').length) { addRow(); }
+  var form = document.querySelector('form[method="POST"]');
+  if (form) { form.addEventListener('submit', function () {
+    document.querySelectorAll('#rows .prov-row').forEach(function (r) { syncRow(r); });
+  }); }
 });
 </script>
 {% endblock %}

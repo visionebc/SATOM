@@ -176,3 +176,28 @@ def git_configure(remote_url: str, token: str, branch: str) -> str:
         else:
             lines.append(f"# branch is already {branch!r}")
     return "\n\n".join(lines)
+
+
+def git_publish(message: str, paths: list[str]) -> str:
+    """Stage *paths*, commit with *message*, and push to origin (authed remote,
+    same token handling as :func:`git_pull`). Best-effort: a no-op commit (nothing
+    changed) or an unreachable remote is reported in the returned log, never raised.
+    Used by the Release-Notes scan to share the harvested corpus with the team."""
+    root = _repo_root()
+    token = _git_token()
+    clean = _redact_remote(_git_out(root, "remote", "get-url", "origin"))
+    redact = (token,) if token else ()
+    lines: list[str] = []
+
+    _run_git(root, ("add", *paths), lines, redact)
+    _run_git(root, ("commit", "-m", message), lines, redact)  # rc!=0 if nothing to commit
+    branch = _git_out(root, "rev-parse", "--abbrev-ref", "HEAD") or "HEAD"
+    if token and clean:
+        authed = _authed_remote(clean, token)
+        if authed:
+            _run_git(root, ("push", authed, branch), lines, redact)
+        else:
+            _run_git(root, ("push",), lines, redact)
+    else:
+        _run_git(root, ("push",), lines, redact)
+    return "\n\n".join(lines)

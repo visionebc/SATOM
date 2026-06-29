@@ -14,7 +14,12 @@ bp = Blueprint('backups', __name__, url_prefix='/backups')
 @require_permission(Permission.BACKUP)
 def index():
     appliances = Appliance.query.order_by(Appliance.name).all()
-    return render_template('backups/index.html', appliances=appliances)
+    from flask import redirect as _redir, url_for as _ufor
+    from ..services import device_context as _dc
+    _cur = _dc.current_appliance()
+    if _cur is None:
+        return _redir(_ufor('architecture.index'))
+    return _redir(_ufor('backups.list_backups', id=_cur.id))
 
 
 @bp.route('/<int:id>')

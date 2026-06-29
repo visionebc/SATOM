@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ 'New' if create else 'Edit' }} {{ title }} — {{ appliance.name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('server_objects.overview', id=appliance.id) }}">{{ appliance.name }}</a></li>
+    <li class="breadcrumb-item active">{{ 'New ' ~ title if create else title }}{% if mkey %} · {{ mkey }}{% endif %}</li>
+  </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+{% if not create %}
+<div id="lock-guard" data-appliance-id="{{ appliance.id }}" data-resource-key="{{ collection }}:{{ mkey }}"></div>
+{% endif %}
+{% include "objedit/_body.html" %}
+{% if not create %}<script src="{{ url_for('static', filename='js/lock.js') }}"></script>{% endif %}
+{% endblock %}

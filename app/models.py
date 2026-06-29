@@ -532,6 +532,74 @@ class Template(db.Model):
 
 
 # ---------------------------------------------------------------------------
+# Baseline — a NAMED, scoped assembly of approved templates (the "armado").
+# Templates carry no scope; the baseline does: it is bound to a zone/line/
+# department and composed of several approved templates (one per section, or
+# several). This is what Provisioning pushes to the devices that match the scope.
+# ---------------------------------------------------------------------------
+
+class Baseline(db.Model):
+    __tablename__ = "baselines"
+    __table_args__ = (
+        db.UniqueConstraint("name", name="uq_baseline_name"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(128), nullable=False, index=True)
+    # Scope: plain strings matching Appliance.zone/line/department (catalogs live
+    # in settings_store). "" / NULL means "any" for that facet.
+    zone = db.Column(db.String(128), nullable=True, default="")
+    line = db.Column(db.String(128), nullable=True, default="")
+    department = db.Column(db.String(128), nullable=True, default="")
+    note = db.Column(db.Text, nullable=True, default="")
+    author = db.Column(db.String(64), nullable=True, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    items = db.relationship(
+        "BaselineTemplate",
+        backref="baseline",
+        cascade="all, delete-orphan",
+        order_by="BaselineTemplate.position",
+    )
+
+    def scope_dict(self) -> dict[str, str]:
+        return {"zone": self.zone or "", "line": self.line or "",
+                "department": self.department or ""}
+
+    def __repr__(self) -> str:
+        return f"<Baseline {self.name!r} zone={self.zone!r} line={self.line!r}>"
+
+
+class BaselineTemplate(db.Model):
+    """Junction: one approved template composing a baseline, tagged with the
+    section it occupies and an ordering position. ``section`` is denormalised
+    (derived from the template kind at link time) so the builder can group/sort
+    without re-deriving, and so a future WPP-SECTION template slots in cleanly."""
+
+    __tablename__ = "baseline_templates"
+    __table_args__ = (
+        db.UniqueConstraint("baseline_id", "template_id",
+                            name="uq_baseline_template"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    baseline_id = db.Column(
+        db.Integer, db.ForeignKey("baselines.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    template_id = db.Column(
+        db.Integer, db.ForeignKey("templates.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    section = db.Column(db.String(64), nullable=False, default="")
+    position = db.Column(db.Integer, nullable=False, default=0)
+
+    def __repr__(self) -> str:
+        return f"<BaselineTemplate b={self.baseline_id} t={self.template_id} {self.section}>"
+
+
+# ---------------------------------------------------------------------------
 # ChangeHistory — audit trail for live (and previewed) FortiWeb config writes
 # ---------------------------------------------------------------------------
 

@@ -116,9 +116,14 @@
                   <i class="bi bi-pencil"></i>
                 </a>
                 <button type="button" class="btn btn-sm btn-outline-info"
-                        title="Clone this profile (deep) or save it as a template"
+                        title="Deep-clone this profile on this device"
                         onclick="openCloneModal('{{ pname|e }}')">
                   <i class="bi bi-files"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-warning"
+                        title="Save as a template (admin approval, then fleet deploy)"
+                        onclick="openTemplateModal('{{ pname|e }}')">
+                  <i class="bi bi-bookmark-plus"></i>
                 </button>
                 {% endif %}
               </td>
@@ -202,6 +207,36 @@
     </div>
   </div>
 </div>
+
+<!-- Save-as-template modal (standalone row action) -->
+<div class="modal fade fw-modal" id="modalSaveTpl" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-bookmark-plus me-2"></i>Save as template</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted" style="font-size:13px;">
+          Save <strong id="tpl-source"></strong> from <strong>{{ appliance.name }}</strong> into the
+          template library. It lands as <strong>pending</strong>; an admin approves it in
+          <strong>WPP Templates</strong> and it then becomes available to deploy across the fleet.
+        </p>
+        <div class="mb-3">
+          <label class="fw-form-label">Template name <span class="text-danger">*</span></label>
+          <input type="text" class="form-control fw-form-control" id="tpl-name"
+                 placeholder="e.g. WPP-Ecommerce-Strict">
+        </div>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-fw-primary btn-sm" id="tpl-save-btn" onclick="saveTplConfirm()">
+            <i class="bi bi-bookmark-plus me-1"></i>Save as template
+          </button>
+        </div>
+        <div id="tpl-status" class="mt-3" style="font-size:13px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -257,9 +292,15 @@ function openCloneModal(name) {
   bootstrap.Modal.getOrCreateInstance(document.getElementById('modalCloneWpp')).show();
 }
 
+function _esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
 function _cloneStatus(html, kind) {
   var el = document.getElementById('clone-status');
-  var cls = kind === 'error' ? 'fw-alert-danger' : (kind === 'ok' ? 'fw-alert-success' : 'fw-alert-info');
+  var cls = kind === 'error' ? 'fw-alert-danger' : (kind === 'ok' ? 'fw-alert-success' : (kind === 'warn' ? 'fw-alert-warning' : 'fw-alert-info'));
   el.innerHTML = '<div class="fw-alert ' + cls + ' d-flex align-items-center gap-2 mb-0">' + html + '</div>';
 }
 
@@ -306,9 +347,32 @@ function cloneWppApply() {
     if (!d.ok && d.created === undefined) { _cloneStatus('Clone failed: ' + (d.error || 'unknown'), 'error'); return; }
     var msg = 'Created <strong>' + (d.created || 0) + '</strong> object(s)' +
       (d.failed ? ', <strong>' + d.failed + '</strong> failed' : '') + ' for "' + nn + '".';
-    _cloneStatus('<i class="bi bi-check-circle"></i><div>' + msg + ' Refresh to see it.</div>', d.failed ? 'error' : 'ok');
+    // Per-object failure detail: WHAT failed and WHY.
+    var detail = '';
+    if (d.failures && d.failures.length) {
+      detail = '<ul style="margin:6px 0 0;padding-left:18px;">';
+      d.failures.forEach(function (f) {
+        detail += '<li><strong>' + _esc(f.label || f.urn || '?') +
+          (f.mkey ? ' (' + _esc(f.mkey) + ')' : '') + '</strong>: ' +
+          _esc(f.reason || 'write failed') + '</li>';
+      });
+      detail += '</ul>';
+    }
+    var refreshed = !d.cache_refresh_failed;
+    if (d.failed) {
+      _cloneStatus('<i class="bi bi-exclamation-triangle"></i><div>' + msg + detail + '</div>', 'error');
+    } else if (!refreshed) {
+      // Clone landed on the box but the local cache did not refresh -- tell the user.
+      _cloneStatus('<i class="bi bi-check-circle"></i><div>' + msg +
+        ' <strong>Clone OK</strong>, but the local cache could not refresh automatically &mdash; ' +
+        'click <strong>Refresh</strong> on the page to see it.</div>', 'warn');
+    } else {
+      _cloneStatus('<i class="bi bi-check-circle"></i><div>' + msg + ' Refreshing&hellip;</div>', 'ok');
+    }
     var pre = document.getElementById('clone-plan'); pre.textContent = d.plan || pre.textContent;
-    if (!d.failed) { setTimeout(function () { window.location.reload(); }, 1500); }
+    // Only auto-reload when the clone fully succeeded AND the cache refreshed
+    // (else the reload would render stale data missing the new profile).
+    if (!d.failed && refreshed) { setTimeout(function () { window.location.reload(); }, 1500); }
   }).catch(function (e) { _busy('clone-apply-btn', false); _cloneStatus('Clone error: ' + e, 'error'); });
 }
 
@@ -325,6 +389,38 @@ function cloneWppSaveTemplate() {
       '</strong> (v' + d.version + ') as <strong>' + d.status + '</strong>. An admin can approve it in ' +
       '<a href="' + URL_TEMPLATES + '" class="alert-link">WPP Templates</a>.</div>', 'ok');
   }).catch(function (e) { _busy('clone-tpl-btn', false); _cloneStatus('Save error: ' + e, 'error'); });
+}
+
+// ── Save-as-template (standalone row action) ───────────────────────────────
+var TPL_SOURCE = '';
+
+function openTemplateModal(name) {
+  TPL_SOURCE = name;
+  document.getElementById('tpl-source').textContent = name;
+  document.getElementById('tpl-name').value = name;
+  document.getElementById('tpl-status').innerHTML = '';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSaveTpl')).show();
+}
+
+function _tplStatus(html, kind) {
+  var el = document.getElementById('tpl-status');
+  var cls = kind === 'error' ? 'fw-alert-danger' : (kind === 'ok' ? 'fw-alert-success' : 'fw-alert-info');
+  el.innerHTML = '<div class="fw-alert ' + cls + ' d-flex align-items-center gap-2 mb-0">' + html + '</div>';
+}
+
+function saveTplConfirm() {
+  var nn = (document.getElementById('tpl-name').value || '').trim() || TPL_SOURCE;
+  _busy('tpl-save-btn', true, 'Saving\u2026');
+  fetch(URL_SAVE_TPL, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source: TPL_SOURCE, name: nn })
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    _busy('tpl-save-btn', false);
+    if (!d.ok) { _tplStatus('Save failed: ' + _esc(d.error || 'unknown'), 'error'); return; }
+    _tplStatus('<i class="bi bi-bookmark-check"></i><div>Saved template <strong>' + _esc(d.name) +
+      '</strong> (v' + _esc(d.version) + ') as <strong>' + _esc(d.status) + '</strong>. An admin can approve it in ' +
+      '<a href="' + URL_TEMPLATES + '" class="alert-link">WPP Templates</a> for fleet deploy.</div>', 'ok');
+  }).catch(function (e) { _busy('tpl-save-btn', false); _tplStatus('Save error: ' + _esc(e), 'error'); });
 }
 </script>
 {% endblock %}

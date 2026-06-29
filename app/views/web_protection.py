@@ -207,9 +207,32 @@ def clone_apply(id):
         clone.apply_clone(items, _write, dry_run=False)
         created = [it for it in items if it.applied]
         failed = [it for it in items if (it.result or '').startswith('error')]
+        # Per-object failure detail for the modal: WHAT failed and WHY.
+        failures = [
+            {'label': it.label, 'mkey': it.mkey, 'urn': it.urn,
+             'reason': (it.result or '').split('error:', 1)[-1].strip() or 'write failed'}
+            for it in failed
+        ]
         log_action('wpp.clone', target=source, appliance_id=appliance.id,
                    detail='new_name=%s created=%d failed=%d' % (new_name, len(created), len(failed)))
+        # The clone wrote to the DEVICE; the overview is DB-first, so refresh the
+        # local source-of-truth here or the new profile won't show until a manual
+        # Refresh. Best-effort: the clone already succeeded regardless -- but if the
+        # refresh fails we tell the client so it can prompt a manual Refresh.
+        cache_refresh_failed = False
+        if created:
+            try:
+                from ..services import device_sync
+                device_sync.sync_device(
+                    appliance, publish=False,
+                    user_label=getattr(current_user, 'username', None),
+                    trigger='wpp.clone')
+            except Exception as _exc:  # noqa: BLE001
+                cache_refresh_failed = True
+                log_action('wpp.clone', target=source, appliance_id=appliance.id,
+                           detail='cache refresh failed: %s' % _exc)
         return jsonify(ok=(not failed), created=len(created), failed=len(failed),
+                       failures=failures, cache_refresh_failed=cache_refresh_failed,
                        new_name=new_name, items=[it.to_dict() for it in items],
                        plan=clone.render_plan(items))
     except Exception as exc:  # noqa: BLE001

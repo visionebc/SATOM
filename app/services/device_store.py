@@ -31,12 +31,29 @@ def _mkey_of(obj: dict) -> str:
     return ""
 
 
+# deep_capture nests referenced objects + by-parent sub-tables under this key
+# so the decomposer can split them out into child rows (parent_id hierarchy).
+DEEP_KEY = "_deep"
+
+
 def split_payload(obj: dict) -> tuple[dict, dict]:
-    """Split an object dict into (own scalar/simple fields, sub-tables)."""
+    """Split an object dict into (own scalar/simple fields, sub-tables).
+
+    A ``_deep`` mapping (emitted by services.deep_capture) is expanded so each
+    entry becomes a child sub-table: a nested object dict is wrapped as a
+    one-row list; a list-of-dicts passes through. This is what lands the full
+    WPP / Server-Policy graph into device_objects at depth with no schema change.
+    """
     own: dict = {}
     subs: dict = {}
     for k, v in obj.items():
-        if _is_subtable(v):
+        if k == DEEP_KEY and isinstance(v, dict):
+            for dk, dv in v.items():
+                if isinstance(dv, dict):
+                    subs[dk] = [dv]
+                elif _is_subtable(dv):
+                    subs[dk] = dv
+        elif _is_subtable(v):
             subs[k] = v
         else:
             own[k] = v

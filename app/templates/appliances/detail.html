@@ -90,6 +90,55 @@
   </div>
 </div>
 {% endif %}
+{% if appliance.is_cluster %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-card-header"><i class="bi bi-diagram-3 me-2"></i>HA Cluster — members
+    <span class="badge bg-secondary ms-2">{{ appliance.ha_mode or 'per_node' }}</span>
+    {% if appliance.ha_mode == 'vip' %}<span class="text-muted ms-2 small">VIP {{ appliance.ha_vip or appliance.host }}</span>{% endif %}
+  </div>
+  <div class="card-body">
+    {% set members = appliance.cluster_members() %}
+    {% if members %}
+    <div class="row g-3 mb-3" id="ha-members">
+      {% for m in members %}
+      <div class="col-md-6"><div class="border rounded p-3 h-100">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="fw-bold"><a href="{{ url_for('appliances.detail', id=m.id) }}" class="text-decoration-none">{{ m.name }}</a>
+              {% if m.ha_role_hint %}<span class="badge bg-light text-dark ms-1">{{ m.ha_role_hint }}</span>{% endif %}
+            </div>
+            <div class="text-muted small mono">{{ m.host }}:{{ m.port }}</div>
+            <div class="small mt-1">Live role: <span class="badge bg-secondary" data-live-role="{{ m.id }}">checking…</span></div>
+          </div>
+          {% if current_user.can('config_write') %}
+          <form method="post" action="{{ url_for('appliances.detach_member', id=appliance.id, mid=m.id) }}" data-fw-confirm-form="Detach member {{ m.name }} (it becomes standalone)?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-danger" title="Detach member"><i class="bi bi-box-arrow-right"></i></button>
+          </form>
+          {% endif %}
+        </div>
+      </div></div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted">No member nodes yet. Add the primary and secondary below.</p>
+    {% endif %}
+    {% if current_user.can('config_write') %}
+    <form method="post" action="{{ url_for('appliances.add_member', id=appliance.id) }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-3"><label class="form-label small mb-0">Member name</label><input class="form-control form-control-sm" name="member_name" placeholder="fw001p1" required></div>
+      <div class="col-md-3"><label class="form-label small mb-0">Host / mgmt IP</label><input class="form-control form-control-sm" name="member_host" placeholder="192.0.2.41" required></div>
+      <div class="col-md-2"><label class="form-label small mb-0">Username</label><input class="form-control form-control-sm" name="member_username" placeholder="admin"></div>
+      <div class="col-md-2"><label class="form-label small mb-0">Password</label><input type="password" class="form-control form-control-sm" name="member_password"></div>
+      <div class="col-md-1"><label class="form-label small mb-0">Role</label>
+        <select class="form-select form-select-sm" name="ha_role_hint"><option value="">—</option><option value="primary">P1</option><option value="secondary">P2</option></select></div>
+      <div class="col-md-1"><button class="btn btn-sm fw-btn-primary w-100" title="Add member"><i class="bi bi-plus-lg"></i></button></div>
+    </form>
+    <div class="form-text">Per-node: the host is the address writes route through when that node is primary. VIP: the host is the member's own management IP (read-only telemetry).</div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
 <div id="conn-result" class="alert d-none mb-3"></div>
 <div class="card shadow-sm">
   <div class="card-header fw-card-header">Recent Audit Events</div>

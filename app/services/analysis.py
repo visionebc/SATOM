@@ -664,3 +664,18 @@ def _empty_payload() -> dict:
                     "policies_without_appid": 0, "tlog_enabled": 0,
                     "objects": 0, "object_types": 0},
     }
+
+
+def deep_freshness(device_ids=None) -> dict:
+    """Per-device deep-layer capture timestamp (the honest freshness badge —
+    None means no deep capture yet). At fleet scale you refresh subsets, so a
+    single page-level 'data from DATE' would lie; this is per device."""
+    from ..models_cache import DeviceSnapshot
+    q = (db.session.query(DeviceSnapshot.appliance_id,
+                          func.max(DeviceSnapshot.generated_at))
+         .filter(DeviceSnapshot.layer == "deep")
+         .group_by(DeviceSnapshot.appliance_id))
+    if device_ids:
+        q = q.filter(DeviceSnapshot.appliance_id.in_(list(device_ids)))
+    return {str(aid): {"captured_at": ts.isoformat() if ts else None}
+            for aid, ts in q.all()}

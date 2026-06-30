@@ -16,8 +16,21 @@
       {% else %}
         <div class="small text-muted">No rediscovery has been run yet.</div>
       {% endif %}
+      <div class="small mt-1">
+        {% if deep_fresh and deep_fresh.captured_at %}
+          <span class="badge bg-info-subtle text-info-emphasis"><i class="bi bi-diagram-3 me-1"></i>Depth captured: {{ deep_fresh.captured_at }}</span>
+        {% else %}
+          <span class="badge bg-secondary-subtle text-secondary-emphasis"><i class="bi bi-diagram-3 me-1"></i>Depth: not captured</span>
+        {% endif %}
+      </div>
     </div>
-    <button id="redisc-start" class="btn fw-btn-primary"><i class="bi bi-play-fill me-1"></i>Start {{ 'rediscovery' if snapshot else 'discovery' }}</button>
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+      <div class="form-check form-switch mb-0" title="Also walk every WPP + Server Policy dependency graph (sub-tables, rule-lists, disabled signatures, exceptions) and cache it for the Analysis page. Slower — reads more from the box.">
+        <input class="form-check-input" type="checkbox" id="redisc-deep">
+        <label class="form-check-label small" for="redisc-deep">Capture full WPP + policy depth <span class="text-muted">(slow)</span></label>
+      </div>
+      <button id="redisc-start" class="btn fw-btn-primary"><i class="bi bi-play-fill me-1"></i>Start {{ 'rediscovery' if snapshot else 'discovery' }}</button>
+    </div>
   </div>
 </div>
 
@@ -52,8 +65,16 @@
     bar.classList.toggle('bg-success', p.state === 'done');
     if (p.state === 'running') {
       line.textContent = `${p.done}/${p.total} endpoints · ${p.objects} objects · ${p.section || ''}`;
+    } else if (p.state === 'deep-running') {
+      bar.classList.remove('bg-success');
+      bar.classList.add('progress-bar-striped', 'progress-bar-animated');
+      line.textContent = 'Deep capture (WPP + policy graph) running…';
     } else if (p.state === 'done') {
-      line.textContent = p.summary || `${p.objects} objects across ${p.section_count} sections`;
+      bar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+      let txt = p.summary || `${p.objects} objects across ${p.section_count} sections`;
+      if (p.deep_objects != null) txt += ` · depth: ${p.deep_objects} object(s)`;
+      if (p.deep_error) txt += ` · depth error: ${p.deep_error}`;
+      line.textContent = txt;
       startBtn.disabled = false;
     }
     errs.textContent = (p.errors && p.errors.length) ? (p.errors.length + ' endpoint error(s)') : '';
@@ -63,15 +84,18 @@
       const r = await fetch('{{ url_for("appliances.rediscover_status", id=appliance.id) }}');
       const p = await r.json();
       paint(p);
-      if (p.state === 'running') return;
+      if (p.state === 'running' || p.state === 'deep-running') return;
     } catch (e) { /* keep polling */ return; }
     clearInterval(timer); timer = null;
   }
   async function start() {
     startBtn.disabled = true;
     errs.textContent = '';
+    const deep = document.getElementById('redisc-deep').checked;
     const r = await fetch('{{ url_for("appliances.rediscover_start", id=appliance.id) }}', {
-      method: 'POST', headers: {'X-CSRFToken': token}
+      method: 'POST',
+      headers: {'X-CSRFToken': token, 'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'deep=' + (deep ? '1' : '0')
     });
     const j = await r.json();
     if (!j.started) { line.textContent = j.reason || 'could not start'; }
@@ -79,7 +103,7 @@
     if (!timer) timer = setInterval(poll, 1500);
   }
   startBtn.addEventListener('click', start);
-  {% if progress and progress.state == 'running' %}if (!timer) timer = setInterval(poll, 1500); startBtn.disabled = true;{% endif %}
+  {% if progress and progress.state in ['running', 'deep-running'] %}if (!timer) timer = setInterval(poll, 1500); startBtn.disabled = true;{% endif %}
 })();
 </script>
 {% endblock %}

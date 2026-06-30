@@ -394,10 +394,12 @@ def rediscover(id):
     appliance, _ = _fortiweb_or_404(id)
     if appliance is None:
         return redirect(url_for('appliances.detail', id=id))
-    from ..services import rediscovery
+    from ..services import rediscovery, analysis
+    deep_fresh = analysis.deep_freshness([appliance.id]).get(str(appliance.id))
     return render_template('appliances/rediscover.html', appliance=appliance,
                            progress=rediscovery.status(appliance.id),
                            snapshot=rediscovery.latest_snapshot_meta(appliance.id),
+                           deep_fresh=deep_fresh,
                            plan_size=len(rediscovery.sweep_plan()))
 
 
@@ -410,7 +412,10 @@ def rediscover_start(id):
         return jsonify({'started': False, 'reason': 'not a FortiWeb'}), 400
     from ..services import rediscovery
     from flask_login import current_user
-    res = rediscovery.start(appliance, by=getattr(current_user, 'username', ''))
+    deep = (request.form.get('deep') or request.args.get('deep') or '').lower() \
+        in ('1', 'true', 'on', 'yes')
+    res = rediscovery.start(appliance, by=getattr(current_user, 'username', ''),
+                            deep=deep)
     if res.get('started'):
         log_action('appliance.rediscover', target=appliance.name)
     return jsonify(res)

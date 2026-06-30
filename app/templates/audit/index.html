@@ -37,6 +37,12 @@
   </div>
   <div class="fw-card-body">
     <form method="GET" action="{{ url_for('audit.index') }}" class="row g-3 align-items-end">
+      <div class="col-md-12">
+        <label class="fw-form-label">Search (user · action · target · detail · error ID)</label>
+        <input type="text" name="q" class="form-control form-control-sm"
+               placeholder="Search all fields — e.g. an Error ID like 69881E81"
+               value="{{ request.args.get('q','') if request else '' }}">
+      </div>
       <div class="col-md-3">
         <label class="fw-form-label">Username</label>
         <input type="text" name="user" class="form-control form-control-sm"
@@ -52,6 +58,7 @@
           <option value="update" {{ 'selected' if request and request.args.get('action') == 'update' }}>Update</option>
           <option value="delete" {{ 'selected' if request and request.args.get('action') == 'delete' }}>Delete</option>
           <option value="backup" {{ 'selected' if request and request.args.get('action') == 'backup' }}>Backup</option>
+          <option value="error" {{ 'selected' if request and request.args.get('action') == 'error' }}>Error</option>
           <option value="api_call" {{ 'selected' if request and request.args.get('action') == 'api_call' }}>API Call</option>
         </select>
       </div>
@@ -78,7 +85,7 @@
 <div class="d-flex align-items-center justify-content-between mb-2">
   <span class="text-muted" style="font-size:13px;">
     Showing <strong>{{ entries|length if entries else 0 }}</strong> entries
-    {% if request and (request.args.get('user') or request.args.get('action') or request.args.get('date_from')) %}
+    {% if request and (request.args.get('q') or request.args.get('user') or request.args.get('action') or request.args.get('date_from')) %}
       (filtered)
     {% endif %}
   </span>
@@ -99,12 +106,20 @@
         <th>Target</th>
         <th>Detail</th>
         <th>IP Address</th>
+        <th style="width:34px;"></th>
       </tr>
     </thead>
     <tbody>
       {% if entries %}
         {% for e in entries %}
-        <tr>
+        <tr class="audit-row" style="cursor:pointer;"
+            onclick="openAuditDetail(this)"
+            data-ts="{{ e.timestamp | localtime }}"
+            data-user="{{ e.username or '—' }}"
+            data-action="{{ e.action or '—' }}"
+            data-target="{{ e.target or '' }}"
+            data-ip="{{ e.ip_address or '' }}"
+            data-extra="{{ e.extra or '' }}">
           <td class="text-nowrap mono" style="font-size:12px;">
             {{ e.timestamp | localtime }}
           </td>
@@ -116,7 +131,7 @@
           </td>
           <td>
             {% set action_lower = e.action|lower if e.action else '' %}
-            {% if 'delete' in action_lower %}
+            {% if 'delete' in action_lower or 'error' in action_lower %}
               <span class="fw-badge fw-badge-danger">{{ e.action }}</span>
             {% elif 'create' in action_lower or 'login' in action_lower %}
               <span class="fw-badge fw-badge-success">{{ e.action }}</span>
@@ -127,15 +142,16 @@
             {% endif %}
           </td>
           <td style="font-size:13px;">{{ e.target or '—' }}</td>
-          <td style="font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ e.detail or '' }}">
-            {{ e.detail or '—' }}
+          <td style="font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ e.extra or '' }}">
+            {{ e.extra or '—' }}
           </td>
           <td class="mono" style="font-size:12px;">{{ e.ip_address or '—' }}</td>
+          <td class="text-center text-muted"><i class="bi bi-chevron-right"></i></td>
         </tr>
         {% endfor %}
       {% else %}
         <tr>
-          <td colspan="6">
+          <td colspan="7">
             <div class="fw-empty-state">
               <div class="fw-empty-state-icon"><i class="bi bi-clipboard"></i></div>
               <div class="fw-empty-state-title">No audit entries</div>
@@ -170,6 +186,30 @@
   </div>
 </div>
 {% endif %}
+
+<!-- ===== Detail drawer (click a row to open) ===== -->
+<div id="auditDetailBackdrop" onclick="closeAuditDetail()"
+     style="position:fixed;inset:0;background:rgba(3,7,18,.55);backdrop-filter:blur(2px);
+            opacity:0;visibility:hidden;transition:opacity .2s ease,visibility .2s ease;z-index:1080;"></div>
+<aside id="auditDetailPanel"
+       style="position:fixed;top:0;right:0;height:100%;width:460px;max-width:92vw;
+              background:#0b1322;color:#eaf0fb;border-left:1px solid rgba(148,163,184,.16);
+              box-shadow:-24px 0 60px rgba(0,0,0,.5);transform:translateX(100%);
+              transition:transform .26s cubic-bezier(.4,0,.2,1);z-index:1081;
+              display:flex;flex-direction:column;">
+  <div style="display:flex;align-items:center;justify-content:space-between;
+              padding:16px 18px;background:#0e1626;border-bottom:1px solid rgba(148,163,184,.12);">
+    <h5 style="margin:0;font-size:15px;font-weight:700;color:#eaf0fb;">
+      <i class="bi bi-clipboard-data me-2" style="color:var(--fw-accent);"></i>Audit Entry
+    </h5>
+    <button type="button" onclick="closeAuditDetail()"
+            style="background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.18);
+                   color:#cdd7ea;border-radius:8px;width:30px;height:30px;cursor:pointer;line-height:1;">
+      <i class="bi bi-x-lg"></i>
+    </button>
+  </div>
+  <div id="auditDetailBody" style="padding:18px;overflow-y:auto;flex:1;font-size:13px;"></div>
+</aside>
 {% endblock %}
 
 {% block scripts %}
@@ -177,8 +217,84 @@
 function filterAudit(q) {
   q = q.toLowerCase();
   document.querySelectorAll('#auditTable tbody tr').forEach(function (row) {
+    if (!row.classList.contains('audit-row') && row.querySelector('.fw-empty-state')) return;
     row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
   });
 }
+
+function _esc(s) {
+  return (s == null ? '' : String(s)).replace(/[&<>"']/g, function (c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
+function _row(label, value, mono) {
+  var v = (value === '' || value == null) ? '—' : _esc(value);
+  return '<div style="margin-bottom:14px;">' +
+    '<div style="text-transform:uppercase;letter-spacing:.04em;font-size:10px;color:#7e8aa3;margin-bottom:3px;">' + _esc(label) + '</div>' +
+    '<div style="color:#eaf0fb;' + (mono ? 'font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-all;' : '') + '">' + v + '</div>' +
+  '</div>';
+}
+
+function openAuditDetail(rowEl) {
+  var d = rowEl.dataset;
+  var html = '';
+
+  // Highlighted Error ID (if the detail carries one)
+  var extra = d.extra || '';
+  var m = extra.match(/([0-9A-Fa-f]{8})/);
+  var eid = null;
+  if (extra.toLowerCase().indexOf('error_id') !== -1 && m) { eid = m[1].toUpperCase(); }
+  if (eid) {
+    html += '<div style="background:rgba(239,68,68,.10);border:1px solid rgba(239,68,68,.35);' +
+      'border-radius:10px;padding:12px 14px;margin-bottom:18px;">' +
+      '<div style="text-transform:uppercase;letter-spacing:.04em;font-size:10px;color:#f4a3a3;margin-bottom:4px;">Error reference</div>' +
+      '<div style="display:flex;align-items:center;gap:10px;">' +
+        '<span style="font-family:ui-monospace,Menlo,monospace;font-size:18px;font-weight:700;color:#fca5a5;letter-spacing:.06em;">' + _esc(eid) + '</span>' +
+        '<button type="button" onclick="copyErrId(this,\'' + _esc(eid) + '\')" ' +
+          'style="background:rgba(148,163,184,.14);border:1px solid rgba(148,163,184,.22);color:#cdd7ea;' +
+          'border-radius:7px;padding:3px 9px;font-size:11px;cursor:pointer;"><i class="bi bi-clipboard me-1"></i>Copy</button>' +
+      '</div>' +
+      '<div style="font-size:11px;color:#9aa6bd;margin-top:8px;">grep this ID in <span style="font-family:monospace;">data/logs/fortinet-manager.log</span> for the full traceback.</div>' +
+    '</div>';
+  }
+
+  html += _row('Timestamp', d.ts, true);
+  html += _row('User', d.user, false);
+  html += _row('Action', d.action, false);
+  html += _row('Target', d.target, true);
+  html += _row('IP Address', d.ip, true);
+
+  // Full detail payload
+  html += '<div style="margin-top:6px;">' +
+    '<div style="text-transform:uppercase;letter-spacing:.04em;font-size:10px;color:#7e8aa3;margin-bottom:4px;">Detail</div>' +
+    '<pre style="background:#070d18;border:1px solid rgba(148,163,184,.14);border-radius:9px;' +
+      'padding:12px;margin:0;color:#cdd7ea;font-size:12px;white-space:pre-wrap;word-break:break-word;' +
+      'max-height:42vh;overflow:auto;">' + (extra ? _esc(extra) : '—') + '</pre>' +
+  '</div>';
+
+  document.getElementById('auditDetailBody').innerHTML = html;
+  document.getElementById('auditDetailBackdrop').style.opacity = '1';
+  document.getElementById('auditDetailBackdrop').style.visibility = 'visible';
+  document.getElementById('auditDetailPanel').style.transform = 'translateX(0)';
+}
+
+function closeAuditDetail() {
+  document.getElementById('auditDetailBackdrop').style.opacity = '0';
+  document.getElementById('auditDetailBackdrop').style.visibility = 'hidden';
+  document.getElementById('auditDetailPanel').style.transform = 'translateX(100%)';
+}
+
+function copyErrId(btn, eid) {
+  navigator.clipboard.writeText(eid).then(function () {
+    var old = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied';
+    setTimeout(function () { btn.innerHTML = old; }, 1500);
+  });
+}
+
+document.addEventListener('keydown', function (ev) {
+  if (ev.key === 'Escape') closeAuditDetail();
+});
 </script>
 {% endblock %}

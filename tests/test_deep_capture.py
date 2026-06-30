@@ -43,3 +43,20 @@ def test_collect_server_policy_nests_pool_members():
     pool = graph["_deep"]["server_pool"]
     assert pool["name"] == "pool-a"
     assert pool["_deep"]["pserver-list"][0]["ip"] == "192.0.2.5"
+
+
+def test_deep_sections_lists_all_policies_and_wpps():
+    reader = FakeReader({
+        "cmdb/server-policy/policy": {"": [{"name": "pol-a", "server-pool": "pool-a"}]},
+        "cmdb/server-policy/server-pool": {"": [{"name": "pool-a"}]},
+        "cmdb/waf/web-protection-profile.inline-protection":
+            {"": [{"name": "wpp-a", "signature-rule": "sig-a"}]},
+        "cmdb/waf/signature": {"": [{"name": "sig-a"}]},
+    })
+    sections = deep_capture.deep_sections(reader)
+    assert "pol-a" in [p["name"] for p in sections["Server Policy"]["server_policy"]]
+    assert "wpp-a" in [w["name"]
+                       for w in sections["Web Protection"]["web_protection_profile"]]
+    # the WPP carries its bound signature set nested under _deep
+    wpp = sections["Web Protection"]["web_protection_profile"][0]
+    assert "signature" in wpp["_deep"]

@@ -1,4 +1,9 @@
-"""Guided-provisioning: catalog reconciliation, typed build, JSON fallback, render."""
+"""System-profile builder: standalone element format.
+
+The builder mirrors the desktop: the Element picker offers EVERY config (cmdb)
+object grouped by GUI section; per element the operator sets singleton/mkey and
+types the JSON values. No firmware-line / typed-schema layer.
+"""
 from __future__ import annotations
 
 from app.services import provisioning as prov
@@ -15,6 +20,15 @@ def test_all_16_base_specs_resolve_against_registry():
     assert len(prov.available_specs()) >= 16
 
 
+def test_catalog_offers_far_more_than_the_curated_baselines():
+    """all_specs() = every cmdb object, so the picker is not limited to the ~16
+    curated baselines (the whole point of matching the standalone)."""
+    all_keys = {s.key for s in prov.all_specs()}
+    curated = {s.key for s in prov.PROVISION_CATALOG}
+    assert curated <= all_keys
+    assert len(all_keys) > len(curated)
+
+
 from tests.conftest import login, admin_user_id
 
 
@@ -22,63 +36,70 @@ def _admin(app, client):
     login(client, admin_user_id(app))
 
 
-def test_new_form_renders_typed_inputs(app, client):
+def test_new_form_offers_objects_grouped_by_section(app, client):
     _admin(app, client)
     r = client.get("/provisioning/new")
     assert r.status_code == 200
     body = r.get_data(as_text=True)
-    assert "window.__FIELD_SCHEMAS" in body      # schemas embedded for the active line
-    assert 'name="line"' in body                  # line selector present
+    assert "<optgroup" in body            # objects grouped by GUI section
+    assert "Add element" in body
+    # the rejected typed-schema / firmware-line layer is gone
+    assert "__FIELD_SCHEMAS" not in body
+    assert 'name="line"' not in body
 
 
-def test_typed_post_builds_item_data_via_schema(app, client):
+def test_json_post_builds_item_data(app, client):
     _admin(app, client)
-    # one DNS row authored with typed fields f_0_primary / f_0_domain (no raw JSON)
     r = client.post("/provisioning/new", data={
-        "name": "guided-dns", "line": "8.0", "rows": "0",
-        "key_0": "dns", "mkey_0": "", "data_0": "{}",
-        "f_0_primary": "192.0.2.3", "f_0_secondary": "", "f_0_domain": "example.net",
+        "name": "json-dns", "rows": "0",
+        "key_0": "dns", "mkey_0": "", "data_0": '{"primary": "192.0.2.3", "domain": "example.net"}',
     }, follow_redirects=True)
     assert r.status_code == 200
     from app.services.templates import list_templates
     from app.models import Template
     with app.app_context():
-        prof = [t for t in list_templates(Template.KIND_SYSTEM) if t.name == "guided-dns"][0]
+        prof = [t for t in list_templates(Template.KIND_SYSTEM) if t.name == "json-dns"][0]
         item = prof.body_dict["items"][0]
         assert item["endpoint"] == "dns"
         assert item["data"] == {"primary": "192.0.2.3", "domain": "example.net"}
-        assert prof.body_dict["line"] == "8.0"
 
 
-def test_json_fallback_still_works_for_schemaless_object(app, client):
+def test_non_curated_object_is_provisionable(app, client):
+    """An object outside the curated baseline list (key == registry endpoint)
+    still builds: the catalog is the whole registry, not just the 16."""
     _admin(app, client)
-    # 'global' has no seed schema yet -> raw JSON path must still work
+    curated = {s.key for s in prov.PROVISION_CATALOG}
+    extra = next(s for s in prov.all_specs() if s.key not in curated)
     r = client.post("/provisioning/new", data={
-        "name": "raw-global", "line": "8.0", "rows": "0",
-        "key_0": "global", "mkey_0": "", "data_0": '{"hostname": "fw-test"}',
+        "name": "raw-any", "rows": "0",
+        "key_0": extra.key, "mkey_0": "", "data_0": '{"comment": "x"}',
     }, follow_redirects=True)
     assert r.status_code == 200
     from app.services.templates import list_templates
     from app.models import Template
     with app.app_context():
-        prof = [t for t in list_templates(Template.KIND_SYSTEM) if t.name == "raw-global"][0]
-        assert prof.body_dict["items"][0]["data"] == {"hostname": "fw-test"}
+        prof = [t for t in list_templates(Template.KIND_SYSTEM) if t.name == "raw-any"][0]
+        item = prof.body_dict["items"][0]
+        assert item["endpoint"] == extra.endpoint
+        assert item["data"] == {"comment": "x"}
 
 
-def test_typed_post_missing_required_reflashes(app, client):
+def test_bad_json_reflashes_with_input_kept(app, client):
     _admin(app, client)
     r = client.post("/provisioning/new", data={
-        "name": "bad-dns", "line": "8.0", "rows": "0",
-        "key_0": "dns", "data_0": "{}", "f_0_primary": "",  # required primary empty
+        "name": "bad-json", "rows": "0",
+        "key_0": "global", "data_0": "{not json",
     }, follow_redirects=True)
     assert r.status_code == 200
-    assert "is required" in r.get_data(as_text=True)
+    body = r.get_data(as_text=True)
+    assert "not valid JSON" in body
 
 
-def test_form_embeds_schema_for_dns_and_advanced_toggle(app, client):
+def test_unknown_key_reflashes(app, client):
     _admin(app, client)
-    body = client.get("/provisioning/new").get_data(as_text=True)
-    assert "window.__FIELD_SCHEMAS" in body and "window.__SCHEMA_LINE" in body
-    assert '"primary"' in body            # dns schema embedded
-    assert "Advanced (JSON)" in body      # per-row fallback toggle label
-    assert "prov-fields" in body          # typed-field container
+    r = client.post("/provisioning/new", data={
+        "name": "bad-key", "rows": "0",
+        "key_0": "definitely_not_an_endpoint", "data_0": "{}",
+    }, follow_redirects=True)
+    assert r.status_code == 200
+    assert "Unknown provisioning element" in r.get_data(as_text=True)

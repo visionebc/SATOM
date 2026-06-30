@@ -46,6 +46,16 @@
       <i class="bi bi-git me-1"></i>Git
     </button>
   </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-email" type="button">
+      <i class="bi bi-envelope me-1"></i>Email
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-auth" type="button">
+      <i class="bi bi-shield-lock me-1"></i>Authentication
+    </button>
+  </li>
   {% endif %}
   <li class="nav-item" role="presentation">
     <button class="nav-link {{ 'active' if not is_admin else '' }}" data-bs-toggle="tab" data-bs-target="#tab-security" type="button">
@@ -367,8 +377,326 @@
   </div>
   {% endif %}
 
+  {% if is_admin %}
+  <!-- EMAIL TAB -->
+  <div class="tab-pane fade" id="tab-email">
+    <div class="row g-3">
+      <div class="col-lg-7">
+        <div class="fw-card">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-envelope me-2 text-accent"></i>Email (SMTP) Configuration</span>
+          </div>
+          <div class="fw-card-body">
+            <form method="POST" action="{{ url_for('settings.save_email') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+              <div class="form-check form-switch mb-4">
+                <input class="form-check-input" type="checkbox" role="switch" name="enabled" id="em-enabled"
+                       {{ 'checked' if email_config.enabled else '' }}>
+                <label class="form-check-label" for="em-enabled">Enable email sending</label>
+                <div class="form-text">When off, the app never attempts to send (notices are only rendered).</div>
+              </div>
+
+              <div class="mb-4">
+                <label class="fw-form-label">Server type</label>
+                <select name="mode" id="em-mode" class="form-select fw-form-control" onchange="emailToggleMode()">
+                  <option value="local" {{ 'selected' if email_config.mode == 'local' else '' }}>Local mail server (localhost relay, no auth)</option>
+                  <option value="smtp" {{ 'selected' if email_config.mode == 'smtp' else '' }}>External SMTP server (third-party)</option>
+                </select>
+                <div class="form-text">Local = the box's own MTA on localhost. External = a provider you point at below.</div>
+              </div>
+
+              <div id="em-smtp-block">
+                <div class="row g-3 mb-3">
+                  <div class="col-8">
+                    <label class="fw-form-label">SMTP host</label>
+                    <input type="text" name="host" class="form-control fw-form-control font-monospace"
+                           value="{{ email_config.host if email_config.mode == 'smtp' else '' }}" placeholder="smtp.example.com">
+                  </div>
+                  <div class="col-4">
+                    <label class="fw-form-label">Port</label>
+                    <input type="number" name="port" class="form-control fw-form-control"
+                           value="{{ email_config.port }}" placeholder="587" min="1" max="65535">
+                  </div>
+                </div>
+
+                <div class="mb-3">
+                  <label class="fw-form-label">Transport security</label>
+                  <select name="security" class="form-select fw-form-control">
+                    <option value="none" {{ 'selected' if email_config.security == 'none' else '' }}>None (plain, port 25) — insecure</option>
+                    <option value="starttls" {{ 'selected' if email_config.security == 'starttls' else '' }}>STARTTLS (port 587)</option>
+                    <option value="ssl" {{ 'selected' if email_config.security == 'ssl' else '' }}>SSL / TLS (port 465)</option>
+                  </select>
+                  <div class="form-text">Default port follows the choice if you leave Port blank.</div>
+                </div>
+
+                <div class="form-check mb-3">
+                  <input class="form-check-input" type="checkbox" name="tls_verify" id="em-verify"
+                         {{ 'checked' if email_config.tls_verify else '' }}>
+                  <label class="form-check-label" for="em-verify">Verify TLS certificate</label>
+                  <div class="form-text">Uncheck for an internal server with a self-signed certificate (insecure).</div>
+                </div>
+
+                <div class="form-check mb-3">
+                  <input class="form-check-input" type="checkbox" name="auth" id="em-auth"
+                         {{ 'checked' if email_config.auth else '' }} onchange="emailToggleAuth()">
+                  <label class="form-check-label" for="em-auth">Server requires authentication</label>
+                </div>
+
+                <div id="em-auth-block" class="row g-3 mb-3">
+                  <div class="col-6">
+                    <label class="fw-form-label">Username</label>
+                    <input type="text" name="username" class="form-control fw-form-control"
+                           value="{{ email_config.username }}" autocomplete="off">
+                  </div>
+                  <div class="col-6">
+                    <label class="fw-form-label">Password</label>
+                    <input type="password" name="password" class="form-control fw-form-control"
+                           placeholder="{{ '•••••••• (stored — leave blank to keep)' if email_config.has_password else '' }}"
+                           autocomplete="new-password">
+                  </div>
+                </div>
+              </div>
+
+              <hr class="my-4">
+
+              <div class="row g-3 mb-3">
+                <div class="col-5">
+                  <label class="fw-form-label">From name</label>
+                  <input type="text" name="from_name" class="form-control fw-form-control"
+                         value="{{ email_config.from_name }}" placeholder="Fortinet Manager">
+                </div>
+                <div class="col-7">
+                  <label class="fw-form-label">From address</label>
+                  <input type="email" name="from_addr" class="form-control fw-form-control"
+                         value="{{ email_config.from_addr }}" placeholder="noreply@example.com">
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <label class="fw-form-label">Default recipient(s)</label>
+                <input type="text" name="default_to" class="form-control fw-form-control"
+                       value="{{ email_config.default_to }}" placeholder="ops@example.com, noc@example.com">
+                <div class="form-text">Used when a notice has no explicit recipient. Comma / newline separated.</div>
+              </div>
+
+              <div class="mb-4" style="max-width:160px;">
+                <label class="fw-form-label">Timeout (seconds)</label>
+                <input type="number" name="timeout" class="form-control fw-form-control"
+                       value="{{ email_config.timeout }}" min="5" max="120">
+              </div>
+
+              <button type="submit" class="btn btn-sm fw-btn-primary">
+                <i class="bi bi-save me-1"></i>Save email settings
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-5">
+        <div class="fw-card">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-send me-2 text-accent"></i>Send a test email</span>
+          </div>
+          <div class="fw-card-body">
+            <p class="text-muted mb-3" style="font-size:13px;">Sends a one-line test message with the CURRENTLY SAVED settings. Save first, then test.</p>
+            <div class="mb-2">
+              <label class="form-label" style="font-size:13px;">Recipient</label>
+              <input type="email" id="em-test-to" class="form-control fw-form-control"
+                     value="{{ email_config.default_to }}" placeholder="you@example.com">
+            </div>
+            <button class="btn btn-sm fw-btn-primary" id="em-test-btn" onclick="emailTest()">
+              <i class="bi bi-send me-1"></i>Send test
+            </button>
+            <div id="em-test-out" class="mt-3" style="display:none;">
+              <div id="em-test-msg"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- AUTHENTICATION TAB -->
+  <div class="tab-pane fade" id="tab-auth">
+    <div class="row g-3">
+      <div class="col-lg-7">
+        <div class="fw-card">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-shield-lock me-2 text-accent"></i>Authentication Source</span>
+          </div>
+          <div class="fw-card-body">
+            <form method="POST" action="{{ url_for('settings.save_auth') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div class="mb-3">
+                <label class="fw-form-label">Sign-in backend</label>
+                <select name="backend" id="auth-backend" class="form-select fw-form-control" onchange="authToggle()">
+                  <option value="local" {{ 'selected' if auth_config.backend == 'local' else '' }}>Local database only</option>
+                  <option value="ad" {{ 'selected' if auth_config.backend == 'ad' else '' }}>Active Directory</option>
+                  <option value="ldap" {{ 'selected' if auth_config.backend == 'ldap' else '' }}>LDAP (generic)</option>
+                  <option value="radius" {{ 'selected' if auth_config.backend == 'radius' else '' }}>FortiAuthenticator / RADIUS</option>
+                </select>
+                <div class="form-text">Local accounts always work. At most one external backend is active at a time (safest against lockout).</div>
+              </div>
+              <div class="mb-3">
+                <label class="fw-form-label">Default profile for new directory users</label>
+                <input type="text" name="default_profile" class="form-control fw-form-control" value="{{ auth_config.default_profile }}" placeholder="operator">
+                <div class="form-text">A directory user is created on first sign-in with this profile; an admin can elevate them later under Users.</div>
+              </div>
+
+              <div id="auth-ldap-block" class="auth-ext">
+                <hr class="my-3">
+                <div class="row g-3 mb-3">
+                  <div class="col-8"><label class="fw-form-label">Host</label>
+                    <input type="text" name="ldap_host" class="form-control fw-form-control font-monospace" value="{{ auth_config.ldap.host }}" placeholder="dc.example.com"></div>
+                  <div class="col-4"><label class="fw-form-label">Port</label>
+                    <input type="number" name="ldap_port" class="form-control fw-form-control" value="{{ auth_config.ldap.port }}" placeholder="389 / 636"></div>
+                </div>
+                <div class="row g-3 mb-3">
+                  <div class="col-6"><label class="fw-form-label">AD domain <span class="text-muted">(Active Directory)</span></label>
+                    <input type="text" name="ldap_ad_domain" class="form-control fw-form-control" value="{{ auth_config.ldap.ad_domain }}" placeholder="example.com"></div>
+                  <div class="col-6"><label class="fw-form-label">User attribute</label>
+                    <input type="text" name="ldap_user_attr" class="form-control fw-form-control" value="{{ auth_config.ldap.user_attr }}" placeholder="sAMAccountName / uid"></div>
+                </div>
+                <div class="mb-3"><label class="fw-form-label">Base DN</label>
+                  <input type="text" name="ldap_base_dn" class="form-control fw-form-control font-monospace" value="{{ auth_config.ldap.base_dn }}" placeholder="dc=example,dc=com"></div>
+                <div class="row g-3 mb-3">
+                  <div class="col-6"><label class="fw-form-label">Bind DN <span class="text-muted">(LDAP service acct)</span></label>
+                    <input type="text" name="ldap_bind_dn" class="form-control fw-form-control font-monospace" value="{{ auth_config.ldap.bind_dn }}" placeholder="cn=svc,dc=example,dc=com"></div>
+                  <div class="col-6"><label class="fw-form-label">Bind password</label>
+                    <input type="password" name="ldap_bind_password" class="form-control fw-form-control" autocomplete="new-password" placeholder="{{ '******** (stored - blank keeps)' if auth_config.ldap.has_bind_password else '' }}"></div>
+                </div>
+                <div class="mb-3"><label class="fw-form-label">User filter <span class="text-muted">(LDAP, optional)</span></label>
+                  <input type="text" name="ldap_user_filter" class="form-control fw-form-control font-monospace" value="{{ auth_config.ldap.user_filter }}" placeholder="(uid={username})"></div>
+                <div class="row g-3 mb-2 ms-1 align-items-center">
+                  <div class="col-auto form-check"><input class="form-check-input" type="checkbox" name="ldap_use_ssl" id="ldap-ssl" {{ 'checked' if auth_config.ldap.use_ssl else '' }}><label class="form-check-label" for="ldap-ssl">LDAPS (SSL)</label></div>
+                  <div class="col-auto form-check"><input class="form-check-input" type="checkbox" name="ldap_start_tls" id="ldap-starttls" {{ 'checked' if auth_config.ldap.start_tls else '' }}><label class="form-check-label" for="ldap-starttls">StartTLS</label></div>
+                  <div class="col-auto form-check"><input class="form-check-input" type="checkbox" name="ldap_tls_verify" id="ldap-verify" {{ 'checked' if auth_config.ldap.tls_verify else '' }}><label class="form-check-label" for="ldap-verify">Verify certificate</label></div>
+                </div>
+              </div>
+
+              <div id="auth-radius-block" class="auth-ext">
+                <hr class="my-3">
+                <div class="row g-3 mb-3">
+                  <div class="col-8"><label class="fw-form-label">RADIUS host</label>
+                    <input type="text" name="radius_host" class="form-control fw-form-control font-monospace" value="{{ auth_config.radius.host }}" placeholder="fac.example.com"></div>
+                  <div class="col-4"><label class="fw-form-label">Port</label>
+                    <input type="number" name="radius_port" class="form-control fw-form-control" value="{{ auth_config.radius.port }}" placeholder="1812"></div>
+                </div>
+                <div class="row g-3 mb-3">
+                  <div class="col-7"><label class="fw-form-label">Shared secret</label>
+                    <input type="password" name="radius_secret" class="form-control fw-form-control" autocomplete="new-password" placeholder="{{ '******** (stored - blank keeps)' if auth_config.radius.has_secret else '' }}"></div>
+                  <div class="col-5"><label class="fw-form-label">NAS identifier</label>
+                    <input type="text" name="radius_nas_id" class="form-control fw-form-control" value="{{ auth_config.radius.nas_id }}" placeholder="fortinet-manager"></div>
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-sm fw-btn-primary"><i class="bi bi-save me-1"></i>Save authentication settings</button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-5">
+        <div class="fw-card">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-plug me-2 text-accent"></i>Test connection</span>
+          </div>
+          <div class="fw-card-body">
+            <p class="text-muted mb-3" style="font-size:13px;">Tests the values CURRENTLY IN THE FORM (no need to save first). Add a test user + password to fully verify a bind.</p>
+            <div class="row g-2 mb-2">
+              <div class="col-6"><input type="text" id="auth-test-user" class="form-control fw-form-control" placeholder="test username"></div>
+              <div class="col-6"><input type="password" id="auth-test-pass" class="form-control fw-form-control" autocomplete="new-password" placeholder="test password"></div>
+            </div>
+            <button class="btn btn-sm fw-btn-primary" id="auth-test-btn" onclick="authTest()"><i class="bi bi-plug me-1"></i>Test connection</button>
+            <div id="auth-test-out" class="mt-3" style="display:none;"><div id="auth-test-msg"></div></div>
+            <hr class="my-3">
+            <p class="text-muted mb-0" style="font-size:12px;"><i class="bi bi-info-circle me-1"></i>Directory users get the <strong>{{ auth_config.default_profile }}</strong> profile on first sign-in and do MFA at the directory. Local accounts can enable app 2FA in the Security tab.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- SECURITY TAB -->
   <div class="tab-pane fade {{ 'show active' if not is_admin else '' }}" id="tab-security">
+    <div class="row g-3 mb-1">
+      <div class="col-lg-7">
+        <div class="fw-card">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-phone me-2 text-accent"></i>Two-Factor Authentication (TOTP)</span>
+          </div>
+          <div class="fw-card-body">
+            {% if not twofa_status.is_local %}
+              <p class="text-muted mb-0" style="font-size:13px;"><i class="bi bi-info-circle me-1"></i>Your account authenticates against a directory — manage multi-factor authentication there.</p>
+            {% elif twofa_status.enabled %}
+              <div class="alert alert-success py-2" style="font-size:13px;"><i class="bi bi-shield-check me-1"></i>Two-factor authentication is <strong>enabled</strong>. Backup codes remaining: <strong>{{ twofa_status.remaining_codes }}</strong>.</div>
+              {% if backup_codes_once %}
+              <div class="alert alert-warning" style="font-size:13px;">
+                <div class="mb-2"><i class="bi bi-exclamation-triangle me-1"></i><strong>Save these backup codes now — shown only once.</strong> Each works one time if you lose your authenticator.</div>
+                <div class="font-monospace" style="columns:2; font-size:15px; letter-spacing:1px;">{% for c in backup_codes_once %}<div>{{ c }}</div>{% endfor %}</div>
+              </div>
+              {% endif %}
+              <form method="POST" action="{{ url_for('settings.twofa_regen_codes') }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>Regenerate backup codes</button>
+              </form>
+              <form method="POST" action="{{ url_for('settings.twofa_disable') }}" class="mt-2" onsubmit="return confirm('Disable two-factor authentication?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="input-group input-group-sm" style="max-width:360px;">
+                  <input type="password" name="current_password" class="form-control" placeholder="Confirm password to disable" autocomplete="current-password">
+                  <button class="btn btn-outline-danger"><i class="bi bi-shield-x me-1"></i>Disable 2FA</button>
+                </div>
+              </form>
+            {% else %}
+              <p class="text-muted" style="font-size:13px;">Add a second factor with an authenticator app (Google Authenticator, Authy, FreeOTP…).</p>
+              <button class="btn btn-sm fw-btn-primary" id="tf-setup-btn" onclick="tfSetup()"><i class="bi bi-qr-code me-1"></i>Set up 2FA</button>
+              <div id="tf-setup-area" style="display:none;" class="mt-3">
+                <div class="row g-3">
+                  <div class="col-auto"><div id="tf-qr" style="width:180px;height:180px;"></div></div>
+                  <div class="col">
+                    <p style="font-size:13px;" class="mb-1">1. Scan the QR (or enter this secret manually):</p>
+                    <code id="tf-secret" class="d-block mb-3" style="word-break:break-all;"></code>
+                    <form method="POST" action="{{ url_for('settings.twofa_enable') }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <p style="font-size:13px;" class="mb-1">2. Enter the 6-digit code to confirm:</p>
+                      <div class="input-group input-group-sm" style="max-width:260px;">
+                        <input type="text" name="code" class="form-control" inputmode="numeric" placeholder="000000" autocomplete="one-time-code" required>
+                        <button class="btn fw-btn-primary"><i class="bi bi-check-lg me-1"></i>Enable</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="fw-card mt-3">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-envelope-at me-2 text-accent"></i>Account Recovery</span>
+          </div>
+          <div class="fw-card-body">
+            {% if twofa_status.is_local %}
+            <form method="POST" action="{{ url_for('settings.recovery_email') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <label class="fw-form-label">Recovery email</label>
+              <div class="input-group input-group-sm" style="max-width:440px;">
+                <input type="email" name="recovery_email" class="form-control" value="{{ twofa_status.recovery_email }}" placeholder="you@example.com">
+                <button class="btn fw-btn-primary"><i class="bi bi-save me-1"></i>Save</button>
+              </div>
+              <div class="form-text">Used by "Forgot password" on the sign-in page to email a reset link. Requires server email to be configured.</div>
+            </form>
+            {% else %}
+            <p class="text-muted mb-0" style="font-size:13px;">Directory accounts recover their password at the directory.</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-5"></div>
+    </div>
+
     <div class="row g-3">
       <div class="col-lg-7">
         <div class="fw-card">
@@ -678,6 +1006,101 @@ function gitConsoleRun() {
 document.addEventListener('DOMContentLoaded', function() {
   var gitTabBtn = document.querySelector('[data-bs-target="#tab-git"]');
   if (gitTabBtn) { gitTabBtn.addEventListener('shown.bs.tab', function() { gitRefresh(); }); }
+});
+
+function emailToggleMode() {
+  var smtp = document.getElementById('em-mode').value === 'smtp';
+  document.getElementById('em-smtp-block').style.display = smtp ? '' : 'none';
+}
+function emailToggleAuth() {
+  var on = document.getElementById('em-auth').checked;
+  document.getElementById('em-auth-block').style.display = on ? '' : 'none';
+}
+function emailTest() {
+  var to = document.getElementById('em-test-to').value.trim();
+  var btn = document.getElementById('em-test-btn');
+  var out = document.getElementById('em-test-out');
+  var msg = document.getElementById('em-test-msg');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sending...';
+  out.style.display = '';
+  msg.innerHTML = '<span class="text-muted">Sending...</span>';
+  var csrfMeta = document.querySelector('meta[name=csrf-token]');
+  var csrf = csrfMeta ? csrfMeta.content : '';
+  fetch('/settings/email/test', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+    body: JSON.stringify({to: to})
+  })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (d.ok) {
+        msg.innerHTML = '<div class="alert alert-success py-2 mb-0" style="font-size:13px;"><i class="bi bi-check-circle me-1"></i>' + (d.detail || 'Sent.') + '</div>';
+      } else {
+        msg.innerHTML = '<div class="alert alert-danger py-2 mb-0" style="font-size:13px;"><i class="bi bi-x-circle me-1"></i>' + (d.detail || 'Failed.') + '</div>';
+      }
+    })
+    .catch(function(e){
+      msg.innerHTML = '<div class="alert alert-danger py-2 mb-0" style="font-size:13px;">Error: ' + e.message + '</div>';
+    })
+    .finally(function(){
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-send me-1"></i>Send test';
+    });
+}
+document.addEventListener('DOMContentLoaded', function() {
+  if (document.getElementById('em-mode')) { emailToggleMode(); emailToggleAuth(); }
+});
+
+// --- Authentication tab ---
+function authToggle() {
+  var b = document.getElementById('auth-backend').value;
+  var ldap = document.getElementById('auth-ldap-block');
+  var rad = document.getElementById('auth-radius-block');
+  if (ldap) ldap.style.display = (b === 'ad' || b === 'ldap') ? '' : 'none';
+  if (rad) rad.style.display = (b === 'radius') ? '' : 'none';
+}
+function authTest() {
+  var btn = document.getElementById('auth-test-btn');
+  var out = document.getElementById('auth-test-out');
+  var msg = document.getElementById('auth-test-msg');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Testing...';
+  out.style.display = ''; msg.innerHTML = '<span class="text-muted">Testing...</span>';
+  var form = document.querySelector('#tab-auth form');
+  var fd = new FormData(form);
+  fd.set('test_username', (document.getElementById('auth-test-user') || {}).value || '');
+  fd.set('test_password', (document.getElementById('auth-test-pass') || {}).value || '');
+  var csrfMeta = document.querySelector('meta[name=csrf-token]');
+  var csrf = csrfMeta ? csrfMeta.content : '';
+  fetch('/settings/auth/test', {method: 'POST', headers: {'X-CSRFToken': csrf}, body: fd})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      msg.innerHTML = d.ok
+        ? '<div class="alert alert-success py-2 mb-0" style="font-size:13px;"><i class="bi bi-check-circle me-1"></i>' + (d.detail || 'OK') + '</div>'
+        : '<div class="alert alert-danger py-2 mb-0" style="font-size:13px;"><i class="bi bi-x-circle me-1"></i>' + (d.detail || 'Failed') + '</div>';
+    })
+    .catch(function(e){ msg.innerHTML = '<div class="alert alert-danger py-2 mb-0" style="font-size:13px;">Error: ' + e.message + '</div>'; })
+    .finally(function(){ btn.disabled = false; btn.innerHTML = '<i class="bi bi-plug me-1"></i>Test connection'; });
+}
+// --- 2FA self-service setup ---
+function tfSetup() {
+  var btn = document.getElementById('tf-setup-btn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>...';
+  var csrfMeta = document.querySelector('meta[name=csrf-token]');
+  var csrf = csrfMeta ? csrfMeta.content : '';
+  fetch('/settings/2fa/setup', {method: 'POST', headers: {'X-CSRFToken': csrf}})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (!d.ok) { alert(d.error || 'Failed to start 2FA setup'); btn.disabled = false; btn.innerHTML = '<i class="bi bi-qr-code me-1"></i>Set up 2FA'; return; }
+      document.getElementById('tf-secret').textContent = d.secret;
+      document.getElementById('tf-qr').innerHTML = d.qr || '<span class="text-muted">Scan the secret manually.</span>';
+      document.getElementById('tf-setup-area').style.display = '';
+      btn.style.display = 'none';
+    })
+    .catch(function(e){ alert('Error: ' + e.message); btn.disabled = false; btn.innerHTML = '<i class="bi bi-qr-code me-1"></i>Set up 2FA'; });
+}
+document.addEventListener('DOMContentLoaded', function() {
+  if (document.getElementById('auth-backend')) { authToggle(); }
 });
 </script>
 {% endblock %}

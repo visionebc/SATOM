@@ -75,10 +75,16 @@
     </button>
     {% endif %}
 
-    <!-- Notifications placeholder -->
-    <button class="fw-topbar-btn" title="Notifications">
-      <i class="bi bi-bell"></i>
-    </button>
+    <!-- Notifications -->
+    <a class="fw-topbar-btn position-relative"
+       href="{{ url_for('templates.index', status='pending') if pending_template_count else url_for('section_catalog.index') }}"
+       title="{% if pending_template_count %}{{ pending_template_count }} template(s) pending approval - click to review{% else %}Notifications{% endif %}">
+      <i class="bi bi-bell{% if pending_template_count %}-fill{% endif %}"></i>
+      {% if pending_template_count %}
+      <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
+            style="font-size:9px;">{{ pending_template_count }}</span>
+      {% endif %}
+    </a>
 
     <!-- User dropdown -->
     <div class="dropdown fw-user-menu">
@@ -279,9 +285,6 @@
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'templates' else '' }}"
              href="{{ url_for('templates.index') }}">
             <i class="bi bi-collection fw-nav-icon"></i><span>Template Library</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'section_catalog' else '' }}"
-             href="{{ url_for('section_catalog.index') }}">
-            <i class="bi bi-sliders fw-nav-icon"></i><span>FortiWeb Sections</span></a>
           <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('audit.') else '' }}"
              href="{{ url_for('audit.index') }}">
             <i class="bi bi-clipboard-check fw-nav-icon"></i><span>Audit Log</span></a>

@@ -16,9 +16,21 @@
     <h1 class="fw-page-title"><i class="bi bi-collection me-2 text-accent"></i>Templates</h1>
     <p class="text-muted mb-0" style="font-size:13px;">Reusable desired-state profiles (Web Protection, System, Server Policy, Structure) — authored once, pushed on demand</p>
   </div>
-  <button class="btn btn-fw-primary" data-bs-toggle="modal" data-bs-target="#modalAddTemplate">
-    <i class="bi bi-plus-lg me-1"></i>New Template
-  </button>
+  <div class="d-flex gap-2">
+    {% if current_user and current_user.can('user_manage') %}
+    <a class="btn btn-outline-secondary position-relative" href="{{ url_for('section_catalog.index') }}" title="Browse approved templates grouped by FortiWeb section{% if pending_template_count %} — {{ pending_template_count }} pending approval{% endif %}">
+      <i class="bi bi-sliders me-1"></i>FortiWeb Sections
+      {% if pending_template_count %}
+      <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-warning text-dark" style="font-size:10px;">
+        {{ pending_template_count }}<span class="visually-hidden">pending</span>
+      </span>
+      {% endif %}
+    </a>
+    {% endif %}
+    <button class="btn btn-fw-primary" data-bs-toggle="modal" data-bs-target="#modalAddTemplate">
+      <i class="bi bi-plus-lg me-1"></i>New Template
+    </button>
+  </div>
 </div>
 
 <!-- Kind filter -->
@@ -28,11 +40,18 @@
     <input type="text" id="tplSearch" placeholder="Search templates…" oninput="filterTemplates(this.value)">
   </div>
   <div class="d-flex gap-1 flex-wrap">
-    <a href="{{ url_for('templates.index') }}" class="btn btn-sm {{ 'btn-fw-primary' if not active_kind else 'btn-outline-secondary' }}">All</a>
+    <a href="{{ url_for('templates.index') }}" class="btn btn-sm {{ 'btn-fw-primary' if not active_kind and not active_status else 'btn-outline-secondary' }}">All</a>
     {% for k in kinds %}
     <a href="{{ url_for('templates.index', kind=k) }}"
        class="btn btn-sm {{ 'btn-fw-primary' if active_kind == k else 'btn-outline-secondary' }}">{{ kind_labels[k] }}</a>
     {% endfor %}
+  </div>
+  <div class="d-flex gap-1 flex-wrap ms-md-2">
+    <a href="{{ url_for('templates.index', kind=active_kind, status='pending') }}"
+       class="btn btn-sm {{ 'btn-fw-primary' if active_status == 'pending' else 'btn-outline-secondary' }}">
+       Pending{% if pending_template_count %} <span class="badge bg-warning text-dark">{{ pending_template_count }}</span>{% endif %}</a>
+    <a href="{{ url_for('templates.index', kind=active_kind, status='approved') }}"
+       class="btn btn-sm {{ 'btn-fw-primary' if active_status == 'approved' else 'btn-outline-secondary' }}">Approved</a>
   </div>
 </div>
 
@@ -67,23 +86,41 @@
               <span class="fw-badge fw-badge-info">pending</span>
             {% endif %}
           </td>
-          <td style="font-size:13px; max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t.note or '—' }}</td>
+          <td style="font-size:13px; max-width:280px;" class="note-cell">
+            {% if t.note %}
+              {% if t.note|length > 70 %}
+                <span class="note-short">{{ t.note[:70] }}…</span><span class="note-full" style="display:none; white-space:pre-wrap; word-break:break-word;">{{ t.note }}</span>
+                <a href="#" class="note-toggle" style="font-size:11px; white-space:nowrap;" onclick="return toggleNote(this);">see more</a>
+              {% else %}
+                <span style="white-space:pre-wrap; word-break:break-word;">{{ t.note }}</span>
+              {% endif %}
+            {% else %}—{% endif %}
+          </td>
           <td style="font-size:13px;">{{ t.author or '—' }}</td>
           <td style="font-size:13px;">{{ t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '—' }}</td>
           <td class="actions-col">
             <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1" title="View"
                     onclick="viewTemplate({{ t.id }})"><i class="bi bi-eye"></i></button>
+            <button class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Approval history (who approved / rejected)"
+                    onclick='openHistory({{ t.id }}, {{ t.name|tojson }})'><i class="bi bi-clock-history"></i></button>
             {% if current_user.can('operations.template_approve') and t.status == 'pending' %}
             <form method="POST" action="{{ url_for('templates.approve', template_id=t.id) }}" style="display:inline;">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-sm btn-outline-success btn-sm-icon me-1" title="Approve (make fleet-deployable)"><i class="bi bi-check2-circle"></i></button>
             </form>
             <button class="btn btn-sm btn-outline-danger btn-sm-icon me-1" title="Reject"
-                    onclick="openReject({{ t.id }}, {{ t.name|tojson }})"><i class="bi bi-x-circle"></i></button>
+                    onclick='openReject({{ t.id }}, {{ t.name|tojson }})'><i class="bi bi-x-circle"></i></button>
+            {% endif %}
+            {% if current_user.can('operations.template_approve') and t.status == 'approved' %}
+            <form method="POST" action="{{ url_for('templates.unapprove', template_id=t.id) }}" style="display:inline;"
+                  data-fw-confirm-form="Revoke approval for '{{ t.name }}' (v{{ t.version }})? It returns to pending and is no longer fleet-deployable.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-outline-warning btn-sm-icon me-1" title="Revoke approval (back to pending)"><i class="bi bi-arrow-counterclockwise"></i></button>
+            </form>
             {% endif %}
             {% if current_user.can('operations.template_apply') %}
             <button class="btn btn-sm btn-fw-primary btn-sm-icon me-1" title="Apply to devices"
-                    onclick="openApply({{ t.id }}, {{ t.name|tojson }}, {{ (t.status == 'approved')|tojson }})"><i class="bi bi-upload"></i></button>
+                    onclick='openApply({{ t.id }}, {{ t.name|tojson }}, {{ (t.status == "approved")|tojson }})'><i class="bi bi-upload"></i></button>
             {% endif %}
             {% if current_user.can('operations.template_save') %}
             <button class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Edit (saves a new version)"
@@ -288,6 +325,25 @@
   </div>
 </div>
 
+<!-- Approval HISTORY modal (who approved / who rejected, full timeline) -->
+<div class="modal fade fw-modal" id="modalHistoryTemplate" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-clock-history me-2"></i>Approval history — <span id="ht-title">Template</span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3 text-muted" id="ht-meta" style="font-size:13px;"></div>
+        <div id="ht-timeline"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Reject reason modal -->
 <div class="modal fade fw-modal" id="modalRejectTemplate" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
@@ -315,6 +371,60 @@
 
 {% block scripts %}
 <script>
+function toggleNote(a) {
+  var td = a.closest('td');
+  var s = td.querySelector('.note-short'), f = td.querySelector('.note-full');
+  var showFull = (f.style.display === 'none');
+  f.style.display = showFull ? 'inline' : 'none';
+  s.style.display = showFull ? 'none' : 'inline';
+  a.textContent = showFull ? 'see less' : 'see more';
+  return false;
+}
+
+function htStatusBadge(s) {
+  if (s === 'approved') return '<span class="fw-badge fw-badge-success">approved</span>';
+  if (s === 'rejected') return '<span class="fw-badge fw-badge-danger">rejected</span>';
+  return '<span class="fw-badge fw-badge-info">pending</span>';
+}
+function htActionBadge(a) {
+  if (a === 'approve') return '<span class="fw-badge fw-badge-success">approved</span>';
+  if (a === 'reject') return '<span class="fw-badge fw-badge-danger">rejected</span>';
+  if (a === 'unapprove') return '<span class="fw-badge fw-badge-warning text-dark">revoked</span>';
+  return '<span class="fw-badge">' + vtEsc(a) + '</span>';
+}
+
+function openHistory(id, name) {
+  document.getElementById('ht-title').textContent = name;
+  document.getElementById('ht-meta').textContent = '';
+  var tl = document.getElementById('ht-timeline');
+  tl.innerHTML = '<div class="text-muted" style="font-size:13px;">Loading…</div>';
+  showModal('modalHistoryTemplate');
+  fetch('/templates/' + id, {headers: {'Accept': 'application/json'}})
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function (t) {
+      document.getElementById('ht-meta').innerHTML =
+        'Current status: ' + htStatusBadge(t.status) +
+        (t.reviewed_by ? ' · last reviewed by <strong>' + vtEsc(t.reviewed_by) + '</strong>' : '');
+      var ev = t.history || [];
+      if (!ev.length) {
+        tl.innerHTML = '<div class="text-muted" style="font-size:13px;">No approval activity yet — this template is still awaiting its first review.</div>';
+        return;
+      }
+      var html = '<ul style="list-style:none; margin:0; padding:0;">';
+      ev.forEach(function (e) {
+        var when = (e.created_at || '').replace('T', ' ').substring(0, 16);
+        html += '<li style="padding:8px 2px; border-bottom:1px solid var(--fw-border,#1e2a3f);">' +
+                htActionBadge(e.action) + ' by <strong>' + vtEsc(e.reviewer || '—') + '</strong>' +
+                ' <span class="text-muted" style="font-size:12px;">' + vtEsc(when) + '</span>' +
+                (e.reason ? '<div style="font-size:12.5px; margin-top:3px; white-space:pre-wrap; word-break:break-word;"><i class="bi bi-chat-left-text me-1 text-muted"></i>' + vtEsc(e.reason) + '</div>' : '') +
+                '</li>';
+      });
+      html += '</ul>';
+      tl.innerHTML = html;
+    })
+    .catch(function (e) { tl.innerHTML = '<span class="text-danger">Could not load history: ' + vtEsc(e.message) + '</span>'; });
+}
+
 function filterTemplates(q) {
   q = (q || '').toLowerCase();
   document.querySelectorAll('#tplTable tbody tr').forEach(function (row) {

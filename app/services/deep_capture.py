@@ -142,3 +142,44 @@ def collect_server_policy(reader: Any, mkey: str) -> dict | None:
 def collect_wpp(reader: Any, mkey: str) -> dict | None:
     """Full subtree for one Web Protection Profile, nested under DEEP_KEY."""
     return _collect_node(reader, WEB_PROTECTION_PROFILE, mkey, set(), {})
+
+
+import dataclasses as _dc
+
+# Offline WPPs share the inline tree's children but live under their own urn.
+_WPP_OFFLINE_NODE = _dc.replace(WEB_PROTECTION_PROFILE, urn=_WPP_OFFLINE_URN)
+
+
+def _list_names(reader: Any, urn: str, cache: dict) -> list[str]:
+    return [m for m in (_mkey_of(r) for r in _collection(reader, urn, cache)) if m]
+
+
+def deep_sections(reader: Any) -> dict:
+    """Walk every server policy + every WPP (inline + offline), returning the
+    enriched ``{section: {logical_name: [obj-with-_deep, ...]}}`` snapshot shape
+    that ``device_store.ingest_sections`` consumes. A single shared collection
+    cache keeps the sweep box-gentle (each top-level object type is listed once);
+    each object gets its OWN visited set so an object shared by two policies is
+    captured in full under each."""
+    cache: dict = {}
+
+    policies: list[dict] = []
+    for nm in _list_names(reader, SERVER_POLICY.urn, cache):
+        g = _collect_node(reader, SERVER_POLICY, nm, set(), cache)
+        if g:
+            policies.append(g)
+
+    wpps: list[dict] = []
+    for nm in _list_names(reader, WEB_PROTECTION_PROFILE.urn, cache):
+        w = _collect_node(reader, WEB_PROTECTION_PROFILE, nm, set(), cache)
+        if w:
+            wpps.append(w)
+    for nm in _list_names(reader, _WPP_OFFLINE_URN, cache):
+        w = _collect_node(reader, _WPP_OFFLINE_NODE, nm, set(), cache)
+        if w:
+            wpps.append(w)
+
+    return {
+        "Server Policy": {"server_policy": policies},
+        "Web Protection": {"web_protection_profile": wpps},
+    }

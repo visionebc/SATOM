@@ -21,8 +21,7 @@ from flask import (Blueprint, abort, flash, redirect, render_template, request,
 from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
-from ..models import Appliance, Permission, Template
-from ..services import field_catalog as fc
+from ..models import Appliance, Permission, Template, UserSetting
 from ..services import provisioning as prov
 from ..services.audit import log_action
 from ..services.templates import delete_template, get_template, list_templates
@@ -44,80 +43,88 @@ def _system_template_or_404(template_id: int) -> Template:
     return template
 
 
-def _render_form(*, profile_name: str = '', rows=None, template_id=None, line: str = '8.0'):
-    """Render the profile builder (shared by /new and /<id>/edit)."""
-    specs = prov.available_specs()
-    product = 'fortiweb'
-    lines = fc.available_lines(product) or ['8.0']
-    if line not in lines:
-        line = lines[0]
-    keys = [s.key for s in specs]
-    schemas_by_line = {lin: fc.schemas_for_line(product, lin, keys) for lin in lines}
+def _render_form(*, profile_name: str = '', rows=None, template_id=None,
+                 scope=None):
+    """Render the profile builder (shared by /new and /<id>/edit).
+
+    Mirrors the desktop: the Element picker offers EVERY config (``cmdb``) object
+    grouped by GUI section; the operator sets singleton/mkey and types the JSON
+    values. No firmware-line / typed-schema layer — the standalone format.
+    """
+    from collections import OrderedDict
+    from ..registry import loader
+
+    specs = prov.all_specs()                       # all cmdb objects, section-ordered
+    sec_by_name = {ep.get('name'): (ep.get('section') or 'Other')
+                   for ep in loader.get_all_endpoints()}
+    grouped = OrderedDict()
+    for s in specs:
+        section = sec_by_name.get(s.endpoint) or (s.note or 'Other')
+        grouped.setdefault(section, []).append(s)
+    cls = settings_store.all_classification()
     return render_template(
         'provisioning/form.html',
-        specs=specs,
-        spec_keys=keys,
+        grouped_specs=grouped,
+        spec_keys=[s.key for s in specs],
         profile_name=profile_name,
         rows=rows or [],
         template_id=template_id,
-        line=line,
-        available_lines=lines,
-        schemas_by_line=schemas_by_line,
+        scope=scope or {},
+        zones=cls.get('zones', []),
+        lines=cls.get('lines', []),
+        departments=cls.get('departments', []),
     )
 
 
 def _collect_rows():
-    """Read the repeatable item editor into ``(name, line, rows)``.
+    """Read the repeatable element editor into ``(name, scope, rows)``.
 
     Each row declares its index via a hidden ``rows`` input; per-field names are
-    ``key_<i>``/``mkey_<i>``/``data_<i>``/``singleton_<i>`` plus typed schema
-    inputs ``f_<i>_<fieldname>``. Pure form-reading — never raises, so the
-    builder can be re-rendered with the operator's input intact on an error.
+    ``key_<i>``/``mkey_<i>``/``data_<i>``/``singleton_<i>``. Pure form-reading —
+    never raises, so the builder can be re-rendered with the operator's input
+    intact on an error. Order follows the submitted ``rows`` order (DOM order),
+    so the up/down buttons reorder the steps.
     """
     name = (request.form.get('name') or '').strip()
-    line = (request.form.get('line') or '8.0').strip()
+    scope = {
+        'zone': (request.form.get('scope_zone') or '').strip(),
+        'line': (request.form.get('scope_line') or '').strip(),
+        'department': (request.form.get('scope_department') or '').strip(),
+    }
     rows = []
     for idx in request.form.getlist('rows'):
-        prefix = f'f_{idx}_'
-        fields = {k[len(prefix):]: v for k, v in request.form.items()
-                  if k.startswith(prefix)}
         rows.append({
             'key': (request.form.get(f'key_{idx}') or '').strip(),
             'mkey': (request.form.get(f'mkey_{idx}') or '').strip(),
             'data': request.form.get(f'data_{idx}') or '',
             'singleton': request.form.get(f'singleton_{idx}') is not None,
-            'fields': fields,
         })
-    return name, line, rows
+    return name, scope, rows
 
 
-def _build_items(rows, line, product='fortiweb'):
+def _build_items(rows):
     """Turn collected rows into ``ProvisionItem``s.
 
-    If the row's object has a field schema for ``line`` AND the operator filled
-    typed inputs, the payload is built + validated via ``field_catalog.coerce``;
-    otherwise the raw ``data`` JSON is parsed (back-compat / schemaless objects).
-    Raises ``ValueError`` (bad key / bad JSON / failed validation) so the caller
-    can flash and re-render.
+    The element key identifies a config object from the full catalog
+    (``provisioning.all_specs`` — a curated baseline or any other cmdb object);
+    its ``data`` is parsed as a JSON payload. Raises ``ValueError`` (unknown key
+    / bad JSON) so the caller can flash and re-render with input kept.
     """
+    catalog = {s.key: s for s in prov.all_specs()}
     items = []
     for row in rows:
         key = row['key']
         if not key:
             continue  # skip blank rows
-        spec = prov.CATALOG_BY_KEY.get(key)
+        spec = prov.CATALOG_BY_KEY.get(key) or catalog.get(key)
         if spec is None:
-            raise ValueError(f"Unknown provisioning item: {key}")
-        schema = fc.load_object_schema(product, line, key)
-        if schema is not None and row.get('fields'):
-            data = fc.coerce(schema, row['fields'])        # typed + validated
-        else:
-            try:
-                data = json.loads(row['data'] or '{}')
-            except ValueError as exc:
-                raise ValueError(f"Item '{spec.label}': data is not valid JSON ({exc})") from exc
-            if not isinstance(data, dict):
-                raise ValueError(f"Item '{spec.label}': data must be a JSON object")
+            raise ValueError(f"Unknown provisioning element: {key}")
+        try:
+            data = json.loads(row['data'] or '{}')
+        except ValueError as exc:
+            raise ValueError(f"Element '{spec.label}': values are not valid JSON ({exc})") from exc
+        if not isinstance(data, dict):
+            raise ValueError(f"Element '{spec.label}': values must be a JSON object")
         item = prov.ProvisionItem.from_spec(spec, data, mkey=row['mkey'] or None)
         item.singleton = row['singleton']  # honour the explicit checkbox
         items.append(item)
@@ -126,18 +133,19 @@ def _build_items(rows, line, product='fortiweb'):
 
 def _save(*, template_id):
     """Validate + persist the builder form. On error re-renders with input kept."""
-    name, line, rows = _collect_rows()
+    name, scope, rows = _collect_rows()
     try:
         if not name:
             raise ValueError("Profile name is required")
-        items = _build_items(rows, line)
+        items = _build_items(rows)
         if not items:
-            raise ValueError("Add at least one provisioning item")
-        profile = prov.SystemProfile(name, items, line=line)
+            raise ValueError("Add at least one provisioning element")
+        profile = prov.SystemProfile(name, items, scope=scope)
         row = prov.save_profile(profile, author=getattr(current_user, 'username', '') or '')
     except ValueError as exc:
         flash(f"Could not save profile: {exc}", 'danger')
-        return _render_form(profile_name=name, rows=rows, template_id=template_id, line=line)
+        return _render_form(profile_name=name, rows=rows, template_id=template_id,
+                            scope=scope)
     log_action('provisioning.save', target=row.name,
                detail=f'v{row.version}, {len(items)} item(s)')
     flash(f'System profile "{row.name}" saved (v{row.version}).', 'success')
@@ -154,7 +162,7 @@ def index():
     """List existing system-profile templates with a 'New profile' action."""
     return render_template(
         'provisioning/index.html',
-        profiles=list_templates(Template.KIND_SYSTEM),
+        profiles=B._latest_version_only(list_templates(Template.KIND_SYSTEM)),
         appliances=Appliance.query.order_by(Appliance.name).all(),
     )
 
@@ -166,7 +174,7 @@ def new():
     """Author a new system profile."""
     if request.method == 'POST':
         return _save(template_id=None)
-    return _render_form(line=(request.args.get('line') or '8.0'))
+    return _render_form()
 
 
 @bp.route('/<int:template_id>/edit', methods=['GET', 'POST'])
@@ -185,7 +193,7 @@ def edit(template_id: int):
         'data': json.dumps(it.data, indent=2, sort_keys=True) if it.data else '{}',
     } for it in profile.items]
     return _render_form(profile_name=profile.name, rows=rows,
-                        template_id=template_id, line=profile.line)
+                        template_id=template_id, scope=profile.scope)
 
 
 @bp.route('/<int:template_id>/apply', methods=['POST'])
@@ -280,15 +288,57 @@ def delete(template_id: int):
     return redirect(url_for('provisioning.index'))
 
 
+
+@bp.route('/<int:template_id>/approve', methods=['POST'])
+@login_required
+@require_permission('operations.template_approve')
+def approve_profile(template_id: int):
+    """Approve a pending system-profile template."""
+    from ..services.templates import approve_template
+    _system_template_or_404(template_id)
+    try:
+        row = approve_template(template_id, reviewer=current_user.username)
+        log_action('provisioning.approve', target=row.name,
+                   detail=f'v{row.version}')
+        flash(f'Approved "{row.name}" v{row.version} — now selectable for baselines.', 'success')
+    except ValueError as exc:
+        flash(f'Could not approve: {exc}', 'danger')
+    return redirect(url_for('provisioning.index'))
+
+
+@bp.route('/<int:template_id>/reject', methods=['POST'])
+@login_required
+@require_permission('operations.template_approve')
+def reject_profile(template_id: int):
+    """Reject a pending system-profile template."""
+    from ..services.templates import reject_template
+    _system_template_or_404(template_id)
+    reason = (request.form.get('reason') or '').strip()
+    try:
+        row = reject_template(template_id, reviewer=current_user.username,
+                              reason=reason)
+        log_action('provisioning.reject', target=row.name,
+                   detail=f'v{row.version}: {reason[:120]}')
+        flash(f'Rejected "{row.name}" v{row.version}.', 'warning')
+    except ValueError as exc:
+        flash(f'Could not reject: {exc}', 'danger')
+    return redirect(url_for('provisioning.index'))
+
+
 # --------------------------------------------------------------------------- #
 #  Baselines — assembly of approved templates by zone / line / department       #
 # --------------------------------------------------------------------------- #
-def _baseline_form_ctx(*, baseline=None):
+def _baseline_form_ctx(*, baseline=None, zone: str = "", line: str = "",
+                        department: str = ""):
     """Shared context for the baseline new/edit form."""
     cls = settings_store.all_classification()
+    # Scope comes from the submitted form (new) or the saved baseline (edit).
+    bz = zone or (baseline.zone if baseline else "") or ""
+    bl = line or (baseline.line if baseline else "") or ""
+    bd = department or (baseline.department if baseline else "") or ""
     return {
         'baseline': baseline,
-        'approved': B.approved_templates(),
+        'approved': B.approved_templates_for_scope(bz, bl, bd),
         'zones': cls.get('zones', []),
         'lines': cls.get('lines', []),
         'departments': cls.get('departments', []),
@@ -300,10 +350,152 @@ def _baseline_form_ctx(*, baseline=None):
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
 def baselines():
+    """Combo grid: one card per zone x line x department permutation, each with
+    its assigned-template + matching-device counts, plus the catalog of approved
+    templates ("things") that can be assigned, below.
+
+    Filterable by zone / line / department / name. The active filter can be
+    SAVED to the signed-in user's profile (``UserSetting`` key
+    ``baselines.filters``) so it is restored on the next visit; ``?clear=1``
+    forgets it.
+    """
+    uid = getattr(current_user, 'id', None)
+    PREF_KEY = 'baselines.filters'
+    arg_keys = ('zone', 'line', 'department', 'q')
+
+    # Resolve the active filter from the query string, the saved pref, or blank.
+    has_query = any(k in request.args for k in arg_keys) or 'save' in request.args
+    blank = {'zone': '', 'line': '', 'department': '', 'q': ''}
+    filters_saved = False
+    if request.args.get('clear'):
+        if uid is not None:
+            UserSetting.set(uid, PREF_KEY, '{}')
+        flt = dict(blank)
+    elif has_query:
+        flt = {k: (request.args.get(k) or '').strip() for k in arg_keys}
+        if request.args.get('save') and uid is not None:
+            UserSetting.set(uid, PREF_KEY, json.dumps(flt))
+            filters_saved = True
+    else:
+        flt = dict(blank)
+        if uid is not None:
+            raw = UserSetting.get(uid, PREF_KEY)
+            if raw:
+                try:
+                    data = json.loads(raw)
+                except ValueError:
+                    data = {}
+                if isinstance(data, dict):
+                    flt.update({k: (data.get(k) or '').strip() for k in arg_keys})
+                    filters_saved = any(flt.values())
+
     rows = B.list_baselines()
-    counts = {b.id: len(B.matching_devices(b)) for b in rows}
+    total = len(rows)
+
+    def _match(b):
+        # An empty facet ON THE COMBO means "Any" -> matches every filter value.
+        if flt['zone'] and (b.zone or '') and b.zone != flt['zone']:
+            return False
+        if flt['line'] and (b.line or '') and b.line != flt['line']:
+            return False
+        if flt['department'] and (b.department or '') and b.department != flt['department']:
+            return False
+        if flt['q'] and flt['q'].lower() not in (b.name or '').lower():
+            return False
+        return True
+
+    rows = [b for b in rows if _match(b)]
+    device_counts = {b.id: len(B.matching_devices(b)) for b in rows}
+    assigned_counts = {b.id: len(b.items) for b in rows}
+    approved = B.approved_templates()
+    combo_chips = {t.id: B.combos_for_template(t.id) for t in approved}
+    grouped = B.grouped_approved_templates()
+    all_combos = B.list_baselines()
+    template_combos = B.template_combo_id_map()
+    cls = settings_store.all_classification()
     return render_template('provisioning/baselines.html',
-                           baselines=rows, device_counts=counts)
+                           baselines=rows, device_counts=device_counts,
+                           assigned_counts=assigned_counts,
+                           approved=approved, combo_chips=combo_chips,
+                           grouped=grouped, all_combos=all_combos,
+                           template_combos=template_combos,
+                           missing_count=B.missing_combo_count(),
+                           filters=flt, filters_saved=filters_saved,
+                           filters_active=any(flt.values()),
+                           filtered_total=total, shown_total=len(rows),
+                           zones=cls.get('zones', []),
+                           lines=cls.get('lines', []),
+                           departments=cls.get('departments', []))
+
+
+@bp.route('/baselines/generate', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def baseline_generate():
+    """Create a combo for every missing zone x line x department permutation."""
+    created = B.generate_missing_combos(
+        author=getattr(current_user, 'username', '') or '')
+    log_action('baseline.generate', target='combos', detail=f'created={created}')
+    if created:
+        flash(f'Generated {created} new combo(s).', 'success')
+    else:
+        flash('All combos already exist — nothing to generate.', 'info')
+    return redirect(url_for('provisioning.baselines'))
+
+
+@bp.route('/baselines/<int:baseline_id>')
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def baseline_detail(baseline_id: int):
+    """Open a combo: assigned templates (removable) + assignable approved ones."""
+    row = B.get_baseline(baseline_id)
+    if row is None:
+        abort(404)
+    devices = B.matching_devices(row)
+    assigned = B.assigned_templates(row)
+    available = B.available_templates_for_combo(row)
+    return render_template('provisioning/baseline_detail.html',
+                           baseline=row,
+                           assigned=assigned,
+                           available=available,
+                           assigned_groups=B.group_by_section(assigned),
+                           available_groups=B.group_by_section(available),
+                           devices=devices)
+
+
+@bp.route('/baselines/<int:baseline_id>/assign', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def baseline_assign(baseline_id: int):
+    """Assign one approved template to this combo."""
+    try:
+        tid = int(request.form.get('template_id', ''))
+    except (TypeError, ValueError):
+        flash('No template selected.', 'warning')
+        return redirect(url_for('provisioning.baseline_detail', baseline_id=baseline_id))
+    try:
+        row = B.combo_assign(baseline_id, tid)
+        log_action('baseline.assign', target=row.name, detail=f'template={tid}')
+        flash('Template assigned to combo.', 'success')
+    except ValueError as exc:
+        flash(f'Could not assign: {exc}', 'danger')
+    return redirect(url_for('provisioning.baseline_detail', baseline_id=baseline_id))
+
+
+@bp.route('/baselines/<int:baseline_id>/unassign', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def baseline_unassign(baseline_id: int):
+    """Remove a template from this combo."""
+    try:
+        tid = int(request.form.get('template_id', ''))
+    except (TypeError, ValueError):
+        flash('No template selected.', 'warning')
+        return redirect(url_for('provisioning.baseline_detail', baseline_id=baseline_id))
+    row = B.combo_unassign(baseline_id, tid)
+    log_action('baseline.unassign', target=row.name, detail=f'template={tid}')
+    flash('Template removed from combo.', 'success')
+    return redirect(url_for('provisioning.baseline_detail', baseline_id=baseline_id))
 
 
 @bp.route('/baselines/new', methods=['GET', 'POST'])
@@ -327,7 +519,10 @@ def baseline_new():
         except ValueError as exc:
             flash(f'Could not create baseline: {exc}', 'danger')
             return render_template('provisioning/baseline_form.html',
-                                   **_baseline_form_ctx())
+                                   **_baseline_form_ctx(
+                                       zone=request.form.get('zone', ''),
+                                       line=request.form.get('line', ''),
+                                       department=request.form.get('department', '')))
     return render_template('provisioning/baseline_form.html', **_baseline_form_ctx())
 
 
@@ -413,3 +608,25 @@ def baseline_apply(baseline_id: int):
     return render_template('provisioning/baseline_apply.html',
                            phase='result', baseline=row, devices=devices,
                            preview=None, result=result, item_count=len(items))
+
+
+@bp.route('/templates/<int:template_id>/combos', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def template_set_combos(template_id: int):
+    """Assign ONE approved template to many combos at once (checkbox sync)."""
+    ids = []
+    for raw in request.form.getlist('combo_ids'):
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    try:
+        res = B.set_template_combos(template_id, ids)
+    except ValueError as exc:
+        flash(str(exc), 'danger')
+        return redirect(url_for('provisioning.baselines'))
+    log_action('baseline.template_combos', target=str(template_id),
+               detail=f"added={res['added']} removed={res['removed']} total={res['total']}")
+    flash(f"Updated combo assignments (+{res['added']} / -{res['removed']}).", 'success')
+    return redirect(url_for('provisioning.baselines'))

@@ -11,6 +11,7 @@ from ..services.fortiweb_field_schema import (
 )
 from ..services import policy_form
 from ..services.fortiweb_ops import FortiWebOps
+from ..errors import flash_error, json_error, log_exception
 
 bp = Blueprint('workspace', __name__, url_prefix='/workspace')
 
@@ -122,7 +123,7 @@ def refresh(appliance_id):
         else:
             flash("Refresh is FortiWeb-only for now.", "warning")
     except Exception as exc:  # noqa: BLE001
-        flash(f"Refresh failed: {exc}", "danger")
+        flash_error(exc, "Refresh failed", context="workspace.refresh")
     return redirect(url_for('workspace.appliance', appliance_id=appliance_id))
 
 
@@ -186,7 +187,8 @@ def cmdb_options(appliance_id):
     try:
         return jsonify(names=FortiWebClient(appl).cmdb_names(endpoint))
     except Exception as exc:
-        return jsonify(error=str(exc), names=[])
+        eid = log_exception(exc, context='workspace.cmdb_options')
+        return jsonify(error=str(exc), names=[], error_id=eid)
 
 
 @bp.route('/<int:appliance_id>/ref-object')
@@ -206,7 +208,8 @@ def ref_object(appliance_id):
         obj = FortiWebClient(appl)._safe_one(
             '/api/v2.0/cmdb/%s?mkey=%s' % (coll, quote(name, safe='')))
     except Exception as exc:
-        return jsonify(ok=False, error=str(exc), html='')
+        eid = log_exception(exc, context='workspace.ref_object')
+        return jsonify(ok=False, error=str(exc), html='', error_id=eid)
     if not obj:
         return jsonify(ok=False, error='Object not found on the device', html='')
     html = render_template('workspace/_ref_object.html',
@@ -240,7 +243,10 @@ def save(appliance_id):
         ep = '%s%ssub_mkey=%s' % (endpoint, '&' if '?' in endpoint else '?', child_id)
     payload = {'data': dict(fields)}   # FortiWeb cmdb writes are {"data": {...}}
 
-    res = FortiWebOps(appl).update(ep, mkey, payload, dry_run=not do_apply)
+    try:
+        res = FortiWebOps(appl).update(ep, mkey, payload, dry_run=not do_apply)
+    except Exception as exc:
+        return json_error(exc, 'Save failed on the device', context='workspace.save')
     return jsonify(
         ok=res.ok, dry_run=res.get('dry_run'),
         request=res.get('request'), error=res.get('error', ''),

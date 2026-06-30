@@ -210,11 +210,42 @@ def cancel(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def mark_notified(id):
+    """Send the client maintenance notice by email when email is configured
+    (Settings -> Email); otherwise just record it as sent. Best-effort: a send
+    failure is reported and logged, never a 500."""
+    from ..services import email_service as email
     cr = ChangeRequest.query.get_or_404(id)
-    cr.notify_status = 'sent'
-    db.session.commit()
-    log_action('change_request.notified', target=cr.title)
-    flash('Maintenance notice marked as sent.', 'success')
+    recipients = (request.form.get('recipients') or '').strip()
+    stamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+
+    if email.is_configured():
+        notice = svc.maintenance_notice(cr)
+        subject = 'Scheduled maintenance window'
+        body = notice
+        lines = notice.splitlines()
+        if lines and lines[0].lower().startswith('subject:'):
+            subject = lines[0].split(':', 1)[1].strip() or subject
+            body = '\n'.join(lines[1:]).lstrip('\n')
+        result = email.send_email(recipients, subject, body)
+        if result.get('ok'):
+            cr.notify_status = 'sent'
+            cr.notify_log = (cr.notify_log or '') + f"\n[{stamp}] sent: {result.get('detail', '')}"
+            db.session.commit()
+            log_action('change_request.notified', target=cr.title,
+                       detail=result.get('detail', ''))
+            flash('Maintenance notice emailed to the client(s).', 'success')
+        else:
+            cr.notify_log = (cr.notify_log or '') + f"\n[{stamp}] FAILED: {result.get('detail', '')}"
+            db.session.commit()
+            log_action('change_request.notify_failed', target=cr.title,
+                       detail=result.get('detail', ''))
+            flash(f"Email send failed: {result.get('detail', '')}", 'danger')
+    else:
+        cr.notify_status = 'sent'
+        cr.notify_log = (cr.notify_log or '') + f"\n[{stamp}] marked sent (email not configured)"
+        db.session.commit()
+        log_action('change_request.notified', target=cr.title)
+        flash('Notice marked as sent. Configure Settings -> Email to deliver it automatically.', 'info')
     return redirect(url_for('change_requests.detail', id=id))
 
 

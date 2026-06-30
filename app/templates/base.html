@@ -264,8 +264,6 @@
           <a class="fw-nav-item" href="{{ url_for('provisioning.index') }}">
             <i class="bi bi-rocket-takeoff fw-nav-icon"></i><span>System Provisioning</span></a>
           {% if current_user.can('user_manage') %}
-          <a class="fw-nav-item" href="{{ url_for('templates.index') }}">
-            <i class="bi bi-collection fw-nav-icon"></i><span>Templates</span></a>
           <a class="fw-nav-item" href="{{ url_for('change_requests.index') }}">
             <i class="bi bi-clipboard2-check fw-nav-icon"></i><span>Change Requests</span></a>
           {% endif %}
@@ -278,9 +276,12 @@
       <div class="fw-nav-group" data-nav-group="Administrator">
         <button type="button" class="fw-nav-section fw-nav-toggle"><span>Administrator</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
-          <a class="fw-nav-item {{ 'active' if request.endpoint == 'section_config.index' else '' }}"
-             href="{{ url_for('section_config.index') }}">
-            <i class="bi bi-sliders fw-nav-icon"></i><span>All sections</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'templates' else '' }}"
+             href="{{ url_for('templates.index') }}">
+            <i class="bi bi-collection fw-nav-icon"></i><span>Template Library</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'section_catalog' else '' }}"
+             href="{{ url_for('section_catalog.index') }}">
+            <i class="bi bi-sliders fw-nav-icon"></i><span>FortiWeb Sections</span></a>
           <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('audit.') else '' }}"
              href="{{ url_for('audit.index') }}">
             <i class="bi bi-clipboard-check fw-nav-icon"></i><span>Audit Log</span></a>

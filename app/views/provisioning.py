@@ -26,6 +26,9 @@ from ..services import field_catalog as fc
 from ..services import provisioning as prov
 from ..services.audit import log_action
 from ..services.templates import delete_template, get_template, list_templates
+from ..services import baselines as B
+from ..services import settings_store
+from ..services.bulk import BulkRunner
 
 bp = Blueprint('provisioning', __name__, url_prefix='/provisioning')
 
@@ -275,3 +278,138 @@ def delete(template_id: int):
     else:
         flash('Profile not found or locked.', 'warning')
     return redirect(url_for('provisioning.index'))
+
+
+# --------------------------------------------------------------------------- #
+#  Baselines — assembly of approved templates by zone / line / department       #
+# --------------------------------------------------------------------------- #
+def _baseline_form_ctx(*, baseline=None):
+    """Shared context for the baseline new/edit form."""
+    cls = settings_store.all_classification()
+    return {
+        'baseline': baseline,
+        'approved': B.approved_templates(),
+        'zones': cls.get('zones', []),
+        'lines': cls.get('lines', []),
+        'departments': cls.get('departments', []),
+        'selected_ids': [i.template_id for i in baseline.items] if baseline else [],
+    }
+
+
+@bp.route('/baselines')
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def baselines():
+    rows = B.list_baselines()
+    counts = {b.id: len(B.matching_devices(b)) for b in rows}
+    return render_template('provisioning/baselines.html',
+                           baselines=rows, device_counts=counts)
+
+
+@bp.route('/baselines/new', methods=['GET', 'POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def baseline_new():
+    if request.method == 'POST':
+        ids = [int(v) for v in request.form.getlist('template_ids') if v.isdigit()]
+        try:
+            row = B.create_baseline(
+                request.form.get('name', ''),
+                zone=request.form.get('zone', ''),
+                line=request.form.get('line', ''),
+                department=request.form.get('department', ''),
+                template_ids=ids, note=request.form.get('note', ''),
+                author=getattr(current_user, 'username', '') or '')
+            log_action('baseline.create', target=row.name,
+                       detail=f'{len(ids)} template(s), zone={row.zone} line={row.line}')
+            flash(f'Baseline "{row.name}" created.', 'success')
+            return redirect(url_for('provisioning.baselines'))
+        except ValueError as exc:
+            flash(f'Could not create baseline: {exc}', 'danger')
+            return render_template('provisioning/baseline_form.html',
+                                   **_baseline_form_ctx())
+    return render_template('provisioning/baseline_form.html', **_baseline_form_ctx())
+
+
+@bp.route('/baselines/<int:baseline_id>/edit', methods=['GET', 'POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def baseline_edit(baseline_id: int):
+    row = B.get_baseline(baseline_id)
+    if row is None:
+        abort(404)
+    if request.method == 'POST':
+        ids = [int(v) for v in request.form.getlist('template_ids') if v.isdigit()]
+        try:
+            B.update_baseline(
+                baseline_id, name=request.form.get('name', ''),
+                zone=request.form.get('zone', ''),
+                line=request.form.get('line', ''),
+                department=request.form.get('department', ''),
+                template_ids=ids, note=request.form.get('note', ''))
+            log_action('baseline.update', target=row.name)
+            flash('Baseline updated.', 'success')
+            return redirect(url_for('provisioning.baselines'))
+        except ValueError as exc:
+            flash(f'Could not update baseline: {exc}', 'danger')
+    return render_template('provisioning/baseline_form.html',
+                           **_baseline_form_ctx(baseline=row))
+
+
+@bp.route('/baselines/<int:baseline_id>/delete', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def baseline_delete(baseline_id: int):
+    row = B.get_baseline(baseline_id)
+    label = row.name if row else str(baseline_id)
+    if B.delete_baseline(baseline_id):
+        log_action('baseline.delete', target=label)
+        flash('Baseline deleted.', 'success')
+    else:
+        flash('Baseline not found.', 'warning')
+    return redirect(url_for('provisioning.baselines'))
+
+
+@bp.route('/baselines/<int:baseline_id>/apply', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def baseline_apply(baseline_id: int):
+    """Two-phase apply of a whole baseline to its scope-matched devices.
+
+    First POST (no ``confirm``) -> dry-run preview over the matching devices.
+    Second POST (``confirm=1``) -> canary-gated live write of every composing
+    template, device by device."""
+    row = B.get_baseline(baseline_id)
+    if row is None:
+        abort(404)
+    devices = B.matching_devices(row)
+    device_ids = [a.id for a in devices]
+    items = B.baseline_push_items(row)
+    confirm = request.form.get('confirm') == '1'
+
+    if not device_ids:
+        flash(f'Baseline "{row.name}" matches no devices for its scope.', 'warning')
+        return redirect(url_for('provisioning.baselines'))
+    if not items:
+        flash(f'Baseline "{row.name}" has no composing templates.', 'warning')
+        return redirect(url_for('provisioning.baselines'))
+
+    if not confirm:
+        preview = BulkRunner(items).preview(device_ids)
+        log_action('baseline.apply.preview', target=row.name,
+                   detail=f'devices={device_ids} items={len(items)}')
+        return render_template('provisioning/baseline_apply.html',
+                               phase='preview', baseline=row, devices=devices,
+                               preview=preview, result=None, item_count=len(items))
+
+    result = BulkRunner(items).apply(device_ids, canary=1)
+    log_action('baseline.apply', target=row.name,
+               detail=f'devices={device_ids} items={len(items)} '
+                      f'aborted={result.get("aborted")}')
+    if result.get('aborted'):
+        flash(f'Apply aborted — canary failed for "{row.name}".', 'danger')
+    else:
+        flash(f'Applied baseline "{row.name}" to {len(devices)} device(s).', 'success')
+    return render_template('provisioning/baseline_apply.html',
+                           phase='result', baseline=row, devices=devices,
+                           preview=None, result=result, item_count=len(items))

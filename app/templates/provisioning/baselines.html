@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Baselines{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>Baselines</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">Named assemblies of approved templates,
+      scoped by zone / line / department. Composed from the
+      <a href="{{ url_for('section_catalog.index') }}">approved templates</a>; pushed to the
+      devices that match the scope.</p>
+  </div>
+  <a class="btn btn-fw-primary" href="{{ url_for('provisioning.baseline_new') }}">
+    <i class="bi bi-plus-lg me-1"></i>New baseline</a>
+</div>
+
+{% if not baselines %}
+  <div class="alert alert-info">No baselines yet. Compose one from the approved templates in
+    <a href="{{ url_for('section_catalog.index') }}">FortiWeb Sections</a>.</div>
+{% else %}
+<div class="fw-table-wrapper">
+  <table class="fw-table">
+    <thead><tr><th>Name</th><th>Zone</th><th>Line</th><th>Department</th>
+      <th>Templates</th><th>Devices</th><th class="actions-col">Actions</th></tr></thead>
+    <tbody>
+    {% for b in baselines %}
+      <tr>
+        <td class="fw-semibold">{{ b.name }}</td>
+        <td>{{ b.zone or '—' }}</td>
+        <td>{{ b.line or '—' }}</td>
+        <td>{{ b.department or '—' }}</td>
+        <td><span class="badge bg-secondary">{{ b.items|length }}</span></td>
+        <td><span class="badge bg-info-subtle text-info">{{ device_counts.get(b.id, 0) }}</span></td>
+        <td class="actions-col">
+          <form method="post" class="d-inline"
+                action="{{ url_for('provisioning.baseline_apply', baseline_id=b.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-primary">Apply…</button>
+          </form>
+          <a class="btn btn-sm btn-outline-secondary"
+             href="{{ url_for('provisioning.baseline_edit', baseline_id=b.id) }}">Edit</a>
+          <form method="post" class="d-inline"
+                action="{{ url_for('provisioning.baseline_delete', baseline_id=b.id) }}"
+                onsubmit="return confirm('Delete baseline {{ b.name }}?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

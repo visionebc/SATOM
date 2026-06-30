@@ -297,13 +297,22 @@ class Appliance(db.Model):
     def set_password(self, plaintext: str) -> None:
         self.password = plaintext
 
-    def build_client(self, timeout: float = 30.0):
-        """Return the right vendor client for this appliance's kind."""
+    def _own_client(self, timeout: float = 30.0):
+        """The vendor client for THIS row's own host/creds (no HA resolution)."""
         from .clients.fortiweb import FortiWebClient
         from .clients.fortiadc import FortiADCClient
         if self.kind == "fortiadc":
             return FortiADCClient(self, timeout=timeout)
         return FortiWebClient(self, timeout=timeout)
+
+    def build_client(self, timeout: float = 30.0):
+        """Vendor client for this appliance. For a cluster node 0 this resolves
+        to the live write target (primary member, or the VIP) so callers never
+        need to know about HA; standalone appliances are unaffected."""
+        if self.is_cluster:
+            from .services.ha import resolve_write_target
+            return resolve_write_target(self)._own_client(timeout=timeout)
+        return self._own_client(timeout=timeout)
 
     def probe_status(self, timeout: float = 6.0) -> str:
         """Live connectivity probe -> 'online' | 'offline'. No DB writes, so it

@@ -154,6 +154,18 @@
   </div>
 </div>
 <script>
+document.addEventListener('DOMContentLoaded', function () {
+  const badges = document.querySelectorAll('[data-live-role]');
+  if (!badges.length) return;
+  fetch('/appliances/{{ appliance.id }}/members/roles').then(function (r) { return r.json(); }).then(function (roles) {
+    badges.forEach(function (el) {
+      const mid = el.getAttribute('data-live-role');
+      const role = roles[mid] || 'unknown';
+      el.textContent = role;
+      el.className = 'badge ' + (role === 'primary' ? 'bg-success' : (role === 'secondary' ? 'bg-info' : 'bg-secondary'));
+    });
+  }).catch(function () {});
+});
 async function testConn(id, btn) {
   btn.disabled = true; btn.textContent = 'Testing…';
   try {

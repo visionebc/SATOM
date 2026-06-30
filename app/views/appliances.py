@@ -70,9 +70,22 @@ bp = Blueprint('appliances', __name__, url_prefix='/appliances')
 @bp.route('/')
 @login_required
 def index():
-    appliances = Appliance.query.order_by(Appliance.name).all()
+    # Top-level rows only: standalones + cluster node 0. Member nodes are
+    # rendered nested under their cluster, never as standalone entries.
+    appliances = (Appliance.query
+                  .filter(Appliance.parent_id.is_(None))
+                  .order_by(Appliance.name).all())
     return render_template('appliances/index.html', appliances=appliances,
                            classification=store.all_classification())
+
+
+@bp.route('/<int:id>/members/roles')
+@login_required
+def member_roles(id):
+    """Live HA role per member (read-only JSON for the cluster sub-cards)."""
+    node0 = Appliance.query.get_or_404(id)
+    from ..services import ha
+    return jsonify({str(m.id): ha.member_role(m, timeout=5.0) for m in node0.members})
 
 
 @bp.route('/<int:id>')

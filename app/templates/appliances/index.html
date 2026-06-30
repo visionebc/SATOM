@@ -98,6 +98,7 @@
         <tr>
           <td>
             <a href="{{ url_for('appliances.detail', id=a.id) }}" class="fw-appliance-name" style="font-size:14px;text-decoration:none;">{{ a.name }}</a>
+            {% if a.is_cluster %}<span class="fw-badge fw-badge-secondary ms-1" title="HA cluster ({{ a.ha_mode or 'per_node' }})"><i class="bi bi-diagram-3 me-1"></i>HA · {{ a.members|length }}</span>{% endif %}
           </td>
           <td>
             <span class="fw-badge fw-badge-secondary">{{ a.kind }}</span>
@@ -154,6 +155,18 @@
             </form>
           </td>
         </tr>
+        {% if a.is_cluster %}{% for m in a.cluster_members() %}
+        <tr class="fw-member-row" data-member-of="{{ a.id }}" style="background:rgba(148,163,184,0.04);">
+          <td style="padding-left:28px;"><i class="bi bi-arrow-return-right text-muted me-1"></i><a href="{{ url_for('appliances.detail', id=m.id) }}" style="text-decoration:none;font-size:13px;">{{ m.name }}</a>
+            {% if m.ha_role_hint %}<span class="fw-tag ms-1">{{ m.ha_role_hint }}</span>{% endif %}</td>
+          <td><span class="fw-badge fw-badge-secondary">member</span></td>
+          <td class="mono" style="font-size:12.5px;">{{ m.host }}</td>
+          <td>{{ m.port }}</td>
+          <td colspan="2"><span class="text-muted small">live role:</span> <span class="fw-tag" data-live-role="{{ m.id }}">…</span></td>
+          <td><span class="fw-status fw-status-unknown" data-status-id="{{ m.id }}"><span class="fw-status-dot"></span></span></td>
+          <td class="actions-col"><a href="{{ url_for('appliances.detail', id=m.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon" title="Open"><i class="bi bi-box-arrow-up-right"></i></a></td>
+        </tr>
+        {% endfor %}{% endif %}
         {% endfor %}
       {% else %}
         <tr>
@@ -417,6 +430,19 @@ function openEditModal(appliance) {
   API.openModal('modalEditAppliance');
 }
 
+// HA: fetch live member roles for each cluster on the page
+document.addEventListener('DOMContentLoaded', function () {
+  const clusters = new Set();
+  document.querySelectorAll('[data-member-of]').forEach(function (r) { clusters.add(r.getAttribute('data-member-of')); });
+  clusters.forEach(function (cid) {
+    fetch('/appliances/' + cid + '/members/roles').then(function (r) { return r.json(); }).then(function (roles) {
+      Object.keys(roles).forEach(function (mid) {
+        const el = document.querySelector('[data-live-role="' + mid + '"]');
+        if (el) { el.textContent = roles[mid]; if (roles[mid] === 'primary') el.style.color = '#10b981'; }
+      });
+    }).catch(function () {});
+  });
+});
 // Update stats after status polling
 document.addEventListener('DOMContentLoaded', function () {
   function updateStats() {

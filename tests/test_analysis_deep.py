@@ -71,3 +71,39 @@ def test_wpp_feature_matrix_counts_bound_features(app, seeded_deep_cache):
     sig = next(r for r in matrix if r["field"] == "signature-rule")
     assert sig["bound"] == 1 and sig["total"] == 2
     assert sig["label"]  # carries a human label
+
+
+def test_subelement_counts_groups_by_logical(app, seeded_deep_cache):
+    from app.services import analysis_deep
+    with app.app_context():
+        counts = analysis_deep.subelement_counts(device_ids=None)
+    by = {c["logical_name"]: c["count"] for c in counts}
+    assert any(ln.endswith("pserver-list") for ln in by)
+    assert by["server_policy/server_pool/pserver-list"] == 2
+
+
+def test_wpp_drilldown_returns_nested_tree(app, seeded_deep_cache):
+    from app.services import analysis_deep
+    with app.app_context():
+        tree = analysis_deep.wpp_drilldown(appliance_id=seeded_deep_cache, mkey="wpp-a")
+    assert tree["mkey"] == "wpp-a"
+    assert "children" in tree
+
+
+def test_policy_drilldown_shows_pool_and_members(app, seeded_deep_cache):
+    from app.services import analysis_deep
+    with app.app_context():
+        tree = analysis_deep.server_policy_drilldown(appliance_id=seeded_deep_cache, mkey="pol-a")
+    assert tree["mkey"] == "pol-a"
+    pool = next(c for c in tree["children"] if c["mkey"] == "pool-a")
+    members = [c for c in pool["children"] if c["subtable"] == "pserver-list"]
+    assert len(members) == 2
+
+
+def test_orphan_objects_flags_unused_wpp(app, seeded_deep_cache):
+    from app.services import analysis_deep
+    with app.app_context():
+        orphans = analysis_deep.orphan_objects(device_ids=None)
+    mkeys = {o["mkey"] for o in orphans}
+    assert "wpp-b" in mkeys   # bound by no server policy
+    assert "wpp-a" not in mkeys

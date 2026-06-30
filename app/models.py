@@ -66,6 +66,13 @@ class User(db.Model, UserMixin):
     last_login = db.Column(db.DateTime, nullable=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
 
+    # External authentication + local 2FA (added 2026-06-30)
+    auth_source = db.Column(db.String(16), nullable=False, default="local")
+    totp_secret = db.Column(db.String(512), nullable=True)
+    totp_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    recovery_email = db.Column(db.String(256), nullable=True)
+    backup_codes = db.Column(db.Text, nullable=True)
+
     # audit relationship (back-ref from AuditLog)
     audit_logs = db.relationship("AuditLog", backref="user", lazy="dynamic")
     profile = db.relationship("Profile", lazy="joined", foreign_keys=[profile_id])
@@ -75,6 +82,16 @@ class User(db.Model, UserMixin):
 
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
+
+    @property
+    def is_local(self) -> bool:
+        """True for accounts that authenticate against the local DB."""
+        return (self.auth_source or "local") == "local"
+
+    @property
+    def is_external(self) -> bool:
+        """True for directory (AD/LDAP/RADIUS) accounts."""
+        return not self.is_local
 
     @property
     def effective_permissions(self) -> set[str]:
@@ -216,6 +233,18 @@ class Appliance(db.Model):
     zone = db.Column(db.String(128), nullable=True)
     line = db.Column(db.String(128), nullable=True)
     ssh_port = db.Column(db.Integer, nullable=True, default=22)
+    # --- HA cluster (self-referential) ----------------------------------
+    # node 0 = logical cluster container; members = ordinary appliances
+    # pointing at node 0 via parent_id. See docs/superpowers/plans.
+    is_cluster = db.Column(db.Boolean, nullable=False, default=False)
+    is_cluster_member = db.Column(db.Boolean, nullable=False, default=False)
+    parent_id = db.Column(
+        db.Integer, db.ForeignKey('appliances.id', ondelete='CASCADE'),
+        nullable=True, index=True,
+    )
+    ha_mode = db.Column(db.String(16), nullable=True)        # 'per_node'|'vip' (node 0)
+    ha_role_hint = db.Column(db.String(16), nullable=True)   # 'primary'|'secondary' (member identity)
+    ha_vip = db.Column(db.String(253), nullable=True)        # shared management VIP (vip mode)
     # Physical inventory — documentation only (not derived from the live device).
     hw_type = db.Column(db.String(16), nullable=False, default="unknown")  # 'hardware'|'vm'|'unknown'
     model = db.Column(db.String(128), nullable=True)        # e.g. "FortiWeb 600F"
@@ -237,6 +266,25 @@ class Appliance(db.Model):
         cascade="all, delete-orphan",  # ORM-side cascade (portable; SQLite FK enforcement is off by default)
         order_by="ApplianceInterface.sort_order",
     )
+
+    # Cluster members (node 0 -> p1/p2). ORM cascade so deleting a node 0
+    # removes its member rows. remote_side=[id] makes this an adjacency list.
+    members = db.relationship(
+        'Appliance',
+        backref=db.backref('parent', remote_side=[id]),
+        cascade='all, delete-orphan',
+        single_parent=True,
+        foreign_keys='Appliance.parent_id',
+        order_by='Appliance.ha_role_hint',
+    )
+
+    @property
+    def is_standalone(self) -> bool:
+        return not self.is_cluster and not self.is_cluster_member
+
+    def cluster_members(self):
+        """Member nodes ordered by role hint then name (stable display)."""
+        return sorted(self.members, key=lambda m: (m.ha_role_hint or 'zz', m.name))
 
     @property
     def password(self) -> str:
@@ -280,6 +328,12 @@ class Appliance(db.Model):
             "department": self.department,
             "zone": self.zone,
             "line": self.line,
+            "is_cluster": bool(self.is_cluster),
+            "is_cluster_member": bool(self.is_cluster_member),
+            "parent_id": self.parent_id,
+            "ha_mode": self.ha_mode,
+            "ha_role_hint": self.ha_role_hint,
+            "ha_vip": self.ha_vip,
             "ssh_port": self.ssh_port,
             "hw_type": self.hw_type or "unknown",
             "model": self.model,

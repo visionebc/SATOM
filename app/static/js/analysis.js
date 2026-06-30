@@ -7,6 +7,8 @@
     "#ec4899", "#22c55e", "#eab308", "#6366f1"];
   var charts = {};
   var lastData = null;
+  window.__anaCharts = charts;  // exposed so analysis_deep's chart-modal can expand any chart
+
 
   function $(id) { return document.getElementById(id); }
   function colors(n) { var a = []; for (var i = 0; i < n; i++) a.push(PALETTE[i % PALETTE.length]); return a; }

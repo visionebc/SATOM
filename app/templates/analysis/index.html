@@ -31,6 +31,22 @@
   .ana-empty{opacity:.5;font-size:.85rem;padding:.6rem}
   .ana-regex{display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap}
   .ana-regex code{background:#f1f4f9;padding:.1rem .4rem;border-radius:5px}
+  .anam-exp{float:right;border:none;background:transparent;cursor:pointer;font-size:.95rem;opacity:.45;line-height:1;padding:0 .2rem}
+  .anam-exp:hover{opacity:1;color:#2563eb}
+  .anam-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:1080;padding:2rem}
+  .anam-overlay[hidden]{display:none}
+  .anam-box{background:#fff;border-radius:14px;width:min(960px,96vw);max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(15,23,42,.4);padding:1.1rem 1.2rem}
+  .anam-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.8rem}
+  .anam-title{font-weight:700;color:#1f3a8a}
+  .anam-ctl{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;font-size:.8rem}
+  .anam-ctl select,.anam-ctl input{padding:.2rem .4rem;border:1px solid var(--fw-border,#d4dae6);border-radius:6px}
+  .anam-chart{position:relative;height:420px;margin-bottom:.8rem}
+  .dt-tree{font-size:.8rem}
+  .dt-row{display:flex;gap:.5rem;align-items:center;padding:.2rem .3rem;border-radius:6px;cursor:pointer}
+  .dt-row:hover{background:#f3f6fc}
+  .dt-tog{width:1rem;text-align:center;color:#2563eb}
+  .dt-name{font-weight:600}.dt-key{color:#3730a3}.dt-meta{opacity:.55;font-size:.72rem}
+  .dt-n{margin-left:auto;background:#eef2ff;color:#3730a3;border-radius:10px;padding:0 .4rem;font-size:.7rem}
 </style>
 {% endblock %}
 
@@ -209,9 +225,61 @@
   <div class="ana-scroll"><table class="ana-tbl" id="tChanges">
     <thead><tr><th>When (UTC)</th><th>Device</th><th>Action</th><th>Endpoint</th><th>Object</th><th>Mode</th><th>User</th></tr></thead><tbody></tbody></table></div>
 </div>
+
+<!-- Deep Analysis (WPP + Policy depth) -->
+<div class="ana-sec">Deep Analysis — WPP &amp; Policy Depth <span id="deepStatus" style="font-size:.75rem;opacity:.6;font-weight:400"></span></div>
+<div class="ana-panel" style="margin-bottom:1rem">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div id="deepFresh" class="d-flex flex-wrap" style="gap:.2rem"></div>
+    <div class="d-flex gap-2">
+      <button id="deepReload" class="btn fw-btn-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> Reload</button>
+      <button id="deepRun" class="btn fw-btn-primary btn-sm"><i class="bi bi-diagram-3"></i> Run deep capture</button>
+    </div>
+  </div>
+  <p class="small text-muted mb-0 mt-2">The full WPP sub-tree + Server-Policy dependency graph captured into the cache (opt-in deep rediscovery). Every sub-element is queryable here — no live device calls. Click ⤢ on any chart to expand, change type, top-N, and export CSV/PNG.</p>
+</div>
+<div class="ana-grid">
+  <div class="ana-panel wide"><h3>WPP feature coverage <span id="deepWppN" style="opacity:.5"></span></h3>
+    <div class="ana-chart" style="height:300px"><canvas id="cDeepWppMatrix"></canvas></div>
+    <div class="ana-scroll" style="margin-top:.6rem"><table class="ana-tbl" id="tDeepWpp">
+      <thead><tr><th>Feature</th><th>Bound / Total</th><th>Coverage</th></tr></thead><tbody></tbody></table></div></div>
+  <div class="ana-panel"><h3>Sub-elements captured</h3>
+    <div class="ana-chart" style="height:300px"><canvas id="cDeepSub"></canvas></div>
+    <div class="ana-scroll" style="max-height:160px;margin-top:.6rem"><table class="ana-tbl" id="tDeepSub">
+      <thead><tr><th>Sub-element type</th><th>Rows</th></tr></thead><tbody></tbody></table></div></div>
+</div>
+<div class="ana-grid">
+  <div class="ana-panel"><h3>Unused WPP (orphans) <span id="deepOrphN" style="opacity:.5"></span></h3>
+    <div id="deepOrphans" class="ana-scroll"></div></div>
+  <div class="ana-panel wide"><h3>Drill-down explorer</h3>
+    <div class="d-flex gap-2 align-items-center mb-2" style="flex-wrap:wrap">
+      <select id="deepKind" class="form-select form-select-sm" style="width:auto"><option value="wpp">Web Protection Profile</option><option value="policy">Server Policy</option></select>
+      <select id="deepObj" class="form-select form-select-sm" style="width:auto;max-width:360px"></select>
+    </div>
+    <div id="deepTree" class="ana-scroll dt-tree" style="max-height:420px"><div class="ana-empty">Pick an object</div></div></div>
+</div>
+
+<!-- Reusable chart modal -->
+<div id="anaModal" class="anam-overlay" hidden>
+  <div class="anam-box">
+    <div class="anam-head">
+      <span id="anamTitle" class="anam-title"></span>
+      <div class="anam-ctl">
+        <label>Type <select id="anamType"><option value="bar">Bar</option><option value="line">Line</option><option value="doughnut">Doughnut</option></select></label>
+        <label>Top <input id="anamTop" type="number" min="0" placeholder="all" style="width:64px"></label>
+        <button id="anamCsv" class="btn fw-btn-secondary btn-sm">CSV</button>
+        <button id="anamPng" class="btn fw-btn-secondary btn-sm">PNG</button>
+        <button id="anamClose" class="btn fw-btn-secondary btn-sm">✕</button>
+      </div>
+    </div>
+    <div class="anam-chart"><canvas id="anamCanvas"></canvas></div>
+    <div class="ana-scroll" style="max-height:210px"><table class="ana-tbl" id="anamTbl"><thead><tr><th>Label</th><th>Value</th></tr></thead><tbody></tbody></table></div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='vendor/chart/chart.umd.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/analysis.js') }}"></script>
+<script src="{{ url_for('static', filename='js/analysis_deep.js') }}"></script>
 {% endblock %}

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}FortiWeb Sections — Approved Templates{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h4 class="mb-1"><i class="bi bi-sliders"></i> FortiWeb Sections</h4>
+      <div class="text-muted small">Approved templates, grouped by section. These are
+        assembled into baselines in <a href="{{ url_for('provisioning.index') }}">System Provisioning</a>.</div>
+    </div>
+    <span class="badge bg-secondary">{{ total }} approved</span>
+  </div>
+
+  {% if not groups %}
+    <div class="alert alert-info">No approved templates yet. Save a template (e.g. from
+      Web Protection), then approve it in the
+      <a href="{{ url_for('templates.index') }}">Template Library</a>.</div>
+  {% endif %}
+
+  {% for g in groups %}
+  <div class="card mb-3">
+    <div class="card-header d-flex align-items-center justify-content-between">
+      <strong>{{ g.label }}</strong>
+      <span class="badge bg-light text-dark">{{ g.templates|length }}</span>
+    </div>
+    <div class="list-group list-group-flush">
+      {% for t in g.templates %}
+      <div class="list-group-item d-flex align-items-center justify-content-between">
+        <div>
+          <span class="fw-semibold">{{ t.name }}</span>
+          <span class="badge bg-success-subtle text-success ms-2">approved</span>
+          <span class="text-muted small ms-2">v{{ t.version }} · {{ kind_labels.get(t.kind, t.kind) }}</span>
+          {% if t.author %}<span class="text-muted small ms-2">by {{ t.author }}</span>{% endif %}
+        </div>
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('section_catalog.detail', template_id=t.id) }}" target="_blank">
+          <i class="bi bi-eye"></i> View</a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

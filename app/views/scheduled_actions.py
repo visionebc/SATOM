@@ -24,6 +24,7 @@ from ..models import (Appliance, Permission, ScheduledAction,
 from ..services import scheduled_actions as sa
 from ..services.audit import log_action
 from ..services.scheduler import SCHEDULE_KINDS, compute_next_run
+from ..registry.loader import get_all_endpoints
 
 bp = Blueprint('scheduled_actions', __name__, url_prefix='/scheduled-actions')
 
@@ -92,6 +93,34 @@ def _parse_params() -> dict:
         return {}
 
 
+def _custom_rest_params() -> dict:
+    """Assemble the params for a custom REST action from its dedicated form
+    fields (method / endpoint / mkey / JSON body). The endpoint is required;
+    the body must be a JSON object (POST/PUT) or it is ignored."""
+    f = request.form
+    method = (f.get('custom_method') or 'GET').strip().upper()
+    endpoint = (f.get('custom_endpoint') or '').strip()
+    mkey = (f.get('custom_mkey') or '').strip()
+    label = (f.get('custom_label') or '').strip()
+    raw_body = (f.get('custom_body') or '').strip()
+    params = {'method': method, 'endpoint': endpoint}
+    if mkey:
+        params['mkey'] = mkey
+    if label:
+        params['label'] = label
+    if raw_body:
+        try:
+            parsed = json.loads(raw_body)
+        except (ValueError, TypeError):
+            parsed = None
+            flash('Custom REST body was not valid JSON and was ignored.', 'warning')
+        if isinstance(parsed, dict):
+            params['body'] = parsed
+        elif parsed is not None:
+            flash('Custom REST body must be a JSON object and was ignored.', 'warning')
+    return params
+
+
 def _schedule_summary(kind: str, spec: dict) -> str:
     """One-line, human description of a schedule for the list page."""
     spec = spec or {}
@@ -132,7 +161,14 @@ def _apply_form(action: ScheduledAction) -> bool:
     action.action = spec.key
     action.scope = spec.scope              # scope is derived from the spec
     action.targets = json.dumps(_build_targets())
-    action.params = json.dumps(_parse_params())
+    if spec.key == 'custom_rest':
+        custom = _custom_rest_params()
+        if not custom.get('endpoint'):
+            flash('Custom REST: an endpoint (registry key or /api/... path) is required.', 'danger')
+            return False
+        action.params = json.dumps(custom)
+    else:
+        action.params = json.dumps(_parse_params())
     action.schedule_kind = kind
     action.schedule = json.dumps(schedule)
     action.enabled = bool(request.form.get('enabled'))
@@ -156,8 +192,12 @@ def _form_context(action: ScheduledAction | None) -> dict:
         schedule_kinds=SCHEDULE_KINDS,
         schedule=action.schedule_dict if action else {},
         params_text=(json.dumps(action.params_dict, indent=2)
-                     if action and action.params_dict else ''),
+                     if action and action.params_dict
+                     and action.action != 'custom_rest' else ''),
         weekdays=WEEKDAYS,
+        registry_endpoints=get_all_endpoints(),
+        custom_params=(action.params_dict
+                       if action and action.action == 'custom_rest' else {}),
     )
 
 

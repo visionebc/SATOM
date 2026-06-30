@@ -254,6 +254,25 @@
                 </label>
               </div>
             </div>
+            <div class="col-12"><hr class="my-1"></div>
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="is_cluster" id="add_is_cluster" onchange="toggleHA('add')">
+                <label class="form-check-label" for="add_is_cluster"><strong>This is an HA cluster (node 0)</strong></label>
+              </div>
+              <div class="form-text">Node 0 is the logical cluster. Add member nodes (p1/p2) afterwards from the cluster's detail page.</div>
+            </div>
+            <div class="col-md-6 ha-fields-add d-none">
+              <label class="fw-form-label">HA mode</label>
+              <select class="form-select fw-form-control" name="ha_mode" id="add_ha_mode" onchange="toggleHA('add')">
+                <option value="per_node">Per-node IP (detect live primary before each write)</option>
+                <option value="vip">Shared VIP (one address that lands on the primary)</option>
+              </select>
+            </div>
+            <div class="col-md-6 ha-fields-add ha-vip-add d-none">
+              <label class="fw-form-label">Shared VIP address</label>
+              <input type="text" class="form-control fw-form-control" name="ha_vip" placeholder="192.0.2.50">
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -358,6 +377,14 @@
 
 {% block scripts %}
 <script>
+function toggleHA(scope) {
+  const cb = document.getElementById(scope + '_is_cluster');
+  const on = !!(cb && cb.checked);
+  document.querySelectorAll('.ha-fields-' + scope).forEach(function (el) { el.classList.toggle('d-none', !on); });
+  const mode = document.getElementById(scope + '_ha_mode');
+  const vipOn = on && mode && mode.value === 'vip';
+  document.querySelectorAll('.ha-vip-' + scope).forEach(function (el) { el.classList.toggle('d-none', !vipOn); });
+}
 function filterTable(query) {
   const q       = query.toLowerCase();
   const kind    = document.getElementById('kindFilter').value.toLowerCase();

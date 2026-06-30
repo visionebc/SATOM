@@ -25,6 +25,19 @@
     <div class="col-md-3"><label class="form-label">Department</label><select name="department" class="form-select"><option value="">(none)</option>{% if appliance.department and appliance.department not in classification.departments %}<option value="{{ appliance.department }}" selected>{{ appliance.department }} (unregistered)</option>{% endif %}{% for v in (classification.departments if classification else []) %}<option value="{{ v }}"{% if appliance.department == v %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
     <div class="col-12"><div class="form-check"><input type="checkbox" name="verify_ssl" class="form-check-input" id="verify_ssl" {{ 'checked' if appliance.verify_ssl }}>
       <label class="form-check-label" for="verify_ssl">Verify SSL Certificate</label></div></div>
+    {% if not appliance.is_cluster_member %}
+    <div class="col-12"><hr class="my-1"><h6 class="text-uppercase text-muted mb-0" style="font-size:12px;letter-spacing:.5px;">High Availability</h6></div>
+    <div class="col-12"><div class="form-check"><input type="checkbox" name="is_cluster" class="form-check-input" id="edit_is_cluster" {{ 'checked' if appliance.is_cluster }} onchange="toggleHA('edit')">
+      <label class="form-check-label" for="edit_is_cluster">This is an HA cluster (node 0)</label></div>
+      <div class="form-text">Manage member nodes from the cluster detail page.</div></div>
+    <div class="col-md-6 ha-fields-edit d-none"><label class="form-label">HA mode</label>
+      <select class="form-select" name="ha_mode" id="edit_ha_mode" onchange="toggleHA('edit')">
+        <option value="per_node" {{ 'selected' if (appliance.ha_mode or 'per_node')=='per_node' }}>Per-node IP (detect live primary)</option>
+        <option value="vip" {{ 'selected' if appliance.ha_mode=='vip' }}>Shared VIP</option>
+      </select></div>
+    <div class="col-md-6 ha-fields-edit ha-vip-edit d-none"><label class="form-label">Shared VIP address</label>
+      <input type="text" class="form-control" name="ha_vip" value="{{ appliance.ha_vip or '' }}" placeholder="192.0.2.50"></div>
+    {% endif %}
 
     <!-- ===== Physical / Inventory ===== -->
     <div class="col-12"><hr class="my-1"><h6 class="text-uppercase text-muted mb-0" style="font-size:12px;letter-spacing:.5px;">Physical / Inventory</h6>
@@ -95,6 +108,15 @@
 
 {% block scripts %}
 <script>
+function toggleHA(scope) {
+  const cb = document.getElementById(scope + '_is_cluster');
+  const on = !!(cb && cb.checked);
+  document.querySelectorAll('.ha-fields-' + scope).forEach(function (el) { el.classList.toggle('d-none', !on); });
+  const mode = document.getElementById(scope + '_ha_mode');
+  const vipOn = on && mode && mode.value === 'vip';
+  document.querySelectorAll('.ha-vip-' + scope).forEach(function (el) { el.classList.toggle('d-none', !vipOn); });
+}
+document.addEventListener('DOMContentLoaded', function () { toggleHA('edit'); });
 (function () {
   const body = document.getElementById('ifBody');
   const addBtn = document.getElementById('addIfBtn');

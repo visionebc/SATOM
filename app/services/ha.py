@@ -15,11 +15,20 @@ class HAError(RuntimeError):
 
 def parse_ha_role(status: dict) -> str:
     """Normalize a FortiWeb/FortiADC HA status dict to one of
-    'primary' | 'secondary' | 'standalone' | 'unknown'. Tolerant of the several
-    shapes FortiOS-family boxes use (is_master / master / ha_role / mode)."""
+    'primary' | 'secondary' | 'standalone' | 'unknown'.
+
+    SAFETY: only an EXPLICIT role/master signal yields 'primary'. A box that only
+    reports its HA *mode* (e.g. systemstatus ``haStatus='Active-Passive'`` — same
+    on both members of a pair) yields 'unknown', NOT 'primary' — so per-node
+    resolution refuses rather than guessing a standby is the primary.
+
+    Verified live on fw1 7.6 (standalone): systemstatus carries ``haStatus``
+    ('Standalone'). The per-member ROLE (master/slave) comes from the HA monitor
+    endpoint and is pending confirmation on a real A-P pair.
+    """
     if not isinstance(status, dict):
         return "unknown"
-    # explicit role string
+    # explicit role string (the HA monitor endpoint's per-member role)
     for key in ("ha_role", "role", "ha-role"):
         v = str(status.get(key, "")).strip().lower()
         if v in ("primary", "master", "active"):
@@ -34,7 +43,18 @@ def parse_ha_role(status: dict) -> str:
                 return "primary"
             if v in ("0", "false", "no", "disable", "disabled"):
                 return "secondary"
-    # HA mode -> standalone when not clustered
+    # FortiWeb systemstatus ``haStatus`` — usually a MODE; only declare a role
+    # when the string itself names master/slave, else standalone vs unknown.
+    hs = str(status.get("haStatus", "")).strip().lower()
+    if hs:
+        if "master" in hs or "primary" in hs:
+            return "primary"
+        if "slave" in hs or "secondary" in hs or "backup" in hs or "standby" in hs:
+            return "secondary"
+        if "standalone" in hs:
+            return "standalone"
+        return "unknown"  # a known HA mode (active-passive/active-active) w/o role
+    # generic mode key -> standalone when not clustered
     mode = str(status.get("ha_mode", status.get("mode", ""))).strip().lower()
     if mode in ("standalone", "", "off", "disable", "disabled"):
         return "standalone"

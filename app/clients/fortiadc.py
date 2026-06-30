@@ -38,5 +38,19 @@ class FortiADCClient(BaseClient):
     def status_check(self):
         return self._request('GET', '/api/system/status', headers=self._headers()).json()
 
+    def ha_status(self):
+        """Best-effort live HA status as a flat dict (FortiADC). Returns {} on
+        failure so the resolver degrades to 'standalone'/'unknown'."""
+        for path in ('/api/system_ha_status', '/api/system/status'):
+            try:
+                raw = self._request('GET', path, headers=self._headers()).json()
+            except Exception:
+                continue
+            if isinstance(raw, dict):
+                data = raw.get('payload', raw)
+                if isinstance(data, dict) and data:
+                    return data
+        return {}
+
     def api_call(self, method: str, path: str, data=None):
         return self._request(method, path, headers=self._headers(), json=data)

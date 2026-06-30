@@ -33,6 +33,10 @@ def _mk(session, name, **kw):
     ({"mode": ""}, "standalone"),
     ({"something": "else"}, "standalone"),   # no HA fields at all -> treat as standalone
     ({"ha_mode": "weird-mode"}, "unknown"),  # a non-empty, unrecognized mode
+    ({"haStatus": "Standalone"}, "standalone"),       # live-observed on fw1
+    ({"haStatus": "HA Master"}, "primary"),
+    ({"haStatus": "HA Slave"}, "secondary"),
+    ({"haStatus": "Active-Passive"}, "unknown"),      # mode only, role unknown -> safe
     ("not a dict", "unknown"),
 ])
 def test_parse_ha_role(status, expected):

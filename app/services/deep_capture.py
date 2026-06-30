@@ -154,6 +154,43 @@ def _list_names(reader: Any, urn: str, cache: dict) -> list[str]:
     return [m for m in (_mkey_of(r) for r in _collection(reader, urn, cache)) if m]
 
 
+# Top-level Server-Objects stores worth counting fleet-wide (certs + SNI). Cheap
+# top-level GETs (no expensive sub-table walk); SNI also nests its small member
+# list so the drill-down shows the domain->cert mapping. Any store absent on a
+# firmware just yields an empty list.
+_CERT_STORES = (
+    ("certificate", "cmdb/system/certificate.local"),
+    ("certificate_ca", "cmdb/system/certificate.ca"),
+    ("certificate_ca_group", "cmdb/system/certificate.ca-group"),
+    ("certificate_intermediate_group",
+     "cmdb/system/certificate.intermediate-certificate-group"),
+    ("certificate_letsencrypt", "cmdb/system/certificate.letsencrypt"),
+)
+_SNI_LOGICAL = "certificate_sni"
+_SNI_URN = "cmdb/system/certificate.sni"
+_SNI_MEMBERS_URN = "cmdb/system/certificate.sni/members"
+
+
+def cert_sections(reader: Any, cache: dict) -> dict:
+    """Top-level certificate + SNI stores -> a flat {logical: [objs]} section for
+    the fleet inventory. SNI nests its members under DEEP_KEY. Box-gentle: one GET
+    per store (cached for the sweep)."""
+    out: dict = {}
+    for logical, urn in _CERT_STORES:
+        rows = [dict(r) for r in _collection(reader, urn, cache)]
+        if rows:
+            out[logical] = rows
+    snis: list = []
+    for sni in _collection(reader, _SNI_URN, cache):
+        members = clone.scoped_rows(reader, _SNI_MEMBERS_URN, "certificate_sni_item",
+                                    _mkey_of(sni)) or []
+        members = [m for m in members if isinstance(m, dict)]
+        snis.append({**sni, DEEP_KEY: {"members": members}} if members else dict(sni))
+    if snis:
+        out[_SNI_LOGICAL] = snis
+    return out
+
+
 def deep_sections(reader: Any) -> dict:
     """Walk every server policy + every WPP (inline + offline), returning the
     enriched ``{section: {logical_name: [obj-with-_deep, ...]}}`` snapshot shape
@@ -179,7 +216,11 @@ def deep_sections(reader: Any) -> dict:
         if w:
             wpps.append(w)
 
-    return {
+    sections = {
         "Server Policy": {"server_policy": policies},
         "Web Protection": {"web_protection_profile": wpps},
     }
+    certs = cert_sections(reader, cache)
+    if certs:
+        sections["Server Objects"] = certs
+    return sections

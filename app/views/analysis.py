@@ -111,19 +111,28 @@ def orphans():
         device_ids=_deep_device_ids(request.args)))
 
 
+@bp.route('/deep/inventory')
+@login_required
+def inventory():
+    """Fleet cardinality: policies, distinct/unique pools, back-ends +
+    ports, VIPs, SNI, certificates — over the deep cache."""
+    return jsonify(analysis_deep.fleet_inventory(
+        device_ids=_deep_device_ids(request.args)))
+
+
 @bp.route('/freshness')
 @login_required
 def freshness():
     return jsonify(ana.deep_freshness(device_ids=_deep_device_ids(request.args)))
 
 
-@bp.route('/wpp/<int:appliance_id>/<path:mkey>')
+@bp.route('/deep/wpp/<int:appliance_id>/<path:mkey>')
 @login_required
 def wpp_drill(appliance_id, mkey):
     return jsonify(analysis_deep.wpp_drilldown(appliance_id, mkey) or {})
 
 
-@bp.route('/policy/<int:appliance_id>/<path:mkey>')
+@bp.route('/deep/policy/<int:appliance_id>/<path:mkey>')
 @login_required
 def policy_drill(appliance_id, mkey):
     return jsonify(analysis_deep.server_policy_drilldown(appliance_id, mkey) or {})

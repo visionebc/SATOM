@@ -124,8 +124,11 @@ def test_deep_routes_smoke(app, client, seeded_deep_cache):
     r = client.get('/analysis/wpp-matrix')
     assert r.status_code == 200
     assert any(row['field'] == 'signature-rule' for row in r.get_json())
-    r2 = client.get(f'/analysis/wpp/{seeded_deep_cache}/wpp-a')
+    r2 = client.get(f'/analysis/deep/wpp/{seeded_deep_cache}/wpp-a')
     assert r2.status_code == 200 and r2.get_json()['mkey'] == 'wpp-a'
+    # the OLD path the JS never used must be gone (the bug that showed
+    # "Nothing captured for this object")
+    assert client.get(f'/analysis/wpp/{seeded_deep_cache}/wpp-a').status_code == 404
     r3 = client.get('/analysis/subelements')
     assert r3.status_code == 200
     r4 = client.get('/analysis/freshness')
@@ -144,3 +147,52 @@ def test_deep_objects_route_lists_wpps(app, client, seeded_deep_cache):
     r2 = client.get('/analysis/deep/objects?kind=policy')
     assert r2.status_code == 200
     assert any(o['mkey'] == 'pol-a' for o in r2.get_json())
+
+
+def test_fleet_inventory_counts(app, seeded_deep_cache):
+    from app.services import analysis_deep
+    with app.app_context():
+        inv = analysis_deep.fleet_inventory(device_ids=None)
+    t = inv["totals"]
+    assert t["server_policies"] == 1
+    assert t["server_pools"]["distinct"] == 1 and t["server_pools"]["unique"] == 1
+    assert t["backends"]["count"] == 2 and t["backends"]["distinct_ips"] == 2
+    assert inv["per_device"] and {"policies", "pools", "backends", "sni",
+                                  "certificates"} <= set(inv["per_device"][0])
+
+
+def test_fleet_inventory_certs_sni_and_ports(app, seeded_deep_cache):
+    from datetime import datetime
+    from app.extensions import db
+    from app.models_cache import DeviceObject, DeviceSnapshot
+    from app.services import analysis_deep
+    with app.app_context():
+        snap = DeviceSnapshot(appliance_id=seeded_deep_cache, layer="deep",
+                              section="Server Objects", source="live",
+                              generated_at=datetime(2026, 6, 30, 18, 40), blob_hash="c")
+        db.session.add(snap); db.session.flush()
+        for ln, mk, idx, pay in [
+            ("certificate", "wildcard", 0, {"name": "wildcard"}),
+            ("certificate_sni", "sni-a", 1, {"name": "sni-a"}),
+        ]:
+            db.session.add(DeviceObject(appliance_id=seeded_deep_cache, snapshot_id=snap.id,
+                layer="deep", section="Server Objects", logical_name=ln, mkey=mk,
+                depth=0, idx=idx, payload=pay))
+        db.session.add(DeviceObject(appliance_id=seeded_deep_cache, snapshot_id=snap.id,
+            layer="deep", section="Server Policy",
+            logical_name="server_policy/server_pool/pserver-list", mkey="9",
+            subtable="pserver-list", depth=2, idx=9,
+            payload={"id": "9", "ip": "192.0.2.9", "port": 8443}))
+        db.session.commit()
+        inv = analysis_deep.fleet_inventory(device_ids=None)
+    assert inv["totals"]["certificates"] == 1
+    assert inv["totals"]["sni"] == 1
+    assert any(pt["port"] == "8443" for pt in inv["ports"])
+
+
+def test_inventory_route(app, client, seeded_deep_cache):
+    from tests.conftest import login, admin_user_id
+    login(client, admin_user_id(app))
+    r = client.get('/analysis/deep/inventory')
+    assert r.status_code == 200
+    assert r.get_json()["totals"]["server_policies"] == 1

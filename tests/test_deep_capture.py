@@ -60,3 +60,28 @@ def test_deep_sections_lists_all_policies_and_wpps():
     # the WPP carries its bound signature set nested under _deep
     wpp = sections["Web Protection"]["web_protection_profile"][0]
     assert "signature" in wpp["_deep"]
+
+
+def test_cert_sections_collects_certs_and_sni_members():
+    reader = FakeReader({
+        "cmdb/system/certificate.local": {"": [{"name": "wild"}]},
+        "cmdb/system/certificate.sni": {"": [{"name": "sni-a"}]},
+        "cmdb/system/certificate.sni/members":
+            {"sni-a": [{"id": "1", "domain": "a.example", "local-cert": "wild"}]},
+    })
+    out = deep_capture.cert_sections(reader, {})
+    assert [c["name"] for c in out["certificate"]] == ["wild"]
+    sni = out["certificate_sni"][0]
+    assert sni["name"] == "sni-a"
+    assert sni["_deep"]["members"][0]["domain"] == "a.example"
+
+
+def test_deep_sections_includes_server_objects():
+    reader = FakeReader({
+        "cmdb/server-policy/policy": {"": [{"name": "pol-a"}]},
+        "cmdb/waf/web-protection-profile.inline-protection": {"": []},
+        "cmdb/system/certificate.local": {"": [{"name": "wild"}]},
+    })
+    sections = deep_capture.deep_sections(reader)
+    assert "Server Objects" in sections
+    assert sections["Server Objects"]["certificate"][0]["name"] == "wild"

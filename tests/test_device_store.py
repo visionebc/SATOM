@@ -122,3 +122,27 @@ def test_ingest_is_idempotent_and_detects_no_change(session):
     from app.models_cache import DeviceObject
     # replace-per-section: count stays 5, not doubled
     assert session.query(DeviceObject).filter_by(appliance_id=aid).count() == 5
+
+
+def test_deep_key_nesting_decomposes_to_children():
+    """A ``_deep`` mapping (deep_capture's nested objects + sub-tables) must
+    decompose into the parent_id hierarchy at depth, with no _deep blob left on
+    the parent payload."""
+    from app.services import device_store
+    obj = {"name": "pol-a", "_deep": {
+        "server_pool": {"name": "pool-a", "_deep": {
+            "pserver-list": [{"id": "1", "ip": "192.0.2.5"}]}}}}
+    roots = device_store.nodes_from_sections({"Server Policy": {"server_policy": [obj]}})
+    flat = device_store.flatten(roots)
+    logicals = {n.logical_name for n, _ in flat}
+    assert "server_policy" in logicals
+    assert any("server_pool" in l for l in logicals)
+    assert any("pserver-list" in l for l in logicals)
+    # the policy's own payload must NOT still carry the _deep blob
+    root = flat[0][0]
+    assert "_deep" not in root.payload
+    # depth increases down the chain
+    depths = {n.logical_name: n.depth for n, _ in flat}
+    assert depths["server_policy"] == 0
+    assert depths["server_policy/server_pool"] == 1
+    assert depths["server_policy/server_pool/pserver-list"] == 2

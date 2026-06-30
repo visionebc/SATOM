@@ -13,31 +13,37 @@
 {% endblock %}
 
 {# ----------------------------------------------------------------------- #}
-{# Repeatable item editor row. ``idx`` is the row index; ``row`` is None for #}
-{# the JS clone template (the hidden <script> below) and a dict for          #}
-{# server-rendered rows (edit / re-render-on-error).                         #}
+{# Repeatable provisioning-element row (mirrors the desktop's element list). #}
+{# ``idx`` is the row index; ``row`` is None for the JS clone template (the   #}
+{# hidden <script> below) and a dict for server-rendered rows.               #}
+{# The Item picker offers EVERY config (cmdb) object grouped by GUI section   #}
+{# (optgroups) — pick the intent, set singleton/mkey, type the values.        #}
 {# ----------------------------------------------------------------------- #}
-{% macro render_row(idx, row) %}
+{% macro render_row(idx, row, grouped_specs, spec_keys) %}
 <div class="prov-row mb-2" style="border:1px solid rgba(148,163,184,.25); border-radius:8px; padding:14px;">
   <input type="hidden" name="rows" value="{{ idx }}">
   <div class="row g-2 align-items-end">
-    <div class="col-md-5">
-      <label class="fw-form-label">Item</label>
+    <div class="col-md-6">
+      <label class="fw-form-label">Element</label>
       <select class="form-select prov-key" name="key_{{ idx }}" onchange="onKeyChange(this)">
-        <option value="">— select an endpoint —</option>
-        {% for s in specs %}
-        <option value="{{ s.key }}"
-                data-singleton="{{ '1' if s.singleton else '0' }}"
-                data-sensitive="{{ '1' if s.sensitive else '0' }}"
-                title="{{ s.note }}"
-                {{ 'selected' if row and row.key == s.key else '' }}>{{ s.label }}{% if s.sensitive %} (secret){% endif %}</option>
+        <option value="">— select a configuration object —</option>
+        {% for section, slist in grouped_specs.items() %}
+        <optgroup label="{{ section }}">
+          {% for s in slist %}
+          <option value="{{ s.key }}"
+                  data-singleton="{{ '1' if s.singleton else '0' }}"
+                  data-sensitive="{{ '1' if s.sensitive else '0' }}"
+                  title="{{ s.note }}"
+                  {{ 'selected' if row and row.key == s.key else '' }}>{{ s.label }}{% if s.sensitive %} (secret){% endif %}</option>
+          {% endfor %}
+        </optgroup>
         {% endfor %}
         {% if row and row.key and row.key not in spec_keys %}
         <option value="{{ row.key }}" selected>{{ row.key }} (not in registry)</option>
         {% endif %}
       </select>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
       <label class="fw-form-label">mkey <span class="text-muted">(optional)</span></label>
       <input type="text" class="form-control" name="mkey_{{ idx }}"
              value="{{ row.mkey if row else '' }}" placeholder="key of object to update" autocomplete="off">
@@ -50,22 +56,23 @@
       </div>
     </div>
     <div class="col-md-1 text-end">
-      <button type="button" class="btn btn-sm btn-outline-danger btn-sm-icon" title="Remove item"
-              onclick="removeRow(this)"><i class="bi bi-trash"></i></button>
+      <div class="btn-group-vertical btn-group-sm" role="group">
+        <button type="button" class="btn btn-outline-secondary btn-sm-icon" title="Move up"
+                onclick="moveRow(this,-1)"><i class="bi bi-arrow-up"></i></button>
+        <button type="button" class="btn btn-outline-secondary btn-sm-icon" title="Move down"
+                onclick="moveRow(this,1)"><i class="bi bi-arrow-down"></i></button>
+        <button type="button" class="btn btn-outline-danger btn-sm-icon" title="Remove element"
+                onclick="removeRow(this)"><i class="bi bi-trash"></i></button>
+      </div>
     </div>
   </div>
-  {# Typed fields (rendered by JS from the embedded schema for the active line). #}
-  <div class="prov-fields mt-2" data-idx="{{ idx }}"></div>
-
-  {# Advanced / fallback raw-JSON editor (shown for schemaless objects or on demand). #}
+  {# Values — the object's payload, typed as JSON (singleton = PUT whole object). #}
   <div class="mt-2">
-    <a href="javascript:void(0)" class="prov-json-toggle" style="font-size:12px;"
-       onclick="toggleJson('{{ idx }}')"><i class="bi bi-braces me-1"></i>Advanced (JSON)</a>
-    <div class="prov-json mt-1" data-idx="{{ idx }}" style="display:none;">
-      <label class="fw-form-label">Data (JSON)</label>
-      <textarea class="form-control prov-data" name="data_{{ idx }}" rows="5" spellcheck="false"
-                style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;">{{ row.data if row else '{}' }}</textarea>
-    </div>
+    <label class="fw-form-label">Values <span class="text-muted">(JSON — the fields to push)</span></label>
+    <textarea class="form-control prov-data" name="data_{{ idx }}" rows="5" spellcheck="false"
+              placeholder='{ "hostname": "fw-test" }'
+              style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;">{{ row.data if row else '{}' }}</textarea>
+    <div class="form-text prov-note"></div>
   </div>
 </div>
 {% endmacro %}
@@ -74,7 +81,7 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-sliders me-2 text-accent"></i>{{ 'Edit' if template_id else 'New' }} system profile</h1>
-    <p class="text-muted mb-0" style="font-size:13px;">Each item maps a system intent to a registry endpoint and a JSON payload. Saving creates a new version. Secret fields (passwords, shared secrets) are stripped on save and re-entered at apply time.</p>
+    <p class="text-muted mb-0" style="font-size:13px;">An ordered list of provisioning elements — each maps a configuration object (any section) to a JSON payload. Add / reorder / remove elements, then save as a versioned profile and apply to one device or the fleet (dry-run → canary). Secret fields (passwords, shared secrets) are stripped on save and re-entered at apply time.</p>
   </div>
   <a class="btn btn-fw-outline" href="{{ url_for('provisioning.index') }}"><i class="bi bi-arrow-left me-1"></i>Back</a>
 </div>
@@ -86,38 +93,60 @@
   <div class="fw-card mb-3">
     <div class="fw-card-header"><span class="fw-card-title">Profile</span></div>
     <div class="fw-card-body">
-      <label class="fw-form-label">Name <span class="text-danger">*</span></label>
-      <input type="text" class="form-control" name="name" value="{{ profile_name }}"
-             placeholder="e.g. fortiweb-baseline" required autocomplete="off">
-      <div class="mt-3">
-        <label class="fw-form-label">Firmware line <span class="text-muted">(field schema source)</span></label>
-        <select class="form-select" name="line" id="lineSelect" style="max-width:240px;" onchange="onLineChange(this.value)">
-          {% for l in available_lines %}
-          <option value="{{ l }}" {{ 'selected' if l == line else '' }}>{{ l }}</option>
-          {% endfor %}
-        </select>
-        <div class="form-text">fw1 = 8.0 (internal), fw2 = 7.6 (external). Switching re-renders fields; entered values are kept by name.</div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="fw-form-label">Name <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" name="name" value="{{ profile_name }}"
+                 placeholder="e.g. fortiweb-baseline" required autocomplete="off">
+        </div>
+      </div>
+      <div class="fw-alert fw-alert-info d-flex align-items-center gap-2 mb-3" style="font-size:13px;">
+        <i class="bi bi-info-circle"></i>
+        <span>Set a scope to restrict this profile to a specific zone, line, or department. Leave blank to apply to any.</span>
+      </div>
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="fw-form-label">Zone</label>
+          <select class="form-select" name="scope_zone">
+            <option value="">— Any zone —</option>
+            {% for z in zones %}<option value="{{ z }}" {{ 'selected' if scope.get('zone') == z else '' }}>{{ z }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="fw-form-label">Line</label>
+          <select class="form-select" name="scope_line">
+            <option value="">— Any line —</option>
+            {% for l in lines %}<option value="{{ l }}" {{ 'selected' if scope.get('line') == l else '' }}>{{ l }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="fw-form-label">Department</label>
+          <select class="form-select" name="scope_department">
+            <option value="">— Any department —</option>
+            {% for d in departments %}<option value="{{ d }}" {{ 'selected' if scope.get('department') == d else '' }}>{{ d }}</option>{% endfor %}
+          </select>
+        </div>
       </div>
     </div>
   </div>
 
   <div class="fw-card mb-3">
     <div class="fw-card-header d-flex justify-content-between align-items-center">
-      <span class="fw-card-title">Provisioning items</span>
-      <button type="button" class="btn btn-sm btn-fw-outline" onclick="addRow()"><i class="bi bi-plus-lg me-1"></i>Add item</button>
+      <span class="fw-card-title">Provisioning elements</span>
+      <button type="button" class="btn btn-sm btn-fw-outline" onclick="addRow()"><i class="bi bi-plus-lg me-1"></i>Add element</button>
     </div>
     <div class="fw-card-body">
-      {% if not specs %}
+      {% if not spec_keys %}
       <div class="fw-alert fw-alert-warning d-flex align-items-center gap-2 mb-3" style="font-size:13px;">
         <i class="bi bi-exclamation-triangle"></i>
-        <span>No provisionable endpoints are available from the registry yet. Load the registry / connect an appliance, then reload this page.</span>
+        <span>No configuration objects are available from the registry yet. Load the registry / connect an appliance, then reload this page.</span>
       </div>
       {% endif %}
       <div id="rows" data-next-index="{{ rows|length }}">
-        {% for row in rows %}{{ render_row(loop.index0, row) }}{% endfor %}
+        {% for row in rows %}{{ render_row(loop.index0, row, grouped_specs, spec_keys) }}{% endfor %}
       </div>
       <div id="emptyRows" class="text-muted" style="font-size:13px; {{ 'display:none;' if rows else '' }}">
-        No items yet — click <strong>Add item</strong> to begin.
+        No elements yet — click <strong>Add element</strong> to begin.
       </div>
     </div>
   </div>
@@ -129,120 +158,11 @@
 </form>
 
 <!-- Clone source for new rows (rendered with __IDX__ placeholders) -->
-<script type="text/template" id="rowTpl">{{ render_row('__IDX__', None) }}</script>
+<script type="text/template" id="rowTpl">{{ render_row('__IDX__', None, grouped_specs, spec_keys) }}</script>
 {% endblock %}
 
 {% block scripts %}
 <script>
-window.__FIELD_SCHEMAS = {{ schemas_by_line | tojson }};   // {line: {objectKey: schema|null}}
-window.__SCHEMA_LINE   = {{ line | tojson }};
-
-function _schemaFor(key) {
-  var byLine = window.__FIELD_SCHEMAS[window.__SCHEMA_LINE] || {};
-  return byLine[key] || null;
-}
-
-function _esc(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
-
-function _inputFor(idx, f, value) {
-  var id = 'f_' + idx + '_' + f.name, nm = id;
-  var v = (value === undefined || value === null) ? (f.default || '') : value;
-  if (f.type === 'bool') {
-    var on = (String(v) !== '' && String(v) !== f.false_value && String(v) !== '0' && String(v) !== 'false');
-    return '<div class="form-check mt-1"><input class="form-check-input prov-f" type="checkbox" id="' + id +
-           '" name="' + nm + '"' + (on ? ' checked' : '') + ' oninput="syncJson(this)" onchange="syncJson(this)"></div>';
-  }
-  if (f.type === 'select') {
-    var opts = (f.options || []).map(function (o) {
-      var sel = (String(o.value) === String(v)) ? ' selected' : '';
-      return '<option value="' + _esc(o.value) + '"' + sel + '>' + _esc(o.label || o.value) + '</option>';
-    }).join('');
-    return '<select class="form-select prov-f" id="' + id + '" name="' + nm + '" onchange="syncJson(this)"><option value="">—</option>' + opts + '</select>';
-  }
-  if (f.type === 'json' || f.type === 'csv') {
-    var ph = (f.type === 'csv') ? 'comma,separated,values' : 'JSON';
-    return '<textarea class="form-control prov-f" id="' + id + '" name="' + nm + '" rows="2" spellcheck="false" placeholder="' + ph + '" oninput="syncJson(this)" style="font-family:ui-monospace,monospace;font-size:12px;">' + _esc(v || '') + '</textarea>';
-  }
-  var itype = (f.type === 'password') ? 'password' : 'text';
-  return '<input class="form-control prov-f" type="' + itype + '" id="' + id + '" name="' + nm +
-         '" value="' + _esc(v) + '" placeholder="' + _esc(f.help || '') + '" oninput="syncJson(this)" autocomplete="off">';
-}
-
-function _readData(rowEl) {
-  var ta = rowEl.querySelector('.prov-data');
-  try { return JSON.parse(ta && ta.value ? ta.value : '{}'); } catch (e) { return {}; }
-}
-
-function renderFields(rowEl) {
-  var box = rowEl.querySelector('.prov-fields');
-  var idx = box.getAttribute('data-idx');
-  var key = rowEl.querySelector('.prov-key').value;
-  var jsonBox = rowEl.querySelector('.prov-json');
-  var schema = key ? _schemaFor(key) : null;
-  var current = _readData(rowEl);
-  if (!schema) {                      // no schema -> JSON editor is the primary UI
-    box.innerHTML = '';
-    if (jsonBox) { jsonBox.style.display = key ? 'block' : 'none'; }
-    return;
-  }
-  var groups = {};
-  (schema.fields || []).forEach(function (f) {
-    if ((schema.readonly || []).indexOf(f.name) !== -1) { return; }
-    var g = f.group || 'Basic';
-    (groups[g] = groups[g] || []).push(f);
-  });
-  var html = '';
-  ['Basic', 'Advanced'].forEach(function (g) {
-    if (!groups[g]) { return; }
-    html += '<div class="fw-form-label" style="margin-top:6px;font-weight:600;">' + g + '</div><div class="row g-2">';
-    groups[g].forEach(function (f) {
-      html += '<div class="col-md-6"><label class="fw-form-label">' + _esc(f.label) +
-              (f.required ? ' <span class="text-danger">*</span>' : '') + '</label>' +
-              _inputFor(idx, f, current[f.name]) +
-              (f.help ? '<div class="form-text">' + _esc(f.help) + '</div>' : '') + '</div>';
-    });
-    html += '</div>';
-  });
-  box.innerHTML = html;
-  if (jsonBox) { jsonBox.style.display = 'none'; }   // hidden but reachable via toggle
-  syncRow(rowEl);
-}
-
-// Serialize a row's typed inputs into its data_<i> JSON (keeps Advanced view truthful).
-function syncRow(rowEl) {
-  var key = rowEl.querySelector('.prov-key').value;
-  var schema = key ? _schemaFor(key) : null;
-  var ta = rowEl.querySelector('.prov-data');
-  var box = rowEl.querySelector('.prov-fields');
-  if (!schema || !ta || !box) { return; }
-  var idx = box.getAttribute('data-idx');
-  var obj = {};
-  (schema.fields || []).forEach(function (f) {
-    if ((schema.readonly || []).indexOf(f.name) !== -1) { return; }
-    var el = rowEl.querySelector('[name="f_' + idx + '_' + f.name + '"]');
-    if (!el) { return; }
-    if (f.type === 'bool') { obj[f.name] = el.checked ? f.true_value : f.false_value; return; }
-    var val = el.value.trim();
-    if (val === '') { return; }
-    if (f.type === 'number') { obj[f.name] = isNaN(+val) ? val : +val; }
-    else if (f.type === 'csv') { obj[f.name] = val.split(',').map(function (s) { return s.trim(); }).filter(Boolean); }
-    else if (f.type === 'json') { try { obj[f.name] = JSON.parse(val); } catch (e) { return; } }
-    else { obj[f.name] = val; }
-  });
-  ta.value = JSON.stringify(obj, null, 2);
-}
-function syncJson(el) { var r = el.closest('.prov-row'); if (r) { syncRow(r); } }
-
-function toggleJson(idx) {
-  var box = document.querySelector('.prov-json[data-idx="' + idx + '"]');
-  if (box) { box.style.display = (box.style.display === 'none') ? 'block' : 'none'; }
-}
-
-function onLineChange(line) {
-  window.__SCHEMA_LINE = line;
-  document.querySelectorAll('#rows .prov-row').forEach(function (r) { syncRow(r); renderFields(r); });
-}
-
 function syncEmpty() {
   var any = document.querySelectorAll('#rows .prov-row').length > 0;
   document.getElementById('emptyRows').style.display = any ? 'none' : '';
@@ -253,27 +173,38 @@ function addRow() {
   box.setAttribute('data-next-index', n + 1);
   var html = document.getElementById('rowTpl').innerHTML.replace(/__IDX__/g, n);
   var tmp = document.createElement('div'); tmp.innerHTML = html.trim();
-  var rowEl = tmp.firstElementChild;
-  box.appendChild(rowEl); renderFields(rowEl); syncEmpty();
+  box.appendChild(tmp.firstElementChild); syncEmpty();
 }
 function removeRow(btn) { var r = btn.closest('.prov-row'); if (r) { r.remove(); } syncEmpty(); }
+function moveRow(btn, dir) {
+  var r = btn.closest('.prov-row'); if (!r) { return; }
+  if (dir < 0 && r.previousElementSibling) {
+    r.parentNode.insertBefore(r, r.previousElementSibling);
+  } else if (dir > 0 && r.nextElementSibling) {
+    r.parentNode.insertBefore(r.nextElementSibling, r);
+  }
+}
+// Picking an element sets the sensible singleton default + a per-row hint.
 function onKeyChange(sel) {
   var opt = sel.options[sel.selectedIndex]; if (!opt) { return; }
-  var row = sel.closest('.prov-row');
-  var sw = row ? row.querySelector('.prov-singleton') : null;
+  var row = sel.closest('.prov-row'); if (!row) { return; }
+  var sw = row.querySelector('.prov-singleton');
   var flag = opt.getAttribute('data-singleton');
   if (sw && flag !== null) { sw.checked = (flag === '1'); }
-  if (row) { renderFields(row); }
+  var note = row.querySelector('.prov-note');
+  if (note) {
+    var bits = [];
+    if (flag === '1') { bits.push('singleton — PUT the whole object (no mkey)'); }
+    else { bits.push('collection — creates a new object, or set mkey to update'); }
+    if (opt.getAttribute('data-sensitive') === '1') {
+      bits.push('⚠ secret — do not type the secret here; it is captured at apply time and never saved');
+    }
+    note.textContent = bits.join('  ·  ');
+  }
 }
-
 document.addEventListener('DOMContentLoaded', function () {
-  document.querySelectorAll('#rows .prov-row').forEach(function (r) { renderFields(r); });
   syncEmpty();
   if (!document.querySelectorAll('#rows .prov-row').length) { addRow(); }
-  var form = document.querySelector('form[method="POST"]');
-  if (form) { form.addEventListener('submit', function () {
-    document.querySelectorAll('#rows .prov-row').forEach(function (r) { syncRow(r); });
-  }); }
 });
 </script>
 {% endblock %}

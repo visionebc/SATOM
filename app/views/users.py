@@ -223,6 +223,23 @@ def reset_password(id):
     return redirect(url_for('users.index'))
 
 
+@bp.route('/<int:id>/clear-2fa', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def clear_2fa(id):
+    """Admin break-glass: clear a user's TOTP 2FA so they can sign in with just
+    their password (e.g. lost authenticator). Local accounts only."""
+    User = _get_user_model()
+    user = User.query.get_or_404(id)
+    user.totp_enabled = False
+    user.totp_secret = None
+    user.backup_codes = None
+    db.session.commit()
+    log_action('user.clear_2fa', target=user.username)
+    flash(f'Two-factor authentication cleared for {user.username}.', 'success')
+    return redirect(url_for('users.index'))
+
+
 @bp.route('/<int:id>/toggle-active', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)

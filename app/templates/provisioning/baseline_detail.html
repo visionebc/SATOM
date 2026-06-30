@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}{{ baseline.name }} — Combo{% endblock %}
+{% block content %}
+<div class="fw-breadcrumb mb-1">
+  <a href="{{ url_for('provisioning.index') }}">Provisioning</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('provisioning.baselines') }}">Combos</a>
+  <span class="separator">/</span>
+  <span>{{ baseline.name }}</span>
+</div>
+
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-grid-3x3-gap-fill me-2 text-accent"></i>{{ baseline.name }}</h1>
+    <p class="mb-0" style="font-size:13px;">
+      <span class="fw-badge fw-badge-primary me-1">Zone: {{ baseline.zone or 'Any' }}</span>
+      <span class="fw-badge fw-badge-secondary me-1">Line: {{ baseline.line or 'Any' }}</span>
+      <span class="fw-badge fw-badge-secondary me-1">Dept: {{ baseline.department or 'Any' }}</span>
+      <span class="text-muted ms-2"><i class="bi bi-hdd-network me-1"></i>{{ devices|length }} matching device(s)</span>
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    {% if assigned and devices %}
+    <form method="post" action="{{ url_for('provisioning.baseline_apply', baseline_id=baseline.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-fw-primary"><i class="bi bi-rocket-takeoff me-1"></i>Apply to {{ devices|length }} device(s)…</button>
+    </form>
+    {% endif %}
+    <a class="btn btn-fw-secondary" href="{{ url_for('provisioning.baselines') }}"><i class="bi bi-arrow-left me-1"></i>Back</a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Assigned -->
+  <div class="col-lg-6">
+    <div class="fw-card">
+      <div class="fw-card-header"><i class="bi bi-check2-square me-2"></i>Assigned templates
+        <span class="fw-badge fw-badge-primary ms-1">{{ assigned|length }}</span></div>
+      <div class="fw-card-body">
+        {% if not assigned %}
+          <p class="text-muted mb-0" style="font-size:13px;">Nothing assigned yet. Pick from the
+            available templates on the right.</p>
+        {% else %}
+          {% for key, label, items in assigned_groups %}
+          <div class="fw-section-group" style="margin-bottom:14px;">
+            <h3 style="font-size:13px; margin:4px 0 6px;">
+              <i class="bi bi-folder2-open me-2 text-accent"></i>{{ label }}
+              <span class="text-muted" style="font-size:11px; font-weight:400;">({{ items|length }})</span>
+            </h3>
+            <table class="fw-table">
+              <thead><tr><th>Name</th><th>Kind</th><th>Ver</th><th class="actions-col"></th></tr></thead>
+              <tbody>
+              {% for t in items %}
+                <tr>
+                  <td class="fw-semibold">{{ t.name }}</td>
+                  <td style="font-size:12px;">{{ t.kind }}</td>
+                  <td>v{{ t.version }}</td>
+                  <td class="actions-col">
+                    <form method="post" class="d-inline"
+                          action="{{ url_for('provisioning.baseline_unassign', baseline_id=baseline.id) }}"
+                          onsubmit="return confirm('Remove {{ t.name }} from this combo?');">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="template_id" value="{{ t.id }}">
+                      <button class="btn btn-sm btn-outline-danger" title="Remove"><i class="bi bi-x-lg"></i></button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endfor %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Available -->
+  <div class="col-lg-6">
+    <div class="fw-card">
+      <div class="fw-card-header"><i class="bi bi-plus-square me-2"></i>Available to assign
+        <span class="fw-badge fw-badge-secondary ms-1">{{ available|length }}</span>
+        <span class="text-muted ms-2" style="font-size:11px; font-weight:400;">latest version only</span></div>
+      <div class="fw-card-body">
+        {% if not available %}
+          <p class="text-muted mb-0" style="font-size:13px;">No more scope-compatible approved
+            templates to add. Approve more in
+            <a href="{{ url_for('provisioning.index') }}">System Provisioning</a>.</p>
+        {% else %}
+          {% for key, label, items in available_groups %}
+          <div class="fw-section-group" style="margin-bottom:14px;">
+            <h3 style="font-size:13px; margin:4px 0 6px;">
+              <i class="bi bi-folder2-open me-2 text-accent"></i>{{ label }}
+              <span class="text-muted" style="font-size:11px; font-weight:400;">({{ items|length }})</span>
+            </h3>
+            <table class="fw-table">
+              <thead><tr><th>Name</th><th>Kind</th><th>Ver</th><th class="actions-col"></th></tr></thead>
+              <tbody>
+              {% for t in items %}
+                <tr>
+                  <td class="fw-semibold">{{ t.name }}</td>
+                  <td style="font-size:12px;">{{ t.kind }}</td>
+                  <td>v{{ t.version }}</td>
+                  <td class="actions-col">
+                    <form method="post" class="d-inline"
+                          action="{{ url_for('provisioning.baseline_assign', baseline_id=baseline.id) }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="template_id" value="{{ t.id }}">
+                      <button class="btn btn-sm btn-outline-success" title="Assign"><i class="bi bi-plus-lg"></i></button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endfor %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if devices %}
+<div class="fw-card mt-3">
+  <div class="fw-card-header"><i class="bi bi-hdd-network me-2"></i>Matching devices
+    <span class="fw-badge fw-badge-secondary ms-1">{{ devices|length }}</span></div>
+  <div class="fw-card-body">
+    {% for d in devices %}<span class="fw-badge fw-badge-secondary me-1 mb-1 d-inline-block">{{ d.name }}</span>{% endfor %}
+  </div>
+</div>
+{% else %}
+<div class="alert alert-warning mt-3 py-2" style="font-size:13px;">
+  <i class="bi bi-exclamation-triangle me-1"></i>No registered device matches this combo's scope yet —
+  nothing to apply to until a device is classified into it.</div>
+{% endif %}
+{% endblock %}

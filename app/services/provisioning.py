@@ -104,18 +104,33 @@ class SystemProfile:
     name: str
     items: list[ProvisionItem] = field(default_factory=list)
     line: str = "8.0"               # firmware line the profile was authored against
+    scope: dict = field(default_factory=dict)  # {zone, line, department} classification scope
 
     def to_body(self) -> dict[str, Any]:
         """Faithful round-trip body (``from_body`` is its inverse). Secrets are
         retained here; strip them with :func:`save_profile` before persisting."""
-        return {"line": self.line, "items": [it.to_dict() for it in self.items]}
+        return {
+            "line": self.line,
+            "_scope": {
+                "zone": (self.scope or {}).get("zone", ""),
+                "line": (self.scope or {}).get("line", ""),
+                "department": (self.scope or {}).get("department", ""),
+            },
+            "items": [it.to_dict() for it in self.items],
+        }
 
     @classmethod
     def from_body(cls, name: str, body: dict[str, Any] | None) -> "SystemProfile":
         body = body or {}
+        raw_scope = body.get("_scope") or {}
         return cls(
             name=name,
             line=body.get("line") or "8.0",
+            scope={
+                "zone": raw_scope.get("zone", ""),
+                "line": raw_scope.get("line", ""),
+                "department": raw_scope.get("department", ""),
+            },
             items=[ProvisionItem.from_dict(d) for d in body.get("items", [])
                    if isinstance(d, dict) and d.get("endpoint")],
         )
@@ -351,7 +366,15 @@ def save_profile(profile: SystemProfile, *, note: str = "", author: str = "",
         if _item_is_sensitive(it):
             d["data"] = _strip_secret_fields(d.get("data") or {})
         items.append(d)
-    body = {"line": profile.line, "items": items}
+    body = {
+        "line": profile.line,
+        "_scope": {
+            "zone": (profile.scope or {}).get("zone", ""),
+            "line": (profile.scope or {}).get("line", ""),
+            "department": (profile.scope or {}).get("department", ""),
+        },
+        "items": items,
+    }
     return save_template(Template.KIND_SYSTEM, profile.name, body,
                          note=note, author=author, new_version=new_version)
 

@@ -95,6 +95,15 @@ def latest_snapshot_meta(appliance_id: int) -> dict | None:
         return None
 
 
+def has_snapshot(appliance_id: int) -> bool:
+    """True once a rediscovery sweep has written a snapshot for this appliance.
+
+    Cheap existence check (no JSON parse) — drives the **Discovery** vs
+    **Rediscovery** label: a never-swept appliance shows "Discovery".
+    """
+    return (_dev_dir(appliance_id) / "_config.json").exists()
+
+
 # --- Physical-inventory sync (hybrid: auto-fill, never clobber manual data) ---
 
 def _clean_ip(v) -> str | None:

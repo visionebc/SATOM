@@ -22,12 +22,15 @@ from __future__ import annotations
 import ipaddress
 
 from flask import (Blueprint, render_template, request, flash, redirect, url_for,
-                   jsonify, abort)
+                   jsonify, abort, session)
 from flask_login import login_required, current_user
 
 from ..auth.decorators import require_permission
 from ..models import db, Permission, User, Role, Profile
 from ..services import naming, settings_store as store
+from ..services import email_service as email
+from ..services import auth_store
+from ..services import twofa
 from ..services import git_service
 from ..services import user_settings_store as user_store
 from ..services.audit import log_action
@@ -70,6 +73,16 @@ def index():
                           for p in Profile.query.all()} if _is_admin() else {}),
         banner_templates=store.BANNER_TEMPLATES,
         banners=store.all_banners(),
+        email_config=email.config(),
+        auth_config=(auth_store.config() if _is_admin() else None),
+        auth_backends=auth_store.BACKENDS,
+        twofa_status={
+            'enabled': bool(getattr(current_user, 'totp_enabled', False)),
+            'is_local': bool(getattr(current_user, 'is_local', True)),
+            'recovery_email': getattr(current_user, 'recovery_email', '') or '',
+            'remaining_codes': twofa.remaining_backup_codes(getattr(current_user, 'backup_codes', None)),
+        },
+        backup_codes_once=session.pop('twofa_backup_codes_once', None),
         is_admin=_is_admin(),
     )
 
@@ -280,3 +293,137 @@ def git_configure():
     transcript = git_service.git_configure(remote_url, token, branch)
     log_action("settings.git_configure", detail=f"remote={bool(remote_url)} branch={branch!r}")
     return jsonify({"transcript": transcript})
+
+
+# ── Email / SMTP ──────────────────────────────────────────
+
+@bp.route('/email', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_email():
+    try:
+        email.save_config(request.form)
+        log_action('settings.email', detail='Updated email settings')
+        flash('Email settings saved.', 'success')
+    except Exception as exc:  # noqa: BLE001
+        flash(f'Failed to save email settings: {exc}', 'danger')
+    return redirect(url_for('settings.index') + '#tab-email')
+
+
+@bp.route('/email/test', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def test_email():
+    data = request.get_json(silent=True) or {}
+    result = email.send_test(data.get('to', ''))
+    log_action('settings.email_test',
+               detail=('ok' if result.get('ok') else 'fail') + ': ' + str(result.get('detail', '')))
+    return jsonify(result)
+
+
+# ── Authentication backend (admin) ────────────────────────
+
+@bp.route('/auth', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_auth():
+    try:
+        auth_store.save_config(request.form)
+        log_action('settings.auth', detail=f'backend={auth_store.backend()}')
+        flash('Authentication settings saved.', 'success')
+    except Exception as exc:  # noqa: BLE001
+        flash(f'Failed to save authentication settings: {exc}', 'danger')
+    return redirect(url_for('settings.index') + '#tab-auth')
+
+
+@bp.route('/auth/test', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def test_auth():
+    result = auth_store.test_connection(request.form)
+    log_action('settings.auth_test',
+               detail=('ok' if result.get('ok') else 'fail') + ': ' + str(result.get('detail', '')))
+    return jsonify(result)
+
+
+# ── 2FA self-service (any local user) ───────────────────
+
+@bp.route('/2fa/setup', methods=['POST'])
+@login_required
+def twofa_setup():
+    if not current_user.is_local:
+        return jsonify({'ok': False, 'error': 'Directory accounts manage MFA at the directory.'}), 400
+    secret = twofa.generate_secret()
+    session['twofa_setup_secret'] = secret
+    uri = twofa.provisioning_uri(secret, current_user.username)
+    return jsonify({'ok': True, 'secret': secret, 'uri': uri, 'qr': twofa.qr_svg(uri)})
+
+
+@bp.route('/2fa/enable', methods=['POST'])
+@login_required
+def twofa_enable():
+    if not current_user.is_local:
+        flash('Directory accounts manage MFA at the directory.', 'danger')
+        return redirect(url_for('settings.index') + '#tab-security')
+    secret = session.get('twofa_setup_secret')
+    code = (request.form.get('code', '') or '').strip()
+    if not secret or not twofa.verify_totp(secret, code):
+        flash('Invalid code — 2FA was not enabled. Re-scan the QR and try again.', 'danger')
+        return redirect(url_for('settings.index') + '#tab-security')
+    codes = twofa.generate_backup_codes()
+    current_user.totp_secret = twofa.encrypt_secret(secret)
+    current_user.totp_enabled = True
+    current_user.backup_codes = twofa.encode_codes(codes)
+    db.session.commit()
+    session.pop('twofa_setup_secret', None)
+    session['twofa_backup_codes_once'] = codes
+    log_action('settings.2fa_enable', target=current_user.username)
+    flash('Two-factor authentication enabled. Save your backup codes now — they are shown only once.', 'success')
+    return redirect(url_for('settings.index') + '#tab-security')
+
+
+@bp.route('/2fa/disable', methods=['POST'])
+@login_required
+def twofa_disable():
+    if not current_user.totp_enabled:
+        return redirect(url_for('settings.index') + '#tab-security')
+    pw = request.form.get('current_password', '')
+    if current_user.is_local and not current_user.check_password(pw):
+        flash('Password incorrect — 2FA was not disabled.', 'danger')
+        return redirect(url_for('settings.index') + '#tab-security')
+    current_user.totp_enabled = False
+    current_user.totp_secret = None
+    current_user.backup_codes = None
+    db.session.commit()
+    log_action('settings.2fa_disable', target=current_user.username)
+    flash('Two-factor authentication disabled.', 'warning')
+    return redirect(url_for('settings.index') + '#tab-security')
+
+
+@bp.route('/2fa/backup-codes', methods=['POST'])
+@login_required
+def twofa_regen_codes():
+    if not (current_user.is_local and current_user.totp_enabled):
+        flash('Enable two-factor authentication first.', 'danger')
+        return redirect(url_for('settings.index') + '#tab-security')
+    codes = twofa.generate_backup_codes()
+    current_user.backup_codes = twofa.encode_codes(codes)
+    db.session.commit()
+    session['twofa_backup_codes_once'] = codes
+    log_action('settings.2fa_backup_regen', target=current_user.username)
+    flash('New backup codes generated. Save them now — the old ones no longer work.', 'success')
+    return redirect(url_for('settings.index') + '#tab-security')
+
+
+@bp.route('/recovery-email', methods=['POST'])
+@login_required
+def recovery_email():
+    addr = (request.form.get('recovery_email', '') or '').strip()
+    if addr and ('@' not in addr or '.' not in addr.split('@')[-1]):
+        flash('Enter a valid email address.', 'danger')
+        return redirect(url_for('settings.index') + '#tab-security')
+    current_user.recovery_email = addr or None
+    db.session.commit()
+    log_action('settings.recovery_email', target=current_user.username)
+    flash('Recovery email updated.' if addr else 'Recovery email cleared.', 'success')
+    return redirect(url_for('settings.index') + '#tab-security')

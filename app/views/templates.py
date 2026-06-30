@@ -54,12 +54,20 @@ def index():
     kind = request.args.get('kind') or None
     if kind and kind not in Template.KINDS:
         kind = None
+    status = request.args.get('status') or None
+    if status not in (Template.STATUS_PENDING, Template.STATUS_APPROVED,
+                      Template.STATUS_REJECTED):
+        status = None
+    rows = lib.list_templates(kind)
+    if status:
+        rows = [t for t in rows if t.status == status]
     return render_template(
         'templates/index.html',
-        templates=lib.list_templates(kind),
+        templates=rows,
         kinds=Template.KINDS,
         kind_labels=lib.KIND_LABELS,
         active_kind=kind,
+        active_status=status,
         appliances=Appliance.query.order_by(Appliance.name).all(),
         edit_template_id=None,
     )
@@ -95,13 +103,33 @@ def detail(template_id: int):
     row = lib.get_template(template_id)
     if row is None:
         abort(404)
+    history = [
+        {'action': e.action, 'reviewer': e.reviewer or '',
+         'reason': e.reason or '',
+         'created_at': e.created_at.isoformat() if e.created_at else ''}
+        for e in lib.review_history(template_id)
+    ]
+    # Backfill a synthetic entry for templates reviewed BEFORE the history log
+    # existed, so an already approved/rejected template still shows who/when.
+    if not history and row.reviewed_by and row.status != Template.STATUS_PENDING:
+        history = [{
+            'action': ('reject' if row.status == Template.STATUS_REJECTED
+                       else 'approve'),
+            'reviewer': row.reviewed_by or '',
+            'reason': row.reject_reason or '',
+            'created_at': row.reviewed_at.isoformat() if row.reviewed_at else '',
+        }]
     return jsonify({
         'id': row.id, 'kind': row.kind, 'name': row.name, 'version': row.version,
         'note': row.note or '', 'author': row.author or '',
-        'locked': bool(row.locked),
+        'locked': bool(row.locked), 'status': row.status,
+        'reviewed_by': row.reviewed_by or '',
+        'reviewed_at': row.reviewed_at.isoformat() if row.reviewed_at else '',
+        'reject_reason': row.reject_reason or '',
         'created_at': row.created_at.isoformat() if row.created_at else '',
         'body': json.dumps(row.body_dict, indent=2, sort_keys=True),
         'exceptions': _pretty_json(row.exceptions or ''),
+        'history': history,
     })
 
 
@@ -167,6 +195,7 @@ def edit(template_id: int):
         kinds=Template.KINDS,
         kind_labels=lib.KIND_LABELS,
         active_kind=None,
+        active_status=None,
         appliances=Appliance.query.order_by(Appliance.name).all(),
         edit_template_id=row.id,
     )
@@ -283,4 +312,20 @@ def reject(template_id: int):
         flash(f'Rejected "{row.name}" v{row.version}.', 'warning')
     except ValueError as exc:
         flash(f'Could not reject template: {exc}', 'danger')
+    return redirect(_safe_next(url_for('templates.index')))
+
+
+@bp.route('/<int:template_id>/unapprove', methods=['POST'])
+@login_required
+@require_permission('operations.template_approve')
+def unapprove(template_id: int):
+    """Revoke approval — returns the template to pending status."""
+    try:
+        row = lib.unapprove_template(template_id, reviewer=current_user.username)
+        log_action('template.unapprove', target=f'{row.kind}/{row.name}',
+                   detail=f'version {row.version}')
+        flash(f'Approval revoked for "{row.name}" v{row.version} — returned to pending.',
+              'warning')
+    except ValueError as exc:
+        flash(f'Could not revoke approval: {exc}', 'danger')
     return redirect(_safe_next(url_for('templates.index')))

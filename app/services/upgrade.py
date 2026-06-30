@@ -17,7 +17,10 @@ Web port of the desktop ``services/upgrade.py``, reimplemented on the web's
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import re
 from datetime import datetime
 from typing import Any
 
@@ -195,5 +198,64 @@ def push_firmware(appliance, image_bytes: bytes, filename: str, *,
     return plan
 
 
+
+# --------------------------------------------------------------------------- #
+#  Firmware-repository helpers (repo-driven upgrade — no upload at upgrade time) #
+# --------------------------------------------------------------------------- #
+def _version_key(v: str) -> tuple:
+    """Sortable key from a version string ("7.6.4" -> (7, 6, 4)); blanks sort low."""
+    parts = re.findall(r"\d+", v or "")
+    return tuple(int(p) for p in parts) if parts else (0,)
+
+
+def _model_matches(image_model: str, appliance_model: str) -> bool:
+    """A stored image fits an appliance when the image is model-agnostic (blank
+    model = universal) or the two model strings overlap (case-insensitive,
+    substring either way so "FortiWeb 600F" matches "600F")."""
+    im = (image_model or "").strip().lower()
+    am = (appliance_model or "").strip().lower()
+    if not im:
+        return True            # universal image
+    if not am:
+        return False           # appliance model unknown — only universal images
+    return im == am or im in am or am in im
+
+
+def compatible_images(appliance) -> list:
+    """Stored :class:`FirmwareImage` rows that can upgrade ``appliance``.
+
+    Matched by product (``kind``) and model (blank image model = universal),
+    newest version first. Pure DB read — no device call.
+    """
+    from ..models_firmware import FirmwareImage
+    kind = (getattr(appliance, "kind", "") or "fortiweb").strip().lower()
+    a_model = getattr(appliance, "model", "") or ""
+    rows = FirmwareImage.query.filter(FirmwareImage.product == kind).all()
+    matches = [fw for fw in rows if _model_matches(fw.model or "", a_model)]
+    matches.sort(key=lambda fw: _version_key(fw.version), reverse=True)
+    return matches
+
+
+def read_image_bytes(image) -> bytes:
+    """Read a stored firmware image off disk, verifying its recorded sha256.
+
+    Raises ``FileNotFoundError`` if the file is gone and ``ValueError`` on a
+    checksum mismatch (a corrupted / swapped file must never reach the box).
+    """
+    path = getattr(image, "stored_path", "") or ""
+    if not path or not os.path.exists(path):
+        raise FileNotFoundError(
+            f"firmware file missing on disk for image {getattr(image, 'id', '?')}")
+    with open(path, "rb") as fh:
+        data = fh.read()
+    recorded = (getattr(image, "sha256", "") or "").strip()
+    if recorded:
+        actual = hashlib.sha256(data).hexdigest()
+        if actual != recorded:
+            raise ValueError(
+                f"sha256 mismatch for {getattr(image, 'filename', path)}: "
+                f"recorded {recorded[:12]}…, file {actual[:12]}…")
+    return data
+
 __all__ = ["prepare", "push_firmware", "check_permission", "firmware_version",
-           "FIRMWARE_ENDPOINT"]
+           "FIRMWARE_ENDPOINT", "compatible_images", "read_image_bytes"]

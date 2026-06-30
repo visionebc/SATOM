@@ -75,8 +75,10 @@ def index():
     appliances = (Appliance.query
                   .filter(Appliance.parent_id.is_(None))
                   .order_by(Appliance.name).all())
+    from ..services import rediscovery
     return render_template('appliances/index.html', appliances=appliances,
-                           classification=store.all_classification())
+                           classification=store.all_classification(),
+                           has_snapshot=rediscovery.has_snapshot)
 
 
 @bp.route('/<int:id>/members/roles')
@@ -95,7 +97,9 @@ def detail(id):
     recent_audit = AuditLog.query.filter(
         AuditLog.target.like(f'%{appliance.name}%')
     ).order_by(AuditLog.timestamp.desc()).limit(20).all()
-    return render_template('appliances/detail.html', appliance=appliance, audit_entries=recent_audit)
+    from ..services import rediscovery
+    return render_template('appliances/detail.html', appliance=appliance, audit_entries=recent_audit,
+                           has_snapshot=rediscovery.has_snapshot)
 
 
 @bp.route('/', methods=['POST'])

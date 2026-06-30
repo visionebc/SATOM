@@ -55,13 +55,18 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_stop)
     signal.signal(signal.SIGINT, _handle_stop)
     app = create_app()
-    # WAL keeps the sidecar's writes from blocking the web workers' reads.
-    try:
-        with app.app_context():
-            db.session.execute(text("PRAGMA journal_mode=WAL"))
-            db.session.commit()
-    except Exception:  # noqa: BLE001
-        db.session.rollback()
+    # WAL keeps the sidecar's writes from blocking the web workers' reads —
+    # but PRAGMA journal_mode is SQLite-only. On Postgres it is a syntax error,
+    # so guard on the dialect; the rollback must stay INSIDE the app context
+    # (it used to dedent out, raising "Working outside of application context"
+    # the moment the prod DB became Postgres). (2026-06-30)
+    with app.app_context():
+        try:
+            if db.engine.dialect.name == "sqlite":
+                db.session.execute(text("PRAGMA journal_mode=WAL"))
+                db.session.commit()
+        except Exception:  # noqa: BLE001
+            db.session.rollback()
     while not _stop:
         try:
             tick(app)

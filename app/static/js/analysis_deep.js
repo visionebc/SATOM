@@ -160,6 +160,36 @@
     }).join("");
   }
 
+  function renderInventory(inv) {
+    inv = inv || {}; var t = inv.totals || {}; var pool = t.server_pools || {}; var be = t.backends || {};
+    var tiles = [
+      ["Server policies", t.server_policies || 0, ""],
+      ["Server pools", pool.distinct || 0, (pool.unique || 0) + " unique \u00b7 " + (pool.shared || 0) + " shared"],
+      ["Back-end servers", be.count || 0, (be.distinct_ips || 0) + " distinct IPs"],
+      ["VIPs", t.vips || 0, ""],
+      ["SNI policies", t.sni || 0, ""],
+      ["Certificates", t.certificates || 0, ""]
+    ];
+    var box = $("deepInv");
+    box.style.display = "flex"; box.style.flexWrap = "wrap"; box.style.gap = ".6rem";
+    box.innerHTML = tiles.map(function (x) {
+      return '<div style="flex:1 1 130px;min-width:130px;background:#f8fafc;border:1px solid #e8edf5;border-radius:12px;padding:.7rem .9rem">' +
+        '<div style="font-size:1.6rem;font-weight:700;color:#2563eb;line-height:1.1">' + esc(x[1]) + '</div>' +
+        '<div style="font-size:.8rem;color:#334155">' + esc(x[0]) + '</div>' +
+        (x[2] ? '<div style="font-size:.68rem;color:#94a3b8;margin-top:.15rem">' + esc(x[2]) + '</div>' : '') + '</div>';
+    }).join("");
+    var dev = inv.per_device || [];
+    var sc = $("invScope"); if (sc) sc.textContent = "(" + dev.length + " device" + (dev.length === 1 ? "" : "s") + " in scope)";
+    var ports = inv.ports || [];
+    deepBar("cDeepPorts", ports.slice(0, 15).map(function (r) { return r.port; }), ports.slice(0, 15).map(function (r) { return r.count; }), false);
+    document.querySelector("#tDeepPorts tbody").innerHTML = ports.length ? ports.map(function (r) {
+      return "<tr><td>" + esc(r.port) + "</td><td><b>" + r.count + "</b></td></tr>";
+    }).join("") : '<tr><td colspan="2" class="ana-empty">No back-end ports \u2014 run a deep capture</td></tr>';
+    document.querySelector("#tDeepInvDev tbody").innerHTML = dev.length ? dev.map(function (d) {
+      return "<tr><td>" + esc(d.device) + "</td><td>" + d.policies + "</td><td>" + d.pools + "</td><td>" + d.backends + "</td><td>" + d.sni + "</td><td>" + d.certificates + "</td></tr>";
+    }).join("") : '<tr><td colspan="6" class="ana-empty">No deep data \u2014 run a deep capture</td></tr>';
+  }
+
   /* --------------------------------------------------------- drill-down tree */
   function treeHTML(node, depth) {
     if (!node || !node.logical_name) return "";
@@ -216,9 +246,11 @@
     $("deepStatus").textContent = "Loading…";
     Promise.all([
       getJSON(withDevices("wpp-matrix")), getJSON(withDevices("subelements")),
-      getJSON(withDevices("orphans")), getJSON(withDevices("freshness"))
+      getJSON(withDevices("orphans")), getJSON(withDevices("freshness")),
+      getJSON(withDevices("deep/inventory"))
     ]).then(function (res) {
       renderMatrix(res[0]); renderSub(res[1]); renderOrphans(res[2]); renderFreshness(res[3]);
+      renderInventory(res[4]);
       loadDrillObjects();
       $("deepStatus").textContent = "";
       addExpandButtons();

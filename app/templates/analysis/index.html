@@ -238,6 +238,20 @@
   </div>
   <p class="small text-muted mb-0 mt-2">The full WPP sub-tree + Server-Policy dependency graph captured into the cache (opt-in deep rediscovery). Every sub-element is queryable here — no live device calls. Click ⤢ on any chart to expand, change type, top-N, and export CSV/PNG.</p>
 </div>
+<!-- Fleet inventory (cardinality) -->
+<div class="ana-panel" style="margin-bottom:1rem">
+  <h3>Fleet inventory <span id="invScope" style="opacity:.5;font-weight:400;font-size:.8rem"></span></h3>
+  <div id="deepInv"><div class="ana-empty">Loading…</div></div>
+  <div class="ana-grid" style="margin-top:.8rem">
+    <div class="ana-panel"><h3>Back-end ports</h3>
+      <div class="ana-chart" style="height:240px"><canvas id="cDeepPorts"></canvas></div>
+      <div class="ana-scroll" style="max-height:150px;margin-top:.5rem"><table class="ana-tbl" id="tDeepPorts">
+        <thead><tr><th>Port</th><th>Back-ends</th></tr></thead><tbody></tbody></table></div></div>
+    <div class="ana-panel wide"><h3>Per-device inventory</h3>
+      <div class="ana-scroll" style="max-height:270px"><table class="ana-tbl" id="tDeepInvDev">
+        <thead><tr><th>Device</th><th>Policies</th><th>Pools</th><th>Back-ends</th><th>SNI</th><th>Certs</th></tr></thead><tbody></tbody></table></div></div>
+  </div>
+</div>
 <div class="ana-grid">
   <div class="ana-panel wide"><h3>WPP feature coverage <span id="deepWppN" style="opacity:.5"></span></h3>
     <div class="ana-chart" style="height:300px"><canvas id="cDeepWppMatrix"></canvas></div>

@@ -71,3 +71,39 @@ def test_backfill_from_git_seeds_cache(session, tmp_path, monkeypatch):
 def test_slugify():
     assert dsync.slugify("FW Demo / Ecom") == "FW-Demo-Ecom"
     assert dsync.slugify("") == "device"
+
+
+def test_persist_deep_snapshot_uses_deep_layer(session):
+    """Deep snapshot ingests under layer='deep' and decomposes _deep nesting."""
+    from app.services import device_sync
+    from app.models_cache import DeviceSnapshot, DeviceObject
+    a = _make_appliance(session, name="fw-deep")
+    snapshot = {
+        "sections": {"Server Policy": {"server_policy": [
+            {"name": "pol-a", "_deep": {"server_pool": {"name": "pool-a", "_deep": {
+                "pserver-list": [{"id": "1", "ip": "192.0.2.5"}]}}}}]}},
+        "generated_at": "2026-06-30T18:40:00", "total_objects": 3,
+    }
+    device_sync.persist_deep_snapshot(a, snapshot, session=session)
+    snaps = DeviceSnapshot.query.filter_by(appliance_id=a.id, layer="deep").all()
+    assert snaps and all(s.layer == "deep" for s in snaps)
+    objs = DeviceObject.query.filter_by(appliance_id=a.id, layer="deep").all()
+    logicals = {o.logical_name for o in objs}
+    assert "server_policy" in logicals
+    assert any("pserver-list" in l for l in logicals)
+
+
+def test_wipe_layer_removes_only_that_layer(session):
+    from app.services import device_sync, device_store
+    from app.models_cache import DeviceObject
+    a = _make_appliance(session, name="fw-wipe")
+    cfg = {"sections": {"server_objects": {"server_pool": [{"name": "pool-c"}]}},
+           "generated_at": "2026-06-30T10:00:00", "total_objects": 1}
+    deep = {"sections": {"Server Policy": {"server_policy": [{"name": "pol-d"}]}},
+            "generated_at": "2026-06-30T10:00:00", "total_objects": 1}
+    device_store.ingest_snapshot(a.id, cfg, layer="config", session=session)
+    device_sync.persist_deep_snapshot(a, deep, session=session)
+    device_store.wipe_layer(a.id, "deep", session=session)
+    assert DeviceObject.query.filter_by(appliance_id=a.id, layer="deep").count() == 0
+    # the config layer is untouched
+    assert DeviceObject.query.filter_by(appliance_id=a.id, layer="config").count() >= 1

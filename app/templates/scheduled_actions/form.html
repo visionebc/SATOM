@@ -99,7 +99,7 @@
             </div>
           </div>
 
-          <div class="mb-2">
+          <div class="mb-2" id="genericParams">
             <label class="fw-form-label">Advanced params (JSON, optional)</label>
             <textarea class="form-control" name="params_json" rows="4" spellcheck="false"
                       style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"
@@ -107,6 +107,62 @@
             <div class="form-text">
               User-scope ops read their inputs here (e.g. <code>policy</code>, <code>member</code>,
               <code>certificate</code>, <code>enabled</code>). Invalid JSON is ignored.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="fw-card mt-3" id="customCard" style="display:none;">
+        <div class="fw-card-header">
+          <span class="fw-card-title"><i class="bi bi-braces me-2 text-accent"></i>Custom REST request</span>
+        </div>
+        <div class="fw-card-body">
+          <div class="mb-3">
+            <label class="fw-form-label">Label (optional)</label>
+            <input type="text" class="form-control" name="custom_label" autocomplete="off"
+                   value="{{ custom_params.get('label', '') }}"
+                   placeholder="e.g. Disable a maintenance banner">
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-4">
+              <label class="fw-form-label">Method</label>
+              <select class="form-select" name="custom_method">
+                {% for m in ['GET', 'POST', 'PUT', 'DELETE'] %}
+                <option value="{{ m }}" {{ 'selected' if custom_params.get('method', 'GET') == m else '' }}>{{ m }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-8">
+              <label class="fw-form-label">mkey (object name, optional)</label>
+              <input type="text" class="form-control" name="custom_mkey" autocomplete="off"
+                     value="{{ custom_params.get('mkey', '') }}" placeholder="e.g. default">
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="fw-form-label">Endpoint <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" name="custom_endpoint" list="registryEndpoints"
+                   autocomplete="off" spellcheck="false"
+                   style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"
+                   value="{{ custom_params.get('endpoint', '') }}"
+                   placeholder="/api/v2.0/cmdb/... or a registry key">
+            <datalist id="registryEndpoints">
+              {% for e in registry_endpoints %}
+              <option value="{{ e.path }}">{{ e.name }}</option>
+              {% endfor %}
+            </datalist>
+            <div class="form-text">
+              {{ registry_endpoints|length }} registry endpoints — type to filter, or paste a raw
+              <code>/api/...</code> path.
+            </div>
+          </div>
+          <div class="mb-1">
+            <label class="fw-form-label">JSON body (POST / PUT)</label>
+            <textarea class="form-control" name="custom_body" rows="5" spellcheck="false"
+                      style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"
+                      placeholder='{"status": "disable"}'>{% if custom_params.get('body') is not none %}{{ custom_params.get('body') | tojson(indent=2) }}{% endif %}</textarea>
+            <div class="form-text">
+              GET ignores the body. <strong>POST</strong>=create, <strong>PUT</strong>=update,
+              <strong>DELETE</strong>=delete — every write goes through snapshot + audit + dry-run.
             </div>
           </div>
         </div>
@@ -238,6 +294,12 @@ function onActionChange() {
 
   document.getElementById('scopeLabel').textContent = scope;
   document.getElementById('dangerNote').style.display = danger ? '' : 'none';
+
+  var isCustom = (sel.value === 'custom_rest');
+  var cc = document.getElementById('customCard');
+  if (cc) { cc.style.display = isCustom ? '' : 'none'; }
+  var gp = document.getElementById('genericParams');
+  if (gp) { gp.style.display = isCustom ? 'none' : ''; }
 
   var kindSel = document.getElementById('scheduleKind');
   var forcedNote = document.getElementById('forcedNote');

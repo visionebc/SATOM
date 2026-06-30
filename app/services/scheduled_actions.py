@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import traceback
 from dataclasses import dataclass
 from datetime import datetime
@@ -36,10 +37,17 @@ from ..models import (Appliance, ChangeRequest, ScheduledAction,
                       ScheduledActionRun, db)
 from . import backup, scheduler, signature_catalog
 from .fortiweb_ops import FortiWebOps
+from ..registry.loader import load_registry
 
 # REST endpoints for the user-scope object ops (FortiWeb v2.0 cmdb).
 SERVER_POLICY_EP = "/api/v2.0/cmdb/server-policy/policy"
 SERVER_POOL_MEMBER_EP = "/api/v2.0/cmdb/server-policy/server-pool/pserver-list"
+
+# Custom REST action: the methods an admin may schedule, and the one URN we
+# refuse outright — the partition-boot op reboots the box EVEN ON GET (it
+# corrupted a device once), so it is never reachable from a custom call.
+_ALLOWED_METHODS = ("GET", "POST", "PUT", "DELETE")
+_DANGEROUS_URN_RE = re.compile(r"backuprestorefirmwareboot", re.I)
 
 # Bound the text we persist so a chatty device response can't bloat a DB row.
 _LOG_MAX = 8000
@@ -126,6 +134,25 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "Authorized by an approved Change Request inside its maintenance "
                 "window (change_requests.cr_runnable).",
     ),
+    ActionSpec(
+        "health_check", "Health check (system status)", "admin",
+        needs_targets=True,
+        summary="Read each target FortiWeb's system status over REST "
+                "(read-only) - a lightweight scheduled liveness/health probe.",
+    ),
+    ActionSpec(
+        "ha_check", "HA status check", "admin", needs_targets=True,
+        summary="Read each target's High-Availability member/role status "
+                "over REST (read-only).",
+    ),
+    ActionSpec(
+        "custom_rest", "Custom REST call", "admin", needs_targets=True,
+        danger=True,
+        summary="Run ANY FortiWeb REST request you define (method + endpoint + "
+                "mkey + JSON body) against the targets. GET is a live read; "
+                "POST/PUT/DELETE go through the snapshot+audit+dry-run write "
+                "path. Build it in the Custom REST card on the form.",
+    ),
 ]
 
 # User-scope Server-Policy automations scheduled for a specific time. These MUTATE
@@ -194,6 +221,12 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_upgrade_prep(appliance, dry_run)
         if key == "upgrade":
             return _do_upgrade(appliance, params, dry_run)
+        if key == "health_check":
+            return _do_health_check(appliance, dry_run)
+        if key == "ha_check":
+            return _do_ha_check(appliance, dry_run)
+        if key == "custom_rest":
+            return _do_custom_rest(appliance, params, dry_run)
         if key in ("policy_set_status", "backend_set_status", "swap_certificate"):
             return _do_user_op(key, appliance, params, dry_run)
         return {"ok": False, "summary": f"No executor for {key!r}.", "log": ""}
@@ -330,6 +363,138 @@ def _do_upgrade(appliance, params: dict, dry_run: bool) -> dict:
                     "service layer (no upgrade runbook); no firmware was flashed."),
         "log": "stub: the upgrade runbook is not yet ported to the web service layer.",
     }
+
+
+def resolve_endpoint(value: str) -> str:
+    """Map a registry friendly key OR a raw ``/api/...`` path to a concrete URN.
+
+    Returns ``""`` when it resolves to neither (so the executor can refuse).
+    """
+    v = (value or "").strip()
+    if not v:
+        return ""
+    if v.startswith("/"):
+        return v
+    return load_registry().get(v, "")
+
+
+def _do_health_check(appliance, dry_run: bool) -> dict:
+    if appliance is None:
+        return {"ok": False, "summary": "health_check needs a target device.", "log": ""}
+    if dry_run:
+        return {"ok": True,
+                "summary": f"[dry-run] would read system status of {appliance.name}.",
+                "log": ""}
+    try:
+        status = appliance.build_client().status_check()
+        return {"ok": True, "summary": f"{appliance.name}: status read ok.",
+                "log": json.dumps(status)[:_LOG_MAX]}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False,
+                "summary": f"{appliance.name}: {type(exc).__name__}: {exc}", "log": ""}
+
+
+def _do_ha_check(appliance, dry_run: bool) -> dict:
+    if appliance is None:
+        return {"ok": False, "summary": "ha_check needs a target device.", "log": ""}
+    if dry_run:
+        return {"ok": True,
+                "summary": f"[dry-run] would read HA status of {appliance.name}.",
+                "log": ""}
+    try:
+        ha = appliance.build_client().ha_status()
+        return {"ok": True, "summary": f"{appliance.name}: HA status read ok.",
+                "log": json.dumps(ha)[:_LOG_MAX]}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False,
+                "summary": f"{appliance.name}: {type(exc).__name__}: {exc}", "log": ""}
+
+
+def _do_custom_rest(appliance, params: dict, dry_run: bool) -> dict:
+    """Run an admin-defined REST request against one device.
+
+    GET = a live read (never mutates). POST/PUT/DELETE go through FortiWebOps so
+    they get the same snapshot + ChangeHistory + audit + dry-run net as every
+    other write. The endpoint is a registry friendly key or a raw ``/api/...``
+    path; the partition-boot reboot URN is refused outright.
+    """
+    method = str(params.get("method") or "GET").strip().upper()
+    raw_ep = str(params.get("endpoint") or "").strip()
+    mkey = str(params.get("mkey") or "").strip() or None
+    label = str(params.get("label") or "").strip()
+    body = params.get("body")
+    if isinstance(body, str):
+        body = body.strip()
+        if body:
+            try:
+                body = json.loads(body)
+            except (ValueError, TypeError):
+                return {"ok": False,
+                        "summary": "custom REST body is not valid JSON.", "log": ""}
+        else:
+            body = None
+
+    if method not in _ALLOWED_METHODS:
+        return {"ok": False, "summary": f"method {method!r} not allowed.", "log": ""}
+    path = resolve_endpoint(raw_ep)
+    if not path:
+        return {"ok": False,
+                "summary": (f"could not resolve endpoint {raw_ep!r} "
+                            "(use a registry key or an /api/... path)."),
+                "log": ""}
+    if _DANGEROUS_URN_RE.search(path):
+        return {"ok": False,
+                "summary": "refused: that endpoint reboots the box even on GET.",
+                "log": ""}
+    if appliance is None:
+        return {"ok": False, "summary": "custom REST needs a target device.", "log": ""}
+
+    desc = label or (f"{method} {path}" + (f"?mkey={mkey}" if mkey else ""))
+
+    if method == "GET":
+        full = path
+        if mkey:
+            full += ("&" if "?" in full else "?") + urlencode({"mkey": mkey})
+        if dry_run:
+            return {"ok": True,
+                    "summary": f"[dry-run] would GET {full} on {appliance.name}.",
+                    "log": ""}
+        try:
+            resp = appliance.build_client().api_call("GET", full)
+            code = getattr(resp, "status_code", 0)
+            ok = code < 400
+            try:
+                out = json.dumps(resp.json())[:_LOG_MAX]
+            except Exception:  # noqa: BLE001
+                out = (getattr(resp, "text", "") or "")[:_LOG_MAX]
+            return {"ok": ok,
+                    "summary": f"{desc} on {appliance.name}: HTTP {code}",
+                    "log": out}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False,
+                    "summary": f"{desc} on {appliance.name}: {type(exc).__name__}: {exc}",
+                    "log": ""}
+
+    # Writes: POST=create, PUT=update, DELETE=delete via FortiWebOps.
+    ops = FortiWebOps(appliance)
+    if method == "POST":
+        result = ops.create(path, body or {}, mkey=mkey, dry_run=dry_run)
+    elif method == "PUT":
+        result = ops.update(path, mkey, body or {}, dry_run=dry_run)
+    else:  # DELETE
+        result = ops.delete(path, mkey, dry_run=dry_run)
+
+    ok = bool(result.get("ok"))
+    err = result.get("error") or ""
+    if dry_run:
+        summary = f"[dry-run] {desc} on {appliance.name} (preview)"
+    elif ok:
+        summary = f"{desc} on {appliance.name}"
+    else:
+        summary = (f"{desc} on {appliance.name} - {err}" if err
+                   else f"{desc} on {appliance.name} - failed")
+    return {"ok": ok, "summary": summary,
+            "log": json.dumps(result.get("request") or {})[:_LOG_MAX]}
 
 
 # --- user-scope object ops (mutate the box via FortiWebOps) ----------------- #

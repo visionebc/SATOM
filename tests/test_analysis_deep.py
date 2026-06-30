@@ -107,3 +107,28 @@ def test_orphan_objects_flags_unused_wpp(app, seeded_deep_cache):
     mkeys = {o["mkey"] for o in orphans}
     assert "wpp-b" in mkeys   # bound by no server policy
     assert "wpp-a" not in mkeys
+
+
+def test_deep_freshness_reports_per_device(app, seeded_deep_cache):
+    from app.services import analysis
+    with app.app_context():
+        fr = analysis.deep_freshness(device_ids=None)
+    aid = str(seeded_deep_cache)
+    assert aid in fr
+    assert fr[aid]["captured_at"]
+
+
+def test_deep_routes_smoke(app, client, seeded_deep_cache):
+    from tests.conftest import login, admin_user_id
+    login(client, admin_user_id(app))
+    r = client.get('/analysis/wpp-matrix')
+    assert r.status_code == 200
+    assert any(row['field'] == 'signature-rule' for row in r.get_json())
+    r2 = client.get(f'/analysis/wpp/{seeded_deep_cache}/wpp-a')
+    assert r2.status_code == 200 and r2.get_json()['mkey'] == 'wpp-a'
+    r3 = client.get('/analysis/subelements')
+    assert r3.status_code == 200
+    r4 = client.get('/analysis/freshness')
+    assert r4.status_code == 200 and str(seeded_deep_cache) in r4.get_json()
+    r5 = client.get('/analysis/orphans')
+    assert r5.status_code == 200 and any(o['mkey'] == 'wpp-b' for o in r5.get_json())

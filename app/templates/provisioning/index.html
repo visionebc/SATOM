@@ -16,7 +16,10 @@
     <h1 class="fw-page-title"><i class="bi bi-sliders me-2 text-accent"></i>System Provisioning</h1>
     <p class="text-muted mb-0" style="font-size:13px;">Author a baseline system profile (DNS, NTP, RADIUS, SNMP, admins…) once, then preview &amp; push it to one device or the whole fleet. Secrets are entered at apply time, never stored.</p>
   </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-fw-secondary" href="{{ url_for('provisioning.baselines') }}"><i class="bi bi-diagram-3 me-1"></i>Baselines</a>
   <a class="btn btn-fw-primary" href="{{ url_for('provisioning.new') }}"><i class="bi bi-plus-lg me-1"></i>New profile</a>
+  </div>
 </div>
 
 <!-- Toolbar -->

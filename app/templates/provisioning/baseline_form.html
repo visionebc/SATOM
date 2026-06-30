@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if baseline else 'New' }} baseline{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>
+      {{ 'Edit baseline' if baseline else 'New baseline' }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">Name it, scope it to a
+      zone / line / department, and compose it from approved templates.</p>
+  </div>
+</div>
+
+<form method="post"
+      action="{{ url_for('provisioning.baseline_edit', baseline_id=baseline.id) if baseline else url_for('provisioning.baseline_new') }}"
+      style="max-width: 960px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label">Name</label>
+      <input class="form-control" name="name" required
+             value="{{ baseline.name if baseline else '' }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Zone</label>
+      <select class="form-select" name="zone">
+        <option value="">(any)</option>
+        {% for z in zones %}<option value="{{ z }}"
+          {{ 'selected' if baseline and baseline.zone == z }}>{{ z }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Line</label>
+      <select class="form-select" name="line">
+        <option value="">(any)</option>
+        {% for l in lines %}<option value="{{ l }}"
+          {{ 'selected' if baseline and baseline.line == l }}>{{ l }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Department</label>
+      <select class="form-select" name="department">
+        <option value="">(any)</option>
+        {% for d in departments %}<option value="{{ d }}"
+          {{ 'selected' if baseline and baseline.department == d }}>{{ d }}</option>{% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <label class="form-label">Compose from approved templates</label>
+    {% if not approved %}
+      <div class="alert alert-warning">No approved templates available. Approve some in
+        the <a href="{{ url_for('templates.index') }}">Template Library</a> first.</div>
+    {% else %}
+    <div class="card"><div class="card-body" style="max-height: 320px; overflow:auto;">
+      {% for t in approved %}
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="template_ids"
+               value="{{ t.id }}" id="t{{ t.id }}"
+               {{ 'checked' if t.id in selected_ids }}>
+        <label class="form-check-label" for="t{{ t.id }}">
+          {{ t.name }} <span class="text-muted small">v{{ t.version }} · {{ t.kind }}</span>
+        </label>
+      </div>
+      {% endfor %}
+    </div></div>
+    {% endif %}
+  </div>
+
+  <div class="mt-3">
+    <label class="form-label">Note</label>
+    <textarea class="form-control" name="note" rows="2">{{ baseline.note if baseline else '' }}</textarea>
+  </div>
+
+  <div class="mt-4">
+    <button class="btn btn-fw-primary" type="submit">
+      {{ 'Save changes' if baseline else 'Create baseline' }}</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('provisioning.baselines') }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

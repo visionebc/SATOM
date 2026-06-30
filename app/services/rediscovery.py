@@ -31,6 +31,19 @@ from ..clients.fortiweb import FortiWebClient
 from ..registry import loader
 
 
+# The deep-capture pass writes to the DB, so it needs a Flask app context inside
+# the worker thread. ``start()`` captures the live app here; ``_get_flask_app``
+# falls back to ``current_app`` when called from within a request.
+_APP = None
+
+
+def _get_flask_app():
+    from flask import current_app
+    if _APP is not None:
+        return _APP
+    return current_app._get_current_object()
+
+
 def _data_dir() -> Path:
     d = Path(__file__).resolve().parents[2] / "data" / "rediscovery"
     d.mkdir(parents=True, exist_ok=True)
@@ -249,7 +262,7 @@ def _client_snapshot(appliance) -> SimpleNamespace:
     )
 
 
-def _run(appliance_snap: SimpleNamespace, by: str) -> None:
+def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False) -> None:
     aid = appliance_snap.id
     devdir = _dev_dir(aid)
     progress_path = devdir / "progress.json"
@@ -294,8 +307,34 @@ def _run(appliance_snap: SimpleNamespace, by: str) -> None:
                          f"from {total} endpoint(s)" + (f", {len(errors)} error(s)" if errors else ""))
     _write_json(progress_path, state)
 
+    if deep:
+        _run_deep(appliance_snap, progress_path, state)
 
-def start(appliance, by: str = "") -> dict:
+
+def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict) -> None:
+    """Opt-in deep-capture pass appended after the shallow sweep: walk every
+    server policy + WPP (sub-tables + named-rule objects nested) and ingest under
+    layer='deep'. Best-effort — a failure is recorded but never breaks the
+    shallow rediscovery that already completed."""
+    state.update(state="deep-running", section="deep capture (WPP + policy graph)",
+                 finished=None)
+    _write_json(progress_path, state)
+    try:
+        from . import device_sync
+        app = _get_flask_app()
+        with app.app_context():
+            snap = device_sync.deep_snapshot_from_device(appliance_snap)
+            device_sync.persist_deep_snapshot(appliance_snap, snap)
+        state.update(state="done", section="deep capture complete",
+                     deep_objects=snap.get("total_objects"),
+                     finished=datetime.utcnow().isoformat())
+    except Exception as exc:  # noqa: BLE001
+        state.update(state="done", deep_error=f"{type(exc).__name__}: {exc}"[:200],
+                     finished=datetime.utcnow().isoformat())
+    _write_json(progress_path, state)
+
+
+def start(appliance, by: str = "", deep: bool = False) -> dict:
     """Kick off a rediscovery sweep in a background thread.
 
     Refuses to start a second concurrent run for the same appliance. Returns the
@@ -311,14 +350,21 @@ def start(appliance, by: str = "") -> dict:
         if age < 900:
             return {"started": False, "reason": "a rediscovery is already running", "progress": cur}
 
+    global _APP
+    try:
+        from flask import current_app
+        _APP = current_app._get_current_object()
+    except Exception:  # noqa: BLE001 — outside a request (tests set _APP directly)
+        pass
+
     snap = _client_snapshot(appliance)
     init = {"state": "running", "appliance_id": appliance.id, "appliance": appliance.name,
-            "total": 0, "done": 0, "percent": 0, "objects": 0,
+            "total": 0, "done": 0, "percent": 0, "objects": 0, "deep": bool(deep),
             "started": datetime.utcnow().isoformat(), "by": by, "errors": [], "finished": None}
     _write_json(_dev_dir(appliance.id) / "progress.json", init)
-    threading.Thread(target=_run, args=(snap, by), daemon=True).start()
+    threading.Thread(target=_run, args=(snap, by, deep), daemon=True).start()
     return {"started": True, "progress": init}
 
 
 __all__ = ["sweep_plan", "status", "latest_snapshot_meta", "start",
-           "apply_inventory", "maybe_apply_inventory"]
+           "apply_inventory", "maybe_apply_inventory", "_run_deep"]

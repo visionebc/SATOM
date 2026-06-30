@@ -43,6 +43,26 @@ class FortiWebClient(BaseClient):
     def status_check(self):
         return self.get('/api/v2.0/system/status.systemstatus').json()
 
+    def ha_status(self):
+        """Best-effort live HA member/role info as a flat dict.
+
+        Tries the HA monitor endpoint then falls back to system status / the HA
+        cmdb object; returns {} on any failure so the resolver degrades to
+        'standalone'/'unknown'. The exact 7.x monitor path is verified live and
+        may be pinned here once an HA cluster confirms it."""
+        for path in (
+            '/api/v2.0/system/ha-status.member',
+            '/api/v2.0/system/status.systemstatus',
+            '/api/v2.0/cmdb/system/ha',
+        ):
+            try:
+                data = self._results_one(self.get(path).json())
+                if data:
+                    return data
+            except Exception:
+                continue
+        return {}
+
     def list_server_policies(self):
         return self.get('/api/v2.0/cmdb/server-policy/policy').json()
 

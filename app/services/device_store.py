@@ -322,3 +322,29 @@ def section_meta(appliance_id: int, section: str, *, layer: str = "config",
             .filter_by(appliance_id=appliance_id, layer=layer, section=section)
             .order_by(DeviceSnapshot.generated_at.desc())
             .first())
+
+
+def wipe_layer(appliance_id: int, layer: str, *, session=None) -> int:
+    """Atomically delete every device_object + snapshot for (appliance, layer).
+
+    Used to replace-per-device the whole ``deep`` layer before a fresh deep
+    ingest, so re-runs never accumulate stale rows. Returns objects removed.
+    Projections are deleted first (FK), then objects, then snapshots.
+    """
+    from ..extensions import db
+    from ..models_cache import (DeviceObject, DeviceSnapshot, DeviceServerPolicy,
+                               DeviceServerPool, DeviceWebProtectionProfile)
+    session = session or db.session
+    old_ids = [r.id for r in session.query(DeviceObject.id)
+               .filter_by(appliance_id=appliance_id, layer=layer)]
+    if old_ids:
+        for proj in (DeviceServerPolicy, DeviceServerPool,
+                     DeviceWebProtectionProfile):
+            session.query(proj).filter(proj.object_id.in_(old_ids)).delete(
+                synchronize_session=False)
+        session.query(DeviceObject).filter(DeviceObject.id.in_(old_ids)).delete(
+            synchronize_session=False)
+    session.query(DeviceSnapshot).filter_by(
+        appliance_id=appliance_id, layer=layer).delete(synchronize_session=False)
+    session.commit()
+    return len(old_ids)

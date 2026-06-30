@@ -162,3 +162,53 @@ def backfill_from_git(*, session=None) -> dict:
                                            session=session)
         out[cfg.parent.name] = {"appliance_id": appliance.id, "sections": len(res)}
     return out
+
+
+def deep_snapshot_from_device(appliance, *, timeout: float = 30.0) -> dict:
+    """Deep, read-only walk of every server policy + WPP -> enriched snapshot
+    (by-parent sub-tables + named-rule objects nested under ``_deep``). Serial
+    per box by design (gentle on the appliance); device-level fan-out lives in
+    services.deep_jobs."""
+    from .deep_capture import deep_sections
+    from ..clients.fortiweb import FortiWebClient
+    from . import clone
+
+    client = FortiWebClient(appliance, timeout=timeout)
+    reader = clone.ClientReader(client)
+    sections = deep_sections(reader)
+    total = sum(len(rows) for sec in sections.values() for rows in sec.values())
+    return {
+        "device": appliance.name, "appliance_id": appliance.id,
+        "generated_at": datetime.utcnow().isoformat(), "total_objects": total,
+        "section_count": len(sections), "sections": sections, "errors": [],
+    }
+
+
+def persist_deep_snapshot(appliance, snapshot: dict, *, trigger: str = "deep",
+                          user_label: str | None = None, session=None):
+    """Atomic replace of the device's ``deep`` layer, then ingest the enriched
+    snapshot under layer='deep' (per-device-per-layer freshness). Records a
+    SyncRun. Returns the ingest result {section: {objects, changed}}."""
+    from ..extensions import db
+    from ..models_cache import SyncRun
+    from . import device_store
+    session = session or db.session
+    run = SyncRun(appliance_id=getattr(appliance, "id", None), section="_deep",
+                  trigger=trigger, user_label=user_label, status="ok")
+    session.add(run)
+    session.flush()
+    try:
+        device_store.wipe_layer(appliance.id, "deep", session=session)
+        res = device_store.ingest_snapshot(appliance.id, snapshot, source="live",
+                                           layer="deep", session=session)
+        run.changed = sum(1 for v in res.values() if v.get("changed"))
+        run.detail = (f"{snapshot.get('total_objects', 0)} deep objects, "
+                      f"{len(res)} sections")
+        run.status = "ok"
+    except Exception as exc:  # noqa: BLE001
+        res = {}
+        run.status = "error"
+        run.detail = f"{type(exc).__name__}: {exc}"[:240]
+    run.finished_at = datetime.utcnow()
+    session.commit()
+    return res

@@ -132,3 +132,15 @@ def test_deep_routes_smoke(app, client, seeded_deep_cache):
     assert r4.status_code == 200 and str(seeded_deep_cache) in r4.get_json()
     r5 = client.get('/analysis/orphans')
     assert r5.status_code == 200 and any(o['mkey'] == 'wpp-b' for o in r5.get_json())
+
+
+def test_deep_objects_route_lists_wpps(app, client, seeded_deep_cache):
+    from tests.conftest import login, admin_user_id
+    login(client, admin_user_id(app))
+    r = client.get('/analysis/deep/objects?kind=wpp')
+    assert r.status_code == 200
+    mkeys = {o['mkey'] for o in r.get_json()}
+    assert {'wpp-a', 'wpp-b'} <= mkeys
+    r2 = client.get('/analysis/deep/objects?kind=policy')
+    assert r2.status_code == 200
+    assert any(o['mkey'] == 'pol-a' for o in r2.get_json())

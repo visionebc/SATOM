@@ -4,6 +4,8 @@
 <div class="container-fluid py-3">
   <div class="d-flex align-items-center justify-content-between mb-3">
     <div>
+      <a href="{{ url_for('templates.index') }}" class="btn btn-sm btn-outline-secondary mb-2">
+        <i class="bi bi-arrow-left"></i> Back to Templates</a>
       <h4 class="mb-1"><i class="bi bi-sliders"></i> FortiWeb Sections</h4>
       <div class="text-muted small">Approved templates, grouped by section. These are
         assembled into baselines in <a href="{{ url_for('provisioning.index') }}">System Provisioning</a>.</div>
@@ -32,9 +34,17 @@
           <span class="text-muted small ms-2">v{{ t.version }} · {{ kind_labels.get(t.kind, t.kind) }}</span>
           {% if t.author %}<span class="text-muted small ms-2">by {{ t.author }}</span>{% endif %}
         </div>
-        <a class="btn btn-sm btn-outline-secondary"
-           href="{{ url_for('section_catalog.detail', template_id=t.id) }}" target="_blank">
-          <i class="bi bi-eye"></i> View</a>
+        <div class="d-flex gap-2">
+          <a class="btn btn-sm btn-outline-secondary"
+             href="{{ url_for('section_catalog.detail', template_id=t.id) }}" target="_blank">
+            <i class="bi bi-eye"></i> View</a>
+          <form method="post"
+                action="{{ url_for('templates.unapprove', template_id=t.id) }}?next={{ request.path }}"
+                onsubmit="return confirm('Revoke approval for “{{ t.name }}”? It will return to pending and cannot be used in fleet rollouts until re-approved.')">
+            <button type="submit" class="btn btn-sm btn-outline-warning">
+              <i class="bi bi-x-circle"></i> Revoke</button>
+          </form>
+        </div>
       </div>
       {% endfor %}
     </div>

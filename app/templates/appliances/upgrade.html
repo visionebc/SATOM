@@ -29,19 +29,45 @@
 </div>
 {% endif %}
 
+{% if not images %}
 <div class="card shadow-sm">
-  <div class="card-header fw-card-header">Upload firmware</div>
   <div class="card-body">
-    <p class="small text-muted mb-3">Current firmware: <b>{{ firmware or 'unknown' }}</b></p>
-    <form method="POST" enctype="multipart/form-data" action="{{ url_for('appliances.upgrade_push', id=appliance.id) }}">
+    <p class="small text-muted mb-2">Current firmware: <b>{{ firmware or 'unknown' }}</b></p>
+    <div class="fw-alert fw-alert-warning mb-0">
+      <i class="bi bi-info-circle me-1"></i>
+      No firmware image in the repository matches this appliance
+      (<b>{{ appliance.kind }}</b>{% if appliance.model %} / {{ appliance.model }}{% endif %}).
+      Add one in the <a class="alert-link" href="{{ url_for('firmware.index') }}">Firmware repository</a> first —
+      images are no longer uploaded from this page.
+    </div>
+  </div>
+</div>
+{% else %}
+
+{# --- Shared image picker is rendered inside each form so the value posts. --- #}
+{% macro image_select(name) %}
+<label class="form-label">Firmware image (auto-detected from repository)</label>
+<select class="form-select" name="image_id" required>
+  {% for img in images %}
+  <option value="{{ img.id }}" {{ 'selected' if selected_id and selected_id == img.id else '' }}>
+    {{ img.version }}{% if img.build %} (build {{ img.build }}){% endif %}
+    — {{ img.model or 'universal' }} · {{ img.size_mb() }} MB · sha256 {{ img.sha256[:12] }}…
+  </option>
+  {% endfor %}
+</select>
+{% endmacro %}
+
+<div class="card shadow-sm mb-3">
+  <div class="card-header fw-card-header"><i class="bi bi-check2-circle me-1"></i>Apply now</div>
+  <div class="card-body">
+    <p class="small text-muted mb-3">Current firmware: <b>{{ firmware or 'unknown' }}</b> — the matching image
+      is selected automatically below; just validate and accept.</p>
+    <form method="POST" action="{{ url_for('appliances.upgrade_push', id=appliance.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="mb-3">
-        <label class="form-label">Firmware image (<code>.out</code>)</label>
-        <input class="form-control" type="file" name="image" accept=".out" required>
-      </div>
+      <div class="mb-3">{{ image_select('image_id') }}</div>
       <div class="form-check mb-2">
         <input class="form-check-input" type="checkbox" name="dry_run" id="dry_run" checked onchange="document.getElementById('live-fields').classList.toggle('d-none', this.checked)">
-        <label class="form-check-label" for="dry_run">Dry run (validate only — no image is sent)</label>
+        <label class="form-check-label" for="dry_run">Dry run (validate the image only — nothing is sent)</label>
       </div>
       <div id="live-fields" class="d-none border rounded p-3 mb-3" style="background:rgba(248,113,113,.06)">
         <div class="form-check mb-2">
@@ -51,8 +77,34 @@
         <label class="form-label small">Type the appliance name <code>{{ appliance.name }}</code> to authorise the live reboot:</label>
         <input class="form-control" type="text" name="confirm_name" autocomplete="off" placeholder="{{ appliance.name }}">
       </div>
-      <button class="btn fw-btn-primary" type="submit"><i class="bi bi-cloud-arrow-up me-1"></i>Submit</button>
+      <button class="btn fw-btn-primary" type="submit"><i class="bi bi-check2-circle me-1"></i>Validate / Accept</button>
     </form>
   </div>
 </div>
+
+<div class="card shadow-sm">
+  <div class="card-header fw-card-header"><i class="bi bi-calendar-event me-1"></i>Schedule for later</div>
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('appliances.upgrade_schedule', id=appliance.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="mb-3">{{ image_select('image_id') }}</div>
+      <div class="mb-3">
+        <label class="form-label">Date &amp; time <span class="text-muted">(UTC)</span></label>
+        <input class="form-control" type="datetime-local" name="when" required>
+      </div>
+      <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" name="confirm_maturity" id="sched_maturity">
+        <label class="form-check-label" for="sched_maturity">Confirm maturity change (Mature&harr;Feature)</label>
+      </div>
+      <div class="fw-alert fw-alert-info small mb-3">
+        <i class="bi bi-info-circle me-1"></i>
+        The upgrade is recorded as a one-shot <b>Scheduled Action</b> with the validated image.
+        Unattended flashing is gated for safety (an approved Change Request / explicit operator
+        run); the schedule is created and visible under Scheduled Actions.
+      </div>
+      <button class="btn fw-btn-secondary" type="submit"><i class="bi bi-calendar-plus me-1"></i>Schedule upgrade</button>
+    </form>
+  </div>
+</div>
+{% endif %}
 {% endblock %}

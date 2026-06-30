@@ -130,7 +130,7 @@
             </button>
             {% if a.kind == 'fortiweb' %}
             <a href="{{ url_for('appliances.inspector', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Policy Inspector"><i class="bi bi-diagram-2"></i></a>
-            <a href="{{ url_for('appliances.rediscover', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Rediscovery"><i class="bi bi-arrow-repeat"></i></a>
+            <a href="{{ url_for('appliances.rediscover', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ 'Rediscovery' if has_snapshot(a.id) else 'Discovery' }}"><i class="bi {{ 'bi-arrow-repeat' if has_snapshot(a.id) else 'bi-binoculars' }}"></i></a>
             <a href="{{ url_for('appliances.console', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Console"><i class="bi bi-terminal"></i></a>
             {% if current_user.can('backup') %}
             <a href="{{ url_for('appliances.upgrade_prep', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Upgrade Preparation"><i class="bi bi-clipboard-check"></i></a>

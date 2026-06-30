@@ -594,6 +594,34 @@ class Template(db.Model):
         return f"<Template {self.kind}/{self.name} v{self.version}>"
 
 
+class TemplateReviewEvent(db.Model):
+    """Append-only audit trail of a template's approval lifecycle.
+
+    ``Template.reviewed_by`` / ``reviewed_at`` keep only the LATEST review; this
+    table is the full history, so the page can show who approved AND who
+    rejected (and who revoked) over time, each with a timestamp and reason.
+    """
+
+    __tablename__ = "template_review_events"
+
+    ACTION_APPROVE = "approve"
+    ACTION_REJECT = "reject"
+    ACTION_REVOKE = "unapprove"
+
+    id = db.Column(db.Integer, primary_key=True)
+    template_id = db.Column(
+        db.Integer, db.ForeignKey("templates.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    action = db.Column(db.String(16), nullable=False)
+    reviewer = db.Column(db.String(64), nullable=True, default="")
+    reason = db.Column(db.Text, nullable=True, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    def __repr__(self) -> str:
+        return (f"<TemplateReviewEvent {self.action} "
+                f"t{self.template_id} by {self.reviewer!r}>")
+
+
 # ---------------------------------------------------------------------------
 # Baseline — a NAMED, scoped assembly of approved templates (the "armado").
 # Templates carry no scope; the baseline does: it is bound to a zone/line/

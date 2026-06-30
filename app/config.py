@@ -36,6 +36,9 @@ def _append_env(var: str, value: str) -> None:
 
 class Config:
     SECRET_KEY: str = _ensure_secret_key()
+    # NOTE: this SQLite default is a DEV/TEST fallback only. Production
+    # (ProductionConfig) requires the env var and refuses this fallback —
+    # see get_config(). (2026-06-30)
     SQLALCHEMY_DATABASE_URI: str = os.environ.get(
         "SQLALCHEMY_DATABASE_URI",
         "sqlite:////opt/fortinet-manager/data/fortinet.db",
@@ -74,4 +77,17 @@ _config_map = {
 
 def get_config() -> type[Config]:
     env = os.environ.get("FLASK_ENV", "development")
-    return _config_map.get(env, DevelopmentConfig)
+    cfg = _config_map.get(env, DevelopmentConfig)
+    # Production MUST use the configured (Postgres) database. Never silently
+    # fall back to the SQLite default in Config — a process started without the
+    # systemd EnvironmentFile used to drift onto data/fortinet.db, splitting
+    # state from the real PG DB (the scheduler did exactly this). Fail loud
+    # instead so the misconfig is caught at boot, not after silent divergence.
+    # (2026-06-30)
+    if cfg is ProductionConfig and not os.environ.get("SQLALCHEMY_DATABASE_URI"):
+        raise RuntimeError(
+            "SQLALCHEMY_DATABASE_URI is required in production "
+            "(set it in /opt/fortinet-manager/.env); "
+            "refusing to fall back to SQLite."
+        )
+    return cfg

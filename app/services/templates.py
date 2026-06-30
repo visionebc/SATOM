@@ -11,7 +11,7 @@ import json
 from datetime import datetime
 from typing import Any
 
-from ..models import Template, db
+from ..models import Template, TemplateReviewEvent, db
 
 # Friendly labels for the template kinds, for the UI.
 KIND_LABELS = {
@@ -147,6 +147,7 @@ def approve_template(template_id: int, reviewer: str) -> Template:
     row.reject_reason = ""
     row.reviewed_by = (reviewer or "").strip()
     row.reviewed_at = datetime.utcnow()
+    _record_review_event(row.id, TemplateReviewEvent.ACTION_APPROVE, reviewer)
     db.session.commit()
     return row
 
@@ -161,5 +162,36 @@ def reject_template(template_id: int, reviewer: str, reason: str = "") -> Templa
     row.reject_reason = (reason or "").strip()
     row.reviewed_by = (reviewer or "").strip()
     row.reviewed_at = datetime.utcnow()
+    _record_review_event(row.id, TemplateReviewEvent.ACTION_REJECT, reviewer, reason)
     db.session.commit()
     return row
+
+
+def unapprove_template(template_id: int, reviewer: str) -> Template:
+    """Revoke approval — returns the template to PENDING so it can be
+    re-reviewed. Raises ``ValueError`` if the template does not exist."""
+    row = Template.query.get(template_id)
+    if row is None:
+        raise ValueError(f"Template {template_id} not found")
+    row.status = Template.STATUS_PENDING
+    row.reject_reason = ""
+    row.reviewed_by = (reviewer or "").strip()
+    row.reviewed_at = datetime.utcnow()
+    _record_review_event(row.id, TemplateReviewEvent.ACTION_REVOKE, reviewer)
+    db.session.commit()
+    return row
+
+
+def _record_review_event(template_id: int, action: str, reviewer: str,
+                         reason: str = "") -> None:
+    """Queue an approval-history row (committed by the caller's commit)."""
+    db.session.add(TemplateReviewEvent(
+        template_id=template_id, action=action,
+        reviewer=(reviewer or "").strip(), reason=(reason or "").strip()))
+
+
+def review_history(template_id: int) -> list[TemplateReviewEvent]:
+    """Full approval timeline for a template, newest first."""
+    return (TemplateReviewEvent.query.filter_by(template_id=template_id)
+            .order_by(TemplateReviewEvent.created_at.desc(),
+                      TemplateReviewEvent.id.desc()).all())

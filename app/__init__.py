@@ -202,12 +202,22 @@ def create_app(config_override: object | None = None) -> Flask:
             _cur_appl = _dc.current_appliance()
         except Exception:
             _cur_appl = None
+        try:
+            from flask_login import current_user as _cu
+            from .models import Template as _Tpl
+            if getattr(_cu, 'is_authenticated', False) and _cu.can('user_manage'):
+                _pending = _Tpl.query.filter_by(status=_Tpl.STATUS_PENDING).count()
+            else:
+                _pending = 0
+        except Exception:
+            _pending = 0
         return {
             'product': prod,
             'current_appliance': _cur_appl,
             'banner_bg': _bg,
             'now': datetime.utcnow(),
             'config_sections_nav': _cfg_nav,
+            'pending_template_count': _pending,
         }
 
     # -- timezone-aware timestamp filter ---------------------------------
@@ -275,6 +285,13 @@ def create_app(config_override: object | None = None) -> Flask:
             response.headers["Expires"] = "0"
         return response
 
+    # -- centralised logging + global error handlers ---------------------
+    from .errors import (configure_logging, register_error_handlers,
+                         register_selftest_routes)
+    configure_logging(app)
+    register_error_handlers(app)
+    register_selftest_routes(app)
+
     # -- CLI commands -----------------------------------------------------
     @app.cli.command('create-db')
     def create_db_cmd():
@@ -306,7 +323,14 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('reviewed_by', 'VARCHAR(64)'),
                 ('reviewed_at', 'DATETIME'),
             ],
-            'users': [('profile_id', 'INTEGER')],
+            'users': [
+                ('profile_id', 'INTEGER'),
+                ('auth_source', "VARCHAR(16) DEFAULT 'local'"),
+                ('totp_secret', 'VARCHAR(512)'),
+                ('totp_enabled', 'BOOLEAN DEFAULT FALSE'),
+                ('recovery_email', 'VARCHAR(256)'),
+                ('backup_codes', 'TEXT'),
+            ],
             'appliances': [
                 ('hw_type', "VARCHAR(16) DEFAULT 'unknown'"),
                 ('model', 'VARCHAR(128)'),
@@ -331,6 +355,15 @@ def create_app(config_override: object | None = None) -> Flask:
         # When the approval column is first introduced, existing templates
         # predate the workflow (admin-authored) -> treat them as APPROVED so the
         # fleet keeps working; new saves still default to 'pending'.
+        if ('users', 'auth_source') in added:
+            try:
+                db.session.execute(text(
+                    "UPDATE users SET auth_source='local' "
+                    "WHERE auth_source IS NULL OR auth_source=''"))
+                db.session.commit()
+            except Exception:  # noqa: BLE001
+                db.session.rollback()
+
         if ('templates', 'status') in added:
             try:
                 db.session.execute(text(

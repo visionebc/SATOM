@@ -18,6 +18,7 @@ def index():
     per_page = int(request.args.get('per_page', 50))
     filter_user = request.args.get('user', '').strip()
     filter_action = request.args.get('action', '').strip()
+    filter_q = request.args.get('q', '').strip()
     date_from = request.args.get('date_from', '').strip()
     date_to = request.args.get('date_to', '').strip()
 
@@ -32,6 +33,16 @@ def index():
 
     if filter_action:
         query = query.filter(AuditLog.action.ilike(f'%{filter_action}%'))
+
+    if filter_q:
+        from sqlalchemy import or_
+        like = f'%{filter_q}%'
+        query = query.filter(or_(
+            AuditLog.username.ilike(like),
+            AuditLog.action.ilike(like),
+            AuditLog.target.ilike(like),
+            AuditLog.extra.ilike(like),
+        ))
 
     if date_from:
         from datetime import datetime
@@ -60,6 +71,7 @@ def index():
         users=users,
         filter_user=filter_user,
         filter_action=filter_action,
+        filter_q=filter_q,
         date_from=date_from,
         date_to=date_to,
     )

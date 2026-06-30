@@ -78,7 +78,7 @@
   <div class="card-body">
     <div class="d-flex flex-wrap gap-2">
       <a href="{{ url_for('appliances.inspector', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm"><i class="bi bi-diagram-2 me-1"></i>Policy Inspector</a>
-      <a href="{{ url_for('appliances.rediscover', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm"><i class="bi bi-arrow-repeat me-1"></i>Rediscovery</a>
+      <a href="{{ url_for('appliances.rediscover', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">{% if has_snapshot(appliance.id) %}<i class="bi bi-arrow-repeat me-1"></i>Rediscovery{% else %}<i class="bi bi-binoculars me-1"></i>Discovery{% endif %}</a>
       <a href="{{ url_for('appliances.console', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm"><i class="bi bi-terminal me-1"></i>Console</a>
       {% if current_user.can('backup') %}
       <a href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm"><i class="bi bi-clipboard-check me-1"></i>Upgrade Prep</a>

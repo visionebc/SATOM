@@ -99,3 +99,58 @@ def mark_device(job_id: str, device_id: int, state_name: str, *, objects: int = 
 def pending_device_ids(job_id: str) -> list[int]:
     st = load_job(job_id) or {"devices": {}}
     return [int(i) for i, d in st["devices"].items() if d.get("state") != _DONE]
+
+
+def run_fleet(job_id: str, device_ids: list[int], capture_fn, *,
+              max_workers: int = DEFAULT_MAX_WORKERS) -> dict:
+    """Run ``capture_fn(device_id) -> object_count`` for each device with a
+    bounded device-level pool, checkpointing per device. One box raising never
+    sinks the fleet — it is marked ``failed`` and the others continue.
+
+    ``capture_fn`` runs in a worker thread, so it MUST open its own Flask app
+    context / DB session (see deep_jobs.capture_device)."""
+    def _one(device_id: int):
+        mark_device(job_id, device_id, "capturing")
+        try:
+            n = capture_fn(device_id)
+            mark_device(job_id, device_id, _DONE, objects=int(n or 0))
+        except Exception as exc:  # noqa: BLE001 — one box never sinks the fleet
+            mark_device(job_id, device_id, "failed",
+                        error=f"{type(exc).__name__}: {exc}"[:200])
+
+    with ThreadPoolExecutor(max_workers=max(1, int(max_workers))) as ex:
+        list(ex.map(_one, device_ids))
+    return load_job(job_id) or {}
+
+
+def capture_device(flask_app, appliance_id: int) -> int:
+    """Deep-capture ONE device end-to-end inside a fresh app context (safe to
+    call from a worker thread). Returns the deep object count. Raises on a
+    missing device / transport failure so run_fleet records it as ``failed``."""
+    from . import device_sync
+    from ..models import Appliance
+    with flask_app.app_context():
+        appliance = Appliance.query.get(appliance_id)
+        if appliance is None:
+            raise ValueError("appliance %s not found" % appliance_id)
+        snap = device_sync.deep_snapshot_from_device(appliance)
+        device_sync.persist_deep_snapshot(appliance, snap)
+        return int(snap.get("total_objects", 0) or 0)
+
+
+def start_fleet_job(flask_app, device_ids, *, by: str = "",
+                    max_workers: int = DEFAULT_MAX_WORKERS) -> dict:
+    """Create a checkpointed job and run the bounded device-level pool in a
+    daemon thread (the HTTP request returns immediately with the job dict; poll
+    load_job(job_id) for progress). Resumable: re-call with pending_device_ids."""
+    ids = [int(i) for i in device_ids]
+    job = new_job(device_ids=ids, by=by)
+
+    def _runner():
+        run_fleet(job["job_id"], ids,
+                  lambda did: capture_device(flask_app, did),
+                  max_workers=max_workers)
+
+    threading.Thread(target=_runner, name="deep-fleet-%s" % job["job_id"],
+                     daemon=True).start()
+    return job

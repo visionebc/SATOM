@@ -150,6 +150,15 @@ def deep_run():
     return jsonify({"started": True, "job": job})
 
 
+@bp.route('/deep/objects')
+@login_required
+def deep_objects():
+    kind = (request.args.get('kind') or 'wpp').lower()
+    logical = 'server_policy' if kind in ('policy', 'server_policy') else 'web_protection_profile'
+    return jsonify(analysis_deep.deep_objects(
+        device_ids=_deep_device_ids(request.args), logical_name=logical))
+
+
 @bp.route('/deep/job/<job_id>')
 @login_required
 def deep_job(job_id):

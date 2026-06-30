@@ -118,3 +118,17 @@ def orphan_objects(device_ids=None) -> list[dict]:
                         "logical_name": w.logical_name, "mkey": w.mkey,
                         "kind": "web_protection_profile"})
     return out
+
+
+def deep_objects(device_ids=None, logical_name: str = _WPP_LOGICAL) -> list[dict]:
+    """Depth-0 deep objects of a type (WPPs or server policies) with their device
+    — drives the drill-down picker. ``{appliance_id, device, mkey}``."""
+    from ..models import Appliance
+    names = {a.id: a.name for a in Appliance.query.all()}
+    q = DeviceObject.query.filter_by(layer="deep", depth=0, logical_name=logical_name)
+    if device_ids:
+        q = q.filter(DeviceObject.appliance_id.in_(list(device_ids)))
+    q = q.order_by(DeviceObject.appliance_id, DeviceObject.mkey)
+    return [{"appliance_id": o.appliance_id,
+             "device": names.get(o.appliance_id, str(o.appliance_id)),
+             "mkey": o.mkey} for o in q.all()]

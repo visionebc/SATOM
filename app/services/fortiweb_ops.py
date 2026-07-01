@@ -80,11 +80,13 @@ def sanitize_payload(data: Any) -> Any:
     return clean
 
 
-def _path(endpoint: str, mkey: str | None) -> str:
+def _path(endpoint: str, mkey: str | None, sub_mkey: str | None = None) -> str:
     ep = (endpoint or "").lstrip("/")
     if mkey:
         sep = "&" if "?" in ep else "?"
-        return f"{ep}{sep}mkey={mkey}"
+        ep = f"{ep}{sep}mkey={mkey}"
+        if sub_mkey:
+            ep = f"{ep}&sub_mkey={sub_mkey}"
     return ep
 
 
@@ -118,12 +120,12 @@ class FortiWebOps:
         return self._client
 
     # -- dry-run (pure, no device contact) --------------------------------
-    def preview(self, action: str, endpoint: str, mkey: str | None, data: Any) -> OpResult:
+    def preview(self, action: str, endpoint: str, mkey: str | None, data: Any, sub_mkey: str | None = None) -> OpResult:
         method = _METHOD.get(action, "POST")
         payload = None if action == "delete" else sanitize_payload(data)
         return OpResult(
             ok=True, action=action, endpoint=endpoint, mkey=mkey, dry_run=True,
-            request={"method": method, "path": _path(endpoint, mkey), "body": payload},
+            request={"method": method, "path": _path(endpoint, mkey, sub_mkey), "body": payload},
             before=None, after=payload, error="",
         )
 
@@ -169,18 +171,19 @@ class FortiWebOps:
             return False, ("errcode %s: %s" % (code, holder.get("message", ""))).strip()
         return True, ""
 
-    def _apply(self, action, endpoint, mkey, data) -> OpResult:
+    def _apply(self, action, endpoint, mkey, data, sub_mkey=None) -> OpResult:
         method = _METHOD.get(action, "POST")
         payload = None if action == "delete" else sanitize_payload(data)
-        req = {"method": method, "path": _path(endpoint, mkey), "body": payload}
+        path = _path(endpoint, mkey, sub_mkey)
+        req = {"method": method, "path": path, "body": payload}
         before = None
         try:  # best-effort before-snapshot — never fatal
-            resp = self.client.api_call("GET", _path(endpoint, mkey))
+            resp = self.client.api_call("GET", path)
             before = resp.json() if resp is not None and resp.status_code < 400 else None
         except Exception:  # noqa: BLE001
             before = None
         try:
-            resp = self.client.api_call(method, _path(endpoint, mkey), payload)
+            resp = self.client.api_call(method, path, payload)
             ok, err = self._response_ok(resp)
             self._record(action, endpoint, mkey, before, payload, False, err)
             return OpResult(ok=ok, action=action, endpoint=endpoint, mkey=mkey,
@@ -193,8 +196,10 @@ class FortiWebOps:
     def create(self, endpoint, data, *, mkey=None, dry_run=True) -> OpResult:
         return self.preview("create", endpoint, mkey, data) if dry_run else self._apply("create", endpoint, mkey, data)
 
-    def update(self, endpoint, mkey, data, *, dry_run=True) -> OpResult:
-        return self.preview("update", endpoint, mkey, data) if dry_run else self._apply("update", endpoint, mkey, data)
+    def update(self, endpoint, mkey, data, *, dry_run=True, sub_mkey=None) -> OpResult:
+        return (self.preview("update", endpoint, mkey, data, sub_mkey) if dry_run
+                else self._apply("update", endpoint, mkey, data, sub_mkey))
 
-    def delete(self, endpoint, mkey, *, dry_run=True) -> OpResult:
-        return self.preview("delete", endpoint, mkey, None) if dry_run else self._apply("delete", endpoint, mkey, None)
+    def delete(self, endpoint, mkey, *, dry_run=True, sub_mkey=None) -> OpResult:
+        return (self.preview("delete", endpoint, mkey, None, sub_mkey) if dry_run
+                else self._apply("delete", endpoint, mkey, None, sub_mkey))

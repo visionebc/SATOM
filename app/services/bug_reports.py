@@ -33,6 +33,18 @@ def opted_in_admins() -> list[User]:
 
 # --- create / resolve --------------------------------------------------------
 
+def _safe_page_url(raw: str | None) -> str | None:
+    """Keep only http(s) URLs; drop javascript:/data:/etc. to avoid a
+    stored link that executes when an admin clicks it in the inbox."""
+    if not raw:
+        return None
+    val = raw.strip()
+    low = val.lower()
+    if low.startswith("http://") or low.startswith("https://"):
+        return val
+    return None
+
+
 def create_report(user: User, title: str, body: str,
                   page_url: str | None, user_agent: str | None) -> BugReport:
     r = BugReport(
@@ -40,7 +52,7 @@ def create_report(user: User, title: str, body: str,
         reporter_username=user.username,
         title=(title or "").strip()[:200],
         body=(body or "").strip(),
-        page_url=(page_url or None),
+        page_url=_safe_page_url(page_url),
         user_agent=(user_agent or None),
     )
     db.session.add(r)

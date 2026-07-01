@@ -172,6 +172,25 @@
       <div class="col-lg-5">
         <div class="fw-card">
           <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-bug me-2 text-accent"></i>Bug report notifications</span>
+          </div>
+          <div class="fw-card-body">
+            <form method="POST" action="{{ url_for('reports.set_notify') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" role="switch" id="bugNotify"
+                       name="bug_reports_notify" {% if bug_reports_notify %}checked{% endif %}>
+                <label class="form-check-label" for="bugNotify">Receive bug reports from users (bell + email)</label>
+              </div>
+              <button class="btn btn-sm btn-primary" type="submit">Save preference</button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-5">
+        <div class="fw-card">
+          <div class="fw-card-header">
             <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>System Information</span>
           </div>
           <div class="fw-card-body">

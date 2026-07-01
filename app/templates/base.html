@@ -75,6 +75,11 @@
     </button>
     {% endif %}
 
+    <!-- Report a problem -->
+    <a class="fw-topbar-btn position-relative" href="#" title="Report a problem"
+       data-bs-toggle="modal" data-bs-target="#bugReportModal">
+      <i class="bi bi-bug"></i>
+    </a>
     <!-- Notifications -->
 {% set _report_total = (open_report_count|default(0)) + (my_resolved_unseen_count|default(0)) %}
     {% set _bell_total = (pending_template_count|default(0)) + _report_total %}
@@ -435,6 +440,52 @@
         : fetch('{{ url_for("reports.mark_mine_seen") }}',
                 {method: 'POST', headers: {'X-CSRFToken': csrf}, keepalive: true});
     } catch (e) {}
+  });
+})();
+</script>
+
+<!-- Bug report modal -->
+<div class="modal fade" id="bugReportModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('reports.submit') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="page_url" id="bugPageUrl">
+        <input type="hidden" name="user_agent" id="bugUserAgent">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-bug me-2"></i>Report a problem</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small">Tell the administrators what isn't working. The current page and your browser are captured automatically.</p>
+          <div class="mb-3">
+            <label class="form-label">Title</label>
+            <input type="text" name="title" class="form-control" maxlength="200" required
+                   placeholder="Short summary (e.g. 'Save button does nothing')">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Description</label>
+            <textarea name="body" class="form-control" rows="4"
+                      placeholder="What did you do, what did you expect, what happened?"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Send report</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var modal = document.getElementById('bugReportModal');
+  if (!modal) return;
+  modal.addEventListener('show.bs.modal', function () {
+    var u = document.getElementById('bugPageUrl');
+    var a = document.getElementById('bugUserAgent');
+    if (u) u.value = window.location.href;
+    if (a) a.value = navigator.userAgent;
   });
 })();
 </script>

@@ -105,3 +105,13 @@ def resolve(report_id: int):
 def mark_mine_seen():
     svc.mark_reporter_seen(current_user.id)
     return redirect(request.referrer or url_for("index"))
+
+
+@bp.route("/prefs/notify", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def set_notify():
+    svc.set_opted_in(current_user.id,
+                     request.form.get("bug_reports_notify") in ("1", "on", "true"))
+    flash("Notification preference saved.", "success")
+    return redirect(request.referrer or url_for("reports.inbox"))

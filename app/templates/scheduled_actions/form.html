@@ -117,16 +117,49 @@
           <span class="fw-card-title"><i class="bi bi-braces me-2 text-accent"></i>Custom REST request</span>
         </div>
         <div class="fw-card-body">
+
+          <div class="d-flex mb-2">
+            <button type="button" class="btn btn-fw-outline btn-sm ms-auto" data-bs-toggle="collapse"
+                    data-bs-target="#customHelp" aria-expanded="true">
+              <i class="bi bi-question-circle me-1"></i>Guide &amp; examples
+            </button>
+          </div>
+
+          <div class="collapse show mb-3" id="customHelp">
+            <div class="fw-help">
+              <p class="mb-2"><strong>Build any FortiWeb REST call and schedule it.</strong> Pick a method,
+                choose an endpoint, and (for writes) give the object name + a JSON body.</p>
+              <ul class="mb-2 ps-3">
+                <li><span class="badge bg-secondary">GET</span> read only — never changes the box; the body is ignored.</li>
+                <li><span class="badge bg-success">POST</span> create &nbsp;·&nbsp;
+                    <span class="badge bg-primary">PUT</span> update &nbsp;·&nbsp;
+                    <span class="badge bg-danger">DELETE</span> remove.</li>
+                <li><strong>mkey</strong> = the object's <em>name</em> (e.g. a policy called <code>pol-demo</code>) —
+                    needed to target one specific object on PUT / DELETE / single GET.</li>
+                <li><strong>Endpoint</strong> = a friendly registry key (<code>server_policy</code>) or a raw
+                    <code>/api/v2.0/...</code> path. Start typing to search all endpoints.</li>
+                <li>Every write goes through <strong>snapshot + audit + change-history</strong> — reversible and logged.</li>
+              </ul>
+              <div class="mb-1 text-muted" style="font-size:12px;">Click a recipe to fill the form, then adjust:</div>
+              <div class="d-flex flex-wrap gap-2" id="recipeChips"></div>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="fw-form-label">Request preview</label>
+            <div id="customPreview" class="fw-preview">GET —</div>
+          </div>
+
           <div class="mb-3">
             <label class="fw-form-label">Label (optional)</label>
-            <input type="text" class="form-control" name="custom_label" autocomplete="off"
+            <input type="text" class="form-control" name="custom_label" id="customLabel" autocomplete="off" oninput="updateCustomPreview()"
                    value="{{ custom_params.get('label', '') }}"
                    placeholder="e.g. Disable a maintenance banner">
           </div>
           <div class="row g-2 mb-3">
             <div class="col-4">
               <label class="fw-form-label">Method</label>
-              <select class="form-select" name="custom_method">
+              <select class="form-select" name="custom_method" id="customMethod" onchange="updateCustomPreview()">
                 {% for m in ['GET', 'POST', 'PUT', 'DELETE'] %}
                 <option value="{{ m }}" {{ 'selected' if custom_params.get('method', 'GET') == m else '' }}>{{ m }}</option>
                 {% endfor %}
@@ -134,13 +167,13 @@
             </div>
             <div class="col-8">
               <label class="fw-form-label">mkey (object name, optional)</label>
-              <input type="text" class="form-control" name="custom_mkey" autocomplete="off"
+              <input type="text" class="form-control" name="custom_mkey" id="customMkey" autocomplete="off" oninput="updateCustomPreview()"
                      value="{{ custom_params.get('mkey', '') }}" placeholder="e.g. default">
             </div>
           </div>
           <div class="mb-3">
             <label class="fw-form-label">Endpoint <span class="text-danger">*</span></label>
-            <input type="text" class="form-control" name="custom_endpoint" list="registryEndpoints"
+            <input type="text" class="form-control" name="custom_endpoint" id="customEndpoint" list="registryEndpoints" oninput="updateCustomPreview()"
                    autocomplete="off" spellcheck="false"
                    style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"
                    value="{{ custom_params.get('endpoint', '') }}"
@@ -156,11 +189,16 @@
             </div>
           </div>
           <div class="mb-1">
-            <label class="fw-form-label">JSON body (POST / PUT)</label>
-            <textarea class="form-control" name="custom_body" rows="5" spellcheck="false"
+            <div class="d-flex align-items-center mb-1">
+              <label class="fw-form-label mb-0">JSON body (POST / PUT)</label>
+              <button type="button" class="btn btn-fw-outline btn-sm ms-auto" onclick="formatCustomBody()">
+                <i class="bi bi-braces-asterisk me-1"></i>Format
+              </button>
+            </div>
+            <textarea class="form-control" name="custom_body" id="customBody" rows="5" spellcheck="false" oninput="updateCustomPreview()"
                       style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"
                       placeholder='{"status": "disable"}'>{% if custom_params.get('body') is not none %}{{ custom_params.get('body') | tojson(indent=2) }}{% endif %}</textarea>
-            <div class="form-text">
+            <div class="form-text" id="customBodyHint">
               GET ignores the body. <strong>POST</strong>=create, <strong>PUT</strong>=update,
               <strong>DELETE</strong>=delete — every write goes through snapshot + audit + dry-run.
             </div>
@@ -298,6 +336,7 @@ function onActionChange() {
   var isCustom = (sel.value === 'custom_rest');
   var cc = document.getElementById('customCard');
   if (cc) { cc.style.display = isCustom ? '' : 'none'; }
+  if (isCustom) { renderRecipeChips(); updateCustomPreview(); }
   var gp = document.getElementById('genericParams');
   if (gp) { gp.style.display = isCustom ? 'none' : ''; }
 
@@ -319,5 +358,81 @@ document.addEventListener('DOMContentLoaded', function () {
   if (document.getElementById('actionSelect').value) { onActionChange(); }
   else { onScheduleKindChange(); }
 });
+// ---- Custom REST helpers (guide / recipes / preview) ----
+var CUSTOM_RECIPES = [
+  {name:'List all server policies', method:'GET',    endpoint:'server_policy', mkey:'',         body:'',                              label:'List server policies'},
+  {name:'Read one server policy',   method:'GET',    endpoint:'server_policy', mkey:'pol-demo', body:'',                              label:'Read server policy'},
+  {name:'Disable a server policy',  method:'PUT',    endpoint:'server_policy', mkey:'pol-demo', body:'{\n  "status": "disable"\n}', label:'Disable server policy'},
+  {name:'Enable a server policy',   method:'PUT',    endpoint:'server_policy', mkey:'pol-demo', body:'{\n  "status": "enable"\n}',  label:'Enable server policy'},
+  {name:'List server pools',        method:'GET',    endpoint:'server_pool',   mkey:'',         body:'',                              label:'List server pools'},
+  {name:'Read system status',       method:'GET',    endpoint:'system_status', mkey:'',         body:'',                              label:'Read system status'}
+];
+
+function _cval(id){ var e=document.getElementById(id); return e ? e.value : ''; }
+function _cset(id,v){ var e=document.getElementById(id); if(e){ e.value=v; } }
+
+function renderRecipeChips(){
+  var box=document.getElementById('recipeChips');
+  if(!box || box.dataset.built){ return; }
+  CUSTOM_RECIPES.forEach(function(r,i){
+    var b=document.createElement('button');
+    b.type='button';
+    b.className='btn btn-fw-outline btn-sm';
+    b.innerHTML='<i class="bi bi-lightning-charge me-1"></i>'+r.name;
+    b.addEventListener('click', function(){ fillCustomRecipe(i); });
+    box.appendChild(b);
+  });
+  box.dataset.built='1';
+}
+
+function fillCustomRecipe(i){
+  var r=CUSTOM_RECIPES[i]; if(!r){ return; }
+  _cset('customMethod', r.method);
+  _cset('customEndpoint', r.endpoint);
+  _cset('customMkey', r.mkey);
+  _cset('customBody', r.body);
+  if(r.label){ _cset('customLabel', r.label); }
+  updateCustomPreview();
+}
+
+function formatCustomBody(){
+  var t=document.getElementById('customBody'); if(!t){ return; }
+  var s=(t.value||'').trim(); if(!s){ return; }
+  try { t.value=JSON.stringify(JSON.parse(s), null, 2); } catch(e){ /* leave as typed */ }
+  updateCustomPreview();
+}
+
+function updateCustomPreview(){
+  var pv=document.getElementById('customPreview'); if(!pv){ return; }
+  var m=(_cval('customMethod')||'GET').toUpperCase();
+  var ep=_cval('customEndpoint').trim();
+  var mk=_cval('customMkey').trim();
+  var body=_cval('customBody').trim();
+  var line=m+' '+(ep || '—');
+  if(mk){ line += (ep.indexOf('?')>=0 ? '&' : '?')+'mkey='+mk; }
+  if(ep && ep.charAt(0)!=='/'){ line += '   (registry key)'; }
+  var note = (m==='GET') ? ' · read-only'
+           : (body ? ' · sends body' : ' · no body (add one below)');
+  pv.textContent=line+note;
+  // Method-aware body: GET ignores it, so dim + disable to avoid confusion.
+  var bt=document.getElementById('customBody');
+  var hint=document.getElementById('customBodyHint');
+  var isGet=(m==='GET');
+  if(bt){ bt.disabled=isGet; bt.style.opacity=isGet?'0.45':'1'; }
+  if(hint){ hint.style.color=isGet?'':'#93c5fd'; }
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+  var sel=document.getElementById('actionSelect');
+  if(sel && sel.value==='custom_rest'){ renderRecipeChips(); updateCustomPreview(); }
+});
 </script>
+<style>
+.fw-help{background:rgba(148,163,184,0.06);border:1px solid rgba(148,163,184,0.12);border-radius:12px;padding:14px 16px;font-size:13px;line-height:1.55;}
+.fw-help code{color:#c4b5fd;background:rgba(139,92,246,0.12);padding:1px 5px;border-radius:5px;}
+.fw-help ul li{margin-bottom:4px;}
+.fw-preview{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:rgba(15,23,42,0.6);border:1px solid rgba(148,163,184,0.12);border-radius:10px;padding:9px 12px;color:#93c5fd;word-break:break-all;}
+#recipeChips .btn{font-size:12px;}
+</style>
+
 {% endblock %}

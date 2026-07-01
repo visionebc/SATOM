@@ -23,7 +23,7 @@
             {% if r.body %}<div class="small text-muted">{{ r.body }}</div>{% endif %}
             {% if r.user_agent %}<div class="small text-muted">UA: {{ r.user_agent }}</div>{% endif %}
           </td>
-          <td class="small">{% if r.page_url %}<a href="{{ r.page_url }}">{{ r.page_url }}</a>{% else %}—{% endif %}</td>
+          <td class="small">{% if r.page_url and (r.page_url.startswith('http://') or r.page_url.startswith('https://')) %}<a href="{{ r.page_url }}" target="_blank" rel="noopener noreferrer">{{ r.page_url }}</a>{% elif r.page_url %}{{ r.page_url }}{% else %}—{% endif %}</td>
           <td class="text-end">
             <form method="post" action="{{ url_for("reports.resolve", report_id=r.id) }}" class="d-inline">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

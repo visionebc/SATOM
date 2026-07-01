@@ -49,6 +49,12 @@ SERVER_POLICY_EP = "/api/v2.0/cmdb/server-policy/policy"
 # The policy fields that can bind a Local certificate (checked for "in use").
 _CERT_BIND_FIELDS = ("certificate", "sni-certificate", "ssl-client-verify")
 
+# Cross-binder cert-usage endpoints: SNI members carry per-domain local-certs,
+# and system/global carries the GUI / management HTTPS certificate.
+SNI_EP = "/api/v2.0/cmdb/system/certificate.sni"
+GLOBAL_EP = "/api/v2.0/cmdb/system/global"
+GUI_CERT_FIELD = "https-certificate"
+
 _SIGN_TIMEOUT = 180  # seconds for the external signer
 
 
@@ -471,6 +477,103 @@ def read_bindings(appliance, cert_name: str) -> list[str]:
     return sorted({n for n in out if n})
 
 
+def _get_results(client, ep):
+    """GET *ep* and return its ``results`` (list or dict), or ``None`` on error.
+
+    Tries the endpoint first WITHOUT and then WITH the ``/api/v2.0/`` REST prefix.
+    The live FortiWeb needs the prefixed path (see :data:`SERVER_POLICY_EP`), but
+    this order lets a caller pass the short ``cmdb/...`` form too: the short probe
+    just yields nothing on a real box and the prefixed retry answers.
+    """
+    core = ep.lstrip("/")
+    if core.startswith("api/v2.0/"):
+        core = core[len("api/v2.0/"):]
+    for path in (core, "/api/v2.0/" + core):
+        try:
+            resp = client.api_call("GET", path)
+            body = resp.json() if resp is not None else {}
+        except Exception:  # noqa: BLE001
+            continue
+        res = body.get("results") if isinstance(body, dict) else None
+        if res is not None:
+            return res
+    return None
+
+
+def cert_usage(appliance, cert_name):
+    """Every place *cert_name* is bound on *appliance*, across the three binders.
+
+    Returns list of {kind, target, field, sub_mkey, label, probe}; kind in
+    {server-policy, sni, gui}. Read-only, best-effort — a dead box yields [].
+    """
+    try:
+        client = appliance.build_client(timeout=6.0)
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+
+    rows = _get_results(client, SERVER_POLICY_EP)
+    for p in (rows or []):
+        if not isinstance(p, dict):
+            continue
+        pname = str(p.get("name", ""))
+        for f in _CERT_BIND_FIELDS:
+            if str(p.get(f, "")).strip() == cert_name:
+                out.append({
+                    "kind": "server-policy", "target": pname, "field": f,
+                    "sub_mkey": None,
+                    "label": f"Server policy {pname}" + ("" if f == "certificate" else f" ({f})"),
+                    "probe": _policy_probe(p),
+                })
+
+    sni_rows = _get_results(client, SNI_EP)
+    for s in (sni_rows or []):
+        if not isinstance(s, dict):
+            continue
+        sname = str(s.get("name", ""))
+        for m in (s.get("members") or []):
+            if isinstance(m, dict) and str(m.get("local-cert", "")).strip() == cert_name:
+                out.append({
+                    "kind": "sni", "target": sname, "field": "local-cert",
+                    "sub_mkey": str(m.get("id", "")),
+                    "label": f"SNI {sname} — {m.get('domain', '')}".strip(" —"),
+                    "probe": None,
+                })
+
+    g = _get_results(client, GLOBAL_EP)
+    if isinstance(g, dict) and str(g.get(GUI_CERT_FIELD, "")).strip() == cert_name:
+        out.append({
+            "kind": "gui", "target": "", "field": GUI_CERT_FIELD, "sub_mkey": None,
+            "label": "GUI / admin access (HTTPS management cert)",
+            "probe": {"host": getattr(appliance, "host", ""), "port": _admin_sport(g)},
+        })
+    return out
+
+
+def _policy_probe(policy):
+    """Best-effort (host, port) for a server policy's published listener, to TLS-probe
+    the live leaf. Port from HTTPS service if numeric else 443; host from explicit VIP.
+    Returns None when nothing usable is found."""
+    host = str(policy.get("vip") or "").strip()
+    port = None
+    for pf in ("https-service", "service"):
+        v = str(policy.get(pf, "")).strip()
+        if v.isdigit():
+            port = int(v)
+            break
+    if not host:
+        return None
+    return {"host": host, "port": port or 443}
+
+
+def _admin_sport(global_obj):
+    v = global_obj.get("admin-sport")
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 443
+
+
 def swap_binding(appliance, policy: str, cert_name: str, *,
                  dry_run: bool = True, actor: str = "") -> dict:
     """Point *policy*'s certificate at *cert_name* via FortiWebOps (snapshot +
@@ -757,6 +860,7 @@ __all__ = [
     "CertManagerError", "generate_csr", "sign_csr", "parse_certificate",
     "cert_name_for", "create_certificate", "renew_certificate",
     "read_bindings", "read_bindings_for", "swap_binding", "confirm_swap",
+    "cert_usage",
     "revoke_certificate", "expiring_certificates", "list_device_certificates",
     "consolidate_device_certificates",
 ]

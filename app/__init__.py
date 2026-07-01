@@ -214,16 +214,20 @@ def create_app(config_override: object | None = None) -> Flask:
         # --- bug-report counts for the top-bar bell ---
         _open_reports = 0
         _my_resolved = 0
+        _bug_notify = False
         try:
             from flask_login import current_user as _cu2
             if getattr(_cu2, "is_authenticated", False):
                 from .services import bug_reports as _br
-                if _cu2.can("user_manage") and _br.is_opted_in(_cu2.id):
-                    _open_reports = _br.open_count()
+                if _cu2.can("user_manage"):
+                    _bug_notify = _br.is_opted_in(_cu2.id)
+                    if _bug_notify:
+                        _open_reports = _br.open_count()
                 _my_resolved = _br.unseen_resolved_count(_cu2.id)
         except Exception:
             _open_reports = 0
             _my_resolved = 0
+            _bug_notify = False
         return {
             'product': prod,
             'current_appliance': _cur_appl,
@@ -232,6 +236,7 @@ def create_app(config_override: object | None = None) -> Flask:
             'config_sections_nav': _cfg_nav,
             'pending_template_count': _pending,
             'open_report_count': _open_reports,
+            'bug_reports_notify': _bug_notify,
             'my_resolved_unseen_count': _my_resolved,
         }
 

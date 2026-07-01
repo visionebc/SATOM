@@ -53,3 +53,27 @@ def test_cert_usage_finds_all_three_binders():
 def test_cert_usage_none_when_unbound():
     client = _Client({"cmdb/system/global": {"https-certificate": "x"}})
     assert cm.cert_usage(_Appliance(client), "shop-cert") == []
+
+
+class _RecordingOps:
+    def __init__(self): self.calls = []
+    def update(self, endpoint, mkey, data, *, dry_run=True, sub_mkey=None):
+        self.calls.append(("update", endpoint, mkey, data, dry_run, sub_mkey))
+        return {"ok": True, "error": "", "request": {"path": endpoint}}
+
+
+def test_swap_helpers_route_to_ops(monkeypatch):
+    ops = _RecordingOps()
+    monkeypatch.setattr(cm, "FortiWebOps", lambda appliance: ops)
+    a = _Appliance(None)
+
+    cm.swap_server_policy_cert(a, "pol-a", "certificate", "new-cert", dry_run=False)
+    cm.swap_sni_member(a, "sni-1", "9", "new-cert", dry_run=False)
+    cm.swap_gui_cert(a, "new-cert", dry_run=False)
+
+    assert ops.calls[0] == ("update", cm.SERVER_POLICY_EP, "pol-a",
+                            {"certificate": "new-cert"}, False, None)
+    assert ops.calls[1] == ("update", cm.SNI_EP + "/members", "sni-1",
+                            {"local-cert": "new-cert"}, False, "9")
+    assert ops.calls[2] == ("update", cm.GLOBAL_EP, None,
+                            {"https-certificate": "new-cert"}, False, None)

@@ -10,6 +10,7 @@ from flask_login import login_required, current_user
 from ..models import db, BugReport
 from ..auth.decorators import require_permission
 from ..services import bug_reports as svc
+from ..extensions import csrf
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,7 @@ def resolve(report_id: int):
 
 @bp.route("/mine/seen", methods=["POST"])
 @login_required
+@csrf.exempt
 def mark_mine_seen():
     svc.mark_reporter_seen(current_user.id)
     return redirect(request.referrer or url_for("index"))

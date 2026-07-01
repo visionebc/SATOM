@@ -76,13 +76,28 @@
     {% endif %}
 
     <!-- Notifications -->
+{% set _report_total = (open_report_count|default(0)) + (my_resolved_unseen_count|default(0)) %}
+    {% set _bell_total = (pending_template_count|default(0)) + _report_total %}
+    {% if open_report_count|default(0) %}
+      {% set _bell_href = url_for('reports.inbox') %}
+      {% set _bell_title = open_report_count ~ ' open bug report(s) - click to review' %}
+    {% elif my_resolved_unseen_count|default(0) %}
+      {% set _bell_href = url_for('reports.inbox') if current_user.can('user_manage') else '#' %}
+      {% set _bell_title = 'Your bug report was resolved' %}
+    {% elif pending_template_count|default(0) %}
+      {% set _bell_href = url_for('templates.index', status='pending') %}
+      {% set _bell_title = pending_template_count ~ ' template(s) pending approval' %}
+    {% else %}
+      {% set _bell_href = url_for('section_catalog.index') %}
+      {% set _bell_title = 'Notifications' %}
+    {% endif %}
     <a class="fw-topbar-btn position-relative"
-       href="{{ url_for('templates.index', status='pending') if pending_template_count else url_for('section_catalog.index') }}"
-       title="{% if pending_template_count %}{{ pending_template_count }} template(s) pending approval - click to review{% else %}Notifications{% endif %}">
-      <i class="bi bi-bell{% if pending_template_count %}-fill{% endif %}"></i>
-      {% if pending_template_count %}
+       href="{{ _bell_href }}" title="{{ _bell_title }}"
+       {% if my_resolved_unseen_count|default(0) %}data-mark-mine-seen="1"{% endif %}>
+      <i class="bi bi-bell{% if _bell_total %}-fill{% endif %}"></i>
+      {% if _bell_total %}
       <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
-            style="font-size:9px;">{{ pending_template_count }}</span>
+            style="font-size:9px;">{{ _bell_total }}</span>
       {% endif %}
     </a>
 
@@ -406,6 +421,23 @@
 <script src="{{ url_for('static', filename='js/api.js') }}"></script>
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 <script src="{{ url_for('static', filename='js/release_notes.js') }}"></script>
+
+<script>
+(function () {
+  var bell = document.querySelector('a[data-mark-mine-seen="1"]');
+  if (!bell) return;
+  bell.addEventListener('click', function () {
+    var meta = document.querySelector('meta[name=csrf-token]');
+    var csrf = meta ? meta.content : '';
+    try {
+      navigator.sendBeacon
+        ? navigator.sendBeacon('{{ url_for("reports.mark_mine_seen") }}')
+        : fetch('{{ url_for("reports.mark_mine_seen") }}',
+                {method: 'POST', headers: {'X-CSRFToken': csrf}, keepalive: true});
+    } catch (e) {}
+  });
+})();
+</script>
 
 {% block scripts %}{% endblock %}
 </body>

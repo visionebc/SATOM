@@ -514,6 +514,7 @@ a:hover { color: var(--fw-accent-hover); text-decoration: underline; }
 
 .fw-badge-primary { background: var(--fw-accent-light); color: var(--fw-accent); }
 .fw-badge-success { background: rgba(40,167,69,0.12); color: #1A7A34; }
+.fw-badge-warning { background: rgba(255,193,7,0.12); color: #856404; }
 .fw-badge-danger { background: rgba(220,53,69,0.12); color: #9B1C2A; }
 .fw-badge-info { background: rgba(23,162,184,0.12); color: #0A6978; }
 .fw-badge-secondary { background: rgba(108,117,125,0.12); color: #495057; }

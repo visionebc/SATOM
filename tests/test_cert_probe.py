@@ -38,3 +38,10 @@ def test_detail_from_pem_extracts_fields():
 def test_detail_from_pem_bad_input_is_safe():
     d = cert_probe.detail_from_pem("not a pem")
     assert d["cn"] == "" and d["sans"] == [] and d["days_left"] is None
+
+
+def test_probe_leaf_pem_unreachable_is_safe():
+    # Closed/unused port on loopback -> best-effort miss: empty pem + populated error, never raises.
+    pem, err = cert_probe.probe_leaf_pem("127.0.0.1", 1, timeout=1.0)
+    assert pem == ""
+    assert err  # a non-empty error string (e.g. ConnectionRefusedError / timeout)

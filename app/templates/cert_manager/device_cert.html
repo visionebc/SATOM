@@ -8,7 +8,7 @@
   <span class="separator">/</span>
   <span>Automation</span>
   <span class="separator">/</span>
-  <a href="{{ url_for('cert_manager.index') }}">Certificate Manager</a>
+  <a href="{{ url_for("cert_manager.index") }}">Certificate Manager</a>
   <span class="separator">/</span>
   <span>{{ cert_name }}</span>
 </div>
@@ -20,12 +20,12 @@
     <h1 class="fw-page-title"><i class="bi bi-hdd-network me-2 text-accent"></i>{{ cert_name }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       On-device certificate ({{ store_label }} store{% if row.type %}, {{ row.type }}{% endif %}) — read live over the API.
-      Deployed on <strong>{{ row.device_count }}</strong> FortiWeb{{ 's' if row.device_count != 1 }}.
+      Deployed on <strong>{{ row.device_count }}</strong> FortiWeb{{ "s" if row.device_count != 1 }}.
       {% if row.comment %}<br><span class="text-muted">{{ row.comment }}</span>{% endif %}
     </p>
   </div>
   <div class="d-flex gap-2">
-    <a class="btn btn-outline-secondary" href="{{ url_for('cert_manager.index') }}">
+    <a class="btn btn-outline-secondary" href="{{ url_for("cert_manager.index") }}">
       <i class="bi bi-arrow-left me-1"></i>Back</a>
   </div>
 </div>
@@ -36,15 +36,15 @@
   <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-file-earmark-lock me-2"></i>Certificate</span></div>
   <div class="fw-card-body" style="font-size:13px;">
     <div class="row g-2">
-      <div class="col-md-6"><span class="text-muted">Subject CN</span><br><strong>{{ detail.cn or '—' }}</strong></div>
-      <div class="col-md-6"><span class="text-muted">Issuer CN</span><br>{{ detail.issuer_cn or '—' }}</div>
-      <div class="col-md-6"><span class="text-muted">Serial</span><br><code>{{ detail.serial or '—' }}</code></div>
-      <div class="col-md-6"><span class="text-muted">Signature</span><br>{{ detail.sig_algo or '—' }} / {{ detail.key_type or '—' }}</div>
-      <div class="col-md-6"><span class="text-muted">Valid from</span><br>{{ detail.not_before.strftime('%Y-%m-%d') if detail.not_before else '—' }}</div>
-      <div class="col-md-6"><span class="text-muted">Valid until</span><br>{{ detail.not_after.strftime('%Y-%m-%d') if detail.not_after else '—' }}
-        {% if detail.days_left is not none %}<span class="fw-badge fw-badge-{{ 'danger' if detail.days_left < 0 else 'warning' if detail.days_left <= 30 else 'success' }} ms-1">{{ detail.days_left }}d</span>{% endif %}</div>
-      <div class="col-12"><span class="text-muted">SANs</span><br>{{ detail.sans | join(', ') if detail.sans else '—' }}</div>
-      <div class="col-12"><span class="text-muted">SHA-256 fingerprint</span><br><code style="font-size:11px;word-break:break-all;">{{ detail.fingerprint_sha256 or '—' }}</code></div>
+      <div class="col-md-6"><span class="text-muted">Subject CN</span><br><strong>{{ detail.cn or "—" }}</strong></div>
+      <div class="col-md-6"><span class="text-muted">Issuer CN</span><br>{{ detail.issuer_cn or "—" }}</div>
+      <div class="col-md-6"><span class="text-muted">Serial</span><br><code>{{ detail.serial or "—" }}</code></div>
+      <div class="col-md-6"><span class="text-muted">Signature</span><br>{{ detail.sig_algo or "—" }} / {{ detail.key_type or "—" }}</div>
+      <div class="col-md-6"><span class="text-muted">Valid from</span><br>{{ detail.not_before.strftime("%Y-%m-%d") if detail.not_before else "—" }}</div>
+      <div class="col-md-6"><span class="text-muted">Valid until</span><br>{{ detail.not_after.strftime("%Y-%m-%d") if detail.not_after else "—" }}
+        {% if detail.days_left is not none %}<span class="fw-badge fw-badge-{{ "danger" if detail.days_left < 0 else "warning" if detail.days_left <= 30 else "success" }} ms-1">{{ detail.days_left }}d</span>{% endif %}</div>
+      <div class="col-12"><span class="text-muted">SANs</span><br>{{ detail.sans | join(", ") if detail.sans else "—" }}</div>
+      <div class="col-12"><span class="text-muted">SHA-256 fingerprint</span><br><code style="font-size:11px;word-break:break-all;">{{ detail.fingerprint_sha256 or "—" }}</code></div>
     </div>
   </div>
 </div>
@@ -79,8 +79,8 @@
         {% endfor %}
       {% else %}
         <tr><td colspan="3"><span class="text-muted">— not bound to anything on this box (safe to remove)</span>
-          <form method="post" action="{{ url_for('cert_manager.device_cert_remove') }}"
-                onsubmit="return confirm('Remove {{ cert_name }} from {{ pd.appliance.name }}?');" style="display:inline; margin-left:8px;">
+          <form method="post" action="{{ url_for("cert_manager.device_cert_remove") }}"
+                data-confirm="Remove {{ cert_name }} from {{ pd.appliance.name }}?" style="display:inline; margin-left:8px;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="appliance_id" value="{{ pd.appliance.id }}">
             <input type="hidden" name="cert_name" value="{{ cert_name }}">
@@ -95,8 +95,8 @@
 
 {# Swap: point a binding on this box ONTO this certificate #}
 {% set opt = swap_options[loop.index0] %}
-<form method="post" action="{{ url_for('cert_manager.device_cert_swap') }}" class="d-flex gap-2 align-items-end mt-2 mb-3"
-      onsubmit="return confirm('Swap the selected target onto {{ cert_name }} on {{ pd.appliance.name }}?');">
+<form method="post" action="{{ url_for("cert_manager.device_cert_swap") }}" class="d-flex gap-2 align-items-end mt-2 mb-3"
+      data-confirm="Swap the selected target onto {{ cert_name }} on {{ pd.appliance.name }}?">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="appliance_id" value="{{ pd.appliance.id }}">
   <input type="hidden" name="cert_name" value="{{ cert_name }}">
@@ -104,7 +104,7 @@
   <div>
     <label class="form-label" style="font-size:12px;">Swap onto this cert</label>
     <select name="kind" class="form-select form-select-sm">
-      <option value="server-policy">Server policy</option>
+      <option value="server-policy">Server policy (primary certificate)</option>
       <option value="sni">SNI member</option>
       <option value="gui">GUI / admin cert</option>
     </select>
@@ -113,6 +113,7 @@
     <select name="policy" class="form-select form-select-sm">
       {% for p in opt.targets.policies %}<option>{{ p }}</option>{% endfor %}
     </select>
+    <div class="text-muted" style="font-size:11px;">Sets the policy's primary <code>certificate</code> field.</div>
   </div>
   <div data-kind="sni" style="display:none;">
     <select name="sni" class="form-select form-select-sm">
@@ -124,13 +125,16 @@
 </form>
 {% endfor %}
 <script>
-document.querySelectorAll('form select[name=kind]').forEach(function(sel){
-  function upd(){ sel.form.querySelectorAll('[data-kind]').forEach(function(e){ e.style.display = (e.dataset.kind==sel.value)?'':'none'; }); }
-  sel.addEventListener('change', upd); upd();
+document.querySelectorAll("form select[name=kind]").forEach(function(sel){
+  function upd(){ sel.form.querySelectorAll("[data-kind]").forEach(function(e){ e.style.display = (e.dataset.kind==sel.value)?"":"none"; }); }
+  sel.addEventListener("change", upd); upd();
 });
-document.querySelectorAll('select[name=sni]').forEach(function(sel){
-  function sync(){ var o=sel.options[sel.selectedIndex]; var mid=sel.form.querySelector('input[name=member_id]'); if(mid) mid.value = o?o.dataset.mid:''; }
-  sel.addEventListener('change', sync); sync();
+document.querySelectorAll("select[name=sni]").forEach(function(sel){
+  function sync(){ var o=sel.options[sel.selectedIndex]; var mid=sel.form.querySelector("input[name=member_id]"); if(mid) mid.value = o?o.dataset.mid:""; }
+  sel.addEventListener("change", sync); sync();
+});
+document.querySelectorAll("form[data-confirm]").forEach(function(f){
+  f.addEventListener("submit", function(e){ if(!window.confirm(f.dataset.confirm)) e.preventDefault(); });
 });
 </script>
 {% endblock %}

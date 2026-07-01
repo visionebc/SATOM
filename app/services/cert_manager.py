@@ -787,22 +787,23 @@ def revoke_certificate(cert: ManagedCertificate, *, delete_from_box: bool = Fals
     # 2) Optionally remove from the box — ONLY if not bound anywhere.
     box_detail = ""
     if delete_from_box and cert.appliance_id:
-        bindings = read_bindings_for(cert)
-        if bindings:
-            box_detail = ("NOT deleted from device — still bound to: "
-                          + ", ".join(bindings))
-            _event(cert, "revoke", False, box_detail, by=actor)
-            return {"ok": ca_ok, "revoked": True, "deleted": False,
-                    "bindings": bindings, "error": box_detail, "log": ca_log}
         from ..models import Appliance
         appliance = db.session.get(Appliance, cert.appliance_id)
-        try:
-            cert_ssh.remove_certificate(appliance, cert.name, secret=appliance.password)
+        # Fail-closed: delegate to the strict remover, which verifies ALL THREE
+        # binders (server-policy / SNI / GUI) via _enumerate_usage and refuses on
+        # any unverifiable read. Managed certs live in the Local store (key
+        # material -> SSH config-delete), matching revoke's previous SSH delete.
+        res = remove_device_certificate(appliance, "Local", cert.name,
+                                        dry_run=False, actor=actor)
+        if res.get("removed"):
             box_detail = f"deleted {cert.name} from {appliance.name}"
             _event(cert, "revoke", True, box_detail, by=actor)
-        except Exception as exc:  # noqa: BLE001
-            box_detail = f"device delete failed: {exc}"
+        else:
+            box_detail = res.get("error") or "device delete refused"
             _event(cert, "revoke", False, box_detail, by=actor)
+            return {"ok": ca_ok, "revoked": True, "deleted": False,
+                    "bindings": res.get("bindings", []), "error": box_detail,
+                    "log": ca_log}
 
     _notify(cert, subject="Certificate revoked",
             body=f"Certificate {cert.name} ({cert.cert_class}) was revoked. {box_detail}")

@@ -185,9 +185,12 @@ def device_cert_swap():
         res = cm.swap_server_policy_cert(a, (request.form.get("policy") or "").strip(),
                                          "certificate", cert_name, dry_run=False)
     elif kind == "sni":
-        res = cm.swap_sni_member(a, (request.form.get("sni") or "").strip(),
-                                 (request.form.get("member_id") or "").strip(),
-                                 cert_name, dry_run=False)
+        sni = (request.form.get("sni") or "").strip()
+        member_id = (request.form.get("member_id") or "").strip()
+        if not sni or not member_id:
+            flash("Select an SNI member to swap.", "danger")
+            return redirect(url_for("cert_manager.device_cert", store=store_label, name=cert_name))
+        res = cm.swap_sni_member(a, sni, member_id, cert_name, dry_run=False)
     elif kind == "gui":
         res = cm.swap_gui_cert(a, cert_name, dry_run=False)
     else:

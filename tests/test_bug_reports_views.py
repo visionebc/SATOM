@@ -99,3 +99,34 @@ def test_mark_mine_seen(app):
     assert resp.status_code in (200, 302)
     with app.app_context():
         assert svc.unseen_resolved_count(aid) == 0
+
+
+def test_admin_sees_inbox_link_without_optin(app):
+    """An admin who has NOT opted into email should still reach the bug
+    inbox from the shell (in-app management is not gated by the email opt-in)."""
+    from app.models import User
+    from app.services import bug_reports as svc
+    with app.app_context():
+        alice = User.query.filter_by(username="alice").one()
+        svc.create_report(alice, "t", "b", None, None)  # one OPEN report
+        adm = User.query.filter_by(username="adm").one()
+        assert not svc.is_opted_in(adm.id)  # precondition: opt-in off
+    c = app.test_client()
+    resp = _login(c, "adm")
+    html = resp.get_data(as_text=True)
+    assert "Bug Reports" in html  # admin inbox link in the shell/user menu
+
+
+def test_admin_open_count_ignores_optin(app):
+    """open_report_count in the template context is populated for any admin,
+    independent of the email opt-in flag."""
+    from app.models import User
+    from app.services import bug_reports as svc
+    with app.app_context():
+        alice = User.query.filter_by(username="alice").one()
+        svc.create_report(alice, "t", "b", None, None)
+    c = app.test_client()
+    resp = _login(c, "adm")
+    html = resp.get_data(as_text=True)
+    # the red notification badge (count 1) must render for the admin
+    assert "bi-bell-fill" in html

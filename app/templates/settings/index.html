@@ -56,6 +56,11 @@
       <i class="bi bi-shield-lock me-1"></i>Authentication
     </button>
   </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-certmgr" type="button">
+      <i class="bi bi-award me-1"></i>Certificate Manager
+    </button>
+  </li>
   {% endif %}
   <li class="nav-item" role="presentation">
     <button class="nav-link {{ 'active' if not is_admin else '' }}" data-bs-toggle="tab" data-bs-target="#tab-security" type="button">
@@ -616,6 +621,119 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- CERTIFICATE MANAGER TAB -->
+  <div class="tab-pane fade" id="tab-certmgr">
+    <p class="text-muted mb-3" style="font-size:13px;">
+      Everything is generic — fill the ADCS connection and, per certificate class, the signing
+      command template with placeholders. The renewal automation (Automation → Certificate Manager)
+      just consumes these values.
+      Command tokens: {% for t in cert_cmd_tokens %}<code>{{ t }}</code>{{ ' ' if not loop.last }}{% endfor %}.
+    </p>
+    <form method="POST" action="{{ url_for('settings.save_cert_manager') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="fw-card mb-3">
+        <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>ADCS connection (Linux enrolment client)</span></div>
+        <div class="fw-card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="fw-form-label">Signing binary <code>{bin}</code></label>
+              <input class="form-control fw-form-control" name="adcs_bin" value="{{ cert_adcs.bin }}" placeholder="certipy">
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">CA host / config <code>{ca}</code></label>
+              <input class="form-control fw-form-control" name="adcs_ca" value="{{ cert_adcs.ca }}" placeholder="pkiserver.corp.local">
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">CA name <code>{ca_name}</code></label>
+              <input class="form-control fw-form-control" name="adcs_ca_name" value="{{ cert_adcs.ca_name }}" placeholder="CORP-CA">
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">Domain <code>{domain}</code></label>
+              <input class="form-control fw-form-control" name="adcs_domain" value="{{ cert_adcs.domain }}" placeholder="corp.local">
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">Enrolment user <code>{user}</code></label>
+              <input class="form-control fw-form-control" name="adcs_user" value="{{ cert_adcs.user }}" placeholder="svc-enroll">
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">Password <code>{password}</code> (encrypted)</label>
+              <input class="form-control fw-form-control" type="password" name="adcs_secret"
+                     placeholder="{{ '•••••• (unchanged)' if cert_adcs.has_secret else 'set password' }}">
+              {% if cert_adcs.has_secret %}
+              <div class="form-check mt-1">
+                <input class="form-check-input" type="checkbox" name="adcs_clear_secret" id="cm-clr">
+                <label class="form-check-label" for="cm-clr" style="font-size:12px;">Clear stored password</label>
+              </div>
+              {% endif %}
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">Name date format <code>{date}</code></label>
+              <input class="form-control fw-form-control" name="adcs_date_format" value="{{ cert_adcs.date_format }}" placeholder="%Y%m%d">
+            </div>
+            <div class="col-md-8">
+              <label class="fw-form-label">Notify emails (lifecycle events)</label>
+              <input class="form-control fw-form-control" name="adcs_notify_to" value="{{ cert_adcs.notify_to }}"
+                     placeholder="ops@corp.local, secteam@corp.local">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% for cls, label, cfg in cert_classes %}
+      <div class="fw-card mb-3">
+        <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-award me-2 text-accent"></i>{{ label }}</span></div>
+        <div class="fw-card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="fw-form-label">ADCS template <code>{template}</code></label>
+              <input class="form-control fw-form-control" name="{{ cls }}_template" value="{{ cfg.template }}" placeholder="WebServer">
+            </div>
+            <div class="col-md-2">
+              <label class="fw-form-label">Key type</label>
+              <select class="form-select fw-form-control" name="{{ cls }}_key_type">
+                <option value="rsa" {{ 'selected' if cfg.key_type == 'rsa' }}>RSA</option>
+                <option value="ec" {{ 'selected' if cfg.key_type == 'ec' }}>EC (P-256)</option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="fw-form-label">Key size</label>
+              <input class="form-control fw-form-control" name="{{ cls }}_key_size" value="{{ cfg.key_size }}" placeholder="2048">
+            </div>
+            <div class="col-md-2">
+              <label class="fw-form-label">Renew before (days)</label>
+              <input class="form-control fw-form-control" name="{{ cls }}_renew_before_days" value="{{ cfg.renew_before_days }}" placeholder="30">
+            </div>
+            <div class="col-md-6">
+              <label class="fw-form-label">Subject format</label>
+              <input class="form-control fw-form-control" name="{{ cls }}_subject_format" value="{{ cfg.subject_format }}" placeholder="CN={cn},O=Corp">
+            </div>
+            <div class="col-md-6">
+              <label class="fw-form-label">SAN format</label>
+              <input class="form-control fw-form-control" name="{{ cls }}_san_format" value="{{ cfg.san_format }}" placeholder="DNS:{cn}">
+            </div>
+            <div class="col-md-12">
+              <label class="fw-form-label">Signing command (submit)</label>
+              <input class="form-control fw-form-control" name="{{ cls }}_submit_cmd" value="{{ cfg.submit_cmd }}"
+                     style="font-family:monospace;font-size:12px;">
+            </div>
+            <div class="col-md-12">
+              <label class="fw-form-label">Revoke command</label>
+              <input class="form-control fw-form-control" name="{{ cls }}_revoke_cmd" value="{{ cfg.revoke_cmd }}"
+                     style="font-family:monospace;font-size:12px;">
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+
+      <div class="d-flex gap-2 mb-4">
+        <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save Settings</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('cert_manager.index') }}">Open Certificate Manager</a>
+      </div>
+    </form>
   </div>
   {% endif %}
 

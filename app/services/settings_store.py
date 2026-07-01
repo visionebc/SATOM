@@ -268,6 +268,142 @@ def banner_bg(product: str) -> str:
     return BANNER_TEMPLATES[banner_template(product)]["bg"]
 
 
+# ---- Certificate Manager --------------------------------------------------
+# Everything the admin fills in Settings → Certificate Manager. NOTHING is
+# hardcoded: the signing command itself is a placeholder TEMPLATE the admin
+# writes, so a change to the ADCS command/attribs is a form edit, not a code
+# change. The domain secret is Fernet-encrypted (never plaintext, never git).
+K_CERTMGR_ADCS = "certmgr.adcs"          # JSON connection + globals
+K_CERTMGR_CLASS = "certmgr.class."       # + server|clientserver|client -> JSON
+
+CERT_CLASSES = ("server", "clientserver", "client")
+CERT_CLASS_LABELS = {
+    "server": "Server (Server Authentication)",
+    "clientserver": "Client+Server (both EKU)",
+    "client": "Client (Client Authentication)",
+}
+
+# Placeholders the admin may use in the signing / revoke command templates.
+CERT_CMD_TOKENS = (
+    "{bin}", "{user}", "{domain}", "{password}", "{ca}", "{ca_name}",
+    "{template}", "{csr}", "{out}", "{serial}", "{request_id}",
+)
+
+# Sensible, EDITABLE defaults. The submit_cmd mirrors the operator's
+# `certreq -submit -attrib "CertificateTemplate:xxx" -config <ca> csr cert`
+# but expressed for the Linux ADCS client (certipy) that runs on this box.
+_CERT_CLASS_DEFAULTS = {
+    "template": "",
+    "key_type": "rsa",
+    "key_size": "2048",
+    "subject_format": "CN={cn}",
+    "san_format": "DNS:{cn}",
+    "submit_cmd": ('certipy req -u {user}@{domain} -p {password} -dc-ip {ca} '
+                   '-ca {ca_name} -template {template} -csr {csr} -out {out}'),
+    "revoke_cmd": ('certipy ca -u {user}@{domain} -p {password} -dc-ip {ca} '
+                   '-ca {ca_name} -revoke -serial {serial}'),
+    "renew_before_days": "30",
+}
+_CERT_CLASS_FIELDS = tuple(_CERT_CLASS_DEFAULTS.keys())
+
+_CERTMGR_ADCS_DEFAULTS = {
+    "bin": "certipy",
+    "ca": "",           # {ca} — DC/CA host or config string ("pkiserver")
+    "ca_name": "",      # {ca_name} — the CA name
+    "domain": "",       # {domain}
+    "user": "",         # {user} — enrolment account
+    "date_format": "%Y%m%d",
+    "notify_to": "",    # comma/newline recipients for lifecycle emails
+}
+
+
+def _certmgr_encrypt(secret: str) -> str:
+    if not secret:
+        return ""
+    try:
+        from .encryption import encrypt
+        return encrypt(secret)
+    except Exception:  # noqa: BLE001 — never block save on a crypto glitch
+        return ""
+
+
+def _certmgr_decrypt(token: str) -> str:
+    if not token:
+        return ""
+    try:
+        from .encryption import decrypt
+        return decrypt(token)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def cert_manager_adcs(*, reveal_secret: bool = False) -> dict[str, Any]:
+    """The ADCS connection + Certificate-Manager globals.
+
+    ``reveal_secret=True`` decrypts the domain password (the signing cycle needs
+    it); the UI never reveals it (a filled field just means "unchanged")."""
+    raw = get_json(K_CERTMGR_ADCS, {})
+    cfg = dict(_CERTMGR_ADCS_DEFAULTS)
+    if isinstance(raw, dict):
+        for k in _CERTMGR_ADCS_DEFAULTS:
+            if raw.get(k) is not None:
+                cfg[k] = str(raw.get(k))
+    cfg["has_secret"] = bool(raw.get("secret_enc")) if isinstance(raw, dict) else False
+    cfg["secret"] = _certmgr_decrypt(raw.get("secret_enc", "")) if reveal_secret and isinstance(raw, dict) else ""
+    return cfg
+
+
+def save_cert_manager_adcs(values: dict[str, Any]) -> None:
+    """Persist the ADCS globals. A blank ``secret`` LEAVES the stored one intact
+    (so re-saving the form doesn't wipe the password)."""
+    raw = get_json(K_CERTMGR_ADCS, {})
+    raw = raw if isinstance(raw, dict) else {}
+    out = dict(raw)
+    for k in _CERTMGR_ADCS_DEFAULTS:
+        if k in values:
+            out[k] = str(values.get(k) or "").strip()
+    out["bin"] = out.get("bin", "").strip() or "certipy"
+    out["date_format"] = out.get("date_format", "").strip() or "%Y%m%d"
+    secret = values.get("secret")
+    if secret is not None and str(secret).strip():
+        out["secret_enc"] = _certmgr_encrypt(str(secret).strip())
+    if values.get("clear_secret"):
+        out["secret_enc"] = ""
+    set_json(K_CERTMGR_ADCS, out)
+
+
+def cert_class_config(cls: str) -> dict[str, str]:
+    """The per-class parameters (template / key / subject+san format / commands /
+    renew window). Unknown class → the server defaults."""
+    cls = cls if cls in CERT_CLASSES else "server"
+    raw = get_json(K_CERTMGR_CLASS + cls, {})
+    cfg = dict(_CERT_CLASS_DEFAULTS)
+    if isinstance(raw, dict):
+        for k in _CERT_CLASS_FIELDS:
+            if raw.get(k) is not None and str(raw.get(k)).strip():
+                cfg[k] = str(raw.get(k)).strip()
+    return cfg
+
+
+def save_cert_class_config(cls: str, values: dict[str, str]) -> None:
+    if cls not in CERT_CLASSES:
+        return
+    out = {k: str(values.get(k, "") or "").strip() for k in _CERT_CLASS_FIELDS}
+    set_json(K_CERTMGR_CLASS + cls, out)
+
+
+def all_cert_class_configs() -> dict[str, dict[str, str]]:
+    return {c: cert_class_config(c) for c in CERT_CLASSES}
+
+
+def cert_manager_configured() -> bool:
+    """True once the ADCS host + name + at least one class template are set."""
+    a = cert_manager_adcs()
+    if not (a.get("ca") and a.get("ca_name") and a.get("user")):
+        return False
+    return any(cert_class_config(c).get("template") for c in CERT_CLASSES)
+
+
 def all_banners() -> dict:
     return {p: banner_template(p) for p in ("fortiweb", "fortiadc")}
 

@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}Certificate — {{ cert.name }}{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a><span class="separator">/</span>
+  <span>Automation</span><span class="separator">/</span>
+  <a href="{{ url_for('cert_manager.index') }}">Certificate Manager</a><span class="separator">/</span>
+  <span>{{ cert.name }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-shield-lock me-2 text-accent"></i>{{ cert.name }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ class_label }} · {{ appliance.name if appliance else 'no device' }} ·
+      {% if cert.status == 'revoked' %}<span class="fw-badge fw-badge-danger">revoked</span>
+      {% elif cert.status == 'active' %}<span class="fw-badge fw-badge-success">active</span>
+      {% elif cert.status == 'superseded' %}<span class="fw-badge fw-badge-secondary">superseded</span>
+      {% else %}<span class="fw-badge fw-badge-info">{{ cert.status }}</span>{% endif %}
+    </p>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="fw-card mb-3">
+      <div class="fw-card-header"><span class="fw-card-title">Details</span></div>
+      <div class="fw-card-body">
+        <dl class="row mb-0" style="font-size:13px;">
+          <dt class="col-4 text-muted">Subject</dt><dd class="col-8">{{ cert.subject or '—' }}</dd>
+          <dt class="col-4 text-muted">SANs</dt><dd class="col-8">{{ cert.sans | join(', ') if cert.sans else '—' }}</dd>
+          <dt class="col-4 text-muted">Serial</dt><dd class="col-8"><code>{{ cert.serial or '—' }}</code></dd>
+          <dt class="col-4 text-muted">Issued</dt><dd class="col-8">{{ cert.issued_at.strftime('%Y-%m-%d %H:%M') if cert.issued_at else '—' }}</dd>
+          <dt class="col-4 text-muted">Expires</dt><dd class="col-8">
+            {{ cert.expires_at.strftime('%Y-%m-%d %H:%M') if cert.expires_at else '—' }}
+            {% if cert.days_left is not none %}<span class="fw-badge fw-badge-{{ 'danger' if cert.days_left < 0 else 'warning' if cert.days_left <= 30 else 'success' }} ms-1">{{ cert.days_left }}d</span>{% endif %}
+          </dd>
+          <dt class="col-4 text-muted">Private key</dt><dd class="col-8">{{ 'stored (encrypted)' if cert.has_private_key else 'not stored' }}</dd>
+          <dt class="col-4 text-muted">Live bindings</dt><dd class="col-8">{{ live_bindings | join(', ') if live_bindings else '—' }}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="fw-card mb-3">
+      <div class="fw-card-header"><span class="fw-card-title">Actions</span></div>
+      <div class="fw-card-body">
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <form method="POST" action="{{ url_for('cert_manager.renew', id=cert.id) }}"
+                data-fw-confirm-form="Generate a fresh certificate for the same CN/class/device? It will be deployed under a new dated name (the current one stays).">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-repeat me-1"></i>Renew now</button>
+          </form>
+          <form method="POST" action="{{ url_for('cert_manager.delete', id=cert.id) }}"
+                data-fw-confirm-form="Remove this certificate RECORD from the manager? The device copy is untouched.">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash me-1"></i>Delete record</button>
+          </form>
+        </div>
+
+        <hr>
+        <h6 class="text-muted text-uppercase" style="font-size:12px;">Swap binding (immediate)</h6>
+        <form method="POST" action="{{ url_for('cert_manager.swap', id=cert.id) }}" class="row g-2 align-items-end mb-3"
+              data-fw-confirm-form="Point the selected server policy at this certificate now?">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="col-auto">
+            <label class="fw-form-label mb-1" style="font-size:12px;">Server policy</label>
+            <select class="form-select fw-form-control form-select-sm" name="policy" style="min-width:220px;">
+              <option value="">— select policy —</option>
+              {% for p in policies %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-sm btn-fw-primary" {{ 'disabled' if not policies or not cert.has_private_key }}>
+              <i class="bi bi-arrow-left-right me-1"></i>Swap now
+            </button>
+          </div>
+        </form>
+        <p class="text-muted" style="font-size:12px;">
+          For a planned change, schedule the swap via a
+          <a href="{{ url_for('change_requests.index') }}">Change Request</a> maintenance window instead.
+        </p>
+
+        <hr>
+        <h6 class="text-muted text-uppercase" style="font-size:12px;">Revoke</h6>
+        <form method="POST" action="{{ url_for('cert_manager.revoke', id=cert.id) }}"
+              data-fw-confirm-form="Revoke this certificate at the CA? If 'remove from device' is ticked it is deleted only when not bound to any policy.">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="delete_from_box" id="delbox">
+            <label class="form-check-label" for="delbox" style="font-size:13px;">
+              Also remove from the device (refused if still bound to a policy)
+            </label>
+          </div>
+          <button class="btn btn-sm btn-outline-danger" {{ 'disabled' if cert.status == 'revoked' }}>
+            <i class="bi bi-x-octagon me-1"></i>Revoke
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="fw-card">
+      <div class="fw-card-header"><span class="fw-card-title">Timeline</span></div>
+      <div class="fw-card-body" style="max-height:520px;overflow:auto;">
+        {% if events %}
+        <ul class="list-unstyled mb-0" style="font-size:12.5px;">
+          {% for e in events %}
+          <li class="mb-2 pb-2" style="border-bottom:1px solid var(--fw-border,rgba(148,163,184,.12));">
+            <span class="fw-badge fw-badge-{{ 'success' if e.ok else 'danger' }}">{{ e.kind }}</span>
+            <span class="text-muted ms-1">{{ e.ts.strftime('%Y-%m-%d %H:%M') }}</span>
+            <span class="text-muted">· {{ e.by }}</span>
+            {% if e.detail %}<div class="mt-1" style="white-space:pre-wrap;font-family:monospace;font-size:11.5px;">{{ e.detail }}</div>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted mb-0" style="font-size:13px;">No events yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

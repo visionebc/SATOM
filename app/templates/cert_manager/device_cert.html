@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}{{ row.name }} — On-device certificate{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>Automation</span>
+  <span class="separator">/</span>
+  <a href="{{ url_for('cert_manager.index') }}">Certificate Manager</a>
+  <span class="separator">/</span>
+  <span>{{ row.name }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-hdd-network me-2 text-accent"></i>{{ row.name }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      On-device certificate ({{ row.store }} store{% if row.type %}, {{ row.type }}{% endif %}) — read live over the API.
+      Deployed on <strong>{{ row.device_count }}</strong> FortiWeb{{ 's' if row.device_count != 1 }}.
+      {% if row.comment %}<br><span class="text-muted">{{ row.comment }}</span>{% endif %}
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="{{ url_for('cert_manager.index') }}">
+      <i class="bi bi-arrow-left me-1"></i>Back</a>
+  </div>
+</div>
+
+<div class="fw-table-wrapper">
+  <table class="fw-table">
+    <thead>
+      <tr>
+        <th>FortiWeb</th>
+        <th>Host</th>
+        <th>Server policies using it</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in per_device %}
+      <tr>
+        <td><strong>{{ d.appliance.name }}</strong></td>
+        <td style="font-size:12px;">{{ d.appliance.host }}</td>
+        <td style="font-size:12px;">
+          {% if d.bindings %}
+            {% for p in d.bindings %}<span class="fw-badge fw-badge-info">{{ p }}</span>{{ ' ' if not loop.last }}{% endfor %}
+          {% else %}
+            <span class="text-muted">— not bound to any server policy (safe to remove)</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

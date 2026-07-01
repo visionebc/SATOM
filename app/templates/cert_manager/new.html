@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Certificate Manager — New{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a><span class="separator">/</span>
+  <span>Automation</span><span class="separator">/</span>
+  <a href="{{ url_for('cert_manager.index') }}">Certificate Manager</a><span class="separator">/</span>
+  <span>New</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-plus-lg me-2 text-accent"></i>New Certificate</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Generate a CSR, sign it at your ADCS, and (optionally) deploy the cert + key to the device.
+      The new certificate is <strong>not</strong> bound to any policy — swap it in during a maintenance window.
+    </p>
+  </div>
+</div>
+
+{% if not configured %}
+<div class="alert alert-warning" style="font-size:13px;">
+  Configure the ADCS connection first in <a href="{{ url_for('cert_manager.settings') }}">Settings</a>.
+</div>
+{% endif %}
+
+<div class="fw-card" style="max-width:720px;">
+  <div class="fw-card-body">
+    <form method="POST" action="{{ url_for('cert_manager.new') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="fw-form-label">Target FortiWeb</label>
+          <select class="form-select fw-form-control" name="appliance_id" required>
+            <option value="">— select —</option>
+            {% for a in appliances %}
+            <option value="{{ a.id }}">{{ a.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="fw-form-label">Certificate class</label>
+          <select class="form-select fw-form-control" name="cert_class">
+            {% for key, label in classes %}
+            <option value="{{ key }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="fw-form-label">CN / hostname</label>
+          <input class="form-control fw-form-control" name="cn" placeholder="shop.example.com" required>
+        </div>
+        <div class="col-md-6">
+          <label class="fw-form-label">Extra SANs (optional)</label>
+          <input class="form-control fw-form-control" name="extra_sans" placeholder="www.example.com, IP:192.0.2.5">
+        </div>
+        <div class="col-12">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="deploy" id="dep" checked>
+            <label class="form-check-label" for="dep">Deploy to the device after signing (upload cert + key over SSH)</label>
+          </div>
+        </div>
+      </div>
+      <div class="mt-3 d-flex gap-2">
+        <button type="submit" class="btn btn-fw-primary" {{ 'disabled' if not configured }}>
+          <i class="bi bi-shield-plus me-1"></i>Generate, Sign &amp; Deploy
+        </button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('cert_manager.index') }}">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

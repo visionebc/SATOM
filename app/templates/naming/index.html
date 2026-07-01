@@ -102,7 +102,14 @@ function refreshNaming() {
     var pv = document.getElementById('pv_' + key);
     if (!pv) return;
     var pat = inp.value.trim() || inp.getAttribute('placeholder') || '';
-    pv.textContent = pat ? pat.replace('{name}', slug).substring(0, 63) : '(default)';
+    // Certificate Manager tokens get sample values so its preview is meaningful.
+    var out = pat.replace('{name}', slug)
+                 .replace('{class}', 'server')
+                 .replace('{cn}', slug)
+                 .replace('{date}', '20260701')
+                 .replace('{serial}', 'a3f1');
+    out = out.replace(/[-_.]{2,}/g, '-').replace(/^[-_.]+|[-_.]+$/g, '');
+    pv.textContent = pat ? out.substring(0, 63) : '(default)';
   });
 }
 document.addEventListener('DOMContentLoaded', refreshNaming);

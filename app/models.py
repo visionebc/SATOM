@@ -938,6 +938,152 @@ class WppExceptionPolicy(db.Model):
         return f"<WppExceptionPolicy exc={self.exception_id} pol={self.server_policy}>"
 
 
+# ---------------------------------------------------------------------------
+# ManagedCertificate — the Certificate Manager's source of truth.
+#
+# One row per certificate the manager generated / manages for a FortiWeb. The
+# PRIVATE KEY is stored Fernet-encrypted (``private_key_enc``) exactly like an
+# appliance password — it never lives in plaintext or in git — so a cert can be
+# re-deployed / rotated without regenerating. Everything else (CSR, public cert
+# PEM, subject, SANs, the ADCS request id needed for revoke, issue/expiry dates,
+# where it is bound) is documentation the inventory + automation read. NEVER a
+# device secret beyond the key it wraps.
+# ---------------------------------------------------------------------------
+
+class ManagedCertificate(db.Model):
+    __tablename__ = "managed_certificate"
+
+    # pending  -> generated + signed + deployed, not yet bound to any policy
+    # active   -> currently the bound/live cert
+    # expiring -> active but inside the renew-before window
+    # superseded -> a newer cert replaced it (old one kept for the window)
+    # revoked  -> revoked at the CA
+    STATUSES = ("pending", "active", "expiring", "superseded", "revoked")
+    CLASSES = ("server", "clientserver", "client")
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(128), nullable=False, default="")   # name on the FortiWeb
+    appliance_id = db.Column(
+        db.Integer, db.ForeignKey("appliances.id", ondelete="CASCADE"),
+        nullable=True, index=True)
+    cert_class = db.Column(db.String(16), nullable=False, default="server", index=True)
+    subject = db.Column(db.String(512), nullable=True, default="")   # the DN used
+    sans_json = db.Column(db.Text, nullable=False, default="[]")     # JSON list of SAN dns/ip
+    serial = db.Column(db.String(128), nullable=True, default="")    # issued cert serial
+    ca_request_id = db.Column(db.String(128), nullable=True, default="")  # ADCS request id (for revoke)
+    issued_at = db.Column(db.DateTime, nullable=True)
+    expires_at = db.Column(db.DateTime, nullable=True, index=True)
+    status = db.Column(db.String(16), nullable=False, default="pending", index=True)
+    cert_pem = db.Column(db.Text, nullable=True, default="")         # public cert (safe)
+    csr_pem = db.Column(db.Text, nullable=True, default="")          # the CSR (safe)
+    private_key_enc = db.Column(db.Text, nullable=True, default="")  # Fernet-encrypted PEM
+    bound_policies_json = db.Column(db.Text, nullable=False, default="[]")  # server policies using it
+    supersedes_id = db.Column(db.Integer, nullable=True)             # old cert this one replaces
+    created_by = db.Column(db.String(64), nullable=True, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    events = db.relationship(
+        "ManagedCertificateEvent", backref="certificate",
+        cascade="all, delete-orphan", lazy="selectin",
+        order_by="ManagedCertificateEvent.ts.desc()")
+
+    # -- encrypted private key (mirror of Appliance.password) -------------
+    @property
+    def private_key(self) -> str:
+        if not self.private_key_enc:
+            return ""
+        return _fernet().decrypt(self.private_key_enc.encode()).decode()
+
+    @private_key.setter
+    def private_key(self, pem: str) -> None:
+        self.private_key_enc = (
+            _fernet().encrypt((pem or "").encode()).decode() if pem else "")
+
+    @property
+    def has_private_key(self) -> bool:
+        return bool(self.private_key_enc)
+
+    # -- JSON helpers -----------------------------------------------------
+    @property
+    def sans(self) -> list[str]:
+        try:
+            v = json.loads(self.sans_json or "[]")
+            return [str(x) for x in v] if isinstance(v, list) else []
+        except (ValueError, TypeError):
+            return []
+
+    @sans.setter
+    def sans(self, values) -> None:
+        self.sans_json = json.dumps([str(v).strip() for v in (values or []) if str(v).strip()])
+
+    @property
+    def bound_policies(self) -> list[str]:
+        try:
+            v = json.loads(self.bound_policies_json or "[]")
+            return [str(x) for x in v] if isinstance(v, list) else []
+        except (ValueError, TypeError):
+            return []
+
+    @bound_policies.setter
+    def bound_policies(self, values) -> None:
+        self.bound_policies_json = json.dumps(
+            sorted({str(v).strip() for v in (values or []) if str(v).strip()}))
+
+    @property
+    def days_left(self):
+        """Whole days until expiry (may be negative). ``None`` if unknown."""
+        if not self.expires_at:
+            return None
+        return (self.expires_at - datetime.utcnow()).days
+
+    @property
+    def is_bound(self) -> bool:
+        return bool(self.bound_policies)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "appliance_id": self.appliance_id,
+            "cert_class": self.cert_class,
+            "subject": self.subject,
+            "sans": self.sans,
+            "serial": self.serial,
+            "ca_request_id": self.ca_request_id,
+            "issued_at": self.issued_at.isoformat() if self.issued_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "status": self.status,
+            "days_left": self.days_left,
+            "bound_policies": self.bound_policies,
+            "has_private_key": self.has_private_key,
+        }
+
+    def __repr__(self) -> str:
+        return f"<ManagedCertificate {self.name!r} {self.cert_class} {self.status}>"
+
+
+class ManagedCertificateEvent(db.Model):
+    """Timeline entry for a managed certificate (generate / sign / deploy / swap /
+    revoke / renew), so the whole lifecycle is auditable per cert."""
+
+    __tablename__ = "managed_certificate_event"
+
+    id = db.Column(db.Integer, primary_key=True)
+    cert_id = db.Column(
+        db.Integer, db.ForeignKey("managed_certificate.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    ts = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    kind = db.Column(db.String(32), nullable=False, default="")   # generate|sign|deploy|swap|revoke|renew|error
+    ok = db.Column(db.Boolean, nullable=False, default=True)
+    by = db.Column(db.String(64), nullable=True, default="")
+    detail = db.Column(db.Text, nullable=True, default="")
+
+    def __repr__(self) -> str:
+        return f"<ManagedCertificateEvent cert={self.cert_id} {self.kind} ok={self.ok}>"
+
+
 # Device-structure cache models (source-of-truth substrate) — import so
 # create_all()/Alembic register them.
 from . import models_cache  # noqa: E402,F401

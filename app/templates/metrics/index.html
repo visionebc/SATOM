@@ -1,0 +1,561 @@
+{% extends "base.html" %}
+{% block title %}Metrics{% endblock %}
+
+{% block content %}
+<div class="fw-page-header d-flex align-items-center justify-content-between mb-4">
+  <div>
+    <h1 class="fw-page-title mb-0"><i class="bi bi-bar-chart-line me-2 text-accent"></i>Metrics</h1>
+    <p class="text-muted small mb-0">Daily activity statistics and trend comparison</p>
+  </div>
+</div>
+
+<!-- CONTROLS -->
+<div class="fw-card mb-4">
+  <div class="fw-card-body">
+    <form id="metricsForm" class="row g-2 align-items-end">
+      <!-- Period presets -->
+      <div class="col-auto">
+        <label class="form-label text-muted small mb-1">Period</label>
+        <div class="btn-group" role="group">
+          {% for p, lbl in [('7d','7 days'),('30d','30 days'),('90d','90 days'),('custom','Custom')] %}
+          <button type="button" class="btn btn-sm {% if period == p %}btn-primary{% else %}btn-outline-secondary{% endif %} period-btn" data-period="{{ p }}">{{ lbl }}</button>
+          {% endfor %}
+        </div>
+        <input type="hidden" name="period" id="periodInput" value="{{ period }}">
+      </div>
+      <!-- Custom date range -->
+      <div class="col-auto" id="customDateRange" style="display:{% if period == 'custom' %}flex{% else %}none{% endif %};gap:.5rem;align-items:flex-end;">
+        <div>
+          <label class="form-label text-muted small mb-1">From</label>
+          <input type="date" class="form-control form-control-sm" name="date_from" id="dateFrom" value="{{ date_from }}">
+        </div>
+        <div>
+          <label class="form-label text-muted small mb-1">To</label>
+          <input type="date" class="form-control form-control-sm" name="date_to" id="dateTo" value="{{ date_to }}">
+        </div>
+      </div>
+      <!-- Compare toggle -->
+      <div class="col-auto d-flex align-items-end">
+        <div class="form-check form-switch mb-0 ms-2">
+          <input class="form-check-input" type="checkbox" role="switch" id="compareToggle" name="compare" value="1" {% if compare %}checked{% endif %}>
+          <label class="form-check-label text-muted small" for="compareToggle">Compare with prior period</label>
+        </div>
+      </div>
+      <div class="col-auto d-flex align-items-end">
+        <button type="submit" class="btn btn-sm btn-primary ms-2"><i class="bi bi-arrow-clockwise me-1"></i>Apply</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- SUMMARY CARDS -->
+<div class="row g-3 mb-4" id="summaryCards">
+  <div class="col-6 col-md-3">
+    <div class="fw-card text-center h-100">
+      <div class="fw-card-body py-3">
+        <div class="text-muted small mb-1"><i class="bi bi-activity me-1"></i>Total Actions</div>
+        <div class="display-6 fw-bold text-accent" id="cardTotalActions">—</div>
+        <div class="small text-muted" id="cardTotalActionsDelta"></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="fw-card text-center h-100">
+      <div class="fw-card-body py-3">
+        <div class="text-muted small mb-1"><i class="bi bi-pencil-square me-1"></i>Config Changes</div>
+        <div class="display-6 fw-bold" id="cardConfigChanges" style="color:#f59e0b">—</div>
+        <div class="small text-muted" id="cardConfigChangesDelta"></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="fw-card text-center h-100">
+      <div class="fw-card-body py-3">
+        <div class="text-muted small mb-1"><i class="bi bi-people me-1"></i>Active Users</div>
+        <div class="display-6 fw-bold" id="cardActiveUsers" style="color:#10b981">—</div>
+        <div class="small text-muted" id="cardActiveUsersDelta"></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="fw-card text-center h-100">
+      <div class="fw-card-body py-3">
+        <div class="text-muted small mb-1"><i class="bi bi-hdd-rack me-1"></i>Appliances Touched</div>
+        <div class="display-6 fw-bold" id="cardAppliances" style="color:#8b5cf6">—</div>
+        <div class="small text-muted" id="cardAppliancesDelta"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- OBJECT TYPE SUMMARY CARDS -->
+<div class="row g-3 mb-4" id="objTypeCards">
+  <div class="col-6 col-md-3">
+    <div class="fw-card text-center h-100">
+      <div class="fw-card-body py-3">
+        <div class="text-muted small mb-1"><i class="bi bi-shield-check me-1"></i>Server Policies</div>
+        <div class="display-6 fw-bold" id="cardServerPolicy" style="color:#3b82f6">{{ inv_totals.server_policy if inv_totals else "—" }}</div>
+        <div class="text-muted" style="font-size:.7rem">total now</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="fw-card text-center h-100">
+      <div class="fw-card-body py-3">
+        <div class="text-muted small mb-1"><i class="bi bi-diagram-3 me-1"></i>Backends</div>
+        <div class="display-6 fw-bold" id="cardBackend" style="color:#8b5cf6">{{ inv_totals.backend if inv_totals else "—" }}</div>
+        <div class="text-muted" style="font-size:.7rem">total now</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="fw-card text-center h-100">
+      <div class="fw-card-body py-3">
+        <div class="text-muted small mb-1"><i class="bi bi-shield-lock me-1"></i>WPPs</div>
+        <div class="display-6 fw-bold" id="cardWpp" style="color:#f59e0b">{{ inv_totals.wpp if inv_totals else "—" }}</div>
+        <div class="text-muted" style="font-size:.7rem">total now</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="fw-card text-center h-100">
+      <div class="fw-card-body py-3">
+        <div class="text-muted small mb-1"><i class="bi bi-patch-check me-1"></i>Certificates</div>
+        <div class="display-6 fw-bold" id="cardCertificate" style="color:#10b981">{{ inv_totals.certificate if inv_totals else "—" }}</div>
+        <div class="text-muted" style="font-size:.7rem">total now</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- OBJECT TYPE CHART -->
+<div class="fw-card mb-4">
+  <div class="fw-card-header d-flex align-items-center justify-content-between">
+    <span class="fw-card-title"><i class="bi bi-graph-up me-2 text-accent"></i>Inventory Totals per Day</span><span class="text-muted small ms-2">how many objects exist, snapshotted daily</span>
+  </div>
+  <div class="fw-card-body">
+    <div style="position:relative;height:240px;">
+      <canvas id="chartObjType"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- TIMELINE CHART -->
+<div class="fw-card mb-4">
+  <div class="fw-card-header d-flex align-items-center justify-content-between">
+    <span class="fw-card-title"><i class="bi bi-calendar3 me-2 text-accent"></i>Activity Timeline</span>
+    <span class="text-muted small" id="timelineLabel"></span>
+  </div>
+  <div class="fw-card-body">
+    <div style="position:relative;height:260px;">
+      <canvas id="chartTimeline"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ROW: by action type + by change type -->
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="fw-card h-100">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-pie-chart me-2 text-accent"></i>Actions by Type</span>
+      </div>
+      <div class="fw-card-body d-flex align-items-center justify-content-center">
+        <div style="position:relative;height:220px;width:220px;max-width:100%;">
+          <canvas id="chartByAction"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="fw-card h-100">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-diagram-2 me-2 text-accent"></i>Config Changes by Operation</span>
+      </div>
+      <div class="fw-card-body d-flex align-items-center justify-content-center">
+        <div style="position:relative;height:220px;width:220px;max-width:100%;">
+          <canvas id="chartByChangeType"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ROW: top users + appliance activity -->
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="fw-card h-100">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-person-lines-fill me-2 text-accent"></i>Top Users</span>
+      </div>
+      <div class="fw-card-body">
+        <div style="position:relative;height:240px;">
+          <canvas id="chartByUser"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="fw-card h-100">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>Appliance Activity</span>
+      </div>
+      <div class="fw-card-body">
+        <div style="position:relative;height:240px;">
+          <canvas id="chartByAppliance"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DAY-BY-DAY TABLE -->
+<div class="fw-card mb-4">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-table me-2 text-accent"></i>Day-by-Day Breakdown</span><span class="text-muted small ms-2">Actions/Changes = activity that day · Server Policy/Backend/WPP/Certificate = how many exist (daily snapshot)</span>
+  </div>
+  <div class="fw-card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0" id="dailyTable">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th class="text-end">Actions</th>
+            <th class="text-end">Changes</th>
+            <th class="text-end" style="color:#3b82f6">Server Policy</th>
+            <th class="text-end" style="color:#8b5cf6">Backend</th>
+            <th class="text-end" style="color:#f59e0b">WPP</th>
+            <th class="text-end" style="color:#10b981">Certificate</th>
+            <th class="text-end" id="thDelta" style="display:none;">Δ Actions</th>
+          </tr>
+        </thead>
+        <tbody id="dailyTableBody">
+          <tr><td colspan="8" class="text-center text-muted py-4"><span class="spinner-border spinner-border-sm me-2"></span>Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // Palette
+  const ACCENT = '#3b82f6';
+  const ACCENT2 = '#8b5cf6';
+  const AMBER = '#f59e0b';
+  const GREEN = '#10b981';
+  const RED = '#ef4444';
+  const MUTED = 'rgba(148,163,184,0.15)';
+  const GRID = 'rgba(148,163,184,0.1)';
+  const TEXT = '#94a3b8';
+
+  const chartDefaults = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { labels: { color: TEXT, font: { family: 'Inter, sans-serif', size: 12 } } },
+      tooltip: {
+        backgroundColor: 'rgba(15,23,42,0.95)',
+        titleColor: '#e2e8f0',
+        bodyColor: '#94a3b8',
+        borderColor: 'rgba(148,163,184,0.2)',
+        borderWidth: 1,
+      },
+    },
+    scales: {
+      x: { ticks: { color: TEXT }, grid: { color: GRID } },
+      y: { ticks: { color: TEXT }, grid: { color: GRID }, beginAtZero: true },
+    },
+  };
+
+  let charts = {};
+
+  function destroyAll(){
+    Object.values(charts).forEach(c => { try { c.destroy(); } catch(e){} });
+    charts = {};
+  }
+
+  function delta(cur, prev){
+    if(prev === 0) return cur > 0 ? '+∞' : '0';
+    const pct = ((cur - prev) / prev * 100).toFixed(0);
+    return (cur >= prev ? '+' : '') + pct + '%';
+  }
+  function deltaClass(cur, prev){
+    if(cur > prev) return 'text-success';
+    if(cur < prev) return 'text-danger';
+    return 'text-muted';
+  }
+
+  function donutPalette(n){
+    const base = ['#3b82f6','#8b5cf6','#10b981','#f59e0b','#ef4444','#06b6d4','#ec4899','#84cc16','#f97316','#6366f1'];
+    return Array.from({length:n}, (_,i) => base[i % base.length]);
+  }
+
+  function renderSummary(cur, prev){
+    function setCard(id, deltaId, val, prevVal){
+      document.getElementById(id).textContent = val.toLocaleString();
+      const el = document.getElementById(deltaId);
+      if(prev){
+        el.textContent = delta(val, prevVal) + ' vs prior period';
+        el.className = 'small ' + deltaClass(val, prevVal);
+      } else {
+        el.textContent = '';
+      }
+    }
+    setCard('cardTotalActions','cardTotalActionsDelta', cur.summary.total_actions, prev ? prev.summary.total_actions : 0);
+    setCard('cardConfigChanges','cardConfigChangesDelta', cur.summary.config_changes, prev ? prev.summary.config_changes : 0);
+    setCard('cardActiveUsers','cardActiveUsersDelta', cur.summary.active_users, prev ? prev.summary.active_users : 0);
+    setCard('cardAppliances','cardAppliancesDelta', cur.summary.appliances_touched, prev ? prev.summary.appliances_touched : 0);
+  }
+
+  function renderTimeline(cur, prev, dateFrom, dateTo, prevFrom, prevTo){
+    document.getElementById('timelineLabel').textContent = dateFrom + ' → ' + dateTo;
+    const ctx = document.getElementById('chartTimeline').getContext('2d');
+    const datasets = [
+      {
+        label: 'Audit actions',
+        data: cur.timeline.audit,
+        borderColor: ACCENT,
+        backgroundColor: 'rgba(59,130,246,0.12)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 3,
+        pointHoverRadius: 6,
+      },
+      {
+        label: 'Config changes',
+        data: cur.timeline.changes,
+        borderColor: AMBER,
+        backgroundColor: 'rgba(245,158,11,0.10)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 3,
+        pointHoverRadius: 6,
+      },
+    ];
+    if(prev){
+      datasets.push({
+        label: 'Prior: audit actions',
+        data: prev.timeline.audit,
+        borderColor: 'rgba(59,130,246,0.4)',
+        backgroundColor: 'transparent',
+        borderDash: [4,4],
+        tension: 0.3,
+        pointRadius: 2,
+      });
+      datasets.push({
+        label: 'Prior: config changes',
+        data: prev.timeline.changes,
+        borderColor: 'rgba(245,158,11,0.4)',
+        backgroundColor: 'transparent',
+        borderDash: [4,4],
+        tension: 0.3,
+        pointRadius: 2,
+      });
+    }
+    charts.timeline = new Chart(ctx, {
+      type: 'line',
+      data: { labels: cur.timeline.labels, datasets },
+      options: { ...chartDefaults },
+    });
+  }
+
+  function renderDonut(id, data, label){
+    const ctx = document.getElementById(id).getContext('2d');
+    if(!data.labels.length){
+      ctx.canvas.parentElement.innerHTML = '<p class="text-muted text-center small py-4">No data</p>';
+      return;
+    }
+    charts[id] = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: data.labels,
+        datasets: [{
+          data: data.values,
+          backgroundColor: donutPalette(data.labels.length),
+          borderColor: '#0f172a',
+          borderWidth: 2,
+          hoverOffset: 6,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'right',
+            labels: { color: TEXT, font: { size: 11 }, boxWidth: 12 },
+          },
+          tooltip: chartDefaults.plugins.tooltip,
+        },
+        cutout: '60%',
+      },
+    });
+  }
+
+  function renderHBar(id, data, color){
+    const ctx = document.getElementById(id).getContext('2d');
+    if(!data.labels.length){
+      ctx.canvas.parentElement.innerHTML = '<p class="text-muted text-center small py-4">No data</p>';
+      return;
+    }
+    charts[id] = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: data.labels,
+        datasets: [{
+          data: data.values,
+          backgroundColor: color + '99',
+          borderColor: color,
+          borderWidth: 1,
+          borderRadius: 4,
+        }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: chartDefaults.plugins.tooltip },
+        scales: {
+          x: { ticks: { color: TEXT }, grid: { color: GRID }, beginAtZero: true },
+          y: { ticks: { color: TEXT, font: { size: 11 } }, grid: { display: false } },
+        },
+      },
+    });
+  }
+
+  function renderObjectTypeCards(inv){
+    const t = (inv && inv.totals) || {};
+    document.getElementById('cardServerPolicy').textContent = (t.server_policy || 0).toLocaleString();
+    document.getElementById('cardBackend').textContent      = (t.backend        || 0).toLocaleString();
+    document.getElementById('cardWpp').textContent          = (t.wpp            || 0).toLocaleString();
+    document.getElementById('cardCertificate').textContent  = (t.certificate    || 0).toLocaleString();
+  }
+
+  function renderObjectTypeChart(inv){
+    const ctx = document.getElementById('chartObjType').getContext('2d');
+    const d = (inv && inv.series) || {labels:[]};
+    const keys = ['server_policy','backend','wpp','certificate'];
+    const hasData = d.labels && d.labels.length && keys.some(k => (d[k]||[]).some(v=>v>0));
+    if(!hasData){
+      ctx.canvas.parentElement.innerHTML = '<p class="text-muted text-center small py-4">No inventory snapshots yet. A snapshot is recorded once per day &mdash; schedule the &ldquo;Record inventory snapshot&rdquo; action (Automation) to build the daily trend.</p>';
+      return;
+    }
+    const mk = (label,key,color,bg)=>({label,data:d[key]||[],borderColor:color,backgroundColor:bg,borderWidth:2,tension:.3,pointRadius:3,pointHoverRadius:5,fill:true});
+    charts.objType = new Chart(ctx, {
+      type: 'line',
+      data: { labels: d.labels, datasets: [
+        mk('Server Policies','server_policy','#3b82f6','rgba(59,130,246,0.08)'),
+        mk('Backends','backend','#8b5cf6','rgba(139,92,246,0.08)'),
+        mk('WPPs','wpp','#f59e0b','rgba(245,158,11,0.08)'),
+        mk('Certificates','certificate','#10b981','rgba(16,185,129,0.08)'),
+      ]},
+      options: {
+        ...chartDefaults,
+        plugins: { ...chartDefaults.plugins, legend: { labels: { color: TEXT, font: { family: 'Inter, sans-serif', size: 11 }, boxWidth: 12 } } },
+        scales: {
+          x: { ticks: { color: TEXT }, grid: { color: GRID } },
+          y: { ticks: { color: TEXT }, grid: { color: GRID }, beginAtZero: true },
+        },
+      },
+    });
+  }
+
+  function renderTable(cur, prev, compareOn){
+    const tbody = document.getElementById('dailyTableBody');
+    const thDelta = document.getElementById('thDelta');
+    thDelta.style.display = compareOn && prev ? '' : 'none';
+
+    const prevByDate = {};
+    if(prev) prev.table.forEach(r => { prevByDate[r.date] = r; });
+
+    let html = '';
+    const rows = [...cur.table].reverse();
+    rows.forEach(r => {
+      const p = prevByDate[r.date];
+      const dA = (compareOn && p) ? delta(r.actions, p.actions) : '';
+      const dAcls = (compareOn && p) ? deltaClass(r.actions, p.actions) : '';
+      const sp = r.server_policy || 0;
+      const be = r.backend || 0;
+      const wp = r.wpp || 0;
+      const ce = r.certificate || 0;
+      html += `<tr>
+        <td class="text-muted small">${r.date}</td>
+        <td class="text-end fw-semibold">${r.actions.toLocaleString()}</td>
+        <td class="text-end" style="color:#f59e0b">${r.changes.toLocaleString()}</td>
+        <td class="text-end" style="color:#3b82f6">${sp > 0 ? sp : '<span class="text-muted">—</span>'}</td>
+        <td class="text-end" style="color:#8b5cf6">${be > 0 ? be : '<span class="text-muted">—</span>'}</td>
+        <td class="text-end" style="color:#f59e0b">${wp > 0 ? wp : '<span class="text-muted">—</span>'}</td>
+        <td class="text-end" style="color:#10b981">${ce > 0 ? ce : '<span class="text-muted">—</span>'}</td>
+        ${compareOn && prev ? `<td class="text-end ${dAcls}">${dA}</td>` : ''}
+      </tr>`;
+    });
+    tbody.innerHTML = html || '<tr><td colspan="8" class="text-center text-muted py-4">No data for this period</td></tr>';
+  }
+
+  function loadData(){
+    const form = document.getElementById('metricsForm');
+    const period = document.getElementById('periodInput').value;
+    const dateFrom = document.getElementById('dateFrom').value;
+    const dateTo = document.getElementById('dateTo').value;
+    const compare = document.getElementById('compareToggle').checked ? '1' : '0';
+
+    let url = '/metrics/api/data?period=' + period + '&compare=' + compare;
+    if(period === 'custom' && dateFrom && dateTo){
+      url += '&date_from=' + dateFrom + '&date_to=' + dateTo;
+    }
+
+    destroyAll();
+    document.getElementById('dailyTableBody').innerHTML =
+      '<tr><td colspan="6" class="text-center text-muted py-4"><span class="spinner-border spinner-border-sm me-2"></span>Loading...</td></tr>';
+
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        const cur = data.current;
+        const prev = data.previous || null;
+        const compareOn = !!prev;
+
+        renderSummary(cur, prev);
+        renderObjectTypeCards(data.inventory);
+        renderObjectTypeChart(data.inventory);
+        renderTimeline(cur, prev, data.date_from, data.date_to, data.prev_date_from, data.prev_date_to);
+        renderDonut('chartByAction', cur.by_action, 'Actions');
+        renderDonut('chartByChangeType', cur.by_change_type, 'Change type');
+        renderHBar('chartByUser', cur.by_user, ACCENT2);
+        renderHBar('chartByAppliance', cur.by_appliance, GREEN);
+        renderTable(cur, prev, compareOn);
+      })
+      .catch(err => {
+        console.error(err);
+        document.getElementById('dailyTableBody').innerHTML =
+          '<tr><td colspan="6" class="text-center text-danger py-4">Error loading metrics</td></tr>';
+      });
+  }
+
+  // Period preset buttons
+  document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.period-btn').forEach(b => {
+        b.classList.remove('btn-primary');
+        b.classList.add('btn-outline-secondary');
+      });
+      this.classList.remove('btn-outline-secondary');
+      this.classList.add('btn-primary');
+      const p = this.dataset.period;
+      document.getElementById('periodInput').value = p;
+      document.getElementById('customDateRange').style.display = p === 'custom' ? 'flex' : 'none';
+    });
+  });
+
+  // Form submit
+  document.getElementById('metricsForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    loadData();
+  });
+
+  // Initial load
+  loadData();
+})();
+</script>
+{% endblock %}

@@ -151,3 +151,23 @@ class SyncRun(db.Model):
     status = db.Column(db.String(16), nullable=True)    # ok|error|skipped
     changed = db.Column(db.Integer, nullable=False, default=0)
     detail = db.Column(db.Text, nullable=True)
+
+
+class InventorySnapshot(db.Model):
+    """Daily count of how many of each object type EXIST per device (fleet
+    inventory trend). One row per (snapshot_date, appliance_id, object_type),
+    so counts can be compared across dates on the Metrics page."""
+    __tablename__ = "inventory_snapshots"
+
+    id = db.Column(db.BigInteger().with_variant(db.Integer, "sqlite"),
+                   primary_key=True)
+    snapshot_date = db.Column(db.Date, nullable=False, index=True)
+    appliance_id = db.Column(db.Integer, nullable=True, index=True)
+    object_type = db.Column(db.String(32), nullable=False)
+    count = db.Column(db.Integer, nullable=False, default=0)
+    generated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint("snapshot_date", "appliance_id", "object_type",
+                            name="uq_inventory_snapshot_day_dev_type"),
+    )

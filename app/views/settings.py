@@ -83,6 +83,10 @@ def index():
             'remaining_codes': twofa.remaining_backup_codes(getattr(current_user, 'backup_codes', None)),
         },
         backup_codes_once=session.pop('twofa_backup_codes_once', None),
+        cert_adcs=(store.cert_manager_adcs() if _is_admin() else None),
+        cert_classes=([(c, store.CERT_CLASS_LABELS[c], store.cert_class_config(c))
+                       for c in store.CERT_CLASSES] if _is_admin() else []),
+        cert_cmd_tokens=store.CERT_CMD_TOKENS,
         is_admin=_is_admin(),
     )
 
@@ -112,6 +116,41 @@ def save_general():
     except Exception as exc:  # noqa: BLE001
         flash(f'Failed to save settings: {exc}', 'danger')
     return redirect(url_for('settings.index') + '#tab-general')
+
+
+@bp.route('/cert-manager', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_cert_manager():
+    """Certificate Manager config — the ADCS connection + per-class command
+    templates. Lives in the admin console (this tab); the Automation inventory
+    only consumes what is saved here. Nothing hardcoded."""
+    f = request.form
+    store.save_cert_manager_adcs({
+        'bin': f.get('adcs_bin', ''),
+        'ca': f.get('adcs_ca', ''),
+        'ca_name': f.get('adcs_ca_name', ''),
+        'domain': f.get('adcs_domain', ''),
+        'user': f.get('adcs_user', ''),
+        'date_format': f.get('adcs_date_format', ''),
+        'notify_to': f.get('adcs_notify_to', ''),
+        'secret': f.get('adcs_secret', ''),
+        'clear_secret': bool(f.get('adcs_clear_secret')),
+    })
+    for cls in store.CERT_CLASSES:
+        store.save_cert_class_config(cls, {
+            'template': f.get(f'{cls}_template', ''),
+            'key_type': f.get(f'{cls}_key_type', 'rsa'),
+            'key_size': f.get(f'{cls}_key_size', '2048'),
+            'subject_format': f.get(f'{cls}_subject_format', ''),
+            'san_format': f.get(f'{cls}_san_format', ''),
+            'submit_cmd': f.get(f'{cls}_submit_cmd', ''),
+            'revoke_cmd': f.get(f'{cls}_revoke_cmd', ''),
+            'renew_before_days': f.get(f'{cls}_renew_before_days', '30'),
+        })
+    log_action('settings.cert_manager', detail='ADCS + class config saved')
+    flash('Certificate Manager settings saved.', 'success')
+    return redirect(url_for('settings.index') + '#tab-certmgr')
 
 
 @bp.route('/naming', methods=['POST'])

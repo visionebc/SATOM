@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}Certificate Manager — Fortinet Manager Web{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>Automation</span>
+  <span class="separator">/</span>
+  <span>Certificate Manager</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-shield-lock me-2 text-accent"></i>Certificate Manager</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      ADCS-signed certificate lifecycle for FortiWeb — generate a CSR here, sign it via your
+      Windows CA, deploy the cert + key to the device, then swap the binding in a maintenance
+      window. Private keys are stored encrypted.
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-fw-primary {{ '' if configured else 'disabled' }}" href="{{ url_for('cert_manager.new') }}">
+      <i class="bi bi-plus-lg me-1"></i>New Certificate
+    </a>
+  </div>
+</div>
+
+{% if not configured %}
+<div class="alert alert-warning" role="alert" style="font-size:13px;">
+  <i class="bi bi-exclamation-triangle me-1"></i>
+  The ADCS connection and at least one class template are not configured yet.
+  Open <a href="{{ url_for('cert_manager.settings') }}">Settings</a> to enter your CA host, name,
+  enrolment account and the per-class signing command.
+</div>
+{% endif %}
+
+<div class="fw-table-wrapper">
+  <table class="fw-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Device</th>
+        <th>Class</th>
+        <th>SANs</th>
+        <th>Expires</th>
+        <th>Days left</th>
+        <th>Status</th>
+        <th>Bindings</th>
+        <th class="actions-col">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if rows %}
+        {% for row in rows %}
+        {% set c = row.c %}
+        <tr>
+          <td><strong>{{ c.name }}</strong>
+            {% if not c.has_private_key %}
+              <span class="fw-badge fw-badge-secondary ms-1" title="No stored private key">no key</span>
+            {% endif %}
+          </td>
+          <td style="font-size:13px;">{{ row.device }}</td>
+          <td style="font-size:13px;">{{ row.class_label }}</td>
+          <td style="font-size:12px;">{{ c.sans | join(', ') if c.sans else '—' }}</td>
+          <td style="font-size:13px;">{{ c.expires_at.strftime('%Y-%m-%d') if c.expires_at else '—' }}</td>
+          <td>
+            {% if row.days_left is not none %}
+              <span class="fw-badge fw-badge-{{ row.tone }}">{{ row.days_left }}d</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td>
+            {% if c.status == 'active' %}<span class="fw-badge fw-badge-success">active</span>
+            {% elif c.status == 'expiring' %}<span class="fw-badge fw-badge-warning">expiring</span>
+            {% elif c.status == 'superseded' %}<span class="fw-badge fw-badge-secondary">superseded</span>
+            {% elif c.status == 'revoked' %}<span class="fw-badge fw-badge-danger">revoked</span>
+            {% else %}<span class="fw-badge fw-badge-info">pending</span>{% endif %}
+          </td>
+          <td style="font-size:12px;">{{ c.bound_policies | join(', ') if c.bound_policies else '—' }}</td>
+          <td class="actions-col">
+            <a class="btn btn-sm btn-outline-primary btn-sm-icon" href="{{ url_for('cert_manager.detail', id=c.id) }}"
+               title="Details / timeline"><i class="bi bi-eye"></i></a>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="9">
+            <div class="fw-empty-state">
+              <div class="fw-empty-state-icon"><i class="bi bi-shield-lock"></i></div>
+              <div class="fw-empty-state-title">No managed certificates yet</div>
+              <div class="fw-empty-state-text">
+                Create your first certificate — generate a CSR, sign it at your ADCS, and deploy it to a FortiWeb.
+              </div>
+              {% if configured %}
+              <a class="btn btn-fw-primary mt-2" href="{{ url_for('cert_manager.new') }}">
+                <i class="bi bi-plus-lg me-1"></i>New Certificate</a>
+              {% else %}
+              <a class="btn btn-fw-primary mt-2" href="{{ url_for('cert_manager.settings') }}">
+                <i class="bi bi-gear me-1"></i>Configure ADCS first</a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+{# --- On-device certificates: one row per unique cert, deduped across boxes -- #}
+<div class="fw-page-header mt-4">
+  <div>
+    <h2 class="fw-page-title" style="font-size:18px;">
+      <i class="bi bi-hdd-network me-2 text-accent"></i>On-device certificates
+    </h2>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Certificates live on the FortiWebs, read over the API — independent of ADCS.
+      The same certificate deployed on several boxes is shown once, with every device it lives on.
+      {% if device_unique %}<strong>{{ device_unique }}</strong> unique
+        across <strong>{{ device_deployments }}</strong> deployment{{ 's' if device_deployments != 1 }}.{% endif %}
+    </p>
+  </div>
+</div>
+
+{% if device_offline %}
+<p class="text-muted mb-2" style="font-size:12px;">
+  <i class="bi bi-exclamation-triangle me-1 text-warning"></i>Not read (unreachable):
+  {% for o in device_offline %}<span title="{{ o.error }}">{{ o.name }}</span>{{ ', ' if not loop.last }}{% endfor %}
+</p>
+{% endif %}
+
+<div class="fw-table-wrapper">
+  <table class="fw-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Store</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>Deployed on</th>
+        <th>Comment</th>
+        <th class="actions-col">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if device_rows %}
+        {% for c in device_rows %}
+        <tr>
+          <td><strong>{{ c.name }}</strong></td>
+          <td style="font-size:12px;">{{ c.store }}</td>
+          <td style="font-size:12px;">{{ c.type or '—' }}</td>
+          <td>
+            {% if c.status == 'ok' %}<span class="fw-badge fw-badge-success">ok</span>
+            {% elif c.status %}<span class="fw-badge fw-badge-warning">{{ c.status }}</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td style="font-size:12px;">
+            <span class="fw-badge fw-badge-secondary me-1" title="On {{ c.device_count }} FortiWeb{{ 's' if c.device_count != 1 }}">{{ c.device_count }}</span>
+            {% for d in c.devices %}<span class="fw-badge fw-badge-info">{{ d.name }}</span>{{ ' ' if not loop.last }}{% endfor %}
+          </td>
+          <td style="font-size:12px;">{{ c.comment or '—' }}</td>
+          <td class="actions-col">
+            <a class="btn btn-sm btn-outline-primary btn-sm-icon"
+               href="{{ url_for('cert_manager.device_cert', store=c.store, name=c.name) }}"
+               title="Where used — devices &amp; server-policy bindings"><i class="bi bi-eye"></i></a>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="7">
+            <div class="fw-empty-state">
+              <div class="fw-empty-state-icon"><i class="bi bi-hdd-network"></i></div>
+              <div class="fw-empty-state-title">No certificates found on any FortiWeb</div>
+              <div class="fw-empty-state-text">
+                {% if device_offline %}Every registered box was unreachable.{% else %}The fleet's certificate stores came back empty.{% endif %}
+              </div>
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

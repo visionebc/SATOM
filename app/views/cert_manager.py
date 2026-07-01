@@ -100,8 +100,9 @@ def index():
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def device_cert():
-    """Read-only detail for one on-device certificate: which FortiWebs carry it and,
-    live, which server policies bind it on each. No ADCS, no writes."""
+    """Detail for one on-device certificate: which FortiWebs carry it, its typed
+    bindings (server-policy / SNI / GUI), a live-probed X.509 detail panel, and
+    swap/remove actions."""
     store_label = (request.args.get("store") or "").strip()
     name = (request.args.get("name") or "").strip()
     appliance_list = _fortiweb_appliances()
@@ -114,13 +115,107 @@ def device_cert():
               "removed, or the box is unreachable).", "warning")
         return redirect(url_for("cert_manager.index"))
     on_ids = {d["id"] for d in row["devices"]}
+    devices = [a for a in appliance_list if a.id in on_ids]
+
+    detail = None
+    mc = ManagedCertificate.query.filter_by(name=name).first()
+    if mc and mc.cert_pem:
+        detail = cert_probe.detail_from_pem(mc.cert_pem)
     per_device = []
-    for a in appliance_list:
-        if a.id not in on_ids:
-            continue
-        per_device.append({"appliance": a, "bindings": cm.read_bindings(a, name)})
+    swap_options = []
+    for a in devices:
+        usage = cm.cert_usage(a, name)
+        per_device.append({"appliance": a, "usage": usage})
+        if detail is None:
+            for u in usage:
+                if u.get("probe") and u["probe"].get("host"):
+                    pem, err = cert_probe.probe_leaf_pem(
+                        u["probe"]["host"], u["probe"].get("port") or 443,
+                        server_name=(_detail_hint(u) or name))
+                    if pem:
+                        detail = cert_probe.detail_from_pem(pem)
+                        break
+        swap_options.append({"appliance": a, "targets": _swap_targets(a)})
+
     return render_template("cert_manager/device_cert.html",
-                           row=row, per_device=per_device)
+                           row=row, per_device=per_device, detail=detail,
+                           swap_options=swap_options, cert_name=name,
+                           store_label=store_label)
+
+
+def _detail_hint(usage_row):
+    """SNI/host hint for the TLS SNI field when probing (a domain if we have one)."""
+    lbl = usage_row.get("label", "")
+    return lbl.split("—")[-1].strip() if "—" in lbl else None
+
+
+def _swap_targets(appliance):
+    """Every place a cert could be swapped ON this box: server policies, SNI members,
+    GUI. Read-only, best-effort."""
+    try:
+        client = appliance.build_client(timeout=6.0)
+    except Exception:  # noqa: BLE001
+        return {"policies": [], "sni": [], "gui": False}
+    pols = cm._get_results(client, cm.SERVER_POLICY_EP) or []
+    policies = sorted(str(p.get("name", "")) for p in pols
+                      if isinstance(p, dict) and p.get("name"))
+    sni_rows = cm._get_results(client, cm.SNI_EP) or []
+    sni = []
+    for s in sni_rows:
+        if isinstance(s, dict):
+            for m in (s.get("members") or []):
+                if isinstance(m, dict):
+                    sni.append({"sni": str(s.get("name", "")), "id": str(m.get("id", "")),
+                                "domain": str(m.get("domain", ""))})
+    return {"policies": policies, "sni": sni, "gui": True}
+
+
+@bp.route("/device-cert/swap", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def device_cert_swap():
+    a = db.session.get(Appliance, _int(request.form.get("appliance_id")))
+    cert_name = (request.form.get("cert_name") or "").strip()
+    kind = (request.form.get("kind") or "").strip()
+    store_label = (request.form.get("store") or "").strip()
+    if a is None or not cert_name:
+        flash("Missing appliance or certificate.", "danger")
+        return redirect(url_for("cert_manager.index"))
+    if kind == "server-policy":
+        res = cm.swap_server_policy_cert(a, (request.form.get("policy") or "").strip(),
+                                         "certificate", cert_name, dry_run=False)
+    elif kind == "sni":
+        res = cm.swap_sni_member(a, (request.form.get("sni") or "").strip(),
+                                 (request.form.get("member_id") or "").strip(),
+                                 cert_name, dry_run=False)
+    elif kind == "gui":
+        res = cm.swap_gui_cert(a, cert_name, dry_run=False)
+    else:
+        flash(f"Unknown swap target {kind!r}.", "danger")
+        return redirect(url_for("cert_manager.device_cert", store=store_label, name=cert_name))
+    flash((f"Swapped {kind} onto {cert_name} on {a.name}." if res.get("ok")
+           else f"Swap failed: {res.get('error')}"),
+          "success" if res.get("ok") else "danger")
+    return redirect(url_for("cert_manager.device_cert", store=store_label, name=cert_name))
+
+
+@bp.route("/device-cert/remove", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def device_cert_remove():
+    a = db.session.get(Appliance, _int(request.form.get("appliance_id")))
+    cert_name = (request.form.get("cert_name") or "").strip()
+    store_label = (request.form.get("store") or "").strip()
+    if a is None or not cert_name:
+        flash("Missing appliance or certificate.", "danger")
+        return redirect(url_for("cert_manager.index"))
+    res = cm.remove_device_certificate(a, store_label, cert_name, dry_run=False,
+                                       actor=current_user.username)
+    if res.get("removed"):
+        flash(f"Removed {cert_name} from {a.name}.", "success")
+    else:
+        flash(f"Not removed: {res.get('error')}", "warning")
+    return redirect(url_for("cert_manager.device_cert", store=store_label, name=cert_name))
 
 
 # --------------------------------------------------------------------------- #

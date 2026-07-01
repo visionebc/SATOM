@@ -516,6 +516,53 @@ class UserSetting(db.Model):
     def __repr__(self) -> str:
         return f"<UserSetting u={self.user_id} {self.key!r}>"
 
+class BugReport(db.Model):
+    """A user-submitted bug/problem report, routed to opted-in admins.
+
+    Stored in the DB; an admin resolves it with an optional note, which
+    notifies the original reporter (bell badge + email).
+    """
+
+    __tablename__ = "bug_reports"
+
+    STATUS_OPEN = "open"
+    STATUS_RESOLVED = "resolved"
+
+    id = db.Column(db.Integer, primary_key=True)
+    reporter_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    # Snapshot so the report stays readable even if the user is deleted.
+    reporter_username = db.Column(db.String(64), nullable=False, default="")
+
+    title = db.Column(db.String(200), nullable=False)
+    body = db.Column(db.Text, nullable=False, default="")
+    page_url = db.Column(db.String(500), nullable=True)
+    user_agent = db.Column(db.String(500), nullable=True)
+
+    status = db.Column(
+        db.String(16), nullable=False, default=STATUS_OPEN, index=True
+    )
+    resolved_by_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    resolved_at = db.Column(db.DateTime, nullable=True)
+    resolution_note = db.Column(db.Text, nullable=True)
+
+    # Cleared->True once the reporter has seen the resolution (dismisses their badge).
+    reporter_seen = db.Column(db.Boolean, nullable=False, default=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    reporter = db.relationship("User", foreign_keys=[reporter_id])
+    resolved_by = db.relationship("User", foreign_keys=[resolved_by_id])
+
+    @property
+    def is_open(self) -> bool:
+        return self.status == self.STATUS_OPEN
+
+
 
 # ---------------------------------------------------------------------------
 # Template — desired-state library (web port of the desktop ``templates`` table)

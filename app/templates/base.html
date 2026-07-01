@@ -166,6 +166,8 @@
             <i class="bi bi-graph-up fw-nav-icon"></i><span>Analysis</span></a>
           <a class="fw-nav-item" href="{{ url_for('fleet_objects.index') }}">
             <i class="bi bi-box-seam fw-nav-icon"></i><span>Fleet Objects</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics' else '' }}" href="{{ url_for('metrics.index') }}">
+            <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>Metrics</span></a>
         </div>
       </div>
 
@@ -266,6 +268,8 @@
           {% if current_user.can('user_manage') %}
           <a class="fw-nav-item" href="{{ url_for('scheduled_actions.index') }}">
             <i class="bi bi-clock-history fw-nav-icon"></i><span>Scheduled Actions</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'cert_manager' else '' }}" href="{{ url_for('cert_manager.index') }}">
+            <i class="bi bi-shield-lock fw-nav-icon"></i><span>Certificate Manager</span></a>
           {% endif %}
           <a class="fw-nav-item" href="{{ url_for('provisioning.index') }}">
             <i class="bi bi-rocket-takeoff fw-nav-icon"></i><span>System Provisioning</span></a>

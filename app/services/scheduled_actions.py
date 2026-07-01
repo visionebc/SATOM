@@ -121,6 +121,14 @@ ADMIN_ACTIONS: list[ActionSpec] = [
         summary="Aggregate a fleet statistics summary. No device call.",
     ),
     ActionSpec(
+        "inventory_snapshot", "Record inventory snapshot (daily counts)",
+        "admin", needs_targets=False,
+        summary="Record today's fleet inventory counts (server policies, "
+                "backends, WPPs, certificates) from the local cache into the "
+                "metrics trend. No device call. Schedule DAILY so the Metrics "
+                "page can compare totals across dates.",
+    ),
+    ActionSpec(
         "upgrade_prep", "Upgrade preparation (backup + health)", "admin",
         needs_targets=True, danger=True,
         summary="Pre-upgrade snapshot: a config backup AND a health read per "
@@ -144,6 +152,28 @@ ADMIN_ACTIONS: list[ActionSpec] = [
         "ha_check", "HA status check", "admin", needs_targets=True,
         summary="Read each target's High-Availability member/role status "
                 "over REST (read-only).",
+    ),
+    ActionSpec(
+        "cert_manager_server", "Cert Manager — renew Server certs", "admin",
+        needs_targets=True,
+        summary="Renew expiring SERVER-authentication certificates on each target: "
+                "generate a new CSR, sign it via the configured ADCS command, and "
+                "deploy the new cert (new {date}-stamped name, old one kept). Does "
+                "NOT swap the binding — that happens in a maintenance window.",
+    ),
+    ActionSpec(
+        "cert_manager_clientserver", "Cert Manager — renew Client+Server certs",
+        "admin", needs_targets=True,
+        summary="Renew expiring CLIENT+SERVER (both EKU) certificates on each "
+                "target (generate → sign via ADCS → deploy under a new name). No "
+                "binding swap.",
+    ),
+    ActionSpec(
+        "cert_manager_client", "Cert Manager — renew Client certs", "admin",
+        needs_targets=True,
+        summary="Renew expiring CLIENT-authentication certificates on each target "
+                "(generate → sign via ADCS → deploy under a new name). No binding "
+                "swap.",
     ),
     ActionSpec(
         "custom_rest", "Custom REST call", "admin", needs_targets=True,
@@ -193,6 +223,24 @@ def get_spec(key: str) -> ActionSpec | None:
 # --------------------------------------------------------------------------- #
 #  Single-action executor (one action vs one appliance)                         #
 # --------------------------------------------------------------------------- #
+def _do_inventory_snapshot(dry_run: bool = False) -> dict:
+    """Record today's fleet inventory counts into the metrics trend (no box)."""
+    from . import inventory_metrics
+    if dry_run:
+        totals = inventory_metrics.current_totals()
+        return {"ok": True,
+                "summary": "Inventory snapshot (preview): "
+                           + ", ".join("%s=%s" % (k, v) for k, v in totals.items()),
+                "log": ""}
+    res = inventory_metrics.record_snapshot()
+    t = res["totals"]
+    return {"ok": True,
+            "summary": ("Inventory snapshot %s: " % res["date"])
+                       + ", ".join("%s=%s" % (k, v) for k, v in t.items())
+                       + (" (%d devices)" % res["appliances"]),
+            "log": ""}
+
+
 def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> dict:
     """Run ONE catalog action against ONE appliance (or ``None`` for a no-device
     action such as ``stats``). Returns ``{"ok": bool, "summary": str, "log": str}``
@@ -217,6 +265,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_system_backup(params, dry_run)
         if key == "stats":
             return _do_stats(dry_run)
+        if key == "inventory_snapshot":
+            return _do_inventory_snapshot(dry_run)
         if key == "upgrade_prep":
             return _do_upgrade_prep(appliance, dry_run)
         if key == "upgrade":
@@ -225,6 +275,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_health_check(appliance, dry_run)
         if key == "ha_check":
             return _do_ha_check(appliance, dry_run)
+        if key.startswith("cert_manager_"):
+            return _do_cert_manager(key, appliance, params, dry_run)
         if key == "custom_rest":
             return _do_custom_rest(appliance, params, dry_run)
         if key in ("policy_set_status", "backend_set_status", "swap_certificate"):
@@ -408,6 +460,55 @@ def _do_ha_check(appliance, dry_run: bool) -> dict:
     except Exception as exc:  # noqa: BLE001
         return {"ok": False,
                 "summary": f"{appliance.name}: {type(exc).__name__}: {exc}", "log": ""}
+
+
+def _do_cert_manager(key: str, appliance, params: dict, dry_run: bool) -> dict:
+    """Renew expiring certificates of ONE class on ONE target device.
+
+    Class is taken from the action key (cert_manager_<class>). For each managed
+    certificate of that class on the device whose expiry is within the class's
+    ``renew_before_days``, run the full generate→sign→deploy cycle under a new
+    {date}-stamped name (the old cert is kept for the maintenance-window swap).
+    Never swaps a binding. NEVER raises (run_action wraps it too)."""
+    from . import cert_manager
+    from . import settings_store as _store
+    cls = key[len("cert_manager_"):]
+    if cls not in _store.CERT_CLASSES:
+        return {"ok": False, "summary": f"unknown certificate class {cls!r}.", "log": ""}
+    if appliance is None:
+        return {"ok": False, "summary": "cert manager needs a target device.", "log": ""}
+    if not _store.cert_class_config(cls).get("template"):
+        return {"ok": False,
+                "summary": f"class {cls!r} has no ADCS template configured.", "log": ""}
+
+    within = _to_int(_store.cert_class_config(cls).get("renew_before_days"), 30)
+    if within <= 0:
+        within = 30
+    candidates = cert_manager.expiring_certificates(appliance.id, cls, within)
+    if not candidates:
+        return {"ok": True,
+                "summary": f"{appliance.name}: no {cls} certs within {within} days.",
+                "log": ""}
+    if dry_run:
+        names = ", ".join(c.name for c in candidates)
+        return {"ok": True,
+                "summary": (f"[dry-run] would renew {len(candidates)} {cls} cert(s) "
+                            f"on {appliance.name}: {names}"),
+                "log": ""}
+
+    ok_n = 0
+    lines: list[str] = []
+    for c in candidates:
+        res = cert_manager.renew_certificate(c, deploy=True, actor="scheduler")
+        if res.get("ok"):
+            ok_n += 1
+            lines.append(f"[ok] {c.name} → {res.get('name')}")
+        else:
+            lines.append(f"[FAIL] {c.name}: {res.get('error')}")
+    ok = ok_n == len(candidates)
+    return {"ok": ok,
+            "summary": f"{appliance.name}: renewed {ok_n}/{len(candidates)} {cls} cert(s).",
+            "log": "\n".join(lines)[:_LOG_MAX]}
 
 
 def _do_custom_rest(appliance, params: dict, dry_run: bool) -> dict:

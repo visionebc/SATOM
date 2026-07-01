@@ -29,6 +29,15 @@ from dataclasses import dataclass
 # The single substitution token a pattern may contain: the site identifier.
 TOKEN = "{name}"
 
+# Certificate names carry MORE than the site id — the class (server/client/…),
+# the CN, the issue date (so the OLD and NEW cert coexist during a maintenance
+# window) and optionally a short serial. These tokens are only meaningful for the
+# Certificate Manager element and are substituted by :func:`render_cert_name`.
+CERT_TOKENS = ("{class}", "{cn}", "{date}", "{serial}")
+# Default strftime format for the {date} token (admin-overridable in Settings →
+# Certificate Manager). ``20260701`` keeps names short and lexically sortable.
+DEFAULT_CERT_DATE_FORMAT = "%Y%m%d"
+
 # Object names (mkey) are bounded; keep derived names within a safe ceiling so a
 # long domain can't produce an illegal name.
 MAX_NAME_LEN = 63
@@ -74,6 +83,7 @@ class NamingElement:
 # ── FortiWeb sections ─────────────────────────────────────────────────────────
 SECTION_POLICY = "Server Policy"
 SECTION_WPP = "Web Protection Profile"
+SECTION_CERT = "Certificate Manager"
 
 # ── FortiADC sections ─────────────────────────────────────────────────────────
 SECTION_ADC_SLB = "Server Load Balance"
@@ -117,6 +127,13 @@ NAMING_ELEMENTS: tuple[NamingElement, ...] = (
     NamingElement("file_upload", "File Upload", SECTION_WPP, "fileup-{name}", PRODUCT_FORTIWEB),
     NamingElement("url_access", "URL Access", SECTION_WPP, "urlacc-{name}", PRODUCT_FORTIWEB),
     NamingElement("bot_mitigation", "Bot Mitigation", SECTION_WPP, "bot-{name}", PRODUCT_FORTIWEB),
+    # Certificate Manager — the ADCS-signed cert name. Uses the cert tokens
+    # {class}/{cn}/{date}/{serial} (NOT {name}); {date} keeps the old + new cert
+    # distinct so both can live on the box during a maintenance-window swap.
+    NamingElement("managed_certificate", "Managed Certificate", SECTION_CERT,
+                  "cert-{class}-{cn}-{date}", PRODUCT_FORTIWEB,
+                  "Tokens: {class} {cn} {date} {serial}. The {date} makes the old "
+                  "and new cert coexist during a maintenance-window swap."),
     # ─────────────────────────── FortiADC ───────────────────────────────────
     # Server Load Balance objects (FortiADC's SLB model)
     NamingElement("adc_virtual_server", "Virtual Server", SECTION_ADC_SLB,
@@ -217,6 +234,32 @@ def render_one(pattern: str, slug: str) -> str:
     return pattern.replace(TOKEN, slug)[:MAX_NAME_LEN]
 
 
+def render_cert_name(
+    pattern: str,
+    *,
+    cls: str,
+    cn: str,
+    date_str: str,
+    serial: str = "",
+) -> str:
+    """Render a Certificate Manager name from its multi-token pattern.
+
+    Substitutes :data:`CERT_TOKENS` — ``{class}`` (server/clientserver/client),
+    ``{cn}`` (the certificate CN/hostname, slugified), ``{date}`` (the caller
+    formats "now" per the configured date format) and ``{serial}`` (optional short
+    serial) — and caps at :data:`MAX_NAME_LEN`. Empty tokens collapse cleanly so a
+    missing ``{serial}`` never leaves a dangling separator.
+    """
+    out = (pattern or "cert-{class}-{cn}-{date}")
+    out = out.replace("{class}", (cls or "").strip().lower())
+    out = out.replace("{cn}", slugify(cn) or (cn or "").strip().lower())
+    out = out.replace("{date}", (date_str or "").strip())
+    out = out.replace("{serial}", (serial or "").strip())
+    # collapse any separator runs left by an empty token, then trim
+    out = re.sub(r"[-_.]{2,}", "-", out).strip("-_.")
+    return out[:MAX_NAME_LEN]
+
+
 def render_names(
     web_address: str,
     overrides: dict[str, str] | None = None,
@@ -238,6 +281,10 @@ def render_names(
 
 __all__ = [
     "TOKEN",
+    "CERT_TOKENS",
+    "DEFAULT_CERT_DATE_FORMAT",
+    "SECTION_CERT",
+    "render_cert_name",
     "MAX_NAME_LEN",
     "PRODUCT_FORTIWEB",
     "PRODUCT_FORTIADC",

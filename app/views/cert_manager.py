@@ -23,6 +23,7 @@ from ..auth.decorators import require_permission
 from ..models import (Appliance, ManagedCertificate, ManagedCertificateEvent,
                       Permission, db)
 from ..services import cert_manager as cm
+from ..services import cert_probe
 from ..services import settings_store as store
 from ..services.audit import log_action
 
@@ -178,11 +179,13 @@ def detail(id):
               .filter_by(cert_id=cert.id)
               .order_by(ManagedCertificateEvent.ts.desc())
               .all())
+    cert_detail = cert_probe.detail_from_pem(cert.cert_pem) if cert.cert_pem else None
     return render_template(
         "cert_manager/detail.html",
         cert=cert, appliance=appliance, events=events,
         live_bindings=live_bindings, policies=policies,
         class_label=store.CERT_CLASS_LABELS.get(cert.cert_class, cert.cert_class),
+        cert_detail=cert_detail, cert_pem=cert.cert_pem or "",
     )
 
 

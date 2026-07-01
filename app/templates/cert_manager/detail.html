@@ -45,6 +45,31 @@
       </div>
     </div>
 
+    {% if cert_detail %}
+    <div class="fw-card mb-3">
+      <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-file-earmark-lock me-2"></i>Certificate</span></div>
+      <div class="fw-card-body" style="font-size:13px;">
+        <div class="row g-2">
+          <div class="col-md-6"><span class="text-muted">Subject CN</span><br><strong>{{ cert_detail.cn or '—' }}</strong></div>
+          <div class="col-md-6"><span class="text-muted">Issuer CN</span><br>{{ cert_detail.issuer_cn or '—' }}</div>
+          <div class="col-md-6"><span class="text-muted">Serial</span><br><code>{{ cert_detail.serial or '—' }}</code></div>
+          <div class="col-md-6"><span class="text-muted">Signature</span><br>{{ cert_detail.sig_algo or '—' }} / {{ cert_detail.key_type or '—' }}</div>
+          <div class="col-md-6"><span class="text-muted">Valid from</span><br>{{ cert_detail.not_before.strftime('%Y-%m-%d') if cert_detail.not_before else '—' }}</div>
+          <div class="col-md-6"><span class="text-muted">Valid until</span><br>{{ cert_detail.not_after.strftime('%Y-%m-%d') if cert_detail.not_after else '—' }}
+            {% if cert_detail.days_left is not none %}<span class="fw-badge fw-badge-{{ 'danger' if cert_detail.days_left < 0 else 'warning' if cert_detail.days_left <= 30 else 'success' }} ms-1">{{ cert_detail.days_left }}d</span>{% endif %}</div>
+          <div class="col-12"><span class="text-muted">SANs</span><br>{{ cert_detail.sans | join(', ') if cert_detail.sans else '—' }}</div>
+          <div class="col-12"><span class="text-muted">SHA-256 fingerprint</span><br><code style="font-size:11px;word-break:break-all;">{{ cert_detail.fingerprint_sha256 or '—' }}</code></div>
+        </div>
+        {% if cert_pem %}
+        <details class="mt-2">
+          <summary style="cursor:pointer;">View PEM</summary>
+          <pre style="font-size:11px;white-space:pre-wrap;word-break:break-all;">{{ cert_pem }}</pre>
+        </details>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
     <div class="fw-card mb-3">
       <div class="fw-card-header"><span class="fw-card-title">Actions</span></div>
       <div class="fw-card-body">

@@ -93,7 +93,7 @@
       {% set _bell_href = url_for('templates.index', status='pending') %}
       {% set _bell_title = pending_template_count ~ ' template(s) pending approval' %}
     {% else %}
-      {% set _bell_href = url_for('section_catalog.index') %}
+      {% set _bell_href = url_for('reports.inbox') if (current_user and current_user.can('user_manage')) else url_for('section_catalog.index') %}
       {% set _bell_title = 'Notifications' %}
     {% endif %}
     <a class="fw-topbar-btn position-relative"
@@ -129,6 +129,16 @@
             <i class="bi bi-person me-2"></i>Profile
           </a>
         </li>
+        {% if current_user and current_user.can('user_manage') %}
+        <li>
+          <a class="dropdown-item" href="{{ url_for('reports.inbox') }}">
+            <i class="bi bi-bug me-2"></i>Bug Reports
+            {% if open_report_count|default(0) %}
+            <span class="badge rounded-pill bg-danger ms-1">{{ open_report_count }}</span>
+            {% endif %}
+          </a>
+        </li>
+        {% endif %}
         <li><hr class="dropdown-divider"></li>
         <li>
           <a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}">

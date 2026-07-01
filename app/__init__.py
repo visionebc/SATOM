@@ -221,8 +221,9 @@ def create_app(config_override: object | None = None) -> Flask:
                 from .services import bug_reports as _br
                 if _cu2.can("user_manage"):
                     _bug_notify = _br.is_opted_in(_cu2.id)
-                    if _bug_notify:
-                        _open_reports = _br.open_count()
+                    # In-app badge/inbox is available to every admin;
+                    # the opt-in flag governs EMAIL delivery only.
+                    _open_reports = _br.open_count()
                 _my_resolved = _br.unseen_resolved_count(_cu2.id)
         except Exception:
             _open_reports = 0

@@ -489,19 +489,21 @@ def _get_results(client, ep):
     return body.get("results") if isinstance(body, dict) else None
 
 
-def cert_usage(appliance, cert_name):
-    """Every place *cert_name* is bound on *appliance*, across the three binders.
+def _enumerate_usage(client, appliance, cert_name):
+    """Walk the three cert binders and return ``(complete, rows)``.
 
-    Returns list of {kind, target, field, sub_mkey, label, probe}; kind in
-    {server-policy, sni, gui}. Read-only, best-effort — a dead box yields [].
+    *rows* is the same list of ``{kind, target, field, sub_mkey, label, probe}``
+    dicts :func:`cert_usage` builds. *complete* is ``True`` only if every binder
+    read succeeded: if ANY ``_get_results`` returns ``None`` (a device read
+    error) that binder could not be verified and *complete* becomes ``False``.
+    The removal safety guard must refuse unless *complete* is ``True``.
     """
-    try:
-        client = appliance.build_client(timeout=6.0)
-    except Exception:  # noqa: BLE001
-        return []
+    complete = True
     out = []
 
     rows = _get_results(client, SERVER_POLICY_EP)
+    if rows is None:
+        complete = False
     for p in (rows or []):
         if not isinstance(p, dict):
             continue
@@ -516,6 +518,8 @@ def cert_usage(appliance, cert_name):
                 })
 
     sni_rows = _get_results(client, SNI_EP)
+    if sni_rows is None:
+        complete = False
     for s in (sni_rows or []):
         if not isinstance(s, dict):
             continue
@@ -525,18 +529,34 @@ def cert_usage(appliance, cert_name):
                 out.append({
                     "kind": "sni", "target": sname, "field": "local-cert",
                     "sub_mkey": str(m.get("id", "")),
-                    "label": f"SNI {sname} — {m.get('domain', '')}".strip(" —"),
+                    "label": f"SNI {sname} \u2014 {m.get('domain', '')}".strip(" \u2014"),
                     "probe": None,
                 })
 
     g = _get_results(client, GLOBAL_EP)
+    if g is None:
+        complete = False
     if isinstance(g, dict) and str(g.get(GUI_CERT_FIELD, "")).strip() == cert_name:
         out.append({
             "kind": "gui", "target": "", "field": GUI_CERT_FIELD, "sub_mkey": None,
             "label": "GUI / admin access (HTTPS management cert)",
             "probe": {"host": getattr(appliance, "host", ""), "port": _admin_sport(g)},
         })
-    return out
+    return complete, out
+
+
+def cert_usage(appliance, cert_name):
+    """Every place *cert_name* is bound on *appliance* (best-effort; [] on failure).
+
+    Keeps its lenient contract for display callers. For the *safety* decision in
+    remove_device_certificate, use _enumerate_usage which reports completeness.
+    """
+    try:
+        client = appliance.build_client(timeout=6.0)
+    except Exception:  # noqa: BLE001
+        return []
+    _complete, rows = _enumerate_usage(client, appliance, cert_name)
+    return rows
 
 
 def _policy_probe(policy):
@@ -613,41 +633,73 @@ def _op_result(r, dry_run):
             "request": get("request"), "dry_run": dry_run}
 
 
+def _audit_remove(appliance, cert_name, *, ok, detail):
+    """Best-effort audit for a device-cert removal decision. Never raises —
+    a failed audit must not sink a safety refusal."""
+    try:
+        log_action("certmgr.device_remove", target=cert_name,
+                   appliance_id=getattr(appliance, "id", None),
+                   detail=f"ok={ok} {detail}"[:400])
+    except Exception:  # noqa: BLE001 — auditing must never break the op
+        pass
+
+
 def remove_device_certificate(appliance, store_label, cert_name, *,
                               dry_run=True, actor=""):
-    """Delete an on-device certificate — REFUSED while it is bound anywhere
-    (server-policy / SNI / GUI). ``Local`` store deletes over SSH (only path for
-    key-material stores); other stores delete over cmdb REST. dry_run reports what
-    WOULD happen without touching the box."""
-    usage = cert_usage(appliance, cert_name)
+    """Delete an on-device certificate — REFUSED unless we can positively CONFIRM
+    it is bound NOWHERE (server-policy / SNI / GUI). Fails CLOSED: if the client
+    cannot be built, or ANY binder read fails, removal is refused. ``Local`` store
+    deletes over SSH (only path for key-material stores); other stores delete over
+    cmdb REST. dry_run reports what WOULD happen without touching the box."""
+    try:
+        client = appliance.build_client(timeout=6.0)
+    except Exception as exc:  # noqa: BLE001
+        _audit_remove(appliance, cert_name, ok=False,
+                      detail=f"refused: cannot verify bindings (client): {exc}")
+        return {"ok": False, "removed": False, "bindings": [],
+                "error": f"cannot verify bindings on {getattr(appliance,'name','device')}: {exc}"}
+
+    complete, usage = _enumerate_usage(client, appliance, cert_name)
+    if not complete:
+        _audit_remove(appliance, cert_name, ok=False,
+                      detail="refused: binding check incomplete (device read failed)")
+        return {"ok": False, "removed": False, "bindings": usage,
+                "error": "could not fully verify bindings (a device read failed); "
+                         "refusing to remove"}
     if usage:
-        return {"ok": False, "removed": False,
-                "error": "still bound to: " + ", ".join(u["label"] for u in usage),
-                "bindings": usage}
+        _audit_remove(appliance, cert_name, ok=False,
+                      detail="refused: still bound to " + ", ".join(u["label"] for u in usage))
+        return {"ok": False, "removed": False, "bindings": usage,
+                "error": "still bound to: " + ", ".join(u["label"] for u in usage)}
+
     if dry_run:
         how = "SSH config-delete" if store_label == "Local" else "cmdb REST delete"
         return {"ok": True, "removed": False, "dry_run": True, "bindings": [],
                 "error": "", "summary": f"[dry-run] would remove {cert_name} via {how}"}
+
     try:
         if store_label == "Local":
             cert_ssh.remove_certificate(appliance, cert_name, secret=appliance.password)
         else:
             ep = _store_ep(store_label)
             if not ep:
-                return {"ok": False, "removed": False,
+                _audit_remove(appliance, cert_name, ok=False,
+                              detail=f"refused: unknown store {store_label!r}")
+                return {"ok": False, "removed": False, "bindings": [],
                         "error": f"don't know how to delete a {store_label!r} certificate"}
             res = FortiWebOps(appliance).delete(ep, cert_name, dry_run=False)
             r = _op_result(res, False)
             if not r["ok"]:
-                return {"ok": False, "removed": False, "error": r["error"], "bindings": []}
+                _audit_remove(appliance, cert_name, ok=False,
+                              detail=f"REST delete failed: {r['error']}")
+                return {"ok": False, "removed": False, "bindings": [],
+                        "error": r["error"]}
     except Exception as exc:  # noqa: BLE001
-        log_action("certmgr.device_remove", target=cert_name,
-                   appliance_id=getattr(appliance, "id", None),
-                   detail=f"ok=False {exc}"[:400])
-        return {"ok": False, "removed": False, "error": str(exc), "bindings": []}
-    log_action("certmgr.device_remove", target=cert_name,
-               appliance_id=getattr(appliance, "id", None),
-               detail=f"ok=True store={store_label} by={actor or _actor()}"[:400])
+        _audit_remove(appliance, cert_name, ok=False, detail=str(exc))
+        return {"ok": False, "removed": False, "bindings": [], "error": str(exc)}
+
+    _audit_remove(appliance, cert_name, ok=True,
+                  detail=f"removed store={store_label} by={actor or _actor()}")
     return {"ok": True, "removed": True, "error": "", "bindings": []}
 
 

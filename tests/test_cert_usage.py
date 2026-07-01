@@ -77,3 +77,31 @@ def test_swap_helpers_route_to_ops(monkeypatch):
                             {"local-cert": "new-cert"}, False, "9")
     assert ops.calls[2] == ("update", cm.GLOBAL_EP, None,
                             {"https-certificate": "new-cert"}, False, None)
+
+
+class _BoomAppliance:
+    id = 7
+    name = "boom"
+    host = "boom.example.com"
+    def build_client(self, *a, **k):
+        raise RuntimeError("box unreachable")
+
+
+def test_remove_refused_when_bound(monkeypatch):
+    client = _Client({
+        "cmdb/system/global": {"https-certificate": "shop-cert"},
+    })
+    a = _Appliance(client)
+    res = cm.remove_device_certificate(a, "Local", "shop-cert", dry_run=True)
+    assert res["ok"] is False and res["removed"] is False
+    assert "still bound" in res["error"]
+    assert "bindings" in res
+
+
+def test_remove_refused_when_unverifiable(monkeypatch):
+    # client build fails -> cannot confirm no bindings -> must refuse (fail closed)
+    a = _BoomAppliance()
+    res = cm.remove_device_certificate(a, "Local", "shop-cert", dry_run=True)
+    assert res["ok"] is False and res["removed"] is False
+    assert "verify" in res["error"].lower()
+    assert res["bindings"] == []

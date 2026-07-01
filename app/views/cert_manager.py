@@ -67,6 +67,23 @@ def index():
     # Consolidated to ONE row per unique cert (same cert on N boxes = 1 line, not N).
     device_certs = cm.list_device_certificates(appliance_list)
     device = cm.consolidate_device_certificates(device_certs)
+    # Enrich each on-device row with detail we already hold: a managed cert of the
+    # same name lends its stored SANs/expiry (no TLS probe); bindings come from ONE
+    # live read against the first FortiWeb that carries the cert.
+    managed_by_name = {}
+    for mc in certs:
+        det = cert_probe.detail_from_pem(mc.cert_pem) if mc.cert_pem else None
+        if det:
+            managed_by_name.setdefault(mc.name, det)
+    appliance_by_id = {a.id: a for a in appliance_list}
+    for r in device["rows"]:
+        d = managed_by_name.get(r["name"])
+        r["sans"] = d["sans"] if d else []
+        r["expires_at"] = d["not_after"] if d else None
+        r["days_left"] = d["days_left"] if d else None
+        first = r["devices"][0] if r["devices"] else None
+        a0 = appliance_by_id.get(first["id"]) if first else None
+        r["bindings"] = cm.read_bindings(a0, r["name"]) if a0 else []
     return render_template(
         "cert_manager/index.html",
         rows=rows,

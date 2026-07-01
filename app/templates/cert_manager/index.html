@@ -138,10 +138,12 @@
       <tr>
         <th>Name</th>
         <th>Store</th>
-        <th>Type</th>
+        <th>SANs</th>
+        <th>Expires</th>
+        <th>Days left</th>
         <th>Status</th>
+        <th>Bindings</th>
         <th>Deployed on</th>
-        <th>Comment</th>
         <th class="actions-col">Actions</th>
       </tr>
     </thead>
@@ -151,27 +153,36 @@
         <tr>
           <td><strong>{{ c.name }}</strong></td>
           <td style="font-size:12px;">{{ c.store }}</td>
-          <td style="font-size:12px;">{{ c.type or '—' }}</td>
+          <td style="font-size:12px;">{{ c.sans | join(', ') if c.sans else '—' }}</td>
+          <td style="font-size:13px;">{{ c.expires_at.strftime('%Y-%m-%d') if c.expires_at else '—' }}</td>
+          <td>
+            {% if c.days_left is not none %}
+              <span class="fw-badge fw-badge-{{ 'danger' if c.days_left < 0 else 'warning' if c.days_left <= 30 else 'success' }}">{{ c.days_left }}d</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
           <td>
             {% if c.status == 'ok' %}<span class="fw-badge fw-badge-success">ok</span>
             {% elif c.status %}<span class="fw-badge fw-badge-warning">{{ c.status }}</span>
             {% else %}<span class="text-muted">—</span>{% endif %}
           </td>
           <td style="font-size:12px;">
+            {% if c.bindings %}{% for p in c.bindings %}<span class="fw-badge fw-badge-info">{{ p }}</span>{{ ' ' if not loop.last }}{% endfor %}
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td style="font-size:12px;">
             <span class="fw-badge fw-badge-secondary me-1" title="On {{ c.device_count }} FortiWeb{{ 's' if c.device_count != 1 }}">{{ c.device_count }}</span>
             {% for d in c.devices %}<span class="fw-badge fw-badge-info">{{ d.name }}</span>{{ ' ' if not loop.last }}{% endfor %}
           </td>
-          <td style="font-size:12px;">{{ c.comment or '—' }}</td>
           <td class="actions-col">
             <a class="btn btn-sm btn-outline-primary btn-sm-icon"
                href="{{ url_for('cert_manager.device_cert', store=c.store, name=c.name) }}"
-               title="Where used — devices &amp; server-policy bindings"><i class="bi bi-eye"></i></a>
+               title="Detail — SANs, bindings, swap &amp; remove"><i class="bi bi-eye"></i></a>
           </td>
         </tr>
         {% endfor %}
       {% else %}
         <tr>
-          <td colspan="7">
+          <td colspan="9">
             <div class="fw-empty-state">
               <div class="fw-empty-state-icon"><i class="bi bi-hdd-network"></i></div>
               <div class="fw-empty-state-title">No certificates found on any FortiWeb</div>

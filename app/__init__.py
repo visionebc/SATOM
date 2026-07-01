@@ -432,6 +432,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.section_config", "bp"),
         ("app.views.section_catalog", "bp"),
         ("app.views.settings", "bp"),
+        ("app.views.reports", "bp"),
         ("app.views.locks", "bp"),
         ("app.views.database", "bp"),
         ("app.views.system_backup", "bp"),

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Bug Reports{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center mb-3">
+  <h1 class="h4 mb-0"><i class="bi bi-bug me-2"></i>Bug Reports</h1>
+  <span class="badge bg-danger ms-2">{{ open_reports|length }} open</span>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header">Open</div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead><tr>
+        <th>When</th><th>Reporter</th><th>Title</th><th>Page</th><th class="text-end">Action</th>
+      </tr></thead>
+      <tbody>
+      {% for r in open_reports %}
+        <tr>
+          <td class="text-nowrap small">{{ r.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+          <td>{{ r.reporter_username }}</td>
+          <td>
+            <div class="fw-semibold">{{ r.title }}</div>
+            {% if r.body %}<div class="small text-muted">{{ r.body }}</div>{% endif %}
+            {% if r.user_agent %}<div class="small text-muted">UA: {{ r.user_agent }}</div>{% endif %}
+          </td>
+          <td class="small">{% if r.page_url %}<a href="{{ r.page_url }}">{{ r.page_url }}</a>{% else %}—{% endif %}</td>
+          <td class="text-end">
+            <form method="post" action="{{ url_for("reports.resolve", report_id=r.id) }}" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="text" name="note" class="form-control form-control-sm d-inline-block" style="width:180px" placeholder="Resolution note (optional)">
+              <button class="btn btn-sm btn-success">Mark resolved</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="text-center text-muted py-4">No open reports 🎉</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Recently resolved</div>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead><tr><th>Resolved</th><th>Reporter</th><th>Title</th><th>Note</th></tr></thead>
+      <tbody>
+      {% for r in resolved_reports %}
+        <tr>
+          <td class="text-nowrap small">{{ r.resolved_at.strftime("%Y-%m-%d %H:%M") if r.resolved_at else "" }}</td>
+          <td>{{ r.reporter_username }}</td>
+          <td>{{ r.title }}</td>
+          <td class="small text-muted">{{ r.resolution_note or "—" }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="text-center text-muted py-3">Nothing resolved yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

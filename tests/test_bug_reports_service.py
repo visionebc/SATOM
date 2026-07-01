@@ -86,3 +86,18 @@ def test_open_reports_lists_newest_first(app_ctx):
     svc.create_report(u, "second", "b", None, None)
     titles = [r.title for r in svc.open_reports()]
     assert titles == ["second", "first"]
+
+
+def test_create_report_sanitizes_page_url_scheme(app_ctx):
+    from app.services import bug_reports as svc
+    u = _mk_user("carol")
+    # javascript:/data: and other non-http(s) schemes must be dropped to None
+    bad = svc.create_report(u, "t", "b", "javascript:alert(1)", "UA")
+    assert bad.page_url is None
+    bad2 = svc.create_report(u, "t", "b", "data:text/html,x", "UA")
+    assert bad2.page_url is None
+    # http(s) URLs are preserved
+    ok = svc.create_report(u, "t", "b", "https://fw.example/policies", "UA")
+    assert ok.page_url == "https://fw.example/policies"
+    ok2 = svc.create_report(u, "t", "b", "  http://x/y  ", "UA")
+    assert ok2.page_url == "http://x/y"

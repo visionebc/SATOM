@@ -4,10 +4,10 @@ from __future__ import annotations
 import logging
 
 from flask import (Blueprint, render_template, request, redirect, url_for,
-                   flash, abort)
+                   flash)
 from flask_login import login_required, current_user
 
-from ..models import db, BugReport
+from ..models import BugReport
 from ..auth.decorators import require_permission
 from ..services import bug_reports as svc
 from ..extensions import csrf

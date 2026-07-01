@@ -478,26 +478,15 @@ def read_bindings(appliance, cert_name: str) -> list[str]:
 
 
 def _get_results(client, ep):
-    """GET *ep* and return its ``results`` (list or dict), or ``None`` on error.
-
-    Tries the endpoint first WITHOUT and then WITH the ``/api/v2.0/`` REST prefix.
-    The live FortiWeb needs the prefixed path (see :data:`SERVER_POLICY_EP`), but
-    this order lets a caller pass the short ``cmdb/...`` form too: the short probe
-    just yields nothing on a real box and the prefixed retry answers.
-    """
-    core = ep.lstrip("/")
-    if core.startswith("api/v2.0/"):
-        core = core[len("api/v2.0/"):]
-    for path in (core, "/api/v2.0/" + core):
-        try:
-            resp = client.api_call("GET", path)
-            body = resp.json() if resp is not None else {}
-        except Exception:  # noqa: BLE001
-            continue
-        res = body.get("results") if isinstance(body, dict) else None
-        if res is not None:
-            return res
-    return None
+    """GET *ep* (a canonical ``/api/v2.0/cmdb/...`` path) and return its ``results``
+    (a list for object collections, a dict for singletons like system/global), or
+    ``None`` on any error. Read-only, best-effort."""
+    try:
+        resp = client.api_call("GET", ep)
+        body = resp.json() if resp is not None else {}
+    except Exception:  # noqa: BLE001
+        return None
+    return body.get("results") if isinstance(body, dict) else None
 
 
 def cert_usage(appliance, cert_name):
@@ -551,9 +540,16 @@ def cert_usage(appliance, cert_name):
 
 
 def _policy_probe(policy):
-    """Best-effort (host, port) for a server policy's published listener, to TLS-probe
-    the live leaf. Port from HTTPS service if numeric else 443; host from explicit VIP.
-    Returns None when nothing usable is found."""
+    """Best-effort ``{host, port}`` to TLS-probe a server policy's live leaf.
+
+    NOTE: this is intentionally naive. A FortiWeb reverse-proxy policy carries its
+    serving IP on the *vserver's* vip-list, not on the policy object, and its
+    ``service``/``https-service`` fields name service OBJECTS rather than port
+    numbers — so for most real policies this returns ``None`` (no usable host) and
+    the caller falls back to another binding's probe (e.g. the GUI cert) or the
+    managed PEM. TODO: resolve the vserver's effective VIP (see clients.fortiweb
+    ``policy_full``/``_resolve_vip_ips``) for full server-policy probe coverage.
+    """
     host = str(policy.get("vip") or "").strip()
     port = None
     for pf in ("https-service", "service"):

@@ -12,7 +12,7 @@ class _Client:
     def __init__(self, by_ep): self.by_ep = by_ep
     def api_call(self, method, path, *a, **k):
         for ep, body in self.by_ep.items():
-            if path.startswith(ep):
+            if ep in path:
                 return _Resp({"results": body})
         return _Resp({"results": []})
 

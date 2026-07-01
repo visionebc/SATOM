@@ -582,6 +582,82 @@ def swap_binding(appliance, policy: str, cert_name: str, *,
             "request": result.get("request"), "dry_run": dry_run}
 
 
+def swap_server_policy_cert(appliance, policy, field, cert_name, *, dry_run=True):
+    """Point *policy*.*field* at *cert_name* (field must be a cert binding field)."""
+    if field not in _CERT_BIND_FIELDS:
+        return {"ok": False, "error": f"field {field!r} is not a cert binding field"}
+    r = FortiWebOps(appliance).update(SERVER_POLICY_EP, policy, {field: cert_name},
+                                      dry_run=dry_run)
+    return _op_result(r, dry_run)
+
+
+def swap_sni_member(appliance, sni_name, member_id, cert_name, *, dry_run=True):
+    """Repoint one SNI member row's local-cert (by-parent sub-table update)."""
+    r = FortiWebOps(appliance).update(SNI_EP + "/members", sni_name,
+                                      {"local-cert": cert_name},
+                                      dry_run=dry_run, sub_mkey=str(member_id))
+    return _op_result(r, dry_run)
+
+
+def swap_gui_cert(appliance, cert_name, *, dry_run=True):
+    """Set the GUI/admin HTTPS server certificate (system/global singleton PUT)."""
+    r = FortiWebOps(appliance).update(GLOBAL_EP, None, {GUI_CERT_FIELD: cert_name},
+                                      dry_run=dry_run)
+    return _op_result(r, dry_run)
+
+
+def _op_result(r, dry_run):
+    """Normalise an OpResult/dict from FortiWebOps into the view's dict shape."""
+    get = (r.get if isinstance(r, dict) else (lambda k, d=None: getattr(r, k, d)))
+    return {"ok": bool(get("ok")), "error": get("error", "") or "",
+            "request": get("request"), "dry_run": dry_run}
+
+
+def remove_device_certificate(appliance, store_label, cert_name, *,
+                              dry_run=True, actor=""):
+    """Delete an on-device certificate — REFUSED while it is bound anywhere
+    (server-policy / SNI / GUI). ``Local`` store deletes over SSH (only path for
+    key-material stores); other stores delete over cmdb REST. dry_run reports what
+    WOULD happen without touching the box."""
+    usage = cert_usage(appliance, cert_name)
+    if usage:
+        return {"ok": False, "removed": False,
+                "error": "still bound to: " + ", ".join(u["label"] for u in usage),
+                "bindings": usage}
+    if dry_run:
+        how = "SSH config-delete" if store_label == "Local" else "cmdb REST delete"
+        return {"ok": True, "removed": False, "dry_run": True, "bindings": [],
+                "error": "", "summary": f"[dry-run] would remove {cert_name} via {how}"}
+    try:
+        if store_label == "Local":
+            cert_ssh.remove_certificate(appliance, cert_name, secret=appliance.password)
+        else:
+            ep = _store_ep(store_label)
+            if not ep:
+                return {"ok": False, "removed": False,
+                        "error": f"don't know how to delete a {store_label!r} certificate"}
+            res = FortiWebOps(appliance).delete(ep, cert_name, dry_run=False)
+            r = _op_result(res, False)
+            if not r["ok"]:
+                return {"ok": False, "removed": False, "error": r["error"], "bindings": []}
+    except Exception as exc:  # noqa: BLE001
+        log_action("certmgr.device_remove", target=cert_name,
+                   appliance_id=getattr(appliance, "id", None),
+                   detail=f"ok=False {exc}"[:400])
+        return {"ok": False, "removed": False, "error": str(exc), "bindings": []}
+    log_action("certmgr.device_remove", target=cert_name,
+               appliance_id=getattr(appliance, "id", None),
+               detail=f"ok=True store={store_label} by={actor or _actor()}"[:400])
+    return {"ok": True, "removed": True, "error": "", "bindings": []}
+
+
+def _store_ep(store_label):
+    for _key, label, ep in _DEVICE_CERT_STORES:
+        if label == store_label:
+            return ep
+    return ""
+
+
 def confirm_swap(cert: ManagedCertificate, policy: str, *, actor: str = "") -> dict:
     """Real swap of *policy* onto *cert*, then reconcile inventory state: the new
     cert becomes active/bound, the one it supersedes becomes 'superseded'."""
@@ -857,6 +933,8 @@ __all__ = [
     "cert_name_for", "create_certificate", "renew_certificate",
     "read_bindings", "read_bindings_for", "swap_binding", "confirm_swap",
     "cert_usage",
+    "swap_server_policy_cert", "swap_sni_member", "swap_gui_cert",
+    "remove_device_certificate",
     "revoke_certificate", "expiring_certificates", "list_device_certificates",
     "consolidate_device_certificates",
 ]

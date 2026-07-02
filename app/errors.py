@@ -252,6 +252,17 @@ def register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(403)
     def _forbidden(exc):  # noqa: ANN001
+        # Security event: record every authorization denial (permission gate,
+        # access allow-list, IP allow-list) so probing / privilege-escalation
+        # attempts are visible in the log without extra instrumentation.
+        try:
+            from flask_login import current_user
+            who = getattr(current_user, "username", None) or "anonymous"
+            ip = (request.headers.get("X-Forwarded-For", "").split(",")[-1].strip()
+                  or request.remote_addr or "-")
+            logger.warning("FORBIDDEN user=%s ip=%s %s", who, ip, _request_context())
+        except Exception:  # noqa: BLE001 — logging must never turn a 403 into a 500
+            pass
         if _wants_json():
             return jsonify(ok=False, error="Forbidden"), 403
         return _safe_render("errors/403.html", code=403), 403

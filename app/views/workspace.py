@@ -2,6 +2,7 @@ from urllib.parse import quote
 
 from flask import Blueprint, render_template, jsonify, request
 from flask_login import login_required
+from ..auth.decorators import require_permission
 from ..models import Appliance
 from ..clients.fortiweb import FortiWebClient
 from ..clients.fortiadc import FortiADCClient
@@ -220,6 +221,7 @@ def ref_object(appliance_id):
 
 @bp.route('/<int:appliance_id>/save', methods=['POST'])
 @login_required
+@require_permission('config_write')
 def save(appliance_id):
     """Apply a minimal-diff change to one object. dry_run (default) previews the
     exact PUT body without touching the device; apply=true writes it through
@@ -255,6 +257,7 @@ def save(appliance_id):
 
 @bp.route('/<int:appliance_id>/create-ref', methods=['POST'])
 @login_required
+@require_permission('config_write')
 def create_ref(appliance_id):
     """Create-new for a reference field (mirrors the FortiWeb dropdown '+').
     Optionally clones an existing object's fields under a new name — used for
@@ -355,6 +358,7 @@ def _clean_create_fields(fields):
 
 @bp.route('/<int:appliance_id>/create-policy', methods=['POST'])
 @login_required
+@require_permission('config_write')
 def create_policy(appliance_id):
     """Create a Server Policy and its objects in dependency order. dry_run
     (default) returns the exact POST bodies without touching the device."""

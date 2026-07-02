@@ -36,6 +36,7 @@ import shlex
 import subprocess
 import tempfile
 from datetime import datetime
+from urllib.parse import quote as _url_quote
 
 from ..models import ManagedCertificate, ManagedCertificateEvent, db
 from . import cert_ssh, naming
@@ -514,7 +515,7 @@ def _enumerate_usage(client, appliance, cert_name):
                     "kind": "server-policy", "target": pname, "field": f,
                     "sub_mkey": None,
                     "label": f"Server policy {pname}" + ("" if f == "certificate" else f" ({f})"),
-                    "probe": _policy_probe(p),
+                    "probe": _policy_probe(client, p),
                 })
 
     sni_rows = _get_results(client, SNI_EP)
@@ -559,27 +560,24 @@ def cert_usage(appliance, cert_name):
     return rows
 
 
-def _policy_probe(policy):
+def _policy_probe(client, policy):
     """Best-effort ``{host, port}`` to TLS-probe a server policy's live leaf.
 
-    NOTE: this is intentionally naive. A FortiWeb reverse-proxy policy carries its
-    serving IP on the *vserver's* vip-list, not on the policy object, and its
-    ``service``/``https-service`` fields name service OBJECTS rather than port
-    numbers — so for most real policies this returns ``None`` (no usable host) and
-    the caller falls back to another binding's probe (e.g. the GUI cert) or the
-    managed PEM. TODO: resolve the vserver's effective VIP (see clients.fortiweb
-    ``policy_full``/``_resolve_vip_ips``) for full server-policy probe coverage.
+    Resolves: policy.vserver → vserver.vip-list → effective VIP IP (handles
+    both static VIPs and interface-IP VIPs via ``_resolve_vip_ips``).
+    Returns ``None`` when no reachable IP can be determined.
     """
-    host = str(policy.get("vip") or "").strip()
-    port = None
-    for pf in ("https-service", "service"):
-        v = str(policy.get(pf, "")).strip()
-        if v.isdigit():
-            port = int(v)
-            break
-    if not host:
+    vserver = str(policy.get("vserver") or "").strip()
+    if not vserver:
         return None
-    return {"host": host, "port": port or 443}
+    vip_rows = client._safe_list(
+        "/api/v2.0/cmdb/server-policy/vserver/vip-list?mkey=%s" % _url_quote(vserver, safe="")
+    )
+    for v in client._resolve_vip_ips(vip_rows or []):
+        ip = str(v.get("effective_ip") or "").strip()
+        if ip and not ip.startswith("0.0.0.0"):
+            return {"host": ip, "port": 443}
+    return None
 
 
 def _admin_sport(global_obj):

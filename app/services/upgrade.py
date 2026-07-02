@@ -66,8 +66,18 @@ def check_permission(client) -> bool | None:
 
 
 def prepare(appliance, *, do_backup: bool = True, do_health: bool = True,
-            do_services: bool = True) -> dict:
-    """Read-only upgrade pre-flight. Never changes the appliance."""
+            do_services: bool = True, progress=None) -> dict:
+    """Read-only upgrade/downgrade pre-flight. Never changes the appliance.
+
+    ``progress(pct, msg)`` (optional) announces each section so a background
+    job can surface every step in the tasks/toast area."""
+    def _say(pct, msg):
+        if progress:
+            try:
+                progress(int(pct), msg)
+            except Exception:  # noqa: BLE001
+                pass
+
     client = appliance.build_client()
     out: dict[str, Any] = {
         "appliance": appliance.name,
@@ -77,6 +87,7 @@ def prepare(appliance, *, do_backup: bool = True, do_health: bool = True,
     }
 
     if do_backup:
+        _say(6, "Pre-flight - backing up the appliance configuration...")
         try:
             res = backup.create_backup(client)
             name = ""
@@ -88,12 +99,14 @@ def prepare(appliance, *, do_backup: bool = True, do_health: bool = True,
             out["backup"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
 
     if do_health:
+        _say(10, "Pre-flight - capturing the system health baseline...")
         try:
             out["health"] = {"ok": True, "text": ssh_ops.health_text(appliance)}
         except Exception as exc:  # noqa: BLE001 — SSH may be closed; non-fatal
             out["health"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
 
     if do_services:
+        _say(14, "Pre-flight - probing published services (baseline)...")
         try:
             targets = service_probe.resolve_targets_from_client(client)
             out["services"] = {"ok": True, "probes": service_probe.probe_targets(targets)}
@@ -124,20 +137,33 @@ def _record(appliance, before: str, after: str, dry_run: bool, error: str = "") 
 
 def push_firmware(appliance, image_bytes: bytes, filename: str, *,
                   dry_run: bool = True, confirm_maturity: bool = False,
-                  device: int = 0, timeout: float = 1800.0) -> dict:
-    """Upload a firmware image and trigger the upgrade + reboot.
+                  confirm_downgrade: bool = False, device: int = 0,
+                  part: int = 0, active: int = 0, timeout: float = 1800.0) -> dict:
+    """Upload a firmware image and drive FortiWeb's upgrade/downgrade handshake.
 
-    DESTRUCTIVE on a real run (the box installs the image and reboots).
-    ``dry_run=True`` (default) validates image + permission and returns the plan
-    WITHOUT uploading. Caller must take a backup first and gate on an explicit
-    confirmation.
+    Mirrors the FortiWeb GUI Firmware page (``fwb-firmware-update``) EXACTLY: a
+    multipart POST of ``{imageFile, device, active, part}`` to
+    ``system/maintenance.firmwareupgradedowngrade``, then the confirmation
+    handshake the box demands via ``results.type``:
+      * ``confirm_maturity_M_to_F`` / ``_F_to_M`` -> POST ``{confirm_maturity_change:1}``
+      * ``confirm_downgrade``                     -> POST ``{confirm_down:1, device, active, part}``
+
+    ``part``/``active`` target a SPECIFIC partition (the GUI's "Upload and Reboot"
+    on the ALTERNATE partition). WITHOUT them the box flashes the ACTIVE partition
+    and refuses a cross-branch image (errcode -28 "invalid upgrade path"). A
+    downgrade across the maturity boundary (8.0 Feature -> 7.6 Mature) needs BOTH
+    ``confirm_maturity`` and ``confirm_downgrade``.
+
+    DESTRUCTIVE on a real run (installs + reboots). ``dry_run=True`` (default) only
+    validates image + permission. Caller must back up first + gate on confirmation.
     """
     client = appliance.build_client(timeout=timeout)
     size = len(image_bytes or b"")
     fw_before = firmware_version(client)
+    tgt = f" -> partition {part}" if part else ""
     plan: dict[str, Any] = {
         "dry_run": dry_run, "image": filename, "size": size, "device": device,
-        "firmware_before": fw_before,
+        "part": part, "active": active, "firmware_before": fw_before,
     }
     if size == 0:
         raise ValueError("firmware image is empty")
@@ -153,47 +179,65 @@ def push_firmware(appliance, image_bytes: bytes, filename: str, *,
     if dry_run:
         plan["ok"] = True
         plan["message"] = (
-            f"DRY-RUN — would upload {filename} ({size:,} bytes) to {appliance.name} "
-            f"(firmwareupgradedowngrade) and reboot. No image was sent.")
+            f"DRY-RUN — would upload {filename} ({size:,} bytes) to {appliance.name}"
+            f"{tgt} (firmwareupgradedowngrade) and reboot. No image was sent.")
         _record(appliance, fw_before, filename, dry_run=True)
         return plan
 
-    files = {"imageFile": (filename, image_bytes, "application/octet-stream")}
-    resp = client.upload(FIRMWARE_ENDPOINT, files=files, data={"device": str(device)},
-                         timeout=timeout)
-    try:
-        body = resp.json()
-    except Exception:  # noqa: BLE001
-        body = {"status_code": getattr(resp, "status_code", None), "text": getattr(resp, "text", "")[:300]}
-    plan["response"] = body
-    results = body.get("results", body) if isinstance(body, dict) else {}
-    rtype = results.get("type") if isinstance(results, dict) else None
-
-    if rtype in ("confirm_maturity_M_to_F", "confirm_maturity_F_to_M"):
-        plan["maturity"] = rtype
-        if not confirm_maturity:
-            plan["ok"] = False
-            plan["message"] = (
-                f"appliance requested maturity confirmation ({rtype}) — the image is "
-                f"staged but NOT installed (no reboot). Re-run with confirm checked.")
-            _record(appliance, fw_before, filename, dry_run=False, error=f"awaiting {rtype}")
-            return plan
-        cresp = client.upload(FIRMWARE_ENDPOINT,
-                              files={"confirm_maturity_change": (None, "1")}, timeout=timeout)
+    def _post(files, data=None):
+        resp = client.upload(FIRMWARE_ENDPOINT, files=files, data=data, timeout=timeout)
         try:
-            plan["confirm_response"] = cresp.json()
+            body = resp.json()
         except Exception:  # noqa: BLE001
-            plan["confirm_response"] = {"status_code": getattr(cresp, "status_code", None)}
-        plan["ok"] = True
-        plan["message"] = (f"maturity confirmed — {appliance.name} is installing the new "
-                           f"firmware and rebooting.")
-        _record(appliance, fw_before, filename, dry_run=False)
-        return plan
+            body = {"status_code": getattr(resp, "status_code", None),
+                    "text": getattr(resp, "text", "")[:300]}
+        results = body.get("results", body) if isinstance(body, dict) else {}
+        rtype = results.get("type") if isinstance(results, dict) else None
+        return resp, body, results, rtype
 
-    # FortiWeb can answer HTTP 200 yet carry a NEGATIVE errcode in the body when it
-    # rejects the image or the upgrade path (e.g. -28 "Incorrect upgrade file. Please
-    # validate image checksum and upgrade path."). Treat that as a FAILURE — never
-    # monitor a reboot that will not happen, never report a false success.
+    # POST #1 -- upload the image, TARGETED at the chosen partition.
+    files = {"imageFile": (filename, image_bytes, "application/octet-stream")}
+    data = {"device": str(device), "active": str(active), "part": str(part)}
+    resp, body, results, rtype = _post(files, data)
+    plan["response"] = body
+    plan["handshake"] = []
+
+    # Drive the confirmation handshake the box asks for (maturity, then downgrade).
+    id_fields = {"device": (None, str(device)), "active": (None, str(active)),
+                 "part": (None, str(part))}
+    for _step in range(4):
+        if rtype in ("confirm_maturity_M_to_F", "confirm_maturity_F_to_M"):
+            plan["maturity"] = rtype
+            if not confirm_maturity:
+                plan["ok"] = False
+                plan["message"] = (
+                    f"{appliance.name} staged the image but needs MATURITY confirmation "
+                    f"({rtype}) — not installed, no reboot. Re-run confirming the change.")
+                _record(appliance, fw_before, filename, dry_run=False, error=f"awaiting {rtype}")
+                return plan
+            resp, body, results, rtype = _post({"confirm_maturity_change": (None, "1")})
+            plan["handshake"].append({"sent": "confirm_maturity_change", "response": body})
+            continue
+        if rtype == "confirm_downgrade":
+            plan["downgrade_confirm"] = True
+            if not confirm_downgrade:
+                plan["ok"] = False
+                plan["message"] = (
+                    f"{appliance.name} staged the image but needs DOWNGRADE confirmation "
+                    f"— not installed, no reboot. Re-run confirming the downgrade.")
+                _record(appliance, fw_before, filename, dry_run=False,
+                        error="awaiting confirm_downgrade")
+                return plan
+            fields = {"confirm_down": (None, "1")}
+            fields.update(id_fields)
+            resp, body, results, rtype = _post(fields)
+            plan["handshake"].append({"sent": "confirm_down", "response": body})
+            continue
+        break
+
+    # FortiWeb can answer HTTP 200 yet carry a NEGATIVE errcode when it rejects the
+    # image / upgrade path (e.g. -28). Treat that as a FAILURE -- never monitor a
+    # reboot that will not happen, never report a false success.
     def _body_errcode(*srcs):
         for s in srcs:
             if isinstance(s, dict) and s.get("errcode") not in (None, "", 0, "0"):
@@ -211,9 +255,9 @@ def push_firmware(appliance, image_bytes: bytes, filename: str, *,
             break
     try:
         from flask import current_app
-        current_app.logger.warning("firmware push %s: HTTP %s errcode=%s body=%s",
+        current_app.logger.warning("firmware push %s: HTTP %s errcode=%s rtype=%s body=%s",
                                    appliance.name, getattr(resp, "status_code", "?"),
-                                   err, json.dumps(body, default=str)[:600])
+                                   err, rtype, json.dumps(body, default=str)[:600])
     except Exception:  # noqa: BLE001
         pass
 
@@ -223,16 +267,19 @@ def push_firmware(appliance, image_bytes: bytes, filename: str, *,
         plan["ok"] = False
         detail = (f" (errcode {err}{': ' + emsg if emsg else ''})" if err < 0
                   else f" (HTTP {getattr(resp, 'status_code', '?')})")
+        hint = ""
+        if err == -28:
+            hint = (" A cross-branch image was refused for the ACTIVE partition — target the "
+                    "alternate partition (part/active) like the GUI's 'Upload and Reboot'.")
         plan["message"] = (
-            f"{appliance.name} did NOT accept the flash{detail}. The image was uploaded "
-            f"but not installed and the box will not reboot — firmware unchanged. A direct "
-            f"cross-branch downgrade (e.g. 8.0→7.6) is usually not a valid upgrade path; "
-            f"roll back by booting the partition that already holds the older build instead.")
+            f"{appliance.name} did NOT accept the flash{detail}. The image was uploaded but "
+            f"not installed and the box will not reboot — firmware unchanged.{hint}")
         _record(appliance, fw_before, filename, dry_run=False, error=plan["message"][:200])
         return plan
 
     plan["ok"] = True
-    plan["message"] = f"firmware uploaded — {appliance.name} is rebooting into the new image."
+    plan["message"] = (f"firmware accepted — {appliance.name} is installing{tgt} and "
+                       f"rebooting into the new image.")
     _record(appliance, fw_before, filename, dry_run=False)
     return plan
 
@@ -327,7 +374,6 @@ def read_image_bytes(image) -> bytes:
 #      -- the box boots the *inactive* partition; there is no partition arg.    #
 # --------------------------------------------------------------------------- #
 PARTITION_READ_ENDPOINT = "/api/v2.0/system/maintenance.backuprestore"
-PARTITION_BOOT_ENDPOINT = "/api/v2.0/system/maintenance.backuprestorefirmwareboot"
 
 
 def _is_active(part: dict) -> bool:
@@ -352,134 +398,8 @@ def read_partitions(appliance) -> dict:
             "last_backup": res.get("lastBackup")}
 
 
-def _record_boot(appliance, before: str, target: str, dry_run: bool, error: str = "") -> None:
-    try:
-        db.session.add(ChangeHistory(
-            appliance_id=getattr(appliance, "id", None),
-            endpoint="system/maintenance.backuprestorefirmwareboot", mkey="",
-            action="partition_boot", before=json.dumps({"firmware": before}),
-            after=json.dumps({"boot_into": target}), dry_run=dry_run,
-            username=_current_username(), ts=datetime.utcnow(),
-        ))
-        db.session.commit()
-    except Exception:  # noqa: BLE001
-        db.session.rollback()
-    try:
-        log_action("appliance.partition_boot", target=appliance.name,
-                   extra={"boot_into": target, "dry_run": dry_run,
-                          "from": before, "error": error})
-    except Exception:  # noqa: BLE001
-        pass
-
-
-def boot_partition(appliance, *, dry_run: bool = True, timeout: float = 60.0) -> dict:
-    """Boot the ALTERNATE (inactive) firmware partition and reboot.
-
-    DESTRUCTIVE on a real run (the box reboots into the other partition and every
-    fronted service is interrupted). ``dry_run=True`` (default) reads the table
-    and returns the plan WITHOUT sending anything. The POST carries NO payload --
-    FortiWeb boots the inactive partition (exactly what the GUI's Firmware 'boot'
-    button does)."""
-    info = read_partitions(appliance)
-    active, alt = info["active"], info["alternate"]
-    plan: dict[str, Any] = {
-        "dry_run": dry_run,
-        "partitions": info["partitions"],
-        "active": active, "alternate": alt,
-        "firmware_before": (active or {}).get("version", ""),
-        "target": (alt or {}).get("version", ""),
-        "target_partition": (alt or {}).get("partition"),
-    }
-    if not alt or not (alt.get("version") or "").strip():
-        plan["ok"] = False
-        plan["message"] = (
-            "No alternate firmware partition is installed, so there is nothing to "
-            "boot into. Upload the rollback image to the second partition first "
-            "(System > Maintenance > Firmware > Upload).")
-        return plan
-
-    _CLEAN = (
-        "FortiWeb will not boot partition {p} ({v}) directly: it is flagged "
-        "'Upload and Reboot' (upload=1), meaning this image needs a full "
-        "re-image, not a partition swap. This happens on a cross-major change "
-        "(e.g. 8.0 -> 7.6), where the two releases use a different system "
-        "partition size. Per Fortinet's 'Restoring firmware (clean install)', "
-        "it can ONLY be done from the LOCAL CONSOLE during a boot interrupt via "
-        "TFTP -- NOT over REST/SSH/Web -- and it RESETS the config to factory "
-        "defaults. Use the console + TFTP clean-install runbook instead."
-    )
-    if str((alt or {}).get("upload")) in ("1", "True", "true"):
-        plan["ok"] = False
-        plan["needs_clean_install"] = True
-        plan["message"] = _CLEAN.format(p=alt.get("partition"), v=alt.get("version"))
-        return plan
-
-    if dry_run:
-        plan["ok"] = True
-        plan["message"] = (
-            f"DRY-RUN - would boot partition {alt.get('partition')} "
-            f"({alt.get('version')}) and reboot {appliance.name} (currently on "
-            f"{plan['firmware_before'] or '?'}). Nothing was sent.")
-        _record_boot(appliance, plan["firmware_before"], plan["target"], dry_run=True)
-        return plan
-
-    client = appliance.build_client(timeout=timeout)
-    resp = client.post(PARTITION_BOOT_ENDPOINT)          # NO body, per the GUI
-    try:
-        body = resp.json()
-    except Exception:  # noqa: BLE001
-        body = {"status_code": getattr(resp, "status_code", None),
-                "text": getattr(resp, "text", "")[:300]}
-    plan["response"] = body
-    results = body.get("results", body) if isinstance(body, dict) else {}
-
-    def _errcode(*srcs):
-        for s in srcs:
-            if isinstance(s, dict) and s.get("errcode") not in (None, "", 0, "0"):
-                try:
-                    return int(str(s.get("errcode")).strip())
-                except Exception:  # noqa: BLE001
-                    return -1
-        return 0
-
-    err = _errcode(results, body)
-    try:
-        from flask import current_app
-        current_app.logger.warning("partition boot %s: HTTP %s errcode=%s body=%s",
-                                   appliance.name, getattr(resp, "status_code", "?"),
-                                   err, json.dumps(body, default=str)[:400])
-    except Exception:  # noqa: BLE001
-        pass
-
-    http_ok = getattr(resp, "status_code", 500) < 400
-    plan["errcode"] = err
-    if err < 0 or not http_ok:
-        detail = (f" (errcode {err})" if err < 0
-                  else f" (HTTP {getattr(resp, 'status_code', '?')})")
-        plan["ok"] = False
-        plan["message"] = (
-            f"{appliance.name} did NOT accept the partition boot{detail}. Firmware "
-            f"unchanged - the box is still on {plan['firmware_before'] or '?'}.")
-        if err == -20014:
-            plan["needs_clean_install"] = True
-            plan["message"] += (
-                " FortiWeb refused it (errcode -20014): this image needs a console "
-                "TFTP clean-install (config reset), not a partition boot -- see the "
-                "clean-install runbook.")
-        _record_boot(appliance, plan["firmware_before"], plan["target"],
-                     dry_run=False, error=plan["message"][:200])
-        return plan
-
-    plan["ok"] = True
-    plan["boot_msg"] = results.get("msg") if isinstance(results, dict) else None
-    plan["message"] = (
-        f"Boot triggered - {appliance.name} is rebooting into partition "
-        f"{alt.get('partition')} ({alt.get('version')}).")
-    _record_boot(appliance, plan["firmware_before"], plan["target"], dry_run=False)
-    return plan
-
 __all__ = ["prepare", "push_firmware", "check_permission", "firmware_version",
-           "FIRMWARE_ENDPOINT", "compatible_images", "read_image_bytes", "read_partitions", "boot_partition"]
+           "FIRMWARE_ENDPOINT", "compatible_images", "read_image_bytes", "read_partitions"]
 
 
 # --------------------------------------------------------------------------- #
@@ -562,4 +482,48 @@ def post_flash_checks(appliance) -> dict:
         out["services"] = {"total": len(probes), "up": up}
     except Exception as exc:  # noqa: BLE001
         out["services"] = {"error": f"{type(exc).__name__}: {exc}"[:160]}
+    return out
+
+
+def postflight(appliance, before: dict | None = None, *, do_health: bool = True,
+               do_services: bool = True, progress=None) -> dict:
+    """Read-only POST-flash verification mirroring :func:`prepare` - re-probe the
+    published services and re-capture the SSH health battery AFTER a flash, and
+    diff the services against the pre-flight ``before`` snapshot. Never raises;
+    ``progress(pct, msg)`` announces each section to the tasks area."""
+    def _say(pct, msg):
+        if progress:
+            try:
+                progress(int(pct), msg)
+            except Exception:  # noqa: BLE001
+                pass
+
+    out: dict[str, Any] = {"generated_at": datetime.utcnow().isoformat()}
+    client = None
+    try:
+        client = appliance.build_client(timeout=12)
+        out["firmware"] = firmware_version(client)
+    except Exception as exc:  # noqa: BLE001
+        out["error"] = f"{type(exc).__name__}: {exc}"[:200]
+
+    if do_services and client is not None:
+        _say(90, "Post-flight - re-probing published services...")
+        try:
+            targets = service_probe.resolve_targets_from_client(client)
+            after = service_probe.probe_targets(targets)
+            out["services"] = {"ok": True, "probes": after}
+            b = (before or {}).get("services") or {}
+            before_probes = b.get("probes") if isinstance(b, dict) else None
+            if before_probes:
+                out["services"]["diff"] = service_probe.diff_probes(before_probes, after)
+        except Exception as exc:  # noqa: BLE001
+            out["services"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+
+    if do_health:
+        _say(94, "Post-flight - re-capturing the system health battery...")
+        try:
+            out["health"] = {"ok": True, "text": ssh_ops.health_text(appliance)}
+        except Exception as exc:  # noqa: BLE001 - SSH may be closed; non-fatal
+            out["health"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+
     return out

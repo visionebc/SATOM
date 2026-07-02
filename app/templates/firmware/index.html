@@ -29,7 +29,7 @@
     <span class="fw-card-title">Add a firmware image</span>
   </div>
   <div class="fw-card-body">
-    <form method="POST" action="{{ url_for('firmware.upload') }}"
+    <form method="POST" action="{{ url_for('firmware.upload') }}" id="fw-upload-form"
           enctype="multipart/form-data" class="row g-3 align-items-end">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="col-md-5">
@@ -51,9 +51,13 @@
       </div>
       <div class="col-md-3">
         <label class="fw-form-label" style="font-size:12px;">
-          Model <span class="text-muted">(optional)</span>
+          Platform
         </label>
-        <input type="text" name="model" class="form-control" placeholder="FortiWeb-VM / 100F">
+        <select name="platform" class="form-select">
+          <option value="" selected>Any (universal)</option>
+          <option value="hw">Hardware appliance</option>
+          <option value="vm">Virtual Machine (KVM/VMware/cloud)</option>
+        </select>
       </div>
       <div class="col-md-2">
         <label class="fw-form-label" style="font-size:12px;">
@@ -88,7 +92,7 @@
         <tr>
           <th>Product</th>
           <th>Version</th>
-          <th>Model</th>
+          <th>Platform</th>
           <th>Build</th>
           <th>File</th>
           <th style="width:80px;">Size</th>
@@ -103,7 +107,7 @@
         <tr>
           <td><span class="fw-badge fw-badge-secondary">{{ img.product }}</span></td>
           <td><strong>{{ img.version }}</strong></td>
-          <td class="text-muted">{{ img.model or '—' }}</td>
+          <td class="text-muted">{{ {'hw':'Hardware','vm':'Virtual Machine'}.get(img.platform, 'Any') }}</td>
           <td class="text-muted">{{ img.build or '—' }}</td>
           <td class="mono" style="font-size:11.5px;">{{ img.filename }}</td>
           <td>{{ img.size_mb() }} MB</td>
@@ -147,4 +151,31 @@
     </table>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* Progressive enhancement: intercept the upload so it runs in the background
+   with a live transfer bar + a "Verifying…" job toast (bottom-right). If JS is
+   off or jobs.js failed to load, the form submits natively (synchronous path). */
+(function () {
+  var form = document.getElementById('fw-upload-form');
+  if (!form || !window.JobsUI) return;
+  form.addEventListener('submit', function (e) {
+    var fileInput = form.querySelector('input[type=file][name=image]');
+    if (!fileInput || !fileInput.files.length) return;   // let native "required" fire
+    e.preventDefault();
+    var name = fileInput.files[0].name;
+    var fd = new FormData(form);
+    fd.append('ajax', '1');
+    JobsUI.uploadWithProgress(form.action, fd, {
+      title: 'Uploading ' + name,
+      serverTitle: 'Verifying ' + name
+    });
+    fileInput.value = '';   // clear so another image can be queued
+    var btn = form.querySelector('button[type=submit]');
+    if (btn) { btn.disabled = true; setTimeout(function () { btn.disabled = false; }, 1500); }
+  });
+})();
+</script>
 {% endblock %}

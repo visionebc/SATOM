@@ -1,16 +1,21 @@
 {% extends 'base.html' %}
-{% block title %}Upgrade - {{ appliance.name }}{% endblock %}
+{% block title %}Downgrade - {{ appliance.name }}{% endblock %}
 {% block content %}
 <div class="fw-page-header d-flex justify-content-between align-items-center">
-  <h4><i class="bi bi-cloud-arrow-up me-2"></i>Firmware Upgrade — {{ appliance.name }}</h4>
+  <h4><i class="bi bi-cloud-arrow-down me-2"></i>Firmware Downgrade / Rollback — {{ appliance.name }}</h4>
   <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; Back</a>
 </div>
 
-<div class="fw-alert fw-alert-danger d-flex align-items-center gap-2">
-  <i class="bi bi-exclamation-octagon-fill"></i>
-  A live upgrade <b>reboots the appliance</b> and interrupts every service it fronts. Always run
-  <a href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}" class="alert-link">Upgrade Preparation</a>
-  first. Leave <b>Dry run</b> checked to validate without sending anything.
+<div class="fw-alert fw-alert-danger d-flex align-items-start gap-2">
+  <i class="bi bi-exclamation-octagon-fill mt-1"></i>
+  <div>
+    A live downgrade <b>reboots the appliance</b> and interrupts every service it fronts, and a
+    downgrade <b>can reset the configuration</b> — especially across a major branch
+    (e.g. 8.0&rarr;7.6). <b>Take a config backup first</b> via
+    <a href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}" class="alert-link">Upgrade Preparation</a>,
+    and keep the current (running) <code>.out</code> in the repository so you can roll forward again.
+    Leave <b>Dry run</b> checked to validate without sending anything.
+  </div>
 </div>
 
 {% if result %}
@@ -37,34 +42,46 @@
       <i class="bi bi-info-circle me-1"></i>
       No firmware image in the repository matches this appliance
       (<b>{{ appliance.kind }}</b>{% if appliance.model %} / {{ appliance.model }}{% endif %}).
-      Add one in the <a class="alert-link" href="{{ url_for('firmware.index') }}">Firmware repository</a> first —
-      images are no longer uploaded from this page.
+      Add the rollback <code>.out</code> in the
+      <a class="alert-link" href="{{ url_for('firmware.index') }}">Firmware repository</a> first.
     </div>
   </div>
 </div>
 {% else %}
 
-{# --- Shared image picker is rendered inside each form so the value posts. --- #}
-{% macro image_select(name) %}
-<label class="form-label">Firmware image (auto-detected from repository)</label>
-<select class="form-select" name="image_id" required>
-  {% for img in images %}
-  <option value="{{ img.id }}" {{ 'selected' if selected_id and selected_id == img.id else '' }}>
-    {{ img.version }}{% if img.build %} (build {{ img.build }}){% endif %}
-    — {{ {'hw':'Hardware','vm':'Virtual Machine'}.get(img.platform, 'Universal') }} · {{ img.size_mb() }} MB · sha256 {{ img.sha256[:12] }}…
-  </option>
-  {% endfor %}
-</select>
+{% if firmware and not older_exists %}
+<div class="fw-alert fw-alert-warning">
+  <i class="bi bi-info-circle me-1"></i>
+  No image <b>older</b> than the running firmware (<b>{{ firmware }}</b>) is in the repository, so there is
+  nothing to roll back to. You can still flash any image below, but selecting a same/newer version is an
+  upgrade, not a downgrade — add the target rollback <code>.out</code> in the
+  <a class="alert-link" href="{{ url_for('firmware.index') }}">Firmware repository</a>.
+</div>
+{% endif %}
+
+{% macro rel_tag(img) %}
+  {%- set r = relations.get(img.id, 'unknown') -%}
+  {%- if r == 'older' -%}[↓ rollback]{%- elif r == 'newer' -%}[↑ upgrade]{%- elif r == 'same' -%}[= current]{%- else -%}[?]{%- endif -%}
 {% endmacro %}
 
-<div class="card shadow-sm mb-3">
-  <div class="card-header fw-card-header"><i class="bi bi-check2-circle me-1"></i>Apply now</div>
+<div class="card shadow-sm">
+  <div class="card-header fw-card-header"><i class="bi bi-arrow-counterclockwise me-1"></i>Roll back now</div>
   <div class="card-body">
-    <p class="small text-muted mb-3">Current firmware: <b>{{ firmware or 'unknown' }}</b> — the matching image
-      is selected automatically below; just validate and accept.</p>
-    <form method="POST" action="{{ url_for('appliances.upgrade_push', id=appliance.id) }}" id="flash-form">
+    <p class="small text-muted mb-3">Current firmware: <b>{{ firmware or 'unknown' }}</b> — the newest image
+      that is <b>older</b> than the running version is pre-selected as the rollback target.</p>
+    <form method="POST" action="{{ url_for('appliances.downgrade_push', id=appliance.id) }}" id="flash-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="mb-3">{{ image_select('image_id') }}</div>
+      <div class="mb-3">
+        <label class="form-label">Firmware image (from repository)</label>
+        <select class="form-select" name="image_id" required>
+          {% for img in images %}
+          <option value="{{ img.id }}" {{ 'selected' if selected_id and selected_id == img.id else '' }}>
+            {{ rel_tag(img) }} {{ img.version }}{% if img.build %} (build {{ img.build }}){% endif %}
+            — {{ {'hw':'Hardware','vm':'Virtual Machine'}.get(img.platform, 'Universal') }} · {{ img.size_mb() }} MB · sha256 {{ img.sha256[:12] }}…
+          </option>
+          {% endfor %}
+        </select>
+      </div>
       <div class="form-check mb-2">
         <input class="form-check-input" type="checkbox" name="dry_run" id="dry_run" checked onchange="document.getElementById('live-fields').classList.toggle('d-none', this.checked)">
         <label class="form-check-label" for="dry_run">Dry run (validate the image only — nothing is sent)</label>
@@ -72,37 +89,12 @@
       <div id="live-fields" class="d-none border rounded p-3 mb-3" style="background:rgba(248,113,113,.06)">
         <div class="form-check mb-2">
           <input class="form-check-input" type="checkbox" name="confirm_maturity" id="confirm_maturity">
-          <label class="form-check-label" for="confirm_maturity">Confirm maturity change (Mature&harr;Feature, e.g. 7.6&rarr;8.0)</label>
+          <label class="form-check-label" for="confirm_maturity">Confirm maturity change (Feature&harr;Mature, e.g. 8.0&rarr;7.6)</label>
         </div>
         <label class="form-label small">Type the appliance name <code>{{ appliance.name }}</code> to authorise the live reboot:</label>
         <input class="form-control" type="text" name="confirm_name" autocomplete="off" placeholder="{{ appliance.name }}">
       </div>
-      <button class="btn fw-btn-primary" type="submit"><i class="bi bi-check2-circle me-1"></i>Validate / Accept</button>
-    </form>
-  </div>
-</div>
-
-<div class="card shadow-sm">
-  <div class="card-header fw-card-header"><i class="bi bi-calendar-event me-1"></i>Schedule for later</div>
-  <div class="card-body">
-    <form method="POST" action="{{ url_for('appliances.upgrade_schedule', id=appliance.id) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="mb-3">{{ image_select('image_id') }}</div>
-      <div class="mb-3">
-        <label class="form-label">Date &amp; time <span class="text-muted">(UTC)</span></label>
-        <input class="form-control" type="datetime-local" name="when" required>
-      </div>
-      <div class="form-check mb-3">
-        <input class="form-check-input" type="checkbox" name="confirm_maturity" id="sched_maturity">
-        <label class="form-check-label" for="sched_maturity">Confirm maturity change (Mature&harr;Feature)</label>
-      </div>
-      <div class="fw-alert fw-alert-info small mb-3">
-        <i class="bi bi-info-circle me-1"></i>
-        The upgrade is recorded as a one-shot <b>Scheduled Action</b> with the validated image.
-        Unattended flashing is gated for safety (an approved Change Request / explicit operator
-        run); the schedule is created and visible under Scheduled Actions.
-      </div>
-      <button class="btn fw-btn-secondary" type="submit"><i class="bi bi-calendar-plus me-1"></i>Schedule upgrade</button>
+      <button class="btn fw-btn-primary" type="submit"><i class="bi bi-check2-circle me-1"></i>Validate / Roll back</button>
     </form>
   </div>
 </div>

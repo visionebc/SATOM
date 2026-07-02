@@ -38,7 +38,8 @@ import tempfile
 from datetime import datetime
 from urllib.parse import quote as _url_quote
 
-from ..models import ManagedCertificate, ManagedCertificateEvent, db
+from ..models import (DeviceCertificate, ManagedCertificate,
+                      ManagedCertificateEvent, db)
 from . import cert_ssh, naming
 from . import settings_store as store
 from .audit import log_action
@@ -580,6 +581,39 @@ def _policy_probe(client, policy):
     return None
 
 
+# Certificate stores whose X.509 detail can be read over the CLI. FortiWeb prints
+# the fully-decoded cert with ``get system certificate <cli> <name>`` — the only
+# source of validity/issuer/SANs for a cert that is on the box but bound nowhere
+# (so it can never be TLS-probed). Verified for the Local store on fw 7.6/8.0.
+_CERT_STORE_CLI = {"Local": "local"}
+
+
+def device_cert_detail_via_ssh(appliance, store_label, cert_name, *,
+                               timeout: float = 20.0):
+    """Best-effort X.509 detail for an on-device cert, read over SSH.
+
+    Runs the read-only ``get system certificate <cli> <name>`` and parses the
+    decoded output (:func:`cert_probe.detail_from_fortiweb_cli`). Returns the same
+    detail dict the TLS probe / stored PEM produce, or ``None`` on any failure or
+    for a store with no CLI reader. Never raises."""
+    cli = _CERT_STORE_CLI.get(store_label)
+    if not cli:
+        return None
+    try:
+        cert_ssh.assert_cert_name(cert_name)  # reuse the injection-safe name guard
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        from .ssh_ops import FortiWebReadonlySSH
+        from . import cert_probe
+        with FortiWebReadonlySSH(appliance, timeout=timeout) as ssh:
+            out = ssh.run_readonly(f"get system certificate {cli} {cert_name}")
+        return cert_probe.detail_from_fortiweb_cli(out)
+    except Exception:  # noqa: BLE001 — SSH unreachable / parse miss → no detail
+        logger.debug("SSH cert detail read failed for %s", cert_name, exc_info=True)
+        return None
+
+
 def _admin_sport(global_obj):
     v = global_obj.get("admin-sport")
     try:
@@ -979,13 +1013,246 @@ def consolidate_device_certificates(device_certs) -> dict:
             "unique": len(rows), "deployments": deployments}
 
 
+# --------------------------------------------------------------------------- #
+#  Device-certificate SCAN + persistent cache                                  #
+# --------------------------------------------------------------------------- #
+def _bindings_index(client):
+    """One-pass ``cert_name -> [binding labels]`` map for a box: read the server
+    policies + SNI members ONCE and tally which cert each references. Cheap
+    (2 REST GETs), read-only, best-effort ({} on failure)."""
+    idx: dict[str, set] = {}
+    pols = _get_results(client, SERVER_POLICY_EP) or []
+    for p in pols:
+        if not isinstance(p, dict):
+            continue
+        pname = str(p.get("name", "")).strip()
+        for f in _CERT_BIND_FIELDS:
+            cert = str(p.get(f, "")).strip()
+            if cert and pname:
+                idx.setdefault(cert, set()).add(pname)
+    sni_rows = _get_results(client, SNI_EP) or []
+    for s in sni_rows:
+        if not isinstance(s, dict):
+            continue
+        sname = str(s.get("name", "")).strip()
+        for m in (s.get("members") or []):
+            if isinstance(m, dict):
+                cert = str(m.get("local-cert", "")).strip()
+                if cert:
+                    idx.setdefault(cert, set()).add(f"SNI {sname}".strip())
+    return idx
+
+
+def scan_device_certificates(appliance, *, with_bindings: bool = True,
+                             timeout: float = 8.0) -> dict:
+    """Scan ONE FortiWeb and UPSERT its certificate inventory into the DB.
+
+    Reads every store's cmdb rows (name/type/status/comment), then over ONE SSH
+    session reads the decoded X.509 detail of each Local cert
+    (:func:`cert_probe.detail_from_fortiweb_cli`), and (optionally) computes each
+    cert's server-policy / SNI bindings from a single REST pass. Rows no longer
+    present on the box are pruned. Commits. Never raises.
+
+    Returns ``{ok, online, appliance, scanned, detailed, error}``.
+    """
+    res = {"ok": False, "online": False, "appliance": appliance.name,
+           "scanned": 0, "detailed": 0, "error": None}
+
+    swept = list_device_certificates([appliance], timeout=timeout)
+    entry = swept[0] if swept else {"online": False, "certs": [], "error": "no-sweep"}
+    if not entry.get("online"):
+        res["error"] = entry.get("error") or "offline"
+        return res
+    res["online"] = True
+    certs = entry.get("certs") or []
+
+    # Bindings — one REST pass reused for every cert on this box.
+    bindings_idx = {}
+    if with_bindings:
+        try:
+            bindings_idx = _bindings_index(appliance.build_client(timeout=timeout))
+        except Exception:  # noqa: BLE001 — bindings are best-effort
+            bindings_idx = {}
+
+    # Decoded detail for Local-store certs — one SSH session, many reads.
+    detail_by_name: dict[str, dict] = {}
+    local_names = [c["name"] for c in certs if c.get("store") == "Local"]
+    if local_names:
+        try:
+            from .ssh_ops import FortiWebReadonlySSH
+            from . import cert_probe
+            with FortiWebReadonlySSH(appliance, timeout=max(timeout, 20.0)) as ssh:
+                for cname in local_names:
+                    try:
+                        cert_ssh.assert_cert_name(cname)
+                    except Exception:  # noqa: BLE001 — skip odd names
+                        continue
+                    try:
+                        out = ssh.run_readonly(
+                            f"get system certificate local {cname}")
+                        det = cert_probe.detail_from_fortiweb_cli(out)
+                    except Exception:  # noqa: BLE001
+                        det = None
+                    if det:
+                        detail_by_name[cname] = det
+        except Exception:  # noqa: BLE001 — SSH unreachable → cmdb-only rows
+            logger.debug("SSH cert scan session failed for %s", appliance.name,
+                         exc_info=True)
+
+    # A managed cert with a stored PEM lends detail for non-Local (SNI/CA/LE) rows.
+    from . import cert_probe as _cp
+    now = datetime.utcnow()
+    existing = {(r.store, r.name): r for r in
+                DeviceCertificate.query.filter_by(appliance_id=appliance.id).all()}
+    seen_keys = set()
+    for c in certs:
+        store_label = c["store"]
+        name = c["name"]
+        key = (store_label, name)
+        seen_keys.add(key)
+        row = existing.get(key)
+        if row is None:
+            row = DeviceCertificate(appliance_id=appliance.id,
+                                    store=store_label, name=name)
+            db.session.add(row)
+        row.cert_type = c.get("type") or ""
+        row.status = c.get("status") or ""
+        row.comment = (c.get("comment") or "")[:512]
+        det = detail_by_name.get(name)
+        if det:
+            row.apply_detail(det, source="ssh")
+            res["detailed"] += 1
+        elif not row.has_detail:
+            mc = ManagedCertificate.query.filter_by(name=name).first()
+            if mc and mc.cert_pem:
+                pem_det = _cp.detail_from_pem(mc.cert_pem)
+                if pem_det:
+                    row.apply_detail(pem_det, source="pem")
+                    res["detailed"] += 1
+        if with_bindings:
+            row.bindings = sorted(bindings_idx.get(name, set()))
+        row.scanned_at = now
+        res["scanned"] += 1
+
+    # Prune rows for certs no longer on the box.
+    for key, row in existing.items():
+        if key not in seen_keys:
+            db.session.delete(row)
+
+    db.session.commit()
+    res["ok"] = True
+    return res
+
+
+def scan_fleet_certificates(appliances, *, with_bindings: bool = True,
+                            timeout: float = 8.0) -> dict:
+    """Run :func:`scan_device_certificates` across many boxes. Best-effort per
+    device; returns ``{ok, scanned, detailed, online, offline[], results[]}``."""
+    results, offline = [], []
+    scanned = detailed = online = 0
+    for a in appliances:
+        try:
+            r = scan_device_certificates(a, with_bindings=with_bindings,
+                                         timeout=timeout)
+        except Exception as exc:  # noqa: BLE001 — never let one box sink the run
+            db.session.rollback()
+            r = {"ok": False, "online": False, "appliance": a.name,
+                 "scanned": 0, "detailed": 0, "error": type(exc).__name__}
+        results.append(r)
+        scanned += r["scanned"]
+        detailed += r["detailed"]
+        if r["online"]:
+            online += 1
+        else:
+            offline.append({"name": a.name, "error": r.get("error") or "offline"})
+    return {"ok": True, "scanned": scanned, "detailed": detailed,
+            "online": online, "offline": offline, "results": results}
+
+
+def stored_device_certificates(appliances) -> dict:
+    """Read the CACHED on-device inventory from the DB and consolidate it into ONE
+    row per unique (store, name) — the same shape
+    :func:`consolidate_device_certificates` yields, plus detail
+    (sans/expires_at/days_left/issuer/bindings) and ``last_scanned``. No box call.
+    """
+    ids = [a.id for a in appliances]
+    by_id = {a.id: a for a in appliances}
+    if not ids:
+        return {"rows": [], "unique": 0, "deployments": 0, "last_scanned": None}
+    rows_db = (DeviceCertificate.query
+               .filter(DeviceCertificate.appliance_id.in_(ids))
+               .all())
+    by_key: dict[tuple, dict] = {}
+    deployments = 0
+    last_scanned = None
+    for dc in rows_db:
+        a = by_id.get(dc.appliance_id)
+        if a is None:
+            continue
+        deployments += 1
+        if dc.scanned_at and (last_scanned is None or dc.scanned_at > last_scanned):
+            last_scanned = dc.scanned_at
+        key = (dc.store, dc.name)
+        row = by_key.get(key)
+        if row is None:
+            row = by_key[key] = {
+                "name": dc.name, "store": dc.store, "type": dc.cert_type or "",
+                "comment": dc.comment or "", "statuses": set(), "devices": [],
+                "sans": [], "expires_at": None, "not_before": None,
+                "days_left": None, "issuer_cn": "", "serial": "",
+                "fingerprint": "", "bindings": set(), "detail_source": "",
+            }
+        row["statuses"].add(dc.status or "")
+        if not row["type"] and dc.cert_type:
+            row["type"] = dc.cert_type
+        if not row["comment"] and dc.comment:
+            row["comment"] = dc.comment
+        # Detail: take the richest available across the box copies.
+        if dc.not_after and row["expires_at"] is None:
+            row["expires_at"] = dc.not_after
+            row["days_left"] = dc.days_left
+        if dc.sans and not row["sans"]:
+            row["sans"] = dc.sans
+        if dc.issuer_cn and not row["issuer_cn"]:
+            row["issuer_cn"] = dc.issuer_cn
+        if dc.serial and not row["serial"]:
+            row["serial"] = dc.serial
+        if dc.fingerprint_sha256 and not row["fingerprint"]:
+            row["fingerprint"] = dc.fingerprint_sha256
+        if dc.detail_source and not row["detail_source"]:
+            row["detail_source"] = dc.detail_source
+        row["bindings"].update(dc.bindings)
+        row["devices"].append({"id": a.id, "name": a.name})
+    rows: list[dict] = []
+    for row in by_key.values():
+        present = {s for s in row["statuses"] if s}
+        status = "" if not present else ("ok" if present == {"ok"}
+                                         else sorted(present - {"ok"})[0])
+        row["devices"].sort(key=lambda d: d["name"].lower())
+        rows.append({
+            "name": row["name"], "store": row["store"], "type": row["type"],
+            "comment": row["comment"], "status": status,
+            "sans": row["sans"], "expires_at": row["expires_at"],
+            "days_left": row["days_left"], "issuer_cn": row["issuer_cn"],
+            "serial": row["serial"], "fingerprint": row["fingerprint"],
+            "detail_source": row["detail_source"],
+            "bindings": sorted(row["bindings"]),
+            "devices": row["devices"], "device_count": len(row["devices"]),
+        })
+    rows.sort(key=lambda r: (r["store"], r["name"].lower()))
+    return {"rows": rows, "unique": len(rows), "deployments": deployments,
+            "last_scanned": last_scanned}
+
+
 __all__ = [
     "CertManagerError", "generate_csr", "sign_csr", "parse_certificate",
     "cert_name_for", "create_certificate", "renew_certificate",
     "read_bindings", "read_bindings_for", "swap_binding", "confirm_swap",
-    "cert_usage",
+    "cert_usage", "device_cert_detail_via_ssh",
     "swap_server_policy_cert", "swap_sni_member", "swap_gui_cert",
     "remove_device_certificate",
     "revoke_certificate", "expiring_certificates", "list_device_certificates",
     "consolidate_device_certificates",
+    "scan_device_certificates", "scan_fleet_certificates",
+    "stored_device_certificates",
 ]

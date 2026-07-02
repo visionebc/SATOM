@@ -154,6 +154,15 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "over REST (read-only).",
     ),
     ActionSpec(
+        "cert_scan", "Cert Manager — scan device certificates", "admin",
+        needs_targets=True,
+        summary="Read each target FortiWeb's certificate stores and cache the "
+                "decoded X.509 detail (expiry / issuer / SANs) + policy bindings "
+                "into the local DB (services.cert_manager.scan_device_certificates). "
+                "Read-only against the box; powers the Certificate Manager table. "
+                "Schedule DAILY.",
+    ),
+    ActionSpec(
         "cert_manager_server", "Cert Manager — renew Server certs", "admin",
         needs_targets=True,
         summary="Renew expiring SERVER-authentication certificates on each target: "
@@ -275,6 +284,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_health_check(appliance, dry_run)
         if key == "ha_check":
             return _do_ha_check(appliance, dry_run)
+        if key == "cert_scan":
+            return _do_cert_scan(appliance, dry_run)
         if key.startswith("cert_manager_"):
             return _do_cert_manager(key, appliance, params, dry_run)
         if key == "custom_rest":
@@ -460,6 +471,27 @@ def _do_ha_check(appliance, dry_run: bool) -> dict:
     except Exception as exc:  # noqa: BLE001
         return {"ok": False,
                 "summary": f"{appliance.name}: {type(exc).__name__}: {exc}", "log": ""}
+
+
+def _do_cert_scan(appliance, dry_run: bool) -> dict:
+    """Scan ONE target's certificate stores and cache the decoded detail +
+    bindings into the DB (read-only against the box)."""
+    from . import cert_manager
+    if appliance is None:
+        return {"ok": False, "summary": "cert_scan needs a target device.", "log": ""}
+    if dry_run:
+        return {"ok": True,
+                "summary": f"Would scan {appliance.name}'s certificate stores "
+                           "and cache X.509 detail + bindings.", "log": ""}
+    r = cert_manager.scan_device_certificates(appliance)
+    if not r.get("ok"):
+        return {"ok": False,
+                "summary": f"{appliance.name}: not scanned ({r.get('error')}).",
+                "log": ""}
+    return {"ok": True,
+            "summary": f"{appliance.name}: cached {r['scanned']} cert(s), "
+                       f"{r['detailed']} with X.509 detail.",
+            "log": ""}
 
 
 def _do_cert_manager(key: str, appliance, params: dict, dry_run: bool) -> dict:

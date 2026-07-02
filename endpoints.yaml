@@ -18,9 +18,9 @@ system_ha:                                      /api/v2.0/cmdb/system/ha
 system_snmp_community:                          /api/v2.0/cmdb/system/snmp.community
 system_snmp_sysinfo:                            /api/v2.0/cmdb/system/snmp.sysinfo
 system_alert_email:                             /api/v2.0/cmdb/system/alertmail
-local_backup:                                   /api/v2.0/system/maintenance.localbackup
-local_backup_list:                              /api/v2.0/system/maintenance.localbackuplist
-system_restore:                                 /api/v2.0/system/maintenance.restore
+local_backup:                                   /api/v2.0/system/maintenance.localbackup.backup
+local_backup_list:                              /api/v2.0/system/maintenance.localbackup.list
+system_restore:                                 /api/v2.0/system/maintenance.backuprestore
 certificate:                                    /api/v2.0/cmdb/system/certificate.local
 certificate_intermediate:                       /api/v2.0/cmdb/system/certificate.intermediate
 certificate_letsencrypt:                        /api/v2.0/cmdb/system/certificate.letsencrypt

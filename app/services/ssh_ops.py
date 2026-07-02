@@ -108,16 +108,21 @@ TROUBLESHOOT: dict[str, str] = {
     "ARP list": "diagnose network arp list",
 }
 
-# Read-only battery captured before/after a firmware upgrade (health baseline).
-DIAGNOSTIC_BATTERY: list[str] = [
-    "get system status",
-    "get system performance",
-    "diagnose system ha status",
-    "diagnose hardware sysinfo vm",
-    "diagnose hardware harddisk health",
-    "diagnose network info routing-table all",
-    "diagnose policy total-list",
-]
+# The extra signal the flash before/after report wants beyond the shared battery.
+_FLASH_EXTRA: list[str] = ["diagnose policy total-list"]
+
+
+def flash_battery() -> list[str]:
+    """Full read-only diagnostic battery captured before/after a firmware flash.
+
+    Reuses the COMPLETE ``logcollect.DIAGNOSTIC_COMMANDS`` set (parity with the
+    desktop upgrade runbook — 31 commands) plus ``diagnose policy total-list``,
+    the one health signal the web flash report wants that the shared battery
+    omits (→ 32 total). Imported lazily because ``logcollect`` imports from
+    this module, so a top-level import would create a circular import.
+    """
+    from .logcollect import DIAGNOSTIC_COMMANDS  # lazy: breaks the import cycle
+    return list(DIAGNOSTIC_COMMANDS) + _FLASH_EXTRA
 
 
 class FortiWebReadonlySSH:
@@ -233,7 +238,7 @@ def run_command(appliance, command: str, *, timeout: float = 15.0) -> str:
 def capture_health(appliance, *, timeout: float = 25.0) -> dict[str, str]:
     """Run the read-only diagnostic battery → {command: output}."""
     with FortiWebReadonlySSH(appliance, timeout=timeout) as ssh:
-        return ssh.run_battery(DIAGNOSTIC_BATTERY)
+        return ssh.run_battery(flash_battery())
 
 
 def health_text(appliance) -> str:
@@ -245,6 +250,6 @@ def health_text(appliance) -> str:
 
 __all__ = [
     "FortiWebReadonlySSH", "FortiSSHError", "ReadOnlyViolation",
-    "clean_output", "assert_readonly", "TROUBLESHOOT", "DIAGNOSTIC_BATTERY",
+    "clean_output", "assert_readonly", "TROUBLESHOOT", "flash_battery",
     "run_command", "capture_health", "health_text",
 ]

@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+{% block title %}Restore - {{ appliance.name }}{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center">
+  <h4><i class="bi bi-arrow-counterclockwise me-2"></i>Configuration Restore — {{ appliance.name }}</h4>
+  <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; Back</a>
+</div>
+
+<div class="fw-alert fw-alert-danger d-flex align-items-start gap-2">
+  <i class="bi bi-exclamation-octagon-fill mt-1"></i>
+  <div>
+    A live restore <b>overwrites the running configuration and reboots the appliance</b>, interrupting
+    every service it fronts. A <b>pre-restore backup is taken automatically</b> before a live restore.
+    Leave <b>Dry run</b> checked to validate without sending anything, and type the appliance name to
+    authorise a live restore. Encrypted backups require the backup password.
+  </div>
+</div>
+
+{% if result %}
+<div class="card shadow-sm mb-3">
+  <div class="card-header fw-card-header">Result — {{ 'DRY RUN' if result.dry_run else 'LIVE RESTORE' }}</div>
+  <div class="card-body">
+    <div class="fw-alert fw-alert-{{ 'success' if result.ok else 'warning' }} mb-2">{{ result.message }}</div>
+    <dl class="row mb-0 small">
+      <dt class="col-sm-3">File</dt><dd class="col-sm-9">{{ result.filename }} ({{ '{:,}'.format(result.size) }} bytes){% if result.encrypted %} · <span class="text-warning">encrypted</span>{% endif %}</dd>
+      <dt class="col-sm-3">Endpoint</dt><dd class="col-sm-9"><code>{{ result.endpoint }}</code></dd>
+      {% if pre_backup %}<dt class="col-sm-3">Pre-restore backup</dt><dd class="col-sm-9">{{ pre_backup }}</dd>{% endif %}
+    </dl>
+  </div>
+</div>
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-header fw-card-header"><i class="bi bi-safe2 me-1"></i>Backup vault
+        <span class="badge bg-secondary ms-2">{{ backups|length }}</span>
+      </div>
+      <div class="card-body">
+        <p class="small text-muted mb-2">Current firmware: <b>{{ firmware or 'unknown' }}</b></p>
+        {% if backups %}
+        <div class="table-responsive">
+          <table class="table table-sm fw-table mb-0">
+            <thead><tr><th>File</th><th>Source</th><th>Size</th><th>When</th><th></th></tr></thead>
+            <tbody>
+            {% for b in backups %}
+              <tr>
+                <td><code>{{ b.filename }}</code>{% if b.encrypted %} <span class="badge bg-warning text-dark">enc</span>{% endif %}</td>
+                <td><span class="badge bg-light text-dark">{{ b.source }}</span></td>
+                <td>{{ b.size_kb() }} KB</td>
+                <td class="text-muted small">{{ b.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td class="text-end text-nowrap">
+                  <a href="{{ url_for('appliances.restore_download', id=appliance.id, backup_id=b.id) }}" class="btn btn-sm fw-btn-secondary" title="Download"><i class="bi bi-download"></i></a>
+                  <form method="post" action="{{ url_for('appliances.restore_delete', id=appliance.id, backup_id=b.id) }}" class="d-inline" data-fw-confirm-form="Delete backup {{ b.filename }} from the vault?">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm fw-btn-secondary text-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-muted small mb-3">No backups stored yet. Upload a <code>.conf</code> or pull one from the device.</p>
+        {% endif %}
+
+        <hr>
+        <form method="post" action="{{ url_for('appliances.restore_upload', id=appliance.id) }}" enctype="multipart/form-data" class="mb-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="form-label small">Upload a config backup (.conf) from your PC</label>
+          <div class="input-group input-group-sm">
+            <input type="file" class="form-control" name="config_file" accept=".conf,.zip,.gz" required>
+            <button class="btn fw-btn-secondary" type="submit"><i class="bi bi-upload me-1"></i>Add</button>
+          </div>
+        </form>
+        <form method="post" action="{{ url_for('appliances.restore_fetch', id=appliance.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm fw-btn-secondary" type="submit"><i class="bi bi-cloud-download me-1"></i>Pull backup from device</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-header fw-card-header"><i class="bi bi-arrow-counterclockwise me-1"></i>Restore now</div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('appliances.restore_run', id=appliance.id) }}" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="mb-3">
+            <label class="form-label">Restore from a stored backup</label>
+            <select class="form-select" name="backup_id">
+              <option value="">— choose a vault backup —</option>
+              {% for b in backups %}
+              <option value="{{ b.id }}">{{ b.filename }} · {{ b.source }} · {{ b.created_at.strftime('%Y-%m-%d %H:%M') }}{% if b.encrypted %} · encrypted{% endif %}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small text-muted">…or upload a .conf to restore directly</label>
+            <input type="file" class="form-control form-control-sm" name="config_file" accept=".conf,.zip,.gz">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small">Backup password (only if the backup is encrypted)</label>
+            <input type="password" class="form-control form-control-sm" name="password" autocomplete="off" placeholder="leave blank for plaintext backups">
+          </div>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="dry_run" id="dry_run" checked onchange="document.getElementById('live-fields').classList.toggle('d-none', this.checked)">
+            <label class="form-check-label" for="dry_run">Dry run (validate only — nothing is sent to the appliance)</label>
+          </div>
+          <div id="live-fields" class="d-none border rounded p-3 mb-3" style="background:rgba(248,113,113,.06)">
+            <p class="small mb-2 text-danger"><i class="bi bi-exclamation-triangle me-1"></i>A live restore reboots {{ appliance.name }} and replaces its configuration. An automatic pre-restore backup is taken first.</p>
+            <label class="form-label small">Type the appliance name <code>{{ appliance.name }}</code> to authorise:</label>
+            <input class="form-control" type="text" name="confirm_name" autocomplete="off" placeholder="{{ appliance.name }}">
+          </div>
+          <button class="btn fw-btn-primary" type="submit"><i class="bi bi-check2-circle me-1"></i>Validate / Restore</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

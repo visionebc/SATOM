@@ -14,6 +14,7 @@ best-effort with a short timeout, so a dead box never hangs a page. No Flask/DB.
 from __future__ import annotations
 
 import logging
+import re
 import socket
 import ssl
 from datetime import datetime
@@ -113,4 +114,80 @@ def probe_leaf_pem(host: str, port: int, *, server_name: str | None = None,
         return "", f"{type(exc).__name__}: {exc}"[:200]
 
 
-__all__ = ["detail_from_pem", "probe_leaf_pem"]
+def _cn_from_dn(dn_line: str) -> str:
+    """Pull the first ``CN = value`` out of a FortiWeb DN line
+    (``Subject: CN = example.net`` / ``Issuer: C = US, O = ..., CN = YR1``)."""
+    m = re.search(r"\bCN\s*=\s*([^,\n]+)", dn_line)
+    return m.group(1).strip() if m else ""
+
+
+def _parse_fw_datetime(s: str):
+    """FortiWeb prints ``2026-06-04 04:17:56  GMT`` — parse to a naive UTC datetime."""
+    m = re.search(r"(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})", s or "")
+    if not m:
+        return None
+    try:
+        return datetime.strptime(f"{m.group(1)} {m.group(2)}", "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+
+
+def detail_from_fortiweb_cli(text: str) -> dict | None:
+    """Parse the output of ``get system certificate local <name>`` into the same
+    detail dict :func:`detail_from_pem` returns.
+
+    FortiWeb can't hand us the certificate material over REST (no monitor endpoint,
+    empty cmdb ``certificate`` field), but its CLI prints the fully-decoded X.509
+    detail — the only source for a cert that is on the box but bound nowhere (so it
+    can't be TLS-probed either). Returns ``None`` when the output carries no cert
+    (missing name / parse miss) so the caller doesn't render an all-blank panel."""
+    text = text or ""
+    out = dict(_EMPTY)
+    out["sans"] = []
+    lines = text.splitlines()
+    for ln in lines:
+        s = ln.strip()
+        if s.startswith("Subject:") and not out["cn"]:
+            out["cn"] = _cn_from_dn(s)
+        elif s.startswith("Issuer:") and not out["issuer_cn"]:
+            out["issuer_cn"] = _cn_from_dn(s)
+        elif s.startswith("Valid from:") and out["not_before"] is None:
+            out["not_before"] = _parse_fw_datetime(s)
+        elif s.startswith("Valid to:") and out["not_after"] is None:
+            out["not_after"] = _parse_fw_datetime(s)
+        elif s.startswith("Fingerprint:") and not out["fingerprint_sha256"]:
+            fp = s.split(":", 1)[1]
+            out["fingerprint_sha256"] = re.sub(r"[^0-9A-Fa-f]", "", fp).lower()
+    # Serial: the hex sits on the line(s) AFTER "Serial Num:".
+    for i, ln in enumerate(lines):
+        if ln.strip().startswith("Serial Num:"):
+            tail = ln.split(":", 1)[1].strip()
+            j = i
+            while not tail and j + 1 < len(lines):
+                j += 1
+                tail = lines[j].strip()
+            if re.fullmatch(r"[0-9A-Fa-f:\s]+", tail or ""):
+                out["serial"] = re.sub(r"[^0-9A-Fa-f]", "", tail).lower()
+            break
+    # SANs: the "Content:" line under the Subject Alternative Name extension.
+    for i, ln in enumerate(lines):
+        if "Subject Alternative Name" in ln:
+            for k in range(i + 1, min(i + 5, len(lines))):
+                cs = lines[k].strip()
+                if cs.startswith("Content:"):
+                    payload = cs.split(":", 1)[1]
+                    for part in payload.split(","):
+                        val = re.sub(r"^\s*(?:DNS|IP Address|email|URI)\s*:\s*", "",
+                                     part.strip())
+                        if val:
+                            out["sans"].append(val)
+                    break
+            break
+    if out["not_after"] is not None:
+        out["days_left"] = (out["not_after"] - datetime.utcnow()).days
+    if not out["cn"] and out["not_after"] is None and not out["sans"]:
+        return None
+    return out
+
+
+__all__ = ["detail_from_pem", "detail_from_fortiweb_cli", "probe_leaf_pem"]

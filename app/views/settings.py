@@ -33,6 +33,7 @@ from ..services import auth_store
 from ..services import twofa
 from ..services import git_service
 from ..services import user_settings_store as user_store
+from ..services import system_info
 from ..services.audit import log_action
 
 bp = Blueprint('settings', __name__, url_prefix='/settings')
@@ -87,6 +88,7 @@ def index():
         cert_classes=([(c, store.CERT_CLASS_LABELS[c], store.cert_class_config(c))
                        for c in store.CERT_CLASSES] if _is_admin() else []),
         cert_cmd_tokens=store.CERT_CMD_TOKENS,
+        system_info=system_info.collect(),
         is_admin=_is_admin(),
     )
 

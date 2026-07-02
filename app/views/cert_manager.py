@@ -62,38 +62,55 @@ def index():
             "tone": tone,
             "class_label": store.CERT_CLASS_LABELS.get(c.cert_class, c.cert_class),
         })
-    # On-device certificates: a live read-only sweep so the operator can see the
-    # certs already on each FortiWeb even when ADCS signing isn't configured.
-    # Consolidated to ONE row per unique cert (same cert on N boxes = 1 line, not N).
-    device_certs = cm.list_device_certificates(appliance_list)
-    device = cm.consolidate_device_certificates(device_certs)
-    # Enrich each on-device row with detail we already hold: a managed cert of the
-    # same name lends its stored SANs/expiry (no TLS probe); bindings come from ONE
-    # live read against the first FortiWeb that carries the cert.
-    managed_by_name = {}
-    for mc in certs:
-        det = cert_probe.detail_from_pem(mc.cert_pem) if mc.cert_pem else None
-        if det:
-            managed_by_name.setdefault(mc.name, det)
-    appliance_by_id = {a.id: a for a in appliance_list}
-    for r in device["rows"]:
-        d = managed_by_name.get(r["name"])
-        r["sans"] = d["sans"] if d else []
-        r["expires_at"] = d["not_after"] if d else None
-        r["days_left"] = d["days_left"] if d else None
-        first = r["devices"][0] if r["devices"] else None
-        a0 = appliance_by_id.get(first["id"]) if first else None
-        r["bindings"] = cm.read_bindings(a0, r["name"]) if a0 else []
+    # On-device certificates: read the CACHED inventory from the DB (populated by
+    # the "Scan devices" button or the daily cert_scan scheduled action), so the
+    # table shows expiry / days-left / SANs / bindings WITHOUT a slow fleet sweep
+    # on every page load. Consolidated to ONE row per unique cert.
+    device = cm.stored_device_certificates(appliance_list)
+    device_cached = True
+    device_offline = []
+    if not device["rows"] and device["last_scanned"] is None:
+        # Never scanned: fall back to a one-off live sweep so the table isn't blank,
+        # and let the operator know a scan will enrich it with expiry/SANs.
+        device_cached = False
+        swept = cm.consolidate_device_certificates(
+            cm.list_device_certificates(appliance_list))
+        for r in swept["rows"]:
+            r.setdefault("sans", []); r.setdefault("expires_at", None)
+            r.setdefault("days_left", None); r.setdefault("bindings", [])
+        device = {"rows": swept["rows"], "unique": swept["unique"],
+                  "deployments": swept["deployments"], "last_scanned": None}
+        device_offline = swept["offline"]
     return render_template(
         "cert_manager/index.html",
         rows=rows,
         configured=store.cert_manager_configured(),
         class_labels=store.CERT_CLASS_LABELS,
         device_rows=device["rows"],
-        device_offline=device["offline"],
+        device_offline=device_offline,
         device_unique=device["unique"],
         device_deployments=device["deployments"],
+        device_last_scanned=device["last_scanned"],
+        device_cached=device_cached,
     )
+
+
+@bp.route("/scan", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def scan_devices():
+    """Manual fleet-wide certificate scan → refresh the on-device DB cache."""
+    appliance_list = _fortiweb_appliances()
+    res = cm.scan_fleet_certificates(appliance_list)
+    log_action("certmgr.scan_devices",
+               detail=f"scanned={res['scanned']} detailed={res['detailed']} "
+                      f"online={res['online']}")
+    msg = (f"Scanned {res['online']} device(s): cached {res['scanned']} "
+           f"certificate(s), {res['detailed']} with full X.509 detail.")
+    if res["offline"]:
+        msg += " Unreachable: " + ", ".join(o["name"] for o in res["offline"]) + "."
+    flash(msg, "success" if res["online"] else "warning")
+    return redirect(url_for("cert_manager.index"))
 
 
 @bp.route("/device-cert")
@@ -136,6 +153,15 @@ def device_cert():
                         detail = cert_probe.detail_from_pem(pem)
                         break
         swap_options.append({"appliance": a, "targets": _swap_targets(a)})
+
+    # Fallback: a cert that is on the box but bound nowhere (no server policy / SNI /
+    # GUI) is served on no live endpoint, so the TLS probe above finds nothing. Read
+    # its decoded X.509 detail straight from the FortiWeb CLI over SSH instead.
+    if detail is None:
+        for a in devices:
+            detail = cm.device_cert_detail_via_ssh(a, store_label, name)
+            if detail is not None:
+                break
 
     return render_template("cert_manager/device_cert.html",
                            row=row, per_device=per_device, detail=detail,

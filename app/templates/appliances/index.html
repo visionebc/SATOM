@@ -16,9 +16,14 @@
     <h1 class="fw-page-title"><i class="bi bi-server me-2 text-accent"></i>Appliances</h1>
     <p class="text-muted mb-0" style="font-size:13px;">Manage FortiWeb appliance connections</p>
   </div>
-  <button class="btn btn-fw-primary" onclick="API.openModal('modalAddAppliance')">
-    <i class="bi bi-plus-lg me-1"></i>Add Appliance
-  </button>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('appliances.flash_reports') }}" class="btn fw-btn-secondary">
+      <i class="bi bi-clipboard-data me-1"></i>Firmware Reports
+    </a>
+    <button class="btn btn-fw-primary" onclick="API.openModal('modalAddAppliance')">
+      <i class="bi bi-plus-lg me-1"></i>Add Appliance
+    </button>
+  </div>
 </div>
 
 <!-- Stats row -->

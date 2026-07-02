@@ -16,6 +16,22 @@
   <!-- FortiWeb CSS -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/fortiweb.css') }}">
 
+  <!-- ============================================================
+       Turbo Drive — client-side navigation so background jobs (firmware
+       uploads) survive page changes. Loaded in <head> so Turbo, the libraries
+       and jobs.js run ONCE and PERSIST across visits (Turbo re-executes <body>
+       scripts on every visit, which would reset jobs.js's upload state and
+       double-register Bootstrap's delegated handlers). turbo-boot.js installs a
+       DOMContentLoaded→turbo:load shim before any body script runs. Page-level
+       scripts (api/main/release_notes) stay at the end of <body> on purpose.
+       ============================================================ -->
+  <meta name="turbo-cache-control" content="no-cache">
+  <script src="{{ url_for('static', filename='js/turbo.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/turbo-boot.js') }}"></script>
+  <script src="/static/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <script src="{{ url_for('static', filename='js/jobs.js') }}"></script>
+
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -80,29 +96,15 @@
        data-bs-toggle="modal" data-bs-target="#bugReportModal">
       <i class="bi bi-bug"></i>
     </a>
-    <!-- Notifications -->
-{% set _report_total = (open_report_count|default(0)) + (my_resolved_unseen_count|default(0)) %}
-    {% set _bell_total = (pending_template_count|default(0)) + _report_total %}
-    {% if open_report_count|default(0) %}
-      {% set _bell_href = url_for('reports.inbox') %}
-      {% set _bell_title = open_report_count ~ ' open bug report(s) - click to review' %}
-    {% elif my_resolved_unseen_count|default(0) %}
-      {% set _bell_href = url_for('reports.inbox') if current_user.can('user_manage') else '#' %}
-      {% set _bell_title = 'Your bug report was resolved' %}
-    {% elif pending_template_count|default(0) %}
-      {% set _bell_href = url_for('templates.index', status='pending') %}
-      {% set _bell_title = pending_template_count ~ ' template(s) pending approval' %}
-    {% else %}
-      {% set _bell_href = url_for('reports.inbox') if (current_user and current_user.can('user_manage')) else url_for('section_catalog.index') %}
-      {% set _bell_title = 'Notifications' %}
-    {% endif %}
+    <!-- Notifications — always links to the notifications page (bell = unread count) -->
+    {% set _notif_count = unread_notification_count|default(0) %}
     <a class="fw-topbar-btn position-relative"
-       href="{{ _bell_href }}" title="{{ _bell_title }}"
-       {% if my_resolved_unseen_count|default(0) %}data-mark-mine-seen="1"{% endif %}>
-      <i class="bi bi-bell{% if _bell_total %}-fill{% endif %}"></i>
-      {% if _bell_total %}
+       href="{{ url_for('notifications.index') }}"
+       title="{{ (_notif_count ~ ' unread notification(s)') if _notif_count else 'Notifications' }}">
+      <i class="bi bi-bell{% if _notif_count %}-fill{% endif %}"></i>
+      {% if _notif_count %}
       <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
-            style="font-size:9px;">{{ _bell_total }}</span>
+            style="font-size:9px;">{{ _notif_count }}</span>
       {% endif %}
     </a>
 
@@ -127,6 +129,11 @@
         <li>
           <a class="dropdown-item" href="{{ url_for('auth.profile') }}">
             <i class="bi bi-person me-2"></i>Profile
+          </a>
+        </li>
+        <li>
+          <a class="dropdown-item" href="{{ url_for('appliances.flash_reports') }}">
+            <i class="bi bi-clipboard-data me-2"></i>Firmware Reports
           </a>
         </li>
         {% if current_user and current_user.can('user_manage') %}
@@ -336,6 +343,8 @@
           <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('firmware.') else '' }}"
              href="{{ url_for('firmware.index') }}">
             <i class="bi bi-hdd-stack fw-nav-icon"></i><span>Firmware</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'reports' else '' }}" href="{{ url_for('reports.inbox') }}">
+            <i class="bi bi-bug fw-nav-icon"></i><span>Bug Reports</span></a>
         </div>
       </div>
       {% endif %}
@@ -428,31 +437,11 @@
   <span class="text-muted">{{ product.tagline }}</span>
 </footer>
 
-<!-- Bootstrap 5.3 JS Bundle -->
-<script src="/static/vendor/bootstrap/bootstrap.bundle.min.js"></script>
-<!-- Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
-<!-- FortiWeb JS -->
+<!-- FortiWeb page-level JS — re-run on every Turbo visit (Turbo Drive, the
+     Bootstrap/Chart libraries and jobs.js are in <head> so they persist). -->
 <script src="{{ url_for('static', filename='js/api.js') }}"></script>
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 <script src="{{ url_for('static', filename='js/release_notes.js') }}"></script>
-
-<script>
-(function () {
-  var bell = document.querySelector('a[data-mark-mine-seen="1"]');
-  if (!bell) return;
-  bell.addEventListener('click', function () {
-    var meta = document.querySelector('meta[name=csrf-token]');
-    var csrf = meta ? meta.content : '';
-    try {
-      navigator.sendBeacon
-        ? navigator.sendBeacon('{{ url_for("reports.mark_mine_seen") }}')
-        : fetch('{{ url_for("reports.mark_mine_seen") }}',
-                {method: 'POST', headers: {'X-CSRFToken': csrf}, keepalive: true});
-    } catch (e) {}
-  });
-})();
-</script>
 
 <!-- Bug report modal -->
 <div class="modal fade" id="bugReportModal" tabindex="-1" aria-hidden="true">

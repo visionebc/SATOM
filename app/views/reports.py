@@ -7,9 +7,10 @@ from flask import (Blueprint, render_template, request, redirect, url_for,
                    flash)
 from flask_login import login_required, current_user
 
-from ..models import BugReport
+from ..models import BugReport, User
 from ..auth.decorators import require_permission
 from ..services import bug_reports as svc
+from ..services import notifications as notify
 from ..extensions import csrf
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,20 @@ bp = Blueprint("reports", __name__, url_prefix="/reports")
 
 
 def _notify_admins_new(report: BugReport) -> None:
-    """Email opted-in admins about a new report. Best-effort, never raises."""
+    """Alert admins of a new report — in-app bell (every active admin) + email
+    (opted-in only). Best-effort, never raises."""
+    try:
+        admins = [u for u in User.query.filter_by(is_active=True).all()
+                  if u.can("user_manage")]
+        notify.push_many(
+            [u.id for u in admins],
+            f"New bug report: {report.title}",
+            kind=notify.Notification.KIND_WARNING,
+            body=f"Filed by {report.reporter_username}.",
+            link=url_for("reports.inbox"),
+        )
+    except Exception:  # pragma: no cover - notification must never break submit
+        logger.exception("bug-report in-app admin notify failed")
     try:
         from ..services import email_service
         recipients = []
@@ -35,7 +49,19 @@ def _notify_admins_new(report: BugReport) -> None:
 
 
 def _notify_reporter_resolved(report: BugReport) -> None:
-    """Email the original reporter that their report was resolved."""
+    """Tell the reporter their report was resolved — in-app bell + email.
+    Best-effort, never raises."""
+    try:
+        if report.reporter_id:
+            _note = report.resolution_note
+            notify.push(
+                report.reporter_id,
+                "Your bug report was resolved",
+                kind=notify.Notification.KIND_SUCCESS,
+                body=report.title + (f" — {_note}" if _note else ""),
+            )
+    except Exception:  # pragma: no cover
+        logger.exception("bug-report in-app reporter notify failed")
     try:
         from ..services import email_service
         reporter = report.reporter

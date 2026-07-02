@@ -83,6 +83,62 @@ def create_app(config_override: object | None = None) -> Flask:
             return redirect(url_for('architecture.index'))
         return redirect(url_for('product.select'))
 
+    # -- service worker (root scope) — powers resilient background uploads
+    #    (Background Fetch API): the transfer is owned by the browser, so it
+    #    survives navigation / refresh / tab close. Served at '/' so its scope
+    #    is the whole app; no auth (the script is not sensitive) and exempt from
+    #    the product/access gates below so registration never gets a redirect.
+    @app.route('/sw.js')
+    def service_worker():
+        from flask import Response
+        sw_path = os.path.join(app.static_folder, 'js', 'sw.js')
+        try:
+            with open(sw_path, 'r', encoding='utf-8') as fh:
+                body = fh.read()
+        except OSError:
+            return ('', 404)
+        resp = Response(body, mimetype='application/javascript')
+        resp.headers['Service-Worker-Allowed'] = '/'
+        resp.headers['Cache-Control'] = 'no-cache'
+        return resp
+
+    # -- shared worker — owns firmware upload TRANSFERS so they survive a
+    #    full-page navigation. A SharedWorker persists across same-origin page
+    #    loads, so an XHR upload started inside it keeps going when the user
+    #    changes page (unlike an in-page XHR, which the navigation aborts). It
+    #    broadcasts progress to whatever page is open and answers a "query" so a
+    #    freshly-loaded page reconnects to the in-flight transfer. Same-origin
+    #    JS, gate-exempt like the service worker so it always loads.
+    @app.route('/upload-worker.js')
+    def upload_worker():
+        from flask import Response
+        w_path = os.path.join(app.static_folder, 'js', 'upload-worker.js')
+        try:
+            with open(w_path, 'r', encoding='utf-8') as fh:
+                body = fh.read()
+        except OSError:
+            return ('', 404)
+        resp = Response(body, mimetype='application/javascript')
+        resp.headers['Cache-Control'] = 'no-cache'
+        return resp
+
+    # -- diagnostic breadcrumb sink (temporary). GET so it never trips CSRF;
+    #    the page + upload worker ping it at each decision point so the server
+    #    log shows EXACTLY which transfer path ran and whether it survived a
+    #    navigation. Logs only (no storage), capped, gate-exempt.
+    @app.route('/_updiag')
+    def updiag():
+        from flask import Response
+        from flask_login import current_user
+        try:
+            who = getattr(current_user, 'username', '') or '-'
+            args = dict(request.args)
+            app.logger.warning('UPDIAG user=%s ip=%s %s', who, _client_ip(),
+                               str(args)[:400])
+        except Exception:
+            pass
+        return Response('', status=204)
+
     # -- product selection gate ------------------------------------------
     @app.before_request
     def _product_gate():
@@ -92,7 +148,7 @@ def create_app(config_override: object | None = None) -> Flask:
             return None
         ep = request.endpoint or ''
         always = {
-            'static', 'index',
+            'static', 'index', 'service_worker', 'upload_worker', 'updiag',
             'product.select', 'product.set_product', 'product.switch',
             'product.fortiadc_home',
         }
@@ -119,7 +175,8 @@ def create_app(config_override: object | None = None) -> Flask:
         if not current_user.is_authenticated:
             return None
         ep = request.endpoint or ''
-        if ep == 'static' or ep.startswith('auth.'):
+        if ep in ('static', 'service_worker', 'upload_worker', 'updiag') \
+                or ep.startswith('auth.'):
             return None
         from .models import Permission
         if current_user.can(Permission.USER_MANAGE):
@@ -229,6 +286,15 @@ def create_app(config_override: object | None = None) -> Flask:
             _open_reports = 0
             _my_resolved = 0
             _bug_notify = False
+        # --- unread notifications for the top-bar bell (the bell's ONLY count) ---
+        _unread_notif = 0
+        try:
+            from flask_login import current_user as _cu3
+            if getattr(_cu3, "is_authenticated", False):
+                from .services import notifications as _notify
+                _unread_notif = _notify.unread_count(_cu3.id)
+        except Exception:
+            _unread_notif = 0
         return {
             'product': prod,
             'current_appliance': _cur_appl,
@@ -239,6 +305,7 @@ def create_app(config_override: object | None = None) -> Flask:
             'open_report_count': _open_reports,
             'bug_reports_notify': _bug_notify,
             'my_resolved_unseen_count': _my_resolved,
+            'unread_notification_count': _unread_notif,
         }
 
     # -- timezone-aware timestamp filter ---------------------------------
@@ -356,6 +423,7 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('hw_type', "VARCHAR(16) DEFAULT 'unknown'"),
                 ('model', 'VARCHAR(128)'),
                 ('datasheet_filename', 'VARCHAR(256)'),
+                ('firmware', 'VARCHAR(64)'),
             ],
         }
         insp = inspect(db.engine)
@@ -421,6 +489,8 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.product", "bp"),
         ("app.views.appliances", "bp"),
         ("app.views.firmware", "bp"),
+        ("app.views.jobs", "bp"),
+        ("app.views.notifications", "bp"),
         ("app.views.release_notes", "bp"),
         ("app.views.workspace", "bp"),
         ("app.views.objedit", "bp"),

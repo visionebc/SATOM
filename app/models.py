@@ -248,6 +248,7 @@ class Appliance(db.Model):
     # Physical inventory — documentation only (not derived from the live device).
     hw_type = db.Column(db.String(16), nullable=False, default="unknown")  # 'hardware'|'vm'|'unknown'
     model = db.Column(db.String(128), nullable=True)        # e.g. "FortiWeb 600F"
+    firmware = db.Column(db.String(64), nullable=True)      # last-known OS version string from system status
     datasheet_filename = db.Column(db.String(256), nullable=True)  # original PDF name; file on disk is <id>.pdf
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
@@ -1129,6 +1130,124 @@ class ManagedCertificateEvent(db.Model):
 
     def __repr__(self) -> str:
         return f"<ManagedCertificateEvent cert={self.cert_id} {self.kind} ok={self.ok}>"
+
+
+class DeviceCertificate(db.Model):
+    """Cached inventory of certificates that live ON a FortiWeb (not ADCS-managed).
+
+    A live REST sweep only exposes name/type/status/comment; the X.509 detail
+    (validity, issuer, SANs, fingerprint) and the per-policy bindings are read
+    over SSH/REST by a scan and PERSISTED here, so the Certificate Manager table
+    can show expiry / days-left / SANs without a slow fleet sweep on every page
+    load. Refreshed by the ``cert_scan`` scheduled action and the manual "Scan
+    devices" button. One row per (appliance, store, name)."""
+
+    __tablename__ = "device_certificate"
+    __table_args__ = (
+        db.UniqueConstraint("appliance_id", "store", "name",
+                            name="uq_device_cert_appliance_store_name"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    appliance_id = db.Column(
+        db.Integer, db.ForeignKey("appliances.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    store = db.Column(db.String(32), nullable=False, default="Local", index=True)
+    name = db.Column(db.String(128), nullable=False, default="", index=True)
+
+    # cmdb summary fields (cheap REST read)
+    cert_type = db.Column(db.String(32), nullable=True, default="")
+    status = db.Column(db.String(32), nullable=True, default="")
+    comment = db.Column(db.String(512), nullable=True, default="")
+
+    # decoded X.509 detail (SSH CLI / stored PEM / TLS probe)
+    cn = db.Column(db.String(256), nullable=True, default="")
+    issuer_cn = db.Column(db.String(256), nullable=True, default="")
+    serial = db.Column(db.String(128), nullable=True, default="")
+    sig_algo = db.Column(db.String(32), nullable=True, default="")
+    key_type = db.Column(db.String(32), nullable=True, default="")
+    not_before = db.Column(db.DateTime, nullable=True)
+    not_after = db.Column(db.DateTime, nullable=True, index=True)
+    sans_json = db.Column(db.Text, nullable=False, default="[]")
+    fingerprint_sha256 = db.Column(db.String(128), nullable=True, default="")
+
+    bindings_json = db.Column(db.Text, nullable=False, default="[]")
+    detail_source = db.Column(db.String(16), nullable=True, default="")  # ssh|pem|tls
+    scanned_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False,
+                           index=True)
+
+    @property
+    def sans(self) -> list[str]:
+        try:
+            v = json.loads(self.sans_json or "[]")
+            return [str(x) for x in v] if isinstance(v, list) else []
+        except (ValueError, TypeError):
+            return []
+
+    @sans.setter
+    def sans(self, values) -> None:
+        self.sans_json = json.dumps(
+            [str(v).strip() for v in (values or []) if str(v).strip()])
+
+    @property
+    def bindings(self) -> list[str]:
+        try:
+            v = json.loads(self.bindings_json or "[]")
+            return [str(x) for x in v] if isinstance(v, list) else []
+        except (ValueError, TypeError):
+            return []
+
+    @bindings.setter
+    def bindings(self, values) -> None:
+        self.bindings_json = json.dumps(
+            sorted({str(v).strip() for v in (values or []) if str(v).strip()}))
+
+    @property
+    def days_left(self):
+        if not self.not_after:
+            return None
+        return (self.not_after - datetime.utcnow()).days
+
+    @property
+    def has_detail(self) -> bool:
+        return bool(self.cn or self.not_after or self.sans)
+
+    def apply_detail(self, detail: dict, source: str = "") -> None:
+        """Merge a cert_probe detail dict (SSH/PEM/TLS) onto this row."""
+        if not detail:
+            return
+        self.cn = detail.get("cn") or self.cn
+        self.issuer_cn = detail.get("issuer_cn") or self.issuer_cn
+        self.serial = detail.get("serial") or self.serial
+        self.sig_algo = detail.get("sig_algo") or self.sig_algo
+        self.key_type = detail.get("key_type") or self.key_type
+        self.not_before = detail.get("not_before") or self.not_before
+        self.not_after = detail.get("not_after") or self.not_after
+        if detail.get("sans"):
+            self.sans = detail["sans"]
+        self.fingerprint_sha256 = (
+            detail.get("fingerprint_sha256") or self.fingerprint_sha256)
+        if source:
+            self.detail_source = source
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id, "appliance_id": self.appliance_id,
+            "store": self.store, "name": self.name,
+            "cert_type": self.cert_type, "status": self.status,
+            "comment": self.comment, "cn": self.cn, "issuer_cn": self.issuer_cn,
+            "serial": self.serial, "sig_algo": self.sig_algo,
+            "key_type": self.key_type,
+            "not_before": self.not_before.isoformat() if self.not_before else None,
+            "not_after": self.not_after.isoformat() if self.not_after else None,
+            "days_left": self.days_left, "sans": self.sans,
+            "fingerprint_sha256": self.fingerprint_sha256,
+            "bindings": self.bindings, "detail_source": self.detail_source,
+            "scanned_at": self.scanned_at.isoformat() if self.scanned_at else None,
+        }
+
+    def __repr__(self) -> str:
+        return f"<DeviceCertificate {self.name!r}@{self.appliance_id} {self.store}>"
 
 
 # Device-structure cache models (source-of-truth substrate) — import so

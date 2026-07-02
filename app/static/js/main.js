@@ -4,6 +4,10 @@
 //    omitted it, silently breaking saves; doing it here once covers every
 //    page and any future call. (2026-06-28)
 (function () {
+  // Turbo Drive re-executes body scripts on every visit; wrap fetch ONCE so the
+  // CSRF shim doesn't nest itself on each navigation.
+  if (window.__fwFetchGuard) return;
+  window.__fwFetchGuard = true;
   var _fetch = window.fetch;
   window.fetch = function (input, init) {
     init = init || {};

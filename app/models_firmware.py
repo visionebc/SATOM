@@ -20,6 +20,8 @@ class FirmwareImage(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     product = db.Column(db.String(16), nullable=False, default="fortiweb")
     model = db.Column(db.String(64))
+    # "" = universal / any | "hw" = hardware appliance | "vm" = virtual machine
+    platform = db.Column(db.String(8), default="")
     version = db.Column(db.String(32), nullable=False)
     build = db.Column(db.String(32))
     filename = db.Column(db.String(255), nullable=False)

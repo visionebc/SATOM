@@ -1,0 +1,150 @@
+{% extends 'base.html' %}
+{% block title %}Downgrade - {{ appliance.name }}{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center">
+  <h4><i class="bi bi-cloud-arrow-down me-2"></i>Firmware Downgrade / Rollback — {{ appliance.name }}</h4>
+  <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; Back</a>
+</div>
+
+<div class="fw-alert fw-alert-danger d-flex align-items-start gap-2">
+  <i class="bi bi-exclamation-octagon-fill mt-1"></i>
+  <div>
+    A live downgrade <b>reboots the appliance</b> and interrupts every service it fronts, and a
+    downgrade <b>can reset the configuration</b> — especially across a major branch
+    (e.g. 8.0&rarr;7.6). <b>Take a config backup first</b> via
+    <a href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}" class="alert-link">Upgrade Preparation</a>,
+    and keep the current (running) <code>.out</code> in the repository so you can roll forward again.
+    Leave <b>Dry run</b> checked to validate without sending anything.
+  </div>
+</div>
+
+{% if result %}
+<div class="card shadow-sm mb-3">
+  <div class="card-header fw-card-header">Result — {{ 'DRY RUN' if result.dry_run else 'LIVE PUSH' }}</div>
+  <div class="card-body">
+    <div class="fw-alert fw-alert-{{ 'success' if result.ok else 'warning' }} mb-2">{{ result.message }}</div>
+    <dl class="row mb-0 small">
+      <dt class="col-sm-3">Image</dt><dd class="col-sm-9">{{ result.image }} ({{ '{:,}'.format(result.size) }} bytes)</dd>
+      <dt class="col-sm-3">Firmware before</dt><dd class="col-sm-9">{{ result.firmware_before or '?' }}</dd>
+      <dt class="col-sm-3">Maintenance permission</dt><dd class="col-sm-9">{{ result.permitted if result.permitted is not none else 'unknown' }}</dd>
+      {% if result.maturity %}<dt class="col-sm-3 text-warning">Maturity prompt</dt><dd class="col-sm-9 text-warning">{{ result.maturity }} — re-submit with "Confirm maturity change" checked to install.</dd>{% endif %}
+      {% if result.warning %}<dt class="col-sm-3 text-warning">Warning</dt><dd class="col-sm-9 text-warning">{{ result.warning }}</dd>{% endif %}
+    </dl>
+  </div>
+</div>
+{% endif %}
+
+{% if not images %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <p class="small text-muted mb-2">Current firmware: <b>{{ firmware or 'unknown' }}</b></p>
+    <div class="fw-alert fw-alert-warning mb-0">
+      <i class="bi bi-info-circle me-1"></i>
+      No firmware image in the repository matches this appliance
+      (<b>{{ appliance.kind }}</b>{% if appliance.model %} / {{ appliance.model }}{% endif %}).
+      Add the rollback <code>.out</code> in the
+      <a class="alert-link" href="{{ url_for('firmware.index') }}">Firmware repository</a> first.
+    </div>
+  </div>
+</div>
+{% else %}
+
+{% if firmware and not older_exists %}
+<div class="fw-alert fw-alert-warning">
+  <i class="bi bi-info-circle me-1"></i>
+  No image <b>older</b> than the running firmware (<b>{{ firmware }}</b>) is in the repository, so there is
+  nothing to roll back to. You can still flash any image below, but selecting a same/newer version is an
+  upgrade, not a downgrade — add the target rollback <code>.out</code> in the
+  <a class="alert-link" href="{{ url_for('firmware.index') }}">Firmware repository</a>.
+</div>
+{% endif %}
+
+{% macro rel_tag(img) %}
+  {%- set r = relations.get(img.id, 'unknown') -%}
+  {%- if r == 'older' -%}[↓ rollback]{%- elif r == 'newer' -%}[↑ upgrade]{%- elif r == 'same' -%}[= current]{%- else -%}[?]{%- endif -%}
+{% endmacro %}
+
+<div class="card shadow-sm">
+  <div class="card-header fw-card-header"><i class="bi bi-arrow-counterclockwise me-1"></i>Roll back now</div>
+  <div class="card-body">
+    <p class="small text-muted mb-3">Current firmware: <b>{{ firmware or 'unknown' }}</b> — the newest image
+      that is <b>older</b> than the running version is pre-selected as the rollback target.</p>
+    <form method="POST" action="{{ url_for('appliances.downgrade_push', id=appliance.id) }}" id="flash-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="mb-3">
+        <label class="form-label">Firmware image (from repository)</label>
+        <select class="form-select" name="image_id" required>
+          {% for img in images %}
+          <option value="{{ img.id }}" {{ 'selected' if selected_id and selected_id == img.id else '' }}>
+            {{ rel_tag(img) }} {{ img.version }}{% if img.build %} (build {{ img.build }}){% endif %}
+            — {{ {'hw':'Hardware','vm':'Virtual Machine'}.get(img.platform, 'Universal') }} · {{ img.size_mb() }} MB · sha256 {{ img.sha256[:12] }}…
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" name="dry_run" id="dry_run" checked onchange="document.getElementById('live-fields').classList.toggle('d-none', this.checked)">
+        <label class="form-check-label" for="dry_run">Dry run (validate the image only — nothing is sent)</label>
+      </div>
+      <div id="live-fields" class="d-none border rounded p-3 mb-3" style="background:rgba(248,113,113,.06)">
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" name="confirm_maturity" id="confirm_maturity">
+          <label class="form-check-label" for="confirm_maturity">Confirm maturity change (Feature&harr;Mature, e.g. 8.0&rarr;7.6)</label>
+        </div>
+        <label class="form-label small">Type the appliance name <code>{{ appliance.name }}</code> to authorise the live reboot:</label>
+        <input class="form-control" type="text" name="confirm_name" autocomplete="off" placeholder="{{ appliance.name }}">
+      </div>
+      <button class="btn fw-btn-primary" type="submit"><i class="bi bi-check2-circle me-1"></i>Validate / Roll back</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* Firmware flash submit handler. Lives in the scripts block (AFTER jobs.js) so
+   window.JobsUI is always defined here. The listener ALWAYS attaches: a live
+   flash must never fall through to a synchronous submit (that hung the worker). */
+(function () {
+  var form = document.getElementById('flash-form');
+  if (!form) return;                     // no matching image -> no form on the page
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var btn = form.querySelector('button[type="submit"]');
+    var dry = form.querySelector('#dry_run');
+    var isDry = dry ? dry.checked : true;
+    if (btn) { btn.disabled = true; btn.classList.add('disabled'); }
+    var fd = new FormData(form);
+    fd.append('ajax', '1');
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    fetch(form.action, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest',
+                 'X-CSRFToken': (meta && meta.content) || '' },
+      body: fd
+    }).then(function (r) {
+        return r.text().then(function (t) {
+          var d = {}; try { d = JSON.parse(t); } catch (e) { /* HTML error page */ }
+          return { ok: r.ok, status: r.status, d: d };
+        });
+      })
+      .then(function (o) {
+        if (btn) { btn.disabled = false; btn.classList.remove('disabled'); }
+        if (o.ok && o.d.job_id && window.JobsUI && window.JobsUI.trackJob) {
+          JobsUI.trackJob(o.d.job_id,
+            isDry ? 'Validating firmware…' : 'Firmware flash…');
+        } else if (o.ok && o.d.job_id) {
+          window.location.reload();       // JobsUI absent (shouldn't happen) — still proceed
+        } else {
+          alert((o.d && o.d.error) || ('Could not start the task (HTTP ' + o.status + ').'));
+        }
+      }).catch(function () {
+        if (btn) { btn.disabled = false; btn.classList.remove('disabled'); }
+        alert('Network error starting the task.');
+      });
+  });
+})();
+</script>
+{% endblock %}

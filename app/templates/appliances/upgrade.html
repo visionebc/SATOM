@@ -51,7 +51,7 @@
   {% for img in images %}
   <option value="{{ img.id }}" {{ 'selected' if selected_id and selected_id == img.id else '' }}>
     {{ img.version }}{% if img.build %} (build {{ img.build }}){% endif %}
-    — {{ img.model or 'universal' }} · {{ img.size_mb() }} MB · sha256 {{ img.sha256[:12] }}…
+    — {{ {'hw':'Hardware','vm':'Virtual Machine'}.get(img.platform, 'Universal') }} · {{ img.size_mb() }} MB · sha256 {{ img.sha256[:12] }}…
   </option>
   {% endfor %}
 </select>
@@ -62,7 +62,7 @@
   <div class="card-body">
     <p class="small text-muted mb-3">Current firmware: <b>{{ firmware or 'unknown' }}</b> — the matching image
       is selected automatically below; just validate and accept.</p>
-    <form method="POST" action="{{ url_for('appliances.upgrade_push', id=appliance.id) }}">
+    <form method="POST" action="{{ url_for('appliances.upgrade_push', id=appliance.id) }}" id="flash-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="mb-3">{{ image_select('image_id') }}</div>
       <div class="form-check mb-2">
@@ -107,4 +107,52 @@
   </div>
 </div>
 {% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* Firmware flash submit handler. Lives in the scripts block (AFTER jobs.js) so
+   window.JobsUI is always defined here. The listener ALWAYS attaches: a live
+   flash must never fall through to a synchronous submit (that hung the worker). */
+(function () {
+  var form = document.getElementById('flash-form');
+  if (!form) return;                     // no matching image -> no form on the page
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var btn = form.querySelector('button[type="submit"]');
+    var dry = form.querySelector('#dry_run');
+    var isDry = dry ? dry.checked : true;
+    if (btn) { btn.disabled = true; btn.classList.add('disabled'); }
+    var fd = new FormData(form);
+    fd.append('ajax', '1');
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    fetch(form.action, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest',
+                 'X-CSRFToken': (meta && meta.content) || '' },
+      body: fd
+    }).then(function (r) {
+        return r.text().then(function (t) {
+          var d = {}; try { d = JSON.parse(t); } catch (e) { /* HTML error page */ }
+          return { ok: r.ok, status: r.status, d: d };
+        });
+      })
+      .then(function (o) {
+        if (btn) { btn.disabled = false; btn.classList.remove('disabled'); }
+        if (o.ok && o.d.job_id && window.JobsUI && window.JobsUI.trackJob) {
+          JobsUI.trackJob(o.d.job_id,
+            isDry ? 'Validating firmware…' : 'Firmware flash…');
+        } else if (o.ok && o.d.job_id) {
+          window.location.reload();       // JobsUI absent (shouldn't happen) — still proceed
+        } else {
+          alert((o.d && o.d.error) || ('Could not start the task (HTTP ' + o.status + ').'));
+        }
+      }).catch(function () {
+        if (btn) { btn.disabled = false; btn.classList.remove('disabled'); }
+        alert('Network error starting the task.');
+      });
+  });
+})();
+</script>
 {% endblock %}

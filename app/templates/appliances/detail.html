@@ -16,6 +16,7 @@
       <dt class="col-sm-4">Host</dt><dd class="col-sm-8">{{ appliance.host }}:{{ appliance.port }}</dd>
       <dt class="col-sm-4">Username</dt><dd class="col-sm-8">{{ appliance.username }}</dd>
       <dt class="col-sm-4">SSL Verify</dt><dd class="col-sm-8">{{ 'Yes' if appliance.verify_ssl else 'No' }}</dd>
+      <dt class="col-sm-4">Firmware</dt><dd class="col-sm-8">{{ appliance.firmware or '—' }}</dd>
       {% if appliance.vdom %}<dt class="col-sm-4">VDOM</dt><dd class="col-sm-8">{{ appliance.vdom }}</dd>{% endif %}
       {% if appliance.department %}<dt class="col-sm-4">Dept</dt><dd class="col-sm-8">{{ appliance.department }}</dd>{% endif %}
       {% if appliance.zone %}<dt class="col-sm-4">Zone</dt><dd class="col-sm-8">{{ appliance.zone }}</dd>{% endif %}
@@ -85,6 +86,11 @@
       {% endif %}
       {% if current_user.can('config_write') %}
       <a href="{{ url_for('appliances.upgrade', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm text-warning"><i class="bi bi-cloud-arrow-up me-1"></i>Upgrade</a>
+      <a href="{{ url_for('appliances.downgrade', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm text-warning" title="Boot this appliance from its alternate firmware partition (rollback / downgrade — real in-app push + reboot)"><i class="bi bi-hdd-stack me-1"></i>Boot Partition</a>
+      {% endif %}
+      {% if current_user.can('user_manage') %}
+      <a href="{{ url_for('appliances.restore', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm text-danger" title="Restore a saved configuration backup onto this appliance (admin only — reboots the box)"><i class="bi bi-arrow-counterclockwise me-1"></i>Restore</a>
+      <a href="{{ url_for('appliances.flash_reports', appliance_id=appliance.id) }}" class="btn fw-btn-secondary btn-sm" title="Before/after firmware upgrade & boot-partition reports for this appliance"><i class="bi bi-clipboard-data me-1"></i>Firmware Reports</a>
       {% endif %}
     </div>
   </div>

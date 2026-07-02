@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Notifications{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('notifications.index') }}">Notifications</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-start">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-bell me-2 text-accent"></i>Notifications
+    </h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Background jobs, bug-report updates and other alerts raised for your account.
+    </p>
+  </div>
+  {% if notifications %}
+  <form method="POST" action="{{ url_for('notifications.clear') }}" class="ms-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-trash me-1"></i>Clear all
+    </button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-body p-0">
+    {% if notifications %}
+    <ul class="list-unstyled mb-0 fw-notif-list">
+      {% for n in notifications %}
+      <li class="fw-notif-row{% if n.id in unread_ids %} fw-notif-unread{% endif %}">
+        {% if n.link %}
+        <a href="{{ n.link }}" class="fw-notif-link">
+        {% else %}
+        <div class="fw-notif-link">
+        {% endif %}
+          <span class="fw-notif-icon" style="color:{{ n.color }};">
+            <i class="bi {{ n.icon }}"></i>
+          </span>
+          <span class="fw-notif-main">
+            <span class="fw-notif-title">
+              {% if n.id in unread_ids %}<span class="fw-notif-dot"></span>{% endif %}
+              {{ n.title }}
+            </span>
+            {% if n.body %}
+            <span class="fw-notif-body">{{ n.body }}</span>
+            {% endif %}
+            <span class="fw-notif-time" title="{{ n.created_at }}">
+              {{ n.created_at | localtime }}
+            </span>
+          </span>
+          {% if n.link %}<i class="bi bi-chevron-right fw-notif-chev"></i>{% endif %}
+        {% if n.link %}</a>{% else %}</div>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="bi bi-bell-slash" style="font-size:34px;opacity:.4;"></i>
+      <p class="mb-0 mt-2" style="font-size:13px;">You're all caught up — no notifications.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+.fw-notif-list { }
+.fw-notif-row { border-bottom:1px solid rgba(148,163,184,.08); }
+.fw-notif-row:last-child { border-bottom:none; }
+.fw-notif-link {
+  display:flex; align-items:flex-start; gap:12px; padding:13px 16px;
+  text-decoration:none; color:inherit; transition:background .15s ease;
+}
+a.fw-notif-link:hover { background:rgba(59,130,246,.06); }
+.fw-notif-unread { background:rgba(59,130,246,.05); }
+.fw-notif-icon { font-size:18px; line-height:1.3; flex:0 0 auto; }
+.fw-notif-main { display:flex; flex-direction:column; gap:2px; min-width:0; flex:1 1 auto; }
+.fw-notif-title { color:#e2e8f0; font-size:13.5px; font-weight:600; }
+.fw-notif-dot {
+  display:inline-block; width:7px; height:7px; border-radius:50%;
+  background:#3b82f6; margin-right:6px; vertical-align:middle;
+}
+.fw-notif-body { color:#94a3b8; font-size:12.5px; word-break:break-word; }
+.fw-notif-time { color:#64748b; font-size:11px; margin-top:2px; }
+.fw-notif-chev { color:#64748b; align-self:center; flex:0 0 auto; }
+</style>
+{% endblock %}

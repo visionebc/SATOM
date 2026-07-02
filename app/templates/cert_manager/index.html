@@ -117,11 +117,26 @@
       <i class="bi bi-hdd-network me-2 text-accent"></i>On-device certificates
     </h2>
     <p class="text-muted mb-0" style="font-size:13px;">
-      Certificates live on the FortiWebs, read over the API — independent of ADCS.
-      The same certificate deployed on several boxes is shown once, with every device it lives on.
+      Certificates live on the FortiWebs — cached in the manager so expiry, issuer and
+      SANs show without hitting every box. The same certificate deployed on several
+      boxes is shown once, with every device it lives on.
       {% if device_unique %}<strong>{{ device_unique }}</strong> unique
         across <strong>{{ device_deployments }}</strong> deployment{{ 's' if device_deployments != 1 }}.{% endif %}
+      {% if device_last_scanned %}
+        <br><i class="bi bi-clock-history me-1"></i>Last scanned
+        <span title="{{ device_last_scanned.strftime('%Y-%m-%d %H:%M UTC') }}">{{ device_last_scanned.strftime('%Y-%m-%d %H:%M') }} UTC</span>.
+      {% elif not device_cached %}
+        <br><i class="bi bi-exclamation-triangle me-1 text-warning"></i>Not scanned yet —
+        showing a live read (names only). Run a scan to cache expiry / issuer / SANs.
+      {% endif %}
     </p>
+  </div>
+  <div class="d-flex gap-2 align-items-start">
+    <form method="post" action="{{ url_for('cert_manager.scan_devices') }}">
+      <button type="submit" class="btn btn-fw-secondary" title="Read every FortiWeb's certificate stores and refresh the cache">
+        <i class="bi bi-arrow-repeat me-1"></i>Scan devices
+      </button>
+    </form>
   </div>
 </div>
 

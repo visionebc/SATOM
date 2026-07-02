@@ -66,3 +66,18 @@ def get_all_sections() -> list:
     """The ordered list of UI section names."""
     from .categories import SECTION_ORDER
     return list(SECTION_ORDER)
+
+
+def resolve(name: str) -> str:
+    """Resolve a logical endpoint name to its ``/api/v2.0/...`` path.
+
+    The single point where services turn a friendly key into a URL — callers
+    never hardcode paths (see CLAUDE.md §4a). Raises ``KeyError`` if the name is
+    not in the registry, so a typo/renamed endpoint fails loudly instead of
+    silently building a phantom URL.
+    """
+    reg = load_registry()
+    try:
+        return reg[name]
+    except KeyError:
+        raise KeyError(f"unknown registry endpoint: {name!r}") from None

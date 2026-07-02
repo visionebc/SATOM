@@ -539,6 +539,7 @@ def upgrade(id):
         fw = upg.firmware_version(appliance.build_client(timeout=8))
     except Exception:
         fw = ''
+    _persist_firmware(appliance, fw)
     images = upg.compatible_images(appliance)
     return render_template('appliances/upgrade.html', appliance=appliance,
                            firmware=fw, images=images)
@@ -654,6 +655,52 @@ def _wants_json() -> bool:
             or (request.form.get("ajax") or "") in ("1", "true"))
 
 
+def _persist_firmware(appliance, fw):
+    """Best-effort: record the appliance's last-known OS version so the UI
+    reflects reality after a flash. Never blocks anything."""
+    try:
+        from ..extensions import db
+        fw = (fw or '').strip()
+        if fw and getattr(appliance, 'firmware', None) != fw:
+            appliance.firmware = fw
+            db.session.commit()
+    except Exception:  # noqa: BLE001
+        try:
+            from ..extensions import db
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+@bp.route('/flash-report/<job_id>', methods=['GET'])
+@login_required
+def flash_report_view(job_id):
+    """Serve the self-contained before/after firmware-flash report for a job.
+    Served from DISK so it survives the ephemeral job record; any signed-in
+    operator may open any firmware report (they are fleet-wide ops artifacts)."""
+    from ..services import flash_report as _fr
+    page = _fr.read_report(job_id)
+    if page is None:
+        abort(404)
+    return page
+
+
+@bp.route('/flash-reports', methods=['GET'])
+@login_required
+def flash_reports():
+    """History of every firmware-flash before/after report (upgrade + downgrade),
+    newest first. Optional ?appliance_id= focuses one box."""
+    from ..services import flash_report as _fr
+    try:
+        aid = int(request.args.get('appliance_id') or 0) or None
+    except (TypeError, ValueError):
+        aid = None
+    reports = _fr.list_reports(appliance_id=aid)
+    focus = Appliance.query.get(aid) if aid else None
+    return render_template('appliances/flash_reports.html',
+                           reports=reports, focus=focus)
+
+
 def _flash_worker(app, job_id, appliance_id, image_id, filename,
                   dry_run, confirm_maturity, kind, user_id, link):
     """Background firmware flash: read image \u2192 push \u2192 monitor reboot/recovery
@@ -698,16 +745,16 @@ def _flash_worker(app, job_id, appliance_id, image_id, filename,
                                       result={"phase": "dry_run"})
                 return
 
+            # Runbook pre-flight for BOTH upgrade and downgrade: safety backup +
+            # SSH health battery + published-service baseline before the flash,
+            # each step announced. Read-only + best-effort (never blocks a flash).
             before_snap = None
-            if kind == 'downgrade':
-                # Reuse the upgrade runbook: safety backup + service/health
-                # baseline before the destructive flash, each step announced.
-                try:
-                    before_snap = upg.prepare(
-                        appliance, do_backup=True, do_health=True, do_services=True,
-                        progress=lambda p, m: jobsvc.set_progress(job_id, p, m))
-                except Exception:  # noqa: BLE001 - best-effort; never blocks an authorized flash
-                    before_snap = {"error": "pre-flight incomplete"}
+            try:
+                before_snap = upg.prepare(
+                    appliance, do_backup=True, do_health=True, do_services=True,
+                    progress=lambda p, m: jobsvc.set_progress(job_id, p, m))
+            except Exception:  # noqa: BLE001 - best-effort; never blocks an authorized flash
+                before_snap = {"error": "pre-flight incomplete"}
 
             jobsvc.set_progress(job_id, 16,
                                 f"Uploading {image.size_mb()} MB and triggering the flash\u2026")
@@ -754,16 +801,15 @@ def _flash_worker(app, job_id, appliance_id, image_id, filename,
                                 kind=K.KIND_ERROR, body=msg[:400], link=link)
                 return
 
+            # Same runbook AFTER the flash (both kinds): re-test services + SSH
+            # health and diff them against the pre-flight baseline, each announced.
             after_snap = None
-            if kind == 'downgrade':
-                # Same runbook AFTER the downgrade: re-test services + health and
-                # diff them against the pre-flight baseline, each step announced.
-                try:
-                    after_snap = upg.postflight(
-                        appliance, before_snap,
-                        progress=lambda p, m: jobsvc.set_progress(job_id, p, m))
-                except Exception:  # noqa: BLE001
-                    after_snap = {"error": "post-flight incomplete"}
+            try:
+                after_snap = upg.postflight(
+                    appliance, before_snap,
+                    progress=lambda p, m: jobsvc.set_progress(job_id, p, m))
+            except Exception:  # noqa: BLE001
+                after_snap = {"error": "post-flight incomplete"}
 
             jobsvc.set_progress(job_id, 96, "Back online \u2014 running basic system checks\u2026")
             health = upg.post_flash_checks(appliance)
@@ -774,20 +820,71 @@ def _flash_worker(app, job_id, appliance_id, image_id, filename,
             done = (f"{appliance.name} is back online on {fw_after or 'the new firmware'} "
                     f"(was {fw_before or '?'}){svc_txt}. Recovered in "
                     f"{int(rec.get('elapsed_s', 0))}s.")
-            if kind == 'downgrade' and isinstance(before_snap, dict):
+            if isinstance(before_snap, dict):
                 _bk = before_snap.get("backup") or {}
                 if _bk.get("ok"):
-                    done += f" Pre-downgrade backup: {_bk.get('name')}."
+                    done += f" Pre-{kind} backup: {_bk.get('name')}."
+            if fw_after:
+                jobsvc.set_progress(job_id, 98,
+                                    f"Recording new firmware version {fw_after} on the appliance\u2026")
+                _persist_firmware(appliance, fw_after)
+            # Render the before/after service + SSH-battery report (both kinds).
+            report_url = ""
+            try:
+                from ..services import flash_report
+                _bk_name = (((before_snap or {}).get("backup") or {}).get("name")
+                            if isinstance(before_snap, dict) else None)
+                report_url = flash_report.write_report(
+                    job_id,
+                    {"appliance": appliance.name, "appliance_id": appliance.id,
+                     "kind": kind, "job_id": job_id,
+                     "firmware_before": fw_before, "firmware_after": fw_after,
+                     "reachable_after": bool(health.get("api_ok")), "image": filename,
+                     "by": (jobsvc.get_job(job_id) or {}).get("by") or "",
+                     "downtime_s": rec.get("elapsed_s"), "backup": _bk_name},
+                    before_snap, after_snap)
+            except Exception:  # noqa: BLE001 - a report failure never sinks a completed flash
+                report_url = ""
+            if report_url:
+                done += " Full before/after report available."
+            # Final step (both kinds): a full rediscovery sweep so the manager's
+            # cached view of the box reflects the just-flashed firmware. Writes a
+            # fresh _config.json snapshot + refreshes the device inventory, and its
+            # progress shows on the appliance Rediscovery page. Best-effort: a
+            # rediscovery failure never sinks an already-completed flash.
+            redisc = None
+            try:
+                from ..services import rediscovery
+                jobsvc.set_progress(job_id, 99,
+                                    "Rediscovering the appliance (full config sweep)\u2026")
+                _rsnap = rediscovery._client_snapshot(appliance)
+                rediscovery._run(_rsnap, by=f"post-{kind}", deep=False)
+                _st = rediscovery.status(appliance.id) or {}
+                redisc = {"objects": _st.get("objects"),
+                          "sections": _st.get("section_count"),
+                          "errors": len(_st.get("errors") or []),
+                          "summary": _st.get("summary")}
+                try:
+                    rediscovery.maybe_apply_inventory(appliance)
+                except Exception:  # noqa: BLE001
+                    pass
+                if _st.get("summary"):
+                    done += f" Rediscovery: {_st['summary']}."
+            except Exception as exc:  # noqa: BLE001 - never sinks a completed flash
+                redisc = {"error": f"{type(exc).__name__}: {exc}"[:200]}
             jobsvc.finish_success(job_id, message=done,
                                   result={"phase": "done", "firmware_before": fw_before,
                                           "firmware_after": fw_after, "recovery": rec,
                                           "health": health, "reload": True,
-                                          "runbook": ({"before": before_snap, "after": after_snap}
-                                                      if kind == 'downgrade' else None)})
+                                          "report_url": report_url,
+                                          "rediscovery": redisc,
+                                          "runbook": {"before": before_snap, "after": after_snap}})
             try:
                 _extra = {"from": fw_before, "to": fw_after, "image_id": image_id}
                 if kind == 'downgrade' and isinstance(before_snap, dict):
                     _extra["backup"] = (before_snap.get("backup") or {}).get("name")
+                if isinstance(redisc, dict) and not redisc.get("error"):
+                    _extra["rediscovered"] = redisc.get("objects")
                 log_action(f'appliance.{kind}.complete', target=appliance.name,
                            extra=_extra)
             except Exception:  # noqa: BLE001
@@ -796,7 +893,7 @@ def _flash_worker(app, job_id, appliance_id, image_id, filename,
                 notify.push(user_id,
                             f"{verb} complete: {appliance.name} \u2192 {fw_after or image.version}",
                             kind=K.KIND_SUCCESS if health.get("api_ok") else K.KIND_WARNING,
-                            body=done[:400], link=link)
+                            body=done[:400], link=(report_url or link))
         except Exception as exc:  # noqa: BLE001
             jobsvc.finish_error(job_id, f"{type(exc).__name__}: {exc}"[:300])
             if user_id:
@@ -841,6 +938,7 @@ def _downgrade_context(appliance):
         fw = upg.firmware_version(appliance.build_client(timeout=8))
     except Exception:
         fw = ''
+    _persist_firmware(appliance, fw)
     images = upg.compatible_images(appliance)   # all product/model matches, newest-first
     cur = upg._version_key(fw) if fw else None
     relations, default_id, older_exists = {}, None, False

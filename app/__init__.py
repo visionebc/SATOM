@@ -11,13 +11,29 @@ from .config import get_config
 from .extensions import csrf, db, limiter, login_manager, migrate
 
 
+def _trusted_proxies() -> set[str]:
+    """IPs of the reverse proxies we accept an X-Forwarded-For from. Anything
+    else that sets XFF is an untrusted client trying to spoof its IP, so its
+    header is ignored. Configurable via the ``TRUSTED_PROXIES`` env (comma
+    list); defaults to the fleet nginx + loopback."""
+    raw = os.environ.get("TRUSTED_PROXIES", "192.0.2.40,127.0.0.1,::1")
+    return {p.strip() for p in raw.split(",") if p.strip()}
+
+
 def _client_ip() -> str:
-    """Real client IP — honour the first X-Forwarded-For hop (we sit behind the
-    fleet reverse proxy), else the direct peer."""
+    """Real client IP. Only honour X-Forwarded-For when the DIRECT peer
+    (``remote_addr``) is a trusted reverse proxy — otherwise a client hitting
+    the app directly (the container also listens on the LAN) could forge XFF to
+    bypass the IP allow-list and rate limiter. The rightmost XFF entry the
+    trusted proxy appended is the real client; take the last hop, not the
+    attacker-controllable first one."""
+    peer = request.remote_addr or ""
     xff = request.headers.get("X-Forwarded-For", "")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.remote_addr or ""
+    if xff and peer in _trusted_proxies():
+        hops = [h.strip() for h in xff.split(",") if h.strip()]
+        if hops:
+            return hops[-1]
+    return peer
 
 
 def _ip_allowed(ip: str, whitelist: list) -> bool:
@@ -131,6 +147,8 @@ def create_app(config_override: object | None = None) -> Flask:
         from flask import Response
         from flask_login import current_user
         try:
+            if not current_user.is_authenticated:
+                return Response('', status=204)  # never log unauthenticated input
             who = getattr(current_user, 'username', '') or '-'
             args = dict(request.args)
             app.logger.warning('UPDIAG user=%s ip=%s %s', who, _client_ip(),
@@ -184,9 +202,15 @@ def create_app(config_override: object | None = None) -> Flask:
         from .services import settings_store as _store
         allowed = _store.allowed_users()
         if allowed and current_user.username not in allowed:
+            app.logger.warning('ACCESS_DENY reason=user_not_allowed user=%s '
+                               'ip=%s endpoint=%s', current_user.username,
+                               _client_ip(), ep)
             abort(403)
         wl = _store.ip_whitelist()
         if wl and not _ip_allowed(_client_ip(), wl):
+            app.logger.warning('ACCESS_DENY reason=ip_not_whitelisted user=%s '
+                               'ip=%s endpoint=%s', current_user.username,
+                               _client_ip(), ep)
             abort(403)
         return None
 
@@ -462,6 +486,34 @@ def create_app(config_override: object | None = None) -> Flask:
             except Exception:  # noqa: BLE001
                 db.session.rollback()
 
+    def _ensure_indexes():
+        """Create covering indexes on foreign-key columns that lack one.
+
+        A FK with no index makes every join/lookup on it a sequential scan and
+        makes the parent row's DELETE take a full-table lock scan — both bite as
+        audit_log / change_history grow. ``CREATE INDEX IF NOT EXISTS`` is safe
+        and idempotent on every boot (Postgres + SQLite)."""
+        from sqlalchemy import inspect, text
+        wanted = {
+            'ix_audit_logs_user_id': ('audit_logs', 'user_id'),
+            'ix_change_history_appliance_id': ('change_history', 'appliance_id'),
+            'ix_bug_reports_resolved_by_id': ('bug_reports', 'resolved_by_id'),
+        }
+        try:
+            insp = inspect(db.engine)
+            tables = set(insp.get_table_names())
+            for ixname, (table, col) in wanted.items():
+                if table not in tables:
+                    continue
+                cols = {c['name'] for c in insp.get_columns(table)}
+                if col not in cols:
+                    continue
+                db.session.execute(text(
+                    f'CREATE INDEX IF NOT EXISTS {ixname} ON {table} ({col})'))
+            db.session.commit()
+        except Exception:  # noqa: BLE001 — never block boot on an index
+            db.session.rollback()
+
     # -- database & seed --------------------------------------------------
     # Skippable so Alembic migration commands (and CI that manages its own
     # schema) can import the app without create_all racing the migration.
@@ -469,6 +521,7 @@ def create_app(config_override: object | None = None) -> Flask:
         with app.app_context():
             db.create_all()
             _ensure_columns()
+            _ensure_indexes()
             _seed_profiles()
             _seed_admin()
             _assign_missing_profiles()

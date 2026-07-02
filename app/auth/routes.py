@@ -225,8 +225,8 @@ def profile():
 
         if not current_user.check_password(current_password):
             flash('Current password is incorrect.', 'danger')
-        elif not new_password:
-            flash('New password cannot be empty.', 'danger')
+        elif len(new_password) < 8:
+            flash('New password must be at least 8 characters.', 'danger')
         elif new_password != confirm_password:
             flash('New passwords do not match.', 'danger')
         else:

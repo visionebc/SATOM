@@ -11,29 +11,7 @@ from .config import get_config
 from .extensions import csrf, db, limiter, login_manager, migrate
 
 
-def _trusted_proxies() -> set[str]:
-    """IPs of the reverse proxies we accept an X-Forwarded-For from. Anything
-    else that sets XFF is an untrusted client trying to spoof its IP, so its
-    header is ignored. Configurable via the ``TRUSTED_PROXIES`` env (comma
-    list); defaults to the fleet nginx + loopback."""
-    raw = os.environ.get("TRUSTED_PROXIES", "192.0.2.40,127.0.0.1,::1")
-    return {p.strip() for p in raw.split(",") if p.strip()}
-
-
-def _client_ip() -> str:
-    """Real client IP. Only honour X-Forwarded-For when the DIRECT peer
-    (``remote_addr``) is a trusted reverse proxy — otherwise a client hitting
-    the app directly (the container also listens on the LAN) could forge XFF to
-    bypass the IP allow-list and rate limiter. The rightmost XFF entry the
-    trusted proxy appended is the real client; take the last hop, not the
-    attacker-controllable first one."""
-    peer = request.remote_addr or ""
-    xff = request.headers.get("X-Forwarded-For", "")
-    if xff and peer in _trusted_proxies():
-        hops = [h.strip() for h in xff.split(",") if h.strip()]
-        if hops:
-            return hops[-1]
-    return peer
+from .extensions import real_client_ip as _client_ip  # single source of truth
 
 
 def _ip_allowed(ip: str, whitelist: list) -> bool:

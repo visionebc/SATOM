@@ -3,12 +3,13 @@ import os
 
 from flask import (
     Blueprint, render_template, request, jsonify, flash, redirect, url_for,
-    send_file, abort,
+    send_file, abort, current_app,
 )
 from flask_login import login_required, current_user
 from ..auth.decorators import require_permission
 from sqlalchemy.exc import IntegrityError
 from ..models import Appliance, ApplianceInterface, AuditLog, db, Permission
+from ..models_backup import ConfigBackup
 from ..clients.fortiweb import FortiWebClient
 from ..errors import log_exception
 from ..clients.fortiadc import FortiADCClient
@@ -557,8 +558,11 @@ def upgrade_push(id):
     if image is None:
         flash('Select a compatible firmware image from the repository first.', 'danger')
         return redirect(url_for('appliances.upgrade', id=id))
-    dry_run = request.form.get('dry_run', 'on') == 'on'
+    dry_run = request.form.get('dry_run') == 'on'
     confirm_maturity = request.form.get('confirm_maturity') == 'on'
+
+    if _wants_json():
+        return _spawn_flash_job(appliance, image, 'upgrade', dry_run, confirm_maturity)
 
     # A live push requires typing the exact appliance name (defence against a
     # mis-click rebooting the wrong box).
@@ -641,3 +645,486 @@ def upgrade_schedule(id):
     flash(f'Scheduled upgrade of {appliance.name} to {image.version} at {when} (UTC). '
           'Unattended flashing is gated — review it under Scheduled Actions.', 'success')
     return redirect(url_for('appliances.upgrade', id=id))
+
+
+# -- Async firmware flash (upgrade/downgrade) via the background-jobs framework -
+def _wants_json() -> bool:
+    """AJAX path \u2014 the browser's fetch sets this header (or an ajax=1 field)."""
+    return (request.headers.get("X-Requested-With") == "XMLHttpRequest"
+            or (request.form.get("ajax") or "") in ("1", "true"))
+
+
+def _flash_worker(app, job_id, appliance_id, image_id, filename,
+                  dry_run, confirm_maturity, kind, user_id, link):
+    """Background firmware flash: read image \u2192 push \u2192 monitor reboot/recovery
+    \u2192 basic health checks \u2192 bell notification. kind \u2208 'upgrade' | 'downgrade'."""
+    from ..models_firmware import FirmwareImage
+    from ..services import upgrade as upg, jobs as jobsvc
+    from ..services import notifications as notify
+    K = notify.Notification
+    verb = 'Downgrade' if kind == 'downgrade' else 'Upgrade'
+    with app.app_context():
+        appliance = Appliance.query.get(appliance_id)
+        image = FirmwareImage.query.get(image_id)
+        if appliance is None or image is None:
+            jobsvc.finish_error(job_id, "appliance or image no longer exists")
+            return
+        try:
+            jobsvc.set_progress(job_id, 3, "Reading firmware image\u2026")
+            image_bytes = upg.read_image_bytes(image)
+
+            # Downgrade (esp. cross-branch, e.g. 8.0->7.6) must target the ALTERNATE
+            # partition and answer the box's maturity + downgrade confirmations,
+            # mirroring the GUI "Upload and Reboot". A same-branch upgrade keeps part=0.
+            fw_part, fw_active, confirm_dg = 0, 0, False
+            if kind == 'downgrade':
+                try:
+                    _pt = upg.read_partitions(appliance)
+                    _alt = _pt.get('alternate') or {}
+                    fw_part = int(_alt.get('partition') or 0)
+                    fw_active = int(bool(_alt.get('active')))
+                    confirm_dg = True
+                    confirm_maturity = True
+                except Exception:  # noqa: BLE001
+                    pass
+
+            if dry_run:
+                jobsvc.set_progress(job_id, 40, "Validating image + maintenance permission\u2026")
+                result = upg.push_firmware(appliance, image_bytes, filename,
+                                           dry_run=True, confirm_maturity=confirm_maturity,
+                                           confirm_downgrade=confirm_dg,
+                                           part=fw_part, active=fw_active)
+                jobsvc.finish_success(job_id, message=result.get("message", "Validated."),
+                                      result={"phase": "dry_run"})
+                return
+
+            before_snap = None
+            if kind == 'downgrade':
+                # Reuse the upgrade runbook: safety backup + service/health
+                # baseline before the destructive flash, each step announced.
+                try:
+                    before_snap = upg.prepare(
+                        appliance, do_backup=True, do_health=True, do_services=True,
+                        progress=lambda p, m: jobsvc.set_progress(job_id, p, m))
+                except Exception:  # noqa: BLE001 - best-effort; never blocks an authorized flash
+                    before_snap = {"error": "pre-flight incomplete"}
+
+            jobsvc.set_progress(job_id, 16,
+                                f"Uploading {image.size_mb()} MB and triggering the flash\u2026")
+            result = upg.push_firmware(appliance, image_bytes, filename,
+                                       dry_run=False, confirm_maturity=confirm_maturity,
+                                       confirm_downgrade=confirm_dg,
+                                       part=fw_part, active=fw_active)
+            image_bytes = None  # free ~300 MB
+            fw_before = result.get("firmware_before", "")
+
+            if not result.get("ok"):
+                msg = result.get("message", "the appliance did not accept the flash")
+                jobsvc.finish_error(job_id, msg)
+                if user_id:
+                    notify.push(user_id, f"{verb} not started: {appliance.name}",
+                                kind=K.KIND_ERROR, body=msg[:400], link=link)
+                return
+
+            jobsvc.set_progress(job_id, 45, "Image accepted \u2014 the appliance is rebooting\u2026")
+            rec = upg.monitor_recovery(
+                appliance,
+                progress=lambda p, m: jobsvc.set_progress(job_id, p, m))
+
+            if not rec.get("recovered"):
+                msg = (f"{appliance.name} did not come back online within the wait window "
+                       f"(~{int(rec.get('elapsed_s', 0))}s). The flash may still be in progress "
+                       f"\u2014 check the console.")
+                jobsvc.finish_error(job_id, msg)
+                if user_id:
+                    notify.push(user_id, f"{verb}: {appliance.name} not back yet",
+                                kind=K.KIND_WARNING, body=msg[:400], link=link)
+                return
+
+            # A flash that neither dropped the box NOR changed the firmware did not take
+            # (the box rejected/ignored the image). Do not report a false win.
+            fw_now = rec.get("firmware_after") or ""
+            if not rec.get("went_down") and fw_before and fw_now and fw_now == fw_before:
+                msg = (f"{appliance.name} never rebooted and is still on {fw_now}. The image was "
+                       f"uploaded but NOT installed - the box did not accept this flash / "
+                       f"upgrade path, so the firmware is unchanged.")
+                jobsvc.finish_error(job_id, msg)
+                if user_id:
+                    notify.push(user_id, f"{verb} not applied: {appliance.name}",
+                                kind=K.KIND_ERROR, body=msg[:400], link=link)
+                return
+
+            after_snap = None
+            if kind == 'downgrade':
+                # Same runbook AFTER the downgrade: re-test services + health and
+                # diff them against the pre-flight baseline, each step announced.
+                try:
+                    after_snap = upg.postflight(
+                        appliance, before_snap,
+                        progress=lambda p, m: jobsvc.set_progress(job_id, p, m))
+                except Exception:  # noqa: BLE001
+                    after_snap = {"error": "post-flight incomplete"}
+
+            jobsvc.set_progress(job_id, 96, "Back online \u2014 running basic system checks\u2026")
+            health = upg.post_flash_checks(appliance)
+            fw_after = rec.get("firmware_after") or health.get("firmware", "")
+            svc = health.get("services") or {}
+            svc_txt = (f" \u00b7 services {svc['up']}/{svc['total']} reachable"
+                       if isinstance(svc, dict) and "up" in svc else "")
+            done = (f"{appliance.name} is back online on {fw_after or 'the new firmware'} "
+                    f"(was {fw_before or '?'}){svc_txt}. Recovered in "
+                    f"{int(rec.get('elapsed_s', 0))}s.")
+            if kind == 'downgrade' and isinstance(before_snap, dict):
+                _bk = before_snap.get("backup") or {}
+                if _bk.get("ok"):
+                    done += f" Pre-downgrade backup: {_bk.get('name')}."
+            jobsvc.finish_success(job_id, message=done,
+                                  result={"phase": "done", "firmware_before": fw_before,
+                                          "firmware_after": fw_after, "recovery": rec,
+                                          "health": health, "reload": True,
+                                          "runbook": ({"before": before_snap, "after": after_snap}
+                                                      if kind == 'downgrade' else None)})
+            try:
+                _extra = {"from": fw_before, "to": fw_after, "image_id": image_id}
+                if kind == 'downgrade' and isinstance(before_snap, dict):
+                    _extra["backup"] = (before_snap.get("backup") or {}).get("name")
+                log_action(f'appliance.{kind}.complete', target=appliance.name,
+                           extra=_extra)
+            except Exception:  # noqa: BLE001
+                pass
+            if user_id:
+                notify.push(user_id,
+                            f"{verb} complete: {appliance.name} \u2192 {fw_after or image.version}",
+                            kind=K.KIND_SUCCESS if health.get("api_ok") else K.KIND_WARNING,
+                            body=done[:400], link=link)
+        except Exception as exc:  # noqa: BLE001
+            jobsvc.finish_error(job_id, f"{type(exc).__name__}: {exc}"[:300])
+            if user_id:
+                notify.push(user_id, f"{verb} failed: {getattr(appliance, 'name', '?')}",
+                            kind=K.KIND_ERROR, body=str(exc)[:400], link=link)
+    return None
+
+
+def _spawn_flash_job(appliance, image, kind, dry_run, confirm_maturity):
+    """Create the background flash job and return {job_id} JSON (the toast then
+    polls /jobs/<id>). Name-confirm is enforced here for the AJAX path."""
+    from ..services import jobs as jobsvc
+    verb = 'Downgrade' if kind == 'downgrade' else 'Upgrade'
+    if not dry_run and (request.form.get('confirm_name', '') or '').strip() != appliance.name:
+        return jsonify({"error":
+                        f"Type the exact appliance name to authorise the live {kind}."}), 400
+    title = (f"Validate {image.version} for {appliance.name}" if dry_run
+             else f"{verb} {appliance.name} \u2192 {image.version}")
+    user_id = getattr(current_user, 'id', 0) or 0
+    link = url_for(f'appliances.{kind}', id=appliance.id)
+    job = jobsvc.create_job(f'firmware_{kind}', title,
+                            by=getattr(current_user, 'username', '') or '',
+                            meta={"appliance_id": appliance.id, "image_id": image.id,
+                                  "dry_run": dry_run})
+    jobsvc.run_async(
+        current_app._get_current_object(), job["id"],
+        lambda app, jid: _flash_worker(app, jid, appliance.id, image.id, image.filename,
+                                       dry_run, confirm_maturity, kind, user_id, link))
+    return jsonify({"job_id": job["id"]})
+
+
+# -- 6. Downgrade / rollback (real in-app firmware push of an OLDER image) ----
+def _downgrade_context(appliance):
+    """Picker context for the downgrade page: current firmware, the per-image
+    relation vs. current (older/same/newer/unknown), the natural rollback default
+    (newest image strictly OLDER than current) and whether any older image exists.
+    The push mechanism is version-agnostic (same firmwareupgradedowngrade endpoint
+    as Upgrade) — this only frames/selects for rollback."""
+    from ..services import upgrade as upg
+    fw = ''
+    try:
+        fw = upg.firmware_version(appliance.build_client(timeout=8))
+    except Exception:
+        fw = ''
+    images = upg.compatible_images(appliance)   # all product/model matches, newest-first
+    cur = upg._version_key(fw) if fw else None
+    relations, default_id, older_exists = {}, None, False
+    for img in images:
+        if cur is None:
+            relations[img.id] = 'unknown'
+            continue
+        k = upg._version_key(img.version)
+        if k < cur:
+            relations[img.id] = 'older'
+            older_exists = True
+            if default_id is None:      # images newest-first → first older = best rollback
+                default_id = img.id
+        elif k > cur:
+            relations[img.id] = 'newer'
+        else:
+            relations[img.id] = 'same'
+    if default_id is None and images:   # nothing older (or fw unknown) → newest
+        default_id = images[0].id
+    return fw, images, relations, default_id, older_exists
+
+
+@bp.route('/<int:id>/downgrade')
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def downgrade(id):
+    appliance, _ = _fortiweb_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    fw, images, relations, default_id, older_exists = _downgrade_context(appliance)
+    return render_template('appliances/downgrade.html', appliance=appliance,
+                           firmware=fw, images=images, relations=relations,
+                           selected_id=default_id, older_exists=older_exists)
+
+
+@bp.route('/<int:id>/downgrade', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def downgrade_push(id):
+    appliance, _ = _fortiweb_or_404(id)
+    if appliance is None:
+        flash('Not a FortiWeb appliance.', 'danger')
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import upgrade as upg
+
+    image = _selected_compatible_image(appliance, request.form.get('image_id'))
+    if image is None:
+        flash('Select a firmware image from the repository first.', 'danger')
+        return redirect(url_for('appliances.downgrade', id=id))
+    dry_run = request.form.get('dry_run') == 'on'
+    confirm_maturity = request.form.get('confirm_maturity') == 'on'
+
+    if _wants_json():
+        return _spawn_flash_job(appliance, image, 'downgrade', dry_run, confirm_maturity)
+
+    # A live push requires typing the exact appliance name (mis-click guard).
+    if not dry_run and request.form.get('confirm_name', '').strip() != appliance.name:
+        flash('Live downgrade requires typing the exact appliance name to confirm.', 'danger')
+        return redirect(url_for('appliances.downgrade', id=id))
+
+    try:
+        image_bytes = upg.read_image_bytes(image)
+    except Exception as exc:
+        flash(f'Firmware file problem: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(url_for('appliances.downgrade', id=id))
+
+    fw_part = fw_active = 0
+    confirm_dg = False
+    if not dry_run:
+        try:
+            _pt = upg.read_partitions(appliance)
+            _alt = _pt.get('alternate') or {}
+            fw_part = int(_alt.get('partition') or 0)
+            fw_active = int(bool(_alt.get('active')))
+            confirm_dg = True
+            confirm_maturity = True
+        except Exception:
+            pass
+    try:
+        result = upg.push_firmware(
+            appliance, image_bytes, image.filename,
+            dry_run=dry_run, confirm_maturity=confirm_maturity,
+            confirm_downgrade=confirm_dg, part=fw_part, active=fw_active,
+        )
+    except Exception as exc:
+        flash(f'Downgrade failed: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(url_for('appliances.downgrade', id=id))
+
+    if not dry_run:
+        log_action('appliance.downgrade', target=appliance.name,
+                   extra={'image_id': image.id, 'version': image.version,
+                          'from': result.get('firmware_before', '')})
+    fw, images, relations, default_id, older_exists = _downgrade_context(appliance)
+    return render_template('appliances/downgrade.html', appliance=appliance,
+                           firmware=result.get('firmware_before', '') or fw,
+                           result=result, images=images, relations=relations,
+                           selected_id=image.id, older_exists=older_exists)
+
+
+# ===========================================================================
+#  Restore — admin-only config restore from the backup vault or an uploaded
+#  .conf. Destructive (the box applies the config + reboots): dry_run default,
+#  hostname hard-confirm, automatic pre-restore backup, audit. USER_MANAGE only.
+# ===========================================================================
+def _restore_context(appliance):
+    """Current firmware (best-effort, no failure) + this appliance's vault entries."""
+    from ..services import upgrade as upg
+    fw = ''
+    try:
+        fw = upg.firmware_version(appliance.build_client(timeout=8))
+    except Exception:
+        fw = ''
+    backups = (ConfigBackup.query
+               .filter_by(appliance_id=appliance.id)
+               .order_by(ConfigBackup.created_at.desc()).all())
+    return fw, backups
+
+
+@bp.route('/<int:id>/restore')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def restore(id):
+    appliance, _ = _fortiweb_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    fw, backups = _restore_context(appliance)
+    return render_template('appliances/restore.html', appliance=appliance,
+                           firmware=fw, backups=backups)
+
+
+@bp.route('/<int:id>/restore/upload', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def restore_upload(id):
+    appliance, _ = _fortiweb_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import backup as backup_svc
+    up = request.files.get('config_file')
+    if up is None or not up.filename:
+        flash('Choose a .conf configuration file to upload into the vault.', 'warning')
+        return redirect(url_for('appliances.restore', id=id))
+    data = up.read()
+    if not data:
+        flash('The uploaded file is empty.', 'warning')
+        return redirect(url_for('appliances.restore', id=id))
+    try:
+        cb = backup_svc.store_bytes(
+            appliance_id=appliance.id, appliance_name=appliance.name, data=data,
+            filename=up.filename, source='upload',
+            created_by=getattr(current_user, 'username', '') or '',
+            note=(request.form.get('note') or '').strip() or None)
+    except Exception as exc:
+        flash(f'Could not store the upload: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(url_for('appliances.restore', id=id))
+    log_action('appliance.backup_upload', target=appliance.name,
+               extra={'filename': cb.filename, 'size': cb.size_bytes, 'encrypted': cb.encrypted})
+    flash(f'Stored "{cb.filename}" in the vault ({cb.size_kb()} KB'
+          f'{", encrypted" if cb.encrypted else ""}).', 'success')
+    return redirect(url_for('appliances.restore', id=id))
+
+
+@bp.route('/<int:id>/restore/fetch', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def restore_fetch(id):
+    """Pull a fresh backup off the device into the vault (best-effort)."""
+    appliance, _ = _fortiweb_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import backup as backup_svc
+    try:
+        client = appliance.build_client(timeout=120)
+        cb = backup_svc.fetch_device_backup(
+            client, appliance_id=appliance.id, appliance_name=appliance.name,
+            created_by=getattr(current_user, 'username', '') or '')
+    except Exception as exc:
+        flash(f'Could not fetch a backup from {appliance.name}: {type(exc).__name__}: {exc}. '
+              f'You can upload a .conf manually instead.', 'warning')
+        return redirect(url_for('appliances.restore', id=id))
+    log_action('appliance.backup_fetch', target=appliance.name, extra={'filename': cb.filename})
+    flash(f'Pulled "{cb.filename}" from {appliance.name} into the vault.', 'success')
+    return redirect(url_for('appliances.restore', id=id))
+
+
+@bp.route('/<int:id>/restore/<int:backup_id>/download')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def restore_download(id, backup_id):
+    cb = ConfigBackup.query.filter_by(id=backup_id, appliance_id=id).first()
+    if cb is None or not cb.stored_path or not os.path.exists(cb.stored_path):
+        abort(404)
+    return send_file(cb.stored_path, as_attachment=True, download_name=cb.filename)
+
+
+@bp.route('/<int:id>/restore/<int:backup_id>/delete', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def restore_delete(id, backup_id):
+    from ..services import backup as backup_svc
+    cb = ConfigBackup.query.filter_by(id=backup_id, appliance_id=id).first()
+    if cb is None:
+        abort(404)
+    meta = cb.filename
+    backup_svc.delete_vault(cb)
+    log_action('appliance.backup_delete', target=str(id), extra={'filename': meta})
+    flash(f'Deleted backup "{meta}" from the vault.', 'success')
+    return redirect(url_for('appliances.restore', id=id))
+
+
+@bp.route('/<int:id>/restore/run', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def restore_run(id):
+    appliance, _ = _fortiweb_or_404(id)
+    if appliance is None:
+        return redirect(url_for('appliances.detail', id=id))
+    from ..services import backup as backup_svc
+
+    dry_run = request.form.get('dry_run') == 'on'
+    password = (request.form.get('password') or '').strip() or None
+
+    # Source: an existing vault entry OR a freshly uploaded .conf.
+    backup_id = request.form.get('backup_id')
+    up = request.files.get('config_file')
+    data, filename = None, 'config.conf'
+    if up and up.filename:
+        data = up.read()
+        filename = os.path.basename(up.filename)
+        if data:
+            try:  # retain the source in the vault
+                backup_svc.store_bytes(
+                    appliance_id=appliance.id, appliance_name=appliance.name, data=data,
+                    filename=filename, source='upload',
+                    created_by=getattr(current_user, 'username', '') or '')
+            except Exception:
+                pass
+    elif backup_id:
+        cb = ConfigBackup.query.filter_by(id=int(backup_id), appliance_id=appliance.id).first()
+        if cb is None:
+            flash('Selected backup not found in the vault.', 'danger')
+            return redirect(url_for('appliances.restore', id=id))
+        try:
+            data = backup_svc.read_vault_bytes(cb)
+        except Exception as exc:
+            flash(f'Stored backup unreadable: {type(exc).__name__}: {exc}', 'danger')
+            return redirect(url_for('appliances.restore', id=id))
+        filename = cb.filename
+    if not data:
+        flash('Choose a stored backup or upload a .conf file to restore.', 'warning')
+        return redirect(url_for('appliances.restore', id=id))
+
+    # A live restore requires typing the exact appliance name (mis-click guard).
+    if not dry_run and request.form.get('confirm_name', '').strip() != appliance.name:
+        flash('Live restore requires typing the exact appliance name to confirm.', 'danger')
+        return redirect(url_for('appliances.restore', id=id))
+
+    try:
+        client = appliance.build_client(timeout=600)
+    except Exception as exc:
+        flash(f'Cannot connect to {appliance.name}: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(url_for('appliances.restore', id=id))
+
+    # Automatic pre-restore backup — the rollback net (real runs only, best-effort).
+    pre_backup = None
+    if not dry_run:
+        try:
+            pre = backup_svc.fetch_device_backup(
+                client, appliance_id=appliance.id, appliance_name=appliance.name,
+                created_by=getattr(current_user, 'username', '') or '')
+            pre_backup = pre.filename
+        except Exception as exc:
+            pre_backup = f'(skipped: {type(exc).__name__})'
+
+    try:
+        result = backup_svc.restore(client, data, filename, password=password, dry_run=dry_run)
+    except Exception as exc:
+        flash(f'Restore failed: {type(exc).__name__}: {exc}', 'danger')
+        return redirect(url_for('appliances.restore', id=id))
+
+    if not dry_run:
+        log_action('appliance.restore', target=appliance.name,
+                   extra={'filename': filename, 'pre_backup': pre_backup,
+                          'ok': result.get('ok')})
+    fw, backups = _restore_context(appliance)
+    return render_template('appliances/restore.html', appliance=appliance, firmware=fw,
+                           backups=backups, result=result, pre_backup=pre_backup)

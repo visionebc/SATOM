@@ -168,9 +168,179 @@ FIELD_SPECS: dict[str, list[dict]] = {
 }
 
 
+# exc_type → engine kind, where the names differ (the class-action override
+# edits a row of the signature set's main_class_list).
+_KIND_ALIAS = {"signature_class_action": "signature_class_item"}
+
+# Required payload fields per type — the FortiWeb-base discipline: a carve-out
+# missing its match key is garbage the box either rejects or (worse) applies
+# too broadly. Enforced in the save endpoint + marked * in the form.
+REQUIRED_FIELDS: dict[str, list[str]] = {
+    "signature_filter_item": ["signature_id", "match-target"],
+    "signature_disable_item": ["signature_id"],
+    "signature_alert_only_item": ["signature_id"],
+    "signature_subclass_disable_item": ["sub_class_id"],
+    "signature_class_action": ["main_class_id", "action"],
+    "http_constraint_exception_item": ["request-type", "request-file"],
+    "allow_method_exception_item": ["request-type", "request-file"],
+    "geo_ip_exception_member_item": ["ip"],
+    "syntax_exception_item": ["match-target", "operator"],
+    "bot_exception_element_item": ["match-target", "operator"],
+    "http_header_security_exception_item": ["request-url-type", "request-url-pattern"],
+    "cookie_security_exception_item": ["cookie-name"],
+    "url_enc_exc_item": ["url-type", "url-pattern"],
+    "link_cloak_exc_item": ["url-type", "url-pattern"],
+    "file_exception_item": ["file-name"],
+    "signature_group_rule_condition": ["match-target", "operator", "value"],
+}
+
+# Light format validators (key → (regex, message)). Only formats FortiWeb is
+# strict about; anything else stays free so nothing becomes un-authorable.
+_FORMAT_RULES: dict[str, tuple[str, str]] = {
+    "signature_id": (r"^\d{9,10}$", "Signature ID is the 9-digit id (e.g. 010000001)"),
+    "sub_class_id": (r"^\d{9,10}$", "Sub-Class ID is the 9-digit id"),
+    "main_class_id": (r"^\d{9,10}$", "Main Class ID is the 9-digit id (e.g. 010000000)"),
+    "request-file": (r"^/", "URL patterns must start with /"),
+    "url-pattern": (r"^/", "URL patterns must start with /"),
+    "request-url-pattern": (r"^/", "Request URL must start with /"),
+}
+
+
+def validate_payload(exc_type: str, payload: dict) -> list[str]:
+    """FortiWeb-base validation: required fields present + strict formats OK.
+    Returns a list of human-readable errors (empty = valid)."""
+    import re as _re
+    errors = []
+    payload = payload or {}
+    for key in REQUIRED_FIELDS.get(exc_type, []):
+        if payload.get(key) in (None, "", []):
+            errors.append("'%s' is required for this carve-out type" % key)
+    for key, (rx, msg) in _FORMAT_RULES.items():
+        val = payload.get(key)
+        if val not in (None, "", []) and not _re.match(rx, str(val)):
+            errors.append(msg)
+    return errors
+
+
 def fields_for(exc_type: str) -> list[dict]:
-    """Curated fields for a type, else ``[]`` (the form offers a key/value editor)."""
-    return list(FIELD_SPECS.get(exc_type, []))
+    """Field descriptors for a type — derived from the SAME curated WAF engine
+    the object editor uses (labels, device enum tokens with GUI display labels,
+    toggles, regex affordance, and the FortiWeb ``show_when`` gating that shows
+    only the inputs relevant to the chosen Element Type — so the operator can't
+    author contradictory garbage). Falls back to the static seed for any type
+    the engine doesn't model."""
+    from .fortiweb_field_schema import KIND_SPECS, descriptor, kind_keys
+
+    kind = _KIND_ALIAS.get(exc_type, exc_type)
+    required = set(REQUIRED_FIELDS.get(exc_type, ()))
+    if kind in KIND_SPECS:
+        out = []
+        for key in kind_keys(kind):
+            if key == "id":
+                continue
+            d = descriptor(kind, key, "", {})
+            d["required"] = key in required
+            out.append(d)
+        if out:
+            return out
+    flat = []
+    for f in FIELD_SPECS.get(exc_type, []):
+        f = dict(f)
+        f["required"] = f["key"] in required
+        flat.append(f)
+    return flat
+
+
+# --------------------------------------------------------------------------- #
+#  Per-type guidance: what it does + how the DEVICE reacts once injected.       #
+#  Shown in the authoring form so the operator understands the blast radius.    #
+# --------------------------------------------------------------------------- #
+TYPE_HELP: dict[str, dict] = {
+    "signature_filter_item": {
+        "what": "Exempts ONE signature id from matching when the chosen request element matches your value — the FortiWeb 'Signature Details → Exception' tab.",
+        "backend": "After inject, requests where the element matches skip that signature only; every other signature still applies. Max 128 exceptions per signature.",
+        "base": "Use this instead of disabling a signature: the signature stays active for the rest of the site.",
+    },
+    "signature_disable_item": {
+        "what": "Turns one signature id fully OFF in the signature set.",
+        "backend": "The device stops evaluating that signature for EVERY policy that binds this set — traffic matching the attack pattern passes uninspected.",
+        "base": "Prefer a per-element Signature Exception; disable only when the signature is a confirmed false positive everywhere.",
+    },
+    "signature_alert_only_item": {
+        "what": "Keeps one signature detecting but downgrades its action to Alert.",
+        "backend": "Matching requests are LOGGED but never blocked — the attack reaches the back-end.",
+        "base": "Good as a staging step before re-enabling blocking.",
+    },
+    "signature_subclass_disable_item": {
+        "what": "Disables a whole signature SUB-CLASS (hundreds of signatures).",
+        "backend": "The device skips the entire sub-class for every bound policy — a wide hole.",
+        "base": "Almost always too broad; prefer per-signature carve-outs.",
+    },
+    "signature_class_action": {
+        "what": "Overrides the ACTION/severity of a signature main class (e.g. all SQL Injection).",
+        "backend": "Every signature in the class fires with your action: Alert = log only, Alert & Deny = block + log, Period Block = block the client IP for the block period.",
+        "base": "Pushed as an UPDATE to the existing class row on the signature set.",
+    },
+    "http_constraint_exception_item": {
+        "what": "Exempts a host/URL from selected HTTP protocol constraint checks.",
+        "backend": "Requests matching host+URL skip only the constraints you toggle on; the rest keep enforcing.",
+        "base": "Pattern must start with /. With Type=Regular Expression, prove it in the regex calculator first.",
+    },
+    "allow_method_exception_item": {
+        "what": "Allows extra HTTP methods on specific hosts/URLs beyond the policy's allow-list.",
+        "backend": "Matching requests may use the extra methods; others still get the policy's method action (usually Alert & Deny).",
+        "base": "Methods are space-separated device tokens: get post put delete …",
+    },
+    "geo_ip_exception_member_item": {
+        "what": "Lets specific IPs/ranges through a Geo IP country block.",
+        "backend": "Those sources bypass the geo block entirely for bound policies; everyone else in the blocked country is still denied (Alert & Deny / Period Block).",
+        "base": "One IP or range per entry.",
+    },
+    "syntax_exception_item": {
+        "what": "Exempts an element from SQL/XSS syntax-based detection for one attack type.",
+        "backend": "The parser skips that attack-type evaluation when the element matches; other attack types keep firing.",
+        "base": "Pick the NARROWEST attack type that false-positives — never blanket all of them.",
+    },
+    "bot_exception_element_item": {
+        "what": "Excludes matching traffic from Bot Mitigation checks.",
+        "backend": "Matching requests skip bot biometrics/thresholds/known-bot checks for bound policies.",
+        "base": "Typical use: health checks, monitoring probes, internal automation IPs.",
+    },
+    "http_header_security_exception_item": {
+        "what": "Skips HTTP header-security insertion for matching client IP / URL.",
+        "backend": "Responses to matching requests are served WITHOUT the injected security headers.",
+        "base": "URL must start with /; regex type available.",
+    },
+    "cookie_security_exception_item": {
+        "what": "Exempts one cookie (by name/domain/path) from cookie security.",
+        "backend": "That cookie is not signed/encrypted/enforced; all other cookies stay protected.",
+        "base": "Needed for third-party cookies the back-end must read raw.",
+    },
+    "url_enc_exc_item": {
+        "what": "Excludes URLs from URL Encryption.",
+        "backend": "Matching URLs are served in clear (not encrypted) while the rest of the app keeps encrypted links.",
+        "base": "Required for URLs consumed by external systems / deep links.",
+    },
+    "link_cloak_exc_item": {
+        "what": "Excludes URLs from Link Cloaking.",
+        "backend": "Matching links are not rewritten/cloaked in responses.",
+        "base": "Same pattern rules as URL Encryption.",
+    },
+    "file_exception_item": {
+        "what": "Allows a specific file (name + MD5) past File Security / AV scanning.",
+        "backend": "Uploads matching name+hash bypass file-type and AV checks; anything else is still scanned.",
+        "base": "Always pin the MD5 — a name-only exception is a hole.",
+    },
+    "signature_group_rule_condition": {
+        "what": "A meet-condition row of a CUSTOM signature rule.",
+        "backend": "The custom rule fires only when its conditions match (per the rule's logic); its action then applies.",
+        "base": "Operators: RE (regex), GT/LT (numeric), EQ/NE.",
+    },
+}
+
+
+def help_for(exc_type: str) -> dict:
+    return TYPE_HELP.get(exc_type, {})
 
 
 # --------------------------------------------------------------------------- #
@@ -293,6 +463,7 @@ def alignment(appliance_id: int, bindings: dict[str, str]) -> dict[str, Any]:
 __all__ = [
     "CAT_EXCEPTION", "CAT_SIGNATURE", "EXCEPTION_TYPES", "SIGNATURE_TYPES",
     "CATALOG", "catalog", "type_for", "category_for", "groups", "fields_for",
+    "validate_payload", "help_for", "TYPE_HELP",
     "FIELD_SPECS", "list_exceptions", "get", "add", "update", "delete",
     "delete_for_policy", "alignment",
 ]

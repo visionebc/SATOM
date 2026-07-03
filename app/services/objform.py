@@ -30,7 +30,8 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any
 
-from .fortiweb_field_schema import build_groups
+from . import waf_specs
+from .fortiweb_field_schema import KIND_SPECS, build_groups
 
 _PREFIX = "/api/v2.0/cmdb/"
 
@@ -113,12 +114,18 @@ def _child_index() -> dict[str, tuple[dict, ...]]:
             "urn": ep.get("urn"),
             "collection": coll,
             "seg": seg,
-            "label": subtable_label(ep.get("name"), seg),
+            "label": subtable_label(ep.get("name"), seg, coll),
         })
     return {k: tuple(sorted(v, key=lambda c: c["label"].lower())) for k, v in idx.items()}
 
 
-def subtable_label(key: str | None, seg: str) -> str:
+def subtable_label(key: str | None, seg: str, coll: str | None = None) -> str:
+    # The desktop-validated WAF catalog carries the FortiWeb GUI title for its
+    # sub-tables ("Signature Exceptions", "Rule List"…) — most specific first.
+    if coll:
+        t = waf_specs.subtable_titles().get(coll)
+        if t:
+            return t
     if seg in _SUBTABLE_LABEL:
         return _SUBTABLE_LABEL[seg]
     base = (seg or key or "").replace("-", " ").replace("_", " ").strip().title()
@@ -160,6 +167,11 @@ _KIND_BY_COLL: dict[str, str] = {
     "server-policy/vserver/vip-list": "vip",
     "server-policy/http-content-routing-policy/content-routing-match-list": "crmatch",
 }
+
+# Merge the desktop-ported WAF catalog (165 curated kinds — the WPP, its ~40
+# sub-policies, their named rules and every sub-table row) into the engine:
+# KIND_SPECS gains the per-kind vocabularies, _KIND_BY_COLL the coll → kind map.
+waf_specs.register(KIND_SPECS, _KIND_BY_COLL)
 
 
 def object_kind(urn_or_coll: str) -> str:
@@ -207,10 +219,13 @@ def object_form(urn_or_coll: str, obj: dict) -> dict[str, Any]:
     sub-table's live rows with :func:`scoped_path` so the read is parent-scoped.
     """
     coll = collection_of(urn_or_coll)
+    kind = object_kind(coll)
     return {
         "collection": coll,
         "rest_path": rest_path(coll),
-        "kind": object_kind(coll),
+        "kind": kind,
+        "kind_label": KIND_SPECS.get(kind, {}).get("kind_label", ""),
+        "help": waf_specs.section_help(kind),
         "groups": field_groups(coll, obj),
         "subtables": subtables_for(coll),
     }

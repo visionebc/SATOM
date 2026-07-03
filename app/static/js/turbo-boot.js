@@ -61,4 +61,34 @@
     var links = document.querySelectorAll('a[href*="/download"], a[download]');
     for (var i = 0; i < links.length; i++) links[i].setAttribute('data-turbo', 'false');
   });
+
+  // ── Re-stamp <style> + <script> nonces on Turbo navigation ─────────────────────────────
+  // CSP is bound to the ORIGINAL full-load document (its response's nonce);
+  // Turbo never creates a new document, so that nonce stays enforced for the
+  // whole Turbo session. Turbo re-inserts body <script>/<style> carrying the
+  // FETCHED response's (different, per-request) nonce, which no longer matches
+  // — the browser CSP-blocks them. With script/style-src-elem nonce-gated
+  // (no 'unsafe-inline'), a body <style> rendered with THIS response's nonce is
+  // refused under the ACTIVE document CSP (the original load's nonce) — the page
+  // renders UNSTYLED after a Turbo visit but fine on a full refresh. Re-stamp
+  // every incoming body <style> with the live meta nonce BEFORE the swap so it
+  // matches the active CSP (no flash of unstyled content).
+  origAdd('turbo:before-render', function (e) {
+    var body = e && e.detail && e.detail.newBody;
+    if (!body) return;
+    var meta = document.querySelector('meta[name=csp-nonce]');
+    var nonce = meta && (meta.nonce || meta.content);
+    if (!nonce) return;
+    // Both <style> AND <script>: Turbo re-creates each incoming body <script>
+    // via activateScriptElement, whose copyAttributes() copies the FETCHED
+    // response's nonce LAST — clobbering the meta nonce — so the re-inserted
+    // script carries the fetched nonce, not the active document's. Re-stamping
+    // the source node here (before the swap) makes that copy land the live
+    // (active-document) nonce, so it matches the enforced CSP.
+    var nodes = body.querySelectorAll('style, script');
+    for (var i = 0; i < nodes.length; i++) {
+      try { nodes[i].nonce = nonce; } catch (err) {}
+      nodes[i].setAttribute('nonce', nonce);
+    }
+  });
 })();

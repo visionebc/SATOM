@@ -59,12 +59,12 @@
     <div class="fw-toolbar mb-2 d-flex align-items-center gap-3 flex-wrap">
       <div class="fw-search-box">
         <i class="bi bi-search search-icon"></i>
-        <input type="text" id="wpp-search" placeholder="Search profiles…" oninput="applyWppFilters()">
+        <input type="text" id="wpp-search" placeholder="Search profiles…">
       </div>
       <label class="d-flex align-items-center gap-2 mb-0" style="font-size:13px;cursor:pointer;user-select:none;"
              title="Hide the FortiWeb predefined (default) profiles, leaving only your custom profiles. Saved to your preferences.">
         <input type="checkbox" id="hide-default-toggle" class="form-check-input mt-0"
-               {% if hide_default %}checked{% endif %} onchange="onHideDefaultChange(this)">
+               {% if hide_default %}checked{% endif %}>
         Hide default (predefined) profiles
       </label>
     </div>
@@ -117,12 +117,12 @@
                 </a>
                 <button type="button" class="btn btn-sm btn-outline-info"
                         title="Deep-clone this profile on this device"
-                        onclick="openCloneModal('{{ pname|e }}')">
+                        data-js="open-clone-modal" data-profile="{{ pname }}">
                   <i class="bi bi-files"></i>
                 </button>
                 <button type="button" class="btn btn-sm btn-outline-warning"
                         title="Save as a template (admin approval, then fleet deploy)"
-                        onclick="openTemplateModal('{{ pname|e }}')">
+                        data-js="open-template-modal" data-profile="{{ pname }}">
                   <i class="bi bi-bookmark-plus"></i>
                 </button>
                 {% endif %}
@@ -189,13 +189,13 @@
         </div>
 
         <div class="d-flex gap-2 flex-wrap mb-3">
-          <button type="button" class="btn btn-outline-info btn-sm" id="clone-preview-btn" onclick="cloneWppPreview()">
+          <button type="button" class="btn btn-outline-info btn-sm" id="clone-preview-btn">
             <i class="bi bi-search me-1"></i>Preview plan
           </button>
-          <button type="button" class="btn btn-fw-primary btn-sm" id="clone-apply-btn" onclick="cloneWppApply()" disabled>
+          <button type="button" class="btn btn-fw-primary btn-sm" id="clone-apply-btn" disabled>
             <i class="bi bi-diagram-3 me-1"></i>Deep clone on this device
           </button>
-          <button type="button" class="btn btn-outline-light btn-sm" id="clone-tpl-btn" onclick="cloneWppSaveTemplate()">
+          <button type="button" class="btn btn-outline-light btn-sm" id="clone-tpl-btn">
             <i class="bi bi-bookmark-plus me-1"></i>Save as template (needs admin approval)
           </button>
         </div>
@@ -228,7 +228,7 @@
                  placeholder="e.g. WPP-Ecommerce-Strict">
         </div>
         <div class="d-flex gap-2">
-          <button type="button" class="btn btn-fw-primary btn-sm" id="tpl-save-btn" onclick="saveTplConfirm()">
+          <button type="button" class="btn btn-fw-primary btn-sm" id="tpl-save-btn">
             <i class="bi bi-bookmark-plus me-1"></i>Save as template
           </button>
         </div>
@@ -422,5 +422,33 @@ function saveTplConfirm() {
       '<a href="' + URL_TEMPLATES + '" class="alert-link">WPP Templates</a> for fleet deploy.</div>', 'ok');
   }).catch(function (e) { _busy('tpl-save-btn', false); _tplStatus('Save error: ' + _esc(e), 'error'); });
 }
+
+// ── Event bindings (CSP: no inline handlers) ───────────────────────────────
+(function () {
+  var search = document.getElementById('wpp-search');
+  if (search) search.addEventListener('input', function (event) { applyWppFilters(); });
+
+  var hideDefault = document.getElementById('hide-default-toggle');
+  if (hideDefault) hideDefault.addEventListener('change', function (event) { onHideDefaultChange(this); });
+
+  var clonePreview = document.getElementById('clone-preview-btn');
+  if (clonePreview) clonePreview.addEventListener('click', function (event) { cloneWppPreview(); });
+
+  var cloneApply = document.getElementById('clone-apply-btn');
+  if (cloneApply) cloneApply.addEventListener('click', function (event) { cloneWppApply(); });
+
+  var cloneTpl = document.getElementById('clone-tpl-btn');
+  if (cloneTpl) cloneTpl.addEventListener('click', function (event) { cloneWppSaveTemplate(); });
+
+  var tplSave = document.getElementById('tpl-save-btn');
+  if (tplSave) tplSave.addEventListener('click', function (event) { saveTplConfirm(); });
+
+  document.querySelectorAll('[data-js="open-clone-modal"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { openCloneModal(this.dataset.profile); });
+  });
+  document.querySelectorAll('[data-js="open-template-modal"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { openTemplateModal(this.dataset.profile); });
+  });
+})();
 </script>
 {% endblock %}

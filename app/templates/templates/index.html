@@ -37,7 +37,7 @@
 <div class="fw-toolbar">
   <div class="fw-search-box">
     <i class="bi bi-search search-icon"></i>
-    <input type="text" id="tplSearch" placeholder="Search templates…" oninput="filterTemplates(this.value)">
+    <input type="text" id="tplSearch" placeholder="Search templates…">
   </div>
   <div class="d-flex gap-1 flex-wrap">
     <a href="{{ url_for('templates.index') }}" class="btn btn-sm {{ 'btn-fw-primary' if not active_kind and not active_status else 'btn-outline-secondary' }}">All</a>
@@ -90,7 +90,7 @@
             {% if t.note %}
               {% if t.note|length > 70 %}
                 <span class="note-short">{{ t.note[:70] }}…</span><span class="note-full" style="display:none; white-space:pre-wrap; word-break:break-word;">{{ t.note }}</span>
-                <a href="#" class="note-toggle" style="font-size:11px; white-space:nowrap;" onclick="return toggleNote(this);">see more</a>
+                <a href="#" class="note-toggle" style="font-size:11px; white-space:nowrap;">see more</a>
               {% else %}
                 <span style="white-space:pre-wrap; word-break:break-word;">{{ t.note }}</span>
               {% endif %}
@@ -100,16 +100,16 @@
           <td style="font-size:13px;">{{ t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '—' }}</td>
           <td class="actions-col">
             <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1" title="View"
-                    onclick="viewTemplate({{ t.id }})"><i class="bi bi-eye"></i></button>
+                    data-js="view-template" data-tpl-id="{{ t.id }}"><i class="bi bi-eye"></i></button>
             <button class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Approval history (who approved / rejected)"
-                    onclick='openHistory({{ t.id }}, {{ t.name|tojson }})'><i class="bi bi-clock-history"></i></button>
+                    data-js="open-history" data-tpl-id="{{ t.id }}" data-tpl-name="{{ t.name }}"><i class="bi bi-clock-history"></i></button>
             {% if current_user.can('operations.template_approve') and t.status == 'pending' %}
             <form method="POST" action="{{ url_for('templates.approve', template_id=t.id) }}" style="display:inline;">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-sm btn-outline-success btn-sm-icon me-1" title="Approve (make fleet-deployable)"><i class="bi bi-check2-circle"></i></button>
             </form>
             <button class="btn btn-sm btn-outline-danger btn-sm-icon me-1" title="Reject"
-                    onclick='openReject({{ t.id }}, {{ t.name|tojson }})'><i class="bi bi-x-circle"></i></button>
+                    data-js="open-reject" data-tpl-id="{{ t.id }}" data-tpl-name="{{ t.name }}"><i class="bi bi-x-circle"></i></button>
             {% endif %}
             {% if current_user.can('operations.template_approve') and t.status == 'approved' %}
             <form method="POST" action="{{ url_for('templates.unapprove', template_id=t.id) }}" style="display:inline;"
@@ -120,11 +120,12 @@
             {% endif %}
             {% if current_user.can('operations.template_apply') %}
             <button class="btn btn-sm btn-fw-primary btn-sm-icon me-1" title="Apply to devices"
-                    onclick='openApply({{ t.id }}, {{ t.name|tojson }}, {{ (t.status == "approved")|tojson }})'><i class="bi bi-upload"></i></button>
+                    data-js="open-apply" data-tpl-id="{{ t.id }}" data-tpl-name="{{ t.name }}"
+                    data-approved="{{ (t.status == 'approved')|tojson }}"><i class="bi bi-upload"></i></button>
             {% endif %}
             {% if current_user.can('operations.template_save') %}
             <button class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Edit (saves a new version)"
-                    onclick="editTemplate({{ t.id }})"><i class="bi bi-pencil"></i></button>
+                    data-js="edit-template" data-tpl-id="{{ t.id }}"><i class="bi bi-pencil"></i></button>
             <form method="POST" action="{{ url_for('templates.clone', template_id=t.id) }}" style="display:inline;">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Clone"><i class="bi bi-files"></i></button>
@@ -305,7 +306,7 @@
           <div class="text-muted" style="font-size:13px;">No appliances are configured.</div>
           {% endif %}
           <div class="mt-3">
-            <button type="button" class="btn btn-fw-outline btn-sm" onclick="applyPreview()">
+            <button type="button" class="btn btn-fw-outline btn-sm" data-js="apply-preview">
               <i class="bi bi-search me-1"></i>Dry-run preview
             </button>
           </div>
@@ -541,5 +542,39 @@ function renderPreview(j) {
 }
 
 {% if edit_template_id %}document.addEventListener('DOMContentLoaded', function () { editTemplate({{ edit_template_id }}); });{% endif %}
+
+// ── Event bindings (CSP: no inline handlers) ───────────────────────────────
+(function () {
+  var search = document.getElementById('tplSearch');
+  if (search) search.addEventListener('input', function (event) { filterTemplates(this.value); });
+
+  document.querySelectorAll('#tplTable a.note-toggle').forEach(function (a) {
+    a.addEventListener('click', function (event) {
+      var r = toggleNote(this);
+      if (r === false) event.preventDefault();
+    });
+  });
+
+  document.querySelectorAll('[data-js="view-template"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { viewTemplate(this.dataset.tplId); });
+  });
+  document.querySelectorAll('[data-js="open-history"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { openHistory(this.dataset.tplId, this.dataset.tplName); });
+  });
+  document.querySelectorAll('[data-js="open-reject"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { openReject(this.dataset.tplId, this.dataset.tplName); });
+  });
+  document.querySelectorAll('[data-js="open-apply"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) {
+      openApply(this.dataset.tplId, this.dataset.tplName, this.dataset.approved === 'true');
+    });
+  });
+  document.querySelectorAll('[data-js="edit-template"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { editTemplate(this.dataset.tplId); });
+  });
+
+  var preview = document.querySelector('[data-js="apply-preview"]');
+  if (preview) preview.addEventListener('click', function (event) { applyPreview(); });
+})();
 </script>
 {% endblock %}

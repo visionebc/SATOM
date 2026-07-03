@@ -16,15 +16,47 @@
    `fld` macro (no per-page JS wiring). `key`='' omits data-key (e.g. the
    content-routing default switch read by class instead). `input_cls` lets a
    caller swap the marker class (default `fw-input` = tracked by a scope save). #}
+{# CSP (script-src-attr 'none'): the macros below carry no inline on* handlers.
+   _fw_bindings() emits ONE delegated-binding script per page (first switch()/
+   savebar() call wins; the namespace guard stops re-emission). This file is
+   pulled in with plain {% from %} imports (no context), so the nonce is read
+   from the `g` Jinja global, not the csp_nonce context var. The listeners sit
+   on `document`, guarded by window.__fwFieldsDelegated, so they bind once per
+   full page load, survive Turbo Drive body swaps, and cover fields injected
+   later (e.g. the ref-edit modal). input/change use capture so fwSync updates
+   .value before any other listener reads it (matches old inline-handler
+   ordering). #}
+{% set _fw_js = namespace(done=false) %}
+{% macro _fw_bindings() %}{% if not _fw_js.done %}{% set _fw_js.done = true %}
+<script nonce="{{ g.csp_nonce }}">
+(function () {
+  if (window.__fwFieldsDelegated) return;
+  window.__fwFieldsDelegated = true;
+  function _fwToggleSync(event) {
+    var el = event.target;
+    if (el.classList && el.classList.contains('fw-toggle')) fwSync(el);
+  }
+  document.addEventListener('input', _fwToggleSync, true);
+  document.addEventListener('change', _fwToggleSync, true);
+  document.addEventListener('click', function (event) {
+    var btn = event.target.closest ? event.target.closest('.fw-save[data-fn]') : null;
+    if (!btn) return;
+    var fn = window[btn.dataset.fn];
+    if (typeof fn === 'function') fn(btn);
+  });
+})();
+</script>
+{% endif %}{% endmacro %}
+
 {% macro switch(key, on, on_label='Enabled', off_label='Disabled', cls='', input_cls='fw-input') %}
 <label class="fw-toggle-sw {{ cls }}">
   <input type="checkbox" class="{{ input_cls }} fw-toggle"{% if key %} data-key="{{ key }}"{% endif %}
          value="{{ 'enable' if on else 'disable' }}" data-orig="{{ 'enable' if on else 'disable' }}"
-         data-on="{{ on_label }}" data-off="{{ off_label }}"
-         oninput="fwSync(this)" onchange="fwSync(this)"{{ ' checked' if on else '' }}>
+         data-on="{{ on_label }}" data-off="{{ off_label }}"{{ ' checked' if on else '' }}>
   <span class="fw-toggle-sw-track" aria-hidden="true"></span>
   <span class="fw-toggle-sw-text">{{ on_label if on else off_label }}</span>
 </label>
+{{ _fw_bindings() }}
 {% endmacro %}
 
 {% macro fld(f, actions=true) %}
@@ -69,8 +101,9 @@
 {% macro savebar(label, fn) %}
 <div class="fw-savebar">
   <span class="fw-dirty-note text-muted">No unsaved changes</span>
-  <button type="button" class="btn btn-sm btn-fw-primary fw-save" onclick="{{ fn or 'saveScope' }}(this)">
+  <button type="button" class="btn btn-sm btn-fw-primary fw-save" data-fn="{{ fn or 'saveScope' }}">
     <i class="bi bi-check2-circle me-1"></i>{{ label or 'Review & save' }}
   </button>
 </div>
+{{ _fw_bindings() }}
 {% endmacro %}

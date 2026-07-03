@@ -58,7 +58,7 @@
                   <td class="actions-col">
                     <form method="post" class="d-inline"
                           action="{{ url_for('provisioning.baseline_unassign', baseline_id=baseline.id) }}"
-                          onsubmit="return confirm('Remove {{ t.name }} from this combo?');">
+                          data-fw-confirm-form="Remove {{ t.name }} from this combo?">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <input type="hidden" name="template_id" value="{{ t.id }}">
                       <button class="btn btn-sm btn-outline-danger" title="Remove"><i class="bi bi-x-lg"></i></button>

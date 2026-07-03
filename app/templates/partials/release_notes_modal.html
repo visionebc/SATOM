@@ -1,7 +1,7 @@
 {# Release Notes — top-banner modal. Same logic as the desktop Release Notes page:
    two buttons (Scan from Fortinet / Sync from git) + three tabs (Issues / Upgrade
    advisor / Notes). Backend: app/views/release_notes.py. JS: static/js/release_notes.js #}
-<style>
+<style nonce="{{ csp_nonce }}">
   /* Bigger by default + user-resizable (drag the bottom-right corner) */
   #releaseNotesModal .modal-dialog.rn-modal-dialog{
     max-width:none;

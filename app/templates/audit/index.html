@@ -17,7 +17,7 @@
     <p class="text-muted mb-0" style="font-size:13px;">All user actions are recorded for compliance and accountability</p>
   </div>
   <div class="d-flex gap-2">
-    <button class="btn btn-fw-outline btn-sm" onclick="window.location.reload()">
+    <button class="btn btn-fw-outline btn-sm" data-js="audit-refresh">
       <i class="bi bi-arrow-clockwise me-1"></i>Refresh
     </button>
     <a href="{{ url_for('audit.index') }}"
@@ -91,7 +91,7 @@
   </span>
   <div class="fw-search-box" style="max-width:240px;">
     <i class="bi bi-search search-icon"></i>
-    <input type="text" id="auditSearch" placeholder="Quick search…" oninput="filterAudit(this.value)">
+    <input type="text" id="auditSearch" placeholder="Quick search…">
   </div>
 </div>
 
@@ -113,7 +113,6 @@
       {% if entries %}
         {% for e in entries %}
         <tr class="audit-row" style="cursor:pointer;"
-            onclick="openAuditDetail(this)"
             data-ts="{{ e.timestamp | localtime }}"
             data-user="{{ e.username or '—' }}"
             data-action="{{ e.action or '—' }}"
@@ -188,7 +187,7 @@
 {% endif %}
 
 <!-- ===== Detail drawer (click a row to open) ===== -->
-<div id="auditDetailBackdrop" onclick="closeAuditDetail()"
+<div id="auditDetailBackdrop"
      style="position:fixed;inset:0;background:rgba(3,7,18,.55);backdrop-filter:blur(2px);
             opacity:0;visibility:hidden;transition:opacity .2s ease,visibility .2s ease;z-index:1080;"></div>
 <aside id="auditDetailPanel"
@@ -202,7 +201,7 @@
     <h5 style="margin:0;font-size:15px;font-weight:700;color:#eaf0fb;">
       <i class="bi bi-clipboard-data me-2" style="color:var(--fw-accent);"></i>Audit Entry
     </h5>
-    <button type="button" onclick="closeAuditDetail()"
+    <button type="button" data-js="audit-detail-close"
             style="background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.18);
                    color:#cdd7ea;border-radius:8px;width:30px;height:30px;cursor:pointer;line-height:1;">
       <i class="bi bi-x-lg"></i>
@@ -251,7 +250,7 @@ function openAuditDetail(rowEl) {
       '<div style="text-transform:uppercase;letter-spacing:.04em;font-size:10px;color:#f4a3a3;margin-bottom:4px;">Error reference</div>' +
       '<div style="display:flex;align-items:center;gap:10px;">' +
         '<span style="font-family:ui-monospace,Menlo,monospace;font-size:18px;font-weight:700;color:#fca5a5;letter-spacing:.06em;">' + _esc(eid) + '</span>' +
-        '<button type="button" onclick="copyErrId(this,\'' + _esc(eid) + '\')" ' +
+        '<button type="button" data-js="copy-errid" data-eid="' + _esc(eid) + '" ' +
           'style="background:rgba(148,163,184,.14);border:1px solid rgba(148,163,184,.22);color:#cdd7ea;' +
           'border-radius:7px;padding:3px 9px;font-size:11px;cursor:pointer;"><i class="bi bi-clipboard me-1"></i>Copy</button>' +
       '</div>' +
@@ -273,7 +272,13 @@ function openAuditDetail(rowEl) {
       'max-height:42vh;overflow:auto;">' + (extra ? _esc(extra) : '—') + '</pre>' +
   '</div>';
 
-  document.getElementById('auditDetailBody').innerHTML = html;
+  var body = document.getElementById('auditDetailBody');
+  body.innerHTML = html;
+  // CSP (script-src-attr 'none') forbids on* attributes even in JS-built markup — bind after insert.
+  var copyBtn = body.querySelector('[data-js="copy-errid"]');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', function (event) { copyErrId(this, this.dataset.eid); });
+  }
   document.getElementById('auditDetailBackdrop').style.opacity = '1';
   document.getElementById('auditDetailBackdrop').style.visibility = 'visible';
   document.getElementById('auditDetailPanel').style.transform = 'translateX(0)';
@@ -296,5 +301,23 @@ function copyErrId(btn, eid) {
 document.addEventListener('keydown', function (ev) {
   if (ev.key === 'Escape') closeAuditDetail();
 });
+
+(function () {
+  document.querySelector('[data-js="audit-refresh"]').addEventListener('click', function (event) {
+    window.location.reload();
+  });
+  document.getElementById('auditSearch').addEventListener('input', function (event) {
+    filterAudit(this.value);
+  });
+  document.querySelectorAll('#auditTable tbody tr.audit-row').forEach(function (row) {
+    row.addEventListener('click', function (event) { openAuditDetail(this); });
+  });
+  document.getElementById('auditDetailBackdrop').addEventListener('click', function (event) {
+    closeAuditDetail();
+  });
+  document.querySelector('[data-js="audit-detail-close"]').addEventListener('click', function (event) {
+    closeAuditDetail();
+  });
+})();
 </script>
 {% endblock %}

@@ -51,9 +51,9 @@
 <div class="fw-toolbar d-flex align-items-center gap-2">
   <div class="fw-search-box">
     <i class="bi bi-search search-icon"></i>
-    <input type="text" id="userSearch" placeholder="Search users…" oninput="filterUsers(this.value)">
+    <input type="text" id="userSearch" placeholder="Search users…">
   </div>
-  <select class="form-select form-select-sm" style="width:auto;" id="roleFilter" onchange="filterUsers(document.getElementById('userSearch').value)">
+  <select class="form-select form-select-sm" style="width:auto;" id="roleFilter">
     <option value="">All Roles</option>
     <option value="admin">Admin</option>
     <option value="operator">Operator</option>
@@ -127,8 +127,9 @@
                 </button>
               </form>
               <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1"
-                      title="Change Profile"
-                      onclick="openProfileModal({{ u.id }}, '{{ u.username }}', {{ u.profile_id or 'null' }})">
+                      title="Change Profile" data-js="change-profile"
+                      data-user-id="{{ u.id }}" data-username="{{ u.username }}"
+                      data-profile-id="{{ u.profile_id or '' }}">
                 <i class="bi bi-person-badge"></i>
               </button>
               <form method="POST" action="{{ url_for('users.delete', id=u.id) }}" style="display:inline;"
@@ -259,4 +260,21 @@ function openProfileModal(userId, username, currentProfileId) {
   document.getElementById('formChangeProfile').action = '/users/' + userId + '/profile';
   API.openModal('modalChangeProfile');
 }
+
+(function () {
+  var search = document.getElementById('userSearch');
+  if (search) { search.addEventListener('input', function (event) { filterUsers(this.value); }); }
+  var role = document.getElementById('roleFilter');
+  if (role) {
+    role.addEventListener('change', function (event) {
+      filterUsers(document.getElementById('userSearch').value);
+    });
+  }
+  document.querySelectorAll('[data-js="change-profile"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) {
+      var pid = this.dataset.profileId;
+      openProfileModal(this.dataset.userId, this.dataset.username, pid === '' ? null : pid);
+    });
+  });
+})();
 </script>

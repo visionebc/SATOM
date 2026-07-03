@@ -107,10 +107,9 @@
 <div class="fw-toolbar">
   <div class="fw-search-box">
     <i class="bi bi-search search-icon"></i>
-    <input type="text" id="policySearch" placeholder="Search policies…" oninput="filterPolicies(this.value)">
+    <input type="text" id="policySearch" placeholder="Search policies…">
   </div>
-  <select class="form-select form-select-sm" style="width:auto;" id="statusFilter"
-          onchange="filterPolicies(document.getElementById('policySearch').value)">
+  <select class="form-select form-select-sm" style="width:auto;" id="statusFilter">
     <option value="">All Status</option>
     <option value="enabled">Enabled</option>
     <option value="disabled">Disabled</option>
@@ -174,7 +173,7 @@
               </span>
             {% endif %}
           </td>
-          <td class="actions-col" onclick="event.stopPropagation()">
+          <td class="actions-col">
             <a href="{{ url_for('workspace.policy_detail', appliance_id=appliance.id, name=p.get('name','')) if appliance else '#' }}"
                class="btn btn-sm btn-outline-primary btn-sm-icon" title="View Detail">
               <i class="bi bi-eye"></i>
@@ -212,5 +211,17 @@ function filterPolicies(query) {
     row.style.display = show ? '' : 'none';
   });
 }
+(function () {
+  document.getElementById('policySearch').addEventListener('input', function (event) {
+    filterPolicies(this.value);
+  });
+  document.getElementById('statusFilter').addEventListener('change', function (event) {
+    filterPolicies(document.getElementById('policySearch').value);
+  });
+  // Keep clicks in the Actions cell from triggering the row's data-href navigation.
+  document.querySelectorAll('#policiesTable tbody td.actions-col').forEach(function (td) {
+    td.addEventListener('click', function (event) { event.stopPropagation(); });
+  });
+})();
 </script>
 {% endblock %}

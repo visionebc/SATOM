@@ -13,7 +13,7 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h4 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Exceptions &amp; Signature Carve-outs — {{ appliance.name }}</h4>
-  <button class="btn btn-sm btn-outline-primary" onclick="openDetect()"><i class="bi bi-search me-1"></i>Detect on device</button>
+  <button class="btn btn-sm btn-outline-primary" data-js="open-detect"><i class="bi bi-search me-1"></i>Detect on device</button>
 </div>
 <p class="text-muted">Desired-state carve-outs authored in the manager and bound to a Server Policy.
   FortiWeb can't record which policy a shared-profile carve-out is for — this does.
@@ -38,9 +38,9 @@
             <td>{% for p in it.policy_names %}<span class="badge bg-secondary me-1">{{ p }}</span>{% else %}<span class="text-muted">unbound</span>{% endfor %}</td>
             <td class="small text-muted">{{ it.reason or '' }}</td>
             <td class="text-nowrap">
-              <button class="btn btn-sm btn-outline-secondary" onclick="editExc(this)">Edit</button>
-              <button class="btn btn-sm btn-outline-primary" onclick="injectExc(this)" title="Push to device">Inject</button>
-              <button class="btn btn-sm btn-outline-danger" onclick="deleteExc({{ it.id }})">Delete</button>
+              <button class="btn btn-sm btn-outline-secondary" data-js="exc-edit">Edit</button>
+              <button class="btn btn-sm btn-outline-primary" data-js="exc-inject" title="Push to device">Inject</button>
+              <button class="btn btn-sm btn-outline-danger" data-js="exc-delete">Delete</button>
             </td>
           </tr>
           {% else %}
@@ -56,14 +56,14 @@
 <div class="card mb-4">
   <div class="card-header d-flex justify-content-between align-items-center">
     <strong id="form-title">New carve-out</strong>
-    <button class="btn btn-sm btn-outline-secondary" onclick="resetForm()">Reset</button>
+    <button class="btn btn-sm btn-outline-secondary" data-js="reset-form">Reset</button>
   </div>
   <div class="card-body">
     <input type="hidden" id="exc-id">
     <div class="row g-3">
       <div class="col-md-4">
         <label class="form-label">Type</label>
-        <select id="exc-type" class="form-select form-select-sm" onchange="loadFields()">
+        <select id="exc-type" class="form-select form-select-sm">
           <option value="">— choose —</option>
           <optgroup label="WAF Exceptions">
             {% for t in exception_types %}<option value="{{ t.key }}">{{ t.group }} · {{ t.label }}</option>{% endfor %}
@@ -103,7 +103,7 @@
     </div>
 
     <div class="mt-3">
-      <button class="btn btn-sm btn-fw-primary" onclick="saveExc()"><i class="bi bi-check2-circle me-1"></i>Save carve-out</button>
+      <button class="btn btn-sm btn-fw-primary" data-js="save-exc"><i class="bi bi-check2-circle me-1"></i>Save carve-out</button>
       <span id="exc-msg" class="ms-2 small"></span>
     </div>
   </div>
@@ -122,7 +122,7 @@
           {% for p in policies %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
         </select>
       </div>
-      <button class="btn btn-sm btn-outline-danger" onclick="purgePolicy()">Purge</button>
+      <button class="btn btn-sm btn-outline-danger" data-js="purge-run">Purge</button>
     </div>
   </div>
 </div>
@@ -131,7 +131,7 @@
 <div class="card mb-4 d-none border-primary-subtle" id="inject-panel">
   <div class="card-header d-flex justify-content-between align-items-center text-primary">
     <strong>⬆ Inject to device</strong>
-    <button class="btn btn-sm btn-outline-secondary" onclick="closeInject()">Close</button>
+    <button class="btn btn-sm btn-outline-secondary" data-js="close-inject">Close</button>
   </div>
   <div class="card-body">
     <p class="small text-muted mb-2" id="inject-summary"></p>
@@ -149,8 +149,8 @@
       </div>
     </div>
     <div class="mt-3">
-      <button class="btn btn-sm btn-outline-primary" onclick="injectRun(false)">Dry-run preview</button>
-      <button class="btn btn-sm btn-fw-primary" onclick="injectRun(true)"><i class="bi bi-upload me-1"></i>Push to device</button>
+      <button class="btn btn-sm btn-outline-primary" data-js="inject-dry-run">Dry-run preview</button>
+      <button class="btn btn-sm btn-fw-primary" data-js="inject-push"><i class="bi bi-upload me-1"></i>Push to device</button>
     </div>
     <pre class="mt-3 p-2 bg-light small d-none" id="inject-out" style="white-space:pre-wrap;"></pre>
   </div>
@@ -160,11 +160,11 @@
 <div class="card mb-4 d-none border-primary-subtle" id="detect-panel">
   <div class="card-header d-flex justify-content-between align-items-center text-primary">
     <strong>🔎 Detect signature carve-outs on device</strong>
-    <button class="btn btn-sm btn-outline-secondary" onclick="closeDetect()">Close</button>
+    <button class="btn btn-sm btn-outline-secondary" data-js="close-detect">Close</button>
   </div>
   <div class="card-body">
     <p class="small text-muted">Reads per-signature exceptions live off the box (server policy → WPP → signature set → filter list) and imports the ones you select, bound to their policy.</p>
-    <button class="btn btn-sm btn-outline-primary" onclick="detectRun()"><i class="bi bi-search me-1"></i>Run detect</button>
+    <button class="btn btn-sm btn-outline-primary" data-js="detect-run"><i class="bi bi-search me-1"></i>Run detect</button>
     <span id="detect-msg" class="ms-2 small text-muted"></span>
     <div id="detect-results" class="mt-3"></div>
   </div>
@@ -334,8 +334,9 @@ function detectRun(){
         + '<td>'+f.policy+'</td><td>'+f.signature_set+'</td><td>'+f.signature_id+'</td>'
         + '<td class="small">'+((f.payload||{})['match-target']||'')+'</td></tr>';
     });
-    html += '</tbody></table><button class="btn btn-sm btn-fw-primary" onclick="detectImport()">Import selected</button>';
+    html += '</tbody></table><button class="btn btn-sm btn-fw-primary" data-js="detect-import">Import selected</button>';
     document.getElementById('detect-results').innerHTML = html;
+    document.querySelector('#detect-results [data-js="detect-import"]').addEventListener('click', function (event) { detectImport(); });
   });
 }
 function detectImport(){
@@ -346,5 +347,27 @@ function detectImport(){
     if (j.imported) location.reload();
   });
 }
+// ── event bindings (CSP: no inline handlers) ──
+(function () {
+  document.querySelector('[data-js="open-detect"]').addEventListener('click', function (event) { openDetect(); });
+  document.querySelectorAll('[data-js="exc-edit"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { editExc(this); });
+  });
+  document.querySelectorAll('[data-js="exc-inject"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { injectExc(this); });
+  });
+  document.querySelectorAll('[data-js="exc-delete"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { deleteExc(+this.closest('tr').dataset.excId); });
+  });
+  document.querySelector('[data-js="reset-form"]').addEventListener('click', function (event) { resetForm(); });
+  document.getElementById('exc-type').addEventListener('change', function (event) { loadFields(); });
+  document.querySelector('[data-js="save-exc"]').addEventListener('click', function (event) { saveExc(); });
+  document.querySelector('[data-js="purge-run"]').addEventListener('click', function (event) { purgePolicy(); });
+  document.querySelector('[data-js="close-inject"]').addEventListener('click', function (event) { closeInject(); });
+  document.querySelector('[data-js="inject-dry-run"]').addEventListener('click', function (event) { injectRun(false); });
+  document.querySelector('[data-js="inject-push"]').addEventListener('click', function (event) { injectRun(true); });
+  document.querySelector('[data-js="close-detect"]').addEventListener('click', function (event) { closeDetect(); });
+  document.querySelector('[data-js="detect-run"]').addEventListener('click', function (event) { detectRun(); });
+})();
 </script>
 {% endblock %}

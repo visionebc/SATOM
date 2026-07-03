@@ -84,7 +84,7 @@
         <div class="fw-search-box">
           <i class="bi bi-search search-icon"></i>
           <input type="text" placeholder="Filter {{ selected.label|lower }}…"
-                 oninput="soFilter('so-table', this.value)">
+                 data-js="so-filter">
         </div>
         <span class="text-muted small ms-2">{{ rows|length }} object(s)</span>
         {% if freshness %}
@@ -123,7 +123,7 @@
                 </a>
                 {% if not selected.read_only %}
                 <button class="btn btn-sm btn-fw-danger"
-                        onclick="soDelete('{{ selected.collection }}', {{ r.name|tojson }})">
+                        data-js="so-delete" data-collection="{{ selected.collection }}" data-mkey="{{ r.name }}">
                   <i class="bi bi-trash"></i>
                 </button>
                 {% endif %}
@@ -144,7 +144,7 @@
 {% endblock %}
 
 {% block scripts %}
-<style>
+<style nonce="{{ csp_nonce }}">
 .so-menu .so-group { border-bottom:1px solid #F0F2F5; }
 .so-menu .so-group:last-child { border-bottom:0; }
 .so-group-head { cursor:pointer; padding:8px 10px; font-weight:600; font-size:13px;
@@ -184,5 +184,18 @@ function soDelete(collection, mkey) {
     }
   });
 }
+(function () {
+  var filterInput = document.querySelector('[data-js="so-filter"]');
+  if (filterInput) {
+    filterInput.addEventListener('input', function (event) {
+      soFilter('so-table', this.value);
+    });
+  }
+  document.querySelectorAll('[data-js="so-delete"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) {
+      soDelete(btn.dataset.collection, btn.dataset.mkey);
+    });
+  });
+})();
 </script>
 {% endblock %}

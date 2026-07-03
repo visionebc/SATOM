@@ -25,7 +25,7 @@
   <div class="row g-2 align-items-end">
     <div class="col-md-6">
       <label class="fw-form-label">Element</label>
-      <select class="form-select prov-key" name="key_{{ idx }}" onchange="onKeyChange(this)">
+      <select class="form-select prov-key" name="key_{{ idx }}">
         <option value="">— select a configuration object —</option>
         {% for section, slist in grouped_specs.items() %}
         <optgroup label="{{ section }}">
@@ -58,11 +58,11 @@
     <div class="col-md-1 text-end">
       <div class="btn-group-vertical btn-group-sm" role="group">
         <button type="button" class="btn btn-outline-secondary btn-sm-icon" title="Move up"
-                onclick="moveRow(this,-1)"><i class="bi bi-arrow-up"></i></button>
+                data-js="row-up"><i class="bi bi-arrow-up"></i></button>
         <button type="button" class="btn btn-outline-secondary btn-sm-icon" title="Move down"
-                onclick="moveRow(this,1)"><i class="bi bi-arrow-down"></i></button>
+                data-js="row-down"><i class="bi bi-arrow-down"></i></button>
         <button type="button" class="btn btn-outline-danger btn-sm-icon" title="Remove element"
-                onclick="removeRow(this)"><i class="bi bi-trash"></i></button>
+                data-js="row-remove"><i class="bi bi-trash"></i></button>
       </div>
     </div>
   </div>
@@ -133,7 +133,7 @@
   <div class="fw-card mb-3">
     <div class="fw-card-header d-flex justify-content-between align-items-center">
       <span class="fw-card-title">Provisioning elements</span>
-      <button type="button" class="btn btn-sm btn-fw-outline" onclick="addRow()"><i class="bi bi-plus-lg me-1"></i>Add element</button>
+      <button type="button" class="btn btn-sm btn-fw-outline" data-js="add-row"><i class="bi bi-plus-lg me-1"></i>Add element</button>
     </div>
     <div class="fw-card-body">
       {% if not spec_keys %}
@@ -206,5 +206,23 @@ document.addEventListener('DOMContentLoaded', function () {
   syncEmpty();
   if (!document.querySelectorAll('#rows .prov-row').length) { addRow(); }
 });
+(function () {
+  var addBtn = document.querySelector('[data-js="add-row"]');
+  if (addBtn) { addBtn.addEventListener('click', function (event) { addRow(); }); }
+  var box = document.getElementById('rows');
+  if (!box) { return; }
+  // Rows are added/cloned dynamically — delegate so new rows are covered too.
+  box.addEventListener('change', function (event) {
+    var sel = event.target.closest('.prov-key');
+    if (sel) { onKeyChange(sel); }
+  });
+  box.addEventListener('click', function (event) {
+    var btn = event.target.closest('[data-js]');
+    if (!btn) { return; }
+    if (btn.dataset.js === 'row-up') { moveRow(btn, -1); }
+    else if (btn.dataset.js === 'row-down') { moveRow(btn, 1); }
+    else if (btn.dataset.js === 'row-remove') { removeRow(btn); }
+  });
+})();
 </script>
 {% endblock %}

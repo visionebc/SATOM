@@ -122,9 +122,9 @@
           </td>
           <td>{{ switch('', (e.get('is-default')|string).lower() in ['enable','enabled','yes'], 'Default', '—', 'fw-toggle-sw-sm', 'fw-cr-default') }}</td>
           <td>
-            <button type="button" class="btn btn-sm btn-fw-outline" onclick="editCrPolicy(this)" data-name="{{ e.get('content-routing-policy-name') }}" title="Edit this rule's match conditions and pool">Conditions…</button>
-            <button type="button" class="btn btn-sm btn-fw-primary" onclick="saveCrRow(this)">Save</button>
-            <button type="button" class="btn btn-sm btn-fw-outline text-danger" onclick="deleteCrRow(this)">Delete</button>
+            <button type="button" class="btn btn-sm btn-fw-outline fw-cr-edit" data-name="{{ e.get('content-routing-policy-name') }}" title="Edit this rule's match conditions and pool">Conditions…</button>
+            <button type="button" class="btn btn-sm btn-fw-primary fw-cr-save">Save</button>
+            <button type="button" class="btn btn-sm btn-fw-outline text-danger fw-cr-delete">Delete</button>
           </td>
         </tr>
         {% endfor %}
@@ -132,8 +132,8 @@
     </table>
     </div>
     <div class="d-flex justify-content-end gap-2">
-      <button type="button" class="btn btn-sm btn-fw-outline" onclick="openNewCrPolicy()"><i class="bi bi-plus-square me-1"></i>New routing policy…</button>
-      <button type="button" class="btn btn-sm btn-fw-primary" onclick="addCrRow()"><i class="bi bi-plus-lg me-1"></i>Add rule</button>
+      <button type="button" class="btn btn-sm btn-fw-outline" data-js="cr-new-open"><i class="bi bi-plus-square me-1"></i>New routing policy…</button>
+      <button type="button" class="btn btn-sm btn-fw-primary" data-js="cr-add-row"><i class="bi bi-plus-lg me-1"></i>Add rule</button>
     </div>
   </div>
 </div>
@@ -170,7 +170,7 @@
             <td style="width:80px"><input type="number" class="form-control form-control-sm fw-input" data-key="weight" data-orig="{{ b.get('weight') }}" value="{{ b.get('weight') }}"></td>
             <td>{{ switch('ssl', (b.get('ssl')|string).lower() in ['enable','enabled'], 'On', 'Off', 'fw-toggle-sw-sm') }}</td>
             <td>{{ switch('status', (b.get('status')|string).lower() in ['enable','enabled'], 'Up', 'Down', 'fw-toggle-sw-sm') }}</td>
-            <td><button type="button" class="btn btn-sm btn-fw-outline fw-save" onclick="saveScope(this)">Save</button></td>
+            <td><button type="button" class="btn btn-sm btn-fw-outline" data-js="save-scope">Save</button></td>
           </tr>
           {% endfor %}
           </tbody>
@@ -199,12 +199,12 @@
     <div class="fw-fld mb-2"><label class="fw-fld-label">Default Server Pool <span class="fw-key">server-pool</span></label>
       <div class="input-group input-group-sm">
         <select class="form-select form-select-sm" id="crNewPool"><option value="">— none —</option></select>
-        <button type="button" class="btn btn-fw-outline" onclick="openNewPool()" title="Create a new server pool on the device"><i class="bi bi-plus-lg me-1"></i>New pool</button>
+        <button type="button" class="btn btn-fw-outline" data-js="pool-new-open" title="Create a new server pool on the device"><i class="bi bi-plus-lg me-1"></i>New pool</button>
       </div></div>
   </div>
   <div class="modal-footer">
     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-    <button type="button" class="btn btn-fw-primary" onclick="submitNewCrPolicy()"><i class="bi bi-check2-circle me-1"></i>Create on device</button>
+    <button type="button" class="btn btn-fw-primary" data-js="cr-new-submit"><i class="bi bi-check2-circle me-1"></i>Create on device</button>
   </div>
 </div></div></div>
 
@@ -227,7 +227,7 @@
   </div>
   <div class="modal-footer">
     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-    <button type="button" class="btn btn-fw-primary" onclick="submitNewPool()"><i class="bi bi-check2-circle me-1"></i>Create on device</button>
+    <button type="button" class="btn btn-fw-primary" data-js="pool-new-submit"><i class="bi bi-check2-circle me-1"></i>Create on device</button>
   </div>
 </div></div></div>
 
@@ -238,7 +238,7 @@
   <div class="modal-body" id="diffBody"></div>
   <div class="modal-footer">
     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-    <button type="button" class="btn btn-fw-primary" onclick="applyPending()"><i class="bi bi-lightning-charge me-1"></i>Apply to device</button>
+    <button type="button" class="btn btn-fw-primary" data-js="apply-pending"><i class="bi bi-lightning-charge me-1"></i>Apply to device</button>
   </div>
 </div></div></div>
 
@@ -256,13 +256,13 @@
   <div class="modal-body" id="createBody"></div>
   <div class="modal-footer">
     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-    <button type="button" class="btn btn-fw-primary" onclick="submitCreate()"><i class="bi bi-check2-circle me-1"></i>Create on device</button>
+    <button type="button" class="btn btn-fw-primary" data-js="submit-create"><i class="bi bi-check2-circle me-1"></i>Create on device</button>
   </div>
 </div></div></div>
 {% endblock %}
 
 {% block scripts %}
-<style>
+<style nonce="{{ csp_nonce }}">
 .fw-fld-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px 16px;padding:10px 2px;}
 .fw-fld{display:flex;flex-direction:column;gap:3px;}
 .fw-fld-label{font-size:11.5px;color:#94a3b8;display:flex;justify-content:space-between;gap:6px;align-items:baseline;}
@@ -541,11 +541,16 @@ function addCrRow(){
   const tr = document.createElement('tr');
   tr.innerHTML = `<td class="mono text-muted">new</td>
     <td><select class="form-select form-select-sm fw-ref-select fw-cr-policy" data-ref="server-policy/http-content-routing-policy" data-orig=""><option value="">— none —</option></select></td>
-    <td><label class="fw-toggle-sw fw-toggle-sw-sm"><input type="checkbox" class="fw-cr-default fw-toggle" value="disable" data-orig="disable" data-on="Default" data-off="—" oninput="fwSync(this)" onchange="fwSync(this)"><span class="fw-toggle-sw-track" aria-hidden="true"></span><span class="fw-toggle-sw-text">—</span></label></td>
-    <td><button type="button" class="btn btn-sm btn-fw-outline" onclick="editCrPolicy(this)" data-name="">Conditions…</button>
-        <button type="button" class="btn btn-sm btn-fw-primary" onclick="saveCrRow(this)">Save</button>
-        <button type="button" class="btn btn-sm btn-fw-outline text-danger" onclick="deleteCrRow(this)">Remove</button></td>`;
+    <td><label class="fw-toggle-sw fw-toggle-sw-sm"><input type="checkbox" class="fw-cr-default fw-toggle" value="disable" data-orig="disable" data-on="Default" data-off="—"><span class="fw-toggle-sw-track" aria-hidden="true"></span><span class="fw-toggle-sw-text">—</span></label></td>
+    <td><button type="button" class="btn btn-sm btn-fw-outline fw-cr-edit" data-name="">Conditions…</button>
+        <button type="button" class="btn btn-sm btn-fw-primary fw-cr-save">Save</button>
+        <button type="button" class="btn btn-sm btn-fw-outline text-danger fw-cr-delete">Remove</button></td>`;
   tb.appendChild(tr);
+  const tgl = tr.querySelector('.fw-cr-default');
+  if(tgl){
+    tgl.addEventListener('input', function (event) { fwSync(this); });
+    tgl.addEventListener('change', function (event) { fwSync(this); });
+  }
   preloadRefs(tr);
 }
 
@@ -612,7 +617,7 @@ async function submitNewCrPolicy(){
   const tr=rows[rows.length-1];
   const sel=tr.querySelector('.fw-cr-policy');
   if(sel){ const o=document.createElement('option'); o.value=name; o.textContent=name; sel.appendChild(o); sel.dataset.orig=name; sel.value=name; }
-  const cond=tr.querySelector('button[onclick="editCrPolicy(this)"]'); if(cond) cond.dataset.name=name;
+  const cond=tr.querySelector('button.fw-cr-edit'); if(cond) cond.dataset.name=name;
   if(confirm(`Add Match Conditions to ${name} now?`) && cond) editCrPolicy(cond);
 }
 
@@ -622,5 +627,32 @@ document.addEventListener('DOMContentLoaded', () => {
   const pre = document.getElementById('rawConfig');
   if(pre){ try { pre.textContent = JSON.stringify(JSON.parse(pre.textContent), null, 2); } catch(_){} }
 });
+
+// ── CSP: bindings that replace the former inline on* attributes ──
+(function () {
+  const crBody = document.getElementById('crBody');
+  if (crBody) {
+    crBody.addEventListener('click', function (event) {
+      const btn = event.target.closest('button');
+      if (!btn || !crBody.contains(btn)) return;
+      if (btn.classList.contains('fw-cr-edit')) editCrPolicy(btn);
+      else if (btn.classList.contains('fw-cr-save')) saveCrRow(btn);
+      else if (btn.classList.contains('fw-cr-delete')) deleteCrRow(btn);
+    });
+  }
+  function bind(name, fn) {
+    document.querySelectorAll('[data-js="' + name + '"]').forEach(function (el) {
+      el.addEventListener('click', fn);
+    });
+  }
+  bind('cr-new-open',     function (event) { openNewCrPolicy(); });
+  bind('cr-add-row',      function (event) { addCrRow(); });
+  bind('pool-new-open',   function (event) { openNewPool(); });
+  bind('cr-new-submit',   function (event) { submitNewCrPolicy(); });
+  bind('pool-new-submit', function (event) { submitNewPool(); });
+  bind('apply-pending',   function (event) { applyPending(); });
+  bind('submit-create',   function (event) { submitCreate(); });
+  bind('save-scope',      function (event) { saveScope(this); });
+})();
 </script>
 {% endblock %}

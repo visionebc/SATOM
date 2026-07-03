@@ -358,15 +358,23 @@ def create_app(config_override: object | None = None) -> Flask:
         return redirect(url_for("auth.login"))
 
     # -- security headers -------------------------------------------------
-    # CSP hardening (2026-07-03): every inline <script> block in the templates
-    # carries nonce="{{ csp_nonce }}", so script-src-elem drops
-    # 'unsafe-inline' — an INJECTED <script> (the classic stored/reflected XSS
-    # payload) is refused by every modern browser. Inline on*= handlers
-    # (~160 across the templates) are still allowed via script-src-attr
-    # 'unsafe-inline' — nonces don't cover attributes; removing them is an
-    # incremental template refactor. The plain script-src line stays as the
-    # legacy-browser fallback (a browser without -elem/-attr support keeps the
-    # previous behaviour instead of a broken UI).
+    # CSP hardening (2026-07-03, round 2): every inline <script> AND <style>
+    # block in the templates carries nonce="{{ csp_nonce }}".
+    #  * script-src-attr is 'none' — the ~163 inline on*= handlers were
+    #    refactored into addEventListener bindings inside nonced script blocks
+    #    (data-js/data-* hooks, delegation for Jinja loops); JS-generated
+    #    markup no longer emits handler attributes either (lock.js, audit,
+    #    api_explorer, settings, segments, exceptions detect).
+    #  * script-src drops 'unsafe-inline' and carries the nonce as the
+    #    legacy fallback for browsers without -elem/-attr support.
+    #  * style-src-elem is nonce-gated, so an INJECTED <style> is refused;
+    #    dynamic injectors stamp the meta[name=csp-nonce] (turbo.min.js does
+    #    natively, jobs.js patched, and the two fragment re-executors —
+    #    base.html device picker + section_config editor — re-nonce style
+    #    elements alongside scripts).
+    #  * style-src-attr stays 'unsafe-inline': ~827 style="..." attributes
+    #    remain in the templates; converting them to classes is a separate
+    #    incremental round. The plain style-src line is the legacy fallback.
     import secrets as _secrets
 
     @app.before_request
@@ -386,10 +394,12 @@ def create_app(config_override: object | None = None) -> Flask:
         nonce = getattr(g, "csp_nonce", "")
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
             f"script-src-elem 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
-            "script-src-attr 'unsafe-inline'; "
+            "script-src-attr 'none'; "
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            f"style-src-elem 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
+            "style-src-attr 'unsafe-inline'; "
             "img-src 'self' data: https:; "
             "font-src 'self' data: https://cdn.jsdelivr.net;"
         )

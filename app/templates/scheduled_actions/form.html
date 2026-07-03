@@ -48,7 +48,7 @@
 
           <div class="mb-3">
             <label class="fw-form-label">Action <span class="text-danger">*</span></label>
-            <select class="form-select" name="action" id="actionSelect" required onchange="onActionChange()">
+            <select class="form-select" name="action" id="actionSelect" required>
               {% if not action %}<option value="" disabled selected>— select an action —</option>{% endif %}
               <optgroup label="Admin maintenance">
                 {% for spec in admin_actions %}
@@ -152,14 +152,14 @@
 
           <div class="mb-3">
             <label class="fw-form-label">Label (optional)</label>
-            <input type="text" class="form-control" name="custom_label" id="customLabel" autocomplete="off" oninput="updateCustomPreview()"
+            <input type="text" class="form-control" name="custom_label" id="customLabel" autocomplete="off"
                    value="{{ custom_params.get('label', '') }}"
                    placeholder="e.g. Disable a maintenance banner">
           </div>
           <div class="row g-2 mb-3">
             <div class="col-4">
               <label class="fw-form-label">Method</label>
-              <select class="form-select" name="custom_method" id="customMethod" onchange="updateCustomPreview()">
+              <select class="form-select" name="custom_method" id="customMethod">
                 {% for m in ['GET', 'POST', 'PUT', 'DELETE'] %}
                 <option value="{{ m }}" {{ 'selected' if custom_params.get('method', 'GET') == m else '' }}>{{ m }}</option>
                 {% endfor %}
@@ -167,13 +167,13 @@
             </div>
             <div class="col-8">
               <label class="fw-form-label">mkey (object name, optional)</label>
-              <input type="text" class="form-control" name="custom_mkey" id="customMkey" autocomplete="off" oninput="updateCustomPreview()"
+              <input type="text" class="form-control" name="custom_mkey" id="customMkey" autocomplete="off"
                      value="{{ custom_params.get('mkey', '') }}" placeholder="e.g. default">
             </div>
           </div>
           <div class="mb-3">
             <label class="fw-form-label">Endpoint <span class="text-danger">*</span></label>
-            <input type="text" class="form-control" name="custom_endpoint" id="customEndpoint" list="registryEndpoints" oninput="updateCustomPreview()"
+            <input type="text" class="form-control" name="custom_endpoint" id="customEndpoint" list="registryEndpoints"
                    autocomplete="off" spellcheck="false"
                    style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"
                    value="{{ custom_params.get('endpoint', '') }}"
@@ -191,11 +191,11 @@
           <div class="mb-1">
             <div class="d-flex align-items-center mb-1">
               <label class="fw-form-label mb-0">JSON body (POST / PUT)</label>
-              <button type="button" class="btn btn-fw-outline btn-sm ms-auto" onclick="formatCustomBody()">
+              <button type="button" class="btn btn-fw-outline btn-sm ms-auto" data-js="format-custom-body">
                 <i class="bi bi-braces-asterisk me-1"></i>Format
               </button>
             </div>
-            <textarea class="form-control" name="custom_body" id="customBody" rows="5" spellcheck="false" oninput="updateCustomPreview()"
+            <textarea class="form-control" name="custom_body" id="customBody" rows="5" spellcheck="false"
                       style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"
                       placeholder='{"status": "disable"}'>{% if custom_params.get('body') is not none %}{{ custom_params.get('body') | tojson(indent=2) }}{% endif %}</textarea>
             <div class="form-text" id="customBodyHint">
@@ -216,7 +216,7 @@
         <div class="fw-card-body">
           <div class="mb-3">
             <label class="fw-form-label">Frequency</label>
-            <select class="form-select" name="schedule_kind" id="scheduleKind" onchange="onScheduleKindChange()">
+            <select class="form-select" name="schedule_kind" id="scheduleKind">
               {% for k in schedule_kinds %}
               <option value="{{ k }}"
                       {{ 'selected' if (action and action.schedule_kind == k) or (not action and k == 'once') else '' }}>
@@ -426,8 +426,20 @@ document.addEventListener('DOMContentLoaded', function(){
   var sel=document.getElementById('actionSelect');
   if(sel && sel.value==='custom_rest'){ renderRecipeChips(); updateCustomPreview(); }
 });
+
+// Event bindings (moved from inline on* attributes for CSP script-src-attr 'none').
+(function () {
+  document.getElementById('actionSelect').addEventListener('change', function (event) { onActionChange(); });
+  document.getElementById('scheduleKind').addEventListener('change', function (event) { onScheduleKindChange(); });
+  document.getElementById('customLabel').addEventListener('input', function (event) { updateCustomPreview(); });
+  document.getElementById('customMethod').addEventListener('change', function (event) { updateCustomPreview(); });
+  document.getElementById('customMkey').addEventListener('input', function (event) { updateCustomPreview(); });
+  document.getElementById('customEndpoint').addEventListener('input', function (event) { updateCustomPreview(); });
+  document.getElementById('customBody').addEventListener('input', function (event) { updateCustomPreview(); });
+  document.querySelector('[data-js="format-custom-body"]').addEventListener('click', function (event) { formatCustomBody(); });
+})();
 </script>
-<style>
+<style nonce="{{ csp_nonce }}">
 .fw-help{background:rgba(148,163,184,0.06);border:1px solid rgba(148,163,184,0.12);border-radius:12px;padding:14px 16px;font-size:13px;line-height:1.55;}
 .fw-help code{color:#c4b5fd;background:rgba(139,92,246,0.12);padding:1px 5px;border-radius:5px;}
 .fw-help ul li{margin-bottom:4px;}

@@ -201,7 +201,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function filterPolicies(query) {
   const q      = query.toLowerCase();
   const status = document.getElementById('statusFilter').value.toLowerCase();

@@ -447,7 +447,7 @@ tr.cfg-edit-row > td { background:#F6F8FB; border-top:0; padding:0 !important; }
 .cfg-edit-body .card { box-shadow:none; border-color:#E2E8F0; }
 .cfg-edit-btn.active { background:var(--fw-accent,#EF5424); color:#fff; border-color:var(--fw-accent,#EF5424); }
 </style>
-<script>
+<script nonce="{{ csp_nonce }}">
 const CFG_AID = {{ appliance.id if appliance else 'null' }};
 const SECTION_KEY = {{ section.key|tojson }};
 const CAN_SAVE_TPL = {{ ('y' if current_user.can('operations.template_save') else '')|tojson }} ? true : false;
@@ -525,6 +525,7 @@ function cfgInlineEdit(btn, collection, mkey, singleton, title){
     body.innerHTML = html;
     body.querySelectorAll('script').forEach(function(old){
       var sc = document.createElement('script');
+      sc.nonce = (document.querySelector('meta[name=csp-nonce]')||{}).content || '';
       if (old.src) sc.src = old.src; else sc.textContent = old.textContent;
       old.parentNode.replaceChild(sc, old);
     });
@@ -614,7 +615,7 @@ function renderPreview(j) {
 }
 </script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // Section sub-menu (.so-menu) accordion — one group open at a time (2026-06-29)
 (function () {
   var menu = document.querySelector('.so-menu');
@@ -638,7 +639,7 @@ function renderPreview(j) {
 </script>
 
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // Capture an existing config object (+ its sub-tables) as a PENDING config
 // template (services side: /objedit/<aid>/save-template). Config-area scoped.
 var _stplCtx = null;

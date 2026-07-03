@@ -94,9 +94,9 @@
   </div>
 </div>
 
-<script id="er-data" type="application/json">{"tables": {{ tables|tojson }}, "edges": {{ edges|tojson }}}</script>
+<script nonce="{{ csp_nonce }}" id="er-data" type="application/json">{"tables": {{ tables|tojson }}, "edges": {{ edges|tojson }}}</script>
 <script src="{{ url_for('static', filename='js/er_diagram.js') }}"></script>
-<script>
+<script nonce="{{ csp_nonce }}">
 (function(){
   function tok(){ var m=document.querySelector('meta[name="csrf-token"]'); return m?m.content:''; }
 

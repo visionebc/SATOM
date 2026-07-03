@@ -236,7 +236,7 @@
 .fm-filter-pill.active { box-shadow: 0 0 8px rgba(255,255,255,0.15); }
 </style>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // MAP_PALETTE — exact match to canonical desktop theme.py
 const MAP_PALETTE = [
   "#4f8cff","#8b5cf6","#06b6d4","#10b981",
@@ -405,7 +405,7 @@ fetch('/architecture/data')
   });
 </script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // ---- Read-only device inventory modal ----
 (function () {
   const modalEl = document.getElementById('deviceModal');
@@ -473,7 +473,7 @@ fetch('/architecture/data')
 })();
 </script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // ---- device-first: saved filters + modal Enter ----
 (function(){
   const SAVED = {{ saved_filters|tojson }};

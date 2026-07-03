@@ -597,17 +597,24 @@ def baseline_apply(baseline_id: int):
                                phase='preview', baseline=row, devices=devices,
                                preview=preview, result=None, item_count=len(items))
 
-    result = BulkRunner(items).apply(device_ids, canary=1)
-    log_action('baseline.apply', target=row.name,
-               detail=f'devices={device_ids} items={len(items)} '
-                      f'aborted={result.get("aborted")}')
-    if result.get('aborted'):
-        flash(f'Apply aborted — canary failed for "{row.name}".', 'danger')
-    else:
-        flash(f'Applied baseline "{row.name}" to {len(devices)} device(s).', 'success')
-    return render_template('provisioning/baseline_apply.html',
-                           phase='result', baseline=row, devices=devices,
-                           preview=None, result=result, item_count=len(items))
+    # Confirmed live apply — background job (same rationale as templates.apply:
+    # a fleet rollout must not run inside an HTTP request). Progress + result
+    # surface in the job dock; the completion audit row is the job's.
+    from flask import current_app
+    from ..services.bulk import start_apply_job
+    from flask_login import current_user
+    job = start_apply_job(
+        current_app._get_current_object(),
+        title=f'Apply baseline "{row.name}" to {len(devices)} device(s)',
+        items=items, device_ids=device_ids,
+        by=getattr(current_user, 'username', '') or '',
+        meta={'baseline_id': row.id, 'name': row.name},
+        audit_action='baseline.apply', audit_target=row.name)
+    log_action('baseline.apply.start', target=row.name,
+               detail=f'devices={device_ids} items={len(items)} job={job["id"]}')
+    flash(f'Baseline rollout "{row.name}" started for {len(devices)} device(s) '
+          '— progress appears in the job dock (bottom right).', 'info')
+    return redirect(url_for('provisioning.baselines'))
 
 
 @bp.route('/templates/<int:template_id>/combos', methods=['POST'])

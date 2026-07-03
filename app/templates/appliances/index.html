@@ -32,7 +32,7 @@
     <div class="fw-stat-card">
       <div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-server"></i></div>
       <div>
-        <div class="fw-stat-value">{{ appliances|length if appliances else 0 }}</div>
+        <div class="fw-stat-value">{{ total_count if total_count is defined else (appliances|length if appliances else 0) }}</div>
         <div class="fw-stat-label">Total Appliances</div>
       </div>
     </div>
@@ -59,7 +59,7 @@
     <div class="fw-stat-card">
       <div class="fw-stat-icon fw-stat-icon-info"><i class="bi bi-tag"></i></div>
       <div>
-        <div class="fw-stat-value">{{ appliances|map(attribute='kind')|unique|list|length if appliances else 0 }}</div>
+        <div class="fw-stat-value">{{ kinds_count if kinds_count is defined else (appliances|map(attribute='kind')|unique|list|length if appliances else 0) }}</div>
         <div class="fw-stat-label">Platforms</div>
       </div>
     </div>
@@ -68,10 +68,13 @@
 
 <!-- Toolbar -->
 <div class="fw-toolbar">
-  <div class="fw-search-box">
+  <form class="fw-search-box" method="get" action="{{ url_for('appliances.index') }}" style="margin:0;">
     <i class="bi bi-search search-icon"></i>
-    <input type="text" id="tableSearch" placeholder="Search appliances…" oninput="filterTable(this.value)">
-  </div>
+    {# oninput = instant filter within the current page; Enter = server-side
+       search across the WHOLE fleet (paginated). #}
+    <input type="text" id="tableSearch" name="q" value="{{ q or '' }}"
+           placeholder="Search appliances… (Enter = whole fleet)" oninput="filterTable(this.value)">
+  </form>
   <select class="form-select form-select-sm" style="width:auto;" id="kindFilter" onchange="filterTable(document.getElementById('tableSearch').value)">
     <option value="">All Kinds</option>
     <option value="fortiweb">FortiWeb</option>
@@ -190,6 +193,32 @@
     </tbody>
   </table>
 </div>
+
+{% if pagination is defined and pagination and pagination.pages > 1 %}
+<nav class="d-flex justify-content-between align-items-center mt-3" aria-label="Appliance pages">
+  <div class="text-muted" style="font-size:13px;">
+    Showing {{ pagination.first }}–{{ pagination.last }} of {{ pagination.total }}
+    {%- if q %} matching “{{ q }}”{% endif %}
+  </div>
+  <ul class="pagination pagination-sm mb-0">
+    <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+      <a class="page-link" href="{{ url_for('appliances.index', page=pagination.prev_num, q=q or None) }}">«</a>
+    </li>
+    {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+      {% if p %}
+        <li class="page-item {% if p == pagination.page %}active{% endif %}">
+          <a class="page-link" href="{{ url_for('appliances.index', page=p, q=q or None) }}">{{ p }}</a>
+        </li>
+      {% else %}
+        <li class="page-item disabled"><span class="page-link">…</span></li>
+      {% endif %}
+    {% endfor %}
+    <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+      <a class="page-link" href="{{ url_for('appliances.index', page=pagination.next_num, q=q or None) }}">»</a>
+    </li>
+  </ul>
+</nav>
+{% endif %}
 
 <!-- ============================================================
      ADD APPLIANCE MODAL
@@ -394,7 +423,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function toggleHA(scope) {
   const cb = document.getElementById(scope + '_is_cluster');
   const on = !!(cb && cb.checked);

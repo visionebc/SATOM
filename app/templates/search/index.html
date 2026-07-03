@@ -209,7 +209,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 // Keyboard shortcut: press '/' to focus search box
 document.addEventListener('keydown', function (e) {
   if (e.key === '/' && !['INPUT','TEXTAREA'].includes(e.target.tagName)) {

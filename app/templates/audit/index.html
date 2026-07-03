@@ -213,7 +213,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function filterAudit(q) {
   q = q.toLowerCase();
   document.querySelectorAll('#auditTable tbody tr').forEach(function (row) {

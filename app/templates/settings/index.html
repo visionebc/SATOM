@@ -953,7 +953,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 // --- activate the tab named in the URL hash (after a save redirect) ---
 (function () {
   var hash = window.location.hash;

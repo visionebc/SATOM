@@ -79,7 +79,7 @@
 </div>
 {% endfor %}
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // OBJEDIT_AID is global so the inline-injected editor and the full page share it.
 window.OBJEDIT_AID = {{ appliance.id }};
 function fwCollectChanged(scope){

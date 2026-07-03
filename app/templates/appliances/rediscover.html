@@ -47,7 +47,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 (function() {
   const token = document.querySelector('meta[name="csrf-token"]').content;
   const startBtn = document.getElementById('redisc-start');

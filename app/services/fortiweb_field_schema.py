@@ -65,13 +65,11 @@ REF_ENDPOINTS: dict[str, str] = {
     "vserver": "server-policy/vserver",
     "server-pool": "server-policy/server-pool",
     "web-protection-profile": "waf/web-protection-profile.inline-protection",
-    "ftp-protection-profile": "waf/ftp-protection-profile",
     "service": "server-policy/service.custom|server-policy/service.predefined",
     "https-service": "server-policy/service.custom|server-policy/service.predefined",
     "http3-service": "server-policy/service.custom|server-policy/service.predefined",
-    "replacemsg": "system/replacemsg-group",
+    "replacemsg": "system/replacemsg",
     "certificate": "system/certificate.local",
-    "certificate-group": "system/certificate.certificate-group",
     "intermediate-certificate-group": "system/certificate.intermediate-certificate-group",
     "sni-certificate": "system/certificate.sni",
     "ssl-client-verify": "system/certificate.verify",
@@ -83,7 +81,7 @@ REF_ENDPOINTS: dict[str, str] = {
     "v-zone": "system/v-zone",
     "lets-certificate": "system/certificate.letsencrypt",
     "scripting-list": "server-policy/scripting",
-    "replacemsg-on-connect-failure": "system/replacemsg-group",
+    "replacemsg-on-connect-failure": "system/replacemsg",
     "ssl-ciphers-group": "server-policy/ssl-ciphers.custom|server-policy/ssl-ciphers.predefined",
     "data-capture-port": "system/interface",
     "block-port": "system/interface",
@@ -100,26 +98,26 @@ REF_ENDPOINTS: dict[str, str] = {
     "signature-rule": "waf/signature",
     "allow-method-policy": "waf/allow-method-policy",
     "http-protocol-parameter-restriction": "waf/http-protocol-parameter-restriction",
-    "x-forwarded-for-rule": "waf/x-forwarded-for-rule",
+    "x-forwarded-for-rule": "waf/x-forwarded-for",
     "ip-list-policy": "waf/ip-list",
     "geo-block-list-policy": "waf/geo-block-list",
     "url-access-policy": "waf/url-access.url-access-policy",
     "custom-access-policy": "waf/custom-access.policy",
-    "bot-mitigate-policy": "waf/bot-mitigate.policy",
+    "bot-mitigate-policy": "waf/bot-mitigate-policy",
     "cookie-security-policy": "waf/cookie-security",
     "csrf-protection": "waf/csrf-protection",
-    "hidden-fields-protection": "waf/hidden-fields-rule",
-    "parameter-validation-rule": "waf/parameter-validation.parameter-validation-rule",
-    "file-upload-policy": "waf/file-upload-restriction-rule",
-    "json-validation-policy": "waf/json-validation",
-    "xml-validation-policy": "waf/xml-validation",
-    "openapi-validation-policy": "waf/openapi-validation",
-    "api-management-policy": "waf/api-management",
+    "hidden-fields-protection": "waf/hidden-fields-protection",
+    "parameter-validation-rule": "waf/parameter-validation-rule",
+    "file-upload-policy": "waf/file-upload-restriction-policy",
+    "json-validation-policy": "waf/json-validation.policy",
+    "xml-validation-policy": "waf/xml-validation.policy",
+    "openapi-validation-policy": "waf/openapi-validation-policy",
+    "api-management-policy": "waf/api-policy",
     "url-rewrite-policy": "waf/url-rewrite.url-rewrite-policy",
     "user-tracking-policy": "waf/user-tracking.policy",
-    "threat-score-profile": "waf/threat-score-profile",
+    "threat-score-profile": "server-policy/pattern.threat-score-profile",
     "http-header-security": "waf/http-header-security",
-    "cors-protection-policy": "waf/cors-protection",
+    "cors-protection-policy": "waf/cors-protection-policy",
     "padding-oracle": "waf/padding-oracle",
 }
 
@@ -400,6 +398,7 @@ def descriptor(kind: str, key: str, value, obj: dict) -> dict:
     k_enum = ks.get("enums", {}).get(key)
     k_ref = ks.get("refs", {}).get(key)
     k_toggle = key in ks.get("toggles", ())
+    k_number = key in ks.get("numbers", ())
     label = ks.get("labels", {}).get(key) or ov.get("label") or LABEL_SEED.get(key) or _prettify(key)
     group = ks.get("groups", {}).get(key) or ov.get("group") or GROUP_SEED.get(kind, {}).get(key) or "Advanced"
     # Enum <select> options MUST be device tokens (round-robin), never the GUI
@@ -422,6 +421,8 @@ def descriptor(kind: str, key: str, value, obj: dict) -> dict:
         widget = "enum"
     elif k_toggle:                     # curated per-object toggle
         widget = "toggle"
+    elif k_number:                     # curated per-object number
+        widget = "number"
     elif sval in _TOGGLE_VALS:        # enable/disable
         widget = "toggle"
     elif options:                     # known enum vocabulary
@@ -449,7 +450,34 @@ def descriptor(kind: str, key: str, value, obj: dict) -> dict:
         d["create_new"] = key in REF_CREATE
     if widget == "toggle":
         d["on"] = is_on(value)
+    # ── WAF-spec enrichments (waf_specs.register adds these keys to KIND_SPECS) ──
+    sw = ks.get("show_when", {}).get(key)
+    if sw:
+        # Same rule shape the workspace vis evaluator understands: the field is
+        # shown only while the controlling field's value is one of ``vals`` —
+        # exactly how FortiWeb gates e.g. a signature exception's inputs by the
+        # chosen Element Type.
+        d["vis"] = {"t": "eq", "key": sw[0], "vals": list(sw[1])}
+    if widget in ("enum", "combo"):
+        vl = _value_labels().get(key)
+        if vl:
+            d["option_labels"] = vl
+    if widget in ("text", "combo") and _is_regex_capable(key):
+        d["regex"] = True
+        d["rx_context"] = kind
     return d
+
+
+@lru_cache(maxsize=1)
+def _value_labels() -> dict:
+    """Display labels for cryptic wire codes (``alert_deny`` → "Alert & Deny")."""
+    from . import waf_specs
+    return waf_specs.value_labels()
+
+
+def _is_regex_capable(key: str) -> bool:
+    from . import waf_specs
+    return key in waf_specs.REGEX_KEYS
 
 
 def kind_keys(kind: str) -> list:
@@ -459,9 +487,15 @@ def kind_keys(kind: str) -> list:
     value, which yields an empty form for a sub-table that has no rows yet)."""
     ks = KIND_SPECS.get(kind, {})
     keys: set = set()
-    for sub in ("enums", "refs", "labels", "groups"):
+    for sub in ("enums", "refs", "labels", "groups", "show_when"):
         keys |= set(ks.get(sub, {}))
     keys |= set(ks.get("toggles", ()))
+    keys |= set(ks.get("numbers", ()))
+    # A curated field ORDER is the FortiWeb form order — a blank form follows it.
+    order = ks.get("order")
+    if order:
+        oidx = {k: i for i, k in enumerate(order)}
+        return sorted(keys, key=lambda k: (oidx.get(k, len(order)), k))
     return sorted(keys)
 
 
@@ -481,9 +515,23 @@ def build_groups(kind: str, obj: dict, keep_name: bool = False) -> list[dict]:
         # populated rows). Advanced groups are collapsed in the template instead.
         d = descriptor(kind, key, value, obj)
         buckets.setdefault(d["group"], []).append(d)
+    ks = KIND_SPECS.get(kind, {})
+    # Per-kind curated ORDER (fields + groups) mirrors the FortiWeb form; keys
+    # outside the curated order fall back to alphabetical after it.
+    order = ks.get("order") or []
+    oidx = {k: i for i, k in enumerate(order)}
+    g_order = ks.get("group_order") or []
+    gidx = {g: i for i, g in enumerate(g_order)}
+
+    def _rank(g: str):
+        if g in gidx:
+            return (-1, "%03d" % gidx[g])
+        return _group_rank(g)
+
     out = []
-    for g in sorted(buckets, key=_group_rank):
-        rows = sorted(buckets[g], key=lambda r: r["label"].lower())
+    for g in sorted(buckets, key=_rank):
+        rows = sorted(buckets[g],
+                      key=lambda r: (oidx.get(r["key"], len(order)), r["label"].lower()))
         out.append({"title": g, "fields": rows})
     return out
 

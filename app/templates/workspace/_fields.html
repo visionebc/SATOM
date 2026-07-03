@@ -59,7 +59,7 @@
 {{ _fw_bindings() }}
 {% endmacro %}
 
-{% macro fld(f, actions=true) %}
+{% macro fld(f, actions=true, drill=false) %}
 <div class="fw-fld"{% if f.vis %} data-vis='{{ f.vis|tojson }}' data-field="{{ f.key }}"{% endif %}>
   <label class="fw-fld-label">{{ f.label }} <span class="fw-key">{{ f.key }}</span></label>
   {% if f.widget == 'toggle' %}
@@ -70,11 +70,13 @@
     </select>
   {% elif f.widget == 'enum' %}
     {% set vals = f.options or [] %}
-    <select class="form-select form-select-sm fw-input" data-key="{{ f.key }}" data-orig="{{ f.value }}">
+    {% set vlab = f.option_labels or {} %}
+    <select class="form-select form-select-sm fw-input"{% if f.key == 'action' %} data-fw-action="1"{% endif %} data-key="{{ f.key }}" data-orig="{{ f.value }}">
       {% if not f.value %}<option value="" selected>— choose —</option>{% endif %}
-      {% if f.value and f.value not in vals %}<option value="{{ f.value }}" selected>{{ f.value }}</option>{% endif %}
-      {% for o in vals %}<option value="{{ o }}" {{ 'selected' if o == f.value }}>{{ o }}</option>{% endfor %}
+      {% if f.value and f.value not in vals %}<option value="{{ f.value }}" selected>{{ vlab.get(f.value, f.value) }}</option>{% endif %}
+      {% for o in vals %}<option value="{{ o }}" {{ 'selected' if o == f.value }}>{{ vlab.get(o, o) }}</option>{% endfor %}
     </select>
+    {% if f.key == 'action' %}<div class="form-text fw-action-explain small" data-for="{{ f.key }}"></div>{% endif %}
   {% elif f.widget == 'ref' %}
     <div class="fw-ref">
       <select class="form-select form-select-sm fw-input fw-ref-select" data-key="{{ f.key }}" data-orig="{{ f.value }}" data-ref="{{ f.ref }}">
@@ -84,16 +86,22 @@
       {% if actions %}
         <button type="button" class="btn btn-sm btn-fw-outline fw-edit-ref" data-ref="{{ f.ref }}" data-key="{{ f.key }}" title="Edit the selected object">✎</button>
         {% if f.create_new %}<button type="button" class="btn btn-sm btn-fw-outline fw-create" data-ref="{{ f.ref }}" data-key="{{ f.key }}" title="Create new">＋</button>{% endif %}
+      {% elif drill %}
+        <button type="button" class="btn btn-sm btn-fw-outline fw-drill" data-ref="{{ f.ref }}" title="Open the selected object in the editor">↗</button>
       {% endif %}
     </div>
   {% elif f.widget == 'combo' %}
     {% set vals = f.options or [] %}
+    {% if f.regex %}<div class="fw-rx-wrap d-flex gap-1">{% endif %}
     <input type="text" class="form-control form-control-sm fw-input" data-key="{{ f.key }}" data-orig="{{ f.value }}" value="{{ f.value }}" list="dl-{{ f.key }}" autocomplete="off" placeholder="type or pick a value">
     <datalist id="dl-{{ f.key }}">{% for o in vals %}<option value="{{ o }}">{% endfor %}</datalist>
+    {% if f.regex %}<button type="button" class="btn btn-sm btn-fw-outline fw-rx-btn" data-rx-context="{{ f.rx_context }}" title="Regex calculator — test this pattern against samples">.*</button></div>{% endif %}
   {% elif f.widget == 'number' %}
     <input type="number" class="form-control form-control-sm fw-input" data-key="{{ f.key }}" data-orig="{{ f.value }}" value="{{ f.value }}">
   {% else %}
+    {% if f.regex %}<div class="fw-rx-wrap d-flex gap-1">{% endif %}
     <input type="text" class="form-control form-control-sm fw-input" data-key="{{ f.key }}" data-orig="{{ f.value }}" value="{{ f.value }}">
+    {% if f.regex %}<button type="button" class="btn btn-sm btn-fw-outline fw-rx-btn" data-rx-context="{{ f.rx_context }}" title="Regex calculator — test this pattern against samples">.*</button></div>{% endif %}
   {% endif %}
 </div>
 {% endmacro %}

@@ -147,19 +147,27 @@ def edit(appliance_id):
     title = request.args.get('title', '') or objform.collection_of(coll).rsplit('/', 1)[-1]
     partial = request.args.get('partial', '') in ('1', 'true', 'True')
     tmpl = 'objedit/_body.html' if partial else 'objedit/editor.html'
+    from ..services import waf_specs
+    action_explain = waf_specs.action_explanations()
     if not objform.is_known_collection(coll):
         return render_template(tmpl, appliance=appl, error='Unknown object type',
                                collection=coll, mkey=mkey, title=title, create=create,
-                               obj_groups=[], subtables=[]), 400
+                               obj_groups=[], subtables=[], help_info=None,
+                               action_explain=action_explain), 400
 
     # CREATE mode: a blank top-level object — render the curated form skeleton
     # (no device read, no sub-tables; those open once the object exists and the
     # operator is promoted to the normal edit view via ?mkey=<name>).
     if create:
         form = objform.object_form(coll, {})
+        # Curated kinds render the FULL blank field set (the device object is
+        # empty, so build_groups alone would yield an empty form).
+        obj_groups = form['groups'] or objform.field_groups(
+            coll, objform.blank_row_sample(coll), keep_name=False)
         return render_template(tmpl, appliance=appl, error=None,
                                collection=coll, mkey='', title=title, create=True,
-                               obj_groups=form['groups'], subtables=[])
+                               obj_groups=obj_groups, subtables=[],
+                               help_info=form.get('help'), action_explain=action_explain)
 
     # Device reads are best-effort: the editor STRUCTURE (fields + sub-tables)
     # always renders from the registry even when the box is unreachable, so the
@@ -190,7 +198,8 @@ def edit(appliance_id):
 
     return render_template(tmpl, appliance=appl, error=error,
                            collection=coll, mkey=mkey, title=title, create=False,
-                           obj_groups=obj_groups, subtables=subtables)
+                           obj_groups=obj_groups, subtables=subtables,
+                           help_info=form.get('help'), action_explain=action_explain)
 
 
 @bp.route('/<int:appliance_id>/ref-options')

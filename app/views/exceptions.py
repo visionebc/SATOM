@@ -75,7 +75,8 @@ def type_fields(id=None):
     t = store.type_for(key)
     if not t:
         return jsonify(ok=False, error='unknown type', fields=[]), 400
-    return jsonify(ok=True, type=t, fields=store.fields_for(key))
+    return jsonify(ok=True, type=t, fields=store.fields_for(key),
+                   help=store.help_for(key))
 
 
 @bp.route('/<int:id>/save', methods=['POST'])
@@ -95,14 +96,21 @@ def save(id):
     payload = {k: v for k, v in fields.items() if v not in (None, '', [])}
 
     if exc_id:
+        existing = store.get(int(exc_id))
+        if existing is None:
+            return jsonify(ok=False, error='not found'), 404
+        errors = store.validate_payload(existing.exc_type, payload)
+        if errors:
+            return jsonify(ok=False, error='; '.join(errors), errors=errors), 400
         exc = store.update(int(exc_id), wpp_mkey=wpp_mkey, payload=payload,
                            name=name, reason=reason, policies=policies)
-        if exc is None:
-            return jsonify(ok=False, error='not found'), 404
         return jsonify(ok=True, id=exc.id)
 
     if not store.type_for(exc_type):
         return jsonify(ok=False, error='unknown carve-out type'), 400
+    errors = store.validate_payload(exc_type, payload)
+    if errors:
+        return jsonify(ok=False, error='; '.join(errors), errors=errors), 400
     author = getattr(current_user, 'username', '') or ''
     exc = store.add(appliance.id, wpp_mkey=wpp_mkey, exc_type=exc_type, payload=payload,
                     name=name, reason=reason, author=author, policies=policies)

@@ -86,6 +86,12 @@
       </div>
     </div>
 
+    <div class="alert alert-secondary py-2 small mt-3 mb-0 d-none" id="exc-help">
+      <div id="exc-help-what"></div>
+      <div class="mt-1" id="exc-help-backend"></div>
+      <div class="mt-1 text-muted" id="exc-help-base"></div>
+    </div>
+
     <div class="row g-3 mt-1" id="exc-fields"><!-- dynamic fields per type --></div>
 
     <div class="row g-3 mt-1">
@@ -170,11 +176,13 @@
   </div>
 </div>
 
+<script src="{{ url_for('static', filename='js/regex_lab.js') }}" nonce="{{ csp_nonce }}"></script>
 <script nonce="{{ csp_nonce }}">
 const EXC_AID = {{ appliance.id }};
 function fwPost(url, payload){
   return fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}).then(r=>r.json());
 }
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
 function fieldInput(f, val){
   val = (val === undefined || val === null) ? '' : val;
   if (f.widget === 'toggle'){
@@ -184,33 +192,72 @@ function fieldInput(f, val){
       + '<option value="disable"'+(!on?' selected':'')+'>Disabled</option></select>';
   }
   if (f.widget === 'enum'){
+    const lab = f.option_labels || {};
     let html = '<select class="form-select form-select-sm exc-fld" data-key="'+f.key+'"><option value="">—</option>';
-    (f.options||[]).forEach(function(o){ html += '<option'+(o==val?' selected':'')+'>'+o+'</option>'; });
-    if (val && (f.options||[]).indexOf(val) < 0) html += '<option selected>'+val+'</option>';
+    (f.options||[]).forEach(function(o){ html += '<option value="'+esc(o)+'"'+(o==val?' selected':'')+'>'+esc(lab[o]||o)+'</option>'; });
+    if (val && (f.options||[]).indexOf(val) < 0) html += '<option value="'+esc(val)+'" selected>'+esc(lab[val]||val)+'</option>';
     return html + '</select>';
   }
-  return '<input class="form-control form-control-sm exc-fld" data-key="'+f.key+'" value="'+String(val).replace(/"/g,'&quot;')+'">';
+  let input = '<input class="form-control form-control-sm exc-fld" data-key="'+f.key+'" value="'+esc(val)+'">';
+  if (f.regex){
+    // "Prove it first" — the .* button opens the regex calculator seeded with
+    // this input; on Apply the tested pattern lands back in the field.
+    input = '<div class="d-flex gap-1 fw-rx-wrap">'+input
+      + '<button type="button" class="btn btn-sm btn-fw-outline fw-rx-btn" data-rx-context="'+esc(f.rx_context||'')+'" title="Regex calculator — test this pattern against samples">.*</button></div>';
+  }
+  return input;
 }
 function renderFields(fields, payload){
   payload = payload || {};
   const box = document.getElementById('exc-fields');
   box.innerHTML = '';
   fields.forEach(function(f){
-    const col = document.createElement('div'); col.className = 'col-md-4';
-    col.innerHTML = '<label class="form-label small">'+f.label+' <code class="text-muted">'+f.key+'</code></label>' + fieldInput(f, payload[f.key]);
+    const col = document.createElement('div'); col.className = 'col-md-4 exc-fld-wrap';
+    if (f.vis) col.setAttribute('data-vis', JSON.stringify(f.vis));
+    const req = f.required ? ' <span class="text-danger">*</span>' : '';
+    col.innerHTML = '<label class="form-label small">'+esc(f.label)+req+' <code class="text-muted">'+esc(f.key)+'</code></label>' + fieldInput(f, payload[f.key]);
     box.appendChild(col);
   });
   if (!fields.length) box.innerHTML = '<div class="col-12 text-muted small">This type has no curated fields — bind it and add details in the reason.</div>';
+  excRefreshVis();
+}
+// show_when gating: a field hidden by its rule is NOT APPLICABLE to the chosen
+// Element Type (mirrors FortiWeb) — hidden fields are never collected/sent.
+function excRefreshVis(){
+  document.querySelectorAll('#exc-fields .exc-fld-wrap[data-vis]').forEach(function(w){
+    let rule = null; try { rule = JSON.parse(w.getAttribute('data-vis')); } catch(e){}
+    if (!rule || rule.t !== 'eq') return;
+    const ctrl = document.querySelector('#exc-fields .exc-fld[data-key="'+rule.key+'"]');
+    const show = !ctrl || (rule.vals||[]).indexOf(ctrl.value) >= 0;
+    w.style.display = show ? '' : 'none';
+  });
+}
+document.getElementById('exc-fields').addEventListener('change', excRefreshVis);
+document.getElementById('exc-fields').addEventListener('click', function(ev){
+  const rx = ev.target.closest && ev.target.closest('.fw-rx-btn');
+  if (rx && window.FWRegexLab)
+    FWRegexLab.open(rx.closest('.fw-rx-wrap').querySelector('.exc-fld'), rx.dataset.rxContext || '');
+});
+function showTypeHelp(h){
+  const box = document.getElementById('exc-help');
+  h = h || {};
+  if (!h.what && !h.backend){ box.classList.add('d-none'); return; }
+  box.classList.remove('d-none');
+  document.getElementById('exc-help-what').innerHTML = h.what ? '<i class="bi bi-info-circle me-1"></i>'+esc(h.what) : '';
+  document.getElementById('exc-help-backend').innerHTML = h.backend ? '<strong>Device behavior:</strong> '+esc(h.backend) : '';
+  document.getElementById('exc-help-base').textContent = h.base || '';
 }
 function loadFields(payload){
   const t = document.getElementById('exc-type').value;
-  if (!t){ document.getElementById('exc-fields').innerHTML = ''; return Promise.resolve(); }
+  if (!t){ document.getElementById('exc-fields').innerHTML = ''; showTypeHelp(null); return Promise.resolve(); }
   return fetch('/exceptions/type-fields?type='+encodeURIComponent(t)).then(r=>r.json())
-    .then(function(j){ renderFields(j.fields||[], payload); });
+    .then(function(j){ renderFields(j.fields||[], payload); showTypeHelp(j.help); });
 }
 function collectFields(){
   const out = {};
   document.querySelectorAll('#exc-fields .exc-fld').forEach(function(el){
+    const wrap = el.closest('.exc-fld-wrap');
+    if (wrap && wrap.style.display === 'none') return;   // gated-out field
     if (el.value !== '') out[el.dataset.key] = el.value;
   });
   return out;
@@ -261,7 +308,10 @@ function saveExc(){
   if (!payload.exc_type){ document.getElementById('exc-msg').innerHTML = '<span class="text-danger">Choose a type.</span>'; return; }
   fwPost('/exceptions/'+EXC_AID+'/save', payload).then(function(j){
     if (j.ok){ if (window.FW) FW.toast('Carve-out saved','success'); location.reload(); }
-    else document.getElementById('exc-msg').innerHTML = '<span class="text-danger">'+(j.error||'failed')+'</span>';
+    else if (j.errors && j.errors.length)
+      document.getElementById('exc-msg').innerHTML =
+        '<span class="text-danger">'+j.errors.map(esc).join(' · ')+'</span>';
+    else document.getElementById('exc-msg').innerHTML = '<span class="text-danger">'+esc(j.error||'failed')+'</span>';
   });
 }
 function deleteExc(id){

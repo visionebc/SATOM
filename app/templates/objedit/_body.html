@@ -11,6 +11,20 @@
 
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 
+{# ── FortiWeb context: what this object does + how the device reacts ───── #}
+{% if help_info and (help_info.what or help_info.backend_reaction) %}
+<div class="alert alert-secondary py-2 small mb-3 fw-help">
+  <div><i class="bi bi-info-circle me-1"></i>{{ help_info.what }}</div>
+  {% if help_info.backend_reaction %}
+    <div class="mt-1"><strong>Device behavior:</strong> {{ help_info.backend_reaction }}</div>
+  {% endif %}
+  {% if help_info.gotchas %}
+    <ul class="mb-0 mt-1">{% for gtx in help_info.gotchas %}<li>{{ gtx }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if help_info.url %}<a class="small" href="{{ help_info.url }}" target="_blank" rel="noopener">FortiWeb admin guide ↗</a>{% endif %}
+</div>
+{% endif %}
+
 {# ── object scalar fields ─────────────────────────────────────────────── #}
 <div class="card mb-3">
   <div class="card-header"><strong>Settings</strong></div>
@@ -26,7 +40,7 @@
       {% for sec in obj_groups %}
         <details class="fw-group" {{ 'open' if loop.first }}>
           <summary class="fw-group-head">{{ sec.title }} <span class="text-muted">({{ sec.fields|length }})</span></summary>
-          <div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false) }}{% endfor %}</div>
+          <div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false, drill=true) }}{% endfor %}</div>
         </details>
       {% else %}
         {% if not create %}<p class="text-muted mb-0">This object exposes no editable scalar fields.</p>{% endif %}
@@ -57,7 +71,7 @@
       <details class="fw-row-scope mb-2 border rounded p-2" data-collection="{{ st.collection }}"
                data-parent="{{ mkey }}" data-sub-id="{{ row.sub_id }}">
         <summary class="fw-group-head">{{ row.label or ('row ' ~ row.sub_id) }}</summary>
-        {% for sec in row.groups %}<div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false) }}{% endfor %}</div>{% endfor %}
+        {% for sec in row.groups %}<div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false, drill=true) }}{% endfor %}</div>{% endfor %}
         <div class="mt-2">
           <button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-save-row">Save row</button>
           <button type="button" class="btn btn-sm btn-fw-danger" data-js="objedit-delete-row">Delete</button>
@@ -71,7 +85,7 @@
     <details class="fw-row-scope fw-row-new mt-2 border rounded p-2 border-primary-subtle"
              data-collection="{{ st.collection }}" data-parent="{{ mkey }}">
       <summary class="fw-group-head text-primary">＋ Add {{ st.label }} row</summary>
-      {% for sec in st.blank_groups %}<div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false) }}{% endfor %}</div>{% endfor %}
+      {% for sec in st.blank_groups %}<div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false, drill=true) }}{% endfor %}</div>{% endfor %}
       <div class="mt-2"><button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-create-row">Create row</button></div>
       <div class="fw-result"></div>
     </details>
@@ -79,16 +93,72 @@
 </div>
 {% endfor %}
 
+<script src="{{ url_for('static', filename='js/regex_lab.js') }}" nonce="{{ csp_nonce }}"></script>
 <script nonce="{{ csp_nonce }}">
 // OBJEDIT_AID is global so the inline-injected editor and the full page share it.
 window.OBJEDIT_AID = {{ appliance.id }};
+// Action → device-behavior explanations (FortiWeb admin guide, waf_specs).
+window.FW_ACTION_EXPLAIN = {{ (action_explain or {})|tojson }};
 function fwCollectChanged(scope){
   const out = {};
   scope.querySelectorAll('.fw-input').forEach(function(el){
     const k = el.dataset.key; if (!k) return;
+    // A field hidden by a show_when rule is NOT APPLICABLE to the current
+    // selection (mirrors the FortiWeb GUI): never send its (stale) value.
+    const wrap = el.closest('.fw-fld');
+    if (wrap && wrap.style.display === 'none') return;
     if (el.value !== el.dataset.orig) out[k] = el.value;
   });
   return out;
+}
+// ── show_when visibility (FortiWeb-style field gating) ─────────────────────
+// rule = {t:'eq', key:<controlling field>, vals:[allowed…]} on .fw-fld[data-vis];
+// the controlling field lives in the SAME scope (.fw-scope / .fw-row-scope).
+function fwEvalScopeVis(scopeEl){
+  scopeEl.querySelectorAll('.fw-fld[data-vis]').forEach(function(w){
+    let rule = null; try { rule = JSON.parse(w.getAttribute('data-vis')); } catch(e){}
+    if (!rule || rule.t !== 'eq') return;
+    const ctrl = scopeEl.querySelector('.fw-input[data-key="' + rule.key + '"]');
+    const show = !ctrl || (rule.vals || []).indexOf(ctrl.value) >= 0;
+    w.style.display = show ? '' : 'none';
+  });
+}
+window.fwRefreshVis = function(root){
+  (root || document).querySelectorAll('.fw-scope, .fw-row-scope').forEach(fwEvalScopeVis);
+};
+if (!window.__fwObjeditVisBound){
+  window.__fwObjeditVisBound = true;
+  document.addEventListener('change', function(ev){
+    const scope = ev.target.closest && ev.target.closest('.fw-scope, .fw-row-scope');
+    if (scope) fwEvalScopeVis(scope);
+    if (ev.target.matches && ev.target.matches('select[data-fw-action]')) fwExplainAction(ev.target);
+  }, true);
+  document.addEventListener('click', function(ev){
+    const b = ev.target.closest && ev.target.closest('.fw-drill');
+    if (b){
+      const sel = b.closest('.fw-ref').querySelector('select.fw-ref-select');
+      const val = sel ? sel.value : '';
+      if (!val){ if (window.FW) FW.toast('Nothing selected to open', 'info'); return; }
+      const coll = (b.dataset.ref || '').split('|')[0];
+      if (!coll) return;
+      location.href = '/objedit/' + window.OBJEDIT_AID + '/edit?collection='
+        + encodeURIComponent(coll) + '&mkey=' + encodeURIComponent(val);
+    }
+    const rx = ev.target.closest && ev.target.closest('.fw-rx-btn');
+    if (rx && window.FWRegexLab){
+      FWRegexLab.open(rx.closest('.fw-rx-wrap').querySelector('.fw-input'), rx.dataset.rxContext || '');
+    }
+  });
+}
+// ── "how will the device react" hint under every Action dropdown ───────────
+function fwExplainAction(sel){
+  const box = sel.parentElement.querySelector('.fw-action-explain[data-for="' + sel.dataset.key + '"]');
+  if (!box) return;
+  const ex = (window.FW_ACTION_EXPLAIN || {})[sel.value];
+  box.textContent = ex || '';
+}
+function fwExplainAllActions(root){
+  (root || document).querySelectorAll('select[data-fw-action]').forEach(fwExplainAction);
 }
 function fwPost(url, payload){
   return fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
@@ -192,7 +262,15 @@ window.objeditPopulateRefs = function(root){
       }).catch(function(){});
   });
 };
-document.addEventListener('DOMContentLoaded', function(){ window.objeditPopulateRefs(document); });
+document.addEventListener('DOMContentLoaded', function(){
+  window.objeditPopulateRefs(document);
+  window.fwRefreshVis(document);
+  fwExplainAllActions(document);
+});
+// The inline-injected (partial) editor has no DOMContentLoaded — run now too;
+// harmless double-run on a full page load (both are idempotent).
+window.fwRefreshVis(document);
+fwExplainAllActions(document);
 function deleteRow(btn){
   const scope = btn.closest('.fw-row-scope'), el = scope.querySelector('.fw-result');
   const base = {collection: scope.dataset.collection, parent: scope.dataset.parent, sub_id: scope.dataset.subId || ''};

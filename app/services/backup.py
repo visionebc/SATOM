@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import hashlib
 import os
+
+from werkzeug.utils import secure_filename
 import shutil
 import time
 from typing import Any
@@ -147,7 +149,7 @@ def store_bytes(*, appliance_id: int, appliance_name: str, data: bytes, filename
                 source: str = "upload", created_by: str = "", firmware: str | None = None,
                 note: str | None = None) -> ConfigBackup:
     """Persist config bytes into the vault (file on disk + ConfigBackup row)."""
-    safe_name = os.path.basename(filename) or "config.conf"
+    safe_name = secure_filename(filename or "") or "config.conf"
     cb = ConfigBackup(
         appliance_id=appliance_id, appliance_name=appliance_name or "",
         filename=safe_name, stored_path="", size_bytes=len(data),

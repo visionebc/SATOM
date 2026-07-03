@@ -72,8 +72,14 @@ DIAGNOSTIC_COMMANDS: list[str] = [
 
 
 def _diag_dir() -> Path:
-    """``/opt/fortinet-manager/data/diagnostics`` — beside the app package."""
-    d = Path(__file__).resolve().parents[2] / "data" / "diagnostics"
+    """``/opt/fortinet-manager/data/diagnostics`` — beside the app package.
+
+    ``FORTINET_DIAG_DIR`` overrides it (tests point it at a tmp dir so the
+    status endpoint never reads the production progress file).
+    """
+    override = os.environ.get("FORTINET_DIAG_DIR")
+    d = Path(override) if override else (
+        Path(__file__).resolve().parents[2] / "data" / "diagnostics")
     d.mkdir(parents=True, exist_ok=True)
     return d
 

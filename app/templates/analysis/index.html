@@ -2,7 +2,7 @@
 {% block title %}Analysis{% endblock %}
 
 {% block head %}
-<style>
+<style nonce="{{ csp_nonce }}">
   .ana-bar{display:flex;flex-wrap:wrap;gap:.6rem;align-items:flex-end;margin-bottom:1rem}
   .ana-bar .fld{display:flex;flex-direction:column;gap:.2rem}
   .ana-bar label{font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;opacity:.7;font-weight:600}

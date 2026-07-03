@@ -77,7 +77,7 @@
 <div class="fw-toolbar">
   <div class="fw-search-box">
     <i class="bi bi-search search-icon"></i>
-    <input type="text" id="backupSearch" placeholder="Search backups…" oninput="filterBackups(this.value)">
+    <input type="text" id="backupSearch" placeholder="Search backups…">
   </div>
 </div>
 
@@ -161,12 +161,20 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function filterBackups(q) {
   q = q.toLowerCase();
   document.querySelectorAll('#backupsTable tbody tr').forEach(function (row) {
     row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
   });
 }
+(function () {
+  var input = document.getElementById('backupSearch');
+  if (input) {
+    input.addEventListener('input', function (event) {
+      filterBackups(this.value);
+    });
+  }
+})();
 </script>
 {% endblock %}

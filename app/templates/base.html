@@ -428,6 +428,7 @@
     fetch('{{ url_for("architecture.picker") }}').then(function(r){return r.text();})
       .then(function(html){ body.innerHTML=html;
         body.querySelectorAll('script').forEach(function(os){var ns=document.createElement('script');ns.nonce=(document.querySelector('meta[name=csp-nonce]')||{}).content||'';ns.textContent=os.textContent;os.replaceWith(ns);});
+        body.querySelectorAll('style').forEach(function(os){var ns=document.createElement('style');ns.nonce=(document.querySelector('meta[name=csp-nonce]')||{}).content||'';ns.textContent=os.textContent;os.replaceWith(ns);});
       }).catch(function(){ body.innerHTML='<div class="text-danger">Failed to load devices.</div>'; });
   });
 })();

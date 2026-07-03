@@ -125,7 +125,7 @@
                 <i class="bi bi-download me-1"></i>Download
               </a>
               <form method="POST" action="{{ url_for('firmware.delete', image_id=img.id) }}"
-                    onsubmit="return confirm('Delete firmware {{ img.version }} ({{ img.filename }})? This removes the file from disk.');">
+                    data-js="fw-delete-form" data-version="{{ img.version }}" data-filename="{{ img.filename }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-fw-danger btn-sm">
                   <i class="bi bi-trash"></i>
@@ -175,6 +175,13 @@
     fileInput.value = '';   // clear so another image can be queued
     var btn = form.querySelector('button[type=submit]');
     if (btn) { btn.disabled = true; setTimeout(function () { btn.disabled = false; }, 1500); }
+  });
+})();
+(function () {
+  document.querySelectorAll('[data-js="fw-delete-form"]').forEach(function (form) {
+    form.addEventListener('submit', function (event) {
+      if (!confirm('Delete firmware ' + this.dataset.version + ' (' + this.dataset.filename + ')? This removes the file from disk.')) event.preventDefault();
+    });
   });
 })();
 </script>

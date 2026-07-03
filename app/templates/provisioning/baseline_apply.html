@@ -21,11 +21,11 @@
 
 {% if phase == 'preview' %}
   <div class="alert alert-secondary" style="max-width:1000px;"><pre class="mb-0" style="max-height:340px;overflow:auto;">{{ preview|tojson(indent=2) }}</pre></div>
-  <form method="post" action="{{ url_for('provisioning.baseline_apply', baseline_id=baseline.id) }}">
+  <form method="post" action="{{ url_for('provisioning.baseline_apply', baseline_id=baseline.id) }}"
+        data-fw-confirm-form="Write baseline {{ baseline.name }} to {{ devices|length }} device(s)? Canary first.">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="confirm" value="1">
-    <button class="btn btn-warning" type="submit"
-            onclick="return confirm('Write baseline {{ baseline.name }} to {{ devices|length }} device(s)? Canary first.');">
+    <button class="btn btn-warning" type="submit">
       <i class="bi bi-cloud-upload"></i> Confirm live apply (canary-gated)</button>
     <a class="btn btn-outline-secondary" href="{{ url_for('provisioning.baselines') }}">Cancel</a>
   </form>

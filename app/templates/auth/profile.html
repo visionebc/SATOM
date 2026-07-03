@@ -112,7 +112,7 @@
 {% endblock %}
 
 {% block scripts %}
-<style>
+<style nonce="{{ csp_nonce }}">
   .banner-options { display: flex; flex-direction: column; gap: 8px; }
   .banner-opt {
     display: flex; align-items: center; gap: 12px; cursor: pointer;

@@ -33,6 +33,12 @@
     b.className = 'alert ' + (danger ? 'alert-warning' : 'alert-info') +
                   ' d-flex justify-content-between align-items-center';
     b.innerHTML = html;
+    // CSP: script-src-attr 'none' — bind the banner button here, not inline.
+    var act = b.querySelector('[data-lock-action]');
+    if (act) act.addEventListener('click', function () {
+      if (this.getAttribute('data-lock-action') === 'reload') location.reload();
+      else takeOver();
+    });
   }
 
   function clearBanner() {
@@ -53,7 +59,7 @@
     clearInterval(hbTimer); hbTimer = null;
     blocked = true;
     banner('<span>⚠ Your edit lock was lost (expired or taken). Reload before saving.</span>' +
-           '<button type="button" class="btn btn-sm btn-outline-dark" onclick="location.reload()">Reload</button>', true);
+           '<button type="button" class="btn btn-sm btn-outline-dark" data-lock-action="reload">Reload</button>', true);
   }
 
   function takeOver() {
@@ -67,7 +73,7 @@
     blocked = true;
     var who = (info && info.owner_label) || 'another user';
     banner('<span>🔒 Being edited by <strong>' + who + '</strong>. Saving is blocked to avoid a conflict.</span>' +
-           '<button type="button" class="btn btn-sm btn-warning" onclick="window.__lockTakeOver()">Take over</button>', true);
+           '<button type="button" class="btn btn-sm btn-warning" data-lock-action="takeover">Take over</button>', true);
   }
 
   // Guard the editor's save entry points if present.

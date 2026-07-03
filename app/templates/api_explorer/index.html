@@ -23,7 +23,7 @@
   </a>
 </div>
 
-<style>
+<style nonce="{{ csp_nonce }}">
   /* API Menu tree (left sidebar) — caret rotates with Bootstrap collapse state */
   #apiTree .api-tree-section-header .api-tree-caret { transition: transform .15s ease; }
   #apiTree .api-tree-section-header:not(.collapsed) .api-tree-caret { transform: rotate(90deg); }
@@ -47,7 +47,7 @@
         <div class="fw-search-box" style="padding:10px 12px; border-bottom:1px solid #F0F2F5;">
           <i class="bi bi-search search-icon" style="left:22px;"></i>
           <input type="text" id="apiTreeSearch" placeholder="Filter endpoints…"
-                 style="padding-left:34px; font-size:13px;" oninput="filterApiTree(this.value)">
+                 style="padding-left:34px; font-size:13px;">
         </div>
         <div id="apiTree" style="max-height:640px; overflow-y:auto;">
           {% if api_tree and api_tree.child_nodes() %}
@@ -69,14 +69,14 @@
                     <div class="api-tree-leaf d-flex align-items-center"
                          data-search="{{ (ep.name ~ ' ' ~ (ep.urn or ep.path or ''))|lower }}">
                       <button type="button" class="btn btn-link text-start flex-grow-1 text-decoration-none api-tree-leaf-btn"
-                              onclick='loadEndpoint({{ method|tojson }}, {{ (ep.urn or ep.path or "")|tojson }})'
+                              data-method="{{ method }}" data-path="{{ ep.urn or ep.path or '' }}"
                               style="padding:6px 8px 6px 24px;">
                         <span class="fw-api-method fw-api-method-{{ method|lower }} me-1" style="font-size:9px;">{{ method }}</span>
                         <span style="font-size:12.5px;">{{ ep.name }}</span>
                         <br><code class="text-muted" style="font-size:10.5px;">{{ ep.urn or ep.path }}</code>
                       </button>
                       <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy me-1"
-                              title="Copy URN" onclick='copyUrn({{ (ep.urn or ep.path or "")|tojson }})'
+                              title="Copy URN" data-urn="{{ ep.urn or ep.path or '' }}"
                               style="padding:2px 7px;">
                         <i class="bi bi-clipboard" style="font-size:11px;"></i>
                       </button>
@@ -144,7 +144,7 @@
                 'api/v2.0/cmdb/waf/web-protection-profile.inline-protection',
               ] %}
                 <button class="fw-tag" style="cursor:pointer;border:none;font-size:10.5px;"
-                        onclick="document.getElementById('inp-path').value='{{ path }}'">
+                        data-js="common-path" data-path="{{ path }}">
                   {{ path.split('.')[-1] }}
                 </button>
               {% endfor %}
@@ -168,7 +168,7 @@
                     style="font-family:Consolas,Monaco,monospace; font-size:12.5px;"></textarea>
         </div>
 
-        <button class="btn btn-fw-primary w-100" id="btn-execute" onclick="runRequest()">
+        <button class="btn btn-fw-primary w-100" id="btn-execute">
           <i class="bi bi-play-circle me-1"></i>Execute Request
         </button>
       </div>
@@ -178,7 +178,7 @@
     <div class="fw-card">
       <div class="fw-card-header">
         <span class="fw-card-title"><i class="bi bi-clock-history me-2"></i>History</span>
-        <button class="btn btn-sm btn-secondary" onclick="clearHistory()">Clear</button>
+        <button class="btn btn-sm btn-secondary" data-js="clear-history">Clear</button>
       </div>
       <div id="history-list" class="fw-card-body p-0" style="max-height:200px;overflow-y:auto;">
         <div class="text-muted text-center py-3" style="font-size:13px;" id="history-empty">
@@ -196,7 +196,7 @@
         <div class="d-flex align-items-center gap-3">
           <span id="resp-time" class="text-muted" style="font-size:12px;"></span>
           <span id="resp-status" class="fw-badge fw-badge-secondary">—</span>
-          <button class="btn btn-sm btn-fw-outline" onclick="copyResponse()">
+          <button class="btn btn-sm btn-fw-outline" data-js="copy-response">
             <i class="bi bi-clipboard me-1"></i>Copy
           </button>
         </div>
@@ -305,13 +305,32 @@ function renderHistory() {
   if (!requestHistory.length) { empty.style.display = ''; return; }
   empty.style.display = 'none';
 
-  list.innerHTML = requestHistory.map(function (h) {
-    return '<button class="list-group-item list-group-item-action text-start" onclick="loadHistory(' + JSON.stringify(h.method) + ',' + JSON.stringify(h.path) + ')" style="font-size:12px;padding:8px 14px;border:none;">' +
-      '<span class="fw-api-method fw-api-method-' + h.method.toLowerCase() + ' me-2">' + h.method + '</span>' +
-      '<span class="text-truncate" style="max-width:260px;display:inline-block;vertical-align:middle;">' + h.path + '</span>' +
-      '<span class="float-end text-muted" style="font-size:11px;">' + h.ts + '</span>' +
-      '</button>';
-  }).join('');
+  list.innerHTML = '';
+  requestHistory.forEach(function (h) {
+    const btn = document.createElement('button');
+    btn.className = 'list-group-item list-group-item-action text-start';
+    btn.style.cssText = 'font-size:12px;padding:8px 14px;border:none;';
+
+    const methodEl = document.createElement('span');
+    methodEl.className = 'fw-api-method fw-api-method-' + h.method.toLowerCase() + ' me-2';
+    methodEl.textContent = h.method;
+
+    const pathEl = document.createElement('span');
+    pathEl.className = 'text-truncate';
+    pathEl.style.cssText = 'max-width:260px;display:inline-block;vertical-align:middle;';
+    pathEl.textContent = h.path;
+
+    const tsEl = document.createElement('span');
+    tsEl.className = 'float-end text-muted';
+    tsEl.style.cssText = 'font-size:11px;';
+    tsEl.textContent = h.ts;
+
+    btn.appendChild(methodEl);
+    btn.appendChild(pathEl);
+    btn.appendChild(tsEl);
+    btn.addEventListener('click', function () { loadHistory(h.method, h.path); });
+    list.appendChild(btn);
+  });
 }
 
 function loadHistory(method, path) {
@@ -379,5 +398,23 @@ document.addEventListener('keydown', function (e) {
     runRequest();
   }
 });
+
+// Event bindings (moved from inline on* attributes for CSP script-src-attr 'none').
+(function () {
+  document.getElementById('apiTreeSearch').addEventListener('input', function (event) { filterApiTree(this.value); });
+  document.getElementById('btn-execute').addEventListener('click', function (event) { runRequest(); });
+  document.querySelector('[data-js="clear-history"]').addEventListener('click', function (event) { clearHistory(); });
+  document.querySelector('[data-js="copy-response"]').addEventListener('click', function (event) { copyResponse(); });
+
+  document.querySelectorAll('#apiTree .api-tree-leaf-btn').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { loadEndpoint(this.dataset.method, this.dataset.path); });
+  });
+  document.querySelectorAll('#apiTree .api-tree-copy').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { copyUrn(this.dataset.urn); });
+  });
+  document.querySelectorAll('[data-js="common-path"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { document.getElementById('inp-path').value = this.dataset.path; });
+  });
+})();
 </script>
 {% endblock %}

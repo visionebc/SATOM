@@ -20,7 +20,7 @@
     <a href="{{ url_for('appliances.flash_reports') }}" class="btn fw-btn-secondary">
       <i class="bi bi-clipboard-data me-1"></i>Firmware Reports
     </a>
-    <button class="btn btn-fw-primary" onclick="API.openModal('modalAddAppliance')">
+    <button class="btn btn-fw-primary" data-js="open-add-appliance">
       <i class="bi bi-plus-lg me-1"></i>Add Appliance
     </button>
   </div>
@@ -70,17 +70,17 @@
 <div class="fw-toolbar">
   <form class="fw-search-box" method="get" action="{{ url_for('appliances.index') }}" style="margin:0;">
     <i class="bi bi-search search-icon"></i>
-    {# oninput = instant filter within the current page; Enter = server-side
-       search across the WHOLE fleet (paginated). #}
+    {# typing = instant filter within the current page (input listener in the
+       scripts block); Enter = server-side search across the WHOLE fleet (paginated). #}
     <input type="text" id="tableSearch" name="q" value="{{ q or '' }}"
-           placeholder="Search appliances… (Enter = whole fleet)" oninput="filterTable(this.value)">
+           placeholder="Search appliances… (Enter = whole fleet)">
   </form>
-  <select class="form-select form-select-sm" style="width:auto;" id="kindFilter" onchange="filterTable(document.getElementById('tableSearch').value)">
+  <select class="form-select form-select-sm" style="width:auto;" id="kindFilter">
     <option value="">All Kinds</option>
     <option value="fortiweb">FortiWeb</option>
     <option value="fortiadc">FortiADC</option>
   </select>
-  <button class="btn btn-fw-outline btn-sm" onclick="window.location.reload()">
+  <button class="btn btn-fw-outline btn-sm" data-js="refresh-page">
     <i class="bi bi-arrow-clockwise me-1"></i>Refresh
   </button>
 </div>
@@ -132,8 +132,7 @@
           <td class="actions-col">
             <button class="btn btn-sm btn-outline-secondary btn-sm-icon me-1"
                     title="Test Connection"
-                    data-test-id="{{ a.id }}"
-                    onclick="API.testConnection('{{ a.id }}')">
+                    data-test-id="{{ a.id }}">
               <i class="bi bi-lightning"></i>
             </button>
             {% if a.kind == 'fortiweb' %}
@@ -149,7 +148,8 @@
             {% endif %}
             <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1"
                     title="Edit"
-                    onclick='openEditModal({{ a.to_dict()|tojson }})'>
+                    data-js="edit-appliance"
+                    data-appliance='{{ a.to_dict()|tojson }}'>
               <i class="bi bi-pencil"></i>
             </button>
             <form method="POST"
@@ -183,7 +183,7 @@
               <div class="fw-empty-state-icon"><i class="bi bi-server"></i></div>
               <div class="fw-empty-state-title">No appliances configured</div>
               <div class="fw-empty-state-text">Add your first FortiWeb appliance to get started.</div>
-              <button class="btn btn-fw-primary" onclick="API.openModal('modalAddAppliance')">
+              <button class="btn btn-fw-primary" data-js="open-add-appliance">
                 <i class="bi bi-plus-lg me-1"></i>Add Appliance
               </button>
             </div>
@@ -304,14 +304,14 @@
             <div class="col-12"><hr class="my-1"></div>
             <div class="col-12">
               <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="is_cluster" id="add_is_cluster" onchange="toggleHA('add')">
+                <input class="form-check-input" type="checkbox" name="is_cluster" id="add_is_cluster">
                 <label class="form-check-label" for="add_is_cluster"><strong>This is an HA cluster (node 0)</strong></label>
               </div>
               <div class="form-text">Node 0 is the logical cluster. Add member nodes (p1/p2) afterwards from the cluster's detail page.</div>
             </div>
             <div class="col-md-6 ha-fields-add d-none">
               <label class="fw-form-label">HA mode</label>
-              <select class="form-select fw-form-control" name="ha_mode" id="add_ha_mode" onchange="toggleHA('add')">
+              <select class="form-select fw-form-control" name="ha_mode" id="add_ha_mode">
                 <option value="per_node">Per-node IP (detect live primary before each write)</option>
                 <option value="vip">Shared VIP (one address that lands on the primary)</option>
               </select>
@@ -494,5 +494,27 @@ document.addEventListener('DOMContentLoaded', function () {
   setInterval(updateStats, 5000);
   setTimeout(updateStats, 3000);
 });
+// CSP: former inline on* attributes, re-bound here (Turbo-safe immediate IIFE)
+(function () {
+  document.querySelectorAll('[data-js="open-add-appliance"]').forEach(function (el) {
+    el.addEventListener('click', function () { API.openModal('modalAddAppliance'); });
+  });
+  var search = document.getElementById('tableSearch');
+  if (search) search.addEventListener('input', function () { filterTable(this.value); });
+  var kindFilter = document.getElementById('kindFilter');
+  if (kindFilter) kindFilter.addEventListener('change', function () { filterTable(document.getElementById('tableSearch').value); });
+  var refresh = document.querySelector('[data-js="refresh-page"]');
+  if (refresh) refresh.addEventListener('click', function () { window.location.reload(); });
+  document.querySelectorAll('button[data-test-id]').forEach(function (el) {
+    el.addEventListener('click', function () { API.testConnection(this.dataset.testId); });
+  });
+  document.querySelectorAll('[data-js="edit-appliance"]').forEach(function (el) {
+    el.addEventListener('click', function () { openEditModal(JSON.parse(this.dataset.appliance)); });
+  });
+  var addCluster = document.getElementById('add_is_cluster');
+  if (addCluster) addCluster.addEventListener('change', function () { toggleHA('add'); });
+  var addHaMode = document.getElementById('add_ha_mode');
+  if (addHaMode) addHaMode.addEventListener('change', function () { toggleHA('add'); });
+})();
 </script>
 {% endblock %}

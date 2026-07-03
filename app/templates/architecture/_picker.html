@@ -1,7 +1,7 @@
 {# Modern, self-contained device picker for the banner switch modal.
    Mirrors the Architecture map's zone -> line -> department division
    (same MAP_PALETTE colors) and its persistent filters. #}
-<style>
+<style nonce="{{ csp_nonce }}">
   #devicePicker{--dp-surface:#0e1626;--dp-card:#111a30;--dp-muted:#93a1bd;--dp-text:#eaf0fb;}
   #devicePicker .dp-filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;align-items:center;}
   #devicePicker .dp-search{position:relative;flex:1 1 200px;min-width:160px;}

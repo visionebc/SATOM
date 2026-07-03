@@ -22,7 +22,7 @@
   </div>
 </div>
 
-<style>
+<style nonce="{{ csp_nonce }}">
 @keyframes fwPulse { 0%,100%{opacity:1;} 50%{opacity:.62;} }
 .fw-flabel { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.04em; opacity:.7; margin-bottom:3px; }
 .fw-combo-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr));
@@ -213,7 +213,7 @@
 </div>
 
 {% if all_combos %}
-<style>
+<style nonce="{{ csp_nonce }}">
 .fw-combo-checks { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:8px; }
 .fw-combo-check { display:flex; align-items:center; gap:8px; padding:7px 9px;
   border:1px solid rgba(148,163,184,.18); border-radius:10px; cursor:pointer; font-size:12px; }

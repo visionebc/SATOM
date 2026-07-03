@@ -88,7 +88,7 @@
     <div class="fw-toolbar mb-2">
       <div class="fw-search-box">
         <i class="bi bi-search search-icon"></i>
-        <input type="text" placeholder="Search profiles…" oninput="filterTable('profiles-table', this.value)">
+        <input type="text" placeholder="Search profiles…" data-js="profile-search">
       </div>
     </div>
     <div class="fw-table-wrapper">
@@ -192,5 +192,11 @@ function filterTable(tableId, q) {
     row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
   });
 }
+
+// ── Event bindings (CSP: no inline handlers) ───────────────────────────────
+(function () {
+  var search = document.querySelector('[data-js="profile-search"]');
+  if (search) search.addEventListener('input', function (event) { filterTable('profiles-table', this.value); });
+})();
 </script>
 {% endblock %}

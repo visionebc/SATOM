@@ -1,0 +1,7508 @@
+{
+ "kind_by_coll": {
+  "server-policy/pattern.threat-score-profile": "threat_score_profile",
+  "waf/allow-method-exceptions": "allow_method_exception",
+  "waf/allow-method-exceptions/allow-method-exception-list": "allow_method_exception_item",
+  "waf/allow-method-policy": "allow_method_policy",
+  "waf/allowed-origins": "cors_allow_origins",
+  "waf/allowed-origins/origin-list": "cors_origin_item",
+  "waf/api-policy": "api_policy",
+  "waf/api-policy/api-rule-list": "api_policy_rule__bind",
+  "waf/api-rules": "api_policy_rule",
+  "waf/api-rules/attach-http-header": "api_attach_header_item",
+  "waf/api-rules/match-url-prefixes": "api_url_prefix_item",
+  "waf/api-rules/sub-url-setting": "api_sub_url_item",
+  "waf/api-user-group": "api_user_group",
+  "waf/api-user-group/user-list": "api_user__bind",
+  "waf/api-users": "api_user",
+  "waf/api-users/http-referer-list": "api_user_referer_item",
+  "waf/api-users/ip-access-list": "api_user_ip_item",
+  "waf/application-layer-dos-prevention": "ddos_policy",
+  "waf/biometrics-based-detection": "bot_biometric_based_detection",
+  "waf/biometrics-based-detection/url-list": "bot_biometric_url_item",
+  "waf/bot-deception": "bot_deception",
+  "waf/bot-deception/url-list": "bot_url_item",
+  "waf/bot-mitigate-policy": "bot_mitigation_policy",
+  "waf/bot-mitigation-exception": "bot_exception_policy",
+  "waf/bot-mitigation-exception/exception-element-list": "bot_exception_element_item",
+  "waf/cookie-security": "cookie_security",
+  "waf/cookie-security/cookie-security-exception-list": "cookie_security_exception_item",
+  "waf/cors-protection-policy": "cors_protection_policy",
+  "waf/cors-protection-policy/rule-list": "cors_protection_rule__bind",
+  "waf/cors-protection-rule": "cors_protection_rule",
+  "waf/cors-protection-rule/allowed-headers-list": "cors_header_item",
+  "waf/cors-protection-rule/allowed-methods-list": "cors_method_item",
+  "waf/cors-protection-rule/exposed-headers-list": "cors_exposed_item",
+  "waf/csrf-protection": "csrf_protection",
+  "waf/csrf-protection/csrf-page-list": "csrf_page_item",
+  "waf/csrf-protection/csrf-url-list": "csrf_url_item",
+  "waf/custom-access.policy": "custom_policy",
+  "waf/custom-access.policy/rule": "custom_rule__bind",
+  "waf/custom-access.rule": "custom_rule",
+  "waf/custom-protection-group": "signature_group",
+  "waf/custom-protection-group/type-list": "signature_group_rule__bind",
+  "waf/custom-protection-rule": "signature_group_rule",
+  "waf/custom-protection-rule/meet-condition": "signature_group_rule_condition",
+  "waf/exclude-url": "compression_exclusion_url",
+  "waf/exclude-url/exclude-rules": "compression_exclude_item",
+  "waf/file-compress-rule": "compression_policy",
+  "waf/file-compress-rule/content-types": "compression_content_item",
+  "waf/file-exception-policy": "fiel_exception_policy",
+  "waf/file-exception-policy/exception-list": "file_exception_item",
+  "waf/file-upload-custom-file-type": "file_security_file_type",
+  "waf/file-upload-custom-file-type/file-content-match-rule": "file_match_item",
+  "waf/file-upload-restriction-policy": "file_security_policy",
+  "waf/file-upload-restriction-policy/rule": "file_security_rule__bind",
+  "waf/file-upload-restriction-rule": "file_security_rule",
+  "waf/file-upload-restriction-rule/custom-file-types": "file_security_file_type__bind",
+  "waf/file-upload-restriction-rule/file-types": "file_type_item",
+  "waf/geo-block-list": "geo_ip",
+  "waf/geo-block-list/country-list": "geo_ip_country_item",
+  "waf/geo-ip-except": "geo_ip_exception",
+  "waf/geo-ip-except/members": "geo_ip_exception_member_item",
+  "waf/grpc-idl.file": "grpc_idl_file",
+  "waf/grpc-security.policy": "grpc_security_policy",
+  "waf/grpc-security.policy/rule-list": "grpc_security_rule__bind",
+  "waf/grpc-security.rule": "grpc_security_rule",
+  "waf/hidden-fields-protection": "hidden_field_protection_policy",
+  "waf/hidden-fields-protection/hidden_fields_list": "hidden_field_rule__bind",
+  "waf/hidden-fields-rule": "hidden_field_rule",
+  "waf/hidden-fields-rule/hidden-field-name": "hidden_field_name_item",
+  "waf/http-authen.http-authen-policy": "http_auth_policy",
+  "waf/http-authen.http-authen-policy/rule": "http_auth_rule__bind",
+  "waf/http-authen.http-authen-rule": "http_auth_rule",
+  "waf/http-authen.http-authen-rule/rule": "http_auth_rule_item",
+  "waf/http-connection-flood-check-rule": "ddos_malicious_ip",
+  "waf/http-constraints-exceptions": "http_constraint_exception",
+  "waf/http-constraints-exceptions/http_constraints-exception-list": "http_constraint_exception_item",
+  "waf/http-header-security": "http_header_security",
+  "waf/http-header-security-exception": "http_header_security_exception",
+  "waf/http-header-security-exception/list": "http_header_security_exception_item",
+  "waf/http-header-security/http-header-security-list": "http_header_security_item",
+  "waf/http-protocol-parameter-restriction": "http_constraint",
+  "waf/http-request-flood-prevention-rule": "ddos_http_flood_prevention",
+  "waf/input-rule": "parameter_input_rule",
+  "waf/input-rule/rule-list": "parameter_rule_item",
+  "waf/ip-list": "ip_list",
+  "waf/ip-list/members": "ip_list_member",
+  "waf/json-schema.file": "json_schema",
+  "waf/json-schema.group": "json_schema_group",
+  "waf/json-schema.group/members": "json_schema_member_item",
+  "waf/json-validation.policy": "json_protection_policy",
+  "waf/json-validation.policy/input-rule-list": "json_protection_rule__bind",
+  "waf/json-validation.rule": "json_protection_rule",
+  "waf/known-bots": "bot_known_bots",
+  "waf/known-bots/known-good-bots-disable-list": "bot_good_disable_item",
+  "waf/known-bots/malicious-bot-disable-list": "bot_generic_item",
+  "waf/layer4-access-limit-rule": "ddos_http_access_limit",
+  "waf/layer4-connection-flood-check-rule": "ddos_tcp_flood_prevention",
+  "waf/link-cloaking.link-cloaking-policy": "link_cloaking_policy",
+  "waf/link-cloaking.link-cloaking-policy/rule-list": "link_cloaking_rule__bind",
+  "waf/link-cloaking.link-cloaking-rule": "link_cloaking_rule",
+  "waf/link-cloaking.link-cloaking-rule/exceptions": "link_cloak_exc_item",
+  "waf/mitb-policy": "mitb_protection_policy",
+  "waf/mitb-policy/rule-list": "mitb_rule__bind",
+  "waf/mitb-rule": "mitb_rule",
+  "waf/mitb-rule/allowed-external-domains-list": "mitb_domain_item",
+  "waf/mitb-rule/protected-parameter-list": "mitb_parameter_item",
+  "waf/mobile-api-protection.mobile-api-protection-policy": "mobile_api_protection_policy",
+  "waf/mobile-api-protection.mobile-api-protection-policy/rule-list": "mobile_api_protection_rule__bind",
+  "waf/mobile-api-protection.mobile-api-protection-rule": "mobile_api_protection_rule",
+  "waf/mobile-api-protection.mobile-api-protection-rule/url-list": "mobile_api_url_item",
+  "waf/openapi-file": "openapi_file",
+  "waf/openapi-validation-policy": "openapi_policy",
+  "waf/openapi-validation-policy/schema-file": "openapi_file__bind",
+  "waf/padding-oracle": "padding_oracle",
+  "waf/padding-oracle/protected-url-list": "padding_url_item",
+  "waf/parameter-validation-rule": "parameter_validation_policy",
+  "waf/parameter-validation-rule/input-rule-list": "parameter_input_rule__bind",
+  "waf/signature": "signature",
+  "waf/signature/alert_only_list": "signature_alert_only_item",
+  "waf/signature/filter_list": "signature_filter_item",
+  "waf/signature/fpm_disable_list": "signature_fpm_disable_item",
+  "waf/signature/main_class_list": "signature_class_item",
+  "waf/signature/score_grade_list": "signature_score_grade_item",
+  "waf/signature/scoring_override_disable_list": "signature_scoring_override_item",
+  "waf/signature/signature_disable_list": "signature_disable_item",
+  "waf/signature/sub_class_disable_list": "signature_subclass_disable_item",
+  "waf/syntax-based-attack-detection": "syntax_based_detection",
+  "waf/syntax-based-attack-detection/exception-element-list": "syntax_exception_item",
+  "waf/threshold-based-detection.policy": "bot_threshold_based_detection",
+  "waf/url-access.url-access-policy": "url_access_policy",
+  "waf/url-access.url-access-policy/rule": "url_access_rule__bind",
+  "waf/url-access.url-access-rule": "url_access_rule",
+  "waf/url-access.url-access-rule/match-condition": "url_access_rule_match_condition_item",
+  "waf/url-encryption.url-encryption-policy": "url_encryption_policy",
+  "waf/url-encryption.url-encryption-policy/rule-list": "url_encryption_rule__bind",
+  "waf/url-encryption.url-encryption-rule": "url_encryption_rule",
+  "waf/url-encryption.url-encryption-rule/exceptions": "url_enc_exc_item",
+  "waf/url-encryption.url-encryption-rule/url-list": "url_enc_url_item",
+  "waf/url-rewrite.url-rewrite-policy": "url_rewriting_policy",
+  "waf/url-rewrite.url-rewrite-policy/rule": "url_rewriting_rule__bind",
+  "waf/url-rewrite.url-rewrite-rule": "url_rewriting_rule",
+  "waf/url-rewrite.url-rewrite-rule/header-insert": "url_rw_hdr_ins_item",
+  "waf/url-rewrite.url-rewrite-rule/header-removal": "url_rw_hdr_rm_item",
+  "waf/url-rewrite.url-rewrite-rule/match-condition": "url_rw_cond_item",
+  "waf/url-rewrite.url-rewrite-rule/response-header-insert": "url_rw_rhdr_ins_item",
+  "waf/url-rewrite.url-rewrite-rule/response-header-removal": "url_rw_rhdr_rm_item",
+  "waf/user-tracking.policy": "user_tracking_policy",
+  "waf/user-tracking.policy/input-rule-list": "user_tracking_rule__bind",
+  "waf/user-tracking.rule": "user_tracking_rule",
+  "waf/user-tracking.rule/match-condition": "user_track_cond_item",
+  "waf/web-protection-profile.inline-protection": "wpp",
+  "waf/web-protection-profile.offline-protection": "wpp",
+  "waf/webshell-detection-policy": "web_shell_detection_policy",
+  "waf/webshell-detection-policy/fuzzy-disable-list": "webshell_fuzzy_item",
+  "waf/websocket-security.policy": "websocket_security_policy",
+  "waf/websocket-security.policy/rule-list": "websocket_security_rule__bind",
+  "waf/websocket-security.rule": "websocket_security_rule",
+  "waf/websocket-security.rule/allowed-origin-list": "websocket_origin_item",
+  "waf/ws-security.rule": "xml_protection_wssecurity_rule",
+  "waf/ws-security.rule/element-list": "wssec_element_item",
+  "waf/ws-security.rule/namespace-mapping": "wssec_namespace_item",
+  "waf/x-forwarded-for": "x_forward",
+  "waf/x-forwarded-for/ip-list": "x_forward_ip_list",
+  "waf/xml-schema.file": "xml_protection_xml_schema",
+  "waf/xml-validation.policy": "xml_protection_policy",
+  "waf/xml-validation.policy/input-rule-list": "xml_protection_rule__bind",
+  "waf/xml-validation.rule": "xml_protection_rule",
+  "waf/xml-wsdl.file": "xml_protection_wsdl"
+ },
+ "kinds": {
+  "allow_method_exception": {
+   "collection": "waf/allow-method-exceptions",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "Allow Method Exception",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/allow-method-exceptions/allow-method-exception-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Exceptions"
+    }
+   ],
+   "toggles": []
+  },
+  "allow_method_exception_item": {
+   "collection": "waf/allow-method-exceptions/allow-method-exception-list",
+   "enums": {
+    "request-type": [
+     "plain",
+     "regular"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "request-type",
+    "request-file",
+    "allow-request"
+   ],
+   "group_order": [
+    "Exception"
+   ],
+   "groups": {
+    "allow-request": "Exception",
+    "host": "Exception",
+    "host-status": "Exception",
+    "request-file": "Exception",
+    "request-type": "Exception"
+   },
+   "identity_key": "",
+   "label": "Method Exception",
+   "labels": {
+    "allow-request": "Allow Method Exception",
+    "host": "Host",
+    "host-status": "Host Status",
+    "request-file": "URL Pattern",
+    "request-type": "Type"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "host-status"
+   ]
+  },
+  "allow_method_policy": {
+   "collection": "waf/allow-method-policy",
+   "enums": {
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "allow-method",
+    "severity",
+    "triggered-action",
+    "override-header",
+    "override-parameter",
+    "allow-method-exception"
+   ],
+   "group_order": [
+    "Allow Method",
+    "Override",
+    "Exception"
+   ],
+   "groups": {
+    "allow-method": "Allow Method",
+    "allow-method-exception": "Exception",
+    "override-header": "Override",
+    "override-parameter": "Override",
+    "severity": "Allow Method",
+    "triggered-action": "Allow Method"
+   },
+   "identity_key": "name",
+   "label": "Allow Method Policy",
+   "labels": {
+    "allow-method": "Allowed Methods",
+    "allow-method-exception": "Method Exception",
+    "override-header": "Override Header",
+    "override-parameter": "Override Parameter",
+    "severity": "Severity",
+    "triggered-action": "Trigger Policy"
+   },
+   "numbers": [],
+   "refs": {
+    "allow-method-exception": "waf/allow-method-exceptions",
+    "triggered-action": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "api_attach_header_item": {
+   "collection": "waf/api-rules/attach-http-header",
+   "enums": {},
+   "field_order": [
+    "http-header-item"
+   ],
+   "group_order": [
+    "Header"
+   ],
+   "groups": {
+    "http-header-item": "Header"
+   },
+   "identity_key": "",
+   "label": "Attached Header",
+   "labels": {
+    "http-header-item": "Header"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "api_policy": {
+   "collection": "waf/api-policy",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "API Gateway",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/api-policy/api-rule-list",
+     "ref_collection": "waf/api-rules",
+     "ref_key": "api-rule-name",
+     "title": "API Gateway Rules"
+    }
+   ],
+   "toggles": []
+  },
+  "api_policy_rule": {
+   "collection": "waf/api-rules",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "api-key-location": [
+     "HTTP-parameter",
+     "HTTP-header"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "api-key-verification",
+    "api-key-location",
+    "header-field-name",
+    "parameter-name",
+    "allow-user-group",
+    "rate-limit-period",
+    "rate-limit-requests",
+    "action",
+    "block-period",
+    "severity",
+    "trigger-policy"
+   ],
+   "group_order": [
+    "Match",
+    "API Key",
+    "Rate Limit",
+    "Action"
+   ],
+   "groups": {
+    "action": "Action",
+    "allow-user-group": "API Key",
+    "api-key-location": "API Key",
+    "api-key-verification": "API Key",
+    "block-period": "Action",
+    "header-field-name": "API Key",
+    "host": "Match",
+    "host-status": "Match",
+    "parameter-name": "API Key",
+    "rate-limit-period": "Rate Limit",
+    "rate-limit-requests": "Rate Limit",
+    "severity": "Action",
+    "trigger-policy": "Action"
+   },
+   "identity_key": "name",
+   "label": "API Gateway Rule",
+   "labels": {
+    "action": "Action",
+    "allow-user-group": "Allow User Group",
+    "api-key-location": "API Key Carried In",
+    "api-key-verification": "API Key Verification",
+    "block-period": "Block Period (s)",
+    "header-field-name": "Header Field Name",
+    "host": "Host",
+    "host-status": "Host Status",
+    "parameter-name": "Parameter Name",
+    "rate-limit-period": "Rate Limit Period",
+    "rate-limit-requests": "Rate Limit Requests",
+    "severity": "Severity",
+    "trigger-policy": "Trigger Policy"
+   },
+   "numbers": [
+    "rate-limit-period",
+    "rate-limit-requests",
+    "block-period"
+   ],
+   "refs": {
+    "allow-user-group": "waf/api-user-group",
+    "trigger-policy": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/api-rules/match-url-prefixes",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Match URL Prefixes"
+    },
+    {
+     "collection": "waf/api-rules/attach-http-header",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Attach HTTP Header"
+    },
+    {
+     "collection": "waf/api-rules/sub-url-setting",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Sub-URL Settings"
+    }
+   ],
+   "toggles": [
+    "host-status",
+    "api-key-verification"
+   ]
+  },
+  "api_policy_rule__bind": {
+   "collection": "waf/api-policy/api-rule-list",
+   "enums": {},
+   "field_order": [
+    "api-rule-name"
+   ],
+   "group_order": [
+    "API Gateway Rule"
+   ],
+   "groups": {
+    "api-rule-name": "API Gateway Rule"
+   },
+   "identity_key": "",
+   "label": "API Gateway Rule",
+   "labels": {
+    "api-rule-name": "API Gateway Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "api-rule-name": "waf/api-rules"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "api_sub_url_item": {
+   "collection": "waf/api-rules/sub-url-setting",
+   "enums": {
+    "type": [
+     "plain",
+     "regular"
+    ]
+   },
+   "field_order": [
+    "http-method",
+    "type",
+    "url-expression",
+    "api-key-verification",
+    "api-key-location",
+    "header-field-name",
+    "parameter-name",
+    "allow-user-group"
+   ],
+   "group_order": [
+    "Sub-URL",
+    "API Key"
+   ],
+   "groups": {
+    "allow-user-group": "API Key",
+    "api-key-verification": "API Key",
+    "http-method": "Sub-URL",
+    "type": "Sub-URL",
+    "url-expression": "Sub-URL"
+   },
+   "identity_key": "",
+   "label": "Sub-URL Setting",
+   "labels": {
+    "allow-user-group": "Allow User Group",
+    "api-key-verification": "API Key Verification",
+    "http-method": "HTTP Method",
+    "type": "Type",
+    "url-expression": "URL Expression"
+   },
+   "numbers": [],
+   "refs": {
+    "allow-user-group": "waf/api-user-group"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "api-key-verification"
+   ]
+  },
+  "api_url_prefix_item": {
+   "collection": "waf/api-rules/match-url-prefixes",
+   "enums": {},
+   "field_order": [
+    "frontend-prefix",
+    "backend-prefix"
+   ],
+   "group_order": [
+    "Prefix"
+   ],
+   "groups": {
+    "backend-prefix": "Prefix",
+    "frontend-prefix": "Prefix"
+   },
+   "identity_key": "",
+   "label": "URL Prefix",
+   "labels": {
+    "backend-prefix": "Backend Prefix",
+    "frontend-prefix": "Frontend Prefix"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "api_user": {
+   "collection": "waf/api-users",
+   "enums": {},
+   "field_order": [
+    "email",
+    "comments",
+    "api-key",
+    "key-mode"
+   ],
+   "group_order": [
+    "API User"
+   ],
+   "groups": {
+    "api-key": "API User",
+    "comments": "API User",
+    "email": "API User",
+    "key-mode": "API User"
+   },
+   "identity_key": "name",
+   "label": "API User",
+   "labels": {
+    "api-key": "API Key",
+    "comments": "Comments",
+    "email": "Email",
+    "key-mode": "Key Mode"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/api-users/ip-access-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "IP Access List"
+    },
+    {
+     "collection": "waf/api-users/http-referer-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "HTTP Referer List"
+    }
+   ],
+   "toggles": []
+  },
+  "api_user__bind": {
+   "collection": "waf/api-user-group/user-list",
+   "enums": {},
+   "field_order": [
+    "api-user-name"
+   ],
+   "group_order": [
+    "API User"
+   ],
+   "groups": {
+    "api-user-name": "API User"
+   },
+   "identity_key": "",
+   "label": "API User",
+   "labels": {
+    "api-user-name": "API User"
+   },
+   "numbers": [],
+   "refs": {
+    "api-user-name": "waf/api-users"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "api_user_group": {
+   "collection": "waf/api-user-group",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "API User Group",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/api-user-group/user-list",
+     "ref_collection": "waf/api-users",
+     "ref_key": "api-user-name",
+     "title": "Users"
+    }
+   ],
+   "toggles": []
+  },
+  "api_user_ip_item": {
+   "collection": "waf/api-users/ip-access-list",
+   "enums": {},
+   "field_order": [
+    "ip"
+   ],
+   "group_order": [
+    "IP"
+   ],
+   "groups": {
+    "ip": "IP"
+   },
+   "identity_key": "",
+   "label": "IP Access",
+   "labels": {
+    "ip": "IP / Subnet"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "api_user_referer_item": {
+   "collection": "waf/api-users/http-referer-list",
+   "enums": {},
+   "field_order": [
+    "http-referer"
+   ],
+   "group_order": [
+    "Referer"
+   ],
+   "groups": {
+    "http-referer": "Referer"
+   },
+   "identity_key": "",
+   "label": "HTTP Referer",
+   "labels": {
+    "http-referer": "Referer"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "bot_biometric_based_detection": {
+   "collection": "waf/biometrics-based-detection",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "mouse-movement",
+    "page-focus",
+    "click",
+    "keyboard",
+    "screen-touch",
+    "scroll",
+    "event-collection-time",
+    "action",
+    "severity",
+    "trigger",
+    "exception"
+   ],
+   "group_order": [
+    "Biometrics"
+   ],
+   "groups": {
+    "action": "Biometrics",
+    "exception": "Biometrics",
+    "severity": "Biometrics",
+    "trigger": "Biometrics"
+   },
+   "identity_key": "name",
+   "label": "Biometrics-Based Detection",
+   "labels": {
+    "action": "Action",
+    "exception": "Bot Exception",
+    "severity": "Severity",
+    "trigger": "Trigger Policy"
+   },
+   "numbers": [],
+   "refs": {
+    "exception": "waf/bot-mitigation-exception",
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/biometrics-based-detection/url-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "URL List"
+    }
+   ],
+   "toggles": []
+  },
+  "bot_biometric_url_item": {
+   "collection": "waf/biometrics-based-detection/url-list",
+   "enums": {
+    "type": [
+     "plain",
+     "regular"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "type",
+    "url"
+   ],
+   "group_order": [
+    "URL"
+   ],
+   "groups": {
+    "host-status": "URL",
+    "type": "URL"
+   },
+   "identity_key": "",
+   "label": "Bot URL",
+   "labels": {
+    "host-status": "Host Status",
+    "type": "URL Type"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "host-status"
+   ]
+  },
+  "bot_deception": {
+   "collection": "waf/bot-deception",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "deception-url",
+    "action",
+    "block-period",
+    "severity",
+    "trigger",
+    "exception"
+   ],
+   "group_order": [
+    "Bot Deception"
+   ],
+   "groups": {
+    "action": "Bot Deception",
+    "block-period": "Bot Deception",
+    "deception-url": "Bot Deception",
+    "exception": "Bot Deception",
+    "severity": "Bot Deception",
+    "trigger": "Bot Deception"
+   },
+   "identity_key": "name",
+   "label": "Bot Deception",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "deception-url": "Deception URL",
+    "exception": "Bot Exception",
+    "severity": "Severity",
+    "trigger": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "exception": "waf/bot-mitigation-exception",
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/bot-deception/url-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "URL List"
+    }
+   ],
+   "toggles": []
+  },
+  "bot_exception_element_item": {
+   "collection": "waf/bot-mitigation-exception/exception-element-list",
+   "enums": {
+    "concatenate-type": [
+     "and",
+     "or"
+    ],
+    "match-target": [
+     "Client IP",
+     "Host",
+     "URI",
+     "Full URL",
+     "Parameter",
+     "Cookie"
+    ],
+    "operator": [
+     "Equal",
+     "Not Equal",
+     "String Match",
+     "Regular Expression Match"
+    ]
+   },
+   "field_order": [
+    "match-target",
+    "operator",
+    "ip-range",
+    "value-name",
+    "value-check",
+    "value",
+    "concatenate-type"
+   ],
+   "group_order": [
+    "Element"
+   ],
+   "groups": {
+    "concatenate-type": "Element",
+    "ip-range": "Element",
+    "match-target": "Element",
+    "operator": "Element",
+    "value": "Element",
+    "value-check": "Element",
+    "value-name": "Element"
+   },
+   "identity_key": "",
+   "label": "Exception Element",
+   "labels": {
+    "concatenate-type": "Concatenate",
+    "ip-range": "Client IP",
+    "match-target": "Element Type",
+    "operator": "Operation",
+    "value": "Value",
+    "value-check": "Check Value of Specified Element",
+    "value-name": "Name"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "value-check"
+   ]
+  },
+  "bot_exception_policy": {
+   "collection": "waf/bot-mitigation-exception",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "Bot Exception",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/bot-mitigation-exception/exception-element-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Exception Elements"
+    }
+   ],
+   "toggles": []
+  },
+  "bot_generic_item": {
+   "collection": "waf/known-bots/malicious-bot-disable-list",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "",
+   "label": "Bot Entry",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "bot_good_disable_item": {
+   "collection": "waf/known-bots/known-good-bots-disable-list",
+   "enums": {},
+   "field_order": [
+    "bot-name"
+   ],
+   "group_order": [
+    "Bot"
+   ],
+   "groups": {
+    "bot-name": "Bot"
+   },
+   "identity_key": "",
+   "label": "Good Bot",
+   "labels": {
+    "bot-name": "Bot Name"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "bot_known_bots": {
+   "collection": "waf/known-bots",
+   "enums": {},
+   "field_order": [
+    "dos-status",
+    "dos-action",
+    "spam-status",
+    "spam-action",
+    "trojan-status",
+    "trojan-action",
+    "scanner-status",
+    "scanner-action",
+    "crawler-status",
+    "crawler-action",
+    "known-engines-status",
+    "known-engines-action",
+    "exception"
+   ],
+   "group_order": [
+    "Known Bots"
+   ],
+   "groups": {
+    "exception": "Known Bots"
+   },
+   "identity_key": "name",
+   "label": "Known Bots",
+   "labels": {
+    "exception": "Bot Exception"
+   },
+   "numbers": [],
+   "refs": {
+    "exception": "waf/bot-mitigation-exception"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/known-bots/malicious-bot-disable-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Malicious Bots (disabled)"
+    },
+    {
+     "collection": "waf/known-bots/known-good-bots-disable-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Known Good Bots (disabled)"
+    }
+   ],
+   "toggles": []
+  },
+  "bot_mitigation_policy": {
+   "collection": "waf/bot-mitigate-policy",
+   "enums": {},
+   "field_order": [
+    "known-bots",
+    "bot-deception",
+    "biometrics-based-detection",
+    "threshold-based-detection",
+    "exception"
+   ],
+   "group_order": [
+    "Bot Mitigation"
+   ],
+   "groups": {
+    "biometrics-based-detection": "Bot Mitigation",
+    "bot-deception": "Bot Mitigation",
+    "exception": "Bot Mitigation",
+    "known-bots": "Bot Mitigation",
+    "threshold-based-detection": "Bot Mitigation"
+   },
+   "identity_key": "name",
+   "label": "Bot Mitigation",
+   "labels": {
+    "biometrics-based-detection": "Biometrics-Based Detection",
+    "bot-deception": "Bot Deception",
+    "exception": "Bot Exception",
+    "known-bots": "Known Bots",
+    "threshold-based-detection": "Threshold-Based Detection"
+   },
+   "numbers": [],
+   "refs": {
+    "biometrics-based-detection": "waf/biometrics-based-detection",
+    "bot-deception": "waf/bot-deception",
+    "exception": "waf/bot-mitigation-exception",
+    "known-bots": "waf/known-bots",
+    "threshold-based-detection": "waf/threshold-based-detection.policy"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "bot_threshold_based_detection": {
+   "collection": "waf/threshold-based-detection.policy",
+   "enums": {},
+   "field_order": [
+    "bot-recognition",
+    "crawler-detection",
+    "scanner-detection",
+    "slow-attack-detection",
+    "content-scraping-detection",
+    "brute-login-detection",
+    "exception"
+   ],
+   "group_order": [
+    "Detection"
+   ],
+   "groups": {
+    "bot-recognition": "Detection",
+    "brute-login-detection": "Detection",
+    "content-scraping-detection": "Detection",
+    "crawler-detection": "Detection",
+    "exception": "Detection",
+    "scanner-detection": "Detection",
+    "slow-attack-detection": "Detection"
+   },
+   "identity_key": "name",
+   "label": "Threshold-Based Detection",
+   "labels": {
+    "bot-recognition": "Bot Recognition",
+    "brute-login-detection": "Brute-Force Login",
+    "content-scraping-detection": "Content Scraping",
+    "crawler-detection": "Crawler Detection",
+    "exception": "Bot Exception",
+    "scanner-detection": "Scanner Detection",
+    "slow-attack-detection": "Slow Attack Detection"
+   },
+   "numbers": [],
+   "refs": {
+    "exception": "waf/bot-mitigation-exception"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "crawler-detection",
+    "scanner-detection",
+    "slow-attack-detection",
+    "content-scraping-detection",
+    "brute-login-detection"
+   ]
+  },
+  "bot_url_item": {
+   "collection": "waf/bot-deception/url-list",
+   "enums": {
+    "type": [
+     "plain",
+     "regular"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "type",
+    "url"
+   ],
+   "group_order": [
+    "URL"
+   ],
+   "groups": {
+    "host-status": "URL",
+    "type": "URL"
+   },
+   "identity_key": "",
+   "label": "Bot URL",
+   "labels": {
+    "host-status": "Host Status",
+    "type": "URL Type"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "host-status"
+   ]
+  },
+  "compression_content_item": {
+   "collection": "waf/file-compress-rule/content-types",
+   "enums": {},
+   "field_order": [
+    "content-type"
+   ],
+   "group_order": [
+    "Content Type"
+   ],
+   "groups": {
+    "content-type": "Content Type"
+   },
+   "identity_key": "",
+   "label": "Content Type",
+   "labels": {
+    "content-type": "Content Type"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "compression_exclude_item": {
+   "collection": "waf/exclude-url/exclude-rules",
+   "enums": {},
+   "field_order": [
+    "host-status",
+    "host",
+    "request-file"
+   ],
+   "group_order": [
+    "Exclusion"
+   ],
+   "groups": {
+    "host": "Exclusion",
+    "host-status": "Exclusion",
+    "request-file": "Exclusion"
+   },
+   "identity_key": "",
+   "label": "Exclusion Rule",
+   "labels": {
+    "host": "Host",
+    "host-status": "Host Status",
+    "request-file": "Request URL"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "host-status"
+   ]
+  },
+  "compression_exclusion_url": {
+   "collection": "waf/exclude-url",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "Compression Exclusion Rule",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/exclude-url/exclude-rules",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Exclusion Rules"
+    }
+   ],
+   "toggles": []
+  },
+  "compression_policy": {
+   "collection": "waf/file-compress-rule",
+   "enums": {
+    "compression-type": [
+     "gzip",
+     "brotli",
+     "zstd",
+     "deflate"
+    ]
+   },
+   "field_order": [
+    "compression-type",
+    "compression-level",
+    "exclude-url"
+   ],
+   "group_order": [
+    "Compression"
+   ],
+   "groups": {
+    "compression-level": "Compression",
+    "compression-type": "Compression",
+    "exclude-url": "Compression"
+   },
+   "identity_key": "name",
+   "label": "Compression",
+   "labels": {
+    "compression-level": "Compression Level",
+    "compression-type": "Compression Type",
+    "exclude-url": "Exclusion Rule"
+   },
+   "numbers": [
+    "compression-level"
+   ],
+   "refs": {
+    "exclude-url": "waf/exclude-url"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/file-compress-rule/content-types",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Content Types"
+    }
+   ],
+   "toggles": []
+  },
+  "cookie_security": {
+   "collection": "waf/cookie-security",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "allow-suspicious-cookies": [
+     "Never",
+     "Always",
+     "Custom"
+    ],
+    "samesite-value": [
+     "Strict",
+     "Lax",
+     "None"
+    ],
+    "security-mode": [
+     "None",
+     "Signed",
+     "Encrypted"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "security-mode",
+    "action",
+    "block-period",
+    "severity",
+    "trigger",
+    "max-age",
+    "secure-cookie",
+    "http-only",
+    "samesite",
+    "samesite-value",
+    "allow-suspicious-cookies"
+   ],
+   "group_order": [
+    "Cookie Security",
+    "Attributes"
+   ],
+   "groups": {
+    "action": "Cookie Security",
+    "allow-suspicious-cookies": "Attributes",
+    "block-period": "Cookie Security",
+    "http-only": "Attributes",
+    "max-age": "Attributes",
+    "samesite": "Attributes",
+    "samesite-value": "Attributes",
+    "secure-cookie": "Attributes",
+    "security-mode": "Cookie Security",
+    "severity": "Cookie Security",
+    "trigger": "Cookie Security"
+   },
+   "identity_key": "name",
+   "label": "Cookie Security",
+   "labels": {
+    "action": "Action",
+    "allow-suspicious-cookies": "Allow Suspicious Cookies",
+    "block-period": "Block Period (s)",
+    "http-only": "HTTP Only",
+    "max-age": "Cookie Max Age (min)",
+    "samesite": "Same Site",
+    "samesite-value": "Same Site Value",
+    "secure-cookie": "Secure Cookie",
+    "security-mode": "Security Mode",
+    "severity": "Severity",
+    "trigger": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period",
+    "max-age"
+   ],
+   "refs": {
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/cookie-security/cookie-security-exception-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Cookie Exceptions"
+    }
+   ],
+   "toggles": [
+    "secure-cookie",
+    "http-only",
+    "samesite"
+   ]
+  },
+  "cookie_security_exception_item": {
+   "collection": "waf/cookie-security/cookie-security-exception-list",
+   "enums": {},
+   "field_order": [
+    "cookie-name",
+    "cookie-domain",
+    "cookie-path",
+    "wildcard"
+   ],
+   "group_order": [
+    "Exception"
+   ],
+   "groups": {
+    "cookie-name": "Exception",
+    "wildcard": "Exception"
+   },
+   "identity_key": "",
+   "label": "Cookie Exception",
+   "labels": {
+    "cookie-name": "Cookie Name",
+    "wildcard": "Wildcard"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "wildcard"
+   ]
+  },
+  "cors_allow_origins": {
+   "collection": "waf/allowed-origins",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "Allowed Origins",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/allowed-origins/origin-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Origins"
+    }
+   ],
+   "toggles": []
+  },
+  "cors_exposed_item": {
+   "collection": "waf/cors-protection-rule/exposed-headers-list",
+   "enums": {},
+   "field_order": [
+    "header"
+   ],
+   "group_order": [
+    "Header"
+   ],
+   "groups": {
+    "header": "Header"
+   },
+   "identity_key": "",
+   "label": "Exposed Header",
+   "labels": {
+    "header": "Header"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "cors_header_item": {
+   "collection": "waf/cors-protection-rule/allowed-headers-list",
+   "enums": {},
+   "field_order": [
+    "header"
+   ],
+   "group_order": [
+    "Header"
+   ],
+   "groups": {
+    "header": "Header"
+   },
+   "identity_key": "",
+   "label": "Allowed Header",
+   "labels": {
+    "header": "Header"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "cors_method_item": {
+   "collection": "waf/cors-protection-rule/allowed-methods-list",
+   "enums": {},
+   "field_order": [
+    "method"
+   ],
+   "group_order": [
+    "Method"
+   ],
+   "groups": {
+    "method": "Method"
+   },
+   "identity_key": "",
+   "label": "Allowed Method",
+   "labels": {
+    "method": "Method"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "cors_origin_item": {
+   "collection": "waf/allowed-origins/origin-list",
+   "enums": {
+    "protocol": [
+     "HTTP",
+     "HTTPS"
+    ]
+   },
+   "field_order": [
+    "protocol",
+    "origin-name",
+    "port",
+    "include-sub-domains"
+   ],
+   "group_order": [
+    "Origin"
+   ],
+   "groups": {
+    "include-sub-domains": "Origin",
+    "origin-name": "Origin",
+    "port": "Origin",
+    "protocol": "Origin"
+   },
+   "identity_key": "",
+   "label": "Allowed Origin",
+   "labels": {
+    "include-sub-domains": "Include Sub Domains",
+    "origin-name": "Origin",
+    "port": "Port",
+    "protocol": "Protocol"
+   },
+   "numbers": [
+    "port"
+   ],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "include-sub-domains"
+   ]
+  },
+  "cors_protection_policy": {
+   "collection": "waf/cors-protection-policy",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "CORS Protection",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/cors-protection-policy/rule-list",
+     "ref_collection": "waf/cors-protection-rule",
+     "ref_key": "cors-rule",
+     "title": "CORS Rules"
+    }
+   ],
+   "toggles": []
+  },
+  "cors_protection_rule": {
+   "collection": "waf/cors-protection-rule",
+   "enums": {
+    "allowed-credentials": [
+     "None",
+     "TRUE",
+     "FALSE"
+    ],
+    "request-type": [
+     "plain",
+     "regular"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "request-type",
+    "request-file",
+    "block-cors-traffic",
+    "allowed-origins-list",
+    "allowed-credentials",
+    "allowed-maximum-age"
+   ],
+   "group_order": [
+    "CORS Rule",
+    "Policy"
+   ],
+   "groups": {
+    "allowed-credentials": "Policy",
+    "allowed-maximum-age": "Policy",
+    "allowed-origins-list": "Policy",
+    "block-cors-traffic": "Policy",
+    "host": "CORS Rule",
+    "host-status": "CORS Rule",
+    "request-file": "CORS Rule",
+    "request-type": "CORS Rule"
+   },
+   "identity_key": "name",
+   "label": "CORS Rule",
+   "labels": {
+    "allowed-credentials": "Allowed Credentials",
+    "allowed-maximum-age": "Max Age",
+    "allowed-origins-list": "Allowed Origins",
+    "block-cors-traffic": "Block CORS Traffic",
+    "host": "Host",
+    "host-status": "Host Status",
+    "request-file": "URL Pattern",
+    "request-type": "URL Type"
+   },
+   "numbers": [
+    "allowed-maximum-age"
+   ],
+   "refs": {
+    "allowed-origins-list": "waf/allowed-origins"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/cors-protection-rule/allowed-methods-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Allowed Methods"
+    },
+    {
+     "collection": "waf/cors-protection-rule/allowed-headers-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Allowed Headers"
+    },
+    {
+     "collection": "waf/cors-protection-rule/exposed-headers-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Exposed Headers"
+    }
+   ],
+   "toggles": [
+    "host-status",
+    "block-cors-traffic"
+   ]
+  },
+  "cors_protection_rule__bind": {
+   "collection": "waf/cors-protection-policy/rule-list",
+   "enums": {},
+   "field_order": [
+    "cors-rule"
+   ],
+   "group_order": [
+    "CORS Rule"
+   ],
+   "groups": {
+    "cors-rule": "CORS Rule"
+   },
+   "identity_key": "",
+   "label": "CORS Rule",
+   "labels": {
+    "cors-rule": "CORS Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "cors-rule": "waf/cors-protection-rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "csrf_page_item": {
+   "collection": "waf/csrf-protection/csrf-page-list",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "",
+   "label": "CSRF Page",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "csrf_protection": {
+   "collection": "waf/csrf-protection",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "deny_no_log",
+     "block-period"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "action",
+    "block-period",
+    "severity",
+    "trigger"
+   ],
+   "group_order": [
+    "CSRF Protection"
+   ],
+   "groups": {
+    "action": "CSRF Protection",
+    "block-period": "CSRF Protection",
+    "severity": "CSRF Protection",
+    "trigger": "CSRF Protection"
+   },
+   "identity_key": "name",
+   "label": "CSRF Protection",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "severity": "Severity",
+    "trigger": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/csrf-protection/csrf-url-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "URL List"
+    },
+    {
+     "collection": "waf/csrf-protection/csrf-page-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Page List"
+    }
+   ],
+   "toggles": []
+  },
+  "csrf_url_item": {
+   "collection": "waf/csrf-protection/csrf-url-list",
+   "enums": {
+    "request-type": [
+     "plain",
+     "regular"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "request-url",
+    "request-type",
+    "parameter-filter",
+    "parameter-name",
+    "parameter-value-type",
+    "parameter-value"
+   ],
+   "group_order": [
+    "URL",
+    "Parameter"
+   ],
+   "groups": {
+    "host-status": "URL",
+    "parameter-filter": "Parameter",
+    "request-type": "URL"
+   },
+   "identity_key": "",
+   "label": "CSRF URL",
+   "labels": {
+    "host-status": "Host Status",
+    "parameter-filter": "Parameter Filter",
+    "request-type": "URL Type"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "host-status",
+    "parameter-filter"
+   ]
+  },
+  "custom_policy": {
+   "collection": "waf/custom-access.policy",
+   "enums": {},
+   "field_order": [
+    "threat-weight"
+   ],
+   "group_order": [
+    "Custom Access"
+   ],
+   "groups": {
+    "threat-weight": "Custom Access"
+   },
+   "identity_key": "name",
+   "label": "Custom Access Policy",
+   "labels": {
+    "threat-weight": "Threat Weight"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/custom-access.policy/rule",
+     "ref_collection": "waf/custom-access.rule",
+     "ref_key": "rule-name",
+     "title": "Rules"
+    }
+   ],
+   "toggles": []
+  },
+  "custom_rule": {
+   "collection": "waf/custom-access.rule",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "action",
+    "block-period",
+    "severity",
+    "trigger",
+    "bot-confirmation"
+   ],
+   "group_order": [
+    "Rule"
+   ],
+   "groups": {
+    "action": "Rule",
+    "block-period": "Rule",
+    "bot-confirmation": "Rule",
+    "severity": "Rule",
+    "trigger": "Rule"
+   },
+   "identity_key": "name",
+   "label": "Custom Access Rule",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "bot-confirmation": "Bot Confirmation",
+    "severity": "Severity",
+    "trigger": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "bot-confirmation"
+   ]
+  },
+  "custom_rule__bind": {
+   "collection": "waf/custom-access.policy/rule",
+   "enums": {},
+   "field_order": [
+    "rule-name"
+   ],
+   "group_order": [
+    "Custom Access Rule"
+   ],
+   "groups": {
+    "rule-name": "Custom Access Rule"
+   },
+   "identity_key": "",
+   "label": "Custom Access Rule",
+   "labels": {
+    "rule-name": "Custom Access Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "rule-name": "waf/custom-access.rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "ddos_http_access_limit": {
+   "collection": "waf/layer4-access-limit-rule",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "action",
+    "block-period",
+    "severity",
+    "trigger-policy"
+   ],
+   "group_order": [
+    "Rule"
+   ],
+   "groups": {
+    "action": "Rule",
+    "block-period": "Rule",
+    "severity": "Rule",
+    "trigger-policy": "Rule"
+   },
+   "identity_key": "name",
+   "label": "HTTP Access Limit Rule",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "severity": "Severity",
+    "trigger-policy": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "trigger-policy": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "ddos_http_flood_prevention": {
+   "collection": "waf/http-request-flood-prevention-rule",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "action",
+    "block-period",
+    "severity",
+    "trigger-policy"
+   ],
+   "group_order": [
+    "Rule"
+   ],
+   "groups": {
+    "action": "Rule",
+    "block-period": "Rule",
+    "severity": "Rule",
+    "trigger-policy": "Rule"
+   },
+   "identity_key": "name",
+   "label": "HTTP Flood Prevention Rule",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "severity": "Severity",
+    "trigger-policy": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "trigger-policy": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "ddos_malicious_ip": {
+   "collection": "waf/http-connection-flood-check-rule",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "action",
+    "block-period",
+    "severity",
+    "trigger-policy"
+   ],
+   "group_order": [
+    "Rule"
+   ],
+   "groups": {
+    "action": "Rule",
+    "block-period": "Rule",
+    "severity": "Rule",
+    "trigger-policy": "Rule"
+   },
+   "identity_key": "name",
+   "label": "Malicious IP Rule",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "severity": "Severity",
+    "trigger-policy": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "trigger-policy": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "ddos_policy": {
+   "collection": "waf/application-layer-dos-prevention",
+   "enums": {},
+   "field_order": [
+    "enable-http-session-based-prevention",
+    "http-request-flood-prevention-rule",
+    "http-connection-flood-check-rule",
+    "enable-layer4-dos-prevention",
+    "layer4-access-limit-rule",
+    "layer4-connection-flood-check-rule",
+    "layer3-fragment-protection"
+   ],
+   "group_order": [
+    "HTTP (Layer 7)",
+    "TCP (Layer 4)"
+   ],
+   "groups": {
+    "enable-http-session-based-prevention": "HTTP (Layer 7)",
+    "enable-layer4-dos-prevention": "TCP (Layer 4)",
+    "http-connection-flood-check-rule": "HTTP (Layer 7)",
+    "http-request-flood-prevention-rule": "HTTP (Layer 7)",
+    "layer3-fragment-protection": "TCP (Layer 4)",
+    "layer4-access-limit-rule": "TCP (Layer 4)",
+    "layer4-connection-flood-check-rule": "TCP (Layer 4)"
+   },
+   "identity_key": "name",
+   "label": "DoS Protection Policy",
+   "labels": {
+    "enable-http-session-based-prevention": "HTTP Session-Based Prevention",
+    "enable-layer4-dos-prevention": "Layer-4 DoS Prevention",
+    "http-connection-flood-check-rule": "Malicious IP",
+    "http-request-flood-prevention-rule": "HTTP Flood Prevention",
+    "layer3-fragment-protection": "Layer-3 Fragment Protection",
+    "layer4-access-limit-rule": "HTTP Access Limit",
+    "layer4-connection-flood-check-rule": "TCP Flood Prevention"
+   },
+   "numbers": [],
+   "refs": {
+    "http-connection-flood-check-rule": "waf/http-connection-flood-check-rule",
+    "http-request-flood-prevention-rule": "waf/http-request-flood-prevention-rule",
+    "layer4-access-limit-rule": "waf/layer4-access-limit-rule",
+    "layer4-connection-flood-check-rule": "waf/layer4-connection-flood-check-rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "enable-http-session-based-prevention",
+    "enable-layer4-dos-prevention",
+    "layer3-fragment-protection"
+   ]
+  },
+  "ddos_tcp_flood_prevention": {
+   "collection": "waf/layer4-connection-flood-check-rule",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "action",
+    "block-period",
+    "severity",
+    "trigger-policy"
+   ],
+   "group_order": [
+    "Rule"
+   ],
+   "groups": {
+    "action": "Rule",
+    "block-period": "Rule",
+    "severity": "Rule",
+    "trigger-policy": "Rule"
+   },
+   "identity_key": "name",
+   "label": "TCP Flood Prevention Rule",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "severity": "Severity",
+    "trigger-policy": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "trigger-policy": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "fiel_exception_policy": {
+   "collection": "waf/file-exception-policy",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "File Security Exception",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/file-exception-policy/exception-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Exceptions"
+    }
+   ],
+   "toggles": []
+  },
+  "file_exception_item": {
+   "collection": "waf/file-exception-policy/exception-list",
+   "enums": {},
+   "field_order": [
+    "file-name",
+    "md5",
+    "comment"
+   ],
+   "group_order": [
+    "Exception"
+   ],
+   "groups": {
+    "comment": "Exception",
+    "file-name": "Exception",
+    "md5": "Exception"
+   },
+   "identity_key": "",
+   "label": "File Exception",
+   "labels": {
+    "comment": "Comment",
+    "file-name": "File Name",
+    "md5": "MD5"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "file_match_item": {
+   "collection": "waf/file-upload-custom-file-type/file-content-match-rule",
+   "enums": {
+    "concatenate-type": [
+     "and",
+     "or"
+    ]
+   },
+   "field_order": [
+    "offset-from",
+    "offset",
+    "operation",
+    "data-type",
+    "data-value",
+    "concatenate-type"
+   ],
+   "group_order": [
+    "Match"
+   ],
+   "groups": {
+    "concatenate-type": "Match",
+    "data-type": "Match",
+    "offset": "Match",
+    "offset-from": "Match",
+    "operation": "Match"
+   },
+   "identity_key": "",
+   "label": "Content Match Rule",
+   "labels": {
+    "concatenate-type": "Concatenate",
+    "data-type": "Data Type",
+    "offset": "Offset",
+    "offset-from": "Offset From",
+    "operation": "Operation"
+   },
+   "numbers": [
+    "offset"
+   ],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "file_security_file_type": {
+   "collection": "waf/file-upload-custom-file-type",
+   "enums": {},
+   "field_order": [
+    "file-extension"
+   ],
+   "group_order": [
+    "Custom File Type"
+   ],
+   "groups": {
+    "file-extension": "Custom File Type"
+   },
+   "identity_key": "name",
+   "label": "Custom File Type",
+   "labels": {
+    "file-extension": "File Extension"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/file-upload-custom-file-type/file-content-match-rule",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Content Match Rules"
+    }
+   ],
+   "toggles": []
+  },
+  "file_security_file_type__bind": {
+   "collection": "waf/file-upload-restriction-rule/custom-file-types",
+   "enums": {},
+   "field_order": [
+    "file-type"
+   ],
+   "group_order": [
+    "Custom File Type"
+   ],
+   "groups": {
+    "file-type": "Custom File Type"
+   },
+   "identity_key": "",
+   "label": "Custom File Type",
+   "labels": {
+    "file-type": "Custom File Type"
+   },
+   "numbers": [],
+   "refs": {
+    "file-type": "waf/file-upload-custom-file-type"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "file_security_policy": {
+   "collection": "waf/file-upload-restriction-policy",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "action",
+    "block-period",
+    "severity",
+    "trigger",
+    "av-scan",
+    "fortisandbox-check",
+    "icap-server-check"
+   ],
+   "group_order": [
+    "File Security",
+    "Scanning"
+   ],
+   "groups": {
+    "action": "File Security",
+    "av-scan": "Scanning",
+    "block-period": "File Security",
+    "fortisandbox-check": "Scanning",
+    "icap-server-check": "Scanning",
+    "severity": "File Security",
+    "trigger": "File Security"
+   },
+   "identity_key": "name",
+   "label": "File Security",
+   "labels": {
+    "action": "Action",
+    "av-scan": "Antivirus Scan",
+    "block-period": "Block Period (s)",
+    "fortisandbox-check": "Send to FortiSandbox",
+    "icap-server-check": "ICAP Server Check",
+    "severity": "Severity",
+    "trigger": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/file-upload-restriction-policy/rule",
+     "ref_collection": "waf/file-upload-restriction-rule",
+     "ref_key": "file-upload-restriction-rule",
+     "title": "File Security Rules"
+    }
+   ],
+   "toggles": [
+    "av-scan",
+    "fortisandbox-check",
+    "icap-server-check"
+   ]
+  },
+  "file_security_rule": {
+   "collection": "waf/file-upload-restriction-rule",
+   "enums": {
+    "request-type": [
+     "plain",
+     "regular"
+    ],
+    "type": [
+     "allow-file-types",
+     "block-file-types"
+    ]
+   },
+   "field_order": [
+    "type",
+    "host-status",
+    "host",
+    "request-type",
+    "request-file",
+    "file-size-limit",
+    "file-uncompress",
+    "json-file-support"
+   ],
+   "group_order": [
+    "Rule",
+    "Limits"
+   ],
+   "groups": {
+    "file-size-limit": "Limits",
+    "file-uncompress": "Limits",
+    "host": "Rule",
+    "host-status": "Rule",
+    "json-file-support": "Limits",
+    "request-file": "Rule",
+    "request-type": "Rule",
+    "type": "Rule"
+   },
+   "identity_key": "name",
+   "label": "File Security Rule",
+   "labels": {
+    "file-size-limit": "File Upload Limit (KB)",
+    "file-uncompress": "File Uncompress",
+    "host": "Host",
+    "host-status": "Host Status",
+    "json-file-support": "JSON File Support",
+    "request-file": "Request URL",
+    "request-type": "URL Type",
+    "type": "Type"
+   },
+   "numbers": [
+    "file-size-limit"
+   ],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/file-upload-restriction-rule/file-types",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Predefined File Types"
+    },
+    {
+     "collection": "waf/file-upload-restriction-rule/custom-file-types",
+     "ref_collection": "waf/file-upload-custom-file-type",
+     "ref_key": "file-type",
+     "title": "Custom File Types"
+    }
+   ],
+   "toggles": [
+    "host-status",
+    "file-uncompress",
+    "json-file-support"
+   ]
+  },
+  "file_security_rule__bind": {
+   "collection": "waf/file-upload-restriction-policy/rule",
+   "enums": {},
+   "field_order": [
+    "file-upload-restriction-rule"
+   ],
+   "group_order": [
+    "File Security Rule"
+   ],
+   "groups": {
+    "file-upload-restriction-rule": "File Security Rule"
+   },
+   "identity_key": "",
+   "label": "File Security Rule",
+   "labels": {
+    "file-upload-restriction-rule": "File Security Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "file-upload-restriction-rule": "waf/file-upload-restriction-rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "file_type_item": {
+   "collection": "waf/file-upload-restriction-rule/file-types",
+   "enums": {},
+   "field_order": [
+    "file-type-name",
+    "file-type-id"
+   ],
+   "group_order": [
+    "File Type"
+   ],
+   "groups": {
+    "file-type-name": "File Type"
+   },
+   "identity_key": "",
+   "label": "Predefined File Type",
+   "labels": {
+    "file-type-name": "File Type"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "geo_ip": {
+   "collection": "waf/geo-block-list",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "action",
+    "block-period",
+    "severity",
+    "trigger",
+    "ignore-x-forwarded-for",
+    "exception-rule"
+   ],
+   "group_order": [
+    "Geo IP"
+   ],
+   "groups": {
+    "action": "Geo IP",
+    "block-period": "Geo IP",
+    "exception-rule": "Geo IP",
+    "ignore-x-forwarded-for": "Geo IP",
+    "severity": "Geo IP",
+    "trigger": "Geo IP"
+   },
+   "identity_key": "name",
+   "label": "Geo IP Block List",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "exception-rule": "Geo Exception",
+    "ignore-x-forwarded-for": "Ignore X-Forwarded-For",
+    "severity": "Severity",
+    "trigger": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "exception-rule": "waf/geo-ip-except",
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/geo-block-list/country-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Countries"
+    }
+   ],
+   "toggles": [
+    "ignore-x-forwarded-for"
+   ]
+  },
+  "geo_ip_country_item": {
+   "collection": "waf/geo-block-list/country-list",
+   "enums": {},
+   "field_order": [
+    "country-name"
+   ],
+   "group_order": [
+    "Country"
+   ],
+   "groups": {
+    "country-name": "Country"
+   },
+   "identity_key": "",
+   "label": "Country",
+   "labels": {
+    "country-name": "Country"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "geo_ip_exception": {
+   "collection": "waf/geo-ip-except",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "Geo IP Exception",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/geo-ip-except/members",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Members"
+    }
+   ],
+   "toggles": []
+  },
+  "geo_ip_exception_member_item": {
+   "collection": "waf/geo-ip-except/members",
+   "enums": {},
+   "field_order": [
+    "ip"
+   ],
+   "group_order": [
+    "Member"
+   ],
+   "groups": {
+    "ip": "Member"
+   },
+   "identity_key": "",
+   "label": "Geo Exception Member",
+   "labels": {
+    "ip": "IP / Subnet"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "grpc_idl_file": {
+   "collection": "waf/grpc-idl.file",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "gRPC IDL File",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "grpc_security_policy": {
+   "collection": "waf/grpc-security.policy",
+   "enums": {},
+   "field_order": [
+    "enable-signature-detection"
+   ],
+   "group_order": [
+    "gRPC"
+   ],
+   "groups": {
+    "enable-signature-detection": "gRPC"
+   },
+   "identity_key": "name",
+   "label": "gRPC Protection",
+   "labels": {
+    "enable-signature-detection": "Signature Detection"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/grpc-security.policy/rule-list",
+     "ref_collection": "waf/grpc-security.rule",
+     "ref_key": "rule",
+     "title": "gRPC Rules"
+    }
+   ],
+   "toggles": [
+    "enable-signature-detection"
+   ]
+  },
+  "grpc_security_rule": {
+   "collection": "waf/grpc-security.rule",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "block-period",
+     "deny_no_log"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "url",
+    "idl-file",
+    "req-message-name",
+    "rsp-message-name",
+    "rate-limit",
+    "size-limit",
+    "action",
+    "block-period",
+    "severity",
+    "trigger"
+   ],
+   "group_order": [
+    "gRPC Rule",
+    "Limits & Action"
+   ],
+   "groups": {
+    "action": "Limits & Action",
+    "block-period": "Limits & Action",
+    "host": "gRPC Rule",
+    "host-status": "gRPC Rule",
+    "idl-file": "gRPC Rule",
+    "rate-limit": "Limits & Action",
+    "req-message-name": "gRPC Rule",
+    "rsp-message-name": "gRPC Rule",
+    "severity": "Limits & Action",
+    "size-limit": "Limits & Action",
+    "trigger": "Limits & Action",
+    "url": "gRPC Rule"
+   },
+   "identity_key": "name",
+   "label": "gRPC Security Rule",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "host": "Host",
+    "host-status": "Host Status",
+    "idl-file": "IDL File",
+    "rate-limit": "Request Rate Limit",
+    "req-message-name": "Request Message",
+    "rsp-message-name": "Response Message",
+    "severity": "Severity",
+    "size-limit": "Request Size Limit",
+    "trigger": "Trigger Policy",
+    "url": "Request URL"
+   },
+   "numbers": [
+    "rate-limit",
+    "size-limit",
+    "block-period"
+   ],
+   "refs": {
+    "idl-file": "waf/grpc-idl.file",
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "host-status"
+   ]
+  },
+  "grpc_security_rule__bind": {
+   "collection": "waf/grpc-security.policy/rule-list",
+   "enums": {},
+   "field_order": [
+    "rule"
+   ],
+   "group_order": [
+    "gRPC Security Rule"
+   ],
+   "groups": {
+    "rule": "gRPC Security Rule"
+   },
+   "identity_key": "",
+   "label": "gRPC Security Rule",
+   "labels": {
+    "rule": "gRPC Security Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "rule": "waf/grpc-security.rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "hidden_field_name_item": {
+   "collection": "waf/hidden-fields-rule/hidden-field-name",
+   "enums": {},
+   "field_order": [
+    "argument"
+   ],
+   "group_order": [
+    "Field"
+   ],
+   "groups": {
+    "argument": "Field"
+   },
+   "identity_key": "",
+   "label": "Hidden Field",
+   "labels": {
+    "argument": "Argument"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "hidden_field_protection_policy": {
+   "collection": "waf/hidden-fields-protection",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "Hidden Fields Protection",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/hidden-fields-protection/hidden_fields_list",
+     "ref_collection": "waf/hidden-fields-rule",
+     "ref_key": "hidden-field-rule",
+     "title": "Hidden Field Rules"
+    }
+   ],
+   "toggles": []
+  },
+  "hidden_field_rule": {
+   "collection": "waf/hidden-fields-rule",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "request-file",
+    "action",
+    "block-period",
+    "severity",
+    "trigger"
+   ],
+   "group_order": [
+    "Hidden Field Rule"
+   ],
+   "groups": {
+    "action": "Hidden Field Rule",
+    "block-period": "Hidden Field Rule",
+    "host": "Hidden Field Rule",
+    "host-status": "Hidden Field Rule",
+    "request-file": "Hidden Field Rule",
+    "severity": "Hidden Field Rule",
+    "trigger": "Hidden Field Rule"
+   },
+   "identity_key": "name",
+   "label": "Hidden Field Rule",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "host": "Host",
+    "host-status": "Host Status",
+    "request-file": "Request URL",
+    "severity": "Severity",
+    "trigger": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/hidden-fields-rule/hidden-field-name",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Hidden Field Names"
+    }
+   ],
+   "toggles": [
+    "host-status"
+   ]
+  },
+  "hidden_field_rule__bind": {
+   "collection": "waf/hidden-fields-protection/hidden_fields_list",
+   "enums": {},
+   "field_order": [
+    "hidden-field-rule"
+   ],
+   "group_order": [
+    "Hidden Field Rule"
+   ],
+   "groups": {
+    "hidden-field-rule": "Hidden Field Rule"
+   },
+   "identity_key": "",
+   "label": "Hidden Field Rule",
+   "labels": {
+    "hidden-field-rule": "Hidden Field Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "hidden-field-rule": "waf/hidden-fields-rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "http_auth_policy": {
+   "collection": "waf/http-authen.http-authen-policy",
+   "enums": {
+    "alert-type": [
+     "none",
+     "fail",
+     "success",
+     "all"
+    ]
+   },
+   "field_order": [
+    "cache",
+    "cache-timeout",
+    "auth-timeout",
+    "alert-type"
+   ],
+   "group_order": [
+    "HTTP Authentication"
+   ],
+   "groups": {
+    "alert-type": "HTTP Authentication",
+    "auth-timeout": "HTTP Authentication",
+    "cache": "HTTP Authentication",
+    "cache-timeout": "HTTP Authentication"
+   },
+   "identity_key": "name",
+   "label": "HTTP Authentication",
+   "labels": {
+    "alert-type": "Alert Type",
+    "auth-timeout": "Connection Timeout (ms)",
+    "cache": "Cache",
+    "cache-timeout": "Cache Timeout (s)"
+   },
+   "numbers": [
+    "cache-timeout",
+    "auth-timeout"
+   ],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/http-authen.http-authen-policy/rule",
+     "ref_collection": "waf/http-authen.http-authen-rule",
+     "ref_key": "http-authen-rule",
+     "title": "Auth Rules"
+    }
+   ],
+   "toggles": [
+    "cache"
+   ]
+  },
+  "http_auth_rule": {
+   "collection": "waf/http-authen.http-authen-rule",
+   "enums": {},
+   "field_order": [
+    "host-status",
+    "host"
+   ],
+   "group_order": [
+    "Auth Rule"
+   ],
+   "groups": {
+    "host": "Auth Rule",
+    "host-status": "Auth Rule"
+   },
+   "identity_key": "name",
+   "label": "HTTP Auth Rule",
+   "labels": {
+    "host": "Host",
+    "host-status": "Host Status"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/http-authen.http-authen-rule/rule",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Rules"
+    }
+   ],
+   "toggles": [
+    "host-status"
+   ]
+  },
+  "http_auth_rule__bind": {
+   "collection": "waf/http-authen.http-authen-policy/rule",
+   "enums": {},
+   "field_order": [
+    "http-authen-rule"
+   ],
+   "group_order": [
+    "HTTP Auth Rule"
+   ],
+   "groups": {
+    "http-authen-rule": "HTTP Auth Rule"
+   },
+   "identity_key": "",
+   "label": "HTTP Auth Rule",
+   "labels": {
+    "http-authen-rule": "HTTP Auth Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "http-authen-rule": "waf/http-authen.http-authen-rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "http_auth_rule_item": {
+   "collection": "waf/http-authen.http-authen-rule/rule",
+   "enums": {
+    "authen-type": [
+     "basic",
+     "digest",
+     "ntlm"
+    ]
+   },
+   "field_order": [
+    "authen-type",
+    "user-realm",
+    "user-group",
+    "request-url"
+   ],
+   "group_order": [
+    "Rule"
+   ],
+   "groups": {
+    "authen-type": "Rule",
+    "request-url": "Rule",
+    "user-group": "Rule",
+    "user-realm": "Rule"
+   },
+   "identity_key": "",
+   "label": "Auth Rule Item",
+   "labels": {
+    "authen-type": "Auth Type",
+    "request-url": "Auth Path",
+    "user-group": "User Group",
+    "user-realm": "User Realm"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "http_constraint": {
+   "collection": "waf/http-protocol-parameter-restriction",
+   "enums": {},
+   "field_order": [
+    "max-http-header-length-check",
+    "max-http-header-length",
+    "max-http-content-length-check",
+    "max-http-content-length",
+    "max-http-body-length-check",
+    "max-http-body-length",
+    "Illegal-http-version-check",
+    "Illegal-http-request-method-check",
+    "Illegal-host-name-check",
+    "block-malformed-request-check",
+    "exception_name"
+   ],
+   "group_order": [
+    "Length Limits",
+    "Protocol Checks",
+    "Exception"
+   ],
+   "groups": {
+    "Illegal-host-name-check": "Protocol Checks",
+    "Illegal-http-request-method-check": "Protocol Checks",
+    "Illegal-http-version-check": "Protocol Checks",
+    "block-malformed-request-check": "Protocol Checks",
+    "exception_name": "Exception",
+    "max-http-body-length": "Length Limits",
+    "max-http-body-length-check": "Length Limits",
+    "max-http-content-length": "Length Limits",
+    "max-http-content-length-check": "Length Limits",
+    "max-http-header-length": "Length Limits",
+    "max-http-header-length-check": "Length Limits"
+   },
+   "identity_key": "name",
+   "label": "HTTP Protocol Constraints",
+   "labels": {
+    "Illegal-host-name-check": "Illegal Host Name",
+    "Illegal-http-request-method-check": "Illegal Request Method",
+    "Illegal-http-version-check": "Illegal HTTP Version",
+    "block-malformed-request-check": "Block Malformed Request",
+    "exception_name": "HTTP Constraints Exception",
+    "max-http-body-length": "Max Body Length",
+    "max-http-body-length-check": "Max Body Length Check",
+    "max-http-content-length": "Max Content Length",
+    "max-http-content-length-check": "Max Content Length Check",
+    "max-http-header-length": "Max Header Length",
+    "max-http-header-length-check": "Max Header Length Check"
+   },
+   "numbers": [
+    "max-http-header-length",
+    "max-http-content-length",
+    "max-http-body-length"
+   ],
+   "refs": {
+    "exception_name": "waf/http-constraints-exceptions"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "max-http-header-length-check",
+    "max-http-content-length-check",
+    "max-http-body-length-check",
+    "Illegal-http-version-check",
+    "Illegal-http-request-method-check",
+    "Illegal-host-name-check",
+    "block-malformed-request-check"
+   ]
+  },
+  "http_constraint_exception": {
+   "collection": "waf/http-constraints-exceptions",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "HTTP Constraints Exception",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/http-constraints-exceptions/http_constraints-exception-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Exceptions"
+    }
+   ],
+   "toggles": []
+  },
+  "http_constraint_exception_item": {
+   "collection": "waf/http-constraints-exceptions/http_constraints-exception-list",
+   "enums": {
+    "request-type": [
+     "plain",
+     "regular"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "source-ip-status",
+    "source-ip",
+    "request-type",
+    "request-file",
+    "block-malformed-request",
+    "Illegal-host-name-check",
+    "Illegal-http-request-method-check",
+    "Illegal-content-length-check",
+    "Illegal-content-type-check",
+    "Illegal-header-name-check",
+    "Illegal-header-value-check",
+    "Illegal-byte-in-url-check",
+    "null-byte-in-url-check",
+    "Post-request-ctype-check",
+    "Internal-resource-limits-check",
+    "max-http-header-length",
+    "max-http-header-name-length",
+    "max-http-header-value-length",
+    "max-http-content-length",
+    "max-http-body-length",
+    "max-http-request-length",
+    "max-http-request-filename-length",
+    "max-http-body-parameter-length",
+    "max-url-parameter-length",
+    "max-url-parameter",
+    "max-url-param-name-len",
+    "max-url-param-value-len",
+    "url-param-name-check",
+    "url-param-value-check",
+    "parameter-name-check",
+    "parameter-value-check",
+    "duplicate-paramname-check",
+    "redundant-header-check",
+    "max-cookie-in-request",
+    "max-header-line-request",
+    "number-of-ranges-in-range-header",
+    "range-overlapping-check",
+    "odd-and-even-space-attack-check",
+    "web-socket-protocol-check",
+    "rpc-protocol-check",
+    "cl-te-coexist-check",
+    "inconsistent-cl-check",
+    "missing-host-check",
+    "multipart-formdata-bad-request-check",
+    "http2-max-requests",
+    "h2-rst-stream-check",
+    "h2-rst-stream-freq-check",
+    "h3-bidir-concurrent-stream-check",
+    "h3-unidir-concurrent-stream-check"
+   ],
+   "group_order": [
+    "Match",
+    "Constraints to omit"
+   ],
+   "groups": {
+    "Illegal-byte-in-url-check": "Constraints to omit",
+    "Illegal-content-length-check": "Constraints to omit",
+    "Illegal-content-type-check": "Constraints to omit",
+    "Illegal-header-name-check": "Constraints to omit",
+    "Illegal-header-value-check": "Constraints to omit",
+    "Illegal-host-name-check": "Constraints to omit",
+    "Illegal-http-request-method-check": "Constraints to omit",
+    "Internal-resource-limits-check": "Constraints to omit",
+    "Post-request-ctype-check": "Constraints to omit",
+    "block-malformed-request": "Constraints to omit",
+    "cl-te-coexist-check": "Constraints to omit",
+    "duplicate-paramname-check": "Constraints to omit",
+    "h2-rst-stream-check": "Constraints to omit",
+    "h2-rst-stream-freq-check": "Constraints to omit",
+    "h3-bidir-concurrent-stream-check": "Constraints to omit",
+    "h3-unidir-concurrent-stream-check": "Constraints to omit",
+    "host": "Match",
+    "host-status": "Match",
+    "http2-max-requests": "Constraints to omit",
+    "inconsistent-cl-check": "Constraints to omit",
+    "max-cookie-in-request": "Constraints to omit",
+    "max-header-line-request": "Constraints to omit",
+    "max-http-body-length": "Constraints to omit",
+    "max-http-body-parameter-length": "Constraints to omit",
+    "max-http-content-length": "Constraints to omit",
+    "max-http-header-length": "Constraints to omit",
+    "max-http-header-name-length": "Constraints to omit",
+    "max-http-header-value-length": "Constraints to omit",
+    "max-http-request-filename-length": "Constraints to omit",
+    "max-http-request-length": "Constraints to omit",
+    "max-url-param-name-len": "Constraints to omit",
+    "max-url-param-value-len": "Constraints to omit",
+    "max-url-parameter": "Constraints to omit",
+    "max-url-parameter-length": "Constraints to omit",
+    "missing-host-check": "Constraints to omit",
+    "multipart-formdata-bad-request-check": "Constraints to omit",
+    "null-byte-in-url-check": "Constraints to omit",
+    "number-of-ranges-in-range-header": "Constraints to omit",
+    "odd-and-even-space-attack-check": "Constraints to omit",
+    "parameter-name-check": "Constraints to omit",
+    "parameter-value-check": "Constraints to omit",
+    "range-overlapping-check": "Constraints to omit",
+    "redundant-header-check": "Constraints to omit",
+    "request-file": "Match",
+    "request-type": "Match",
+    "rpc-protocol-check": "Constraints to omit",
+    "source-ip": "Match",
+    "source-ip-status": "Match",
+    "url-param-name-check": "Constraints to omit",
+    "url-param-value-check": "Constraints to omit",
+    "web-socket-protocol-check": "Constraints to omit"
+   },
+   "identity_key": "",
+   "label": "Constraint Exception",
+   "labels": {
+    "Illegal-byte-in-url-check": "Illegal Char in URL",
+    "Illegal-content-length-check": "Illegal Content Length",
+    "Illegal-content-type-check": "Illegal Content Type",
+    "Illegal-header-name-check": "Illegal Char in Header Name",
+    "Illegal-header-value-check": "Illegal Char in Header Value",
+    "Illegal-host-name-check": "Illegal Host Name",
+    "Illegal-http-request-method-check": "Illegal HTTP Method",
+    "Internal-resource-limits-check": "Internal Resource Limits",
+    "Post-request-ctype-check": "POST Missing Content-Type",
+    "block-malformed-request": "Malformed Request",
+    "cl-te-coexist-check": "CL-TE Coexist",
+    "duplicate-paramname-check": "Duplicated Parameter Name",
+    "h2-rst-stream-check": "HTTP/2 RST Stream",
+    "h2-rst-stream-freq-check": "HTTP/2 RST Stream Frequency",
+    "h3-bidir-concurrent-stream-check": "HTTP/3 Bidir Concurrent Streams",
+    "h3-unidir-concurrent-stream-check": "HTTP/3 Unidir Concurrent Streams",
+    "host": "Host",
+    "host-status": "Host Status",
+    "http2-max-requests": "HTTP/2 Max Requests",
+    "inconsistent-cl-check": "Inconsistent Content-Length",
+    "max-cookie-in-request": "Number of Cookies",
+    "max-header-line-request": "Number of Header Lines",
+    "max-http-body-length": "Body Length",
+    "max-http-body-parameter-length": "Total Body Parameters Length",
+    "max-http-content-length": "Content Length",
+    "max-http-header-length": "Header Length",
+    "max-http-header-name-length": "Header Name Length",
+    "max-http-header-value-length": "Header Value Length",
+    "max-http-request-filename-length": "Request Filename Length",
+    "max-http-request-length": "Request Length",
+    "max-url-param-name-len": "Max URL Parameter Name Length",
+    "max-url-param-value-len": "Max URL Parameter Value Length",
+    "max-url-parameter": "Number of URL Parameters",
+    "max-url-parameter-length": "Total URL Parameter Length",
+    "missing-host-check": "Missing Host",
+    "multipart-formdata-bad-request-check": "Multipart/form-data Bad Request",
+    "null-byte-in-url-check": "NULL Char in URL",
+    "number-of-ranges-in-range-header": "Ranges in Range Header",
+    "odd-and-even-space-attack-check": "Odd and Even Space Attack",
+    "parameter-name-check": "NULL Char in Parameter Name",
+    "parameter-value-check": "NULL Char in Parameter Value",
+    "range-overlapping-check": "Range Overlapping",
+    "redundant-header-check": "Redundant HTTP Headers",
+    "request-file": "URL Pattern",
+    "request-type": "Request Type",
+    "rpc-protocol-check": "RPC Protocol",
+    "source-ip": "IPv4/IPv6/IP Range",
+    "source-ip-status": "Source IP",
+    "url-param-name-check": "Illegal Char in Parameter Name",
+    "url-param-value-check": "Illegal Char in Parameter Value",
+    "web-socket-protocol-check": "WebSocket Protocol"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "host-status",
+    "source-ip-status",
+    "block-malformed-request",
+    "Illegal-host-name-check",
+    "Illegal-http-request-method-check",
+    "Illegal-content-length-check",
+    "Illegal-content-type-check",
+    "Illegal-header-name-check",
+    "Illegal-header-value-check",
+    "Illegal-byte-in-url-check",
+    "null-byte-in-url-check",
+    "Post-request-ctype-check",
+    "Internal-resource-limits-check",
+    "max-http-header-length",
+    "max-http-header-name-length",
+    "max-http-header-value-length",
+    "max-http-content-length",
+    "max-http-body-length",
+    "max-http-request-length",
+    "max-http-request-filename-length",
+    "max-http-body-parameter-length",
+    "max-url-parameter-length",
+    "max-url-parameter",
+    "max-url-param-name-len",
+    "max-url-param-value-len",
+    "url-param-name-check",
+    "url-param-value-check",
+    "parameter-name-check",
+    "parameter-value-check",
+    "duplicate-paramname-check",
+    "redundant-header-check",
+    "max-cookie-in-request",
+    "max-header-line-request",
+    "number-of-ranges-in-range-header",
+    "range-overlapping-check",
+    "odd-and-even-space-attack-check",
+    "web-socket-protocol-check",
+    "rpc-protocol-check",
+    "cl-te-coexist-check",
+    "inconsistent-cl-check",
+    "missing-host-check",
+    "multipart-formdata-bad-request-check",
+    "http2-max-requests",
+    "h2-rst-stream-check",
+    "h2-rst-stream-freq-check",
+    "h3-bidir-concurrent-stream-check",
+    "h3-unidir-concurrent-stream-check"
+   ]
+  },
+  "http_header_security": {
+   "collection": "waf/http-header-security",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "HTTP Header Security",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/http-header-security/http-header-security-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Secure Header Table"
+    }
+   ],
+   "toggles": []
+  },
+  "http_header_security_exception": {
+   "collection": "waf/http-header-security-exception",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "HTTP Header Security Exception",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/http-header-security-exception/list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Exceptions"
+    }
+   ],
+   "toggles": []
+  },
+  "http_header_security_exception_item": {
+   "collection": "waf/http-header-security-exception/list",
+   "enums": {
+    "request-url-type": [
+     "plain",
+     "regular"
+    ]
+   },
+   "field_order": [
+    "client-ip-status",
+    "client-ip",
+    "request-url-type",
+    "request-url-pattern"
+   ],
+   "group_order": [
+    "Exception"
+   ],
+   "groups": {
+    "client-ip": "Exception",
+    "client-ip-status": "Exception",
+    "request-url-pattern": "Exception",
+    "request-url-type": "Exception"
+   },
+   "identity_key": "",
+   "label": "Header Exception",
+   "labels": {
+    "client-ip": "IPv4/IPv6/IP Range",
+    "client-ip-status": "Client IP",
+    "request-url-pattern": "Request URL",
+    "request-url-type": "Request URL Type"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "client-ip-status"
+   ]
+  },
+  "http_header_security_item": {
+   "collection": "waf/http-header-security/http-header-security-list",
+   "enums": {
+    "name": [
+     "X-Frame-Options",
+     "X-Content-Type-Options",
+     "X-XSS-Protection",
+     "Content-Security-Policy",
+     "Feature-Policy",
+     "Referrer-Policy"
+    ],
+    "request-type": [
+     "plain",
+     "regular"
+    ]
+   },
+   "field_order": [
+    "name",
+    "value",
+    "custom-value",
+    "referrer-policy-value",
+    "request-status",
+    "request-type",
+    "request-file",
+    "exception"
+   ],
+   "group_order": [
+    "Header",
+    "URL Filter",
+    "Exception"
+   ],
+   "groups": {
+    "custom-value": "Header",
+    "exception": "Exception",
+    "name": "Header",
+    "request-file": "URL Filter",
+    "request-status": "URL Filter",
+    "request-type": "URL Filter",
+    "value": "Header"
+   },
+   "identity_key": "",
+   "label": "Secure Header",
+   "labels": {
+    "custom-value": "Custom Value",
+    "exception": "Exception",
+    "name": "Secure Header Type",
+    "request-file": "Request URL",
+    "request-status": "URL Filter",
+    "request-type": "URL Type",
+    "value": "Header Value"
+   },
+   "numbers": [],
+   "refs": {
+    "exception": "waf/http-header-security-exception"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "request-status"
+   ]
+  },
+  "ip_list": {
+   "collection": "waf/ip-list",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "action",
+    "block-period",
+    "severity",
+    "trigger-policy",
+    "ignore-x-forwarded-for"
+   ],
+   "group_order": [
+    "IP List"
+   ],
+   "groups": {
+    "action": "IP List",
+    "block-period": "IP List",
+    "ignore-x-forwarded-for": "IP List",
+    "severity": "IP List",
+    "trigger-policy": "IP List"
+   },
+   "identity_key": "name",
+   "label": "IP List",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "ignore-x-forwarded-for": "Ignore X-Forwarded-For",
+    "severity": "Severity",
+    "trigger-policy": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "trigger-policy": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/ip-list/members",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Members"
+    }
+   ],
+   "toggles": [
+    "ignore-x-forwarded-for"
+   ]
+  },
+  "ip_list_member": {
+   "collection": "waf/ip-list/members",
+   "enums": {
+    "group-type": [
+     "ip",
+     "ip-group"
+    ],
+    "type": [
+     "trust-ip",
+     "black-ip",
+     "allow-ip"
+    ]
+   },
+   "field_order": [
+    "type",
+    "group-type",
+    "ip",
+    "ip-group"
+   ],
+   "group_order": [
+    "Member"
+   ],
+   "groups": {
+    "group-type": "Member",
+    "ip": "Member",
+    "ip-group": "Member",
+    "type": "Member"
+   },
+   "identity_key": "",
+   "label": "IP List Member",
+   "labels": {
+    "group-type": "Group Type",
+    "ip": "IP / Subnet",
+    "ip-group": "IP Group",
+    "type": "Type"
+   },
+   "numbers": [],
+   "refs": {
+    "ip-group": "server-policy/ip-group"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "json_protection_policy": {
+   "collection": "waf/json-validation.policy",
+   "enums": {},
+   "field_order": [
+    "enable-attack-signatures"
+   ],
+   "group_order": [
+    "JSON Validation"
+   ],
+   "groups": {
+    "enable-attack-signatures": "JSON Validation"
+   },
+   "identity_key": "name",
+   "label": "JSON Validation",
+   "labels": {
+    "enable-attack-signatures": "Signature Detection"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/json-validation.policy/input-rule-list",
+     "ref_collection": "waf/json-validation.rule",
+     "ref_key": "input-rule",
+     "title": "JSON Rules"
+    }
+   ],
+   "toggles": [
+    "enable-attack-signatures"
+   ]
+  },
+  "json_protection_rule": {
+   "collection": "waf/json-validation.rule",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "request-type": [
+     "plain",
+     "regular"
+    ],
+    "schema-type": [
+     "single-schema",
+     "schema-group"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "request-type",
+    "request-file",
+    "schema-type",
+    "schema-file",
+    "schema-group",
+    "json-limits",
+    "action",
+    "block-period",
+    "severity",
+    "trigger"
+   ],
+   "group_order": [
+    "Match",
+    "Schema",
+    "Action"
+   ],
+   "groups": {
+    "action": "Action",
+    "block-period": "Action",
+    "host": "Match",
+    "host-status": "Match",
+    "json-limits": "Schema",
+    "request-file": "Match",
+    "request-type": "Match",
+    "schema-file": "Schema",
+    "schema-group": "Schema",
+    "schema-type": "Schema",
+    "severity": "Action",
+    "trigger": "Action"
+   },
+   "identity_key": "name",
+   "label": "JSON Protection Rule",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "host": "Host",
+    "host-status": "Host Status",
+    "json-limits": "JSON Limits",
+    "request-file": "Request URL",
+    "request-type": "URL Type",
+    "schema-file": "Single Schema",
+    "schema-group": "Schema Group",
+    "schema-type": "Schema Type",
+    "severity": "Severity",
+    "trigger": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "schema-file": "waf/json-schema.file",
+    "schema-group": "waf/json-schema.group",
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "host-status",
+    "json-limits"
+   ]
+  },
+  "json_protection_rule__bind": {
+   "collection": "waf/json-validation.policy/input-rule-list",
+   "enums": {},
+   "field_order": [
+    "input-rule"
+   ],
+   "group_order": [
+    "JSON Protection Rule"
+   ],
+   "groups": {
+    "input-rule": "JSON Protection Rule"
+   },
+   "identity_key": "",
+   "label": "JSON Protection Rule",
+   "labels": {
+    "input-rule": "JSON Protection Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "input-rule": "waf/json-validation.rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "json_schema": {
+   "collection": "waf/json-schema.file",
+   "enums": {},
+   "field_order": [
+    "json-schema-version"
+   ],
+   "group_order": [
+    "JSON Schema"
+   ],
+   "groups": {
+    "json-schema-version": "JSON Schema"
+   },
+   "identity_key": "name",
+   "label": "JSON Schema File",
+   "labels": {
+    "json-schema-version": "Schema Version"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "json_schema_group": {
+   "collection": "waf/json-schema.group",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "JSON Schema Group",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/json-schema.group/members",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Members"
+    }
+   ],
+   "toggles": []
+  },
+  "json_schema_member_item": {
+   "collection": "waf/json-schema.group/members",
+   "enums": {},
+   "field_order": [
+    "member-name"
+   ],
+   "group_order": [
+    "Member"
+   ],
+   "groups": {
+    "member-name": "Member"
+   },
+   "identity_key": "",
+   "label": "Schema Member",
+   "labels": {
+    "member-name": "JSON Schema File"
+   },
+   "numbers": [],
+   "refs": {
+    "member-name": "waf/json-schema.file"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "link_cloak_exc_item": {
+   "collection": "waf/link-cloaking.link-cloaking-rule/exceptions",
+   "enums": {
+    "url-type": [
+     "plain",
+     "regular"
+    ]
+   },
+   "field_order": [
+    "url-type",
+    "url-pattern"
+   ],
+   "group_order": [
+    "Exception"
+   ],
+   "groups": {
+    "url-pattern": "Exception",
+    "url-type": "Exception"
+   },
+   "identity_key": "",
+   "label": "Exception",
+   "labels": {
+    "url-pattern": "URL Pattern",
+    "url-type": "Type"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "link_cloaking_policy": {
+   "collection": "waf/link-cloaking.link-cloaking-policy",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "Link Cloaking",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/link-cloaking.link-cloaking-policy/rule-list",
+     "ref_collection": "waf/link-cloaking.link-cloaking-rule",
+     "ref_key": "rule",
+     "title": "Link Cloaking Rules"
+    }
+   ],
+   "toggles": []
+  },
+  "link_cloaking_rule": {
+   "collection": "waf/link-cloaking.link-cloaking-rule",
+   "enums": {
+    "url-type": [
+     "plain",
+     "regular"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "url-type",
+    "url-pattern"
+   ],
+   "group_order": [
+    "Rule"
+   ],
+   "groups": {
+    "host": "Rule",
+    "host-status": "Rule",
+    "url-pattern": "Rule",
+    "url-type": "Rule"
+   },
+   "identity_key": "name",
+   "label": "Link Cloaking Rule",
+   "labels": {
+    "host": "Host",
+    "host-status": "Host Status",
+    "url-pattern": "URL Pattern",
+    "url-type": "Type"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/link-cloaking.link-cloaking-rule/exceptions",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Exceptions"
+    }
+   ],
+   "toggles": [
+    "host-status"
+   ]
+  },
+  "link_cloaking_rule__bind": {
+   "collection": "waf/link-cloaking.link-cloaking-policy/rule-list",
+   "enums": {},
+   "field_order": [
+    "rule"
+   ],
+   "group_order": [
+    "Link Cloaking Rule"
+   ],
+   "groups": {
+    "rule": "Link Cloaking Rule"
+   },
+   "identity_key": "",
+   "label": "Link Cloaking Rule",
+   "labels": {
+    "rule": "Link Cloaking Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "rule": "waf/link-cloaking.link-cloaking-rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "mitb_domain_item": {
+   "collection": "waf/mitb-rule/allowed-external-domains-list",
+   "enums": {},
+   "field_order": [
+    "domain"
+   ],
+   "group_order": [
+    "Domain"
+   ],
+   "groups": {
+    "domain": "Domain"
+   },
+   "identity_key": "",
+   "label": "Allowed Domain",
+   "labels": {
+    "domain": "Domain"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "mitb_parameter_item": {
+   "collection": "waf/mitb-rule/protected-parameter-list",
+   "enums": {},
+   "field_order": [
+    "name",
+    "type",
+    "obfuscate",
+    "encrypt",
+    "anti-keyLogger"
+   ],
+   "group_order": [
+    "Parameter"
+   ],
+   "groups": {
+    "anti-keyLogger": "Parameter",
+    "encrypt": "Parameter",
+    "obfuscate": "Parameter",
+    "type": "Parameter"
+   },
+   "identity_key": "",
+   "label": "Protected Parameter",
+   "labels": {
+    "anti-keyLogger": "Anti Key-Logger",
+    "encrypt": "Encrypt",
+    "obfuscate": "Obfuscate",
+    "type": "Type"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "obfuscate",
+    "encrypt",
+    "anti-keyLogger"
+   ]
+  },
+  "mitb_protection_policy": {
+   "collection": "waf/mitb-policy",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "Man in the Browser (MITB)",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/mitb-policy/rule-list",
+     "ref_collection": "waf/mitb-rule",
+     "ref_key": "mitb-rule",
+     "title": "MITB Rules"
+    }
+   ],
+   "toggles": []
+  },
+  "mitb_rule": {
+   "collection": "waf/mitb-rule",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny"
+    ],
+    "request-type": [
+     "plain",
+     "regular"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "request-type",
+    "request-url",
+    "action",
+    "severity",
+    "trigger"
+   ],
+   "group_order": [
+    "MITB Rule"
+   ],
+   "groups": {
+    "action": "MITB Rule",
+    "host": "MITB Rule",
+    "host-status": "MITB Rule",
+    "request-type": "MITB Rule",
+    "request-url": "MITB Rule",
+    "severity": "MITB Rule",
+    "trigger": "MITB Rule"
+   },
+   "identity_key": "name",
+   "label": "MITB Rule",
+   "labels": {
+    "action": "Action",
+    "host": "Host",
+    "host-status": "Host Status",
+    "request-type": "URL Type",
+    "request-url": "Request URL",
+    "severity": "Severity",
+    "trigger": "Trigger Policy"
+   },
+   "numbers": [],
+   "refs": {
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/mitb-rule/protected-parameter-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Protected Parameters"
+    },
+    {
+     "collection": "waf/mitb-rule/allowed-external-domains-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Allowed External Domains"
+    }
+   ],
+   "toggles": [
+    "host-status"
+   ]
+  },
+  "mitb_rule__bind": {
+   "collection": "waf/mitb-policy/rule-list",
+   "enums": {},
+   "field_order": [
+    "mitb-rule"
+   ],
+   "group_order": [
+    "MITB Rule"
+   ],
+   "groups": {
+    "mitb-rule": "MITB Rule"
+   },
+   "identity_key": "",
+   "label": "MITB Rule",
+   "labels": {
+    "mitb-rule": "MITB Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "mitb-rule": "waf/mitb-rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "mobile_api_protection_policy": {
+   "collection": "waf/mobile-api-protection.mobile-api-protection-policy",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "Mobile API Protection",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/mobile-api-protection.mobile-api-protection-policy/rule-list",
+     "ref_collection": "waf/mobile-api-protection.mobile-api-protection-rule",
+     "ref_key": "rule",
+     "title": "Mobile API Rules"
+    }
+   ],
+   "toggles": []
+  },
+  "mobile_api_protection_rule": {
+   "collection": "waf/mobile-api-protection.mobile-api-protection-rule",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "action",
+    "block-period",
+    "severity",
+    "trigger"
+   ],
+   "group_order": [
+    "Mobile API Rule"
+   ],
+   "groups": {
+    "action": "Mobile API Rule",
+    "block-period": "Mobile API Rule",
+    "host": "Mobile API Rule",
+    "host-status": "Mobile API Rule",
+    "severity": "Mobile API Rule",
+    "trigger": "Mobile API Rule"
+   },
+   "identity_key": "name",
+   "label": "Mobile API Rule",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "host": "Host",
+    "host-status": "Host Status",
+    "severity": "Severity",
+    "trigger": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/mobile-api-protection.mobile-api-protection-rule/url-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "URL List"
+    }
+   ],
+   "toggles": [
+    "host-status"
+   ]
+  },
+  "mobile_api_protection_rule__bind": {
+   "collection": "waf/mobile-api-protection.mobile-api-protection-policy/rule-list",
+   "enums": {},
+   "field_order": [
+    "rule"
+   ],
+   "group_order": [
+    "Mobile API Rule"
+   ],
+   "groups": {
+    "rule": "Mobile API Rule"
+   },
+   "identity_key": "",
+   "label": "Mobile API Rule",
+   "labels": {
+    "rule": "Mobile API Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "rule": "waf/mobile-api-protection.mobile-api-protection-rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "mobile_api_url_item": {
+   "collection": "waf/mobile-api-protection.mobile-api-protection-rule/url-list",
+   "enums": {
+    "url-type": [
+     "plain",
+     "regular"
+    ]
+   },
+   "field_order": [
+    "url-type",
+    "url-pattern"
+   ],
+   "group_order": [
+    "URL"
+   ],
+   "groups": {
+    "url-pattern": "URL",
+    "url-type": "URL"
+   },
+   "identity_key": "",
+   "label": "Mobile API URL",
+   "labels": {
+    "url-pattern": "Request URL",
+    "url-type": "Type"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "openapi_file": {
+   "collection": "waf/openapi-file",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "OpenAPI File",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "openapi_file__bind": {
+   "collection": "waf/openapi-validation-policy/schema-file",
+   "enums": {},
+   "field_order": [
+    "openapi-file"
+   ],
+   "group_order": [
+    "OpenAPI File"
+   ],
+   "groups": {
+    "openapi-file": "OpenAPI File"
+   },
+   "identity_key": "",
+   "label": "OpenAPI File",
+   "labels": {
+    "openapi-file": "OpenAPI File"
+   },
+   "numbers": [],
+   "refs": {
+    "openapi-file": "waf/openapi-file"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "openapi_policy": {
+   "collection": "waf/openapi-validation-policy",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "action",
+    "block-period",
+    "severity",
+    "trigger"
+   ],
+   "group_order": [
+    "OpenAPI Validation"
+   ],
+   "groups": {
+    "action": "OpenAPI Validation",
+    "block-period": "OpenAPI Validation",
+    "severity": "OpenAPI Validation",
+    "trigger": "OpenAPI Validation"
+   },
+   "identity_key": "name",
+   "label": "OpenAPI Validation",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "severity": "Severity",
+    "trigger": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/openapi-validation-policy/schema-file",
+     "ref_collection": "waf/openapi-file",
+     "ref_key": "openapi-file",
+     "title": "OpenAPI Files"
+    }
+   ],
+   "toggles": []
+  },
+  "padding_oracle": {
+   "collection": "waf/padding-oracle",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "deny_no_log",
+     "block-period"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "action",
+    "block-period",
+    "severity",
+    "trigger"
+   ],
+   "group_order": [
+    "Padding Oracle"
+   ],
+   "groups": {
+    "action": "Padding Oracle",
+    "block-period": "Padding Oracle",
+    "severity": "Padding Oracle",
+    "trigger": "Padding Oracle"
+   },
+   "identity_key": "name",
+   "label": "Padding Oracle Protection",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "severity": "Severity",
+    "trigger": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/padding-oracle/protected-url-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Protected URLs"
+    }
+   ],
+   "toggles": []
+  },
+  "padding_url_item": {
+   "collection": "waf/padding-oracle/protected-url-list",
+   "enums": {
+    "target": [
+     "URL",
+     "Parameter",
+     "Cookie"
+    ],
+    "url-type": [
+     "plain",
+     "regular"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "url-type",
+    "protected-url",
+    "target"
+   ],
+   "group_order": [
+    "URL"
+   ],
+   "groups": {
+    "host-status": "URL",
+    "target": "URL",
+    "url-type": "URL"
+   },
+   "identity_key": "",
+   "label": "Protected URL",
+   "labels": {
+    "host-status": "Host Status",
+    "target": "Protected Target",
+    "url-type": "URL Type"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "host-status"
+   ]
+  },
+  "parameter_input_rule": {
+   "collection": "waf/input-rule",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "request-type": [
+     "plain",
+     "regular"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "request-type",
+    "request-file",
+    "maximum-parameter-number",
+    "json-parameter-support",
+    "action",
+    "block-period",
+    "severity",
+    "trigger"
+   ],
+   "group_order": [
+    "Input Rule",
+    "Action"
+   ],
+   "groups": {
+    "action": "Action",
+    "block-period": "Action",
+    "host": "Input Rule",
+    "host-status": "Input Rule",
+    "json-parameter-support": "Input Rule",
+    "maximum-parameter-number": "Input Rule",
+    "request-file": "Input Rule",
+    "request-type": "Input Rule",
+    "severity": "Action",
+    "trigger": "Action"
+   },
+   "identity_key": "name",
+   "label": "Input Rule",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "host": "Host",
+    "host-status": "Host Status",
+    "json-parameter-support": "JSON Parameter Support",
+    "maximum-parameter-number": "Max Parameter Number",
+    "request-file": "Post URL",
+    "request-type": "URL Type",
+    "severity": "Severity",
+    "trigger": "Trigger Policy"
+   },
+   "numbers": [
+    "maximum-parameter-number",
+    "block-period"
+   ],
+   "refs": {
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/input-rule/rule-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Parameters"
+    }
+   ],
+   "toggles": [
+    "host-status",
+    "json-parameter-support"
+   ]
+  },
+  "parameter_input_rule__bind": {
+   "collection": "waf/parameter-validation-rule/input-rule-list",
+   "enums": {},
+   "field_order": [
+    "input-rule"
+   ],
+   "group_order": [
+    "Input Rule"
+   ],
+   "groups": {
+    "input-rule": "Input Rule"
+   },
+   "identity_key": "",
+   "label": "Input Rule",
+   "labels": {
+    "input-rule": "Input Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "input-rule": "waf/input-rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "parameter_rule_item": {
+   "collection": "waf/input-rule/rule-list",
+   "enums": {
+    "argument-name-type": [
+     "plain",
+     "regular"
+    ]
+   },
+   "field_order": [
+    "argument-name-type",
+    "argument-name",
+    "max-length",
+    "location",
+    "type-checked",
+    "is-essential",
+    "from-json",
+    "argument-type",
+    "data-type",
+    "custom-data-type",
+    "argument-expression"
+   ],
+   "group_order": [
+    "Parameter",
+    "Value"
+   ],
+   "groups": {
+    "argument-name": "Parameter",
+    "argument-name-type": "Parameter",
+    "data-type": "Value",
+    "from-json": "Parameter",
+    "is-essential": "Parameter",
+    "max-length": "Parameter",
+    "type-checked": "Parameter"
+   },
+   "identity_key": "",
+   "label": "Parameter",
+   "labels": {
+    "argument-name": "Name",
+    "argument-name-type": "Name Type",
+    "data-type": "Data Type",
+    "from-json": "From JSON",
+    "is-essential": "Required",
+    "max-length": "Max Length",
+    "type-checked": "Use Type Check"
+   },
+   "numbers": [
+    "max-length"
+   ],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "type-checked",
+    "is-essential",
+    "from-json"
+   ]
+  },
+  "parameter_validation_policy": {
+   "collection": "waf/parameter-validation-rule",
+   "enums": {},
+   "field_order": [
+    "cache-mode"
+   ],
+   "group_order": [
+    "Parameter Validation"
+   ],
+   "groups": {
+    "cache-mode": "Parameter Validation"
+   },
+   "identity_key": "name",
+   "label": "Parameter Validation",
+   "labels": {
+    "cache-mode": "Cache Mode"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/parameter-validation-rule/input-rule-list",
+     "ref_collection": "waf/input-rule",
+     "ref_key": "input-rule",
+     "title": "Input Rules"
+    }
+   ],
+   "toggles": [
+    "cache-mode"
+   ]
+  },
+  "signature": {
+   "collection": "waf/signature",
+   "enums": {
+    "sensitivity-level": [
+     "1",
+     "2",
+     "3",
+     "4"
+    ]
+   },
+   "field_order": [
+    "sensitivity-level",
+    "custom-protection-group",
+    "credit-card-detection-threshold",
+    "personally-identifiable-information-hyperscan-mode",
+    "comment"
+   ],
+   "group_order": [
+    "Signatures"
+   ],
+   "groups": {
+    "comment": "Signatures",
+    "credit-card-detection-threshold": "Signatures",
+    "custom-protection-group": "Signatures",
+    "personally-identifiable-information-hyperscan-mode": "Signatures",
+    "sensitivity-level": "Signatures"
+   },
+   "identity_key": "name",
+   "label": "Signatures",
+   "labels": {
+    "comment": "Comments",
+    "credit-card-detection-threshold": "Detection Threshold (PII)",
+    "custom-protection-group": "Custom Signature Group",
+    "personally-identifiable-information-hyperscan-mode": "PII Hyperscan Mode",
+    "sensitivity-level": "Sensitivity Level"
+   },
+   "numbers": [
+    "credit-card-detection-threshold"
+   ],
+   "refs": {
+    "custom-protection-group": "waf/custom-protection-group"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/signature/main_class_list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Signature Classes (Main Class)"
+    },
+    {
+     "collection": "waf/signature/signature_disable_list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Disabled Signatures"
+    },
+    {
+     "collection": "waf/signature/filter_list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Signature Exceptions"
+    },
+    {
+     "collection": "waf/signature/sub_class_disable_list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Disabled Sub-Classes"
+    },
+    {
+     "collection": "waf/signature/alert_only_list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Alert-Only Signatures"
+    },
+    {
+     "collection": "waf/signature/fpm_disable_list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "FPM-Disabled Signatures"
+    },
+    {
+     "collection": "waf/signature/scoring_override_disable_list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Scoring Override Disabled"
+    },
+    {
+     "collection": "waf/signature/score_grade_list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Score Grades"
+    }
+   ],
+   "toggles": [
+    "personally-identifiable-information-hyperscan-mode"
+   ]
+  },
+  "signature_alert_only_item": {
+   "collection": "waf/signature/alert_only_list",
+   "enums": {},
+   "field_order": [
+    "signature_id"
+   ],
+   "group_order": [
+    "Signature"
+   ],
+   "groups": {
+    "signature_id": "Signature"
+   },
+   "identity_key": "",
+   "label": "Alert-Only Signature",
+   "labels": {
+    "signature_id": "Signature ID"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "signature_class_item": {
+   "collection": "waf/signature/main_class_list",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "main_class_id",
+    "status",
+    "fpm-status",
+    "action",
+    "severity",
+    "block-period",
+    "trigger"
+   ],
+   "group_order": [
+    "Class"
+   ],
+   "groups": {
+    "action": "Class",
+    "block-period": "Class",
+    "fpm-status": "Class",
+    "severity": "Class",
+    "status": "Class",
+    "trigger": "Class"
+   },
+   "identity_key": "",
+   "label": "Signature Class",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "fpm-status": "FPM Status",
+    "severity": "Severity",
+    "status": "Status",
+    "trigger": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "status",
+    "fpm-status"
+   ]
+  },
+  "signature_disable_item": {
+   "collection": "waf/signature/signature_disable_list",
+   "enums": {},
+   "field_order": [
+    "signature_id"
+   ],
+   "group_order": [
+    "Signature"
+   ],
+   "groups": {
+    "signature_id": "Signature"
+   },
+   "identity_key": "",
+   "label": "Disabled Signature",
+   "labels": {
+    "signature_id": "Signature ID"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "signature_filter_item": {
+   "collection": "waf/signature/filter_list",
+   "enums": {
+    "concatenate-type": [
+     "AND",
+     "OR"
+    ],
+    "match-target": [
+     "HTTP_METHOD",
+     "CLIENT_IP",
+     "HOST",
+     "URI",
+     "FULL_URL",
+     "PARAMETER",
+     "COOKIE",
+     "HTTP_HEADER",
+     "JSON_ELEMENTS"
+    ],
+    "operator": [
+     "STRING_MATCH",
+     "REGEXP_MATCH",
+     "EQ",
+     "NE",
+     "INCLUDE",
+     "EXCLUDE"
+    ]
+   },
+   "field_order": [
+    "signature_id",
+    "match-target",
+    "operator",
+    "http-method",
+    "ip",
+    "name",
+    "value-check",
+    "value",
+    "concatenate-type"
+   ],
+   "group_order": [
+    "Exception"
+   ],
+   "groups": {
+    "concatenate-type": "Exception",
+    "http-method": "Exception",
+    "ip": "Exception",
+    "match-target": "Exception",
+    "name": "Exception",
+    "operator": "Exception",
+    "signature_id": "Exception",
+    "value": "Exception",
+    "value-check": "Exception"
+   },
+   "identity_key": "",
+   "label": "Signature Exception",
+   "labels": {
+    "concatenate-type": "Concatenate",
+    "http-method": "HTTP Method",
+    "ip": "Client IP",
+    "match-target": "Element Type",
+    "name": "Name",
+    "operator": "Operation",
+    "signature_id": "Signature ID",
+    "value": "Value",
+    "value-check": "Check Value of Specified Element"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {
+    "http-method": [
+     "match-target",
+     [
+      "HTTP_METHOD"
+     ]
+    ],
+    "ip": [
+     "match-target",
+     [
+      "CLIENT_IP"
+     ]
+    ],
+    "name": [
+     "match-target",
+     [
+      "PARAMETER",
+      "COOKIE",
+      "HTTP_HEADER",
+      "JSON_ELEMENTS"
+     ]
+    ],
+    "value": [
+     "match-target",
+     [
+      "HOST",
+      "URI",
+      "FULL_URL",
+      "PARAMETER",
+      "COOKIE",
+      "HTTP_HEADER",
+      "JSON_ELEMENTS"
+     ]
+    ],
+    "value-check": [
+     "match-target",
+     [
+      "PARAMETER",
+      "COOKIE",
+      "HTTP_HEADER",
+      "JSON_ELEMENTS"
+     ]
+    ]
+   },
+   "subtables": [],
+   "toggles": [
+    "value-check"
+   ]
+  },
+  "signature_fpm_disable_item": {
+   "collection": "waf/signature/fpm_disable_list",
+   "enums": {},
+   "field_order": [
+    "signature_id"
+   ],
+   "group_order": [
+    "Signature"
+   ],
+   "groups": {
+    "signature_id": "Signature"
+   },
+   "identity_key": "",
+   "label": "FPM-Disabled Signature",
+   "labels": {
+    "signature_id": "Signature ID"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "signature_group": {
+   "collection": "waf/custom-protection-group",
+   "enums": {},
+   "field_order": [
+    "max-alert-interval"
+   ],
+   "group_order": [
+    "Group"
+   ],
+   "groups": {
+    "max-alert-interval": "Group"
+   },
+   "identity_key": "name",
+   "label": "Custom Signature Group",
+   "labels": {
+    "max-alert-interval": "Max Alert Interval"
+   },
+   "numbers": [
+    "max-alert-interval"
+   ],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/custom-protection-group/type-list",
+     "ref_collection": "waf/custom-protection-rule",
+     "ref_key": "custom-protection-rule",
+     "title": "Signature Rules"
+    }
+   ],
+   "toggles": []
+  },
+  "signature_group_rule": {
+   "collection": "waf/custom-protection-rule",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ],
+    "threat-weight": [
+     "low",
+     "informational",
+     "moderate",
+     "substantial",
+     "severe",
+     "critical"
+    ],
+    "type": [
+     "request",
+     "response"
+    ]
+   },
+   "field_order": [
+    "type",
+    "action",
+    "block-period",
+    "severity",
+    "trigger",
+    "threat-weight"
+   ],
+   "group_order": [
+    "Rule"
+   ],
+   "groups": {
+    "action": "Rule",
+    "block-period": "Rule",
+    "severity": "Rule",
+    "threat-weight": "Rule",
+    "trigger": "Rule",
+    "type": "Rule"
+   },
+   "identity_key": "name",
+   "label": "Custom Signature Rule",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "severity": "Severity",
+    "threat-weight": "Threat Weight",
+    "trigger": "Trigger Policy",
+    "type": "Direction"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/custom-protection-rule/meet-condition",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Conditions"
+    }
+   ],
+   "toggles": []
+  },
+  "signature_group_rule__bind": {
+   "collection": "waf/custom-protection-group/type-list",
+   "enums": {},
+   "field_order": [
+    "custom-protection-rule"
+   ],
+   "group_order": [
+    "Custom Signature Rule"
+   ],
+   "groups": {
+    "custom-protection-rule": "Custom Signature Rule"
+   },
+   "identity_key": "",
+   "label": "Custom Signature Rule",
+   "labels": {
+    "custom-protection-rule": "Custom Signature Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "custom-protection-rule": "waf/custom-protection-rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "signature_group_rule_condition": {
+   "collection": "waf/custom-protection-rule/meet-condition",
+   "enums": {
+    "operator": [
+     "RE",
+     "GT",
+     "LT",
+     "NE",
+     "EQ"
+    ],
+    "request-target": [
+     "REQUEST_FILENAME",
+     "REQUEST_URI",
+     "REQUEST_HEADERS_NAMES",
+     "REQUEST_HEADERS",
+     "REQUEST_COOKIES_NAMES",
+     "REQUEST_COOKIES",
+     "ARGS_NAMES",
+     "ARGS_VALUE",
+     "REQUEST_RAW_URI",
+     "REQUEST_BODY",
+     "CONTENT_LENGTH",
+     "HEADER_LENGTH",
+     "BODY_LENGTH",
+     "COOKIE_NUMBER",
+     "ARGS_NUMBER",
+     "HTTP_METHOD"
+    ],
+    "response-target": [
+     "RESPONSE_BODY",
+     "RESPONSE_HEADER",
+     "CONTENT_LENGTH",
+     "HEADER_LENGTH",
+     "BODY_LENGTH",
+     "RESPONSE_CODE"
+    ]
+   },
+   "field_order": [
+    "operator",
+    "request-target",
+    "response-target",
+    "threshold",
+    "case-sensitive",
+    "expression"
+   ],
+   "group_order": [
+    "Condition"
+   ],
+   "groups": {
+    "case-sensitive": "Condition",
+    "operator": "Condition",
+    "request-target": "Condition",
+    "response-target": "Condition"
+   },
+   "identity_key": "",
+   "label": "Meet Condition",
+   "labels": {
+    "case-sensitive": "Case Sensitive",
+    "operator": "Match Operator",
+    "request-target": "Request Target",
+    "response-target": "Response Target"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "case-sensitive"
+   ]
+  },
+  "signature_score_grade_item": {
+   "collection": "waf/signature/score_grade_list",
+   "enums": {
+    "scoring-grade": [
+     "low",
+     "informational",
+     "moderate",
+     "substantial",
+     "severe",
+     "critical"
+    ]
+   },
+   "field_order": [
+    "signature_id",
+    "scoring-grade"
+   ],
+   "group_order": [
+    "Grade"
+   ],
+   "groups": {
+    "scoring-grade": "Grade",
+    "signature_id": "Grade"
+   },
+   "identity_key": "",
+   "label": "Score Grade",
+   "labels": {
+    "scoring-grade": "Scoring Grade",
+    "signature_id": "Signature ID"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "signature_scoring_override_item": {
+   "collection": "waf/signature/scoring_override_disable_list",
+   "enums": {},
+   "field_order": [
+    "signature_id"
+   ],
+   "group_order": [
+    "Signature"
+   ],
+   "groups": {
+    "signature_id": "Signature"
+   },
+   "identity_key": "",
+   "label": "Scoring Override (disabled)",
+   "labels": {
+    "signature_id": "Signature ID"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "signature_subclass_disable_item": {
+   "collection": "waf/signature/sub_class_disable_list",
+   "enums": {},
+   "field_order": [
+    "sub_class_id"
+   ],
+   "group_order": [
+    "Sub-Class"
+   ],
+   "groups": {
+    "sub_class_id": "Sub-Class"
+   },
+   "identity_key": "",
+   "label": "Disabled Sub-Class",
+   "labels": {
+    "sub_class_id": "Sub Class ID"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "syntax_based_detection": {
+   "collection": "waf/syntax-based-attack-detection",
+   "enums": {},
+   "field_order": [
+    "detection-target-sql",
+    "detection-target-xss",
+    "sql-detection-template"
+   ],
+   "group_order": [
+    "Targets"
+   ],
+   "groups": {
+    "detection-target-sql": "Targets",
+    "detection-target-xss": "Targets",
+    "sql-detection-template": "Targets"
+   },
+   "identity_key": "name",
+   "label": "Syntax-Based Detection",
+   "labels": {
+    "detection-target-sql": "Detect SQL Injection",
+    "detection-target-xss": "Detect XSS",
+    "sql-detection-template": "SQL Detection Template"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/syntax-based-attack-detection/exception-element-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Exceptions"
+    }
+   ],
+   "toggles": [
+    "detection-target-sql",
+    "detection-target-xss"
+   ]
+  },
+  "syntax_exception_item": {
+   "collection": "waf/syntax-based-attack-detection/exception-element-list",
+   "enums": {
+    "attack-type": [
+     "arithmetic_operation_based_boolean_injection",
+     "condition_based_boolean_injection",
+     "embeded_queries_sql_injection",
+     "html_attr_based_xss_injection",
+     "html_css_based_xss_injection",
+     "html_tag_based_xss_injection",
+     "js_func_based_xss_injection",
+     "js_var_based_xss_injection",
+     "line_comments",
+     "sql_function_based_boolean_injection",
+     "stacked_queries_sql_injection"
+    ],
+    "concatenate-type": [
+     "AND",
+     "OR"
+    ],
+    "match-target": [
+     "HOST",
+     "URI",
+     "FULL-URL",
+     "PARAMETER",
+     "COOKIE"
+    ],
+    "operator": [
+     "STRING_MATCH",
+     "REGEXP_MATCH"
+    ]
+   },
+   "field_order": [
+    "match-target",
+    "operator",
+    "value-name",
+    "value-check",
+    "value",
+    "attack-type",
+    "concatenate-type"
+   ],
+   "group_order": [
+    "Exception"
+   ],
+   "groups": {
+    "attack-type": "Exception",
+    "concatenate-type": "Exception",
+    "match-target": "Exception",
+    "operator": "Exception",
+    "value-check": "Exception",
+    "value-name": "Exception"
+   },
+   "identity_key": "",
+   "label": "Syntax Exception",
+   "labels": {
+    "attack-type": "Attack Type",
+    "concatenate-type": "Concatenate",
+    "match-target": "Element Type",
+    "operator": "Operation",
+    "value-check": "Check Value of Specified Element",
+    "value-name": "Name"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "value-check"
+   ]
+  },
+  "threat_score_profile": {
+   "collection": "server-policy/pattern.threat-score-profile",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "Threat Scoring Profile",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "url_access_policy": {
+   "collection": "waf/url-access.url-access-policy",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "URL Access Policy",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/url-access.url-access-policy/rule",
+     "ref_collection": "waf/url-access.url-access-rule",
+     "ref_key": "url-access-rule-name",
+     "title": "URL Access Rules"
+    }
+   ],
+   "toggles": []
+  },
+  "url_access_rule": {
+   "collection": "waf/url-access.url-access-rule",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "action",
+    "severity",
+    "trigger"
+   ],
+   "group_order": [
+    "Rule"
+   ],
+   "groups": {
+    "action": "Rule",
+    "host": "Rule",
+    "host-status": "Rule",
+    "severity": "Rule",
+    "trigger": "Rule"
+   },
+   "identity_key": "name",
+   "label": "URL Access Rule",
+   "labels": {
+    "action": "Action",
+    "host": "Host",
+    "host-status": "Host Status",
+    "severity": "Severity",
+    "trigger": "Trigger Policy"
+   },
+   "numbers": [],
+   "refs": {
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/url-access.url-access-rule/match-condition",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Match Conditions"
+    }
+   ],
+   "toggles": [
+    "host-status"
+   ]
+  },
+  "url_access_rule__bind": {
+   "collection": "waf/url-access.url-access-policy/rule",
+   "enums": {},
+   "field_order": [
+    "url-access-rule-name"
+   ],
+   "group_order": [
+    "URL Access Rule"
+   ],
+   "groups": {
+    "url-access-rule-name": "URL Access Rule"
+   },
+   "identity_key": "",
+   "label": "URL Access Rule",
+   "labels": {
+    "url-access-rule-name": "URL Access Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "url-access-rule-name": "waf/url-access.url-access-rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "url_access_rule_match_condition_item": {
+   "collection": "waf/url-access.url-access-rule/match-condition",
+   "enums": {
+    "type": [
+     "simple-string",
+     "regular-expression"
+    ]
+   },
+   "field_order": [
+    "type",
+    "reg-exp",
+    "reverse-match"
+   ],
+   "group_order": [
+    "Match"
+   ],
+   "groups": {
+    "reverse-match": "Match",
+    "type": "Match"
+   },
+   "identity_key": "",
+   "label": "Match Condition",
+   "labels": {
+    "reverse-match": "Reverse Match",
+    "type": "Object"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "reverse-match"
+   ]
+  },
+  "url_enc_exc_item": {
+   "collection": "waf/url-encryption.url-encryption-rule/exceptions",
+   "enums": {
+    "url-type": [
+     "plain",
+     "regular"
+    ]
+   },
+   "field_order": [
+    "url-type",
+    "url-pattern"
+   ],
+   "group_order": [
+    "Exception"
+   ],
+   "groups": {
+    "url-pattern": "Exception",
+    "url-type": "Exception"
+   },
+   "identity_key": "",
+   "label": "Exception",
+   "labels": {
+    "url-pattern": "Request URL",
+    "url-type": "Type"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "url_enc_url_item": {
+   "collection": "waf/url-encryption.url-encryption-rule/url-list",
+   "enums": {
+    "url-type": [
+     "plain",
+     "regular"
+    ]
+   },
+   "field_order": [
+    "url-type",
+    "url-pattern"
+   ],
+   "group_order": [
+    "URL"
+   ],
+   "groups": {
+    "url-pattern": "URL",
+    "url-type": "URL"
+   },
+   "identity_key": "",
+   "label": "URL",
+   "labels": {
+    "url-pattern": "Request URL",
+    "url-type": "Type"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "url_encryption_policy": {
+   "collection": "waf/url-encryption.url-encryption-policy",
+   "enums": {},
+   "field_order": [
+    "full-mode"
+   ],
+   "group_order": [
+    "URL Encryption"
+   ],
+   "groups": {
+    "full-mode": "URL Encryption"
+   },
+   "identity_key": "name",
+   "label": "URL Encryption",
+   "labels": {
+    "full-mode": "Full Mode"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/url-encryption.url-encryption-policy/rule-list",
+     "ref_collection": "waf/url-encryption.url-encryption-rule",
+     "ref_key": "rule",
+     "title": "URL Encryption Rules"
+    }
+   ],
+   "toggles": [
+    "full-mode"
+   ]
+  },
+  "url_encryption_rule": {
+   "collection": "waf/url-encryption.url-encryption-rule",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "allow-unencrypted",
+    "action",
+    "block-period",
+    "severity",
+    "trigger"
+   ],
+   "group_order": [
+    "Rule"
+   ],
+   "groups": {
+    "action": "Rule",
+    "allow-unencrypted": "Rule",
+    "block-period": "Rule",
+    "host": "Rule",
+    "host-status": "Rule",
+    "severity": "Rule",
+    "trigger": "Rule"
+   },
+   "identity_key": "name",
+   "label": "URL Encryption Rule",
+   "labels": {
+    "action": "Action",
+    "allow-unencrypted": "Allow Unencrypted",
+    "block-period": "Block Period (s)",
+    "host": "Host",
+    "host-status": "Host Status",
+    "severity": "Severity",
+    "trigger": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/url-encryption.url-encryption-rule/url-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "URL List"
+    },
+    {
+     "collection": "waf/url-encryption.url-encryption-rule/exceptions",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Exceptions"
+    }
+   ],
+   "toggles": [
+    "host-status",
+    "allow-unencrypted"
+   ]
+  },
+  "url_encryption_rule__bind": {
+   "collection": "waf/url-encryption.url-encryption-policy/rule-list",
+   "enums": {},
+   "field_order": [
+    "rule"
+   ],
+   "group_order": [
+    "URL Encryption Rule"
+   ],
+   "groups": {
+    "rule": "URL Encryption Rule"
+   },
+   "identity_key": "",
+   "label": "URL Encryption Rule",
+   "labels": {
+    "rule": "URL Encryption Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "rule": "waf/url-encryption.url-encryption-rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "url_rewriting_policy": {
+   "collection": "waf/url-rewrite.url-rewrite-policy",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "URL Rewriting",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/url-rewrite.url-rewrite-policy/rule",
+     "ref_collection": "waf/url-rewrite.url-rewrite-rule",
+     "ref_key": "url-rewrite-rule-name",
+     "title": "URL Rewriting Rules"
+    }
+   ],
+   "toggles": []
+  },
+  "url_rewriting_rule": {
+   "collection": "waf/url-rewrite.url-rewrite-rule",
+   "enums": {
+    "action": [
+     "request-action",
+     "response-action"
+    ]
+   },
+   "field_order": [
+    "action",
+    "host-status",
+    "host",
+    "url-status",
+    "url",
+    "referer-status",
+    "referer",
+    "location-status",
+    "location",
+    "http-method-status",
+    "http-method",
+    "status-code-status",
+    "status-code"
+   ],
+   "group_order": [
+    "Action",
+    "Replacement URL",
+    "Replacement Referer",
+    "Replacement Location / Method / Status"
+   ],
+   "groups": {
+    "action": "Action",
+    "host": "Replacement URL",
+    "host-status": "Replacement URL",
+    "http-method": "Replacement Location / Method / Status",
+    "http-method-status": "Replacement Location / Method / Status",
+    "location": "Replacement Location / Method / Status",
+    "location-status": "Replacement Location / Method / Status",
+    "referer": "Replacement Referer",
+    "referer-status": "Replacement Referer",
+    "status-code": "Replacement Location / Method / Status",
+    "status-code-status": "Replacement Location / Method / Status",
+    "url": "Replacement URL",
+    "url-status": "Replacement URL"
+   },
+   "identity_key": "name",
+   "label": "URL Rewriting Rule",
+   "labels": {
+    "action": "Action Type",
+    "host": "Host",
+    "host-status": "Replace Host",
+    "http-method": "HTTP Method",
+    "http-method-status": "Replace Method",
+    "location": "Location",
+    "location-status": "Replace Location",
+    "referer": "Referer",
+    "referer-status": "Replace Referer",
+    "status-code": "Status Code",
+    "status-code-status": "Replace Status Code",
+    "url": "URL",
+    "url-status": "Replace URL"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/url-rewrite.url-rewrite-rule/match-condition",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Condition Table"
+    },
+    {
+     "collection": "waf/url-rewrite.url-rewrite-rule/header-insert",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Header Insertion"
+    },
+    {
+     "collection": "waf/url-rewrite.url-rewrite-rule/header-removal",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Header Removal"
+    },
+    {
+     "collection": "waf/url-rewrite.url-rewrite-rule/response-header-insert",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Response Header Insertion"
+    },
+    {
+     "collection": "waf/url-rewrite.url-rewrite-rule/response-header-removal",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Response Header Removal"
+    }
+   ],
+   "toggles": [
+    "host-status",
+    "url-status",
+    "referer-status",
+    "location-status",
+    "http-method-status",
+    "status-code-status"
+   ]
+  },
+  "url_rewriting_rule__bind": {
+   "collection": "waf/url-rewrite.url-rewrite-policy/rule",
+   "enums": {},
+   "field_order": [
+    "url-rewrite-rule-name"
+   ],
+   "group_order": [
+    "URL Rewriting Rule"
+   ],
+   "groups": {
+    "url-rewrite-rule-name": "URL Rewriting Rule"
+   },
+   "identity_key": "",
+   "label": "URL Rewriting Rule",
+   "labels": {
+    "url-rewrite-rule-name": "URL Rewriting Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "url-rewrite-rule-name": "waf/url-rewrite.url-rewrite-rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "url_rw_cond_item": {
+   "collection": "waf/url-rewrite.url-rewrite-rule/match-condition",
+   "enums": {
+    "object": [
+     "HTTP-host",
+     "HTTP-request",
+     "HTTP-referer",
+     "HTTP-location",
+     "HTTP-body"
+    ]
+   },
+   "field_order": [
+    "object",
+    "reg-exp",
+    "reverse-match",
+    "protocol-filter",
+    "HTTP-protocol",
+    "content-type-filter",
+    "content-type-set"
+   ],
+   "group_order": [
+    "Condition",
+    "Filters"
+   ],
+   "groups": {
+    "content-type-filter": "Filters",
+    "object": "Condition",
+    "protocol-filter": "Filters",
+    "reg-exp": "Condition",
+    "reverse-match": "Condition"
+   },
+   "identity_key": "",
+   "label": "Condition",
+   "labels": {
+    "content-type-filter": "Content-Type Filter",
+    "object": "Object",
+    "protocol-filter": "Protocol Filter",
+    "reg-exp": "Regular Expression",
+    "reverse-match": "Meet If Not Match"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "reverse-match",
+    "protocol-filter",
+    "content-type-filter"
+   ]
+  },
+  "url_rw_hdr_ins_item": {
+   "collection": "waf/url-rewrite.url-rewrite-rule/header-insert",
+   "enums": {},
+   "field_order": [
+    "header-name",
+    "header-value"
+   ],
+   "group_order": [
+    "Header"
+   ],
+   "groups": {
+    "header-name": "Header",
+    "header-value": "Header"
+   },
+   "identity_key": "",
+   "label": "Header Insert",
+   "labels": {
+    "header-name": "Name",
+    "header-value": "Value"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "url_rw_hdr_rm_item": {
+   "collection": "waf/url-rewrite.url-rewrite-rule/header-removal",
+   "enums": {},
+   "field_order": [
+    "header-name"
+   ],
+   "group_order": [
+    "Header"
+   ],
+   "groups": {
+    "header-name": "Header"
+   },
+   "identity_key": "",
+   "label": "Header Removal",
+   "labels": {
+    "header-name": "Name"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "url_rw_rhdr_ins_item": {
+   "collection": "waf/url-rewrite.url-rewrite-rule/response-header-insert",
+   "enums": {},
+   "field_order": [
+    "response-header-name",
+    "response-header-value"
+   ],
+   "group_order": [
+    "Header"
+   ],
+   "groups": {
+    "response-header-name": "Header",
+    "response-header-value": "Header"
+   },
+   "identity_key": "",
+   "label": "Response Header Insert",
+   "labels": {
+    "response-header-name": "Name",
+    "response-header-value": "Value"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "url_rw_rhdr_rm_item": {
+   "collection": "waf/url-rewrite.url-rewrite-rule/response-header-removal",
+   "enums": {},
+   "field_order": [
+    "response-removal-header-name"
+   ],
+   "group_order": [
+    "Header"
+   ],
+   "groups": {
+    "response-removal-header-name": "Header"
+   },
+   "identity_key": "",
+   "label": "Response Header Removal",
+   "labels": {
+    "response-removal-header-name": "Name"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "user_track_cond_item": {
+   "collection": "waf/user-tracking.rule/match-condition",
+   "enums": {
+    "HTTP-match-target": [
+     "return-code",
+     "response-body",
+     "redirect-url"
+    ],
+    "authentication-result-type": [
+     "failed",
+     "successful"
+    ],
+    "value-type": [
+     "plain",
+     "regular"
+    ]
+   },
+   "field_order": [
+    "authentication-result-type",
+    "HTTP-match-target",
+    "value-type",
+    "value"
+   ],
+   "group_order": [
+    "Condition"
+   ],
+   "groups": {
+    "HTTP-match-target": "Condition",
+    "authentication-result-type": "Condition",
+    "value": "Condition",
+    "value-type": "Condition"
+   },
+   "identity_key": "",
+   "label": "Auth Result Condition",
+   "labels": {
+    "HTTP-match-target": "HTTP Match Target",
+    "authentication-result-type": "Result Type",
+    "value": "Value",
+    "value-type": "Value Type"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "user_tracking_policy": {
+   "collection": "waf/user-tracking.policy",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "User Tracking",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/user-tracking.policy/input-rule-list",
+     "ref_collection": "waf/user-tracking.rule",
+     "ref_key": "input-rule",
+     "title": "User Tracking Rules"
+    }
+   ],
+   "toggles": []
+  },
+  "user_tracking_rule": {
+   "collection": "waf/user-tracking.rule",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "default-action": [
+     "successful",
+     "failed"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "hostname-ip",
+    "authentication-url",
+    "username-parameter",
+    "password-parameter",
+    "session-id-name",
+    "default-action",
+    "limit-users",
+    "maximum-users",
+    "credential-stuffing-protection",
+    "action",
+    "severity",
+    "trigger"
+   ],
+   "group_order": [
+    "User Tracking Rule",
+    "Concurrency",
+    "Action"
+   ],
+   "groups": {
+    "action": "Action",
+    "authentication-url": "User Tracking Rule",
+    "credential-stuffing-protection": "Concurrency",
+    "default-action": "User Tracking Rule",
+    "host-status": "User Tracking Rule",
+    "hostname-ip": "User Tracking Rule",
+    "limit-users": "Concurrency",
+    "maximum-users": "Concurrency",
+    "password-parameter": "User Tracking Rule",
+    "session-id-name": "User Tracking Rule",
+    "severity": "Action",
+    "trigger": "Action",
+    "username-parameter": "User Tracking Rule"
+   },
+   "identity_key": "name",
+   "label": "User Tracking Rule",
+   "labels": {
+    "action": "Action",
+    "authentication-url": "Authentication URL",
+    "credential-stuffing-protection": "Credential Stuffing Defense",
+    "default-action": "Default Auth Result",
+    "host-status": "Host Status",
+    "hostname-ip": "Host",
+    "limit-users": "Limit Concurrent Users",
+    "maximum-users": "Maximum Concurrent Users",
+    "password-parameter": "Password Field",
+    "session-id-name": "Session ID Name",
+    "severity": "Severity",
+    "trigger": "Trigger Policy",
+    "username-parameter": "Username Field"
+   },
+   "numbers": [
+    "maximum-users"
+   ],
+   "refs": {
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/user-tracking.rule/match-condition",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Authentication Result Conditions"
+    }
+   ],
+   "toggles": [
+    "host-status",
+    "limit-users",
+    "credential-stuffing-protection"
+   ]
+  },
+  "user_tracking_rule__bind": {
+   "collection": "waf/user-tracking.policy/input-rule-list",
+   "enums": {},
+   "field_order": [
+    "input-rule"
+   ],
+   "group_order": [
+    "User Tracking Rule"
+   ],
+   "groups": {
+    "input-rule": "User Tracking Rule"
+   },
+   "identity_key": "",
+   "label": "User Tracking Rule",
+   "labels": {
+    "input-rule": "User Tracking Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "input-rule": "waf/user-tracking.rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "web_shell_detection_policy": {
+   "collection": "waf/webshell-detection-policy",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "alert_erase",
+     "block-period",
+     "deny_no_log",
+     "only_erase",
+     "pass",
+     "redirect",
+     "send_http_response"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "action",
+    "block-period",
+    "severity",
+    "trigger",
+    "fuzzy-similarity-threshold"
+   ],
+   "group_order": [
+    "Web Shell Detection"
+   ],
+   "groups": {
+    "action": "Web Shell Detection",
+    "block-period": "Web Shell Detection",
+    "fuzzy-similarity-threshold": "Web Shell Detection",
+    "severity": "Web Shell Detection",
+    "trigger": "Web Shell Detection"
+   },
+   "identity_key": "name",
+   "label": "Web Shell Detection",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "fuzzy-similarity-threshold": "Fuzzy Similarity Threshold (%)",
+    "severity": "Severity",
+    "trigger": "Trigger Policy"
+   },
+   "numbers": [
+    "block-period",
+    "fuzzy-similarity-threshold"
+   ],
+   "refs": {
+    "trigger": "log/trigger-policy"
+   },
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/webshell-detection-policy/fuzzy-disable-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Fuzzy Disable List"
+    }
+   ],
+   "toggles": []
+  },
+  "webshell_fuzzy_item": {
+   "collection": "waf/webshell-detection-policy/fuzzy-disable-list",
+   "enums": {},
+   "field_order": [
+    "webshell-name"
+   ],
+   "group_order": [
+    "Web Shell"
+   ],
+   "groups": {
+    "webshell-name": "Web Shell"
+   },
+   "identity_key": "",
+   "label": "Web Shell",
+   "labels": {
+    "webshell-name": "Web Shell Name"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "websocket_origin_item": {
+   "collection": "waf/websocket-security.rule/allowed-origin-list",
+   "enums": {},
+   "field_order": [
+    "origin"
+   ],
+   "group_order": [
+    "Origin"
+   ],
+   "groups": {
+    "origin": "Origin"
+   },
+   "identity_key": "",
+   "label": "Allowed Origin",
+   "labels": {
+    "origin": "Origin"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "websocket_security_policy": {
+   "collection": "waf/websocket-security.policy",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "WebSocket Security",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/websocket-security.policy/rule-list",
+     "ref_collection": "waf/websocket-security.rule",
+     "ref_key": "rule",
+     "title": "WebSocket Rules"
+    }
+   ],
+   "toggles": []
+  },
+  "websocket_security_rule": {
+   "collection": "waf/websocket-security.rule",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "deny_no_log"
+    ],
+    "url-type": [
+     "plain",
+     "regular"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "url-type",
+    "url",
+    "block-websocket-traffic",
+    "action",
+    "allow-plain-text",
+    "allow-binary-text",
+    "max-frame-size",
+    "max-message-size",
+    "block-extensions",
+    "enable-attack-signatures"
+   ],
+   "group_order": [
+    "Match",
+    "WebSocket"
+   ],
+   "groups": {
+    "action": "WebSocket",
+    "allow-binary-text": "WebSocket",
+    "allow-plain-text": "WebSocket",
+    "block-websocket-traffic": "WebSocket",
+    "enable-attack-signatures": "WebSocket",
+    "host": "Match",
+    "host-status": "Match",
+    "max-frame-size": "WebSocket",
+    "max-message-size": "WebSocket",
+    "url": "Match",
+    "url-type": "Match"
+   },
+   "identity_key": "name",
+   "label": "WebSocket Rule",
+   "labels": {
+    "action": "Action",
+    "allow-binary-text": "Allow Binary",
+    "allow-plain-text": "Allow Plain Text",
+    "block-websocket-traffic": "Block WebSocket Traffic",
+    "enable-attack-signatures": "Enable Attack Signatures",
+    "host": "Host",
+    "host-status": "Host Status",
+    "max-frame-size": "Max Frame Size",
+    "max-message-size": "Max Message Size",
+    "url": "URL",
+    "url-type": "URL Type"
+   },
+   "numbers": [
+    "max-frame-size",
+    "max-message-size"
+   ],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/websocket-security.rule/allowed-origin-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Allowed Origins"
+    }
+   ],
+   "toggles": [
+    "host-status",
+    "block-websocket-traffic",
+    "allow-plain-text",
+    "allow-binary-text",
+    "enable-attack-signatures"
+   ]
+  },
+  "websocket_security_rule__bind": {
+   "collection": "waf/websocket-security.policy/rule-list",
+   "enums": {},
+   "field_order": [
+    "rule"
+   ],
+   "group_order": [
+    "WebSocket Rule"
+   ],
+   "groups": {
+    "rule": "WebSocket Rule"
+   },
+   "identity_key": "",
+   "label": "WebSocket Rule",
+   "labels": {
+    "rule": "WebSocket Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "rule": "waf/websocket-security.rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "wpp": {
+   "collection": "waf/web-protection-profile.inline-protection",
+   "enums": {},
+   "field_order": [
+    "signature-rule",
+    "http-protocol-parameter-restriction",
+    "x-forwarded-for-rule",
+    "allow-method-policy",
+    "ip-list-policy",
+    "geo-block-list-policy",
+    "url-access-policy",
+    "custom-access-policy",
+    "application-layer-dos-prevention",
+    "bot-mitigate-policy",
+    "syntax-based-attack-detection",
+    "http-header-security",
+    "cors-protection-policy",
+    "cookie-security-policy",
+    "websocket-security-policy",
+    "mitb-protection",
+    "csrf-protection",
+    "padding-oracle",
+    "url-encryption-policy",
+    "link-cloaking-policy",
+    "hidden-fields-protection",
+    "parameter-validation-rule",
+    "file-upload-policy",
+    "file-exception-policy",
+    "webshell-detection-policy",
+    "xml-validation-policy",
+    "json-validation-policy",
+    "openapi-validation-policy",
+    "api-management-policy",
+    "mobile-api-protection",
+    "grpc-policy",
+    "url-rewrite-policy",
+    "http-authen-policy",
+    "file-compress-rule",
+    "user-tracking-policy",
+    "threat-score-profile",
+    "client-management",
+    "http-session-timeout",
+    "ip-intelligence",
+    "mobile-app-identification",
+    "amf3-protocol-detection",
+    "redirect-url",
+    "rdt-reason",
+    "comment"
+   ],
+   "group_order": [
+    "General",
+    "Standard Protection",
+    "Client-Side Security",
+    "Advanced Protection",
+    "API Protection",
+    "Application Delivery",
+    "Tracking"
+   ],
+   "groups": {
+    "allow-method-policy": "Standard Protection",
+    "amf3-protocol-detection": "General",
+    "api-management-policy": "API Protection",
+    "application-layer-dos-prevention": "Standard Protection",
+    "bot-mitigate-policy": "Standard Protection",
+    "client-management": "General",
+    "comment": "General",
+    "cookie-security-policy": "Client-Side Security",
+    "cors-protection-policy": "Client-Side Security",
+    "csrf-protection": "Advanced Protection",
+    "custom-access-policy": "Standard Protection",
+    "file-compress-rule": "Application Delivery",
+    "file-exception-policy": "Advanced Protection",
+    "file-upload-policy": "Advanced Protection",
+    "geo-block-list-policy": "Standard Protection",
+    "grpc-policy": "API Protection",
+    "hidden-fields-protection": "Advanced Protection",
+    "http-authen-policy": "Application Delivery",
+    "http-header-security": "Client-Side Security",
+    "http-protocol-parameter-restriction": "Standard Protection",
+    "http-session-timeout": "General",
+    "ip-intelligence": "General",
+    "ip-list-policy": "Standard Protection",
+    "json-validation-policy": "API Protection",
+    "link-cloaking-policy": "Advanced Protection",
+    "mitb-protection": "Client-Side Security",
+    "mobile-api-protection": "API Protection",
+    "mobile-app-identification": "General",
+    "openapi-validation-policy": "API Protection",
+    "padding-oracle": "Advanced Protection",
+    "parameter-validation-rule": "Advanced Protection",
+    "rdt-reason": "General",
+    "redirect-url": "General",
+    "signature-rule": "Standard Protection",
+    "syntax-based-attack-detection": "Standard Protection",
+    "threat-score-profile": "Tracking",
+    "url-access-policy": "Standard Protection",
+    "url-encryption-policy": "Advanced Protection",
+    "url-rewrite-policy": "Application Delivery",
+    "user-tracking-policy": "Tracking",
+    "webshell-detection-policy": "Advanced Protection",
+    "websocket-security-policy": "Client-Side Security",
+    "x-forwarded-for-rule": "Standard Protection",
+    "xml-validation-policy": "API Protection"
+   },
+   "identity_key": "name",
+   "label": "Web Protection Profile",
+   "labels": {
+    "allow-method-policy": "Allow Method",
+    "amf3-protocol-detection": "AMF3 Protocol Detection",
+    "api-management-policy": "API Gateway",
+    "application-layer-dos-prevention": "DoS Protection",
+    "bot-mitigate-policy": "Bot Mitigation",
+    "client-management": "Client Management",
+    "comment": "Comments",
+    "cookie-security-policy": "Cookie Security",
+    "cors-protection-policy": "CORS Protection",
+    "csrf-protection": "CSRF Protection",
+    "custom-access-policy": "Custom Access",
+    "file-compress-rule": "Compression",
+    "file-exception-policy": "File Security Exception",
+    "file-upload-policy": "File Security",
+    "geo-block-list-policy": "Geo IP Block List",
+    "grpc-policy": "gRPC Protection",
+    "hidden-fields-protection": "Hidden Fields Protection",
+    "http-authen-policy": "HTTP Authentication",
+    "http-header-security": "HTTP Header Security",
+    "http-protocol-parameter-restriction": "HTTP Protocol Constraints",
+    "http-session-timeout": "HTTP Session Timeout",
+    "ip-intelligence": "IP Reputation",
+    "ip-list-policy": "IP List",
+    "json-validation-policy": "JSON Validation",
+    "link-cloaking-policy": "Link Cloaking",
+    "mitb-protection": "Man in the Browser (MITB)",
+    "mobile-api-protection": "Mobile API Protection",
+    "mobile-app-identification": "Mobile App Identification",
+    "openapi-validation-policy": "OpenAPI Validation",
+    "padding-oracle": "Padding Oracle",
+    "parameter-validation-rule": "Parameter Validation",
+    "rdt-reason": "Redirect Reason",
+    "redirect-url": "Redirect URL",
+    "signature-rule": "Signatures",
+    "syntax-based-attack-detection": "Syntax-Based Detection",
+    "threat-score-profile": "Threat Scoring",
+    "url-access-policy": "URL Access",
+    "url-encryption-policy": "URL Encryption",
+    "url-rewrite-policy": "URL Rewriting",
+    "user-tracking-policy": "User Tracking",
+    "webshell-detection-policy": "Web Shell Detection",
+    "websocket-security-policy": "WebSocket Security",
+    "x-forwarded-for-rule": "X-Forwarded-For",
+    "xml-validation-policy": "XML Validation"
+   },
+   "numbers": [
+    "http-session-timeout"
+   ],
+   "refs": {
+    "allow-method-policy": "waf/allow-method-policy",
+    "api-management-policy": "waf/api-policy",
+    "application-layer-dos-prevention": "waf/application-layer-dos-prevention",
+    "bot-mitigate-policy": "waf/bot-mitigate-policy",
+    "cookie-security-policy": "waf/cookie-security",
+    "cors-protection-policy": "waf/cors-protection-policy",
+    "csrf-protection": "waf/csrf-protection",
+    "custom-access-policy": "waf/custom-access.policy",
+    "file-compress-rule": "waf/file-compress-rule",
+    "file-exception-policy": "waf/file-exception-policy",
+    "file-upload-policy": "waf/file-upload-restriction-policy",
+    "geo-block-list-policy": "waf/geo-block-list",
+    "grpc-policy": "waf/grpc-security.policy",
+    "hidden-fields-protection": "waf/hidden-fields-protection",
+    "http-authen-policy": "waf/http-authen.http-authen-policy",
+    "http-header-security": "waf/http-header-security",
+    "http-protocol-parameter-restriction": "waf/http-protocol-parameter-restriction",
+    "ip-list-policy": "waf/ip-list",
+    "json-validation-policy": "waf/json-validation.policy",
+    "link-cloaking-policy": "waf/link-cloaking.link-cloaking-policy",
+    "mitb-protection": "waf/mitb-policy",
+    "mobile-api-protection": "waf/mobile-api-protection.mobile-api-protection-policy",
+    "openapi-validation-policy": "waf/openapi-validation-policy",
+    "padding-oracle": "waf/padding-oracle",
+    "parameter-validation-rule": "waf/parameter-validation-rule",
+    "signature-rule": "waf/signature",
+    "syntax-based-attack-detection": "waf/syntax-based-attack-detection",
+    "threat-score-profile": "server-policy/pattern.threat-score-profile",
+    "url-access-policy": "waf/url-access.url-access-policy",
+    "url-encryption-policy": "waf/url-encryption.url-encryption-policy",
+    "url-rewrite-policy": "waf/url-rewrite.url-rewrite-policy",
+    "user-tracking-policy": "waf/user-tracking.policy",
+    "webshell-detection-policy": "waf/webshell-detection-policy",
+    "websocket-security-policy": "waf/websocket-security.policy",
+    "x-forwarded-for-rule": "waf/x-forwarded-for",
+    "xml-validation-policy": "waf/xml-validation.policy"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "client-management",
+    "ip-intelligence",
+    "mobile-app-identification",
+    "amf3-protocol-detection",
+    "rdt-reason"
+   ]
+  },
+  "wssec_element_item": {
+   "collection": "waf/ws-security.rule/element-list",
+   "enums": {
+    "direction": [
+     "request",
+     "response"
+    ]
+   },
+   "field_order": [
+    "xpath",
+    "direction"
+   ],
+   "group_order": [
+    "Element"
+   ],
+   "groups": {
+    "direction": "Element",
+    "xpath": "Element"
+   },
+   "identity_key": "",
+   "label": "Element",
+   "labels": {
+    "direction": "Direction",
+    "xpath": "XPath"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "wssec_namespace_item": {
+   "collection": "waf/ws-security.rule/namespace-mapping",
+   "enums": {},
+   "field_order": [
+    "prefix",
+    "namespace"
+   ],
+   "group_order": [
+    "Namespace"
+   ],
+   "groups": {
+    "namespace": "Namespace",
+    "prefix": "Namespace"
+   },
+   "identity_key": "",
+   "label": "Namespace",
+   "labels": {
+    "namespace": "Namespace",
+    "prefix": "Prefix"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "x_forward": {
+   "collection": "waf/x-forwarded-for",
+   "enums": {},
+   "field_order": [
+    "x-forwarded-for-support",
+    "original-ip-header",
+    "x-real-ip",
+    "x-forwarded-proto",
+    "block-based-on-original-ip",
+    "skip-private-original-ip"
+   ],
+   "group_order": [
+    "X-Forwarded-For"
+   ],
+   "groups": {
+    "block-based-on-original-ip": "X-Forwarded-For",
+    "original-ip-header": "X-Forwarded-For",
+    "skip-private-original-ip": "X-Forwarded-For",
+    "x-forwarded-for-support": "X-Forwarded-For",
+    "x-forwarded-proto": "X-Forwarded-For",
+    "x-real-ip": "X-Forwarded-For"
+   },
+   "identity_key": "name",
+   "label": "X-Forwarded-For",
+   "labels": {
+    "block-based-on-original-ip": "Block Based on Original IP",
+    "original-ip-header": "Original IP Header",
+    "skip-private-original-ip": "Skip Private Original IP",
+    "x-forwarded-for-support": "X-Forwarded-For Support",
+    "x-forwarded-proto": "Add X-Forwarded-Proto",
+    "x-real-ip": "Add X-Real-IP"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/x-forwarded-for/ip-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Trusted IP List"
+    }
+   ],
+   "toggles": [
+    "x-forwarded-for-support",
+    "x-real-ip",
+    "x-forwarded-proto",
+    "block-based-on-original-ip",
+    "skip-private-original-ip"
+   ]
+  },
+  "x_forward_ip_list": {
+   "collection": "waf/x-forwarded-for/ip-list",
+   "enums": {},
+   "field_order": [
+    "ip"
+   ],
+   "group_order": [
+    "IP"
+   ],
+   "groups": {
+    "ip": "IP"
+   },
+   "identity_key": "",
+   "label": "Trusted IP",
+   "labels": {
+    "ip": "IP / Subnet"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "xml_protection_policy": {
+   "collection": "waf/xml-validation.policy",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "XML Validation",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/xml-validation.policy/input-rule-list",
+     "ref_collection": "waf/xml-validation.rule",
+     "ref_key": "input-rule",
+     "title": "XML Rules"
+    }
+   ],
+   "toggles": []
+  },
+  "xml_protection_rule": {
+   "collection": "waf/xml-validation.rule",
+   "enums": {
+    "action": [
+     "alert",
+     "alert_deny",
+     "block-period",
+     "redirect"
+    ],
+    "data-format": [
+     "XML",
+     "SOAP"
+    ],
+    "request-type": [
+     "plain",
+     "regular"
+    ],
+    "severity": [
+     "Informative",
+     "Low",
+     "Medium",
+     "High"
+    ]
+   },
+   "field_order": [
+    "host-status",
+    "host",
+    "request-type",
+    "request-file",
+    "data-format",
+    "schema-file",
+    "wsdl-file",
+    "ws-security",
+    "action",
+    "block-period",
+    "severity",
+    "trigger"
+   ],
+   "group_order": [
+    "Match",
+    "Validation",
+    "Action"
+   ],
+   "groups": {
+    "action": "Action",
+    "block-period": "Action",
+    "data-format": "Match",
+    "host": "Match",
+    "host-status": "Match",
+    "request-file": "Match",
+    "request-type": "Match",
+    "schema-file": "Validation",
+    "severity": "Action",
+    "trigger": "Action",
+    "ws-security": "Validation",
+    "wsdl-file": "Validation"
+   },
+   "identity_key": "name",
+   "label": "XML Protection Rule",
+   "labels": {
+    "action": "Action",
+    "block-period": "Block Period (s)",
+    "data-format": "Data Format",
+    "host": "Host",
+    "host-status": "Host Status",
+    "request-file": "Request URL",
+    "request-type": "URL Type",
+    "schema-file": "Schema File",
+    "severity": "Severity",
+    "trigger": "Trigger Policy",
+    "ws-security": "WS-Security Rule",
+    "wsdl-file": "WSDL File"
+   },
+   "numbers": [
+    "block-period"
+   ],
+   "refs": {
+    "schema-file": "waf/xml-schema.file",
+    "trigger": "log/trigger-policy",
+    "ws-security": "waf/ws-security.rule",
+    "wsdl-file": "waf/xml-wsdl.file"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": [
+    "host-status"
+   ]
+  },
+  "xml_protection_rule__bind": {
+   "collection": "waf/xml-validation.policy/input-rule-list",
+   "enums": {},
+   "field_order": [
+    "input-rule"
+   ],
+   "group_order": [
+    "XML Protection Rule"
+   ],
+   "groups": {
+    "input-rule": "XML Protection Rule"
+   },
+   "identity_key": "",
+   "label": "XML Protection Rule",
+   "labels": {
+    "input-rule": "XML Protection Rule"
+   },
+   "numbers": [],
+   "refs": {
+    "input-rule": "waf/xml-validation.rule"
+   },
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "xml_protection_wsdl": {
+   "collection": "waf/xml-wsdl.file",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "WSDL File",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  },
+  "xml_protection_wssecurity_rule": {
+   "collection": "waf/ws-security.rule",
+   "enums": {},
+   "field_order": [
+    "request-security-status",
+    "request-operation",
+    "response-security-status",
+    "response-operation",
+    "signature-algorithm",
+    "encryption-algorithm"
+   ],
+   "group_order": [
+    "WS-Security"
+   ],
+   "groups": {
+    "request-security-status": "WS-Security",
+    "response-security-status": "WS-Security"
+   },
+   "identity_key": "name",
+   "label": "WS-Security Rule",
+   "labels": {
+    "request-security-status": "Request Security",
+    "response-security-status": "Response Security"
+   },
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [
+    {
+     "collection": "waf/ws-security.rule/namespace-mapping",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Namespace Mapping"
+    },
+    {
+     "collection": "waf/ws-security.rule/element-list",
+     "ref_collection": null,
+     "ref_key": null,
+     "title": "Element List"
+    }
+   ],
+   "toggles": [
+    "request-security-status",
+    "response-security-status"
+   ]
+  },
+  "xml_protection_xml_schema": {
+   "collection": "waf/xml-schema.file",
+   "enums": {},
+   "field_order": [],
+   "group_order": [],
+   "groups": {},
+   "identity_key": "name",
+   "label": "XML Schema File",
+   "labels": {},
+   "numbers": [],
+   "refs": {},
+   "show_when": {},
+   "subtables": [],
+   "toggles": []
+  }
+ },
+ "subtable_titles": {
+  "waf/allow-method-exceptions/allow-method-exception-list": "Exceptions",
+  "waf/allowed-origins/origin-list": "Origins",
+  "waf/api-policy/api-rule-list": "API Gateway Rules",
+  "waf/api-rules/attach-http-header": "Attach HTTP Header",
+  "waf/api-rules/match-url-prefixes": "Match URL Prefixes",
+  "waf/api-rules/sub-url-setting": "Sub-URL Settings",
+  "waf/api-user-group/user-list": "Users",
+  "waf/api-users/http-referer-list": "HTTP Referer List",
+  "waf/api-users/ip-access-list": "IP Access List",
+  "waf/biometrics-based-detection/url-list": "URL List",
+  "waf/bot-deception/url-list": "URL List",
+  "waf/bot-mitigation-exception/exception-element-list": "Exception Elements",
+  "waf/cookie-security/cookie-security-exception-list": "Cookie Exceptions",
+  "waf/cors-protection-policy/rule-list": "CORS Rules",
+  "waf/cors-protection-rule/allowed-headers-list": "Allowed Headers",
+  "waf/cors-protection-rule/allowed-methods-list": "Allowed Methods",
+  "waf/cors-protection-rule/exposed-headers-list": "Exposed Headers",
+  "waf/csrf-protection/csrf-page-list": "Page List",
+  "waf/csrf-protection/csrf-url-list": "URL List",
+  "waf/custom-access.policy/rule": "Rules",
+  "waf/custom-protection-group/type-list": "Signature Rules",
+  "waf/custom-protection-rule/meet-condition": "Conditions",
+  "waf/exclude-url/exclude-rules": "Exclusion Rules",
+  "waf/file-compress-rule/content-types": "Content Types",
+  "waf/file-exception-policy/exception-list": "Exceptions",
+  "waf/file-upload-custom-file-type/file-content-match-rule": "Content Match Rules",
+  "waf/file-upload-restriction-policy/rule": "File Security Rules",
+  "waf/file-upload-restriction-rule/custom-file-types": "Custom File Types",
+  "waf/file-upload-restriction-rule/file-types": "Predefined File Types",
+  "waf/geo-block-list/country-list": "Countries",
+  "waf/geo-ip-except/members": "Members",
+  "waf/grpc-security.policy/rule-list": "gRPC Rules",
+  "waf/hidden-fields-protection/hidden_fields_list": "Hidden Field Rules",
+  "waf/hidden-fields-rule/hidden-field-name": "Hidden Field Names",
+  "waf/http-authen.http-authen-policy/rule": "Auth Rules",
+  "waf/http-authen.http-authen-rule/rule": "Rules",
+  "waf/http-constraints-exceptions/http_constraints-exception-list": "Exceptions",
+  "waf/http-header-security-exception/list": "Exceptions",
+  "waf/http-header-security/http-header-security-list": "Secure Header Table",
+  "waf/input-rule/rule-list": "Parameters",
+  "waf/ip-list/members": "Members",
+  "waf/json-schema.group/members": "Members",
+  "waf/json-validation.policy/input-rule-list": "JSON Rules",
+  "waf/known-bots/known-good-bots-disable-list": "Known Good Bots (disabled)",
+  "waf/known-bots/malicious-bot-disable-list": "Malicious Bots (disabled)",
+  "waf/link-cloaking.link-cloaking-policy/rule-list": "Link Cloaking Rules",
+  "waf/link-cloaking.link-cloaking-rule/exceptions": "Exceptions",
+  "waf/mitb-policy/rule-list": "MITB Rules",
+  "waf/mitb-rule/allowed-external-domains-list": "Allowed External Domains",
+  "waf/mitb-rule/protected-parameter-list": "Protected Parameters",
+  "waf/mobile-api-protection.mobile-api-protection-policy/rule-list": "Mobile API Rules",
+  "waf/mobile-api-protection.mobile-api-protection-rule/url-list": "URL List",
+  "waf/openapi-validation-policy/schema-file": "OpenAPI Files",
+  "waf/padding-oracle/protected-url-list": "Protected URLs",
+  "waf/parameter-validation-rule/input-rule-list": "Input Rules",
+  "waf/signature/alert_only_list": "Alert-Only Signatures",
+  "waf/signature/filter_list": "Signature Exceptions",
+  "waf/signature/fpm_disable_list": "FPM-Disabled Signatures",
+  "waf/signature/main_class_list": "Signature Classes (Main Class)",
+  "waf/signature/score_grade_list": "Score Grades",
+  "waf/signature/scoring_override_disable_list": "Scoring Override Disabled",
+  "waf/signature/signature_disable_list": "Disabled Signatures",
+  "waf/signature/sub_class_disable_list": "Disabled Sub-Classes",
+  "waf/syntax-based-attack-detection/exception-element-list": "Exceptions",
+  "waf/url-access.url-access-policy/rule": "URL Access Rules",
+  "waf/url-access.url-access-rule/match-condition": "Match Conditions",
+  "waf/url-encryption.url-encryption-policy/rule-list": "URL Encryption Rules",
+  "waf/url-encryption.url-encryption-rule/exceptions": "Exceptions",
+  "waf/url-encryption.url-encryption-rule/url-list": "URL List",
+  "waf/url-rewrite.url-rewrite-policy/rule": "URL Rewriting Rules",
+  "waf/url-rewrite.url-rewrite-rule/header-insert": "Header Insertion",
+  "waf/url-rewrite.url-rewrite-rule/header-removal": "Header Removal",
+  "waf/url-rewrite.url-rewrite-rule/match-condition": "Condition Table",
+  "waf/url-rewrite.url-rewrite-rule/response-header-insert": "Response Header Insertion",
+  "waf/url-rewrite.url-rewrite-rule/response-header-removal": "Response Header Removal",
+  "waf/user-tracking.policy/input-rule-list": "User Tracking Rules",
+  "waf/user-tracking.rule/match-condition": "Authentication Result Conditions",
+  "waf/webshell-detection-policy/fuzzy-disable-list": "Fuzzy Disable List",
+  "waf/websocket-security.policy/rule-list": "WebSocket Rules",
+  "waf/websocket-security.rule/allowed-origin-list": "Allowed Origins",
+  "waf/ws-security.rule/element-list": "Element List",
+  "waf/ws-security.rule/namespace-mapping": "Namespace Mapping",
+  "waf/x-forwarded-for/ip-list": "Trusted IP List",
+  "waf/xml-validation.policy/input-rule-list": "XML Rules"
+ },
+ "value_labels": {
+  "action": {
+   "alert": "Alert",
+   "alert_deny": "Alert & Deny",
+   "alert_erase": "Alert & Erase",
+   "block-period": "Period Block",
+   "deny_no_log": "Deny (no log)",
+   "only_erase": "Erase, no Alert",
+   "pass": "Pass",
+   "redirect": "Redirect",
+   "send_http_response": "Send HTTP Response"
+  },
+  "attack-type": {
+   "arithmetic_operation_based_boolean_injection": "Arithmetic Operation Based Boolean Injection",
+   "condition_based_boolean_injection": "Condition Based Boolean Injection",
+   "embeded_queries_sql_injection": "Embedded Queries SQL Injection",
+   "html_attr_based_xss_injection": "HTML Attribute Based XSS Injection",
+   "html_css_based_xss_injection": "HTML CSS Based XSS Injection",
+   "html_tag_based_xss_injection": "HTML Tag Based XSS Injection",
+   "js_func_based_xss_injection": "JS Function Based XSS Injection",
+   "js_var_based_xss_injection": "JS Variable Based XSS Injection",
+   "line_comments": "Line Comments",
+   "sql_function_based_boolean_injection": "SQL Function Based Boolean Injection",
+   "stacked_queries_sql_injection": "Stacked Queries SQL Injection"
+  },
+  "main_class_id": {
+   "010000000": "Cross Site Scripting",
+   "020000000": "Cross Site Scripting (Extended)",
+   "030000000": "SQL Injection",
+   "040000000": "SQL Injection (Extended)",
+   "050000000": "Generic Attacks",
+   "060000000": "Generic Attacks (Extended)",
+   "070000000": "Trojans",
+   "080000000": "Information Disclosure",
+   "090000000": "Known Exploits",
+   "100000000": "Personally Identifiable Information"
+  },
+  "match-target": {
+   "CLIENT_IP": "Client IP",
+   "COOKIE": "Cookie",
+   "FULL-URL": "Full URL",
+   "FULL_URL": "Full URL",
+   "HOST": "Host",
+   "HTTP_HEADER": "HTTP Header",
+   "HTTP_METHOD": "HTTP Method",
+   "JSON_ELEMENTS": "JSON Elements",
+   "PARAMETER": "Parameter",
+   "URI": "URI"
+  },
+  "operator": {
+   "EQ": "Equal",
+   "EXCLUDE": "Exclude",
+   "INCLUDE": "Include",
+   "NE": "Not Equal",
+   "REGEXP_MATCH": "Regular Expression Match",
+   "STRING_MATCH": "String Match"
+  },
+  "request-type": {
+   "plain": "Simple String",
+   "regular": "Regular Expression"
+  },
+  "request-url-type": {
+   "plain": "Simple String",
+   "regular": "Regular Expression"
+  },
+  "scoring-grade": {
+   "critical": "Critical",
+   "informational": "Informational",
+   "low": "Low",
+   "moderate": "Moderate",
+   "severe": "Severe",
+   "substantial": "Substantial"
+  },
+  "scoring-override": {
+   "critical": "Critical",
+   "informational": "Informational",
+   "low": "Low",
+   "moderate": "Moderate",
+   "severe": "Severe",
+   "substantial": "Substantial"
+  },
+  "status": {
+   "disable": "Disabled",
+   "disabled": "Disabled",
+   "enable": "Enabled",
+   "enabled": "Enabled"
+  },
+  "url-type": {
+   "plain": "Simple String",
+   "regular": "Regular Expression"
+  }
+ },
+ "wpp_sections": [
+  {
+   "collection": "waf/signature",
+   "field": "signature-rule",
+   "label": "Signatures",
+   "section": "Standard Protection"
+  },
+  {
+   "collection": "waf/http-protocol-parameter-restriction",
+   "field": "http-protocol-parameter-restriction",
+   "label": "HTTP Protocol Constraints",
+   "section": "Standard Protection"
+  },
+  {
+   "collection": "waf/x-forwarded-for",
+   "field": "x-forwarded-for-rule",
+   "label": "X-Forwarded-For",
+   "section": "Standard Protection"
+  },
+  {
+   "collection": "waf/allow-method-policy",
+   "field": "allow-method-policy",
+   "label": "Allow Method",
+   "section": "Standard Protection"
+  },
+  {
+   "collection": "waf/ip-list",
+   "field": "ip-list-policy",
+   "label": "IP List",
+   "section": "Standard Protection"
+  },
+  {
+   "collection": "waf/geo-block-list",
+   "field": "geo-block-list-policy",
+   "label": "Geo IP Block List",
+   "section": "Standard Protection"
+  },
+  {
+   "collection": "waf/url-access.url-access-policy",
+   "field": "url-access-policy",
+   "label": "URL Access",
+   "section": "Standard Protection"
+  },
+  {
+   "collection": "waf/custom-access.policy",
+   "field": "custom-access-policy",
+   "label": "Custom Access",
+   "section": "Standard Protection"
+  },
+  {
+   "collection": "waf/application-layer-dos-prevention",
+   "field": "application-layer-dos-prevention",
+   "label": "DoS Protection",
+   "section": "Standard Protection"
+  },
+  {
+   "collection": "waf/bot-mitigate-policy",
+   "field": "bot-mitigate-policy",
+   "label": "Bot Mitigation",
+   "section": "Standard Protection"
+  },
+  {
+   "collection": "waf/syntax-based-attack-detection",
+   "field": "syntax-based-attack-detection",
+   "label": "Syntax-Based Detection",
+   "section": "Standard Protection"
+  },
+  {
+   "collection": "waf/http-header-security",
+   "field": "http-header-security",
+   "label": "HTTP Header Security",
+   "section": "Client-Side Security"
+  },
+  {
+   "collection": "waf/cors-protection-policy",
+   "field": "cors-protection-policy",
+   "label": "CORS Protection",
+   "section": "Client-Side Security"
+  },
+  {
+   "collection": "waf/cookie-security",
+   "field": "cookie-security-policy",
+   "label": "Cookie Security",
+   "section": "Client-Side Security"
+  },
+  {
+   "collection": "waf/websocket-security.policy",
+   "field": "websocket-security-policy",
+   "label": "WebSocket Security",
+   "section": "Client-Side Security"
+  },
+  {
+   "collection": "waf/mitb-policy",
+   "field": "mitb-protection",
+   "label": "Man in the Browser (MITB)",
+   "section": "Client-Side Security"
+  },
+  {
+   "collection": "waf/csrf-protection",
+   "field": "csrf-protection",
+   "label": "CSRF Protection",
+   "section": "Advanced Protection"
+  },
+  {
+   "collection": "waf/padding-oracle",
+   "field": "padding-oracle",
+   "label": "Padding Oracle",
+   "section": "Advanced Protection"
+  },
+  {
+   "collection": "waf/url-encryption.url-encryption-policy",
+   "field": "url-encryption-policy",
+   "label": "URL Encryption",
+   "section": "Advanced Protection"
+  },
+  {
+   "collection": "waf/link-cloaking.link-cloaking-policy",
+   "field": "link-cloaking-policy",
+   "label": "Link Cloaking",
+   "section": "Advanced Protection"
+  },
+  {
+   "collection": "waf/hidden-fields-protection",
+   "field": "hidden-fields-protection",
+   "label": "Hidden Fields Protection",
+   "section": "Advanced Protection"
+  },
+  {
+   "collection": "waf/parameter-validation-rule",
+   "field": "parameter-validation-rule",
+   "label": "Parameter Validation",
+   "section": "Advanced Protection"
+  },
+  {
+   "collection": "waf/file-upload-restriction-policy",
+   "field": "file-upload-policy",
+   "label": "File Security",
+   "section": "Advanced Protection"
+  },
+  {
+   "collection": "waf/file-exception-policy",
+   "field": "file-exception-policy",
+   "label": "File Security Exception",
+   "section": "Advanced Protection"
+  },
+  {
+   "collection": "waf/webshell-detection-policy",
+   "field": "webshell-detection-policy",
+   "label": "Web Shell Detection",
+   "section": "Advanced Protection"
+  },
+  {
+   "collection": "waf/xml-validation.policy",
+   "field": "xml-validation-policy",
+   "label": "XML Validation",
+   "section": "API Protection"
+  },
+  {
+   "collection": "waf/json-validation.policy",
+   "field": "json-validation-policy",
+   "label": "JSON Validation",
+   "section": "API Protection"
+  },
+  {
+   "collection": "waf/openapi-validation-policy",
+   "field": "openapi-validation-policy",
+   "label": "OpenAPI Validation",
+   "section": "API Protection"
+  },
+  {
+   "collection": "waf/api-policy",
+   "field": "api-management-policy",
+   "label": "API Gateway",
+   "section": "API Protection"
+  },
+  {
+   "collection": "waf/mobile-api-protection.mobile-api-protection-policy",
+   "field": "mobile-api-protection",
+   "label": "Mobile API Protection",
+   "section": "API Protection"
+  },
+  {
+   "collection": "waf/grpc-security.policy",
+   "field": "grpc-policy",
+   "label": "gRPC Protection",
+   "section": "API Protection"
+  },
+  {
+   "collection": "waf/url-rewrite.url-rewrite-policy",
+   "field": "url-rewrite-policy",
+   "label": "URL Rewriting",
+   "section": "Application Delivery"
+  },
+  {
+   "collection": "waf/http-authen.http-authen-policy",
+   "field": "http-authen-policy",
+   "label": "HTTP Authentication",
+   "section": "Application Delivery"
+  },
+  {
+   "collection": "waf/file-compress-rule",
+   "field": "file-compress-rule",
+   "label": "Compression",
+   "section": "Application Delivery"
+  },
+  {
+   "collection": "waf/user-tracking.policy",
+   "field": "user-tracking-policy",
+   "label": "User Tracking",
+   "section": "Tracking"
+  },
+  {
+   "collection": "server-policy/pattern.threat-score-profile",
+   "field": "threat-score-profile",
+   "label": "Threat Scoring",
+   "section": "Tracking"
+  }
+ ]
+}

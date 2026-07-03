@@ -28,7 +28,8 @@ def test_object_kind_curated_vs_generic():
     assert objform.object_kind("server-policy/server-pool") == "pool"
     assert objform.object_kind("/api/v2.0/cmdb/server-policy/server-pool/pserver-list") == "pserver"
     assert objform.object_kind("server-policy/vserver/vip-list") == "vip"
-    assert objform.object_kind("waf/signature") == "ref"  # generic fallback
+    assert objform.object_kind("waf/signature") == "signature"  # WAF catalog curated
+    assert objform.object_kind("log/trigger-policy") == "ref"  # generic fallback
 
 
 def test_subtables_derived_from_registry():

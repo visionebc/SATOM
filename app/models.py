@@ -73,6 +73,11 @@ class User(db.Model, UserMixin):
     recovery_email = db.Column(db.String(256), nullable=True)
     backup_codes = db.Column(db.Text, nullable=True)
 
+    # Per-account brute-force lockout (the IP rate-limit alone can't isolate a
+    # targeted account when attempts arrive from many clients).
+    failed_logins = db.Column(db.Integer, nullable=False, default=0)
+    locked_until = db.Column(db.DateTime, nullable=True)
+
     # audit relationship (back-ref from AuditLog)
     audit_logs = db.relationship("AuditLog", backref="user", lazy="dynamic")
     profile = db.relationship("Profile", lazy="joined", foreign_keys=[profile_id])

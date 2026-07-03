@@ -128,5 +128,7 @@ def test_admin_open_count_ignores_optin(app):
     c = app.test_client()
     resp = _login(c, "adm")
     html = resp.get_data(as_text=True)
-    # the red notification badge (count 1) must render for the admin
-    assert "bi-bell-fill" in html
+    # The open-report count badge next to the Bug Reports link must render for
+    # the admin. (The bell icon now belongs to the notifications feature — the
+    # bug-report count moved to this sidebar badge.)
+    assert 'badge rounded-pill bg-danger ms-1">1</span>' in html

@@ -1,6 +1,8 @@
 import json
 import os
 
+from werkzeug.utils import secure_filename
+
 from flask import (
     Blueprint, render_template, request, jsonify, flash, redirect, url_for,
     send_file, abort, current_app,
@@ -1167,7 +1169,7 @@ def restore_run(id):
     data, filename = None, 'config.conf'
     if up and up.filename:
         data = up.read()
-        filename = os.path.basename(up.filename)
+        filename = secure_filename(up.filename) or "config.conf"
         if data:
             try:  # retain the source in the vault
                 backup_svc.store_bytes(

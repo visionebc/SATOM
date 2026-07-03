@@ -14,6 +14,9 @@ import pytest
 _TMPDIR = tempfile.mkdtemp(prefix="fmw-test-")
 os.environ["FLASK_ENV"] = "development"
 os.environ["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{_TMPDIR}/test.db"
+# Isolate services that keep state on disk from the production tree (the logs
+# status endpoint reads a _progress.json that real runs leave behind).
+os.environ["FORTINET_DIAG_DIR"] = f"{_TMPDIR}/diagnostics"
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-prod")
 # A valid Fernet key so models.py encryption helpers import cleanly.
 from cryptography.fernet import Fernet  # noqa: E402

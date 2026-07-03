@@ -49,7 +49,11 @@ class Config:
     SESSION_COOKIE_SAMESITE: str = "Lax"
     FERNET_KEY: str = _ensure_fernet_key()
     WTF_CSRF_TIME_LIMIT: int = 3600
-    RATELIMIT_STORAGE_URL: str = "memory://"
+    # Flask-Limiter 3.x reads RATELIMIT_STORAGE_URI (the old *_URL key is
+    # ignored, silently falling back to per-worker memory://). Production sets
+    # redis:// in .env so the 4 gunicorn workers share ONE bucket set and
+    # counters survive restarts; memory:// stays the dev/test fallback.
+    RATELIMIT_STORAGE_URI: str = os.environ.get("RATELIMIT_STORAGE_URI", "memory://")
     # Firmware/backup uploads — cap so a runaway upload 413s instead of
     # OOMing a gunicorn worker. Real FortiWeb .out images are ~100-500 MB.
     MAX_CONTENT_LENGTH: int = int(os.environ.get("MAX_UPLOAD_MB", "600")) * 1024 * 1024
@@ -66,6 +70,11 @@ class DevelopmentConfig(Config):
 
 class ProductionConfig(Config):
     DEBUG: bool = False
+    # Static assets get a real max-age so the edge nginx (and browsers) can
+    # cache them instead of hitting a gunicorn worker per CSS/JS request.
+    # Flask still honours conditional requests (ETag/Last-Modified), so a
+    # changed file revalidates within the day.
+    SEND_FILE_MAX_AGE_DEFAULT: int = 86400
 
 
 _config_map = {

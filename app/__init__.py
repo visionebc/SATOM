@@ -202,6 +202,10 @@ def create_app(config_override: object | None = None) -> Flask:
         if session.get('product') != 'fortiweb':
             return None
         ep = request.endpoint or ''
+        # Pure-metadata JSON endpoints need no device context — gating them
+        # only breaks the forms (and tests) that fetch field specs.
+        if ep in ('exceptions.type_fields',):
+            return None
         bp_name = ep.split('.', 1)[0]
         device_bps = {'workspace', 'server_objects', 'web_protection',
                       'exceptions', 'backups'}
@@ -420,6 +424,8 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('totp_enabled', 'BOOLEAN DEFAULT FALSE'),
                 ('recovery_email', 'VARCHAR(256)'),
                 ('backup_codes', 'TEXT'),
+                ('failed_logins', 'INTEGER DEFAULT 0'),
+                ('locked_until', 'TIMESTAMP'),
             ],
             'appliances': [
                 ('hw_type', "VARCHAR(16) DEFAULT 'unknown'"),

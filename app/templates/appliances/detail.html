@@ -5,7 +5,7 @@
   <h4><i class="bi bi-server me-2"></i>{{ appliance.name }}</h4>
   <div class="d-flex gap-2">
     <a href="{{ url_for('appliances.edit', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">Edit</a>
-    <button class="btn fw-btn-primary btn-sm" onclick="testConn({{ appliance.id }}, this)">Test Connection</button>
+    <button class="btn fw-btn-primary btn-sm" data-js="test-conn">Test Connection</button>
   </div>
 </div>
 <div class="row g-3 mb-4">
@@ -185,5 +185,10 @@ async function testConn(id, btn) {
   document.getElementById('conn-result').classList.remove('d-none');
   btn.disabled = false; btn.textContent = 'Test Connection';
 }
+// CSP: former inline onclick, re-bound here (Turbo-safe immediate IIFE)
+(function () {
+  var btn = document.querySelector('[data-js="test-conn"]');
+  if (btn) btn.addEventListener('click', function () { testConn({{ appliance.id }}, this); });
+})();
 </script>
 {% endblock %}

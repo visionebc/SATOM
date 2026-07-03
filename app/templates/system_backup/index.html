@@ -50,7 +50,7 @@
               <td class="small">{{ (b.size/1024)|round(1) }} KB</td>
               <td class="text-end">
                 <a class="btn btn-outline-light btn-sm" href="{{ url_for('system_backup.download', name=b.name) }}"><i class="bi bi-download"></i></a>
-                <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#restoreModal" onclick="document.getElementById('restore-name').value='{{ b.name }}';document.getElementById('restore-label').textContent='{{ b.name }}';"><i class="bi bi-arrow-counterclockwise"></i> Restore</button>
+                <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#restoreModal" data-js="restore-backup" data-name="{{ b.name }}"><i class="bi bi-arrow-counterclockwise"></i> Restore</button>
               </td>
             </tr>
           {% endfor %}
@@ -83,4 +83,17 @@
     </form>
   </div></div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  document.querySelectorAll('[data-js="restore-backup"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) {
+      document.getElementById('restore-name').value = this.dataset.name;
+      document.getElementById('restore-label').textContent = this.dataset.name;
+    });
+  });
+})();
+</script>
 {% endblock %}

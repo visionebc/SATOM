@@ -33,10 +33,10 @@
       {% endfor %}
       <div class="mt-2">
         {% if create %}
-          <button type="button" class="btn btn-sm btn-fw-primary" onclick="createObject(this)">
+          <button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-create">
             <i class="bi bi-plus-circle me-1"></i>Review &amp; create</button>
         {% elif obj_groups %}
-          <button type="button" class="btn btn-sm btn-fw-primary" onclick="saveObject(this)">
+          <button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-save">
             <i class="bi bi-check2-circle me-1"></i>Review &amp; save</button>
         {% endif %}
       </div>
@@ -59,8 +59,8 @@
         <summary class="fw-group-head">{{ row.label or ('row ' ~ row.sub_id) }}</summary>
         {% for sec in row.groups %}<div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false) }}{% endfor %}</div>{% endfor %}
         <div class="mt-2">
-          <button type="button" class="btn btn-sm btn-fw-primary" onclick="saveRow(this)">Save row</button>
-          <button type="button" class="btn btn-sm btn-fw-danger" onclick="deleteRow(this)">Delete</button>
+          <button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-save-row">Save row</button>
+          <button type="button" class="btn btn-sm btn-fw-danger" data-js="objedit-delete-row">Delete</button>
         </div>
         <div class="fw-result"></div>
       </details>
@@ -72,7 +72,7 @@
              data-collection="{{ st.collection }}" data-parent="{{ mkey }}">
       <summary class="fw-group-head text-primary">＋ Add {{ st.label }} row</summary>
       {% for sec in st.blank_groups %}<div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false) }}{% endfor %}</div>{% endfor %}
-      <div class="mt-2"><button type="button" class="btn btn-sm btn-fw-primary" onclick="createRow(this)">Create row</button></div>
+      <div class="mt-2"><button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-create-row">Create row</button></div>
       <div class="fw-result"></div>
     </details>
   </div>
@@ -203,4 +203,19 @@ function deleteRow(btn){
       Object.assign({}, base, {apply:true})).then(function(j2){ fwShow(el, j2); }); });
   });
 }
+// CSP (script-src-attr 'none'): bindings for the former inline onclick attributes.
+// This fragment replaces its container's innerHTML on each load, so the matched
+// nodes are always fresh — re-running this script cannot double-bind stale rows.
+(function(){
+  function bindClick(name, fn){
+    document.querySelectorAll('[data-js="' + name + '"]').forEach(function(btn){
+      btn.addEventListener('click', function(event){ fn(this); });
+    });
+  }
+  bindClick('objedit-create', createObject);
+  bindClick('objedit-save', saveObject);
+  bindClick('objedit-save-row', saveRow);
+  bindClick('objedit-delete-row', deleteRow);
+  bindClick('objedit-create-row', createRow);
+})();
 </script>

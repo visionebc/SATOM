@@ -83,7 +83,7 @@
         </select>
       </div>
       <div class="form-check mb-2">
-        <input class="form-check-input" type="checkbox" name="dry_run" id="dry_run" checked onchange="document.getElementById('live-fields').classList.toggle('d-none', this.checked)">
+        <input class="form-check-input" type="checkbox" name="dry_run" id="dry_run" checked>
         <label class="form-check-label" for="dry_run">Dry run (validate the image only — nothing is sent)</label>
       </div>
       <div id="live-fields" class="d-none border rounded p-3 mb-3" style="background:rgba(248,113,113,.06)">
@@ -144,6 +144,13 @@
         if (btn) { btn.disabled = false; btn.classList.remove('disabled'); }
         alert('Network error starting the task.');
       });
+  });
+})();
+// CSP: former inline onchange on #dry_run, re-bound here (Turbo-safe immediate IIFE)
+(function () {
+  var dry = document.getElementById('dry_run');
+  if (dry) dry.addEventListener('change', function () {
+    document.getElementById('live-fields').classList.toggle('d-none', this.checked);
   });
 })();
 </script>

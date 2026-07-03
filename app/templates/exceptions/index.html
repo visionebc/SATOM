@@ -72,9 +72,9 @@
 <div class="fw-toolbar">
   <div class="fw-search-box">
     <i class="bi bi-search search-icon"></i>
-    <input type="text" placeholder="Search exceptions…" oninput="filterTable('exceptions-table', this.value)">
+    <input type="text" placeholder="Search exceptions…" data-js="exc-search">
   </div>
-  <select class="form-select form-select-sm" style="width:auto;" onchange="filterByStatus(this.value)">
+  <select class="form-select form-select-sm" style="width:auto;" data-js="exc-status-filter">
     <option value="">All Status</option>
     <option value="enable">Enabled</option>
     <option value="disable">Disabled</option>
@@ -162,5 +162,13 @@ function filterByStatus(status) {
     row.style.display = rowStatus.includes(status) ? '' : 'none';
   });
 }
+
+// ── event bindings (CSP: no inline handlers) ──
+(function () {
+  const search = document.querySelector('[data-js="exc-search"]');
+  if (search) search.addEventListener('input', function (event) { filterTable('exceptions-table', this.value); });
+  const statusSel = document.querySelector('[data-js="exc-status-filter"]');
+  if (statusSel) statusSel.addEventListener('change', function (event) { filterByStatus(this.value); });
+})();
 </script>
 {% endblock %}

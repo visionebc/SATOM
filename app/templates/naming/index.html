@@ -34,7 +34,7 @@
     <div class="d-flex align-items-center gap-2">
       <label class="fw-form-label mb-0" for="naming-product" style="font-size:12px;">Product</label>
       <select id="naming-product" class="form-select fw-form-control form-select-sm" style="width:auto;"
-              onchange="window.location.href='{{ url_for('naming.index') }}?product=' + this.value">
+              data-url="{{ url_for('naming.index') }}">
         {% for pkey, plabel in products %}
         <option value="{{ pkey }}" {{ 'selected' if pkey == current_product else '' }}>{{ plabel }}</option>
         {% endfor %}
@@ -45,8 +45,7 @@
     <div class="row g-2 align-items-center mb-3" style="max-width:560px;">
       <div class="col-auto"><label class="fw-form-label mb-0">Sample web address</label></div>
       <div class="col">
-        <input type="text" id="naming-sample" class="form-control fw-form-control" value="shop.example.com"
-               oninput="refreshNaming()">
+        <input type="text" id="naming-sample" class="form-control fw-form-control" value="shop.example.com">
       </div>
       <div class="col-auto"><span class="text-muted" id="naming-slug" style="font-size:12px;"></span></div>
     </div>
@@ -65,7 +64,7 @@
             <input type="text" class="form-control fw-form-control naming-input"
                    name="nm_{{ e.key }}" data-key="{{ e.key }}"
                    value="{{ naming_scheme[e.key] }}" placeholder="{{ e.default }}"
-                   oninput="refreshNaming()" {% if e.note %}title="{{ e.note }}"{% endif %}>
+                   {% if e.note %}title="{{ e.note }}"{% endif %}>
             <span class="input-group-text">→</span>
             <span class="input-group-text text-muted" id="pv_{{ e.key }}" style="min-width:140px; justify-content:flex-start;"></span>
           </div>
@@ -113,5 +112,18 @@ function refreshNaming() {
   });
 }
 document.addEventListener('DOMContentLoaded', refreshNaming);
+(function () {
+  var prod = document.getElementById('naming-product');
+  if (prod) {
+    prod.addEventListener('change', function (event) {
+      window.location.href = this.dataset.url + '?product=' + this.value;
+    });
+  }
+  var sample = document.getElementById('naming-sample');
+  if (sample) { sample.addEventListener('input', function (event) { refreshNaming(); }); }
+  document.querySelectorAll('.naming-input').forEach(function (inp) {
+    inp.addEventListener('input', function (event) { refreshNaming(); });
+  });
+})();
 </script>
 {% endblock %}

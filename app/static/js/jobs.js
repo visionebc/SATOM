@@ -57,6 +57,8 @@
     if (document.getElementById('jobs-toast-styles')) return;
     var css = document.createElement('style');
     css.id = 'jobs-toast-styles';
+    // CSP: style-src-elem is nonce-gated — stamp the page nonce.
+    css.nonce = (document.querySelector('meta[name=csp-nonce]')||{}).content || '';
     css.textContent =
       '#job-toasts{position:fixed;right:18px;bottom:18px;z-index:20000;display:flex;' +
       'flex-direction:column;gap:10px;max-width:340px;font-family:inherit;pointer-events:none}' +

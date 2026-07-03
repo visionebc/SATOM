@@ -49,8 +49,8 @@
 
   {% if not disabled %}
   <div class="d-flex gap-2 mb-3">
-    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setAllPerms(true)"><i class="bi bi-check2-all me-1"></i>Select all</button>
-    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setAllPerms(false)"><i class="bi bi-x-lg me-1"></i>Clear all</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-js="set-perms" data-perms="true"><i class="bi bi-check2-all me-1"></i>Select all</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-js="set-perms" data-perms="false"><i class="bi bi-x-lg me-1"></i>Clear all</button>
   </div>
   {% endif %}
 
@@ -99,5 +99,12 @@
 function setAllPerms(state) {
   document.querySelectorAll('.perm-check:not([disabled])').forEach(function (c) { c.checked = state; });
 }
+(function () {
+  document.querySelectorAll('[data-js="set-perms"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) {
+      setAllPerms(this.dataset.perms === 'true');
+    });
+  });
+})();
 </script>
 {% endblock %}

@@ -128,14 +128,14 @@
         }).join('');
       });
   }
-  sel.onchange=function(){ cur=sel.value; page=1; loadTable(); };
-  prev.onclick=function(){ if(page>1){page--; loadTable();} };
-  next.onclick=function(){ if(page<pages){page++; loadTable();} };
+  sel.addEventListener('change', function(event){ cur=sel.value; page=1; loadTable(); });
+  prev.addEventListener('click', function(event){ if(page>1){page--; loadTable();} });
+  next.addEventListener('click', function(event){ if(page<pages){page++; loadTable();} });
 
   // ----- SQL console -----
   var input=document.getElementById('sql-input'), errBox=document.getElementById('sql-error'),
       smeta=document.getElementById('sql-meta');
-  document.getElementById('sql-run').onclick=function(){
+  document.getElementById('sql-run').addEventListener('click', function(event){
     errBox.classList.add('d-none');
     document.getElementById('sql-csv-field').value=input.value;
     fetch('{{ url_for("database.query") }}',{method:'POST',

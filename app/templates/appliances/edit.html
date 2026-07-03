@@ -27,11 +27,11 @@
       <label class="form-check-label" for="verify_ssl">Verify SSL Certificate</label></div></div>
     {% if not appliance.is_cluster_member %}
     <div class="col-12"><hr class="my-1"><h6 class="text-uppercase text-muted mb-0" style="font-size:12px;letter-spacing:.5px;">High Availability</h6></div>
-    <div class="col-12"><div class="form-check"><input type="checkbox" name="is_cluster" class="form-check-input" id="edit_is_cluster" {{ 'checked' if appliance.is_cluster }} onchange="toggleHA('edit')">
+    <div class="col-12"><div class="form-check"><input type="checkbox" name="is_cluster" class="form-check-input" id="edit_is_cluster" {{ 'checked' if appliance.is_cluster }}>
       <label class="form-check-label" for="edit_is_cluster">This is an HA cluster (node 0)</label></div>
       <div class="form-text">Manage member nodes from the cluster detail page.</div></div>
     <div class="col-md-6 ha-fields-edit d-none"><label class="form-label">HA mode</label>
-      <select class="form-select" name="ha_mode" id="edit_ha_mode" onchange="toggleHA('edit')">
+      <select class="form-select" name="ha_mode" id="edit_ha_mode">
         <option value="per_node" {{ 'selected' if (appliance.ha_mode or 'per_node')=='per_node' }}>Per-node IP (detect live primary)</option>
         <option value="vip" {{ 'selected' if appliance.ha_mode=='vip' }}>Shared VIP</option>
       </select></div>
@@ -140,6 +140,13 @@ document.addEventListener('DOMContentLoaded', function () { toggleHA('edit'); })
     const del = e.target.closest('.if-del');
     if (del) del.closest('tr').remove();
   });
+})();
+// CSP: former inline onchange handlers, re-bound here (Turbo-safe immediate IIFE)
+(function () {
+  var cb = document.getElementById('edit_is_cluster');
+  if (cb) cb.addEventListener('change', function () { toggleHA('edit'); });
+  var mode = document.getElementById('edit_ha_mode');
+  if (mode) mode.addEventListener('change', function () { toggleHA('edit'); });
 })();
 </script>
 {% endblock %}

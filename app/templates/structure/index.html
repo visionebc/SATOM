@@ -81,7 +81,7 @@
     <div class="fw-card">
       <div class="fw-card-header">
         <span class="fw-card-title"><i class="bi bi-list-nested me-2"></i>Dependency Tree</span>
-        <button class="btn btn-fw-outline btn-sm" onclick="copyTree()">
+        <button class="btn btn-fw-outline btn-sm" data-js="copy-tree">
           <i class="bi bi-clipboard me-1"></i>Copy
         </button>
       </div>
@@ -103,7 +103,7 @@
         <div class="fw-search-box" style="max-width:100%;">
           <i class="bi bi-search search-icon"></i>
           <input type="text" id="xrefSearch" placeholder="Filter objects by name, URN or section…"
-                 oninput="filterXref(this.value)" style="max-width:420px;">
+                 style="max-width:420px;">
         </div>
       </div>
       <div class="fw-card-body p-0">
@@ -234,7 +234,7 @@
           <i class="bi bi-save me-1"></i>Save overlay
         </button>
         <button type="submit" name="action" value="reset" class="btn btn-fw-outline btn-sm"
-                onclick="return confirm('Reset the structure overlay to the built-in defaults?');">
+                data-js="reset-overlay">
           <i class="bi bi-arrow-counterclockwise me-1"></i>Restore defaults
         </button>
       </div>
@@ -259,5 +259,18 @@ function copyTree() {
     .then(function () { if (window.FW && window.FW.toast) window.FW.toast('Tree copied', 'success'); })
     .catch(function () { if (window.FW && window.FW.toast) window.FW.toast('Copy failed', 'danger'); });
 }
+
+(function () {
+  var copyBtn = document.querySelector('[data-js="copy-tree"]');
+  if (copyBtn) { copyBtn.addEventListener('click', function (event) { copyTree(); }); }
+  var xref = document.getElementById('xrefSearch');
+  if (xref) { xref.addEventListener('input', function (event) { filterXref(this.value); }); }
+  var resetBtn = document.querySelector('[data-js="reset-overlay"]');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', function (event) {
+      if (!confirm('Reset the structure overlay to the built-in defaults?')) { event.preventDefault(); }
+    });
+  }
+})();
 </script>
 {% endblock %}

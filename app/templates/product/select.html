@@ -7,7 +7,7 @@
   <title>Choose a product &middot; Fortinet Manager</title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/fortiweb.css') }}">
-  <style>
+  <style nonce="{{ csp_nonce }}">
     :root { --ps-ease: cubic-bezier(0.16, 1, 0.3, 1); }
     * { box-sizing: border-box; }
     .ps-backdrop {

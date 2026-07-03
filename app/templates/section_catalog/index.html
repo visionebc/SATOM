@@ -40,7 +40,7 @@
             <i class="bi bi-eye"></i> View</a>
           <form method="post"
                 action="{{ url_for('templates.unapprove', template_id=t.id) }}?next={{ request.path }}"
-                onsubmit="return confirm('Revoke approval for “{{ t.name }}”? It will return to pending and cannot be used in fleet rollouts until re-approved.')">
+                data-js="revoke-form" data-name="{{ t.name }}">
             <button type="submit" class="btn btn-sm btn-outline-warning">
               <i class="bi bi-x-circle"></i> Revoke</button>
           </form>
@@ -51,4 +51,16 @@
   </div>
   {% endfor %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  document.querySelectorAll('[data-js="revoke-form"]').forEach(function (form) {
+    form.addEventListener('submit', function (event) {
+      if (!confirm('Revoke approval for “' + this.dataset.name + '”? It will return to pending and cannot be used in fleet rollouts until re-approved.')) event.preventDefault();
+    });
+  });
+})();
+</script>
 {% endblock %}

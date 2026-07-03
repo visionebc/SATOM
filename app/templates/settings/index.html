@@ -253,13 +253,13 @@
                     <tr>
                       <td><input class="form-control form-control-sm" name="wl_ip[]" value="{{ ip.ip }}" placeholder="192.0.2.0/24 or 1.2.3.4"></td>
                       <td><input class="form-control form-control-sm" name="wl_note[]" value="{{ ip.note }}" placeholder="office / vpn"></td>
-                      <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()"><i class="bi bi-trash"></i></button></td>
+                      <td><button type="button" class="btn btn-sm btn-outline-danger" data-js="remove-row"><i class="bi bi-trash"></i></button></td>
                     </tr>
                     {% endfor %}
                   </tbody>
                 </table>
               </div>
-              <button type="button" class="btn btn-outline-secondary mt-3" onclick="addIpRow()"><i class="bi bi-plus-lg me-1"></i>Add IP</button>
+              <button type="button" class="btn btn-outline-secondary mt-3" data-js="add-ip-row"><i class="bi bi-plus-lg me-1"></i>Add IP</button>
             </div>
           </div>
         </div>
@@ -310,7 +310,7 @@
         <div class="fw-card mb-3">
           <div class="fw-card-header d-flex align-items-center justify-content-between">
             <span class="fw-card-title"><i class="bi bi-git me-2 text-accent"></i>Repository</span>
-            <button class="btn btn-sm btn-outline-secondary" onclick="gitRefresh()">
+            <button class="btn btn-sm btn-outline-secondary" data-js="git-refresh">
               <i class="bi bi-arrow-clockwise"></i>
             </button>
           </div>
@@ -345,7 +345,7 @@
               <label class="form-label" style="font-size:13px;">Branch</label>
               <input type="text" id="gc-branch" class="form-control fw-form-control font-monospace" placeholder="main">
             </div>
-            <button class="btn btn-sm fw-btn-primary" onclick="gitConfigure()">
+            <button class="btn btn-sm fw-btn-primary" data-js="git-configure">
               <i class="bi bi-save me-1"></i>Apply
             </button>
             <div id="gc-out" class="mt-3" style="display:none;">
@@ -360,7 +360,7 @@
           </div>
           <div class="fw-card-body">
             <p class="text-muted mb-3" style="font-size:13px;">Pull the latest commits from origin (fast-forward only). Restart the service after a pull to apply Python changes.</p>
-            <button class="btn btn-sm fw-btn-primary" id="git-pull-btn" onclick="gitPull()">
+            <button class="btn btn-sm fw-btn-primary" id="git-pull-btn">
               <i class="bi bi-cloud-download me-1"></i>Pull now
             </button>
             <div id="git-pull-out" class="mt-3" style="display:none;">
@@ -390,7 +390,7 @@
             <p class="text-muted mb-2" style="font-size:12px;">One git command per line. Leading <code>git</code> is optional. <code>#</code> lines are comments. Git-only — not an arbitrary shell.</p>
             <textarea id="git-console-input" class="form-control fw-form-control font-monospace mb-2" rows="5"
               placeholder="remote -v&#10;log --oneline -5&#10;fetch origin"></textarea>
-            <button class="btn btn-sm btn-outline-secondary" onclick="gitConsoleRun()">
+            <button class="btn btn-sm btn-outline-secondary" data-js="git-console-run">
               <i class="bi bi-play me-1"></i>Run
             </button>
             <div id="git-console-out" class="mt-3" style="display:none;">
@@ -438,7 +438,7 @@
 
               <div class="mb-4">
                 <label class="fw-form-label">Server type</label>
-                <select name="mode" id="em-mode" class="form-select fw-form-control" onchange="emailToggleMode()">
+                <select name="mode" id="em-mode" class="form-select fw-form-control">
                   <option value="local" {{ 'selected' if email_config.mode == 'local' else '' }}>Local mail server (localhost relay, no auth)</option>
                   <option value="smtp" {{ 'selected' if email_config.mode == 'smtp' else '' }}>External SMTP server (third-party)</option>
                 </select>
@@ -478,7 +478,7 @@
 
                 <div class="form-check mb-3">
                   <input class="form-check-input" type="checkbox" name="auth" id="em-auth"
-                         {{ 'checked' if email_config.auth else '' }} onchange="emailToggleAuth()">
+                         {{ 'checked' if email_config.auth else '' }}>
                   <label class="form-check-label" for="em-auth">Server requires authentication</label>
                 </div>
 
@@ -545,7 +545,7 @@
               <input type="email" id="em-test-to" class="form-control fw-form-control"
                      value="{{ email_config.default_to }}" placeholder="you@example.com">
             </div>
-            <button class="btn btn-sm fw-btn-primary" id="em-test-btn" onclick="emailTest()">
+            <button class="btn btn-sm fw-btn-primary" id="em-test-btn">
               <i class="bi bi-send me-1"></i>Send test
             </button>
             <div id="em-test-out" class="mt-3" style="display:none;">
@@ -569,7 +569,7 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <div class="mb-3">
                 <label class="fw-form-label">Sign-in backend</label>
-                <select name="backend" id="auth-backend" class="form-select fw-form-control" onchange="authToggle()">
+                <select name="backend" id="auth-backend" class="form-select fw-form-control">
                   <option value="local" {{ 'selected' if auth_config.backend == 'local' else '' }}>Local database only</option>
                   <option value="ad" {{ 'selected' if auth_config.backend == 'ad' else '' }}>Active Directory</option>
                   <option value="ldap" {{ 'selected' if auth_config.backend == 'ldap' else '' }}>LDAP (generic)</option>
@@ -647,7 +647,7 @@
               <div class="col-6"><input type="text" id="auth-test-user" class="form-control fw-form-control" placeholder="test username"></div>
               <div class="col-6"><input type="password" id="auth-test-pass" class="form-control fw-form-control" autocomplete="new-password" placeholder="test password"></div>
             </div>
-            <button class="btn btn-sm fw-btn-primary" id="auth-test-btn" onclick="authTest()"><i class="bi bi-plug me-1"></i>Test connection</button>
+            <button class="btn btn-sm fw-btn-primary" id="auth-test-btn"><i class="bi bi-plug me-1"></i>Test connection</button>
             <div id="auth-test-out" class="mt-3" style="display:none;"><div id="auth-test-msg"></div></div>
             <hr class="my-3">
             <p class="text-muted mb-0" style="font-size:12px;"><i class="bi bi-info-circle me-1"></i>Directory users get the <strong>{{ auth_config.default_profile }}</strong> profile on first sign-in and do MFA at the directory. Local accounts can enable app 2FA in the Security tab.</p>
@@ -794,7 +794,7 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>Regenerate backup codes</button>
               </form>
-              <form method="POST" action="{{ url_for('settings.twofa_disable') }}" class="mt-2" onsubmit="return confirm('Disable two-factor authentication?');">
+              <form method="POST" action="{{ url_for('settings.twofa_disable') }}" class="mt-2" data-js="twofa-disable-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="input-group input-group-sm" style="max-width:360px;">
                   <input type="password" name="current_password" class="form-control" placeholder="Confirm password to disable" autocomplete="current-password">
@@ -803,7 +803,7 @@
               </form>
             {% else %}
               <p class="text-muted" style="font-size:13px;">Add a second factor with an authenticator app (Google Authenticator, Authy, FreeOTP…).</p>
-              <button class="btn btn-sm fw-btn-primary" id="tf-setup-btn" onclick="tfSetup()"><i class="bi bi-qr-code me-1"></i>Set up 2FA</button>
+              <button class="btn btn-sm fw-btn-primary" id="tf-setup-btn"><i class="bi bi-qr-code me-1"></i>Set up 2FA</button>
               <div id="tf-setup-area" style="display:none;" class="mt-3">
                 <div class="row g-3">
                   <div class="col-auto"><div id="tf-qr" style="width:180px;height:180px;"></div></div>
@@ -929,8 +929,7 @@
               <div class="mb-3">
                 <label class="fw-form-label">New Password <span class="text-danger">*</span></label>
                 <input type="password" name="new_password" class="form-control fw-form-control"
-                       id="newPwd" placeholder="At least 8 characters" required autocomplete="new-password"
-                       oninput="checkStrength(this.value)">
+                       id="newPwd" placeholder="At least 8 characters" required autocomplete="new-password">
                 <div class="mt-2" id="pwd-strength-bar" style="height:4px; border-radius:2px; background:#E9ECEF; overflow:hidden;">
                   <div id="pwd-strength-fill" style="height:100%; width:0; transition:width 0.3s, background 0.3s;"></div>
                 </div>
@@ -1012,7 +1011,7 @@ function addSegmentRow() {
     '<td><input class="form-control form-control-sm" name="seg_interface[]" placeholder="port1" value="port1"></td>' +
     '<td><input class="form-control form-control-sm" name="seg_gateway[]"></td>' +
     '<td><input class="form-control form-control-sm" name="seg_note[]"></td>' +
-    '<td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest(\'tr\').remove()"><i class="bi bi-trash"></i></button></td>';
+    '<td><button type="button" class="btn btn-sm btn-outline-danger" data-js="remove-row"><i class="bi bi-trash"></i></button></td>';
   body.appendChild(tr);
 }
 
@@ -1024,7 +1023,7 @@ function addIpRow() {
   tr.innerHTML =
     '<td><input class="form-control form-control-sm" name="wl_ip[]" placeholder="192.0.2.0/24 or 1.2.3.4"></td>' +
     '<td><input class="form-control form-control-sm" name="wl_note[]" placeholder="office / vpn"></td>' +
-    '<td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest(\'tr\').remove()"><i class="bi bi-trash"></i></button></td>';
+    '<td><button type="button" class="btn btn-sm btn-outline-danger" data-js="remove-row"><i class="bi bi-trash"></i></button></td>';
   body.appendChild(tr);
 }
 
@@ -1254,5 +1253,42 @@ function tfSetup() {
 document.addEventListener('DOMContentLoaded', function() {
   if (document.getElementById('auth-backend')) { authToggle(); }
 });
+
+// --- CSP-safe event bindings (replaces inline on* attributes) ---
+(function () {
+  function on(id, evt, fn) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener(evt, fn);
+  }
+  function onJs(hook, evt, fn) {
+    document.querySelectorAll('[data-js="' + hook + '"]').forEach(function (el) {
+      el.addEventListener(evt, fn);
+    });
+  }
+  // Delegated row-delete: covers server-rendered rows and rows added later
+  ['ipwl-body', 'segments-body'].forEach(function (id) {
+    var body = document.getElementById(id);
+    if (!body) return;
+    body.addEventListener('click', function (event) {
+      var btn = event.target.closest('[data-js="remove-row"]');
+      if (btn && body.contains(btn)) btn.closest('tr').remove();
+    });
+  });
+  onJs('add-ip-row', 'click', function (event) { addIpRow(); });
+  onJs('git-refresh', 'click', function (event) { gitRefresh(); });
+  onJs('git-configure', 'click', function (event) { gitConfigure(); });
+  on('git-pull-btn', 'click', function (event) { gitPull(); });
+  onJs('git-console-run', 'click', function (event) { gitConsoleRun(); });
+  on('em-mode', 'change', function (event) { emailToggleMode(); });
+  on('em-auth', 'change', function (event) { emailToggleAuth(); });
+  on('em-test-btn', 'click', function (event) { emailTest(); });
+  on('auth-backend', 'change', function (event) { authToggle(); });
+  on('auth-test-btn', 'click', function (event) { authTest(); });
+  on('tf-setup-btn', 'click', function (event) { tfSetup(); });
+  onJs('twofa-disable-form', 'submit', function (event) {
+    if (!confirm('Disable two-factor authentication?')) event.preventDefault();
+  });
+  on('newPwd', 'input', function (event) { checkStrength(event.target.value); });
+})();
 </script>
 {% endblock %}

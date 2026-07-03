@@ -113,7 +113,7 @@
         <div class="fw-search-box">
           <i class="bi bi-search search-icon"></i>
           <input type="text" placeholder="Filter {{ selected.label|lower }}…"
-                 oninput="cfgFilter('cfg-table', this.value)">
+                 data-js="cfg-filter">
         </div>
         <span class="text-muted small ms-2">{{ rows|length }} object(s)</span>
       </div>
@@ -139,12 +139,13 @@
               <td class="text-muted" style="font-size:12.5px;">{{ r.detail or '—' }}</td>
               <td>
                 <button type="button" class="btn btn-sm btn-secondary cfg-edit-btn"
-                   onclick='cfgInlineEdit(this, {{ selected.collection|tojson }}, {{ ('' if is_singleton else r.name)|tojson }}, {{ 1 if is_singleton else 0 }}, {{ selected.label|tojson }})'>
+                   data-collection="{{ selected.collection }}" data-mkey="{{ '' if is_singleton else r.name }}"
+                   data-singleton="{{ 1 if is_singleton else 0 }}" data-title="{{ selected.label }}">
                   <i class="bi bi-pencil"></i> {{ 'View' if selected.read_only else 'Edit' }}
                 </button>
                 {% if not selected.read_only and not is_singleton %}
-                <button class="btn btn-sm btn-fw-danger"
-                        onclick='cfgDelete({{ selected.collection|tojson }}, {{ r.name|tojson }})'>
+                <button class="btn btn-sm btn-fw-danger" data-js="cfg-delete"
+                        data-collection="{{ selected.collection }}" data-mkey="{{ r.name }}">
                   <i class="bi bi-trash"></i>
                 </button>
                 {% endif %}
@@ -243,9 +244,9 @@
               <td style="font-size:13px;">{{ t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '—' }}</td>
               <td class="actions-col">
                 <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1" title="View"
-                        onclick="viewTemplate({{ t.id }})"><i class="bi bi-eye"></i></button>
+                        data-js="tpl-view" data-tpl-id="{{ t.id }}"><i class="bi bi-eye"></i></button>
                 <button class="btn btn-sm btn-fw-primary btn-sm-icon me-1" title="Apply to devices"
-                        onclick="openApply({{ t.id }}, {{ t.name|tojson }})"><i class="bi bi-upload"></i></button>
+                        data-js="tpl-apply" data-tpl-id="{{ t.id }}" data-tpl-name="{{ t.name }}"><i class="bi bi-upload"></i></button>
                 <form method="POST" action="{{ url_for('templates.clone', template_id=t.id) }}" style="display:inline;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <input type="hidden" name="next" value="{{ back_url }}">
@@ -370,7 +371,7 @@
           <div class="text-muted" style="font-size:13px;">No appliances are configured.</div>
           {% endif %}
           <div class="mt-3">
-            <button type="button" class="btn btn-fw-outline btn-sm" onclick="applyPreview()">
+            <button type="button" class="btn btn-fw-outline btn-sm" data-js="apply-preview">
               <i class="bi bi-search me-1"></i>Dry-run preview
             </button>
           </div>
@@ -416,7 +417,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-fw-primary" id="stpl-save" onclick="cfgTplSubmit()">
+        <button type="button" class="btn btn-fw-primary" id="stpl-save">
           <i class="bi bi-check-lg me-1"></i>Save template</button>
       </div>
     </div>
@@ -426,7 +427,7 @@
 {% endblock %}
 
 {% block scripts %}
-<style>
+<style nonce="{{ csp_nonce }}">
 .so-menu .so-group { border-bottom:1px solid #F0F2F5; }
 .so-menu .so-group:last-child { border-bottom:0; }
 .so-group-head { cursor:pointer; padding:8px 10px; font-weight:600; font-size:13px;
@@ -528,6 +529,18 @@ function cfgInlineEdit(btn, collection, mkey, singleton, title){
       sc.nonce = (document.querySelector('meta[name=csp-nonce]')||{}).content || '';
       if (old.src) sc.src = old.src; else sc.textContent = old.textContent;
       old.parentNode.replaceChild(sc, old);
+    });
+    body.querySelectorAll('style').forEach(function(old){
+      var st = document.createElement('style');
+      st.nonce = (document.querySelector('meta[name=csp-nonce]')||{}).content || '';
+      st.textContent = old.textContent;
+      old.parentNode.replaceChild(st, old);
+    });
+    body.querySelectorAll('style').forEach(function(old){
+      var st = document.createElement('style');
+      st.nonce = (document.querySelector('meta[name=csp-nonce]')||{}).content || '';
+      st.textContent = old.textContent;
+      old.parentNode.replaceChild(st, old);
     });
     if (window.objeditPopulateRefs) window.objeditPopulateRefs(body);
     er.scrollIntoView({behavior:'smooth', block:'nearest'});
@@ -669,6 +682,33 @@ function cfgTplSubmit(){
     setTimeout(function(){ location.reload(); }, 1200);
   }).catch(function(e){ res.innerHTML = '<div class="text-danger" style="font-size:13px;">' + vtEsc(e.message) + '</div>'; btn.disabled = false; });
 }
+
+// CSP (script-src-attr 'none'): bindings for the former inline on* attributes.
+(function () {
+  var flt = document.querySelector('[data-js="cfg-filter"]');
+  if (flt) flt.addEventListener('input', function (event) { cfgFilter('cfg-table', this.value); });
+  document.querySelectorAll('#cfg-table .cfg-edit-btn').forEach(function (btn) {
+    btn.addEventListener('click', function (event) {
+      cfgInlineEdit(this, this.dataset.collection, this.dataset.mkey,
+                    this.dataset.singleton === '1' ? 1 : 0, this.dataset.title);
+    });
+  });
+  document.querySelectorAll('[data-js="cfg-delete"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) {
+      cfgDelete(this.dataset.collection, this.dataset.mkey);
+    });
+  });
+  document.querySelectorAll('[data-js="tpl-view"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { viewTemplate(Number(this.dataset.tplId)); });
+  });
+  document.querySelectorAll('[data-js="tpl-apply"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { openApply(Number(this.dataset.tplId), this.dataset.tplName); });
+  });
+  var pv = document.querySelector('[data-js="apply-preview"]');
+  if (pv) pv.addEventListener('click', function (event) { applyPreview(); });
+  var stplSave = document.getElementById('stpl-save');
+  if (stplSave) stplSave.addEventListener('click', function (event) { cfgTplSubmit(); });
+})();
 </script>
 
 {% endblock %}

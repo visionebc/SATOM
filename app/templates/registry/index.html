@@ -22,7 +22,7 @@
       FortiWeb REST API endpoint catalog — browse, search, and cross-reference API paths
     </p>
   </div>
-  <button class="btn btn-fw-outline btn-sm" onclick="copyEndpointList()">
+  <button class="btn btn-fw-outline btn-sm" data-js="copy-endpoints">
     <i class="bi bi-clipboard me-1"></i>Copy List
   </button>
 </div>
@@ -38,8 +38,7 @@
       <div class="fw-card-body p-0">
         <div class="fw-search-box" style="padding:10px 12px; border-bottom:1px solid #F0F2F5;">
           <i class="bi bi-search search-icon" style="left:22px;"></i>
-          <input type="text" id="sectionSearch" placeholder="Filter sections…" style="padding-left:34px; font-size:13px;"
-                 oninput="filterSections(this.value)">
+          <input type="text" id="sectionSearch" placeholder="Filter sections…" style="padding-left:34px; font-size:13px;">
         </div>
         <div class="list-group list-group-flush" id="sectionList" style="max-height:520px; overflow-y:auto;">
           <a href="{{ url_for('registry.index') }}"
@@ -85,7 +84,7 @@
         <div class="fw-search-box" style="max-width:100%;">
           <i class="bi bi-search search-icon"></i>
           <input type="text" id="endpointSearch" placeholder="Search endpoints by name or path…"
-                 oninput="filterEndpoints(this.value)" style="max-width:400px;">
+                 style="max-width:400px;">
         </div>
       </div>
       <div class="fw-card-body p-0">
@@ -175,5 +174,14 @@ function copyEndpointList() {
     .then(() => window.FW.toast('Copied ' + lines.length + ' endpoints', 'success'))
     .catch(() => window.FW.toast('Copy failed', 'danger'));
 }
+
+(function () {
+  var copyBtn = document.querySelector('[data-js="copy-endpoints"]');
+  if (copyBtn) { copyBtn.addEventListener('click', function (event) { copyEndpointList(); }); }
+  var sectionSearch = document.getElementById('sectionSearch');
+  if (sectionSearch) { sectionSearch.addEventListener('input', function (event) { filterSections(this.value); }); }
+  var endpointSearch = document.getElementById('endpointSearch');
+  if (endpointSearch) { endpointSearch.addEventListener('input', function (event) { filterEndpoints(this.value); }); }
+})();
 </script>
 {% endblock %}

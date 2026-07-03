@@ -27,7 +27,7 @@
         <input type="text" class="form-control form-control-sm" id="vserverName" placeholder="e.g. vs-myapp"></div>
     </div>
     <div id="vipRows" class="mt-2"></div>
-    <button type="button" class="btn btn-sm btn-fw-outline mt-2" onclick="addVip()">＋ Add VIP</button>
+    <button type="button" class="btn btn-sm btn-fw-outline mt-2" data-js="add-vip">＋ Add VIP</button>
   </div>
 </div>
 
@@ -43,7 +43,7 @@
     <div class="fw-group"><div class="fw-group-title">Pool members</div>
       <table class="table table-sm fw-table"><thead><tr><th>Type</th><th>IP / Domain</th><th>Port</th><th>Weight</th><th>SSL</th><th>Status</th><th></th></tr></thead>
         <tbody id="psRows"></tbody></table>
-      <button type="button" class="btn btn-sm btn-fw-outline" onclick="addPs()">＋ Add member</button>
+      <button type="button" class="btn btn-sm btn-fw-outline" data-js="add-ps">＋ Add member</button>
     </div>
   </div>
 </div>
@@ -58,8 +58,8 @@
 </div>
 
 <div class="fw-savebar mb-4" style="justify-content:flex-end;gap:10px;">
-  <button type="button" class="btn btn-fw-outline" onclick="doCreate(false)"><i class="bi bi-eye me-1"></i>Preview (dry-run)</button>
-  <button type="button" class="btn btn-fw-primary" id="applyBtn" onclick="doCreate(true)" disabled><i class="bi bi-check2-circle me-1"></i>Create on device</button>
+  <button type="button" class="btn btn-fw-outline" data-js="preview-btn"><i class="bi bi-eye me-1"></i>Preview (dry-run)</button>
+  <button type="button" class="btn btn-fw-primary" id="applyBtn" disabled><i class="bi bi-check2-circle me-1"></i>Create on device</button>
 </div>
 <div id="result"></div>
 {% endblock %}
@@ -71,7 +71,7 @@
   <div class="fw-fld"><label class="fw-fld-label">interface</label><select class="form-select form-select-sm vipf fw-ref-select" data-key="interface" data-ref="system/interface"><option value="">— none —</option></select></div>
   <div class="fw-fld"><label class="fw-fld-label">use-interface-ip</label><select class="form-select form-select-sm vipf" data-key="use-interface-ip"><option value="">—</option><option value="enable">enable</option><option value="disable">disable</option></select></div>
   <div class="fw-fld"><label class="fw-fld-label">status</label><select class="form-select form-select-sm vipf" data-key="status"><option value="enable">enable</option><option value="disable">disable</option></select></div>
-  <button type="button" class="btn btn-sm btn-fw-outline" onclick="this.closest('.vip-row').remove()">✕</button>
+  <button type="button" class="btn btn-sm btn-fw-outline" data-js="remove-row">✕</button>
 </div>
 </script>
 <script nonce="{{ csp_nonce }}" type="text/template" id="psTpl">
@@ -82,7 +82,7 @@
   <td style="width:80px"><input type="number" class="form-control form-control-sm psf" data-key="weight" placeholder="1"></td>
   <td><select class="form-select form-select-sm psf" data-key="ssl"><option value="disable">disable</option><option value="enable">enable</option></select></td>
   <td><select class="form-select form-select-sm psf" data-key="status"><option value="enable">enable</option><option value="disable">disable</option><option value="maintenance">maintenance</option></select></td>
-  <td><button type="button" class="btn btn-sm btn-fw-outline" onclick="this.closest('.ps-row').remove()">✕</button></td>
+  <td><button type="button" class="btn btn-sm btn-fw-outline" data-js="remove-row">✕</button></td>
 </tr>
 </script>
 <script nonce="{{ csp_nonce }}">
@@ -119,5 +119,20 @@ async function doCreate(apply){
   }
   box.scrollIntoView({behavior:'smooth'});
 }
+(function () {
+  document.querySelector('[data-js="add-vip"]').addEventListener('click', function (event) { addVip(); });
+  document.querySelector('[data-js="add-ps"]').addEventListener('click', function (event) { addPs(); });
+  document.querySelector('[data-js="preview-btn"]').addEventListener('click', function (event) { doCreate(false); });
+  document.getElementById('applyBtn').addEventListener('click', function (event) { doCreate(true); });
+  // ✕ buttons come from the vipTpl/psTpl templates (rows added at runtime) — delegate on the containers.
+  document.getElementById('vipRows').addEventListener('click', function (event) {
+    var btn = event.target.closest('[data-js="remove-row"]');
+    if (btn) btn.closest('.vip-row').remove();
+  });
+  document.getElementById('psRows').addEventListener('click', function (event) {
+    var btn = event.target.closest('[data-js="remove-row"]');
+    if (btn) btn.closest('.ps-row').remove();
+  });
+})();
 </script>
 {% endblock %}

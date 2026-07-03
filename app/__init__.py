@@ -563,6 +563,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.release_notes", "bp"),
         ("app.views.workspace", "bp"),
         ("app.views.objedit", "bp"),
+        ("app.views.regex_lab", "bp"),
         ("app.views.server_objects", "bp"),
         ("app.views.web_protection", "bp"),
         ("app.views.exceptions", "bp"),

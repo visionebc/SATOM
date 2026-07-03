@@ -1,0 +1,1257 @@
+{
+ "generated_from": "FortiWeb 7.6.4 admin guide (docs.fortinet.com, Firecrawl harvest 2026-07-03)",
+ "actions": {
+  "Alert": "Accept the request and generate an alert email and/or log message; traffic passes to the server unchanged.",
+  "alert": "Accept the request and generate an alert email and/or log message; traffic passes to the server unchanged.",
+  "Alert & Deny": "Block the request (or reset the connection) and generate an alert email and/or log message; the block page/HTTP status code returned to the client is customizable via replacement messages.",
+  "alert_deny": "Block the request (or reset the connection) and generate an alert email and/or log message; the block page/HTTP status code returned to the client is customizable via replacement messages.",
+  "Deny (no log)": "Block the request (or reset the connection) without generating any alert email or log message.",
+  "deny_no_log": "Block the request (or reset the connection) without generating any alert email or log message.",
+  "Period Block": "Block all subsequent requests from that client source IP for the configured Block Period (typically 1-3600 s; 1-600 s for IP List/Geo IP, up to 10000 s for HTTP Access Limit/API Gateway); behind a NAT load balancer you MUST configure an X-header with the real client IP or FortiWeb may block ALL connections.",
+  "block-period": "Block all subsequent requests from that client source IP for the configured Block Period (typically 1-3600 s; 1-600 s for IP List/Geo IP, up to 10000 s for HTTP Access Limit/API Gateway); behind a NAT load balancer you MUST configure an X-header with the real client IP or FortiWeb may block ALL connections.",
+  "Client ID Block Period": "Block the client for N seconds based on the FortiWeb-generated client ID (Client Management) instead of source IP; useful when the client's source IP keeps changing.",
+  "client-id-block-period": "Block the client for N seconds based on the FortiWeb-generated client ID (Client Management) instead of source IP; useful when the client's source IP keeps changing.",
+  "Redirect": "Redirect the request to the Redirect URL configured in the protection profile and generate an alert/log; optionally appends the violation reason as a URL parameter (e.g. reason747sha=Parameter%20Validation%20Violation) and redirect491=1 to break redirect loops.",
+  "redirect": "Redirect the request to the Redirect URL configured in the protection profile and generate an alert/log; optionally appends the violation reason as a URL parameter (e.g. reason747sha=Parameter%20Validation%20Violation) and redirect491=1 to break redirect loops.",
+  "Send HTTP Response": "Block the request and reply to the client with a customizable HTTP error message/error code, and generate an alert email and/or log message.",
+  "send_http_response": "Block the request and reply to the client with a customizable HTTP error message/error code, and generate an alert email and/or log message.",
+  "Send 403 Forbidden": "Reply to the client with an HTTP 403 Access Forbidden error message and generate an alert email and/or log message.",
+  "send_403_forbidden": "Reply to the client with an HTTP 403 Access Forbidden error message and generate an alert email and/or log message.",
+  "Alert & Erase": "Response-side cloaking: hide sensitive information in replies from the web server - block the request or remove (erase) the sensitive data from the response - and generate an alert/log. Not fully supported in Offline Protection mode (there only alert/log is possible; data cannot be blocked or erased).",
+  "alert_erase": "Response-side cloaking: hide sensitive information in replies from the web server - block the request or remove (erase) the sensitive data from the response - and generate an alert/log. Not fully supported in Offline Protection mode (there only alert/log is possible; data cannot be blocked or erased).",
+  "Erase, no Alert": "Same response cloaking as Alert & Erase but without generating any alert email or log message; not supported at all in Offline Protection mode.",
+  "only_erase": "Same response cloaking as Alert & Erase but without generating any alert email or log message; not supported at all in Offline Protection mode.",
+  "Pass": "Allow the request; do not generate any alert or log message (URL Access rules; default action there).",
+  "pass": "Allow the request; do not generate any alert or log message (URL Access rules; default action there).",
+  "Continue": "Continue evaluating subsequent rules in the web protection profile (Sequence of scans); if no other rule is violated the request is allowed; a single request violating multiple rules generates multiple attack log messages.",
+  "continue": "Continue evaluating subsequent rules in the web protection profile (Sequence of scans); if no other rule is violated the request is allowed; a single request violating multiple rules generates multiple attack log messages.",
+  "Bypass": "Accept the request (Known Bots): the matched bot traffic is let through (and for Known Good Bots it also skips the subsequent scans after Known Bots).",
+  "bypass": "Accept the request (Known Bots): the matched bot traffic is let through (and for Known Good Bots it also skips the subsequent scans after Known Bots).",
+  "Remove Cookie": "Accept the request but strip the offending cookie from the datagram before it reaches the web server, and generate an alert/log (Cookie Security only).",
+  "remove_cookie": "Accept the request but strip the offending cookie from the datagram before it reaches the web server, and generate an alert/log (Cookie Security only).",
+  "Alert Only (FortiGuard-enhanced signature)": "When FortiGuard updates enhance an existing signature, its action automatically switches to Alert Only until you Approve it in System > Config > FortiGuard > Signature Update Management, even if the policy configured a blocking action.",
+  "alert_only": "When FortiGuard updates enhance an existing signature, its action automatically switches to Alert Only until you Approve it in System > Config > FortiGuard > Signature Update Management, even if the policy configured a blocking action.",
+  "_monitor_mode_caveat": "On nearly every feature page: 'This setting will be ignored if Monitor Mode is enabled' - in Monitor Mode FortiWeb only logs; no blocking/erasing/redirecting happens."
+ },
+ "sections": {
+  "signatures": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/210196/blocking-known-attacks",
+   "what": "FortiGuard-updated (plus custom) attack signatures scan URL parameters, POST body parameters, XML/JSON body, cookies, headers and uploaded filenames for XSS, SQL injection, generic attacks (LFI/RFI/command injection), trojans/webshells, information disclosure, bad robots, and personally identifiable information. Each category (and each individual signature) has its own action, severity and trigger; a Signature Wizard can generate a policy with irrelevant signatures disabled; a Sensitivity Level adds/removes signatures.",
+   "backend_reaction": "Per-category action: request passes with log (Alert), is blocked/reset with customizable block page (Alert & Deny, Deny no log, Send HTTP Response), client is IP-blocked 1-3600 s (Period Block), redirected, or for response-side categories (Information Disclosure, PII) the response is rewritten to erase the sensitive data (Alert & Erase / Erase no Alert; Offline mode can only log, not erase). All ignored in Monitor Mode. WebSocket traffic: only alert/period-block/deny are really executed.",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Period Block",
+    "Redirect",
+    "Send HTTP Response",
+    "Alert & Erase",
+    "Erase, no Alert"
+   ],
+   "regex_fields": [
+    "Custom signatures are regex-based (see Defining custom data leak & attack signatures)",
+    "Signature exceptions / action overrides: Host, URI, Full URL, Parameter name/value, Cookie name/value when Operation = Regular Expression Match"
+   ],
+   "examples": [
+    {
+     "field": "Attack log",
+     "pattern-or-value": "Cross Site Scripting : Signature ID 010000063",
+     "note": "Log format: category, subtype and signature ID."
+    },
+    {
+     "field": "PII Detection Threshold",
+     "pattern-or-value": "2",
+     "note": "Trigger only when a page contains >= 2 instances of PII (range 1-128)."
+    }
+   ],
+   "gotchas": [
+    "Extended categories (XSS/SQLi/Generic Extended) are more false-positive prone",
+    "Information Disclosure / PII require a decompression rule and (for HTTPS) the server certificate, otherwise the scan is effectively disabled",
+    "Info Disclosure can rewrite every response - performance cost; Fortinet suggests using it only for logging until servers are fixed",
+    "FortiGuard-enhanced signatures auto-switch to Alert Only until Approved",
+    "Individual signatures can be disabled per-policy or in all policies (right-click in Signature Details)",
+    "Scanning limited by HTTP-cachesize buffer; disable HTTP Return Code 4XX/5XX signatures to reduce noise",
+    "False Positive Mitigation adds SQL syntax validation to SQLi signatures"
+   ]
+  },
+  "http_constraints": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/277489/http-https-protocol-constraints",
+   "what": "Enforces RFC/buffer limits on the HTTP protocol itself: content length, header count/name/value lengths, parameter count/length/illegal-null characters, illegal method/version/hostname/content-type, malformed requests and parser buffer overflows, HTTP/2 SETTINGS limits (table size, streams, window, frame, header list, RST-stream floods), cookies count, Range header count, chunk size, RPC and WebSocket protocol detection. Prevents buffer-overflow style attacks.",
+   "backend_reaction": "Per-constraint action: log only (Alert), block/reset with customizable page (Alert & Deny), silent block (Deny no log), or IP block for 1-3600 s (Period Block). Ignored in Monitor Mode. Bypassed entirely if the source IP is a configured Known Search Engine.",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Period Block"
+   ],
+   "regex_fields": [
+    "Exception rule URL Pattern when Request Type = Regular Expression"
+   ],
+   "examples": [
+    {
+     "field": "Exception URL Pattern for Malformed Request",
+     "pattern-or-value": "/*",
+     "note": "Doc note: for Malformed Request exceptions select Regular Expression and fill URL Pattern with /*."
+    },
+    {
+     "field": "Exception URL Pattern",
+     "pattern-or-value": "^/*.php",
+     "note": "Regex example given for exception URL matching."
+    }
+   ],
+   "gotchas": [
+    "Defaults reflect the model's HTTP parser buffer size; requests bigger than the buffer pass UNSCANNED unless Malformed Request (strongly recommended) blocks them",
+    "Exceptions are matched by URL and only the FIRST matching exception rule is applied (e.g. /example/* rule shadows a later /example/abc rule)",
+    "Number of URL Parameters max 1024; Ranges-in-Range-header default 5 (Apache DoS)",
+    "Per-constraint Threat Weight when Client Management is enabled",
+    "Some constraints apply only to HTTP/1.x or only to HTTP/2",
+    "Exceptions can also be scoped by Host and Source IP"
+   ]
+  },
+  "allow_method": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/20105/specifying-allowed-http-methods",
+   "what": "Whitelist of allowed HTTP request methods (GET, POST, HEAD, PUT, DELETE, TRACE, OPTIONS, PATCH, WEBDAV, OTHERS...) per protection profile, with per-host/per-URL exceptions that allow different method sets. OTHERS covers any custom/non-standard method. Optional Override Header/Override Parameter check also validates methods smuggled in headers/parameters.",
+   "backend_reaction": "Methods not selected are denied (request blocked) unless an Allow Method Exception matching the Host/URL allows them; violations are logged with the configured Severity and Trigger Policy.",
+   "actions_available": [
+    "(implicit deny of unselected methods; Severity + Trigger Policy configurable)"
+   ],
+   "regex_fields": [
+    "Exception URL Pattern when Type = Regular Expression"
+   ],
+   "examples": [
+    {
+     "field": "Typical public website",
+     "pattern-or-value": "Allow: GET, POST, HEAD / Deny: PUT, DELETE, TRACE, OPTIONS",
+     "note": "Doc's suggested configuration."
+    },
+    {
+     "field": "Exception URL Pattern (regex)",
+     "pattern-or-value": "^/*.php",
+     "note": "Regex exception example; wildcards like /folder1/* also allowed for Simple String."
+    }
+   ],
+   "gotchas": [
+    "TRACE should only be enabled while debugging (XST attacks)",
+    "OPTIONS must be allowed if a CORS policy is used, or preflight requests get blocked",
+    "WebDAV apps (Exchange, Subversion) may need OTHERS (PROPFIND, BCOPY)",
+    "Exceptions require the host be defined in a Protected Host Names group if Host Status is used"
+   ]
+  },
+  "ip_list": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/811256/ip-list-blocklisting-whitelisting-clients-using-a-source-ip-or-source-ip-range",
+   "what": "Per-policy list of client source IPs/ranges classified as Block IP (always blocked), Trust IP (skips many later scans), or Allow Only (anything outside the range is blocked). Supports single IPs, comma-separated ranges (IPv4/IPv6), IP Groups, and external IP connectors.",
+   "backend_reaction": "Blocked clients receive a warning message page as the HTTP response containing ID: 70007; action options are Alert & Deny (block+log), Deny (no log), or Period Block (1-600 s). Evaluation order is Block IP > Trust IP > Allow Only, before most other scans (performance win). Attack log: 'Blocklisted IP blocked'.",
+   "actions_available": [
+    "Alert & Deny",
+    "Deny (no log)",
+    "Period Block (1-600 s)"
+   ],
+   "regex_fields": [],
+   "examples": [
+    {
+     "field": "IP Range entry",
+     "pattern-or-value": "1.2.3.4,2001::1,1.2.3.4-1.2.3.40,2001::1-2001::100",
+     "note": "Multiple addresses/ranges comma-separated."
+    },
+    {
+     "field": "Trust range with blocked members",
+     "pattern-or-value": "Block IP: specific IPs; Trust IP: surrounding range",
+     "note": "Block IP list is scanned first, so specific IPs inside a trusted range can still be blocked."
+    }
+   ],
+   "gotchas": [
+    "NAT: blocking one source IP may block innocent clients sharing it",
+    "Trusted IPs are exempt from many but not all scans (see Sequence of scans)",
+    "Ignore X-Forwarded-For moves scanning to TCP layer for performance",
+    "Empty Allow Only list = no allow-only screening"
+   ]
+  },
+  "geo_ip": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/226257/geo-ip-blocklisting-whitelisting-countries-regions",
+   "what": "Blocks traffic by geographic origin using the MaxMind GeoLite region-to-IP database; select countries/territories to block, with an Exception list of IPv4/IPv6 addresses or ranges that are exempted even if inside a blocked region.",
+   "backend_reaction": "Matching clients are blocked with Alert & Deny (block+log), Deny (no log), or Period Block (1-600 s). Evaluated early in the scan sequence (performance). Known Search Engine source IPs bypass the blacklist.",
+   "actions_available": [
+    "Alert & Deny",
+    "Deny (no log)",
+    "Period Block (1-600 s)"
+   ],
+   "regex_fields": [],
+   "examples": [
+    {
+     "field": "Exception entry",
+     "pattern-or-value": "192.168.0.1-192.168.0.255 or 2001::1-2001::100",
+     "note": "IPv4/IPv6 addresses or ranges added to a named exception item, referenced by the Geo IP rule."
+    }
+   ],
+   "gotchas": [
+    "Requires visibility of real client IPs: behind an SNAT load balancer configure X-Forwarded-For or all traffic appears to come from one private IP",
+    "Update the geography-to-IP database periodically (support.fortinet.com)",
+    "Ignore X-Forwarded-For option scans at TCP layer for performance",
+    "Country list includes territories (Puerto Rico) and non-country regions (Antarctica)"
+   ]
+  },
+  "url_access": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/232579/restricting-access-based-on-specific-urls",
+   "what": "URL access rules accept or deny requests by Host, URL pattern, client source (IP/range, DNS-resolved domain, reverse-DNS source domain), optional parameter checks (with data-type validation), HTTP method and protocol filters. Rules are grouped into a URL access policy; each rule holds multiple conditions with 'meet condition if matches / does not match' logic.",
+   "backend_reaction": "Per-rule action: Alert & Deny (block+log, customizable page), Deny (no log), Pass (allow, no log - the default), or Continue (evaluate remaining profile rules; multiple violations produce multiple logs). Attack log message: 'URL Access Violation'. Ignored in Monitor Mode.",
+   "actions_available": [
+    "Alert & Deny",
+    "Deny (no log)",
+    "Pass",
+    "Continue"
+   ],
+   "regex_fields": [
+    "URL Pattern when URL Type = Regular Expression",
+    "Source Domain when Source Domain Type = Regular Expression",
+    "URL Access Parameter Name when Name Type = Regular Expression"
+   ],
+   "examples": [
+    {
+     "field": "URL Pattern",
+     "pattern-or-value": "^/send/index[0-9]\\.html",
+     "note": "Match exact URL where the name is between index1.html and index9.html."
+    },
+    {
+     "field": "URL Pattern",
+     "pattern-or-value": "^/send/.*",
+     "note": "Match the root path regardless."
+    },
+    {
+     "field": "Source IP",
+     "pattern-or-value": "192.0.2.1-192.0.2.255",
+     "note": "Restrict admin panel URLs to a management network range."
+    }
+   ],
+   "gotchas": [
+    "Checks URL path and parameters but NOT query strings",
+    "Evaluated after some other scans - a permitted request can still be denied by earlier rules",
+    "Rules at the top of the policy have priority; use Move to reorder (ID does not affect priority)",
+    "Does not see RPC traffic - use HTTP Protocol Constraints for RPC",
+    "Reverse DNS lookups can hang - set Reverse DNS Timeout",
+    "Default severity Low, default action Pass"
+   ]
+  },
+  "custom_access": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/146637/custom-policy",
+   "what": "Advanced access control ('Custom Policy'/'Custom Rule'): combines filters - source IP, user (needs User Tracking), HTTP method, URL, HTTP header (string/regex, missing-header, empty-value, reverse match), access rate limit, signature-violation category, Geo IP, parameter, transaction timeout, HTTP response code, content type, packet interval timeout, time period, and occurrence thresholds - into one rule; rules are grouped into a Custom Policy with a Threat Weight. Predefined rules (e.g. Vulnerability-Scanning) can be cloned.",
+   "backend_reaction": "On match FortiWeb applies Alert, Alert & Deny, Deny (no log), Period Block (1-3600 s), Client ID Block Period, or Redirect; optional Bot Confirmation first challenges the client (Real Browser Enforcement JavaScript, CAPTCHA, reCAPTCHA/v3, or Mobile Token) and only applies the action if the challenge fails. Attack log: 'Custom Access Violation'. Ignored in Monitor Mode.",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Period Block",
+    "Client ID Block Period",
+    "Redirect"
+   ],
+   "regex_fields": [
+    "HTTP Header name/value when Regular Expression is selected",
+    "URL filter accepts a regular expression (e.g. /index\\.jsp) or wildcards",
+    "HTTP Method Check simple string or regex",
+    "Parameter name/value filters"
+   ],
+   "examples": [
+    {
+     "field": "HTTP Header value pitfall",
+     "pattern-or-value": "^192.0.2.1$",
+     "note": "Anchor the value: plain 192.0.2.1 as substring would also match 192.0.2.10-19 and 192.0.2.100-199."
+    },
+    {
+     "field": "Occurrence + percentage",
+     "pattern-or-value": "occurrence 5, percentage 10%",
+     "note": "5+ hits out of 50 requests counts as a match."
+    }
+   ],
+   "gotchas": [
+    "Filters of DIFFERENT types are ANDed; filters of the SAME type are ORed - two 'does not match' source-IP filters cancel each other out (documented logic loophole)",
+    "Only one Access Rate Limit filter per rule",
+    "Bot Confirmation does not work with response-packet filters (HTTP Response Code, Content Type)",
+    "URL filter reverse match only via CLI (reverse-match {no|yes})",
+    "Header Simple String matching is substring ('test' matches 'atest1') and value matching is case sensitive",
+    "GET/HEAD/POST/DELETE/PUT must be selected individually - selecting WEBDAV alone does not scan them",
+    "User filter requires a User Tracking policy in the same profile",
+    "Occurrence by HTTP Session/User requires session/user-tracking options in the profile"
+   ]
+  },
+  "dos_protection": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/276350/dos-prevention",
+   "what": "Application-layer DoS protection: HTTP Access Limit (requests/sec per source IP, with separate Standalone-IP and Shared-IP thresholds), Malicious IPs (TCP connection count per HTTP session cookie), and HTTP Flood Prevention (requests/sec per session per URL); plus network-layer (TCP/IP) rules. Rules are grouped into a DoS Protection policy referenced by the profile; a DoS Protection Exception Policy (client IP / IP group) omits the scans for trusted sources.",
+   "backend_reaction": "Uses a session cookie to track clients (missing/changed cookie = request dropped); when a rate/connection limit is exceeded FortiWeb applies Alert, Alert & Deny, Deny (no log), or Period Block (1-10000 s for HTTP Access Limit, 1-3600 s otherwise) - Period Block blocks attackers at the IP layer, conserving resources during DDoS. Optional Bot Confirmation (RBE JavaScript/CAPTCHA/reCAPTCHA/mobile token) challenges clients before acting. Attack logs e.g. 'DoS Attack: HTTP Access Limit Violation', 'DoS Attack: Malicious IPs Violation'.",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Period Block"
+   ],
+   "regex_fields": [],
+   "examples": [
+    {
+     "field": "HTTP Request Limit/sec (Standalone IP)",
+     "pattern-or-value": "500 (suggested initial value; range 0-65536, default 0)",
+     "note": "Must cover a full page load (HTML + JS + images), else false positives."
+    },
+    {
+     "field": "Shared IP limit",
+     "pattern-or-value": "20 req/s/person x 10 persons = 200 req/s",
+     "note": "Doc's NAT branch-office sizing example."
+    }
+   ],
+   "gotchas": [
+    "Bypassed for Known Search Engines",
+    "Requires Client Management enabled in the protection profile",
+    "Shared-IP threshold ignored unless Shared IP detection is enabled in Advanced settings",
+    "Clients must support cookies for session-based counters",
+    "After HA failover existing sessions cannot be enforced",
+    "Monitor Mode ignores actions",
+    "Not all features supported in every operation mode"
+   ]
+  },
+  "bot_mitigation": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/881142/bot-mitigation",
+   "what": "Umbrella policy (Bot Mitigation Policy) combining: Known Bots (FortiGuard signatures for malicious bots - DoS/Spam/Crawler - plus Known Good Bots i.e. search engines, and Likely Good Bots), Biometrics Based Detection (mouse/keyboard/touch/scroll events + browser fingerprinting for Headless Chrome/Selenium/PhantomJS, Bot Trait Checking 2-10 traits), Threshold Based Detection (Crawler 403/404 rate, Vulnerability Scanning signature rate, Slow Attack, Content Scraping, Illegal User Scan), and Bot Deception (invisible honeypot link inserted into HTML). An Exception Policy (client IP/host/URI/full URL/parameter/cookie, string or regex, And/Or concatenation) exempts elements from all bot scans.",
+   "backend_reaction": "Known Bots: Alert, Alert & Deny, Deny (no log), Period Block (1-3600 s), Redirect, Send HTTP Response, or Bypass; Known Good Bots skip subsequent scans. Biometrics: Alert / Alert & Deny / Deny (no log) after the JS event-collection window. Threshold detection acts only when Occurrence within the time window is exceeded (e.g. denies the 101st request), then the counter restarts - use Period Block or CLI keep-occurrence-count to extend denial; Crawler also supports Client ID Block Period. Bot Deception: any client requesting the invisible link gets Alert/Alert & Deny/Deny (no log)/Period Block. Bot Confirmation (RBE/CAPTCHA/reCAPTCHA/mobile token) can verify suspected bots before acting.",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Period Block",
+    "Client ID Block Period",
+    "Redirect",
+    "Send HTTP Response",
+    "Bypass"
+   ],
+   "regex_fields": [
+    "Biometrics / Bot Deception Request URL when Type = Regular Expression",
+    "Threshold Illegal User Scan Request URL (regex with >> validator)",
+    "Exception Policy Host/URI/Full URL/Parameter/Cookie values when Operation = Regular Expression Match"
+   ],
+   "examples": [
+    {
+     "field": "Deception URL",
+     "pattern-or-value": "/bot_deception.html",
+     "note": "Absolute or relative path inserted invisibly into matched HTML pages."
+    },
+    {
+     "field": "Threshold example",
+     "pattern-or-value": "Occurrence 100 within 30 min",
+     "note": "FortiWeb denies the 101st illegal request, then re-counts; Block Period extends the denial."
+    }
+   ],
+   "gotchas": [
+    "Threshold detection is cumulative, not per-request - suspicious traffic passes until the threshold is hit",
+    "keep-occurrence-count CLI only works when bot confirmation is enabled",
+    "Biometrics needs Mouse Movement and/or Keyboard selected for Bot Trait Checking",
+    "Blocking Known Good Bots can hurt SEO/visibility; their IPs update via FortiGuard",
+    "Bot deception only inserts links into matched HTML content types; no URL table = no insertion",
+    "Content Scraping applies to text/html, text/plain, xml, soap+xml, json responses"
+   ]
+  },
+  "syntax_detection": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/981691/syntax-based-sql-xss-injection-detection",
+   "what": "Detects SQL injection by lexing/parsing input into an AST and comparing against built-in standard SQL templates (double-quote, single-quote, as-is injection contexts), and XSS by HTML document parsing + JavaScript compilation (attribute/tag/CSS/function/variable based). Scan targets selectable: Parameter Name, Parameter Value, Request Cookie, User-Agent, Referer, Other Request Header. Virtually eliminates regex-signature false positives/negatives.",
+   "backend_reaction": "Per attack-type action: Alert, Alert & Deny, Deny (no log), Send HTTP Response (custom error page), Redirect, or Period Block (1-3600 s; NAT LB X-header caveat). Exceptions (Host/URI/Full URL/Parameter/Cookie, string or regex, And/Or concatenated) skip the scan or can be added straight from the attack log ('Add Exception').",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Send HTTP Response",
+    "Redirect",
+    "Period Block"
+   ],
+   "regex_fields": [
+    "Exception element values: Host, URI (up to 2048 chars), Full URL, Parameter name/value, Cookie name/value when Operation = Regular Expression Match"
+   ],
+   "examples": [
+    {
+     "field": "SQLi snippet detected",
+     "pattern-or-value": "1 or 1 = 1",
+     "note": "Combined with template select * from t where v = [injection point] then AST-compared."
+    },
+    {
+     "field": "Exception concatenation",
+     "pattern-or-value": "(1) OR (2 AND 3)",
+     "note": "Rule 2 Or + rule 3 And yields: skip when (Parameter AND Full URL) match, or URI matches."
+    },
+    {
+     "field": "Obfuscated XSS caught",
+     "pattern-or-value": "l=self,___=1?'ert(123)':0,_=l?'al':0,__=1?'ev':0,l[__+_](_+___)",
+     "note": "Obfuscation of alert(123) that bypasses signature-based detection."
+    }
+   ],
+   "gotchas": [
+    "Up to 128 exceptions per attack type",
+    "Three SQL templates all enabled by default - only disable if certain the DB never uses that quoting",
+    "Threat Weight slider per rule",
+    "Exception match sequence is adjustable (Move up/down)"
+   ]
+  },
+  "http_header_security": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/906820/http-header-security",
+   "what": "Inserts security response headers into backend responses without code changes: X-Frame-Options (DENY/SAMEORIGIN/ALLOW-FROM), X-Content-Type-Options (nosniff), X-XSS-Protection (Sanitizing/Block Mode), Content-Security-Policy, Feature-Policy/Permission-Policy, Referrer-Policy. Optional URL Filter applies headers only to responses of matching request URLs; an Exception policy excludes specific client IPs and/or request URLs.",
+   "backend_reaction": "No blocking - matching responses are modified on the wire: the selected header/value is inserted into the HTTP response before it reaches the client.",
+   "actions_available": [
+    "(no violation action - header insertion only)"
+   ],
+   "regex_fields": [
+    "Request URL when Request URL Type = Regular Expression (rule and exception)"
+   ],
+   "examples": [
+    {
+     "field": "Content-Security-Policy value",
+     "pattern-or-value": "default-src 'self';script-src 'self';object-src 'self'",
+     "note": "Doc example."
+    },
+    {
+     "field": "Permission-Policy value",
+     "pattern-or-value": "fullscreen 'self' https://game.com https://map.example.com;geolocation *; camera 'none'",
+     "note": "Doc example."
+    },
+    {
+     "field": "Request URL (regex)",
+     "pattern-or-value": "^/*.php",
+     "note": "Regex form; simple string must start with /."
+    }
+   ],
+   "gotchas": [
+    "List multiple values on one line separated by semicolons rather than multiple rules",
+    "Feature-Policy renamed Permission-Policy since 7.4.1 - use Upgrade + Validate buttons",
+    "Policy name max 63 chars, no special characters"
+   ]
+  },
+  "cors": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/413696/cross-origin-resource-sharing-cors-protection",
+   "what": "Three-part CORS protection: Allowed Origin lists (protocol, domain with wildcards, port, include-subdomains), CORS Protection Rules per host/URL (block all CORS traffic, or restrict by allowed origins, credentials TRUE/FALSE/None, preflight max age 0-86400, allowed methods/headers, exposed headers), and a CORS Protection Policy grouping rules for the inline profile.",
+   "backend_reaction": "If the Origin matches the allow list FortiWeb permits the request and writes Access-Control-Allow-Origin: <origin> into the response; non-matching or restricted CORS requests are blocked. Attack log: 'CORS Protection Violation'.",
+   "actions_available": [
+    "(allow/deny per rule settings; violations logged as CORS Protection Violation)"
+   ],
+   "regex_fields": [
+    "URL Pattern when Type = Regular Expression (e.g. ^/*.php)"
+   ],
+   "examples": [
+    {
+     "field": "Origin Value wildcard",
+     "pattern-or-value": "*.b.com",
+     "note": "Matches a.b.com; *.com matches a.com but NOT a.b.com unless Include Sub Domains is enabled."
+    },
+    {
+     "field": "Port",
+     "pattern-or-value": "0",
+     "note": "0 = any TCP port for CORS requests."
+    }
+   ],
+   "gotchas": [
+    "Enable OPTIONS in the Allow Method policy or preflights are blocked",
+    "Allowed Method Type entries must be a subset of the Allow Method policy's selected methods",
+    "If Allowed Origins is left empty the backend decides and may send Access-Control-Allow-Origin: * - dangerous with Allowed Credentials TRUE",
+    "Allowed Maximum Age applies only to preflighted requests"
+   ]
+  },
+  "cookie_security": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/2851/cookie-security",
+   "what": "Prevents cookie-based attacks: Security Mode None/Signed (tamper/poisoning detection via hash in the FortiWeb session cookie; needs Client Management)/Encrypted (server cookies transparently encrypted toward clients and decrypted on return); optional Cookie Replay tied to client IP; security attributes added to server Set-Cookies: Cookie Max Age, Secure flag, HTTPOnly flag, SameSite (Strict/Lax/None). Cookie Exceptions table (name + optional domain/path) exempts cookies.",
+   "backend_reaction": "On violation (tampered, unrecognized/suspicious or replayed cookie): Alert, Alert & Deny, Deny (no log), Remove Cookie (forward the request but strip the cookie before the server), or Period Block (NAT LB X-header caveat). Allow Suspicious Cookies = Never/Always/Custom(date) delays enforcement so pre-existing browser cookies don't cause false positives.",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Remove Cookie",
+    "Period Block"
+   ],
+   "regex_fields": [],
+   "examples": [
+    {
+     "field": "Cookie exception",
+     "pattern-or-value": "Cookie Name NID, Cookie Domain .google.com, Cookie Path /",
+     "note": "Exempt by name plus optional domain/path; create items for both DNS name and IP if clients use both."
+    },
+    {
+     "field": "CLI for FortiWeb->server cookies",
+     "pattern-or-value": "set internal-cookie-httponly enable / internal-cookie-secure / internal-cookie-samesite lax",
+     "note": "Attributes on cookies FortiWeb itself sends to backends."
+    }
+   ],
+   "gotchas": [
+    "Attributes apply only to responses from the server",
+    "Signed mode requires Client Management enabled in the profile",
+    "Cookie Replay not recommended when client public IPs change; needs X-header behind NAT LB",
+    "Not supported with a cookie-based Persistence policy unless 'Persistent Cookie' is selected",
+    "HTTPOnly may break apps whose scripts read cookies",
+    "Cookie Max Age 0 = no expiry enforcement"
+   ]
+  },
+  "websocket": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/283711/websocket-protocol",
+   "what": "WebSocket security rules per host/URL: block WebSocket traffic entirely, restrict allowed frame formats (Plain Text/Binary, both on by default), Max Frame Size and Max Message Size (0-2147483647 bytes), Block Extensions (strip/deny the extension header in the handshake), enable attack-signature scanning of message bodies, and an Allowed Origin list (e.g. 121.40.165.18:8800). Rules group into a WebSocket Security Policy referenced under Protocol in the profile.",
+   "backend_reaction": "Violations: Alert (accept+log), Alert & Deny (block/reset+log), Deny (no log). Block Extensions + Alert removes the extension field from the packet; + Deny (no log) makes the WebSocket negotiation fail. Signature hits on WebSocket frames can only alert, period-block, or deny - erase/redirect/send-response configured on signatures degrade to alert.",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)"
+   ],
+   "regex_fields": [
+    "URL when URL Type = Regular Expression (e.g. ^/*.php)"
+   ],
+   "examples": [
+    {
+     "field": "Allowed Origin",
+     "pattern-or-value": "121.40.165.18:8800",
+     "note": "Only listed origins accepted; empty list = origin not checked."
+    }
+   ],
+   "gotchas": [
+    "Attack signature detection not guaranteed when traffic uses an allowed extension header",
+    "Signature actions must also be enabled in Known Attacks > Signatures of the same profile",
+    "Default action Alert; Block WebSocket Traffic disables all other fields"
+   ]
+  },
+  "mitb": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/431293/protection-against-man-in-the-browser-mitb-attacks",
+   "what": "Man-in-the-Browser protection rules injected into pages: Obfuscation of sensitive input field names (Base64-based disguise so trojans can't find them), Encryption of password parameters (only FortiWeb can decode), Anti-Keylogger for password fields, an AJAX Request allow list (external destinations XHR may contact), and SSL Stripping Detection (Middle Proxy comparison of server response vs client-reported protocol, HSTS enforcement, protocol/header/User-Agent consistency checks). Configured as MiTB protection rules + policy applied in the inline profile.",
+   "backend_reaction": "For AJAX requests to external domains not on the allow list FortiWeb takes the configured action (alert, or alert & deny) and can display an alert message in the browser; protected field names/values are rewritten (obfuscated/encrypted) in the served page and transparently restored/decoded by FortiWeb on submission; SSL-stripping mismatches (e.g. client reports http:// for an https:// page) raise alerts.",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny"
+   ],
+   "regex_fields": [
+    "(rule URL matching per MiTB rule pages; see Creating an MiTB protection rule)"
+   ],
+   "examples": [
+    {
+     "field": "SSL stripping example",
+     "pattern-or-value": "server sends https://secure.example.com but client reports http://secure.example.com",
+     "note": "Detected as protocol downgrade / potential SSL stripping."
+    }
+   ],
+   "gotchas": [
+    "Built-in allowed domains list exists for AJAX (7.6.0 feature)",
+    "Password encryption is Base64-encoding based and only decodable by FortiWeb",
+    "Works together with CSRF JS parameters (check_url, check_action, local_url) when Ajaxcheck Status is enabled"
+   ]
+  },
+  "csrf": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/56487/defeating-cross-site-request-forgery-csrf-attacks",
+   "what": "Two lists: Page List (web pages FortiWeb injects JavaScript into) and URL List (requests that must then carry the anti-CSRF token). The injected JS appends parameter tknfv (value = Client Management cookie) to <a href> links and forms; with JS Request Status enabled a second script patches XMLHttpRequest too. Parameter filters (name + value, value regex '*' matches any) disambiguate when page and generated request share the same URL.",
+   "backend_reaction": "Requests for listed URLs arriving without tknfv, or with a token not matching the session cookie, trigger Alert (default), Alert & Deny (customizable block page), Deny (no log), or Period Block (1-3600 s).",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Period Block"
+   ],
+   "regex_fields": [
+    "Full URL when Request Type = Regular Expression (e.g. test\\.com instead of full literal URL)",
+    "Parameter Value when Parameter Value Type = Regular Expression (enter * to match any value)"
+   ],
+   "examples": [
+    {
+     "field": "Generated request",
+     "pattern-or-value": "http://example.com/csrf_test1.php?tknfv=3DF5BDCCIG3DCXNTE3RUNCTKRS3E36AD",
+     "note": "Add /csrf_test1.php to the URL list for this link."
+    },
+    {
+     "field": "Parameter filter",
+     "pattern-or-value": "Full URL /www.test.com, Parameter Name username, Parameter Value Type Regular Expression, Value *",
+     "note": "Match URL by presence of a parameter, any value."
+    }
+   ],
+   "gotchas": [
+    "Not supported in Offline Protection or Transparent Inspection modes",
+    "Requires Client Management enabled in the inline profile",
+    "Protected page must be HTML with <html></html> tags and response 200 OK; compressed pages need a decompression policy; page must fit Maximum Body Cache Size",
+    "Every URL-list entry needs a corresponding page-list entry or legitimate requests get blocked",
+    "Default severity Low"
+   ]
+  },
+  "padding_oracle": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/910966/defeating-cipher-padding-attacks-on-individually-encrypted-inputs",
+   "what": "Defeats padding-oracle attacks (e.g. Lucky 13) against inputs the application encrypts individually (session IDs, cookies, profile URLs, passwords) with CBC/ECB/OAEP-style ciphers. Rules match Host + Protected URL (string or regex) and specify the Protected Target: URL, Parameter, and/or Cookie.",
+   "backend_reaction": "Detects the brute-force guessing pattern and applies Alert (default), Alert & Deny, Deny (no log), or Period Block (1-3600 s; NAT LB X-header caveat). Attack log 'Padding Oracle Attack' may take up to ~2 minutes to appear because of the DoS alert interval (max-dos-alert-interval).",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Period Block"
+   ],
+   "regex_fields": [
+    "Protected URL when Type = Regular Expression"
+   ],
+   "examples": [
+    {
+     "field": "Protected URL (regex)",
+     "pattern-or-value": "^/*\\.jsp\\?uid\\=(.*)",
+     "note": "Doc's example matching encrypted-UID URLs."
+    }
+   ],
+   "gotchas": [
+    "Must first enable Padding Oracle Protection in System > Config > Feature Visibility",
+    "Only protect genuinely encrypted inputs - unnecessary rules decrease performance",
+    "Repetitive attack requests are rate-limited in the logs (Log rate limits)"
+   ]
+  },
+  "url_encryption": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/847751/url-encryption",
+   "what": "Prevents forceful browsing by encrypting matching URLs in server responses so the site's internal directory structure (e.g. /admin, /backups) is never exposed; clients see opaque encrypted URLs and FortiWeb validates/decrypts them on the way back. Rules contain a URL List (Simple String or Regular Expression) and an Exception List; rules group into a URL Encryption Policy in the inline profile.",
+   "backend_reaction": "Response URLs matching the rule are rewritten to encrypted form; incoming requests whose matching URL is not correctly encrypted are rejected per action: Alert (default), Alert & Deny, Deny (no log), Period Block (1-3600 s). Allow Unencrypted permits valid client requests FortiWeb failed to decrypt.",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Period Block"
+   ],
+   "regex_fields": [
+    "Request URL in URL List and Exception List when Type = Regular Expression (e.g. ^/*.php)"
+   ],
+   "examples": [
+    {
+     "field": "Effect",
+     "pattern-or-value": "https://www.secureshop.com/user/account/12345 -> https://www.secureshop.com/7d93jd83jd3f",
+     "note": "Doc's before/after illustration."
+    }
+   ],
+   "gotchas": [
+    "Complex content (script events, external js, stylesheets) may need full mode disabled via CLI to avoid URL replacement errors",
+    "Compare with Link Cloaking: URL Encryption encrypts the path; cloaking hides the href from crawlers",
+    "Default severity High"
+   ]
+  },
+  "link_cloaking": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/657585/link-cloaking",
+   "what": "Hides links on matched pages from crawlers/scanners: link tags <a>, <form>, <img>, <link>, <object> are transformed into JavaScript-generated placeholders (e.g. <a href=\"https://www.google.com\"...> becomes <a id=\"fwb_4069875712\"...>) and re-converted to the original link in the client's browser. Rule matches Host + URL Pattern (string/regex); Exception List excludes specific links; rules group into a Link Cloaking Policy referenced by the profile.",
+   "backend_reaction": "Pure response transformation - FortiWeb rewrites the HTML of matched pages; there is no violation action on requests.",
+   "actions_available": [
+    "(no violation action - response link rewriting only)"
+   ],
+   "regex_fields": [
+    "URL Pattern when Type = Regular Expression (e.g. ^/*.php)",
+    "Exception List entries (literal or regex)"
+   ],
+   "examples": [
+    {
+     "field": "Cloaked link",
+     "pattern-or-value": "<a href=\"https://www.secureshop.com/login\" ...> -> <a id=\"fwb_4069875712\" ...>",
+     "note": "Crawler can no longer read the href."
+    }
+   ],
+   "gotchas": [
+    "Differs from URL Encryption, which encrypts the link target but leaves href visible",
+    "Only the five listed tag types are processed"
+   ]
+  },
+  "hidden_fields": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/301072/preventing-tampering-with-hidden-inputs",
+   "what": "Protects <input type=\"hidden\"> values (e.g. prices, state tokens) against client-side tampering: FortiWeb caches the hidden-input values served in the page and verifies they are unchanged when the form is POSTed to the listed Post URLs. A Fetch URL tool retrieves the page from a real server and auto-discovers hidden fields and post URLs (color coded: blue add, red remove, black in sync). Rules group into a Hidden Fields Policy.",
+   "backend_reaction": "Tampered/missing hidden inputs trigger Alert (default), Alert & Deny, Deny (no log), Period Block (1-3600 s, default 1; NAT LB X-header caveat), Redirect, or Send 403 Forbidden. Ignored in Monitor Mode.",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Period Block",
+    "Redirect",
+    "Send 403 Forbidden"
+   ],
+   "regex_fields": [],
+   "examples": [
+    {
+     "field": "Attack prevented",
+     "pattern-or-value": "POSTDATA quantity=9999&price=1 (price altered from 900)",
+     "note": "Doc's TV-shop hidden price tampering example."
+    }
+   ],
+   "gotchas": [
+    "Request URL is the exact literal URL of the page (starts with /; no regex)",
+    "After an HA failover, existing sessions cannot be enforced",
+    "When re-fetching, keep checkboxes of previously configured items or they are deleted",
+    "Requires the session-related option enabled in the inline profile"
+   ]
+  },
+  "parameter_validation": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/808674/validating-parameters-input-rules",
+   "what": "Input rules validate visible parameters per Host + Post URL: per-parameter name (string or regex), Max Length, Required flag, Location, From JSON, and type check via predefined Data Types, a custom data type, or a validation Regular Expression; plus Maximum Parameter Number (0-1024) and JSON Parameter Support. Rules group into a Parameter Validation Policy.",
+   "backend_reaction": "Violations trigger Alert (default), Alert & Deny, Deny (no log), Period Block (1-3600 s), Redirect, or Send 403 Forbidden; attack log 'Parameter Validation Violation'. Requests are forwarded as received (streaming) so late-detected violations can cut a request midway - enable CLI cache-mode to buffer the whole request first. Ignored in Monitor Mode.",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Period Block",
+    "Redirect",
+    "Send 403 Forbidden"
+   ],
+   "regex_fields": [
+    "Post URL when URL Type = Regular Expression (e.g. ^/*.php)",
+    "Parameter Name when Name Type = Regular Expression",
+    "Argument Type = Regular Expression: pattern matching all valid values for the input"
+   ],
+   "examples": [
+    {
+     "field": "Parameter Name",
+     "pattern-or-value": "pwd for <input type=\"password\" name=\"pwd\" />",
+     "note": "Simple String name exactly as in the form."
+    },
+    {
+     "field": "Max Length",
+     "pattern-or-value": "5 for value 'candy'; 0 disables the limit",
+     "note": "Length is of the value string."
+    },
+    {
+     "field": "CLI",
+     "pattern-or-value": "set block_unknown_parameters enable (config waf input-rule)",
+     "note": "Block requests containing parameters not in the list instead of passing them on."
+    }
+   ],
+   "gotchas": [
+    "Regexes beginning with ! are not supported",
+    "Up to 1024 parameter entries per rule",
+    "Repeated parameters: all instances are enforced",
+    "Cannot enforce parameters larger than the HTTP-cachesize scan buffer - enable Malformed Request to harden",
+    "Bulk edit (Action/Trigger/Severity) supported across selected rules",
+    "To build a custom data type, copy a predefined type's Pattern and modify it"
+   ]
+  },
+  "file_security": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/329620/limiting-file-uploads",
+   "what": "File Security rules restrict uploads by file type (Allow File Types or Block File Types; content/payload inspection defeats renamed extensions except for 'Whole Suffix Files') and size (File Upload Limit in KB), per Host/URL, with File Uncompress (up to 12 nesting levels / 5000 KB decompressed), JSON-embedded file parsing, and octet-stream filename identification. File Security policies add Antivirus Scan, Signature Detection, FortiSandbox submission, ICAP server scanning, and email attachment scanning (OWA/ActiveSync/MAPI).",
+   "backend_reaction": "Violating uploads trigger Alert, Alert & Deny (the default), Deny (no log), or Period Block (1-3600 s). With Hold Session While Scanning File enabled FortiWeb holds the session up to 30 min for FortiSandbox/ICAP verdicts; disabled, it forwards optimistically, then alerts and remembers the malicious file hash for future direct blocking. Ignored in Monitor Mode.",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Period Block"
+   ],
+   "regex_fields": [],
+   "examples": [
+    {
+     "field": "Allowed types for /upload.php",
+     "pattern-or-value": "MP3, PDF, GIF, JPG only",
+     "note": "Doc example: all other types blocked for that URL."
+    },
+    {
+     "field": "AV attack log",
+     "pattern-or-value": "filename [eicar.com] virus name [EICAR_TEST_FILE]: Waf anti-virus",
+     "note": "Log format when a virus is found."
+    }
+   ],
+   "gotchas": [
+    "Applies only to multipart/form-data and application/octet-stream; multipart files with empty filename are not checked",
+    "File Upload Limit hardware caps: 102400/204800/358400 KB depending on model",
+    "Files larger than Maximum Antivirus Buffer Size pass UNSCANNED - configure Body Length to block oversized bodies",
+    "MS Office Open XML (.docx etc.) are ZIP-compressed XML: without an MSOOX restriction, XML/ZIP restrictions still apply",
+    "To catch renamed executables select the content-based type (e.g. 'pdf' under Text File), not just the suffix",
+    "FortiSandbox cache timeout default 72 h; elog CLI enables transfer logging"
+   ]
+  },
+  "webshell": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/756680/web-shell-detection",
+   "what": "Detects Trojan/web-shell code in uploaded files using two methods: Known Web Shells (tag/keyword signatures) and Fuzzy Hash Based Detection (similarity of the file's hash against a Trojan sample library, so modified scripts are still caught), each split into PHP, ASP, JSP, Perl and Python categories. Individual scripts can be included/excluded per policy.",
+   "backend_reaction": "When similarity meets the Fuzzy Similarity Threshold (percentage) or a known web shell matches, FortiWeb applies Alert, Alert & Deny (default), Deny (no log), or Period Block (1-3600 s). Ignored in Monitor Mode.",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Period Block"
+   ],
+   "regex_fields": [],
+   "examples": [
+    {
+     "field": "Fuzzy Similarity Threshold",
+     "pattern-or-value": "percentage of resemblance to the Trojan sample library",
+     "note": "File flagged when similarity >= threshold, regardless of attacker edits."
+    }
+   ],
+   "gotchas": [
+    "Default action Alert & Deny; default severity Low",
+    "Applied via inline or Offline Protection profile"
+   ]
+  },
+  "xml_validation": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/842138/configuring-xml-protection",
+   "what": "Validates XML/SOAP request bodies: XML Limits (max attributes 1-256 def 32, attribute name length def 64, attribute value length def 1024, CDATA length def 4096, element depth 1-256 def 20, element name length def 64), Forbidden XML Entities (External Entity, recursive Entity Expansion, XInclude, Schema Location with exempted-URL allow list), Schema/DTD validation for XML, and WSDL validation, WS-Security, WS-I Basic Profile checks and SOAP attachment control for SOAP. XSW detection rules supported for both formats.",
+   "backend_reaction": "Rule violations trigger Alert (default), Alert & Deny (customizable page), Period Block (1-3600 s; NAT LB caveat), Redirect, or Send 403 Forbidden. Ignored in Monitor Mode.",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Period Block",
+    "Redirect",
+    "Send 403 Forbidden"
+   ],
+   "regex_fields": [
+    "Request URL when Request URL type = Regular Expression (e.g. ^/*.php)"
+   ],
+   "examples": [
+    {
+     "field": "XML Limits defaults",
+     "pattern-or-value": "Attribute 32, Attr Name 64, Attr Value 1024, CDATA 4096, Depth 20, Element Name 64",
+     "note": "Ranges: 1-256 / 1-1024 / 1-2048 / 1-4096 / 1-256 / 1-1024."
+    }
+   ],
+   "gotchas": [
+    "Available only in Reverse Proxy, True Transparent Proxy and WCCP modes",
+    "Up to 256 rules per policy",
+    "Referenced schema/DTD/WSDL files must all be uploaded to FortiWeb",
+    "Retain packet payloads for XML Protection must be enabled in log config to see payloads"
+   ]
+  },
+  "json_validation": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/306143/configuring-json-protection",
+   "what": "Validates JSON request bodies per Host/URL: JSON Limits (Total Size def 1024, Key Size def 64, Total Key Number def 256, Value Size def 128, Total Value Number def 256, Values per Array def 255, Object Depth def 32) and validation against an uploaded JSON Schema or schema group. Rules (up to 256) group into a JSON Protection Policy selected in the profile.",
+   "backend_reaction": "Violations trigger Alert (default), Alert & Deny (customizable page), Deny (no log), Period Block (1-3600 s; NAT LB caveat), Redirect, or Send 403 Forbidden.",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Period Block",
+    "Redirect",
+    "Send 403 Forbidden"
+   ],
+   "regex_fields": [
+    "Request URL when Request URL type = Regular Expression (e.g. ^/*.php)"
+   ],
+   "examples": [
+    {
+     "field": "JSON Limits defaults",
+     "pattern-or-value": "Total Size 1024, Key Size 64, Total Keys 256, Value Size 128, Total Values 256, Array Values 255, Depth 32",
+     "note": "Most ranges 0-10240 or 0-2147483647; 0 typically disables."
+    }
+   ],
+   "gotchas": [
+    "Configured under API Protection > JSON Protection",
+    "Up to 256 rules per policy",
+    "Default severity Low"
+   ]
+  },
+  "openapi": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/933477/openapi-validation",
+   "what": "Upload an OpenAPI 3.0.x description file (YAML/JSON); FortiWeb parses it and validates incoming requests against the defined endpoints, parameter names/locations and data types, blocking requests that do not conform (unexpected endpoints, invalid parameters, mismatched types). A validation policy can contain multiple OpenAPI files and is selected in the web protection profile.",
+   "backend_reaction": "Non-conforming requests trigger Alert (default), Alert & Deny, Deny (no log), Period Block (1-3600 s, default 60), Redirect, or Send 403 Forbidden.",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Period Block",
+    "Redirect",
+    "Send 403 Forbidden"
+   ],
+   "regex_fields": [],
+   "examples": [
+    {
+     "field": "Supported string formats",
+     "pattern-or-value": "type: string / format: uuid  and  format: email",
+     "note": "Only email (RFC5322) and uuid (RFC4122) string formats supported; 'email'/'Email'/'EMAIL' and 'uuid'/'UUID' accepted, others (e.g. UuID) not."
+    }
+   ],
+   "gotchas": [
+    "Supports OpenAPI 3.0.0-3.0.9 only; Swagger Editor recommended for authoring",
+    "Re-upload OpenAPI files after upgrading to 6.3.0",
+    "7.6.4 adds schema line numbers to OpenAPI validation attack logs",
+    "Enable Retain Packet Payload For OpenAPI Validation to see log payloads"
+   ]
+  },
+  "api_gateway": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/511481/api-gateway",
+   "what": "API user management, API key verification, access control, rate limiting and API call rewriting. API Users (Standard auto-generated key, Dynamic RSA-token, or JWT) with optional IP and Referer restrictions are grouped into API User Groups. API Gateway Rules match Host + frontend URL prefixes (rewritten to backend prefixes), verify the API key from an HTTP header or parameter, restrict to a user group, apply Per-user Rate Limit and global Rate Limit, insert headers, and define Sub-URL rules (method + URL string/regex) with their own key/rate settings.",
+   "backend_reaction": "On violation (invalid/missing API key, user not in allowed group, rate limit exceeded) FortiWeb applies Alert (default), Alert & Deny, Deny (no log), or Period Block (1-10000 s). X-RateLimit-* headers can be added to responses when the limit is exceeded (limit, remaining, wait time). Matching frontend prefixes are rewritten to backend prefixes before forwarding.",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Period Block (1-10000 s)"
+   ],
+   "regex_fields": [
+    "Sub-URL URL Expression when Type = Regular Expression (e.g. ^/*.php)"
+   ],
+   "examples": [
+    {
+     "field": "Prefix rewrite",
+     "pattern-or-value": "Frontend /fortiweb/ -> Backend /api/v1.0/System/Status/",
+     "note": "https://host/fortiweb/example.json?param=value becomes backend /api/v1.0/System/Status/example.json?param=value."
+    },
+    {
+     "field": "API key in request",
+     "pattern-or-value": "API_Key: xxxx-xxxx-xxxx",
+     "note": "Key carried in header or parameter as configured."
+    }
+   ],
+   "gotchas": [
+    "Must first enable API Gateway in System > Config > Feature Visibility",
+    "When a request matches both frontend prefix and a Sub-URL rule, Sub-URL settings dominate",
+    "Dynamic keys require both API Key and dynamic_key token (RSA + HS256 formula over a random number and the user's email)",
+    "Empty rate limit = unlimited",
+    "Referer restriction is full-URL only and can be forged server-side"
+   ]
+  },
+  "mobile_api": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/995262/configuring-mobile-api-protection",
+   "what": "Validates that API requests originate from trusted mobile apps by verifying JWT tokens (Approov platform): the profile's Mobile Application Identification settings hold the JWT Token Secret and Token Header; Mobile API Protection rules match Host + Request URL (string/regex) and act on requests whose token is missing or invalid.",
+   "backend_reaction": "Requests without the JWT-token header or with an invalid token trigger Alert (default), Alert & Deny, Deny (no log), or Period Block (1-3600 s).",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Period Block"
+   ],
+   "regex_fields": [
+    "Request URL when Type = Regular Expression (e.g. ^/*.php)"
+   ],
+   "examples": [
+    {
+     "field": "Profile settings",
+     "pattern-or-value": "Token Secret (from Approov) + Token Header name + Mobile API Protection policy",
+     "note": "Configured under Web Protection Profile > Mobile > Mobile Application Identification."
+    }
+   ],
+   "gotchas": [
+    "Mobile Application Identification must be enabled in System > Config > Feature Visibility first",
+    "Also powers Mobile Token Validation bot confirmation in Custom Policy / DoS / Threshold Detection",
+    "Default severity High"
+   ]
+  },
+  "grpc": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/797650/grpc-protocol",
+   "what": "Secures gRPC API traffic: upload an IDL (Interface Definition Language) file describing services/messages; gRPC security rules match Host + Request URL (literal/wildcards) and apply to specific Request/Response Message Names (case-sensitive package.message, e.g. routeguide.Point), enforcing Request Rate Limit (max messages per request) and Request Size Limit (max message body size), plus signature scanning of decoded payloads. Rules group into a gRPC Security Policy under Protocol in the profile.",
+   "backend_reaction": "Violations trigger Alert (default), Alert & Deny, Deny (no log), or Block Period (1-3600 s).",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Block Period"
+   ],
+   "regex_fields": [],
+   "examples": [
+    {
+     "field": "Request Message Name",
+     "pattern-or-value": "routeguide.Point",
+     "note": "Format <package_name>.<message_name>, case sensitive."
+    }
+   ],
+   "gotchas": [
+    "FortiWeb decodes traffic according to the uploaded IDL file - keep it current",
+    "gRPC over HTTP/1 supported since 7.6.3",
+    "Sensitive data in gRPC responses can be obscured (7.6.0 feature)"
+   ]
+  },
+  "url_rewriting": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/961303/rewriting-redirecting",
+   "what": "URL Rewriting rules act on requests (rewrite HTTP header: method, Host, URL, Referer; insert/remove up to 10 headers or cookies; rewrite body; 301/302 redirect; Send 403 Forbidden) or responses (rewrite body, Location, status code, insert/remove headers). Conditions match objects (HTTP Host, Request URL, Referer, Body, Location) against regular expressions with 'matches / does not match' logic plus protocol (HTTP/HTTPS) and Content-Type filters. Replacement fields support back-references $0-$9 and variables ($CLIENT_IP, $CLIENT_PORT, $HOST, $URL, $FULL_URL, $UTC_STR, $UTC_INT, $ORIGIN_IP, $VSERVER_IP, $VSERVER_PORT, FortiWeb_PSERVER).",
+   "backend_reaction": "When all conditions of a rule match, FortiWeb rewrites the request before forwarding to the server, rewrites the response before returning it to the client, replies itself with a 301/302 redirect (Location supports back-references), or returns 403 Forbidden. Only the first matched rule in the policy executes unless 'Continue Executing the Next Rule' is enabled.",
+   "actions_available": [
+    "Rewrite HTTP Header (request)",
+    "Rewrite HTTP Body (request/response)",
+    "Redirect (301 Permanently)",
+    "Redirect (302 Temporary)",
+    "Send 403 Forbidden",
+    "Rewrite HTTP Location/Status (response)",
+    "Header/Cookie insertion & removal"
+   ],
+   "regex_fields": [
+    "URL Rewriting Condition Table: Regular Expression per object (Host, URL, Referer, Body, Location) - always regex",
+    "Replacement Host / URL / Location / body Replacement support back-references $0.. to condition capture groups"
+   ],
+   "examples": [
+    {
+     "field": "HTTP->HTTPS redirect",
+     "pattern-or-value": "cond1 Host (.*), cond2 URL ^/(.*)$, Location https://$0/$1",
+     "note": "Condition 1 should only match HTTP (protocol filter) to avoid redirect loops."
+    },
+    {
+     "field": "URL rewrite",
+     "pattern-or-value": "/Wordpress/(.*) -> /blog/$0",
+     "note": "/wordpress/10/11/24 becomes /blog/10/11/24."
+    },
+    {
+     "field": "Extension disguise",
+     "pattern-or-value": "Host (.*)->$0 ; URL /(.*)\\.asp -> /$1.php",
+     "note": "news/local.asp served as news/local.php."
+    },
+    {
+     "field": "Body rewrite delete/insert",
+     "pattern-or-value": "(.*)(everyone), (.*)(works)! -> $0, $2 $3 now!",
+     "note": "Omit a back-reference to delete that text."
+    },
+    {
+     "field": "Location rewrite",
+     "pattern-or-value": "(.*)www-internal.example.com(.*) -> $0www.example.com$1",
+     "note": "Internal-to-external DNS translation."
+    }
+   ],
+   "gotchas": [
+    "Back-references are numbered from $0 across the whole condition table",
+    "Not supported in all operation modes; cannot rewrite requests exceeding the buffer - enable Malformed Request to block those",
+    "Compressed responses need a decompression rule before body rewriting",
+    "Chunked (Transfer-Encoding: chunked) requests are supported",
+    "Order rules most-specific first; only the first match runs unless Continue Executing the Next Rule",
+    "Referer conditions: decide match behavior when the Referer header is absent"
+   ]
+  },
+  "http_authentication": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/467409/offloading-http-authentication-and-authorization",
+   "what": "Offloads HTTP authentication/authorization to FortiWeb for sites lacking their own: local user accounts or remote LDAP/RADIUS/NTLM/KDC (Kerberos)/SAML/TACACS+ queries, grouped into user groups; authorization rules bind a user group to a realm and URL set; rules group into an authorization policy selected in the inline protection profile. Auth styles: basic, digest (local users only), NTLM.",
+   "backend_reaction": "If a request lacks an Authorization: header FortiWeb itself replies 401 Authorization Required with WWW-Authenticate (style + realm); the browser prompts the user and repeats the request with credentials; FortiWeb validates them (locally or against the auth server) and then authorizes each request against the rules; authentication failures (and optionally successes) can be logged/alerted.",
+   "actions_available": [
+    "(401 challenge / allow / deny per authorization rules; logging of failures and/or successes)"
+   ],
+   "regex_fields": [],
+   "examples": [
+    {
+     "field": "User name formats",
+     "pattern-or-value": "local: username; LDAP: username or username@example.com per directory schema",
+     "note": "Format depends on the authentication server."
+    },
+    {
+     "field": "Realm",
+     "pattern-or-value": "Restricted Area",
+     "note": "Browsers show the realm in the prompt and cache credentials per realm for the session."
+    }
+   ],
+   "gotchas": [
+    "Not supported in all operation modes",
+    "PCI DSS may require per-person accounts and need-to-know authorization scoping",
+    "NTLM does not support HTTP-style realm display",
+    "Same realm across rules lets browsers re-supply cached credentials automatically"
+   ]
+  },
+  "compression": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/650285/compression",
+   "what": "Offloads response compression from web servers: File Compress Policy selects Compression Type gzip, Brotli (level 1-11) or Zstd (level 1-20) and the Content-Types to compress; Exclusion Rules exempt Hosts/URLs. Decompression configuration is also a dependency for other features (signatures on responses, rewriting, CSRF) to scan compressed content.",
+   "backend_reaction": "Matching responses are compressed by FortiWeb before delivery (Content-Encoding set); excluded host/URLs pass through untouched. No violation action.",
+   "actions_available": [
+    "(no violation action - traffic transformation)"
+   ],
+   "regex_fields": [],
+   "examples": [
+    {
+     "field": "Exclusion Request URL",
+     "pattern-or-value": "/folder1/* or /folder1/*/index.htm",
+     "note": "Literal URLs/wildcards only; must begin with /."
+    }
+   ],
+   "gotchas": [
+    "Maximum pre-compressed file size FortiWeb can compress is 128 KB - larger files pass uncompressed",
+    "Compressed requests/responses generally cannot be scanned or rewritten - exempting vulnerable URLs weakens security",
+    "Disable server-side compression or add exceptions, otherwise double compression degrades performance",
+    "text/css and JS content types compress only EXTERNAL files; embedded CSS/JS is governed by text/html",
+    "RPC clients do not support compression - create exceptions"
+   ]
+  },
+  "user_tracking": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/902681/tracking",
+   "what": "Tracks sessions by application user: a User Tracking rule defines the Authentication URL, Username/Password fields, Session ID name (e.g. PHPSESSID, JSESSIONID or an API token) and login-success conditions (Return Code / Response Body / Redirect URL, string or regex); captured usernames appear in traffic/attack logs and feed the Custom Policy 'User' filter. Extras: Session Fixation Protection (erases pre-auth session IDs), Limit Concurrent Users Per Account (1-128), Session Timeout with Session Timeout Enforcement + Session Freeze Time, and Credential Stuffing Defense (FortiGuard spilled-credential DB + optional online check with Test button).",
+   "backend_reaction": "For requests carrying a timed-out session ID during the freeze time, or logins matching the credential-stuffing DB, FortiWeb applies Alert, Alert & Deny, Deny (no log), Redirect, or Period Block (1-3600 s). Log messages: 'Session Timeout Enforcement: triggered by user <username>.' and 'Triggered by user <username>: Credential Stuffing Defense Violation.' Tracking stops at the Log Off URL or after Session Timeout.",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Deny (no log)",
+    "Redirect",
+    "Period Block"
+   ],
+   "regex_fields": [
+    "Authentication Result Condition Value when Value Type = Regular Expression"
+   ],
+   "examples": [
+    {
+     "field": "Session ID Name",
+     "pattern-or-value": "sid, PHPSESSID, JSESSIONID",
+     "note": "For JSON logins use the API token from the response instead."
+    }
+   ],
+   "gotchas": [
+    "Priority order: User Tracking policy > Site Publish rule > client certificate",
+    "Offline Protection: Session Fixation Protection, Session Timeout Enforcement and deny/redirect/period-block actions are NOT supported (deny behaves like Alert)",
+    "Credential Stuffing DB requires at least one FortiGuard update",
+    "Session Timeout and Credential Stuffing share one Action/Block Period/Severity/Trigger set",
+    "Authentication URL and Log Off URL must begin with /"
+   ]
+  },
+  "threat_scoring": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/... (Policy > Client Management: 'Configuring client management'; see also /704981/threat-weight-configuration-enhancements-7-6-3)",
+   "what": "Client Management threat scoring: every security violation carries a Threat Weight (six risk levels Informational/Low/Moderate/Substantial/Severe/Critical, weights 1-500, adjusted per security module in the Threat Weight tree, some modules per-policy); FortiWeb accumulates each client's threat score (client identified by a generated client ID from cookie or source IP) over a Statistics Period and classifies it trusted / unidentified / suspicious / malicious against configured score thresholds (e.g. 0-120 trusted, 121-300 suspicious, >301 malicious).",
+   "backend_reaction": "When a client's accumulated score crosses the suspicious/malicious thresholds, Block Settings apply: Alert (accept+log), Alert & Deny (block/reset+log), Block Period (block by source IP for N seconds), or Client ID Block Period (block by FortiWeb client ID, resilient to changing source IPs). With Signature Only Threat Score enabled, single signature hits no longer act individually - action fires only when the signature score threshold is reached ('Always Record Signature Attack Log' controls per-hit logging).",
+   "actions_available": [
+    "Alert",
+    "Alert & Deny",
+    "Block Period",
+    "Client ID Block Period"
+   ],
+   "regex_fields": [],
+   "examples": [
+    {
+     "field": "Risk thresholds",
+     "pattern-or-value": "0-120 trusted, 121-300 suspicious, >301 malicious (over 5-minute traffic)",
+     "note": "Doc's example threshold set."
+    }
+   ],
+   "gotchas": [
+    "Global threat score profile applies to the whole ADOM; enable Threat Score Profile to differentiate per protection profile",
+    "Known Bots threat weight is policy-level only (7.6.3 change)",
+    "Blocked clients appear under Blocked IPs / Blocked Client IDs",
+    "7.6.3 added modules to the tree (URL Encryption, gRPC, API Gateway, ML modules, Custom Signature at policy level) and per-constraint weights for HTTP/2 constraints"
+   ]
+  },
+  "wpp": {
+   "url": "https://docs.fortinet.com/document/fortiweb/7.6.4/administration-guide/",
+   "what": "The Web Protection Profile bundles every WAF feature (signatures, access control, API protection, bot mitigation...) into one object a Server Policy binds. Each dropdown names a separate reusable sub-policy.",
+   "backend_reaction": "The profile itself takes no action - each bound sub-policy evaluates traffic with its own action (Alert, Alert & Deny, Period Block...). A profile is usually SHARED: editing a sub-policy here affects every Server Policy binding this profile.",
+   "gotchas": [
+    "Monitor Mode on the Server Policy overrides every deny action to log-only.",
+    "Clone a shared profile before adding policy-specific exceptions to it."
+   ]
+  }
+ },
+ "regex_guide": {
+  "flavor": "FortiWeb follows most Perl-compatible regular expression (PCRE, pcre.org) syntax. Matching is case-sensitive unless you turn on case-insensitivity with (?i). Inverse string matching is NOT supported (you cannot write !(hamsters)); only character-class negation like [^A] is available. FortiWeb evaluates a specific location starting at its beginning and takes only the first match unless repetitions are defined.",
+  "notes": [
+   "Back-reference numbering starts at 0: use $0 (or /0) for the FIRST capture group, not $1. Valid range $0-$9.",
+   "$0..$9 = capture groups of the previous match string (e.g. condition-table match reused in URL rewriting); /0../9 = earlier part of the CURRENT string (e.g. (/(^/)*)/0/0/0/0 for repeated path); $+ = highest-numbered capture group; $& = entire match string.",
+   "Capture groups are numbered left to right, outside to inside, top to bottom across the condition table: (a)(b)(c(d))(e) yields $0=a, $1=b, $2=cd, $3=d, $4=e.",
+   "In URL rewriting, capture groups are numbered ACROSS all condition-table rows: e.g. condition 1 on HTTP Host (.*) is $0 and condition 2 on HTTP URL ^/(.*)$ is $1.",
+   "URL-type regex fields do not require a leading slash, but must match URLs that begin with a slash (e.g. /index.cfm); never include the domain name (configured separately as Host).",
+   "Always validate with the >> (test) button, which opens the Regular Expression Validator, to check syntax, unintended matches, and intended matches.",
+   "Regex evaluation is computationally expensive - use regular expressions only where necessary and build them with care (see 'Regular expression performance tips').",
+   "The matching engine uses UTF-8 character values; for regexes matching HTTP requests use the same encoding as the clients; visually similar characters (Latin C vs Cyrillic С 'confusables') have different code points and need explicit alternatives.",
+   "Character ranges match by numeric code point: [@-B] matches UTF-8 code points 40-42 (@AB).",
+   "FortiWeb does not support regular expressions that begin with an exclamation point ( ! ) (noted on Parameter Validation).",
+   "Some fields allow up to 2048 characters for regex (signature/syntax exceptions URI values).",
+   ". matches any single character except \\r or \\n; ^ and $ match line positions (not characters); + is greedy unless followed by ?, * greedy, *? lazy, ? makes preceding item optional, ?= is lookahead (not included in match), | alternation, {n} / {n,m} repetition counts, [] sets/ranges, \\ escapes special characters *.|^$?+\\(){}[]."
+  ],
+  "examples": [
+   {
+    "pattern": "cat",
+    "matches": "'cat' in 'My cat catches things.' (may also match 'cat' in 'catches' if the feature looks for all instances)",
+    "note": "Literal match; anything except *.|^$?+\\(){}[] matches literally."
+   },
+   {
+    "pattern": "\\?param",
+    "matches": "?param in /url?parameter=value",
+    "note": "Backslash escapes a regex special character."
+   },
+   {
+    "pattern": "(?i)param",
+    "matches": "Param, pArAM, etc. in /url?Parameter=value",
+    "note": "(?i) turns on case-insensitive matching for the rest of the evaluation."
+   },
+   {
+    "pattern": "^/url",
+    "matches": "/url only at the beginning of the path string; not /url in subdirectories",
+    "note": "Anchor ^ = position of beginning of line."
+   },
+   {
+    "pattern": "(www\\.)?example.com",
+    "matches": "www.example.com and example.com",
+    "note": "? makes the capture group optional."
+   },
+   {
+    "pattern": "p(?=arameter)",
+    "matches": "p only in 'parameter', not in 'pack'",
+    "note": "Lookahead ?= evaluates but does not include following characters."
+   },
+   {
+    "pattern": "(param)A=(value)A&\\0B\\1B",
+    "matches": "paramA=valueA&paramB=valueB",
+    "note": "Back-references within the current string; numbering starts at 0."
+   },
+   {
+    "pattern": "(\\r\\n)|\\n|\\r",
+    "matches": "Line endings, platform-independent",
+    "note": "Cookbook: line endings."
+   },
+   {
+    "pattern": "[a-zA-Z0-9]",
+    "matches": "Any ASCII alphanumeric character",
+    "note": "Cookbook: does not match accented characters like é."
+   },
+   {
+    "pattern": "(?i)\\bwww\\.example\\.com\\b",
+    "matches": "A specific domain name, case-insensitive",
+    "note": "Cookbook: specific domain name."
+   },
+   {
+    "pattern": "(?i)\\b(.*)\\.example\\.com\\b",
+    "matches": "Any sub-domain of example.com",
+    "note": "Cookbook: any sub-domain name."
+   },
+   {
+    "pattern": "\\b10\\.1\\.1\\.1\\b",
+    "matches": "A specific IPv4 address",
+    "note": "Cookbook: specific IPv4."
+   },
+   {
+    "pattern": "\\b(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\b",
+    "matches": "Any IPv4 address",
+    "note": "Cookbook: any IPv4 address."
+   },
+   {
+    "pattern": "(?i)<\\s*TAG\\s*[^>]*>",
+    "matches": "A specific well-formed HTML tag (opening only)",
+    "note": "Cookbook: replace TAG with the tag name."
+   },
+   {
+    "pattern": "(?i)<\\s*(TAG)\\s*[^>]*>[^<]*</\\1>",
+    "matches": "A specific HTML tag pair with contained text",
+    "note": "Cookbook: tag pair; uses \\1 internal back-reference."
+   },
+   {
+    "pattern": "(?i)<\\s*([A-Z][A-Z0-9]*)\\b[^>]*>(.*?)</\\1>",
+    "matches": "Any HTML tag pair and contents",
+    "note": "Cookbook: any tag pair, well-formed HTML only."
+   },
+   {
+    "pattern": "(?i):on(blur|c(hange|lick)|dblclick|focus|keypress|(key|mouse)(down|up)|(un)?load|mouse(move|o(ut|ver))|reset|s(elect|ubmit))",
+    "matches": "JavaScript UI events (onClick(), onMouseOver(), ...)",
+    "note": "Cookbook: JS event handlers."
+   },
+   {
+    "pattern": "[#\\?](.*)",
+    "matches": "All parameters after ? or # in the URL",
+    "note": "Cookbook: back-reference to this match does not include the ?/# itself."
+   },
+   {
+    "pattern": "www.example.com\\b",
+    "matches": "www.example.com followed by a word boundary (e.g. before a quote)",
+    "note": "\\s fails on non-space word boundaries; use \\b instead."
+   },
+   {
+    "pattern": "^/send/index[0-9]\\.html",
+    "matches": "/send/index1.html ... /send/index9.html exactly",
+    "note": "URL Access example: match a numbered file range."
+   },
+   {
+    "pattern": "^/send/.*",
+    "matches": "Anything under /send/",
+    "note": "URL Access example: match root path regardless."
+   },
+   {
+    "pattern": "/Wordpress/(.*)  ->  /blog/$0",
+    "matches": "/wordpress/10/11/24 rewritten to /blog/10/11/24",
+    "note": "URL rewriting: $0 recalls the first capture group."
+   },
+   {
+    "pattern": "/(.*)\\.xml  ->  /$0",
+    "matches": "/index.xml rewritten to /index",
+    "note": "URL rewriting: strip .xml extension."
+   },
+   {
+    "pattern": "Host (.*) [$0] + URL /(.*)\\.asp [$1]  ->  URL /$1.php",
+    "matches": "www.example.com/news/local.asp rewritten to /news/local.php",
+    "note": "URL rewriting with variables: groups numbered across the condition table."
+   },
+   {
+    "pattern": "condition1 (.*) on Host + condition2 ^/(.*)$ on URL  ->  Location https://$0/$1",
+    "matches": "HTTP-to-HTTPS redirect preserving host and URL",
+    "note": "Redirect example (301/302) using back-references."
+   },
+   {
+    "pattern": "(.*)(everyone), (.*)(works)!  ->  $0, $2 $3 now!",
+    "matches": "'Hey everyone, this works!' rewritten to 'Hey, this works now!'",
+    "note": "Body rewrite: omitting a capture group ($1) deletes that text."
+   },
+   {
+    "pattern": "(.*)www-internal.example.com(.*)  ->  $0www.example.com$1",
+    "matches": "Location header rewrite internal->external DNS name",
+    "note": "Response Location rewrite example."
+   },
+   {
+    "pattern": "(?i)<(\\s)*iframe[\\s\\/]*src=(\\s)*[\"'`?“”„?‚’‘'?‹›«»]javascript:(\\n|.)*</iframe>",
+    "matches": "Injected malicious iframe with flexible quoting/whitespace",
+    "note": "Sanitizing poisoned HTML: (?i) case-insensitive, alternative quote class, (\\s)* zero+ spaces, [\\s\\/]* slash-or-space breaks, (\\n|.)* spans newlines."
+   }
+  ]
+ }
+}

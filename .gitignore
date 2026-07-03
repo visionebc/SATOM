@@ -7,8 +7,8 @@ __pycache__/
 venv/
 .venv/
 
-# App runtime / data
-data/
+# App runtime / data (root only — app/registry/data/ is versioned spec data)
+/data/
 instance/
 *.sqlite
 *.sqlite3

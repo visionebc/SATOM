@@ -382,11 +382,31 @@ def save_profile(profile: SystemProfile, *, note: str = "", author: str = "",
 # --------------------------------------------------------------------------- #
 #  Apply (preview / canary fleet write via the shared bulk machinery)           #
 # --------------------------------------------------------------------------- #
+def _resolve_urn(endpoint: str) -> str:
+    """Registry LOGICAL name -> concrete URN path for the REST client.
+
+    ``ProvisionSpec.endpoint`` is the registry logical name (``dns``,
+    ``system_global``…), but ``FortiWebOps`` sends its ``endpoint`` argument to
+    the device verbatim as the URL path — pushing the bare logical name 404s.
+    A value that already looks like a path passes through unchanged.
+    """
+    ep = (endpoint or "").strip()
+    if "/" in ep:
+        return ep
+    for row in _cmdb_endpoints():
+        if row.get("name") == ep:
+            return row.get("urn") or row.get("path") or ep
+    return ep
+
+
 def _item_to_push_node(item: ProvisionItem) -> dict[str, Any]:
     """Map a ``ProvisionItem`` to a ``{action, endpoint, mkey, data}`` push node.
 
     Singletons PUT the whole object (``update`` with ``mkey=None``); a keyed item
-    with an ``mkey`` updates that object; everything else is created.
+    with an ``mkey`` updates that object; everything else is created. The
+    endpoint is resolved to its URN and the payload wrapped in the ``{"data":…}``
+    envelope FortiWeb cmdb writes require (same shape the object editor sends) —
+    the bare-logical-name + unwrapped-body form never worked against a live box.
     """
     if item.singleton:
         action, mkey = "update", None
@@ -396,9 +416,9 @@ def _item_to_push_node(item: ProvisionItem) -> dict[str, Any]:
         action, mkey = "create", None
     return {
         "action": action,
-        "endpoint": item.endpoint,
+        "endpoint": _resolve_urn(item.endpoint),
         "mkey": mkey,
-        "data": sanitize_payload(item.endpoint, item.data or {}),
+        "data": {"data": sanitize_payload(item.endpoint, item.data or {})},
     }
 
 

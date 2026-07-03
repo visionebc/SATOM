@@ -11,7 +11,7 @@ Sign-in resolution (see ``services.auth_store`` / ``directory_auth``):
 3. Local accounts with **TOTP** enabled get a second-factor challenge before the
    session is established (directory accounts do MFA at the directory).
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import (render_template, redirect, url_for, flash, request, session,
                    current_app)
@@ -24,6 +24,10 @@ from ..services.audit import log_action
 from ..services import settings_store as store
 from ..services import user_settings_store as user_store
 from ..services import auth_store, twofa, email_service
+
+# Per-account lockout policy (complements the per-IP rate limit).
+LOCKOUT_THRESHOLD = 10
+LOCKOUT_WINDOW = timedelta(minutes=15)
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +66,19 @@ def login():
             flash('This account is disabled.', 'danger')
             return render_template('auth/login.html')
 
+        # Per-account lockout: after LOCKOUT_THRESHOLD consecutive failures the
+        # account rejects logins for LOCKOUT_MINUTES, regardless of source IP —
+        # the IP rate-limit can't stop a distributed guess against one account.
+        now = datetime.utcnow()
+        if user and user.locked_until and user.locked_until > now:
+            current_app.logger.warning(
+                'SECURITY: LOCKED account login attempt user=%s ip=%s',
+                username, request.remote_addr)
+            log_action('login.locked_attempt', target=username)
+            flash('Too many failed attempts — account temporarily locked. '
+                  'Try again later.', 'danger')
+            return render_template('auth/login.html')
+
         authed = False
         # 1) Local account → local password only (never fall through to directory).
         if user and user.is_local:
@@ -81,8 +98,24 @@ def login():
                            extra={'detail': result.get('detail', '')})
 
         if not authed:
+            if user is not None:
+                user.failed_logins = (user.failed_logins or 0) + 1
+                if user.failed_logins >= LOCKOUT_THRESHOLD:
+                    user.locked_until = now + LOCKOUT_WINDOW
+                    user.failed_logins = 0
+                    current_app.logger.warning(
+                        'SECURITY: account LOCKED user=%s ip=%s (%d failures)',
+                        username, request.remote_addr, LOCKOUT_THRESHOLD)
+                    log_action('login.lockout', target=username)
+                db.session.commit()
             flash('Invalid username or password.', 'danger')
             return render_template('auth/login.html')
+
+        # Success clears any accumulated failure state.
+        if user.failed_logins or user.locked_until:
+            user.failed_logins = 0
+            user.locked_until = None
+            db.session.commit()
 
         # 3) Second factor for local accounts that enabled it.
         if user.is_local and user.totp_enabled:

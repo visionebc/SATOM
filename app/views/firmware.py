@@ -15,6 +15,8 @@ from __future__ import annotations
 import hashlib
 import json as _json
 import os
+
+from werkzeug.utils import secure_filename
 import shutil
 import uuid
 
@@ -147,14 +149,17 @@ def upload():
     _tok = (request.headers.get("X-CSRFToken")
             or request.headers.get("X-CSRF-Token")
             or request.form.get("csrf_token"))
-    try:
-        validate_csrf(_tok)
-    except Exception:
-        if _wants_json():
-            return jsonify({"error": "Invalid or missing CSRF token — "
-                                     "reload the page and try again."}), 400
-        flash("Your session expired — please reload and try again.", "warning")
-        return redirect(url_for("firmware.index"))
+    # Honour WTF_CSRF_ENABLED=False (tests) exactly like CSRFProtect does —
+    # a manual validate_csrf() call ignores that flag on its own.
+    if current_app.config.get("WTF_CSRF_ENABLED", True):
+        try:
+            validate_csrf(_tok)
+        except Exception:
+            if _wants_json():
+                return jsonify({"error": "Invalid or missing CSRF token — "
+                                         "reload the page and try again."}), 400
+            flash("Your session expired — please reload and try again.", "warning")
+            return redirect(url_for("firmware.index"))
 
     file = request.files.get("image")
     version = (request.form.get("version") or "").strip()
@@ -184,7 +189,7 @@ def upload():
         return redirect(url_for("firmware.index"))
 
     # Insert the row first to mint an id, then stream the upload into its folder.
-    safe_name = os.path.basename(file.filename)
+    safe_name = secure_filename(file.filename) or "firmware.out"
     fw = FirmwareImage(
         product=product, platform=platform, version=version,
         build=build or None, filename=safe_name, stored_path="",
@@ -370,7 +375,7 @@ def assemble_upload(upload_id: str, username: str = "") -> dict:
     declared = int(meta.get("size") or 0)
     if declared and size != declared:
         raise ValueError(f"incomplete upload: {size}/{declared} bytes on disk")
-    safe_name = os.path.basename(meta.get("filename") or "firmware.out")
+    safe_name = secure_filename(meta.get("filename") or "") or "firmware.out"
     fw = FirmwareImage(
         product=(meta.get("product") or "fortiweb"),
         platform=(meta.get("platform") or ""),
@@ -402,6 +407,8 @@ def _csrf_guard():
     tok = (request.headers.get("X-CSRFToken")
            or request.headers.get("X-CSRF-Token")
            or request.form.get("csrf_token"))
+    if not current_app.config.get("WTF_CSRF_ENABLED", True):
+        return None
     try:
         validate_csrf(tok)
         return None
@@ -419,7 +426,7 @@ def upload_begin():
     if bad:
         return bad
     data = request.get_json(silent=True) or request.form
-    filename = os.path.basename((data.get("filename") or "").strip())
+    filename = secure_filename((data.get("filename") or "").strip())
     version = (data.get("version") or "").strip()
     product = (data.get("product") or "fortiweb").strip().lower()
     platform = (data.get("platform") or "").strip().lower()

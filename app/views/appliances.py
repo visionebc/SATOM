@@ -75,11 +75,35 @@ bp = Blueprint('appliances', __name__, url_prefix='/appliances')
 def index():
     # Top-level rows only: standalones + cluster node 0. Member nodes are
     # rendered nested under their cluster, never as standalone entries.
-    appliances = (Appliance.query
-                  .filter(Appliance.parent_id.is_(None))
-                  .order_by(Appliance.name).all())
+    # Server-side pagination: with a 1000-device fleet this page must never
+    # materialise (and render) every appliance per request.
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+    except (TypeError, ValueError):
+        page = 1
+    q = (request.args.get('q') or '').strip()
+
+    base = Appliance.query.filter(Appliance.parent_id.is_(None))
+    if q:
+        from sqlalchemy import or_
+        like = f'%{q}%'
+        base = base.filter(or_(Appliance.name.ilike(like),
+                               Appliance.host.ilike(like),
+                               Appliance.tags.ilike(like)))
+    pagination = (base.order_by(Appliance.name)
+                  .paginate(page=page, per_page=100, error_out=False))
+
+    # Fleet-wide stats (independent of the current page / search filter).
+    from sqlalchemy import func
+    total_count = Appliance.query.filter(Appliance.parent_id.is_(None)).count()
+    kinds_count = (db.session.query(func.count(func.distinct(Appliance.kind)))
+                   .filter(Appliance.parent_id.is_(None)).scalar() or 0)
+
     from ..services import rediscovery
-    return render_template('appliances/index.html', appliances=appliances,
+    return render_template('appliances/index.html',
+                           appliances=pagination.items,
+                           pagination=pagination, q=q,
+                           total_count=total_count, kinds_count=kinds_count,
                            classification=store.all_classification(),
                            has_snapshot=rediscovery.has_snapshot)
 

@@ -113,7 +113,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 var CLS = {
   zones: {{ classification.zones | tojson }},
   lines: {{ classification.lines | tojson }},

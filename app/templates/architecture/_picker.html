@@ -115,7 +115,7 @@
     </div>
   {% endif %}
 </div>
-<script>
+<script nonce="{{ csp_nonce }}">
 (function(){
   var root=document.getElementById('devicePicker'); if(!root) return;
   var SAVED={{ saved_filters|tojson }}; var TOKEN={{ csrf_token()|tojson }};

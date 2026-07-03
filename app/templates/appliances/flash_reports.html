@@ -163,7 +163,7 @@
 </div>
 
 {% if reports %}
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   const search = document.getElementById('rptSearch');
   const kindBtns = document.querySelectorAll('#rptKind button');

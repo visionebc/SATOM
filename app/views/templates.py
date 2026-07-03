@@ -262,23 +262,28 @@ def apply(template_id: int):
             'preview': preview,
         })
 
-    # Confirmed live apply. CONFIG_WRITE is already enforced by the decorator.
-    result = BulkRunner(items).apply(device_ids, canary=1)
-    runs = (result.get('canary') or []) + (result.get('rest') or [])
-    ok_count = sum(1 for r in runs if r.get('ok'))
-    total = len(runs)
-    log_action('template.apply', target=f'{row.kind}/{row.name}',
-               detail=f'devices={device_ids} items={len(items)} '
-                      f'aborted={result.get("aborted")} ok={ok_count}/{total}')
-    if result.get('aborted'):
-        flash(f'Apply aborted — the canary device failed for "{row.name}". '
-              'Remaining devices were skipped.', 'danger')
-    elif ok_count == total:
-        flash(f'Applied "{row.name}" v{row.version} to {ok_count}/{total} device(s).',
-              'success')
-    else:
-        flash(f'Applied "{row.name}" v{row.version} to {ok_count}/{total} device(s) '
-              '— some writes failed.', 'warning')
+    # Confirmed live apply — runs as a BACKGROUND JOB (a fleet rollout must
+    # not live inside an HTTP request: with many devices it outlives the
+    # gunicorn/proxy timeout and a dropped connection would kill it midway).
+    # The job dock (static/js/jobs.js) picks it up and shows live progress;
+    # the completion audit row is written by the job itself.
+    from flask import current_app
+    from ..services.bulk import start_apply_job
+    job = start_apply_job(
+        current_app._get_current_object(),
+        title=f'Apply "{row.name}" v{row.version} to {len(device_ids)} device(s)',
+        items=items, device_ids=device_ids,
+        by=getattr(current_user, 'username', '') or '',
+        meta={'template_id': row.id, 'kind': row.kind, 'name': row.name},
+        audit_action='template.apply',
+        audit_target=f'{row.kind}/{row.name}')
+    log_action('template.apply.start', target=f'{row.kind}/{row.name}',
+               detail=f'devices={device_ids} items={len(items)} job={job["id"]}')
+    if wants_json:
+        return jsonify({'ok': True, 'mode': 'apply', 'job_id': job['id']}), 202
+    flash(f'Rollout of "{row.name}" v{row.version} started for '
+          f'{len(device_ids)} device(s) — progress appears in the job dock '
+          '(bottom right).', 'info')
     return redirect(_safe_next(url_for('templates.index')))
 
 

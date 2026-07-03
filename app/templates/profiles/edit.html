@@ -95,7 +95,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function setAllPerms(state) {
   document.querySelectorAll('.perm-check:not([disabled])').forEach(function (c) { c.checked = state; });
 }

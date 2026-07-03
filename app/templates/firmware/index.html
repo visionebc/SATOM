@@ -154,7 +154,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 /* Progressive enhancement: intercept the upload so it runs in the background
    with a live transfer bar + a "Verifying…" job toast (bottom-right). If JS is
    off or jobs.js failed to load, the form submits natively (synchronous path). */

@@ -232,7 +232,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 // Attack Types Doughnut Chart
 (function () {
   const ctx = document.getElementById('attackTypesChart');

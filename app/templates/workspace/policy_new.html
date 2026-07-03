@@ -65,7 +65,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="text/template" id="vipTpl">
+<script nonce="{{ csp_nonce }}" type="text/template" id="vipTpl">
 <div class="fw-row-card vip-row" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:8px;">
   <div class="fw-fld"><label class="fw-fld-label">vip</label><select class="form-select form-select-sm vipf fw-ref-select" data-key="vip" data-ref="system/vip"><option value="">— select VIP —</option></select></div>
   <div class="fw-fld"><label class="fw-fld-label">interface</label><select class="form-select form-select-sm vipf fw-ref-select" data-key="interface" data-ref="system/interface"><option value="">— none —</option></select></div>
@@ -74,7 +74,7 @@
   <button type="button" class="btn btn-sm btn-fw-outline" onclick="this.closest('.vip-row').remove()">✕</button>
 </div>
 </script>
-<script type="text/template" id="psTpl">
+<script nonce="{{ csp_nonce }}" type="text/template" id="psTpl">
 <tr class="ps-row">
   <td><select class="form-select form-select-sm psf" data-key="server-type"><option value="physical">physical</option><option value="domain">domain</option><option value="sdn">sdn</option></select></td>
   <td><input class="form-control form-control-sm psf" data-key="ip" placeholder="192.0.2.50"></td>
@@ -85,7 +85,7 @@
   <td><button type="button" class="btn btn-sm btn-fw-outline" onclick="this.closest('.ps-row').remove()">✕</button></td>
 </tr>
 </script>
-<script>
+<script nonce="{{ csp_nonce }}">
 const APPL_ID = {{ appliance.id }};
 function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 async function loadRef(sel){

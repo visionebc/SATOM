@@ -212,7 +212,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 const requestHistory = [];
 
 async function runRequest() {

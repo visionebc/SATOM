@@ -206,7 +206,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   // Populate apply modal on show using Bootstrap event (reliable, no manual openModal needed)
   var rejectModalEl = document.getElementById('modalReject');

@@ -358,15 +358,37 @@ def create_app(config_override: object | None = None) -> Flask:
         return redirect(url_for("auth.login"))
 
     # -- security headers -------------------------------------------------
+    # CSP hardening (2026-07-03): every inline <script> block in the templates
+    # carries nonce="{{ csp_nonce }}", so script-src-elem drops
+    # 'unsafe-inline' — an INJECTED <script> (the classic stored/reflected XSS
+    # payload) is refused by every modern browser. Inline on*= handlers
+    # (~160 across the templates) are still allowed via script-src-attr
+    # 'unsafe-inline' — nonces don't cover attributes; removing them is an
+    # incremental template refactor. The plain script-src line stays as the
+    # legacy-browser fallback (a browser without -elem/-attr support keeps the
+    # previous behaviour instead of a broken UI).
+    import secrets as _secrets
+
+    @app.before_request
+    def _csp_nonce():
+        g.csp_nonce = _secrets.token_urlsafe(16)
+
+    @app.context_processor
+    def _inject_csp_nonce():
+        return {"csp_nonce": getattr(g, "csp_nonce", "")}
+
     @app.after_request
     def set_security_headers(response):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        nonce = getattr(g, "csp_nonce", "")
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            f"script-src-elem 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
+            "script-src-attr 'unsafe-inline'; "
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
             "img-src 'self' data: https:; "
             "font-src 'self' data: https://cdn.jsdelivr.net;"

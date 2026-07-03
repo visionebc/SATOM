@@ -107,7 +107,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function toggleHA(scope) {
   const cb = document.getElementById(scope + '_is_cluster');
   const on = !!(cb && cb.checked);

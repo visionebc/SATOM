@@ -14,8 +14,16 @@ bp = Blueprint('audit', __name__, url_prefix='/audit')
 def index():
     from ..models import AuditLog, User
 
-    page = int(request.args.get('page', 1))
-    per_page = int(request.args.get('per_page', 50))
+    # Clamp paging inputs: a non-numeric value must not 500 and a huge
+    # per_page must not let one request materialise the whole audit table.
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        per_page = min(200, max(10, int(request.args.get('per_page', 50))))
+    except (TypeError, ValueError):
+        per_page = 50
     filter_user = request.args.get('user', '').strip()
     filter_action = request.args.get('action', '').strip()
     filter_q = request.args.get('q', '').strip()

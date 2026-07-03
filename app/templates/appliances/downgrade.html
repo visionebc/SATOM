@@ -103,7 +103,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 /* Firmware flash submit handler. Lives in the scripts block (AFTER jobs.js) so
    window.JobsUI is always defined here. The listener ALWAYS attaches: a live
    flash must never fall through to a synchronous submit (that hung the worker). */

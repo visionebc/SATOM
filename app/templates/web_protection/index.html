@@ -185,7 +185,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function filterTable(tableId, q) {
   q = q.toLowerCase();
   document.querySelectorAll('#' + tableId + ' tbody tr').forEach(function (row) {

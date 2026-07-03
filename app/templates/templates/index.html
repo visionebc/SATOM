@@ -370,7 +370,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function toggleNote(a) {
   var td = a.closest('td');
   var s = td.querySelector('.note-short'), f = td.querySelector('.note-full');

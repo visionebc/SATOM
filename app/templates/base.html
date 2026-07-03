@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="{{ csrf_token() }}">
+  {# Turbo Drive reads this and re-stamps the CURRENT document's nonce onto
+     inline scripts arriving in a fetched body — without it, every inline
+     script would be CSP-blocked after the first Turbo navigation. #}
+  <meta name="csp-nonce" content="{{ csp_nonce }}">
   <title>{% block title %}{{ product.title if product else 'Fortinet Manager' }}{% endblock %}</title>
 
   <!-- Favicon (Fortinet) -->
@@ -416,14 +420,14 @@
     </div>
   </div>
 </div>
-<script>
+<script nonce="{{ csp_nonce }}">
 (function(){
   var el=document.getElementById('deviceSwitchModal'); if(!el) return;
   el.addEventListener('show.bs.modal', function(){
     var body=document.getElementById('deviceSwitchBody');
     fetch('{{ url_for("architecture.picker") }}').then(function(r){return r.text();})
       .then(function(html){ body.innerHTML=html;
-        body.querySelectorAll('script').forEach(function(os){var ns=document.createElement('script');ns.textContent=os.textContent;os.replaceWith(ns);});
+        body.querySelectorAll('script').forEach(function(os){var ns=document.createElement('script');ns.nonce=(document.querySelector('meta[name=csp-nonce]')||{}).content||'';ns.textContent=os.textContent;os.replaceWith(ns);});
       }).catch(function(){ body.innerHTML='<div class="text-danger">Failed to load devices.</div>'; });
   });
 })();
@@ -476,7 +480,7 @@
     </div>
   </div>
 </div>
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   var modal = document.getElementById('bugReportModal');
   if (!modal) return;

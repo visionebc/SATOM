@@ -240,7 +240,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 var APPLIANCE_ID = {{ appliance.id }};
 var URL_CLONE_PLAN = "{{ url_for('web_protection.clone_plan', id=appliance.id) }}";
 var URL_CLONE = "{{ url_for('web_protection.clone_apply', id=appliance.id) }}";

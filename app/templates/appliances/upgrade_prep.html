@@ -29,7 +29,7 @@
   <div class="card shadow-sm"><div class="card-header fw-card-header">Health battery (SSH)</div><div class="card-body"><pre id="r-health" class="fw-pre mb-0">—</pre></div></div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 (function() {
   const token = document.querySelector('meta[name="csrf-token"]').content;
   const btn = document.getElementById('prep-run');

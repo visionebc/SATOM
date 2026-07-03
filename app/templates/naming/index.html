@@ -83,7 +83,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function namingSlugify(addr) {
   var s = (addr || '').trim().toLowerCase();
   s = s.replace(/^[a-z][a-z0-9+.\-]*:\/\//, '');

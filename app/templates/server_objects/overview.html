@@ -157,7 +157,7 @@
 .so-item:hover { background:#F6F8FB; color:#0d6efd; }
 .so-item.active { background:rgba(59,130,246,.12); color:#2563eb; font-weight:600; }
 </style>
-<script>
+<script nonce="{{ csp_nonce }}">
 const SO_AID = {{ appliance.id }};
 function soFilter(tableId, q) {
   q = q.toLowerCase();

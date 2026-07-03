@@ -147,7 +147,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function filterEndpoints(q) {
   q = q.toLowerCase();
   document.querySelectorAll('#endpointsTable tbody tr').forEach(function (row) {

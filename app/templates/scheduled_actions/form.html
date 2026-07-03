@@ -314,7 +314,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function onScheduleKindChange() {
   var kind = document.getElementById('scheduleKind').value;
   document.querySelectorAll('.sched-group').forEach(function (g) {

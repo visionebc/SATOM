@@ -44,6 +44,14 @@ class Config:
         "sqlite:////opt/fortinet-manager/data/fortinet.db",
     )
     SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
+    # pool_pre_ping: a connection checked out of the pool is validated with a
+    # cheap SELECT 1 first, so a Postgres restart / idle-timeout kill never
+    # surfaces as a user-facing OperationalError. pool_recycle keeps
+    # connections younger than typical firewall/PG idle timeouts.
+    SQLALCHEMY_ENGINE_OPTIONS: dict = {
+        "pool_pre_ping": True,
+        "pool_recycle": 1800,
+    }
     SESSION_COOKIE_SECURE: bool = True
     SESSION_COOKIE_HTTPONLY: bool = True
     SESSION_COOKIE_SAMESITE: str = "Lax"

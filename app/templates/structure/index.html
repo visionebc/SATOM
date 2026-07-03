@@ -245,7 +245,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function filterXref(q) {
   q = q.toLowerCase();
   document.querySelectorAll('#xrefTable tbody tr').forEach(function (row) {

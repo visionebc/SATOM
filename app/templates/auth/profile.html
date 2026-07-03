@@ -124,7 +124,7 @@
   .banner-swatch { width: 80px; height: 28px; border-radius: 4px; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
   .banner-name { font-size: 13px; color: var(--fw-text-primary); }
 </style>
-<script>
+<script nonce="{{ csp_nonce }}">
   document.querySelectorAll('.banner-options').forEach(function(group){
     group.querySelectorAll('.banner-opt').forEach(function(opt){
       opt.addEventListener('click', function(){

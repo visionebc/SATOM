@@ -15,7 +15,7 @@
 {# ----------------------------------------------------------------------- #}
 {# Repeatable provisioning-element row (mirrors the desktop's element list). #}
 {# ``idx`` is the row index; ``row`` is None for the JS clone template (the   #}
-{# hidden <script> below) and a dict for server-rendered rows.               #}
+{# hidden <script nonce="{{ csp_nonce }}"> below) and a dict for server-rendered rows.               #}
 {# The Item picker offers EVERY config (cmdb) object grouped by GUI section   #}
 {# (optgroups) — pick the intent, set singleton/mkey, type the values.        #}
 {# ----------------------------------------------------------------------- #}
@@ -158,11 +158,11 @@
 </form>
 
 <!-- Clone source for new rows (rendered with __IDX__ placeholders) -->
-<script type="text/template" id="rowTpl">{{ render_row('__IDX__', None, grouped_specs, spec_keys) }}</script>
+<script nonce="{{ csp_nonce }}" type="text/template" id="rowTpl">{{ render_row('__IDX__', None, grouped_specs, spec_keys) }}</script>
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function syncEmpty() {
   var any = document.querySelectorAll('#rows .prov-row').length > 0;
   document.getElementById('emptyRows').style.display = any ? 'none' : '';

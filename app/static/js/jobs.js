@@ -228,11 +228,17 @@
   // ── reconnect to jobs still running after a FULL reload (F5 / JS-off nav) ────
   function reconnectJobs() {
     fetch('/jobs/?active=1', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-      .then(function (r) { return r.ok ? r.json() : []; })
-      .then(function (list) {
-        (list || []).forEach(function (j) {
-          if (j && j.id && j.type === 'firmware_finalize')
-            trackJob(j.id, 'Verifying ' + ((j.meta && j.meta.filename) || j.title || ''));
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        var list = (data && data.jobs) || data || [];
+        list.forEach(function (j) {
+          if (!j || !j.id) return;
+          // Track ANY active job of this user (bulk applies, finalize, …);
+          // tracked{} dedupes so calling this on every navigation is safe.
+          var label = j.type === 'firmware_finalize'
+            ? 'Verifying ' + ((j.meta && j.meta.filename) || j.title || '')
+            : (j.title || j.type || 'Job');
+          trackJob(j.id, label);
         });
       }).catch(function () {});
   }
@@ -260,7 +266,10 @@
   function onLoad() {
     ensureDock();
     diag('nav', { path: location.pathname, uploading: activeXhr ? 1 : 0 });
-    if (!booted) { booted = true; cleanupOldWorkers(); reconnectJobs(); }
+    if (!booted) { booted = true; cleanupOldWorkers(); }
+    // Every navigation (a bulk apply ends in a redirect): pick up any active
+    // job of this user; tracked{} inside trackJob dedupes repeat calls.
+    reconnectJobs();
   }
 
   // Turbo fires turbo:load on the initial load AND after every visit.

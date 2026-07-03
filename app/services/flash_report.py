@@ -171,7 +171,7 @@ _CSS = """
 :root{color-scheme:dark}
 *{box-sizing:border-box}
 body{margin:0;background:#080d1a;color:#e2e8f0;font:14px/1.5 -apple-system,Segoe UI,Roboto,Inter,sans-serif}
-.wrap{max-width:1100px;margin:0 auto;padding:28px 20px 60px}
+.wrap{width:90%;max-width:none;margin:0 auto;padding:28px 20px 60px;text-align:center}
 h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:0 0 12px}
 .sub{color:#94a3b8;font-size:12px;margin:0 0 20px}
 .card{background:rgba(15,23,42,.6);border:1px solid rgba(148,163,184,.10);border-radius:16px;padding:18px 20px;margin:0 0 18px;backdrop-filter:blur(6px)}
@@ -182,6 +182,7 @@ h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:0 0 12px}
 .hdr-badge.bad{background:rgba(239,68,68,.14);color:#ef4444;border:1px solid rgba(239,68,68,.4)}
 .fw{font-size:13px;margin:6px 0 0}
 table{width:100%;border-collapse:collapse;font-size:12px}
+pre{text-align:left}
 th,td{text-align:left;padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.10);vertical-align:top}
 th{text-transform:uppercase;font-size:10px;letter-spacing:.04em;color:#94a3b8}
 .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600}
@@ -200,7 +201,7 @@ details.cmd summary .mono{overflow:hidden;text-overflow:ellipsis;white-space:now
 .ba pre{margin:0;background:#0b1220;border:1px solid rgba(148,163,184,.10);border-radius:8px;padding:10px;
         overflow:auto;max-height:340px;font-family:ui-monospace,Menlo,monospace;font-size:11px;white-space:pre;color:#cbd5e1}
 @media(max-width:760px){.ba{grid-template-columns:1fr}}
-.cards{display:flex;flex-wrap:wrap;gap:12px;margin:0 0 20px}
+.cards{display:flex;flex-wrap:wrap;gap:12px;margin:0 0 20px;justify-content:center}
 .mcard{background:rgba(15,23,42,.6);border:1px solid rgba(148,163,184,.12);border-radius:12px;padding:12px 16px;min-width:148px}
 .mcard .mlbl{color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
 .mcard .mval{font-size:16px;font-weight:600;margin-top:4px}

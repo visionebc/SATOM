@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Web Protection — {{ appliance.name }}{% endblock %}
+{% block title %}Web Protection Profile — {{ appliance.name }}{% endblock %}
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
@@ -8,161 +8,172 @@
   <span class="separator">/</span>
   <a href="{{ url_for('web_protection.index') }}">Web Protection</a>
   <span class="separator">/</span>
-  <span>{{ appliance.name }}</span>
+  <span>Web Protection Profile</span>
 </div>
 {% endblock %}
 
 {% block content %}
-<div class="fw-page-header">
-  <div>
-    <h1 class="fw-page-title"><i class="bi bi-shield-exclamation me-2 text-accent"></i>Web Protection Profiles</h1>
-    <p class="text-muted mb-0" style="font-size:13px;">WAF profiles configured on <strong>{{ appliance.name }}</strong></p>
+<div class="row g-3">
+  <div class="col-lg-2 col-md-3">
+    {% include 'web_protection/_menu.html' %}
   </div>
-  <div class="d-flex align-items-center gap-2">
-    <span class="badge bg-dark border" title="Served from the local source of truth">
-      <i class="bi bi-database me-1"></i>{{ freshness or 'no local data' }}</span>
-    <form method="post" action="{{ url_for('web_protection.refresh', id=appliance.id) }}" class="d-inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="btn btn-outline-light btn-sm" title="Pull live config from the device into the cache">
-        <i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
-    </form>
-    <a href="{{ url_for('web_protection.index') }}" class="btn btn-secondary btn-sm">
-      <i class="bi bi-chevron-left me-1"></i>Change Appliance
-    </a>
-  </div>
-</div>
-
-{% if error %}
-<div class="fw-alert fw-alert-danger d-flex align-items-center gap-2 mb-3">
-  <i class="bi bi-exclamation-triangle-fill"></i>
-  <div>Could not load web protection data from <strong>{{ appliance.name }}</strong>: {{ error }}</div>
-</div>
-{% endif %}
-
-<ul class="nav nav-tabs mb-3" role="tablist">
-  <li class="nav-item">
-    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-inline" type="button">
-      <i class="bi bi-shield-fill-check me-1"></i>Inline Profiles
-      <span class="fw-badge fw-badge-secondary ms-1">{{ wpp_profiles|length if wpp_profiles else 0 }}</span>
-    </button>
-  </li>
-  <li class="nav-item">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-signatures" type="button">
-      <i class="bi bi-fingerprint me-1"></i>Signature Rules
-      <span class="fw-badge fw-badge-secondary ms-1">{{ signatures|length if signatures else 0 }}</span>
-    </button>
-  </li>
-</ul>
-
-<div class="tab-content">
-  <div class="tab-pane fade show active" id="tab-inline">
-    <div class="fw-toolbar mb-2 d-flex align-items-center gap-3 flex-wrap">
-      <div class="fw-search-box">
-        <i class="bi bi-search search-icon"></i>
-        <input type="text" id="wpp-search" placeholder="Search profiles…">
+  <div class="col-lg-10 col-md-9">
+    <div class="fw-page-header">
+      <div>
+        <h1 class="fw-page-title"><i class="bi bi-shield-fill-check me-2 text-accent"></i>Web Protection Profile</h1>
+        <p class="text-muted mb-0" style="font-size:13px;">
+          Policy &gt; Web Protection Profile on <strong>{{ appliance.name }}</strong>
+        </p>
       </div>
-      <label class="d-flex align-items-center gap-2 mb-0" style="font-size:13px;cursor:pointer;user-select:none;"
-             title="Hide the FortiWeb predefined (default) profiles, leaving only your custom profiles. Saved to your preferences.">
-        <input type="checkbox" id="hide-default-toggle" class="form-check-input mt-0"
-               {% if hide_default %}checked{% endif %}>
-        Hide default (predefined) profiles
-      </label>
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge bg-dark border" title="Served from the local source of truth">
+          <i class="bi bi-database me-1"></i>{{ freshness or 'no local data' }}</span>
+        <form method="post" action="{{ url_for('web_protection.refresh', id=appliance.id) }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="next" value="{{ url_for('web_protection.overview', id=appliance.id) }}">
+          <button type="submit" class="btn btn-outline-light btn-sm" title="Pull live config from the device into the cache">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+        </form>
+      </div>
     </div>
-    <div class="fw-table-wrapper">
-      <table class="fw-table" id="profiles-table">
-        <thead>
-          <tr>
-            <th>Profile Name</th>
-            <th>Signature Rule</th>
-            <th>Bot Detection</th>
-            <th>HTTP Flood</th>
-            <th>Exception</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% if wpp_profiles %}
-            {% for p in wpp_profiles %}
-            {% set pname = p.get('name') or p.get('mkey') or '' %}
-            {% set is_default = (p.get('can_view') == 1) %}
-            <tr data-default="{{ 1 if is_default else 0 }}">
-              <td><strong>{{ pname or '—' }}</strong>
-                {% if is_default %}<span class="fw-badge fw-badge-secondary ms-1" title="FortiWeb predefined profile">Default</span>{% endif %}
-              </td>
-              <td>
-                {% if p.get('signature-rule') or p.get('signature_rule') %}
-                  <span class="fw-badge fw-badge-primary">{{ p.get('signature-rule') or p.get('signature_rule') }}</span>
-                {% else %}<span class="text-muted">None</span>{% endif %}
-              </td>
-              <td>
-                {% if p.get('bot-detection') or p.get('bot_detection') %}
-                  <span class="fw-badge fw-badge-success">Enabled</span>
-                {% else %}<span class="fw-badge fw-badge-secondary">Disabled</span>{% endif %}
-              </td>
-              <td>
-                {% if p.get('http-flood-prevention') or p.get('http_flood_prevention') %}
-                  <span class="fw-badge fw-badge-success">Enabled</span>
-                {% else %}<span class="fw-badge fw-badge-secondary">Disabled</span>{% endif %}
-              </td>
-              <td>{{ p.get('exception-name') or '—' }}</td>
-              <td>
-                {% if pname %}
-                <a href="{{ url_for('web_protection.wpp_detail', id=appliance.id, name=pname) }}"
-                   class="btn btn-sm btn-outline-primary" title="View profile detail">
-                  <i class="bi bi-eye"></i>
-                </a>
-                <a href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/web-protection-profile.inline-protection', mkey=pname, title='Web Protection Profile') }}"
-                   class="btn btn-sm btn-outline-secondary" title="Edit profile">
-                  <i class="bi bi-pencil"></i>
-                </a>
-                <button type="button" class="btn btn-sm btn-outline-info"
-                        title="Deep-clone this profile on this device"
-                        data-js="open-clone-modal" data-profile="{{ pname }}">
-                  <i class="bi bi-files"></i>
-                </button>
-                <button type="button" class="btn btn-sm btn-outline-warning"
-                        title="Save as a template (admin approval, then fleet deploy)"
-                        data-js="open-template-modal" data-profile="{{ pname }}">
-                  <i class="bi bi-bookmark-plus"></i>
-                </button>
-                {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          {% else %}
-            <tr><td colspan="6"><div class="fw-empty-state py-4">
-              <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi bi-shield-exclamation"></i></div>
-              <div class="fw-empty-state-title">No web protection profiles found</div>
-            </div></td></tr>
-          {% endif %}
-        </tbody>
-      </table>
-    </div>
-  </div>
 
-  <div class="tab-pane fade" id="tab-signatures">
-    <div class="fw-table-wrapper">
-      <table class="fw-table">
-        <thead><tr><th>Rule Name</th><th>Main Class</th><th>Action</th><th>Severity</th></tr></thead>
-        <tbody>
-          {% if signatures %}
-            {% for r in signatures %}
-            <tr>
-              <td><strong>{{ r.get('name') or r.get('mkey') or '—' }}</strong></td>
-              <td>{{ r.get('main-class-id') or '—' }}</td>
-              <td>
-                {% if r.get('action') == 'block' %}<span class="fw-badge fw-badge-danger">Block</span>
-                {% elif r.get('action') == 'alert' %}<span class="fw-badge fw-badge-warning">Alert</span>
-                {% else %}<span class="fw-badge fw-badge-secondary">{{ r.get('action') or 'Pass' }}</span>{% endif %}
-              </td>
-              <td>{{ r.get('severity') or '—' }}</td>
-            </tr>
-            {% endfor %}
-          {% else %}
-            <tr><td colspan="4" class="text-center text-muted py-3">No signature rules loaded</td></tr>
-          {% endif %}
-        </tbody>
-      </table>
+    {% if error %}
+    <div class="fw-alert fw-alert-danger d-flex align-items-center gap-2 mb-3">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      <div>Could not load web protection data from <strong>{{ appliance.name }}</strong>: {{ error }}</div>
+    </div>
+    {% endif %}
+
+    {# FortiWeb's own tabs: Inline Protection Profile | Offline Protection Profile #}
+    <ul class="nav nav-tabs mb-3" role="tablist">
+      <li class="nav-item">
+        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-inline" type="button">
+          Inline Protection Profile
+          <span class="fw-badge fw-badge-secondary ms-1">{{ wpp_profiles|length if wpp_profiles else 0 }}</span>
+        </button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-offline" type="button">
+          Offline Protection Profile
+          <span class="fw-badge fw-badge-secondary ms-1">{{ offline_profiles|length if offline_profiles else 0 }}</span>
+        </button>
+      </li>
+    </ul>
+
+    <div class="tab-content">
+      <div class="tab-pane fade show active" id="tab-inline">
+        <div class="fw-toolbar mb-2 d-flex align-items-center gap-3 flex-wrap">
+          <a class="btn btn-fw-primary btn-sm"
+             href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/web-protection-profile.inline-protection', title='Web Protection Profile', create=1) }}">
+            <i class="bi bi-plus-lg me-1"></i>Create New
+          </a>
+          <div class="fw-search-box">
+            <i class="bi bi-search search-icon"></i>
+            <input type="text" id="wpp-search" placeholder="Search profiles…">
+          </div>
+          <label class="d-flex align-items-center gap-2 mb-0" style="font-size:13px;cursor:pointer;user-select:none;"
+                 title="Hide the FortiWeb predefined (default) profiles, leaving only your custom profiles. Saved to your preferences.">
+            <input type="checkbox" id="hide-default-toggle" class="form-check-input mt-0"
+                   {% if hide_default %}checked{% endif %}>
+            Hide default (predefined) profiles
+          </label>
+        </div>
+        <div class="fw-table-wrapper">
+          <table class="fw-table" id="profiles-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Signatures</th>
+                <th>Bot Mitigation</th>
+                <th>DoS Protection</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if wpp_profiles %}
+                {% for p in wpp_profiles %}
+                {% set pname = p.get('name') or p.get('mkey') or '' %}
+                {% set is_default = (p.get('can_view') == 1) %}
+                <tr data-default="{{ 1 if is_default else 0 }}">
+                  <td>
+                    {% if pname %}
+                    <a class="fw-semibold text-decoration-none"
+                       href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/web-protection-profile.inline-protection', mkey=pname, title='Web Protection Profile') }}">{{ pname }}</a>
+                    {% else %}—{% endif %}
+                    {% if is_default %}<span class="fw-badge fw-badge-secondary ms-1" title="FortiWeb predefined profile">Default</span>{% endif %}
+                  </td>
+                  <td>
+                    {% if p.get('signature-rule') or p.get('signature_rule') %}
+                      <span class="fw-badge fw-badge-primary">{{ p.get('signature-rule') or p.get('signature_rule') }}</span>
+                    {% else %}<span class="text-muted">None</span>{% endif %}
+                  </td>
+                  <td>{{ p.get('bot-mitigate-policy') or '—' }}</td>
+                  <td>{{ p.get('application-layer-dos-prevention') or '—' }}</td>
+                  <td>
+                    {% if pname %}
+                    <a href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/web-protection-profile.inline-protection', mkey=pname, title='Web Protection Profile') }}"
+                       class="btn btn-sm btn-outline-secondary" title="Edit profile (FortiWeb-style form, all ~40 sub-policies)">
+                      <i class="bi bi-pencil"></i>
+                    </a>
+                    <button type="button" class="btn btn-sm btn-outline-info"
+                            title="Deep-clone this profile on this device"
+                            data-js="open-clone-modal" data-profile="{{ pname }}">
+                      <i class="bi bi-files"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-warning"
+                            title="Save as a template (admin approval, then fleet deploy)"
+                            data-js="open-template-modal" data-profile="{{ pname }}">
+                      <i class="bi bi-bookmark-plus"></i>
+                    </button>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              {% else %}
+                <tr><td colspan="5"><div class="fw-empty-state py-4">
+                  <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi bi-shield-exclamation"></i></div>
+                  <div class="fw-empty-state-title">No inline protection profiles found</div>
+                </div></td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="tab-offline">
+        <div class="fw-toolbar mb-2 d-flex align-items-center gap-3 flex-wrap">
+          <a class="btn btn-fw-primary btn-sm"
+             href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/web-protection-profile.offline-protection', title='Offline Protection Profile', create=1) }}">
+            <i class="bi bi-plus-lg me-1"></i>Create New
+          </a>
+        </div>
+        <div class="fw-table-wrapper">
+          <table class="fw-table">
+            <thead><tr><th>Name</th><th>Signatures</th><th>Actions</th></tr></thead>
+            <tbody>
+              {% if offline_profiles %}
+                {% for p in offline_profiles %}
+                {% set pname = p.get('name') or p.get('mkey') or '' %}
+                <tr>
+                  <td class="fw-semibold">{{ pname or '—' }}
+                    {% if p.get('can_view') == 1 %}<span class="fw-badge fw-badge-secondary ms-1">Default</span>{% endif %}
+                  </td>
+                  <td>{{ p.get('signature-rule') or '—' }}</td>
+                  <td>
+                    {% if pname %}
+                    <a href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/web-protection-profile.offline-protection', mkey=pname, title='Offline Protection Profile') }}"
+                       class="btn btn-sm btn-outline-secondary" title="Edit profile"><i class="bi bi-pencil"></i></a>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              {% else %}
+                <tr><td colspan="3" class="text-center text-muted py-3">No offline protection profiles</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -276,7 +287,6 @@ function onHideDefaultChange(cb) {
   }).catch(function () {});
 }
 
-document.addEventListener('DOMContentLoaded', applyWppFilters);
 
 // ── Clone modal ───────────────────────────────────────────────────────────
 var CLONE_SOURCE = '';
@@ -410,7 +420,7 @@ function _tplStatus(html, kind) {
 
 function saveTplConfirm() {
   var nn = (document.getElementById('tpl-name').value || '').trim() || TPL_SOURCE;
-  _busy('tpl-save-btn', true, 'Saving\u2026');
+  _busy('tpl-save-btn', true, 'Saving…');
   fetch(URL_SAVE_TPL, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ source: TPL_SOURCE, name: nn })
@@ -449,6 +459,7 @@ function saveTplConfirm() {
   document.querySelectorAll('[data-js="open-template-modal"]').forEach(function (btn) {
     btn.addEventListener('click', function (event) { openTemplateModal(this.dataset.profile); });
   });
+  applyWppFilters();
 })();
 </script>
 {% endblock %}

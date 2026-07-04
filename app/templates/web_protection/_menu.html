@@ -1,0 +1,42 @@
+{# The FortiWeb 7.6 Web Protection left menu — exact mirror of the appliance.
+   Context: appliance, wp_groups (wp_menu.menu()), active_item (item key or
+   '__profile__' for the Web Protection Profile page). #}
+<div class="fw-card" style="position:sticky; top:12px;">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-shield-exclamation me-2 text-accent"></i>Web Protection</span>
+  </div>
+  <div class="fw-card-body p-2" style="font-size:13px;">
+    <a href="{{ url_for('web_protection.overview', id=appliance.id) }}"
+       class="d-flex align-items-center gap-2 px-2 py-2 rounded text-decoration-none wpm-link {{ 'wpm-active' if active_item == '__profile__' else '' }}">
+      <i class="bi bi-shield-fill-check"></i>
+      <span>Web Protection Profile</span>
+    </a>
+    <div class="text-muted px-2 mt-1" style="font-size:11px;">(Policy &gt; Web Protection Profile)</div>
+    <hr class="my-2" style="opacity:.15;">
+    {% for group in wp_groups %}
+      {% if group.flat %}
+        {% set it = group.items[0] %}
+        <a href="{{ url_for('web_protection.menu_page', id=appliance.id, item_key=it.key) }}"
+           class="d-flex align-items-center gap-2 px-2 py-2 rounded text-decoration-none wpm-link {{ 'wpm-active' if active_item == it.key else '' }}">
+          <i class="bi {{ group.icon }}"></i><span>{{ group.label }}</span>
+        </a>
+      {% else %}
+        <div class="text-uppercase text-muted px-2 mt-2 mb-1" style="font-size:10.5px; letter-spacing:.06em;">
+          <i class="bi {{ group.icon }} me-1"></i>{{ group.label }}
+        </div>
+        {% for it in group.items %}
+        <a href="{{ url_for('web_protection.menu_page', id=appliance.id, item_key=it.key) }}"
+           class="d-flex align-items-center gap-2 px-2 py-1 rounded text-decoration-none wpm-link {{ 'wpm-active' if active_item == it.key else '' }}"
+           style="padding-left:1.4rem !important;">
+          <i class="bi {{ it.icon }}" style="font-size:12px;"></i><span>{{ it.label }}</span>
+        </a>
+        {% endfor %}
+      {% endif %}
+    {% endfor %}
+  </div>
+</div>
+<style nonce="{{ csp_nonce }}">
+  .wpm-link { color: #cbd5e1; }
+  .wpm-link:hover { background: rgba(59,130,246,.12); color: #fff; }
+  .wpm-active { background: linear-gradient(90deg, rgba(59,130,246,.25), rgba(139,92,246,.18)); color: #fff; font-weight: 600; }
+</style>

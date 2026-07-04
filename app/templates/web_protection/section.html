@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block title %}{{ item.label }} — {{ appliance.name }}{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('web_protection.overview', id=appliance.id) }}">Web Protection</a>
+  <span class="separator">/</span>
+  <span>{{ item.label }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-2 col-md-3">
+    {% include 'web_protection/_menu.html' %}
+  </div>
+  <div class="col-lg-10 col-md-9">
+    <div class="fw-page-header">
+      <div>
+        <h1 class="fw-page-title"><i class="bi {{ item.icon }} me-2 text-accent"></i>{{ item.label }}</h1>
+        <p class="text-muted mb-0" style="font-size:13px;">
+          Web Protection &gt; {{ item.label }} on <strong>{{ appliance.name }}</strong>
+        </p>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge bg-dark border" title="Served from the local source of truth">
+          <i class="bi bi-database me-1"></i>{{ freshness or 'no local data' }}</span>
+        <form method="post" action="{{ url_for('web_protection.refresh', id=appliance.id) }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="next" value="{{ request.full_path }}">
+          <button type="submit" class="btn btn-outline-light btn-sm" title="Pull live config from the device into the cache">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+        </form>
+      </div>
+    </div>
+
+    {% if error %}
+    <div class="fw-alert fw-alert-danger d-flex align-items-center gap-2 mb-3">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      <div>Device error: {{ error }}</div>
+    </div>
+    {% endif %}
+
+    {# FortiWeb's own tabs for this menu entry #}
+    <ul class="nav nav-tabs mb-3">
+      {% for t in item.tabs %}
+      <li class="nav-item">
+        <a class="nav-link {{ 'active' if t.logical == tab.logical else '' }}"
+           href="{{ url_for('web_protection.menu_page', id=appliance.id, item_key=item.key, tab=t.logical) }}">
+          {{ t.label }}
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <div class="fw-toolbar mb-2 d-flex align-items-center gap-2 flex-wrap">
+      <a class="btn btn-fw-primary btn-sm"
+         href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=tab.collection, title=tab.label, create=1) }}">
+        <i class="bi bi-plus-lg me-1"></i>Create New
+      </a>
+      <div class="fw-search-box">
+        <i class="bi bi-search search-icon"></i>
+        <input type="text" id="wp-obj-search" placeholder="Search…">
+      </div>
+      <span class="text-muted ms-auto" style="font-size:12px;">{{ rows|length }} object(s)</span>
+    </div>
+
+    <div class="fw-table-wrapper">
+      <table class="fw-table" id="wp-obj-table">
+        <thead>
+          <tr><th style="width:34%;">Name</th><th style="width:14%;">Status</th><th>Detail</th><th style="width:130px;">Actions</th></tr>
+        </thead>
+        <tbody>
+          {% if rows %}
+            {% for r in rows %}
+            <tr>
+              <td>
+                {% if item.special == 'signatures' and tab.logical == 'signature' %}
+                <a href="{{ url_for('web_protection.signature_policy', id=appliance.id, name=r.name) }}"
+                   class="fw-semibold text-decoration-none">{{ r.name }}</a>
+                {% else %}
+                <a href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=tab.collection, mkey=r.name, title=tab.label) }}"
+                   class="fw-semibold text-decoration-none">{{ r.name }}</a>
+                {% endif %}
+              </td>
+              <td>
+                {% if r.status in ('enable', 'enabled') %}<span class="fw-badge fw-badge-success">Enabled</span>
+                {% elif r.status in ('disable', 'disabled') %}<span class="fw-badge fw-badge-secondary">Disabled</span>
+                {% elif r.status %}<span class="fw-badge fw-badge-secondary">{{ r.status }}</span>
+                {% else %}<span class="text-muted">—</span>{% endif %}
+              </td>
+              <td class="text-muted" style="font-size:12.5px;">{{ r.detail or '—' }}</td>
+              <td>
+                {% if item.special == 'signatures' and tab.logical == 'signature' %}
+                <a href="{{ url_for('web_protection.signature_policy', id=appliance.id, name=r.name) }}"
+                   class="btn btn-sm btn-outline-primary" title="Open the FortiWeb-style signature editor (classes, details, exceptions)">
+                  <i class="bi bi-fingerprint"></i></a>
+                {% endif %}
+                <a href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=tab.collection, mkey=r.name, title=tab.label) }}"
+                   class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
+                <button type="button" class="btn btn-sm btn-outline-danger" title="Delete"
+                        data-js="wp-delete" data-name="{{ r.name }}"><i class="bi bi-trash"></i></button>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="4"><div class="fw-empty-state py-4">
+              <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi {{ item.icon }}"></i></div>
+              <div class="fw-empty-state-title">No {{ tab.label }} objects</div>
+              <div class="fw-empty-state-text">Create one, or Refresh to pull live config from the device.</div>
+            </div></td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var AID = {{ appliance.id }};
+  var COLL = {{ tab.collection | tojson }};
+
+  var search = document.getElementById('wp-obj-search');
+  if (search) search.addEventListener('input', function () {
+    var q = (this.value || '').toLowerCase();
+    document.querySelectorAll('#wp-obj-table tbody tr').forEach(function (row) {
+      row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  });
+
+  function post(url, body) {
+    return fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (r) { return r.json(); });
+  }
+
+  document.querySelectorAll('[data-js="wp-delete"]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var name = this.dataset.name;
+      var base = { collection: COLL, mkey: name };
+      // dry-run first (the app-wide contract), then confirm, then apply.
+      post('/objedit/' + AID + '/delete-object', base).then(function (j) {
+        if (!j.ok) { alert('Delete pre-check failed: ' + (j.error || 'unknown')); return; }
+        if (!confirm('Delete "' + name + '" on {{ appliance.name }}?\nThis removes the object (and its sub-table rows) from the device.')) return;
+        post('/objedit/' + AID + '/delete-object', Object.assign({}, base, { apply: true })).then(function (j2) {
+          if (!j2.ok) { alert('Delete failed: ' + (j2.error || 'unknown')); return; }
+          window.location.reload();
+        });
+      });
+    });
+  });
+})();
+</script>
+{% endblock %}

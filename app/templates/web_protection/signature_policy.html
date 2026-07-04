@@ -1,0 +1,551 @@
+{% extends "base.html" %}
+
+{% block title %}{{ set_name }} — Signatures — {{ appliance.name }}{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('web_protection.overview', id=appliance.id) }}">Web Protection</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('web_protection.menu_page', id=appliance.id, item_key='signatures') }}">Known Attacks / Signatures</a>
+  <span class="separator">/</span>
+  <span>{{ set_name }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-2 col-md-3">
+    {% include 'web_protection/_menu.html' %}
+  </div>
+  <div class="col-lg-10 col-md-9">
+    <div class="fw-page-header">
+      <div>
+        <h1 class="fw-page-title"><i class="bi bi-fingerprint me-2 text-accent"></i>{{ set_name }}</h1>
+        <p class="text-muted mb-0" style="font-size:13px;">
+          Signature Policy on <strong>{{ appliance.name }}</strong>
+          {% if sig_obj and sig_obj.get('can_view') == 1 %}
+            <span class="fw-badge fw-badge-secondary ms-1" title="FortiWeb predefined signature policy — read-only; clone it to customize">Predefined</span>
+          {% endif %}
+          · state source:
+          {% if state_source == 'db' %}<span class="fw-badge fw-badge-success">DB cache</span>
+          {% elif state_source == 'live' %}<span class="fw-badge fw-badge-primary">live device</span>
+          {% else %}<span class="fw-badge fw-badge-warning" title="Neither the cache nor the device returned the sub-lists">unavailable</span>{% endif %}
+        </p>
+      </div>
+      <div class="d-flex gap-2">
+        <a href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/signature', mkey=set_name, title='Signature Policy') }}"
+           class="btn btn-secondary btn-sm"><i class="bi bi-pencil me-1"></i>Full editor</a>
+        <a href="{{ url_for('web_protection.menu_page', id=appliance.id, item_key='signatures') }}"
+           class="btn btn-secondary btn-sm"><i class="bi bi-chevron-left me-1"></i>Back</a>
+      </div>
+    </div>
+
+    {% if not catalog_ready %}
+    <div class="fw-alert fw-alert-warning d-flex align-items-center gap-2 mb-3">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      <div>No signature database cached — signature names/descriptions and the search need it.
+        Sync it once in <a href="{{ url_for('signatures.index') }}" class="alert-link">Settings → Signatures</a>.</div>
+    </div>
+    {% endif %}
+
+    {# ── Signature Category — the per-main-class rows, like FortiWeb's policy page ── #}
+    <div class="fw-card mb-3">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-collection me-2 text-accent"></i>Signature Category</span>
+      </div>
+      <div class="fw-card-body p-0">
+        <table class="fw-table mb-0">
+          <thead><tr>
+            <th>Signature Category</th><th>Status</th><th>Action</th><th>Severity</th><th>Trigger Policy</th><th style="width:70px;"></th>
+          </tr></thead>
+          <tbody>
+            {% set mc_labels = value_labels.get('main_class_id', {}) %}
+            {% set act_labels = value_labels.get('action', {}) %}
+            {% if state.classes %}
+              {% for c in state.classes %}
+              <tr>
+                <td class="fw-semibold">{{ mc_labels.get(c.get('main_class_id')|string, c.get('main_class_id')) }}</td>
+                <td>{% if c.get('status') == 'enable' %}<span class="fw-badge fw-badge-success">Enabled</span>
+                    {% else %}<span class="fw-badge fw-badge-secondary">Disabled</span>{% endif %}</td>
+                <td>{{ act_labels.get(c.get('action'), c.get('action') or '—') }}</td>
+                <td>{{ c.get('severity') or '—' }}</td>
+                <td>{{ c.get('trigger') or '—' }}</td>
+                <td>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" title="Edit category settings"
+                          data-js="edit-class" data-row="{{ c.get('id', c.get('_id','')) }}"
+                          data-mc="{{ c.get('main_class_id') }}" data-status="{{ c.get('status','') }}"
+                          data-action="{{ c.get('action','') }}" data-severity="{{ c.get('severity','') }}"
+                          data-block="{{ c.get('block-period','') }}" data-trigger="{{ c.get('trigger','') }}">
+                    <i class="bi bi-pencil"></i></button>
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr><td colspan="6" class="text-center text-muted py-3">
+                No category rows available{% if state_source == 'none' %} — device unreachable and no deep capture cached. Run a deep capture or Refresh{% endif %}.
+              </td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# ── Signature Details — searchable list + per-signature actions, like FortiWeb ── #}
+    <div class="fw-card">
+      <div class="fw-card-header d-flex align-items-center justify-content-between">
+        <span class="fw-card-title"><i class="bi bi-list-ul me-2 text-accent"></i>Signature Details</span>
+        <span class="text-muted" style="font-size:12px;">{{ catalog_count }} signatures in the catalog</span>
+      </div>
+      <div class="fw-card-body">
+        <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+          <select id="sig-main" class="form-select fw-form-control" style="width:auto; font-size:13px;">
+            <option value="">All classes</option>
+            {% for mid, m in classes.items() %}
+            <option value="{{ mid }}">{{ m.name }}</option>
+            {% endfor %}
+          </select>
+          <select id="sig-sub" class="form-select fw-form-control" style="width:auto; font-size:13px;">
+            <option value="">All sub-classes</option>
+          </select>
+          <select id="sig-flt" class="form-select fw-form-control" style="width:auto; font-size:13px;">
+            <option value="">All signatures</option>
+            <option value="disabled">Disabled only</option>
+            <option value="alert">Alert Only</option>
+            <option value="exception">With exceptions</option>
+          </select>
+          <div class="fw-search-box">
+            <i class="bi bi-search search-icon"></i>
+            <input type="text" id="sig-q" placeholder="Search ID or description…">
+          </div>
+          <span id="sig-count" class="text-muted ms-auto" style="font-size:12px;"></span>
+        </div>
+
+        <div class="fw-table-wrapper">
+          <table class="fw-table" id="sig-table">
+            <thead><tr>
+              <th style="width:110px;">Signature ID</th><th>Description</th>
+              <th style="width:180px;">Sub Class</th><th style="width:110px;">Status</th>
+              <th style="width:100px;">Exceptions</th><th style="width:170px;">Actions</th>
+            </tr></thead>
+            <tbody id="sig-tbody">
+              <tr><td colspan="6" class="text-center text-muted py-3">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="d-flex align-items-center gap-2 mt-2">
+          <button type="button" class="btn btn-sm btn-outline-light" id="sig-prev">&laquo; Prev</button>
+          <span id="sig-page" class="text-muted" style="font-size:12px;"></span>
+          <button type="button" class="btn btn-sm btn-outline-light" id="sig-next">Next &raquo;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Signature Category edit modal ── #}
+<div class="modal fade fw-modal" id="modalClass" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-collection me-2"></i><span id="cls-title">Signature Category</span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2"><label class="fw-form-label">Status</label>
+          <select id="cls-status" class="form-select fw-form-control">
+            <option value="enable">Enabled</option><option value="disable">Disabled</option>
+          </select></div>
+        <div class="mb-2"><label class="fw-form-label">Action</label>
+          <select id="cls-action" class="form-select fw-form-control">
+            {% for a in class_spec.get('enums', {}).get('action', []) %}
+            <option value="{{ a }}">{{ value_labels.get('action', {}).get(a, a) }}</option>
+            {% endfor %}
+          </select></div>
+        <div class="mb-2"><label class="fw-form-label">Severity</label>
+          <select id="cls-severity" class="form-select fw-form-control">
+            {% for s in class_spec.get('enums', {}).get('severity', ['Informative','Low','Medium','High']) %}
+            <option value="{{ s }}">{{ s }}</option>
+            {% endfor %}
+          </select></div>
+        <div class="mb-2"><label class="fw-form-label">Block Period (seconds)</label>
+          <input type="number" id="cls-block" class="form-control fw-form-control" min="1" max="3600"></div>
+        <div class="mb-2"><label class="fw-form-label">Trigger Policy</label>
+          <input type="text" id="cls-trigger" class="form-control fw-form-control" placeholder="(none)"></div>
+        <div id="cls-status-msg"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-fw-primary btn-sm" id="cls-save">Save to device</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Per-signature modal: Signature Details | Exception tabs (like FortiWeb) ── #}
+<div class="modal fade fw-modal" id="modalSig" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-fingerprint me-2"></i>Signature <span id="sd-id"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <ul class="nav nav-tabs mb-3">
+          <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#sd-tab-details" type="button">Signature Details</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sd-tab-exc" type="button">Exception</button></li>
+        </ul>
+        <div class="tab-content">
+          <div class="tab-pane fade show active" id="sd-tab-details">
+            <table class="fw-table">
+              <tbody>
+                <tr><td class="text-muted" style="width:30%;">Signature ID</td><td class="mono" id="sd-d-id"></td></tr>
+                <tr><td class="text-muted">Class</td><td id="sd-d-class"></td></tr>
+                <tr><td class="text-muted">Sub Class</td><td id="sd-d-sub"></td></tr>
+                <tr><td class="text-muted">Description</td><td id="sd-d-desc" style="font-size:12.5px;"></td></tr>
+                <tr><td class="text-muted">Status in this policy</td><td id="sd-d-status"></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="tab-pane fade" id="sd-tab-exc">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <span class="text-muted" style="font-size:12.5px;">
+                Exception entries exempt this signature when the request element matches (max 128 per signature).
+              </span>
+              <button type="button" class="btn btn-fw-primary btn-sm" id="exc-new-btn"><i class="bi bi-plus-lg me-1"></i>Create New</button>
+            </div>
+            <table class="fw-table" id="exc-table">
+              <thead><tr><th>#</th><th>Element Type</th><th>Operation</th><th>Value</th><th>Concatenate</th><th style="width:60px;"></th></tr></thead>
+              <tbody id="exc-tbody"><tr><td colspan="6" class="text-center text-muted py-2">Loading…</td></tr></tbody>
+            </table>
+
+            <div id="exc-form" class="fw-card mt-2" style="display:none;">
+              <div class="fw-card-header"><span class="fw-card-title">New exception entry</span></div>
+              <div class="fw-card-body">
+                <div class="row g-2">
+                  <div class="col-md-6"><label class="fw-form-label">Element Type</label>
+                    <select id="exc-target" class="form-select fw-form-control"></select></div>
+                  <div class="col-md-6"><label class="fw-form-label">Operation</label>
+                    <select id="exc-op" class="form-select fw-form-control"></select></div>
+                  <div class="col-md-6" data-exc-field="http-method"><label class="fw-form-label">HTTP Method</label>
+                    <input type="text" id="exc-method" class="form-control fw-form-control" placeholder="GET"></div>
+                  <div class="col-md-6" data-exc-field="ip"><label class="fw-form-label">Client IP</label>
+                    <input type="text" id="exc-ip" class="form-control fw-form-control" placeholder="192.0.2.1 or range"></div>
+                  <div class="col-md-6" data-exc-field="name"><label class="fw-form-label">Name</label>
+                    <input type="text" id="exc-name" class="form-control fw-form-control"></div>
+                  <div class="col-md-6" data-exc-field="value-check"><label class="fw-form-label">Check Value of Specified Element</label>
+                    <select id="exc-vcheck" class="form-select fw-form-control">
+                      <option value="disable">Disabled</option><option value="enable">Enabled</option>
+                    </select></div>
+                  <div class="col-md-6" data-exc-field="value"><label class="fw-form-label">Value</label>
+                    <input type="text" id="exc-value" class="form-control fw-form-control"></div>
+                  <div class="col-md-6"><label class="fw-form-label">Concatenate</label>
+                    <select id="exc-concat" class="form-select fw-form-control">
+                      <option value="AND">AND</option><option value="OR">OR</option>
+                    </select></div>
+                </div>
+                <div class="d-flex gap-2 mt-3">
+                  <button type="button" class="btn btn-fw-primary btn-sm" id="exc-save"><i class="bi bi-check-lg me-1"></i>Save to device</button>
+                  <button type="button" class="btn btn-secondary btn-sm" id="exc-cancel">Cancel</button>
+                </div>
+              </div>
+            </div>
+            <div id="exc-msg" class="mt-2"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var AID = {{ appliance.id }};
+  var SET = {{ set_name | tojson }};
+  var URL_SEARCH = {{ url_for('web_protection.sig_search', id=appliance.id, name=set_name) | tojson }};
+  var URL_EXC = {{ url_for('web_protection.sig_exceptions', id=appliance.id, name=set_name, sig_id='__SID__') | tojson }};
+  var CLASSES = {{ classes | tojson }};
+  var FILTER_SPEC = {{ filter_spec | tojson }};
+  var VLBL = {{ value_labels | tojson }};
+  var PAGE = 1, TOTAL = 0, PER = 100, LIVE = false;
+  var CUR = null;  // signature row currently open in the modal
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function lbl(field, v) {
+    var m = VLBL[field] || {};
+    return m[v] != null ? m[v] : v;
+  }
+  function post(url, body) {
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body) }).then(function (r) { return r.json(); });
+  }
+  function saveRow(coll, subId, fields) {
+    return post('/objedit/' + AID + '/save-row',
+                { collection: coll, parent: SET, sub_id: subId || null,
+                  fields: fields, apply: true });
+  }
+  function deleteRow(coll, subId) {
+    return post('/objedit/' + AID + '/delete-row',
+                { collection: coll, parent: SET, sub_id: subId, apply: true });
+  }
+
+  // ── Signature Details list ────────────────────────────────────────────────
+  function query() {
+    var p = new URLSearchParams({
+      q: document.getElementById('sig-q').value || '',
+      main: document.getElementById('sig-main').value || '',
+      sub: document.getElementById('sig-sub').value || '',
+      filter: document.getElementById('sig-flt').value || '',
+      page: PAGE, per_page: PER
+    });
+    if (LIVE) p.set('live', '1');
+    fetch(URL_SEARCH + '?' + p.toString()).then(function (r) { return r.json(); }).then(render);
+  }
+
+  function render(d) {
+    var tb = document.getElementById('sig-tbody');
+    if (!d.ok) {
+      tb.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">' + esc(d.error || 'No data') + '</td></tr>';
+      return;
+    }
+    TOTAL = d.total;
+    document.getElementById('sig-count').textContent = d.total + ' match(es)' + (d.source ? ' · state: ' + d.source : '');
+    document.getElementById('sig-page').textContent = 'Page ' + d.page + ' / ' + Math.max(1, Math.ceil(d.total / PER));
+    if (!d.rows.length) {
+      tb.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">No signatures match.</td></tr>';
+      return;
+    }
+    tb.innerHTML = d.rows.map(function (s) {
+      var status = s.disabled ? '<span class="fw-badge fw-badge-secondary">Disabled</span>'
+                 : (s.alert_only ? '<span class="fw-badge fw-badge-warning">Alert Only</span>'
+                                 : '<span class="fw-badge fw-badge-success">Enabled</span>');
+      var exc = s.exceptions ? '<span class="fw-badge fw-badge-primary">' + s.exceptions + '</span>' : '<span class="text-muted">—</span>';
+      return '<tr>' +
+        '<td class="mono">' + esc(s.id) + '</td>' +
+        '<td style="font-size:12.5px;">' + esc(s.desc || '—') + '</td>' +
+        '<td class="text-muted" style="font-size:12px;">' + esc(s.sub) + '</td>' +
+        '<td>' + status + '</td><td>' + exc + '</td>' +
+        '<td>' +
+          '<button class="btn btn-sm btn-outline-' + (s.disabled ? 'success' : 'secondary') + '" title="' + (s.disabled ? 'Enable' : 'Disable') + ' this signature in the policy" data-act="toggle-disable" data-sig=\'' + esc(JSON.stringify(s)) + '\'><i class="bi bi-power"></i></button> ' +
+          '<button class="btn btn-sm btn-outline-' + (s.alert_only ? 'warning' : 'secondary') + '" title="' + (s.alert_only ? 'Remove Alert Only' : 'Alert Only (log, don\'t block)') + '" data-act="toggle-alert" data-sig=\'' + esc(JSON.stringify(s)) + '\'><i class="bi bi-bell"></i></button> ' +
+          '<button class="btn btn-sm btn-outline-primary" title="Details / Exceptions" data-act="open" data-sig=\'' + esc(JSON.stringify(s)) + '\'><i class="bi bi-three-dots"></i></button>' +
+        '</td></tr>';
+    }).join('');
+    tb.querySelectorAll('button[data-act]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var s = JSON.parse(this.dataset.sig);
+        var act = this.dataset.act;
+        if (act === 'open') openSig(s, false);
+        else if (act === 'toggle-disable') toggleList(s, 'signature_disable_list', s.disabled, s.disable_row);
+        else if (act === 'toggle-alert') toggleList(s, 'alert_only_list', s.alert_only, s.alert_row);
+      });
+    });
+  }
+
+  function toggleList(s, seg, isOn, rowId) {
+    var coll = 'waf/signature/' + seg;
+    var what = seg === 'alert_only_list' ? 'Alert Only' : 'Disable';
+    if (isOn) {
+      if (!rowId) { alert('Row id unknown — refresh the list (state may be stale).'); return; }
+      if (!confirm('Remove ' + what + ' for signature ' + s.id + ' on ' + SET + '?')) return;
+      deleteRow(coll, rowId).then(after);
+    } else {
+      if (!confirm(what + ' signature ' + s.id + ' in policy ' + SET + '?\nThis writes to the device.')) return;
+      saveRow(coll, null, { signature_id: s.id }).then(after);
+    }
+    function after(j) {
+      if (!j.ok) { alert('Write failed: ' + (j.error || 'unknown')); return; }
+      LIVE = true;  // the box is now ahead of the local cache — read live
+      query();
+    }
+  }
+
+  // ── Per-signature modal (Details | Exception) ─────────────────────────────
+  function openSig(s, showExc) {
+    CUR = s;
+    document.getElementById('sd-id').textContent = s.id;
+    document.getElementById('sd-d-id').textContent = s.id;
+    document.getElementById('sd-d-class').textContent = s.main;
+    document.getElementById('sd-d-sub').textContent = s.sub;
+    document.getElementById('sd-d-desc').textContent = s.desc || '—';
+    document.getElementById('sd-d-status').innerHTML =
+      s.disabled ? 'Disabled' : (s.alert_only ? 'Alert Only' : 'Enabled');
+    document.getElementById('exc-form').style.display = 'none';
+    document.getElementById('exc-msg').innerHTML = '';
+    loadExceptions();
+    var modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSig'));
+    modal.show();
+    if (showExc) {
+      var el = document.querySelector('[data-bs-target="#sd-tab-exc"]');
+      bootstrap.Tab.getOrCreateInstance(el).show();
+    }
+  }
+
+  function loadExceptions() {
+    var tb = document.getElementById('exc-tbody');
+    tb.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-2">Loading…</td></tr>';
+    var u = URL_EXC.replace('__SID__', encodeURIComponent(CUR.id)) + (LIVE ? '?live=1' : '');
+    fetch(u).then(function (r) { return r.json(); }).then(function (d) {
+      var rows = d.rows || [];
+      if (!rows.length) {
+        tb.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-2">No exception entries for this signature.</td></tr>';
+        return;
+      }
+      tb.innerHTML = rows.map(function (r) {
+        var val = r.value || r.ip || r['http-method'] || '';
+        if (r.name) val = r.name + (val ? ' = ' + val : '');
+        return '<tr>' +
+          '<td>' + esc(r.id) + '</td>' +
+          '<td>' + esc(lbl('match-target', r['match-target'])) + '</td>' +
+          '<td>' + esc(lbl('operator', r.operator)) + '</td>' +
+          '<td class="mono" style="font-size:12px;">' + esc(val || '—') + '</td>' +
+          '<td>' + esc(r['concatenate-type'] || '—') + '</td>' +
+          '<td><button class="btn btn-sm btn-outline-danger" data-exc-del="' + esc(r.id) + '"><i class="bi bi-trash"></i></button></td>' +
+          '</tr>';
+      }).join('');
+      tb.querySelectorAll('[data-exc-del]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var rid = this.dataset.excDel;
+          if (!confirm('Delete exception entry #' + rid + ' of signature ' + CUR.id + '?')) return;
+          deleteRow('waf/signature/filter_list', rid).then(function (j) {
+            if (!j.ok) { alert('Delete failed: ' + (j.error || 'unknown')); return; }
+            LIVE = true; loadExceptions(); query();
+          });
+        });
+      });
+    });
+  }
+
+  // Exception create form — gated by Element Type exactly like the FortiWeb GUI
+  // (show_when from the curated signature_filter_item spec).
+  var SHOW_WHEN = FILTER_SPEC.show_when || {};
+  var EXC_INPUT = { 'http-method': 'exc-method', 'ip': 'exc-ip', 'name': 'exc-name',
+                    'value-check': 'exc-vcheck', 'value': 'exc-value' };
+
+  function buildExcForm() {
+    var tgt = document.getElementById('exc-target');
+    var op = document.getElementById('exc-op');
+    (FILTER_SPEC.enums && FILTER_SPEC.enums['match-target'] || []).forEach(function (v) {
+      tgt.insertAdjacentHTML('beforeend', '<option value="' + esc(v) + '">' + esc(lbl('match-target', v)) + '</option>');
+    });
+    (FILTER_SPEC.enums && FILTER_SPEC.enums['operator'] || []).forEach(function (v) {
+      op.insertAdjacentHTML('beforeend', '<option value="' + esc(v) + '">' + esc(lbl('operator', v)) + '</option>');
+    });
+    tgt.addEventListener('change', gateExcFields);
+    document.getElementById('exc-vcheck').addEventListener('change', gateExcFields);
+    gateExcFields();
+  }
+
+  function gateExcFields() {
+    var target = document.getElementById('exc-target').value;
+    Object.keys(EXC_INPUT).forEach(function (field) {
+      var box = document.querySelector('[data-exc-field="' + field + '"]');
+      if (!box) return;
+      var rule = SHOW_WHEN[field];
+      var show = !rule || (rule[0] === 'match-target' && rule[1].indexOf(target) !== -1);
+      // FortiWeb quirk: for named elements, Value only shows when Check-Value is enabled.
+      if (field === 'value' && show) {
+        var named = ['PARAMETER', 'COOKIE', 'HTTP_HEADER', 'JSON_ELEMENTS'].indexOf(target) !== -1;
+        if (named) show = document.getElementById('exc-vcheck').value === 'enable';
+      }
+      box.style.display = show ? '' : 'none';
+    });
+  }
+
+  document.getElementById('exc-new-btn').addEventListener('click', function () {
+    document.getElementById('exc-form').style.display = '';
+  });
+  document.getElementById('exc-cancel').addEventListener('click', function () {
+    document.getElementById('exc-form').style.display = 'none';
+  });
+  document.getElementById('exc-save').addEventListener('click', function () {
+    var target = document.getElementById('exc-target').value;
+    var fields = { signature_id: CUR.id, 'match-target': target,
+                   operator: document.getElementById('exc-op').value,
+                   'concatenate-type': document.getElementById('exc-concat').value };
+    Object.keys(EXC_INPUT).forEach(function (f) {
+      var box = document.querySelector('[data-exc-field="' + f + '"]');
+      if (box && box.style.display !== 'none') {
+        fields[f] = document.getElementById(EXC_INPUT[f]).value;
+      }
+    });
+    if (!confirm('Create this exception for signature ' + CUR.id + ' in policy ' + SET + '?\nThis writes to the device.')) return;
+    saveRow('waf/signature/filter_list', null, fields).then(function (j) {
+      var el = document.getElementById('exc-msg');
+      if (!j.ok) {
+        el.innerHTML = '<div class="fw-alert fw-alert-danger">Write failed: ' + esc(j.error || 'unknown') + '</div>';
+        return;
+      }
+      el.innerHTML = '<div class="fw-alert fw-alert-success">Exception saved to the device.</div>';
+      document.getElementById('exc-form').style.display = 'none';
+      LIVE = true; loadExceptions(); query();
+    });
+  });
+
+  // ── Signature Category edit modal ─────────────────────────────────────────
+  var CLS_ROW = null;
+  document.querySelectorAll('[data-js="edit-class"]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      CLS_ROW = this.dataset.row;
+      document.getElementById('cls-title').textContent =
+        (VLBL['main_class_id'] || {})[this.dataset.mc] || this.dataset.mc;
+      document.getElementById('cls-status').value = this.dataset.status || 'enable';
+      document.getElementById('cls-action').value = this.dataset.action || '';
+      document.getElementById('cls-severity').value = this.dataset.severity || '';
+      document.getElementById('cls-block').value = this.dataset.block || '';
+      document.getElementById('cls-trigger').value = this.dataset.trigger || '';
+      document.getElementById('cls-status-msg').innerHTML = '';
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('modalClass')).show();
+    });
+  });
+  document.getElementById('cls-save').addEventListener('click', function () {
+    var fields = {
+      status: document.getElementById('cls-status').value,
+      action: document.getElementById('cls-action').value,
+      severity: document.getElementById('cls-severity').value,
+      trigger: document.getElementById('cls-trigger').value
+    };
+    var bp = document.getElementById('cls-block').value;
+    if (bp) fields['block-period'] = bp;
+    if (!confirm('Save these category settings to ' + SET + ' on the device?')) return;
+    saveRow('waf/signature/main_class_list', CLS_ROW, fields).then(function (j) {
+      var el = document.getElementById('cls-status-msg');
+      if (!j.ok) { el.innerHTML = '<div class="fw-alert fw-alert-danger">Write failed: ' + esc(j.error || 'unknown') + '</div>'; return; }
+      el.innerHTML = '<div class="fw-alert fw-alert-success">Saved. Reloading…</div>';
+      setTimeout(function () { window.location.reload(); }, 900);
+    });
+  });
+
+  // ── Filters wiring ────────────────────────────────────────────────────────
+  document.getElementById('sig-main').addEventListener('change', function () {
+    var sub = document.getElementById('sig-sub');
+    sub.innerHTML = '<option value="">All sub-classes</option>';
+    var m = CLASSES[this.value];
+    if (m) Object.keys(m.subs).forEach(function (sid) {
+      sub.insertAdjacentHTML('beforeend', '<option value="' + esc(sid) + '">' + esc(m.subs[sid]) + '</option>');
+    });
+    PAGE = 1; query();
+  });
+  document.getElementById('sig-sub').addEventListener('change', function () { PAGE = 1; query(); });
+  document.getElementById('sig-flt').addEventListener('change', function () { PAGE = 1; query(); });
+  var qTimer = null;
+  document.getElementById('sig-q').addEventListener('input', function () {
+    clearTimeout(qTimer); qTimer = setTimeout(function () { PAGE = 1; query(); }, 250);
+  });
+  document.getElementById('sig-prev').addEventListener('click', function () {
+    if (PAGE > 1) { PAGE--; query(); }
+  });
+  document.getElementById('sig-next').addEventListener('click', function () {
+    if (PAGE * PER < TOTAL) { PAGE++; query(); }
+  });
+
+  buildExcForm();
+  query();
+})();
+</script>
+{% endblock %}

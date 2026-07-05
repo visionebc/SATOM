@@ -158,12 +158,21 @@ def relations() -> dict[str, Any]:
                 "pk": cname in pk_cols,
                 "fk": fk_map.get(cname, ""),
                 "sensitive": _is_sensitive(cname),
+                "nullable": bool(c.get("nullable", True)),
             })
+        # Row count for the diagram header badge — best-effort, never fatal.
+        try:
+            nrows = int(db.session.execute(
+                text(f'SELECT COUNT(*) FROM "{name}"')).scalar() or 0)
+        except Exception:
+            db.session.rollback()
+            nrows = -1
         tables.append({
             "name": name,
             "columns": len(cols),   # kept for the accessible row-fallback (a count)
             "cols": cols,           # the real schema, drives the ER diagram
             "pk": sorted(pk_cols),
+            "rows": nrows,
         })
     return {"tables": tables, "edges": edges}
 

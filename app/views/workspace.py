@@ -4,13 +4,15 @@ from flask import Blueprint, render_template, jsonify, request
 from flask_login import login_required
 from ..auth.decorators import require_permission
 from ..models import Appliance
+from ..models import visible_appliances, visible_appliance_or_404
 from ..clients.fortiweb import FortiWebClient
-from ..clients.fortiadc import FortiADCClient
+from ..clients import client_for
 from ..services.fortiweb_field_schema import (
     build_groups, descriptor, is_noise, is_on, REF_ENDPOINTS, ALL_REF_ENDPOINTS,
     CREATE_FIELDS,
 )
 from ..services import policy_form
+from ..services import policy_ops
 from ..services.fortiweb_ops import FortiWebOps
 from ..errors import flash_error, json_error, log_exception
 
@@ -68,7 +70,7 @@ def _filter_groups(groups, drop_keys):
 @bp.route('/')
 @login_required
 def index():
-    appliances = Appliance.query.order_by(Appliance.name).all()
+    appliances = visible_appliances().order_by(Appliance.name).all()
     from flask import redirect as _redir, url_for as _ufor
     from ..services import device_context as _dc
     _cur = _dc.current_appliance()
@@ -80,7 +82,7 @@ def index():
 @bp.route('/<int:appliance_id>')
 @login_required
 def appliance(appliance_id):
-    appl = Appliance.query.get_or_404(appliance_id)
+    appl = visible_appliance_or_404(appliance_id)
     policies = []
     error = None
     meta = {}
@@ -92,14 +94,31 @@ def appliance(appliance_id):
             from ..services import read_layer
             policies, meta = read_layer.read_policies(appl)
         elif appl.kind == 'fortiadc':
-            client = FortiADCClient(appl)
+            client = client_for(appl)
             raw = client.list_virtual_servers()
             policies = raw.get('payload', [])
     except Exception as exc:
         error = str(exc)
     from ..services import read_layer as _rl
+    # Filter facets (VIP IP / backend server IP / pool / cert type) + the list of
+    # OTHER FortiWebs (clone-to / migrate-to targets). Both are DB-first — the
+    # facets read the deep cache, the target list is pure config. Best-effort so a
+    # cold cache never breaks the page (backend/VIP filters just show nothing).
+    facets, other_appliances = {}, []
+    if appl.kind == 'fortiweb':
+        names = [(p.get('name') if isinstance(p, dict) else getattr(p, 'name', ''))
+                 for p in (policies or [])]
+        names = [n for n in names if n]
+        try:
+            facets = _rl.policy_filter_facets(appl.id, names)
+        except Exception as exc:  # noqa: BLE001
+            log_exception(exc, context='workspace.appliance.facets')
+        other_appliances = [a for a in visible_appliances()
+                            .filter(Appliance.kind == 'fortiweb')
+                            .order_by(Appliance.name).all() if a.id != appl.id]
     return render_template('workspace/policies.html', appliance=appl,
                            policies=policies, error=error, cache_meta=meta,
+                           facets=facets, other_appliances=other_appliances,
                            cache_freshness=_rl.freshness_label(meta) if appl.kind == 'fortiweb' else '')
 
 
@@ -111,7 +130,7 @@ def refresh(appliance_id):
     everything else; this is the explicit ⟳ the user controls."""
     from flask import redirect, url_for, flash
     from flask_login import current_user
-    appl = Appliance.query.get_or_404(appliance_id)
+    appl = visible_appliance_or_404(appliance_id)
     try:
         if appl.kind == 'fortiweb':
             from ..services import device_sync
@@ -134,23 +153,114 @@ _SAVE_EPS = _SAVE_EPS | {EP_CRLIST, EP_CRPOLICY}
 _CHILD_EPS = _CHILD_EPS | {EP_CRLIST}
 
 
+# ───────────────────── Server-Policy row / bulk actions ──────────────────────
+# Enable/Disable · Delete · Clone (same box) · Clone to another FortiWeb ·
+# Migrate to another FortiWeb — for one policy (the row ⚙) or many (checkboxes).
+# Preview is a synchronous dry-run (no writes); a real run spawns a background
+# job (services.policy_ops → services.jobs) so the user gets progress + history +
+# a bell notification, and every object write is audited via FortiWebOps.
+def _parse_action(appliance_id):
+    """Validate an action request. Returns ``(appl, action, policies, new_name,
+    dest, None)`` or ``(None, …, error_response)`` on a bad request."""
+    appl = visible_appliance_or_404(appliance_id)
+    body = request.get_json(silent=True) or {}
+    action = body.get('action', '')
+    policies = [p for p in (body.get('policies') or []) if p]
+    new_name = (body.get('new_name') or '').strip()
+    dest_id = body.get('dest_id')
+    if action not in policy_ops.ACTIONS:
+        return appl, None, None, None, None, (jsonify(ok=False, error='unknown action'), 400)
+    if appl.kind != 'fortiweb':
+        return appl, None, None, None, None, (jsonify(ok=False, error='FortiWeb-only'), 400)
+    if not policies:
+        return appl, None, None, None, None, (jsonify(ok=False, error='no policies selected'), 400)
+    dest = None
+    if action in policy_ops._NEEDS_TARGET:
+        if not dest_id:
+            return appl, None, None, None, None, (jsonify(ok=False, error='destination appliance required'), 400)
+        dest = visible_appliance_or_404(int(dest_id))
+        if dest.id == appl.id:
+            return appl, None, None, None, None, (jsonify(ok=False, error='pick a DIFFERENT destination'), 400)
+    if action in policy_ops._NEEDS_NAME and len(policies) == 1 and not new_name:
+        return appl, None, None, None, None, (jsonify(ok=False, error='a new name is required'), 400)
+    return appl, action, policies, new_name, dest, None
+
+
+@bp.route('/<int:appliance_id>/policy-action/preview', methods=['POST'])
+@login_required
+@require_permission('config_write')
+def policy_action_preview(appliance_id):
+    """Synchronous dry-run of an action across the selected policies — no device
+    writes. For clone/migrate this reads the source (and validates the target)."""
+    appl, action, policies, new_name, dest, err = _parse_action(appliance_id)
+    if err:
+        return err
+    try:
+        results = policy_ops.preview(action, source_appl=appl, dest_appl=dest,
+                                     policies=policies, new_name=new_name)
+    except Exception as exc:  # noqa: BLE001
+        return json_error(exc, 'Preview failed', context='workspace.policy_action_preview')
+    return jsonify(ok=True, action=action, label=policy_ops.action_label(action),
+                   dest=(dest.name if dest else ''), results=results)
+
+
+@bp.route('/<int:appliance_id>/policy-action', methods=['POST'])
+@login_required
+@require_permission('config_write')
+def policy_action(appliance_id):
+    """Apply an action for real. Spawns a background job (poll ``/jobs/<id>``)."""
+    from flask import current_app
+    from flask_login import current_user
+    appl, action, policies, new_name, dest, err = _parse_action(appliance_id)
+    if err:
+        return err
+    try:
+        job = policy_ops.start_policy_job(
+            current_app._get_current_object(), action=action, source_appl=appl,
+            dest_appl=dest, policies=policies, new_name=new_name,
+            by=getattr(current_user, 'username', '') or 'system',
+            user_id=getattr(current_user, 'id', None))
+    except Exception as exc:  # noqa: BLE001
+        return json_error(exc, 'Could not start the action', context='workspace.policy_action')
+    return jsonify(ok=True, job_id=job['id'])
+
+
 @bp.route('/<int:appliance_id>/policy/<path:name>')
 @login_required
 def policy_detail(appliance_id, name):
-    appl = Appliance.query.get_or_404(appliance_id)
+    appl = visible_appliance_or_404(appliance_id)
     data = {}
     cr_entries = []
     error = None
-    try:
-        client = FortiWebClient(appl)
-        data = client.policy_full(name)
-        # Content-routing bindings (a by-parent sub-table of the policy, scoped
-        # ?mkey=<policy>) — fetched regardless of mode so the card is ready if the
-        # operator switches Deployment Mode to HTTP Content Routing in the form.
-        cr_entries = client._safe_list(
-            '%s?mkey=%s' % (EP_CRLIST, quote(name, safe='')))
-    except Exception as exc:
-        error = str(exc)
+    cache_meta = {}
+    # DB-first: the deep layer holds the FULL per-policy tree (vserver+vip-list,
+    # pool+pserver-list, WPP, content-routing) — serve it with zero device calls.
+    # A policy without a deep capture falls back to the live composite read; a
+    # dead/locked device then falls back to the config-layer cache (top-level
+    # payloads, no sub-tables) so the page is never blank.
+    from ..services import read_layer
+    if appl.kind == 'fortiweb':
+        _d, _cr, _meta = read_layer.policy_full_cached(appl.id, name)
+        if _d is not None and _meta.get('layer') == 'deep':
+            data, cr_entries, cache_meta = _d, _cr, _meta
+    if not data:
+        try:
+            client = FortiWebClient(appl)
+            data = client.policy_full(name)
+            # Content-routing bindings (a by-parent sub-table of the policy, scoped
+            # ?mkey=<policy>) — fetched regardless of mode so the card is ready if
+            # the operator switches Deployment Mode to HTTP Content Routing.
+            cr_entries = client._safe_list(
+                '%s?mkey=%s' % (EP_CRLIST, quote(name, safe='')))
+            cache_meta = {"generated_at": None, "source": "live", "cached": False}
+        except Exception as exc:
+            error = str(exc)
+            if appl.kind == 'fortiweb':
+                _d, _cr, _meta = read_layer.policy_full_cached(appl.id, name)
+                if _d is not None:
+                    data, cr_entries, cache_meta = _d, _cr, _meta
+                    error = ("%s — showing the last cached copy (%s)"
+                             % (error, read_layer.freshness_label(_meta)))
     policy = data.get('policy') or {}
     pool = data.get('pool') or {}
     wpp_sel = policy.get('web-protection-profile') or ''
@@ -167,6 +277,9 @@ def policy_detail(appliance_id, name):
         pool_groups=build_groups('pool', pool),
         cr_entries=cr_entries,
         policy_clean=_clean_policy(policy),
+        cache_meta=cache_meta,
+        cache_freshness=(read_layer.freshness_label(cache_meta)
+                         if cache_meta.get('cached') else ''),
         create_fields=CREATE_FIELDS,
         eps={'policy': EP_POLICY, 'pool': EP_POOL, 'wpp': EP_WPP,
              'viplist': EP_VIPLIST, 'pserver': EP_PSERVER,
@@ -181,42 +294,25 @@ def cmdb_options(appliance_id):
     """Lazy options for a reference <select> — names of configured objects in
     the given cmdb collection. Allow-listed to the endpoints our schema declares
     (so this can't be used to read arbitrary cmdb paths)."""
-    appl = Appliance.query.get_or_404(appliance_id)
+    appl = visible_appliance_or_404(appliance_id)
     endpoint = request.args.get('endpoint', '')
     if endpoint not in ALL_REF_ENDPOINTS:
         return jsonify(error='endpoint not allowed', names=[]), 400
+    names, err, eid = [], '', None
     try:
-        return jsonify(names=FortiWebClient(appl).cmdb_names(endpoint))
+        names = FortiWebClient(appl).cmdb_names(endpoint)
     except Exception as exc:
+        err = str(exc)
         eid = log_exception(exc, context='workspace.cmdb_options')
-        return jsonify(error=str(exc), names=[], error_id=eid)
-
-
-@bp.route('/<int:appliance_id>/ref-object')
-@login_required
-def ref_object(appliance_id):
-    """Load the currently-selected referenced object so the ✎ button can edit it
-    in place (mirrors FortiWeb's inline edit pencil). Returns a rendered field
-    form scoped to the object's own cmdb collection."""
-    appl = Appliance.query.get_or_404(appliance_id)
-    coll = request.args.get('endpoint', '')
-    name = request.args.get('name', '')
-    if coll not in _REF_COLLECTIONS:
-        return jsonify(ok=False, error='endpoint not allowed', html=''), 400
-    if not name:
-        return jsonify(ok=False, error='Select an object first', html='')
-    try:
-        obj = FortiWebClient(appl)._safe_one(
-            '/api/v2.0/cmdb/%s?mkey=%s' % (coll, quote(name, safe='')))
-    except Exception as exc:
-        eid = log_exception(exc, context='workspace.ref_object')
-        return jsonify(ok=False, error=str(exc), html='', error_id=eid)
-    if not obj:
-        return jsonify(ok=False, error='Object not found on the device', html='')
-    html = render_template('workspace/_ref_object.html',
-                           groups=build_groups('ref', obj),
-                           endpoint='/api/v2.0/cmdb/' + coll, mkey=name)
-    return jsonify(ok=True, name=name, html=html)
+    if names:
+        return jsonify(names=names, source='live')
+    # DB-first net: an offline / license-locked box answers with nothing — serve
+    # the cached object names so the policy form's dropdowns stay usable.
+    from ..services import read_layer
+    cached = read_layer.cached_ref_names(appl.id, endpoint)
+    if cached:
+        return jsonify(names=cached, source='cache', error=err)
+    return jsonify(names=[], source='live', error=err, error_id=eid)
 
 
 @bp.route('/<int:appliance_id>/save', methods=['POST'])
@@ -226,7 +322,7 @@ def save(appliance_id):
     """Apply a minimal-diff change to one object. dry_run (default) previews the
     exact PUT body without touching the device; apply=true writes it through
     FortiWebOps (before/after snapshot + ChangeHistory + audit)."""
-    appl = Appliance.query.get_or_404(appliance_id)
+    appl = visible_appliance_or_404(appliance_id)
     body = request.get_json(silent=True) or {}
     endpoint = body.get('endpoint', '')
     mkey = body.get('mkey', '')
@@ -249,9 +345,25 @@ def save(appliance_id):
         res = FortiWebOps(appl).update(ep, mkey, payload, dry_run=not do_apply)
     except Exception as exc:
         return json_error(exc, 'Save failed on the device', context='workspace.save')
+    # Lifecycle hook (WAF rule 1): re-binding a policy's Web Protection Profile
+    # orphans the carve-outs authored against the OLD profile — flag them stale
+    # (never silently delete; the Exceptions page shows the banner and the
+    # operator migrates or removes each one).
+    stale_marked = 0
+    if do_apply and res.ok and endpoint == EP_POLICY and 'web-protection-profile' in fields:
+        try:
+            from ..services import wpp_exceptions as exc_store
+            new_wpp = fields.get('web-protection-profile') or ''
+            stale_marked = exc_store.mark_stale_for_policy(
+                appl.id, mkey, new_wpp,
+                reason='Server Policy "%s" was re-bound to WPP "%s" on %s.'
+                       % (mkey, new_wpp or '?', appl.name))
+        except Exception:  # noqa: BLE001 — the flag is advisory, never sink the save
+            pass
     return jsonify(
         ok=res.ok, dry_run=res.get('dry_run'),
         request=res.get('request'), error=res.get('error', ''),
+        stale_carveouts=stale_marked,
     )
 
 
@@ -262,7 +374,7 @@ def create_ref(appliance_id):
     """Create-new for a reference field (mirrors the FortiWeb dropdown '+').
     Optionally clones an existing object's fields under a new name — used for
     spinning up a Web Protection Profile from one of the inline templates."""
-    appl = Appliance.query.get_or_404(appliance_id)
+    appl = visible_appliance_or_404(appliance_id)
     body = request.get_json(silent=True) or {}
     endpoint = body.get('endpoint', '')
     name = (body.get('name') or '').strip()
@@ -290,6 +402,15 @@ def create_ref(appliance_id):
         for k, v in extra.items():
             if k in allowed and v not in (None, '', []):
                 payload[k] = v
+    # Required extras (a custom Service's port, a VIP's IP): reject with the
+    # real reason instead of the device's opaque HTTP 500 (errcode -56
+    # "Empty value isn't allowed."). A clone inherits them from its source.
+    if not clone_from:
+        missing = [f.get('label') or f['key'] for f in CREATE_FIELDS.get(ep, [])
+                   if f.get('required') and not str(payload.get(f['key']) or '').strip()]
+        if missing:
+            return jsonify(ok=False, error='%s required for this object type'
+                           % ' and '.join(missing)), 400
     res = FortiWebOps(appl).create('/api/v2.0/cmdb/' + ep, {'data': payload}, dry_run=not do_apply)
     return jsonify(ok=res.ok, dry_run=res.get('dry_run'),
                    request=res.get('request'), error=res.get('error', ''))
@@ -298,11 +419,11 @@ def create_ref(appliance_id):
 @bp.route('/<int:appliance_id>/browse/<path:endpoint_path>')
 @login_required
 def browse(appliance_id, endpoint_path):
-    appl = Appliance.query.get_or_404(appliance_id)
+    appl = visible_appliance_or_404(appliance_id)
     data = None
     error = None
     try:
-        client = FortiWebClient(appl) if appl.kind == 'fortiweb' else FortiADCClient(appl)
+        client = client_for(appl)
         resp = client.api_call('GET', '/' + endpoint_path)
         data = resp.json()
     except Exception as exc:
@@ -331,7 +452,7 @@ _CREATE_EPS = {
 @bp.route('/<int:appliance_id>/new-policy')
 @login_required
 def new_policy(appliance_id):
-    appl = Appliance.query.get_or_404(appliance_id)
+    appl = visible_appliance_or_404(appliance_id)
     return render_template(
         'workspace/policy_new.html',
         appliance=appl,
@@ -362,7 +483,7 @@ def _clean_create_fields(fields):
 def create_policy(appliance_id):
     """Create a Server Policy and its objects in dependency order. dry_run
     (default) returns the exact POST bodies without touching the device."""
-    appl = Appliance.query.get_or_404(appliance_id)
+    appl = visible_appliance_or_404(appliance_id)
     body = request.get_json(silent=True) or {}
     do_apply = bool(body.get('apply'))
     ops = FortiWebOps(appl)

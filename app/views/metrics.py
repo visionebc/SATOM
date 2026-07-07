@@ -68,7 +68,11 @@ def index():
     # Server-side inventory totals so the cards show even if JS fails to run.
     try:
         from ..services import inventory_metrics
-        inv_totals = inventory_metrics.current_totals()
+        from ..services.product_scope import session_product
+        # Inventory totals are FortiWeb typed-projection counts; in the ADC
+        # ADOM they would show the OTHER product's data — hide them instead.
+        inv_totals = (None if session_product() == 'fortiadc'
+                      else inventory_metrics.current_totals())
     except Exception:
         inv_totals = None
     return render_template(
@@ -86,7 +90,25 @@ def index():
 def api_data():
     """Return JSON metrics for the selected date range."""
     from ..models import AuditLog, ChangeHistory, Appliance, db
-    from sqlalchemy import func, cast, Date as SADate
+    from sqlalchemy import func, cast, or_, Date as SADate
+    from ..services.product_scope import scope_query, session_product
+
+    # --- ADOM scoping (2026-07-07): AuditLog rows carry a product stamp;
+    # ChangeHistory rows are scoped through their appliance's kind. ---
+    _prod = session_product()
+    _adc_ids = db.session.query(Appliance.id).filter(
+        Appliance.kind == 'fortiadc')
+
+    def _al(q):
+        return scope_query(q, AuditLog.product)
+
+    def _ch(q):
+        if _prod == 'fortiadc':
+            return q.filter(ChangeHistory.appliance_id.in_(_adc_ids))
+        if _prod == 'fortiweb':
+            return q.filter(or_(ChangeHistory.appliance_id.is_(None),
+                                ~ChangeHistory.appliance_id.in_(_adc_ids)))
+        return q
 
     period = request.args.get('period', '7d')
     date_from_str = request.args.get('date_from', '')
@@ -96,47 +118,47 @@ def api_data():
     dt_from, dt_to = _date_range(period, date_from_str, date_to_str)
 
     def compute_metrics(df, dt):
-        total_actions = AuditLog.query.filter(
+        total_actions = _al(AuditLog.query).filter(
             AuditLog.timestamp >= df,
             AuditLog.timestamp <= dt,
         ).count()
 
-        config_changes = ChangeHistory.query.filter(
+        config_changes = _ch(ChangeHistory.query).filter(
             ChangeHistory.ts >= df,
             ChangeHistory.ts <= dt,
             ChangeHistory.dry_run == False,
         ).count()
 
-        active_users = db.session.query(
+        active_users = _al(db.session.query(
             func.count(func.distinct(AuditLog.username))
-        ).filter(
+        )).filter(
             AuditLog.timestamp >= df,
             AuditLog.timestamp <= dt,
         ).scalar() or 0
 
-        appliances_touched = db.session.query(
+        appliances_touched = _ch(db.session.query(
             func.count(func.distinct(ChangeHistory.appliance_id))
-        ).filter(
+        )).filter(
             ChangeHistory.ts >= df,
             ChangeHistory.ts <= dt,
             ChangeHistory.dry_run == False,
             ChangeHistory.appliance_id != None,
         ).scalar() or 0
 
-        timeline_rows = db.session.query(
+        timeline_rows = _al(db.session.query(
             cast(AuditLog.timestamp, SADate).label('day'),
             func.count().label('total'),
-        ).filter(
+        )).filter(
             AuditLog.timestamp >= df,
             AuditLog.timestamp <= dt,
         ).group_by(
             cast(AuditLog.timestamp, SADate)
         ).order_by('day').all()
 
-        timeline_changes_rows = db.session.query(
+        timeline_changes_rows = _ch(db.session.query(
             cast(ChangeHistory.ts, SADate).label('day'),
             func.count().label('changes'),
-        ).filter(
+        )).filter(
             ChangeHistory.ts >= df,
             ChangeHistory.ts <= dt,
             ChangeHistory.dry_run == False,
@@ -160,10 +182,10 @@ def api_data():
             'changes': [changes_by_day.get(d, 0) for d in all_days],
         }
 
-        action_rows = db.session.query(
+        action_rows = _al(db.session.query(
             AuditLog.action,
             func.count().label('cnt'),
-        ).filter(
+        )).filter(
             AuditLog.timestamp >= df,
             AuditLog.timestamp <= dt,
         ).group_by(AuditLog.action).order_by(func.count().desc()).limit(10).all()
@@ -173,10 +195,10 @@ def api_data():
             'values': [r.cnt for r in action_rows],
         }
 
-        change_type_rows = db.session.query(
+        change_type_rows = _ch(db.session.query(
             ChangeHistory.action,
             func.count().label('cnt'),
-        ).filter(
+        )).filter(
             ChangeHistory.ts >= df,
             ChangeHistory.ts <= dt,
             ChangeHistory.dry_run == False,
@@ -187,10 +209,10 @@ def api_data():
             'values': [r.cnt for r in change_type_rows],
         }
 
-        user_rows = db.session.query(
+        user_rows = _al(db.session.query(
             AuditLog.username,
             func.count().label('cnt'),
-        ).filter(
+        )).filter(
             AuditLog.timestamp >= df,
             AuditLog.timestamp <= dt,
         ).group_by(AuditLog.username).order_by(func.count().desc()).limit(10).all()
@@ -200,10 +222,10 @@ def api_data():
             'values': [r.cnt for r in user_rows],
         }
 
-        app_rows = db.session.query(
+        app_rows = _ch(db.session.query(
             Appliance.name,
             func.count().label('cnt'),
-        ).join(ChangeHistory, ChangeHistory.appliance_id == Appliance.id).filter(
+        ).join(ChangeHistory, ChangeHistory.appliance_id == Appliance.id)).filter(
             ChangeHistory.ts >= df,
             ChangeHistory.ts <= dt,
             ChangeHistory.dry_run == False,
@@ -215,11 +237,11 @@ def api_data():
         }
 
         # ---- object-type breakdown per day ----
-        obj_rows = db.session.query(
+        obj_rows = _ch(db.session.query(
             cast(ChangeHistory.ts, SADate).label('day'),
             ChangeHistory.endpoint,
             func.count().label('cnt'),
-        ).filter(
+        )).filter(
             ChangeHistory.ts >= df,
             ChangeHistory.ts <= dt,
             ChangeHistory.dry_run == False,

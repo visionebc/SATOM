@@ -41,6 +41,8 @@ class Notification(db.Model):
     # Where clicking the row takes the user (a resolved url path). Optional.
     link = db.Column(db.String(500), nullable=True)
     read = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    # ADOM/product that raised it ('' / NULL = unscoped -> hidden from ADC).
+    product = db.Column(db.String(16), nullable=True, default="")
     created_at = db.Column(
         db.DateTime, default=datetime.utcnow, nullable=False, index=True
     )

@@ -1,4 +1,4 @@
-"""Product selection gate (FortiWeb vs FortiADC)."""
+"""Product / ADOM selection gate (Global vs FortiWeb vs FortiADC)."""
 from __future__ import annotations
 
 from flask import (Blueprint, redirect, render_template, request, session,
@@ -8,6 +8,14 @@ from flask_login import login_required
 from ..branding import PRODUCTS, is_valid
 
 bp = Blueprint('product', __name__, url_prefix='/product')
+
+
+def _home_for(key: str):
+    if key == 'global':
+        return redirect(url_for('index'))
+    if key == 'fortiadc':
+        return redirect(url_for('adc.index'))
+    return redirect(url_for('fortiweb_home'))
 
 
 @bp.route('/select')
@@ -25,9 +33,18 @@ def set_product():
         return redirect(url_for('product.select'))
     session['product'] = choice
     session.permanent = True
-    if choice == 'fortiadc':
-        return redirect(url_for('product.fortiadc_home'))
-    return redirect(url_for('workspace.index'))
+    return _home_for(choice)
+
+
+@bp.route('/enter/<key>')
+@login_required
+def enter(key):
+    """ADOM jump — switch the session product and land on that ADOM's home."""
+    if not is_valid(key):
+        return redirect(url_for('product.select'))
+    session['product'] = key
+    session.permanent = True
+    return _home_for(key)
 
 
 @bp.route('/switch')
@@ -41,5 +58,5 @@ def switch():
 @bp.route('/fortiadc')
 @login_required
 def fortiadc_home():
-    """FortiADC placeholder dashboard — basic structure only."""
-    return render_template('product/fortiadc.html')
+    """Legacy entry point — the ADC area now has a real dashboard."""
+    return redirect(url_for('adc.index'))

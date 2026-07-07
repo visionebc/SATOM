@@ -20,12 +20,14 @@ import logging
 
 from ..extensions import db
 from ..models_notifications import Notification
+from .product_scope import scope_query as _scope_query, stamp as _stamp_product
 
 logger = logging.getLogger(__name__)
 
 
 def push(user_id: int, title: str, *, kind: str = Notification.KIND_INFO,
-         body: str | None = None, link: str | None = None) -> Notification | None:
+         body: str | None = None, link: str | None = None,
+         product: str | None = None) -> Notification | None:
     """Create a notification for one user. Returns the row, or ``None`` on any
     failure (logged, never raised)."""
     if not user_id or not title:
@@ -37,6 +39,7 @@ def push(user_id: int, title: str, *, kind: str = Notification.KIND_INFO,
             title=title[:200],
             body=body,
             link=link[:500] if link else None,
+            product=(product if product is not None else _stamp_product()),
         )
         db.session.add(n)
         db.session.commit()
@@ -65,9 +68,9 @@ def unread_count(user_id: int) -> int:
     if not user_id:
         return 0
     try:
-        return (Notification.query
-                .filter_by(user_id=user_id, read=False)
-                .count())
+        return _scope_query(
+            Notification.query.filter_by(user_id=user_id, read=False),
+            Notification.product).count()
     except Exception:  # noqa: BLE001
         logger.debug("unread_count failed", exc_info=True)
         return 0
@@ -77,8 +80,8 @@ def recent(user_id: int, limit: int = 50) -> list[Notification]:
     if not user_id:
         return []
     try:
-        return (Notification.query
-                .filter_by(user_id=user_id)
+        return (_scope_query(Notification.query.filter_by(user_id=user_id),
+                             Notification.product)
                 .order_by(Notification.created_at.desc(), Notification.id.desc())
                 .limit(limit).all())
     except Exception:  # noqa: BLE001
@@ -91,8 +94,9 @@ def mark_all_read(user_id: int) -> int:
     if not user_id:
         return 0
     try:
-        n = (Notification.query
-             .filter_by(user_id=user_id, read=False)
+        n = (_scope_query(Notification.query.filter_by(user_id=user_id,
+                                                        read=False),
+                          Notification.product)
              .update({"read": True}, synchronize_session=False))
         db.session.commit()
         return n
@@ -130,8 +134,8 @@ def clear_all(user_id: int) -> int:
     if not user_id:
         return 0
     try:
-        n = Notification.query.filter_by(user_id=user_id).delete(
-            synchronize_session=False)
+        n = _scope_query(Notification.query.filter_by(user_id=user_id),
+                         Notification.product).delete(synchronize_session=False)
         db.session.commit()
         return n
     except Exception:  # noqa: BLE001

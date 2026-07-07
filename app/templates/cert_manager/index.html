@@ -17,9 +17,10 @@
   <div>
     <h1 class="fw-page-title"><i class="bi bi-shield-lock me-2 text-accent"></i>Certificate Manager</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      ADCS-signed certificate lifecycle for FortiWeb — generate a CSR here, sign it via your
-      Windows CA, deploy the cert + key to the device, then swap the binding in a maintenance
-      window. Private keys are stored encrypted.
+      CA-signed certificate lifecycle for FortiWeb — generate a CSR here, sign it via the
+      configured protocol (ADCS or ACME, Settings → Certificate Manager), deploy the cert + key
+      to the device, then swap the binding in a maintenance window. Private keys are stored
+      encrypted; superseded/expired material is revoked and cleaned per the lifecycle policy.
     </p>
   </div>
   <div class="d-flex gap-2">
@@ -108,6 +109,53 @@
       {% endif %}
     </tbody>
   </table>
+</div>
+
+{# --- Lifecycle policy: what is DUE for revocation / device deletion --------- #}
+<div class="fw-card mt-4 mb-2">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-recycle me-2 text-accent"></i>Lifecycle — due for revocation / device cleanup</span>
+    <div class="d-flex gap-2">
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('cert_manager.settings') }}"
+         title="Grace / retention windows live in Settings → Certificate Manager">
+        <i class="bi bi-gear me-1"></i>Policy</a>
+      <form method="post" action="{{ url_for('cert_manager.lifecycle_run') }}"
+            data-fw-confirm-form="Apply the lifecycle sweep now? Due certs are revoked at the CA and unbound material is deleted from the devices (bindings re-verified live, fail-closed).">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-sm fw-btn-primary"
+                {{ 'disabled' if not (lifecycle.revoke_due or lifecycle.delete_due) }}>
+          <i class="bi bi-play-fill me-1"></i>Run sweep now
+        </button>
+      </form>
+    </div>
+  </div>
+  <div class="fw-card-body" style="font-size:13px;">
+    <p class="text-muted mb-2" style="font-size:12px;">
+      Policy: revoke superseded after <strong>{{ lifecycle.policy.revoke_grace_days }}d</strong>
+      ({{ 'on' if lifecycle.policy.revoke_on_supersede else 'off' }}) ·
+      delete superseded after <strong>{{ lifecycle.policy.delete_superseded_after_days }}d</strong> ·
+      delete expired after <strong>{{ lifecycle.policy.delete_expired_after_days }}d</strong> ·
+      delete revoked material: <strong>{{ 'yes' if lifecycle.policy.delete_revoked_from_device else 'no' }}</strong> ·
+      scheduled auto-apply: <strong>{{ 'ON' if lifecycle.policy.auto_apply else 'off (report-only)' }}</strong>.
+      A cert still bound anywhere is never touched.
+    </p>
+    {% if lifecycle.revoke_due or lifecycle.delete_due or lifecycle.blocked %}
+      {% for item in lifecycle.revoke_due %}
+      <div><span class="fw-badge fw-badge-danger me-1">revoke due</span>
+        <strong>{{ item.cert.name }}</strong> — {{ item.reason }}</div>
+      {% endfor %}
+      {% for item in lifecycle.delete_due %}
+      <div><span class="fw-badge fw-badge-warning me-1">delete due</span>
+        <strong>{{ item.cert.name }}</strong> — {{ item.reason }}</div>
+      {% endfor %}
+      {% for item in lifecycle.blocked %}
+      <div><span class="fw-badge fw-badge-secondary me-1">blocked</span>
+        <strong>{{ item.cert.name }}</strong> — {{ item.action }} due ({{ item.reason }}) but still bound: {{ item.cert.bound_policies | join(', ') }}</div>
+      {% endfor %}
+    {% else %}
+      <span class="text-muted"><i class="bi bi-check-circle me-1 text-success"></i>Nothing due — the fleet matches the lifecycle policy.</span>
+    {% endif %}
+  </div>
 </div>
 
 {# --- On-device certificates: one row per unique cert, deduped across boxes -- #}

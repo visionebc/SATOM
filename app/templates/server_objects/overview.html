@@ -26,41 +26,14 @@
 </div>
 
 <div class="row g-3">
-  <!-- ───────────────── Server Objects menu (the GUI tree) ───────────────── -->
-  <div class="col-lg-3">
-    <div class="fw-card">
-      <div class="fw-card-body p-2">
-        <nav class="so-menu">
-          {% for group in menu %}
-          <details class="so-group" {{ 'open' if (not selected) or (selected.logical in group.items|map(attribute='logical')|list) }}>
-            <summary class="so-group-head">
-              <i class="bi {{ group.icon }} me-2"></i>{{ group.label }}
-            </summary>
-            <ul class="so-items">
-              {% for item in group.items %}
-              <li>
-                <a class="so-item {{ 'active' if selected and selected.logical == item.logical }}"
-                   href="{{ url_for('server_objects.overview', id=appliance.id, type=item.logical) }}">
-                  <i class="bi {{ item.icon }} me-2"></i>{{ item.label }}
-                  {% if item.read_only %}<i class="bi bi-eye ms-auto text-muted" title="Read-only (predefined)"></i>{% endif %}
-                </a>
-              </li>
-              {% endfor %}
-            </ul>
-          </details>
-          {% endfor %}
-        </nav>
-      </div>
-    </div>
-  </div>
-
   <!-- ───────────────── Object list for the selected type ────────────────── -->
-  <div class="col-lg-9">
+  <!-- The Server Objects menu now lives in the main sidebar (collapsible). -->
+  <div class="col-12">
     {% if not selected %}
       <div class="fw-empty-state py-5">
         <div class="fw-empty-state-icon"><i class="bi bi-arrow-left-circle"></i></div>
-        <div class="fw-empty-state-title">Pick an object type from the menu</div>
-        <p class="text-muted">Choose Server, Service, Certificates, SSL Ciphers, IP Group…</p>
+        <div class="fw-empty-state-title">Pick an object type from the sidebar</div>
+        <p class="text-muted">Expand <strong>Server Objects</strong> in the left menu — Server, Service, Certificates, SSL Ciphers, IP Group…</p>
       </div>
     {% else %}
       <div class="d-flex justify-content-between align-items-center mb-2">
@@ -144,19 +117,6 @@
 {% endblock %}
 
 {% block scripts %}
-<style nonce="{{ csp_nonce }}">
-.so-menu .so-group { border-bottom:1px solid #F0F2F5; }
-.so-menu .so-group:last-child { border-bottom:0; }
-.so-group-head { cursor:pointer; padding:8px 10px; font-weight:600; font-size:13px;
-  list-style:none; border-radius:8px; }
-.so-group-head::-webkit-details-marker { display:none; }
-.so-group-head:hover { background:#F6F8FB; }
-.so-items { list-style:none; padding:0 0 6px 0; margin:0; }
-.so-item { display:flex; align-items:center; padding:6px 10px 6px 26px; font-size:12.5px;
-  color:#334155; text-decoration:none; border-radius:8px; }
-.so-item:hover { background:#F6F8FB; color:#0d6efd; }
-.so-item.active { background:rgba(59,130,246,.12); color:#2563eb; font-weight:600; }
-</style>
 <script nonce="{{ csp_nonce }}">
 const SO_AID = {{ appliance.id }};
 function soFilter(tableId, q) {

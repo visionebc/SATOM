@@ -414,13 +414,14 @@ xsw_detection_rule_element_item:                 /api/v2.0/cmdb/waf/xsw-detectio
 graphql_validation_rule:                         /api/v2.0/cmdb/waf/graphql-validation.rule
 graphql_validation_rule_url_item:                /api/v2.0/cmdb/waf/graphql-validation.rule/url-list
 graphql_validation_policy_rule_item:             /api/v2.0/cmdb/waf/graphql-validation.policy/rule-list
-dlp_policy_rule_item:                            /api/v2.0/cmdb/waf/dlp.policy/rule-list
+dlp_policy_rule_item:                             /api/v2.0/cmdb/waf/dlp.policy/dlp-rules
 dlp_exception:                                   /api/v2.0/cmdb/waf/dlp.exception
 dlp_exception_item:                              /api/v2.0/cmdb/waf/dlp.exception/exception-list
 base_signature_disable:                          /api/v2.0/cmdb/waf/base-signature-disable
 base_signature_disable_item:                     /api/v2.0/cmdb/waf/base-signature-disable/signature-list
 waf_custom_tracking_policy:                      /api/v2.0/cmdb/waf/custom-tracking.policy
 waf_dlp_dictionary:                              /api/v2.0/cmdb/waf/dlp.dictionary
+waf_dlp_dictionary_entry_item:                   /api/v2.0/cmdb/waf/dlp.dictionary/entries
 waf_dlp_rule:                                    /api/v2.0/cmdb/waf/dlp.rule
 waf_dlp_sensor:                                  /api/v2.0/cmdb/waf/dlp.sensor
 waf_file_list:                                   /api/v2.0/cmdb/waf/file-list

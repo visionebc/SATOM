@@ -187,6 +187,91 @@ def _ldap_escape(value: str) -> str:
     return "".join(out)
 
 
+def ldap_list_users(cfg: dict, group_dn: str = "", limit: int = 500):
+    """Enumerate directory users (optionally scoped to a group/OU) for the admin
+    'Sync users' action. Returns ``(ok, users|detail)`` where *users* is a list
+    of ``{"username", "display_name", "dn"}`` dicts, capped at *limit*.
+
+    Scope: ``group_dn`` empty -> every person/user object under the base DN;
+    an OU DN -> used as the search base; a GROUP DN -> members via ``memberOf``.
+    Uses the configured service (bind) account. Never raises."""
+    if not cfg.get("host"):
+        return False, "No LDAP host configured."
+    base = (cfg.get("base_dn") or "").strip()
+    if not base:
+        return False, "No base DN configured (required to enumerate users)."
+    try:
+        from ldap3 import SIMPLE, SUBTREE, Connection
+        from ldap3.core.exceptions import LDAPException
+    except Exception as exc:  # noqa: BLE001
+        return False, f"ldap3 not available: {exc}"
+
+    is_ad = cfg.get("kind") == "ad"
+    attr = (cfg.get("user_attr") or ("sAMAccountName" if is_ad else "uid")).strip()
+    person = ("(&(objectCategory=person)(objectClass=user))" if is_ad
+              else "(objectClass=person)")
+    group_dn = (group_dn or "").strip()
+    search_base = base
+    if group_dn:
+        low = group_dn.lower()
+        if low.startswith("ou=") or ",ou=" in low:
+            search_base = group_dn          # an OU DN: search inside it
+            flt = person
+        else:                                # a group DN: filter by membership
+            flt = f"(&{person}(memberOf={_ldap_escape_dn(group_dn)}))"
+    else:
+        flt = person
+
+    try:
+        server = _server(cfg)
+        bind_dn = (cfg.get("bind_dn") or "").strip()
+        bind_pw = cfg.get("bind_password") or ""
+        conn = Connection(server, user=bind_dn or None, password=bind_pw or None,
+                          authentication=SIMPLE if bind_dn else None, read_only=True)
+        if cfg.get("start_tls"):
+            conn.start_tls()
+        if not conn.bind():
+            return False, ("Bind failed: "
+                           f"{conn.result.get('description', 'check the service (bind) account')}")
+        conn.search(search_base, flt, search_scope=SUBTREE,
+                    attributes=[attr, "displayName", "cn"], size_limit=int(limit) + 1)
+        users = []
+        for e in conn.entries:
+            try:
+                uname = str(e[attr].value) if (attr in e and e[attr].value) else ""
+            except Exception:  # noqa: BLE001
+                uname = ""
+            if not uname:
+                continue
+            disp = ""
+            for d in ("displayName", "cn"):
+                try:
+                    if d in e and e[d].value:
+                        disp = str(e[d].value)
+                        break
+                except Exception:  # noqa: BLE001
+                    pass
+            users.append({"username": uname, "display_name": disp, "dn": e.entry_dn})
+        conn.unbind()
+        return True, users[:int(limit)]
+    except LDAPException as exc:
+        return False, f"LDAP error: {exc}"
+    except (socket.error, OSError) as exc:
+        return False, f"Connection error: {exc}"
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("LDAP enumerate failed")
+        return False, f"{type(exc).__name__}: {exc}"
+
+
+def _ldap_escape_dn(value: str) -> str:
+    """Escape RFC-4515 filter specials but KEEP '='/',' so a DN used as a
+    ``memberOf`` value stays a valid DN."""
+    out = []
+    for ch in value or "":
+        out.append("\\%02x" % ord(ch) if ch in "\\*()\0" else ch)
+    return "".join(out)
+
+
 # ---------------------------------------------------------------------------
 # RADIUS / FortiAuthenticator
 # ---------------------------------------------------------------------------
@@ -278,6 +363,6 @@ def radius_test(cfg: dict, username: str = "", password: str = "") -> tuple[bool
 
 
 __all__ = [
-    "ldap_authenticate", "ldap_test",
+    "ldap_authenticate", "ldap_test", "ldap_list_users",
     "radius_authenticate", "radius_test",
 ]

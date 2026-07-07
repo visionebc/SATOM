@@ -4,6 +4,8 @@
 
 /* CSS Custom Properties */
 :root {
+  /* enable height:0 -> auto transition for the sub-menu accordion (2026-07-06) */
+  interpolate-size: allow-keywords;
   --fw-sidebar-bg: #1D3452;
   --fw-sidebar-active: #EF5424;
   --fw-sidebar-text: #B8C8D8;
@@ -17,20 +19,20 @@
   --fw-accent-light: rgba(239, 84, 36, 0.1);
   --fw-border: #DEE2E6;
   --fw-border-light: #E9ECEF;
-  --fw-card-shadow: 0 1px 3px rgba(0,0,0,0.12);
-  --fw-card-shadow-hover: 0 4px 12px rgba(0,0,0,0.15);
+  --fw-card-shadow: 0 1px 2px rgba(16,32,52,0.06), 0 3px 12px rgba(16,32,52,0.06);
+  --fw-card-shadow-hover: 0 4px 10px rgba(16,32,52,0.10), 0 12px 30px rgba(16,32,52,0.10);
   --fw-text-primary: #212529;
   --fw-text-secondary: #6C757D;
   --fw-success: #28A745;
   --fw-danger: #DC3545;
   --fw-warning: #FFC107;
   --fw-info: #17A2B8;
-  --fw-sidebar-width: 240px;
+  --fw-sidebar-width: 264px;
   --fw-topbar-height: 50px;
   --fw-radius: 4px;
   --fw-radius-lg: 8px;
   --fw-transition: 0.2s ease;
-  --fw-font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --fw-font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 /* ============================================================
@@ -198,6 +200,7 @@ a:hover { color: var(--fw-accent-hover); text-decoration: underline; }
   bottom: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
   z-index: 900;
   transition: width var(--fw-transition), transform var(--fw-transition);
   scrollbar-width: thin;
@@ -223,6 +226,21 @@ a:hover { color: var(--fw-accent-hover); text-decoration: underline; }
   color: var(--fw-sidebar-section);
   white-space: nowrap;
 }
+.fw-nav-section-icon {
+  width: 16px;
+  text-align: center;
+  font-size: 13px;
+  flex-shrink: 0;
+  margin-right: 4px;
+  opacity: 0.9;
+}
+.fw-nav-section.fw-nav-context-label,
+div.fw-nav-section.fw-nav-context-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 
 .fw-nav-item {
   display: flex;
@@ -280,6 +298,88 @@ a:hover { color: var(--fw-accent-hover); text-decoration: underline; }
 }
 .fw-nav-subitem:hover { color: var(--fw-sidebar-text-hover); }
 .fw-nav-subitem.active .fw-nav-emoji { opacity: 1; }
+
+/* ============================================================
+   Server Objects sidebar sub-menu — collapsible groups under
+   the "Server Objects" nav item (GUI-faithful tree). 2026-07-04
+   ============================================================ */
+.fw-so-nav { padding: 2px 0 4px; }
+.fw-so-nav-group { border: 0; }
+.fw-so-nav-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  padding: 6px 16px 6px 30px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--fw-sidebar-section);
+  user-select: none;
+}
+.fw-so-nav-head::-webkit-details-marker { display: none; }
+.fw-so-nav-head:hover { color: var(--fw-sidebar-text-hover); background: rgba(255,255,255,0.04); }
+.fw-so-nav-gicon { width: 16px; text-align: center; font-size: 12.5px; opacity: 0.8; flex-shrink: 0; }
+.fw-so-nav-head > span { flex: 1 1 auto; }
+.fw-so-nav-caret {
+  font-size: 9px; opacity: .6; flex-shrink: 0;
+  transition: transform .22s cubic-bezier(.4,0,.2,1);
+}
+.fw-so-nav-group[open] > .fw-so-nav-head .fw-so-nav-caret { transform: rotate(0deg); }
+.fw-so-nav-group:not([open]) > .fw-so-nav-head .fw-so-nav-caret { transform: rotate(-90deg); }
+/* leaves: indent deeper than group heads so the hierarchy reads clearly */
+.fw-so-nav-item { padding-left: 46px !important; font-size: 12.5px; }
+.fw-so-nav-item .fw-nav-icon { width: 16px; font-size: 12.5px; }
+/* Flat top-level WP groups (Cookie Security, Data Loss Prevention): they have
+   NO children, so they render as a direct link — but they are TOP-LEVEL menu
+   entries (peers of Access / Input Validation / Advanced Protection), so they
+   must sit at the GROUP-HEAD indent (30px), not the deep child indent (46px). */
+.fw-so-nav-flat { padding-left: 30px !important; font-size: 12.5px; }
+.fw-so-nav-flat .fw-nav-icon { width: 16px; font-size: 12.5px; }
+.fw-so-nav-ro { margin-left: auto; font-size: 11px; opacity: .55; flex-shrink: 0; }
+/* Server Objects PARENT — the whole section collapses as one unit */
+.fw-so-parent { border: 0; }
+.fw-so-parent-head { list-style: none; cursor: pointer; user-select: none; }
+.fw-so-parent-head::-webkit-details-marker { display: none; }
+.fw-so-parent-head .fw-so-nav-caret { margin-left: auto; }
+.fw-so-parent[open] > .fw-so-parent-head .fw-so-nav-caret { transform: rotate(0deg); }
+.fw-so-parent:not([open]) > .fw-so-parent-head .fw-so-nav-caret { transform: rotate(-90deg); }
+
+/* ============================================================
+   Configuration sidebar tree — each section (System, Network…)
+   collapses as a unit; its GUI groups nest below (reusing the
+   Server Objects .fw-so-nav group/leaf styles). 2026-07-05
+   ============================================================ */
+.fw-cfg-section { border: 0; }
+.fw-cfg-section-head { list-style: none; cursor: pointer; user-select: none; }
+.fw-cfg-section-head::-webkit-details-marker { display: none; }
+.fw-cfg-section-head .fw-so-nav-caret { margin-left: auto; }
+.fw-cfg-section[open] > .fw-cfg-section-head .fw-so-nav-caret { transform: rotate(0deg); }
+.fw-cfg-section:not([open]) > .fw-cfg-section-head .fw-so-nav-caret { transform: rotate(-90deg); }
+.fw-cfg-section-body { padding-bottom: 2px; }
+/* ============================================================
+   Smooth expand/collapse for the sidebar sub-menus. Native
+   <details> snaps open/closed (its content is display:none when
+   closed), so animate ::details-content height — this eases BOTH
+   a manual open AND the sibling-accordion auto-close (main.js)
+   at every nesting depth. interpolate-size enables the
+   height:0 -> auto transition; browsers without ::details-content
+   support just snap as before (graceful, no regression). 2026-07-06
+   ============================================================ */
+.fw-so-parent::details-content,
+.fw-so-nav-group::details-content,
+.fw-cfg-section::details-content {
+  height: 0;
+  overflow: clip;
+  transition: height .24s cubic-bezier(.4,0,.2,1),
+              content-visibility .24s allow-discrete;
+}
+.fw-so-parent[open]::details-content,
+.fw-so-nav-group[open]::details-content,
+.fw-cfg-section[open]::details-content {
+  height: auto;
+}
+
 
 .fw-nav-divider {
   height: 1px;
@@ -794,6 +894,9 @@ a:hover { color: var(--fw-accent-hover); text-decoration: underline; }
   .fw-sidebar {
     transform: translateX(-100%);
     width: var(--fw-sidebar-width);
+    height: calc(100dvh - var(--fw-topbar-height));
+    min-height: 0;
+    -webkit-overflow-scrolling: touch;
   }
   .fw-sidebar.mobile-open { transform: translateX(0); }
   .fw-main { margin-left: 0 !important; }
@@ -970,8 +1073,10 @@ a:hover { color: var(--fw-accent-hover); text-decoration: underline; }
   font-style: normal; font-size: 8.5px; letter-spacing: 0.06em;
   text-transform: uppercase; font-weight: 700; opacity: 0.5;
 }
-.fw-dev-host { color: var(--fw-accent); }
+.fw-dev-host { font-size: 14px; }
 .fw-dev-host .fw-dev-k { opacity: 0.6; }
+.fw-device-center { min-width: 0; max-width: 46vw; overflow: hidden; }
+.fw-device-center .fw-dev-meta { overflow: hidden; }
 
 @media (max-width: 700px) {
   .fw-dev-meta .fw-dev-seg:not(.fw-dev-host) { display: none; }
@@ -1002,17 +1107,26 @@ button.fw-nav-section.fw-nav-toggle > span { flex: 1 1 auto; text-align: left; }
   flex-shrink: 0;
   transition: transform .28s cubic-bezier(.4, 0, .2, 1);
 }
-.fw-nav-group.collapsed .fw-nav-caret { transform: rotate(-90deg); }
+.fw-nav-group:not(.open) .fw-nav-caret { transform: rotate(-90deg); }
 
+/* Top-level nav sections are COLLAPSED by default and only open when the
+   group carries .open — emitted server-side for the active section and
+   toggled by JS on click. A full page reload therefore paints the correct
+   state with NO flash-of-all-expanded (the old max-height:1600px default was
+   open, so every reload flashed every section open then JS collapsed them).
+   Scoped to .fw-nav-group > body so the always-visible .fw-nav-context
+   bodies (Device, Global) are untouched. 2026-07-05 */
 .fw-nav-group-body {
-  max-height: 1600px;
   overflow: hidden;
-  opacity: 1;
-  transition: max-height .28s cubic-bezier(.4, 0, .2, 1), opacity .2s ease;
+  transition: opacity .2s ease;
 }
-.fw-nav-group.collapsed .fw-nav-group-body {
+.fw-nav-group:not(.open) > .fw-nav-group-body {
   max-height: 0;
   opacity: 0;
+}
+.fw-nav-group.open > .fw-nav-group-body {
+  max-height: none;
+  opacity: 1;
 }
 
 /* ============================================================
@@ -1085,3 +1199,234 @@ button.fw-nav-section.fw-nav-toggle > span { flex: 1 1 auto; text-align: left; }
 }
 details[open] > .fw-group-head::before { transform: rotate(90deg); }
 .fw-group > .fw-fld-grid { margin-top: 10px; }
+
+/* ============================================================
+   Notifications bell dropdown (top bar)
+   ============================================================ */
+.fw-notif-menu .dropdown-menu.fw-notif-dd {
+  width: 340px; max-width: 92vw; border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg); overflow: hidden;
+}
+.fw-notif-dd-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-bottom: 1px solid var(--fw-border-light);
+  font-weight: 600; font-size: 13px; color: var(--fw-text-primary);
+  background: var(--fw-content-bg);
+}
+.fw-notif-dd-clear {
+  border: 1px solid var(--fw-border); background: #fff;
+  color: var(--fw-text-secondary); border-radius: var(--fw-radius);
+  font-size: 12px; font-weight: 600; padding: 3px 10px; cursor: pointer;
+  line-height: 1.4;
+}
+.fw-notif-dd-clear:hover { color: var(--fw-accent); border-color: var(--fw-accent); }
+.fw-notif-dd-list { max-height: 360px; overflow-y: auto; }
+.fw-notif-dd-item {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px;
+  border-bottom: 1px solid var(--fw-border-light); text-decoration: none;
+  color: inherit; transition: background var(--fw-transition);
+}
+.fw-notif-dd-item:last-child { border-bottom: none; }
+.fw-notif-dd-item:hover { background: var(--fw-content-bg); text-decoration: none; }
+.fw-notif-dd-item.unread { background: var(--fw-accent-light); }
+.fw-notif-dd-ic { font-size: 16px; line-height: 1.3; flex: 0 0 auto; }
+.fw-notif-dd-main { display: flex; flex-direction: column; min-width: 0; }
+.fw-notif-dd-title {
+  font-size: 13px; font-weight: 500; color: var(--fw-text-primary);
+  white-space: normal; word-break: break-word;
+}
+.fw-notif-dd-time { font-size: 11px; color: var(--fw-text-secondary); margin-top: 1px; }
+.fw-notif-dd-empty {
+  padding: 22px 14px; text-align: center; color: var(--fw-text-secondary);
+  font-size: 13px;
+}
+.fw-notif-dd-foot {
+  display: block; text-align: center; padding: 9px 14px; font-size: 12.5px;
+  font-weight: 600; color: var(--fw-accent); border-top: 1px solid var(--fw-border-light);
+  background: var(--fw-content-bg);
+}
+.fw-notif-dd-foot:hover { background: var(--fw-accent-light); text-decoration: none; }
+
+/* ─── Turbo Drive navigation progress bar ─── */
+.turbo-progress-bar {
+  height: 3px;
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6, #06b6d4);
+  background-size: 200% 100%;
+  animation: fw-progress-shimmer 1.2s linear infinite;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10000;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+}
+@keyframes fw-progress-shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* Dim main content during navigation */
+#fw-main.fw-navigating {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+/* ============================================================
+   Context nesting — indent the items under the always-visible
+   Device / Global headers so they read as children of the
+   label (tree guide line), matching the nested nav language
+   used elsewhere in the sidebar. 2026-07-05
+   ============================================================ */
+.fw-nav-context > .fw-nav-group-body {
+  margin-left: 23px;
+  border-left: 1px solid rgba(255,255,255,0.08);
+}
+.fw-nav-context > .fw-nav-group-body > .fw-nav-item {
+  padding-left: 16px;
+}
+
+/* ============================================================
+   Group nesting — same tree-guide indent for the collapsible
+   nav groups (Loadbalancer, WAF, Configuration, Operations,
+   Automation, Administrator, FortiADC) so their items read as
+   children of the group header, matching Device/Global. 2026-07-05
+   ============================================================ */
+.fw-nav-group > .fw-nav-group-body {
+  margin-left: 23px;
+  border-left: 1px solid rgba(255,255,255,0.08);
+}
+.fw-nav-group > .fw-nav-group-body > .fw-nav-item {
+  padding-left: 16px;
+}
+/* ── FortiWeb-style slide-over object panels (objedit_drawer.js, 2026-07-06) ──
+   Referenced objects open in stacked right-hand panels instead of navigating
+   away; deeper panels are slightly narrower so the parents peek at the left. */
+.fw-drawer-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(13, 25, 42, 0.42);
+  z-index: 1050;
+  opacity: 0; pointer-events: none;
+  transition: opacity .2s ease;
+}
+.fw-drawer-backdrop.show { opacity: 1; pointer-events: auto; }
+
+.fw-drawer {
+  position: fixed; top: var(--fw-topbar-height); right: 0; bottom: 0;
+  width: min(880px, 94vw);
+  background: var(--fw-content-bg);
+  border-left: 3px solid var(--fw-accent);
+  box-shadow: -14px 0 34px rgba(0, 0, 0, 0.28);
+  display: flex; flex-direction: column;
+  transform: translateX(102%);
+  transition: transform .25s ease, width .2s ease, filter .2s ease;
+}
+.fw-drawer.show { transform: none; }
+.fw-drawer.fw-drawer-under { filter: brightness(.92); }
+
+.fw-drawer-head {
+  background: var(--fw-topbar-bg);
+  color: #fff;
+  padding: .55rem .9rem;
+  display: flex; justify-content: space-between; align-items: center;
+  flex: 0 0 auto;
+}
+.fw-drawer-titles { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+.fw-drawer-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fw-drawer-coll { color: #9fb3c8; font-size: .72rem; white-space: nowrap; }
+.fw-drawer-actions { display: flex; gap: .35rem; flex: 0 0 auto; }
+.fw-drawer-actions .btn {
+  color: #dce6f0; border-color: rgba(255,255,255,.35); background: transparent;
+}
+.fw-drawer-actions .btn:hover { color: #fff; border-color: #fff; background: rgba(255,255,255,.12); }
+
+.fw-drawer-body { flex: 1 1 auto; overflow: auto; padding: 1rem; }
+.fw-drawer-body .fw-objedit > .d-flex:first-child { margin-top: -.25rem; }
+
+
+/* == PRODUCTION POLISH 2026-07-06 == */
+/* Low-risk visual refinements appended last so they win over earlier rules.
+   No inline handlers, no new CDN deps, CSP-safe. */
+
+/* Cards lift more clearly off the grey content background. */
+.fw-card { transition: box-shadow var(--fw-transition), transform var(--fw-transition); }
+
+/* Active sidebar item: the icon takes the accent colour so selection reads instantly. */
+.fw-nav-item.active .fw-nav-icon { opacity: 1; color: var(--fw-sidebar-active); }
+
+/* Tables: readable zebra striping + a slightly stronger hover. */
+.fw-table tbody tr:nth-child(even) > td { background: #F5F7FA; }
+.fw-table tbody tr:hover > td { background: rgba(239,84,36,0.06); }
+
+/* Card header: a touch more separation from the body. */
+.fw-card-header { background: #F6F8FA; border-bottom: 1px solid #E3E8EF; }
+
+/* Topbar: a hairline under-border defines the chrome boundary. */
+.fw-topbar { border-bottom: 1px solid rgba(255,255,255,0.06); }
+
+/* Badges: stronger fills so they don't vanish on tinted rows. */
+.fw-badge-success   { background: rgba(40,167,69,0.16);  color: #15692A; }
+.fw-badge-danger    { background: rgba(220,53,69,0.16);  color: #8B1C2A; }
+.fw-badge-warning   { background: rgba(255,193,7,0.20);  color: #7A5700; }
+.fw-badge-info      { background: rgba(23,162,184,0.16); color: #0A5F6C; }
+.fw-badge-primary   { background: rgba(239,84,36,0.16);  color: #C44220; }
+.fw-badge-secondary { background: rgba(108,117,125,0.16);color: #3D4550; }
+
+/* Empty state: intentional tinted icon medallion instead of a faded glyph. */
+.fw-empty-state-icon {
+  opacity: 1; font-size: 34px; width: 76px; height: 76px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: var(--fw-accent-light); color: var(--fw-accent);
+  margin-bottom: 18px;
+}
+
+/* Page header: anchored with a bottom separator. */
+.fw-page-header { padding-bottom: 14px; border-bottom: 1px solid var(--fw-border-light); }
+
+/* Primary button micro-interaction. */
+.btn-fw-primary { box-shadow: 0 1px 2px rgba(239,84,36,0.28); transition: box-shadow var(--fw-transition), transform var(--fw-transition); }
+.btn-fw-primary:hover { box-shadow: 0 3px 8px rgba(239,84,36,0.38); transform: translateY(-1px); }
+.btn-fw-primary:active { transform: none; box-shadow: 0 1px 2px rgba(239,84,36,0.28); }
+
+/* ── Documentation section ─────────────────────────────────────────────── */
+.fw-doc-tile { transition: box-shadow var(--fw-transition), transform var(--fw-transition), border-color var(--fw-transition); }
+.fw-doc-tile:hover { box-shadow: var(--fw-card-shadow-hover); transform: translateY(-2px); border-color: rgba(239,84,36,0.35); }
+.fw-doc-tile-icon {
+  flex-shrink: 0; width: 42px; height: 42px; border-radius: var(--fw-radius-lg);
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--fw-accent-light); color: var(--fw-accent); font-size: 20px;
+}
+.fw-doc-tile-title { font-weight: 600; color: var(--fw-text-primary); font-size: 14px; }
+.fw-doc-tile-blurb { color: var(--fw-text-secondary); font-size: 12px; line-height: 1.45; margin-top: 3px; }
+.fw-doc-tile-slug  { color: var(--fw-text-secondary); font-size: 11px; font-family: Consolas, Monaco, monospace; margin-top: 6px; opacity: .7; }
+.fw-doc-tile-chev  { color: var(--fw-text-secondary); align-self: center; opacity: .5; }
+.fw-doc-tile:hover .fw-doc-tile-chev { color: var(--fw-accent); opacity: 1; }
+
+.fw-doc-layout { display: grid; grid-template-columns: 232px minmax(0,1fr); gap: 20px; align-items: start; }
+@media (max-width: 900px){ .fw-doc-layout { grid-template-columns: 1fr; } .fw-doc-nav { display: none; } }
+.fw-doc-nav { position: sticky; top: calc(var(--fw-topbar-height) + 16px); background: #fff; border: 1px solid var(--fw-border-light); border-radius: var(--fw-radius-lg); padding: 8px; box-shadow: var(--fw-card-shadow); }
+.fw-doc-nav-title { font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--fw-text-secondary); padding: 6px 10px 4px; }
+.fw-doc-nav-item { display: block; padding: 7px 10px; border-radius: var(--fw-radius); font-size: 12.5px; color: var(--fw-text-primary); text-decoration: none; }
+.fw-doc-nav-item:hover { background: var(--fw-accent-light); color: var(--fw-accent); text-decoration: none; }
+.fw-doc-nav-item.active { background: var(--fw-accent); color: #fff; }
+.fw-doc-card { overflow: hidden; }
+.fw-doc-content { max-width: 900px; }
+.fw-doc-content h1, .fw-doc-content h2, .fw-doc-content h3, .fw-doc-content h4 { color: var(--fw-text-primary); font-weight: 600; margin: 1.5em 0 .5em; scroll-margin-top: calc(var(--fw-topbar-height) + 12px); }
+.fw-doc-content > h1:first-child, .fw-doc-content > h2:first-child { margin-top: 0; }
+.fw-doc-content h1 { font-size: 1.4rem; border-bottom: 2px solid var(--fw-border); padding-bottom: .35em; }
+.fw-doc-content h2 { font-size: 1.18rem; border-bottom: 1px solid var(--fw-border-light); padding-bottom: .3em; }
+.fw-doc-content h3 { font-size: 1.04rem; }
+.fw-doc-content p, .fw-doc-content li { line-height: 1.7; }
+.fw-doc-content p { margin-bottom: .85em; }
+.fw-doc-content a { color: var(--fw-accent); }
+.fw-doc-content code { background: #EEF1F5; padding: 2px 5px; border-radius: 3px; font-size: 12.5px; font-family: Consolas, Monaco, monospace; color: #C44220; }
+.fw-doc-content pre { background: #1B2A3A; color: #C9D7E6; border-radius: var(--fw-radius-lg); padding: 14px 16px; font-size: 12.5px; overflow-x: auto; border: 1px solid #2A3B4D; margin: 1em 0; }
+.fw-doc-content pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+.fw-doc-content table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 13px; }
+.fw-doc-content table th { background: #F0F2F5; font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; padding: 8px 12px; border-bottom: 2px solid var(--fw-border); text-align: left; }
+.fw-doc-content table td { padding: 8px 12px; border-bottom: 1px solid var(--fw-border-light); vertical-align: top; }
+.fw-doc-content table tr:nth-child(even) td { background: #F7F8FA; }
+.fw-doc-content blockquote { border-left: 4px solid var(--fw-accent); background: var(--fw-accent-light); padding: 10px 16px; margin: 1em 0; border-radius: 0 var(--fw-radius) var(--fw-radius) 0; color: var(--fw-text-secondary); }
+.fw-doc-content blockquote p { margin: 0; }
+.fw-doc-content ul, .fw-doc-content ol { padding-left: 1.4em; margin-bottom: .85em; }
+.fw-doc-content li { margin-bottom: .25em; }
+.fw-doc-content hr { border: none; border-top: 1px solid var(--fw-border); margin: 1.5em 0; }

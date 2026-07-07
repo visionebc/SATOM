@@ -1,99 +1,86 @@
-"""Fleet-scale deep-capture orchestration: a resumable, checkpointed job over
-many devices, with a bounded device-level worker pool. Progress + per-device
-state live in a JSON file (worker-proof under multi-worker gunicorn, exactly
-like rediscovery's progress files). A crash or one unreachable box never
-restarts the other devices — resume re-runs only the not-yet-ingested ones.
+"""Fleet deep-capture on the GLOBAL background-job framework (services.jobs).
 
-Designed to scale linearly to ~100 appliances: the speed comes from running N
-*devices* concurrently (run_fleet's bounded pool), while each device's walk
-stays serial (gentle on the appliance — a FortiWeb is not a load balancer).
+Migrated 2026-07-03 from the standalone ``data/deep_jobs`` JSON store: a deep
+capture is now an ordinary ``deep_capture`` job, so it shows up in the global
+Job Manager (Global → Jobs) with live progress, ownership, worker host/pid and
+the cooperative Pause / Resume / Stop controls — and the boot orphan sweep
+fails it cleanly if the service restarts mid-run (no more ghost jobs).
+
+What is kept from the old design:
+
+* the per-device checkpoint LEDGER (pending/capturing/ingested/failed/skipped +
+  object counts + errors) — now living in the job's ``meta["devices"]``;
+* the bounded device-level pool (speed comes from N devices in parallel, each
+  device's walk stays serial — gentle on the appliance);
+* the legacy poll shape (``job_id``/``total``/``done``/``percent``/``devices``/
+  ``finished``) the Analysis page consumes, projected by :func:`load_job`.
+
+Old ``data/deep_jobs/*.json`` files are inert history — nothing reads them.
 """
 from __future__ import annotations
 
-import json
-import os
-import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from pathlib import Path
 
+from . import jobs
+
+JOB_TYPE = "deep_capture"
 _DONE = "ingested"
+_SETTLED = (_DONE, "failed", "skipped")
 
 # Device-level fan-out is where speed comes from at 100 boxes; keep it bounded so
 # the DB + network stay healthy. Intra-device reads stay serial (the walker).
 DEFAULT_MAX_WORKERS = 8
 
-_LOCK = threading.Lock()
-
-
-def _state_dir() -> Path:
-    d = Path(__file__).resolve().parents[2] / "data" / "deep_jobs"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
-def _path(job_id: str) -> Path:
-    return _state_dir() / f"{job_id}.json"
-
-
-def _write(job_id: str, state: dict) -> None:
-    p = _path(job_id)
-    tmp = p.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(state, indent=2, default=str), encoding="utf-8")
-    os.replace(tmp, p)
-
 
 def new_job(*, device_ids: list[int], by: str = "") -> dict:
-    job_id = (datetime.utcnow().strftime("%Y%m%d-%H%M%S-")
-              + str(int(time.time() * 1000) % 100000))
-    state = {
-        "job_id": job_id, "by": by, "started": datetime.utcnow().isoformat(),
-        "finished": None, "total": len(device_ids), "done": 0, "percent": 0,
-        "devices": {str(i): {"state": "pending", "objects": 0, "error": None}
-                    for i in device_ids},
-    }
-    _write(job_id, state)
-    return state
+    """Create the global job carrying the per-device ledger. Returns the legacy
+    projection (``job_id`` etc.) so existing callers keep working."""
+    devices = {str(i): {"state": "pending", "objects": 0, "error": None}
+               for i in device_ids}
+    job = jobs.create_job(
+        JOB_TYPE, "Deep capture — %d device(s)" % len(device_ids), by=by,
+        meta={"devices": devices})
+    return load_job(job["id"])
 
 
 def load_job(job_id: str) -> dict | None:
-    p = _path(job_id)
-    if not p.exists():
+    """The legacy poll shape the Analysis page consumes, projected straight off
+    the global job file (single source of truth)."""
+    st = jobs.get_job(job_id)
+    if not st or st.get("type") != JOB_TYPE:
         return None
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
-        return None
-
-
-def list_jobs(limit: int = 20) -> list[dict]:
-    """Most-recent jobs first (filename carries the UTC timestamp)."""
-    paths = sorted(_state_dir().glob("*.json"), reverse=True)[:limit]
-    out = []
-    for p in paths:
-        try:
-            out.append(json.loads(p.read_text(encoding="utf-8")))
-        except Exception:  # noqa: BLE001
-            continue
-    return out
+    devices = (st.get("meta") or {}).get("devices") or {}
+    done = sum(1 for d in devices.values() if d.get("state") == _DONE)
+    total = len(devices)
+    return {
+        "job_id": st["id"], "id": st["id"], "by": st.get("by", ""),
+        "status": st.get("status"), "started": st.get("created"),
+        "finished": st.get("finished"), "total": total, "done": done,
+        "percent": int(done * 100 / total) if total else 100,
+        "devices": devices,
+    }
 
 
 def mark_device(job_id: str, device_id: int, state_name: str, *, objects: int = 0,
                 error: str | None = None) -> None:
-    with _LOCK:
-        st = load_job(job_id)
-        if not st:
-            return
-        dev = st["devices"].setdefault(str(device_id), {})
+    """Checkpoint one device's state into the ledger (atomic nested-meta write)
+    and tick the job's visible progress."""
+    def _mut(st: dict) -> None:
+        dev = (st.setdefault("meta", {}).setdefault("devices", {})
+               .setdefault(str(device_id), {}))
         dev.update(state=state_name, objects=objects, error=error,
                    updated=datetime.utcnow().isoformat())
-        done = sum(1 for d in st["devices"].values() if d.get("state") == _DONE)
-        st["done"] = done
-        st["percent"] = int(done * 100 / st["total"]) if st["total"] else 100
-        if all(d.get("state") in (_DONE, "failed") for d in st["devices"].values()):
-            st["finished"] = datetime.utcnow().isoformat()
-        _write(job_id, st)
+
+    st = jobs.mutate_job(job_id, _mut)
+    if not st or st.get("status") not in jobs._ACTIVE:
+        return
+    devices = (st.get("meta") or {}).get("devices") or {}
+    done = sum(1 for d in devices.values() if d.get("state") == _DONE)
+    settled = sum(1 for d in devices.values() if d.get("state") in _SETTLED)
+    total = len(devices) or 1
+    jobs.set_progress(job_id, int(settled * 100 / total),
+                      "%d/%d device(s) captured" % (done, len(devices)))
 
 
 def pending_device_ids(job_id: str) -> list[int]:
@@ -105,11 +92,19 @@ def run_fleet(job_id: str, device_ids: list[int], capture_fn, *,
               max_workers: int = DEFAULT_MAX_WORKERS) -> dict:
     """Run ``capture_fn(device_id) -> object_count`` for each device with a
     bounded device-level pool, checkpointing per device. One box raising never
-    sinks the fleet — it is marked ``failed`` and the others continue.
+    sinks the fleet — it is marked ``failed`` and the others continue. A Stop
+    finishes the in-flight devices and marks the rest ``skipped``; a Pause parks
+    every pool thread at the pre-device checkpoint.
 
     ``capture_fn`` runs in a worker thread, so it MUST open its own Flask app
     context / DB session (see deep_jobs.capture_device)."""
     def _one(device_id: int):
+        try:
+            jobs.checkpoint(job_id)   # park on pause; JobCancelled on stop
+        except jobs.JobCancelled:
+            mark_device(job_id, device_id, "skipped",
+                        error="stopped before capture")
+            return
         mark_device(job_id, device_id, "capturing")
         try:
             n = capture_fn(device_id)
@@ -140,17 +135,33 @@ def capture_device(flask_app, appliance_id: int) -> int:
 
 def start_fleet_job(flask_app, device_ids, *, by: str = "",
                     max_workers: int = DEFAULT_MAX_WORKERS) -> dict:
-    """Create a checkpointed job and run the bounded device-level pool in a
-    daemon thread (the HTTP request returns immediately with the job dict; poll
-    load_job(job_id) for progress). Resumable: re-call with pending_device_ids."""
+    """Create the job and run the bounded fleet capture through the global
+    runner (``jobs.run_async``): the HTTP request returns immediately with the
+    legacy job dict; poll ``load_job(job_id)`` (or the global Job Manager).
+
+    Terminal semantics: every device failed → ``error`` (a fleet-wide dead
+    destination must never read as success); a Stop → ``cancelled``; otherwise
+    ``success`` with the per-device summary as the result."""
     ids = [int(i) for i in device_ids]
     job = new_job(device_ids=ids, by=by)
+    job_id = job["job_id"]
 
-    def _runner():
-        run_fleet(job["job_id"], ids,
-                  lambda did: capture_device(flask_app, did),
-                  max_workers=max_workers)
+    def _worker(app, jid):
+        st = run_fleet(jid, ids, lambda did: capture_device(app, did),
+                       max_workers=max_workers)
+        if jobs.is_cancel_requested(jid):
+            raise jobs.JobCancelled(jid)
+        devices = st.get("devices") or {}
+        failed = {i: d.get("error") for i, d in devices.items()
+                  if d.get("state") == "failed"}
+        if devices and len(failed) == len(devices):
+            raise RuntimeError(
+                "all %d device(s) failed — first error: %s"
+                % (len(failed), next(iter(failed.values())) or "?"))
+        return {"done": st.get("done", 0), "total": st.get("total", 0),
+                "objects": sum(int(d.get("objects") or 0)
+                               for d in devices.values()),
+                "failed": failed}
 
-    threading.Thread(target=_runner, name="deep-fleet-%s" % job["job_id"],
-                     daemon=True).start()
-    return job
+    jobs.run_async(flask_app, job_id, _worker)
+    return load_job(job_id)

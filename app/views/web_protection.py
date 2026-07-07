@@ -20,6 +20,7 @@ from flask import Blueprint, render_template, request, jsonify, flash, redirect,
 from flask_login import login_required, current_user
 from ..auth.decorators import require_permission
 from ..models import Appliance, db, Permission, UserSetting, Template
+from ..models import visible_appliances, visible_appliance_or_404
 from ..clients.fortiweb import FortiWebClient
 from ..services.audit import log_action
 from ..services import wp_menu
@@ -39,25 +40,55 @@ def _results(resp):
     return j if isinstance(j, list) else []
 
 
-def _row_view(obj):
-    """A compact list-row projection (name + a couple of GUI-meaningful fields)."""
+# GUI labels for enum tokens value_labels doesn't carry (fw6-verified tokens).
+_EXTRA_LABELS = {
+    'security-mode': {'no': 'None', 'signed': 'Signed', 'encrypted': 'Encrypted'},
+    'type': {'request': 'Request', 'response': 'Response',
+             'Allow': 'Allow File Types', 'Block': 'Block File Types'},
+    'match-type': {'any': 'Any', 'all': 'All'},
+    'direction': {'request': 'Request', 'response': 'Response', 'both': 'Both'},
+}
+
+
+def _cell(obj, col, vlabels):
+    """Render ONE FortiWeb list cell for a WpCol (see wp_menu column kinds)."""
+    v = obj.get(col.key)
+    if col.kind == 'count':
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            n = 0
+        return {'kind': 'count', 'text': str(n)}
+    if col.kind == 'host':
+        return {'kind': 'text',
+                'text': (obj.get('host') or '—')
+                        if obj.get('host-status') == 'enable' else 'Any'}
+    if col.kind == 'onoff':
+        tok = str(v or '')
+        return {'kind': 'onoff', 'on': tok == 'enable',
+                'text': 'Enabled' if tok == 'enable'
+                        else ('Disabled' if tok == 'disable' else (tok or '—'))}
+    if v in (None, '', []):
+        return {'kind': 'text', 'text': '—'}
+    tok = str(v).strip()
+    lbl = ((vlabels.get(col.key) or {}).get(tok)
+           or _EXTRA_LABELS.get(col.key, {}).get(tok))
+    if not lbl and col.kind == 'enum' and tok.islower():
+        lbl = tok.replace('_', ' ').replace('-', ' ').title()
+    return {'kind': 'text', 'text': lbl or tok}
+
+
+def _row_view(obj, columns, vlabels):
+    """One FortiWeb-style list row: name + the tab's own GUI columns."""
     if not isinstance(obj, dict):
-        return {'name': str(obj), 'status': '', 'detail': ''}
+        return {'name': str(obj), 'cells': [{'kind': 'text', 'text': '—'}
+                                            for _ in columns]}
     name = obj.get('name') or obj.get('mkey') or obj.get('id') or '—'
-    status = obj.get('status') or ''
-    detail = ''
-    for k in ('comment', 'comments', 'action', 'severity', 'host', 'url',
-              'request-file', 'request-type', 'type', 'mode'):
-        v = obj.get(k)
-        if v not in (None, '', []):
-            detail = '%s: %s' % (k, v)
-            break
-    return {'name': name, 'status': status, 'detail': detail}
+    return {'name': name, 'cells': [_cell(obj, c, vlabels) for c in columns]}
 
 
 @bp.route('/')
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
 def index():
     from ..services import device_context as _dc
     _cur = _dc.current_appliance()
@@ -72,12 +103,12 @@ def index():
 # --------------------------------------------------------------------------- #
 @bp.route('/<int:id>')
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
 def overview(id):
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     # DB-first: serve from the local source of truth; the device is touched only
     # on an explicit refresh (see web_protection.refresh).
     from ..services import read_layer
+    from ..services.templates import managed_wpp_names
     error = None
     wpp_profiles, wmeta = read_layer.read_objects(
         appliance.id, "webprotection_profile_inline")
@@ -89,6 +120,7 @@ def overview(id):
         appliance=appliance,
         wpp_profiles=wpp_profiles,
         offline_profiles=offline_profiles,
+        managed_names=managed_wpp_names(),
         hide_default=hide_default,
         freshness=read_layer.freshness_label(wmeta),
         cached=wmeta.get("cached"),
@@ -104,7 +136,7 @@ def overview(id):
 def refresh(id):
     """Pull live config into the local source of truth, then return to where
     the ⟳ was clicked (DB-first)."""
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     try:
         from ..services import device_sync
         run = device_sync.sync_device(appliance, publish=False,
@@ -120,11 +152,10 @@ def refresh(id):
 
 @bp.route('/<int:id>/wpp/<name>')
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
 def wpp_detail(id, name):
     """Legacy detail URL → the FortiWeb-style profile form (generic editor,
     grouped exactly like the box's own profile page)."""
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     return redirect(url_for(
         'objedit.edit', appliance_id=appliance.id,
         collection='waf/web-protection-profile.inline-protection',
@@ -136,9 +167,8 @@ def wpp_detail(id, name):
 # --------------------------------------------------------------------------- #
 @bp.route('/<int:id>/m/<item_key>')
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
 def menu_page(id, item_key):
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     item = wp_menu.item_for(item_key)
     if item is None:
         abort(404)
@@ -147,7 +177,7 @@ def menu_page(id, item_key):
     if tab is None:
         abort(404)
 
-    from ..services import read_layer, objform
+    from ..services import read_layer, objform, waf_specs
     error = None
     raw, cache_meta = read_layer.read_objects(appliance.id, tab.logical)
     if not raw and not read_layer.has_any_cache(appliance.id):
@@ -159,7 +189,8 @@ def menu_page(id, item_key):
         except Exception as exc:  # noqa: BLE001 — dead device → empty list + note
             error = str(exc)
             raw = []
-    rows = [_row_view(o) for o in raw]
+    vlabels = waf_specs.value_labels()
+    rows = [_row_view(o, tab.columns, vlabels) for o in raw]
     return render_template(
         'web_protection/section.html',
         appliance=appliance,
@@ -251,9 +282,8 @@ def _sig_catalog():
 
 @bp.route('/<int:id>/signatures/<path:name>')
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
 def signature_policy(id, name):
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     from ..services import read_layer, waf_specs
 
     obj_row = read_layer.object_by_mkey(appliance.id, 'signature', name)
@@ -299,11 +329,10 @@ def signature_policy(id, name):
 
 @bp.route('/<int:id>/signatures/<path:name>/search')
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
 def sig_search(id, name):
     """Signature Details search — the catalog joined with THIS set's state
     (disabled / alert-only / exception count per signature id)."""
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     q = (request.args.get('q') or '').strip().lower()
     main = (request.args.get('main') or '').strip()
     sub = (request.args.get('sub') or '').strip()
@@ -367,11 +396,10 @@ def sig_search(id, name):
 
 @bp.route('/<int:id>/signatures/<path:name>/exceptions/<sig_id>')
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
 def sig_exceptions(id, name, sig_id):
     """The Exception tab rows for ONE signature id (the set's filter_list
     entries whose ``signature_id`` matches) — freshest source available."""
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     force_live = (request.args.get('live') or '') in ('1', 'true')
     state, src = _sig_state(appliance, name, force_live=force_live)
     rows = [r for r in state['exceptions']
@@ -386,7 +414,6 @@ _WPP_PREF_KEYS = {"hide_default"}
 
 @bp.route('/prefs', methods=['POST'])
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
 def set_pref():
     """Persist a per-user Web Protection view preference (DB-backed).
 
@@ -426,7 +453,7 @@ def _wpp_plan(appliance, source, new_name):
 def clone_plan(id):
     """Dry-run preview of a deep WPP clone (read-only, no writes). Returns the
     per-object plan + counts so the modal shows what is created vs already there."""
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     data = request.get_json(silent=True) or {}
     source = (data.get('source') or '').strip()
     new_name = (data.get('new_name') or '').strip()
@@ -448,7 +475,7 @@ def clone_apply(id):
     """Deep-clone a WPP on THIS device under a new name. Creates only the missing
     referenced objects (existing ones are validated, not copied); each create
     goes through FortiWebOps (sanitize + audit + change-history)."""
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     data = request.get_json(silent=True) or {}
     source = (data.get('source') or '').strip()
     new_name = (data.get('new_name') or '').strip()
@@ -516,7 +543,7 @@ def clone_apply(id):
 def save_as_template(id):
     """Save a WPP (deep) to the template library as a PENDING draft. The admin
     approves it in Settings -> WPP Templates — same workflow as every template."""
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     data = request.get_json(silent=True) or {}
     source = (data.get('source') or '').strip()
     name = (data.get('name') or '').strip() or source

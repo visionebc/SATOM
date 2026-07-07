@@ -27,6 +27,27 @@ from ..models import WppException, WppExceptionPolicy, db
 CAT_EXCEPTION = WppException.CAT_EXCEPTION
 CAT_SIGNATURE = WppException.CAT_SIGNATURE
 
+# FortiWeb hard cap: a signature set's ``filter_list`` (per-signature exception
+# entries) holds at most 128 rows — verified live on fw1 7.6.8 and documented in
+# the admin guide. Surfaced on the inject flow so the operator sees headroom.
+SIG_FILTER_MAX = 128
+
+
+def template_lock_error(wpp_mkey: str) -> str:
+    """Team rule 2: a template-managed WPP stays CLEAN — no carve-outs on it.
+
+    Returns a non-empty, human-readable reason when ``wpp_mkey`` names a Web
+    Protection Profile governed by an APPROVED template (the same lock objedit
+    enforces). Empty string = not locked."""
+    if not wpp_mkey:
+        return ""
+    from .templates import managed_wpp_names
+    if str(wpp_mkey) in managed_wpp_names():
+        return ('"%s" is a template-managed Web Protection Profile — templates '
+                'stay clean (no exceptions). Clone it for the Server Policy and '
+                'author the carve-out on the clone.' % wpp_mkey)
+    return ""
+
 
 # --------------------------------------------------------------------------- #
 #  Type catalog (GUI group · label · spec key · category)                       #
@@ -398,6 +419,11 @@ def update(exc_id: int, *, wpp_mkey: str | None = None, payload: dict | None = N
         return None
     if wpp_mkey is not None:
         exc.wpp_mkey = wpp_mkey
+        # Re-pointing the carve-out at a profile resolves a lifecycle-stale flag
+        # (the operator has made a decision — the record is current again).
+        if getattr(exc, "stale", False):
+            exc.stale = False
+            exc.stale_reason = ""
     if payload is not None:
         exc.payload = json.dumps(payload or {})
     if name is not None:
@@ -440,6 +466,54 @@ def delete_for_policy(appliance_id: int, server_policy: str,
     return deleted
 
 
+def mark_stale_for_policy(appliance_id: int, server_policy: str,
+                          new_wpp: str = "", reason: str = "") -> int:
+    """Lifecycle hook (rule 1): the device-side WPP of *server_policy* changed.
+
+    Flags every carve-out bound to that policy whose recorded ``wpp_mkey`` no
+    longer matches the policy's new profile. Nothing is deleted — the operator
+    decides on the Exceptions page whether each record migrates to the new
+    profile or dies. Returns the number of records flagged."""
+    n = 0
+    for exc in list_exceptions(appliance_id):
+        if server_policy not in exc.policy_names:
+            continue
+        if exc.wpp_mkey and new_wpp and exc.wpp_mkey == new_wpp:
+            continue                       # already points at the new profile
+        if getattr(exc, "stale", False):
+            continue
+        exc.stale = True
+        exc.stale_reason = reason or (
+            'Server Policy "%s" was re-bound to WPP "%s" — this carve-out still '
+            'points at "%s".' % (server_policy, new_wpp or "?", exc.wpp_mkey or "?"))
+        n += 1
+    if n:
+        db.session.commit()
+    return n
+
+
+def retarget_for_policy(appliance_id: int, server_policy: str,
+                        old_wpp: str, new_wpp: str) -> int:
+    """Move every carve-out bound to *server_policy* from *old_wpp* to
+    *new_wpp* (the guided clone+rebind flow) and clear any stale flag.
+    Returns the number of records moved."""
+    n = 0
+    for exc in list_exceptions(appliance_id):
+        if server_policy not in exc.policy_names:
+            continue
+        if old_wpp and exc.wpp_mkey and exc.wpp_mkey != old_wpp:
+            continue
+        if exc.wpp_mkey == new_wpp and not getattr(exc, "stale", False):
+            continue
+        exc.wpp_mkey = new_wpp
+        exc.stale = False
+        exc.stale_reason = ""
+        n += 1
+    if n:
+        db.session.commit()
+    return n
+
+
 def alignment(appliance_id: int, bindings: dict[str, str]) -> dict[str, Any]:
     """Join authored carve-outs with the device's live ``policy → wpp`` bindings.
 
@@ -461,9 +535,11 @@ def alignment(appliance_id: int, bindings: dict[str, str]) -> dict[str, Any]:
 
 
 __all__ = [
-    "CAT_EXCEPTION", "CAT_SIGNATURE", "EXCEPTION_TYPES", "SIGNATURE_TYPES",
+    "CAT_EXCEPTION", "CAT_SIGNATURE", "SIG_FILTER_MAX",
+    "EXCEPTION_TYPES", "SIGNATURE_TYPES",
     "CATALOG", "catalog", "type_for", "category_for", "groups", "fields_for",
-    "validate_payload", "help_for", "TYPE_HELP",
+    "validate_payload", "help_for", "TYPE_HELP", "template_lock_error",
     "FIELD_SPECS", "list_exceptions", "get", "add", "update", "delete",
-    "delete_for_policy", "alignment",
+    "delete_for_policy", "mark_stale_for_policy", "retarget_for_policy",
+    "alignment",
 ]

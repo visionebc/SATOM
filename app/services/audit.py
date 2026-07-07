@@ -36,7 +36,14 @@ def log_action(
     except Exception:  # noqa: BLE001 — audit is best-effort, never fatal
         ip = None
 
+    try:
+        from .product_scope import stamp
+        product = stamp()
+    except Exception:  # noqa: BLE001 — audit is best-effort, never fatal
+        product = ""
+
     entry = AuditLog(
+        product=product,
         user_id=user_id,
         username=username,
         action=action,

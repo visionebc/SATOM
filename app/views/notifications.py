@@ -38,3 +38,14 @@ def clear():
     notify.clear_all(_me())
     flash("Notifications cleared.", "success")
     return redirect(url_for("notifications.index"))
+
+
+@bp.route("/dismiss", methods=["POST"])
+@login_required
+def dismiss():
+    """Clear the bell: mark all notifications read so the badge/dropdown empties,
+    but KEEP the rows on the /notifications page (unlike /clear which deletes
+    them). Redirects back to wherever the user was."""
+    notify.mark_all_read(_me())
+    dest = request.referrer or url_for("notifications.index")
+    return redirect(dest)

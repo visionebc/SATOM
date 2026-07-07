@@ -3,7 +3,6 @@ from flask_login import login_required, current_user
 from ..auth.decorators import require_permission
 from ..models import Appliance, db, Permission
 from ..clients.fortiweb import FortiWebClient
-from ..clients.fortiadc import FortiADCClient
 from ..services.audit import log_action
 
 bp = Blueprint('audit', __name__, url_prefix='/audit')
@@ -30,7 +29,9 @@ def index():
     date_from = request.args.get('date_from', '').strip()
     date_to = request.args.get('date_to', '').strip()
 
-    query = AuditLog.query
+    from ..services.product_scope import scope_query
+    # ADOM scoping: fortiweb/fortiadc sessions see only their product's rows.
+    query = scope_query(AuditLog.query, AuditLog.product)
 
     if filter_user:
         user_obj = User.query.filter_by(username=filter_user).first()

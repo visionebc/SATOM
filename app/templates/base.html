@@ -18,7 +18,7 @@
   <!-- Bootstrap Icons -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
   <!-- FortiWeb CSS -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/fortiweb.css') }}">
+  <link rel="stylesheet" href="{{ asset('css/fortiweb.css') }}">
 
   <!-- ============================================================
        Turbo Drive — client-side navigation so background jobs (firmware
@@ -31,10 +31,11 @@
        ============================================================ -->
   <meta name="turbo-cache-control" content="no-cache">
   <script src="{{ url_for('static', filename='js/turbo.min.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/turbo-boot.js') }}"></script>
+  <script src="{{ asset('js/turbo-boot.js') }}"></script>
   <script src="/static/vendor/bootstrap/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
-  <script src="{{ url_for('static', filename='js/jobs.js') }}"></script>
+  <script src="{{ asset('js/jobs.js') }}"></script>
+  <script src="{{ asset('js/objedit_drawer.js') }}"></script>
 
   {% block head %}{% endblock %}
 </head>
@@ -48,7 +49,7 @@
     <i class="bi bi-list"></i>
   </button>
 
-  <a href="{{ url_for('product.fortiadc_home') if product.key == 'fortiadc' else url_for('workspace.index') }}"
+  <a href="{{ url_for('product.fortiadc_home') if product.key == 'fortiadc' else (url_for('index') if product.key == 'global' else url_for('workspace.index')) }}"
      class="fw-topbar-brand">
     <img src="{{ url_for('static', filename=product.mark) }}" alt="{{ product.name }}"
          style="width:28px;height:28px;flex-shrink:0;">
@@ -57,28 +58,26 @@
 
   <div class="fw-topbar-spacer"></div>
 
-  <div class="fw-topbar-actions">
-    {% if product.key == 'fortiweb' %}
-    <!-- Global search shortcut -->
-    <a href="{{ url_for('search.index') }}"
-       class="fw-topbar-btn" title="Search (/)">
-      <i class="bi bi-search"></i>
-    </a>
-    <!-- Architecture / switch device -->
-    <button class="fw-topbar-btn fw-device-switch" type="button"
-            title="{% if current_appliance %}{{ current_appliance.host }} — {% endif %}Architecture / switch device"
-            data-bs-toggle="modal" data-bs-target="#deviceSwitchModal">
-      <i class="bi bi-hdd-network"></i>
-      {% if current_appliance %}
-      <span class="fw-dev-meta d-inline-flex">
-        {% if current_appliance.zone %}<span class="fw-dev-seg"><i class="fw-dev-k">Zone</i>{{ current_appliance.zone }}</span>{% endif %}
-        {% if current_appliance.line %}<span class="fw-dev-seg"><i class="fw-dev-k">Line</i>{{ current_appliance.line }}</span>{% endif %}
-        {% if current_appliance.department %}<span class="fw-dev-seg"><i class="fw-dev-k">Dept</i>{{ current_appliance.department }}</span>{% endif %}
-        <span class="fw-dev-seg fw-dev-host"><i class="fw-dev-k">Host</i>{{ current_appliance.name }}</span>
-      </span>
-      {% endif %}
-    </button>
+  {% if product.key == 'fortiweb' %}
+  <!-- Device context (zone/line/dept/host) — centered in the header -->
+  <button class="fw-topbar-btn fw-device-switch fw-device-center" type="button"
+          title="{% if current_appliance %}{{ current_appliance.host }} — {% endif %}Architecture / switch device"
+          data-bs-toggle="modal" data-bs-target="#deviceSwitchModal">
+    <i class="bi bi-hdd-network"></i>
+    {% if current_appliance %}
+    <span class="fw-dev-meta d-inline-flex">
+      {% if current_appliance.zone %}<span class="fw-dev-seg"><i class="fw-dev-k">Zone</i>{{ current_appliance.zone }}</span>{% endif %}
+      {% if current_appliance.line %}<span class="fw-dev-seg"><i class="fw-dev-k">Line</i>{{ current_appliance.line }}</span>{% endif %}
+      {% if current_appliance.department %}<span class="fw-dev-seg"><i class="fw-dev-k">Dept</i>{{ current_appliance.department }}</span>{% endif %}
+      <span class="fw-dev-seg fw-dev-host"><i class="fw-dev-k">Host</i>{{ current_appliance.name }}</span>
+    </span>
     {% endif %}
+  </button>
+  {% endif %}
+
+  <div class="fw-topbar-spacer"></div>
+
+  <div class="fw-topbar-actions">
 
     <!-- Switch Product (mini product logo + switch icon) -->
     <a href="{{ url_for('product.switch') }}"
@@ -87,30 +86,73 @@
       <i class="bi bi-arrow-left-right"></i>
     </a>
 
-    {% if product.key == 'fortiweb' %}
-    <!-- Release Notes (banner modal) -->
-    <button class="fw-topbar-btn" type="button" title="Release Notes"
-            data-bs-toggle="modal" data-bs-target="#releaseNotesModal">
-      <i class="bi bi-journal-richtext"></i>
-    </button>
-    {% endif %}
+    <!-- Help menu (Regex calculator, cheat sheet, docs) -->
+    <div class="dropdown">
+      <a class="fw-topbar-btn" href="#" role="button" title="Regex &amp; tools"
+         data-bs-toggle="dropdown" aria-expanded="false">
+        <i class="bi bi-braces-asterisk"></i>
+      </a>
+      <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+        <li><h6 class="dropdown-header"><i class="bi bi-life-preserver me-1"></i>Help &amp; tools</h6></li>
+        <li><a class="dropdown-item" href="#" data-fw-regex-open="test">
+          <i class="bi bi-braces-asterisk me-2"></i>Regex calculator</a></li>
+        <li><a class="dropdown-item" href="#" data-fw-regex-open="cheat">
+          <i class="bi bi-card-list me-2"></i>Regex cheat sheet</a></li>
+        <li><a class="dropdown-item" href="#" data-fw-regex-open="library">
+          <i class="bi bi-collection me-2"></i>Pattern library</a></li>
+      </ul>
+    </div>
 
-    <!-- Report a problem -->
-    <a class="fw-topbar-btn position-relative" href="#" title="Report a problem"
-       data-bs-toggle="modal" data-bs-target="#bugReportModal">
-      <i class="bi bi-bug"></i>
+    {% if product.key in ('fortiweb', 'global') %}
+    <!-- Global search shortcut (sits just left of the bell) -->
+    <a href="{{ url_for('search.index') }}"
+       class="fw-topbar-btn" title="Search (/)">
+      <i class="bi bi-search"></i>
     </a>
-    <!-- Notifications — always links to the notifications page (bell = unread count) -->
+    {% endif %}
+    <!-- Notifications — bell dropdown: preview + Clear (dismiss, kept on page) -->
     {% set _notif_count = unread_notification_count|default(0) %}
-    <a class="fw-topbar-btn position-relative"
-       href="{{ url_for('notifications.index') }}"
-       title="{{ (_notif_count ~ ' unread notification(s)') if _notif_count else 'Notifications' }}">
-      <i class="bi bi-bell{% if _notif_count %}-fill{% endif %}"></i>
-      {% if _notif_count %}
-      <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
-            style="font-size:9px;">{{ _notif_count }}</span>
-      {% endif %}
-    </a>
+    <div class="dropdown fw-notif-menu">
+      <a class="fw-topbar-btn position-relative"
+         href="{{ url_for('notifications.index') }}"
+         data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"
+         title="{{ (_notif_count ~ ' unread notification(s)') if _notif_count else 'Notifications' }}">
+        <i class="bi bi-bell{% if _notif_count %}-fill{% endif %}"></i>
+        {% if _notif_count %}
+        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
+              style="font-size:9px;">{{ _notif_count }}</span>
+        {% endif %}
+      </a>
+      <div class="dropdown-menu dropdown-menu-end shadow-sm fw-notif-dd p-0">
+        <div class="fw-notif-dd-head">
+          <span><i class="bi bi-bell me-1"></i>Notifications</span>
+          {% if notification_preview %}
+          <form method="POST" action="{{ url_for('notifications.dismiss') }}" class="m-0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="fw-notif-dd-clear"
+                    title="Clear the bell — the notifications stay on the Notifications page">
+              <i class="bi bi-check2-all me-1"></i>Clear
+            </button>
+          </form>
+          {% endif %}
+        </div>
+        <div class="fw-notif-dd-list">
+          {% for n in notification_preview %}
+          <a class="fw-notif-dd-item{% if not n.read %} unread{% endif %}"
+             href="{{ n.link or url_for('notifications.index') }}">
+            <span class="fw-notif-dd-ic" style="color:{{ n.color }};"><i class="bi {{ n.icon }}"></i></span>
+            <span class="fw-notif-dd-main">
+              <span class="fw-notif-dd-title">{{ n.title }}</span>
+              <span class="fw-notif-dd-time">{{ n.created_at | localtime }}</span>
+            </span>
+          </a>
+          {% else %}
+          <div class="fw-notif-dd-empty"><i class="bi bi-bell-slash me-1"></i>You're all caught up.</div>
+          {% endfor %}
+        </div>
+        <a class="fw-notif-dd-foot" href="{{ url_for('notifications.index') }}">View all notifications &rsaquo;</a>
+      </div>
+    </div>
 
     <!-- User dropdown -->
     <div class="dropdown fw-user-menu">
@@ -135,11 +177,13 @@
             <i class="bi bi-person me-2"></i>Profile
           </a>
         </li>
+        {% if product.key == 'fortiweb' %}
         <li>
-          <a class="dropdown-item" href="{{ url_for('appliances.flash_reports') }}">
-            <i class="bi bi-clipboard-data me-2"></i>Firmware Reports
+          <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#releaseNotesModal">
+            <i class="bi bi-journal-richtext me-2"></i>Release Notes
           </a>
         </li>
+        {% endif %}
         {% if current_user and current_user.can('user_manage') %}
         <li>
           <a class="dropdown-item" href="{{ url_for('reports.inbox') }}">
@@ -172,21 +216,172 @@
       <div class="fw-nav-top">
 
       {% if product.key == 'fortiadc' %}
-      <!-- ===== FortiADC (placeholder) ===== -->
-      <div class="fw-nav-group" data-nav-group="FortiADC">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><span>FortiADC</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+      <!-- ===== FortiADC — the appliance's own left menu (services.adc_menu) ===== -->
+      {% set _adc_item = (request.view_args.get('item_key') if (request.endpoint == 'adc.menu_page' and request.view_args) else '') %}
+
+      {% if current_appliance and current_appliance.kind == 'fortiadc' %}
+      <div class="fw-nav-context" data-nav-context="Device">
+        <div class="fw-nav-section fw-nav-context-label"><i class="bi bi-hdd-rack fw-nav-section-icon" style="color:#10b981;"></i><span>Device</span></div>
         <div class="fw-nav-group-body">
-          <a class="fw-nav-item" href="{{ url_for('product.fortiadc_home') }}">
-            <i class="bi bi-hdd-rack fw-nav-icon"></i><span>Dashboard</span></a>
+          <a class="fw-nav-item" href="{{ url_for('adc.index') }}" title="Switch device">
+            <i class="bi bi-hdd-rack fw-nav-icon"></i>
+            <span>{{ current_appliance.name }} <small style="opacity:.55;">· change</small></span></a>
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="fw-nav-context" data-nav-context="ADOM">
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item" href="{{ url_for('product.enter', key='global') }}" title="Back to the Global ADOM">
+            <i class="bi bi-globe2 fw-nav-icon" style="color:#3b82f6;"></i><span>&lsaquo; Global</span></a>
         </div>
       </div>
 
+      <div class="fw-nav-context" data-nav-context="FortiADC">
+        <div class="fw-nav-section fw-nav-context-label"><i class="bi bi-hdd-rack fw-nav-section-icon" style="color:#10b981;"></i><span>FortiADC</span></div>
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item {{ 'active' if request.endpoint == 'adc.index' else '' }}" href="{{ url_for('adc.index') }}">
+            <i class="bi bi-hdd-rack fw-nav-icon"></i><span>Dashboard</span></a>
+          {% if current_user and current_user.can('user_manage') %}
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'adc_api' else '' }}" href="{{ url_for('adc_api.index') }}">
+            <i class="bi bi-code-slash fw-nav-icon"></i><span>API</span></a>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- FLEET — the Global-ADOM menu, mirrored here but scoped to this
+           product's devices/policies (visible_appliances + product_scope). -->
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['monitoring','search','architecture','analysis','fleet_objects','metrics','jobs','cert_manager'] }}" data-nav-group="Fleet">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>Fleet</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'monitoring' else '' }}" href="{{ url_for('monitoring.index') }}">
+            <i class="bi bi-activity fw-nav-icon"></i><span>Monitoring</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
+            <i class="bi bi-search fw-nav-icon"></i><span>Search</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
+            <i class="bi bi-hdd-network fw-nav-icon"></i><span>Architecture</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'analysis' else '' }}" href="{{ url_for('analysis.index') }}">
+            <i class="bi bi-graph-up fw-nav-icon"></i><span>Analysis</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'fleet_objects' else '' }}" href="{{ url_for('fleet_objects.index') }}">
+            <i class="bi bi-box-seam fw-nav-icon"></i><span>Fleet Objects</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics' else '' }}" href="{{ url_for('metrics.index') }}">
+            <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>Metrics</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">
+            <i class="bi bi-list-task fw-nav-icon"></i><span>Jobs</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'cert_manager' else '' }}" href="{{ url_for('cert_manager.index') }}">
+            <i class="bi bi-shield-lock fw-nav-icon"></i><span>Certificate Manager</span></a>
+        </div>
+      </div>
+
+      {% for g in adc_nav %}
+      {% set _g_active = g.items|selectattr('key', 'equalto', _adc_item)|list %}
+      <div class="fw-nav-group {{ 'open' if _g_active }}" data-nav-group="{{ g.label }}">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi {{ g.icon }} fw-nav-section-icon" style="color:#10b981;"></i><span>{{ g.label }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          {% for item in g.items %}
+          <a class="fw-nav-item {{ 'active' if _adc_item == item.key else '' }}"
+             href="{{ url_for('adc.menu_page', item_key=item.key) }}">
+            <i class="bi {{ item.icon }} fw-nav-icon"></i><span>{{ item.label }}</span></a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+
+      {% if current_user and current_user.can('user_manage') %}
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['appliances','audit','users','database'] }}" data-nav-group="Administrator">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>Administrator</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'appliances' else '' }}" href="{{ url_for('appliances.index') }}">
+            <i class="bi bi-server fw-nav-icon"></i><span>Appliances</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'audit' else '' }}" href="{{ url_for('audit.index') }}">
+            <i class="bi bi-clipboard-check fw-nav-icon"></i><span>Audit Log</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'users' else '' }}" href="{{ url_for('users.index') }}">
+            <i class="bi bi-people fw-nav-icon"></i><span>Users</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' else '' }}" href="{{ url_for('database.index') }}">
+            <i class="bi bi-hdd fw-nav-icon"></i><span>Database</span></a>
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="fw-nav-group-body">
+        <div class="fw-nav-divider"></div>
+        <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('settings.') else '' }}"
+           href="{{ url_for('settings.index') }}">
+          <i class="bi bi-gear fw-nav-icon"></i><span>Settings</span></a>
+      </div>
+
+      {% elif product.key == 'global' %}
+      <!-- ===== GLOBAL ADOM — fleet-wide, spans FortiWeb + FortiADC ===== -->
+      <div class="fw-nav-context" data-nav-context="Global">
+        <div class="fw-nav-section fw-nav-context-label"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>Global</span></div>
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item {{ 'active' if request.endpoint == 'index' else '' }}" href="{{ url_for('index') }}">
+            <i class="bi bi-speedometer2 fw-nav-icon"></i><span>Dashboard</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'monitoring' else '' }}" href="{{ url_for('monitoring.index') }}">
+            <i class="bi bi-activity fw-nav-icon"></i><span>Monitoring</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
+            <i class="bi bi-search fw-nav-icon"></i><span>Search</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
+            <i class="bi bi-hdd-network fw-nav-icon"></i><span>Architecture</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'analysis' else '' }}" href="{{ url_for('analysis.index') }}">
+            <i class="bi bi-graph-up fw-nav-icon"></i><span>Analysis</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'fleet_objects' else '' }}" href="{{ url_for('fleet_objects.index') }}">
+            <i class="bi bi-box-seam fw-nav-icon"></i><span>Fleet Objects</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics' else '' }}" href="{{ url_for('metrics.index') }}">
+            <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>Metrics</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">
+            <i class="bi bi-list-task fw-nav-icon"></i><span>Jobs</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'cert_manager' else '' }}" href="{{ url_for('cert_manager.index') }}">
+            <i class="bi bi-shield-lock fw-nav-icon"></i><span>Certificate Manager</span></a>
+        </div>
+      </div>
+
+      <!-- ADOMs -->
+      <div class="fw-nav-group open" data-nav-group="ADOMs">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-grid-1x2 fw-nav-section-icon" style="color:#10b981;"></i><span>ADOMs</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item" href="{{ url_for('product.enter', key='fortiweb') }}">
+            <img src="{{ url_for('static', filename='img/fortiweb-mark.svg') }}" alt="" class="fw-nav-icon" style="width:16px;height:16px;"><span>FortiWeb</span></a>
+          <a class="fw-nav-item" href="{{ url_for('product.enter', key='fortiadc') }}">
+            <img src="{{ url_for('static', filename='img/fortiadc-mark.svg') }}" alt="" class="fw-nav-icon" style="width:16px;height:16px;"><span>FortiADC</span></a>
+        </div>
+      </div>
+
+      {% if current_user and current_user.can('user_manage') %}
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['appliances','audit','users','database','system_backup'] }}" data-nav-group="Administrator">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>Administrator</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'appliances' else '' }}" href="{{ url_for('appliances.index') }}">
+            <i class="bi bi-server fw-nav-icon"></i><span>Appliances</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'audit' else '' }}" href="{{ url_for('audit.index') }}">
+            <i class="bi bi-clipboard-check fw-nav-icon"></i><span>Audit Log</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'users' else '' }}" href="{{ url_for('users.index') }}">
+            <i class="bi bi-people fw-nav-icon"></i><span>Users</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' else '' }}" href="{{ url_for('database.index') }}">
+            <i class="bi bi-hdd fw-nav-icon"></i><span>Database</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'system_backup' else '' }}" href="{{ url_for('system_backup.index') }}">
+            <i class="bi bi-safe fw-nav-icon"></i><span>System Backup &amp; Restore</span></a>
+        </div>
+      </div>
+      {% endif %}
+
       {% else %}
       <!-- ===== FortiWeb ===== -->
+      {# Active top-level nav section (server-rendered .open = no flash on reload). 2026-07-05 #}
+      {% set _sc_cfg = request.endpoint == 'section_config.section' %}
+      {% set _sc_key = (request.view_args.get('section_key') if (_sc_cfg and request.view_args) else None) %}
+      {% set _waf_sc = ['application_delivery','api_protection','bot_mitigation','dos_protection','ip_protection'] %}
+      {% set _g_lb   = request.blueprint in ['workspace','server_objects'] %}
+      {% set _g_waf  = request.blueprint in ['web_protection','exceptions'] or (_sc_cfg and _sc_key in _waf_sc) %}
+      {% set _g_cfg  = _sc_cfg and _sc_key not in _waf_sc %}
+      {% set _g_ops  = request.blueprint in ['backups','logs','import_backup'] %}
+      {% set _g_api  = request.blueprint in ['registry','api_explorer','structure'] %}
+      {% set _g_auto = request.blueprint in ['scheduled_actions','provisioning','change_requests'] %}
+      {% set _g_adm  = request.blueprint in ['templates','audit','appliances','classification','segments','naming','firmware','system_backup','reports','database','capacity','signatures'] %}
 
       {% if current_appliance %}
       <div class="fw-nav-context" data-nav-context="Device">
-        <div class="fw-nav-section fw-nav-context-label"><span>Device</span></div>
+        <div class="fw-nav-section fw-nav-context-label"><i class="bi bi-hdd-rack fw-nav-section-icon" style="color:#10b981;"></i><span>Device</span></div>
         <div class="fw-nav-group-body">
           <a class="fw-nav-item" href="{{ url_for('architecture.index') }}" title="Switch device">
             <i class="bi bi-hdd-rack fw-nav-icon"></i>
@@ -195,122 +390,247 @@
       </div>
       {% endif %}
 
-      <!-- GLOBAL -->
-      <div class="fw-nav-context" data-nav-context="Global">
-        <div class="fw-nav-section fw-nav-context-label"><span>Global</span></div>
+      <!-- ADOM back-link — the Global menu now lives at the Global ADOM (/) -->
+      <div class="fw-nav-context" data-nav-context="ADOM">
         <div class="fw-nav-group-body">
-          <a class="fw-nav-item" href="{{ url_for('search.index') }}">
+          <a class="fw-nav-item" href="{{ url_for('product.enter', key='global') }}" title="Back to the Global ADOM">
+            <i class="bi bi-globe2 fw-nav-icon" style="color:#3b82f6;"></i><span>&lsaquo; Global</span></a>
+        </div>
+      </div>
+
+      <!-- FLEET — the Global-ADOM menu, mirrored here but scoped to this
+           product's devices/policies (visible_appliances + product_scope). -->
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['monitoring','search','architecture','analysis','fleet_objects','metrics','jobs','cert_manager'] }}" data-nav-group="Fleet">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>Fleet</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'monitoring' else '' }}" href="{{ url_for('monitoring.index') }}">
+            <i class="bi bi-activity fw-nav-icon"></i><span>Monitoring</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
             <i class="bi bi-search fw-nav-icon"></i><span>Search</span></a>
-          <a class="fw-nav-item" href="{{ url_for('architecture.index') }}">
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
             <i class="bi bi-hdd-network fw-nav-icon"></i><span>Architecture</span></a>
-          <a class="fw-nav-item" href="{{ url_for('analysis.index') }}">
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'analysis' else '' }}" href="{{ url_for('analysis.index') }}">
             <i class="bi bi-graph-up fw-nav-icon"></i><span>Analysis</span></a>
-          <a class="fw-nav-item" href="{{ url_for('fleet_objects.index') }}">
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'fleet_objects' else '' }}" href="{{ url_for('fleet_objects.index') }}">
             <i class="bi bi-box-seam fw-nav-icon"></i><span>Fleet Objects</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics' else '' }}" href="{{ url_for('metrics.index') }}">
             <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>Metrics</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">
+            <i class="bi bi-list-task fw-nav-icon"></i><span>Jobs</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'cert_manager' else '' }}" href="{{ url_for('cert_manager.index') }}">
+            <i class="bi bi-shield-lock fw-nav-icon"></i><span>Certificate Manager</span></a>
         </div>
       </div>
 
       <!-- LOADBALANCER -->
-      <div class="fw-nav-group" data-nav-group="Loadbalancer">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><span>Loadbalancer</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+      <div class="fw-nav-group {{ 'open' if _g_lb }}" data-nav-group="Loadbalancer">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-shield-check fw-nav-section-icon" style="color:#10b981;"></i><span>Loadbalancer</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           <a class="fw-nav-item" href="{{ url_for('workspace.index') }}">
             <i class="bi bi-shield-check fw-nav-icon"></i><span>Server Policy</span></a>
-          <a class="fw-nav-item" href="{{ url_for('server_objects.index') }}">
-            <i class="bi bi-diagram-3 fw-nav-icon"></i><span>Server Objects</span></a>
+          {# Server Objects — collapses as a unit (native <details>, no JS / CSP-safe).
+             Open ONLY when its own section is active (like Web Protection / the WAF areas). An
+             unconditional open left it permanently expanded, so EVERY page had two sidebar
+             sub-menus open at once, breaking the accordion and (via Turbo body-swaps) collapsing
+             the area the user was actually in. #}
+          <details class="fw-so-parent" {{ 'open' if request.blueprint == 'server_objects' }}>
+            <summary class="fw-nav-item fw-so-parent-head {{ 'active' if request.endpoint == 'server_objects.overview' and not request.args.get('type') else '' }}">
+              <i class="bi bi-diagram-3 fw-nav-icon"></i><span>Server Objects</span>
+              <i class="bi bi-chevron-down fw-so-nav-caret"></i>
+            </summary>
+            <div class="fw-so-parent-body">
+              {% if current_appliance and server_objects_nav %}
+              {# Server Objects sub-menu (GUI-faithful) — each group collapsible; leaf → object list #}
+              <div class="fw-so-nav">
+                {% for group in server_objects_nav %}
+                {% set _grp_active = current_appliance and (request.endpoint == 'server_objects.overview')
+                                     and (request.args.get('type') in group.items|map(attribute='logical')|list) %}
+                <details class="fw-so-nav-group" {{ 'open' if _grp_active }}>
+                  <summary class="fw-so-nav-head">
+                    <i class="bi {{ group.icon }} fw-so-nav-gicon"></i><span>{{ group.label }}</span>
+                    <i class="bi bi-chevron-down fw-so-nav-caret"></i>
+                  </summary>
+                  <div class="fw-so-nav-items">
+                    {% for item in group.items %}
+                    <a class="fw-nav-item fw-so-nav-item {{ 'active' if request.endpoint == 'server_objects.overview' and request.args.get('type') == item.logical else '' }}"
+                       href="{{ url_for('server_objects.overview', id=current_appliance.id, type=item.logical) }}">
+                      <i class="bi {{ item.icon }} fw-nav-icon"></i><span>{{ item.label }}</span>
+                      {% if item.read_only %}<i class="bi bi-eye fw-so-nav-ro" title="Read-only (predefined)"></i>{% endif %}
+                    </a>
+                    {% endfor %}
+                  </div>
+                </details>
+                {% endfor %}
+              </div>
+              {% endif %}
+            </div>
+          </details>
         </div>
       </div>
 
       <!-- WAF -->
-      <div class="fw-nav-group" data-nav-group="WAF">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><span>WAF</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+      <div class="fw-nav-group {{ 'open' if _g_waf }}" data-nav-group="WAF">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-shield-exclamation fw-nav-section-icon" style="color:#f59e0b;"></i><span>WAF</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
-          <a class="fw-nav-item" href="{{ url_for('web_protection.index') }}">
-            <i class="bi bi-shield-exclamation fw-nav-icon"></i><span>Web Protection Profiles</span></a>
+          {# Web Protection — the whole FortiWeb «Web Protection» menu collapses
+             as a unit (native <details>, no JS / CSP-safe), mirroring the
+             appliance's own left menu (services.wp_menu). Flat groups (Cookie
+             Security, Data Loss Prevention) are direct leaves; the rest are
+             nested collapsible groups. Device-scoped: the tree needs a selected
+             FortiWeb for its leaves. #}
+          {% set _wp_active = request.view_args.get('item_key') if request.endpoint == 'web_protection.menu_page'
+                              else ('signatures' if request.endpoint == 'web_protection.signature_policy'
+                              else ('__profile__' if request.endpoint in ['web_protection.overview', 'web_protection.wpp_detail'] else '')) %}
+          {% if current_appliance %}
+          <a class="fw-nav-item {{ 'active' if _wp_active == '__profile__' else '' }}"
+             href="{{ url_for('web_protection.overview', id=current_appliance.id) }}">
+            <i class="bi bi-shield-fill-check fw-nav-icon"></i><span>Web Protection Profile</span></a>
+          {% endif %}
           <a class="fw-nav-item" href="{{ url_for('exceptions.index') }}">
             <i class="bi bi-slash-circle fw-nav-icon"></i><span>Exceptions &amp; Signature</span></a>
-          {% if current_user and current_user.can('user_manage') %}
-          <a class="fw-nav-item" href="{{ url_for('signatures.index') }}">
-            <i class="bi bi-fingerprint fw-nav-icon"></i><span>Signatures</span></a>
-          {% endif %}
-          <a class="fw-nav-item {{ 'active' if request.endpoint == 'section_config.section' and request.view_args and request.view_args.get('section_key') == 'application_delivery' else '' }}"
-             href="{{ url_for('section_config.section', section_key='application_delivery') }}">
-            <i class="bi bi-rocket-takeoff fw-nav-icon"></i><span>Application Delivery</span></a>
-          <a class="fw-nav-item {{ 'active' if request.endpoint == 'section_config.section' and request.view_args and request.view_args.get('section_key') == 'api_protection' else '' }}"
-             href="{{ url_for('section_config.section', section_key='api_protection') }}">
-            <i class="bi bi-plug fw-nav-icon"></i><span>API Protection</span></a>
-          <a class="fw-nav-item {{ 'active' if request.endpoint == 'section_config.section' and request.view_args and request.view_args.get('section_key') == 'bot_mitigation' else '' }}"
-             href="{{ url_for('section_config.section', section_key='bot_mitigation') }}">
-            <i class="bi bi-robot fw-nav-icon"></i><span>Bot Mitigation</span></a>
-          <a class="fw-nav-item {{ 'active' if request.endpoint == 'section_config.section' and request.view_args and request.view_args.get('section_key') == 'dos_protection' else '' }}"
-             href="{{ url_for('section_config.section', section_key='dos_protection') }}">
-            <i class="bi bi-shield-fill-exclamation fw-nav-icon"></i><span>DoS Protection</span></a>
-          <a class="fw-nav-item {{ 'active' if request.endpoint == 'section_config.section' and request.view_args and request.view_args.get('section_key') == 'ip_protection' else '' }}"
-             href="{{ url_for('section_config.section', section_key='ip_protection') }}">
-            <i class="bi bi-signpost-split fw-nav-icon"></i><span>IP Protection</span></a>
+          <details class="fw-so-parent" {{ 'open' if request.blueprint == 'web_protection' and _wp_active != '__profile__' }}>
+            <summary class="fw-nav-item fw-so-parent-head">
+              <i class="bi bi-shield-exclamation fw-nav-icon"></i><span>Web Protection</span>
+              <i class="bi bi-chevron-down fw-so-nav-caret"></i>
+            </summary>
+            <div class="fw-so-parent-body">
+              {% if current_appliance and web_protection_nav %}
+              <div class="fw-so-nav">
+                {% for group in web_protection_nav %}
+                  {% if group.flat %}
+                  <a class="fw-nav-item fw-so-nav-flat {{ 'active' if _wp_active == group.items[0].key else '' }}"
+                     href="{{ url_for('web_protection.menu_page', id=current_appliance.id, item_key=group.items[0].key) }}">
+                    <i class="bi {{ group.icon }} fw-nav-icon"></i><span>{{ group.label }}</span></a>
+                  {% else %}
+                  {% set _grp_active = group.items|selectattr('key', 'equalto', _wp_active)|list %}
+                  <details class="fw-so-nav-group" {{ 'open' if _grp_active }}>
+                    <summary class="fw-so-nav-head">
+                      <i class="bi {{ group.icon }} fw-so-nav-gicon"></i><span>{{ group.label }}</span>
+                      <i class="bi bi-chevron-down fw-so-nav-caret"></i>
+                    </summary>
+                    <div class="fw-so-nav-items">
+                      {% for item in group.items %}
+                      <a class="fw-nav-item fw-so-nav-item {{ 'active' if _wp_active == item.key else '' }}"
+                         href="{{ url_for('web_protection.menu_page', id=current_appliance.id, item_key=item.key) }}">
+                        <i class="bi {{ item.icon }} fw-nav-icon"></i><span>{{ item.label }}</span></a>
+                      {% endfor %}
+                    </div>
+                  </details>
+                  {% endif %}
+                {% endfor %}
+              </div>
+              {% endif %}
+            </div>
+          </details>
+
+          {# Application Delivery / API Protection / Bot Mitigation / DoS /
+             IP Protection — the 5 FortiWeb protection menus, each the appliance's
+             own GUI menu collapsed as a native <details> accordion (like Web
+             Protection / Server Objects; services.config_sections, GUI-faithful).
+             A flat group (single leaf == its label) is a direct link; the rest
+             nest. Every leaf opens the section browser with ?type=<logical> and
+             the shared deep objedit editor. Device-scoped. #}
+          {% for area in waf_sections_nav %}
+          {% set _area_active = request.endpoint == 'section_config.section' and request.view_args and request.view_args.get('section_key') == area.key %}
+          <details class="fw-so-parent" {{ 'open' if _area_active }}>
+            <summary class="fw-nav-item fw-so-parent-head {{ 'active' if _area_active and not request.args.get('type') else '' }}">
+              <i class="bi {{ area.icon }} fw-nav-icon"></i><span>{{ area.label }}</span>
+              <i class="bi bi-chevron-down fw-so-nav-caret"></i>
+            </summary>
+            <div class="fw-so-parent-body">
+              {% if current_appliance and area.menu %}
+              {# Web Protection PARITY: each curated GUI group is ONE clickable
+                 menu entry (like a WP item); its object types are the TABS on the
+                 section page (section_config/section.html). #}
+              <div class="fw-so-nav">
+                {% for group in area.menu %}
+                  {% set _grp_active = _area_active and (request.args.get('type') in group.items|map(attribute='logical')|list) %}
+                  <a class="fw-nav-item fw-so-nav-item {{ 'active' if _grp_active else '' }}"
+                     href="{{ url_for('section_config.section', section_key=area.key, type=group.items[0].logical) }}">
+                    <i class="bi {{ group.icon }} fw-nav-icon"></i><span>{{ group.label }}</span>
+                  </a>
+                {% endfor %}
+              </div>
+              {% elif not current_appliance %}
+              <div class="fw-so-nav"><span class="fw-nav-item fw-so-nav-item" style="opacity:.5;cursor:default;">Select a device</span></div>
+              {% endif %}
+            </div>
+          </details>
+          {% endfor %}
         </div>
       </div>
 
       <!-- CONFIGURATION -->
       {% if current_user and current_user.can('config_write') %}
-      <div class="fw-nav-group" data-nav-group="Configuration">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><span>Configuration</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+      <div class="fw-nav-group {{ 'open' if _g_cfg }}" data-nav-group="Configuration">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-sliders fw-nav-section-icon" style="color:#06b6d4;"></i><span>Configuration</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
+          {# Each config section expands into a collapsible GUI-faithful tree
+             (section → group → object type), exactly like Server Objects. Native
+             <details>, no JS / CSP-safe. Sections start COLLAPSED (6 of them) —
+             only the active section + its active group auto-open, so the sidebar
+             stays compact. Needs a selected device for the object-list leaves;
+             with none it falls back to a flat link that prompts device pick. #}
           {% for s in config_sections_nav %}
-          <a class="fw-nav-item {{ 'active' if request.view_args and request.view_args.get('section_key') == s.key else '' }}"
+          {% set _sec_active = request.view_args and request.view_args.get('section_key') == s.key %}
+          {% if current_appliance and s.menu %}
+          <details class="fw-cfg-section" {{ 'open' if _sec_active }}>
+            <summary class="fw-nav-item fw-cfg-section-head {{ 'active' if _sec_active and not request.args.get('type') else '' }}">
+              <span class="fw-nav-icon fw-nav-emoji">{{ s.emoji }}</span><span>{{ s.label }}</span>
+              <i class="bi bi-chevron-down fw-so-nav-caret"></i>
+            </summary>
+            <div class="fw-cfg-section-body fw-so-nav">
+              {% for group in s.menu %}
+              {% set _grp_active = _sec_active and (request.args.get('type') in group.items|map(attribute='logical')|list) %}
+              <details class="fw-so-nav-group" {{ 'open' if _grp_active }}>
+                <summary class="fw-so-nav-head">
+                  <i class="bi {{ group.icon }} fw-so-nav-gicon"></i><span>{{ group.label }}</span>
+                  <i class="bi bi-chevron-down fw-so-nav-caret"></i>
+                </summary>
+                <div class="fw-so-nav-items">
+                  {% for item in group.items %}
+                  <a class="fw-nav-item fw-so-nav-item {{ 'active' if _sec_active and request.args.get('type') == item.logical else '' }}"
+                     href="{{ url_for('section_config.section', section_key=s.key, device=current_appliance.id, type=item.logical) }}">
+                    <i class="bi {{ item.icon }} fw-nav-icon"></i><span>{{ item.label }}</span>
+                    {% if item.read_only %}<i class="bi bi-eye fw-so-nav-ro" title="Read-only (predefined)"></i>{% endif %}
+                  </a>
+                  {% endfor %}
+                </div>
+              </details>
+              {% endfor %}
+            </div>
+          </details>
+          {% else %}
+          <a class="fw-nav-item {{ 'active' if _sec_active else '' }}"
              href="{{ url_for('section_config.section', section_key=s.key) }}">
             <span class="fw-nav-icon fw-nav-emoji">{{ s.emoji }}</span><span>{{ s.label }}</span></a>
+          {% endif %}
           {% endfor %}
         </div>
       </div>
       {% endif %}
 
       <!-- OPERATIONS -->
-      <div class="fw-nav-group" data-nav-group="Operations">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><span>Operations</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+      <div class="fw-nav-group {{ 'open' if _g_ops }}" data-nav-group="Operations">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-tools fw-nav-section-icon" style="color:#94a3b8;"></i><span>Operations</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
-          <a class="fw-nav-item" href="{{ url_for('backups.index') }}">
-            <i class="bi bi-cloud-arrow-down fw-nav-icon"></i><span>Backups</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'backups' else '' }}" href="{{ url_for('backups.index') }}">
+            <i class="bi bi-cloud-arrow-down fw-nav-icon"></i><span>Device Backups</span></a>
           <a class="fw-nav-item" href="{{ url_for('logs.index') }}">
             <i class="bi bi-journal-text fw-nav-icon"></i><span>Log Collection</span></a>
           <a class="fw-nav-item" href="{{ url_for('import_backup.index') }}">
             <i class="bi bi-file-earmark-arrow-up fw-nav-icon"></i><span>Import Backup</span></a>
-          {% if current_user and current_user.can('user_manage') %}
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' else '' }}" href="{{ url_for('database.index') }}">
-            <i class="bi bi-database fw-nav-icon"></i><span>Database</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'system_backup' else '' }}" href="{{ url_for('system_backup.index') }}">
-            <i class="bi bi-hdd-stack fw-nav-icon"></i><span>Backup &amp; Restore</span></a>
-          {% endif %}
         </div>
       </div>
-
-      <!-- API -->
-      {% if current_user and current_user.can('user_manage') %}
-      <div class="fw-nav-group" data-nav-group="API">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><span>API</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-        <div class="fw-nav-group-body">
-          <a class="fw-nav-item" href="{{ url_for('registry.index') }}">
-            <i class="bi bi-table fw-nav-icon"></i><span>Registry</span></a>
-          <a class="fw-nav-item" href="{{ url_for('api_explorer.index') }}">
-            <i class="bi bi-code-square fw-nav-icon"></i><span>API Explorer</span></a>
-          <a class="fw-nav-item" href="{{ url_for('structure.index') }}">
-            <i class="bi bi-diagram-3 fw-nav-icon"></i><span>Structure</span></a>
-        </div>
-      </div>
-      {% endif %}
 
       <!-- AUTOMATION -->
       {% if current_user and current_user.can('config_write') %}
-      <div class="fw-nav-group" data-nav-group="Automation">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><span>Automation</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+      <div class="fw-nav-group {{ 'open' if _g_auto }}" data-nav-group="Automation">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-gear-wide-connected fw-nav-section-icon" style="color:#8b5cf6;"></i><span>Automation</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           {% if current_user.can('user_manage') %}
           <a class="fw-nav-item" href="{{ url_for('scheduled_actions.index') }}">
             <i class="bi bi-clock-history fw-nav-icon"></i><span>Scheduled Actions</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'cert_manager' else '' }}" href="{{ url_for('cert_manager.index') }}">
-            <i class="bi bi-shield-lock fw-nav-icon"></i><span>Certificate Manager</span></a>
           {% endif %}
           <a class="fw-nav-item" href="{{ url_for('provisioning.index') }}">
             <i class="bi bi-rocket-takeoff fw-nav-icon"></i><span>System Provisioning</span></a>
@@ -324,8 +644,8 @@
 
       <!-- ADMINISTRATOR -->
       {% if current_user and current_user.can('user_manage') %}
-      <div class="fw-nav-group" data-nav-group="Administrator">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><span>Administrator</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+      <div class="fw-nav-group {{ 'open' if _g_adm }}" data-nav-group="Administrator">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>Administrator</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'templates' else '' }}"
              href="{{ url_for('templates.index') }}">
@@ -347,6 +667,14 @@
           <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('firmware.') else '' }}"
              href="{{ url_for('firmware.index') }}">
             <i class="bi bi-hdd-stack fw-nav-icon"></i><span>Firmware</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'capacity' else '' }}" href="{{ url_for('capacity.index') }}">
+            <i class="bi bi-speedometer2 fw-nav-icon"></i><span>Capacity Limits</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' else '' }}" href="{{ url_for('database.index') }}">
+            <i class="bi bi-database fw-nav-icon"></i><span>Database</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'system_backup' else '' }}" href="{{ url_for('system_backup.index') }}">
+            <i class="bi bi-hdd-stack fw-nav-icon"></i><span>System Backup &amp; Restore</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'signatures' else '' }}" href="{{ url_for('signatures.index') }}">
+            <i class="bi bi-fingerprint fw-nav-icon"></i><span>Signatures</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'reports' else '' }}" href="{{ url_for('reports.inbox') }}">
             <i class="bi bi-bug fw-nav-icon"></i><span>Bug Reports</span></a>
         </div>
@@ -361,6 +689,13 @@
 
       <!-- PROJECT SETTINGS — pinned to the bottom of the sidebar -->
       <div class="fw-nav-bottom">
+        <a class="fw-nav-item {{ 'active' if request.blueprint == 'docs' else '' }}"
+           href="{{ url_for('docs.index') }}">
+          <i class="bi bi-book fw-nav-icon"></i><span>Documentation</span></a>
+        {% if current_user and current_user.can('user_manage') %}
+        <a class="fw-nav-item {{ 'active' if _g_api }}" href="{{ url_for('registry.index') }}">
+          <i class="bi bi-code-slash fw-nav-icon"></i><span>API</span></a>
+        {% endif %}
         <div class="fw-nav-divider"></div>
         <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('settings.') else '' }}"
            href="{{ url_for('settings.index') }}">
@@ -444,8 +779,20 @@
 
 <!-- FortiWeb page-level JS — re-run on every Turbo visit (Turbo Drive, the
      Bootstrap/Chart libraries and jobs.js are in <head> so they persist). -->
-<script src="{{ url_for('static', filename='js/api.js') }}"></script>
-<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<script src="{{ asset('js/api.js') }}"></script>
+<script src="{{ asset('js/main.js') }}"></script>
+<script src="{{ asset('js/regex_lab.js') }}"></script>
+<script nonce="{{ csp_nonce }}">
+(function(){
+  document.body.dataset.product = '{{ product.key }}';
+  document.addEventListener('click', function(e){
+    var t = e.target.closest('[data-fw-regex-open]');
+    if (!t || !window.FWRegexLab) return;
+    e.preventDefault();
+    FWRegexLab.open(null, '', '{{ product.key }}', t.getAttribute('data-fw-regex-open'));
+  });
+})();
+</script>
 <script src="{{ url_for('static', filename='js/release_notes.js') }}"></script>
 
 <!-- Bug report modal -->

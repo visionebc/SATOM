@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}FortiADC — Dashboard{% endblock %}
+
+{% block content %}
+<div class="fw-page-header d-flex align-items-center gap-3 mb-4">
+  <img src="{{ url_for('static', filename='img/fortiadc-mark.svg') }}"
+       alt="FortiADC" style="width:42px;height:42px;">
+  <div>
+    <h1 class="h4 mb-0">FortiADC-Manager</h1>
+    <div class="text-muted" style="font-size:13px;">Application Delivery Controller
+      · {{ n_types }} object types across {{ groups|length }} sections</div>
+  </div>
+  <div class="ms-auto">
+    <a href="{{ url_for('product.switch') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left-right me-1"></i>Switch product</a>
+  </div>
+</div>
+
+{# ---- Device picker -------------------------------------------------- #}
+<div class="fw-card mb-4" style="padding:18px 20px;">
+  <h2 class="h6 mb-3"><i class="bi bi-hdd-rack me-2 text-accent"></i>FortiADC devices</h2>
+  {% if fleet %}
+  <div class="row g-3">
+    {% for a in fleet %}
+    <div class="col-md-4 col-lg-3">
+      <div class="fw-card h-100 {{ 'border-primary' if current and current.id == a.id }}"
+           style="padding:14px;">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <i class="bi bi-hdd-rack text-accent"></i>
+          <strong>{{ a.name }}</strong>
+          {% if current and current.id == a.id %}
+          <span class="fw-badge fw-badge-success ms-auto">selected</span>
+          {% endif %}
+        </div>
+        <div class="text-muted mb-2" style="font-size:12px;">{{ a.host }}:{{ a.port }}</div>
+        <a class="btn btn-sm {{ 'btn-outline-secondary' if current and current.id == a.id else 'btn-fw-primary' }}"
+           href="{{ url_for('adc.use_device', id=a.id) }}">
+          <i class="bi bi-check2-circle me-1"></i>{{ 'Selected' if current and current.id == a.id else 'Select' }}</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="fw-empty-state py-4">
+    <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi bi-hdd-rack"></i></div>
+    <div class="fw-empty-state-title">No FortiADC appliances registered yet</div>
+    <div class="fw-empty-state-text">
+      Register the FortiADC VM under <a href="{{ url_for('appliances.index') }}">Appliances</a>
+      with kind <code>fortiadc</code>. Until then the sections below browse the
+      structure only (lists need a live device — FortiADC has no local cache yet).
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{# ---- Section overview ------------------------------------------------ #}
+<div class="row g-3">
+  {% for g in groups %}
+  <div class="col-md-6 col-lg-4">
+    <div class="fw-card h-100" style="padding:16px 18px;">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <i class="bi {{ g.icon }} text-accent"></i>
+        <strong>{{ g.label }}</strong>
+        <span class="text-muted ms-auto" style="font-size:11px;">
+          {{ g.items|map(attribute='tabs')|map('length')|sum }} types</span>
+      </div>
+      <div class="d-flex flex-wrap gap-1">
+        {% for item in g.items %}
+        <a class="fw-badge fw-badge-secondary text-decoration-none"
+           href="{{ url_for('adc.menu_page', item_key=item.key) }}">
+          <i class="bi {{ item.icon }} me-1"></i>{{ item.label }}</a>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

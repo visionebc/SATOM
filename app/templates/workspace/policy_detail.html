@@ -34,12 +34,19 @@
   </a>
 </div>
 
+{% if cache_freshness %}<div class="mb-2"><span class="fw-badge fw-badge-success" title="Served from the local source of truth (PostgreSQL deep capture). Use 'Refresh from device' on the policy list to pull live config."><i class="bi bi-database me-1"></i>{{ cache_freshness }}</span></div>{% endif %}
 {% if error %}<div class="fw-alert fw-alert-warning mb-3"><i class="bi bi-exclamation-triangle me-2"></i>{{ error }}</div>{% endif %}
 {% if not policy and not error %}<div class="fw-alert fw-alert-warning mb-3"><i class="bi bi-exclamation-triangle me-2"></i>The device returned no data for this policy.</div>{% endif %}
 
 <!-- ───────────────────────── Virtual Server / VIP ───────────────────────── -->
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>Virtual Server <span class="mono text-muted">{{ vserver_name or '—' }}</span></span></div>
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>Virtual Server <span class="mono text-muted">{{ vserver_name or '—' }}</span></span>
+    {% if vserver_name %}
+    <button type="button" class="btn btn-sm btn-fw-outline fw-open-obj" data-coll="server-policy/vserver" data-mkey="{{ vserver_name }}" data-label="Virtual Server"
+            title="Open the virtual server in the full editor (add / remove VIP rows)"><i class="bi bi-layout-sidebar-inset-reverse me-1"></i>Manage VIP rows…</button>
+    {% endif %}
+  </div>
   <div class="fw-card-body">
     {% if vips %}
       {% for v in vips %}
@@ -140,7 +147,13 @@
 
 <!-- ───────────────────────── Server Pool ───────────────────────── -->
 <div class="fw-card mb-3" id="poolCard" data-mode-vis='{"t":"mode","modes":["server-pool","offline-protection","transparent-servers","wccp-servers"]}'>
-  <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>Server Pool <span class="mono text-muted">{{ pool_name or '—' }}</span></span></div>
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>Server Pool <span class="mono text-muted">{{ pool_name or '—' }}</span></span>
+    {% if pool_name %}
+    <button type="button" class="btn btn-sm btn-fw-outline fw-open-obj" data-coll="server-policy/server-pool" data-mkey="{{ pool_name }}" data-label="Server Pool"
+            title="Open the pool in the full editor (add / remove back-end members)"><i class="bi bi-layout-sidebar-inset-reverse me-1"></i>Manage members…</button>
+    {% endif %}
+  </div>
   <div class="fw-card-body">
     {% if pool %}
       <div class="fw-scope" data-endpoint="{{ eps.pool }}" data-mkey="{{ pool_name }}">
@@ -242,14 +255,11 @@
   </div>
 </div></div></div>
 
-<!-- Referenced-object edit modal (the ✎ on a dropdown) -->
-<div class="modal fade" id="refEditModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
-  <div class="modal-header"><h5 class="modal-title"><i class="bi bi-pencil-square me-2 text-accent"></i><span id="refEditTitle">Edit object</span></h5>
-    <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-  <div class="modal-body" id="refEditBody"></div>
-</div></div></div>
+<!-- Referenced objects (the ✎ on a dropdown) open in the FortiWeb-style
+     slide-over panel (objedit_drawer.js) — no modal, no page navigation. -->
 
-<!-- Create-new object modal (the ＋ on a dropdown) -->
+<!-- Create-new object modal (kept ONLY for the WPP '+', which offers
+     clone-from-an-existing-profile; every other ＋ opens the slide-over) -->
 <div class="modal fade" id="createModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
   <div class="modal-header"><h5 class="modal-title"><i class="bi bi-plus-square me-2 text-accent"></i><span id="createTitle">Create object</span></h5>
     <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -282,11 +292,12 @@
 </style>
 <script nonce="{{ csp_nonce }}">
 const APPL_ID = {{ appliance.id }};
+// The FortiWeb-style slide-over panels (objedit_drawer.js) need the appliance id.
+window.OBJEDIT_AID = APPL_ID;
 const POLICY_NAME = {{ policy_name|tojson }};
 const CREATE_FIELDS = {{ create_fields|tojson }};
 const diffModal = (window.bootstrap && document.getElementById('diffModal')) ? new bootstrap.Modal(document.getElementById('diffModal')) : null;
 let pendingApply = null;
-const refEditModal = (window.bootstrap && document.getElementById('refEditModal')) ? new bootstrap.Modal(document.getElementById('refEditModal')) : null;
 const createModal = (window.bootstrap && document.getElementById('createModal')) ? new bootstrap.Modal(document.getElementById('createModal')) : null;
 let createCtx = null;
 
@@ -403,9 +414,19 @@ async function preloadRefs(root){
 }
 
 // ── create-new for a reference field (＋) ──────────────────────────────────────
+// FortiWeb-style: the ＋ opens the object's FULL create form in a slide-over
+// panel; on create the panel promotes to the object's editor (fill sub-tables)
+// and the name is selected back here. The WPP ＋ keeps its bespoke modal (it
+// offers cloning the settings of an existing profile — the drawer create doesn't).
 document.addEventListener('click', e => {
   const btn = e.target.closest('.fw-create'); if(!btn) return;
-  openCreate(btn.dataset.key, btn.dataset.ref, btn.parentElement.querySelector('.fw-ref-select'));
+  if (btn.closest('[data-fw-objedit]')) return;   // drawer fragments handle their own
+  const sel = btn.parentElement.querySelector('.fw-ref-select');
+  if (btn.dataset.key === 'web-protection-profile' || !window.FWDrawer){
+    openCreate(btn.dataset.key, btn.dataset.ref, sel);
+    return;
+  }
+  FWDrawer.openCreate((btn.dataset.ref||'').split('|')[0], {title: btn.dataset.key, opener: sel});
 });
 
 function openCreate(key, refEp, sel){
@@ -459,45 +480,22 @@ async function submitCreate(){
   } else { window.FW.toast('Create failed: ' + (res.error||''), 'danger'); }
 }
 
-// ── edit (✎) the selected referenced object in place ──
+// ── edit (✎) the selected referenced object — FortiWeb-style slide-over ──
+// Opens the full generic editor (fields + sub-tables, cache fallback, deeper
+// references stack more panels) instead of the old flat modal. The WPP too:
+// its ~34 sub-policies render in the same panel (template-managed profiles are
+// save-locked server-side with a clear message).
 document.addEventListener('click', async e => {
   const btn = e.target.closest('.fw-edit-ref'); if(!btn) return;
+  if (btn.closest('[data-fw-objedit]')) return;   // drawer fragments handle their own
   const key = btn.dataset.key, ep = (btn.dataset.ref||'').split('|')[0];
   const sel = btn.parentElement.querySelector('.fw-ref-select');
   const name = sel ? (sel.value||'').trim() : '';
   if(!name){ window.FW.toast('Pick an object first, then edit it', 'info'); return; }
-  // WPP contents live in the Web Protection module — open it, don't edit inline
-  if(key === 'web-protection-profile'){
-    window.open(`/web-protection/${APPL_ID}/wpp/${encodeURIComponent(name)}`, '_blank'); return;
-  }
-  let r;
-  try { r = await (await fetch(`/workspace/${APPL_ID}/ref-object?endpoint=${encodeURIComponent(ep)}&name=${encodeURIComponent(name)}`)).json(); }
-  catch(_){ window.FW.toast('Load failed', 'danger'); return; }
-  if(!r.ok){ window.FW.toast('Load failed: ' + (r.error||''), 'danger'); return; }
-  document.getElementById('refEditTitle').textContent = `${key} — ${name}`;
-  document.getElementById('refEditBody').innerHTML = r.html;
-  preloadRefs(document.getElementById('refEditBody'));
-  if(refEditModal) refEditModal.show();
+  if (window.FWDrawer){ FWDrawer.openEdit(ep, name, {title: key, opener: sel}); return; }
+  // fallback (drawer script missing): the full editor page in a new tab
+  window.open(`/objedit/${APPL_ID}/edit?collection=${encodeURIComponent(ep)}&mkey=${encodeURIComponent(name)}&title=${encodeURIComponent(key)}`, '_blank');
 });
-
-// save handler for the ref-edit modal (native confirm — avoids nested modals)
-async function saveRefScope(btn){
-  const scope = btn.closest('.fw-scope');
-  const dirty = dirtyInputs(scope);
-  if(!dirty.length){ window.FW.toast('No changes in this object', 'info'); return; }
-  const fields = {}; dirty.forEach(el => fields[el.dataset.key] = el.value);
-  const base = {endpoint: scope.dataset.endpoint, mkey: scope.dataset.mkey, fields};
-  const dry = await postJSON(`/workspace/${APPL_ID}/save`, base);
-  if(!dry.ok){ window.FW.toast('Preview failed: ' + (dry.error||''), 'danger'); return; }
-  const summary = dirty.map(el => `• ${el.dataset.key}: ${el.dataset.orig||'∅'} → ${el.value}`).join('\n');
-  if(!confirm(`Apply to ${scope.dataset.mkey} on the device?\n\n${summary}`)) return;
-  const res = await postJSON(`/workspace/${APPL_ID}/save`, Object.assign({}, base, {apply:true}));
-  if(res.ok){
-    window.FW.toast('Saved to device', 'success');
-    dirty.forEach(el => { el.dataset.orig = el.value; el.classList.remove('fw-dirty'); });
-    refreshDirty(scope);
-  } else { window.FW.toast('Save failed: ' + (res.error||''), 'danger'); }
-}
 
 // ── Content Routing rules (by-parent rows on the policy) ──────────────────────
 function crFields(tr){
@@ -534,6 +532,7 @@ async function deleteCrRow(btn){
 function editCrPolicy(btn){
   const name = (btn.dataset.name||'').trim() || (btn.closest('tr').querySelector('.fw-cr-policy')||{}).value;
   if(!name){ window.FW.toast('Pick/save a routing policy first', 'info'); return; }
+  if (window.FWDrawer){ FWDrawer.openEdit('server-policy/http-content-routing-policy', name, {title: 'Content Routing'}); return; }
   window.open(`/objedit/${APPL_ID}/edit?collection=${encodeURIComponent('server-policy/http-content-routing-policy')}&mkey=${encodeURIComponent(name)}&title=${encodeURIComponent('Content Routing · '+name)}`, '_blank');
 }
 function addCrRow(){
@@ -584,7 +583,8 @@ async function submitNewPool(){
     sel.value=name; }
   if(poolNewModal) poolNewModal.hide();   // hidden.bs.modal re-shows the CR modal
   if(confirm(`Add real-server members to ${name} now?`)){
-    window.open(`/objedit/${APPL_ID}/edit?collection=${encodeURIComponent('server-policy/server-pool')}&mkey=${encodeURIComponent(name)}&title=${encodeURIComponent('Server Pool · '+name)}`, '_blank');
+    if (window.FWDrawer) FWDrawer.openEdit('server-policy/server-pool', name, {title: 'Server Pool'});
+    else window.open(`/objedit/${APPL_ID}/edit?collection=${encodeURIComponent('server-policy/server-pool')}&mkey=${encodeURIComponent(name)}&title=${encodeURIComponent('Server Pool · '+name)}`, '_blank');
   }
 }
 async function crLoadOptions(sel, coll){
@@ -653,6 +653,15 @@ document.addEventListener('DOMContentLoaded', () => {
   bind('apply-pending',   function (event) { applyPending(); });
   bind('submit-create',   function (event) { submitCreate(); });
   bind('save-scope',      function (event) { saveScope(this); });
+  // "Manage VIP rows… / Manage members…" — the linked object's FULL editor
+  // (add/edit/delete its sub-table rows) in a FortiWeb-style slide-over panel.
+  document.querySelectorAll('.fw-open-obj').forEach(function (el) {
+    el.addEventListener('click', function () {
+      if (window.FWDrawer) FWDrawer.openEdit(el.dataset.coll, el.dataset.mkey, {title: el.dataset.label});
+      else window.open('/objedit/' + APPL_ID + '/edit?collection=' + encodeURIComponent(el.dataset.coll)
+                       + '&mkey=' + encodeURIComponent(el.dataset.mkey), '_blank');
+    });
+  });
 })();
 </script>
 {% endblock %}

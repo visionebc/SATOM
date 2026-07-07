@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 
 from werkzeug.utils import secure_filename
 import shutil
@@ -67,8 +68,12 @@ def create_backup(client: Any, name: str | None = None) -> dict[str, Any]:
     downloaded config — device-side create can return -901 depending on the
     box's backup-password state. Returns the raw response body.
     """
-    payload: dict[str, Any] = {"name": name or f"backup_{time.strftime('%Y%m%d_%H%M%S')}"}
-    resp = client.upload(loader.resolve("local_backup"), files={}, data=payload)
+    # FortiWeb triggers maintenance.localbackup.backup with a GET (verified
+    # live on fw1: POST/PUT/multipart -> -20005 "invalid HTTP method"; GET
+    # runs the backup, returning -901 only when a backup password blocks it).
+    # The box auto-names the file, so `name` is kept for API compat but unused.
+    _ = name
+    resp = client.get(loader.resolve("local_backup"))
     try:
         return resp.json()
     except Exception:  # noqa: BLE001
@@ -203,14 +208,23 @@ def fetch_device_backup(client: Any, *, appliance_id: int, appliance_name: str,
     Best-effort convenience path (device-side create can fail with -901); the
     upload-from-PC path is the reliable one. Raises on any REST failure.
     """
-    create_backup(client)
-    rows = list_backups(client)
+    res = create_backup(client)
+    if isinstance(res, dict) and str(res.get("errcode", "0")) not in ("0", "", "None"):
+        raise RuntimeError(
+            f"device refused the backup (errcode {res.get('errcode')}): "
+            f"{res.get('message', 'no message')}")
+    # The backup takes a moment to appear in the on-device list — bounded poll
+    # (the desktop runbook does the same; a single immediate list races it).
     name = ""
-    for r in rows:
-        if isinstance(r, dict):
-            name = r.get("name") or r.get("filename") or r.get("mkey") or ""
-            if name:
-                break
+    for _ in range(15):
+        for r in list_backups(client):
+            if isinstance(r, dict):
+                name = r.get("name") or r.get("filename") or r.get("mkey") or ""
+                if name:
+                    break
+        if name:
+            break
+        time.sleep(2)
     if not name:
         raise RuntimeError("device reported no backup to download")
     data = download_backup(client, name)
@@ -225,6 +239,102 @@ def fetch_device_backup(client: Any, *, appliance_id: int, appliance_name: str,
                        created_by=created_by, firmware=fw or None)
 
 
+
+# --------------------------------------------------------------------------- #
+# SSH fallback — capture the running config over the CLI                       #
+# --------------------------------------------------------------------------- #
+def _ssh_capture_note(rest_err: str) -> str:
+    """SUCCESS note for an SSH-captured backup: the device REST backup was
+    unavailable but the CLI dump landed. Phrased positively so the vault row
+    does not read like a crash; the REST reason is compacted to its errcode."""
+    m = re.search(r"errcode (-?\d+)", rest_err or "")
+    detail = f"errcode {m.group(1)}" if m else "REST backup unavailable"
+    return (f"Captured over SSH (show full-configuration) — device REST "
+            f"backup unavailable ({detail}).")
+
+
+def ssh_config_backup(appliance) -> bytes:
+    """Dump the FULL running configuration over SSH (``show full-configuration``).
+
+    The management REST API can be unavailable while the CLI still works —
+    live case: an expired FortiWeb-VM trial license locks EVERY ``/api/v2.0``
+    route with HTTP 423 ``errcode -20010`` but leaves SSH management intact
+    (verified on fw1 8.0.5, 2026-07-04: 677 KB dump, clean start/end). The
+    dump is the same CLI text a plaintext backup carries. Read-only by
+    construction (:mod:`app.services.ssh_ops`)."""
+    from .ssh_ops import FortiWebReadonlySSH
+
+    with FortiWebReadonlySSH(appliance, timeout=20.0) as sess:
+        text = sess.run_readonly("show full-configuration", quiet=2.5, maxt=300.0)
+    body = (text or "").strip()
+    if len(body) < 500 or not body.startswith("config"):
+        raise RuntimeError("SSH config dump looks invalid (unexpected header)")
+    if not body.endswith("end"):
+        raise RuntimeError("SSH config dump looks truncated (missing trailing 'end')")
+    return (body + "\n").encode()
+
+
+def fetch_device_backup_auto(appliance, *, created_by: str = "",
+                             method: str = "auto") -> ConfigBackup:
+    """Vault-fill orchestrator with a selectable transport.
+
+    ``method``:
+      * ``"auto"``  (default) — REST local-backup first, SSH CLI dump fallback.
+      * ``"rest"``  — device REST backup ONLY; raise on REST failure (no
+        fallback), so the caller learns the box refused it (e.g. -901 backup
+        password, -20010 license lock).
+      * ``"ssh"``   — SSH ``show full-configuration`` dump ONLY (skip REST).
+
+    REST yields the device's own backup file, so it stays the first choice in
+    ``auto``; on ANY REST failure the SSH capture is tried before giving up.
+    Raises ``RuntimeError`` carrying the relevant reason(s) when the chosen
+    path(s) fail."""
+    method = (method or "auto").lower()
+    if method not in ("auto", "rest", "ssh"):
+        method = "auto"
+
+    rest_err = ""
+    if method in ("auto", "rest"):
+        try:
+            client = appliance.build_client(timeout=120)
+            return fetch_device_backup(
+                client, appliance_id=appliance.id,
+                appliance_name=appliance.name or "", created_by=created_by)
+        except Exception as exc:  # noqa: BLE001 — fall through to the SSH dump
+            rest_err = f"{type(exc).__name__}: {exc}"
+            if method == "rest":
+                raise RuntimeError(f"REST backup failed ({rest_err})") from exc
+
+    # SSH path: chosen explicitly, or the auto-fallback after a REST failure.
+    try:
+        data = ssh_config_backup(appliance)
+    except Exception as ssh_exc:  # noqa: BLE001
+        if method == "ssh":
+            raise RuntimeError(
+                f"SSH backup failed "
+                f"({type(ssh_exc).__name__}: {ssh_exc})") from ssh_exc
+        raise RuntimeError(
+            f"REST backup failed ({rest_err}); SSH fallback also failed "
+            f"({type(ssh_exc).__name__}: {ssh_exc})") from ssh_exc
+    fw = ""
+    try:
+        from . import upgrade as upg
+        fw = upg.firmware_version(appliance.build_client(timeout=15))
+    except Exception:  # noqa: BLE001 — REST is likely locked; firmware is optional
+        pass
+    fname = f"{(appliance.name or 'appliance')}_{time.strftime('%Y%m%d_%H%M%S')}_cli.conf"
+    if method == "ssh":
+        note = "Captured over SSH (show full-configuration) — SSH method requested."
+    else:
+        note = _ssh_capture_note(rest_err)
+    return store_bytes(
+        appliance_id=appliance.id, appliance_name=appliance.name or "",
+        data=data, filename=fname, source="device", created_by=created_by,
+        firmware=fw or None,
+        note=note)
+
+
 __all__ = ["RESTORE_FILE_FIELD", "list_backups", "download_backup", "create_backup",
            "restore", "is_encrypted", "vault_root", "store_bytes", "read_vault_bytes",
-           "delete_vault", "fetch_device_backup"]
+           "delete_vault", "fetch_device_backup", "ssh_config_backup",
+           "fetch_device_backup_auto"]

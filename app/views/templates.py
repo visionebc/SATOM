@@ -16,6 +16,7 @@ from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
 from ..models import Appliance, Template
+from ..models import visible_appliances, visible_appliance_or_404
 from ..services import templates as lib
 from ..services.audit import log_action
 from ..services.bulk import BulkRunner, iter_push_items
@@ -68,7 +69,7 @@ def index():
         kind_labels=lib.KIND_LABELS,
         active_kind=kind,
         active_status=status,
-        appliances=Appliance.query.order_by(Appliance.name).all(),
+        appliances=visible_appliances().order_by(Appliance.name).all(),
         edit_template_id=None,
     )
 
@@ -196,7 +197,7 @@ def edit(template_id: int):
         kind_labels=lib.KIND_LABELS,
         active_kind=None,
         active_status=None,
-        appliances=Appliance.query.order_by(Appliance.name).all(),
+        appliances=visible_appliances().order_by(Appliance.name).all(),
         edit_template_id=row.id,
     )
 
@@ -291,7 +292,13 @@ def apply(template_id: int):
 @login_required
 @require_permission('operations.template_approve')
 def approve(template_id: int):
-    """Approve a pending template, making it eligible for fleet rollout."""
+    """Approve a pending template, making it eligible for fleet rollout.
+
+    **Web Protection Profile templates deploy fleet-wide on approval** (the team
+    rule: a template-managed WPP is read-only on the devices; a change edited +
+    approved here is what lands on EVERY device). The rollout runs as the same
+    audited background bulk job the Apply button uses (canary first).
+    """
     try:
         row = lib.approve_template(template_id, reviewer=current_user.username)
         log_action('template.approve', target=f'{row.kind}/{row.name}',
@@ -300,6 +307,32 @@ def approve(template_id: int):
               'success')
     except ValueError as exc:
         flash(f'Could not approve template: {exc}', 'danger')
+        return redirect(_safe_next(url_for('templates.index')))
+
+    from flask import current_app
+    if (row.kind == Template.KIND_WEB_PROTECTION
+            and not current_app.config.get('TESTING')):
+        device_ids = [a.id for a in visible_appliances().all()]
+        items = iter_push_items(row.body_dict)
+        if device_ids and items:
+            from ..services.bulk import start_apply_job
+            job = start_apply_job(
+                current_app._get_current_object(),
+                title=(f'Deploy WPP template "{row.name}" v{row.version} to '
+                       f'{len(device_ids)} device(s)'),
+                items=items, device_ids=device_ids,
+                by=getattr(current_user, 'username', '') or '',
+                meta={'template_id': row.id, 'kind': row.kind, 'name': row.name,
+                      'trigger': 'approve'},
+                audit_action='template.apply',
+                audit_target=f'{row.kind}/{row.name}')
+            log_action('template.approve.autodeploy',
+                       target=f'{row.kind}/{row.name}',
+                       detail=f'devices={device_ids} items={len(items)} '
+                              f'job={job["id"]}')
+            flash(f'Deploying "{row.name}" v{row.version} to ALL '
+                  f'{len(device_ids)} device(s) — progress in the job dock.',
+                  'info')
     return redirect(_safe_next(url_for('templates.index')))
 
 

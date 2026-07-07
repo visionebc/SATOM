@@ -88,6 +88,11 @@ def index():
         cert_classes=([(c, store.CERT_CLASS_LABELS[c], store.cert_class_config(c))
                        for c in store.CERT_CLASSES] if _is_admin() else []),
         cert_cmd_tokens=store.CERT_CMD_TOKENS,
+        cert_protocol=(store.cert_manager_protocol() if _is_admin() else 'adcs'),
+        cert_protocols=[(p, store.CERT_PROTOCOL_LABELS[p]) for p in store.CERT_PROTOCOLS],
+        cert_acme=(store.cert_manager_acme() if _is_admin() else None),
+        acme_cmd_tokens=store.ACME_CMD_TOKENS,
+        cert_lifecycle=(store.cert_lifecycle_policy() if _is_admin() else None),
         system_info=system_info.collect(),
         is_admin=_is_admin(),
     )
@@ -150,7 +155,31 @@ def save_cert_manager():
             'revoke_cmd': f.get(f'{cls}_revoke_cmd', ''),
             'renew_before_days': f.get(f'{cls}_renew_before_days', '30'),
         })
-    log_action('settings.cert_manager', detail='ADCS + class config saved')
+    # Issuance protocol (pluggable CA backend) + ACME client config.
+    store.save_cert_manager_protocol(f.get('cert_protocol', 'adcs'))
+    store.save_cert_manager_acme({
+        'bin': f.get('acme_bin', ''),
+        'directory_url': f.get('acme_directory_url', ''),
+        'account_email': f.get('acme_account_email', ''),
+        'eab_kid': f.get('acme_eab_kid', ''),
+        'challenge': f.get('acme_challenge', 'http-01'),
+        'submit_cmd': f.get('acme_submit_cmd', ''),
+        'revoke_cmd': f.get('acme_revoke_cmd', ''),
+        'eab_hmac': f.get('acme_eab_hmac', ''),
+        'clear_eab_hmac': bool(f.get('acme_clear_eab_hmac')),
+    })
+    # Lifecycle policy — when superseded certs get revoked and when material
+    # is deleted off the devices.
+    store.save_cert_lifecycle_policy({
+        'revoke_on_supersede': f.get('lc_revoke_on_supersede') == 'on',
+        'revoke_grace_days': f.get('lc_revoke_grace_days', 7),
+        'delete_superseded_after_days': f.get('lc_delete_superseded_after_days', 14),
+        'delete_expired_after_days': f.get('lc_delete_expired_after_days', 30),
+        'delete_revoked_from_device': f.get('lc_delete_revoked_from_device') == 'on',
+        'auto_apply': f.get('lc_auto_apply') == 'on',
+    })
+    log_action('settings.cert_manager',
+               detail=f"protocol={f.get('cert_protocol', 'adcs')} + ADCS/ACME + lifecycle policy saved")
     flash('Certificate Manager settings saved.', 'success')
     return redirect(url_for('settings.index') + '#tab-certmgr')
 
@@ -385,6 +414,24 @@ def test_auth():
     log_action('settings.auth_test',
                detail=('ok' if result.get('ok') else 'fail') + ': ' + str(result.get('detail', '')))
     return jsonify(result)
+
+
+@bp.route('/auth/sync', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def sync_auth():
+    """Import directory users (scoped to the sync group/OU) into local rows so
+    the admin can assign profiles / block access BEFORE first sign-in. New rows
+    are created DISABLED (pending approval)."""
+    result = auth_store.sync_directory_users(default_active=False)
+    log_action('settings.auth_sync',
+               detail=('ok' if result.get('ok') else 'fail') + ': '
+               + str(result.get('detail', '')))
+    flash(result.get('detail', 'Sync finished.'),
+          'success' if result.get('ok') else 'danger')
+    if result.get('ok'):
+        return redirect(url_for('users.index'))
+    return redirect(url_for('settings.index') + '#tab-auth')
 
 
 # ── 2FA self-service (any local user) ───────────────────

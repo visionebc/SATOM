@@ -1,10 +1,11 @@
 """Product branding registry.
 
-The app ships two products that share the same chrome but differ in
-identity and (for now) scope:
+The app ships three "ADOMs" that share the same chrome but differ in
+identity and scope:
 
-* ``fortiweb``  — the full Web Application Firewall manager.
-* ``fortiadc``  — Application Delivery Controller. Basic structure only.
+* ``global``    — the fleet-wide console at ``/`` spanning both products.
+* ``fortiweb``  — the full Web Application Firewall manager (under ``/web``).
+* ``fortiadc``  — Application Delivery Controller (under ``/adc``).
 
 The selected product lives in ``session['product']`` and is injected into
 every template as ``product`` by the app-factory context processor.
@@ -12,6 +13,16 @@ every template as ``product`` by the app-factory context processor.
 from __future__ import annotations
 
 PRODUCTS: dict[str, dict] = {
+    "global": {
+        "key": "global",
+        "name": "Global",
+        "title": "Fortinet-Manager",
+        "tagline": "Global — all products",
+        "mark": "img/global-mark.svg",
+        "description": "One console over the whole fleet — dashboards, "
+                       "metrics, jobs, certificates and administration "
+                       "across FortiWeb and FortiADC.",
+    },
     "fortiweb": {
         "key": "fortiweb",
         "name": "FortiWeb",
@@ -27,8 +38,9 @@ PRODUCTS: dict[str, dict] = {
         "title": "FortiADC-Manager",
         "tagline": "Application Delivery Controller",
         "mark": "img/fortiadc-mark.svg",
-        "description": "Application Delivery Controller management. "
-                       "Basic structure — modules coming soon.",
+        "description": "Manage virtual servers, server/link/global load "
+                       "balancing, WAF, network security and the FortiADC "
+                       "appliance fleet.",
     },
 }
 

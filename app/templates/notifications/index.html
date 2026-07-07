@@ -6,12 +6,12 @@
 <div class="fw-breadcrumb mb-1">
   <a href="/">Home</a>
   <span class="separator">/</span>
-  <a href="{{ url_for('notifications.index') }}">Notifications</a>
+  <span>Notifications</span>
 </div>
 {% endblock %}
 
 {% block content %}
-<div class="fw-page-header d-flex justify-content-between align-items-start">
+<div class="fw-page-header">
   <div>
     <h1 class="fw-page-title">
       <i class="bi bi-bell me-2 text-accent"></i>Notifications
@@ -20,14 +20,6 @@
       Background jobs, bug-report updates and other alerts raised for your account.
     </p>
   </div>
-  {% if notifications %}
-  <form method="POST" action="{{ url_for('notifications.clear') }}" class="ms-3">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button type="submit" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-trash me-1"></i>Clear all
-    </button>
-  </form>
-  {% endif %}
 </div>
 
 <div class="fw-card">
@@ -71,24 +63,23 @@
 </div>
 
 <style nonce="{{ csp_nonce }}">
-.fw-notif-list { }
-.fw-notif-row { border-bottom:1px solid rgba(148,163,184,.08); }
+.fw-notif-row { border-bottom:1px solid var(--fw-border-light); }
 .fw-notif-row:last-child { border-bottom:none; }
 .fw-notif-link {
   display:flex; align-items:flex-start; gap:12px; padding:13px 16px;
-  text-decoration:none; color:inherit; transition:background .15s ease;
+  text-decoration:none; color:inherit; transition:background var(--fw-transition);
 }
-a.fw-notif-link:hover { background:rgba(59,130,246,.06); }
-.fw-notif-unread { background:rgba(59,130,246,.05); }
+a.fw-notif-link:hover { background:var(--fw-content-bg); text-decoration:none; }
+.fw-notif-unread { background:var(--fw-accent-light); }
 .fw-notif-icon { font-size:18px; line-height:1.3; flex:0 0 auto; }
 .fw-notif-main { display:flex; flex-direction:column; gap:2px; min-width:0; flex:1 1 auto; }
-.fw-notif-title { color:#e2e8f0; font-size:13.5px; font-weight:600; }
+.fw-notif-title { color:var(--fw-text-primary); font-size:13.5px; font-weight:600; }
 .fw-notif-dot {
   display:inline-block; width:7px; height:7px; border-radius:50%;
-  background:#3b82f6; margin-right:6px; vertical-align:middle;
+  background:var(--fw-accent); margin-right:6px; vertical-align:middle;
 }
-.fw-notif-body { color:#94a3b8; font-size:12.5px; word-break:break-word; }
-.fw-notif-time { color:#64748b; font-size:11px; margin-top:2px; }
-.fw-notif-chev { color:#64748b; align-self:center; flex:0 0 auto; }
+.fw-notif-body { color:var(--fw-text-secondary); font-size:12.5px; word-break:break-word; }
+.fw-notif-time { color:var(--fw-text-secondary); font-size:11px; margin-top:2px; opacity:.85; }
+.fw-notif-chev { color:var(--fw-text-secondary); align-self:center; flex:0 0 auto; }
 </style>
 {% endblock %}

@@ -139,13 +139,29 @@ REF_CREATE = {
 # specs (key, label, placeholder). Anything not listed is created name-only.
 CREATE_FIELDS: dict[str, list[dict]] = {
     "system/vip": [
-        {"key": "vip", "label": "IP / Netmask", "placeholder": "e.g. 192.0.2.50/24"},
+        {"key": "vip", "label": "IP / Netmask", "placeholder": "e.g. 192.0.2.50/24",
+         "required": True},
         {"key": "interface", "label": "Interface", "placeholder": "e.g. port1", "ref": "system/interface"},
     ],
     "server-policy/service.custom": [
-        {"key": "type", "label": "Type", "options": ["HTTP", "HTTPS"]},
-        {"key": "port", "label": "Port", "placeholder": "e.g. 8080"},
+        # Wire shape verified live on fw6 7.6.8: {name, port, protocol} — there
+        # is NO "type" field; a create without port answers HTTP 500 errcode
+        # -56 "Empty value isn't allowed." (protocol defaults to TCP).
+        {"key": "port", "label": "Port", "placeholder": "e.g. 8080", "required": True},
     ],
+}
+
+# Blank add-row field templates for by-parent sub-tables whose parent has no
+# rows yet (a brand-new object). Without a seed the generic union-of-existing-
+# keys yields an EMPTY add-row form and a dead "Create row" button. Values are
+# the device DEFAULTS (they drive widget inference: enable/disable → toggle) and
+# are only sent when the operator changes them. Live-verified shapes only.
+SUBTABLE_FIELD_SEED: dict[str, dict] = {
+    # verified on fw6 7.6.8 (GET host-list of a populated Protected Hostnames)
+    "server-policy/allow-hosts/host-list": {
+        "host": "", "action": "allow", "ignore-port": "disable",
+        "include-subdomains": "disable", "override-header": "disable",
+    },
 }
 
 # ── curated enum seed (overlay from Firecrawl extends this) ───────────────────

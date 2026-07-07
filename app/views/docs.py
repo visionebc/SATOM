@@ -1,0 +1,100 @@
+"""Documentation — renders the project's Markdown docs as in-app HTML pages.
+
+The docs live as Markdown files in the repo-root ``docs/`` directory. This
+blueprint renders them with python-markdown (fenced code, tables, ToC) so the
+whole team can read the project reference, operational rules, and installation
+guide from inside the app — no shell access needed.
+
+Security notes:
+  * ``login_required`` only — docs are readable by any authenticated user
+    regardless of role (no secrets live in them).
+  * Path traversal is impossible: the slug is validated against the set of
+    ``*.md`` basenames actually present in ``docs/`` and the resolved path is
+    re-checked to be inside ``DOCS_DIR``.
+  * The rendered HTML is derived from repo-controlled files (not user input);
+    it carries no <script> tags and is CSP-safe.
+"""
+from __future__ import annotations
+
+import pathlib
+
+from flask import Blueprint, abort, render_template
+from flask_login import login_required
+from markupsafe import Markup
+
+# docs/ lives at the project root — two levels above this file (app/views/).
+DOCS_DIR = (pathlib.Path(__file__).resolve().parents[2] / "docs")
+
+# Friendly titles + curated display order. Files present in docs/ but not listed
+# here still appear (auto-titled from the filename) after the curated ones.
+_TITLES: dict[str, str] = {
+    "overview.md": "Project Overview & Operational Rules",
+    "INSTALL.md": "Installation & Deployment",
+    "source-of-truth-spec.md": "Source-of-Truth Specification",
+    "server_policy.md": "Server Policy Reference",
+    "web_protection_profile.md": "Web Protection Profile Reference",
+    "wpp_exceptions.md": "WPP Exceptions & Signatures",
+    "release_notes.md": "Release Notes & Upgrade Planning",
+}
+
+# One-line descriptions for the catalog cards.
+_BLURBS: dict[str, str] = {
+    "overview.md": "What this app is, architecture, deployment, security posture and the operational rules.",
+    "INSTALL.md": "How to install, configure and migrate the manager.",
+    "source-of-truth-spec.md": "The authoritative behavioural specification.",
+    "server_policy.md": "Field-level reference for the Server Policy object graph.",
+    "web_protection_profile.md": "The ~40 sub-policy WAF bundle, field by field.",
+    "wpp_exceptions.md": "Authoring and injecting WAF exceptions and signature carve-outs.",
+    "release_notes.md": "Known/resolved issues corpus and the upgrade advisor.",
+}
+
+_MD_EXTENSIONS = ["toc", "fenced_code", "tables", "sane_lists", "nl2br"]
+
+bp = Blueprint("docs", __name__, url_prefix="/docs")
+
+
+def _catalog() -> list[dict]:
+    """Discovered ``*.md`` docs, curated order first, then any extras."""
+    try:
+        present = {p.name for p in DOCS_DIR.glob("*.md") if p.is_file()}
+    except OSError:
+        present = set()
+    ordered = [n for n in _TITLES if n in present]
+    extras = sorted(present - set(_TITLES))
+    out: list[dict] = []
+    for name in ordered + extras:
+        out.append({
+            "slug": name,
+            "title": _TITLES.get(name, name.rsplit(".", 1)[0].replace("_", " ").replace("-", " ").title()),
+            "blurb": _BLURBS.get(name, ""),
+        })
+    return out
+
+
+@bp.route("/")
+@login_required
+def index():
+    return render_template("docs/index.html", docs=_catalog())
+
+
+@bp.route("/<slug>")
+@login_required
+def view(slug: str):
+    import markdown as md_lib
+
+    catalog = {d["slug"]: d for d in _catalog()}
+    if slug not in catalog:  # allowlist — no traversal possible
+        abort(404)
+    path = (DOCS_DIR / slug).resolve()
+    # Defence in depth: the resolved path must stay inside DOCS_DIR.
+    if DOCS_DIR.resolve() not in path.parents or not path.is_file():
+        abort(404)
+    text = path.read_text(encoding="utf-8")
+    html = Markup(md_lib.markdown(text, extensions=_MD_EXTENSIONS, output_format="html5"))
+    return render_template(
+        "docs/view.html",
+        title=catalog[slug]["title"],
+        content=html,
+        slug=slug,
+        docs=_catalog(),
+    )

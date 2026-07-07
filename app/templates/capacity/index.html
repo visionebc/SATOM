@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Capacity Limits{% endblock %}
+
+{% block content %}
+<style nonce="{{ csp_nonce }}">
+  .cap-tbl input, .cap-tbl select { max-width:110px; display:inline-block; }
+  .cap-eff { font-weight:600; }
+  .cap-used-hi { color:#fbbf24; font-weight:600; }
+</style>
+
+<div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h1 class="fw-page-title mb-0"><i class="bi bi-speedometer2 me-2 text-accent"></i>Capacity Limits</h1>
+    <p class="text-muted small mb-0">
+      Per model × firmware: <b>Hard max</b> = Fortinet's ceiling (datasheet / Appendix B).
+      <b>Operational cap</b> = your safety buffer, as an absolute <b>number</b> or a
+      <b>percent</b> of the hard max. Automations check the effective cap (the lower one)
+      before creating objects; the Monitoring page alerts when usage approaches it.
+    </p>
+  </div>
+</div>
+
+{% if missing_models %}
+<div class="alert alert-info py-2">
+  <i class="bi bi-lightbulb me-1"></i>Fleet models without a limits catalog:
+  {% for m in missing_models %}
+  <form method="post" action="{{ url_for('capacity.add_model') }}" class="d-inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="model" value="{{ m.model }}">
+    <input type="hidden" name="firmware_major" value="{{ m.fw }}">
+    <button class="btn btn-sm btn-outline-primary ms-1">＋ {{ m.model }} ({{ m.fw }})</button>
+  </form>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="fw-card mb-4">
+  <div class="fw-card-body">
+    <form method="post" action="{{ url_for('capacity.add_model') }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-auto">
+        <label class="form-label text-muted small mb-1">Model / SKU (e.g. FortiWeb-VM02, FWB-600F)</label>
+        <input name="model" class="form-control form-control-sm" placeholder="FortiWeb-VM04">
+      </div>
+      <div class="col-auto">
+        <label class="form-label text-muted small mb-1">Firmware major</label>
+        <input name="firmware_major" class="form-control form-control-sm" placeholder="7.6" style="max-width:90px;">
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Add model</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if not groups %}
+<div class="text-muted">No capacity catalogs yet — add a model above (the fleet's models are suggested automatically).</div>
+{% endif %}
+
+{% for (product, fw, model), rows in groups.items() %}
+<div class="fw-card mb-4">
+  <div class="fw-card-body">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <b><i class="bi bi-hdd-rack me-1"></i>{{ model }} <span class="text-muted">· {{ product }} · fw {{ fw }}</span></b>
+      <form method="post" action="{{ url_for('capacity.delete_model') }}"
+            data-confirm="Remove ALL limit rows for {{ model }} ({{ fw }})?">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="model" value="{{ model }}">
+        <input type="hidden" name="firmware_major" value="{{ fw }}">
+        <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+      </form>
+    </div>
+    <form method="post" action="{{ url_for('capacity.save') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <table class="table table-sm align-middle cap-tbl">
+        <thead>
+          <tr class="text-muted small">
+            <th>Object type</th><th>In use (fleet max)</th><th>Hard max (Fortinet)</th>
+            <th>Cap mode</th><th>Cap value</th><th>Effective cap</th><th class="text-muted">Updated</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          {% set used = usage.get((model, fw), {}).get(r.object_type, 0) %}
+          <tr>
+            <td>{{ labels.get(r.object_type, {}).get('label', r.object_type) }}</td>
+            <td class="{{ 'cap-used-hi' if r.effective_cap and used >= 0.8 * r.effective_cap else '' }}">{{ used }}</td>
+            <td>
+              <input type="hidden" name="row_id" value="{{ r.id }}">
+              <input name="hard_{{ r.id }}" value="{{ r.hard_max if r.hard_max is not none }}"
+                     class="form-control form-control-sm" inputmode="numeric" placeholder="—">
+            </td>
+            <td>
+              <select name="mode_{{ r.id }}" class="form-select form-select-sm">
+                <option value="none" {{ 'selected' if r.operational_cap is none and r.cap_percent is none }}>no cap</option>
+                <option value="number" {{ 'selected' if r.operational_cap is not none }}>number</option>
+                <option value="percent" {{ 'selected' if r.cap_percent is not none }}>% of max</option>
+              </select>
+            </td>
+            <td>
+              <input name="val_{{ r.id }}"
+                     value="{{ r.operational_cap if r.operational_cap is not none else (r.cap_percent|round(1)|string if r.cap_percent is not none else '') }}"
+                     class="form-control form-control-sm" inputmode="decimal" placeholder="—">
+            </td>
+            <td class="cap-eff">{{ r.effective_cap if r.effective_cap is not none else '—' }}</td>
+            <td class="text-muted small">{{ r.updated_by or '' }} {{ r.updated_at.strftime('%Y-%m-%d') if r.updated_at }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button class="btn btn-sm btn-primary"><i class="bi bi-save me-1"></i>Save {{ model }} ({{ fw }})</button>
+    </form>
+  </div>
+</div>
+{% endfor %}
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  'use strict';
+  document.querySelectorAll('form[data-confirm]').forEach(function (f) {
+    f.addEventListener('submit', function (ev) {
+      if (!window.confirm(f.getAttribute('data-confirm'))) ev.preventDefault();
+    });
+  });
+})();
+</script>
+{% endblock %}

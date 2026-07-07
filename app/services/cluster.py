@@ -126,8 +126,9 @@ def scheduler_local() -> dict:
 
 
 def promote_eligible() -> bool:
-    """A node may be promoted only when it is currently a standby."""
-    return su.node_role() == "standby"
+    """A node may be promoted only when it is currently a standby AND the
+    deployment mode is HA (standalone mode disables failover entirely)."""
+    return su.ha_mode() == "ha" and su.node_role() == "standby"
 
 
 def request_promote(by: str) -> str:
@@ -174,6 +175,7 @@ def manager_summary() -> dict:
     hardcoded 'single instance — no standby' lie)."""
     reps = su.node_reports()
     role = su.node_role()
+    mode = su.ha_mode()
     primaries = [n for n in reps
                  if ((n.get("report") or {}).get("role")) == "primary"]
     standbys = [n for n in reps
@@ -188,7 +190,11 @@ def manager_summary() -> dict:
                        or bool([s for s in rep.get("senders", [])
                                 if s.get("state") == "streaming"]))
     split = len(primaries) > 1
-    if len(reps) <= 1:
+    if mode == "standalone":
+        note = ("Standalone mode (admin-set) — HA interlock, peer probes and "
+                "failover are disabled. Recovery = nightly DB dump + git-published "
+                "reports.")
+    elif len(reps) <= 1:
         note = ("Single node registered — no hot standby. Recovery = nightly DB "
                 "dump + git-published reports.")
     elif split:
@@ -201,6 +207,7 @@ def manager_summary() -> dict:
                 "— check the standby." % len(reps))
     return {
         "instances": len(reps),
+        "mode": mode,
         "standby": standby_present,
         "this_role": role,
         "primaries": len(primaries),
@@ -221,6 +228,7 @@ def full_state() -> dict:
     # replica but hasn't self-reported (the standby can't write the shared,
     # replicated store — see manager_summary()). Match by host == client_addr.
     this = su.this_node_name()
+    mode = su.ha_mode()
     addrs = {sn.get("client_addr") for sn in rep.get("senders", [])
              if sn.get("state") == "streaming"}
     # For every PEER (not self) actively probe its HTTP endpoints — this works
@@ -228,6 +236,11 @@ def full_state() -> dict:
     # for a running peer. Fall back to the replication view if unreachable.
     for n in nodes:
         if n.get("name") == this:
+            continue
+        if mode != "ha":
+            n["report"] = {"role": None, "healthy": None, "revision": None,
+                           "reported_at": "standalone mode — probe disabled",
+                           "source": "disabled", "reachable": None}
             continue
         host = n.get("host")
         pr = _probe_peer(host) if host and host != "127.0.0.1" else {"reachable": False}
@@ -255,7 +268,8 @@ def full_state() -> dict:
         "replication": rep,
         "scheduler": scheduler_local(),
         "interlock": su.validated_state(),
-        "promote_eligible": role == "standby",
+        "mode": mode,
+        "promote_eligible": mode == "ha" and role == "standby",
         "last_promote": last_promote(),
         "lb_probe": LB_PROBE_PATH,
     }

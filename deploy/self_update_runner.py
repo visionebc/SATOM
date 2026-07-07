@@ -54,6 +54,35 @@ def git(*a, timeout=600):
                timeout=timeout, user=APP_USER)
 
 
+def pg_in_recovery():
+    """True when local Postgres is a hot standby (read-only replica).
+
+    On the HA standby the app cannot run (create_all/_ensure_columns write on
+    boot) and migrations must NOT run (the schema arrives via streaming
+    replication from the primary), so the update path diverges: code + deps +
+    unit files only, validated by an import smoke instead of an HTTP health
+    check. Promotion is what turns this node into a serving primary."""
+    try:
+        r = subprocess.run(
+            ["runuser", "-u", "postgres", "--", "psql", "-tAc",
+             "select pg_is_in_recovery()"],
+            capture_output=True, text=True, timeout=15)
+        return r.stdout.strip() == "t"
+    except Exception:
+        return False
+
+
+def import_smoke_ok():
+    """Standby validation: the new code imports cleanly (no create_app, which
+    would write to the read-only replica). Proves syntax/import health."""
+    try:
+        r = run([str(VENV / "python"), "-c", "import app"],
+                timeout=60, user=APP_USER, cwd=str(APP))
+        return r.returncode == 0, (r.stderr or r.stdout)
+    except Exception as e:
+        return False, str(e)
+
+
 def health_ok(timeout=HEALTH_TIMEOUT):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -109,6 +138,12 @@ def process(req_path):
     snapshot = git("rev-parse", "HEAD").stdout.strip()
     st.step("snapshot current commit", True, snapshot[:12])
 
+    # HA role: explicit request wins; else detect from the local DB. A standby
+    # updates code-only (no migration, no app restart, import-smoke validation).
+    role = req.get("role") or ("standby" if pg_in_recovery() else "primary")
+    is_standby = (role == "standby")
+    st.step("ha role", True, role)
+
     try:
         branch = req.get("branch", "main")
         f = git("fetch", "origin", branch)
@@ -131,7 +166,10 @@ def process(req_path):
             if p.returncode != 0:
                 raise RuntimeError("pip install failed")
 
-        if req.get("do_migrate", True):
+        # Migrations run on the PRIMARY only; on a standby the schema arrives
+        # via streaming replication, and `flask db upgrade` would fail on the
+        # read-only replica.
+        if req.get("do_migrate", True) and not is_standby:
             env = dict(os.environ, FLASK_APP="wsgi.py")
             m = run([str(VENV / "flask"), "db", "upgrade"], timeout=600,
                     user=APP_USER, cwd=str(APP), env=env)
@@ -140,6 +178,8 @@ def process(req_path):
             # block the update — the post-restart health check is the real gate.
             st.step("flask db upgrade (best-effort)", m.returncode == 0,
                     (m.stderr or m.stdout))
+        elif is_standby:
+            st.step("flask db upgrade", True, "skipped (standby; schema via replication)")
 
         # Refresh unit files (they may have changed in the update).
         for unit in UNIT_FILES:
@@ -147,6 +187,19 @@ def process(req_path):
             if src.exists():
                 subprocess.run(["cp", str(src), "/etc/systemd/system/" + unit])
         subprocess.run(["systemctl", "daemon-reload"])
+
+        if is_standby:
+            # Do NOT start the app (gunicorn crashes on a read-only replica).
+            # The scheduler guard idle-waits; a restart just reloads its code.
+            subprocess.run(["systemctl", "restart", SCHED], timeout=60)
+            st.step("restart services", True, "scheduler only (standby; app stays stopped)")
+            ok, detail = import_smoke_ok()
+            if not ok:
+                raise RuntimeError("import smoke failed: %s" % detail[:300])
+            new = git("rev-parse", "HEAD").stdout.strip()
+            st.step("import smoke", True, "new code imports on revision %s" % new[:12])
+            st.finish("success", result_sha=new, rolled_back=False, standby=True)
+            return
 
         subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
         subprocess.run(["systemctl", "restart", SCHED], timeout=60)
@@ -167,9 +220,12 @@ def process(req_path):
             if req.get("do_pip", True):
                 run([str(VENV / "pip"), "install", "-q", "-r",
                      str(APP / "requirements.txt")], timeout=900, user=APP_USER)
-            subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
             subprocess.run(["systemctl", "restart", SCHED], timeout=60)
-            ok = health_ok()
+            if is_standby:
+                ok, _ = import_smoke_ok()
+            else:
+                subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
+                ok = health_ok()
             st.step("rollback to %s" % snapshot[:12], ok,
                     "recovered" if ok else "STILL UNHEALTHY after rollback")
             st.finish("failed", result_sha=snapshot, rolled_back=True,

@@ -50,7 +50,8 @@ def save_banners(user_id: int, mapping: dict[str, Any]) -> None:
 import json as _json
 
 K_ARCH_FILTERS = "architecture.filters"
-_ARCH_KEYS = ("zone", "line", "department", "text", "status")
+_ARCH_KEYS = ("zone", "line", "department", "text", "status",
+              "kind", "firmware", "data", "proto", "waf")
 
 
 def architecture_filters(user_id: int) -> dict:

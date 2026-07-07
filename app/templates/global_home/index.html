@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Global — Fortinet Manager{% endblock %}
+
+{% block content %}
+<div class="fw-page-header d-flex align-items-center gap-3 mb-4">
+  <img src="{{ url_for('static', filename='img/global-mark.svg') }}"
+       alt="Global" style="width:42px;height:42px;">
+  <div>
+    <h1 class="h4 mb-0">Global</h1>
+    <div class="text-muted" style="font-size:13px;">Fleet-wide console —
+      everything across FortiWeb and FortiADC</div>
+  </div>
+  <div class="ms-auto">
+    <a href="{{ url_for('product.switch') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left-right me-1"></i>Switch product</a>
+  </div>
+</div>
+
+{# ---- Stat cards ------------------------------------------------------ #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <a class="fw-card d-block h-100 text-decoration-none" style="padding:16px 18px;"
+       href="{{ url_for('product.enter', key='fortiweb') }}">
+      <div class="d-flex align-items-center gap-2 text-muted" style="font-size:12px;">
+        <img src="{{ url_for('static', filename='img/fortiweb-mark.svg') }}" alt="" style="width:18px;height:18px;">
+        FortiWeb ADOM</div>
+      <div class="h3 mb-0 mt-1">{{ fw_fleet|length }}</div>
+      <div class="text-muted" style="font-size:12px;">appliance(s) · open /web &rsaquo;</div>
+    </a>
+  </div>
+  <div class="col-6 col-lg-3">
+    <a class="fw-card d-block h-100 text-decoration-none" style="padding:16px 18px;"
+       href="{{ url_for('product.enter', key='fortiadc') }}">
+      <div class="d-flex align-items-center gap-2 text-muted" style="font-size:12px;">
+        <img src="{{ url_for('static', filename='img/fortiadc-mark.svg') }}" alt="" style="width:18px;height:18px;">
+        FortiADC ADOM</div>
+      <div class="h3 mb-0 mt-1">{{ adc_fleet|length }}</div>
+      <div class="text-muted" style="font-size:12px;">appliance(s) · open /adc &rsaquo;</div>
+    </a>
+  </div>
+  <div class="col-6 col-lg-3">
+    <a class="fw-card d-block h-100 text-decoration-none" style="padding:16px 18px;"
+       href="{{ url_for('jobs.manager') }}">
+      <div class="d-flex align-items-center gap-2 text-muted" style="font-size:12px;">
+        <i class="bi bi-list-task"></i> Jobs</div>
+      <div class="h3 mb-0 mt-1">{{ jobs_running }}</div>
+      <div class="text-muted" style="font-size:12px;">active job(s) &rsaquo;</div>
+    </a>
+  </div>
+  <div class="col-6 col-lg-3">
+    <a class="fw-card d-block h-100 text-decoration-none" style="padding:16px 18px;"
+       href="{{ url_for('cert_manager.index') }}">
+      <div class="d-flex align-items-center gap-2 text-muted" style="font-size:12px;">
+        <i class="bi bi-shield-lock"></i> Certificates</div>
+      <div class="h3 mb-0 mt-1">{{ certs.total }}</div>
+      <div class="text-muted" style="font-size:12px;">
+        {% if certs.expiring %}<span class="text-warning">{{ certs.expiring }} expiring &le;30d</span>
+        {% else %}none expiring &le;30d{% endif %} &rsaquo;</div>
+    </a>
+  </div>
+</div>
+
+{# ---- Global sections (the old per-product "Global" menus, unified) ---- #}
+<div class="fw-card mb-4" style="padding:18px 20px;">
+  <h2 class="h6 mb-3"><i class="bi bi-globe2 me-2 text-accent"></i>Global sections</h2>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('monitoring.index') }}"><i class="bi bi-activity me-1"></i>Monitoring</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('search.index') }}"><i class="bi bi-search me-1"></i>Search</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('architecture.index') }}"><i class="bi bi-hdd-network me-1"></i>Architecture</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('analysis.index') }}"><i class="bi bi-graph-up me-1"></i>Analysis</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('fleet_objects.index') }}"><i class="bi bi-box-seam me-1"></i>Fleet Objects</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('metrics.index') }}"><i class="bi bi-bar-chart-line me-1"></i>Metrics</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('jobs.manager') }}"><i class="bi bi-list-task me-1"></i>Jobs</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('cert_manager.index') }}"><i class="bi bi-shield-lock me-1"></i>Certificate Manager</a>
+    {% if current_user and current_user.can('user_manage') %}
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('appliances.index') }}"><i class="bi bi-server me-1"></i>Appliances</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('audit.index') }}"><i class="bi bi-clipboard-check me-1"></i>Audit Log</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('users.index') }}"><i class="bi bi-people me-1"></i>Users</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('database.index') }}"><i class="bi bi-hdd me-1"></i>Database</a>
+    {% endif %}
+  </div>
+</div>
+
+{# ---- Fleet (both products) ------------------------------------------- #}
+<div class="fw-card" style="padding:18px 20px;">
+  <h2 class="h6 mb-3"><i class="bi bi-hdd-rack me-2 text-accent"></i>Fleet
+    <span class="text-muted" style="font-size:12px;">— {{ fw_fleet|length + adc_fleet|length }} appliance(s), both products</span></h2>
+  {% if fw_fleet or adc_fleet %}
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Name</th><th>Product</th><th>Host</th>
+          <th>Zone</th><th>Line</th><th>Department</th><th class="text-end">Open</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in fw_fleet + adc_fleet %}
+        <tr>
+          <td><strong>{{ a.name }}</strong></td>
+          <td>
+            {% if a.kind == 'fortiadc' %}
+            <span class="fw-badge fw-badge-secondary"><img src="{{ url_for('static', filename='img/fortiadc-mark.svg') }}" alt="" style="width:12px;height:12px;" class="me-1">FortiADC</span>
+            {% else %}
+            <span class="fw-badge fw-badge-secondary"><img src="{{ url_for('static', filename='img/fortiweb-mark.svg') }}" alt="" style="width:12px;height:12px;" class="me-1">FortiWeb</span>
+            {% endif %}
+          </td>
+          <td class="text-muted">{{ a.host }}:{{ a.port }}</td>
+          <td class="text-muted">{{ a.zone or '—' }}</td>
+          <td class="text-muted">{{ a.line or '—' }}</td>
+          <td class="text-muted">{{ a.department or '—' }}</td>
+          <td class="text-end">
+            {% if a.kind == 'fortiadc' %}
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('adc.use_device', id=a.id) }}" title="Open in the FortiADC ADOM"><i class="bi bi-box-arrow-in-right"></i></a>
+            {% else %}
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('appliances.detail', id=a.id) }}" title="Appliance detail"><i class="bi bi-box-arrow-in-right"></i></a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="fw-empty-state py-4">
+    <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi bi-hdd-rack"></i></div>
+    <div class="fw-empty-state-title">No appliances registered yet</div>
+    <div class="fw-empty-state-text">Register FortiWeb / FortiADC devices under
+      <a href="{{ url_for('appliances.index') }}">Appliances</a>.</div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

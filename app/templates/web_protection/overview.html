@@ -14,10 +14,7 @@
 
 {% block content %}
 <div class="row g-3">
-  <div class="col-lg-2 col-md-3">
-    {% include 'web_protection/_menu.html' %}
-  </div>
-  <div class="col-lg-10 col-md-9">
+  <div class="col-lg-12">
     <div class="fw-page-header">
       <div>
         <h1 class="fw-page-title"><i class="bi bi-shield-fill-check me-2 text-accent"></i>Web Protection Profile</h1>
@@ -94,6 +91,7 @@
                 {% for p in wpp_profiles %}
                 {% set pname = p.get('name') or p.get('mkey') or '' %}
                 {% set is_default = (p.get('can_view') == 1) %}
+                {% set is_managed = pname and pname in managed_names %}
                 <tr data-default="{{ 1 if is_default else 0 }}">
                   <td>
                     {% if pname %}
@@ -101,6 +99,8 @@
                        href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/web-protection-profile.inline-protection', mkey=pname, title='Web Protection Profile') }}">{{ pname }}</a>
                     {% else %}—{% endif %}
                     {% if is_default %}<span class="fw-badge fw-badge-secondary ms-1" title="FortiWeb predefined profile">Default</span>{% endif %}
+                    {% if is_managed %}<span class="fw-badge fw-badge-warning ms-1"
+                       title="Template-managed: read-only here. Edit in Administrator → WPP Templates — approving a change there deploys it to ALL devices."><i class="bi bi-lock-fill me-1"></i>Template</span>{% endif %}
                   </td>
                   <td>
                     {% if p.get('signature-rule') or p.get('signature_rule') %}
@@ -111,10 +111,17 @@
                   <td>{{ p.get('application-layer-dos-prevention') or '—' }}</td>
                   <td>
                     {% if pname %}
+                    {% if is_managed %}
+                    <a href="{{ url_for('templates.index', kind='web-protection-profile') }}"
+                       class="btn btn-sm btn-outline-warning" title="Template-managed: edit in Administrator → WPP Templates (deploys to ALL devices)">
+                      <i class="bi bi-lock"></i>
+                    </a>
+                    {% else %}
                     <a href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/web-protection-profile.inline-protection', mkey=pname, title='Web Protection Profile') }}"
                        class="btn btn-sm btn-outline-secondary" title="Edit profile (FortiWeb-style form, all ~40 sub-policies)">
                       <i class="bi bi-pencil"></i>
                     </a>
+                    {% endif %}
                     <button type="button" class="btn btn-sm btn-outline-info"
                             title="Deep-clone this profile on this device"
                             data-js="open-clone-modal" data-profile="{{ pname }}">
@@ -154,15 +161,23 @@
               {% if offline_profiles %}
                 {% for p in offline_profiles %}
                 {% set pname = p.get('name') or p.get('mkey') or '' %}
+                {% set is_managed = pname and pname in managed_names %}
                 <tr>
                   <td class="fw-semibold">{{ pname or '—' }}
                     {% if p.get('can_view') == 1 %}<span class="fw-badge fw-badge-secondary ms-1">Default</span>{% endif %}
+                    {% if is_managed %}<span class="fw-badge fw-badge-warning ms-1"
+                       title="Template-managed: read-only here. Edit in Administrator → WPP Templates."><i class="bi bi-lock-fill me-1"></i>Template</span>{% endif %}
                   </td>
                   <td>{{ p.get('signature-rule') or '—' }}</td>
                   <td>
                     {% if pname %}
+                    {% if is_managed %}
+                    <a href="{{ url_for('templates.index', kind='web-protection-profile') }}"
+                       class="btn btn-sm btn-outline-warning" title="Template-managed: edit in Administrator → WPP Templates"><i class="bi bi-lock"></i></a>
+                    {% else %}
                     <a href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/web-protection-profile.offline-protection', mkey=pname, title='Offline Protection Profile') }}"
                        class="btn btn-sm btn-outline-secondary" title="Edit profile"><i class="bi bi-pencil"></i></a>
+                    {% endif %}
                     {% endif %}
                   </td>
                 </tr>
@@ -188,7 +203,11 @@
       </div>
       <div class="modal-body">
         <p class="text-muted" style="font-size:13px;">
-          Source profile: <strong id="clone-source"></strong> &mdash; on <strong>{{ appliance.name }}</strong>.
+          Source profile: <strong id="clone-source"></strong>
+          <a id="clone-source-view" href="#" target="_blank" rel="noopener" class="ms-1"
+             title="Open the profile's form (fields + sub-policies) in a new tab">
+            <i class="bi bi-search"></i> view contents</a>
+          &mdash; on <strong>{{ appliance.name }}</strong>.
           A <strong>deep clone</strong> walks the whole profile (its ~40 sub-policies and their
           rules); objects that already exist on this device are validated and reused, only the
           missing ones are created.
@@ -294,6 +313,10 @@ var CLONE_SOURCE = '';
 function openCloneModal(name) {
   CLONE_SOURCE = name;
   document.getElementById('clone-source').textContent = name;
+  document.getElementById('clone-source-view').href =
+    '/objedit/{{ appliance.id }}/edit?collection=' +
+    encodeURIComponent('waf/web-protection-profile.inline-protection') +
+    '&mkey=' + encodeURIComponent(name) + '&title=Web+Protection+Profile';
   document.getElementById('clone-new-name').value = name + '-copy';
   document.getElementById('clone-status').innerHTML = '';
   var pre = document.getElementById('clone-plan');

@@ -13,6 +13,7 @@ from flask_login import login_required
 
 from ..auth.decorators import require_permission
 from ..models import Permission
+from ..models import visible_appliances, visible_appliance_or_404
 from ..services import analysis as ana
 from ..services.audit import log_action
 
@@ -148,7 +149,7 @@ def deep_run():
     from ..services import deep_jobs
     ids = _deep_device_ids(request.form) or _deep_device_ids(request.args)
     if not ids:
-        ids = [a.id for a in Appliance.query.filter_by(kind='fortiweb').all()]
+        ids = [a.id for a in visible_appliances().filter_by(kind='fortiweb').all()]
     if not ids:
         return jsonify({"started": False, "reason": "no devices"}), 400
     max_workers = request.form.get('max_workers', type=int) or 8

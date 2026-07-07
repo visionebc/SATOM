@@ -10,11 +10,14 @@ from flask import (
 from flask_login import login_required, current_user
 from ..auth.decorators import require_permission
 from sqlalchemy.exc import IntegrityError
-from ..models import Appliance, ApplianceInterface, AuditLog, db, Permission
+from ..models import (
+    Appliance, ApplianceInterface, AuditLog, db, Permission,
+    visible_appliances, visible_appliance_or_404,
+)
 from ..models_backup import ConfigBackup
 from ..clients.fortiweb import FortiWebClient
 from ..errors import log_exception
-from ..clients.fortiadc import FortiADCClient
+from ..clients import client_for
 from ..services.audit import log_action
 from ..services import settings_store as store
 from ..services import datasheets
@@ -83,7 +86,7 @@ def index():
         page = 1
     q = (request.args.get('q') or '').strip()
 
-    base = Appliance.query.filter(Appliance.parent_id.is_(None))
+    base = visible_appliances().filter(Appliance.parent_id.is_(None))
     if q:
         from sqlalchemy import or_
         like = f'%{q}%'
@@ -95,8 +98,8 @@ def index():
 
     # Fleet-wide stats (independent of the current page / search filter).
     from sqlalchemy import func
-    total_count = Appliance.query.filter(Appliance.parent_id.is_(None)).count()
-    kinds_count = (db.session.query(func.count(func.distinct(Appliance.kind)))
+    total_count = visible_appliances().filter(Appliance.parent_id.is_(None)).count()
+    kinds_count = (visible_appliances(db.session.query(func.count(func.distinct(Appliance.kind))))
                    .filter(Appliance.parent_id.is_(None)).scalar() or 0)
 
     from ..services import rediscovery
@@ -112,7 +115,7 @@ def index():
 @login_required
 def member_roles(id):
     """Live HA role per member (read-only JSON for the cluster sub-cards)."""
-    node0 = Appliance.query.get_or_404(id)
+    node0 = visible_appliance_or_404(id)
     from ..services import ha
     return jsonify({str(m.id): ha.member_role(m, timeout=5.0) for m in node0.members})
 
@@ -120,7 +123,7 @@ def member_roles(id):
 @bp.route('/<int:id>')
 @login_required
 def detail(id):
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     recent_audit = AuditLog.query.filter(
         AuditLog.target.like(f'%{appliance.name}%')
     ).order_by(AuditLog.timestamp.desc()).limit(20).all()
@@ -147,6 +150,10 @@ def create():
     line = request.form.get('line', '').strip() or None
     hw_type = _clean_hw_type(request.form.get('hw_type', 'unknown'))
     model = request.form.get('model', '').strip() or None
+    # Only a user who can SEE maintenance devices may set the flag (operators
+    # cannot even render the field; ignore a forged value from them).
+    maintenance = (request.form.get('maintenance') == 'on'
+                   and current_user.can('appliances.view_maintenance'))
     is_cluster, ha_mode, ha_vip = _parse_ha(request.form)
 
     # VIP cluster: the shared VIP is the connection target.
@@ -165,7 +172,7 @@ def create():
         name=name, kind=kind, host=host, port=port,
         username=username, verify_ssl=verify_ssl,
         vdom=vdom, tags=tags, department=department, zone=zone, line=line,
-        hw_type=hw_type, model=model,
+        hw_type=hw_type, model=model, maintenance=maintenance,
         is_cluster=is_cluster, ha_mode=ha_mode, ha_vip=ha_vip,
         password_enc='placeholder',
     )
@@ -186,7 +193,7 @@ def create():
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
 def edit(id):
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     return render_template('appliances/edit.html', appliance=appliance,
                            classification=store.all_classification())
 
@@ -195,7 +202,7 @@ def edit(id):
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
 def edit_save(id):
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     appliance.name = request.form.get('name', appliance.name).strip()
     appliance.kind = request.form.get('kind', appliance.kind).strip()
     appliance.host = request.form.get('host', appliance.host).strip()
@@ -209,6 +216,10 @@ def edit_save(id):
     appliance.line = request.form.get('line', appliance.line or '').strip() or None
     appliance.hw_type = _clean_hw_type(request.form.get('hw_type', appliance.hw_type or 'unknown'))
     appliance.model = request.form.get('model', appliance.model or '').strip() or None
+    # Preserve maintenance unless the editor can see it (an operator editing a
+    # normal device never submits the hidden field -> value kept).
+    if current_user.can('appliances.view_maintenance') and request.form.get('maintenance_present'):
+        appliance.maintenance = request.form.get('maintenance') == 'on'
     # HA: a member node's identity is managed from its cluster, not here; only
     # a top-level row (standalone or node 0) toggles cluster/mode/vip.
     if not appliance.is_cluster_member:
@@ -248,7 +259,7 @@ def edit_save(id):
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
 def delete(id):
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     name = appliance.name
     datasheets.delete(appliance.id)  # drop the PDF file (interfaces cascade via FK)
     db.session.delete(appliance)
@@ -262,7 +273,7 @@ def delete(id):
 @login_required
 def datasheet(id):
     """Serve the appliance's datasheet PDF inline (read-only, any logged-in user)."""
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     if not appliance.datasheet_filename:
         abort(404)
     path = datasheets.path_for(appliance.id)
@@ -279,12 +290,9 @@ def datasheet(id):
 @bp.route('/<int:id>/test', methods=['POST'])
 @login_required
 def test_connection(id):
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     try:
-        if appliance.kind == 'fortiweb':
-            client = FortiWebClient(appliance)
-        else:
-            client = FortiADCClient(appliance)
+        client = client_for(appliance)
         status = client.status_check()
         log_action('appliance.test', target=appliance.name)
         return jsonify({'ok': True, 'status': status})
@@ -308,7 +316,7 @@ def _clean_role_hint(raw):
 def add_member(id):
     """Attach an existing standalone appliance, or create a new member node,
     under a cluster node 0."""
-    node0 = Appliance.query.get_or_404(id)
+    node0 = visible_appliance_or_404(id)
     if not node0.is_cluster:
         flash('This appliance is not an HA cluster.', 'warning')
         return redirect(url_for('appliances.detail', id=id))
@@ -356,8 +364,8 @@ def add_member(id):
 @require_permission(Permission.CONFIG_WRITE)
 def detach_member(id, mid):
     """Detach a member (back to standalone) or delete it outright (delete=1)."""
-    node0 = Appliance.query.get_or_404(id)
-    m = Appliance.query.get_or_404(mid)
+    node0 = visible_appliance_or_404(id)
+    m = visible_appliance_or_404(mid)
     if m.parent_id != node0.id:
         flash('That appliance is not a member of this cluster.', 'warning')
         return redirect(url_for('appliances.detail', id=id))
@@ -381,7 +389,7 @@ def detach_member(id, mid):
 # ===========================================================================
 
 def _fortiweb_or_404(id):
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     if appliance.kind != 'fortiweb':
         flash('This action is only available for FortiWeb appliances.', 'warning')
         return None, appliance
@@ -452,7 +460,7 @@ def rediscover_start(id):
 @login_required
 @require_permission('appliances.view')
 def rediscover_status(id):
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     from ..services import rediscovery
     st = rediscovery.status(id) or {'state': 'idle'}
     if st.get('state') == 'done':
@@ -705,9 +713,16 @@ def flash_report_view(job_id):
     Served from DISK so it survives the ephemeral job record; any signed-in
     operator may open any firmware report (they are fleet-wide ops artifacts)."""
     from ..services import flash_report as _fr
+    from flask import g
     page = _fr.read_report(job_id)
     if page is None:
         abort(404)
+    # The report is a self-contained page with an inline <style> block written
+    # to disk (no nonce). CSP style-src-elem lacks 'unsafe-inline', so stamp the
+    # request nonce onto the tag at serve time or the report renders unstyled.
+    nonce = getattr(g, 'csp_nonce', '')
+    if nonce and '<style>' in page:
+        page = page.replace('<style>', f'<style nonce="{nonce}">', 1)
     return page
 
 
@@ -778,6 +793,7 @@ def _flash_worker(app, job_id, appliance_id, image_id, filename,
             try:
                 before_snap = upg.prepare(
                     appliance, do_backup=True, do_health=True, do_services=True,
+                    created_by=(jobsvc.get_job(job_id) or {}).get("by") or "",
                     progress=lambda p, m: jobsvc.set_progress(job_id, p, m))
             except Exception:  # noqa: BLE001 - best-effort; never blocks an authorized flash
                 before_snap = {"error": "pre-flight incomplete"}
@@ -940,7 +956,7 @@ def _spawn_flash_job(appliance, image, kind, dry_run, confirm_maturity):
              else f"{verb} {appliance.name} \u2192 {image.version}")
     user_id = getattr(current_user, 'id', 0) or 0
     link = url_for(f'appliances.{kind}', id=appliance.id)
-    job = jobsvc.create_job(f'firmware_{kind}', title,
+    job = jobsvc.create_job(f'firmware_{kind}', title, cancelable=False,
                             by=getattr(current_user, 'username', '') or '',
                             meta={"appliance_id": appliance.id, "image_id": image.id,
                                   "dry_run": dry_run})

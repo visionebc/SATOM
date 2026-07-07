@@ -158,7 +158,22 @@ class FortiWebOps:
             return False, "no response"
         status = getattr(resp, "status_code", 0)
         if status >= 400:
-            return False, "HTTP %s" % status
+            # FortiWeb error bodies still carry the real reason (e.g. HTTP 500
+            # + errcode -56 "Empty value isn't allowed.") — surface it instead
+            # of an opaque status code.
+            err = "HTTP %s" % status
+            try:
+                body = resp.json()
+                res = body.get("results") if isinstance(body, dict) else None
+                holder = res if isinstance(res, dict) else (
+                    body if isinstance(body, dict) else {})
+                code = holder.get("errcode")
+                if code not in (None, ""):
+                    err = ("HTTP %s — errcode %s: %s"
+                           % (status, code, holder.get("message", ""))).strip()
+            except Exception:  # noqa: BLE001 — non-JSON error body
+                pass
+            return False, err
         try:
             body = resp.json()
         except Exception:  # noqa: BLE001 - non-JSON 2xx -> ok

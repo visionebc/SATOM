@@ -2,10 +2,15 @@ from flask import Blueprint, render_template, request, jsonify, flash, redirect,
 from flask_login import login_required, current_user
 from ..auth.decorators import require_permission
 from ..models import Appliance, db, Permission
+from ..models import visible_appliances, visible_appliance_or_404
 from ..clients.fortiweb import FortiWebClient
-from ..clients.fortiadc import FortiADCClient
 from ..services.audit import log_action
 from ..registry import loader, tree
+# The catalog editor (New / Edit / Disable) lives on the Registry blueprint and
+# writes through registry.save / registry.toggle. The API-Registry Explorer
+# reuses that SAME context so its API-Menu tree is editable in place — one page,
+# no duplicated write path (see registry._edit_context).
+from .registry import _edit_context
 
 bp = Blueprint('api_explorer', __name__, url_prefix='/api-explorer')
 
@@ -15,15 +20,18 @@ WRITE_METHODS = {'POST', 'PUT', 'DELETE', 'PATCH'}
 @bp.route('/')
 @login_required
 def index():
-    appliances = Appliance.query.order_by(Appliance.name).all()
+    appliances = visible_appliances().order_by(Appliance.name).all()
     # Registry-backed section > endpoint tree for the left-hand "API Menu"
-    # sidebar (mirrors the desktop API Menu). Built from the same loader the
-    # Endpoint Registry uses; purely additive to the executor context below.
+    # sidebar. Built from the same loader the Endpoint Registry uses; when the
+    # user has registry_edit, _edit_context() adds the per-endpoint DB rows so
+    # each leaf grows Edit/Disable affordances (the Registry catalog, fused in).
     api_tree = tree.build_category_tree(loader.get_all_endpoints())
     return render_template(
         'api_explorer/index.html',
         appliances=appliances,
         api_tree=api_tree,
+        can_write=current_user.can('registry.execute_write'),
+        **_edit_context(),
     )
 
 
@@ -38,10 +46,10 @@ def execute():
     if not appliance_id or not endpoint:
         return jsonify({'ok': False, 'error': 'Appliance and endpoint are required.'})
 
-    if method in WRITE_METHODS and not current_user.can(Permission.CONFIG_WRITE):
-        return jsonify({'ok': False, 'error': 'CONFIG_WRITE permission required for write operations.'})
+    if method in WRITE_METHODS and not current_user.can('registry.execute_write'):
+        return jsonify({'ok': False, 'error': 'The "Execute write API calls" permission is required for non-GET methods.'})
 
-    appliance = Appliance.query.get_or_404(appliance_id)
+    appliance = visible_appliance_or_404(appliance_id)
 
     body = None
     if body_raw:

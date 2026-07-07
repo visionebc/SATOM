@@ -4,12 +4,21 @@
 {#  AND the inline panel served with ?partial=1 (loaded by AJAX into the  #}
 {#  Configuration / Server Objects list, so editing happens in place).    #}
 {# ===================================================================== #}
+<div class="fw-objedit" data-fw-objedit data-collection="{{ collection }}"
+     data-mkey="{{ mkey }}" data-title="{{ title }}"{% if create %} data-create="1"{% endif %}>
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h4 class="mb-0">{{ 'New ' ~ title if create else title }} <span class="text-muted">{{ mkey }}</span></h4>
   <code class="small text-muted">{{ collection }}</code>
 </div>
 
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+{% if data_src == 'cache' %}
+<div class="alert alert-info py-2 small">
+  <i class="bi bi-database me-1"></i>Showing locally cached data
+  <span class="fw-bold">({{ freshness or 'DB' }})</span> — the device did not answer the
+  live read (offline or license-locked). Fields stay editable; Save still writes to the device.
+</div>
+{% endif %}
 
 {# ── FortiWeb context: what this object does + how the device reacts ───── #}
 {% if help_info and (help_info.what or help_info.backend_reaction) %}
@@ -40,7 +49,7 @@
       {% for sec in obj_groups %}
         <details class="fw-group" {{ 'open' if loop.first }}>
           <summary class="fw-group-head">{{ sec.title }} <span class="text-muted">({{ sec.fields|length }})</span></summary>
-          <div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false, drill=true) }}{% endfor %}</div>
+          <div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, true) }}{% endfor %}</div>
         </details>
       {% else %}
         {% if not create %}<p class="text-muted mb-0">This object exposes no editable scalar fields.</p>{% endif %}
@@ -71,7 +80,7 @@
       <details class="fw-row-scope mb-2 border rounded p-2" data-collection="{{ st.collection }}"
                data-parent="{{ mkey }}" data-sub-id="{{ row.sub_id }}">
         <summary class="fw-group-head">{{ row.label or ('row ' ~ row.sub_id) }}</summary>
-        {% for sec in row.groups %}<div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false, drill=true) }}{% endfor %}</div>{% endfor %}
+        {% for sec in row.groups %}<div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, true) }}{% endfor %}</div>{% endfor %}
         <div class="mt-2">
           <button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-save-row">Save row</button>
           <button type="button" class="btn btn-sm btn-fw-danger" data-js="objedit-delete-row">Delete</button>
@@ -85,8 +94,14 @@
     <details class="fw-row-scope fw-row-new mt-2 border rounded p-2 border-primary-subtle"
              data-collection="{{ st.collection }}" data-parent="{{ mkey }}">
       <summary class="fw-group-head text-primary">＋ Add {{ st.label }} row</summary>
-      {% for sec in st.blank_groups %}<div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false, drill=true) }}{% endfor %}</div>{% endfor %}
-      <div class="mt-2"><button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-create-row">Create row</button></div>
+      {% if st.blank_groups %}
+        {% for sec in st.blank_groups %}<div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, true) }}{% endfor %}</div>{% endfor %}
+        <div class="mt-2"><button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-create-row">Create row</button></div>
+      {% else %}
+        <p class="text-muted small mb-0 mt-2">No field template is known for this
+        sub-table yet (no curated form and nothing cached). Run a rediscovery /
+        deep capture of a device that already has rows here, then reopen.</p>
+      {% endif %}
       <div class="fw-result"></div>
     </details>
   </div>
@@ -141,6 +156,8 @@ if (!window.__fwObjeditVisBound){
       if (!val){ if (window.FW) FW.toast('Nothing selected to open', 'info'); return; }
       const coll = (b.dataset.ref || '').split('|')[0];
       if (!coll) return;
+      // FortiWeb-style: open in the right slide-over panel, never leave the page.
+      if (window.FWDrawer){ FWDrawer.openEdit(coll, val, {opener: sel}); return; }
       location.href = '/objedit/' + window.OBJEDIT_AID + '/edit?collection='
         + encodeURIComponent(coll) + '&mkey=' + encodeURIComponent(val);
     }
@@ -190,7 +207,11 @@ function fwShow(el, j, applyFn){
   } else {
     el.innerHTML = '<div class="alert alert-success mt-2 mb-0">Applied to device.</div>';
     if (window.FW) FW.toast('Saved to device', 'success');
-    setTimeout(function(){ location.reload(); }, 800);
+    // Inside a slide-over panel: refresh JUST the panel (the page below keeps
+    // its state — the FortiWeb behavior); on the base page, reload as before.
+    const panel = el.closest && el.closest('.fw-drawer');
+    if (panel && window.FWDrawer){ setTimeout(function(){ FWDrawer.reload(panel); }, 800); }
+    else { setTimeout(function(){ location.reload(); }, 800); }
   }
 }
 function saveObject(btn){
@@ -206,7 +227,7 @@ function saveObject(btn){
 // ── Create a NEW top-level object, then open it in the editor to add sub-tables.
 function createObject(btn){
   const scope = btn.closest('.fw-scope'), el = scope.querySelector('.fw-result');
-  const nameEl = document.getElementById('fw-new-name');
+  const nameEl = scope.querySelector('#fw-new-name');
   const name = (nameEl ? nameEl.value : '').trim();
   if (!name){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">Name is required.</div>'; if(nameEl) nameEl.focus(); return; }
   const coll = scope.dataset.collection;
@@ -223,9 +244,19 @@ function createObject(btn){
         if (!j2.ok){ el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">'+(j2.error||'failed')+'</div>'; return; }
         el.innerHTML = '<div class="alert alert-success mt-2 mb-0">Created. Opening editor…</div>';
         if (window.FW) FW.toast('Created on device', 'success');
+        const ctx = scope.closest('[data-fw-objedit]');
+        const ttl = ctx ? (ctx.dataset.title || '') : '';
+        const panel = scope.closest('.fw-drawer');
+        // In a slide-over: promote THIS panel to the new object's edit view (so
+        // its sub-tables can be filled) and select the name back in the opener
+        // dropdown — the FortiWeb create-in-place flow. Full page: navigate.
+        if (panel && window.FWDrawer){
+          setTimeout(function(){ FWDrawer.createdObject(panel, coll, name, ttl); }, 700);
+          return;
+        }
         setTimeout(function(){
           location.href = '/objedit/'+window.OBJEDIT_AID+'/edit?collection='+encodeURIComponent(coll)
-            + '&mkey='+encodeURIComponent(name)+'&title='+encodeURIComponent('{{ title }}');
+            + '&mkey='+encodeURIComponent(name)+'&title='+encodeURIComponent(ttl);
         }, 700);
       });
     };
@@ -281,19 +312,26 @@ function deleteRow(btn){
       Object.assign({}, base, {apply:true})).then(function(j2){ fwShow(el, j2); }); });
   });
 }
-// CSP (script-src-attr 'none'): bindings for the former inline onclick attributes.
-// This fragment replaces its container's innerHTML on each load, so the matched
-// nodes are always fresh — re-running this script cannot double-bind stale rows.
+// CSP (script-src-attr 'none'): ONE delegated listener for the action buttons.
+// Delegation (vs per-node binding) matters now that several editor fragments
+// can be alive at once — the base page plus each stacked slide-over panel —
+// re-running this script per fragment must never double-bind lower panels.
 (function(){
-  function bindClick(name, fn){
-    document.querySelectorAll('[data-js="' + name + '"]').forEach(function(btn){
-      btn.addEventListener('click', function(event){ fn(this); });
-    });
-  }
-  bindClick('objedit-create', createObject);
-  bindClick('objedit-save', saveObject);
-  bindClick('objedit-save-row', saveRow);
-  bindClick('objedit-delete-row', deleteRow);
-  bindClick('objedit-create-row', createRow);
+  if (window.__fwObjeditActionsBound) return;
+  window.__fwObjeditActionsBound = true;
+  const FNS = {
+    'objedit-create': function(b){ createObject(b); },
+    'objedit-save': function(b){ saveObject(b); },
+    'objedit-save-row': function(b){ saveRow(b); },
+    'objedit-delete-row': function(b){ deleteRow(b); },
+    'objedit-create-row': function(b){ createRow(b); }
+  };
+  document.addEventListener('click', function(ev){
+    const btn = ev.target.closest && ev.target.closest('[data-js]');
+    if (!btn) return;
+    const fn = FNS[btn.dataset.js];
+    if (fn) fn(btn);
+  });
 })();
 </script>
+</div>{# /.fw-objedit #}

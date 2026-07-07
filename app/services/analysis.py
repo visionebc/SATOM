@@ -16,7 +16,8 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
 from ..models import (Appliance, AppSetting, AuditLog, ChangeHistory,
-                      WppException)
+                      WppException, visible_appliances,
+                      visible_appliance_or_404)
 from ..models_cache import (DeviceObject, DeviceServerPool,
                             DeviceWebProtectionProfile)
 from . import settings_store
@@ -97,7 +98,7 @@ def _cidr_hosts(cidr: str) -> int:
 # Filter options + selection                                                   #
 # --------------------------------------------------------------------------- #
 def filter_options() -> dict:
-    appls = Appliance.query.order_by(Appliance.name).all()
+    appls = visible_appliances().order_by(Appliance.name).all()
     return {
         "zones": sorted({a.zone for a in appls if a.zone}),
         "lines": sorted({a.line for a in appls if a.line}),
@@ -114,7 +115,7 @@ def filter_options() -> dict:
 
 
 def _selected_appliances(f: dict) -> list[Appliance]:
-    q = Appliance.query
+    q = visible_appliances()
     ids = f.get("device_ids") or []
     if ids:
         q = q.filter(Appliance.id.in_(ids))

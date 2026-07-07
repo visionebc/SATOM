@@ -23,6 +23,7 @@ from flask_login import login_required
 
 from ..auth.decorators import require_permission
 from ..models import Permission
+from ..registry import loader
 from ..services import settings_store as store
 from ..services import structure
 from ..services.audit import log_action
@@ -58,6 +59,7 @@ def index():
         fetchable=fetchable,
         missing=missing,
         total_nodes=structure.node_count(tree),
+        total_endpoints=len(loader.get_all_endpoints()),
         pct=(round(matched * 100 / fetchable) if fetchable else 0),
         show_urn=show_urn,
         has_overlay=bool(overlay),

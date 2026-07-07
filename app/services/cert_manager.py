@@ -40,7 +40,7 @@ from urllib.parse import quote as _url_quote
 
 from ..models import (DeviceCertificate, ManagedCertificate,
                       ManagedCertificateEvent, db)
-from . import cert_ssh, naming
+from . import cert_adc, cert_ssh, naming
 from . import settings_store as store
 from .audit import log_action
 from .fortiweb_ops import FortiWebOps
@@ -206,8 +206,92 @@ def _interpolate(template: str, mapping: dict) -> str:
     return out
 
 
+def _argv_from_template(cmd_tmpl: str, mapping: dict) -> list[str]:
+    """Build the argv SAFELY: the admin's template is shlex-parsed FIRST and the
+    tokens are substituted inside each argument afterwards. A value carrying
+    spaces / quotes (a password, a DN, an URL) therefore stays ONE argument and
+    can never break parsing or inject extra arguments into the CA command."""
+    try:
+        parts = shlex.split(cmd_tmpl or "")
+    except ValueError as exc:
+        raise CertManagerError(f"command template is not parseable: {exc}") from exc
+    argv = [_interpolate(p, mapping) for p in parts]
+    if not argv:
+        raise CertManagerError("command template is empty")
+    return argv
+
+
 def _redact(text: str, secret: str) -> str:
     return text.replace(secret, "********") if secret else text
+
+
+# --------------------------------------------------------------------------- #
+#  Protocol dispatch — the CA backend is CHOSEN in the admin console            #
+#  (Settings → Certificate Manager): "adcs" = enterprise-CA command template,   #
+#  "acme" = an ACME client (certbot/acme.sh/lego) driven through the same       #
+#  template contract. Adding a protocol = a settings_store entry + a context    #
+#  builder here; the pipeline (generate/sign/deploy/swap/revoke) is shared.     #
+# --------------------------------------------------------------------------- #
+def _signing_context(cert_class: str) -> tuple[str, str, dict, str]:
+    """(protocol, submit command template, base token mapping, secret) for the
+    ACTIVE issuance protocol. ``{csr}``/``{out}`` are added at run time."""
+    protocol = store.cert_manager_protocol()
+    ccfg = store.cert_class_config(cert_class)
+    if protocol == "acme":
+        acme = store.cert_manager_acme(reveal_secret=True)
+        secret = acme.get("eab_hmac", "")
+        mapping = {
+            "bin": acme.get("bin", "certbot"),
+            "directory": acme.get("directory_url", ""),
+            "email": acme.get("account_email", ""),
+            "eab_kid": acme.get("eab_kid", ""),
+            "eab_hmac": secret,
+            "challenge": acme.get("challenge", "http-01"),
+            "template": ccfg.get("template", ""),
+        }
+        return "acme", (acme.get("submit_cmd") or "").strip(), mapping, secret
+    adcs = store.cert_manager_adcs(reveal_secret=True)
+    secret = adcs.get("secret", "")
+    mapping = {
+        "bin": adcs.get("bin", "certipy"),
+        "user": adcs.get("user", ""),
+        "domain": adcs.get("domain", ""),
+        "password": secret,
+        "ca": adcs.get("ca", ""),
+        "ca_name": adcs.get("ca_name", ""),
+        "template": ccfg.get("template", ""),
+    }
+    return "adcs", (ccfg.get("submit_cmd") or "").strip(), mapping, secret
+
+
+def _revoke_context(cert: ManagedCertificate) -> tuple[str, str, dict, str]:
+    """(protocol, revoke command template, base token mapping, secret). The ACME
+    revoke references the CERTIFICATE itself ({cert}, written to a temp file at
+    run time); the ADCS revoke references {serial}/{request_id}."""
+    protocol = store.cert_manager_protocol()
+    if protocol == "acme":
+        acme = store.cert_manager_acme(reveal_secret=True)
+        secret = acme.get("eab_hmac", "")
+        mapping = {
+            "bin": acme.get("bin", "certbot"),
+            "directory": acme.get("directory_url", ""),
+            "email": acme.get("account_email", ""),
+            "eab_kid": acme.get("eab_kid", ""),
+            "eab_hmac": secret,
+            "challenge": acme.get("challenge", "http-01"),
+            "serial": cert.serial or "",
+        }
+        return "acme", (acme.get("revoke_cmd") or "").strip(), mapping, secret
+    ccfg = store.cert_class_config(cert.cert_class)
+    adcs = store.cert_manager_adcs(reveal_secret=True)
+    secret = adcs.get("secret", "")
+    mapping = {
+        "bin": adcs.get("bin", "certipy"), "user": adcs.get("user", ""),
+        "domain": adcs.get("domain", ""), "password": secret,
+        "ca": adcs.get("ca", ""), "ca_name": adcs.get("ca_name", ""),
+        "serial": cert.serial or "", "request_id": cert.ca_request_id or "",
+    }
+    return "adcs", (ccfg.get("revoke_cmd") or "").strip(), mapping, secret
 
 
 def _extract_cert_pem(out_path: str, stdout: str, stderr: str) -> str:
@@ -235,44 +319,27 @@ def _extract_cert_pem(out_path: str, stdout: str, stderr: str) -> str:
 
 
 def sign_csr(cert_class: str, csr_pem: str) -> tuple[str, str]:
-    """Run the class's signing command against the CSR. Returns ``(cert_pem, log)``.
+    """Run the ACTIVE protocol's signing command against the CSR. Returns
+    ``(cert_pem, log)``.
 
-    The command template ({csr}/{out}/{ca}/{ca_name}/{template}/{user}/{domain}/
-    {password}/{bin}) is fully admin-defined — this is the "el usuario indica los
-    parámetros del comando" contract. Raises :class:`CertManagerError` on failure.
-    """
-    adcs = store.cert_manager_adcs(reveal_secret=True)
-    ccfg = store.cert_class_config(cert_class)
-    cmd_tmpl = (ccfg.get("submit_cmd") or "").strip()
+    The command template ({csr}/{out}/… — ADCS or ACME tokens) is fully
+    admin-defined — this is the "el usuario indica los parámetros del comando"
+    contract. Raises :class:`CertManagerError` on failure."""
+    protocol, cmd_tmpl, mapping, secret = _signing_context(cert_class)
     if not cmd_tmpl:
-        raise CertManagerError(f"no signing command configured for class {cert_class!r}")
+        raise CertManagerError(
+            f"no signing command configured for protocol {protocol!r} / "
+            f"class {cert_class!r}")
 
-    secret = adcs.get("secret", "")
     with tempfile.TemporaryDirectory(prefix="certmgr-") as d:
         csr_path = os.path.join(d, "request.csr")
         out_path = os.path.join(d, "signed.cer")
         with open(csr_path, "w") as fh:
             fh.write(csr_pem)
-        mapping = {
-            "bin": adcs.get("bin", "certipy"),
-            "user": adcs.get("user", ""),
-            "domain": adcs.get("domain", ""),
-            "password": secret,
-            "ca": adcs.get("ca", ""),
-            "ca_name": adcs.get("ca_name", ""),
-            "template": ccfg.get("template", ""),
-            "csr": csr_path,
-            "out": out_path,
-        }
-        cmd_str = _interpolate(cmd_tmpl, mapping)
-        try:
-            argv = shlex.split(cmd_str)
-        except ValueError as exc:
-            raise CertManagerError(f"signing command is not parseable: {exc}") from exc
-        if not argv:
-            raise CertManagerError("signing command is empty after interpolation")
+        mapping = dict(mapping, csr=csr_path, out=out_path)
+        argv = _argv_from_template(cmd_tmpl, mapping)
 
-        safe_cmd = _redact(cmd_str, secret)
+        safe_cmd = _redact(" ".join(shlex.quote(a) for a in argv), secret)
         try:
             proc = subprocess.run(argv, capture_output=True, text=True,
                                   timeout=_SIGN_TIMEOUT, cwd=d)
@@ -418,7 +485,11 @@ def create_certificate(appliance, cn: str, cert_class: str, *, extra_sans=None,
             return {"ok": False, "error": "signed but not deployed (no appliance).",
                     "cert_id": row.id, "name": name}
         try:
-            out = cert_ssh.deploy_certificate(
+            # FortiADC takes key material over a REST multipart upload; FortiWeb
+            # over the SSH CLI. Same call shape, dispatched on the device kind.
+            deployer = (cert_adc if getattr(appliance, "kind", "fortiweb") == "fortiadc"
+                        else cert_ssh)
+            out = deployer.deploy_certificate(
                 appliance, name, cert_pem, row.private_key,
                 secret=appliance.password)
             _event(row, "deploy", True, f"uploaded to {appliance.name}", by=actor)
@@ -552,11 +623,17 @@ def cert_usage(appliance, cert_name):
 
     Keeps its lenient contract for display callers. For the *safety* decision in
     remove_device_certificate, use _enumerate_usage which reports completeness.
+    Dispatches on ``appliance.kind`` (FortiADC walks the cert-group → SSL-profile
+    → virtual-server chain instead of server-policy / SNI / GUI).
     """
     try:
         client = appliance.build_client(timeout=6.0)
     except Exception:  # noqa: BLE001
         return []
+    if getattr(appliance, "kind", "fortiweb") == "fortiadc":
+        from . import cert_adc
+        _complete, rows = cert_adc.enumerate_usage(client, cert_name)
+        return rows
     _complete, rows = _enumerate_usage(client, appliance, cert_name)
     return rows
 
@@ -652,7 +729,21 @@ def swap_sni_member(appliance, sni_name, member_id, cert_name, *, dry_run=True):
 
 
 def swap_gui_cert(appliance, cert_name, *, dry_run=True):
-    """Set the GUI/admin HTTPS server certificate (system/global singleton PUT)."""
+    """Set the GUI/admin HTTPS server certificate. FortiWeb: system/global
+    singleton PUT via FortiWebOps. FortiADC: ``system_global.https-server-cert``
+    over REST (the live-verified bind path)."""
+    if getattr(appliance, "kind", "fortiweb") == "fortiadc":
+        req = {"method": "PUT", "path": "system_global",
+               "body": {"https-server-cert": cert_name}}
+        if dry_run:
+            return {"ok": True, "error": "", "request": req, "dry_run": True}
+        try:
+            appliance.build_client(timeout=8.0).bind_https_admin_cert(cert_name)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc), "request": req, "dry_run": False}
+        log_action("certmgr.swap_gui", target=cert_name,
+                   appliance_id=getattr(appliance, "id", None))
+        return {"ok": True, "error": "", "request": req, "dry_run": False}
     r = FortiWebOps(appliance).update(GLOBAL_EP, None, {GUI_CERT_FIELD: cert_name},
                                       dry_run=dry_run)
     return _op_result(r, dry_run)
@@ -682,7 +773,9 @@ def remove_device_certificate(appliance, store_label, cert_name, *,
     it is bound NOWHERE (server-policy / SNI / GUI). Fails CLOSED: if the client
     cannot be built, or ANY binder read fails, removal is refused. ``Local`` store
     deletes over SSH (only path for key-material stores); other stores delete over
-    cmdb REST. dry_run reports what WOULD happen without touching the box."""
+    cmdb REST. FortiADC deletes over REST after the same fail-closed check
+    (usage = cert-group / SSL-profile / virtual-server / admin-GUI chain).
+    dry_run reports what WOULD happen without touching the box."""
     try:
         client = appliance.build_client(timeout=6.0)
     except Exception as exc:  # noqa: BLE001
@@ -691,7 +784,12 @@ def remove_device_certificate(appliance, store_label, cert_name, *,
         return {"ok": False, "removed": False, "bindings": [],
                 "error": f"cannot verify bindings on {getattr(appliance,'name','device')}: {exc}"}
 
-    complete, usage = _enumerate_usage(client, appliance, cert_name)
+    is_adc = getattr(appliance, "kind", "fortiweb") == "fortiadc"
+    if is_adc:
+        from . import cert_adc
+        complete, usage = cert_adc.enumerate_usage(client, cert_name)
+    else:
+        complete, usage = _enumerate_usage(client, appliance, cert_name)
     if not complete:
         _audit_remove(appliance, cert_name, ok=False,
                       detail="refused: binding check incomplete (device read failed)")
@@ -705,9 +803,28 @@ def remove_device_certificate(appliance, store_label, cert_name, *,
                 "error": "still bound to: " + ", ".join(u["label"] for u in usage)}
 
     if dry_run:
-        how = "SSH config-delete" if store_label == "Local" else "cmdb REST delete"
+        how = ("REST delete" if is_adc else
+               "SSH config-delete" if store_label == "Local" else "cmdb REST delete")
         return {"ok": True, "removed": False, "dry_run": True, "bindings": [],
                 "error": "", "summary": f"[dry-run] would remove {cert_name} via {how}"}
+
+    if is_adc:
+        from . import cert_adc
+        logical = next((lg for _k, lbl, lg in cert_adc.ADC_CERT_STORES
+                        if lbl == store_label), "")
+        if not logical:
+            _audit_remove(appliance, cert_name, ok=False,
+                          detail=f"refused: unknown ADC store {store_label!r}")
+            return {"ok": False, "removed": False, "bindings": [],
+                    "error": f"don't know how to delete a {store_label!r} certificate"}
+        try:
+            client.delete(logical, cert_name)
+        except Exception as exc:  # noqa: BLE001
+            _audit_remove(appliance, cert_name, ok=False, detail=str(exc))
+            return {"ok": False, "removed": False, "bindings": [], "error": str(exc)}
+        _audit_remove(appliance, cert_name, ok=True,
+                      detail=f"removed store={store_label} by={actor or _actor()} (REST)")
+        return {"ok": True, "removed": True, "error": "", "bindings": []}
 
     try:
         if store_label == "Local":
@@ -761,6 +878,7 @@ def confirm_swap(cert: ManagedCertificate, policy: str, *, actor: str = "") -> d
             old = db.session.get(ManagedCertificate, cert.supersedes_id)
             if old and old.status not in ("revoked",):
                 old.status = "superseded"
+                old.superseded_at = old.superseded_at or datetime.utcnow()
                 db.session.commit()
                 _event(old, "swap", True,
                        f"superseded by {cert.name} on policy {policy}", by=actor)
@@ -775,44 +893,40 @@ def confirm_swap(cert: ManagedCertificate, policy: str, *, actor: str = "") -> d
 # --------------------------------------------------------------------------- #
 def revoke_certificate(cert: ManagedCertificate, *, delete_from_box: bool = False,
                        dry_run: bool = False, actor: str = "") -> dict:
-    """Revoke at the CA (class ``revoke_cmd``) and mark the row revoked. Deleting
-    the cert off the FortiWeb is refused while it is bound to any server policy."""
-    ccfg = store.cert_class_config(cert.cert_class)
-    adcs = store.cert_manager_adcs(reveal_secret=True)
-    cmd_tmpl = (ccfg.get("revoke_cmd") or "").strip()
-    secret = adcs.get("secret", "")
+    """Revoke at the CA (via the ACTIVE protocol's ``revoke_cmd``) and mark the
+    row revoked. Deleting the cert off the FortiWeb is refused while it is bound
+    to any server policy."""
+    protocol, cmd_tmpl, mapping, secret = _revoke_context(cert)
 
     if dry_run:
-        preview = _redact(_interpolate(cmd_tmpl, {
-            "bin": adcs.get("bin", ""), "user": adcs.get("user", ""),
-            "domain": adcs.get("domain", ""), "password": secret,
-            "ca": adcs.get("ca", ""), "ca_name": adcs.get("ca_name", ""),
-            "serial": cert.serial or "", "request_id": cert.ca_request_id or "",
-        }), secret)
-        return {"ok": True, "dry_run": True, "summary": f"[dry-run] revoke: {preview}",
+        preview = _redact(_interpolate(cmd_tmpl, dict(mapping, cert="<cert.pem>")),
+                          secret)
+        return {"ok": True, "dry_run": True,
+                "summary": f"[dry-run] revoke ({protocol}): {preview}",
                 "bindings": read_bindings_for(cert)}
 
     # 1) CA revoke (best-effort but reported).
     ca_ok, ca_log = True, ""
     if cmd_tmpl:
-        mapping = {
-            "bin": adcs.get("bin", "certipy"), "user": adcs.get("user", ""),
-            "domain": adcs.get("domain", ""), "password": secret,
-            "ca": adcs.get("ca", ""), "ca_name": adcs.get("ca_name", ""),
-            "serial": cert.serial or "", "request_id": cert.ca_request_id or "",
-        }
-        cmd_str = _interpolate(cmd_tmpl, mapping)
-        try:
-            proc = subprocess.run(shlex.split(cmd_str), capture_output=True,
-                                  text=True, timeout=_SIGN_TIMEOUT)
-            ca_ok = proc.returncode == 0
-            ca_log = _redact(f"[rc={proc.returncode}] {proc.stdout}\n{proc.stderr}", secret)[:2000]
-        except Exception as exc:  # noqa: BLE001
-            ca_ok, ca_log = False, f"revoke command error: {exc}"
+        with tempfile.TemporaryDirectory(prefix="certmgr-rev-") as d:
+            cert_path = os.path.join(d, "cert.pem")
+            with open(cert_path, "w") as fh:
+                fh.write(cert.cert_pem or "")
+            try:
+                argv = _argv_from_template(cmd_tmpl, dict(mapping, cert=cert_path))
+                proc = subprocess.run(argv, capture_output=True,
+                                      text=True, timeout=_SIGN_TIMEOUT, cwd=d)
+                ca_ok = proc.returncode == 0
+                ca_log = _redact(f"[{protocol}] [rc={proc.returncode}] "
+                                 f"{proc.stdout}\n{proc.stderr}", secret)[:2000]
+            except Exception as exc:  # noqa: BLE001
+                ca_ok, ca_log = False, f"revoke command error: {exc}"
     else:
-        ca_log = "no revoke_cmd configured — marked revoked locally only."
+        ca_log = (f"no revoke_cmd configured for protocol {protocol!r} — "
+                  "marked revoked locally only.")
 
     cert.status = "revoked"
+    cert.revoked_at = cert.revoked_at or datetime.utcnow()
     db.session.commit()
     _event(cert, "revoke", ca_ok, ca_log, by=actor)
 
@@ -877,6 +991,145 @@ def expiring_certificates(appliance_id: int | None, cert_class: str,
 
 
 # --------------------------------------------------------------------------- #
+#  Lifecycle policy — WHEN a cert gets revoked at the CA and WHEN its material  #
+#  leaves the devices. Driven ENTIRELY by the admin-console policy              #
+#  (Settings → Certificate Manager → Lifecycle policy); consumed by the         #
+#  ``cert_lifecycle`` scheduled action and the manual sweep button.             #
+# --------------------------------------------------------------------------- #
+def _days_since(ts) -> int | None:
+    if not ts:
+        return None
+    return (datetime.utcnow() - ts).days
+
+
+def lifecycle_candidates(appliance_id: int | None = None) -> dict:
+    """What the lifecycle policy says is DUE right now.
+
+    * ``revoke_due`` — superseded certs past the revoke grace window
+      (``revoke_on_supersede``). Revocation happens at the CA; the material
+      stays on the box until the delete rule below picks it up.
+    * ``delete_due`` — certs whose material must leave the FortiWeb:
+      revoked certs (``delete_revoked_from_device``), superseded certs past
+      the retention window (when revocation-on-supersede is off), and expired
+      certs past the expiry retention window.
+
+    Candidates carrying bound policies in the DB are listed as ``blocked``
+    instead — and the apply path re-verifies bindings LIVE and fail-closed
+    (:func:`remove_device_certificate`), so a bound cert can never be removed."""
+    pol = store.cert_lifecycle_policy()
+    q = ManagedCertificate.query
+    if appliance_id is not None:
+        q = q.filter(ManagedCertificate.appliance_id == appliance_id)
+    revoke_due, delete_due, blocked = [], [], []
+    for c in q.all():
+        sup_days = _days_since(c.superseded_at or
+                               (c.updated_at if c.status == "superseded" else None))
+        if (pol["revoke_on_supersede"] and c.status == "superseded"
+                and sup_days is not None and sup_days >= pol["revoke_grace_days"]):
+            item = {"cert": c, "action": "revoke",
+                    "reason": (f"superseded {sup_days}d ago "
+                               f"(grace {pol['revoke_grace_days']}d)")}
+            (blocked if c.is_bound else revoke_due).append(item)
+
+        if not c.appliance_id:
+            continue
+        reason = ""
+        if c.status == "revoked" and pol["delete_revoked_from_device"]:
+            reason = "revoked — material must leave the device"
+        elif (c.status == "superseded" and not pol["revoke_on_supersede"]
+                and sup_days is not None
+                and sup_days >= pol["delete_superseded_after_days"]):
+            reason = (f"superseded {sup_days}d ago (retention "
+                      f"{pol['delete_superseded_after_days']}d)")
+        else:
+            exp_days = _days_since(c.expires_at)
+            if (exp_days is not None and exp_days >= pol["delete_expired_after_days"]
+                    and c.status != "revoked" and c.expires_at):
+                reason = (f"expired {exp_days}d ago (retention "
+                          f"{pol['delete_expired_after_days']}d)")
+        if reason:
+            item = {"cert": c, "action": "delete", "reason": reason}
+            (blocked if c.is_bound else delete_due).append(item)
+    return {"revoke_due": revoke_due, "delete_due": delete_due,
+            "blocked": blocked, "policy": pol}
+
+
+def run_lifecycle_sweep(*, dry_run: bool = True, appliance_id: int | None = None,
+                        actor: str = "") -> dict:
+    """Apply the lifecycle policy: revoke what is due, then delete due material
+    off the devices. Every destructive step re-verifies bindings LIVE and
+    fail-closed — an unverifiable or bound cert is skipped and reported, never
+    forced. ``dry_run=True`` only reports what WOULD happen."""
+    from ..models import Appliance
+    cand = lifecycle_candidates(appliance_id)
+    out = {"dry_run": dry_run, "revoked": [], "deleted": [], "skipped": [],
+           "policy": cand["policy"]}
+    for item in cand["blocked"]:
+        out["skipped"].append(f"{item['cert'].name}: {item['action']} due "
+                              f"({item['reason']}) but still bound in DB — skipped")
+
+    for item in cand["revoke_due"]:
+        c = item["cert"]
+        # Live, fail-closed binding check: a cert we cannot PROVE unbound is skipped.
+        try:
+            bindings = read_bindings_for(c)
+        except Exception as exc:  # noqa: BLE001
+            out["skipped"].append(f"{c.name}: revoke due but bindings unreadable "
+                                  f"({exc}) — skipped (fail-closed)")
+            continue
+        if bindings:
+            out["skipped"].append(f"{c.name}: revoke due but LIVE-bound to "
+                                  f"{', '.join(bindings)} — skipped")
+            continue
+        if dry_run:
+            out["revoked"].append(f"[dry-run] would revoke {c.name} — {item['reason']}")
+            continue
+        res = revoke_certificate(c, delete_from_box=False, actor=actor or "lifecycle")
+        if res.get("revoked"):
+            _event(c, "lifecycle", True, f"auto-revoked: {item['reason']}", by=actor)
+            out["revoked"].append(f"revoked {c.name} — {item['reason']}")
+        else:
+            out["skipped"].append(f"{c.name}: revoke failed — {res.get('error')}")
+
+    for item in cand["delete_due"]:
+        c = item["cert"]
+        appliance = db.session.get(Appliance, c.appliance_id)
+        if appliance is None:
+            out["skipped"].append(f"{c.name}: target appliance missing — skipped")
+            continue
+        if dry_run:
+            out["deleted"].append(f"[dry-run] would delete {c.name} from "
+                                  f"{appliance.name} — {item['reason']}")
+            continue
+        # remove_device_certificate re-verifies ALL binders live, fail-closed.
+        res = remove_device_certificate(appliance, "Local", c.name,
+                                        dry_run=False, actor=actor or "lifecycle")
+        if res.get("removed"):
+            _event(c, "lifecycle", True,
+                   f"deleted from {appliance.name}: {item['reason']}", by=actor)
+            out["deleted"].append(f"deleted {c.name} from {appliance.name} — "
+                                  f"{item['reason']}")
+        else:
+            out["skipped"].append(f"{c.name}: device delete refused — "
+                                  f"{res.get('error')}")
+
+    if not dry_run and (out["revoked"] or out["deleted"]):
+        to = store.cert_manager_adcs().get("notify_to", "")
+        if to:
+            try:
+                from . import email_service
+                body = "\n".join(["Lifecycle sweep results:"] + out["revoked"]
+                                 + out["deleted"] + out["skipped"])
+                email_service.send_email(to, "[Cert Manager] Lifecycle sweep", body)
+            except Exception:  # noqa: BLE001
+                logger.debug("lifecycle email skipped", exc_info=True)
+    log_action("certmgr.lifecycle_sweep",
+               detail=(f"dry_run={dry_run} revoked={len(out['revoked'])} "
+                       f"deleted={len(out['deleted'])} skipped={len(out['skipped'])}"))
+    return out
+
+
+# --------------------------------------------------------------------------- #
 #  Email                                                                         #
 # --------------------------------------------------------------------------- #
 def _notify(cert: ManagedCertificate, *, subject: str, body: str) -> None:
@@ -907,15 +1160,24 @@ _DEVICE_CERT_STORES = (
 
 
 def list_device_certificates(appliances, *, timeout: float = 6.0) -> list[dict]:
-    """Live, read-only sweep of every FortiWeb's certificate stores.
+    """Live, read-only sweep of every appliance's certificate stores.
 
     Returns one entry per appliance: ``{appliance, online, error, certs[]}``.
-    Best-effort — an unreachable box is marked ``online=False`` (its first store
-    GET failed) and the sweep moves on; a store missing on a given firmware just
-    contributes nothing. No SSH, no ADCS, never raises.
+    Dispatches on ``appliance.kind`` — FortiWeb reads the four cmdb stores,
+    FortiADC reads its REST stores (:func:`cert_adc.sweep_certificates`, same
+    entry shape). Best-effort — an unreachable box is marked ``online=False``
+    (its first store GET failed) and the sweep moves on; a store missing on a
+    given firmware just contributes nothing. No SSH, no ADCS, never raises.
     """
+    from . import cert_adc
     out: list[dict] = []
     for a in appliances:
+        if getattr(a, "kind", "fortiweb") == "fortiadc":
+            entry = cert_adc.sweep_certificates(a, timeout=timeout)
+            for c in entry["certs"]:
+                c.pop("detail", None)  # summary shape parity with FortiWeb
+            out.append(entry)
+            continue
         entry = {"appliance": a, "online": True, "error": None, "certs": []}
         try:
             client = a.build_client(timeout=timeout)
@@ -1043,18 +1305,80 @@ def _bindings_index(client):
     return idx
 
 
+def _scan_adc_certificates(appliance, *, with_bindings: bool = True,
+                           timeout: float = 8.0) -> dict:
+    """FortiADC leg of :func:`scan_device_certificates` — pure REST.
+
+    The ADC list payload already carries the decoded X.509 detail, so one sweep
+    yields summary + detail in a single pass (no SSH). Bindings walk the ADC
+    chain cert → local-cert-group → client-SSL-profile → virtual server, plus
+    the admin GUI cert. Upsert/prune/commit semantics identical to FortiWeb.
+    """
+    from . import cert_adc
+    res = {"ok": False, "online": False, "appliance": appliance.name,
+           "scanned": 0, "detailed": 0, "error": None}
+    entry = cert_adc.sweep_certificates(appliance, timeout=timeout)
+    if not entry.get("online"):
+        res["error"] = entry.get("error") or "offline"
+        return res
+    res["online"] = True
+
+    bindings_idx = {}
+    if with_bindings:
+        try:
+            bindings_idx = cert_adc.bindings_index(
+                appliance.build_client(timeout=timeout))
+        except Exception:  # noqa: BLE001 — bindings are best-effort
+            bindings_idx = {}
+
+    now = datetime.utcnow()
+    existing = {(r.store, r.name): r for r in
+                DeviceCertificate.query.filter_by(appliance_id=appliance.id).all()}
+    seen_keys = set()
+    for c in entry["certs"]:
+        key = (c["store"], c["name"])
+        seen_keys.add(key)
+        row = existing.get(key)
+        if row is None:
+            row = DeviceCertificate(appliance_id=appliance.id,
+                                    store=c["store"], name=c["name"])
+            db.session.add(row)
+        row.cert_type = c.get("type") or ""
+        row.status = c.get("status") or ""
+        row.comment = (c.get("comment") or "")[:512]
+        det = c.get("detail") or {}
+        if det:
+            row.apply_detail(det, source="rest")
+            res["detailed"] += 1
+        if with_bindings:
+            row.bindings = sorted(bindings_idx.get(c["name"], set()))
+        row.scanned_at = now
+        res["scanned"] += 1
+    for key, row in existing.items():
+        if key not in seen_keys:
+            db.session.delete(row)
+    db.session.commit()
+    res["ok"] = True
+    return res
+
+
 def scan_device_certificates(appliance, *, with_bindings: bool = True,
                              timeout: float = 8.0) -> dict:
-    """Scan ONE FortiWeb and UPSERT its certificate inventory into the DB.
+    """Scan ONE appliance and UPSERT its certificate inventory into the DB.
 
-    Reads every store's cmdb rows (name/type/status/comment), then over ONE SSH
-    session reads the decoded X.509 detail of each Local cert
-    (:func:`cert_probe.detail_from_fortiweb_cli`), and (optionally) computes each
-    cert's server-policy / SNI bindings from a single REST pass. Rows no longer
-    present on the box are pruned. Commits. Never raises.
+    Dispatches on ``appliance.kind`` (FortiADC → :func:`_scan_adc_certificates`,
+    pure REST). FortiWeb: reads every store's cmdb rows (name/type/status/
+    comment), then over ONE SSH session reads the decoded X.509 detail of each
+    Local cert (:func:`cert_probe.detail_from_fortiweb_cli`), and (optionally)
+    computes each cert's server-policy / SNI bindings from a single REST pass.
+    Rows no longer present on the box are pruned. Commits. Never raises.
 
     Returns ``{ok, online, appliance, scanned, detailed, error}``.
     """
+    if getattr(appliance, "kind", "fortiweb") == "fortiadc":
+        return _scan_adc_certificates(appliance, with_bindings=with_bindings,
+                                      timeout=timeout)
+
     res = {"ok": False, "online": False, "appliance": appliance.name,
            "scanned": 0, "detailed": 0, "error": None}
 

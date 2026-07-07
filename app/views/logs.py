@@ -20,6 +20,7 @@ from flask_login import login_required, current_user
 
 from ..auth.decorators import require_permission
 from ..models import Appliance, Permission
+from ..models import visible_appliances, visible_appliance_or_404
 from ..services import logcollect
 from ..services.ssh_ops import TROUBLESHOOT, ReadOnlyViolation
 from ..services.audit import log_action
@@ -29,7 +30,7 @@ bp = Blueprint('logs', __name__, url_prefix='/logs')
 
 def _fortiweb_appliances():
     """FortiWeb appliances only — SSH log collection is FortiWeb-specific."""
-    return (Appliance.query
+    return (visible_appliances()
             .filter(Appliance.kind == 'fortiweb')
             .order_by(Appliance.name).all())
 
@@ -73,7 +74,7 @@ def collect():
             return jsonify({'ok': False,
                             'error': 'Enter at least one get/diagnose command.'}), 400
 
-    appliances = (Appliance.query
+    appliances = (visible_appliances()
                   .filter(Appliance.kind == 'fortiweb', Appliance.id.in_(ids)).all()
                   if ids else [])
     if not appliances:

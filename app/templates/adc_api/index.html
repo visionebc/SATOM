@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+{% block title %}FortiADC — API{% endblock %}
+
+{% block content %}
+<div class="fw-page-header d-flex align-items-center gap-3 mb-4">
+  <img src="{{ url_for('static', filename='img/fortiadc-mark.svg') }}"
+       alt="FortiADC" style="width:38px;height:38px;">
+  <div>
+    <h1 class="h4 mb-0">API</h1>
+    <div class="text-muted" style="font-size:13px;">
+      Endpoint registry + live console · {{ total }} FortiADC endpoints
+      {% if can_edit %}· <span class="text-accent">catalog editable</span>{% endif %}</div>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    {% if can_edit %}
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="reg-new">
+      <i class="bi bi-plus-lg me-1"></i>New endpoint</button>
+    {% endif %}
+    <a href="{{ url_for('adc.index') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Dashboard</a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- ==== left: catalog browse ==== -->
+  <div class="col-lg-6">
+    <div class="fw-card" style="padding:16px 18px;">
+      <div class="d-flex align-items-center mb-2">
+        <h2 class="h6 mb-0"><i class="bi bi-diagram-3 me-2 text-accent"></i>Endpoint registry</h2>
+        <input type="search" id="reg-filter" class="form-control form-control-sm ms-auto"
+               style="max-width:200px;" placeholder="Filter endpoints…">
+      </div>
+      <div class="text-muted mb-3" style="font-size:12px;">
+        The FortiADC catalog, grouped as the appliance GUI menu. Click an endpoint
+        to load it into the console. Paths are registry-resolved
+        (<code>load-balance pool</code> → <code>/api/load_balance_pool</code>).</div>
+
+      <div class="accordion adc-reg-tree" id="regTree" style="max-height:60vh;overflow:auto;">
+        {% for g in groups %}
+        <div class="reg-group mb-2">
+          <div class="fw-nav-section" style="cursor:pointer;font-size:13px;font-weight:600;"
+               data-reg-toggle="g{{ loop.index }}">
+            <i class="bi {{ g.icon }} me-2" style="color:#10b981;"></i>{{ g.label }}
+            <i class="bi bi-chevron-down ms-1" style="font-size:11px;opacity:.6;"></i></div>
+          <div class="reg-group-body" id="g{{ loop.index }}" style="display:none;padding-left:6px;">
+            {% for item in g.items %}
+            {% for t in item.tabs %}
+            <div class="reg-row d-flex align-items-center gap-2 py-1" data-reg-name="{{ t.logical }}"
+                 style="border-bottom:1px solid rgba(148,163,184,.06);">
+              <button type="button" class="btn btn-link btn-sm p-0 text-start reg-pick flex-grow-1"
+                      data-name="{{ t.logical }}" data-urn="{{ t.urn }}"
+                      style="font-size:12px;text-decoration:none;">
+                <span class="text-body">{{ t.label }}</span>
+                <code class="ms-1" style="font-size:11px;opacity:.7;">{{ t.logical }}</code>
+              </button>
+              {% if can_edit and t.logical in db_rows %}
+              <button type="button" class="btn btn-outline-secondary btn-sm py-0 reg-edit"
+                      data-id="{{ db_rows[t.logical].id }}" data-name="{{ t.logical }}"
+                      data-urn="{{ t.urn }}" data-ver="{{ db_rows[t.logical].api_version }}"
+                      title="Edit"><i class="bi bi-pencil"></i></button>
+              {% endif %}
+            </div>
+            {% endfor %}
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+
+        {% if extras %}
+        <div class="reg-group mb-2">
+          <div class="fw-nav-section" style="cursor:pointer;font-size:13px;font-weight:600;"
+               data-reg-toggle="gextra">
+            <i class="bi bi-three-dots me-2" style="color:#94a3b8;"></i>Other endpoints
+            <span class="text-muted">({{ extras|length }})</span>
+            <i class="bi bi-chevron-down ms-1" style="font-size:11px;opacity:.6;"></i></div>
+          <div class="reg-group-body" id="gextra" style="display:none;padding-left:6px;">
+            {% for e in extras %}
+            <div class="reg-row d-flex align-items-center gap-2 py-1" data-reg-name="{{ e.name }}"
+                 style="border-bottom:1px solid rgba(148,163,184,.06);">
+              <button type="button" class="btn btn-link btn-sm p-0 text-start reg-pick flex-grow-1"
+                      data-name="{{ e.name }}" data-urn="{{ e.urn }}"
+                      style="font-size:12px;text-decoration:none;">
+                <code style="font-size:11px;">{{ e.name }}</code></button>
+              {% if can_edit and e.name in db_rows %}
+              <button type="button" class="btn btn-outline-secondary btn-sm py-0 reg-edit"
+                      data-id="{{ db_rows[e.name].id }}" data-name="{{ e.name }}"
+                      data-urn="{{ e.urn }}" data-ver="{{ db_rows[e.name].api_version }}"
+                      title="Edit"><i class="bi bi-pencil"></i></button>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      {% if can_edit and disabled_rows %}
+      <div class="mt-3 pt-2" style="border-top:1px solid rgba(148,163,184,.12);">
+        <div class="text-muted mb-2" style="font-size:12px;">
+          <i class="bi bi-slash-circle me-1"></i>Disabled endpoints ({{ disabled_rows|length }})
+          — hidden from the app until restored.</div>
+        {% for r in disabled_rows %}
+        <div class="d-flex align-items-center gap-2 py-1" style="font-size:12px;">
+          <code style="opacity:.7;">{{ r.name }}</code>
+          <span class="text-muted ms-1" style="font-size:11px;">{{ r.urn }}</span>
+          <form method="POST" action="{{ url_for('adc_api.registry_toggle', rid=r.id) }}"
+                class="ms-auto">
+            <button class="btn btn-outline-success btn-sm py-0"><i class="bi bi-arrow-counterclockwise me-1"></i>Restore</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ==== right: live console ==== -->
+  <div class="col-lg-6">
+    <div class="fw-card" style="padding:16px 18px;">
+      <h2 class="h6 mb-3"><i class="bi bi-terminal me-2 text-accent"></i>Live console</h2>
+      {% if not fleet %}
+      <div class="alert alert-info" style="font-size:13px;">
+        No FortiADC registered. Add the device under
+        <a href="{{ url_for('appliances.index') }}">Appliances</a> to run live calls.</div>
+      {% endif %}
+
+      <form id="adc-api-form" class="mb-3">
+        <div class="row g-2 mb-2">
+          <div class="col-5">
+            <label class="form-label" style="font-size:12px;">Device</label>
+            <select name="appliance_id" class="form-select form-select-sm" id="adc-dev">
+              {% for a in fleet %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-3">
+            <label class="form-label" style="font-size:12px;">Method</label>
+            <select name="method" class="form-select form-select-sm" id="adc-method">
+              <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option>
+            </select>
+          </div>
+          <div class="col-4">
+            <label class="form-label" style="font-size:12px;">mkey (optional)</label>
+            <input type="text" class="form-control form-control-sm" id="adc-mkey"
+                   placeholder="object name">
+          </div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label" style="font-size:12px;">Endpoint (logical name or /api/ path)</label>
+          <input type="text" name="endpoint" class="form-control form-control-sm" id="adc-endpoint"
+                 placeholder="load_balance_pool  or  /api/load_balance_pool" required>
+        </div>
+        <div class="mb-2" id="adc-body-wrap" style="display:none;">
+          <label class="form-label" style="font-size:12px;">JSON body</label>
+          <textarea class="form-control form-control-sm" id="adc-body" rows="5"
+                    style="font-family:monospace;font-size:12px;" placeholder='{ "mkey": "name", ... }'></textarea>
+        </div>
+        <button type="submit" class="btn btn-fw-primary btn-sm" {{ 'disabled' if not fleet }}>
+          <i class="bi bi-play-fill me-1"></i>Execute</button>
+        {% if not can_write %}
+        <span class="text-muted ms-2" style="font-size:11px;">
+          <i class="bi bi-lock me-1"></i>Write methods need the "Execute write API calls" permission.</span>
+        {% endif %}
+      </form>
+
+      <div id="adc-result" style="display:none;">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <span class="fw-badge" id="adc-status">—</span>
+          <code id="adc-result-path" style="font-size:11px;opacity:.7;"></code>
+        </div>
+        <pre id="adc-result-body" style="max-height:45vh;overflow:auto;background:#0b1220;
+             border:1px solid rgba(148,163,184,.12);border-radius:8px;padding:12px;
+             font-size:12px;"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- registry editor modal -->
+{% if can_edit %}
+<div class="modal fade" id="regModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content" style="background:#0f172a;">
+    <form method="POST" action="{{ url_for('adc_api.registry_save') }}">
+      <div class="modal-header"><h5 class="modal-title">FortiADC endpoint</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" name="id" id="reg-id">
+        <div class="mb-2"><label class="form-label" style="font-size:12px;">Logical name</label>
+          <input type="text" name="name" id="reg-name-in" class="form-control form-control-sm"
+                 placeholder="load_balance_pool" required></div>
+        <div class="mb-2"><label class="form-label" style="font-size:12px;">URN (API path)</label>
+          <input type="text" name="urn" id="reg-urn-in" class="form-control form-control-sm"
+                 placeholder="/api/load_balance_pool" required></div>
+        <div class="mb-2"><label class="form-label" style="font-size:12px;">API version</label>
+          <input type="text" name="api_version" id="reg-ver-in" class="form-control form-control-sm"
+                 value="v1"></div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-fw-primary btn-sm">Save</button></div>
+    </form>
+  </div></div>
+</div>
+{% endif %}
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  // group accordion
+  document.querySelectorAll('[data-reg-toggle]').forEach(function (h) {
+    h.addEventListener('click', function () {
+      var b = document.getElementById(h.getAttribute('data-reg-toggle'));
+      if (b) b.style.display = (b.style.display === 'none') ? 'block' : 'none';
+    });
+  });
+  // filter
+  var filt = document.getElementById('reg-filter');
+  if (filt) filt.addEventListener('input', function () {
+    var q = filt.value.toLowerCase();
+    document.querySelectorAll('.reg-group').forEach(function (grp) {
+      var any = false;
+      grp.querySelectorAll('.reg-row').forEach(function (row) {
+        var hit = row.getAttribute('data-reg-name').toLowerCase().indexOf(q) >= 0
+                  || row.textContent.toLowerCase().indexOf(q) >= 0;
+        row.style.display = hit ? '' : 'none';
+        if (hit) any = true;
+      });
+      var body = grp.querySelector('.reg-group-body');
+      if (q && body) body.style.display = any ? 'block' : 'none';
+      grp.style.display = (q && !any) ? 'none' : '';
+    });
+  });
+  // pick endpoint -> console
+  document.querySelectorAll('.reg-pick').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.getElementById('adc-endpoint').value = b.getAttribute('data-name');
+      document.getElementById('adc-endpoint').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  });
+  // method -> toggle body
+  var method = document.getElementById('adc-method');
+  var bodyWrap = document.getElementById('adc-body-wrap');
+  function syncBody() {
+    var m = method.value;
+    bodyWrap.style.display = (m === 'POST' || m === 'PUT') ? 'block' : 'none';
+  }
+  if (method) { method.addEventListener('change', syncBody); syncBody(); }
+  // execute
+  var form = document.getElementById('adc-api-form');
+  if (form) form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var fd = new FormData();
+    fd.append('appliance_id', document.getElementById('adc-dev').value || '');
+    fd.append('method', method.value);
+    var ep = document.getElementById('adc-endpoint').value.trim();
+    var mk = document.getElementById('adc-mkey').value.trim();
+    // append ?mkey through the path if provided and it's a raw path; else the
+    // logical resolver handles it — send mkey as a query on raw paths only.
+    if (mk && ep.indexOf('/') === 0) {
+      ep += (ep.indexOf('?') >= 0 ? '&' : '?') + 'mkey=' + encodeURIComponent(mk);
+    }
+    fd.append('endpoint', ep);
+    fd.append('body', document.getElementById('adc-body').value || '');
+    var box = document.getElementById('adc-result');
+    var stat = document.getElementById('adc-status');
+    var pathEl = document.getElementById('adc-result-path');
+    var out = document.getElementById('adc-result-body');
+    box.style.display = 'block'; stat.textContent = '…'; stat.className = 'fw-badge';
+    out.textContent = 'Running…';
+    fetch('{{ url_for('adc_api.execute') }}', { method: 'POST', body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) {
+          stat.textContent = 'error'; stat.className = 'fw-badge fw-badge-danger';
+          pathEl.textContent = ''; out.textContent = j.error || 'unknown error'; return;
+        }
+        stat.textContent = 'HTTP ' + j.status;
+        stat.className = 'fw-badge ' + (j.status < 400 ? 'fw-badge-success' : 'fw-badge-danger');
+        pathEl.textContent = j.path || '';
+        out.textContent = (typeof j.result === 'string') ? j.result
+                          : JSON.stringify(j.result, null, 2);
+      })
+      .catch(function (err) {
+        stat.textContent = 'error'; stat.className = 'fw-badge fw-badge-danger';
+        out.textContent = String(err);
+      });
+  });
+  // registry modal
+  var regModal = document.getElementById('regModal');
+  function openReg(id, name, urn, ver) {
+    document.getElementById('reg-id').value = id || '';
+    document.getElementById('reg-name-in').value = name || '';
+    document.getElementById('reg-urn-in').value = urn || '';
+    document.getElementById('reg-ver-in').value = ver || 'v1';
+    if (window.bootstrap && regModal) new bootstrap.Modal(regModal).show();
+  }
+  var newBtn = document.getElementById('reg-new');
+  if (newBtn) newBtn.addEventListener('click', function () { openReg('', '', '/api/', 'v1'); });
+  document.querySelectorAll('.reg-edit').forEach(function (b) {
+    b.addEventListener('click', function () {
+      openReg(b.getAttribute('data-id'), b.getAttribute('data-name'),
+              b.getAttribute('data-urn'), b.getAttribute('data-ver'));
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -14,10 +14,7 @@
 
 {% block content %}
 <div class="row g-3">
-  <div class="col-lg-2 col-md-3">
-    {% include 'web_protection/_menu.html' %}
-  </div>
-  <div class="col-lg-10 col-md-9">
+  <div class="col-lg-12">
     <div class="fw-page-header">
       <div>
         <h1 class="fw-page-title"><i class="bi {{ item.icon }} me-2 text-accent"></i>{{ item.label }}</h1>
@@ -68,10 +65,15 @@
       <span class="text-muted ms-auto" style="font-size:12px;">{{ rows|length }} object(s)</span>
     </div>
 
+    {% set ncols = 2 + tab.columns|length %}
     <div class="fw-table-wrapper">
       <table class="fw-table" id="wp-obj-table">
         <thead>
-          <tr><th style="width:34%;">Name</th><th style="width:14%;">Status</th><th>Detail</th><th style="width:130px;">Actions</th></tr>
+          <tr>
+            <th>Name</th>
+            {% for col in tab.columns %}<th>{{ col.label }}</th>{% endfor %}
+            <th style="width:160px;">Actions</th>
+          </tr>
         </thead>
         <tbody>
           {% if rows %}
@@ -86,13 +88,19 @@
                    class="fw-semibold text-decoration-none">{{ r.name }}</a>
                 {% endif %}
               </td>
+              {% for c in r.cells %}
               <td>
-                {% if r.status in ('enable', 'enabled') %}<span class="fw-badge fw-badge-success">Enabled</span>
-                {% elif r.status in ('disable', 'disabled') %}<span class="fw-badge fw-badge-secondary">Disabled</span>
-                {% elif r.status %}<span class="fw-badge fw-badge-secondary">{{ r.status }}</span>
-                {% else %}<span class="text-muted">—</span>{% endif %}
+                {% if c.kind == 'onoff' %}
+                  {% if c.on %}<span class="fw-badge fw-badge-success">{{ c.text }}</span>
+                  {% elif c.text == 'Disabled' %}<span class="fw-badge fw-badge-secondary">{{ c.text }}</span>
+                  {% else %}<span class="text-muted">{{ c.text }}</span>{% endif %}
+                {% elif c.kind == 'count' %}
+                  <span class="fw-badge fw-badge-secondary">{{ c.text }}</span>
+                {% else %}
+                  {% if c.text == '—' %}<span class="text-muted">—</span>{% else %}{{ c.text }}{% endif %}
+                {% endif %}
               </td>
-              <td class="text-muted" style="font-size:12.5px;">{{ r.detail or '—' }}</td>
+              {% endfor %}
               <td>
                 {% if item.special == 'signatures' and tab.logical == 'signature' %}
                 <a href="{{ url_for('web_protection.signature_policy', id=appliance.id, name=r.name) }}"
@@ -101,13 +109,15 @@
                 {% endif %}
                 <a href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=tab.collection, mkey=r.name, title=tab.label) }}"
                    class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
+                <button type="button" class="btn btn-sm btn-outline-info" title="Clone (copies the object and its sub-table rows under a new name)"
+                        data-js="wp-clone" data-name="{{ r.name }}"><i class="bi bi-files"></i></button>
                 <button type="button" class="btn btn-sm btn-outline-danger" title="Delete"
                         data-js="wp-delete" data-name="{{ r.name }}"><i class="bi bi-trash"></i></button>
               </td>
             </tr>
             {% endfor %}
           {% else %}
-            <tr><td colspan="4"><div class="fw-empty-state py-4">
+            <tr><td colspan="{{ ncols }}"><div class="fw-empty-state py-4">
               <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi {{ item.icon }}"></i></div>
               <div class="fw-empty-state-title">No {{ tab.label }} objects</div>
               <div class="fw-empty-state-text">Create one, or Refresh to pull live config from the device.</div>
@@ -150,6 +160,29 @@
         post('/objedit/' + AID + '/delete-object', Object.assign({}, base, { apply: true })).then(function (j2) {
           if (!j2.ok) { alert('Delete failed: ' + (j2.error || 'unknown')); return; }
           window.location.reload();
+        });
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-js="wp-clone"]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var name = this.dataset.name;
+      var newName = prompt('Clone "' + name + '" as:', name + '-copy');
+      if (!newName) return;
+      var base = { collection: COLL, mkey: name, new_name: newName.trim() };
+      post('/objedit/' + AID + '/clone-object', base).then(function (j) {
+        if (!j.ok) { alert('Clone pre-check failed: ' + (j.error || 'unknown')); return; }
+        var rows = (j.plan && j.plan.rows) || 0;
+        if (!confirm('Clone "' + name + '" → "' + base.new_name + '" on {{ appliance.name }}?\n' +
+                     'Copies the object' + (rows ? ' + ' + rows + ' sub-table row(s)' : '') + '.')) return;
+        post('/objedit/' + AID + '/clone-object', Object.assign({}, base, { apply: true })).then(function (j2) {
+          if (!j2.ok) { alert('Clone failed: ' + (j2.error || 'unknown')); return; }
+          // The list is DB-first; open the clone directly (live read) so it is
+          // visible right away — the list catches up on the next Refresh/sync.
+          window.location = '/objedit/' + AID + '/edit?collection=' +
+            encodeURIComponent(COLL) + '&mkey=' + encodeURIComponent(base.new_name) +
+            '&title=' + encodeURIComponent({{ tab.label | tojson }});
         });
       });
     });

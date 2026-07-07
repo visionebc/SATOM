@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}Documentation — {{ product.title if product else 'Fortinet Manager' }}{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <div class="fw-breadcrumb mb-1"><i class="bi bi-book me-1"></i>Documentation</div>
+    <h1 class="fw-page-title">Documentation</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">Project reference, operational rules and deployment guides — always in sync with the repo.</p>
+  </div>
+</div>
+
+<div class="row g-3">
+  {% for doc in docs %}
+  <div class="col-md-6 col-xl-4">
+    <a href="{{ url_for('docs.view', slug=doc.slug) }}"
+       class="fw-card fw-card-link fw-doc-tile d-block h-100 text-decoration-none">
+      <div class="fw-card-body d-flex align-items-start gap-3">
+        <span class="fw-doc-tile-icon"><i class="bi bi-file-earmark-text"></i></span>
+        <span class="flex-grow-1">
+          <span class="fw-doc-tile-title d-block">{{ doc.title }}</span>
+          {% if doc.blurb %}<span class="fw-doc-tile-blurb d-block">{{ doc.blurb }}</span>{% endif %}
+          <span class="fw-doc-tile-slug d-block">{{ doc.slug }}</span>
+        </span>
+        <i class="bi bi-chevron-right fw-doc-tile-chev"></i>
+      </div>
+    </a>
+  </div>
+  {% else %}
+  <div class="col-12">
+    <div class="fw-empty-state">
+      <div class="fw-empty-state-icon"><i class="bi bi-journal-x"></i></div>
+      <div class="fw-empty-state-title">No documentation found</div>
+      <div class="fw-empty-state-text">No Markdown files were found in the <code>docs/</code> directory.</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

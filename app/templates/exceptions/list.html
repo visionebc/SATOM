@@ -19,6 +19,15 @@
   FortiWeb can't record which policy a shared-profile carve-out is for — this does.
   <strong>Authoring only</strong>; pushing to the device is a separate step.</p>
 
+{% if stale_count %}
+<div class="alert alert-warning py-2">
+  <i class="bi bi-exclamation-octagon me-1"></i>
+  <strong>{{ stale_count }} carve-out(s) are stale</strong> — their Server Policy was
+  re-bound to another Web Protection Profile after they were authored. Edit each one to
+  re-point it at the new profile (saving clears the flag), or delete it.
+</div>
+{% endif %}
+
 {# ── existing carve-outs ───────────────────────────────────────────────── #}
 <div class="card mb-4">
   <div class="card-header"><strong>Authored carve-outs</strong> <span class="text-muted">({{ items|length }})</span></div>
@@ -32,9 +41,10 @@
               data-name="{{ it.name }}" data-reason="{{ it.reason }}"
               data-policies="{{ it.policy_names|join(',') }}"
               data-payload='{{ it.payload_dict|tojson }}'>
-            <td><span class="badge bg-{{ 'info' if it.category == cat_exception else 'warning' }}">{{ it.category }}</span></td>
+            <td><span class="badge bg-{{ 'info' if it.category == cat_exception else 'warning' }}">{{ it.category }}</span>
+              {% if it.stale %}<span class="badge bg-danger ms-1" title="{{ it.stale_reason }}">STALE</span>{% endif %}</td>
             <td>{{ it.exc_type }}</td>
-            <td>{{ it.wpp_mkey or '—' }}</td>
+            <td>{{ it.wpp_mkey or '—' }}{% if it.wpp_mkey in managed_wpps %} <span title="Template-managed profile — carve-outs on it are blocked">🔒</span>{% endif %}</td>
             <td>{% for p in it.policy_names %}<span class="badge bg-secondary me-1">{{ p }}</span>{% else %}<span class="text-muted">unbound</span>{% endfor %}</td>
             <td class="small text-muted">{{ it.reason or '' }}</td>
             <td class="text-nowrap">
@@ -77,8 +87,13 @@
         <label class="form-label">Web Protection Profile</label>
         <select id="exc-wpp" class="form-select form-select-sm">
           <option value="">— none —</option>
-          {% for w in wpps %}<option value="{{ w }}">{{ w }}</option>{% endfor %}
+          {% for w in wpps %}<option value="{{ w }}"{% if w in managed_wpps %} data-managed="1"{% endif %}>{{ w }}{% if w in managed_wpps %} 🔒 template{% endif %}</option>{% endfor %}
         </select>
+        <div class="form-text text-warning d-none" id="wpp-managed-warn">
+          🔒 Template-managed profile — templates stay clean. On save you'll be offered a
+          per-policy clone (named from the <a href="/naming">Naming</a> pattern) that the
+          Server Policy is re-bound to.
+        </div>
       </div>
       <div class="col-md-4">
         <label class="form-label">Name (optional)</label>
@@ -111,6 +126,39 @@
     <div class="mt-3">
       <button class="btn btn-sm btn-fw-primary" data-js="save-exc"><i class="bi bi-check2-circle me-1"></i>Save carve-out</button>
       <span id="exc-msg" class="ms-2 small"></span>
+    </div>
+  </div>
+</div>
+
+{# ── guided clone+rebind (template-managed WPP) ────────────────────────── #}
+<div class="card mb-4 d-none border-warning-subtle" id="clone-panel">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>🔒 Template-managed profile — guided clone</strong>
+    <button class="btn btn-sm btn-outline-secondary" data-js="clone-cancel">Cancel</button>
+  </div>
+  <div class="card-body">
+    <p class="small mb-2">
+      <strong id="clone-src"></strong> is governed by an approved template and stays clean
+      (no exceptions). The manager will <strong>deep-clone</strong> it for
+      <strong id="clone-policy"></strong>, <strong>re-bind that Server Policy</strong> to the
+      clone, and save your carve-out on the clone — one step, nothing manual.
+      <a id="clone-view-src" href="#" target="_blank" rel="noopener" class="ms-1">
+        <i class="bi bi-search"></i> View the profile's contents</a>
+      <span class="text-muted">(what the clone will carry)</span>
+    </p>
+    <div class="row g-2 align-items-end">
+      <div class="col-md-5">
+        <label class="form-label small">Clone name <span class="text-muted">(pattern: Naming → Exception WPP)</span></label>
+        <input id="clone-newname" class="form-control form-control-sm">
+      </div>
+      <div class="col-md-7">
+        <div id="clone-headroom" class="small text-muted"></div>
+      </div>
+    </div>
+    <div class="mt-2">
+      <button class="btn btn-sm btn-fw-primary" data-js="clone-rebind">
+        <i class="bi bi-diagram-3 me-1"></i>Clone, re-bind &amp; save carve-out</button>
+      <span id="clone-msg" class="ms-2 small text-danger"></span>
     </div>
   </div>
 </div>
@@ -280,6 +328,8 @@ function resetForm(){
   document.getElementById('exc-fields').innerHTML = '';
   document.getElementById('form-title').textContent = 'New carve-out';
   document.getElementById('exc-msg').textContent = '';
+  document.getElementById('wpp-managed-warn').classList.add('d-none');
+  hideClonePanel();
 }
 function editExc(btn){
   const tr = btn.closest('tr');
@@ -308,10 +358,69 @@ function saveExc(){
   if (!payload.exc_type){ document.getElementById('exc-msg').innerHTML = '<span class="text-danger">Choose a type.</span>'; return; }
   fwPost('/exceptions/'+EXC_AID+'/save', payload).then(function(j){
     if (j.ok){ if (window.FW) FW.toast('Carve-out saved','success'); location.reload(); }
+    else if (j.template_locked){ showClonePanel(j.clone_suggestion, j.error); }
     else if (j.errors && j.errors.length)
       document.getElementById('exc-msg').innerHTML =
         '<span class="text-danger">'+j.errors.map(esc).join(' · ')+'</span>';
     else document.getElementById('exc-msg').innerHTML = '<span class="text-danger">'+esc(j.error||'failed')+'</span>';
+  });
+}
+// ── guided clone+rebind (template-managed WPP) ──
+function showClonePanel(s, err){
+  s = s || {};
+  if (!s.policy){
+    document.getElementById('exc-msg').innerHTML =
+      '<span class="text-danger">'+esc(err||'Template-managed profile.')+
+      ' Select the Server Policy first — the clone is named after it.</span>';
+    return;
+  }
+  document.getElementById('exc-msg').textContent = '';
+  const p = document.getElementById('clone-panel');
+  p.classList.remove('d-none');
+  document.getElementById('clone-src').textContent = s.source || '';
+  document.getElementById('clone-view-src').href =
+    '/objedit/'+EXC_AID+'/edit?collection='+
+    encodeURIComponent('waf/web-protection-profile.inline-protection')+
+    '&mkey='+encodeURIComponent(s.source||'')+'&title=Web+Protection+Profile';
+  document.getElementById('clone-policy').textContent = s.policy || '';
+  document.getElementById('clone-newname').value = s.new_name || '';
+  const h = document.getElementById('clone-headroom');
+  h.textContent = s.headroom || '';
+  h.className = 'small ' + (s.headroom_ok ? 'text-muted' : 'text-danger fw-bold');
+  document.querySelector('#clone-panel [data-js="clone-rebind"]').disabled = !s.headroom_ok;
+  document.getElementById('clone-msg').textContent =
+    s.headroom_ok ? '' : 'WPP capacity limit reached — free capacity first (see /capacity).';
+  p.scrollIntoView({behavior:'smooth'});
+}
+function hideClonePanel(){ document.getElementById('clone-panel').classList.add('d-none'); }
+function cloneRebind(){
+  const btn = document.querySelector('#clone-panel [data-js="clone-rebind"]');
+  const msg = document.getElementById('clone-msg');
+  btn.disabled = true; msg.textContent = 'Cloning on the device…'; msg.className = 'ms-2 small text-muted';
+  fwPost('/exceptions/'+EXC_AID+'/clone-for-policy', {
+    source: document.getElementById('clone-src').textContent,
+    server_policy: document.getElementById('clone-policy').textContent,
+    new_name: document.getElementById('clone-newname').value.trim(),
+    apply: true,
+  }).then(function(j){
+    btn.disabled = false;
+    if (!j.ok){
+      msg.className = 'ms-2 small text-danger';
+      msg.textContent = j.error || 'clone failed';
+      if (window.FW) FW.toast(j.error||'Clone failed','danger');
+      return;
+    }
+    const sel = document.getElementById('exc-wpp');
+    if (!Array.prototype.some.call(sel.options, function(o){ return o.value === j.new_name; })){
+      const o = document.createElement('option'); o.value = j.new_name; o.textContent = j.new_name;
+      sel.appendChild(o);
+    }
+    sel.value = j.new_name;
+    document.getElementById('wpp-managed-warn').classList.add('d-none');
+    hideClonePanel();
+    if (window.FW) FW.toast('Cloned to '+j.new_name+' and re-bound '+
+      document.getElementById('clone-policy').textContent, 'success');
+    saveExc();   // re-submit the carve-out, now against the clone
   });
 }
 function deleteExc(id){
@@ -340,11 +449,21 @@ function injectExc(btn){
   fetch('/exceptions/'+EXC_AID+'/inject-targets?type='+encodeURIComponent(INJECT_EXC.type))
     .then(r=>r.json()).then(function(j){
       sel.innerHTML = '<option value="">— choose —</option>';
-      (j.targets||[]).forEach(function(t){ const o=document.createElement('option'); o.value=t; o.textContent=t; sel.appendChild(o); });
+      const counts = j.counts || {}, limit = j.limit || 128;
+      (j.targets||[]).forEach(function(t){
+        const o=document.createElement('option'); o.value=t;
+        if (counts[t] !== undefined){
+          o.textContent = t+'  ('+counts[t]+'/'+limit+' exceptions)';
+          if (counts[t] >= limit){ o.disabled = true; o.textContent += ' — FULL'; }
+        } else { o.textContent = t; }
+        sel.appendChild(o);
+      });
       document.getElementById('inject-create-wrap').style.display = j.can_create ? '' : 'none';
-      document.getElementById('inject-target-help').textContent = !j.ok ? (j.error||'') :
+      let help = !j.ok ? (j.error||'') :
         (j.inline ? 'Inline carve-out: the target is the sub-policy/rule it lives on.'
                   : (j.can_create ? 'Container carve-out: pick an existing container or tick create.' : ''));
+      if (Object.keys(counts).length) help += ' FortiWeb caps each signature set at '+limit+' exception entries.';
+      document.getElementById('inject-target-help').textContent = help;
     });
   document.getElementById('inject-panel').scrollIntoView({behavior:'smooth'});
 }
@@ -411,6 +530,12 @@ function detectImport(){
   });
   document.querySelector('[data-js="reset-form"]').addEventListener('click', function (event) { resetForm(); });
   document.getElementById('exc-type').addEventListener('change', function (event) { loadFields(); });
+  document.getElementById('exc-wpp').addEventListener('change', function (event) {
+    const opt = this.selectedOptions && this.selectedOptions[0];
+    document.getElementById('wpp-managed-warn').classList.toggle('d-none', !(opt && opt.dataset.managed));
+  });
+  document.querySelector('[data-js="clone-rebind"]').addEventListener('click', function (event) { cloneRebind(); });
+  document.querySelector('[data-js="clone-cancel"]').addEventListener('click', function (event) { hideClonePanel(); });
   document.querySelector('[data-js="save-exc"]').addEventListener('click', function (event) { saveExc(); });
   document.querySelector('[data-js="purge-run"]').addEventListener('click', function (event) { purgePolicy(); });
   document.querySelector('[data-js="close-inject"]').addEventListener('click', function (event) { closeInject(); });

@@ -44,11 +44,17 @@ class ConfigObjectType:
 
 @dataclass(frozen=True)
 class ConfigGroup:
-    """A section sub-menu (e.g. "API Gateway", "XML Protection")."""
+    """A section sub-menu (e.g. "API Gateway", "XML Protection"). A group whose
+    single leaf carries the same label renders as a DIRECT link in the sidebar
+    (mirrors ``wp_menu.WpGroup.flat`` — FortiWeb's own flat menu entries)."""
 
     label: str
     icon: str
     items: tuple[ConfigObjectType, ...] = field(default_factory=tuple)
+
+    @property
+    def flat(self) -> bool:
+        return len(self.items) == 1 and self.items[0].label == self.label
 
 
 # --------------------------------------------------------------------------- #
@@ -72,26 +78,35 @@ _SECTION_MENUS: dict[str, tuple[tuple[str, str, tuple[tuple[str, str, bool, str]
             ("api_user_group", "API User Group", False, "bi-people"),
             ("api_user", "API User", False, "bi-person-badge"),
         )),
-        ("OpenAPI Validation", "bi-file-earmark-code", (
-            ("openapi_policy", "OpenAPI Validation Policy", False, "bi-file-earmark-check"),
-            ("openapi_file", "OpenAPI Schema File", False, "bi-file-earmark-arrow-up"),
-        )),
         ("XML Protection", "bi-filetype-xml", (
             ("xml_protection_policy", "XML Protection Policy", False, "bi-filetype-xml"),
-            ("xml_protection_rule", "XML Validation Rule", False, "bi-list-check"),
+            ("xml_protection_rule", "XML Protection Rule", False, "bi-list-check"),
+            ("xml_protection_xml_schema", "XML Schema File", False, "bi-file-earmark-code"),
+            ("xml_protection_wsdl", "WSDL File", False, "bi-file-earmark-text"),
+            ("xml_protection_dtd", "DTD File", False, "bi-file-earmark-ruled"),
+            ("xml_protection_exempted_url", "Exempted URL", False, "bi-x-circle"),
         )),
         ("JSON Protection", "bi-filetype-json", (
             ("json_protection_policy", "JSON Protection Policy", False, "bi-filetype-json"),
-            ("json_protection_rule", "JSON Validation Rule", False, "bi-list-check"),
+            ("json_protection_rule", "JSON Protection Rule", False, "bi-list-check"),
+            ("json_schema", "JSON Schema File", False, "bi-file-earmark-code"),
+            ("json_schema_group", "JSON Schema Group", False, "bi-collection"),
+        )),
+        ("OpenAPI Validation", "bi-file-earmark-check", (
+            ("openapi_policy", "OpenAPI Validation Policy", False, "bi-file-earmark-check"),
+            ("openapi_file", "OpenAPI Schema File", False, "bi-file-earmark-arrow-up"),
+        )),
+        ("GraphQL Protection", "bi-diagram-3", (
+            ("graphql_validation_policy", "GraphQL Protection Policy", False, "bi-diagram-3"),
+            ("graphql_validation_rule", "GraphQL Protection Rule", False, "bi-list-check"),
         )),
         ("Mobile API Protection", "bi-phone", (
             ("mobile_api_protection_policy", "Mobile API Protection Policy", False, "bi-phone"),
             ("mobile_api_protection_rule", "Mobile API Protection Rule", False, "bi-list-check"),
         )),
-        ("gRPC Protection", "bi-diagram-2", (
-            ("grpc_security_policy", "gRPC Security Policy", False, "bi-diagram-2"),
-            ("grpc_security_rule", "gRPC Security Rule", False, "bi-list-check"),
-            ("grpc_idl_file", "gRPC IDL File", False, "bi-file-earmark-arrow-up"),
+        ("ML-Based API Protection", "bi-mortarboard", (
+            ("api_learning_policy", "ML API Protection Policy", False, "bi-mortarboard"),
+            ("api_learning_rule", "ML API Protection Rule", False, "bi-list-check"),
         )),
     ),
 
@@ -214,30 +229,26 @@ _SECTION_MENUS: dict[str, tuple[tuple[str, str, tuple[tuple[str, str, bool, str]
     # ------------------------------------------------------------------ #
     "application_delivery": (
         ("Caching", "bi-hdd", (
-            ("cache_policy", "Caching Policy", False, "bi-hdd"),
             ("web_cache_policy", "Web Cache Policy", False, "bi-hdd-fill"),
             ("waf_web_cache_rule", "Web Cache Rule", False, "bi-list-check"),
         )),
         ("Compression", "bi-file-zip", (
-            ("compression_rule", "Compression Rule", False, "bi-file-zip"),
             ("compression_policy", "Compression Policy", False, "bi-file-earmark-zip"),
             ("compression_exclusion_url", "Compression Exclusion", False, "bi-x-circle"),
         )),
         ("URL Rewriting", "bi-pencil-square", (
             ("url_rewriting_policy", "URL Rewriting Policy", False, "bi-pencil-square"),
             ("url_rewriting_rule", "URL Rewriting Rule", False, "bi-list-check"),
-            ("rewrite_policy", "Rewrite Policy", False, "bi-pencil"),
         )),
-        ("Redirect", "bi-signpost-2", (
-            ("redirect_policy", "Redirect Policy", False, "bi-signpost-2"),
+        ("Site Publish", "bi-box-arrow-up-right", (
+            ("site_publish_policy", "Site Publish Policy", False, "bi-box-arrow-up-right"),
+            ("site_publish_rule", "Site Publish Rule", False, "bi-list-check"),
+            ("site_publish_auth_server_pool", "Authentication Server Pool", False, "bi-people"),
+            ("site_publish_form_delegation", "Form-based Delegation", False, "bi-input-cursor-text"),
+            ("site_publish_saml_pool", "SAML Service Provider Pool", False, "bi-shield-check"),
         )),
-        ("Acceleration", "bi-rocket", (
-            ("acceleration_policy", "Web Acceleration Policy", False, "bi-rocket-takeoff"),
-            ("acceleration_exception", "Acceleration Exception", False, "bi-x-circle"),
-        )),
-        ("Load Balancing", "bi-distribute-horizontal", (
-            ("load_balance", "Load Balance", False, "bi-distribute-horizontal"),
-            ("persistence_policy", "Persistence Policy", False, "bi-pin-angle"),
+        ("Waiting Room", "bi-hourglass-split", (
+            ("waiting_room_policy", "Waiting Room", False, "bi-hourglass-split"),
         )),
     ),
 
@@ -245,21 +256,28 @@ _SECTION_MENUS: dict[str, tuple[tuple[str, str, tuple[tuple[str, str, bool, str]
     #  Bot Mitigation — policy, detection methods, allow/exceptions.      #
     # ------------------------------------------------------------------ #
     "bot_mitigation": (
-        ("Bot Mitigation", "bi-robot", (
-            ("bot_mitigation_policy", "Bot Mitigation Policy", False, "bi-robot"),
-            ("bot_mitigation_policy_2", "Bot Mitigate Policy", False, "bi-robot"),
+        ("Bot Mitigation Policy", "bi-robot", (
+            ("bot_mitigation_policy_2", "Bot Mitigation Policy", False, "bi-robot"),
         )),
-        ("Detection Methods", "bi-search", (
+        ("Known Bots", "bi-list-stars", (
             ("bot_known_bots", "Known Bots", False, "bi-list-stars"),
+        )),
+        ("Bot Deception", "bi-mask", (
             ("bot_deception", "Bot Deception", False, "bi-mask"),
+        )),
+        ("Biometrics Based Detection", "bi-fingerprint", (
             ("bot_biometric_based_detection", "Biometrics Based Detection", False, "bi-fingerprint"),
+        )),
+        ("Threshold Based Detection", "bi-speedometer2", (
             ("bot_threshold_based_detection", "Threshold Based Detection", False, "bi-speedometer2"),
         )),
-        ("Allow & Exceptions", "bi-check-circle", (
+        ("Known Good Bots", "bi-check2-circle", (
             ("bot_allow_list", "Known Good Bots", False, "bi-check2-circle"),
+        )),
+        ("Bot Mitigation Exception", "bi-x-circle", (
             ("bot_detection", "Bot Mitigation Exception", False, "bi-x-circle"),
         )),
-        ("Advanced", "bi-shield-shaded", (
+        ("Advanced Bot Protection", "bi-shield-shaded", (
             ("advanced_bot_protection", "Advanced Bot Protection", False, "bi-shield-shaded"),
         )),
     ),
@@ -268,16 +286,16 @@ _SECTION_MENUS: dict[str, tuple[tuple[str, str, tuple[tuple[str, str, bool, str]
     #  DoS Protection — the policy + its L7 and L4 prevention rules.      #
     # ------------------------------------------------------------------ #
     "dos_protection": (
-        ("DoS Protection", "bi-shield-exclamation", (
+        ("DoS Protection Policy", "bi-shield-exclamation", (
             ("dos_policy", "DoS Protection Policy", False, "bi-shield-exclamation"),
         )),
-        ("Application Layer (L7)", "bi-layers", (
+        ("Application", "bi-layers", (
             ("http_access_limit", "HTTP Access Limit", False, "bi-speedometer"),
             ("http_flood", "HTTP Flood Prevention", False, "bi-water"),
-            ("ddos_http_flood_prevention", "HTTP Request Flood Rule", False, "bi-list-check"),
+            ("ddos_http_flood_prevention", "HTTP Request Flood Prevention", False, "bi-list-check"),
             ("ddos_malicious_ip", "HTTP Connection Flood Check", False, "bi-hdd-network"),
         )),
-        ("Network Layer (L4)", "bi-diagram-3", (
+        ("Network", "bi-diagram-3", (
             ("tcp_flood", "TCP Connection Flood Prevention", False, "bi-water"),
             ("ddos_http_access_limit", "Layer 4 Access Limit", False, "bi-speedometer2"),
             ("ddos_tcp_flood_prevention", "Layer 4 Connection Flood Check", False, "bi-diagram-3"),
@@ -288,19 +306,17 @@ _SECTION_MENUS: dict[str, tuple[tuple[str, str, tuple[tuple[str, str, bool, str]
     #  IP Protection — IP list & reputation, Geo IP, trusted / brute.     #
     # ------------------------------------------------------------------ #
     "ip_protection": (
-        ("IP List & Reputation", "bi-list-ol", (
+        ("Geo IP", "bi-globe-americas", (
+            ("geo_block", "Geo IP", False, "bi-globe-americas"),
+            ("geo_ip_exception", "Geo IP Exception", False, "bi-x-circle"),
+        )),
+        ("IP List", "bi-list-ol", (
             ("ip_list", "IP List", False, "bi-list-ol"),
+        )),
+        ("IP Reputation", "bi-shield-shaded", (
             ("ip_intel", "IP Reputation", False, "bi-shield-shaded"),
             ("ip_intelligence_exception", "IP Reputation Exception", False, "bi-x-circle"),
             ("ip_intelligence_ignore_xff", "Ignore X-Forwarded-For", False, "bi-slash-circle"),
-        )),
-        ("Geo IP", "bi-globe-americas", (
-            ("geo_block", "Geo IP Block List", False, "bi-globe-americas"),
-            ("geo_ip_exception", "Geo IP Exception", False, "bi-x-circle"),
-        )),
-        ("Trusted IP & Brute Force", "bi-shield-check", (
-            ("trusted_ip", "Trusted IP", False, "bi-shield-check"),
-            ("brute_force", "Brute Force Login", False, "bi-fingerprint"),
         )),
     ),
 
@@ -588,6 +604,18 @@ def type_for(section_key: str, logical: str) -> ConfigObjectType | None:
     return None
 
 
+def group_of(section_key: str, logical: str) -> ConfigGroup | None:
+    """The CURATED group (``complete=False`` — GUI-faithful, no "Other Objects"
+    bucket) that owns ``logical``, or ``None``. Backs the Web-Protection-style
+    tab bar: a group's object types are its page tabs. ``None`` (e.g. a logical
+    only reachable via the trailing "Other Objects" bucket) means no tab bar."""
+    for group in section_menu(section_key, complete=False):
+        for item in group.items:
+            if item.logical == logical:
+                return group
+    return None
+
+
 def curated_sections() -> list[str]:
     """Section keys that currently have a curated menu (for coverage/tests)."""
     return ["server_objects", *_SECTION_MENUS.keys()]
@@ -606,6 +634,7 @@ __all__ = [
     "section_menu",
     "has_menu",
     "type_for",
+    "group_of",
     "curated_sections",
     "iter_types",
 ]

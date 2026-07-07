@@ -1,9 +1,9 @@
-from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for, abort
+from flask import current_app, Blueprint, render_template, request, jsonify, flash, redirect, url_for, abort
 from flask_login import login_required, current_user
 from ..auth.decorators import require_permission
 from ..models import Appliance, db, Permission
+from ..models import visible_appliances, visible_appliance_or_404
 from ..clients.fortiweb import FortiWebClient
-from ..clients.fortiadc import FortiADCClient
 from ..services.audit import log_action
 
 bp = Blueprint('search', __name__, url_prefix='/search')
@@ -20,7 +20,7 @@ SEARCH_ENDPOINTS = [
 @bp.route('/')
 @login_required
 def index():
-    appliances = Appliance.query.order_by(Appliance.name).all()
+    appliances = visible_appliances().order_by(Appliance.name).all()
     return render_template('search/index.html', appliances=appliances)
 
 
@@ -35,9 +35,9 @@ def results():
         return redirect(url_for('search.index'))
 
     if appliance_ids:
-        appliances = Appliance.query.filter(Appliance.id.in_(appliance_ids)).all()
+        appliances = visible_appliances().filter(Appliance.id.in_(appliance_ids)).all()
     else:
-        appliances = Appliance.query.order_by(Appliance.name).all()
+        appliances = visible_appliances().order_by(Appliance.name).all()
 
     search_results = []
     for appliance in appliances:
@@ -55,8 +55,9 @@ def results():
                                 'endpoint': endpoint,
                                 'item': item,
                             })
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    current_app.logger.info(
+                        'search: %s %s failed: %s', appliance.name, endpoint, _exc)
         except Exception as exc:
             appliance_hits = [{'error': str(exc)}]
         if appliance_hits:

@@ -63,19 +63,30 @@ def create_app(config_override: object | None = None) -> Flask:
 
     @app.route('/')
     def index():
+        """The GLOBAL ADOM — fleet-wide dashboard spanning FortiWeb + FortiADC.
+        Visiting '/' always enters Global (like FortiManager's Global ADOM)."""
         from flask import redirect, url_for, session
         from flask_login import current_user
         if not current_user.is_authenticated:
             return redirect(url_for('auth.login'))
-        product = session.get('product')
-        if product == 'fortiadc':
-            return redirect(url_for('product.fortiadc_home'))
-        if product == 'fortiweb':
-            from .services import device_context
-            if device_context.current_appliance() is not None:
-                return redirect(url_for('workspace.index'))
-            return redirect(url_for('architecture.index'))
-        return redirect(url_for('product.select'))
+        session['product'] = 'global'
+        session.permanent = True
+        from .views.global_home import dashboard
+        return dashboard()
+
+    @app.route('/web/')
+    def fortiweb_home():
+        """FortiWeb ADOM entry — the old '/' fortiweb landing, now at /web/."""
+        from flask import redirect, url_for, session
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return redirect(url_for('auth.login'))
+        session['product'] = 'fortiweb'
+        session.permanent = True
+        from .services import device_context
+        if device_context.current_appliance() is not None:
+            return redirect(url_for('workspace.index'))
+        return redirect(url_for('architecture.index'))
 
     # -- service worker (root scope) — powers resilient background uploads
     #    (Background Fetch API): the transfer is owned by the browser, so it
@@ -144,20 +155,51 @@ def create_app(config_override: object | None = None) -> Flask:
             return None
         ep = request.endpoint or ''
         always = {
-            'static', 'index', 'service_worker', 'upload_worker', 'updiag',
+            'static', 'index', 'fortiweb_home', 'service_worker',
+            'upload_worker', 'updiag',
             'product.select', 'product.set_product', 'product.switch',
-            'product.fortiadc_home',
+            'product.enter', 'product.fortiadc_home',
         }
         if ep in always or ep.startswith('auth.'):
             return None
         product = session.get('product')
-        if product not in ('fortiweb', 'fortiadc'):
+        if product not in ('fortiweb', 'fortiadc', 'global'):
             return redirect(url_for('product.select'))
+        if product == 'global':
+            # The Global ADOM sees EVERYTHING (both products). Opening a
+            # product-scoped page is an ADOM jump: the session switches to
+            # that product and the request proceeds (FortiManager-style).
+            fortiweb_scoped = {
+                'workspace', 'objedit', 'regex_lab', 'server_objects',
+                'web_protection', 'exceptions', 'backups', 'logs',
+                'import_backup', 'section_config', 'section_catalog',
+                'templates', 'signatures', 'structure', 'classification',
+                'segments', 'naming', 'scheduled_actions', 'change_requests',
+                'provisioning', 'capacity', 'registry', 'api_explorer',
+            }
+            bp_name = ep.split('.', 1)[0]
+            if bp_name in fortiweb_scoped:
+                session['product'] = 'fortiweb'
+            elif bp_name == 'adc':
+                session['product'] = 'fortiadc'
+            return None
         if product == 'fortiadc':
-            # FortiADC is a placeholder — restrict to its own + shared pages
-            adc_allowed = {'product.fortiadc_home', 'settings.index'}
-            if ep not in adc_allowed:
-                return redirect(url_for('product.fortiadc_home'))
+            # FortiADC sessions get the ADC area + the product-neutral shared
+            # pages (fleet admin, audit, jobs, notifications, own profile) +
+            # the fleet-wide sections that are product-neutral or ADC-aware:
+            # the ADC API console (adc_api), Certificate Manager, and
+            # the DB browser. 'cert_manager'/'database' are product-scoped;
+            # 'adc_api' is the ADC-scoped API hub. RBAC still gates each write.
+            adc_bps = {'adc', 'adc_api', 'appliances', 'settings', 'audit',
+                       'jobs', 'notifications', 'profiles', 'users', 'docs',
+                       'cert_manager', 'database', 'locks',
+                       # Fleet pages mirrored into the ADC ADOM (2026-07-07),
+                       # product-scoped via visible_appliances/product_scope.
+                       'monitoring', 'search', 'architecture', 'analysis',
+                       'fleet_objects', 'metrics'}
+            adc_eps = {'product.fortiadc_home'}
+            if ep.split('.', 1)[0] not in adc_bps and ep not in adc_eps:
+                return redirect(url_for('adc.index'))
         return None
 
     # -- access control gate (IP whitelist + allowed users) --------------
@@ -225,6 +267,18 @@ def create_app(config_override: object | None = None) -> Flask:
         return None
 
     # -- template globals -------------------------------------------------
+    # Cache-busting for app-owned static: ?v=<mtime> so a deploy invalidates
+    # the edge /static/ proxy cache (which otherwise serves stale JS/CSS).
+    @app.template_global()
+    def asset(filename):
+        import os as _os
+        from flask import url_for
+        try:
+            _v = int(_os.path.getmtime(_os.path.join(app.static_folder, filename)))
+        except OSError:
+            _v = 0
+        return url_for('static', filename=filename) + ('?v=%d' % _v)
+
     @app.context_processor
     def _inject_branding():
         from flask import session
@@ -253,13 +307,59 @@ def create_app(config_override: object | None = None) -> Flask:
             # them twice (WAF group + admin Configuration submenu).
             _promoted = {'application_delivery', 'api_protection',
                          'bot_mitigation', 'dos_protection', 'ip_protection'}
+            # server_objects has its OWN dedicated collapsible sidebar item
+            # (fw-so-parent), so it is excluded here to avoid a duplicate tree.
+            _cfg_skip = _promoted | {'server_objects'}
+            # Each section carries its GUI-faithful curated menu (groups → object
+            # types) so the sidebar expands it into a collapsible tree, exactly
+            # like Server Objects. complete=False = curated groups only (no giant
+            # "everything else" bucket — that stays on the section page).
             _cfg_nav = [
-                {'key': s.key, 'label': s.label, 'emoji': s.emoji}
+                {'key': s.key, 'label': s.label, 'emoji': s.emoji,
+                 'menu': _cs.section_menu(s.key, complete=False)}
                 for s in _cc.CONFIG_SECTIONS
-                if _cs.has_menu(s.key) and s.key not in _promoted
+                if _cs.has_menu(s.key) and s.key not in _cfg_skip
             ]
         except Exception:
             _cfg_nav = []
+        # Server Objects menu (groups → object types) for the sidebar submenu.
+        # The GUI-faithful menu lives in services.server_objects; each leaf links
+        # to server_objects.overview(?type=…) under the selected device.
+        try:
+            from .services import server_objects as _so
+            _so_nav = _so.server_objects_menu()
+        except Exception:
+            _so_nav = []
+        # Web Protection menu (FortiWeb 7.6 GUI mirror: groups → items) for the
+        # sidebar submenu — the SAME tree the in-page card used, now collapsible
+        # under the sidebar "Web Protection" item. Each leaf links to
+        # web_protection.menu_page under the selected device.
+        try:
+            from .services import wp_menu as _wp
+            _wp_nav = _wp.menu()
+        except Exception:
+            _wp_nav = []
+        # The 5 WAF protection areas promoted to the sidebar WAF group: each the
+        # FortiWeb GUI menu (services.config_sections, GUI-faithful) rendered as
+        # a collapsible accordion (like Web Protection / Server Objects). Each
+        # leaf links into section_config with ?type=<logical>. complete=False =
+        # curated GUI groups only (the "everything else" bucket stays on the page).
+        try:
+            from .services import config_sections as _cs2
+            _WAF_AREAS = (
+                ('application_delivery', 'Application Delivery', 'bi-rocket-takeoff'),
+                ('api_protection', 'API Protection', 'bi-plug'),
+                ('bot_mitigation', 'Bot Mitigation', 'bi-robot'),
+                ('dos_protection', 'DoS Protection', 'bi-shield-fill-exclamation'),
+                ('ip_protection', 'IP Protection', 'bi-signpost-split'),
+            )
+            _waf_nav = [
+                {'key': _k, 'label': _lbl, 'icon': _ic,
+                 'menu': _cs2.section_menu(_k, complete=False)}
+                for _k, _lbl, _ic in _WAF_AREAS
+            ]
+        except Exception:
+            _waf_nav = []
         try:
             from .services import device_context as _dc
             _cur_appl = _dc.current_appliance()
@@ -294,24 +394,42 @@ def create_app(config_override: object | None = None) -> Flask:
             _bug_notify = False
         # --- unread notifications for the top-bar bell (the bell's ONLY count) ---
         _unread_notif = 0
+        _notif_preview = []
         try:
             from flask_login import current_user as _cu3
             if getattr(_cu3, "is_authenticated", False):
                 from .services import notifications as _notify
                 _unread_notif = _notify.unread_count(_cu3.id)
+                _notif_preview = _notify.recent(_cu3.id, limit=8)
         except Exception:
             _unread_notif = 0
+            _notif_preview = []
+        # FortiADC sidebar menu (only built for fortiadc sessions; pure data,
+        # registry-resolved, cached per process — see services.adc_menu).
+        try:
+            if session.get('product') == 'fortiadc':
+                from .services import adc_menu as _adcm
+                _adc_nav = _adcm.menu()
+            else:
+                _adc_nav = ()
+        except Exception:
+            _adc_nav = ()
         return {
             'product': prod,
+            'adc_nav': _adc_nav,
             'current_appliance': _cur_appl,
             'banner_bg': _bg,
             'now': datetime.utcnow(),
             'config_sections_nav': _cfg_nav,
+            'server_objects_nav': _so_nav,
+            'web_protection_nav': _wp_nav,
+            'waf_sections_nav': _waf_nav,
             'pending_template_count': _pending,
             'open_report_count': _open_reports,
             'bug_reports_notify': _bug_notify,
             'my_resolved_unseen_count': _my_resolved,
             'unread_notification_count': _unread_notif,
+            'notification_preview': _notif_preview,
         }
 
     # -- timezone-aware timestamp filter ---------------------------------
@@ -379,7 +497,21 @@ def create_app(config_override: object | None = None) -> Flask:
 
     @app.before_request
     def _csp_nonce():
-        g.csp_nonce = _secrets.token_urlsafe(16)
+        # STABLE per session, NOT per request. CSP is enforced from the ORIGINAL
+        # document response HEADER and is immutable for that document's lifetime.
+        # Turbo Drive navigations are fetch+swap: the active document (and the
+        # nonce its header enforces) never changes, yet Turbo re-inserts each
+        # fetched page's inline <script>/<style> carrying THAT response nonce. A
+        # per-request nonce therefore never matches the enforced one after any
+        # Turbo visit -> every inline script/style is CSP-blocked until a full
+        # refresh. Pinning the nonce to the session makes every response (full
+        # load + Turbo fetch) share the one nonce enforced on first load.
+        from flask import session
+        nonce = session.get("_csp_nonce")
+        if not nonce:
+            nonce = _secrets.token_urlsafe(16)
+            session["_csp_nonce"] = nonce
+        g.csp_nonce = nonce
 
     @app.context_processor
     def _inject_csp_nonce():
@@ -448,6 +580,7 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('reject_reason', 'TEXT'),
                 ('reviewed_by', 'VARCHAR(64)'),
                 ('reviewed_at', 'DATETIME'),
+                ('product', "VARCHAR(16) DEFAULT 'fortiweb'"),
             ],
             'users': [
                 ('profile_id', 'INTEGER'),
@@ -464,6 +597,28 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('model', 'VARCHAR(128)'),
                 ('datasheet_filename', 'VARCHAR(256)'),
                 ('firmware', 'VARCHAR(64)'),
+                ('maintenance', 'BOOLEAN DEFAULT FALSE'),
+            ],
+            'managed_certificate': [
+                ('superseded_at', 'TIMESTAMP'),
+                ('revoked_at', 'TIMESTAMP'),
+            ],
+            'wpp_exceptions': [
+                ('stale', 'BOOLEAN DEFAULT FALSE'),
+                ('stale_reason', 'TEXT'),
+            ],
+            # --- product/ADOM separation (2026-07-07) ---
+            'audit_logs': [
+                ('product', "VARCHAR(16) DEFAULT ''"),
+            ],
+            'notifications': [
+                ('product', "VARCHAR(16) DEFAULT ''"),
+            ],
+            'baselines': [
+                ('product', "VARCHAR(16) DEFAULT 'fortiweb'"),
+            ],
+            'scheduled_action': [
+                ('product', "VARCHAR(16) DEFAULT 'fortiweb'"),
             ],
         }
         insp = inspect(db.engine)
@@ -541,6 +696,47 @@ def create_app(config_override: object | None = None) -> Flask:
             _seed_profiles()
             _seed_admin()
             _assign_missing_profiles()
+            _seed_registry()
+            _seed_capacity()
+
+    # -- orphaned background jobs ------------------------------------------
+    # A restart kills job worker threads without touching their state files,
+    # leaving forever-"running" ghosts in the Job Manager. Sweep them to a
+    # terminal error at boot (idempotent; any booting worker may run it).
+    if not app.config.get("TESTING"):
+        try:
+            from .services import jobs as _jobsvc
+            swept = _jobsvc.sweep_orphans()
+            if swept:
+                app.logger.warning("swept %d orphaned background job(s): %s",
+                                   len(swept), [j["id"] for j in swept])
+        except Exception:  # noqa: BLE001 — never block boot on housekeeping
+            app.logger.exception("orphaned-job sweep failed")
+
+    # -- legacy URL compatibility: the FortiWeb area moved under /web/ ------
+    # (2026-07-07 ADOM split). Old deep-links, hardcoded JS fetches and the
+    # test suite keep working: the WSGI layer transparently rewrites the old
+    # top-level paths onto the /web prefix (no redirect, same endpoints).
+    _legacy_web = (
+        '/workspace', '/objedit', '/regex-lab', '/server-objects',
+        '/web-protection', '/exceptions', '/backups', '/logs',
+        '/import-backup', '/configuration', '/section-catalog', '/templates',
+        '/signatures', '/structure', '/classification', '/segments',
+        '/naming', '/scheduled-actions', '/change-requests', '/provisioning',
+        '/firmware', '/release-notes', '/capacity', '/registry',
+        '/api-explorer',
+    )
+    _inner_wsgi = app.wsgi_app
+
+    def _legacy_web_rewrite(environ, start_response):
+        path = environ.get('PATH_INFO', '') or ''
+        for pref in _legacy_web:
+            if path == pref or path.startswith(pref + '/'):
+                environ['PATH_INFO'] = '/web' + path
+                break
+        return _inner_wsgi(environ, start_response)
+
+    app.wsgi_app = _legacy_web_rewrite
 
     return app
 
@@ -556,6 +752,8 @@ def _register_blueprints(app: Flask) -> None:
     blueprints = [
         ("app.auth", "bp"),
         ("app.views.product", "bp"),
+        ("app.views.adc", "bp"),
+        ("app.views.adc_api", "bp"),
         ("app.views.appliances", "bp"),
         ("app.views.firmware", "bp"),
         ("app.views.jobs", "bp"),
@@ -575,6 +773,8 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.users", "bp"),
         ("app.views.profiles", "bp"),
         ("app.views.metrics", "bp"),
+        ("app.views.monitoring", "bp"),
+        ("app.views.capacity", "bp"),
         ("app.views.audit", "bp"),
         ("app.views.registry", "bp"),
         ("app.views.api_explorer", "bp"),
@@ -597,14 +797,34 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.locks", "bp"),
         ("app.views.database", "bp"),
         ("app.views.system_backup", "bp"),
+        ("app.views.docs", "bp"),
         ("app.api", "bp"),
     ]
 
+    # FortiWeb-scoped areas live under the /web ADOM prefix (2026-07-07).
+    # url_for() picks the prefix up automatically; legacy top-level paths are
+    # rewritten by the WSGI shim in create_app so old links/tests keep working.
+    web_prefixed = {
+        "app.views.workspace", "app.views.objedit", "app.views.regex_lab",
+        "app.views.server_objects", "app.views.web_protection",
+        "app.views.exceptions", "app.views.backups", "app.views.logs",
+        "app.views.import_backup", "app.views.section_config",
+        "app.views.section_catalog", "app.views.templates",
+        "app.views.signatures", "app.views.structure",
+        "app.views.classification", "app.views.segments", "app.views.naming",
+        "app.views.scheduled_actions", "app.views.change_requests",
+        "app.views.provisioning", "app.views.firmware",
+        "app.views.release_notes", "app.views.capacity",
+        "app.views.registry", "app.views.api_explorer",
+    }
     for module_path, attr in blueprints:
         try:
             module = importlib.import_module(module_path)
             bp = getattr(module, attr)
-            app.register_blueprint(bp)
+            if module_path in web_prefixed:
+                app.register_blueprint(bp, url_prefix='/web' + (bp.url_prefix or ''))
+            else:
+                app.register_blueprint(bp)
         except ModuleNotFoundError:
             logger.debug("Blueprint module %r not found — skipping.", module_path)
         except AttributeError:
@@ -632,6 +852,20 @@ def _seed_profiles() -> None:
             p.description = perm.SYSTEM_PROFILE_META.get(name, "")
             p.permission_set = set(keys)
         db.session.commit()
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()
+
+
+def _seed_capacity() -> None:
+    """Insert-only seed of published capacity limits from capacity_seed.json
+    (admin edits are never touched; see services.capacity.seed_from_json)."""
+    import logging
+    try:
+        from .services import capacity
+        added = capacity.seed_from_json()
+        if added:
+            logging.getLogger(__name__).info(
+                "Capacity seed: %d limit rows imported", added)
     except Exception:  # noqa: BLE001 — never block boot on seeding
         db.session.rollback()
 
@@ -678,3 +912,28 @@ def _seed_admin() -> None:
     except IntegrityError:
         db.session.rollback()
         return  # Another worker seeded first — that's fine
+
+
+def _seed_registry() -> None:
+    """Insert-only seed of the endpoint registry from the git-tracked
+    ``endpoints.yaml`` (rows already in the DB — operator edits, disables —
+    are never touched; see ``registry.loader.seed_from_yaml``)."""
+    import logging
+
+    try:
+        from .registry import loader
+        added = loader.seed_from_yaml()
+        if added:
+            logging.getLogger(__name__).info(
+                "Registry seed: %d endpoints imported from endpoints.yaml", added)
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()
+    try:
+        from .registry import loader
+        added = loader.seed_adc_from_yaml()
+        if added:
+            logging.getLogger(__name__).info(
+                "Registry seed: %d FortiADC endpoints imported from "
+                "endpoints_fortiadc.yaml", added)
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()

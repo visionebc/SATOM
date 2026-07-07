@@ -92,15 +92,30 @@
     startBtn.disabled = true;
     errs.textContent = '';
     const deep = document.getElementById('redisc-deep').checked;
-    const r = await fetch('{{ url_for("appliances.rediscover_start", id=appliance.id) }}', {
-      method: 'POST',
-      headers: {'X-CSRFToken': token, 'Content-Type': 'application/x-www-form-urlencoded'},
-      body: 'deep=' + (deep ? '1' : '0')
-    });
-    const j = await r.json();
-    if (!j.started) { line.textContent = j.reason || 'could not start'; }
-    paint(j.progress);
-    if (!timer) timer = setInterval(poll, 1500);
+    const freshToken = document.querySelector('meta[name="csrf-token"]').content;
+    try {
+      const r = await fetch('{{ url_for("appliances.rediscover_start", id=appliance.id) }}', {
+        method: 'POST',
+        headers: {'X-CSRFToken': freshToken, 'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'deep=' + (deep ? '1' : '0')
+      });
+      if (!r.ok) {
+        errs.textContent = 'Server error ' + r.status + ' — check permissions or try refreshing.';
+        startBtn.disabled = false;
+        return;
+      }
+      const j = await r.json();
+      if (!j.started) {
+        line.textContent = j.reason || 'could not start';
+        startBtn.disabled = false;
+        return;
+      }
+      paint(j.progress);
+      if (!timer) timer = setInterval(poll, 1500);
+    } catch (e) {
+      errs.textContent = 'Request failed: ' + e.message;
+      startBtn.disabled = false;
+    }
   }
   startBtn.addEventListener('click', start);
   {% if progress and progress.state in ['running', 'deep-running'] %}if (!timer) timer = setInterval(poll, 1500); startBtn.disabled = true;{% endif %}

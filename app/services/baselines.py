@@ -16,7 +16,9 @@ from . import settings_store
 
 
 def list_baselines() -> list[Baseline]:
-    return Baseline.query.order_by(Baseline.name).all()
+    from .product_scope import scope_query
+    return (scope_query(Baseline.query, Baseline.product)
+            .order_by(Baseline.name).all())
 
 
 def get_baseline(baseline_id: int) -> Baseline | None:
@@ -25,7 +27,8 @@ def get_baseline(baseline_id: int) -> Baseline | None:
 
 def approved_templates() -> list[Template]:
     """Every APPROVED template, newest version first within a name."""
-    return (Template.query
+    from .product_scope import scope_query
+    return (scope_query(Template.query, Template.product)
             .filter_by(status=Template.STATUS_APPROVED)
             .order_by(Template.kind, Template.name, Template.version.desc())
             .all())

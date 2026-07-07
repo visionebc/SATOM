@@ -15,6 +15,10 @@
  *   • On completion the server returns 202 {job_id}; we poll /jobs/<id> for the
  *     server-side sha256 "finalize" job (which already survives navigation).
  *
+ * A running job whose server-side state is `cancelable` shows a Stop button in
+ * its toast; clicking it POSTs /jobs/<id>/cancel (cooperative — the worker halts
+ * at its next safe checkpoint) and the toast reflects `cancelling` → `cancelled`.
+ *
  * MUST load in <head> (runs once, persists). Uses turbo:load / turbo:before-render
  * DIRECTLY — never DOMContentLoaded — so it is correct as a run-once head script
  * (the DOMContentLoaded→turbo:load shim in turbo-boot.js is for BODY scripts).
@@ -26,7 +30,7 @@
   var DIAG = '/_updiag';
 
   var activeXhr = null;   // in-flight upload XHR — module scope ⇒ survives Turbo visits
-  var toasts = {};        // key -> {el, bar, title, msg}
+  var toasts = {};        // key -> {el, bar, title, msg, stop, jobId}
   var dock = null;        // #job-toasts container — re-homed into each new <body>
   var tracked = {};       // finalize job ids currently being polled
   var booted = false;
@@ -68,9 +72,15 @@
       'backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);animation:jobToastIn .18s ease}' +
       '@keyframes jobToastIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}' +
       '.job-toast.ok{border-left-color:#10b981}.job-toast.err{border-left-color:#ef4444}' +
+      '.job-toast.stopped{border-left-color:#fbbf24}' +
       '.job-toast .jt-top{display:flex;align-items:center;gap:8px;justify-content:space-between}' +
       '.job-toast .jt-title{font-size:13px;font-weight:600;line-height:1.3;flex:1;' +
       'overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.job-toast .jt-stop{cursor:pointer;font-size:11px;font-weight:600;line-height:1;' +
+      'border:1px solid rgba(148,163,184,.35);background:rgba(148,163,184,.08);color:#e2e8f0;' +
+      'border-radius:7px;padding:3px 8px}' +
+      '.job-toast .jt-stop:hover{background:rgba(239,68,68,.18);border-color:#ef4444}' +
+      '.job-toast .jt-stop[disabled]{opacity:.5;cursor:default}' +
       '.job-toast .jt-x{cursor:pointer;opacity:.5;font-size:16px;line-height:1;border:0;' +
       'background:none;color:inherit;padding:0 2px}.job-toast .jt-x:hover{opacity:1}' +
       '.job-toast .jt-msg{font-size:11px;color:#94a3b8;margin-top:3px;min-height:14px}' +
@@ -79,8 +89,10 @@
       '.job-toast .jt-bar{height:100%;width:0;border-radius:6px;transition:width .25s ease;' +
       'background:linear-gradient(90deg,#3b82f6,#8b5cf6)}' +
       '.job-toast.ok .jt-bar{background:#10b981}.job-toast.err .jt-bar{background:#ef4444}' +
+      '.job-toast.stopped .jt-bar{background:#fbbf24}' +
       '.job-toast.ok .jt-title::before{content:"\\2713 ";color:#10b981}' +
-      '.job-toast.err .jt-title::before{content:"\\26A0 ";color:#ef4444}';
+      '.job-toast.err .jt-title::before{content:"\\26A0 ";color:#ef4444}' +
+      '.job-toast.stopped .jt-title::before{content:"\\23F9 ";color:#fbbf24}';
     (document.head || document.documentElement).appendChild(css);
   }
   function ensureDock() {
@@ -97,21 +109,35 @@
       el.className = 'job-toast';
       el.innerHTML =
         '<div class="jt-top"><div class="jt-title"></div>' +
+        '<button class="jt-stop" hidden>Stop</button>' +
         '<button class="jt-x" title="Dismiss">&times;</button></div>' +
         '<div class="jt-msg"></div>' +
         '<div class="jt-track"><div class="jt-bar"></div></div>';
       ensureDock().appendChild(el);
       el.querySelector('.jt-x').addEventListener('click', function () { removeToast(key); });
+      el.querySelector('.jt-stop').addEventListener('click', function () {
+        var tt = toasts[key]; if (tt && tt.jobId) cancelJob(tt.jobId, key);
+      });
       t = toasts[key] = { el: el, bar: el.querySelector('.jt-bar'),
                           title: el.querySelector('.jt-title'),
-                          msg: el.querySelector('.jt-msg') };
+                          msg: el.querySelector('.jt-msg'),
+                          stop: el.querySelector('.jt-stop'), jobId: null };
     }
+    if (o.jobId != null) t.jobId = o.jobId;
     if (o.title != null) t.title.textContent = o.title;
     if (o.message != null) t.msg.textContent = o.message;
     if (o.percent != null) t.bar.style.width = Math.max(0, Math.min(100, o.percent)) + '%';
-    t.el.classList.remove('ok', 'err');
+    t.el.classList.remove('ok', 'err', 'stopped');
     if (o.state === 'ok') t.el.classList.add('ok');
     else if (o.state === 'err') t.el.classList.add('err');
+    else if (o.state === 'stopped' || o.state === 'cancelling') t.el.classList.add('stopped');
+    // A Stop button only when the running job says it is cancelable (and not
+    // already being stopped) — never promise a stop the server won't honour.
+    if (t.stop && o.state != null) {
+      var canStop = !!o.cancelable && o.state === 'run';
+      t.stop.hidden = !canStop;
+      if (canStop) { t.stop.disabled = false; t.stop.textContent = 'Stop'; }
+    }
     return t;
   }
   function removeToast(key) {
@@ -120,6 +146,27 @@
     delete toasts[key];
   }
   function autoDismiss(key, ms) { setTimeout(function () { removeToast(key); }, ms || 6000); }
+
+  // ── cooperative cancel ──────────────────────────────────────────────────────
+  function cancelJob(jobId, key) {
+    var t = toasts[key];
+    if (t && t.stop) { t.stop.disabled = true; t.stop.textContent = 'Stopping…'; }
+    fetch('/jobs/' + encodeURIComponent(jobId) + '/cancel',
+          { method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrf() } })
+      .then(function (r) { return r.ok ? r.json() : r.json().catch(function () { return null; }); })
+      .then(function (j) {
+        if (j && j.error) {   // e.g. 409 — not cancelable
+          if (t && t.stop) { t.stop.hidden = true; }
+          showToast(key, { message: j.error });
+          return;
+        }
+        showToast(key, { state: 'cancelling', message: 'Stopping — finishing the current step…' });
+      })
+      .catch(function () {
+        if (t && t.stop) { t.stop.disabled = false; t.stop.textContent = 'Stop'; }
+      });
+  }
 
   // ── the upload: plain XHR, held in module scope ⇒ survives navigation ────────
   function uploadWithProgress(actionUrl, formData, opts) {
@@ -193,7 +240,8 @@
     tracked[jobId] = true;
     var key = 'job:' + jobId;
     var label = name || 'Firmware';
-    showToast(key, { title: label, state: 'run', percent: 0, message: 'Finalizing…' });
+    showToast(key, { title: label, state: 'run', percent: 0, message: 'Finalizing…',
+                     jobId: jobId });
     function poll() {
       fetch('/jobs/' + encodeURIComponent(jobId),
             { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
@@ -206,20 +254,45 @@
                              percent: 100, message: j.message || 'Done' });
             if (res.report_url) addToastLink(key, res.report_url, 'View before/after report →');
             autoDismiss(key, res.report_url ? 60000 : 6000); delete tracked[jobId];
-            if (res.reload && location.pathname.indexOf('/firmware') === 0)
+            if (res.reload &&
+                location.pathname.indexOf(res.reload_path || '/firmware') === 0)
               setTimeout(function () {
                 if (window.Turbo && window.Turbo.visit) window.Turbo.visit(location.href, { action: 'replace' });
                 else location.reload();
               }, 1200);
             return;
           }
+          if (j.status === 'cancelled') {
+            var cres = j.result || {};
+            var extra = '';
+            if (cres.mid_change && cres.mid_change.length) {
+              var n = cres.mid_change.reduce(function (a, m) {
+                return a + ((m.committed || []).length); }, 0);
+              extra = ' — ' + cres.mid_change.length + ' device(s) left mid-change, '
+                      + n + ' write(s) to review';
+            }
+            showToast(key, { title: label + ' stopped', state: 'stopped',
+                             percent: j.percent || 0,
+                             message: (j.message || 'Stopped') + extra });
+            autoDismiss(key, (cres.mid_change && cres.mid_change.length) ? 60000 : 8000);
+            delete tracked[jobId]; return;
+          }
           if (j.status === 'error') {
             showToast(key, { title: label + ' failed', state: 'err',
                              message: j.error || j.message || 'Error' });
             autoDismiss(key, 10000); delete tracked[jobId]; return;
           }
-          showToast(key, { title: label, state: 'run',
-                           percent: j.percent || 0, message: j.message || 'Working…' });
+          // running, pausing/paused or cancelling
+          var stopping = j.status === 'cancelling';
+          var paused = j.status === 'paused' || j.status === 'pausing';
+          showToast(key, { title: stopping ? ('Stopping ' + label)
+                                  : (paused ? (label + ' — paused') : label),
+                           state: stopping ? 'cancelling' : (paused ? 'stopped' : 'run'),
+                           percent: j.percent || 0,
+                           message: j.message || (stopping ? 'Stopping…'
+                                    : (paused ? 'Paused — resume from the Jobs page' : 'Working…')),
+                           cancelable: j.cancelable !== false && !stopping,
+                           jobId: jobId });
           setTimeout(poll, POLL_MS);
         })
         .catch(function () { setTimeout(poll, POLL_MS * 2); });
@@ -255,7 +328,8 @@
     } catch (e) {}
   }
 
-  window.JobsUI = { uploadWithProgress: uploadWithProgress, trackJob: trackJob };
+  window.JobsUI = { uploadWithProgress: uploadWithProgress, trackJob: trackJob,
+                    cancelJob: cancelJob };
 
   // ── Turbo lifecycle: keep the dock (and its live toasts) attached ───────────
   // Move the dock into the INCOMING body before the swap → seamless, no flicker.

@@ -46,6 +46,18 @@ SIG_DETAIL_PATH = f"/api/{API_VERSION}/waf/signature.advanced.details"
 SIG_SET_PATH = f"/api/{API_VERSION}/cmdb/waf/signature"
 
 
+class DeviceUnreachable(RuntimeError):
+    """The device stopped answering MID-SYNC: N *consecutive* sub-class reads
+    failed. Raised by :func:`sync_signature_database` so the job errors out in
+    seconds instead of grinding through hundreds of doomed requests at full
+    timeout each (the fw5 hang)."""
+
+
+# Consecutive failed sub-class reads before the sync gives the box up for dead.
+# One flaky sub-class still never aborts a sync (the counter resets on success).
+MAX_CONSECUTIVE_FAILURES = 5
+
+
 def _json(client: Any, path: str) -> Any:
     """GET ``path`` through the web FortiWebClient and decode the JSON body."""
     return client.api_call("GET", path).json()
@@ -159,16 +171,14 @@ def read_subclass_signatures(client: Any, signature_set: str, main_id: str,
                              sub_id: str) -> list[Signature]:
     """The individual signatures of one sub-class.
 
-    Best-effort: returns ``[]`` on any failure so a single flaky sub-class never
-    aborts a full sync (matches the desktop)."""
+    RAISES on a transport/decode failure — the caller decides the policy:
+    :func:`sync_signature_database` tolerates isolated blips but aborts after
+    :data:`MAX_CONSECUTIVE_FAILURES` in a row (a dead box mid-sync)."""
     if not signature_set:
         return []
     path = f"{SIG_DETAIL_PATH}?" + urlencode({
         "mkey": signature_set, "main_class_id": main_id, "sub_class_id": sub_id})
-    try:
-        raw = _json(client, path)
-    except Exception:  # noqa: BLE001 — best-effort per sub-class read
-        return []
+    raw = _json(client, path)
     out: list[Signature] = []
     for d in _unwrap(raw):
         if not isinstance(d, dict):
@@ -234,11 +244,26 @@ def sync_signature_database(
 
     ``progress(label, count_so_far)`` is called per sub-class (optional, for a UI
     bar). READ-ONLY: only GETs are issued. The dictionary read raises on a dead
-    device (the view flashes it); per-sub-class reads are best-effort."""
+    device (the view flashes it). Per-sub-class reads tolerate isolated blips
+    (a flaky sub-class reads as empty, the sync continues) but
+    :data:`MAX_CONSECUTIVE_FAILURES` in a row means the box died mid-sync →
+    :class:`DeviceUnreachable`, so the job fails fast instead of hanging."""
     catalog = read_signature_catalog(client, signature_set)
     sigs: list[Signature] = []
+    consecutive = 0
     for m, s in iter_subclasses(catalog):
-        rows = read_subclass_signatures(client, signature_set, m.main_id, s.sub_id)
+        try:
+            rows = read_subclass_signatures(
+                client, signature_set, m.main_id, s.sub_id)
+            consecutive = 0
+        except Exception as exc:  # noqa: BLE001 — count it, then decide
+            consecutive += 1
+            if consecutive >= MAX_CONSECUTIVE_FAILURES:
+                raise DeviceUnreachable(
+                    "aborting sync: %d consecutive sub-class reads failed — "
+                    "device unreachable mid-sync? Last error: %s: %s"
+                    % (consecutive, type(exc).__name__, exc)) from exc
+            rows = []
         for r in rows:
             r.main_name, r.sub_name = m.name, s.name
         sigs.extend(rows)

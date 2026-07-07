@@ -1,7 +1,7 @@
 from flask import request, jsonify
 from flask_login import login_required, current_user
 from . import bp
-from ..models import Appliance, db, Permission
+from ..models import Appliance, db, Permission, visible_appliances, visible_appliance_or_404
 from ..auth.decorators import require_permission
 from ..services.audit import log_action
 from datetime import datetime
@@ -26,7 +26,7 @@ def list_appliances():
     probed concurrently (network only -- no DB writes inside the threads); the
     cache is then persisted with a single bulk UPDATE that intentionally does
     NOT bump ``updated_at`` (a status poll must not look like a config edit)."""
-    appliances = Appliance.query.order_by(Appliance.name).all()
+    appliances = visible_appliances().order_by(Appliance.name).all()
     status_map = {a.id: (a.last_status or 'unknown') for a in appliances}
 
     stale = [a for a in appliances if _is_stale(a)]
@@ -111,7 +111,7 @@ def create_appliance():
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
 def update_appliance(id):
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     data = request.get_json(force=True) or {}
 
     if 'name' in data:
@@ -152,7 +152,7 @@ def update_appliance(id):
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
 def delete_appliance(id):
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     name = appliance.name
     db.session.delete(appliance)
     db.session.commit()
@@ -165,14 +165,10 @@ def delete_appliance(id):
 def test_appliance(id):
     """Connectivity check used by the appliances list UI (api.js).
     Returns {status: 'online'|'offline'} so the status badge updates."""
-    from ..clients.fortiweb import FortiWebClient
-    from ..clients.fortiadc import FortiADCClient
-    appliance = Appliance.query.get_or_404(id)
+    from ..clients import client_for
+    appliance = visible_appliance_or_404(id)
     try:
-        if appliance.kind == 'fortiadc':
-            client = FortiADCClient(appliance)
-        else:
-            client = FortiWebClient(appliance)
+        client = client_for(appliance)
         client.status_check()
         status, ok, detail = 'online', True, None
     except Exception as exc:

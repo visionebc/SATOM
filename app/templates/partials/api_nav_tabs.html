@@ -1,0 +1,18 @@
+{# Shared tab strip for the API hub — the Registry catalog and the live query
+   console were FUSED into one "API-Registry Explorer" page (2026-07-05):
+   browse + edit the catalog on the API-Menu tree, execute against a device on
+   the right. Structure = the Server Policy + WPP dependency subgraph of it.
+   Set {% set api_tab = 'explorer'|'registry'|'structure' %} before including
+   ('registry' is kept as an alias so the fused tab stays active on old links). #}
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if api_tab in ['explorer', 'registry'] }}" href="{{ url_for('api_explorer.index') }}">
+      <i class="bi bi-code-square me-1"></i>API-Registry Explorer
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if api_tab == 'structure' }}" href="{{ url_for('structure.index') }}">
+      <i class="bi bi-diagram-3 me-1"></i>Structure
+    </a>
+  </li>
+</ul>

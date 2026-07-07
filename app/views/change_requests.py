@@ -24,6 +24,7 @@ from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
 from ..models import Appliance, ChangeRequest, ChangeRequestEvent, Permission, db
+from ..models import visible_appliances, visible_appliance_or_404
 from ..services import change_requests as svc
 from ..services.audit import log_action
 
@@ -126,7 +127,7 @@ def new():
         flash(f'Change request "{cr.title}" created.', 'success')
         return redirect(url_for('change_requests.detail', id=cr.id))
 
-    appliances = (Appliance.query
+    appliances = (visible_appliances()
                   .filter_by(kind='fortiweb')
                   .order_by(Appliance.name)
                   .all())

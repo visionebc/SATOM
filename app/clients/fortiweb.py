@@ -105,6 +105,50 @@ class FortiWebClient(BaseClient):
         except Exception:
             return []
 
+    # --- error-surfacing reads (Configuration browser) -----------------------
+    _BENIGN_ERRCODES = {'-20001', '-3'}  # absent on this firmware / not found
+
+    @staticmethod
+    def _device_error(resp):
+        """A human-readable device refusal for a cmdb read, else None.
+
+        FortiWeb signals failures two ways: an HTTP error status (423 license
+        lock, 401 auth) and/or an errcode envelope — sometimes top-level
+        ({"errcode": "-20010", ...}), sometimes nested under "results". Both are
+        surfaced; errcode -20001/-3 (object absent on this firmware / not
+        found) stays benign because the registry is a cross-firmware superset.
+        """
+        try:
+            j = resp.json()
+        except Exception:  # noqa: BLE001 - non-JSON body
+            return ('HTTP %s' % resp.status_code) if resp.status_code >= 400 else None
+        body = j if isinstance(j, dict) else {}
+        res = body.get('results')
+        if isinstance(res, dict) and res.get('errcode') not in (None, 0, '0'):
+            body = res
+        code = body.get('errcode')
+        if code in (None, 0, '0'):
+            return ('HTTP %s' % resp.status_code) if resp.status_code >= 400 else None
+        if str(code) in FortiWebClient._BENIGN_ERRCODES:
+            return None
+        msg = body.get('message') or ''
+        return ('device error %s: %s' % (code, msg)) if msg else ('device error %s' % code)
+
+    def list_with_error(self, path: str):
+        """(rows, error) — like _safe_list, but a device refusal (license lock,
+        auth failure, unreachable host) is RETURNED instead of reading as []."""
+        try:
+            resp = self.get(path)
+        except Exception as exc:  # noqa: BLE001 - transport-level failure
+            return [], str(exc)
+        err = self._device_error(resp)
+        if err:
+            return [], err
+        try:
+            return self._results_list(resp.json()), None
+        except Exception as exc:  # noqa: BLE001
+            return [], str(exc)
+
     def get_server_policy(self, name: str):
         """The full server-policy object, unwrapped from the results envelope."""
         return self._results_one(

@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}{{ item.label }} — FortiADC{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="{{ url_for('adc.index') }}">FortiADC</a>
+  <span class="separator">/</span>
+  <span>{{ group.label }}</span>
+  <span class="separator">/</span>
+  <span>{{ item.label }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi {{ item.icon }} me-2 text-accent"></i>{{ item.label }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ group.label }} &gt; {{ item.label }}
+      {% if appliance %} on <strong>{{ appliance.name }}</strong> <span class="fw-badge fw-badge-secondary ms-1" title="Read live from the device — FortiADC has no local cache yet">LIVE</span>{% endif %}
+    </p>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    {% if appliance %}
+    <a class="btn btn-outline-light btn-sm" href="{{ request.full_path }}" title="Re-read from the device">
+      <i class="bi bi-arrow-clockwise me-1"></i>Refresh</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if not appliance %}
+<div class="fw-alert fw-alert-warning d-flex align-items-center gap-2 mb-3">
+  <i class="bi bi-hdd-rack"></i>
+  <div>No FortiADC selected — object lists are read live from a device.
+    <a href="{{ url_for('adc.index') }}">Pick one on the FortiADC dashboard</a>
+    {% if not fleet %} (none registered yet — add the VM under
+    <a href="{{ url_for('appliances.index') }}">Appliances</a>){% endif %}.
+  </div>
+</div>
+{% elif error %}
+<div class="fw-alert fw-alert-danger d-flex align-items-center gap-2 mb-3">
+  <i class="bi bi-exclamation-triangle-fill"></i>
+  <div>Device error: {{ error }}</div>
+</div>
+{% endif %}
+
+{# FortiADC's own tabs for this menu entry #}
+<ul class="nav nav-tabs mb-3">
+  {% for t in item.tabs %}
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if t.logical == tab.logical else '' }}"
+       href="{{ url_for('adc.menu_page', item_key=item.key, tab=t.logical) }}">
+      {{ t.label }}
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+
+<div class="fw-toolbar mb-2 d-flex align-items-center gap-2 flex-wrap">
+  {% if appliance and current_user.can('config_write') %}
+  <a class="btn btn-fw-primary btn-sm"
+     href="{{ url_for('adc.object_detail', logical=tab.logical, create=1, back=request.full_path) }}">
+    <i class="bi bi-plus-lg me-1"></i>Create New
+  </a>
+  {% endif %}
+  <div class="fw-search-box">
+    <i class="bi bi-search search-icon"></i>
+    <input type="text" id="adc-obj-search" placeholder="Search…">
+  </div>
+  <span class="text-muted ms-auto" style="font-size:12px;">
+    {{ rows|length }} object(s) · <code style="font-size:11px;">{{ tab.urn }}</code></span>
+</div>
+
+<div class="fw-table-wrapper">
+  <table class="fw-table" id="adc-obj-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        {% for col in columns %}<th>{{ col.replace('_',' ').replace('-',' ')|title }}</th>{% endfor %}
+        <th style="width:130px;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if rows %}
+        {% for r in rows %}
+        <tr>
+          <td>
+            <a href="{{ url_for('adc.object_detail', logical=tab.logical, mkey=r.mkey, back=request.full_path) }}"
+               class="fw-semibold text-decoration-none">{{ r.mkey }}</a>
+          </td>
+          {% for c in r.cells %}
+          <td>
+            {% if c in ('enable', 'enabled') %}<span class="fw-badge fw-badge-success">{{ c }}</span>
+            {% elif c in ('disable', 'disabled') %}<span class="fw-badge fw-badge-secondary">{{ c }}</span>
+            {% elif c is none or c == '' %}<span class="text-muted">—</span>
+            {% else %}{{ c }}{% endif %}
+          </td>
+          {% endfor %}
+          <td>
+            <a href="{{ url_for('adc.object_detail', logical=tab.logical, mkey=r.mkey, back=request.full_path) }}"
+               class="btn btn-sm btn-outline-secondary" title="View / edit (raw JSON)"><i class="bi bi-pencil"></i></a>
+            {% if current_user.can('config_write') %}
+            <button type="button" class="btn btn-sm btn-outline-danger" title="Delete"
+                    data-js="adc-delete" data-mkey="{{ r.mkey }}"><i class="bi bi-trash"></i></button>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="{{ 2 + columns|length }}"><div class="fw-empty-state py-4">
+          <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi {{ item.icon }}"></i></div>
+          <div class="fw-empty-state-title">No {{ tab.label }} objects</div>
+          <div class="fw-empty-state-text">
+            {% if not appliance %}Select a FortiADC device to list live objects.
+            {% elif error %}The device refused the read — see the banner above.
+            {% else %}Nothing configured on the device for this type yet.{% endif %}
+          </div>
+        </div></td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var search = document.getElementById('adc-obj-search');
+  if (search) search.addEventListener('input', function () {
+    var q = (this.value || '').toLowerCase();
+    document.querySelectorAll('#adc-obj-table tbody tr').forEach(function (row) {
+      row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  });
+
+  document.querySelectorAll('[data-js="adc-delete"]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var mkey = this.dataset.mkey;
+      if (!confirm('Delete "' + mkey + '" on the device?\nFortiADC applies this immediately.')) return;
+      fetch('{{ url_for('adc.object_delete', logical=tab.logical) }}', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mkey: mkey })
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        if (!j.ok) { alert('Delete failed: ' + (j.error || 'unknown')); return; }
+        window.location.reload();
+      });
+    });
+  });
+})();
+</script>
+{% endblock %}

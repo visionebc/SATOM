@@ -19,6 +19,7 @@ from flask import Blueprint, render_template, request, abort
 from flask_login import login_required
 
 from ..models import Appliance
+from ..models import visible_appliances, visible_appliance_or_404
 from ..clients.fortiweb import FortiWebClient
 from ..services import objform
 from ..services import server_objects as so
@@ -48,7 +49,7 @@ def _row_view(obj: dict) -> dict:
 @login_required
 def index():
     """Appliance picker — choose a device to browse its Server Objects."""
-    appliances = Appliance.query.order_by(Appliance.name).all()
+    appliances = visible_appliances().order_by(Appliance.name).all()
     from flask import redirect as _redir, url_for as _ufor
     from ..services import device_context as _dc
     _cur = _dc.current_appliance()
@@ -65,7 +66,7 @@ def overview(id):
     ``?type=<logical>`` selects a menu leaf; its live objects are fetched and
     listed. With no ``type`` the page shows the menu with a hint to pick one.
     """
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     menu = so.server_objects_menu()
 
     selected = None
@@ -102,7 +103,7 @@ def refresh(id):
     selected Server Objects type (DB-first)."""
     from flask import redirect, url_for, flash
     from flask_login import current_user
-    appliance = Appliance.query.get_or_404(id)
+    appliance = visible_appliance_or_404(id)
     logical = (request.form.get('type') or '').strip()
     try:
         from ..services import device_sync

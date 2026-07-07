@@ -21,7 +21,8 @@ from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
 from ..models import (Appliance, ManagedCertificate, ManagedCertificateEvent,
-                      Permission, db)
+                      Permission, db, visible_appliances,
+                      visible_appliance_or_404)
 from ..services import cert_manager as cm
 from ..services import cert_probe
 from ..services import settings_store as store
@@ -30,8 +31,28 @@ from ..services.audit import log_action
 bp = Blueprint("cert_manager", __name__, url_prefix="/cert-manager")
 
 
+def _product_kind() -> str:
+    """Appliance kind for the ACTIVE product (session['product']). The
+    Certificate Manager is reachable from BOTH products; each must show only
+    its OWN devices/certs (FortiADC Global -> FortiADC, FortiWeb -> FortiWeb)."""
+    from flask import session
+    return "fortiadc" if session.get("product") == "fortiadc" else "fortiweb"
+
+
 def _fortiweb_appliances():
-    return (Appliance.query.filter_by(kind="fortiweb")
+    """Every appliance the device-cert inventory covers — FortiWeb AND FortiADC
+    (the scan/list service dispatches per kind; ADC reads are pure REST).
+    Name kept for history; it has been both-kinds since the ADC scan landed."""
+    return (visible_appliances()
+            .filter(Appliance.kind == _product_kind())
+            .order_by(Appliance.name).all())
+
+
+def _deploy_targets():
+    """Deploy targets for a NEW certificate — FortiWeb (SSH import) AND FortiADC
+    (REST upload; ``cert_adc``)."""
+    return (visible_appliances()
+            .filter(Appliance.kind == _product_kind())
             .order_by(Appliance.name).all())
 
 
@@ -42,12 +63,16 @@ def _fortiweb_appliances():
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def index():
-    certs = (ManagedCertificate.query
-             .order_by(ManagedCertificate.expires_at.asc().nullslast(),
-                       ManagedCertificate.name.asc())
-             .all())
     appliance_list = _fortiweb_appliances()
     appliances = {a.id: a for a in appliance_list}
+    _prod_ids = set(appliances)
+    # Managed certs scoped to the active product: certs on THIS product's
+    # appliances (unassigned certs - no appliance yet - show in either).
+    certs = [c for c in (ManagedCertificate.query
+                         .order_by(ManagedCertificate.expires_at.asc().nullslast(),
+                                   ManagedCertificate.name.asc())
+                         .all())
+             if c.appliance_id in _prod_ids or c.appliance_id is None]
     rows = []
     for c in certs:
         d = c.days_left
@@ -81,9 +106,15 @@ def index():
         device = {"rows": swept["rows"], "unique": swept["unique"],
                   "deployments": swept["deployments"], "last_scanned": None}
         device_offline = swept["offline"]
+    _lifecycle = cm.lifecycle_candidates()
+    for _k in ("revoke_due", "delete_due", "blocked"):
+        _lifecycle[_k] = [it for it in _lifecycle.get(_k, [])
+                          if it["cert"].appliance_id in _prod_ids
+                          or it["cert"].appliance_id is None]
     return render_template(
         "cert_manager/index.html",
         rows=rows,
+        lifecycle=_lifecycle,
         configured=store.cert_manager_configured(),
         class_labels=store.CERT_CLASS_LABELS,
         device_rows=device["rows"],
@@ -93,6 +124,24 @@ def index():
         device_last_scanned=device["last_scanned"],
         device_cached=device_cached,
     )
+
+
+@bp.route("/lifecycle/run", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def lifecycle_run():
+    """Apply the lifecycle policy NOW (manual sweep): revoke due superseded
+    certs at the CA and delete due unbound material off the devices. Every
+    destructive step re-verifies bindings live and fail-closed."""
+    res = cm.run_lifecycle_sweep(dry_run=False, actor=current_user.username)
+    done = res["revoked"] + res["deleted"]
+    if done:
+        flash("Lifecycle sweep: " + "; ".join(done), "success")
+    else:
+        flash("Lifecycle sweep: nothing applied.", "info")
+    if res["skipped"]:
+        flash("Skipped: " + "; ".join(res["skipped"]), "warning")
+    return redirect(url_for("cert_manager.index"))
 
 
 @bp.route("/scan", methods=["POST"])
@@ -289,7 +338,7 @@ def new():
 
     return render_template(
         "cert_manager/new.html",
-        appliances=_fortiweb_appliances(),
+        appliances=_deploy_targets(),
         classes=[(c, store.CERT_CLASS_LABELS[c]) for c in store.CERT_CLASSES],
         configured=store.cert_manager_configured(),
     )

@@ -32,6 +32,9 @@
   // Links = Turbo (client-side, preserves the runtime). Forms = native submit.
   try { window.Turbo.setFormMode('optin'); } catch (e) {}
 
+  // Show progress bar immediately (default is 500ms delay).
+  try { window.Turbo.setProgressBarDelay(0); } catch (e) {}
+
   var origAdd = document.addEventListener.bind(document);
 
   // ── DOMContentLoaded → turbo:load compatibility shim ────────────────────────
@@ -55,6 +58,21 @@
     }
     return origAdd(type, listener, opts);
   };
+
+  // ── Navigation loading feedback (progress bar + content dim) ─────────────────
+  origAdd('turbo:visit', function () {
+    var main = document.getElementById('fw-main');
+    if (main) main.classList.add('fw-navigating');
+  });
+  origAdd('turbo:load', function () {
+    var main = document.getElementById('fw-main');
+    if (main) main.classList.remove('fw-navigating');
+  });
+  // Safety: clear dim if render happens without a load (cached pages).
+  origAdd('turbo:before-render', function () {
+    var main = document.getElementById('fw-main');
+    if (main) main.classList.remove('fw-navigating');
+  });
 
   // ── Let file downloads go native (Turbo would try to render the binary) ─────
   origAdd('turbo:load', function () {

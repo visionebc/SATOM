@@ -25,7 +25,8 @@ bp = Blueprint('section_catalog', __name__, url_prefix='/section-catalog')
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def index():
-    approved = (Template.query
+    from ..services.product_scope import scope_query
+    approved = (scope_query(Template.query, Template.product)
                 .filter_by(status=Template.STATUS_APPROVED)
                 .order_by(Template.kind, Template.name, Template.version.desc())
                 .all())

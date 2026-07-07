@@ -54,40 +54,33 @@
 
 {% if menu %}
 <div class="row g-3">
-  <!-- ───────────────────── Section menu (the GUI tree) ───────────────────── -->
-  <div class="col-lg-3">
-    <div class="fw-card">
-      <div class="fw-card-body p-2">
-        <nav class="so-menu">
-          {% for group in menu %}
-          <details class="so-group" {{ 'open' if (not selected) or (selected.logical in group.items|map(attribute='logical')|list) }}>
-            <summary class="so-group-head">
-              <i class="bi {{ group.icon }} me-2"></i>{{ group.label }}
-            </summary>
-            <ul class="so-items">
-              {% for item in group.items %}
-              <li>
-                <a class="so-item {{ 'active' if selected and selected.logical == item.logical }}"
-                   href="{{ url_for('section_config.section', section_key=section.key, device=appliance.id if appliance else None, type=item.logical) }}">
-                  <i class="bi {{ item.icon }} me-2"></i>{{ item.label }}
-                  {% if item.read_only %}<i class="bi bi-eye ms-auto text-muted" title="Read-only (predefined)"></i>{% endif %}
-                </a>
-              </li>
-              {% endfor %}
-            </ul>
-          </details>
-          {% endfor %}
-        </nav>
-      </div>
-    </div>
-  </div>
-
+  {# Section menu (the GUI tree) now lives in the MAIN SIDEBAR as a collapsible
+     tree (Configuration → section → group → object type), so it is no longer
+     duplicated in-page. The object list spans full width. 2026-07-05 #}
   <!-- ───────────────────── Object list for selected type ─────────────────── -->
-  <div class="col-lg-9">
+  <div class="col-lg-12">
+    {# FortiWeb-style TABS for the selected group's object types (Web Protection
+       parity): a sidebar entry opens a group; its object types are the tabs. #}
+    {% if active_group and active_group.items|length > 1 %}
+    <div class="mb-2">
+      <h5 class="mb-2"><i class="bi {{ active_group.icon }} me-2 text-accent"></i>{{ active_group.label }}</h5>
+      <ul class="nav nav-tabs">
+        {% for it in active_group.items %}
+        <li class="nav-item">
+          <a class="nav-link {{ 'active' if selected and it.logical == selected.logical else '' }}"
+             href="{{ url_for('section_config.section', section_key=section.key, device=device_id, type=it.logical) }}">
+            <i class="bi {{ it.icon }} me-1"></i>{{ it.label }}
+            {% if it.read_only %}<i class="bi bi-eye ms-1 text-muted" title="Read-only"></i>{% endif %}
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
     {% if not selected %}
       <div class="fw-empty-state py-5">
         <div class="fw-empty-state-icon"><i class="bi bi-arrow-left-circle"></i></div>
-        <div class="fw-empty-state-title">Pick an object type from the menu</div>
+        <div class="fw-empty-state-title">Pick an object type from the sidebar menu</div>
         <p class="text-muted">{{ section.label }} objects are listed here; each opens the deep editor.</p>
       </div>
     {% else %}
@@ -116,6 +109,20 @@
                  data-js="cfg-filter">
         </div>
         <span class="text-muted small ms-2">{{ rows|length }} object(s)</span>
+        {% if cache_meta is defined and cache_meta %}
+        <span class="fw-badge {{ 'fw-badge-success' if cache_meta.get('generated_at') else 'fw-badge-warning' }} ms-2"
+              title="Local source of truth (PostgreSQL). Use Refresh to pull live config.">
+          <i class="bi bi-database me-1"></i>{{ cache_freshness or 'no local data — refresh' }}
+        </span>
+        {% endif %}
+        <form method="post" class="ms-auto" style="display:inline"
+              action="{{ url_for('section_config.refresh', section_key=section.key, type=(selected.logical if selected else None)) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-fw-outline btn-sm"
+                  title="Pull live config from the device into the local source of truth">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh from device
+          </button>
+        </form>
       </div>
 
       <div class="fw-table-wrapper">
@@ -215,7 +222,7 @@
 <!-- ====================== CONFIG TEMPLATE LIBRARY ====================== -->
 <div class="fw-card mt-4">
   <div class="fw-card-header d-flex align-items-center justify-content-between">
-    <span class="fw-card-title"><i class="bi bi-collection me-2"></i>Config template library
+    <span class="fw-card-title"><i class="bi bi-collection me-2"></i>Config template library{% if selected %} · {{ selected.label }}{% endif %}
       <span class="text-muted" style="font-weight:normal;font-size:12px;">({{ kind }})</span>
     </span>
     <button class="btn btn-fw-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalNewSectionTemplate">
@@ -266,8 +273,8 @@
             <tr><td colspan="5">
               <div class="fw-empty-state">
                 <div class="fw-empty-state-icon"><i class="bi bi-collection"></i></div>
-                <div class="fw-empty-state-title">No templates for this section</div>
-                <div class="fw-empty-state-text">Author a <span class="mono">{{ kind }}</span> template to push this section's config on demand.</div>
+                <div class="fw-empty-state-title">No templates for {{ selected.label if selected else 'this section' }}</div>
+                <div class="fw-empty-state-text">Author a <span class="mono">{{ kind }}</span> template{% if selected %} for {{ selected.label }}{% endif %} to push this config on demand.</div>
               </div>
             </td></tr>
           {% endif %}
@@ -428,17 +435,6 @@
 
 {% block scripts %}
 <style nonce="{{ csp_nonce }}">
-.so-menu .so-group { border-bottom:1px solid #F0F2F5; }
-.so-menu .so-group:last-child { border-bottom:0; }
-.so-group-head { cursor:pointer; padding:8px 10px; font-weight:600; font-size:13px;
-  list-style:none; border-radius:8px; }
-.so-group-head::-webkit-details-marker { display:none; }
-.so-group-head:hover { background:#F6F8FB; }
-.so-items { list-style:none; padding:0 0 6px 0; margin:0; }
-.so-item { display:flex; align-items:center; padding:6px 10px 6px 26px; font-size:12.5px;
-  color:#334155; text-decoration:none; border-radius:8px; }
-.so-item:hover { background:#F6F8FB; color:#0d6efd; }
-.so-item.active { background:rgba(59,130,246,.12); color:#2563eb; font-weight:600; }
 /* Inline object editor (opens in place under the row instead of a new screen) */
 tr.cfg-edit-row > td { background:#F6F8FB; border-top:0; padding:0 !important; }
 .cfg-edit-panel { border-left:3px solid var(--fw-accent,#EF5424); }
@@ -627,30 +623,6 @@ function renderPreview(j) {
   return html;
 }
 </script>
-
-<script nonce="{{ csp_nonce }}">
-// Section sub-menu (.so-menu) accordion — one group open at a time (2026-06-29)
-(function () {
-  var menu = document.querySelector('.so-menu');
-  if (!menu) return;
-  var groups = Array.prototype.slice.call(menu.querySelectorAll('details.so-group'));
-  if (!groups.length) return;
-  // On load, if several are open, keep only the active one (else the first).
-  var open = groups.filter(function (d) { return d.open; });
-  if (open.length > 1) {
-    var act = menu.querySelector('.so-item.active');
-    var keep = act ? act.closest('details.so-group') : groups[0];
-    groups.forEach(function (d) { d.open = (d === keep); });
-  }
-  // Accordion: opening one closes the others.
-  groups.forEach(function (d) {
-    d.addEventListener('toggle', function () {
-      if (d.open) groups.forEach(function (o) { if (o !== d) o.open = false; });
-    });
-  });
-})();
-</script>
-
 
 <script nonce="{{ csp_nonce }}">
 // Capture an existing config object (+ its sub-tables) as a PENDING config

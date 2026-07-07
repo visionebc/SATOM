@@ -103,13 +103,14 @@
     <tbody>
       {% if appliances %}
         {% for a in appliances %}
-        <tr>
+        <tr data-kind="{{ a.kind }}">
           <td>
             <a href="{{ url_for('appliances.detail', id=a.id) }}" class="fw-appliance-name" style="font-size:14px;text-decoration:none;">{{ a.name }}</a>
             {% if a.is_cluster %}<span class="fw-badge fw-badge-secondary ms-1" title="HA cluster ({{ a.ha_mode or 'per_node' }})"><i class="bi bi-diagram-3 me-1"></i>HA · {{ a.members|length }}</span>{% endif %}
+            {% if a.maintenance %}<span class="fw-badge ms-1" style="background:rgba(251,191,36,.15);color:#fbbf24;border:1px solid rgba(251,191,36,.35);" title="Maintenance mode - hidden from operators"><i class="bi bi-tools me-1"></i>Maintenance</span>{% endif %}
           </td>
           <td>
-            <span class="fw-badge fw-badge-secondary">{{ a.kind }}</span>
+            <span class="fw-badge fw-badge-secondary mono" title="{{ a.kind_tooltip }}">{{ a.kind_badge }}</span>
           </td>
           <td class="mono" style="font-size:12.5px;">{{ a.host }}</td>
           <td>{{ a.port }}</td>
@@ -164,10 +165,10 @@
           </td>
         </tr>
         {% if a.is_cluster %}{% for m in a.cluster_members() %}
-        <tr class="fw-member-row" data-member-of="{{ a.id }}" style="background:rgba(148,163,184,0.04);">
+        <tr class="fw-member-row" data-kind="{{ m.kind }}" data-member-of="{{ a.id }}" style="background:rgba(148,163,184,0.04);">
           <td style="padding-left:28px;"><i class="bi bi-arrow-return-right text-muted me-1"></i><a href="{{ url_for('appliances.detail', id=m.id) }}" style="text-decoration:none;font-size:13px;">{{ m.name }}</a>
             {% if m.ha_role_hint %}<span class="fw-tag ms-1">{{ m.ha_role_hint }}</span>{% endif %}</td>
-          <td><span class="fw-badge fw-badge-secondary">member</span></td>
+          <td><span class="fw-badge fw-badge-secondary mono" title="{{ m.kind_tooltip }}">{{ m.kind_badge }}</span></td>
           <td class="mono" style="font-size:12.5px;">{{ m.host }}</td>
           <td>{{ m.port }}</td>
           <td colspan="2"><span class="text-muted small">live role:</span> <span class="fw-tag" data-live-role="{{ m.id }}">…</span></td>
@@ -301,6 +302,14 @@
                 </label>
               </div>
             </div>
+            {% if current_user.can('appliances.view_maintenance') %}
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="maintenance" id="add-maintenance">
+                <label class="form-check-label" for="add-maintenance"><i class="bi bi-tools me-1"></i>Maintenance mode <span class="text-muted">(hidden from operators)</span></label>
+              </div>
+            </div>
+            {% endif %}
             <div class="col-12"><hr class="my-1"></div>
             <div class="col-12">
               <div class="form-check">
@@ -408,6 +417,15 @@
                 <label class="form-check-label" for="edit-verify-ssl">Verify SSL certificate</label>
               </div>
             </div>
+            {% if current_user.can('appliances.view_maintenance') %}
+            <div class="col-12">
+              <input type="hidden" name="maintenance_present" value="1">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="maintenance" id="edit-maintenance">
+                <label class="form-check-label" for="edit-maintenance"><i class="bi bi-tools me-1"></i>Maintenance mode <span class="text-muted">(hidden from operators)</span></label>
+              </div>
+            </div>
+            {% endif %}
           </div>
         </div>
         <div class="modal-footer">
@@ -438,7 +456,7 @@ function filterTable(query) {
   const rows    = document.querySelectorAll('#appliancesTable tbody tr');
   rows.forEach(function (row) {
     const text   = row.textContent.toLowerCase();
-    const rowKind = row.querySelector('td:nth-child(2)')?.textContent.toLowerCase() || '';
+    const rowKind = (row.dataset.kind || '').toLowerCase();
     const show   = text.includes(q) && (kind === '' || rowKind.includes(kind));
     row.style.display = show ? '' : 'none';
   });
@@ -457,6 +475,7 @@ function openEditModal(appliance) {
   setClsSelect('edit-line', appliance.line);
   setClsSelect('edit-department', appliance.department);
   document.getElementById('edit-verify-ssl').checked = appliance.verify_ssl !== false;
+  { const mc = document.getElementById('edit-maintenance'); if (mc) mc.checked = !!appliance.maintenance; }
 
   const form = document.getElementById('formEditAppliance');
   form.action = '/appliances/' + appliance.id + '/edit';

@@ -396,8 +396,140 @@ def all_cert_class_configs() -> dict[str, dict[str, str]]:
     return {c: cert_class_config(c) for c in CERT_CLASSES}
 
 
+# ---- Certificate Manager: issuance protocol (pluggable CA backend) ---------
+# The signing/revocation BACKEND is selectable in the admin console. "adcs"
+# is the classic command-template path (certipy/certreq against a Microsoft
+# CA); "acme" drives an ACME client (certbot/acme.sh/lego) through the same
+# command-template contract, so switching protocol is a Settings change —
+# never a code change. New protocols = a new entry here + a template set.
+K_CERTMGR_PROTOCOL = "certmgr.protocol"
+K_CERTMGR_ACME = "certmgr.acme"
+
+CERT_PROTOCOLS = ("adcs", "acme")
+CERT_PROTOCOL_LABELS = {
+    "adcs": "ADCS / enterprise CA (command template — certipy, certreq…)",
+    "acme": "ACME (RFC 8555 — certbot, acme.sh, lego…)",
+}
+
+# Placeholders usable in the ACME submit/revoke command templates.
+ACME_CMD_TOKENS = (
+    "{bin}", "{directory}", "{email}", "{eab_kid}", "{eab_hmac}",
+    "{challenge}", "{csr}", "{out}", "{cert}", "{serial}",
+)
+
+_CERTMGR_ACME_DEFAULTS = {
+    "bin": "certbot",
+    "directory_url": "",      # {directory} — ACME directory (empty = client default)
+    "account_email": "",      # {email}
+    "eab_kid": "",            # {eab_kid} — External Account Binding key id
+    "challenge": "http-01",   # {challenge} — http-01 | dns-01
+    "submit_cmd": ("{bin} certonly --non-interactive --agree-tos -m {email} "
+                   "--server {directory} --preferred-challenges {challenge} "
+                   "--csr {csr} --cert-path {out} --standalone"),
+    "revoke_cmd": ("{bin} revoke --non-interactive --server {directory} "
+                   "--cert-path {cert} --reason superseded"),
+}
+
+
+def cert_manager_protocol() -> str:
+    p = get_str(K_CERTMGR_PROTOCOL)
+    return p if p in CERT_PROTOCOLS else "adcs"
+
+
+def save_cert_manager_protocol(protocol: str) -> None:
+    if protocol in CERT_PROTOCOLS:
+        set_str(K_CERTMGR_PROTOCOL, protocol)
+
+
+def cert_manager_acme(*, reveal_secret: bool = False) -> dict[str, Any]:
+    """The ACME client config. The EAB HMAC key is stored encrypted; the UI
+    never reveals it (``has_secret`` just means "one is stored")."""
+    raw = get_json(K_CERTMGR_ACME, {})
+    cfg = dict(_CERTMGR_ACME_DEFAULTS)
+    if isinstance(raw, dict):
+        for k in _CERTMGR_ACME_DEFAULTS:
+            if raw.get(k) is not None and str(raw.get(k)).strip():
+                cfg[k] = str(raw.get(k)).strip()
+    cfg["has_secret"] = bool(raw.get("eab_hmac_enc")) if isinstance(raw, dict) else False
+    cfg["eab_hmac"] = (_certmgr_decrypt(raw.get("eab_hmac_enc", ""))
+                       if reveal_secret and isinstance(raw, dict) else "")
+    return cfg
+
+
+def save_cert_manager_acme(values: dict[str, Any]) -> None:
+    """Persist the ACME config. A blank ``eab_hmac`` leaves the stored one."""
+    raw = get_json(K_CERTMGR_ACME, {})
+    out = dict(raw) if isinstance(raw, dict) else {}
+    for k in _CERTMGR_ACME_DEFAULTS:
+        if k in values:
+            out[k] = str(values.get(k) or "").strip()
+    out["bin"] = out.get("bin", "").strip() or "certbot"
+    if out.get("challenge") not in ("http-01", "dns-01"):
+        out["challenge"] = "http-01"
+    secret = values.get("eab_hmac")
+    if secret is not None and str(secret).strip():
+        out["eab_hmac_enc"] = _certmgr_encrypt(str(secret).strip())
+    if values.get("clear_eab_hmac"):
+        out["eab_hmac_enc"] = ""
+    set_json(K_CERTMGR_ACME, out)
+
+
+# ---- Certificate Manager: lifecycle policy (revocation + device cleanup) ---
+# WHEN a superseded certificate gets revoked at the CA, and WHEN old material
+# gets DELETED off the FortiWebs — the retention contract of the whole fleet.
+# The sweep itself lives in services.cert_manager.run_lifecycle_sweep and the
+# ``cert_lifecycle`` scheduled action; it only consumes these values.
+K_CERTMGR_LIFECYCLE = "certmgr.lifecycle"
+
+_CERTMGR_LIFECYCLE_DEFAULTS = {
+    "revoke_on_supersede": True,        # revoke the OLD cert after a swap…
+    "revoke_grace_days": 7,             # …once it has been superseded N days
+    "delete_superseded_after_days": 14, # remove superseded+unbound certs from the box after N days
+    "delete_expired_after_days": 30,    # remove expired+unbound certs after N days past expiry
+    "delete_revoked_from_device": True, # revoked+unbound certs never stay on a box
+    "auto_apply": False,                # scheduled sweep applies (True) or reports-only (False)
+}
+
+
+def cert_lifecycle_policy() -> dict[str, Any]:
+    raw = get_json(K_CERTMGR_LIFECYCLE, {})
+    cfg = dict(_CERTMGR_LIFECYCLE_DEFAULTS)
+    if isinstance(raw, dict):
+        for k, dv in _CERTMGR_LIFECYCLE_DEFAULTS.items():
+            if k not in raw:
+                continue
+            if isinstance(dv, bool):
+                cfg[k] = bool(raw[k])
+            else:
+                try:
+                    cfg[k] = max(0, int(raw[k]))
+                except (TypeError, ValueError):
+                    pass
+    return cfg
+
+
+def save_cert_lifecycle_policy(values: dict[str, Any]) -> None:
+    out = {}
+    for k, dv in _CERTMGR_LIFECYCLE_DEFAULTS.items():
+        v = values.get(k, dv)
+        if isinstance(dv, bool):
+            out[k] = bool(v)
+        else:
+            try:
+                out[k] = max(0, int(v))
+            except (TypeError, ValueError):
+                out[k] = dv
+    set_json(K_CERTMGR_LIFECYCLE, out)
+
+
 def cert_manager_configured() -> bool:
-    """True once the ADCS host + name + at least one class template are set."""
+    """True once the ACTIVE protocol's backend is usable: ADCS needs the CA
+    host + name + enrolment user and at least one class template; ACME needs
+    a directory URL (or a fully custom submit command)."""
+    if cert_manager_protocol() == "acme":
+        a = cert_manager_acme()
+        return bool(a.get("directory_url") or
+                    a.get("submit_cmd") != _CERTMGR_ACME_DEFAULTS["submit_cmd"])
     a = cert_manager_adcs()
     if not (a.get("ca") and a.get("ca_name") and a.get("user")):
         return False

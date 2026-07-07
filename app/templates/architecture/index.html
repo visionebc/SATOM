@@ -15,8 +15,9 @@
   <div>
     <h1 class="fw-page-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>Fleet Map</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      Each Zone, Line (environment) and Department is a colored rectangle; devices are cards with their network summary.
-      Click a device to see policies and objects. Drag to move, Ctrl+wheel to zoom, search an IP to highlight it.
+      Network view of the whole fleet: Internet → published services (VIP:port) → FortiWeb → server pools → back-end servers.
+      Devices start collapsed — click one to unfold its topology. Searching switches to a focused view
+      (zone → device → server policy → backends) so only the matching path is drawn.
     </p>
   </div>
   {% if current %}
@@ -31,102 +32,62 @@
   {% endif %}
 </div>
 
-<!-- Search -->
-<div class="mb-3">
-  <input id="mapSearch" type="text" class="form-control"
-         placeholder="Search IP / device... (highlights where it appears)"
-         style="background:#111a30;border:1px solid rgba(148,163,184,0.18);color:#eaf0fb;border-radius:10px;padding:10px 16px;font-size:14px;">
+{% if total %}
+<!-- Toolbar: search + view controls -->
+<div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+  <input id="mapSearch" type="text" class="form-control fm-search"
+         placeholder="Search device / policy / VIP / WAF / pool / backend ip:port…  (shows a focused result view)">
+  <div class="btn-group fm-toolbtns" role="group">
+    <button id="fmExpand"   type="button" class="btn btn-sm fm-tool" title="Expand every device"><i class="bi bi-arrows-expand"></i> Expand all</button>
+    <button id="fmCollapse" type="button" class="btn btn-sm fm-tool" title="Collapse every device"><i class="bi bi-arrows-collapse"></i> Collapse</button>
+    <button id="fmFit"      type="button" class="btn btn-sm fm-tool" title="Fit diagram to view"><i class="bi bi-aspect-ratio"></i> Fit</button>
+    <button id="fmZoomOut"  type="button" class="btn btn-sm fm-tool" title="Zoom out"><i class="bi bi-dash-lg"></i></button>
+    <button id="fmZoomIn"   type="button" class="btn btn-sm fm-tool" title="Zoom in"><i class="bi bi-plus-lg"></i></button>
+  </div>
 </div>
 
 <!-- Filter pills -->
-<div id="mapFilters" class="mb-2 d-flex flex-wrap gap-2 align-items-center" style="min-height:32px;"></div>
+<div id="mapFilters" class="mb-2 d-flex flex-wrap gap-2 align-items-center" style="min-height:30px;"></div>
 
 <!-- Stats bar -->
-<div id="mapStats" class="mb-3" style="font-size:13px;color:#93a1bd;">
-  {{ total }} device(s) · loading… · drag to move · Ctrl+wheel = zoom · click = detail
-</div>
+<div id="mapStats" class="mb-2" style="font-size:13px;color:#93a1bd;">Loading…</div>
 
-<!-- Canvas viewport -->
-<div id="mapViewport"
-     style="overflow:hidden;width:100%;min-height:580px;background:#080b16;border-radius:14px;
-            border:1px solid rgba(148,163,184,0.08);cursor:grab;position:relative;user-select:none;">
-  <div id="mapCanvas"
-       style="transform-origin:0 0;transform:translate(0px,0px) scale(1);padding:28px;
-              width:max-content;min-width:100%;">
-
-    {% if fleet_map %}
-      {% for zone, lines in fleet_map.items() %}
-        {% set zone_total = namespace(n=0) %}
-        {% for _l, depts in lines.items() %}{% for _d, devs in depts.items() %}{% set zone_total.n = zone_total.n + devs|length %}{% endfor %}{% endfor %}
-        <div class="fm-zone" data-zone="{{ zone }}"
-             style="margin-bottom:22px;border:1.5px solid #333;border-radius:14px;padding:16px 20px 20px;">
-          <div class="d-flex align-items-center mb-3 gap-2">
-            <span class="fm-zpill fm-label-pill">{{ zone }}</span>
-            <span style="color:#93a1bd;font-size:13px;">{{ zone_total.n }} device(s)</span>
-          </div>
-
-          {% for line, depts in lines.items() %}
-            {% set line_total = namespace(n=0) %}
-            {% for _d, devs in depts.items() %}{% set line_total.n = line_total.n + devs|length %}{% endfor %}
-            <div class="fm-line" data-line="{{ line }}"
-                 style="margin-bottom:14px;border:1.5px solid #2a2a2a;border-radius:10px;padding:12px 16px 16px;">
-              <div class="d-flex align-items-center mb-2 gap-2">
-                <span class="fm-lpill fm-label-pill">{{ line }}</span>
-                <span style="color:#93a1bd;font-size:12px;">{{ line_total.n }} device(s)</span>
-              </div>
-
-              {% for dept, devs in depts.items() %}
-                <div class="fm-dept" data-dept="{{ dept }}"
-                     style="margin-bottom:10px;border:1px solid #222;border-radius:8px;padding:10px 12px 14px;">
-                  <div class="d-flex align-items-center mb-2 gap-2">
-                    <span class="fm-dpill fm-label-pill">{{ dept }}</span>
-                    <span style="color:#93a1bd;font-size:12px;">{{ devs|length }}</span>
-                  </div>
-                  <div class="d-flex flex-wrap gap-3">
-                    {% for a in devs %}
-                    <div class="fm-card-wrap" style="position:relative;display:flex;flex-direction:column;">
-                    <a href="{{ url_for('appliances.detail', id=a.id) }}"
-                       class="fm-device-card fm-open-modal text-decoration-none"
-                       data-id="{{ a.id }}"
-                       data-name="{{ a.name|lower }}"
-                       data-host="{{ a.host|lower }}">
-                      <div class="d-flex justify-content-between align-items-start mb-1">
-                        <span style="color:#eaf0fb;font-size:14px;font-weight:700;line-height:1.2;">{{ a.name }}</span>
-                        <span class="fm-status-dot" data-id="{{ a.id }}"></span>
-                      </div>
-                      <div style="color:#93a1bd;font-size:12px;font-family:monospace;margin-bottom:8px;">{{ a.host }}</div>
-                      <div class="d-flex gap-2">
-                        <span class="fm-stat-badge">{{ a.kind }}</span>
-                        <span class="fm-pol-badge" data-id="{{ a.id }}">— pol</span>
-                      </div>
-                    </a>
-                    <form method="post" action="{{ url_for('architecture.select', id=a.id) }}"
-                          class="fm-enter-form" style="margin:6px 0 0;text-align:right;">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <button type="submit" class="btn btn-sm fw-btn-primary"
-                              style="padding:1px 8px;font-size:11px;" title="Enter this device">Enter ▶</button>
-                    </form>
-                    </div>
-                    {% endfor %}
-                  </div>
-                </div>
-              {% endfor %}
-            </div>
-          {% endfor %}
-        </div>
-      {% endfor %}
-    {% else %}
-      <div style="text-align:center;padding:80px 40px;color:#475569;">
-        <div style="font-size:48px;margin-bottom:16px;">🗺</div>
-        <div style="font-size:16px;font-weight:600;color:#93a1bd;">No appliances configured</div>
-        <div style="font-size:13px;margin-top:8px;">
-          Add appliances and assign Zone / Line / Department in
-          <a href="{{ url_for('appliances.index') }}" style="color:#4f8cff;">Appliances</a> to see the fleet map.
-        </div>
-      </div>
-    {% endif %}
+<!-- Diagram viewport -->
+<div id="mapViewport">
+  <svg id="mapSvg" width="100%" height="100%"></svg>
+  <div id="fmTooltip"></div>
+  <div id="fmLegend">
+    <div class="fm-lg-title">LEGEND</div>
+    <div class="fm-lg-row"><span class="fm-lg-swatch" style="border-color:#4f8cff;border-radius:12px;"></span> Published service (VIP:port)</div>
+    <div class="fm-lg-row"><span class="fm-lg-swatch" style="border-color:#22c55e;border-radius:12px;"></span> HTTPS / TLS service</div>
+    <div class="fm-lg-row"><span class="fm-lg-swatch" style="background:linear-gradient(135deg,#3b82f6,#8b5cf6);border:none;"></span> FortiWeb appliance</div>
+    <div class="fm-lg-row"><span class="fm-lg-swatch" style="border-color:#8b5cf6;"></span> Server pool (load balancing)</div>
+    <div class="fm-lg-row"><span class="fm-lg-swatch" style="border-color:#14b8a6;"></span> Back-end servers</div>
+    <div class="fm-lg-row"><span class="fm-lg-line"></span> Traffic path (animated = enabled)</div>
+    <div class="fm-lg-row"><span class="fm-lg-line" style="border-top-style:dashed;border-top-color:#64748b;"></span> Disabled policy</div>
+    <div class="fm-lg-row"><span style="color:#22c55e;">🛡</span> WAF profile attached</div>
   </div>
 </div>
+
+<script type="application/json" id="fmConfig">{{ {
+  'savedFilters': saved_filters or {},
+  'dataUrl': url_for('architecture.map_data'),
+  'filtersUrl': url_for('architecture.save_filters'),
+  'selectBase': url_for('architecture.select', id=0)[:-1],
+  'deviceBase': url_for('architecture.device_detail', id=0)[:-1],
+  'policyBase': url_for('architecture.index') + 'policy/'
+}|tojson }}</script>
+
+{% else %}
+<div style="text-align:center;padding:80px 40px;color:#475569;background:#080b16;border-radius:14px;border:1px solid rgba(148,163,184,0.08);">
+  <div style="font-size:48px;margin-bottom:16px;">🗺</div>
+  <div style="font-size:16px;font-weight:600;color:#93a1bd;">No appliances configured</div>
+  <div style="font-size:13px;margin-top:8px;">
+    Add appliances and assign Zone / Line / Department in
+    <a href="{{ url_for('appliances.index') }}" style="color:#4f8cff;">Appliances</a> to see the fleet map.
+  </div>
+</div>
+{% endif %}
 
 <!-- Read-only device inventory modal -->
 <div class="modal fade" id="deviceModal" tabindex="-1" aria-hidden="true">
@@ -174,349 +135,237 @@
     </div>
   </div>
 </div>
+<!-- Server-policy full-detail modal (all cached data + config deep-links) -->
+<div class="modal fade" id="policyModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content" style="background:#fff;border:1px solid var(--fw-border);color:var(--fw-text-primary);border-radius:var(--fw-radius-lg);">
+      <div class="modal-header" style="border-color:var(--fw-border);background:var(--fw-content-bg);">
+        <div>
+          <h5 class="modal-title" style="color:var(--fw-text-primary);">
+            <i class="bi bi-shield-check me-2" style="color:var(--fw-accent);"></i><span id="pmName">Server policy</span>
+          </h5>
+          <div style="font-size:12px;color:var(--fw-text-secondary);margin-top:2px;">
+            <span id="pmAppl"></span>
+            <span id="pmFresh" class="fm-stat-badge ms-2"></span>
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="pmLoading" class="text-muted py-4 text-center">Loading…</div>
+        <div id="pmContent" class="d-none"></div>
+        <div id="pmError" class="alert alert-danger d-none mb-0"></div>
+      </div>
+      <div class="modal-footer" style="border-color:var(--fw-border);background:var(--fw-content-bg);">
+        <span style="font-size:12px;color:var(--fw-text-secondary);" class="me-auto">
+          <i class="bi bi-database me-1"></i>Data from the device cache — “Configure” links open the live editor.
+        </span>
+        <a id="pmPolicyLink" href="#" class="btn fw-btn-primary btn-sm d-none">
+          <i class="bi bi-gear me-1"></i>Open policy configuration <i class="bi bi-arrow-right ms-1"></i>
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <style nonce="{{ csp_nonce }}">
-.fm-device-card {
+/* ---- toolbar ---- */
+.fm-search {
+  flex: 1 1 320px;
+  max-width: 520px;
   background: #111a30;
-  border: 1px solid rgba(148,163,184,0.12);
+  border: 1px solid rgba(148,163,184,0.18);
+  color: #eaf0fb;
   border-radius: 10px;
-  padding: 12px 14px;
-  min-width: 160px;
-  max-width: 220px;
-  flex: 0 0 auto;
-  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  padding: 9px 16px;
+  font-size: 14px;
 }
-.fm-device-card:hover {
-  border-color: rgba(79,140,255,0.5);
-  box-shadow: 0 0 16px rgba(79,140,255,0.18);
-  transform: translateY(-2px);
+.fm-search:focus {
+  background: #111a30; color: #eaf0fb;
+  border-color: rgba(79,140,255,0.6);
+  box-shadow: 0 0 0 3px rgba(79,140,255,0.15);
 }
-.fm-status-dot {
-  width: 10px; height: 10px;
-  border-radius: 50%;
-  background: #475569;
-  flex-shrink: 0;
-  margin-top: 3px;
-  margin-left: 8px;
+.fm-tool {
+  background: rgba(148,163,184,0.1);
+  color: #cdd7ea;
+  border: 1px solid rgba(148,163,184,0.2);
+  font-size: 12.5px;
 }
-.fm-status-dot.online { background: #22c55e; box-shadow: 0 0 6px #22c55e88; }
-.fm-stat-badge {
-  background: rgba(148,163,184,0.12);
-  color: #93a1bd;
-  border-radius: 10px;
-  padding: 2px 8px;
-  font-size: 11px;
-}
-.fm-pol-badge {
-  background: rgba(79,140,255,0.12);
-  color: #4f8cff;
-  border-radius: 10px;
-  padding: 2px 8px;
-  font-size: 11px;
-}
-.fm-label-pill {
-  border-radius: 20px;
-  padding: 3px 14px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.3px;
-  color: #fff;
-}
+.fm-tool:hover { background: rgba(79,140,255,0.2); color: #fff; border-color: rgba(79,140,255,0.5); }
+.fm-filter-label { color: #93a1bd; font-size: 13px; font-weight: 600; margin-right: 2px; }
 .fm-filter-pill {
-  border-radius: 20px;
-  padding: 3px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  border: 1px solid;
-  transition: background 0.15s;
+  border-radius: 20px; padding: 3px 12px; font-size: 12px; font-weight: 600;
+  cursor: pointer; border: 1px solid; transition: background 0.15s;
 }
 .fm-filter-pill.active { box-shadow: 0 0 8px rgba(255,255,255,0.15); }
+.fm-stat-badge { background: rgba(148,163,184,0.12); color: #93a1bd; border-radius: 10px; padding: 2px 8px; font-size: 11px; }
+
+/* ---- viewport ---- */
+#mapViewport {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  height: calc(100vh - 300px);
+  min-height: 620px;
+  border-radius: 14px;
+  border: 1px solid rgba(148,163,184,0.1);
+  cursor: grab;
+  user-select: none;
+  background:
+    radial-gradient(1200px 500px at 50% -10%, rgba(59,130,246,0.10), transparent 60%),
+    radial-gradient(900px 400px at 85% 110%, rgba(139,92,246,0.08), transparent 60%),
+    #070b15;
+}
+#mapViewport.grabbing { cursor: grabbing; }
+#mapViewport::before {
+  content: '';
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(148,163,184,0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148,163,184,0.045) 1px, transparent 1px);
+  background-size: 34px 34px;
+  pointer-events: none;
+}
+#mapSvg { position: absolute; inset: 0; }
+
+/* ---- svg text ---- */
+#mapSvg text { font-family: 'Inter', system-ui, sans-serif; fill: #eaf0fb; pointer-events: none; }
+.fm-t-cloud  { font-size: 14px; font-weight: 800; letter-spacing: 2.5px; fill: #cfe0ff; }
+.fm-t-dim    { font-size: 10px; fill: #64748b; letter-spacing: 1px; }
+.fm-t-zone   { font-size: 11px; font-weight: 800; letter-spacing: 1px; fill: #ffffff; }
+.fm-t-dev    { font-size: 16px; font-weight: 800; }
+.fm-t-host   { font-size: 11px; font-family: 'SFMono-Regular', Menlo, monospace !important; fill: #93a1bd; }
+.fm-t-chip   { font-size: 10px; font-weight: 700; letter-spacing: 0.4px; }
+.fm-t-fresh  { font-size: 10.5px; fill: #64748b; }
+.fm-t-shield { font-size: 10px; font-weight: 700; fill: #22c55e; }
+.fm-t-btn    { font-size: 10.5px; font-weight: 700; fill: #cdd7ea; }
+.fm-t-vip    { font-size: 12px; font-weight: 700; font-family: Menlo, monospace !important; }
+.fm-t-port   { font-size: 10.5px; fill: #93a1bd; font-family: Menlo, monospace !important; }
+.fm-t-pool   { font-size: 12px; font-weight: 700; }
+.fm-t-dim2   { font-size: 10px; fill: #64748b; }
+.fm-t-beh    { font-size: 9px; font-weight: 800; letter-spacing: 1.5px; fill: #14b8a6; }
+.fm-t-be     { font-size: 11px; font-family: Menlo, monospace !important; fill: #b9c7e4; }
+.fm-t-be.down{ fill: #ef4444; text-decoration: line-through; }
+.fm-t-sdev   { font-size: 13px; font-weight: 800; }
+.fm-t-sdept  { font-size: 10px; fill: #93a1bd; letter-spacing: 0.4px; }
+.fm-behit    { animation: fmpulse 1.1s ease-in-out infinite; }
+.fm-filter-clear { color: #fca5a5 !important; background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.4); }
+.fm-t-subnet { font-size: 10px; font-family: Menlo, monospace !important; fill: #64748b; letter-spacing: 0.5px; }
+
+/* ---- edges ---- */
+.fm-edge {
+  fill: none;
+  stroke: #4f8cff;
+  stroke-width: 1.7;
+  stroke-opacity: 0.55;
+  transition: stroke-opacity .15s, stroke-width .15s;
+}
+.fm-edge.https { stroke: #22c55e; }
+.fm-edge.mon   { stroke: #f59e0b; }
+.fm-edge.off   { stroke: #64748b; stroke-dasharray: 5 6; stroke-opacity: 0.4; }
+.fm-edge.agg   { stroke-width: 2.4; stroke: url(#fmAccent); }
+.fm-edge.flow  { stroke-dasharray: 7 9; animation: fmflow 1.15s linear infinite; }
+@keyframes fmflow { to { stroke-dashoffset: -16; } }
+
+/* ---- hover focus: light the path, dim the rest ---- */
+#mapSvg.focus .fm-edge:not(.hot) { stroke-opacity: 0.08; }
+#mapSvg.focus .fm-node:not(.hot) { opacity: 0.22; }
+#mapSvg.focus .fm-edge.hot { stroke-opacity: 1; stroke-width: 2.6; filter: url(#fmGlow); }
+#mapSvg.focus .fm-node.hot { opacity: 1; }
+.fm-node { transition: opacity .15s; }
+.fm-dev, .fm-btn { cursor: pointer; }
+.fm-btn:hover rect { fill: rgba(79,140,255,0.35); }
+.fm-led { animation: fmled 2.4s ease-in-out infinite; }
+@keyframes fmled { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* ---- search ---- */
+#mapSvg.searching .fm-dimdev { opacity: 0.13; }
+#mapSvg.searching path.fm-dimdev { stroke-opacity: 0.05; }
+.fm-match { animation: fmpulse 1.1s ease-in-out infinite; }
+@keyframes fmpulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+/* ---- tooltip ---- */
+#fmTooltip {
+  display: none;
+  position: absolute;
+  z-index: 30;
+  max-width: 320px;
+  background: rgba(10,16,32,0.96);
+  border: 1px solid rgba(79,140,255,0.35);
+  border-radius: 10px;
+  padding: 10px 13px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #cdd7ea;
+  pointer-events: none;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  backdrop-filter: blur(6px);
+}
+#fmTooltip b { color: #eaf0fb; }
+
+/* ---- legend ---- */
+#fmLegend {
+  position: absolute;
+  left: 14px; bottom: 14px;
+  z-index: 20;
+  background: rgba(10,16,32,0.88);
+  border: 1px solid rgba(148,163,184,0.16);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 11.5px;
+  color: #93a1bd;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+.fm-lg-title { font-size: 9.5px; font-weight: 800; letter-spacing: 1.5px; color: #64748b; margin-bottom: 6px; }
+.fm-lg-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.fm-lg-swatch { display: inline-block; width: 18px; height: 12px; border: 1.5px solid; border-radius: 4px; background: #0f1a33; }
+.fm-lg-line { display: inline-block; width: 18px; border-top: 2px solid #4f8cff; }
+
+/* ---- clickable service nodes ---- */
+.fm-node[data-pk] { cursor: pointer; }
+
+/* ---- policy modal sections ---- */
+.pm-section { margin-bottom: 18px; }
+.pm-sec-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 8px; padding-bottom: 5px;
+  border-bottom: 1px solid var(--fw-border);
+}
+.pm-sec-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .8px; color: var(--fw-text-secondary);
+}
+.pm-cfg-link {
+  font-size: 12px; font-weight: 600; text-decoration: none;
+  color: var(--fw-accent); white-space: nowrap;
+}
+.pm-cfg-link:hover { text-decoration: underline; }
+.pm-kv {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 4px 18px; font-size: 12.5px;
+}
+.pm-kv .k { color: var(--fw-text-secondary); }
+.pm-kv .v { font-family: Menlo, monospace; word-break: break-all; }
+.pm-kv .row2 { display: flex; justify-content: space-between; gap: 10px; padding: 2px 6px; border-radius: 6px; }
+.pm-kv .row2:nth-child(odd) { background: rgba(148,163,184,0.07); }
+.pm-empty-note { font-size: 11.5px; color: var(--fw-text-secondary); margin-top: 6px; }
+.pm-table { font-size: 12.5px; }
+.pm-table th { font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--fw-text-secondary); }
+.pm-table td { font-family: Menlo, monospace; }
+.pm-chip {
+  display: inline-block; border-radius: 12px; padding: 1px 10px;
+  font-size: 11px; font-weight: 700; margin-left: 6px;
+}
+.pm-chip.on  { background: rgba(34,197,94,.15);  color: #16a34a; }
+.pm-chip.off { background: rgba(148,163,184,.2); color: #64748b; }
+
+@media (max-width: 768px) {
+  #fmLegend { display: none; }
+  #mapViewport { height: 70vh; min-height: 480px; }
+}
 </style>
-
-<script nonce="{{ csp_nonce }}">
-// MAP_PALETTE — exact match to canonical desktop theme.py
-const MAP_PALETTE = [
-  "#4f8cff","#8b5cf6","#06b6d4","#10b981",
-  "#f59e0b","#ef4444","#ec4899","#14b8a6",
-  "#a855f7","#84cc16","#f97316","#6366f1",
-  "#0ea5e9","#22c55e","#eab308","#fb7185",
-];
-
-function paletteColor(name) {
-  if (!name || name.startsWith('(no ')) return '#475569';
-  let h = 2166136261;
-  for (let i = 0; i < name.length; i++) {
-    h = (Math.imul(h ^ name.charCodeAt(i), 16777619)) >>> 0;
-  }
-  return MAP_PALETTE[h % MAP_PALETTE.length];
-}
-
-// Apply colors to zones, lines, depts
-document.querySelectorAll('.fm-zone').forEach(el => {
-  const c = paletteColor(el.dataset.zone);
-  el.style.borderColor = c + '55';
-  el.querySelector('.fm-zpill').style.background = c;
-});
-document.querySelectorAll('.fm-line').forEach(el => {
-  const c = paletteColor(el.dataset.line);
-  el.style.borderColor = c + '44';
-  el.querySelector('.fm-lpill').style.background = c;
-});
-document.querySelectorAll('.fm-dept').forEach(el => {
-  const c = paletteColor(el.dataset.dept);
-  el.style.borderColor = c + '33';
-  el.querySelector('.fm-dpill').style.background = c;
-});
-
-// Build filter pills
-function buildFilterPills() {
-  const zones = new Set(), lines = new Set(), depts = new Set();
-  document.querySelectorAll('.fm-zone').forEach(e => zones.add(e.dataset.zone));
-  document.querySelectorAll('.fm-line').forEach(e => lines.add(e.dataset.line));
-  document.querySelectorAll('.fm-dept').forEach(e => depts.add(e.dataset.dept));
-
-  const container = document.getElementById('mapFilters');
-  container.innerHTML = '';
-
-  function addSection(label, items, attr) {
-    const lbl = document.createElement('span');
-    lbl.textContent = label;
-    lbl.style.cssText = 'color:#93a1bd;font-size:13px;font-weight:600;margin-right:2px;';
-    container.appendChild(lbl);
-
-    let active = null;
-    items.forEach(name => {
-      const c = paletteColor(name);
-      const pill = document.createElement('span');
-      pill.textContent = name;
-      pill.className = 'fm-filter-pill';
-      pill.style.cssText = `color:#eaf0fb;background:${c}22;border-color:${c}66;margin-right:4px;`;
-      pill.addEventListener('click', () => {
-        if (active === name) {
-          // deactivate
-          active = null;
-          pill.classList.remove('active');
-          pill.style.background = `${c}22`;
-          document.querySelectorAll(`.fm-${attr}`).forEach(el => el.style.display = '');
-        } else {
-          // activate this one, deactivate others
-          container.querySelectorAll(`.fm-filter-pill`).forEach(p => {
-            if (p.dataset.attr === attr) { p.classList.remove('active'); p.style.background = `${paletteColor(p.dataset.val)}22`; }
-          });
-          active = name;
-          pill.classList.add('active');
-          pill.style.background = `${c}88`;
-          document.querySelectorAll(`.fm-${attr}`).forEach(el => {
-            el.style.display = el.dataset[attr] === name ? '' : 'none';
-          });
-        }
-      });
-      pill.dataset.attr = attr;
-      pill.dataset.val = name;
-      container.appendChild(pill);
-    });
-  }
-
-  addSection('Zones', zones, 'zone');
-  addSection('Lines', lines, 'line');
-  addSection('Depts', depts, 'dept');
-}
-buildFilterPills();
-
-// Search
-document.getElementById('mapSearch').addEventListener('input', function() {
-  const q = this.value.toLowerCase().trim();
-  document.querySelectorAll('.fm-device-card').forEach(card => {
-    const match = !q || card.dataset.name.includes(q) || card.dataset.host.includes(q);
-    card.style.opacity = match ? '1' : '0.15';
-    card.style.transform = (match && q) ? 'translateY(-2px) scale(1.04)' : '';
-  });
-});
-
-// Pan + zoom
-const viewport = document.getElementById('mapViewport');
-const canvas   = document.getElementById('mapCanvas');
-let tx = 0, ty = 0, scale = 1;
-let dragging = false, sx = 0, sy = 0, stx = 0, sty = 0;
-
-function applyT() {
-  canvas.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`;
-}
-viewport.addEventListener('mousedown', e => {
-  if (e.target.closest('a, form, button')) return;
-  dragging = true;
-  sx = e.clientX; sy = e.clientY; stx = tx; sty = ty;
-  viewport.style.cursor = 'grabbing';
-  e.preventDefault();
-});
-document.addEventListener('mousemove', e => {
-  if (!dragging) return;
-  tx = stx + (e.clientX - sx);
-  ty = sty + (e.clientY - sy);
-  applyT();
-});
-document.addEventListener('mouseup', () => { dragging = false; viewport.style.cursor = 'grab'; });
-viewport.addEventListener('wheel', e => {
-  if (!e.ctrlKey) return;
-  e.preventDefault();
-  const rect = viewport.getBoundingClientRect();
-  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-  const delta = e.deltaY > 0 ? 0.9 : 1.1;
-  const ns = Math.min(3, Math.max(0.25, scale * delta));
-  tx = mx - (mx - tx) * (ns / scale);
-  ty = my - (my - ty) * (ns / scale);
-  scale = ns;
-  applyT();
-}, {passive: false});
-
-// Async: populate policy counts + status from /architecture/data
-fetch('/architecture/data')
-  .then(r => r.json())
-  .then(data => {
-    const polCounts = {};
-    const onlineIds = new Set();
-    data.edges.forEach(e => {
-      const aid = e.source.replace('appliance_', '');
-      polCounts[aid] = (polCounts[aid] || 0) + 1;
-    });
-    data.nodes.filter(n => n.type === 'appliance' && !n.offline)
-              .forEach(n => onlineIds.add(n.id.replace('appliance_', '')));
-
-    document.querySelectorAll('.fm-pol-badge').forEach(el => {
-      const cnt = polCounts[el.dataset.id];
-      el.textContent = cnt !== undefined ? `${cnt} pol` : '— pol';
-    });
-    document.querySelectorAll('.fm-status-dot').forEach(el => {
-      if (onlineIds.has(el.dataset.id)) el.classList.add('online');
-    });
-
-    const withTopo = Object.keys(polCounts).length;
-    const total = document.querySelectorAll('.fm-device-card').length;
-    document.getElementById('mapStats').textContent =
-      `${total} device(s) · ${withTopo} with topology · drag to move · Ctrl+wheel = zoom · click = detail`;
-  })
-  .catch(() => {
-    const total = document.querySelectorAll('.fm-device-card').length;
-    document.getElementById('mapStats').textContent =
-      `${total} device(s) · topology unavailable · drag to move · Ctrl+wheel = zoom · click = detail`;
-  });
-</script>
-
-<script nonce="{{ csp_nonce }}">
-// ---- Read-only device inventory modal ----
-(function () {
-  const modalEl = document.getElementById('deviceModal');
-  if (!modalEl || !window.bootstrap) return;
-  const modal = new bootstrap.Modal(modalEl);
-  const $ = (id) => document.getElementById(id);
-  const HW_LABEL = { hardware: 'Hardware', vm: 'Virtual Machine', unknown: 'Unknown' };
-
-  function setText(id, val) {
-    $(id).textContent = (val === null || val === undefined || val === '') ? '—' : val;
-  }
-
-  function open(id) {
-    $('dmLoading').classList.remove('d-none');
-    $('dmContent').classList.add('d-none');
-    $('dmError').classList.add('d-none');
-    $('dmName').textContent = 'Device';
-    modal.show();
-    fetch(`/architecture/device/${id}`, { credentials: 'same-origin' })
-      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then(d => {
-        $('dmName').textContent = d.name || 'Device';
-        setText('dmKind', d.kind);
-        setText('dmHwType', HW_LABEL[d.hw_type] || 'Unknown');
-        setText('dmModel', d.model);
-        setText('dmHost', (d.host || '') + (d.port ? ':' + d.port : ''));
-        setText('dmStatus', d.status);
-        setText('dmVdom', d.vdom);
-        setText('dmZone', d.zone);
-        setText('dmLine', d.line);
-        setText('dmDept', d.department);
-        const dsWrap = $('dmDatasheetWrap');
-        if (d.datasheet_url) { $('dmDatasheet').href = d.datasheet_url; dsWrap.classList.remove('d-none'); }
-        else dsWrap.classList.add('d-none');
-        $('dmDetailLink').href = d.detail_url || '#';
-        const tb = $('dmIfaces'); tb.innerHTML = '';
-        const ifaces = d.interfaces || [];
-        if (ifaces.length === 0) { $('dmNoIfaces').classList.remove('d-none'); }
-        else {
-          $('dmNoIfaces').classList.add('d-none');
-          ifaces.forEach(i => {
-            const tr = document.createElement('tr');
-            [i.name, i.if_type, i.connected_to, i.ip_address, i.notes].forEach((v, idx) => {
-              const td = document.createElement('td');
-              if (idx === 3 && v) { const c = document.createElement('code'); c.textContent = v; td.appendChild(c); }
-              else td.textContent = v || '';
-              tr.appendChild(td);
-            });
-            tb.appendChild(tr);
-          });
-        }
-        $('dmLoading').classList.add('d-none');
-        $('dmContent').classList.remove('d-none');
-      })
-      .catch(err => {
-        $('dmLoading').classList.add('d-none');
-        $('dmError').textContent = 'Could not load device details: ' + err.message;
-        $('dmError').classList.remove('d-none');
-      });
-  }
-
-  document.querySelectorAll('.fm-open-modal').forEach(card => {
-    card.addEventListener('click', (e) => { e.preventDefault(); open(card.dataset.id); });
-  });
-})();
-</script>
-
-<script nonce="{{ csp_nonce }}">
-// ---- device-first: saved filters + modal Enter ----
-(function(){
-  const SAVED = {{ saved_filters|tojson }};
-  const meta = document.querySelector('meta[name="csrf-token"]');
-  const TOKEN = meta ? meta.getAttribute('content') : '';
-
-  // Wire the inventory-modal Enter button to the clicked device.
-  document.querySelectorAll('.fm-device-card').forEach(function(card){
-    card.addEventListener('click', function(){
-      const f = document.getElementById('dmEnterForm');
-      if (f) f.action = '/architecture/select/' + card.dataset.id;
-    });
-  });
-
-  let t=null;
-  function saveFilters(){
-    if(t) clearTimeout(t);
-    t=setTimeout(function(){
-      const active={zone:'',line:'',dept:''};
-      document.querySelectorAll('#mapFilters .fm-filter-pill.active').forEach(function(p){
-        active[p.dataset.attr]=p.dataset.val;
-      });
-      const ms=document.getElementById('mapSearch');
-      fetch('/architecture/filters',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':TOKEN},
-        body:JSON.stringify({zone:active.zone,line:active.line,department:active.dept,text:ms?ms.value:'',status:''})}).catch(function(){});
-    },600);
-  }
-  const mf=document.getElementById('mapFilters');
-  if(mf) mf.addEventListener('click', function(e){ if(e.target.classList.contains('fm-filter-pill')) saveFilters(); });
-  const ms=document.getElementById('mapSearch');
-  if(ms) ms.addEventListener('input', saveFilters);
-
-  // Apply saved filters on load.
-  function clickPill(attr,val){
-    if(!val) return;
-    document.querySelectorAll('#mapFilters .fm-filter-pill').forEach(function(p){
-      if(p.dataset.attr===attr && p.dataset.val===val) p.click();
-    });
-  }
-  if(SAVED){
-    if(SAVED.text && ms){ ms.value=SAVED.text; ms.dispatchEvent(new Event('input')); }
-    clickPill('zone',SAVED.zone); clickPill('line',SAVED.line); clickPill('dept',SAVED.department);
-  }
-})();
-</script>
+<script src="{{ asset('js/fleet_map.js') }}" nonce="{{ csp_nonce }}"></script>
 {% endblock %}

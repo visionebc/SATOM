@@ -297,10 +297,55 @@ def process(req_path):
                       error="%s ; rollback error: %s" % (e, e2))
 
 
+def promote(req_path):
+    """Guarded failover handler (root): promote this node's Postgres standby and
+    bring the app up via deploy/fm-promote.sh. Enqueued by the web UI after a
+    typed-hostname confirmation; never auto-invoked."""
+    req = json.loads(Path(req_path).read_text())
+    uid = req.get("id") or Path(req_path).stem
+    st = Status(uid, req)
+    try:
+        os.remove(req_path)  # dequeue so the .path unit stops re-firing
+    except OSError:
+        pass
+    if not pg_in_recovery():
+        st.step("precheck", False,
+                "local Postgres is NOT a standby (already primary?) — refusing")
+        st.finish("failed", error="not a standby")
+        return
+    script = APP / "deploy" / "fm-promote.sh"
+    st.step("promote standby -> primary", True,
+            "running fm-promote.sh (pg promote + start app)")
+    try:
+        r = subprocess.run(["bash", str(script)], capture_output=True,
+                           text=True, timeout=300)
+    except Exception as e:
+        st.step("fm-promote.sh", False, str(e))
+        st.finish("failed", error=str(e)[:300])
+        return
+    tail = ((r.stdout or "") + (r.stderr or "")).strip()[-500:]
+    ok = (r.returncode == 0) and (not pg_in_recovery())
+    st.step("fm-promote.sh exit %d" % r.returncode, ok, tail)
+    if ok and health_ok():
+        st.step("health check", True, "this node is now the read-write PRIMARY")
+        st.finish("success", rolled_back=False, promoted=True)
+    else:
+        st.finish("failed", rolled_back=False,
+                  error=(r.stderr or "promotion did not complete")[-300:])
+
+
 def main():
     for rp in sorted(glob.glob(str(REQ / "*.json"))):
         try:
-            process(rp)
+            kind = ""
+            try:
+                kind = (json.loads(Path(rp).read_text()) or {}).get("kind", "")
+            except Exception:
+                kind = ""
+            if kind == "promote":
+                promote(rp)
+            else:
+                process(rp)
         except Exception:
             try:
                 os.remove(rp)  # never crash-loop on a malformed request

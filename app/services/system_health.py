@@ -159,6 +159,17 @@ def db_stats() -> dict:
 # Redundancy — device HA clusters + the manager's own footprint
 # ---------------------------------------------------------------------------
 
+def _manager_summary() -> dict:
+    """Real manager-HA health (nodes/roles/streaming/scheduler) — replaces the
+    old hardcoded 'single instance' stub. Lazy import avoids a circular ref."""
+    try:
+        from . import cluster
+        return cluster.manager_summary()
+    except Exception as exc:
+        return {"instances": 1, "standby": False, "scheduler_ok": False,
+                "note": "HA summary unavailable: %s" % str(exc)[:120]}
+
+
 def redundancy() -> dict:
     clusters = []
     standalone = 0
@@ -184,11 +195,5 @@ def redundancy() -> dict:
     return {
         "device_clusters": clusters,
         "device_standalone": standalone,
-        "manager": {
-            "instances": 1,
-            "standby": False,
-            "note": ("Single instance (LXC 248) — no hot standby. Recovery = "
-                     "nightly DB dump + git-published reports."),
-            "scheduler_ok": bool(sched and sched["ok"]),
-        },
+        "manager": _manager_summary(),
     }

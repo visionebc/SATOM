@@ -104,6 +104,66 @@
   </div>
 </div>
 
+<!-- High Availability: replication + failover -->
+<div class="card mb-3">
+  <div class="card-header"><strong><i class="bi bi-diagram-3 me-1"></i>High Availability — database replication &amp; failover</strong></div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-lg-7">
+        <div class="text-muted small mb-1">Streaming replication (live from this node's Postgres)</div>
+        {% set rep = ha.replication %}
+        {% if rep.role == 'primary' %}
+          {% if rep.senders %}
+            <table class="table table-sm mb-2"><thead><tr><th>Replica</th><th>State</th><th>Sync</th><th>WAL lag</th></tr></thead><tbody>
+            {% for s in rep.senders %}
+              <tr><td class="font-monospace small">{{ s.client_addr or '—' }}</td>
+                  <td>{% if s.state=='streaming' %}<span class="badge bg-success">streaming</span>{% else %}<span class="badge bg-warning text-dark">{{ s.state }}</span>{% endif %}</td>
+                  <td class="small">{{ s.sync_state }}</td>
+                  <td class="font-monospace small">{{ s.lag_bytes if s.lag_bytes is not none else '?' }} B</td></tr>
+            {% endfor %}
+            </tbody></table>
+          {% else %}
+            <div class="alert alert-warning small mb-2"><i class="bi bi-exclamation-triangle me-1"></i>
+              This node is PRIMARY but <strong>no replica is connected</strong> — the standby is not streaming.</div>
+          {% endif %}
+        {% elif rep.role == 'standby' and rep.receiver %}
+          <div class="mb-2 small"><span class="badge bg-info text-dark">STANDBY receiving</span>
+            apply lag <span class="font-monospace">{{ rep.receiver.apply_lag_bytes if rep.receiver.apply_lag_bytes is not none else '?' }} B</span>
+            <div class="text-muted">receive {{ rep.receiver.receive_lsn }} · replay {{ rep.receiver.replay_lsn }}</div></div>
+        {% else %}
+          <div class="text-muted small mb-2">No replication data{% if rep.error %} — {{ rep.error }}{% endif %}.</div>
+        {% endif %}
+        <div class="small">Scheduler on this node:
+          {% if ha.scheduler.active %}<span class="badge bg-success">active</span>{% else %}<span class="badge bg-secondary">idle</span>{% endif %}
+          <span class="text-muted">(fires only on the primary)</span></div>
+        <div class="small mt-1">Load balancer health probe: <code>{{ ha.lb_probe }}</code>
+          <span class="text-muted">→ 200 on primary, 503 on standby</span></div>
+      </div>
+      <div class="col-lg-5">
+        <div class="text-muted small mb-1">Manual failover</div>
+        {% if ha.promote_eligible %}
+          <div class="alert alert-danger small mb-2"><i class="bi bi-exclamation-octagon me-1"></i>
+            <strong>Only promote when the current primary is confirmed DOWN.</strong>
+            With no quorum, promoting while the primary is alive creates two primaries (split-brain). Manual by design.</div>
+          <form method="post" action="{{ url_for('self_update.promote') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label class="form-label small mb-1">Type <code>{{ ha.this_node }}</code> to confirm promotion of this node to PRIMARY:</label>
+            <input type="text" name="confirm_host" class="form-control form-control-sm mb-2" autocomplete="off" placeholder="{{ ha.this_node }}">
+            <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-lightning-charge me-1"></i>Promote this node to PRIMARY</button>
+          </form>
+        {% elif ha.this_role == 'primary' %}
+          <div class="alert alert-success small mb-0"><i class="bi bi-shield-check me-1"></i>
+            This node is the PRIMARY. Failover is initiated from the STANDBY node's own Software Update page.</div>
+        {% else %}
+          <div class="text-muted small">Role unknown — cannot offer promotion.</div>
+        {% endif %}
+        {% if ha.last_promote %}<div class="mt-2 small text-muted">Last failover: {{ ha.last_promote.state }} · {{ ha.last_promote.updated_at }}</div>{% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+
 <!-- Live status of the running update -->
 <div id="live-panel" class="card mb-3 d-none"><div class="card-header"><strong>Update in progress</strong>
   <span id="live-state" class="badge bg-secondary ms-2">queued</span></div>
@@ -217,6 +277,35 @@
     }
     poll();
   }
+
+  // --- Promote (failover) status polling (when redirected with ?watch_promote) ---
+  var watchP = {{ watch_promote|tojson }};
+  if (watchP) {
+    var pPanel = document.getElementById('live-panel');
+    var pState = document.getElementById('live-state');
+    var pSteps = document.getElementById('live-steps');
+    if (pPanel) pPanel.classList.remove('d-none');
+    var pdone = false;
+    function pollP() {
+      fetch('/self-update/promote-status/' + encodeURIComponent(watchP), {credentials: 'same-origin'})
+        .then(function (r) { return r.json(); })
+        .then(function (s) {
+          if (pState) { pState.textContent = s.state || 'unknown';
+            pState.className = 'badge ms-2 ' + ({success:'bg-success',failed:'bg-danger',running:'bg-warning text-dark'}[s.state] || 'bg-secondary'); }
+          if (pSteps) { pSteps.innerHTML = '';
+            (s.steps || []).forEach(function (st) { var li = document.createElement('li');
+              li.className = st.ok ? 'text-success' : 'text-danger';
+              li.textContent = st.name + (st.detail ? ' — ' + st.detail : ''); pSteps.appendChild(li); }); }
+          if (s.state === 'success' || s.state === 'failed') {
+            if (!pdone) { pdone = true; setTimeout(function () { window.location = '{{ url_for("self_update.index") }}'; }, 5000); }
+            return; }
+          setTimeout(pollP, 2500);
+        })
+        .catch(function () { setTimeout(pollP, 4000); });
+    }
+    pollP();
+  }
+
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {

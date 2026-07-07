@@ -117,3 +117,35 @@ def promote():
 @require_permission("user_manage")
 def promote_status(uid):
     return jsonify(cluster.promote_status(uid) or {"state": "unknown"})
+
+
+@bp.route("/nodes", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def save_node():
+    """Register / update the secondary HA node from the admin console (writes
+    data/ha_nodes.json; rsync carries it to the peer on the next data sync)."""
+    name = (request.form.get("name") or "").strip()
+    host = (request.form.get("host") or "").strip()
+    desc = (request.form.get("desc") or "").strip()
+    if not name or not host:
+        flash("Both a node name (hostname) and a host/IP are required.", "danger")
+    else:
+        su.upsert_node(name, host, desc)
+        flash("HA node '%s' (%s) saved. It propagates to the peer on the next "
+              "data sync; its live state is probed on this page." % (name, host),
+              "success")
+    return redirect(url_for("self_update.index"))
+
+
+@bp.route("/nodes/delete", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def delete_node():
+    name = (request.form.get("name") or "").strip()
+    if name == su.this_node_name():
+        flash("Cannot remove this node (self) from the HA registry.", "warning")
+    else:
+        su.remove_node(name)
+        flash("HA node '%s' removed from the registry." % name, "info")
+    return redirect(url_for("self_update.index"))

@@ -122,9 +122,18 @@ def self_report() -> dict:
     }
     try:
         from ..models import AppSetting
-        AppSetting.set(_K_NODE_REPORT % this_node_name(), json.dumps(rep))
+        # A standby's Postgres is read-only (the shared settings live on the
+        # primary and replicate one-way), so don't attempt the write there — it
+        # would poison this request's DB session. The primary publishes for all;
+        # a standby's role/health is derived from replication (cluster.full_state).
+        if (rep.get("role") or node_role()) != "standby":
+            AppSetting.set(_K_NODE_REPORT % this_node_name(), json.dumps(rep))
     except Exception:
-        pass
+        try:
+            from ..models import db
+            db.session.rollback()
+        except Exception:
+            pass
     return rep
 
 

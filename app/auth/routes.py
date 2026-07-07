@@ -33,11 +33,19 @@ LOCKOUT_WINDOW = timedelta(minutes=15)
 # ---------------------------------------------------------------------------
 # Sign-in
 # ---------------------------------------------------------------------------
+def _commit_quiet():
+    """Best-effort commit — on the read-only HA standby the write is skipped."""
+    try:
+        db.session.commit()
+    except Exception:  # noqa: BLE001 — replica is read-only; login still proceeds
+        db.session.rollback()
+
+
 def _post_login(user: User, remember: bool):
     """Establish the session + stamp last_login + audit."""
     login_user(user, remember=remember)
     user.last_login = datetime.utcnow()
-    db.session.commit()
+    _commit_quiet()
     log_action('login', target=user.username,
                extra={'source': user.auth_source or 'local'})
 
@@ -107,7 +115,7 @@ def login():
                         'SECURITY: account LOCKED user=%s ip=%s (%d failures)',
                         username, request.remote_addr, LOCKOUT_THRESHOLD)
                     log_action('login.lockout', target=username)
-                db.session.commit()
+                _commit_quiet()
             flash('Invalid username or password.', 'danger')
             return render_template('auth/login.html')
 
@@ -115,7 +123,7 @@ def login():
         if user.failed_logins or user.locked_until:
             user.failed_logins = 0
             user.locked_until = None
-            db.session.commit()
+            _commit_quiet()
 
         # 3) Second factor for local accounts that enabled it.
         if user.is_local and user.totp_enabled:

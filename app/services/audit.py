@@ -52,5 +52,8 @@ def log_action(
         ip_address=ip,
         timestamp=datetime.utcnow(),
     )
-    db.session.add(entry)
-    db.session.commit()
+    try:
+        db.session.add(entry)
+        db.session.commit()
+    except Exception:  # noqa: BLE001 — audit is best-effort (read-only standby)
+        db.session.rollback()

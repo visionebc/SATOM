@@ -1,0 +1,14 @@
+# Privileged self-update runner. Triggered by fortinet-manager-updater.path
+# when data/update-requests/ becomes non-empty. Runs as root (oneshot) so it
+# can install files and restart the web service without the unprivileged
+# gunicorn worker having to restart itself.
+[Unit]
+Description=Fortinet Manager self-update runner (privileged, oneshot)
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/fortinet-manager
+ExecStart=/opt/fortinet-manager/venv/bin/python /opt/fortinet-manager/deploy/self_update_runner.py
+# Runs as root by design (installs unit files, restarts services).
+TimeoutStartSec=1800

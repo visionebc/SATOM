@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}New Virtual Server (guided) — FortiADC{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="{{ url_for('adc.index') }}">FortiADC</a>
+  <span class="separator">/</span>
+  <a href="{{ back }}">Virtual Server</a>
+  <span class="separator">/</span>
+  <span>New (guided)</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-magic me-2 text-accent"></i>New Virtual Server (guided)</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Builds the whole load-balancing chain on <strong>{{ appliance.name }}</strong>
+      in one step.</p>
+  </div>
+  <a class="btn btn-outline-light btn-sm" href="{{ back }}"><i class="bi bi-arrow-left me-1"></i>Back</a>
+</div>
+
+<div class="fw-alert fw-alert-info d-flex align-items-start gap-2 mb-3">
+  <i class="bi bi-info-circle-fill mt-1"></i>
+  <div>A FortiADC virtual server needs a <strong>load-balance pool</strong>, and that pool
+    needs at least one <strong>real server</strong> member. This wizard creates them in the
+    right order — <em>real servers → pool → members → virtual server</em> — so you never hit the
+    bare <code>errcode -56</code>. Preview shows the exact REST calls; nothing touches the device
+    until you click <strong>Create all</strong>. If a step fails mid-chain, the objects already
+    created are rolled back automatically.</div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="fw-card p-3">
+      <h6 class="fw-semibold mb-3">Virtual server</h6>
+      <div class="row g-2">
+        <div class="col-md-6">
+          <label class="form-label fw-label">Name</label>
+          <input class="form-control form-control-sm" id="w-vs-name" placeholder="vs-web-prod">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-label">Pool name (new)</label>
+          <input class="form-control form-control-sm" id="w-pool-name" placeholder="pool-web-prod">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-label">IP address (VIP)</label>
+          <input class="form-control form-control-sm" id="w-address" placeholder="192.0.2.210">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-label">Port</label>
+          <input class="form-control form-control-sm" id="w-port" value="80">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-label">Status</label>
+          <select class="form-select form-select-sm" id="w-status">
+            <option value="enable" selected>enable</option>
+            <option value="disable">disable</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-label">Interface</label>
+          <input class="form-control form-control-sm" id="w-interface" list="dl-interfaces" value="port1">
+          <datalist id="dl-interfaces">
+            {% for o in options.interfaces %}<option value="{{ o }}">{% endfor %}
+          </datalist>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-label">Profile</label>
+          <input class="form-control form-control-sm" id="w-profile" list="dl-profiles" value="LB_PROF_TCP">
+          <datalist id="dl-profiles">
+            {% for o in options.profiles %}<option value="{{ o }}">{% endfor %}
+          </datalist>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-label">LB method</label>
+          <input class="form-control form-control-sm" id="w-method" list="dl-methods" value="LB_METHOD_ROUND_ROBIN">
+          <datalist id="dl-methods">
+            {% for o in options.methods %}<option value="{{ o }}">{% endfor %}
+          </datalist>
+        </div>
+      </div>
+    </div>
+
+    <div class="fw-card p-3 mt-3">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <h6 class="fw-semibold mb-0">Real servers (back-ends)</h6>
+        <button type="button" class="btn btn-outline-light btn-sm" id="w-add-rs">
+          <i class="bi bi-plus-lg me-1"></i>Add server</button>
+      </div>
+      <table class="fw-table" id="w-rs-table">
+        <thead><tr><th>Name</th><th>IP address</th><th style="width:90px;">Port</th>
+          <th style="width:90px;">Weight</th><th style="width:40px;"></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="d-flex gap-2 mt-3">
+      <button type="button" class="btn btn-outline-light" id="w-preview">
+        <i class="bi bi-eye me-1"></i>Preview plan</button>
+      <button type="button" class="btn btn-fw-primary" id="w-create">
+        <i class="bi bi-magic me-1"></i>Create all</button>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="fw-card p-3" id="w-out-card" style="display:none;">
+      <h6 class="fw-semibold mb-2" id="w-out-title">Plan</h6>
+      <div id="w-out"></div>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var APPLY_URL = '{{ url_for('adc.wizard_virtual_server_apply') }}';
+  var BACK = '{{ back }}';
+  var tbody = document.querySelector('#w-rs-table tbody');
+
+  function addRow(name, ip, port, weight) {
+    var tr = document.createElement('tr');
+    function cell(cls, val, ph) {
+      var td = document.createElement('td');
+      var inp = document.createElement('input');
+      inp.className = 'form-control form-control-sm ' + cls;
+      inp.value = val || ''; if (ph) inp.placeholder = ph;
+      td.appendChild(inp); return td;
+    }
+    tr.appendChild(cell('w-rs-name', name, 'rs-web-1'));
+    tr.appendChild(cell('w-rs-addr', ip, '192.0.2.211'));
+    tr.appendChild(cell('w-rs-port', port || '80'));
+    tr.appendChild(cell('w-rs-weight', weight || '1'));
+    var td = document.createElement('td');
+    var del = document.createElement('button');
+    del.type = 'button'; del.className = 'btn btn-sm btn-outline-danger';
+    del.innerHTML = '<i class="bi bi-x"></i>';
+    del.addEventListener('click', function () { tr.remove(); });
+    td.appendChild(del); tr.appendChild(td);
+    tbody.appendChild(tr);
+  }
+  addRow();
+
+  document.getElementById('w-add-rs').addEventListener('click', function () { addRow(); });
+
+  function val(id) { return (document.getElementById(id).value || '').trim(); }
+  function collect() {
+    var servers = [];
+    tbody.querySelectorAll('tr').forEach(function (tr) {
+      var n = tr.querySelector('.w-rs-name').value.trim();
+      var a = tr.querySelector('.w-rs-addr').value.trim();
+      if (!n && !a) return;
+      servers.push({ name: n, address: a,
+        port: tr.querySelector('.w-rs-port').value.trim(),
+        weight: tr.querySelector('.w-rs-weight').value.trim() });
+    });
+    return {
+      vs_name: val('w-vs-name'), pool_name: val('w-pool-name'),
+      address: val('w-address'), port: val('w-port'), status: val('w-status'),
+      interface: val('w-interface'), profile: val('w-profile'), method: val('w-method'),
+      real_servers: servers
+    };
+  }
+
+  var card = document.getElementById('w-out-card');
+  var out = document.getElementById('w-out');
+  var title = document.getElementById('w-out-title');
+
+  function show() { card.style.display = ''; }
+  function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+
+  function renderErrors(errors) {
+    show(); title.textContent = 'Cannot proceed';
+    out.innerHTML = '<div class="fw-alert fw-alert-danger"><ul class="mb-0">' +
+      errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul></div>';
+  }
+  function renderPlan(steps) {
+    show(); title.textContent = 'Plan — ' + steps.length + ' REST call(s)';
+    out.innerHTML = steps.map(function (s, i) {
+      return '<div class="mb-2" style="font-size:12px;">' +
+        '<div class="fw-semibold">' + (i + 1) + '. ' + esc(s.label) + '</div>' +
+        '<div class="text-muted"><code>' + esc(s.method) + ' ' + esc(s.path) + '</code></div>' +
+        '<pre style="font-size:11px;margin:2px 0 0;">' + esc(JSON.stringify(s.body)) + '</pre></div>';
+    }).join('') + '<div class="text-muted" style="font-size:12px;">Nothing sent yet — click <strong>Create all</strong> to apply.</div>';
+  }
+  function renderCreated(j) {
+    show(); title.textContent = 'Created';
+    out.innerHTML = '<div class="fw-alert fw-alert-success">Virtual server <strong>' +
+      esc(j.vs_name) + '</strong> and ' + j.created.length + ' object(s) created.</div>' +
+      '<ul style="font-size:12px;">' + j.created.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul>' +
+      '<a class="btn btn-fw-primary btn-sm" href="' + BACK + '">See it in the list</a>';
+  }
+  function renderApplyFail(j) {
+    show(); title.textContent = 'Failed';
+    var rolled = (j.rolled_back && j.rolled_back.length)
+      ? '<div class="text-muted" style="font-size:12px;">Rolled back: ' + j.rolled_back.map(esc).join(', ') + '</div>' : '';
+    out.innerHTML = '<div class="fw-alert fw-alert-danger">Failed at: <strong>' + esc(j.failed_step) +
+      '</strong><br>' + esc(j.error) + '</div>' + rolled;
+  }
+
+  function send(apply, btn) {
+    var body = collect(); body.apply = apply;
+    btn.disabled = true;
+    fetch(APPLY_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (j) { return { s: r.status, j: j }; }); })
+      .then(function (res) {
+        var j = res.j;
+        if (!j.ok) {
+          if (j.errors) renderErrors(j.errors);
+          else if (j.failed_step) renderApplyFail(j);
+          else renderErrors([j.error || 'unknown error']);
+          return;
+        }
+        if (j.dry_run) renderPlan(j.steps);
+        else renderCreated(j);
+      })
+      .catch(function (e) { renderErrors([String(e)]); })
+      .finally(function () { btn.disabled = false; });
+  }
+
+  document.getElementById('w-preview').addEventListener('click', function () { send(false, this); });
+  document.getElementById('w-create').addEventListener('click', function () {
+    if (!confirm('Create the pool, real servers and virtual server on the device now?')) return;
+    send(true, this);
+  });
+})();
+</script>
+{% endblock %}

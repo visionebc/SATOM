@@ -420,3 +420,115 @@ def object_delete(logical):
         return jsonify(ok=False, error=str(exc)), 502
     log_action('adc.delete', target=f'{logical}/{mkey}', appliance_id=appliance.id)
     return jsonify(ok=True)
+
+
+# --------------------------------------------------------------------------- #
+#  Guided "New virtual server" wizard — build the whole LB chain in one form.   #
+#  A FortiADC VS needs a pool, and the pool needs a real-server member; this    #
+#  creates real servers -> pool -> members -> VS bottom-up (dry-run default),   #
+#  with a pre-existence guard and best-effort ROLLBACK on a mid-chain failure   #
+#  so a partial run never leaves orphans on the box.                            #
+# --------------------------------------------------------------------------- #
+def _adc_options(appliance):
+    out = {'interfaces': [], 'profiles': [], 'methods': []}
+    if appliance is None:
+        return out
+    try:
+        c = FortiADCClient(appliance)
+    except Exception:  # noqa: BLE001
+        return out
+    for key, logical in (('interfaces', 'system_interface'),
+                         ('profiles', 'load_balance_profile'),
+                         ('methods', 'load_balance_method')):
+        try:
+            rows, _err = c.list_with_error(logical)
+            out[key] = sorted({str(_mkey_of(r)) for r in rows
+                               if isinstance(r, dict) and _mkey_of(r)})
+        except Exception:  # noqa: BLE001
+            pass
+    return out
+
+
+def _wizard_conflicts(client, steps):
+    """Names among the plan's top-level objects that ALREADY exist on the box."""
+    conflicts, seen = [], {}
+    for st in steps:
+        if st['kind'] != 'object':
+            continue
+        logical = st['logical']
+        if logical not in seen:
+            rows, _e = client.list_with_error(logical)
+            seen[logical] = {str(_mkey_of(r)) for r in rows if isinstance(r, dict)}
+        if st['mkey'] in seen[logical]:
+            conflicts.append(st['mkey'])
+    return conflicts
+
+
+def _wizard_rollback(client, created):
+    """Best-effort reverse delete of what THIS run created (avoid orphans)."""
+    done = []
+    for logical, mkey, pkey in reversed(created):
+        try:
+            client.delete(logical, mkey, pkey=pkey) if pkey else client.delete(logical, mkey)
+            done.append(mkey)
+        except Exception:  # noqa: BLE001
+            pass
+    return done
+
+
+@bp.route('/wizard/virtual-server')
+@login_required
+def wizard_virtual_server():
+    appliance = _current_adc()
+    if appliance is None:
+        return redirect(url_for('adc.index'))
+    back = request.args.get('back') or url_for('adc.index')
+    return render_template('adc/wizard_vs.html', appliance=appliance,
+                           options=_adc_options(appliance), back=back)
+
+
+@bp.route('/wizard/virtual-server', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def wizard_virtual_server_apply():
+    appliance = _current_adc()
+    if appliance is None:
+        return jsonify(ok=False, error='no FortiADC selected'), 400
+    body = request.get_json(silent=True) or {}
+    do_apply = bool(body.get('apply'))
+    steps, errors = adc_objform.build_virtual_server_plan(body)
+    if errors:
+        return jsonify(ok=False, errors=errors), 400
+    client = FortiADCClient(appliance)
+    conflicts = _wizard_conflicts(client, steps)
+    if conflicts:
+        return jsonify(ok=False, errors=['Already on the device: ' + ', '.join(conflicts)
+                       + ' — pick different names.']), 409
+    if not do_apply:
+        preview = []
+        for st in steps:
+            path = client._resolve(st['logical'])
+            if st.get('pkey'):
+                path += '?pkey=' + st['pkey']
+            preview.append({'label': st['label'], 'method': 'POST',
+                            'path': path, 'body': st['payload']})
+        return jsonify(ok=True, dry_run=True, steps=preview)
+    created = []
+    for st in steps:
+        try:
+            if st['kind'] == 'child':
+                client.create(st['logical'], st['payload'], pkey=st['pkey'])
+                created.append((st['logical'], st['mkey'], st['pkey']))
+            else:
+                client.create(st['logical'], st['payload'])
+                created.append((st['logical'], st['mkey'], None))
+        except (FortiADCError, Exception) as exc:  # noqa: BLE001
+            rolled = _wizard_rollback(client, created)
+            return jsonify(ok=False, failed_step=st['label'], error=str(exc),
+                           created=[c[1] for c in created],
+                           rolled_back=rolled), 502
+    vs_name = str(body.get('vs_name', '')).strip()
+    log_action('adc.wizard_create', target='virtual_server/%s' % vs_name,
+               detail={'objects': len(created)}, appliance_id=appliance.id)
+    return jsonify(ok=True, dry_run=False, vs_name=vs_name,
+                   created=[c[1] for c in created])

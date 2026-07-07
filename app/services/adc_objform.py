@@ -282,8 +282,109 @@ def create_field_groups(logical: str, sample: dict | None = None) -> list[dict]:
     return [{"title": "Settings", "fields": fields}] if fields else []
 
 
+
+# --------------------------------------------------------------------------- #
+#  Guided "new virtual server" wizard — PURE plan builder                       #
+# --------------------------------------------------------------------------- #
+# A FortiADC virtual server can't exist without a load-balance pool, and a pool
+# needs a real-server member (verified live: a VS create with no pool is refused
+# errcode -56; the whole real-server -> pool -> member -> VS chain creates at
+# errcode 0 over REST). This turns one wizard form into the ordered list of REST
+# creates that builds the whole chain BOTTOM-UP, so the operator never hits the
+# blind -56 nor has to hop between four create screens. Pure: no device I/O —
+# the view executes the steps (with a pre-existence guard + rollback-on-error).
+import ipaddress as _ipaddress
+
+
+def _ip_ok(v) -> bool:
+    try:
+        _ipaddress.ip_address(str(v).strip())
+        return True
+    except ValueError:
+        return False
+
+
+def build_virtual_server_plan(spec: dict):
+    """(steps, errors) — steps are ordered REST creates (real servers -> pool ->
+    members -> virtual server); errors is a list of human validation messages
+    (non-empty => do not execute). No network access."""
+    spec = spec or {}
+    errors: list = []
+    vs_name = str(spec.get('vs_name', '')).strip()
+    pool_name = str(spec.get('pool_name', '')).strip()
+    address = str(spec.get('address', '')).strip()
+    port = str(spec.get('port', '') or '80').strip()
+    interface = str(spec.get('interface', '') or 'port1').strip()
+    profile = str(spec.get('profile', '') or 'LB_PROF_TCP').strip()
+    method = str(spec.get('method', '') or 'LB_METHOD_ROUND_ROBIN').strip()
+    status = ('disable' if str(spec.get('status', 'enable')).strip().lower()
+              == 'disable' else 'enable')
+    servers = spec.get('real_servers') or []
+    if not isinstance(servers, list):
+        servers = []
+
+    if not vs_name:
+        errors.append('Virtual server name is required.')
+    if not pool_name:
+        errors.append('Pool name is required.')
+    if not address:
+        errors.append('Virtual server IP address is required.')
+    elif not _ip_ok(address):
+        errors.append('Virtual server IP "%s" is not a valid IP.' % address)
+
+    clean: list = []
+    for i, srv in enumerate(servers, 1):
+        if not isinstance(srv, dict):
+            continue
+        nm = str(srv.get('name', '')).strip()
+        ad = str(srv.get('address', '')).strip()
+        if not nm and not ad:
+            continue  # blank row — skip
+        if not nm:
+            errors.append('Real server #%d: name is required.' % i)
+        if not ad:
+            errors.append('Real server #%d: IP address is required.' % i)
+        elif not _ip_ok(ad):
+            errors.append('Real server #%d: "%s" is not a valid IP.' % (i, ad))
+        clean.append({'name': nm, 'address': ad,
+                      'port': str(srv.get('port', '') or '80').strip(),
+                      'weight': str(srv.get('weight', '') or '1').strip()})
+    if not clean:
+        errors.append('At least one real server (back-end) is required.')
+    names = [c['name'] for c in clean if c['name']]
+    if len(names) != len(set(names)):
+        errors.append('Real server names must be unique within the batch.')
+
+    steps: list = []
+    for c in clean:
+        steps.append({'kind': 'object', 'logical': 'load_balance_real_server',
+                      'mkey': c['name'],
+                      'payload': {'mkey': c['name'], 'address': c['address'],
+                                  'status': 'enable'},
+                      'label': 'Real server %s (%s)' % (c['name'], c['address'])})
+    steps.append({'kind': 'object', 'logical': 'load_balance_pool',
+                  'mkey': pool_name, 'payload': {'mkey': pool_name},
+                  'label': 'Load-balance pool %s' % pool_name})
+    for idx, c in enumerate(clean, 1):
+        steps.append({'kind': 'child',
+                      'logical': 'load_balance_pool_child_pool_member',
+                      'pkey': pool_name, 'mkey': str(idx),
+                      'payload': {'mkey': str(idx), 'real_server_id': c['name'],
+                                  'port': c['port'], 'weight': c['weight'],
+                                  'status': 'enable'},
+                      'label': 'Pool member %d -> %s' % (idx, c['name'])})
+    steps.append({'kind': 'object', 'logical': 'load_balance_virtual_server',
+                  'mkey': vs_name,
+                  'payload': {'mkey': vs_name, 'interface': interface,
+                              'address': address, 'port': port,
+                              'profile': profile, 'method': method,
+                              'pool': pool_name, 'status': status},
+                  'label': 'Virtual server %s (%s:%s)' % (vs_name, address, port)})
+    return steps, errors
+
 __all__ = [
     "known_logicals", "is_known", "subtables_for", "invalidate", "is_noise",
     "descriptor", "field_groups", "row_label", "blank_row_sample", "object_form",
     "CREATE_FIELDS", "required_fields", "create_hint", "create_field_groups",
+    "build_virtual_server_plan",
 ]

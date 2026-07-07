@@ -49,3 +49,41 @@
 * No curated list columns (columns derive from the live payload).
 * Candidate next steps once verified: field-spec catalog, DB-first cache,
   objedit-style forms, backups/upgrade runbook parity.
+
+
+## Virtual server dependency chain + create-field seed (verified live, fadc 8.0.3, 2026-07-07)
+
+A FortiADC **virtual server** is NOT a flat "name + IP" object — the device
+refuses a create that has no load-balance pool, and the pool needs a real-server
+member. Full chain (create in this order):
+
+```
+load_balance_real_server   (address = back-end IP)                 <- create 1st
+load_balance_pool          (owns pool_member child rows)           <- create 2nd
+  child load_balance_pool_child_pool_member
+        (real_server_id = <real server name>, NOT inline ip:port)   <- add member
+load_balance_virtual_server(pool = <pool name>, interface, address,
+        port, profile=LB_PROF_*, method=LB_METHOD_*)                <- create last
+```
+
+**REST field names differ from the CLI tokens** (verified by reading the live
+objects, not guessed): the VS's pool is **`pool`** (CLI `set load-balance-pool`),
+a member references its real server by **`real_server_id`** (CLI
+`set real-server`), the member port is `port`. A VS create with no `pool`
+returns bare **errcode -56** ("Empty value isn't allowed") naming no field.
+
+**Create-form guard (`app/services/adc_objform.py`).** A blank create form
+derives its fields from sibling objects, so on a fresh box (0 siblings) it was
+just the Name box and any create -56'd. `CREATE_FIELDS` now seeds the
+create-critical fields (with defaults) for `load_balance_virtual_server`,
+`load_balance_real_server`, and the `..._child_pool_member` child table;
+`create_field_groups()` renders them, `required_fields()` lists the REST keys the
+device requires, and `create_hint()` shows the dependency chain atop the form.
+`app/views/adc.py` (`form_create_object` / `form_save_row`) **validates the
+required fields BEFORE the device call** → a clear `400 "Missing required
+field(s): pool"` instead of a blind -56. The create form/child-row JS
+(`adc/object.html`) sends every non-empty seeded field on create (`collectAll`,
+not the diff-only `collectChanged`). Verified live on fadc 8.0.3: form renders
+the pool field + hint; no-pool create blocked 400; with-pool create dry-runs
+correctly. Adding a new required object = one `CREATE_FIELDS` entry (tests:
+`tests/test_adc_create_seed.py`).

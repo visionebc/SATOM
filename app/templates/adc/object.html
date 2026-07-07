@@ -51,6 +51,7 @@
       <div class="form-text">The object's unique identity. Child tables (members, rules…)
         are added after it's created.</div>
     </div>
+    {% if create_hint %}<div class="alert alert-info py-2 px-3 mb-3" style="font-size:12.5px;max-width:640px;"><i class="bi bi-info-circle me-1"></i>{{ create_hint }}</div>{% endif %}
     {% endif %}
     {% for sec in obj_groups %}
       {% if sec.fields and sec.fields[0].widget == 'complex' %}
@@ -180,6 +181,17 @@
     });
     return out;
   }
+  // On CREATE we send every non-empty seeded field (not just changed ones):
+  // a create needs the full desired object, and seeded defaults have
+  // data-orig == value so collectChanged would drop them.
+  function collectAll(scope) {
+    var out = {};
+    scope.querySelectorAll('.fw-input').forEach(function (el) {
+      var k = el.dataset.key; if (!k) return;
+      if (el.value != null && el.value !== '') out[k] = el.value;
+    });
+    return out;
+  }
   function post(url, payload) {
     return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload) }).then(function (r) { return r.json(); });
@@ -219,7 +231,7 @@
     var nameEl = document.getElementById('adc-new-name');
     var name = (nameEl ? nameEl.value : '').trim();
     if (!name) { el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">Name is required.</div>'; if (nameEl) nameEl.focus(); return; }
-    var base = { logical: LOGICAL, mkey: name, fields: collectChanged(scope) };
+    var base = { logical: LOGICAL, mkey: name, fields: collectAll(scope) };
     post(ep('create-object'), base).then(function (j) {
       show(el, j, function () {
         post(ep('create-object'), Object.assign({}, base, { apply: true })).then(function (j2) {
@@ -235,7 +247,8 @@
   }
   function rowBase(scope) {
     return { logical: scope.dataset.logical, pkey: scope.dataset.pkey,
-             sub_mkey: scope.dataset.subMkey || '', fields: collectChanged(scope) };
+             sub_mkey: scope.dataset.subMkey || '',
+             fields: (scope.dataset.subMkey ? collectChanged(scope) : collectAll(scope)) };
   }
   function rowEp(scope, action) {
     return '/adc/obj/' + encodeURIComponent(scope.dataset.logical) + '/' + action;

@@ -182,7 +182,108 @@ def object_form(logical: str, obj: dict) -> dict[str, Any]:
     }
 
 
+# --------------------------------------------------------------------------- #
+#  Create-field seeds — verified live off fadc 8.0.3                           #
+# --------------------------------------------------------------------------- #
+# A blank create form derives its fields from sibling objects (union of scalar
+# keys). When a type has ZERO existing objects (a fresh box) that union is empty
+# and the form is just the Name box, so the device rejects the create with a
+# bare errcode -56 ("Empty value isn't allowed") naming no field. These seeds
+# render the create-critical fields (with sane defaults) up front and let the
+# view enforce the REQUIRED ones BEFORE the device call, so the operator gets a
+# clear message, not a blind -56. Wire keys are REST field names VERIFIED LIVE
+# on fadc 8.0.3 (NOT the CLI tokens: a virtual server's pool is `pool`, not
+# `load-balance-pool`; a pool member references its real server by
+# `real_server_id`, not inline ip:port).
+CREATE_FIELDS: dict[str, tuple[dict, ...]] = {
+    "load_balance_virtual_server": (
+        {"key": "interface", "label": "Interface", "widget": "text",
+         "default": "port1"},
+        {"key": "address", "label": "IP Address (VIP)", "widget": "text",
+         "default": ""},
+        {"key": "port", "label": "Port", "widget": "text", "default": "80"},
+        {"key": "profile", "label": "Profile", "widget": "text",
+         "default": "LB_PROF_TCP"},
+        {"key": "method", "label": "LB Method", "widget": "text",
+         "default": "LB_METHOD_ROUND_ROBIN"},
+        {"key": "pool", "label": "Load-Balance Pool", "widget": "text",
+         "default": "", "required": True,
+         "help": "Name of an existing Load-Balance Pool. FortiADC rejects a "
+                 "virtual server with no pool (errcode -56)."},
+        {"key": "status", "label": "Status", "widget": "toggle",
+         "default": "enable"},
+    ),
+    "load_balance_real_server": (
+        {"key": "address", "label": "IP Address", "widget": "text",
+         "default": "", "required": True, "help": "Back-end server IP."},
+        {"key": "status", "label": "Status", "widget": "toggle",
+         "default": "enable"},
+    ),
+    "load_balance_pool_child_pool_member": (
+        {"key": "real_server_id", "label": "Real Server", "widget": "text",
+         "default": "", "required": True,
+         "help": "Name of an existing Real Server object — a pool member "
+                 "references a real server, it is NOT an inline ip:port."},
+        {"key": "port", "label": "Port", "widget": "text", "default": "80"},
+        {"key": "weight", "label": "Weight", "widget": "text", "default": "1"},
+        {"key": "status", "label": "Status", "widget": "toggle",
+         "default": "enable"},
+    ),
+}
+
+# Human hint shown atop a blank create form (the dependency chain), by logical.
+CREATE_HINTS: dict[str, str] = {
+    "load_balance_virtual_server":
+        "A FortiADC virtual server needs a Load-Balance Pool, and that pool "
+        "needs a Real Server member. Create them in order: Real Server -> Pool "
+        "(add the member) -> Virtual Server (point it at the pool). A VS with "
+        "no pool is refused by the device (errcode -56).",
+    "load_balance_pool_child_pool_member":
+        "A pool member references an existing Real Server by name "
+        "(real_server_id) — create the Real Server first.",
+}
+
+
+def required_fields(logical: str) -> set:
+    """REST keys the device requires for a create of ``logical`` (verified)."""
+    return {f["key"] for f in CREATE_FIELDS.get((logical or "").strip(), ())
+            if f.get("required")}
+
+
+def create_hint(logical: str) -> str:
+    return CREATE_HINTS.get((logical or "").strip(), "")
+
+
+def create_field_groups(logical: str, sample: dict | None = None) -> list[dict]:
+    """Field groups for a BLANK create form: the curated seed (authoritative —
+    carries defaults / required / help) FIRST, then any extra scalar keys the
+    live siblings expose that the seed does not already cover."""
+    logical = (logical or "").strip()
+    seed = CREATE_FIELDS.get(logical, ())
+    fields: list[dict] = []
+    seen: set = set()
+    for f in seed:
+        d = descriptor(f["key"], f.get("default", ""))
+        d["label"] = f.get("label") or d["label"]
+        if f.get("widget"):
+            d["widget"] = f["widget"]
+        if d["widget"] == "toggle":
+            d["on"] = str(f.get("default", "")).strip().lower() == "enable"
+            d["value"] = "enable" if d["on"] else "disable"
+        d["required"] = bool(f.get("required"))
+        if f.get("help"):
+            d["help"] = f["help"]
+        fields.append(d)
+        seen.add(f["key"])
+    for key in sorted(sample or {}):
+        if key in seen or is_noise(key):
+            continue
+        fields.append(descriptor(key, sample[key]))
+    return [{"title": "Settings", "fields": fields}] if fields else []
+
+
 __all__ = [
     "known_logicals", "is_known", "subtables_for", "invalidate", "is_noise",
     "descriptor", "field_groups", "row_label", "blank_row_sample", "object_form",
+    "CREATE_FIELDS", "required_fields", "create_hint", "create_field_groups",
 ]

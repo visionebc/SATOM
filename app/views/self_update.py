@@ -13,6 +13,7 @@ from flask_login import login_required, current_user
 
 from ..auth.decorators import require_permission
 from ..services import self_update as su
+from ..services import cluster
 
 bp = Blueprint("self_update", __name__, url_prefix="/self-update")
 
@@ -32,6 +33,8 @@ def index():
         validated=su.validated_state(),
         history=su.recent_updates(),
         branch=su.BRANCH,
+        ha=cluster.full_state(),
+        watch_promote=request.args.get("watch_promote", ""),
         watch=request.args.get("watch", ""),
     )
 
@@ -83,3 +86,34 @@ def status(uid):
     if st:
         su.reconcile_interlock(st)  # unlock the primary once the standby validated
     return jsonify(st or {"state": "unknown"})
+
+
+@bp.route("/promote", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def promote():
+    """Guarded MANUAL failover: promote THIS node's Postgres to primary. Enqueue
+    only — the privileged runner runs fm-promote.sh. Requires typing the node's
+    hostname to confirm; only valid on a standby."""
+    confirm = (request.form.get("confirm_host") or "").strip()
+    this_node = su.this_node_name()
+    if not cluster.promote_eligible():
+        flash("This node is not a standby — promotion is only valid on the node "
+              "currently in recovery.", "warning")
+        return redirect(url_for("self_update.index"))
+    if confirm != this_node:
+        flash("Confirmation failed: type this node's hostname (%s) exactly to "
+              "promote it." % this_node, "danger")
+        return redirect(url_for("self_update.index"))
+    uid = cluster.request_promote(by=getattr(current_user, "username", "?"))
+    flash("Failover queued (%s). The privileged runner is promoting this node to "
+          "PRIMARY and starting the app — watch the status below. Only promote "
+          "when the old primary is confirmed DOWN." % uid, "success")
+    return redirect(url_for("self_update.index", watch_promote=uid))
+
+
+@bp.route("/promote-status/<uid>")
+@login_required
+@require_permission("user_manage")
+def promote_status(uid):
+    return jsonify(cluster.promote_status(uid) or {"state": "unknown"})

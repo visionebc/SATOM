@@ -30,7 +30,6 @@ import io
 import json
 from typing import Any
 
-from ..clients.fortiweb import FortiWebClient
 from ..models import Appliance
 from .cache import cache_get, cache_set
 
@@ -196,12 +195,15 @@ def _as_list(raw: Any) -> list:
     return []
 
 
-def _fortiweb_appliances() -> list[Appliance]:
-    """FortiWeb appliances visible to this session (product + maintenance
-    scoped), name-sorted. In the ADC ADOM this is empty by construction."""
+def _scoped_appliances() -> list[Appliance]:
+    """Appliances visible to this session, product- + maintenance-scoped,
+    name-sorted. ``visible_appliances`` already applies the ADOM product rule
+    (FortiADC -> only fortiadc, FortiWeb -> everything except fortiadc, Global ->
+    all), so this is genuinely per-product: the Global ADOM sees the whole fleet
+    (both kinds) and each product ADOM sees only its own devices. NO hardcoded
+    kind filter -- that made Global FortiWeb-only and mislabelled the scope."""
     from ..models import visible_appliances
-    rows = visible_appliances().order_by(Appliance.name).all()
-    return [a for a in rows if (a.kind or "fortiweb") == "fortiweb"]
+    return visible_appliances().order_by(Appliance.name).all()
 
 
 # DB-FIRST: each fleet type maps to one or more cached logical names in the
@@ -261,7 +263,7 @@ def collect_objects(type_key: str) -> tuple[list[dict], list[dict]]:
     spec = TYPES[type_key]
     rows: list[dict] = []
     errors: list[dict] = []
-    for appl in _fortiweb_appliances():
+    for appl in _scoped_appliances():
         try:
             objs = _fetch_objects(appl, spec)
         except Exception as exc:  # noqa: BLE001 — one dead device must not 500
@@ -287,7 +289,7 @@ def collect_search(q: str) -> tuple[list[dict], list[dict]]:
     errors: list[dict] = []
     if not needle:
         return rows, errors
-    for appl in _fortiweb_appliances():
+    for appl in _scoped_appliances():
         try:
             per_section = {tk: _fetch_objects(appl, TYPES[tk]) for tk in SEARCH_SECTIONS}
         except Exception as exc:  # noqa: BLE001 — skip unreachable device

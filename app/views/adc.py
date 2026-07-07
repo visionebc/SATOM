@@ -159,7 +159,7 @@ def object_detail(logical):
         except Exception:  # noqa: BLE001
             rows = []
         sample = adc_objform.blank_row_sample(rows[:3])
-        obj_groups = adc_objform.field_groups(sample)
+        obj_groups = adc_objform.create_field_groups(logical, sample)
         subtables = []
     else:
         obj_groups = adc_objform.field_groups(data)
@@ -185,6 +185,7 @@ def object_detail(logical):
                            logical=logical, mkey=mkey, create=create,
                            data=data, error=error, back=back,
                            obj_groups=obj_groups, subtables=subtables,
+                           create_hint=(adc_objform.create_hint(logical) if create else ''),
                            data_json=json.dumps(data, indent=2, ensure_ascii=False))
 
 
@@ -268,6 +269,11 @@ def form_create_object(logical):
     mkey = (body.get('mkey') or '').strip()
     if not mkey:
         return jsonify(ok=False, error='name (mkey) required'), 400
+    missing = [k for k in adc_objform.required_fields(logical)
+               if not str(fields.get(k, '')).strip()]
+    if missing:
+        return jsonify(ok=False,
+                       error='Missing required field(s): ' + ', '.join(missing)), 400
     payload = {k: v for k, v in fields.items() if v not in (None, '', [])}
     payload['mkey'] = mkey
     client = FortiADCClient(appliance)
@@ -302,6 +308,11 @@ def form_save_row(logical):
     client = FortiADCClient(appliance)
 
     if not sub_mkey:  # create — POST ?pkey= with the row fields in the body
+        missing = [k for k in adc_objform.required_fields(logical)
+                   if not str(fields.get(k, '')).strip()]
+        if missing:
+            return jsonify(ok=False,
+                           error='Missing required field(s): ' + ', '.join(missing)), 400
         payload = {k: v for k, v in fields.items() if v not in (None, '', [])}
         if not do_apply:
             return _dry('POST', logical, payload, client, pkey=pkey)

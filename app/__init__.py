@@ -193,10 +193,10 @@ def create_app(config_override: object | None = None) -> Flask:
             adc_bps = {'adc', 'adc_api', 'appliances', 'settings', 'audit',
                        'jobs', 'notifications', 'profiles', 'users', 'docs',
                        'cert_manager', 'database', 'locks',
-                       # Fleet pages mirrored into the ADC ADOM (2026-07-07),
-                       # product-scoped via visible_appliances/product_scope.
-                       'monitoring', 'search', 'architecture', 'analysis',
-                       'fleet_objects', 'metrics'}
+                       # ADC-aware / product-scoped Fleet pages mirrored into the ADC
+                       # ADOM. FortiWeb-only pages (search, analysis,
+                       # fleet_objects) are intentionally excluded.
+                       'monitoring', 'architecture', 'metrics'}
             adc_eps = {'product.fortiadc_home'}
             if ep.split('.', 1)[0] not in adc_bps and ep not in adc_eps:
                 return redirect(url_for('adc.index'))

@@ -17,6 +17,8 @@ Scope: git app code + pip requirements + migrations. NEVER OS packages.
 import glob
 import json
 import os
+import re
+import socket
 import subprocess
 import time
 import urllib.request
@@ -78,6 +80,59 @@ def import_smoke_ok():
     try:
         r = run([str(VENV / "python"), "-c", "import app"],
                 timeout=60, user=APP_USER, cwd=str(APP))
+        return r.returncode == 0, (r.stderr or r.stdout)
+    except Exception as e:
+        return False, str(e)
+
+
+def _peer_host():
+    """The OTHER HA node's host from ha_nodes.json (failover-agnostic)."""
+    try:
+        nodes = json.loads((APP / "data" / "ha_nodes.json").read_text())
+        me = os.environ.get("FM_NODE_NAME") or socket.gethostname()
+        for n in nodes:
+            if n.get("name") != me and n.get("host"):
+                return n["host"]
+    except Exception:
+        pass
+    return None
+
+
+def _env_db_creds():
+    """(user, password, dbname) from the .env SQLALCHEMY_DATABASE_URI."""
+    try:
+        for line in (APP / ".env").read_text().splitlines():
+            if line.startswith("SQLALCHEMY_DATABASE_URI="):
+                uri = line.split("=", 1)[1].strip().strip('"').strip("'")
+                m = re.search(r"://([^:]+):([^@]+)@[^/]+/([A-Za-z0-9_]+)", uri)
+                if m:
+                    return m.group(1), m.group(2), m.group(3)
+    except Exception:
+        pass
+    return None
+
+
+def mark_validated_on_primary(sha, node):
+    """After a STANDBY validates a target revision, write the staged-rollout
+    'validated' marker into the PRIMARY's (read-write) Postgres so the primary's
+    update button unlocks (services.self_update.can_apply_to_primary reads
+    ha.update.validated). The standby's own DB is read-only, hence the cross-node
+    write to the peer discovered from ha_nodes.json."""
+    host = _peer_host()
+    creds = _env_db_creds()
+    if not host or not creds:
+        return False, "no peer host or db creds (ha_nodes.json / .env)"
+    user, pw, dbname = creds
+    payload = json.dumps({"target": sha, "node": node, "at": now()})
+    lit = "'" + payload.replace("'", "''") + "'"
+    sql = ("INSERT INTO app_settings(key,value,updated_at) VALUES "
+           "('ha.update.validated', %s, now()) "
+           "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now();" % lit)
+    env = dict(os.environ, PGPASSWORD=pw)
+    try:
+        r = subprocess.run(["psql", "-h", host, "-p", "5432", "-U", user, "-d", dbname,
+                            "-v", "ON_ERROR_STOP=1", "-c", sql],
+                           capture_output=True, text=True, timeout=30, env=env)
         return r.returncode == 0, (r.stderr or r.stdout)
     except Exception as e:
         return False, str(e)
@@ -198,7 +253,14 @@ def process(req_path):
                 raise RuntimeError("import smoke failed: %s" % detail[:300])
             new = git("rev-parse", "HEAD").stdout.strip()
             st.step("import smoke", True, "new code imports on revision %s" % new[:12])
-            st.finish("success", result_sha=new, rolled_back=False, standby=True)
+            # Unlock the primary: write the validated marker into the PRIMARY's
+            # read-write DB (our own replica is read-only). Best-effort — a failed
+            # marker write doesn't fail the standby update, but it IS the seguro.
+            mok, mdetail = mark_validated_on_primary(new, req.get("node") or socket.gethostname())
+            st.step("mark validated on primary", mok,
+                    "primary update unlocked for %s" % new[:12] if mok else mdetail[:200])
+            st.finish("success", result_sha=new, rolled_back=False, standby=True,
+                      validated_on_primary=mok)
             return
 
         subprocess.run(["systemctl", "restart", SERVICE], timeout=120)

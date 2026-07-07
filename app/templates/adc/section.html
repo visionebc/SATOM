@@ -63,6 +63,12 @@
      href="{{ url_for('adc.object_detail', logical=tab.logical, create=1, back=request.full_path) }}">
     <i class="bi bi-plus-lg me-1"></i>Create New
   </a>
+  {% if tab.logical == 'load_balance_virtual_server' %}
+  <a class="btn btn-outline-light btn-sm"
+     href="{{ url_for('adc.wizard_virtual_server', back=request.full_path) }}"
+     title="Guided wizard: create the pool + real servers + virtual server in one step">
+    <i class="bi bi-magic me-1"></i>New (guided)</a>
+  {% endif %}
   {% endif %}
   <div class="fw-search-box">
     <i class="bi bi-search search-icon"></i>

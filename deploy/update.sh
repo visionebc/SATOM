@@ -6,8 +6,8 @@ APP_DIR="/opt/fortinet-manager"
 SERVICE_NAME="fortinet-manager"
 
 cd "$APP_DIR"
-git fetch origin master
-git checkout -f origin/master
+git fetch origin main
+git checkout -f origin/main
 venv/bin/pip install -r requirements.txt -q
 cp deploy/fortinet-manager.service /etc/systemd/system/"${SERVICE_NAME}".service
 systemctl daemon-reload

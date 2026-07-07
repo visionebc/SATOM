@@ -348,7 +348,7 @@
       </div>
 
       {% if current_user and current_user.can('user_manage') %}
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['appliances','audit','users','database','system_backup'] }}" data-nav-group="Administrator">
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['appliances','audit','users','database','system_backup','self_update'] }}" data-nav-group="Administrator">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>Administrator</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'appliances' else '' }}" href="{{ url_for('appliances.index') }}">
@@ -361,6 +361,8 @@
             <i class="bi bi-hdd fw-nav-icon"></i><span>Database</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'system_backup' else '' }}" href="{{ url_for('system_backup.index') }}">
             <i class="bi bi-safe fw-nav-icon"></i><span>System Backup &amp; Restore</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'self_update' else '' }}" href="{{ url_for('self_update.index') }}">
+            <i class="bi bi-arrow-repeat fw-nav-icon"></i><span>Software Update</span></a>
         </div>
       </div>
       {% endif %}
@@ -377,7 +379,7 @@
       {% set _g_ops  = request.blueprint in ['backups','logs','import_backup'] %}
       {% set _g_api  = request.blueprint in ['registry','api_explorer','structure'] %}
       {% set _g_auto = request.blueprint in ['scheduled_actions','provisioning','change_requests'] %}
-      {% set _g_adm  = request.blueprint in ['templates','audit','appliances','classification','segments','naming','firmware','system_backup','reports','database','capacity','signatures'] %}
+      {% set _g_adm  = request.blueprint in ['templates','audit','appliances','classification','segments','naming','firmware','system_backup','reports','database','capacity','signatures','self_update'] %}
 
       {% if current_appliance %}
       <div class="fw-nav-context" data-nav-context="Device">
@@ -673,6 +675,8 @@
             <i class="bi bi-database fw-nav-icon"></i><span>Database</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'system_backup' else '' }}" href="{{ url_for('system_backup.index') }}">
             <i class="bi bi-hdd-stack fw-nav-icon"></i><span>System Backup &amp; Restore</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'self_update' else '' }}" href="{{ url_for('self_update.index') }}">
+            <i class="bi bi-arrow-repeat fw-nav-icon"></i><span>Software Update</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'signatures' else '' }}" href="{{ url_for('signatures.index') }}">
             <i class="bi bi-fingerprint fw-nav-icon"></i><span>Signatures</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'reports' else '' }}" href="{{ url_for('reports.inbox') }}">

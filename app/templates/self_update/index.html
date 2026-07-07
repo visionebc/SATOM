@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}Software Update{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-arrow-repeat me-2 text-accent"></i>Software Update</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Update the manager's own code and Python dependencies from git — never OS packages.
+      Rolled out one node at a time: the <strong>standby</strong> first, and the
+      <strong>primary</strong> only after the standby passes its health check.</p>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Current version + this node -->
+  <div class="col-lg-5">
+    <div class="card mb-3"><div class="card-header"><strong>This node</strong></div>
+      <div class="card-body">
+        <div class="mb-2"><span class="text-muted small">Host</span>
+          <div class="font-monospace">{{ this_node }}
+            {% if this_role == 'primary' %}<span class="badge bg-success">PRIMARY</span>
+            {% elif this_role == 'standby' %}<span class="badge bg-info text-dark">STANDBY</span>
+            {% else %}<span class="badge bg-secondary">role: unknown</span>{% endif %}
+          </div>
+        </div>
+        <div class="mb-2"><span class="text-muted small">Running revision ({{ branch }})</span>
+          <div class="font-monospace">{{ current.short or 'unknown' }} — {{ current.subject }}</div>
+          <div class="text-muted small">{{ current.date }}</div>
+        </div>
+        <button id="check-btn" class="btn btn-fw-primary btn-sm" data-js="check-updates" type="button">
+          <i class="bi bi-cloud-arrow-down me-1"></i>Check for updates</button>
+        <span id="check-spin" class="ms-2 d-none"><span class="spinner-border spinner-border-sm"></span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Available update + apply -->
+  <div class="col-lg-7">
+    <div class="card mb-3"><div class="card-header"><strong>Available update</strong></div>
+      <div class="card-body">
+        <div id="update-info" class="text-muted small">Click <em>Check for updates</em> to query the git remote.</div>
+
+        <form id="apply-form" method="post" action="{{ url_for('self_update.apply') }}" class="d-none mt-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="target" id="apply-target" value="">
+          <div class="form-check mb-1">
+            <input class="form-check-input" type="checkbox" name="do_pip" id="do_pip" checked>
+            <label class="form-check-label small" for="do_pip">Update Python dependencies (<code>pip install -r requirements.txt</code>)</label>
+          </div>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="do_migrate" id="do_migrate" checked>
+            <label class="form-check-label small" for="do_migrate">Run DB migrations (<code>flask db upgrade</code>)</label>
+          </div>
+          {% set is_primary = this_role == 'primary' %}
+          {% set has_peers = nodes|length > 1 %}
+          {% set unlocked = (not is_primary) or (not has_peers) or (validated and validated.target) %}
+          <button type="submit" class="btn {{ 'btn-danger' if is_primary else 'btn-success' }} btn-sm"
+                  id="apply-btn" {{ 'disabled' if (is_primary and has_peers and not unlocked) else '' }}>
+            <i class="bi bi-download me-1"></i>
+            Apply update to {{ 'PRIMARY' if is_primary else 'this node' }}</button>
+          {% if is_primary and has_peers and not unlocked %}
+            <div class="alert alert-warning small mt-2 mb-0"><i class="bi bi-shield-lock me-1"></i>
+              <strong>Safeguard active.</strong> This is the PRIMARY. Update the standby to the new
+              revision first; once it passes its health check, this button unlocks.</div>
+          {% elif is_primary and has_peers and unlocked %}
+            <div class="alert alert-success small mt-2 mb-0"><i class="bi bi-shield-check me-1"></i>
+              Standby validated <code>{{ validated.target[:12] }}</code> — the primary is cleared to update.</div>
+          {% endif %}
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- HA nodes -->
+<div class="card mb-3"><div class="card-header"><strong>HA nodes</strong>
+  <span class="text-muted small ms-2">roles are live from <code>pg_is_in_recovery()</code></span></div>
+  <div class="card-body">
+    <table class="table table-sm table-hover align-middle mb-0">
+      <thead><tr><th>Node</th><th>Role</th><th>Revision</th><th>Health</th><th>Last report (UTC)</th></tr></thead>
+      <tbody>
+      {% for n in nodes %}
+        {% set rep = n.report %}
+        <tr>
+          <td class="font-monospace">{{ n.name }}{% if n.host and n.host != '127.0.0.1' %} <span class="text-muted small">{{ n.host }}</span>{% endif %}</td>
+          <td>
+            {% if rep and rep.role == 'primary' %}<span class="badge bg-success">PRIMARY</span>
+            {% elif rep and rep.role == 'standby' %}<span class="badge bg-info text-dark">STANDBY</span>
+            {% else %}<span class="badge bg-secondary">unknown</span>{% endif %}
+          </td>
+          <td class="font-monospace small">{{ rep.revision.short if rep and rep.revision else '—' }}</td>
+          <td>{% if rep and rep.healthy %}<span class="text-success"><i class="bi bi-check-circle"></i></span>
+              {% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td class="small text-muted">{{ rep.reported_at if rep else 'no report yet' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if nodes|length == 1 %}
+      <div class="text-muted small mt-2"><i class="bi bi-info-circle me-1"></i>
+        Single node registered. Add the second HA node to <code>data/ha_nodes.json</code> to activate
+        the staged-rollout safeguard.</div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Live status of the running update -->
+<div id="live-panel" class="card mb-3 d-none"><div class="card-header"><strong>Update in progress</strong>
+  <span id="live-state" class="badge bg-secondary ms-2">queued</span></div>
+  <div class="card-body">
+    <ol id="live-steps" class="small mb-0" style="list-style:decimal inside;"></ol>
+  </div>
+</div>
+
+<!-- History -->
+<div class="card"><div class="card-header"><strong>Recent updates</strong></div>
+  <div class="card-body">
+    {% if not history %}
+      <p class="text-muted small mb-0">No updates run yet.</p>
+    {% else %}
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>When</th><th>By</th><th>Node</th><th>Target</th><th>Result</th></tr></thead>
+      <tbody>
+      {% for h in history %}
+        <tr>
+          <td class="small">{{ h.updated_at or h.started_at }}</td>
+          <td class="small">{{ h.requested_by }}</td>
+          <td class="small font-monospace">{{ h.node }} ({{ h.role }})</td>
+          <td class="small font-monospace">{{ (h.result_sha or h.target or '')[:12] }}</td>
+          <td>
+            {% if h.state == 'success' %}<span class="badge bg-success">success</span>
+            {% elif h.state == 'failed' %}<span class="badge bg-danger">failed{% if h.rolled_back %} · rolled back{% endif %}</span>
+            {% elif h.state == 'running' %}<span class="badge bg-warning text-dark">running</span>
+            {% else %}<span class="badge bg-secondary">{{ h.state }}</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+  function jpost(url) {
+    return fetch(url, {method: 'POST', headers: {'X-CSRFToken': csrf,
+      'X-Requested-With': 'XMLHttpRequest'}, credentials: 'same-origin'});
+  }
+
+  // --- Check for updates ---
+  var btn = document.querySelector('[data-js="check-updates"]');
+  if (btn) btn.addEventListener('click', function () {
+    var spin = document.getElementById('check-spin');
+    var info = document.getElementById('update-info');
+    spin.classList.remove('d-none'); btn.setAttribute('disabled', 'disabled');
+    jpost('{{ url_for("self_update.check") }}').then(function (r) { return r.json(); })
+      .then(function (d) {
+        spin.classList.add('d-none'); btn.removeAttribute('disabled');
+        if (d.error) { info.innerHTML = '<span class="text-danger">Fetch error: ' +
+          escapeHtml(d.error) + '</span>'; }
+        if (d.behind === 0) {
+          info.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>' +
+            'Up to date on <code>' + escapeHtml(d.current.short) + '</code>.</span>' +
+            (d.error ? '<div class="text-danger small">' + escapeHtml(d.error) + '</div>' : '');
+          document.getElementById('apply-form').classList.add('d-none');
+          return;
+        }
+        var html = '<div class="mb-2"><strong>' + d.behind + '</strong> new commit(s) available — ' +
+          'target <code>' + escapeHtml((d.target_sha || '').substring(0, 12)) + '</code>:</div>' +
+          '<ul class="small">';
+        d.commits.forEach(function (c) { html += '<li class="font-monospace">' + escapeHtml(c) + '</li>'; });
+        html += '</ul>';
+        info.innerHTML = html;
+        document.getElementById('apply-target').value = d.target_sha;
+        document.getElementById('apply-form').classList.remove('d-none');
+      })
+      .catch(function () { spin.classList.add('d-none'); btn.removeAttribute('disabled');
+        info.innerHTML = '<span class="text-danger">Check failed.</span>'; });
+  });
+
+  // --- Live status polling (when redirected with ?watch=<uid>) ---
+  var watch = {{ watch|tojson }};
+  if (watch) {
+    var panel = document.getElementById('live-panel');
+    var stateEl = document.getElementById('live-state');
+    var stepsEl = document.getElementById('live-steps');
+    panel.classList.remove('d-none');
+    var done = false;
+    function poll() {
+      fetch('/self-update/status/' + encodeURIComponent(watch), {credentials: 'same-origin'})
+        .then(function (r) { return r.json(); })
+        .then(function (s) {
+          stateEl.textContent = s.state || 'unknown';
+          stateEl.className = 'badge ms-2 ' + ({
+            success: 'bg-success', failed: 'bg-danger', running: 'bg-warning text-dark',
+            queued: 'bg-secondary'
+          }[s.state] || 'bg-secondary');
+          stepsEl.innerHTML = '';
+          (s.steps || []).forEach(function (st) {
+            var li = document.createElement('li');
+            li.className = st.ok ? 'text-success' : 'text-danger';
+            li.textContent = st.name + (st.detail ? ' — ' + st.detail : '');
+            stepsEl.appendChild(li);
+          });
+          if (s.state === 'success' || s.state === 'failed') {
+            if (!done) { done = true;
+              setTimeout(function () { window.location = '{{ url_for("self_update.index") }}'; }, 4000); }
+            return;
+          }
+          setTimeout(poll, 2500);
+        })
+        .catch(function () { setTimeout(poll, 4000); });  // survives the mid-update restart
+    }
+    poll();
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+})();
+</script>
+{% endblock %}

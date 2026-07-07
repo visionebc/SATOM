@@ -156,7 +156,7 @@ def create_app(config_override: object | None = None) -> Flask:
         ep = request.endpoint or ''
         always = {
             'static', 'index', 'fortiweb_home', 'service_worker',
-            'upload_worker', 'updiag',
+            'upload_worker', 'updiag', 'healthz',
             'product.select', 'product.set_product', 'product.switch',
             'product.enter', 'product.fortiadc_home',
         }
@@ -550,6 +550,19 @@ def create_app(config_override: object | None = None) -> Flask:
     register_error_handlers(app)
     register_selftest_routes(app)
 
+    # -- health probe (unauthenticated; used by the self-update runner) --
+    @app.route('/healthz')
+    def healthz():
+        from flask import jsonify
+        rev = {}
+        try:
+            from .services import self_update as _su
+            rev = _su.current_revision()
+        except Exception:
+            pass
+        return jsonify({'ok': True, 'revision': rev.get('short'),
+                        'sha': rev.get('sha'), 'branch': rev.get('branch')}), 200
+
     # -- CLI commands -----------------------------------------------------
     @app.cli.command('create-db')
     def create_db_cmd():
@@ -797,6 +810,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.locks", "bp"),
         ("app.views.database", "bp"),
         ("app.views.system_backup", "bp"),
+        ("app.views.self_update", "bp"),
         ("app.views.docs", "bp"),
         ("app.api", "bp"),
     ]

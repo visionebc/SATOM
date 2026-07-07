@@ -1,0 +1,244 @@
+"""Self-update service — update the manager's OWN code + Python deps.
+
+The web process runs UNPRIVILEGED (user ``fortinet``, ``NoNewPrivileges`` +
+``ProtectSystem=strict``) so it can neither restart itself nor install files.
+The real update therefore runs in a SEPARATE privileged oneshot service
+(``fortinet-manager-updater.service``) triggered by a systemd ``.path`` unit
+that watches ``data/update-requests/``. This module is the app-side half: it
+inspects the current git revision, checks the remote for a newer one, and
+ENQUEUES an update request (a JSON file the root runner picks up). It never
+runs a privileged command itself.
+
+Scope ("solo la paqueteria que usa"): git app code + pip requirements +
+``flask db upgrade``. NEVER OS packages.
+
+Staged rollout ("un equipo primero, luego el otro"): the interlock lives in
+``AppSetting`` (Postgres → replicated to both HA nodes). A target revision must
+be validated on the STANDBY (updated + health-checked) before the PRIMARY
+button unlocks.
+"""
+from __future__ import annotations
+
+import json
+import os
+import socket
+import subprocess
+import uuid
+from datetime import datetime
+from pathlib import Path
+
+APP_DIR = Path(os.environ.get("FM_APP_DIR", "/opt/fortinet-manager"))
+REQ_DIR = APP_DIR / "data" / "update-requests"
+STATUS_DIR = APP_DIR / "data" / "update-status"
+NODES_FILE = APP_DIR / "data" / "ha_nodes.json"
+BRANCH = os.environ.get("FM_UPDATE_BRANCH", "main")
+
+# AppSetting keys — Postgres-backed, so they replicate across the HA pair.
+_K_NODE_REPORT = "ha.node.%s"          # per-node last self-report (version/role/health)
+_K_VALIDATED = "ha.update.validated"   # {"target": sha, "node": name, "at": iso}
+
+
+# ---------------------------------------------------------------------------
+# git helpers (read-only from the app side; the privileged writes are the runner)
+# ---------------------------------------------------------------------------
+def _git(*args, timeout: int = 120) -> subprocess.CompletedProcess:
+    """Run a git command in the app repo as the current user."""
+    return subprocess.run(
+        ["git", "-C", str(APP_DIR), "-c", "safe.directory=%s" % APP_DIR, *args],
+        capture_output=True, text=True, timeout=timeout,
+    )
+
+
+def current_revision() -> dict:
+    r = _git("log", "-1", "--pretty=%H%x1f%h%x1f%s%x1f%cI")
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    if r.returncode != 0 or not r.stdout.strip():
+        return {"sha": "", "short": "unknown", "subject": "", "date": "", "branch": branch}
+    parts = (r.stdout.strip().split("\x1f") + ["", "", "", ""])[:4]
+    sha, short, subject, date = parts
+    return {"sha": sha, "short": short, "subject": subject, "date": date, "branch": branch}
+
+
+def check_remote(fetch: bool = True) -> dict:
+    """``git fetch`` + compare local HEAD vs ``origin/BRANCH``."""
+    err = ""
+    if fetch:
+        f = _git("fetch", "origin", BRANCH, timeout=120)
+        if f.returncode != 0:
+            err = (f.stderr or "git fetch failed").strip()
+    cur = current_revision()
+    tgt = _git("rev-parse", "origin/%s" % BRANCH).stdout.strip()
+    behind_raw = _git("rev-list", "--count", "HEAD..origin/%s" % BRANCH).stdout.strip()
+    log = _git("log", "--pretty=%h %s (%cr)", "HEAD..origin/%s" % BRANCH).stdout.strip()
+    commits = [ln for ln in log.splitlines() if ln.strip()]
+    return {
+        "current": cur,
+        "target_sha": tgt,
+        "behind": int(behind_raw) if behind_raw.isdigit() else 0,
+        "commits": commits,
+        "error": err,
+        "checked_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+# ---------------------------------------------------------------------------
+# node identity / role (role is LIVE from Postgres, not stored)
+# ---------------------------------------------------------------------------
+def this_node_name() -> str:
+    return os.environ.get("FM_NODE_NAME") or socket.gethostname()
+
+
+def node_role() -> str:
+    """``primary`` | ``standby`` | ``unknown`` from ``pg_is_in_recovery()``."""
+    try:
+        from ..models import db
+        from sqlalchemy import text
+        val = db.session.execute(text("SELECT pg_is_in_recovery()")).scalar()
+        return "standby" if val else "primary"
+    except Exception:
+        return "unknown"
+
+
+def load_nodes() -> list[dict]:
+    """The HA node registry (``data/ha_nodes.json``). Absent → this node only."""
+    try:
+        data = json.loads(NODES_FILE.read_text())
+        if isinstance(data, list) and data:
+            return data
+    except Exception:
+        pass
+    return [{"name": this_node_name(), "host": "127.0.0.1", "self": True}]
+
+
+def self_report() -> dict:
+    """Write THIS node's (role, revision, health) into the shared (replicated)
+    settings so the UI on either node sees every node's state."""
+    rep = {
+        "name": this_node_name(),
+        "role": node_role(),
+        "revision": current_revision(),
+        "healthy": True,
+        "reported_at": datetime.utcnow().isoformat() + "Z",
+    }
+    try:
+        from ..models import AppSetting
+        AppSetting.set(_K_NODE_REPORT % this_node_name(), json.dumps(rep))
+    except Exception:
+        pass
+    return rep
+
+
+def node_reports() -> list[dict]:
+    out = []
+    try:
+        from ..models import AppSetting
+    except Exception:
+        AppSetting = None
+    for n in load_nodes():
+        rep = None
+        if AppSetting is not None:
+            raw = AppSetting.get(_K_NODE_REPORT % n.get("name", ""))
+            if raw:
+                try:
+                    rep = json.loads(raw)
+                except Exception:
+                    rep = None
+        out.append({**n, "report": rep})
+    return out
+
+
+# ---------------------------------------------------------------------------
+# the staged-rollout interlock (the "seguro")
+# ---------------------------------------------------------------------------
+def validated_state() -> dict:
+    try:
+        from ..models import AppSetting
+        raw = AppSetting.get(_K_VALIDATED)
+        return json.loads(raw) if raw else {}
+    except Exception:
+        return {}
+
+
+def mark_validated(target_sha: str, node: str) -> None:
+    try:
+        from ..models import AppSetting
+        AppSetting.set(_K_VALIDATED, json.dumps({
+            "target": target_sha, "node": node,
+            "at": datetime.utcnow().isoformat() + "Z"}))
+    except Exception:
+        pass
+
+
+def can_apply_to_primary(target_sha: str) -> bool:
+    """The PRIMARY may update to ``target_sha`` only once the STANDBY has
+    validated that EXACT revision (updated + passed health checks)."""
+    st = validated_state()
+    return bool(target_sha) and st.get("target") == target_sha
+
+
+def reconcile_interlock(status: dict | None) -> None:
+    """Called by the status poll (which has a DB session): when a STANDBY
+    finishes a target successfully, record it as validated so the PRIMARY
+    button unlocks."""
+    if not status:
+        return
+    if status.get("state") == "success" and status.get("role") == "standby":
+        tgt = status.get("result_sha") or status.get("target")
+        if tgt:
+            mark_validated(tgt, status.get("node", "standby"))
+
+
+# ---------------------------------------------------------------------------
+# enqueue + status (the privileged runner does the actual work)
+# ---------------------------------------------------------------------------
+def request_update(target: str, by: str, *, do_pip: bool = True,
+                   do_migrate: bool = True) -> str:
+    REQ_DIR.mkdir(parents=True, exist_ok=True)
+    STATUS_DIR.mkdir(parents=True, exist_ok=True)
+    uid = datetime.utcnow().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
+    req = {
+        "id": uid,
+        "target": target or ("origin/%s" % BRANCH),
+        "branch": BRANCH,
+        "do_pip": bool(do_pip),
+        "do_migrate": bool(do_migrate),
+        "requested_by": by,
+        "requested_at": datetime.utcnow().isoformat() + "Z",
+        "node": this_node_name(),
+        "role": node_role(),
+    }
+    # A "queued" status up front so the UI has something to poll immediately.
+    (STATUS_DIR / (uid + ".json")).write_text(json.dumps({
+        "id": uid, "state": "queued", "steps": [],
+        "requested_by": by, "target": req["target"],
+        "node": req["node"], "role": req["role"],
+        "updated_at": datetime.utcnow().isoformat() + "Z"}))
+    # Write to a hidden temp then rename INTO the watched dir → atomic trigger.
+    tmp = REQ_DIR / ("." + uid + ".tmp")
+    tmp.write_text(json.dumps(req))
+    tmp.rename(REQ_DIR / (uid + ".json"))
+    return uid
+
+
+def update_status(uid: str) -> dict | None:
+    p = STATUS_DIR / (uid + ".json")
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return None
+
+
+def recent_updates(limit: int = 15) -> list[dict]:
+    if not STATUS_DIR.exists():
+        return []
+    files = sorted(STATUS_DIR.glob("*.json"),
+                   key=lambda p: p.stat().st_mtime, reverse=True)
+    out = []
+    for p in files[:limit]:
+        try:
+            out.append(json.loads(p.read_text()))
+        except Exception:
+            pass
+    return out

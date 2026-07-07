@@ -156,7 +156,7 @@ def create_app(config_override: object | None = None) -> Flask:
         ep = request.endpoint or ''
         always = {
             'static', 'index', 'fortiweb_home', 'service_worker',
-            'upload_worker', 'updiag', 'healthz',
+            'upload_worker', 'updiag', 'healthz', 'healthz_primary',
             'product.select', 'product.set_product', 'product.switch',
             'product.enter', 'product.fortiadc_home',
         }
@@ -562,6 +562,25 @@ def create_app(config_override: object | None = None) -> Flask:
             pass
         return jsonify({'ok': True, 'revision': rev.get('short'),
                         'sha': rev.get('sha'), 'branch': rev.get('branch')}), 200
+
+    # -- primary-aware probe (for a load balancer health check) -----------
+    # Returns 200 ONLY when the local Postgres is the PRIMARY. A standby
+    # answers 503 so the LB keeps it out of rotation; after promotion
+    # (pg_is_in_recovery() -> false) it flips to 200 and the LB routes to it.
+    @app.route('/healthz/primary')
+    def healthz_primary():
+        from flask import jsonify
+        from sqlalchemy import text
+        try:
+            in_recovery = db.session.execute(
+                text('SELECT pg_is_in_recovery()')).scalar()
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({'ok': False, 'role': 'unknown',
+                            'error': str(exc)}), 503
+        if in_recovery:
+            return jsonify({'ok': False, 'role': 'standby'}), 503
+        return jsonify({'ok': True, 'role': 'primary'}), 200
 
     # -- CLI commands -----------------------------------------------------
     @app.cli.command('create-db')

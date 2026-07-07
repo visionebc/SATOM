@@ -26,3 +26,4 @@ data/system_backups/
 
 # editor/session backup snapshots (never commit/ship)
 *.pre-*
+.cache/

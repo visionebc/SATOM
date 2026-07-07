@@ -13,6 +13,7 @@
 {% endblock %}
 
 {% block content %}
+{% set has_deep = facets is defined and facets and (facets.values()|selectattr('backends')|list|length > 0) %}
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title">
@@ -103,17 +104,48 @@
 </div>
 {% endif %}
 
-<!-- Toolbar -->
-<div class="fw-toolbar">
+<!-- Filter toolbar -->
+<div class="fw-toolbar flex-wrap gap-2">
   <div class="fw-search-box">
     <i class="bi bi-search search-icon"></i>
-    <input type="text" id="policySearch" placeholder="Search policies…">
+    <input type="text" id="policySearch" placeholder="Name or /regex/…" autocomplete="off" title="Plain text = case-insensitive substring. Wrap in slashes for regex, e.g. /pol-.*-prod/ or /^vs-/i">
   </div>
+  <input type="text" class="form-control form-control-sm" style="width:140px;" id="fVip" placeholder="VIP / IP…" autocomplete="off" title="Substring, or /regex/ (e.g. /^10\.0\./)">
+  <input type="text" class="form-control form-control-sm" style="width:150px;" id="fPool" placeholder="Backend pool…" autocomplete="off" title="Substring, or /regex/">
+  <input type="text" class="form-control form-control-sm" style="width:160px;" id="fBackend" placeholder="Backend server IP…" autocomplete="off" title="Substring, or /regex/ (e.g. /:8080$/)">
+  <select class="form-select form-select-sm" style="width:auto;" id="fCert">
+    <option value="">Any certificate</option>
+    <option value="local">Local</option>
+    <option value="multi">Multi (SNI)</option>
+    <option value="letsencrypt">Let's Encrypt</option>
+    <option value="none">None</option>
+  </select>
   <select class="form-select form-select-sm" style="width:auto;" id="statusFilter">
     <option value="">All Status</option>
     <option value="enabled">Enabled</option>
     <option value="disabled">Disabled</option>
   </select>
+  <button type="button" class="btn btn-sm btn-fw-outline" id="clearFilters" title="Clear all filters">
+    <i class="bi bi-x-lg"></i>
+  </button>
+  {% if not has_deep %}
+  <span class="fw-badge fw-badge-warning" title="Backend server IP and VIP filters read the deep capture cache. Run a deep capture (Analysis) to populate them.">
+    <i class="bi bi-info-circle me-1"></i>VIP / backend filters need a deep capture
+  </span>
+  {% endif %}
+</div>
+
+<!-- Bulk action bar (shown when ≥1 policy is checked) -->
+<div id="bulkBar" class="fw-alert fw-alert-info d-none align-items-center justify-content-between mb-2" style="gap:12px;">
+  <span><strong id="bulkCount">0</strong> selected</span>
+  <div class="d-flex gap-2 flex-wrap">
+    <button type="button" class="btn btn-sm btn-outline-success fw-bulk-action" data-action="enable"><i class="bi bi-play-fill me-1"></i>Enable</button>
+    <button type="button" class="btn btn-sm btn-outline-warning fw-bulk-action" data-action="disable"><i class="bi bi-pause-fill me-1"></i>Disable</button>
+    <button type="button" class="btn btn-sm btn-outline-primary fw-bulk-action" data-action="clone_here"><i class="bi bi-files me-1"></i>Clone here</button>
+    <button type="button" class="btn btn-sm btn-outline-primary fw-bulk-action" data-action="clone_to" {{ 'disabled' if not other_appliances }} title="{{ 'No other FortiWeb registered' if not other_appliances else 'Clone to another FortiWeb' }}"><i class="bi bi-box-arrow-up-right me-1"></i>Clone to…</button>
+    <button type="button" class="btn btn-sm btn-outline-info fw-bulk-action" data-action="migrate_to" {{ 'disabled' if not other_appliances }} title="{{ 'No other FortiWeb registered' if not other_appliances else 'Migrate to another FortiWeb (disables the source)' }}"><i class="bi bi-arrow-left-right me-1"></i>Migrate to…</button>
+    <button type="button" class="btn btn-sm btn-outline-danger fw-bulk-action" data-action="delete"><i class="bi bi-trash me-1"></i>Delete</button>
+  </div>
 </div>
 
 <!-- Policies Table -->
@@ -121,6 +153,7 @@
   <table class="fw-table" id="policiesTable">
     <thead>
       <tr>
+        <th style="width:34px;"><input type="checkbox" id="selectAll" title="Select all (visible)"></th>
         <th>Policy Name</th>
         <th>Virtual Server</th>
         <th>Server Pool</th>
@@ -134,12 +167,22 @@
     <tbody>
       {% if policies %}
         {% for p in policies %}
-        <tr data-policy-row data-href="{{ url_for('workspace.policy_detail', appliance_id=appliance.id, name=p.get('name','')) if appliance else '#' }}">
+        {% set pname = p.get('name','') %}
+        {% set f = (facets.get(pname) if facets is defined else {}) or {} %}
+        {% set st = p.get('status','') or p.get('enable','') %}
+        {% set is_on = st in ['enable','enabled',true,1] %}
+        <tr data-policy-row
+            data-name="{{ pname }}"
+            data-vips="{{ (f.vips or [])|join(' ') }}"
+            data-pool="{{ f.pool or p.get('server-pool','') }}"
+            data-backends="{{ (f.backends or [])|join(' ') }}"
+            data-cert="{{ f.cert or '' }}"
+            data-status="{{ 'enabled' if is_on else 'disabled' }}"
+            data-href="{{ url_for('workspace.policy_detail', appliance_id=appliance.id, name=pname) if appliance else '#' }}">
+          <td class="check-col"><input type="checkbox" class="fw-pol-check" value="{{ pname }}"></td>
           <td>
-            <strong>{{ p.get('name','') or p.name or '—' }}</strong>
-            {% if p.get('comment') or (p is mapping and p.comment is defined) %}
-              <br><small class="text-muted">{{ p.get('comment','') }}</small>
-            {% endif %}
+            <strong>{{ pname or '—' }}</strong>
+            {% if p.get('comment') %}<br><small class="text-muted">{{ p.get('comment','') }}</small>{% endif %}
           </td>
           <td>
             <span class="fw-badge fw-badge-info">{{ p.get('vserver','') or p.get('vs','') or '—' }}</span>
@@ -147,11 +190,7 @@
           <td>{{ p.get('server-pool','') or p.get('pool','') or '—' }}</td>
           <td>
             {% set wpp = p.get('web-protection-profile','') or p.get('wpp','') %}
-            {% if wpp %}
-              <span class="fw-badge fw-badge-primary">{{ wpp }}</span>
-            {% else %}
-              <span class="text-muted">None</span>
-            {% endif %}
+            {% if wpp %}<span class="fw-badge fw-badge-primary">{{ wpp }}</span>{% else %}<span class="text-muted">None</span>{% endif %}
           </td>
           <td>
             {% set svc = p.get('service','') %}
@@ -162,28 +201,40 @@
             {% if hsvc %}<span class="fw-badge fw-badge-secondary">{{ hsvc }}</span>{% else %}—{% endif %}
           </td>
           <td>
-            {% set st = p.get('status','') or p.get('enable','') %}
-            {% if st in ['enable','enabled',true,1] %}
-              <span class="fw-status fw-status-online" style="font-size:12px;">
-                <span class="fw-status-dot"></span>Enabled
-              </span>
+            {% if is_on %}
+              <span class="fw-status fw-status-online" style="font-size:12px;"><span class="fw-status-dot"></span>Enabled</span>
             {% else %}
-              <span class="fw-status fw-status-offline" style="font-size:12px;">
-                <span class="fw-status-dot"></span>Disabled
-              </span>
+              <span class="fw-status fw-status-offline" style="font-size:12px;"><span class="fw-status-dot"></span>Disabled</span>
             {% endif %}
           </td>
           <td class="actions-col">
-            <a href="{{ url_for('workspace.policy_detail', appliance_id=appliance.id, name=p.get('name','')) if appliance else '#' }}"
-               class="btn btn-sm btn-outline-primary btn-sm-icon" title="View Detail">
+            <a href="{{ url_for('workspace.policy_detail', appliance_id=appliance.id, name=pname) if appliance else '#' }}"
+               class="btn btn-sm btn-outline-primary btn-sm-icon" title="View / Edit Detail">
               <i class="bi bi-eye"></i>
             </a>
+            <div class="dropdown d-inline-block">
+              <button class="btn btn-sm btn-outline-secondary btn-sm-icon" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Actions">
+                <i class="bi bi-three-dots-vertical"></i>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                {% if is_on %}
+                <li><button class="dropdown-item fw-row-action" data-action="disable" data-policy="{{ pname }}"><i class="bi bi-pause-fill me-2 text-warning"></i>Disable</button></li>
+                {% else %}
+                <li><button class="dropdown-item fw-row-action" data-action="enable" data-policy="{{ pname }}"><i class="bi bi-play-fill me-2 text-success"></i>Enable</button></li>
+                {% endif %}
+                <li><button class="dropdown-item fw-row-action" data-action="clone_here" data-policy="{{ pname }}"><i class="bi bi-files me-2"></i>Clone (same box)…</button></li>
+                <li><button class="dropdown-item fw-row-action" data-action="clone_to" data-policy="{{ pname }}" {{ 'disabled' if not other_appliances }}><i class="bi bi-box-arrow-up-right me-2"></i>Clone to another FortiWeb…</button></li>
+                <li><button class="dropdown-item fw-row-action" data-action="migrate_to" data-policy="{{ pname }}" {{ 'disabled' if not other_appliances }}><i class="bi bi-arrow-left-right me-2"></i>Migrate to another FortiWeb…</button></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><button class="dropdown-item text-danger fw-row-action" data-action="delete" data-policy="{{ pname }}"><i class="bi bi-trash me-2"></i>Delete</button></li>
+              </ul>
+            </div>
           </td>
         </tr>
         {% endfor %}
       {% else %}
         <tr>
-          <td colspan="8">
+          <td colspan="9">
             <div class="fw-empty-state">
               <div class="fw-empty-state-icon"><i class="bi bi-shield"></i></div>
               <div class="fw-empty-state-title">No server policies found</div>
@@ -197,31 +248,367 @@
     </tbody>
   </table>
 </div>
+
+<!-- Action modal (preview → apply) -->
+<div class="modal fade" id="actionModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="actionModalTitle">Action</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p id="actionModalIntro" class="text-muted"></p>
+        <div id="actionFieldDest" class="mb-3 d-none">
+          <label class="fw-fld-label">Destination FortiWeb</label>
+          <select class="form-select form-select-sm" id="actionDest">
+            {% for a in other_appliances %}
+            <option value="{{ a.id }}">{{ a.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div id="actionFieldName" class="mb-3 d-none">
+          <label class="fw-fld-label">New policy name</label>
+          <input type="text" class="form-control form-control-sm" id="actionNewName" placeholder="new-policy-name" autocomplete="off">
+        </div>
+        <div id="actionTargets" class="mb-3"></div>
+        <div id="actionPreview" class="d-none">
+          <hr>
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <strong>Dry-run preview</strong>
+            <span class="fw-badge fw-badge-secondary" id="actionPreviewBadge"></span>
+          </div>
+          <div id="actionPreviewBody" class="mono" style="font-size:12px;max-height:340px;overflow:auto;"></div>
+        </div>
+        <div id="actionError" class="fw-alert fw-alert-warning d-none mt-2"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-fw-outline btn-sm" id="actionPreviewBtn"><i class="bi bi-eye me-1"></i>Preview (dry-run)</button>
+        <button type="button" class="btn btn-fw-primary btn-sm" id="actionApplyBtn" disabled><i class="bi bi-lightning-charge me-1"></i>Apply for real</button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
-function filterPolicies(query) {
-  const q      = query.toLowerCase();
-  const status = document.getElementById('statusFilter').value.toLowerCase();
-  document.querySelectorAll('#policiesTable tbody tr[data-policy-row]').forEach(function (row) {
-    const text      = row.textContent.toLowerCase();
-    const rowStatus = row.querySelector('td:nth-child(7)')?.textContent.toLowerCase() || '';
-    const show = text.includes(q) && (status === '' || rowStatus.includes(status));
-    row.style.display = show ? '' : 'none';
-  });
-}
 (function () {
-  document.getElementById('policySearch').addEventListener('input', function (event) {
-    filterPolicies(this.value);
+  var hasOtherFw = {{ 'true' if other_appliances else 'false' }};
+  var previewUrl = "{{ url_for('workspace.policy_action_preview', appliance_id=appliance.id) if appliance else '' }}";
+  var applyUrl   = "{{ url_for('workspace.policy_action', appliance_id=appliance.id) if appliance else '' }}";
+
+  var LABELS = {
+    enable: 'Enable', disable: 'Disable', delete: 'Delete',
+    clone_here: 'Clone (same box)', clone_to: 'Clone to another FortiWeb',
+    migrate_to: 'Migrate to another FortiWeb'
+  };
+  var NEEDS_DEST = { clone_to: 1, migrate_to: 1 };
+
+  // ── Filtering ──────────────────────────────────────────────────────────────
+  // Text filters accept a plain case-insensitive substring OR a regular
+  // expression when wrapped in slashes, e.g.  /pol-.*-prod/  or  /^vs-/i .
+  // Matching is 100% client-side over rows already in the DOM — no request hits
+  // the server or the FortiWeb.
+  //
+  // ReDoS-SAFE: literal + dropdown constraints run synchronously (instant). A
+  // REGEX runs in a Web Worker (policy_filter_worker.js) with a watchdog — a
+  // catastrophic pattern like /(a+)+$/ backtracks forever, and on the MAIN
+  // thread a setTimeout can't stop it (the tab just freezes). Here the regex
+  // runs off-thread; if it doesn't answer within WATCHDOG_MS we terminate() the
+  // worker (the only thing that actually kills a runaway regex), flag that box
+  // red, and REMEMBER the pattern so it isn't retried until edited. Invalid /
+  // oversized patterns are ignored + flagged, never hide rows on a typo.
+  var WORKER_FILTER_URL = "{{ asset('js/policy_filter_worker.js') }}";
+  var TEXT_FIELDS = [
+    { id: 'policySearch', key: 'name' }, { id: 'fVip', key: 'vips' },
+    { id: 'fPool', key: 'pool' },        { id: 'fBackend', key: 'backends' }
+  ];
+  var WATCHDOG_MS = 150, REGEX_DEBOUNCE_MS = 90;
+
+  function fieldRaw(id) { var e = document.getElementById(id); return e ? e.value.trim() : ''; }
+  function enumVal(id)  { var e = document.getElementById(id); return e ? e.value.trim().toLowerCase() : ''; }
+  function setInvalid(id, bad) { var e = document.getElementById(id); if (e) e.classList.toggle('is-invalid', !!bad); }
+
+  // raw → {kind:'none'|'lit'|'re'|'bad'}
+  function parseField(raw) {
+    raw = (raw || '').trim();
+    if (!raw) return { kind: 'none' };
+    if (raw.length > 200) return { kind: 'bad' };            // oversized
+    var m = raw.match(/^\/(.*)\/([a-z]*)$/i);                // /pattern/ or /pattern/flags
+    if (m) {
+      var flags = m[2].indexOf('i') >= 0 ? m[2] : m[2] + 'i';  // case-insensitive by default
+      try { new RegExp(m[1], flags); } catch (e) { return { kind: 'bad' }; }  // invalid
+      return { kind: 're', source: m[1], flags: flags };
+    }
+    return { kind: 'lit', lit: raw.toLowerCase() };          // plain substring
+  }
+
+  var slowPatterns = {};   // field id → raw value proven too-slow (skipped + red until edited)
+
+  // Sync phase — literal + dropdown constraints, instant. Marks bad/slow red.
+  // Returns { visible: [rowEls still shown], regexActive: [{id,field,source,flags}] }.
+  function runSync() {
+    var lits = [], regexActive = [];
+    TEXT_FIELDS.forEach(function (f) {
+      var raw = fieldRaw(f.id), p = parseField(raw);
+      if (p.kind === 'bad') { setInvalid(f.id, true); }
+      else if (p.kind === 're') {
+        if (slowPatterns[f.id] === raw) { setInvalid(f.id, true); }       // known ReDoS → skip
+        else { setInvalid(f.id, false); regexActive.push({ id: f.id, field: f.key, source: p.source, flags: p.flags }); }
+      } else { setInvalid(f.id, false); if (p.kind === 'lit') lits.push({ key: f.key, lit: p.lit }); }
+    });
+    var status = enumVal('statusFilter'), cert = enumVal('fCert'), visible = [];
+    document.querySelectorAll('#policiesTable tbody tr[data-policy-row]').forEach(function (row) {
+      var d = row.dataset, show = true;
+      for (var i = 0; i < lits.length; i++) {
+        if ((d[lits[i].key] || '').toLowerCase().indexOf(lits[i].lit) < 0) { show = false; break; }
+      }
+      if (show && status && (d.status || '') !== status) show = false;
+      if (show && cert && (d.cert || '').toLowerCase() !== cert) show = false;
+      row.style.display = show ? '' : 'none';
+      if (!show) { var c = row.querySelector('.fw-pol-check'); if (c) c.checked = false; }
+      else visible.push(row);
+    });
+    updateBulkBar();
+    return { visible: visible, regexActive: regexActive };
+  }
+
+  // Worker plumbing
+  var worker = null, seq = 0, watchdog = null, lastStart = null, fieldToId = {}, regexTimer = null;
+  function ensureWorker() {
+    if (worker) return worker;
+    try { worker = new Worker(WORKER_FILTER_URL); }
+    catch (e) { worker = null; return null; }
+    worker.onmessage = function (ev) {
+      var m = ev.data || {};
+      if (m.seq !== seq) return;                              // stale reply
+      if (m.type === 'field-start') { lastStart = m.field; return; }
+      if (m.type === 'result') { clearTimeout(watchdog); watchdog = null; hideByName(m.hideIds || []); }
+    };
+    worker.onerror = function () { killWorker(); };
+    return worker;
+  }
+  function killWorker() { if (worker) { try { worker.terminate(); } catch (e) {} } worker = null; clearTimeout(watchdog); watchdog = null; }
+
+  function hideByName(names) {
+    if (!names.length) return;
+    var set = Object.create(null); names.forEach(function (n) { set[n] = 1; });
+    document.querySelectorAll('#policiesTable tbody tr[data-policy-row]').forEach(function (row) {
+      if (set[row.dataset.name]) {
+        row.style.display = 'none';
+        var c = row.querySelector('.fw-pol-check'); if (c) c.checked = false;
+      }
+    });
+    updateBulkBar();
+  }
+
+  function dispatchRegex(state) {
+    seq++;                                                    // invalidates older replies
+    clearTimeout(watchdog); watchdog = null; lastStart = null;
+    if (!state.regexActive.length) return;                   // sync already final
+    var w = ensureWorker();
+    if (!w) { state.regexActive.forEach(function (r) { setInvalid(r.id, true); }); return; }  // no Worker → fail safe
+    fieldToId = {}; state.regexActive.forEach(function (r) { fieldToId[r.field] = r.id; });
+    var rows = state.visible.map(function (row) {
+      var d = row.dataset;
+      return { name: d.name, vips: d.vips, pool: d.pool, backends: d.backends };
+    });
+    w.postMessage({
+      seq: seq, rows: rows,
+      regexFields: state.regexActive.map(function (r) { return { field: r.field, source: r.source, flags: r.flags }; })
+    });
+    watchdog = setTimeout(onRegexTimeout, WATCHDOG_MS);
+  }
+  function onRegexTimeout() {
+    // The running pattern is catastrophic — kill it, remember it, flag its box.
+    var culprit = lastStart ? fieldToId[lastStart] : null;
+    killWorker();
+    if (culprit) { slowPatterns[culprit] = fieldRaw(culprit); setInvalid(culprit, true); }
+    else { Object.keys(fieldToId).forEach(function (k) { var id = fieldToId[k]; slowPatterns[id] = fieldRaw(id); setInvalid(id, true); }); }
+    refilter(false);                                          // re-run; the slow pattern is now skipped
+  }
+
+  function refilter(debounceRegex) {
+    var state = runSync();                                    // instant literal/enum feedback
+    clearTimeout(regexTimer);
+    if (debounceRegex) regexTimer = setTimeout(function () { dispatchRegex(state); }, REGEX_DEBOUNCE_MS);
+    else dispatchRegex(state);
+  }
+
+  TEXT_FIELDS.forEach(function (f) {
+    var e = document.getElementById(f.id); if (e) e.addEventListener('input', function () { refilter(true); });
   });
-  document.getElementById('statusFilter').addEventListener('change', function (event) {
-    filterPolicies(document.getElementById('policySearch').value);
+  ['fCert', 'statusFilter'].forEach(function (id) {
+    var e = document.getElementById(id); if (e) e.addEventListener('change', function () { refilter(false); });
   });
-  // Keep clicks in the Actions cell from triggering the row's data-href navigation.
-  document.querySelectorAll('#policiesTable tbody td.actions-col').forEach(function (td) {
-    td.addEventListener('click', function (event) { event.stopPropagation(); });
+  var clearBtn = document.getElementById('clearFilters');
+  if (clearBtn) clearBtn.addEventListener('click', function () {
+    TEXT_FIELDS.forEach(function (f) { var e = document.getElementById(f.id); if (e) { e.value = ''; e.classList.remove('is-invalid'); } });
+    ['fCert', 'statusFilter'].forEach(function (id) { var e = document.getElementById(id); if (e) e.value = ''; });
+    slowPatterns = {};
+    refilter(false);
   });
+
+  // ── Selection + bulk bar ────────────────────────────────────────────────────
+  function checkedNames() {
+    return Array.prototype.slice
+      .call(document.querySelectorAll('#policiesTable tbody tr[data-policy-row]'))
+      .filter(function (r) { return r.style.display !== 'none'; })
+      .map(function (r) { return r.querySelector('.fw-pol-check'); })
+      .filter(function (c) { return c && c.checked; })
+      .map(function (c) { return c.value; });
+  }
+  function updateBulkBar() {
+    var names = checkedNames(), bar = document.getElementById('bulkBar');
+    if (!bar) return;
+    document.getElementById('bulkCount').textContent = names.length;
+    if (names.length) { bar.classList.remove('d-none'); bar.classList.add('d-flex'); }
+    else { bar.classList.add('d-none'); bar.classList.remove('d-flex'); }
+  }
+  document.querySelectorAll('.fw-pol-check').forEach(function (c) {
+    c.addEventListener('change', updateBulkBar);
+  });
+  var selAll = document.getElementById('selectAll');
+  if (selAll) selAll.addEventListener('change', function () {
+    document.querySelectorAll('#policiesTable tbody tr[data-policy-row]').forEach(function (row) {
+      if (row.style.display === 'none') return;
+      var c = row.querySelector('.fw-pol-check'); if (c) c.checked = selAll.checked;
+    });
+    updateBulkBar();
+  });
+  // Row click → navigate, but not from the checkbox/actions cells.
+  document.querySelectorAll('#policiesTable tbody td.actions-col, #policiesTable tbody td.check-col').forEach(function (td) {
+    td.addEventListener('click', function (e) { e.stopPropagation(); });
+  });
+  document.querySelectorAll('#policiesTable tbody tr[data-policy-row]').forEach(function (row) {
+    row.addEventListener('click', function () { var h = row.dataset.href; if (h && h !== '#') window.location = h; });
+  });
+
+  // ── Action modal ────────────────────────────────────────────────────────────
+  var modalEl = document.getElementById('actionModal');
+  var modal = modalEl ? bootstrap.Modal.getOrCreateInstance(modalEl) : null;
+  var current = { action: '', policies: [] };
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]; }); }
+
+  function openAction(action, policies) {
+    if (!modal || !policies.length) return;
+    if (NEEDS_DEST[action] && !hasOtherFw) { alert('No other FortiWeb is registered as a destination.'); return; }
+    current = { action: action, policies: policies };
+    var many = policies.length !== 1;
+    document.getElementById('actionModalTitle').textContent = LABELS[action] + ' — ' + policies.length + ' polic' + (many ? 'ies' : 'y');
+    var intro = { enable: 'Enable the selected server polic{y}.',
+      disable: 'Disable the selected server polic{y} (traffic stops; the object is kept).',
+      delete: 'DELETE the selected server polic{y}. Shared objects (WPP, pool, certificate, service) are kept.',
+      clone_here: 'Deep-clone the whole policy tree on THIS FortiWeb under a new name. Existing objects are validated (not overwritten); the copy is left DISABLED.',
+      clone_to: 'Deep-clone the whole policy tree onto ANOTHER FortiWeb. Existing objects on the destination are validated (not overwritten); the copy is left DISABLED.',
+      migrate_to: 'Clone the policy tree onto another FortiWeb and, only if that lands cleanly, DISABLE the source (the source is kept — never deleted).'
+    }[action] || '';
+    document.getElementById('actionModalIntro').textContent = intro.replace('{y}', many ? 'ies' : 'y');
+    document.getElementById('actionTargets').innerHTML =
+      '<div class="fw-badge fw-badge-secondary mb-1">Targets</div><br>' +
+      policies.map(function (p) { return '<span class="fw-badge fw-badge-info">' + esc(p) + '</span>'; }).join(' ');
+    document.getElementById('actionFieldDest').classList.toggle('d-none', !NEEDS_DEST[action]);
+    var showName = (action === 'clone_here' && policies.length === 1);
+    var nameField = document.getElementById('actionFieldName');
+    nameField.classList.toggle('d-none', !showName);
+    if (showName) document.getElementById('actionNewName').value = policies[0] + '-copy';
+    document.getElementById('actionPreview').classList.add('d-none');
+    document.getElementById('actionPreviewBody').innerHTML = '';
+    document.getElementById('actionError').classList.add('d-none');
+    document.getElementById('actionApplyBtn').disabled = true;
+    modal.show();
+  }
+
+  function collectPayload() {
+    var p = { action: current.action, policies: current.policies };
+    if (NEEDS_DEST[current.action]) p.dest_id = document.getElementById('actionDest').value;
+    var nameField = document.getElementById('actionFieldName');
+    if (!nameField.classList.contains('d-none')) p.new_name = document.getElementById('actionNewName').value.trim();
+    return p;
+  }
+
+  function showErr(msg) {
+    var e = document.getElementById('actionError');
+    e.textContent = msg; e.classList.remove('d-none');
+  }
+
+  function renderPreview(data) {
+    var many = data.results.length !== 1;
+    document.getElementById('actionPreviewBadge').textContent =
+      (data.dest ? ('→ ' + data.dest + ' · ') : '') + data.results.length + ' polic' + (many ? 'ies' : 'y');
+    var html = data.results.map(function (r) {
+      var head = '<div style="margin:6px 0 2px;"><strong>' + esc(r.policy) + '</strong> — '
+        + (r.ok ? '<span style="color:#10b981;">ready</span>'
+                : '<span style="color:#fbbf24;">' + esc(r.error || 'check') + '</span>') + '</div>';
+      var det = r.detail || {}, body = '';
+      if (det.summary) {
+        var s = det.summary;
+        body += '<div class="text-muted">to create: ' + (s.to_create || 0)
+          + ' · already exists: ' + (s.exists || 0) + ' · total: ' + (s.total || 0) + '</div>';
+      }
+      if (det.plan) body += '<pre style="white-space:pre-wrap;margin:4px 0;background:rgba(148,163,184,.06);padding:6px;border-radius:6px;">' + esc(det.plan) + '</pre>';
+      else if (det.request) body += '<pre style="white-space:pre-wrap;margin:4px 0;background:rgba(148,163,184,.06);padding:6px;border-radius:6px;">' + esc(JSON.stringify(det.request, null, 1)) + '</pre>';
+      return head + body;
+    }).join('');
+    document.getElementById('actionPreviewBody').innerHTML = html || '<span class="text-muted">No changes.</span>';
+    document.getElementById('actionPreview').classList.remove('d-none');
+  }
+
+  function post(url, payload) {
+    return fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function (r) { return r.json().catch(function () { return { ok: false, error: 'HTTP ' + r.status }; }); });
+  }
+
+  document.getElementById('actionPreviewBtn').addEventListener('click', function () {
+    document.getElementById('actionError').classList.add('d-none');
+    var btn = this; btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Previewing…';
+    post(previewUrl, collectPayload()).then(function (d) {
+      btn.disabled = false; btn.innerHTML = '<i class="bi bi-eye me-1"></i>Preview (dry-run)';
+      if (!d.ok) { showErr(d.error || 'Preview failed'); return; }
+      renderPreview(d);
+      document.getElementById('actionApplyBtn').disabled = false;
+    }).catch(function (e) {
+      btn.disabled = false; btn.innerHTML = '<i class="bi bi-eye me-1"></i>Preview (dry-run)';
+      showErr('' + e);
+    });
+  });
+
+  document.getElementById('actionApplyBtn').addEventListener('click', function () {
+    var action = current.action, n = current.policies.length, many = n !== 1;
+    if (!confirm(LABELS[action] + ': apply to ' + n + ' server polic' + (many ? 'ies' : 'y') + ' for real?')) return;
+    var btn = this; btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Starting…';
+    post(applyUrl, collectPayload()).then(function (d) {
+      btn.disabled = false; btn.innerHTML = '<i class="bi bi-lightning-charge me-1"></i>Apply for real';
+      if (!d.ok || !d.job_id) { showErr(d.error || 'Could not start the action'); return; }
+      if (window.JobsUI && window.JobsUI.trackJob) window.JobsUI.trackJob(d.job_id, LABELS[action]);
+      if (modal) modal.hide();
+    }).catch(function (e) {
+      btn.disabled = false; btn.innerHTML = '<i class="bi bi-lightning-charge me-1"></i>Apply for real';
+      showErr('' + e);
+    });
+  });
+
+  // Row ⚙ actions + bulk bar buttons
+  document.querySelectorAll('.fw-row-action').forEach(function (b) {
+    b.addEventListener('click', function () {
+      if (b.hasAttribute('disabled')) return;
+      openAction(b.dataset.action, [b.dataset.policy]);
+    });
+  });
+  document.querySelectorAll('.fw-bulk-action').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var names = checkedNames();
+      if (!names.length) { alert('Select at least one policy.'); return; }
+      openAction(b.dataset.action, names);
+    });
+  });
+
+  updateBulkBar();
 })();
 </script>
 {% endblock %}

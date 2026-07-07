@@ -607,6 +607,8 @@
                 </div>
                 <div class="mb-3"><label class="fw-form-label">User filter <span class="text-muted">(LDAP, optional)</span></label>
                   <input type="text" name="ldap_user_filter" class="form-control fw-form-control font-monospace" value="{{ auth_config.ldap.user_filter }}" placeholder="(uid={username})"></div>
+                <div class="mb-3"><label class="fw-form-label">Sync group / OU DN <span class="text-muted">(optional, for user sync)</span></label>
+                  <input type="text" name="ldap_sync_group_dn" class="form-control fw-form-control font-monospace" value="{{ auth_config.ldap.sync_group_dn }}" placeholder="cn=fortiweb-admins,ou=groups,dc=example,dc=com"></div>
                 <div class="row g-3 mb-2 ms-1 align-items-center">
                   <div class="col-auto form-check"><input class="form-check-input" type="checkbox" name="ldap_use_ssl" id="ldap-ssl" {{ 'checked' if auth_config.ldap.use_ssl else '' }}><label class="form-check-label" for="ldap-ssl">LDAPS (SSL)</label></div>
                   <div class="col-auto form-check"><input class="form-check-input" type="checkbox" name="ldap_start_tls" id="ldap-starttls" {{ 'checked' if auth_config.ldap.start_tls else '' }}><label class="form-check-label" for="ldap-starttls">StartTLS</label></div>
@@ -651,6 +653,14 @@
             <div id="auth-test-out" class="mt-3" style="display:none;"><div id="auth-test-msg"></div></div>
             <hr class="my-3">
             <p class="text-muted mb-0" style="font-size:12px;"><i class="bi bi-info-circle me-1"></i>Directory users get the <strong>{{ auth_config.default_profile }}</strong> profile on first sign-in and do MFA at the directory. Local accounts can enable app 2FA in the Security tab.</p>
+            <div id="auth-sync-block" class="auth-ext">
+              <hr class="my-3">
+              <p class="text-muted mb-2" style="font-size:12px;"><i class="bi bi-people me-1"></i>Import the directory users (scoped to the <strong>Sync group / OU DN</strong> above &mdash; blank = everyone under the base DN) into the local user list, so you can assign profiles or block them <strong>before</strong> they ever sign in. New users are imported <strong>disabled (pending approval)</strong>; already-known users are left untouched. Save the settings first.</p>
+              <form method="POST" action="{{ url_for('settings.sync_auth') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm fw-btn-primary"><i class="bi bi-arrow-repeat me-1"></i>Sync directory users</button>
+              </form>
+            </div>
           </div>
         </div>
       </div>
@@ -660,13 +670,38 @@
   <!-- CERTIFICATE MANAGER TAB -->
   <div class="tab-pane fade" id="tab-certmgr">
     <p class="text-muted mb-3" style="font-size:13px;">
-      Everything is generic — fill the ADCS connection and, per certificate class, the signing
-      command template with placeholders. The renewal automation (Automation → Certificate Manager)
-      just consumes these values.
-      Command tokens: {% for t in cert_cmd_tokens %}<code>{{ t }}</code>{{ ' ' if not loop.last }}{% endfor %}.
+      Everything is generic — pick the issuance <strong>protocol</strong>, fill the CA backend
+      connection and, per certificate class, the signing command template with placeholders.
+      The renewal automation and the lifecycle sweep (Automation → Scheduled Actions) just
+      consume these values.
+      ADCS tokens: {% for t in cert_cmd_tokens %}<code>{{ t }}</code>{{ ' ' if not loop.last }}{% endfor %}.
     </p>
     <form method="POST" action="{{ url_for('settings.save_cert_manager') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="fw-card mb-3">
+        <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-shuffle me-2 text-accent"></i>Issuance protocol (CA backend)</span></div>
+        <div class="fw-card-body">
+          <div class="row g-3 align-items-end">
+            <div class="col-md-6">
+              <label class="fw-form-label">Active protocol</label>
+              <select class="form-select fw-form-control" name="cert_protocol">
+                {% for pkey, plabel in cert_protocols %}
+                <option value="{{ pkey }}" {{ 'selected' if cert_protocol == pkey }}>{{ plabel }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <p class="text-muted mb-1" style="font-size:12px;">
+                The whole pipeline (generate → sign → deploy → swap → revoke) is protocol-agnostic:
+                switching to ACME here re-points signing AND revocation to the ACME client command
+                templates below — no code change. The per-class cards (key type, subject/SAN format,
+                renew window) apply to both protocols.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div class="fw-card mb-3">
         <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>ADCS connection (Linux enrolment client)</span></div>
@@ -711,6 +746,64 @@
               <label class="fw-form-label">Notify emails (lifecycle events)</label>
               <input class="form-control fw-form-control" name="adcs_notify_to" value="{{ cert_adcs.notify_to }}"
                      placeholder="ops@corp.local, secteam@corp.local">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="fw-card mb-3">
+        <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-globe2 me-2 text-accent"></i>ACME client (used when the protocol is ACME)</span></div>
+        <div class="fw-card-body">
+          <p class="text-muted mb-2" style="font-size:12px;">
+            Drives any ACME client (certbot, acme.sh, lego…) through the same command-template
+            contract. Tokens: {% for t in acme_cmd_tokens %}<code>{{ t }}</code>{{ ' ' if not loop.last }}{% endfor %}.
+            The EAB HMAC key is stored encrypted and never displayed.
+          </p>
+          <div class="row g-3">
+            <div class="col-md-3">
+              <label class="fw-form-label">ACME binary <code>{bin}</code></label>
+              <input class="form-control fw-form-control" name="acme_bin" value="{{ cert_acme.bin }}" placeholder="certbot">
+            </div>
+            <div class="col-md-5">
+              <label class="fw-form-label">Directory URL <code>{directory}</code></label>
+              <input class="form-control fw-form-control" name="acme_directory_url" value="{{ cert_acme.directory_url }}"
+                     placeholder="https://acme-v02.api.letsencrypt.org/directory">
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">Account email <code>{email}</code></label>
+              <input class="form-control fw-form-control" name="acme_account_email" value="{{ cert_acme.account_email }}" placeholder="pki@corp.local">
+            </div>
+            <div class="col-md-3">
+              <label class="fw-form-label">Challenge <code>{challenge}</code></label>
+              <select class="form-select fw-form-control" name="acme_challenge">
+                <option value="http-01" {{ 'selected' if cert_acme.challenge == 'http-01' }}>http-01</option>
+                <option value="dns-01" {{ 'selected' if cert_acme.challenge == 'dns-01' }}>dns-01</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label">EAB key id <code>{eab_kid}</code></label>
+              <input class="form-control fw-form-control" name="acme_eab_kid" value="{{ cert_acme.eab_kid }}" placeholder="(optional — External Account Binding)">
+            </div>
+            <div class="col-md-5">
+              <label class="fw-form-label">EAB HMAC key <code>{eab_hmac}</code> (encrypted)</label>
+              <input class="form-control fw-form-control" type="password" name="acme_eab_hmac"
+                     placeholder="{{ '•••••• (unchanged)' if cert_acme.has_secret else 'set HMAC key (optional)' }}">
+              {% if cert_acme.has_secret %}
+              <div class="form-check mt-1">
+                <input class="form-check-input" type="checkbox" name="acme_clear_eab_hmac" id="acme-clr">
+                <label class="form-check-label" for="acme-clr" style="font-size:12px;">Clear stored HMAC key</label>
+              </div>
+              {% endif %}
+            </div>
+            <div class="col-md-12">
+              <label class="fw-form-label">Signing command (submit)</label>
+              <input class="form-control fw-form-control" name="acme_submit_cmd" value="{{ cert_acme.submit_cmd }}"
+                     style="font-family:monospace;font-size:12px;">
+            </div>
+            <div class="col-md-12">
+              <label class="fw-form-label">Revoke command</label>
+              <input class="form-control fw-form-control" name="acme_revoke_cmd" value="{{ cert_acme.revoke_cmd }}"
+                     style="font-family:monospace;font-size:12px;">
             </div>
           </div>
         </div>
@@ -762,6 +855,61 @@
         </div>
       </div>
       {% endfor %}
+
+      <div class="fw-card mb-3">
+        <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-recycle me-2 text-accent"></i>Lifecycle policy — revocation &amp; device cleanup</span></div>
+        <div class="fw-card-body">
+          <p class="text-muted mb-2" style="font-size:12px;">
+            WHEN a superseded certificate is revoked at the CA and WHEN old material is deleted off
+            the FortiWebs. Enforced by the <em>Cert Manager — lifecycle sweep</em> scheduled action
+            and the manual sweep on the Certificate Manager page. A certificate still bound to any
+            server policy / SNI member / GUI is <strong>never</strong> revoked or deleted — bindings
+            are re-verified live, fail-closed, before every destructive step.
+          </p>
+          <div class="row g-3">
+            <div class="col-md-3">
+              <div class="form-check form-switch mt-4">
+                <input class="form-check-input" type="checkbox" name="lc_revoke_on_supersede" id="lc-ros"
+                       {{ 'checked' if cert_lifecycle.revoke_on_supersede }}>
+                <label class="form-check-label" for="lc-ros" style="font-size:13px;">Revoke superseded certs at the CA</label>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <label class="fw-form-label">Revoke grace (days after supersede)</label>
+              <input class="form-control fw-form-control" type="number" min="0" name="lc_revoke_grace_days"
+                     value="{{ cert_lifecycle.revoke_grace_days }}">
+            </div>
+            <div class="col-md-3">
+              <label class="fw-form-label">Delete superseded from device after (days)</label>
+              <input class="form-control fw-form-control" type="number" min="0" name="lc_delete_superseded_after_days"
+                     value="{{ cert_lifecycle.delete_superseded_after_days }}">
+              <div class="text-muted" style="font-size:11px;">Used when revoke-on-supersede is OFF.</div>
+            </div>
+            <div class="col-md-3">
+              <label class="fw-form-label">Delete expired from device after (days)</label>
+              <input class="form-control fw-form-control" type="number" min="0" name="lc_delete_expired_after_days"
+                     value="{{ cert_lifecycle.delete_expired_after_days }}">
+            </div>
+            <div class="col-md-4">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="lc_delete_revoked_from_device" id="lc-drd"
+                       {{ 'checked' if cert_lifecycle.delete_revoked_from_device }}>
+                <label class="form-check-label" for="lc-drd" style="font-size:13px;">Delete revoked certs from devices (once unbound)</label>
+              </div>
+            </div>
+            <div class="col-md-8">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="lc_auto_apply" id="lc-auto"
+                       {{ 'checked' if cert_lifecycle.auto_apply }}>
+                <label class="form-check-label" for="lc-auto" style="font-size:13px;">
+                  <strong>Auto-apply</strong> on the scheduled sweep — when off, the scheduled action only
+                  REPORTS what is due (manual sweeps from the Certificate Manager page still apply).
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div class="d-flex gap-2 mb-4">
         <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save Settings</button>
@@ -1210,6 +1358,7 @@ function authToggle() {
   var rad = document.getElementById('auth-radius-block');
   if (ldap) ldap.style.display = (b === 'ad' || b === 'ldap') ? '' : 'none';
   if (rad) rad.style.display = (b === 'radius') ? '' : 'none';
+  var sync = document.getElementById('auth-sync-block'); if (sync) sync.style.display = (b === 'ad' || b === 'ldap') ? '' : 'none';
 }
 function authTest() {
   var btn = document.getElementById('auth-test-btn');

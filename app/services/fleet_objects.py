@@ -197,8 +197,10 @@ def _as_list(raw: Any) -> list:
 
 
 def _fortiweb_appliances() -> list[Appliance]:
-    """All FortiWeb appliances (skip FortiADC / other kinds), name-sorted."""
-    rows = Appliance.query.order_by(Appliance.name).all()
+    """FortiWeb appliances visible to this session (product + maintenance
+    scoped), name-sorted. In the ADC ADOM this is empty by construction."""
+    from ..models import visible_appliances
+    rows = visible_appliances().order_by(Appliance.name).all()
     return [a for a in rows if (a.kind or "fortiweb") == "fortiweb"]
 
 

@@ -40,6 +40,7 @@ K_L_BINDDN = "auth.ldap.bind_dn"
 K_L_BINDPW = "auth.ldap.bind_password_enc"    # Fernet token
 K_L_DOMAIN = "auth.ldap.ad_domain"
 K_L_FILTER = "auth.ldap.user_filter"
+K_L_SYNCGROUP = "auth.ldap.sync_group_dn"    # optional group/OU DN to scope Sync
 K_L_TIMEOUT = "auth.ldap.timeout"
 
 # RADIUS
@@ -123,6 +124,7 @@ def config(*, reveal_secrets: bool = False) -> dict:
             "bind_dn": _get(K_L_BINDDN),
             "ad_domain": _get(K_L_DOMAIN),
             "user_filter": _get(K_L_FILTER),
+            "sync_group_dn": _get(K_L_SYNCGROUP),
             "timeout": _to_int(_get(K_L_TIMEOUT), 8),
             "has_bind_password": bool(AppSetting.get(K_L_BINDPW)),
         },
@@ -175,6 +177,7 @@ def save_config(form) -> None:
         AppSetting.set(K_L_BINDDN, g("ldap_bind_dn"))
         AppSetting.set(K_L_DOMAIN, g("ldap_ad_domain"))
         AppSetting.set(K_L_FILTER, g("ldap_user_filter"))
+        AppSetting.set(K_L_SYNCGROUP, g("ldap_sync_group_dn"))
         AppSetting.set(K_L_TIMEOUT, str(max(2, min(60, _to_int(g("ldap_timeout"), 8)))))
         new_pw = form.get("ldap_bind_password", "")
         if new_pw:
@@ -291,8 +294,66 @@ def provision_external_user(username: str, source: str):
     return user
 
 
+# ---- directory sync (admin action) ----------------------------------------
+def list_directory_users(limit: int = 500) -> dict:
+    """Enumerate the active AD/LDAP backend's users (scoped to the configured
+    sync group/OU). ``{ok, users, detail}``. Not supported on RADIUS/local."""
+    b = backend()
+    if b not in ("ad", "ldap"):
+        return {"ok": False, "users": [],
+                "detail": "Directory sync needs an Active Directory or LDAP backend."}
+    cfg = _resolved_ldap_cfg()
+    ok, res = directory_auth.ldap_list_users(cfg, group_dn=_get(K_L_SYNCGROUP), limit=limit)
+    if not ok:
+        return {"ok": False, "users": [], "detail": str(res)}
+    return {"ok": True, "users": res, "detail": f"{len(res)} user(s) found."}
+
+
+def sync_directory_users(default_active: bool = False, limit: int = 500) -> dict:
+    """Provision local rows for every directory user (see ``list_directory_users``).
+
+    NEW rows: ``auth_source`` = active backend, the default profile, an unusable
+    local password, ``is_active=default_active`` (default DISABLED / pending —
+    the admin enables + refines from Settings -> Users). EXISTING rows are NEVER
+    touched. ``{ok, created, existing, total, detail}``."""
+    listing = list_directory_users(limit=limit)
+    if not listing["ok"]:
+        return {"ok": False, "created": 0, "existing": 0, "total": 0,
+                "detail": listing["detail"]}
+
+    from ..extensions import db
+    from ..models import Profile, User
+
+    source = backend()
+    prof = (Profile.query.filter_by(name=default_profile_name()).first()
+            or Profile.query.filter_by(name="operator").first())
+
+    created = existing = 0
+    for entry in listing["users"]:
+        uname = (entry.get("username") or "").strip()
+        if not uname:
+            continue
+        if User.query.filter_by(username=uname).first() is not None:
+            existing += 1
+            continue
+        user = User(username=uname, auth_source=source, is_active=bool(default_active))
+        user.set_password(_secrets.token_urlsafe(48))
+        if prof is not None:
+            user.profile = prof
+            user.role = prof.role_label
+        db.session.add(user)
+        created += 1
+    db.session.commit()
+    state = "active" if default_active else "disabled (pending approval)"
+    return {"ok": True, "created": created, "existing": existing,
+            "total": created + existing,
+            "detail": (f"{created} new user(s) imported as {state}; "
+                       f"{existing} already existed.")}
+
+
 __all__ = [
     "BACKENDS", "backend", "is_enabled", "default_profile_name",
     "config", "save_config", "test_connection",
     "authenticate_external", "provision_external_user",
+    "list_directory_users", "sync_directory_users",
 ]

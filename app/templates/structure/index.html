@@ -11,15 +11,25 @@
 {% endblock %}
 
 {% block content %}
+{% set api_tab = 'structure' %}
+{% include 'partials/api_nav_tabs.html' %}
+
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title">
       <i class="bi bi-diagram-3 me-2 text-accent"></i>Object Structure &amp; Dependencies
+      {% if total_endpoints %}
+      <span class="fw-badge fw-badge-secondary ms-2" style="vertical-align:middle;"
+            title="The structure tree deliberately covers only the Server Policy + Web Protection Profile dependency subgraph — not the whole registry (System, Network, Monitor, Log objects hang off no policy).">
+        {{ total_nodes }} of {{ total_endpoints }} registry endpoints
+      </span>
+      {% endif %}
     </h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      The FortiWeb object dependency tree (the in-repo exporter capture) cross-referenced
-      against the endpoint registry. Shows what depends on what, and how much of the tree
-      the endpoint library covers.
+      A deliberate <strong>subset</strong> of the registry: only the objects that hang off a
+      <strong>Server Policy</strong> or a <strong>Web Protection Profile</strong> (the dependency
+      subgraph), cross-referenced against the endpoint registry. System, Network, Monitor and
+      Log &amp; Report endpoints are in the Registry but not here — they depend on no policy.
     </p>
   </div>
   <div class="d-flex align-items-center gap-2">

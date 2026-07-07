@@ -16,10 +16,7 @@
 
 {% block content %}
 <div class="row g-3">
-  <div class="col-lg-2 col-md-3">
-    {% include 'web_protection/_menu.html' %}
-  </div>
-  <div class="col-lg-10 col-md-9">
+  <div class="col-lg-12">
     <div class="fw-page-header">
       <div>
         <h1 class="fw-page-title"><i class="bi bi-fingerprint me-2 text-accent"></i>{{ set_name }}</h1>
@@ -58,7 +55,9 @@
       <div class="fw-card-body p-0">
         <table class="fw-table mb-0">
           <thead><tr>
-            <th>Signature Category</th><th>Status</th><th>Action</th><th>Severity</th><th>Trigger Policy</th><th style="width:70px;"></th>
+            <th>Signature Category</th><th>Status</th>
+            <th title="False Positive Mitigation — extra SQL syntax validation (SQL Injection categories only)">False Positive Mitigation</th>
+            <th>Action</th><th>Block Period</th><th>Severity</th><th>Trigger Policy</th><th style="width:70px;"></th>
           </tr></thead>
           <tbody>
             {% set mc_labels = value_labels.get('main_class_id', {}) %}
@@ -69,13 +68,18 @@
                 <td class="fw-semibold">{{ mc_labels.get(c.get('main_class_id')|string, c.get('main_class_id')) }}</td>
                 <td>{% if c.get('status') == 'enable' %}<span class="fw-badge fw-badge-success">Enabled</span>
                     {% else %}<span class="fw-badge fw-badge-secondary">Disabled</span>{% endif %}</td>
+                <td>{% if c.get('fpm-status') == 'enable' %}<span class="fw-badge fw-badge-success">Enabled</span>
+                    {% elif c.get('fpm-status') == 'disable' %}<span class="fw-badge fw-badge-secondary">Disabled</span>
+                    {% else %}<span class="text-muted">—</span>{% endif %}</td>
                 <td>{{ act_labels.get(c.get('action'), c.get('action') or '—') }}</td>
+                <td>{{ c.get('block-period') or '—' }}</td>
                 <td>{{ c.get('severity') or '—' }}</td>
                 <td>{{ c.get('trigger') or '—' }}</td>
                 <td>
                   <button type="button" class="btn btn-sm btn-outline-secondary" title="Edit category settings"
                           data-js="edit-class" data-row="{{ c.get('id', c.get('_id','')) }}"
                           data-mc="{{ c.get('main_class_id') }}" data-status="{{ c.get('status','') }}"
+                          data-fpm="{{ c.get('fpm-status','') }}"
                           data-action="{{ c.get('action','') }}" data-severity="{{ c.get('severity','') }}"
                           data-block="{{ c.get('block-period','') }}" data-trigger="{{ c.get('trigger','') }}">
                     <i class="bi bi-pencil"></i></button>
@@ -83,7 +87,7 @@
               </tr>
               {% endfor %}
             {% else %}
-              <tr><td colspan="6" class="text-center text-muted py-3">
+              <tr><td colspan="8" class="text-center text-muted py-3">
                 No category rows available{% if state_source == 'none' %} — device unreachable and no deep capture cached. Run a deep capture or Refresh{% endif %}.
               </td></tr>
             {% endif %}
@@ -155,6 +159,12 @@
       <div class="modal-body">
         <div class="mb-2"><label class="fw-form-label">Status</label>
           <select id="cls-status" class="form-select fw-form-control">
+            <option value="enable">Enabled</option><option value="disable">Disabled</option>
+          </select></div>
+        <div class="mb-2"><label class="fw-form-label"
+             title="Extra SQL syntax validation before a signature match fires (SQL Injection categories only)">False Positive Mitigation</label>
+          <select id="cls-fpm" class="form-select fw-form-control">
+            <option value="">(not applicable)</option>
             <option value="enable">Enabled</option><option value="disable">Disabled</option>
           </select></div>
         <div class="mb-2"><label class="fw-form-label">Action</label>
@@ -495,6 +505,7 @@
       document.getElementById('cls-title').textContent =
         (VLBL['main_class_id'] || {})[this.dataset.mc] || this.dataset.mc;
       document.getElementById('cls-status').value = this.dataset.status || 'enable';
+      document.getElementById('cls-fpm').value = this.dataset.fpm || '';
       document.getElementById('cls-action').value = this.dataset.action || '';
       document.getElementById('cls-severity').value = this.dataset.severity || '';
       document.getElementById('cls-block').value = this.dataset.block || '';
@@ -512,6 +523,8 @@
     };
     var bp = document.getElementById('cls-block').value;
     if (bp) fields['block-period'] = bp;
+    var fpm = document.getElementById('cls-fpm').value;
+    if (fpm) fields['fpm-status'] = fpm;
     if (!confirm('Save these category settings to ' + SET + ' on the device?')) return;
     saveRow('waf/signature/main_class_list', CLS_ROW, fields).then(function (j) {
       var el = document.getElementById('cls-status-msg');

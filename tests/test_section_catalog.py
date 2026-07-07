@@ -43,5 +43,8 @@ def test_catalog_has_no_live_device_artifacts(client, app):
     # The page must be DB-only: no device picker / live object rows.
     login(client, admin_user_id(app))
     r = client.get("/section-catalog/")
-    assert b"Select a device" not in r.data
-    assert b"objedit" not in r.data
+    # scope to the page body: the GLOBAL sidebar legitimately carries a
+    # "Select a device" placeholder + objedit links since the WAF nav accordion
+    main = r.data.split(b"<main", 1)[-1]
+    assert b"Select a device" not in main
+    assert b"objedit" not in main

@@ -199,12 +199,16 @@ def blank_row_sample(urn_or_coll: str, rows: list | None = None) -> dict:
     Seeds EVERY curated key for the sub-table's kind so a curated sub-table (e.g.
     content-routing Match Conditions) renders a full add-row form even when the
     parent has ZERO existing rows — the generic union-of-existing-keys yields an
-    empty form (and a dead "Create row" button) in that case. Unions in any keys
-    seen in existing rows so an un-curated sub-table still works as before.
+    empty form (and a dead "Create row" button) in that case. Un-curated
+    sub-tables fall back to the live-verified SUBTABLE_FIELD_SEED templates, so
+    a brand-new parent (e.g. a fresh Protected Hostnames object) still renders
+    an add-row form. Unions in any keys seen in existing rows.
     """
-    from .fortiweb_field_schema import kind_keys
+    from .fortiweb_field_schema import SUBTABLE_FIELD_SEED, kind_keys
 
     sample = {k: "" for k in kind_keys(object_kind(urn_or_coll))}
+    for k, v in SUBTABLE_FIELD_SEED.get(collection_of(urn_or_coll), {}).items():
+        sample.setdefault(k, v)
     for r in rows or []:
         if isinstance(r, dict):
             for k in r:

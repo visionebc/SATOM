@@ -105,6 +105,15 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "git-backed source-of-truth snapshot.",
     ),
     ActionSpec(
+        "deep_capture", "Deep capture (full policy/WPP tree)", "admin",
+        needs_targets=True,
+        summary="Walk each target FortiWeb's server policies + WPPs (by-parent "
+                "sub-tables, named rules) into the deep cache layer, so the "
+                "policy/WPP detail pages serve entirely from the DB "
+                "(services.device_sync.deep_snapshot_from_device). Read-only, "
+                "serial per box.",
+    ),
+    ActionSpec(
         "signature_sync", "Sync signature database", "admin", needs_targets=True,
         summary="Refresh the FortiWeb signature catalog from a target device and "
                 "cache it as the shared reference DB (services.signature_catalog).",
@@ -183,6 +192,16 @@ ADMIN_ACTIONS: list[ActionSpec] = [
         summary="Renew expiring CLIENT-authentication certificates on each target "
                 "(generate → sign via ADCS → deploy under a new name). No binding "
                 "swap.",
+    ),
+    ActionSpec(
+        "cert_lifecycle", "Cert Manager — lifecycle sweep (revoke + cleanup)",
+        "admin", needs_targets=True,
+        summary="Enforce the certificate lifecycle policy (Settings → Certificate "
+                "Manager): revoke superseded certs past the grace window at the CA "
+                "and DELETE revoked/superseded/expired unbound certificate material "
+                "off each target FortiWeb. Bindings are re-verified live and "
+                "fail-closed before any delete. Reports-only unless the policy's "
+                "'auto apply' is enabled.",
     ),
     ActionSpec(
         "custom_rest", "Custom REST call", "admin", needs_targets=True,
@@ -268,6 +287,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_device_sync(appliance, params, dry_run, publish=False)
         if key == "device_inspect":
             return _do_device_sync(appliance, params, dry_run, publish=True)
+        if key == "deep_capture":
+            return _do_deep_capture(appliance, dry_run)
         if key == "signature_sync":
             return _do_signature_sync(appliance, dry_run)
         if key == "system_backup":
@@ -286,6 +307,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_ha_check(appliance, dry_run)
         if key == "cert_scan":
             return _do_cert_scan(appliance, dry_run)
+        if key == "cert_lifecycle":
+            return _do_cert_lifecycle(appliance, dry_run)
         if key.startswith("cert_manager_"):
             return _do_cert_manager(key, appliance, params, dry_run)
         if key == "custom_rest":
@@ -317,6 +340,28 @@ def _do_device_sync(appliance, params: dict, dry_run: bool, *, publish: bool) ->
     return {"ok": ok,
             "summary": f"{appliance.name}: {getattr(run, 'detail', '')}",
             "log": getattr(run, "detail", "") or ""}
+
+
+def _do_deep_capture(appliance, dry_run: bool) -> dict:
+    """Refresh the device's DEEP cache layer (full per-policy/WPP tree) so the
+    detail pages serve from the DB. Read-only against the appliance; a failed
+    sweep never wipes the existing deep layer (guarded below)."""
+    if appliance is None:
+        return {"ok": False, "summary": "deep_capture needs a target device.", "log": ""}
+    if dry_run:
+        return {"ok": True,
+                "summary": f"[dry-run] would deep-capture {appliance.name}.", "log": ""}
+    from . import device_sync as _ds
+    snapshot = _ds.deep_snapshot_from_device(appliance)
+    if not snapshot.get("total_objects"):
+        return {"ok": False,
+                "summary": f"{appliance.name}: deep sweep returned 0 objects — "
+                           "existing deep cache kept.", "log": ""}
+    res = _ds.persist_deep_snapshot(appliance, snapshot, trigger="scheduled")
+    n = sum(v.get("objects", 0) for v in res.values())
+    return {"ok": True,
+            "summary": f"{appliance.name}: {n} deep objects, {len(res)} sections.",
+            "log": ""}
 
 
 def _do_backup(appliance, dry_run: bool) -> dict:
@@ -492,6 +537,30 @@ def _do_cert_scan(appliance, dry_run: bool) -> dict:
             "summary": f"{appliance.name}: cached {r['scanned']} cert(s), "
                        f"{r['detailed']} with X.509 detail.",
             "log": ""}
+
+
+def _do_cert_lifecycle(appliance, dry_run: bool) -> dict:
+    """Enforce the certificate LIFECYCLE POLICY on one target: revoke superseded
+    certs past the grace window, delete due material off the box. Honors the
+    policy's ``auto_apply`` — when it is off the scheduled run is REPORT-ONLY
+    regardless of the action's own dry-run flag (safe default)."""
+    from . import cert_manager
+    from . import settings_store as _store
+    if appliance is None:
+        return {"ok": False, "summary": "cert_lifecycle needs a target device.",
+                "log": ""}
+    pol = _store.cert_lifecycle_policy()
+    effective_dry = dry_run or not pol.get("auto_apply")
+    res = cert_manager.run_lifecycle_sweep(
+        dry_run=effective_dry, appliance_id=appliance.id, actor="scheduler")
+    lines = res["revoked"] + res["deleted"] + res["skipped"]
+    mode = ("dry-run" if dry_run else
+            "report-only (auto_apply off)" if effective_dry else "applied")
+    return {"ok": True,
+            "summary": (f"{appliance.name}: lifecycle sweep [{mode}] — "
+                        f"{len(res['revoked'])} revoke, {len(res['deleted'])} "
+                        f"delete, {len(res['skipped'])} skipped."),
+            "log": "\n".join(lines)[:_LOG_MAX]}
 
 
 def _do_cert_manager(key: str, appliance, params: dict, dry_run: bool) -> dict:

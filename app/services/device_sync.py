@@ -47,6 +47,9 @@ def write_device_json(appliance, snapshot: dict) -> Path:
     return p
 
 
+_SWEEP_ABORT_AFTER = 8
+
+
 def snapshot_from_device(appliance, *, timeout: float = 20.0) -> dict:
     """Live, read-only sweep of every top-level cmdb section -> snapshot dict."""
     from .rediscovery import sweep_plan
@@ -57,16 +60,28 @@ def snapshot_from_device(appliance, *, timeout: float = 20.0) -> dict:
     sections: dict = {}
     total = 0
     errors: list[dict] = []
+    consecutive = 0
     for ep in plan:
-        try:
-            rows = client._results_list(client.get(ep["urn"]).json())
-            rows = [r for r in rows if isinstance(r, dict)]
-            if rows:
-                sections.setdefault(ep["section"], {})[ep["name"]] = rows
-                total += len(rows)
-        except Exception as exc:  # noqa: BLE001 — one endpoint never sinks the sweep
-            errors.append({"endpoint": ep["name"],
-                           "error": f"{type(exc).__name__}: {exc}"[:160]})
+        # list_with_error surfaces device-level refusals (license lock -20010,
+        # auth, dead host) while the benign -20001/-3 (endpoint absent on this
+        # firmware) still reads as empty — the registry is a superset.
+        rows, err = client.list_with_error(ep["urn"])
+        if err:
+            errors.append({"endpoint": ep["name"], "error": str(err)[:160]})
+            consecutive += 1
+            if consecutive >= _SWEEP_ABORT_AFTER:
+                # A dead/locked box fails EVERY endpoint; keep hammering it and a
+                # ~470-endpoint sweep burns 20+ minutes to learn nothing.
+                errors.append({"endpoint": "_sweep",
+                               "error": f"aborted after {consecutive} consecutive "
+                                        "device-level failures"})
+                break
+            continue
+        consecutive = 0
+        rows = [r for r in rows if isinstance(r, dict)]
+        if rows:
+            sections.setdefault(ep["section"], {})[ep["name"]] = rows
+            total += len(rows)
     return {
         "device": appliance.name, "appliance_id": appliance.id,
         "generated_at": datetime.utcnow().isoformat(), "total_objects": total,
@@ -117,6 +132,23 @@ def sync_device(appliance, *, publish: bool = False, user_label: str | None = No
                 trigger: str = "manual", session=None):
     """Live sync one device: sweep -> ingest -> JSON -> (git) -> SyncRun."""
     snapshot = snapshot_from_device(appliance)
+    if not snapshot.get("total_objects"):
+        # Device-level failure (license lock -20010, dead host, auth): EVERY
+        # endpoint failed. Record an error run and do NOT ingest or overwrite
+        # the JSON backup — the last good cache stays the source of truth.
+        from ..extensions import db
+        from ..models_cache import SyncRun
+        session = session or db.session
+        errs = snapshot.get("errors") or [{"error": "device returned no objects"}]
+        run = SyncRun(appliance_id=getattr(appliance, "id", None), section="_all",
+                      trigger=trigger, user_label=user_label, status="error",
+                      detail=(f"device refused the sweep ({len(errs)} endpoints "
+                              f"failed, 0 objects) — cache kept. First error: "
+                              f"{errs[0].get('error', '')}")[:240])
+        run.finished_at = datetime.utcnow()
+        session.add(run)
+        session.commit()
+        return run
     return persist_snapshot(appliance, snapshot, source="live", trigger=trigger,
                             user_label=user_label, publish=publish, session=session)
 

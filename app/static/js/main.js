@@ -368,112 +368,123 @@ function fwSync(el) {
 window.fwSync = fwSync;
 
 // ============================================================
-// Collapsible sidebar nav groups (accordion) — 2026-06-29
-// One group open at a time. On load, open the group holding the
-// active item and keep it in view, so a full-page navigation no
-// longer "scrolls to the top" away from the link you clicked.
-// Runs after the active-highlighting IIFE above (so .active is set).
+// Collapsible sidebar nav groups (accordion) — delegated 2026-07-05
+// The ACTIVE section is rendered .open SERVER-SIDE (base.html) so a page
+// load paints the right state with NO flash. The click toggle is bound ONCE
+// and DELEGATED on document, because Turbo Drive swaps the <body> (and the
+// whole sidebar) on every link navigation — per-element handlers bound to
+// the old sidebar are thrown away with it, so after the first Turbo visit
+// the toggles "stopped working". document is never replaced, so a single
+// delegated listener survives every navigation. Idempotent: guarded so a
+// Turbo re-exec of main.js never stacks duplicate listeners.
 // ============================================================
 (function () {
-  var sidebar = document.getElementById('fw-sidebar');
-  if (!sidebar) return;
-  var groups = Array.prototype.slice.call(sidebar.querySelectorAll('.fw-nav-group'));
-  if (!groups.length) return;
-
   var OPEN_KEY = 'fw_nav_open_group';
   var SCROLL_KEY = 'fw_nav_scroll';
-
   function nameOf(g) { return g.getAttribute('data-nav-group') || ''; }
-  function bodyOf(g) { return g.querySelector('.fw-nav-group-body'); }
+  function sidebarEl() { return document.getElementById('fw-sidebar'); }
 
-  // Set a group open/closed with NO animation (initial render, etc.).
-  function setOpenInstant(g, open) {
-    var b = bodyOf(g);
-    g.classList.toggle('collapsed', !open);
-    if (!b) return;
-    b.style.transition = 'none';
-    b.style.maxHeight = open ? 'none' : '0px';
-    b.style.opacity = open ? '1' : '0';
-    void b.offsetHeight;          // flush styles before re-enabling transitions
-    b.style.transition = '';
-  }
+  // --- Bind ONCE on document (survives Turbo body swaps) ---------------------
+  if (!window.__fwNavAccordionBound) {
+    window.__fwNavAccordionBound = true;
 
-  // Animate a group OPEN by easing to its real content height, then release
-  // the cap to 'none' so nested/resized content isn't clipped.
-  function animateOpen(g) {
-    var b = bodyOf(g);
-    g.classList.remove('collapsed');
-    if (!b) return;
-    b.style.maxHeight = b.scrollHeight + 'px';
-    b.style.opacity = '1';
-    var done = function (e) {
-      if (e.propertyName !== 'max-height') return;
-      b.removeEventListener('transitionend', done);
-      if (!g.classList.contains('collapsed')) b.style.maxHeight = 'none';
-    };
-    b.addEventListener('transitionend', done);
-  }
-
-  // Animate a group CLOSED: pin the current real height (it may be 'none'),
-  // force a reflow, then ease down to 0 so the motion is proportional.
-  function animateClose(g) {
-    var b = bodyOf(g);
-    if (b) {
-      b.style.maxHeight = b.scrollHeight + 'px';
-      void b.offsetHeight;
-      b.style.opacity = '0';
-      b.style.maxHeight = '0px';
-    }
-    g.classList.add('collapsed');
-  }
-
-  function openOnly(group) {
-    groups.forEach(function (g) {
-      if (g === group) animateOpen(g); else animateClose(g);
-    });
-    if (group) localStorage.setItem(OPEN_KEY, nameOf(group));
-  }
-
-  // Header click → accordion toggle
-  groups.forEach(function (g) {
-    var head = g.querySelector('.fw-nav-toggle');
-    if (!head) return;
-    head.addEventListener('click', function () {
-      if (g.classList.contains('collapsed')) {
-        openOnly(g);
+    document.addEventListener('click', function (e) {
+      var head = e.target.closest ? e.target.closest('.fw-nav-toggle') : null;
+      if (!head) return;
+      var g = head.closest('.fw-nav-group');
+      var sb = sidebarEl();
+      if (!g || !sb || !sb.contains(g)) return;
+      var willOpen = !g.classList.contains('open');
+      var groups = sb.querySelectorAll('.fw-nav-group');
+      for (var i = 0; i < groups.length; i++) groups[i].classList.remove('open');
+      if (willOpen) {
+        g.classList.add('open');
+        try { localStorage.setItem(OPEN_KEY, nameOf(g)); } catch (x) {}
       } else {
-        animateClose(g);
-        localStorage.removeItem(OPEN_KEY);
+        try { localStorage.removeItem(OPEN_KEY); } catch (x) {}
       }
     });
-  });
 
-  // Initial state: active group wins, else persisted, else first
-  var activeItem = sidebar.querySelector('.fw-nav-item.active');
-  var initial = activeItem ? activeItem.closest('.fw-nav-group') : null;
-  if (!initial) {
-    var saved = localStorage.getItem(OPEN_KEY);
+    // Persist the sidebar's own scroll (capture phase: scroll doesn't bubble).
+    document.addEventListener('scroll', function (e) {
+      var sb = sidebarEl();
+      if (sb && e.target === sb) {
+        try { sessionStorage.setItem(SCROLL_KEY, sb.scrollTop); } catch (x) {}
+      }
+    }, true);
+  }
+
+  // --- Per-execution: restore open section + scroll (best-effort) ------------
+  var sb = sidebarEl();
+  if (!sb) return;
+
+  // If the server didn't open a section (page outside the accordion), reopen
+  // the last one the user had open.
+  if (!sb.querySelector('.fw-nav-group.open')) {
+    var saved = null;
+    try { saved = localStorage.getItem(OPEN_KEY); } catch (x) {}
     if (saved) {
-      initial = groups.filter(function (g) { return nameOf(g) === saved; })[0] || null;
+      var gs = sb.querySelectorAll('.fw-nav-group');
+      for (var j = 0; j < gs.length; j++) {
+        if (nameOf(gs[j]) === saved) { gs[j].classList.add('open'); break; }
+      }
     }
   }
-  if (!initial) initial = groups[0];
-  groups.forEach(function (g) { setOpenInstant(g, g === initial); });
 
-  // Restore the sidebar's own scroll position from the previous page,
-  // then guarantee the active link is visible within the sidebar.
-  var sc = sessionStorage.getItem(SCROLL_KEY);
-  if (sc !== null) sidebar.scrollTop = parseInt(sc, 10) || 0;
+  var openNow = sb.querySelector('.fw-nav-group.open');
+  if (openNow) { try { localStorage.setItem(OPEN_KEY, nameOf(openNow)); } catch (x) {} }
+
+  var sc = null;
+  try { sc = sessionStorage.getItem(SCROLL_KEY); } catch (x) {}
+  if (sc !== null) sb.scrollTop = parseInt(sc, 10) || 0;
+
+  var activeItem = sb.querySelector('.fw-nav-item.active');
   if (activeItem) {
-    var ir = activeItem.getBoundingClientRect();
-    var sr = sidebar.getBoundingClientRect();
-    if (ir.top < sr.top || ir.bottom > sr.bottom) {
-      activeItem.scrollIntoView({ block: 'center' });
-    }
+    var ir = activeItem.getBoundingClientRect(), sr = sb.getBoundingClientRect();
+    if (ir.top < sr.top || ir.bottom > sr.bottom) activeItem.scrollIntoView({ block: 'center' });
   }
+})();
 
-  // Persist the sidebar scroll so navigation keeps context
-  sidebar.addEventListener('scroll', function () {
-    sessionStorage.setItem(SCROLL_KEY, sidebar.scrollTop);
+
+// ============================================================
+// Nested sub-menu accordion (native <details>) — click-driven, 2026-07-06
+// The nested sidebar sub-menus (.fw-so-parent, .fw-so-nav-group, .fw-cfg-section)
+// are native <details>. Without coordination they open INDEPENDENTLY. This makes
+// them an accordion at EVERY depth: opening one collapses every OTHER open
+// <details> in the sidebar that is not an ANCESTOR of it, so other branches
+// collapse (at any depth) while the opened element's own path stays expanded.
+//
+// Bound on a SUMMARY CLICK — a genuine user action — NOT on the  event.
+// Turbo Drive swaps the whole sidebar on navigation and re-connecting a
+// server-rendered <details open> can SYNTHESIZE  events; a toggle-based
+// listener then fired on navigation and, when the server rendered two branches
+// open, made them fight and collapsed the one the user was in. A click never
+// fires on a Turbo render, so navigation can no longer collapse anything.
+//
+// Delegated on document (survives Turbo body swaps) + guarded (idempotent).
+// ============================================================
+(function () {
+  if (window.__fwNavDetailsAccordionBound) return;
+  window.__fwNavDetailsAccordionBound = true;
+
+  document.addEventListener('click', function (e) {
+    var sm = e.target && e.target.closest ? e.target.closest('summary') : null;
+    if (!sm) return;
+    var d = sm.parentElement;
+    if (!d || d.tagName !== 'DETAILS') return;
+    var sb = document.getElementById('fw-sidebar');
+    if (!sb || !sb.contains(d)) return;
+    // The native default action toggles d.open AFTER this handler. We only
+    // collapse other branches when d is about to OPEN (it is currently closed);
+    // a click that is about to CLOSE d must leave the rest untouched.
+    if (d.open) return;
+    var opens = sb.querySelectorAll('details[open]');
+    for (var i = 0; i < opens.length; i++) {
+      var o = opens[i];
+      // Close every open <details> that is NOT an ancestor of d (o.contains(d)
+      // is true for an ancestor of d or d itself), collapsing sibling/other
+      // branches at any depth while keeping d's own path expanded.
+      if (o !== d && !o.contains(d)) o.open = false;
+    }
   });
 })();

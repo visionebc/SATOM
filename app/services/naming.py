@@ -127,6 +127,12 @@ NAMING_ELEMENTS: tuple[NamingElement, ...] = (
     NamingElement("file_upload", "File Upload", SECTION_WPP, "fileup-{name}", PRODUCT_FORTIWEB),
     NamingElement("url_access", "URL Access", SECTION_WPP, "urlacc-{name}", PRODUCT_FORTIWEB),
     NamingElement("bot_mitigation", "Bot Mitigation", SECTION_WPP, "bot-{name}", PRODUCT_FORTIWEB),
+    NamingElement("wpp_exception", "Exception WPP (per-policy clone)", SECTION_WPP,
+                  "wpp-{name}", PRODUCT_FORTIWEB,
+                  "Name of the WPP clone the Exceptions page creates when a Server "
+                  "Policy needs a carve-out on a template-managed profile. Here "
+                  "{name} is the SERVER POLICY's name (templates stay clean; the "
+                  "exception lands on the per-policy clone)."),
     # Certificate Manager — the ADCS-signed cert name. Uses the cert tokens
     # {class}/{cn}/{date}/{serial} (NOT {name}); {date} keeps the old + new cert
     # distinct so both can live on the box during a maintenance-window swap.

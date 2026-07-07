@@ -20,7 +20,8 @@ from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
 from ..models import (Appliance, Permission, ScheduledAction,
-                      ScheduledActionRun, db)
+                      ScheduledActionRun, db, visible_appliances,
+                      visible_appliance_or_404)
 from ..services import scheduled_actions as sa
 from ..services.audit import log_action
 from ..services.scheduler import SCHEDULE_KINDS, compute_next_run
@@ -178,7 +179,7 @@ def _apply_form(action: ScheduledAction) -> bool:
 
 
 def _form_context(action: ScheduledAction | None) -> dict:
-    appliances = (Appliance.query
+    appliances = (visible_appliances()
                   .filter_by(kind='fortiweb')
                   .order_by(Appliance.name)
                   .all())
@@ -208,7 +209,9 @@ def _form_context(action: ScheduledAction | None) -> dict:
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def index():
-    actions = ScheduledAction.query.order_by(ScheduledAction.name).all()
+    from ..services.product_scope import scope_query
+    actions = (scope_query(ScheduledAction.query, ScheduledAction.product)
+               .order_by(ScheduledAction.name).all())
     rows = []
     for a in actions:
         spec = sa.get_spec(a.action)
@@ -227,7 +230,9 @@ def index():
 @require_permission(Permission.USER_MANAGE)
 def new():
     if request.method == 'POST':
-        action = ScheduledAction(created_by=current_user.username)
+        from ..services.product_scope import stamp
+        action = ScheduledAction(created_by=current_user.username,
+                                 product=stamp() or 'fortiweb')
         if _apply_form(action):
             db.session.add(action)
             db.session.commit()

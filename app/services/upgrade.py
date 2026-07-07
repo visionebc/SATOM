@@ -66,7 +66,7 @@ def check_permission(client) -> bool | None:
 
 
 def prepare(appliance, *, do_backup: bool = True, do_health: bool = True,
-            do_services: bool = True, progress=None) -> dict:
+            do_services: bool = True, progress=None, created_by: str = "") -> dict:
     """Read-only upgrade/downgrade pre-flight. Never changes the appliance.
 
     ``progress(pct, msg)`` (optional) announces each section so a background
@@ -87,14 +87,12 @@ def prepare(appliance, *, do_backup: bool = True, do_health: bool = True,
     }
 
     if do_backup:
-        _say(6, "Pre-flight - backing up the appliance configuration...")
+        _say(6, "Pre-flight - backing up the appliance configuration into the vault...")
         try:
-            res = backup.create_backup(client)
-            name = ""
-            if isinstance(res, dict):
-                r = res.get("results", res)
-                name = (r.get("name") if isinstance(r, dict) else "") or "backup created"
-            out["backup"] = {"ok": True, "name": name or "backup created"}
+            cb = backup.fetch_device_backup_auto(
+                appliance, created_by=created_by or "")
+            out["backup"] = {"ok": True, "name": cb.filename, "stored": True,
+                             "backup_id": cb.id, "size_bytes": cb.size_bytes}
         except Exception as exc:  # noqa: BLE001
             out["backup"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
 

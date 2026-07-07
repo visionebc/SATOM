@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }} — Documentation{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <div class="fw-breadcrumb mb-1">
+      <a href="{{ url_for('docs.index') }}">Documentation</a>
+      <span class="separator">/</span>{{ title }}
+    </div>
+    <h1 class="fw-page-title">{{ title }}</h1>
+  </div>
+  <a href="{{ url_for('docs.index') }}" class="btn btn-sm btn-fw-secondary">
+    <i class="bi bi-arrow-left me-1"></i>All docs
+  </a>
+</div>
+
+<div class="fw-doc-layout">
+  {% if docs and docs|length > 1 %}
+  <nav class="fw-doc-nav">
+    <div class="fw-doc-nav-title">Documents</div>
+    {% for d in docs %}
+    <a href="{{ url_for('docs.view', slug=d.slug) }}"
+       class="fw-doc-nav-item {{ 'active' if d.slug == slug else '' }}">{{ d.title }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+  <article class="fw-card fw-doc-card">
+    <div class="fw-card-body fw-doc-content">
+      {{ content }}
+    </div>
+  </article>
+</div>
+{% endblock %}

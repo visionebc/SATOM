@@ -83,7 +83,9 @@ def test_list_view_replaces_stub(client, app):
     login(client, admin_user_id(app))
     h = client.get(f"/exceptions/{aid}").get_data(as_text=True)
     assert "Authored carve-outs" in h and "New carve-out" in h
-    assert "url-access" not in h          # the old mislabelled stub is gone
+    main = h.split("<main", 1)[-1]
+    assert "url-access" not in main       # the old mislabelled stub is gone
+                                          # (sidebar WAF nav carries url-access links globally)
 
 
 def test_type_fields_route(client, app):

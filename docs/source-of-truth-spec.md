@@ -1,4 +1,13 @@
 # Source of Truth — Local Persistence Layer for Fortinet Manager (web)
+> **STATUS (2026-07-05): IMPLEMENTED.** The DB-first read layer shipped in full
+> (2026-07-04): `services/read_layer.py`, per-device cache layers (config /
+> deep / inventory), DB-first Configuration sections, Server-Policy & WPP
+> detail, fleet map, freshness badges, and the standing refresh schedule
+> (`device_sync` 60 min · `deep_capture` 03:30 · `cert_scan` 04:15 via the
+> scheduler sidecar). This document is kept as the **design record**; the
+> living operational reference is `CLAUDE.md` §4c. Do not implement from here
+> without cross-checking the current code.
+
 
 > Spec + phased implementation plan. Target: `fortinet-manager-web` on LXC 248
 > (`/opt/fortinet-manager`, Flask + SQLAlchemy, gunicorn 4 workers on 192.0.2.34:8000).

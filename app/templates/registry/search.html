@@ -11,6 +11,9 @@
 {% endblock %}
 
 {% block content %}
+{% set api_tab = 'registry' %}
+{% include 'partials/api_nav_tabs.html' %}
+
 <h4 class="mb-3">Registry Search{% if term %} — "{{ term }}"{% endif %}</h4>
 
 <form method="get" action="{{ url_for('registry.search') }}" class="mb-3 d-flex gap-2">

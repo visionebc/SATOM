@@ -1,0 +1,288 @@
+# FortiADC REST endpoint registry SEED (product=fortiadc, api_version=v1).
+#
+# Same contract as endpoints.yaml (FortiWeb): flat friendly_key: urn map,
+# INSERT-ONLY seeded into registry_endpoints at boot — DB edits/disables win.
+#
+# Derived 2026-07-07 from the FortiADC 8.0.3 CLI Reference ToC
+# (docs.fortinet.com, Firecrawl harvest) with the URL rule
+# "config a-b c-d" -> /api/a_b_c_d; entries also present in the official
+# terraform-provider-fortiadc SDK are path-CONFIRMED. NOT yet probed against
+# a live device (no lab FortiADC) — validate with the API explorer / probe
+# once the VM exists. `config user tacacs+` was left out (unresolvable "+").
+#
+# Child tables follow /api/<parent>_child_<table>?pkey=<parent mkey>.
+
+# ---- Server Load Balance -------------------------------------------------
+load_balance_virtual_server: /api/load_balance_virtual_server
+load_balance_pool: /api/load_balance_pool
+load_balance_pool_child_pool_member: /api/load_balance_pool_child_pool_member
+load_balance_real_server: /api/load_balance_real_server
+load_balance_real_server_ssl_profile: /api/load_balance_real_server_ssl_profile
+load_balance_method: /api/load_balance_method
+load_balance_persistence: /api/load_balance_persistence
+load_balance_persistence_child_iso8583_bitmap: /api/load_balance_persistence_child_iso8583_bitmap
+load_balance_persistence_child_radius_attribute: /api/load_balance_persistence_child_radius_attribute
+load_balance_profile: /api/load_balance_profile
+load_balance_client_ssl_profile: /api/load_balance_client_ssl_profile
+load_balance_certificate_caching: /api/load_balance_certificate_caching
+load_balance_http2_profile: /api/load_balance_http2_profile
+load_balance_http3_profile: /api/load_balance_http3_profile
+load_balance_content_routing: /api/load_balance_content_routing
+load_balance_content_routing_child_match_condition: /api/load_balance_content_routing_child_match_condition
+load_balance_content_rewriting: /api/load_balance_content_rewriting
+load_balance_content_rewriting_child_match_condition: /api/load_balance_content_rewriting_child_match_condition
+load_balance_error_page: /api/load_balance_error_page
+load_balance_auth_policy: /api/load_balance_auth_policy
+load_balance_captcha_profile: /api/load_balance_captcha_profile
+load_balance_caching: /api/load_balance_caching
+load_balance_caching_child_dyn_cache_list: /api/load_balance_caching_child_dyn_cache_list
+load_balance_caching_child_uri_exclude_list: /api/load_balance_caching_child_uri_exclude_list
+load_balance_compression: /api/load_balance_compression
+load_balance_compression_child_content_types: /api/load_balance_compression_child_content_types
+load_balance_compression_child_uri_list: /api/load_balance_compression_child_uri_list
+load_balance_decompression: /api/load_balance_decompression
+load_balance_decompression_child_content_types: /api/load_balance_decompression_child_content_types
+load_balance_decompression_child_uri_list: /api/load_balance_decompression_child_uri_list
+load_balance_pagespeed: /api/load_balance_pagespeed
+load_balance_pagespeed_child_page_control: /api/load_balance_pagespeed_child_page_control
+load_balance_pagespeed_child_resource_control: /api/load_balance_pagespeed_child_resource_control
+load_balance_pagespeed_profile: /api/load_balance_pagespeed_profile
+load_balance_ippool: /api/load_balance_ippool
+load_balance_ippool_child_node_member: /api/load_balance_ippool_child_node_member
+load_balance_clone_pool: /api/load_balance_clone_pool
+load_balance_clone_pool_child_pool_member: /api/load_balance_clone_pool_child_pool_member
+load_balance_connection_pool: /api/load_balance_connection_pool
+load_balance_schedule_pool: /api/load_balance_schedule_pool
+load_balance_l2_exception_list: /api/load_balance_l2_exception_list
+load_balance_l2_exception_list_child_member: /api/load_balance_l2_exception_list_child_member
+load_balance_allowlist: /api/load_balance_allowlist
+load_balance_geoip_list: /api/load_balance_geoip_list
+load_balance_web_filter_profile: /api/load_balance_web_filter_profile
+load_balance_web_filter_profile_child_category_members: /api/load_balance_web_filter_profile_child_category_members
+load_balance_web_category: /api/load_balance_web_category
+load_balance_web_sub_category: /api/load_balance_web_sub_category
+load_balance_reputation: /api/load_balance_reputation
+load_balance_reputation_exception: /api/load_balance_reputation_exception
+load_balance_reputation_black_list: /api/load_balance_reputation_black_list
+
+# ---- Link Load Balance ---------------------------------------------------
+link_load_balance_link_group: /api/link_load_balance_link_group
+link_load_balance_gateway: /api/link_load_balance_gateway
+link_load_balance_flow_policy: /api/link_load_balance_flow_policy
+link_load_balance_persistence: /api/link_load_balance_persistence
+link_load_balance_proximity_route: /api/link_load_balance_proximity_route
+link_load_balance_virtual_tunnel: /api/link_load_balance_virtual_tunnel
+
+# ---- Global Load Balance + Global DNS -------------------------------------
+global_load_balance_data_center: /api/global_load_balance_data_center
+global_load_balance_servers: /api/global_load_balance_servers
+global_load_balance_virtual_server_pool: /api/global_load_balance_virtual_server_pool
+global_load_balance_host: /api/global_load_balance_host
+global_load_balance_link: /api/global_load_balance_link
+global_load_balance_topology: /api/global_load_balance_topology
+global_load_balance_setting: /api/global_load_balance_setting
+global_load_balance_analytic: /api/global_load_balance_analytic
+global_dns_server_general: /api/global_dns_server_general
+global_dns_server_zone: /api/global_dns_server_zone
+global_dns_server_policy: /api/global_dns_server_policy
+global_dns_server_address_group: /api/global_dns_server_address_group
+global_dns_server_remote_dns_server: /api/global_dns_server_remote_dns_server
+global_dns_server_response_rate_limit: /api/global_dns_server_response_rate_limit
+global_dns_server_dns64: /api/global_dns_server_dns64
+global_dns_server_dsset_info_list: /api/global_dns_server_dsset_info_list
+global_dns_server_trust_anchor_key: /api/global_dns_server_trust_anchor_key
+global_dns_server_tsig_key: /api/global_dns_server_tsig_key
+
+# ---- Web Application Firewall ---------------------------------------------
+security_waf_profile: /api/security_waf_profile
+security_waf_web_attack_signature: /api/security_waf_web_attack_signature
+waf_staging_signature_list: /api/waf_staging_signature_list
+security_waf_adaptive_learning: /api/security_waf_adaptive_learning
+security_waf_action: /api/security_waf_action
+security_waf_exception: /api/security_waf_exception
+security_waf_heuristic_sql_xss_injection_detection: /api/security_waf_heuristic_sql_xss_injection_detection
+security_waf_http_protocol_constraint: /api/security_waf_http_protocol_constraint
+security_waf_http_header_security: /api/security_waf_http_header_security
+security_waf_brute_force_login: /api/security_waf_brute_force_login
+security_waf_csrf_protection: /api/security_waf_csrf_protection
+security_waf_cookie_security: /api/security_waf_cookie_security
+security_waf_advanced_protection: /api/security_waf_advanced_protection
+security_waf_input_validation_policy: /api/security_waf_input_validation_policy
+security_waf_parameter_validation_rule: /api/security_waf_parameter_validation_rule
+security_waf_hidden_field_rule: /api/security_waf_hidden_field_rule
+security_waf_file_restriction_rule: /api/security_waf_file_restriction_rule
+security_waf_url_protection: /api/security_waf_url_protection
+security_waf_data_leak_protection: /api/security_waf_data_leak_protection
+security_waf_sensitive_data_type: /api/security_waf_sensitive_data_type
+security_waf_dlp_dictionary: /api/security_waf_dlp_dictionary
+security_waf_dlp_sensors: /api/security_waf_dlp_sensors
+security_waf_cors_protection: /api/security_waf_cors_protection
+security_waf_cors_headers: /api/security_waf_cors_headers
+security_waf_allowed_origin: /api/security_waf_allowed_origin
+security_waf_json_validation_detection: /api/security_waf_json_validation_detection
+security_waf_json_schema_file: /api/security_waf_json_schema_file
+security_waf_xml_validation_detection: /api/security_waf_xml_validation_detection
+security_waf_xml_schema_file: /api/security_waf_xml_schema_file
+security_waf_openapi_validation_detection: /api/security_waf_openapi_validation_detection
+security_waf_openapi_schema_file: /api/security_waf_openapi_schema_file
+security_waf_api_gateway_policy: /api/security_waf_api_gateway_policy
+security_waf_api_gateway_rule: /api/security_waf_api_gateway_rule
+security_waf_api_gateway_user: /api/security_waf_api_gateway_user
+security_waf_api_discovery: /api/security_waf_api_discovery
+security_waf_bot_detection: /api/security_waf_bot_detection
+security_waf_threshold_based_detection: /api/security_waf_threshold_based_detection
+security_waf_biometrics_based_detection: /api/security_waf_biometrics_based_detection
+security_waf_fingerprint_based_detection: /api/security_waf_fingerprint_based_detection
+security_waf_advanced_bot_protection: /api/security_waf_advanced_bot_protection
+security_waf_scanner: /api/security_waf_scanner
+security_wad_profile: /api/security_wad_profile
+
+# ---- Network Security -----------------------------------------------------
+firewall_policy: /api/firewall_policy
+firewall_policy6: /api/firewall_policy6
+firewall_vip: /api/firewall_vip
+firewall_nat_snat: /api/firewall_nat_snat
+firewall_connlimit: /api/firewall_connlimit
+firewall_connlimit6: /api/firewall_connlimit6
+firewall_qos_filter: /api/firewall_qos_filter
+firewall_qos_filter6: /api/firewall_qos_filter6
+firewall_qos_queue: /api/firewall_qos_queue
+firewall_global: /api/firewall_global
+security_ips_profile: /api/security_ips_profile
+security_antivirus_profile: /api/security_antivirus_profile
+security_antivirus_quarantine: /api/security_antivirus_quarantine
+security_antivirus_settings: /api/security_antivirus_settings
+security_dos_dos_protection_profile: /api/security_dos_dos_protection_profile
+security_dos_exception: /api/security_dos_exception
+security_dos_http_access_limit: /api/security_dos_http_access_limit
+security_dos_http_connection_flood_protection: /api/security_dos_http_connection_flood_protection
+security_dos_http_request_flood_protection: /api/security_dos_http_request_flood_protection
+security_dos_dns_query_flood_protection: /api/security_dos_dns_query_flood_protection
+security_dos_dns_reverse_flood_protection: /api/security_dos_dns_reverse_flood_protection
+security_dos_ip_fragmentation_protection: /api/security_dos_ip_fragmentation_protection
+security_dos_tcp_access_flood_protection: /api/security_dos_tcp_access_flood_protection
+security_dos_tcp_slowdata_attack_protection: /api/security_dos_tcp_slowdata_attack_protection
+security_dos_tcp_synflood_protection: /api/security_dos_tcp_synflood_protection
+security_ztna_profile: /api/security_ztna_profile
+
+# ---- Network ---------------------------------------------------------------
+system_interface: /api/system_interface
+system_interface_child_ha_node_ip_list: /api/system_interface_child_ha_node_ip_list
+system_interface_child_secondary_ip_list: /api/system_interface_child_secondary_ip_list
+system_interface_child_trust_ip_list: /api/system_interface_child_trust_ip_list
+router_static: /api/router_static
+router_policy: /api/router_policy
+router_setting: /api/router_setting
+router_isp: /api/router_isp
+router_ospf: /api/router_ospf
+router_ospf6: /api/router_ospf6
+router_md5_ospf: /api/router_md5_ospf
+router_bgp: /api/router_bgp
+router_bfd: /api/router_bfd
+router_access_list: /api/router_access_list
+router_access_list6: /api/router_access_list6
+router_prefix_list: /api/router_prefix_list
+router_prefix_list6: /api/router_prefix_list6
+system_overlay_tunnel: /api/system_overlay_tunnel
+system_tcpdump: /api/system_tcpdump
+
+# ---- Shared Resources -------------------------------------------------------
+system_health_check: /api/system_health_check
+system_health_check_script: /api/system_health_check_script
+system_schedule_group: /api/system_schedule_group
+system_schedule_group_child_schedule_member: /api/system_schedule_group_child_schedule_member
+system_address: /api/system_address
+system_address6: /api/system_address6
+system_addrgrp: /api/system_addrgrp
+system_addrgrp6: /api/system_addrgrp6
+system_service: /api/system_service
+system_servicegrp: /api/system_servicegrp
+system_isp_addr: /api/system_isp_addr
+system_isp_addr_child_address: /api/system_isp_addr_child_address
+system_isp_province: /api/system_isp_province
+system_scripting: /api/system_scripting
+system_stream_scripting: /api/system_stream_scripting
+
+# ---- User Authentication ----------------------------------------------------
+user_local: /api/user_local
+user_user_group: /api/user_user_group
+user_ldap: /api/user_ldap
+user_radius: /api/user_radius
+user_authentication_relay: /api/user_authentication_relay
+user_saml_idp: /api/user_saml_idp
+user_saml_sp: /api/user_saml_sp
+user_oauth: /api/user_oauth
+user_adfs_publish: /api/user_adfs_publish
+user_app_group: /api/user_app_group
+user_app_portal: /api/user_app_portal
+
+# ---- System ------------------------------------------------------------------
+system_global: /api/system_global
+system_setting: /api/system_setting
+system_admin: /api/system_admin
+system_accprofile: /api/system_accprofile
+system_password_policy: /api/system_password_policy
+system_sso_admin: /api/system_sso_admin
+system_vdom: /api/system_vdom
+system_vdom_link: /api/system_vdom_link
+system_ha: /api/system_ha
+system_ha_child_remote_ip_monitor_list: /api/system_ha_child_remote_ip_monitor_list
+system_traffic_group: /api/system_traffic_group
+system_dns: /api/system_dns
+system_dns_vdom: /api/system_dns_vdom
+system_time_manual: /api/system_time_manual
+system_time_ntp: /api/system_time_ntp
+system_mailserver: /api/system_mailserver
+system_snmp_sysinfo: /api/system_snmp_sysinfo
+system_snmp_community: /api/system_snmp_community
+system_snmp_user: /api/system_snmp_user
+system_fortiguard: /api/system_fortiguard
+system_fortisandbox: /api/system_fortisandbox
+system_certificate_local: /api/system_certificate_local
+system_certificate_local_cert_group: /api/system_certificate_local_cert_group
+system_certificate_local_cert_group_child_group_member: /api/system_certificate_local_cert_group_child_group_member
+system_certificate_ca: /api/system_certificate_ca
+system_certificate_ca_group: /api/system_certificate_ca_group
+system_certificate_ca_group_child_group_member: /api/system_certificate_ca_group_child_group_member
+system_certificate_intermediate_ca: /api/system_certificate_intermediate_ca
+system_certificate_intermediate_ca_group: /api/system_certificate_intermediate_ca_group
+system_certificate_intermediate_ca_group_child_group_member: /api/system_certificate_intermediate_ca_group_child_group_member
+system_certificate_remote: /api/system_certificate_remote
+system_certificate_crl: /api/system_certificate_crl
+system_certificate_ocsp: /api/system_certificate_ocsp
+system_certificate_ocsp_stapling: /api/system_certificate_ocsp_stapling
+system_certificate_certificate_verify: /api/system_certificate_certificate_verify
+system_certificate_certificate_verify_child_group_member: /api/system_certificate_certificate_verify_child_group_member
+system_auto_backup: /api/system_auto_backup
+system_external_resource: /api/system_external_resource
+system_feature_visibility: /api/system_feature_visibility
+system_feature_visibility_global: /api/system_feature_visibility_global
+system_azure: /api/system_azure
+system_azure_lb_backend_ip: /api/system_azure_lb_backend_ip
+system_sdn_connector: /api/system_sdn_connector
+system_icapserver: /api/system_icapserver
+system_web_filter: /api/system_web_filter
+system_central_management: /api/system_central_management
+system_csf: /api/system_csf
+system_alert: /api/system_alert
+system_alert_action: /api/system_alert_action
+system_alert_policy: /api/system_alert_policy
+system_alert_email: /api/system_alert_email
+system_alert_snmp_trap: /api/system_alert_snmp_trap
+config_sync_list: /api/config_sync_list
+endpoint_control_fctems: /api/endpoint_control_fctems
+endpoint_control_client: /api/endpoint_control_client
+endpoint_control_tag: /api/endpoint_control_tag
+
+# ---- Log & Report --------------------------------------------------------------
+log_setting_local: /api/log_setting_local
+log_setting_remote: /api/log_setting_remote
+log_setting_fortianalyzer: /api/log_setting_fortianalyzer
+log_setting_fast_stats: /api/log_setting_fast_stats
+log_setting_global_remote: /api/log_setting_global_remote
+log_setting_global_faz: /api/log_setting_global_faz
+log_setting_global_plugin: /api/log_setting_global_plugin
+log_report: /api/log_report
+log_report_email: /api/log_report_email
+log_report_queryset: /api/log_report_queryset
+log_fast_report: /api/log_fast_report

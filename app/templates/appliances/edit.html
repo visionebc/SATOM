@@ -25,6 +25,11 @@
     <div class="col-md-3"><label class="form-label">Department</label><select name="department" class="form-select"><option value="">(none)</option>{% if appliance.department and appliance.department not in classification.departments %}<option value="{{ appliance.department }}" selected>{{ appliance.department }} (unregistered)</option>{% endif %}{% for v in (classification.departments if classification else []) %}<option value="{{ v }}"{% if appliance.department == v %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
     <div class="col-12"><div class="form-check"><input type="checkbox" name="verify_ssl" class="form-check-input" id="verify_ssl" {{ 'checked' if appliance.verify_ssl }}>
       <label class="form-check-label" for="verify_ssl">Verify SSL Certificate</label></div></div>
+    {% if current_user.can('appliances.view_maintenance') %}
+    <div class="col-12"><input type="hidden" name="maintenance_present" value="1">
+      <div class="form-check"><input type="checkbox" name="maintenance" class="form-check-input" id="edit_maintenance" {{ 'checked' if appliance.maintenance }}>
+      <label class="form-check-label" for="edit_maintenance"><i class="bi bi-tools me-1"></i>Maintenance mode <span class="text-muted">(hidden from operators)</span></label></div></div>
+    {% endif %}
     {% if not appliance.is_cluster_member %}
     <div class="col-12"><hr class="my-1"><h6 class="text-uppercase text-muted mb-0" style="font-size:12px;letter-spacing:.5px;">High Availability</h6></div>
     <div class="col-12"><div class="form-check"><input type="checkbox" name="is_cluster" class="form-check-input" id="edit_is_cluster" {{ 'checked' if appliance.is_cluster }}>

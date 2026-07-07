@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+{% from "workspace/_fields.html" import fld %}
+
+{% block title %}{{ mkey or 'New object' }} — {{ logical }} — FortiADC{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="{{ url_for('adc.index') }}">FortiADC</a>
+  <span class="separator">/</span>
+  <a href="{{ back }}">{{ logical }}</a>
+  <span class="separator">/</span>
+  <span>{{ mkey or 'new' }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-braces me-2 text-accent"></i>{{ mkey or 'New ' + logical }}
+    </h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      <code>{{ logical }}</code> on <strong>{{ appliance.name }}</strong>
+      <span class="fw-badge fw-badge-secondary ms-1">LIVE</span>
+      {% if create %}<span class="fw-badge fw-badge-warning ms-1">create</span>{% endif %}
+    </p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm" href="{{ back }}">
+    <i class="bi bi-arrow-left me-1"></i>Back</a>
+</div>
+
+{% if error %}
+<div class="fw-alert fw-alert-danger d-flex align-items-center gap-2 mb-3">
+  <i class="bi bi-exclamation-triangle-fill"></i><div>{{ error }}</div>
+</div>
+{% endif %}
+
+{# ── object scalar fields (FortiWeb-style form, same fld widgets) ────────── #}
+<div class="fw-card mb-3" style="padding:18px 20px;">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <strong>Settings</strong>
+    <span class="text-muted" style="font-size:12px;">
+      changed fields are merged onto the device object — nothing un-shown is dropped</span>
+  </div>
+  <div class="adc-scope" data-logical="{{ logical }}" data-mkey="{{ mkey or '' }}">
+    {% if create %}
+    <div class="mb-3" style="max-width:420px;">
+      <label class="form-label small fw-bold">Name (mkey) <span class="text-danger">*</span></label>
+      <input type="text" class="form-control form-control-sm" id="adc-new-name"
+             placeholder="object name" autocomplete="off">
+      <div class="form-text">The object's unique identity. Child tables (members, rules…)
+        are added after it's created.</div>
+    </div>
+    {% endif %}
+    {% for sec in obj_groups %}
+      {% if sec.fields and sec.fields[0].widget == 'complex' %}
+        <details class="fw-group">
+          <summary class="fw-group-head">{{ sec.title }}
+            <span class="text-muted">({{ sec.fields|length }})</span></summary>
+          {% for f in sec.fields %}
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ f.label }} <span class="fw-key">{{ f.key }}</span></label>
+            <textarea class="form-control form-control-sm" rows="3" readonly
+                      style="font-family:var(--bs-font-monospace);font-size:11.5px;">{{ f.value }}</textarea>
+          </div>
+          {% endfor %}
+        </details>
+      {% else %}
+        <details class="fw-group" {{ 'open' if loop.first }}>
+          <summary class="fw-group-head">{{ sec.title }}
+            <span class="text-muted">({{ sec.fields|length }})</span></summary>
+          <div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false) }}{% endfor %}</div>
+        </details>
+      {% endif %}
+    {% else %}
+      {% if not create %}<p class="text-muted mb-0">This object exposes no editable scalar fields.</p>{% endif %}
+    {% endfor %}
+    {% if current_user.can('config_write') %}
+    <div class="mt-2">
+      {% if create %}
+        <button type="button" class="btn btn-sm btn-fw-primary" data-js="adc-create">
+          <i class="bi bi-plus-circle me-1"></i>Review &amp; create</button>
+      {% elif obj_groups %}
+        <button type="button" class="btn btn-sm btn-fw-primary" data-js="adc-save">
+          <i class="bi bi-check2-circle me-1"></i>Review &amp; save</button>
+      {% endif %}
+    </div>
+    {% endif %}
+    <div class="adc-result"></div>
+  </div>
+</div>
+
+{# ── child tables (?pkey=-scoped, registry-derived) ──────────────────────── #}
+{% for st in subtables %}
+<div class="fw-card mb-3" style="padding:18px 20px;">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <strong>{{ st.label }}</strong>
+    <span class="text-muted" style="font-size:12px;">{{ st.rows|length }} row(s) ·
+      <code style="font-size:11px;">{{ st.logical }}</code></span>
+  </div>
+  {% for row in st.rows %}
+  <details class="adc-row-scope mb-2 border rounded p-2" data-logical="{{ st.logical }}"
+           data-pkey="{{ mkey }}" data-sub-mkey="{{ row.sub_mkey }}">
+    <summary class="fw-group-head">{{ row.label or ('row ' ~ row.sub_mkey) }}</summary>
+    {% for sec in row.groups %}
+      {% if sec.fields and sec.fields[0].widget == 'complex' %}
+        {% for f in sec.fields %}
+        <div class="mb-2">
+          <label class="fw-fld-label">{{ f.label }} <span class="fw-key">{{ f.key }}</span></label>
+          <textarea class="form-control form-control-sm" rows="2" readonly
+                    style="font-family:var(--bs-font-monospace);font-size:11.5px;">{{ f.value }}</textarea>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false) }}{% endfor %}</div>
+      {% endif %}
+    {% endfor %}
+    {% if current_user.can('config_write') %}
+    <div class="mt-2">
+      <button type="button" class="btn btn-sm btn-fw-primary" data-js="adc-save-row">Save row</button>
+      <button type="button" class="btn btn-sm btn-fw-danger" data-js="adc-delete-row">Delete</button>
+    </div>
+    {% endif %}
+    <div class="adc-result"></div>
+  </details>
+  {% else %}
+  <p class="text-muted mb-1">No rows yet.</p>
+  {% endfor %}
+
+  {% if current_user.can('config_write') %}
+  <details class="adc-row-scope adc-row-new mt-2 border rounded p-2 border-primary-subtle"
+           data-logical="{{ st.logical }}" data-pkey="{{ mkey }}">
+    <summary class="fw-group-head text-primary">＋ Add {{ st.label }} row</summary>
+    {% if st.blank_groups %}
+      {% for sec in st.blank_groups %}
+        <div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false) }}{% endfor %}</div>
+      {% endfor %}
+      <div class="mt-2"><button type="button" class="btn btn-sm btn-fw-primary"
+        data-js="adc-create-row">Create row</button></div>
+    {% else %}
+      <p class="text-muted small mb-0 mt-2">No field template is known for this child
+      table yet — no sibling rows exist to derive it from. Use the Raw JSON editor
+      below, or create the first row on a device that already has one.</p>
+    {% endif %}
+    <div class="adc-result"></div>
+  </details>
+  {% endif %}
+</div>
+{% endfor %}
+
+{# ── raw JSON escape hatch (inline arrays/objects live here) ─────────────── #}
+{% if not create %}
+<details class="fw-card mb-3" style="padding:18px 20px;">
+  <summary class="fw-group-head"><i class="bi bi-braces-asterisk me-1"></i>Raw JSON
+    <span class="text-muted small">— full object, incl. structured values the form can't edit</span></summary>
+  <textarea id="adc-json" class="form-control mt-2" rows="18" spellcheck="false"
+            style="font-family:var(--bs-font-monospace);font-size:12.5px;"
+            {% if not current_user.can('config_write') %}readonly{% endif %}>{{ data_json }}</textarea>
+  {% if current_user.can('config_write') %}
+  <div class="mt-2 d-flex gap-2">
+    <button type="button" id="adc-raw-save" class="btn btn-outline-danger btn-sm">
+      <i class="bi bi-save me-1"></i>Save raw JSON to device</button>
+    <span id="adc-raw-msg" class="text-muted align-self-center" style="font-size:12px;"></span>
+  </div>
+  {% endif %}
+</details>
+{% endif %}
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var LOGICAL = {{ logical|tojson }};
+  var MKEY = {{ (mkey or '')|tojson }};
+  var BACK = {{ back|tojson }};
+
+  function collectChanged(scope) {
+    var out = {};
+    scope.querySelectorAll('.fw-input').forEach(function (el) {
+      var k = el.dataset.key; if (!k) return;
+      if (el.value !== el.dataset.orig) out[k] = el.value;
+    });
+    return out;
+  }
+  function post(url, payload) {
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload) }).then(function (r) { return r.json(); });
+  }
+  // Dry-run preview → explicit "Apply to device" — the objedit contract.
+  function show(el, j, applyFn) {
+    if (!j.ok) { el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">' + (j.error || 'failed') + '</div>'; return; }
+    if (j.dry_run) {
+      var req = j.request || {};
+      el.innerHTML = '<div class="alert alert-info mt-2 mb-0">'
+        + '<div class="small text-muted mb-1">' + req.method + ' ' + req.path + '</div>'
+        + '<pre class="mb-2 small" style="max-height:220px;overflow:auto">'
+        + JSON.stringify(req.body, null, 2) + '</pre>'
+        + '<button type="button" class="btn btn-sm btn-fw-danger adc-apply">Apply to device</button></div>';
+      el.querySelector('.adc-apply').onclick = applyFn;
+    } else {
+      el.innerHTML = '<div class="alert alert-success mt-2 mb-0">Applied to device.</div>';
+      setTimeout(function () { location.reload(); }, 800);
+    }
+  }
+  function ep(action) { return '/adc/obj/' + encodeURIComponent(LOGICAL) + '/' + action; }
+
+  function saveObject(btn) {
+    var scope = btn.closest('.adc-scope'), el = scope.querySelector('.adc-result');
+    var fields = collectChanged(scope);
+    if (!Object.keys(fields).length) { el.innerHTML = '<div class="text-muted mt-2">No changes to save.</div>'; return; }
+    var base = { logical: LOGICAL, mkey: MKEY, fields: fields };
+    post(ep('save-object'), base).then(function (j) {
+      show(el, j, function () {
+        post(ep('save-object'), Object.assign({}, base, { apply: true }))
+          .then(function (j2) { show(el, j2); });
+      });
+    });
+  }
+  function createObject(btn) {
+    var scope = btn.closest('.adc-scope'), el = scope.querySelector('.adc-result');
+    var nameEl = document.getElementById('adc-new-name');
+    var name = (nameEl ? nameEl.value : '').trim();
+    if (!name) { el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">Name is required.</div>'; if (nameEl) nameEl.focus(); return; }
+    var base = { logical: LOGICAL, mkey: name, fields: collectChanged(scope) };
+    post(ep('create-object'), base).then(function (j) {
+      show(el, j, function () {
+        post(ep('create-object'), Object.assign({}, base, { apply: true })).then(function (j2) {
+          if (!j2.ok) { el.innerHTML = '<div class="alert alert-danger mt-2 mb-0">' + (j2.error || 'failed') + '</div>'; return; }
+          el.innerHTML = '<div class="alert alert-success mt-2 mb-0">Created. Opening editor…</div>';
+          setTimeout(function () {
+            location.href = '/adc/obj/' + encodeURIComponent(LOGICAL)
+              + '?mkey=' + encodeURIComponent(name) + '&back=' + encodeURIComponent(BACK);
+          }, 700);
+        });
+      });
+    });
+  }
+  function rowBase(scope) {
+    return { logical: scope.dataset.logical, pkey: scope.dataset.pkey,
+             sub_mkey: scope.dataset.subMkey || '', fields: collectChanged(scope) };
+  }
+  function rowEp(scope, action) {
+    return '/adc/obj/' + encodeURIComponent(scope.dataset.logical) + '/' + action;
+  }
+  function saveRow(btn) {
+    var scope = btn.closest('.adc-row-scope'), el = scope.querySelector('.adc-result');
+    var base = rowBase(scope);
+    if (!Object.keys(base.fields).length) { el.innerHTML = '<div class="text-muted mt-2">No changes to save.</div>'; return; }
+    post(rowEp(scope, 'save-row'), base).then(function (j) {
+      show(el, j, function () {
+        post(rowEp(scope, 'save-row'), Object.assign({}, base, { apply: true }))
+          .then(function (j2) { show(el, j2); });
+      });
+    });
+  }
+  function deleteRow(btn) {
+    var scope = btn.closest('.adc-row-scope'), el = scope.querySelector('.adc-result');
+    var base = rowBase(scope);
+    delete base.fields;
+    if (!base.sub_mkey) { el.innerHTML = '<div class="text-muted mt-2">Row not saved yet.</div>'; return; }
+    if (!confirm('Delete this row?')) return;
+    post(rowEp(scope, 'delete-row'), base).then(function (j) {
+      show(el, j, function () {
+        post(rowEp(scope, 'delete-row'), Object.assign({}, base, { apply: true }))
+          .then(function (j2) { show(el, j2); });
+      });
+    });
+  }
+
+  // CSP (script-src-attr 'none'): one delegated listener for the action buttons.
+  var FNS = { 'adc-create': createObject, 'adc-save': saveObject,
+              'adc-save-row': saveRow, 'adc-create-row': saveRow,
+              'adc-delete-row': deleteRow };
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target.closest && ev.target.closest('[data-js]');
+    if (!btn) return;
+    var fn = FNS[btn.dataset.js];
+    if (fn) fn(btn);
+  });
+
+  // Raw JSON escape (immediate device apply, confirm-gated — the old editor).
+  var rawBtn = document.getElementById('adc-raw-save');
+  if (rawBtn) rawBtn.addEventListener('click', function () {
+    var txt = document.getElementById('adc-json').value;
+    var msg = document.getElementById('adc-raw-msg');
+    try { JSON.parse(txt); } catch (e) { msg.textContent = 'Invalid JSON: ' + e.message; return; }
+    if (!confirm('Save the RAW object to {{ appliance.name }}?\nFortiADC applies this immediately (no dry-run on the raw path).')) return;
+    msg.textContent = 'Saving…';
+    fetch('{{ url_for('adc.object_save', logical=logical) }}', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mkey: MKEY || null, data: txt })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (!j.ok) { msg.textContent = 'Failed: ' + (j.error || 'unknown'); return; }
+      msg.textContent = 'Saved.';
+      setTimeout(function () { location.reload(); }, 700);
+    }).catch(function (e) { msg.textContent = 'Failed: ' + e; });
+  });
+})();
+</script>
+{% endblock %}

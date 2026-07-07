@@ -77,6 +77,8 @@ GRANULAR_PERMISSIONS: list[dict] = [
 
     _p("registry.view", "View registry", "Browse the endpoint registry & API explorer"),
     _p("registry.edit", "Edit registry", "Modify the endpoint registry"),
+    _p("registry.execute_write", "Execute write API calls",
+       "Run POST/PUT/DELETE/PATCH in the API Explorer (GET is always allowed)"),
 
     _p("audit.view", "View audit log", "Read the application audit trail"),
 
@@ -84,6 +86,8 @@ GRANULAR_PERMISSIONS: list[dict] = [
     _p("appliances.edit", "Edit appliances", "Add, edit or delete appliances"),
     _p("appliances.apply", "Run appliance actions",
        "Console, rediscovery, policy inspector, upgrade preparation & upgrade"),
+    _p("appliances.view_maintenance", "View maintenance devices",
+       "See appliances placed in maintenance mode (hidden from operators)", admin_only=True),
 
     _p("users.view", "View users", "See the user list"),
     _p("users.manage", "Manage users",

@@ -22,6 +22,7 @@ from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
 from ..models import Appliance, Permission, Template, UserSetting
+from ..models import visible_appliances, visible_appliance_or_404
 from ..services import provisioning as prov
 from ..services.audit import log_action
 from ..services.templates import delete_template, get_template, list_templates
@@ -163,7 +164,7 @@ def index():
     return render_template(
         'provisioning/index.html',
         profiles=B._latest_version_only(list_templates(Template.KIND_SYSTEM)),
-        appliances=Appliance.query.order_by(Appliance.name).all(),
+        appliances=visible_appliances().order_by(Appliance.name).all(),
     )
 
 
@@ -233,10 +234,10 @@ def apply(template_id: int):
     device_ids = [] if mode == 'fleet' else selected_ids
 
     if mode == 'fleet' or not device_ids:
-        target_appliances = Appliance.query.order_by(Appliance.name).all()
+        target_appliances = visible_appliances().order_by(Appliance.name).all()
         target_desc = 'Entire fleet (all appliances)'
     else:
-        target_appliances = (Appliance.query
+        target_appliances = (visible_appliances()
                               .filter(Appliance.id.in_(device_ids))
                               .order_by(Appliance.name).all())
         target_desc = ', '.join(a.name for a in target_appliances) or '(none)'

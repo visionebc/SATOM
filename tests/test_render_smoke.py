@@ -56,7 +56,10 @@ def test_user_edit_page_renders_profile_picker(app, client):
     assert 'name="profile_id"' in r.get_data(as_text=True)
 
 
-def test_home_redirects_when_logged_in(app, client):
+def test_home_is_global_dashboard_when_logged_in(app, client):
+    # '/' is the GLOBAL ADOM (2026-07-07): a logged-in user gets the
+    # fleet-wide dashboard directly, not a redirect.
     _admin(app, client)
     r = client.get("/")
-    assert r.status_code in (301, 302)
+    assert r.status_code == 200
+    assert "Global" in r.get_data(as_text=True)

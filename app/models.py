@@ -238,6 +238,14 @@ class Appliance(db.Model):
     zone = db.Column(db.String(128), nullable=True)
     line = db.Column(db.String(128), nullable=True)
     ssh_port = db.Column(db.Integer, nullable=True, default=22)
+    # --- Maintenance mode (visibility gate) -----------------------------
+    # True => the appliance is HIDDEN from anyone lacking the
+    # 'appliances.view_maintenance' permission (operators / read-only).
+    # Admins still see it (with a badge) and can use it for testing.
+    # Enforced ONLY through models.visible_appliances /
+    # visible_appliance_or_404 — never a stored 'hidden' flag. Default
+    # False so every existing device stays visible after the migration.
+    maintenance = db.Column(db.Boolean, nullable=False, default=False)
     # --- HA cluster (self-referential) ----------------------------------
     # node 0 = logical cluster container; members = ordinary appliances
     # pointing at node 0 via parent_id. See docs/superpowers/plans.
@@ -329,6 +337,49 @@ class Appliance(db.Model):
         except Exception:
             return "offline"
 
+    @property
+    def fw_version(self) -> str:
+        """Short X.Y.Z firmware version, taken from the live firmware string
+        (authoritative running OS) and falling back to the documented model."""
+        import re as _re
+        for src in (self.firmware, self.model):
+            if src:
+                m = _re.search(r"\d+\.\d+(?:\.\d+)?", src)
+                if m:
+                    return m.group(0)
+        return ""
+
+    @property
+    def kind_badge(self) -> str:
+        """Compact type+version label for the appliances table.
+        fortiweb -> FW_VM_7.6.8 / FW_HW_7.6.8 (FW_7.6.8 if platform unknown);
+        fortiadc -> FADC."""
+        if self.kind == "fortiadc":
+            return "FADC"
+        if self.kind == "fortiweb":
+            plat = {"vm": "VM", "hardware": "HW"}.get((self.hw_type or "").lower())
+            ver = self.fw_version
+            parts = ["FW"]
+            if plat:
+                parts.append(plat)
+            if ver:
+                parts.append(ver)
+            return "_".join(parts)
+        return self.kind
+
+    @property
+    def kind_tooltip(self) -> str:
+        """Full, human-readable version detail for the badge hover."""
+        parts = []
+        if self.firmware:
+            parts.append(f"Firmware: {self.firmware}")
+        if self.model:
+            parts.append(f"Model: {self.model}")
+        plat = {"vm": "Virtual (VM)", "hardware": "Hardware appliance"}.get((self.hw_type or "").lower())
+        if plat:
+            parts.append(f"Platform: {plat}")
+        return "\n".join(parts) if parts else (self.kind or "")
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -338,6 +389,7 @@ class Appliance(db.Model):
             "port": self.port,
             "username": self.username,
             "verify_ssl": self.verify_ssl,
+            "maintenance": bool(self.maintenance),
             "vdom": self.vdom,
             "tags": _parse_tags(self.tags),
             "department": self.department,
@@ -388,6 +440,54 @@ class Appliance(db.Model):
 
     def __repr__(self) -> str:
         return f"<Appliance {self.name!r} kind={self.kind!r} host={self.host!r}>"
+
+
+# ---------------------------------------------------------------------------
+# Appliance visibility — the maintenance-mode gate (SINGLE choke point).
+#
+# Every USER-FACING appliance listing must route through visible_appliances();
+# every user-facing by-id load through visible_appliance_or_404(). Background
+# services (bulk, device_sync, scheduled actions, deep capture) intentionally
+# act on the WHOLE fleet and keep using the raw query, so an admin's automation
+# still reaches a maintenance box — that is the point of maintenance mode.
+# ---------------------------------------------------------------------------
+
+VIEW_MAINTENANCE_PERM = "appliances.view_maintenance"
+
+
+def can_view_maintenance(user=None) -> bool:
+    """True if *user* (default: the logged-in user) may see maintenance-mode
+    appliances. Fails CLOSED on any error / anonymous user (cannot see)."""
+    if user is None:
+        from flask_login import current_user
+        user = current_user
+    try:
+        return bool(getattr(user, "is_authenticated", False)) and user.can(VIEW_MAINTENANCE_PERM)
+    except Exception:  # noqa: BLE001 — visibility must never crash a page; deny.
+        return False
+
+
+def visible_appliances(query=None, user=None):
+    """Scope an Appliance query to what *user* may see: maintenance-mode rows
+    are dropped unless the user holds ``appliances.view_maintenance``, and the
+    active ADOM only sees its own product's devices (FortiADC -> fortiadc,
+    FortiWeb -> everything else, Global/workers -> all)."""
+    q = Appliance.query if query is None else query
+    from .services.product_scope import scope_appliance_query
+    q = scope_appliance_query(q, Appliance.kind)
+    if can_view_maintenance(user):
+        return q
+    return q.filter(Appliance.maintenance.is_(False))
+
+
+def visible_appliance_or_404(id, user=None):
+    """Load one appliance by id, but abort 404 (never 403 — do not confirm the
+    row exists) when it is in maintenance and *user* may not see it."""
+    from flask import abort
+    a = Appliance.query.get(id)
+    if a is None or (a.maintenance and not can_view_maintenance(user)):
+        abort(404)
+    return a
 
 
 # ---------------------------------------------------------------------------
@@ -442,6 +542,8 @@ class AuditLog(db.Model):
     target = db.Column(db.String(256), nullable=True, default="")
     extra = db.Column(db.Text, nullable=True, default="{}")   # JSON-serialised dict
     ip_address = db.Column(db.String(45), nullable=True)      # IPv4 or IPv6
+    # ADOM/product the action was performed in ('' / NULL = unscoped legacy).
+    product = db.Column(db.String(16), nullable=True, default="")
     timestamp = db.Column(
         db.DateTime, default=datetime.utcnow, nullable=False, index=True
     )
@@ -455,6 +557,11 @@ class AuditLog(db.Model):
 # ---------------------------------------------------------------------------
 
 class AppSetting(db.Model):
+    """Key/value app settings. CONVENTION (product separation): keys are
+    global by default (e.g. ``certmgr.*`` — one CA for the whole platform);
+    a product-specific setting MUST be namespaced with the product prefix
+    (``adc.*`` for FortiADC) so ADOMs never read each other's knobs."""
+
     __tablename__ = "app_settings"
 
     key = db.Column(db.String(128), primary_key=True)
@@ -480,6 +587,45 @@ class AppSetting(db.Model):
 
     def __repr__(self) -> str:
         return f"<AppSetting {self.key!r}>"
+
+
+# ---------------------------------------------------------------------------
+# RegistryEndpoint — the DB-backed API endpoint registry
+# ---------------------------------------------------------------------------
+
+class RegistryEndpoint(db.Model):
+    """One REST endpoint of the API registry (logical name → URN).
+
+    The git-tracked ``endpoints.yaml`` is only the SEED: at boot an insert-only
+    sync adds names the DB doesn't have yet (``registry.loader.seed_from_yaml``).
+    Operator edits live here and always win; ``pg_dump`` backs them up with the
+    rest of the runtime data. ``enabled=False`` is a SOFT delete — the row must
+    stay so the boot seeder does not resurrect the name from the YAML.
+
+    Two-dimensional key (product, api_version) so a future FortiWeb API v3 or a
+    second product (FortiADC) is schema-ready — today everything is
+    ``fortiweb`` / ``v2.0``.
+    """
+
+    __tablename__ = "registry_endpoints"
+
+    id = db.Column(db.Integer, primary_key=True)
+    product = db.Column(db.String(32), nullable=False, default="fortiweb", index=True)
+    api_version = db.Column(db.String(16), nullable=False, default="v2.0")
+    name = db.Column(db.String(128), nullable=False)
+    urn = db.Column(db.String(255), nullable=False)
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    updated_by = db.Column(db.String(64), nullable=True)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint("product", "api_version", "name", name="uq_registry_endpoint_key"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<RegistryEndpoint {self.name!r} -> {self.urn!r}>"
 
 
 # ---------------------------------------------------------------------------
@@ -593,6 +739,10 @@ class Template(db.Model):
     KIND_SYSTEM = "system-profile"
     KIND_STRUCTURE = "structure"
     KINDS = (KIND_WEB_PROTECTION, KIND_SERVER_POLICY, KIND_SYSTEM, KIND_STRUCTURE)
+
+    # Owning product/ADOM. Everything authored so far is FortiWeb; ADC-side
+    # templates will carry 'fortiadc' so lists scope by session product.
+    product = db.Column(db.String(16), nullable=False, default="fortiweb")
     # Approval lifecycle (separate from ``locked``: locked == curated/read-only,
     # status == approval state). A template is fleet-deployable only when APPROVED.
     STATUS_PENDING = "pending"
@@ -690,6 +840,8 @@ class Baseline(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(128), nullable=False, index=True)
+    # Owning product/ADOM (baselines compose FortiWeb templates today).
+    product = db.Column(db.String(16), nullable=False, default="fortiweb")
     # Scope: plain strings matching Appliance.zone/line/department (catalogs live
     # in settings_store). "" / NULL means "any" for that facet.
     zone = db.Column(db.String(128), nullable=True, default="")
@@ -784,6 +936,8 @@ class ScheduledAction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(128), nullable=False, default="")
     scope = db.Column(db.String(16), nullable=False, default="admin")  # admin|user
+    # ADOM/product owning this automation (the catalog is FortiWeb today).
+    product = db.Column(db.String(16), nullable=False, default="fortiweb")
     action = db.Column(db.String(64), nullable=False)                  # catalog key
     targets = db.Column(db.Text, nullable=False, default="[]")         # JSON appliance ids ([]=fleet)
     params = db.Column(db.Text, nullable=False, default="{}")          # JSON params
@@ -947,6 +1101,11 @@ class WppException(db.Model):
     payload = db.Column(db.Text, nullable=False, default="{}")       # FortiWeb-shaped entry
     reason = db.Column(db.Text, nullable=True, default="")
     enabled = db.Column(db.Boolean, nullable=False, default=True)
+    # Lifecycle flags (rule 1): set when the bound Server Policy was deleted or
+    # re-bound to another WPP after this carve-out was authored. Never silently
+    # deleted — the operator resolves it on the Exceptions page.
+    stale = db.Column(db.Boolean, nullable=False, default=False)
+    stale_reason = db.Column(db.Text, nullable=True, default="")
     author = db.Column(db.String(64), nullable=True, default="")
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
@@ -1032,6 +1191,8 @@ class ManagedCertificate(db.Model):
     private_key_enc = db.Column(db.Text, nullable=True, default="")  # Fernet-encrypted PEM
     bound_policies_json = db.Column(db.Text, nullable=False, default="[]")  # server policies using it
     supersedes_id = db.Column(db.Integer, nullable=True)             # old cert this one replaces
+    superseded_at = db.Column(db.DateTime, nullable=True)  # when THIS cert became superseded
+    revoked_at = db.Column(db.DateTime, nullable=True)     # when THIS cert was revoked
     created_by = db.Column(db.String(64), nullable=True, default="")
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
@@ -1111,6 +1272,8 @@ class ManagedCertificate(db.Model):
             "days_left": self.days_left,
             "bound_policies": self.bound_policies,
             "has_private_key": self.has_private_key,
+            "superseded_at": self.superseded_at.isoformat() if self.superseded_at else None,
+            "revoked_at": self.revoked_at.isoformat() if self.revoked_at else None,
         }
 
     def __repr__(self) -> str:
@@ -1253,6 +1416,126 @@ class DeviceCertificate(db.Model):
 
     def __repr__(self) -> str:
         return f"<DeviceCertificate {self.name!r}@{self.appliance_id} {self.store}>"
+
+
+# ---------------------------------------------------------------------------
+# CapacityLimit — per-(firmware, model) maximum object counts + operational cap
+# ---------------------------------------------------------------------------
+
+class CapacityLimit(db.Model):
+    """A capacity guardrail for one object type on one FortiWeb model/firmware.
+
+    ``hard_max`` is Fortinet's published ceiling for that (firmware major, model)
+    — the number from Appendix B / the model datasheet. It is the ABSOLUTE limit
+    the box will accept; the admin enters/confirms it (the fleet is unlicensed
+    VMs that can't self-report a SKU). ``operational_cap`` is the admin's OWN
+    lower limit (the "espacio de sobra" buffer) that automations honour BEFORE
+    hitting the hardware ceiling — it may be NULL (=> effective cap = hard_max)
+    and is validated <= hard_max (never above; going above just makes the box
+    reject creates).
+
+    ``object_type`` is a logical token from ``services.capacity.OBJECT_TYPES``
+    (server_policy / web_protection_profile / certificate / sni / ...), not a raw
+    registry name, so the catalog is stable and extensible. One row per
+    (product, firmware_major, model, object_type). Seeded insert-only from
+    ``capacity_seed.json``; admin edits always win (like RegistryEndpoint).
+    """
+
+    __tablename__ = "capacity_limits"
+    __table_args__ = (
+        db.UniqueConstraint("product", "firmware_major", "model", "object_type",
+                            name="uq_capacity_limit_key"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    product = db.Column(db.String(32), nullable=False, default="fortiweb", index=True)
+    firmware_major = db.Column(db.String(16), nullable=False, index=True)
+    model = db.Column(db.String(128), nullable=False, index=True)
+    object_type = db.Column(db.String(64), nullable=False)
+    hard_max = db.Column(db.Integer, nullable=True)
+    operational_cap = db.Column(db.Integer, nullable=True)
+    cap_percent = db.Column(db.Float, nullable=True)   # admin cap as % of hard_max
+    source = db.Column(db.String(32), nullable=True, default="")
+    updated_by = db.Column(db.String(64), nullable=True)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    @property
+    def effective_cap(self) -> int | None:
+        """The number automations must respect: the lower of the two, ignoring
+        an operational cap that (illegally) exceeds the hard max."""
+        vals = [v for v in (self.hard_max, self.operational_cap) if v is not None]
+        if self.cap_percent is not None and self.hard_max is not None:
+            try:
+                p = float(self.cap_percent)
+                if 0 < p <= 100:
+                    vals.append(int(self.hard_max * p / 100.0))
+            except (TypeError, ValueError):
+                pass
+        return min(vals) if vals else None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id, "product": self.product,
+            "firmware_major": self.firmware_major, "model": self.model,
+            "object_type": self.object_type, "hard_max": self.hard_max,
+            "operational_cap": self.operational_cap,
+            "cap_percent": self.cap_percent,
+            "effective_cap": self.effective_cap, "source": self.source,
+            "updated_by": self.updated_by,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self) -> str:
+        return (f"<CapacityLimit {self.product}/{self.firmware_major}/{self.model}"
+                f"/{self.object_type} max={self.hard_max} cap={self.operational_cap}>")
+
+
+class DeviceHardware(db.Model):
+    """Hardware inventory of one appliance, captured over SSH (works even when
+    the REST API is license-locked — see services.hardware). One row per
+    appliance, upserted by scan_appliance; raw command output kept for
+    debugging. Consumed by the Monitoring dashboard and the Architecture map."""
+
+    __tablename__ = "device_hardware"
+
+    id = db.Column(db.Integer, primary_key=True)
+    appliance_id = db.Column(db.Integer,
+                             db.ForeignKey("appliances.id", ondelete="CASCADE"),
+                             nullable=False, unique=True, index=True)
+    cpu_count = db.Column(db.Integer, nullable=True)
+    cpu_model = db.Column(db.String(128), nullable=True)
+    mem_total_mb = db.Column(db.Integer, nullable=True)
+    disks_json = db.Column(db.Text, nullable=True)   # [{"name", "size_gb"}]
+    raw_json = db.Column(db.Text, nullable=True)     # {command: output}
+    source = db.Column(db.String(16), nullable=True, default="ssh")
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow, nullable=False)
+
+    appliance = db.relationship(
+        "Appliance", backref=db.backref("hardware", uselist=False))
+
+    @property
+    def disks(self) -> list:
+        import json as _json
+        try:
+            return _json.loads(self.disks_json or "[]")
+        except Exception:
+            return []
+
+    @property
+    def disk_total_gb(self) -> float | None:
+        total = sum((d.get("size_gb") or 0) for d in self.disks)
+        return round(total, 1) if total else None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "appliance_id": self.appliance_id, "cpu_count": self.cpu_count,
+            "cpu_model": self.cpu_model, "mem_total_mb": self.mem_total_mb,
+            "disks": self.disks, "disk_total_gb": self.disk_total_gb,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
 
 
 # Device-structure cache models (source-of-truth substrate) — import so

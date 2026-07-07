@@ -8,6 +8,12 @@
     <button class="btn fw-btn-primary btn-sm" data-js="test-conn">Test Connection</button>
   </div>
 </div>
+{% if appliance.maintenance %}
+<div style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.35);border-radius:12px;padding:12px 16px;margin-bottom:16px;color:#fbbf24;display:flex;align-items:center;gap:10px;">
+  <i class="bi bi-tools" style="font-size:18px;"></i>
+  <div><strong>Maintenance mode</strong> &mdash; hidden from operators and read-only users. Only administrators with the &ldquo;View maintenance devices&rdquo; permission can see and use this device.</div>
+</div>
+{% endif %}
 <div class="row g-3 mb-4">
   <div class="col-md-6"><div class="card shadow-sm">
     <div class="card-header fw-card-header">Details</div>

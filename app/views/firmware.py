@@ -230,7 +230,7 @@ def upload():
         uid = getattr(current_user, "id", 0) or 0
         link = url_for("firmware.index")
         job = jobsvc.create_job(
-            "firmware_finalize", f"Verifying {safe_name}",
+            "firmware_finalize", f"Verifying {safe_name}", cancelable=False,
             by=getattr(current_user, "username", "") or "",
             meta={"image_id": image_id, "filename": safe_name},
         )
@@ -524,7 +524,7 @@ def upload_finish():
     uid = getattr(current_user, "id", 0) or 0
     link = url_for("firmware.index")
     job = jobsvc.create_job(
-        "firmware_finalize", f"Verifying {safe_name}",
+        "firmware_finalize", f"Verifying {safe_name}", cancelable=False,
         by=getattr(current_user, "username", "") or "",
         meta={"image_id": image_id, "filename": safe_name},
     )

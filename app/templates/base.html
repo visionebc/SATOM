@@ -256,14 +256,8 @@
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'monitoring' else '' }}" href="{{ url_for('monitoring.index') }}">
             <i class="bi bi-activity fw-nav-icon"></i><span>Monitoring</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
-            <i class="bi bi-search fw-nav-icon"></i><span>Search</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
             <i class="bi bi-hdd-network fw-nav-icon"></i><span>Architecture</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'analysis' else '' }}" href="{{ url_for('analysis.index') }}">
-            <i class="bi bi-graph-up fw-nav-icon"></i><span>Analysis</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'fleet_objects' else '' }}" href="{{ url_for('fleet_objects.index') }}">
-            <i class="bi bi-box-seam fw-nav-icon"></i><span>Fleet Objects</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics' else '' }}" href="{{ url_for('metrics.index') }}">
             <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>Metrics</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">

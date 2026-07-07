@@ -36,6 +36,7 @@ BRANCH = os.environ.get("FM_UPDATE_BRANCH", "main")
 # AppSetting keys — Postgres-backed, so they replicate across the HA pair.
 _K_NODE_REPORT = "ha.node.%s"          # per-node last self-report (version/role/health)
 _K_VALIDATED = "ha.update.validated"   # {"target": sha, "node": name, "at": iso}
+_K_MODE = "ha.mode"                    # "ha" | "standalone" (admin-set, replicated)
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +98,32 @@ def node_role() -> str:
         return "standby" if val else "primary"
     except Exception:
         return "unknown"
+
+
+def ha_mode() -> str:
+    """Admin-set deployment mode: 'ha' (staged-update interlock, peer probes,
+    failover promote, data-sync) or 'standalone' (all HA behavior off).
+    Stored in AppSetting so it replicates to the standby — ONE source of
+    truth, set from the PRIMARY. Unset -> derived: 'ha' when a peer is
+    registered, else 'standalone' (backward compatible)."""
+    try:
+        from ..models import AppSetting
+        v = (AppSetting.get(_K_MODE) or "").strip().lower()
+        if v in ("ha", "standalone"):
+            return v
+    except Exception:
+        pass
+    others = [n for n in _nodes_raw() if n.get("name") != this_node_name()]
+    return "ha" if others else "standalone"
+
+
+def set_ha_mode(mode: str) -> None:
+    """Persist the deployment mode (replicated AppSetting). Writable only
+    where Postgres is read-write, i.e. on the primary."""
+    if mode not in ("ha", "standalone"):
+        raise ValueError("mode must be 'ha' or 'standalone'")
+    from ..models import AppSetting
+    AppSetting.set(_K_MODE, mode)
 
 
 def load_nodes() -> list[dict]:
@@ -242,7 +269,11 @@ def mark_validated(target_sha: str, node: str) -> None:
 
 def can_apply_to_primary(target_sha: str) -> bool:
     """The PRIMARY may update to ``target_sha`` only once the STANDBY has
-    validated that EXACT revision (updated + passed health checks)."""
+    validated that EXACT revision (updated + passed health checks).
+    In STANDALONE mode the staged-rollout interlock is off by admin choice
+    — updates apply directly."""
+    if ha_mode() == "standalone":
+        return True
     st = validated_state()
     return bool(target_sha) and st.get("target") == target_sha
 

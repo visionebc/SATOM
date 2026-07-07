@@ -356,7 +356,7 @@
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'system_backup' else '' }}" href="{{ url_for('system_backup.index') }}">
             <i class="bi bi-safe fw-nav-icon"></i><span>System Backup &amp; Restore</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'self_update' else '' }}" href="{{ url_for('self_update.index') }}">
-            <i class="bi bi-arrow-repeat fw-nav-icon"></i><span>Software Update</span></a>
+            <i class="bi bi-arrow-repeat fw-nav-icon"></i><span>Software Update &amp; HA</span></a>
         </div>
       </div>
       {% endif %}
@@ -670,7 +670,7 @@
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'system_backup' else '' }}" href="{{ url_for('system_backup.index') }}">
             <i class="bi bi-hdd-stack fw-nav-icon"></i><span>System Backup &amp; Restore</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'self_update' else '' }}" href="{{ url_for('self_update.index') }}">
-            <i class="bi bi-arrow-repeat fw-nav-icon"></i><span>Software Update</span></a>
+            <i class="bi bi-arrow-repeat fw-nav-icon"></i><span>Software Update &amp; HA</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'signatures' else '' }}" href="{{ url_for('signatures.index') }}">
             <i class="bi bi-fingerprint fw-nav-icon"></i><span>Signatures</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'reports' else '' }}" href="{{ url_for('reports.inbox') }}">

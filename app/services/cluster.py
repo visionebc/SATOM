@@ -31,6 +31,35 @@ SCHED_UNIT = "fortinet-manager-scheduler.service"
 LB_PROBE_PATH = "/healthz/primary"
 
 
+def _probe_peer(host: str, timeout: float = 1.5) -> dict:
+    """Actively probe a peer node over HTTP (from THIS node) so the admin sees
+    the secondary's real role + revision + app health WITHOUT SSH access to it.
+    role: /healthz/primary (200=primary, 503=standby); revision + app_up:
+    /healthz. Best-effort — an unreachable peer just reports reachable=False."""
+    import urllib.request
+    import urllib.error
+    base = "http://%s:8000" % host
+    out = {"reachable": False, "role": None, "revision": None, "app_up": False}
+    try:
+        with urllib.request.urlopen(base + "/healthz/primary", timeout=timeout) as r:
+            out["reachable"] = True
+            out["role"] = "primary" if r.status == 200 else "standby"
+    except urllib.error.HTTPError as e:
+        out["reachable"] = True
+        out["role"] = "standby" if e.code == 503 else None
+    except Exception:
+        pass
+    try:
+        with urllib.request.urlopen(base + "/healthz", timeout=timeout) as r:
+            out["reachable"] = True
+            d = json.loads(r.read().decode("utf-8", "replace"))
+            out["app_up"] = bool(d.get("ok"))
+            out["revision"] = {"short": d.get("revision"), "sha": d.get("sha")}
+    except Exception:
+        pass
+    return out
+
+
 def _num(v):
     """Coerce a Postgres numeric/Decimal to a JSON-safe int (bytes of WAL lag)."""
     try:
@@ -191,15 +220,34 @@ def full_state() -> dict:
     # On the primary, synthesize a report for any peer that is a live streaming
     # replica but hasn't self-reported (the standby can't write the shared,
     # replicated store — see manager_summary()). Match by host == client_addr.
-    if role == "primary":
-        addrs = {s.get("client_addr") for s in rep.get("senders", [])
-                 if s.get("state") == "streaming"}
-        for n in nodes:
-            if not n.get("report") and n.get("host") in addrs:
-                n["report"] = {"role": "standby", "healthy": True,
-                               "revision": None,
-                               "reported_at": "live via replication",
-                               "source": "replication"}
+    this = su.this_node_name()
+    addrs = {sn.get("client_addr") for sn in rep.get("senders", [])
+             if sn.get("state") == "streaming"}
+    # For every PEER (not self) actively probe its HTTP endpoints — this works
+    # even when the operator has no SSH to the secondary, and is authoritative
+    # for a running peer. Fall back to the replication view if unreachable.
+    for n in nodes:
+        if n.get("name") == this:
+            continue
+        host = n.get("host")
+        pr = _probe_peer(host) if host and host != "127.0.0.1" else {"reachable": False}
+        if pr.get("reachable"):
+            n["report"] = {
+                "role": pr.get("role") or ("standby" if host in addrs else None),
+                "healthy": pr.get("app_up"),
+                "revision": pr.get("revision"),
+                "reported_at": "live probe",
+                "source": "probe",
+                "reachable": True,
+            }
+        elif not n.get("report") and host in addrs:
+            n["report"] = {"role": "standby", "healthy": True, "revision": None,
+                           "reported_at": "replicating (app unreachable)",
+                           "source": "replication", "reachable": False}
+        elif not n.get("report"):
+            n["report"] = {"role": None, "healthy": False, "revision": None,
+                           "reported_at": "unreachable", "source": "none",
+                           "reachable": False}
     return {
         "this_node": su.this_node_name(),
         "this_role": role,

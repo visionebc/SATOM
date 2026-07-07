@@ -110,6 +110,68 @@ def load_nodes() -> list[dict]:
     return [{"name": this_node_name(), "host": "127.0.0.1", "self": True}]
 
 
+def _nodes_raw() -> list[dict]:
+    """The literal ha_nodes.json list (empty if absent) — unlike load_nodes(),
+    it does NOT substitute a synthetic self entry, so writers don't persist it."""
+    try:
+        data = json.loads(NODES_FILE.read_text())
+        if isinstance(data, list):
+            return data
+    except Exception:
+        pass
+    return []
+
+
+def save_nodes(nodes: list[dict]) -> None:
+    """Persist the HA node registry (data/ha_nodes.json). Rsync propagates it to
+    the peer; git never tracks it (per-deployment infra, not code)."""
+    NODES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    clean = []
+    for n in nodes:
+        name = (n.get("name") or "").strip()
+        host = (n.get("host") or "").strip()
+        if not name or not host:
+            continue
+        row = {"name": name, "host": host}
+        if n.get("desc"):
+            row["desc"] = str(n["desc"]).strip()
+        clean.append(row)
+    tmp = NODES_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(clean, indent=2))
+    os.replace(tmp, NODES_FILE)
+
+
+def upsert_node(name: str, host: str, desc: str = "") -> None:
+    """Add or update one node in the registry, keeping every other entry and
+    guaranteeing THIS node stays registered (so the panel always shows both)."""
+    name = (name or "").strip()
+    host = (host or "").strip()
+    nodes = _nodes_raw()
+    found = False
+    for n in nodes:
+        if n.get("name") == name:
+            n["host"] = host
+            if desc:
+                n["desc"] = desc
+            found = True
+    if not found:
+        row = {"name": name, "host": host}
+        if desc:
+            row["desc"] = desc
+        nodes.append(row)
+    this = this_node_name()
+    if not any(n.get("name") == this for n in nodes):
+        nodes.insert(0, {"name": this, "host": "127.0.0.1"})
+    save_nodes(nodes)
+
+
+def remove_node(name: str) -> None:
+    """Remove a node from the registry. Never removes THIS node (self)."""
+    if (name or "").strip() == this_node_name():
+        return
+    save_nodes([n for n in _nodes_raw() if n.get("name") != name])
+
+
 def self_report() -> dict:
     """Write THIS node's (role, revision, health) into the shared (replicated)
     settings so the UI on either node sees every node's state."""

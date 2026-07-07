@@ -72,6 +72,37 @@
   </div>
 </div>
 
+<!-- Deployment mode -->
+<div class="card mb-3">
+  <div class="card-header"><strong><i class="bi bi-toggles me-1"></i>Deployment mode</strong>
+    {% if ha.mode == 'ha' %}<span class="badge bg-success ms-2">HA — two-node</span>
+    {% else %}<span class="badge bg-secondary ms-2">STANDALONE</span>{% endif %}
+  </div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('self_update.set_mode') }}" class="row g-2 align-items-center">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-auto">
+        <select name="mode" class="form-select form-select-sm">
+          <option value="ha" {% if ha.mode == 'ha' %}selected{% endif %}>HA — two-node cluster</option>
+          <option value="standalone" {% if ha.mode == 'standalone' %}selected{% endif %}>Standalone — single node</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-outline-primary"{% if ha.this_role != 'primary' %} disabled title="Change the mode on the PRIMARY node — this node's database is read-only"{% endif %}>Save mode</button>
+      </div>
+      <div class="col-12 small text-muted">
+        <strong>HA</strong>: staged updates (the standby must validate a revision before the primary
+        unlocks), active peer probing, manual failover, and the periodic <code>data/</code> sync —
+        all driven by the peer host registered in <em>HA nodes</em> below (never hardcoded).
+        <strong>Standalone</strong>: every HA behavior above is off and updates apply directly to this node.
+        The toggle governs the manager's behavior only — it does not build or tear down Postgres
+        streaming replication (if configured, replication keeps running harmlessly underneath).
+        Stored in the replicated settings: set it once on the primary and both nodes follow.
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- HA nodes -->
 <div class="card mb-3"><div class="card-header"><strong>HA nodes</strong>
   <span class="text-muted small ms-2">roles &amp; health are probed live from each node's <code>/healthz</code></span></div>
@@ -136,6 +167,11 @@
 <div class="card mb-3">
   <div class="card-header"><strong><i class="bi bi-diagram-3 me-1"></i>High Availability — database replication &amp; failover</strong></div>
   <div class="card-body">
+    {% if ha.mode == 'standalone' %}
+    <div class="alert alert-secondary small mb-0"><i class="bi bi-pause-circle me-1"></i>
+      <strong>Standalone mode</strong> — replication monitoring, the staged-update interlock and
+      failover are disabled. Switch the deployment mode to <strong>HA</strong> above to re-enable them.</div>
+    {% else %}
     <div class="row g-3">
       <div class="col-lg-7">
         <div class="text-muted small mb-1">Streaming replication (live from this node's Postgres)</div>
@@ -188,6 +224,7 @@
         {% if ha.last_promote %}<div class="mt-2 small text-muted">Last failover: {{ ha.last_promote.state }} · {{ ha.last_promote.updated_at }}</div>{% endif %}
       </div>
     </div>
+    {% endif %}
   </div>
 </div>
 

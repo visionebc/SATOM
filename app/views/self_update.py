@@ -88,6 +88,27 @@ def status(uid):
     return jsonify(st or {"state": "unknown"})
 
 
+@bp.route("/ha-mode", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def set_mode():
+    """Switch the deployment mode standalone <-> ha. The setting lives in
+    the replicated app_settings table, so it can only be WRITTEN where
+    Postgres is read-write: the primary."""
+    mode = (request.form.get("mode") or "").strip().lower()
+    if mode not in ("ha", "standalone"):
+        flash("Invalid deployment mode.", "danger")
+        return redirect(url_for("self_update.index"))
+    if su.node_role() != "primary":
+        flash("The deployment mode is stored in the replicated settings — "
+              "change it on the PRIMARY node (this node's database is "
+              "read-only).", "warning")
+        return redirect(url_for("self_update.index"))
+    su.set_ha_mode(mode)
+    flash("Deployment mode set to %s." % mode.upper(), "success")
+    return redirect(url_for("self_update.index"))
+
+
 @bp.route("/promote", methods=["POST"])
 @login_required
 @require_permission("user_manage")

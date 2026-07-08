@@ -82,6 +82,21 @@ def sweep_plan() -> list[dict]:
     return plan
 
 
+def sweep_plan_adc() -> list[dict]:
+    """The FortiADC sweep plan — delegated to :mod:`app.services.adc_ops`
+    (the ADC module holds the fortiadc-side imports; import direction is
+    enforced by ``tests/test_product_separation.py``)."""
+    from . import adc_ops
+    return adc_ops.discovery_plan()
+
+
+def plan_for(appliance) -> list[dict]:
+    """The sweep plan matching the appliance's kind."""
+    if getattr(appliance, "kind", "") == "fortiadc":
+        return sweep_plan_adc()
+    return sweep_plan()
+
+
 def status(appliance_id: int) -> dict | None:
     """Current/last run progress for an appliance (None if never run)."""
     p = _dev_dir(appliance_id) / "progress.json"
@@ -136,22 +151,31 @@ def _iface_rows(snapshot: dict) -> list[dict]:
         if not isinstance(section, dict):
             continue
         for name, eprows in section.items():
-            if str(name).startswith("interface") and isinstance(eprows, list):
+            n = str(name)
+            # FortiWeb logical: "interface*"; FortiADC logical: "system_interface"
+            if (n.startswith("interface") or n.endswith("interface")) \
+                    and isinstance(eprows, list):
                 rows.extend(r for r in eprows if isinstance(r, dict))
     return rows
 
 
-def _model_from_status(appliance) -> tuple[str | None, str | None]:
-    """Best-effort ``(model, hw_type)`` from a live system-status call.
+def _model_from_status(appliance) -> tuple[str | None, str | None, str | None]:
+    """Best-effort ``(model, hw_type, firmware)`` from a live status call.
 
-    Returns ``(None, None)`` on any failure so a sync never breaks on a probe.
+    Returns ``(None, None, None)`` on any failure so a sync never breaks on a
+    probe. FortiADC keys off ``/api/platform/version`` (live-verified 8.0.3);
+    FortiWeb keeps its ``status.systemstatus`` read (firmware not derived
+    there — unchanged behaviour).
     """
+    if getattr(appliance, "kind", "") == "fortiadc":
+        from . import adc_ops
+        return adc_ops.model_inventory(appliance)
     try:
         from ..clients.fortiweb import FortiWebClient
         raw = FortiWebClient(appliance, timeout=15.0).status_check()
         d = raw.get("results", raw) if isinstance(raw, dict) else {}
     except Exception:  # noqa: BLE001
-        return None, None
+        return None, None, None
     fw = str(d.get("firmwareVersion") or "")
     platform = str(d.get("platformName") or "")
     serial = str(d.get("serialNumber") or "")
@@ -163,7 +187,7 @@ def _model_from_status(appliance) -> tuple[str | None, str | None]:
         hw = "hardware"
     else:
         hw = None
-    return (model or None), hw
+    return (model or None), hw, None
 
 
 def apply_inventory(appliance) -> dict:
@@ -214,11 +238,13 @@ def apply_inventory(appliance) -> dict:
             if changed:
                 updated += 1
 
-    model, hw = _model_from_status(appliance)
+    model, hw, fw = _model_from_status(appliance)
     if model:
         appliance.model = model
     if hw:
         appliance.hw_type = hw
+    if fw:
+        appliance.firmware = fw
 
     db.session.commit()
     return {"applied": True, "interfaces_added": added, "interfaces_updated": updated,
@@ -258,15 +284,18 @@ def _client_snapshot(appliance) -> SimpleNamespace:
         id=appliance.id, name=appliance.name, host=appliance.host,
         port=appliance.port, verify_ssl=appliance.verify_ssl,
         username=appliance.username, password=appliance.password,
-        vdom=appliance.vdom,
+        vdom=appliance.vdom, kind=getattr(appliance, "kind", "fortiweb"),
     )
 
 
-def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False) -> None:
+def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
+         plan: list[dict] | None = None) -> None:
     aid = appliance_snap.id
     devdir = _dev_dir(aid)
     progress_path = devdir / "progress.json"
-    plan = sweep_plan()
+    is_adc = getattr(appliance_snap, "kind", "") == "fortiadc"
+    if plan is None:
+        plan = sweep_plan_adc() if is_adc else sweep_plan()
     total = len(plan)
     started = datetime.utcnow().isoformat()
     state = {
@@ -276,14 +305,22 @@ def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False) -> None:
     }
     _write_json(progress_path, state)
 
-    client = FortiWebClient(appliance_snap, timeout=20.0)
+    if is_adc:
+        from . import adc_ops
+
+        _fetch = adc_ops.make_fetcher(appliance_snap)
+    else:
+        client = FortiWebClient(appliance_snap, timeout=20.0)
+
+        def _fetch(ep: dict) -> list:
+            return client._results_list(client.get(ep["urn"]).json())
+
     sections: dict[str, dict[str, list]] = {}
     total_objects = 0
     errors: list[dict] = []
     for i, ep in enumerate(plan, 1):
         try:
-            rows = client._results_list(client.get(ep["urn"]).json())
-            rows = [r for r in rows if isinstance(r, dict)]
+            rows = [r for r in _fetch(ep) if isinstance(r, dict)]
             if rows:
                 sections.setdefault(ep["section"], {})[ep["name"]] = rows
                 total_objects += len(rows)
@@ -307,7 +344,7 @@ def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False) -> None:
                          f"from {total} endpoint(s)" + (f", {len(errors)} error(s)" if errors else ""))
     _write_json(progress_path, state)
 
-    if deep:
+    if deep and not is_adc:  # deep capture is the FortiWeb WPP/policy layer
         _run_deep(appliance_snap, progress_path, state)
 
 
@@ -358,13 +395,19 @@ def start(appliance, by: str = "", deep: bool = False) -> dict:
         pass
 
     snap = _client_snapshot(appliance)
+    if snap.kind == "fortiadc":
+        deep = False  # deep capture is the FortiWeb WPP/policy layer
+    # Resolve the plan HERE (request context): the registry is DB-first and the
+    # worker thread has no app context to fall back through.
+    plan = plan_for(appliance)
     init = {"state": "running", "appliance_id": appliance.id, "appliance": appliance.name,
             "total": 0, "done": 0, "percent": 0, "objects": 0, "deep": bool(deep),
             "started": datetime.utcnow().isoformat(), "by": by, "errors": [], "finished": None}
     _write_json(_dev_dir(appliance.id) / "progress.json", init)
-    threading.Thread(target=_run, args=(snap, by, deep), daemon=True).start()
+    threading.Thread(target=_run, args=(snap, by, deep, plan), daemon=True).start()
     return {"started": True, "progress": init}
 
 
-__all__ = ["sweep_plan", "status", "latest_snapshot_meta", "start",
-           "apply_inventory", "maybe_apply_inventory", "_run_deep"]
+__all__ = ["sweep_plan", "sweep_plan_adc", "plan_for", "status",
+           "latest_snapshot_meta", "start", "apply_inventory",
+           "maybe_apply_inventory", "_run_deep"]

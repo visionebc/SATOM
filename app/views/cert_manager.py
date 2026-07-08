@@ -32,28 +32,37 @@ bp = Blueprint("cert_manager", __name__, url_prefix="/cert-manager")
 
 
 def _product_kind() -> str:
-    """Appliance kind for the ACTIVE product (session['product']). The
-    Certificate Manager is reachable from BOTH products; each must show only
-    its OWN devices/certs (FortiADC Global -> FortiADC, FortiWeb -> FortiWeb)."""
-    from flask import session
-    return "fortiadc" if session.get("product") == "fortiadc" else "fortiweb"
+    """Appliance kind for the ACTIVE product (the request's effective ADOM —
+    per-tab, see services.product_scope). The Certificate Manager is
+    reachable from all three ADOMs; the concrete ones show only their OWN
+    devices/certs, the Global ADOM shows BOTH (returns '' = no kind
+    filter)."""
+    from ..services.product_scope import session_product
+    prod = session_product()
+    if prod == "fortiadc":
+        return "fortiadc"
+    if prod == "fortiweb":
+        return "fortiweb"
+    return ""  # global / unset — no kind filter
+
+
+def _kind_scoped(query):
+    """Apply the active ADOM's kind filter; Global passes everything."""
+    kind = _product_kind()
+    return query.filter(Appliance.kind == kind) if kind else query
 
 
 def _fortiweb_appliances():
     """Every appliance the device-cert inventory covers — FortiWeb AND FortiADC
     (the scan/list service dispatches per kind; ADC reads are pure REST).
     Name kept for history; it has been both-kinds since the ADC scan landed."""
-    return (visible_appliances()
-            .filter(Appliance.kind == _product_kind())
-            .order_by(Appliance.name).all())
+    return _kind_scoped(visible_appliances()).order_by(Appliance.name).all()
 
 
 def _deploy_targets():
     """Deploy targets for a NEW certificate — FortiWeb (SSH import) AND FortiADC
     (REST upload; ``cert_adc``)."""
-    return (visible_appliances()
-            .filter(Appliance.kind == _product_kind())
-            .order_by(Appliance.name).all())
+    return _kind_scoped(visible_appliances()).order_by(Appliance.name).all()
 
 
 # --------------------------------------------------------------------------- #

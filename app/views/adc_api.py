@@ -107,6 +107,11 @@ def execute():
         except KeyError:
             return jsonify(ok=False, error=f'Unknown FortiADC endpoint: {endpoint}')
 
+    mkey = (request.form.get('mkey') or '').strip()
+    if mkey:
+        from urllib.parse import quote
+        path += ('&' if '?' in path else '?') + 'mkey=' + quote(mkey)
+
     body = None
     if body_raw:
         try:

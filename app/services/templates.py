@@ -23,8 +23,11 @@ KIND_LABELS = {
 
 
 def list_templates(kind: str | None = None) -> list[Template]:
-    """All templates, optionally filtered by kind, newest first."""
-    query = Template.query
+    """All templates VISIBLE TO THE ACTIVE ADOM (product-scoped), optionally
+    filtered by kind, newest first. FortiADC sessions see only 'fortiadc'
+    templates, FortiWeb everything else, Global all."""
+    from .product_scope import scope_query
+    query = scope_query(Template.query, Template.product)
     if kind:
         query = query.filter_by(kind=kind)
     return query.order_by(Template.kind, Template.name, Template.version.desc()).all()
@@ -175,12 +178,14 @@ def save_template(kind: str, name: str, body: Any, *, note: str = "",
 
     exc_json = _normalize_exceptions(exceptions)
 
+    from .product_scope import stamp
     version = _next_version(kind, name) if new_version else 1
     row = Template(
         kind=kind, name=name, version=version,
         body=json.dumps(parsed, separators=(",", ":"), sort_keys=True),
         exceptions=exc_json,
         note=(note or "").strip(), author=(author or "").strip(),
+        product=stamp() or "fortiweb",
     )
     db.session.add(row)
     db.session.commit()
@@ -203,6 +208,7 @@ def clone_template(template_id: int, new_name: str | None = None) -> Template:
         kind=src.kind, name=name, version=version,
         body=src.body, exceptions=src.exceptions or "",
         note=src.note or "", author=src.author or "", locked=False,
+        product=src.product or "fortiweb",
     )
     db.session.add(row)
     db.session.commit()

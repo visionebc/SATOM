@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}{{ report.name }} — Report{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-speedometer2 me-2 text-accent"></i>{{ report.name }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ report.description or 'Database report dashboard.' }}
+      <span id="rpt-generated" class="ms-1"></span></p>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <a href="{{ url_for('database.index') }}#tab-reports" class="btn btn-outline-light btn-sm"><i class="bi bi-arrow-left me-1"></i>Back</a>
+    <button id="rpt-refresh" class="btn btn-outline-light btn-sm"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+    <a href="{{ url_for('database.report_edit', report_id=report.id) }}" class="btn btn-outline-light btn-sm"><i class="bi bi-pencil me-1"></i>Edit</a>
+    <a href="{{ url_for('database.report_pdf', report_id=report.id) }}" class="btn btn-fw-primary btn-sm"><i class="bi bi-file-earmark-pdf me-1"></i>Download PDF</a>
+  </div>
+</div>
+
+<div id="rpt-loading" class="text-center text-muted py-5">
+  <div class="spinner-border spinner-border-sm me-2"></div>Running queries…
+</div>
+<div id="rpt-grid" class="row g-3"></div>
+
+<script src="{{ url_for('static', filename='vendor/chart/chart.umd.min.js') }}" nonce="{{ csp_nonce }}"></script>
+<script nonce="{{ csp_nonce }}">
+(function(){
+  var PALETTE=['#3b82f6','#8b5cf6','#10b981','#fbbf24','#ef4444','#06b6d4','#f97316','#84cc16','#ec4899','#64748b'];
+  var grid=document.getElementById('rpt-grid'), loading=document.getElementById('rpt-loading');
+  function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+  function card(w, colClass){
+    var col=document.createElement('div'); col.className=colClass;
+    var c=document.createElement('div'); c.className='card h-100';
+    var b=document.createElement('div'); b.className='card-body';
+    var h=document.createElement('div'); h.className='d-flex align-items-center mb-2';
+    h.innerHTML='<span class="fw-card-title">'+esc(w.title)+'</span>'+
+      '<span class="small text-muted ms-auto">'+(w.error?'':w.row_count+' rows'+(w.truncated?' (truncated)':''))+'</span>';
+    b.appendChild(h); c.appendChild(b); col.appendChild(c);
+    return {col:col, body:b};
+  }
+
+  function renderTable(w, body){
+    var div=document.createElement('div'); div.className='table-responsive'; div.style.maxHeight='420px';
+    var html='<table class="table table-sm table-striped"><thead><tr>'+
+      (w.columns||[]).map(function(c){return '<th class="small">'+esc(c)+'</th>';}).join('')+'</tr></thead><tbody>'+
+      (w.rows||[]).map(function(row){ return '<tr>'+row.map(function(c){
+        return '<td class="small">'+(c===''?'<span class="text-muted">∅</span>':esc(c))+'</td>';}).join('')+'</tr>'; }).join('')+
+      '</tbody></table>';
+    div.innerHTML=html; body.appendChild(div);
+  }
+
+  function renderStat(w, body){
+    var v=document.createElement('div');
+    v.style.cssText='font-size:44px;font-weight:700;background:linear-gradient(135deg,#3b82f6,#8b5cf6);'+
+      '-webkit-background-clip:text;background-clip:text;color:transparent;line-height:1.1;';
+    v.textContent=(w.stat===null||w.stat===undefined)?'—':w.stat;
+    body.appendChild(v);
+    if(w.columns&&w.columns.length){ var l=document.createElement('div'); l.className='small text-muted';
+      l.textContent=w.columns[0]; body.appendChild(l); }
+  }
+
+  function renderChart(w, body){
+    var box=document.createElement('div'); box.style.cssText='position:relative;height:300px;';
+    var cv=document.createElement('canvas'); box.appendChild(cv); body.appendChild(box);
+    var kind=(w.viz==='pie')?'pie':(w.viz==='line'?'line':'bar');
+    var ds={label:w.y_col||'value', data:w.values,
+            backgroundColor:(kind==='pie')?w.values.map(function(_,i){return PALETTE[i%PALETTE.length];}):'rgba(59,130,246,.65)',
+            borderColor:(kind==='line')?'#8b5cf6':'rgba(59,130,246,1)', borderWidth:kind==='line'?2:1,
+            tension:.3, fill:false};
+    new Chart(cv,{type:kind, data:{labels:w.labels, datasets:[ds]},
+      options:{responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{display:kind==='pie', labels:{color:'#94a3b8', boxWidth:12, font:{size:10}}}},
+        scales:(kind==='pie')?{}:{
+          x:{ticks:{color:'#94a3b8', font:{size:10}, maxRotation:45}, grid:{color:'rgba(148,163,184,.08)'}},
+          y:{ticks:{color:'#94a3b8', font:{size:10}}, grid:{color:'rgba(148,163,184,.08)'}, beginAtZero:true}
+        }}});
+  }
+
+  function render(data){
+    document.getElementById('rpt-generated').textContent='· generated '+data.generated_at;
+    grid.innerHTML='';
+    (data.widgets||[]).forEach(function(w){
+      var colClass=(w.width==='full')?'col-12':(w.viz==='stat'?'col-md-3 col-sm-6':'col-lg-6');
+      var parts=card(w, colClass);
+      if(w.error){
+        var e=document.createElement('div'); e.className='alert alert-danger py-2 small mb-0';
+        e.textContent='Query error: '+w.error; parts.body.appendChild(e);
+      } else if(!w.rows||!w.rows.length){
+        var n=document.createElement('div'); n.className='text-muted small'; n.textContent='No data.';
+        parts.body.appendChild(n);
+      } else if(w.viz==='stat'){ renderStat(w, parts.body); }
+      else if(w.viz==='table'){ renderTable(w, parts.body); }
+      else { renderChart(w, parts.body); }
+      grid.appendChild(parts.col);
+    });
+  }
+
+  function load(){
+    loading.classList.remove('d-none'); grid.innerHTML='';
+    fetch('{{ url_for("database.report_data", report_id=report.id) }}')
+      .then(function(r){return r.json();})
+      .then(function(j){ loading.classList.add('d-none'); render(j); })
+      .catch(function(){ loading.textContent='Failed to load report data.'; });
+  }
+  document.getElementById('rpt-refresh').addEventListener('click', load);
+  load();
+})();
+</script>
+{% endblock %}

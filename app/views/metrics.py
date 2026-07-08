@@ -23,6 +23,61 @@ def _classify_endpoint(endpoint: str) -> str:
 bp = Blueprint('metrics', __name__, url_prefix='/metrics')
 
 
+# --- product-aware inventory (2026-07-07) -----------------------------------
+# The 4 inventory slots keep their wire KEYS (server_policy/backend/wpp/
+# certificate — the chart/table JS is keyed on them) but each ADOM labels them
+# with its own object types. FortiWeb/Global read the daily typed-projection
+# snapshots; FortiADC has no snapshot pipeline yet, so its totals are counted
+# LIVE off the (single-device) ADC fleet and cached in-process for 10 minutes.
+INV_LABELS = {
+    'fortiweb': {'server_policy': 'Server Policies', 'backend': 'Backends',
+                 'wpp': 'WPPs', 'certificate': 'Certificates'},
+    'fortiadc': {'server_policy': 'Virtual Servers', 'backend': 'Real Servers',
+                 'wpp': 'Server Pools', 'certificate': 'Certificates'},
+}
+
+# ADC logical collection per inventory slot (registry-resolved by the client).
+_ADC_INV_LOGICALS = {
+    'server_policy': 'load_balance_virtual_server',
+    'backend': 'load_balance_real_server',
+    'wpp': 'load_balance_pool',
+    'certificate': 'system_certificate_local',
+}
+
+_ADC_INV_CACHE: dict = {'at': 0.0, 'totals': None}
+_ADC_INV_TTL = 600  # seconds
+
+
+def _inv_labels():
+    from ..services.product_scope import session_product
+    return INV_LABELS['fortiadc' if session_product() == 'fortiadc' else 'fortiweb']
+
+
+def _adc_inventory_totals() -> dict:
+    """Live object counts across the visible FortiADC fleet (cached 10 min).
+    Any per-device transport error just contributes 0 — the metrics page must
+    never 500 because an appliance is down."""
+    import time
+    from ..clients import client_for
+    from ..models import visible_appliances
+
+    now = time.time()
+    if _ADC_INV_CACHE['totals'] is not None and now - _ADC_INV_CACHE['at'] < _ADC_INV_TTL:
+        return _ADC_INV_CACHE['totals']
+    totals = {k: 0 for k in _ADC_INV_LOGICALS}
+    for a in visible_appliances().filter_by(kind='fortiadc').all():
+        try:
+            client = client_for(a)
+            for slot, logical in _ADC_INV_LOGICALS.items():
+                rows, err = client.list_with_error(logical)
+                if not err and isinstance(rows, list):
+                    totals[slot] += len(rows)
+        except Exception:  # noqa: BLE001 — unreachable device counts as 0
+            continue
+    _ADC_INV_CACHE.update(at=now, totals=totals)
+    return totals
+
+
 def _date_range(period, date_from_str, date_to_str):
     today = date.today()
     if period == '7d':
@@ -67,12 +122,12 @@ def index():
     dt_from, dt_to = _date_range(period, date_from_str, date_to_str)
     # Server-side inventory totals so the cards show even if JS fails to run.
     try:
-        from ..services import inventory_metrics
         from ..services.product_scope import session_product
-        # Inventory totals are FortiWeb typed-projection counts; in the ADC
-        # ADOM they would show the OTHER product's data — hide them instead.
-        inv_totals = (None if session_product() == 'fortiadc'
-                      else inventory_metrics.current_totals())
+        if session_product() == 'fortiadc':
+            inv_totals = _adc_inventory_totals()
+        else:
+            from ..services import inventory_metrics
+            inv_totals = inventory_metrics.current_totals()
     except Exception:
         inv_totals = None
     return render_template(
@@ -82,6 +137,7 @@ def index():
         date_to=dt_to.strftime('%Y-%m-%d'),
         compare=compare,
         inv_totals=inv_totals,
+        inv_labels=_inv_labels(),
     )
 
 
@@ -300,11 +356,19 @@ def api_data():
     current = compute_metrics(dt_from, dt_to)
 
     # --- fleet INVENTORY (how many exist), current totals + per-date trend ---
-    from ..services import inventory_metrics
-    inventory = {
-        'totals': inventory_metrics.current_totals(),
-        'series': inventory_metrics.series(dt_from.date(), dt_to.date()),
-    }
+    # FortiWeb/Global: daily typed-projection snapshots. FortiADC: live counts
+    # (no snapshot pipeline yet), so the trend series is empty by design.
+    if _prod == 'fortiadc':
+        inventory = {
+            'totals': _adc_inventory_totals(),
+            'series': {'labels': []},
+        }
+    else:
+        from ..services import inventory_metrics
+        inventory = {
+            'totals': inventory_metrics.current_totals(),
+            'series': inventory_metrics.series(dt_from.date(), dt_to.date()),
+        }
 
     # Overlay INVENTORY (how many exist per day) onto the daily table's
     # per-type columns so they match the cards + trend chart, instead of
@@ -323,6 +387,8 @@ def api_data():
         _row['backend'] = _d.get('backend', 0)
         _row['wpp'] = _d.get('wpp', 0)
         _row['certificate'] = _d.get('certificate', 0)
+
+    inventory['labels'] = _inv_labels()
 
     result = {
         'current': current,

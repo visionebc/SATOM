@@ -78,13 +78,24 @@ def prepare(appliance, *, do_backup: bool = True, do_health: bool = True,
             except Exception:  # noqa: BLE001
                 pass
 
+    is_adc = getattr(appliance, "kind", "") == "fortiadc"
     client = appliance.build_client()
-    out: dict[str, Any] = {
-        "appliance": appliance.name,
-        "generated_at": datetime.utcnow().isoformat(),
-        "firmware": firmware_version(client),
-        "permission": check_permission(client),
-    }
+    if is_adc:
+        from . import adc_ops
+        out: dict[str, Any] = {
+            "appliance": appliance.name,
+            "generated_at": datetime.utcnow().isoformat(),
+            "firmware": adc_ops.firmware_string(client),
+            # FortiADC has no monitor/permission-check equivalent → unknown.
+            "permission": None,
+        }
+    else:
+        out = {
+            "appliance": appliance.name,
+            "generated_at": datetime.utcnow().isoformat(),
+            "firmware": firmware_version(client),
+            "permission": check_permission(client),
+        }
 
     if do_backup:
         _say(6, "Pre-flight - backing up the appliance configuration into the vault...")
@@ -99,14 +110,22 @@ def prepare(appliance, *, do_backup: bool = True, do_health: bool = True,
     if do_health:
         _say(10, "Pre-flight - capturing the system health baseline...")
         try:
-            out["health"] = {"ok": True, "text": ssh_ops.health_text(appliance)}
+            if is_adc:
+                from . import adc_ops
+                out["health"] = {"ok": True, "text": adc_ops.health_text(appliance)}
+            else:
+                out["health"] = {"ok": True, "text": ssh_ops.health_text(appliance)}
         except Exception as exc:  # noqa: BLE001 — SSH may be closed; non-fatal
             out["health"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
 
     if do_services:
         _say(14, "Pre-flight - probing published services (baseline)...")
         try:
-            targets = service_probe.resolve_targets_from_client(client)
+            if is_adc:
+                from . import adc_ops
+                targets = adc_ops.resolve_targets(client)
+            else:
+                targets = service_probe.resolve_targets_from_client(client)
             out["services"] = {"ok": True, "probes": service_probe.probe_targets(targets)}
         except Exception as exc:  # noqa: BLE001
             out["services"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}

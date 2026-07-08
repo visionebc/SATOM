@@ -600,7 +600,7 @@ SERVER_POLICY: DepNode = _n(
            "deployment-mode = http-content-routing", "Server Policy",
            children=[
                _n("HTTP Content Routing Policy", "cmdb/server-policy/http-content-routing-policy",
-                  "http-content-routing-policy",
+                  "content-routing-policy-name",  # HTTP CR row names the policy via this field (NOT the urn tail)
                   children=[
                       _n("Match Conditions",
                          "cmdb/server-policy/http-content-routing-policy/content-routing-match-list",

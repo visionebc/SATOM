@@ -46,7 +46,7 @@ def patched(app, tmp_path, monkeypatch):
     status probe so the sync never hits the network."""
     monkeypatch.setattr(rediscovery, "_dev_dir", lambda aid: tmp_path)
     monkeypatch.setattr(rediscovery, "_model_from_status",
-                        lambda appliance: ("FortiWeb-KVM 8.0.5", "vm"))
+                        lambda appliance: ("FortiWeb-KVM 8.0.5", "vm", None))
     return tmp_path
 
 

@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}API Tokens — Fortinet Manager Web{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>API Tokens</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-3">
+  <h4 class="mb-0"><i class="bi bi-key me-2"></i>API Tokens</h4>
+</div>
+<p class="text-muted" style="max-width:70ch">
+  Tokens let authenticated external systems call the <code>/api/v1</code>
+  surface with <code>Authorization: Bearer &lt;token&gt;</code>. A token is
+  scoped, bound to one ADOM, owned by a user, and can never exceed that user's
+  permissions. Destructive firmware actions are never reachable via the API.
+</p>
+
+{% if new_token %}
+<div class="alert alert-success">
+  <strong>New token created — copy it now.</strong> This is the only time the
+  full token is shown. Store it securely.
+  <input class="form-control mt-2" readonly value="{{ new_token }}"
+         style="font-family:monospace">
+  <div class="small text-muted mt-1">
+    Owner: <strong>{{ new_token_row.owner.username }}</strong> ·
+    Scopes: <strong>{{ new_token_row.scope_list|join(', ') }}</strong> ·
+    ADOM: <strong>{{ new_token_row.product }}</strong>
+  </div>
+</div>
+{% endif %}
+
+<div class="card fw-card mb-4">
+  <div class="card-header">Create a token</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('api_tokens.create') }}" class="row g-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-4">
+        <label class="form-label">Name</label>
+        <input class="form-control" name="name" placeholder="e.g. splunk-integration" required>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Owner (inherits RBAC)</label>
+        <select class="form-select" name="owner_id" required>
+          {% for u in users %}
+          <option value="{{ u.id }}">{{ u.username }} ({{ u.role }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">ADOM</label>
+        <select class="form-select" name="product">
+          {% for p in products %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Expires (days)</label>
+        <input class="form-control" name="expires_days" type="number" min="1" placeholder="never">
+      </div>
+      <div class="col-12">
+        <label class="form-label d-block">Scopes</label>
+        {% for s in scopes %}
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="checkbox" name="scopes" value="{{ s }}"
+                 id="scope-{{ s }}" {{ 'checked' if s == 'read' else '' }}>
+          <label class="form-check-label" for="scope-{{ s }}">
+            {{ s }}
+            <span class="text-muted small">
+              {%- if s == 'read' %} (GET){% elif s == 'write' %} (run actions / config_write){% else %} (admin){% endif -%}
+            </span>
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="col-12">
+        <button class="btn btn-primary" type="submit">
+          <i class="bi bi-plus-lg me-1"></i>Create token</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card fw-card">
+  <div class="card-header">Existing tokens</div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>Name</th><th>Token</th><th>Owner</th><th>Scopes</th>
+          <th>ADOM</th><th>Status</th><th>Last used</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tokens %}
+        <tr class="{{ 'text-muted' if not t.is_active else '' }}">
+          <td>{{ t.name }}</td>
+          <td><code>{{ t.masked }}</code></td>
+          <td>{{ t.owner.username if t.owner else '—' }}</td>
+          <td>{{ t.scope_list|join(', ') }}</td>
+          <td>{{ t.product }}</td>
+          <td>
+            {% if t.revoked %}<span class="badge bg-secondary">revoked</span>
+            {% elif t.is_expired %}<span class="badge bg-warning text-dark">expired</span>
+            {% else %}<span class="badge bg-success">active</span>{% endif %}
+          </td>
+          <td class="small text-muted">
+            {{ t.last_used_at.strftime('%Y-%m-%d %H:%M') if t.last_used_at else 'never' }}</td>
+          <td class="text-end">
+            {% if not t.revoked %}
+            <form method="post" action="{{ url_for('api_tokens.revoke', id=t.id) }}" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-warning" type="submit">Revoke</button>
+            </form>
+            {% endif %}
+            <form method="post" action="{{ url_for('api_tokens.delete', id=t.id) }}" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="text-center text-muted py-4">No tokens yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -43,7 +43,7 @@ class FakePlanner:
     def __init__(self, items):
         self._items = items
 
-    def plan(self, root, mkey, *, new_name=""):
+    def plan(self, root, mkey, *, new_name="", **kw):
         return list(self._items)
 
 

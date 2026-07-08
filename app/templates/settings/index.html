@@ -61,6 +61,21 @@
       <i class="bi bi-award me-1"></i>Certificate Manager
     </button>
   </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-dnstool" type="button">
+      <i class="bi bi-globe2 me-1"></i>DNS Lookup
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-policylinks" type="button">
+      <i class="bi bi-link-45deg me-1"></i>Policy Links
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-clonerules" type="button">
+      <i class="bi bi-files me-1"></i>Clone / Migrate
+    </button>
+  </li>
   {% endif %}
   <li class="nav-item" role="presentation">
     <button class="nav-link {{ 'active' if not is_admin else '' }}" data-bs-toggle="tab" data-bs-target="#tab-security" type="button">
@@ -917,6 +932,163 @@
       </div>
     </form>
   </div>
+  <!-- DNS LOOKUP TAB -->
+  <div class="tab-pane fade" id="tab-dnstool">
+    <div class="fw-card" style="max-width:780px;">
+      <div class="fw-card-header"><i class="bi bi-globe2 me-1"></i>DNS Lookup — resolver servers</div>
+      <div class="fw-card-body">
+        <p class="text-muted" style="font-size:13px;">
+          The DNS servers the <a href="{{ url_for('dns_tool.index') }}">DNS &amp; LB Lookup</a> tool queries.
+          The list is variable — add or remove rows at any time (blank rows are dropped). Every enabled
+          server becomes one column in the lookup results; all ADOMs share this list.
+        </p>
+        <form method="POST" action="{{ url_for('settings.save_dns_tool') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <table class="table fw-table align-middle" style="font-size:13px;">
+            <thead>
+              <tr><th style="width:32%;">Name</th><th>Server (IP / hostname)</th><th style="width:90px;" class="text-center">Enabled</th></tr>
+            </thead>
+            <tbody>
+              {% for s in dns_tool_servers %}
+              <tr>
+                <td><input type="text" name="dns_name" class="form-control fw-form-control form-control-sm" value="{{ s.name }}"></td>
+                <td><input type="text" name="dns_server" class="form-control fw-form-control form-control-sm" value="{{ s.server }}"></td>
+                <td class="text-center"><input type="checkbox" class="form-check-input" name="dns_enabled" value="{{ loop.index0 }}" {{ 'checked' if s.enabled }}></td>
+              </tr>
+              {% endfor %}
+              {% for i in range(3) %}
+              <tr>
+                <td><input type="text" name="dns_name" class="form-control fw-form-control form-control-sm" placeholder="e.g. Extern"></td>
+                <td><input type="text" name="dns_server" class="form-control fw-form-control form-control-sm" placeholder="e.g. 192.0.2.53"></td>
+                <td class="text-center"><input type="checkbox" class="form-check-input" name="dns_enabled" value="{{ (dns_tool_servers|length) + i }}" checked></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save DNS servers</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- POLICY LINKS TAB -->
+  <div class="tab-pane fade" id="tab-policylinks">
+    <div class="fw-card" style="max-width:920px;">
+      <div class="fw-card-header"><i class="bi bi-link-45deg me-1"></i>Policy Links — dynamic deep links</div>
+      <div class="fw-card-body">
+        <p class="text-muted" style="font-size:13px;">
+          Links shown at the top of every <strong>Server Policy</strong> detail page. Use
+          <code>{token}</code> placeholders — each policy fills them with its own context, so one
+          link (e.g. a Splunk search) jumps straight to <em>that</em> policy's data. The list is
+          variable — add or remove rows at any time (blank rows are dropped); all ADOMs share it.
+        </p>
+        <div class="mb-3" style="font-size:12.5px;">
+          <span class="text-muted">Available tokens:</span>
+          {% for tok, desc in policy_link_tokens %}
+          <code title="{{ desc }}">&#123;{{ tok }}&#125;</code>{% if not loop.last %} {% endif %}
+          {% endfor %}
+          <div class="text-muted mt-1" style="font-size:11.5px;">
+            Example: <code>https://splunk.example.net/en-US/app/search/search?q=policy%3D&#123;policy&#125;%20vip%3D&#123;vip&#125;</code>
+            &mdash; a link naming a field the policy doesn't have (e.g. <code>&#123;vip&#125;</code> on a
+            policy with no VIP) is skipped, never rendered broken.
+          </div>
+        </div>
+        <form method="POST" action="{{ url_for('settings.save_policy_links') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <table class="table fw-table align-middle" style="font-size:13px;">
+            <thead>
+              <tr>
+                <th style="width:22%;">Label</th>
+                <th>URL (with {tokens})</th>
+                <th style="width:70px;" class="text-center">New tab</th>
+                <th style="width:70px;" class="text-center">Enabled</th>
+                <th style="width:44px;"></th>
+              </tr>
+            </thead>
+            <tbody id="policylinks-body">
+              {% for l in policy_links %}
+              <tr>
+                <td><input type="hidden" name="link_row" value="r{{ loop.index0 }}"><input type="text" name="link_label" class="form-control fw-form-control form-control-sm" value="{{ l.label }}"></td>
+                <td><input type="text" name="link_url" class="form-control fw-form-control form-control-sm" value="{{ l.url }}"></td>
+                <td class="text-center"><input type="checkbox" class="form-check-input" name="link_newtab" value="r{{ loop.index0 }}" {{ 'checked' if l.new_tab }}></td>
+                <td class="text-center"><input type="checkbox" class="form-check-input" name="link_enabled" value="r{{ loop.index0 }}" {{ 'checked' if l.enabled }}></td>
+                <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" data-js="remove-row"><i class="bi bi-trash"></i></button></td>
+              </tr>
+              {% endfor %}
+              {% if policy_links|length == 0 %}
+              <tr>
+                <td><input type="hidden" name="link_row" value="rnew0"><input type="text" name="link_label" class="form-control fw-form-control form-control-sm" placeholder="e.g. Splunk logs"></td>
+                <td><input type="text" name="link_url" class="form-control fw-form-control form-control-sm" placeholder="https://…?q=policy%3D{policy}"></td>
+                <td class="text-center"><input type="checkbox" class="form-check-input" name="link_newtab" value="rnew0" checked></td>
+                <td class="text-center"><input type="checkbox" class="form-check-input" name="link_enabled" value="rnew0" checked></td>
+                <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" data-js="remove-row"><i class="bi bi-trash"></i></button></td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+          <div class="d-flex align-items-center gap-2">
+            <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save policy links</button>
+            <button type="button" class="btn btn-outline-secondary" data-js="add-policy-link"><i class="bi bi-plus-lg me-1"></i>Add link</button>
+            <span class="text-muted" style="font-size:12px;">Up to 10 links.</span>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- CLONE / MIGRATE TAB -->
+  <div class="tab-pane fade" id="tab-clonerules">
+    <div class="fw-card" style="max-width:780px;">
+      <div class="fw-card-header"><i class="bi bi-files me-1"></i>Clone / Migrate — Server Policy copy rules</div>
+      <div class="fw-card-body">
+        <p class="text-muted" style="font-size:13px;">
+          Fleet-wide defaults for the Server Policy <strong>Clone</strong> and <strong>Migrate</strong> dialogs.
+          A <strong>bulk</strong> clone/migrate always rewrites each copy's VIP to a <strong>dummy IP</strong> using
+          the rules below (leading octets replaced, the rest kept — e.g. <code>10 → 240</code> turns
+          <code>192.0.2.1</code> into <code>240.1.10.1</code>); a <strong>single-policy</strong> dialog prefills
+          the same suggestion but asks the operator. Operators see these values in the dialog and can
+          override them per run only after ticking "Override admin defaults".
+        </p>
+        <form method="POST" action="{{ url_for('settings.save_clone_rules') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="fw-fld-label mb-1">Dummy-IP transformation rules (first match wins)</label>
+          <table class="table fw-table align-middle" style="font-size:13px;max-width:480px;">
+            <thead>
+              <tr><th>IP starts with (octets)</th><th>Replace with</th></tr>
+            </thead>
+            <tbody>
+              {% for r in (clone_rules_cfg.ip_rules if clone_rules_cfg else []) %}
+              <tr>
+                <td><input type="text" name="rule_match" class="form-control fw-form-control form-control-sm" value="{{ r.match }}"></td>
+                <td><input type="text" name="rule_replace" class="form-control fw-form-control form-control-sm" value="{{ r.replace }}"></td>
+              </tr>
+              {% endfor %}
+              {% for i in range(2) %}
+              <tr>
+                <td><input type="text" name="rule_match" class="form-control fw-form-control form-control-sm" placeholder="e.g. 10"></td>
+                <td><input type="text" name="rule_replace" class="form-control fw-form-control form-control-sm" placeholder="e.g. 240"></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          <div class="mb-3" style="max-width:300px;">
+            <label class="fw-fld-label">Fallback dummy IP (no rule matches)</label>
+            <input type="text" name="fallback_ip" class="form-control fw-form-control form-control-sm"
+                   value="{{ clone_rules_cfg.fallback_ip if clone_rules_cfg else '203.0.113.9' }}">
+          </div>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="copy_wpp_default" id="cloneCopyWpp"
+                   {{ 'checked' if clone_rules_cfg and clone_rules_cfg.copy_wpp_default }}>
+            <label class="form-check-label" for="cloneCopyWpp" style="font-size:13px;">
+              Copy the Web Protection Profile by default on clone / migrate
+            </label>
+          </div>
+          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save clone/migrate rules</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
   {% endif %}
 
   <!-- SECURITY TAB -->
@@ -1175,6 +1347,27 @@ function addIpRow() {
   body.appendChild(tr);
 }
 
+// --- policy-links row add (max 10) ---
+var _plSeq = 0;
+function addPolicyLinkRow() {
+  var body = document.getElementById('policylinks-body');
+  if (!body) return;
+  if (body.querySelectorAll('tr').length >= 10) {
+    alert('You can configure up to 10 policy links.');
+    return;
+  }
+  var tok = 'rjs' + (_plSeq++) + '_' + Date.now();
+  var tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td><input type="hidden" name="link_row" value="' + tok + '">' +
+    '<input type="text" name="link_label" class="form-control fw-form-control form-control-sm" placeholder="e.g. Splunk logs"></td>' +
+    '<td><input type="text" name="link_url" class="form-control fw-form-control form-control-sm" placeholder="https://…?q=policy%3D{policy}"></td>' +
+    '<td class="text-center"><input type="checkbox" class="form-check-input" name="link_newtab" value="' + tok + '" checked></td>' +
+    '<td class="text-center"><input type="checkbox" class="form-check-input" name="link_enabled" value="' + tok + '" checked></td>' +
+    '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" data-js="remove-row"><i class="bi bi-trash"></i></button></td>';
+  body.appendChild(tr);
+}
+
 // --- password strength meter (Change Password tab) ---
 function checkStrength(pwd) {
   var fill = document.getElementById('pwd-strength-fill');
@@ -1415,7 +1608,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
   // Delegated row-delete: covers server-rendered rows and rows added later
-  ['ipwl-body', 'segments-body'].forEach(function (id) {
+  ['ipwl-body', 'segments-body', 'policylinks-body'].forEach(function (id) {
     var body = document.getElementById(id);
     if (!body) return;
     body.addEventListener('click', function (event) {
@@ -1424,6 +1617,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
   onJs('add-ip-row', 'click', function (event) { addIpRow(); });
+  onJs('add-policy-link', 'click', function (event) { addPolicyLinkRow(); });
   onJs('git-refresh', 'click', function (event) { gitRefresh(); });
   onJs('git-configure', 'click', function (event) { gitConfigure(); });
   on('git-pull-btn', 'click', function (event) { gitPull(); });

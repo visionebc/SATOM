@@ -54,14 +54,14 @@ def _safe_next() -> str:
     nxt = request.args.get('next') or request.form.get('next')
     if nxt and nxt.startswith('/') and not nxt.startswith('//'):
         return nxt
-    return url_for('workspace.index')
+    return url_for('index')
 
 
 @bp.route('/login', methods=['GET', 'POST'])
 @limiter.limit('5 per minute')
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for('workspace.index'))
+        return redirect(url_for('index'))
 
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
@@ -173,7 +173,7 @@ def two_factor():
                 flash('Backup code accepted. '
                       f'{twofa.remaining_backup_codes(user.backup_codes)} backup code(s) left.',
                       'warning')
-            return redirect(nxt or url_for('workspace.index'))
+            return redirect(nxt or url_for('index'))
         flash('Invalid authentication code.', 'danger')
         return redirect(url_for('auth.two_factor'))
 
@@ -195,7 +195,7 @@ def logout():
 @limiter.limit('5 per 15 minutes')
 def forgot_password():
     if current_user.is_authenticated:
-        return redirect(url_for('workspace.index'))
+        return redirect(url_for('index'))
 
     sent_msg = ('If that account exists and has a recovery email on file, a '
                 'password-reset link has been sent.')

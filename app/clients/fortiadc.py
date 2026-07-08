@@ -164,13 +164,25 @@ class FortiADCClient(BaseClient):
     def list_pools(self):
         return self._api('GET', '/api/load_balance_pool').json()
 
+    def platform_version(self) -> dict:
+        """``/api/platform/version`` → ``{build, hostname, model, version}``.
+        VERIFIED LIVE on FortiADC-KVM 8.0.3 — the old ``/api/system/status``
+        does NOT exist on FortiADC (404), so the connectivity check and the
+        firmware/model inventory both key off this endpoint."""
+        resp = self._api('GET', '/api/platform/version')
+        err = self._device_error(resp)
+        if err:
+            raise FortiADCError(err)
+        data = self._payload(resp)
+        return data if isinstance(data, dict) else {}
+
     def status_check(self):
-        return self._api('GET', '/api/system/status').json()
+        return self.platform_version()
 
     def ha_status(self):
         """Best-effort live HA status as a flat dict (FortiADC). Returns {} on
         failure so the resolver degrades to 'standalone'/'unknown'."""
-        for path in ('/api/system_ha_status', '/api/system/status'):
+        for path in ('/api/system_ha_status', '/api/system_ha'):
             try:
                 raw = self._api('GET', path).json()
             except Exception:

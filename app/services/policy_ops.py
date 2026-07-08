@@ -58,15 +58,35 @@ def delete_policy(ops, policy: str, *, dry_run: bool):
 
 
 def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
-                 disable: bool = True) -> list[clone.CloneItem]:
+                 disable: bool = True, vip_ip: str = "", copy_wpp: bool = True,
+                 wpp_new_name: str = "", wpp_suffix: str = "") -> list[clone.CloneItem]:
     """Plan the full policy tree on the source and create the missing objects on
     the ``ops`` device (same box or another). The new root is left DISABLED.
 
     ``ops`` is where writes land: for a same-box clone it wraps the source
-    device; for a cross-box clone/migrate it wraps the DESTINATION."""
-    items = planner.plan(clone.ROOT_SERVER_POLICY, policy, new_name=new_name)
+    device; for a cross-box clone/migrate it wraps the DESTINATION.
+
+    * ``vip_ip`` — the address the copy's VIP comes up on: an explicit IPv4 (the
+      single-policy dialog asked the operator) or ``"auto"`` (every bulk run —
+      apply the admin dummy-IP rules to each VIP's own address). Empty keeps the
+      source address (legacy behaviour).
+    * ``copy_wpp=False`` prunes the Web Protection Profile subtree; the copy
+      still names the profile, so the destination must already have it (the
+      pre-flight checklist enforces that).
+    * ``wpp_new_name`` copies the WPP under a NEW name and re-points the policy
+      at it — the escape when the destination has a same-name profile whose
+      values differ from the source."""
+    items = planner.plan(clone.ROOT_SERVER_POLICY, policy, new_name=new_name,
+                         follow_wpp=copy_wpp, wpp_new_name=wpp_new_name,
+                         wpp_suffix=wpp_suffix)
     if disable:
         clone.disable_root(items)
+    if vip_ip == "auto":
+        from . import clone_rules
+        cfg = clone_rules.config()
+        clone.set_vip_ip(items, transform=lambda ip: clone_rules.dummy_ip(ip, cfg))
+    elif vip_ip:
+        clone.set_vip_ip(items, ip=vip_ip)
 
     def _write(item: clone.CloneItem) -> None:
         from . import objform
@@ -77,6 +97,12 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
             raise RuntimeError(res.get("error") or "write failed")
 
     clone.apply_clone(items, _write, dry_run=dry_run)
+    if not dry_run:
+        # Confirm against the destination what actually landed (read-only).
+        try:
+            clone.verify_created(items, planner.dst)
+        except Exception:  # noqa: BLE001 — verification is advisory
+            pass
     return items
 
 
@@ -97,13 +123,34 @@ def clone_summary(items: list[clone.CloneItem]) -> dict[str, int]:
     }
 
 
+def _failed_msg(report: dict) -> str:
+    """A human error naming the objects that failed (not just a count) — the
+    operator asked WHICH object broke, so the job error says so."""
+    fails = report.get("failed") or []
+    names = []
+    for f in fails:
+        lbl = f.get("label") or f.get("urn") or "?"
+        mk = f.get("mkey")
+        names.append("%s (%s)" % (lbl, mk) if mk else lbl)
+    head = "%d object(s) failed" % len(fails)
+    if names:
+        head += ": " + ", ".join(names[:5])
+        if len(names) > 5:
+            head += " …(+%d)" % (len(names) - 5)
+    return head
+
+
 def migrate_policy(dst_planner, dst_ops, src_ops, policy: str, *,
-                   new_name: str, dry_run: bool) -> dict:
+                   new_name: str, dry_run: bool, vip_ip: str = "",
+                   copy_wpp: bool = True, wpp_new_name: str = "",
+                   wpp_suffix: str = "") -> dict:
     """Clone the policy tree onto the destination, then — ONLY on a clean clone
     and a real apply — disable the SOURCE policy (rollback-friendly; the source
     is kept). A failed clone leaves the source LIVE and untouched."""
     items = clone_policy(dst_planner, dst_ops, policy, new_name=new_name,
-                         dry_run=dry_run, disable=True)
+                         dry_run=dry_run, disable=True, vip_ip=vip_ip,
+                         copy_wpp=copy_wpp, wpp_new_name=wpp_new_name,
+                         wpp_suffix=wpp_suffix)
     summary = clone_summary(items)
     clone_ok = summary["failed"] == 0 and (dry_run or summary["created"] > 0
                                            or summary["exists"] > 0)
@@ -138,11 +185,21 @@ def _planner(src_appl, dst_appl):
 
 
 def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
-                new_name: str = "", dry_run: bool) -> dict:
+                new_name: str = "", dry_run: bool,
+                opts: dict | None = None) -> dict:
     """Execute (or preview) ONE action against ONE policy with real appliances.
+
+    ``opts`` carries the clone/migrate knobs from the dialog: ``vip_ip``
+    (explicit IPv4 | ``"auto"`` | '' = keep), ``copy_wpp`` (bool) and
+    ``wpp_new_name`` (copy the WPP under a new name).
 
     Returns a normalised ``{policy, action, ok, error, detail}`` record; never
     raises (a device/logic failure is captured in ``ok``/``error``)."""
+    opts = opts or {}
+    vip_ip = str(opts.get("vip_ip") or "")
+    copy_wpp = bool(opts.get("copy_wpp", True))
+    wpp_new_name = str(opts.get("wpp_new_name") or "")
+    wpp_suffix = str(opts.get("wpp_suffix") or "")
     rec = {"policy": policy, "action": action, "ok": False, "error": "",
            "detail": {}}
     try:
@@ -172,42 +229,269 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
         elif action == "clone_here":
             planner = _planner(source_appl, source_appl)
             items = clone_policy(planner, _ops(source_appl), policy,
-                                 new_name=new_name, dry_run=dry_run)
+                                 new_name=new_name, dry_run=dry_run,
+                                 vip_ip=vip_ip, copy_wpp=copy_wpp,
+                                 wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix)
             summary = clone_summary(items)
             rec["ok"] = summary["failed"] == 0 and (dry_run or summary["created"] > 0)
+            report = clone.outcome(items)
             rec["detail"] = {"summary": summary, "plan": clone.render_plan(items),
-                             "new_name": new_name}
+                             "new_name": new_name, "vip_ip": vip_ip,
+                             "copy_wpp": copy_wpp, "wpp_new_name": wpp_new_name,
+                             "clone": report}
             if summary["failed"]:
-                rec["error"] = "%d object(s) failed" % summary["failed"]
+                rec["error"] = _failed_msg(report)
             elif not dry_run and summary["created"] == 0:
                 rec["ok"], rec["error"] = False, 'nothing to create — "%s" exists' % new_name
         elif action == "clone_to":
             planner = _planner(source_appl, dest_appl)
             items = clone_policy(planner, _ops(dest_appl), policy,
-                                 new_name=new_name or policy, dry_run=dry_run)
+                                 new_name=new_name or policy, dry_run=dry_run,
+                                 vip_ip=vip_ip, copy_wpp=copy_wpp,
+                                 wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix)
             summary = clone_summary(items)
             rec["ok"] = summary["failed"] == 0 and (dry_run or summary["created"] > 0
                                                     or summary["exists"] > 0)
+            report = clone.outcome(items)
             rec["detail"] = {"summary": summary, "plan": clone.render_plan(items),
-                             "dest": dest_appl.name, "new_name": new_name or policy}
+                             "dest": dest_appl.name, "new_name": new_name or policy,
+                             "vip_ip": vip_ip, "copy_wpp": copy_wpp,
+                             "wpp_new_name": wpp_new_name, "clone": report}
             if summary["failed"]:
-                rec["error"] = "%d object(s) failed on %s" % (summary["failed"], dest_appl.name)
+                rec["error"] = "%s on %s" % (_failed_msg(report), dest_appl.name)
         elif action == "migrate_to":
             planner = _planner(source_appl, dest_appl)
             out = migrate_policy(planner, _ops(dest_appl), _ops(source_appl),
-                                 policy, new_name=new_name or policy, dry_run=dry_run)
+                                 policy, new_name=new_name or policy, dry_run=dry_run,
+                                 vip_ip=vip_ip, copy_wpp=copy_wpp,
+                                 wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix)
             rec["ok"] = out["ok"]
+            report = clone.outcome(out["items"])
             rec["detail"] = {"summary": out["summary"],
                              "plan": clone.render_plan(out["items"]),
                              "dest": dest_appl.name, "new_name": new_name or policy,
-                             "source_disabled": out["source_disabled"]}
+                             "vip_ip": vip_ip, "copy_wpp": copy_wpp,
+                             "wpp_new_name": wpp_new_name,
+                             "source_disabled": out["source_disabled"],
+                             "clone": report}
             if not out["ok"]:
-                rec["error"] = "clone failed — source left live"
+                rec["error"] = ("%s — source left live" % _failed_msg(report)
+                                if report["failed"] else "clone failed — source left live")
         else:
             rec["error"] = "unknown action %r" % action
     except Exception as exc:  # noqa: BLE001 — one policy's failure never sinks the run
         rec["error"] = "%s: %s" % (type(exc).__name__, exc)
     return rec
+
+
+# --------------------------------------------------------------------------- #
+#  Pre-flight checklist (clone/migrate dialog)                                   #
+# --------------------------------------------------------------------------- #
+def _live_lookup(reader, logical: str, mkey: str) -> dict:
+    """One object off a live box via the reliable ``?mkey=`` read ({} on any
+    failure — the caller decides the cache fallback)."""
+    try:
+        rows = reader.get_object(logical, mkey)
+        return rows[0] if rows else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _wpp_diff(src: dict, dst: dict) -> list[str]:
+    """Field names whose values differ between two WPP payloads (both run
+    through the same write-sanitizer, so volatile/read-only keys are gone)."""
+    from .fortiweb_ops import sanitize_payload
+    a, b = sanitize_payload(dict(src or {})), sanitize_payload(dict(dst or {}))
+    keys = sorted(set(a) | set(b))
+    return [k for k in keys if a.get(k) != b.get(k) and k != "name"]
+
+
+def preflight(action: str, *, source_appl, dest_appl=None, policies: list[str],
+              new_name: str = "", opts: dict | None = None) -> dict:
+    """The clone/migrate PRE-FLIGHT CHECKLIST the dialog shows before anything
+    is written. Read-only; every check degrades to a WARN (never a crash) when
+    a device can't be read (the lab fleet's license flaps).
+
+    Per policy: source present · destination reachable · target-name collision ·
+    WPP present/identical/different at the destination (with the operator's
+    choice when it differs) · VIP dummy-IP suggestion + address conflict ·
+    certificate carry-over · capacity headroom."""
+    from ..clients.fortiweb import FortiWebClient
+    from . import clone_rules, read_layer
+    opts = opts or {}
+    cfg = clone_rules.config()
+    cross_box = dest_appl is not None and dest_appl.id != source_appl.id
+    dest = dest_appl if cross_box else source_appl
+    copy_wpp = bool(opts.get("copy_wpp", cfg["copy_wpp_default"]))
+    explicit_ip = str(opts.get("vip_ip") or "").strip()
+    bulk = len(policies) > 1
+
+    src_reader = clone.ClientReader(FortiWebClient(source_appl))
+    dst_reader = (src_reader if not cross_box
+                  else clone.ClientReader(FortiWebClient(dest)))
+
+    # Destination reachability + its VIP address inventory (one read, reused).
+    dest_vips: list[dict] = []
+    dest_live = True
+    try:
+        client = dst_reader.client
+        rows, dev_err = client.list_with_error("/api/v2.0/cmdb/system/vip")
+        if dev_err:
+            dest_live = False
+            dest_err = dev_err
+        else:
+            dest_vips = rows or []
+            dest_err = ""
+    except Exception as exc:  # noqa: BLE001
+        dest_live, dest_err = False, str(exc)
+    dest_vip_ips = {str(v.get("vip") or "").split("/")[0] for v in dest_vips}
+
+    def _dest_has(logical: str, mkey: str) -> dict | None:
+        """Object at the destination — live first, cache fallback when the
+        destination can't be read (None = 'could not verify')."""
+        if not mkey:
+            return {}
+        if dest_live:
+            return _live_lookup(dst_reader, logical, mkey)
+        row = read_layer.object_by_mkey(dest.id, logical, mkey)
+        if row is not None:
+            return dict(row.payload or {})
+        return None  # unverifiable: no live read, no cache row
+
+    out_policies = []
+    for pol in policies:
+        checks: list[dict] = []
+        suggest: dict[str, Any] = {}
+
+        def add(key, level, label, detail=""):
+            checks.append({"key": key, "level": level, "label": label,
+                           "detail": detail})
+
+        # 1) source policy
+        data, _cr, _meta = read_layer.policy_full_cached(source_appl.id, pol)
+        policy_obj = (data or {}).get("policy") or {}
+        if not policy_obj:
+            policy_obj = _live_lookup(src_reader, "server_policy", pol)
+        if policy_obj:
+            add("source", "ok", "Source policy readable", pol)
+        else:
+            add("source", "block", "Source policy not found",
+                "not in the local cache and the device did not return it — refresh the device first")
+        # 2) destination reachability
+        if cross_box:
+            add("dest", "ok" if dest_live else "warn",
+                "Destination %s" % dest.name,
+                "reachable" if dest_live else
+                "unreachable or license-locked (%s) — existence checks fall back to the local cache" % dest_err)
+        # 3) target name collision
+        target_name = _name_for(action, pol, new_name, policies)
+        existing = _dest_has("server_policy", target_name)
+        if existing:
+            add("name", "block", 'Name "%s" already exists on %s' % (target_name, dest.name),
+                "the clone would create nothing — pick a different name")
+        elif existing is None:
+            add("name", "warn", 'Name "%s" could not be verified' % target_name,
+                "destination unreadable and no cached copy")
+        else:
+            add("name", "ok", 'Name "%s" is free on %s' % (target_name, dest.name))
+        suggest["new_name"] = target_name
+        # 4) WPP
+        wpp_name = str(policy_obj.get("web-protection-profile") or "")
+        suggest["wpp_name"] = wpp_name
+        if not wpp_name:
+            add("wpp", "ok", "No Web Protection Profile bound", "nothing to copy")
+            suggest["wpp_status"] = "none"
+        elif not cross_box:
+            add("wpp", "ok", 'WPP "%s" — same box' % wpp_name,
+                "the copy shares the existing profile" if not copy_wpp
+                else "already present here; the planner will reuse it")
+            suggest["wpp_status"] = "same"
+        else:
+            src_wpp = (data or {}).get("wpp") or _live_lookup(
+                src_reader, "webprotection_profile_inline", wpp_name)
+            dst_wpp = _dest_has("webprotection_profile_inline", wpp_name)
+            if dst_wpp is None:
+                add("wpp", "warn", 'WPP "%s" could not be verified on %s' % (wpp_name, dest.name),
+                    "destination unreadable and no cached copy — the plan preview will tell")
+                suggest["wpp_status"] = "unknown"
+            elif not dst_wpp:
+                if copy_wpp:
+                    add("wpp", "ok", 'WPP "%s" missing on %s — will be created' % (wpp_name, dest.name))
+                else:
+                    add("wpp", "block", 'WPP "%s" is NOT on %s' % (wpp_name, dest.name),
+                        "and 'Copy Web Protection Profile' is off — the copied policy would "
+                        "reference a profile that does not exist. Enable the copy or create it first.")
+                suggest["wpp_status"] = "missing"
+            else:
+                diff = _wpp_diff(src_wpp, dst_wpp) if src_wpp else []
+                if not src_wpp:
+                    add("wpp", "warn", 'WPP "%s" exists on %s — source values unknown' % (wpp_name, dest.name),
+                        "no cached/live source profile to compare against")
+                    suggest["wpp_status"] = "unknown"
+                elif not diff:
+                    add("wpp", "ok", 'WPP "%s" exists on %s and is IDENTICAL' % (wpp_name, dest.name),
+                        "the destination profile will be reused as-is")
+                    suggest["wpp_status"] = "same"
+                else:
+                    add("wpp", "choice", 'WPP "%s" exists on %s but DIFFERS' % (wpp_name, dest.name),
+                        "differing fields: %s%s — choose below: keep the destination's profile "
+                        "(values differ from the source) or copy the source profile under a new name."
+                        % (", ".join(diff[:8]), "…" if len(diff) > 8 else ""))
+                    suggest["wpp_status"] = "different"
+                    suggest["wpp_diff_fields"] = diff[:20]
+                    suggest["wpp_new_name"] = "%s-%s" % (wpp_name, source_appl.name)
+        # 5) VIP / dummy IP
+        vips = (data or {}).get("vips") or []
+        src_ip = ""
+        for v in vips:
+            src_ip = str(v.get("effective_ip") or v.get("vip") or "").split("/")[0]
+            if src_ip:
+                break
+        suggest["source_vip_ip"] = src_ip
+        suggest["vip_ip"] = clone_rules.dummy_ip(src_ip, cfg) if (bulk or not explicit_ip) \
+            else explicit_ip
+        chosen_ip = explicit_ip if (explicit_ip and not bulk) else suggest["vip_ip"]
+        if not src_ip and not vips:
+            add("vip", "ok", "No VIP address in the cached tree",
+                "policy may use the interface IP — no dummy rewrite will apply")
+        elif chosen_ip in dest_vip_ips:
+            add("vip", "warn", "IP %s is already used by a VIP on %s" % (chosen_ip, dest.name),
+                "pick a different address or expect the existing VIP object to be reused")
+        else:
+            add("vip", "ok", "Copy comes up on %s" % chosen_ip,
+                ("admin rule: %s" % clone_rules.rules_summary(cfg)) if (bulk or not explicit_ip)
+                else "operator-provided address")
+        # 6) certificates
+        if cross_box and (policy_obj.get("certificate") or policy_obj.get("sni-certificate")
+                          or policy_obj.get("ssl") == "enable"):
+            add("certs", "warn", "Policy uses TLS certificates",
+                "certificate key material can NOT move over REST — upload it on %s "
+                "via SSH/Certificates before cutover" % dest.name)
+        # 7) capacity at the destination
+        try:
+            from . import capacity
+            allowed, msg = capacity.check_headroom(dest, "server_policy", want=1)
+            add("capacity", "ok" if allowed else "block", "Capacity on %s" % dest.name, msg)
+        except Exception:  # noqa: BLE001 — capacity data is optional
+            pass
+
+        worst = "ok"
+        for c in checks:
+            if c["level"] == "block":
+                worst = "block"
+                break
+            if c["level"] in ("warn", "choice") and worst == "ok":
+                worst = "warn"
+        out_policies.append({"policy": pol, "level": worst, "checks": checks,
+                             "suggest": suggest})
+
+    return {
+        "policies": out_policies,
+        "defaults": {"copy_wpp": cfg["copy_wpp_default"],
+                     "rules_summary": clone_rules.rules_summary(cfg),
+                     "fallback_ip": cfg["fallback_ip"]},
+        "bulk": bulk,
+    }
 
 
 def action_label(action: str) -> str:
@@ -219,14 +503,14 @@ def action_label(action: str) -> str:
 
 
 def preview(action: str, *, source_appl, dest_appl=None, policies: list[str],
-            new_name: str = "") -> list[dict]:
+            new_name: str = "", opts: dict | None = None) -> list[dict]:
     """Synchronous dry-run across the selected policies (read-only). For
     clone/migrate this reads the source device (and validates the destination)
     but writes nothing."""
     return [
         perform_one(action, source_appl=source_appl, dest_appl=dest_appl,
                     policy=p, new_name=_name_for(action, p, new_name, policies),
-                    dry_run=True)
+                    dry_run=True, opts=opts)
         for p in policies
     ]
 
@@ -244,7 +528,7 @@ def _name_for(action: str, policy: str, new_name: str, policies: list[str]) -> s
 
 def start_policy_job(flask_app, *, action: str, source_appl, dest_appl=None,
                      policies: list[str], new_name: str = "", by: str,
-                     user_id: int | None = None) -> dict:
+                     user_id: int | None = None, opts: dict | None = None) -> dict:
     """Run a REAL policy action across ``policies`` as a background job.
 
     The job iterates policies, checks the Stop flag between each (never
@@ -260,11 +544,12 @@ def start_policy_job(flask_app, *, action: str, source_appl, dest_appl=None,
         action_label(action), len(policies),
         "y" if len(policies) == 1 else "ies", src_name)
 
+    opts = dict(opts or {})
     job = jobs.create_job(
         "policy_action", title, by=by,
         meta={"action": action, "source_id": src_id, "source": src_name,
               "dest_id": dest_id, "dest": dest_name,
-              "policies": list(policies), "new_name": new_name},
+              "policies": list(policies), "new_name": new_name, "opts": opts},
         cancelable=True)
 
     def _worker(app, job_id):
@@ -282,7 +567,8 @@ def start_policy_job(flask_app, *, action: str, source_appl, dest_appl=None,
                                   "%s — %s (%d/%d)" % (action_label(action), pol, i + 1, total))
                 rec = perform_one(
                     action, source_appl=src, dest_appl=dst, policy=pol,
-                    new_name=_name_for(action, pol, new_name, policies), dry_run=False)
+                    new_name=_name_for(action, pol, new_name, policies),
+                    dry_run=False, opts=opts)
                 results.append(rec)
                 # Clear, per-object audit line for THIS policy.
                 log_action(
@@ -296,6 +582,11 @@ def start_policy_job(flask_app, *, action: str, source_appl, dest_appl=None,
                        "source": src_name, "dest": dest_name,
                        "ok": ok, "failed": failed, "total": total,
                        "results": results}
+            if action in _CLONE_ACTIONS:
+                # Plain path (no url_for — this runs in a worker thread with no
+                # request context); the app is mounted under /web. The toast +
+                # Job Manager link straight to the reconciliation report.
+                summary["report_url"] = "/web/workspace/clone-report/%s" % job_id
             log_action(
                 "policy.%s.summary" % action, target=src_name,
                 detail="by=%s %s policies=%s dest=%s ok=%d/%d" % (

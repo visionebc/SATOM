@@ -1,17 +1,26 @@
 {% extends 'base.html' %}
-{% block title %}Policy Inspector - {{ appliance.name }}{% endblock %}
+{% set is_adc = appliance.kind == 'fortiadc' %}
+{% block title %}{{ 'VS Inspector' if is_adc else 'Policy Inspector' }} - {{ appliance.name }}{% endblock %}
 {% block content %}
 <div class="fw-page-header d-flex justify-content-between align-items-center">
-  <h4><i class="bi bi-diagram-2 me-2"></i>Policy Inspector — {{ appliance.name }}</h4>
+  <h4><i class="bi bi-diagram-2 me-2"></i>{{ 'VS Inspector' if is_adc else 'Policy Inspector' }} — {{ appliance.name }}</h4>
   <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; Back</a>
 </div>
+{% if is_adc %}
+<p class="text-muted">Per virtual-server tree (listener, real server pool + members, profile chain), composed live over REST.</p>
+{% else %}
 <p class="text-muted">Per server-policy tree (virtual server + VIPs, server pool + back-ends, health check, web-protection profile), composed live over REST.</p>
+{% endif %}
 
 {% if error %}
   <div class="fw-alert fw-alert-danger">{{ error }}</div>
 {% elif result %}
   <div class="mb-3 text-muted small">
+    {% if is_adc %}
+    {{ result.count }} virtual server{{ '' if result.count == 1 else 's' }} inspected
+    {% else %}
     {{ result.count }} server polic{{ 'y' if result.count == 1 else 'ies' }} inspected
+    {% endif %}
     {% if one_policy %}<a href="{{ url_for('appliances.inspector', id=appliance.id) }}" class="ms-2">show all</a>{% endif %}
     {% if result.errors %}· <span class="text-danger">{{ result.errors|length }} failed</span>{% endif %}
   </div>

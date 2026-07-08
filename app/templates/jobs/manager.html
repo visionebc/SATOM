@@ -57,6 +57,7 @@
       <table class="table fw-table mb-0" id="jm-table">
         <thead>
           <tr>
+            <th style="width:150px;">ID</th>
             <th style="width:110px;">Status</th>
             <th>Job</th>
             <th style="width:170px;">Progress</th>
@@ -68,7 +69,7 @@
           </tr>
         </thead>
         <tbody id="jm-body">
-          <tr><td colspan="8" class="text-center text-muted py-5">Loading…</td></tr>
+          <tr><td colspan="9" class="text-center text-muted py-5">Loading…</td></tr>
         </tbody>
       </table>
     </div>
@@ -91,6 +92,9 @@
 @keyframes jmPulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 .jm-title { font-weight:600; }
 .jm-type  { font-size:11px; color:#64748b; }
+.jm-id    { font-family:var(--bs-font-monospace,ui-monospace,monospace); font-size:11px;
+  color:#94a3b8; cursor:pointer; white-space:nowrap; }
+.jm-id:hover { color:#3b82f6; text-decoration:underline; }
 .jm-msg   { font-size:11px; color:#94a3b8; max-width:420px; overflow:hidden;
   text-overflow:ellipsis; white-space:nowrap; }
 .jm-track { height:6px; background:rgba(148,163,184,.15); border-radius:6px; overflow:hidden; }
@@ -123,6 +127,10 @@ tr.jm-row { cursor:pointer; }
   var activeOnly = document.getElementById('jm-active-only');
   var countEl = document.getElementById('jm-count');
   var timer = null, open = {}, lastJobs = [];
+  var focusId = (function () { try {
+      return new URLSearchParams(location.search).get('focus'); } catch (e) { return null; } })();
+  var focusDone = false;
+  if (focusId) open[focusId] = true;   // deep-link from the job toast: auto-expand it
   var ACTIVE = { pending:1, running:1, cancelling:1, pausing:1, paused:1 };
   var LABEL = { running:'Running', pending:'Pending', pausing:'Pausing…', paused:'Paused',
                 cancelling:'Stopping…', cancelled:'Stopped', success:'Success', error:'Error' };
@@ -188,9 +196,10 @@ tr.jm-row { cursor:pointer; }
     var st = j.status || 'pending';
     var html =
       '<tr class="jm-row" data-id="' + esc(j.id) + '">' +
+      '<td><span class="jm-id" data-act="copy" data-id="' + esc(j.id) + '" title="Click to copy job ID">' + esc(j.id) + '</span></td>' +
       '<td><span class="jm-badge jm-st-' + esc(st) + '"><span class="dot"></span>' + (LABEL[st] || esc(st)) + '</span></td>' +
       '<td><div class="jm-title">' + esc(j.title || j.type) + '</div>' +
-      '<div class="jm-type">' + esc(j.type || '') + ' · ' + esc(j.id) + '</div>' +
+      '<div class="jm-type">' + esc(j.type || '') + '</div>' +
       (j.message ? '<div class="jm-msg" title="' + esc(j.message) + '">' + esc(j.message) + '</div>' : '') + '</td>' +
       '<td><div class="jm-track"><div class="jm-bar ' + barClass(st) + '" style="width:' + (j.percent || 0) + '%"></div></div>' +
       '<div class="jm-pct">' + (j.percent || 0) + '%</div></td>' +
@@ -204,7 +213,8 @@ tr.jm-row { cursor:pointer; }
                   cancel_requested: j.cancel_requested, pause_requested: j.pause_requested,
                   host: j.host, pid: j.pid, created: j.created, updated: j.updated,
                   finished: j.finished };
-      html += '<tr class="jm-detail" data-detail="' + esc(j.id) + '"><td colspan="8">' +
+      html += '<tr class="jm-detail" data-detail="' + esc(j.id) + '"><td colspan="9">' +
+        '<div class="d-flex justify-content-end mb-1"><button class="jm-btn" data-act="copydetail" data-id="' + esc(j.id) + '"><i class="bi bi-clipboard me-1"></i>Copy</button></div>' +
         '<pre>' + esc(JSON.stringify(det, null, 2)) + '</pre></td></tr>';
     }
     return html;
@@ -221,23 +231,56 @@ tr.jm-row { cursor:pointer; }
     });
     countEl.textContent = rows.length;
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-5">' +
+      body.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-5">' +
         '<i class="bi bi-list-task" style="font-size:30px;opacity:.4;"></i>' +
         '<p class="mb-0 mt-2" style="font-size:13px;">No jobs match.</p></td></tr>';
       return;
     }
     body.innerHTML = rows.map(rowHtml).join('');
+    if (focusId && !focusDone) {
+      var frow = body.querySelector('tr.jm-row[data-id="' + focusId + '"]');
+      if (frow) { focusDone = true;
+        try { frow.scrollIntoView({ block: 'center' });
+              frow.style.outline = '2px solid #8b5cf6'; } catch (e) {} }
+    }
+  }
+  function selectionInBody() {
+    var sel = window.getSelection && window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return false;
+    var n = sel.anchorNode;
+    n = n && n.nodeType === 1 ? n : (n ? n.parentNode : null);
+    return !!(n && body.contains(n));
   }
   function refresh() {
     var url = '/jobs/all?limit=100' +
       (stateSel.value ? '&status=' + encodeURIComponent(stateSel.value) : '');
     fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) { if (d && d.jobs) render(d.jobs); })
+      .then(function (d) {
+        if (!d || !d.jobs) return;
+        // Don't rebuild the table (and destroy the user's text selection)
+        // while they are selecting/copying an error. Keep data fresh, defer render.
+        if (selectionInBody()) { lastJobs = d.jobs; return; }
+        render(d.jobs);
+      })
       .catch(function () {});
   }
   function act(action, id, btn) {
     if (action === 'detail') { open[id] = !open[id]; render(lastJobs); return; }
+    if (action === 'copy') {
+      if (navigator.clipboard) navigator.clipboard.writeText(id).catch(function () {});
+      if (btn) { var t = btn.textContent; btn.textContent = 'copied ✓';
+        setTimeout(function () { btn.textContent = t; }, 900); }
+      return;
+    }
+    if (action === 'copydetail') {
+      var pre = document.querySelector('[data-detail="' + id + '"] pre');
+      var txt = pre ? pre.textContent : '';
+      if (navigator.clipboard) navigator.clipboard.writeText(txt).catch(function () {});
+      if (btn) { var tc = btn.innerHTML; btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied';
+        setTimeout(function () { btn.innerHTML = tc; }, 1200); }
+      return;
+    }
     if (action === 'cancel' && !window.confirm(
         'Stop this job? It will halt at its next safe checkpoint.')) return;
     if (btn) btn.disabled = true;

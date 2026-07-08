@@ -110,3 +110,43 @@ def test_disable_root():
     clone.disable_root(items)
     root = next(it for it in items if it.depth == 0 and it.kind == "object")
     assert root.payload["status"] == "disable"
+
+
+def test_subrow_missing_under_existing_parent_is_recreated():
+    """Partial-clone recovery: the parent object already exists on the destination
+    but one of its by-parent rows is absent. The planner must flag the MISSING row
+    as ``create`` (matched by CONTENT, not the per-box id) and the present one as
+    ``exists`` — the exact gap that left a broken clone's content-routing binding
+    row uncreated on a re-clone."""
+    src = {
+        ("u/wpp", "wpp1"): {"name": "wpp1", "signature-rule": "sig1"},
+        ("u/sig", "sig1"): {"name": "sig1"},
+        ("u/wpp/member", "wpp1"): [{"id": "1", "host": "a.com"},
+                                   {"id": "2", "host": "b.com"}],
+    }
+    dst = {
+        ("u/wpp", "wpp1"): {"name": "wpp1", "signature-rule": "sig1"},
+        ("u/sig", "sig1"): {"name": "sig1"},
+        # parent exists, but only the a.com row is present (b.com is MISSING)
+        ("u/wpp/member", "wpp1"): [{"id": "9", "host": "a.com"}],
+    }
+    items = _planner(FakeReader(src), FakeReader(dst)).plan(_WPP, "wpp1")
+    status = {it.payload.get("host"): it.status
+              for it in items if it.kind == "subrow"}
+    assert status == {"a.com": "exists", "b.com": "create"}
+
+
+def test_subrow_all_present_under_existing_parent_are_skipped():
+    """The safe side: when every row is already present under an existing parent,
+    nothing is recreated (no duplicates)."""
+    data = {
+        ("u/wpp", "wpp1"): {"name": "wpp1", "signature-rule": "sig1"},
+        ("u/sig", "sig1"): {"name": "sig1"},
+        ("u/wpp/member", "wpp1"): [{"id": "1", "host": "a.com"},
+                                   {"id": "2", "host": "b.com"}],
+    }
+    dst = {**data, ("u/wpp/member", "wpp1"): [{"id": "7", "host": "a.com"},
+                                              {"id": "8", "host": "b.com"}]}
+    items = _planner(FakeReader(data), FakeReader(dst)).plan(_WPP, "wpp1")
+    subs = [it.status for it in items if it.kind == "subrow"]
+    assert subs == ["exists", "exists"]

@@ -27,6 +27,7 @@ ADC_MODULES = [
     "views/adc.py",
     "views/adc_api.py",
     "services/adc_menu.py",
+    "services/adc_ops.py",
     "services/adc_objform.py",
     "services/cert_adc.py",
     "clients/fortiadc.py",

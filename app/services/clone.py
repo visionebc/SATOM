@@ -427,6 +427,37 @@ class ClonePlanner:
                 if it.kind == "object":
                     created_parents.add(it.mkey)
         return items
+def validate_completeness(items: list["CloneItem"]) -> list[dict]:
+    """Referential-completeness gate over a LIVE-collected tree. Returns the
+    BLOCKING issues: every ``object`` node that was referenced on the source but
+    whose live payload came back empty (renamed, deleted, or the read did not
+    resolve). Certificates are exempt \u2014 their key material never travels over
+    REST, so an empty cert payload is expected, not a gap. Empty by-parent
+    sub-tables are trusted: the caller only validates a tree collected from a
+    source that already answered live + healthy, so an empty sub-table is a real
+    empty table, not a failed read (which the caller blocks upstream)."""
+    # A name that resolved on ANY node covers the predefined -> custom fallback
+    # (a policy naming "HTTP" visits service.predefined [resolves] AND
+    # service.custom [empty]; the empty one is not a gap). Only a name that
+    # resolved NOWHERE is a real missing object.
+    resolved = {it.mkey for it in items
+                if it.kind == "object" and it.payload and it.urn not in _CERT_URNS}
+    issues: list[dict] = []
+    seen: set[str] = set()
+    for it in items:
+        if it.kind != "object" or it.urn in _CERT_URNS:
+            continue
+        if it.payload or it.mkey in resolved or it.mkey in seen:
+            continue
+        seen.add(it.mkey)
+        issues.append({
+            "object": it.label, "mkey": it.mkey, "urn": it.urn,
+            "reason": "referenced on the source tree but not found live "
+                      "(renamed, deleted, or unreadable)",
+        })
+    return issues
+
+
 
 
 # --------------------------------------------------------------------------- #
@@ -643,5 +674,5 @@ __all__ = [
     "apply_clone", "summarize", "render_plan", "referenced_names",
     "disable_root", "template_body", "registry_urn_index",
     "outcome", "verify_created",
-    "ROOT_SERVER_POLICY", "ROOT_WPP",
+    "ROOT_SERVER_POLICY", "ROOT_WPP", "validate_completeness",
 ]

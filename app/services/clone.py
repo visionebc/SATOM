@@ -48,6 +48,11 @@ _WPP_OFFLINE = "cmdb/waf/web-protection-profile.offline-protection"
 # Certificates can't move over REST (SSH-only) — flagged, never copied.
 _CERT_URNS = {"cmdb/system/certificate.local", "cmdb/system/certificate.sni"}
 
+# The VIP address object — the one payload a clone rewrites when the copy must
+# come up on a dummy IP (bulk clones, or the IP the operator typed).
+_VIP_URN = "cmdb/system/vip"
+_WPP_URNS = (_WPP_INLINE, _WPP_OFFLINE)
+
 # Values that mean "no reference" when read off a parent field.
 _EMPTY_REFS = {"", "0", "disable", "enable", "none", "None", "http://", "https://"}
 
@@ -159,6 +164,7 @@ class CloneItem:
     note: str = ""
     applied: bool = False
     result: str = ""
+    verified: str = ""   # after a real clone: present | missing | unverifiable
 
     @property
     def will_create(self) -> bool:
@@ -169,7 +175,7 @@ class CloneItem:
             "label": self.label, "urn": self.urn, "logical": self.logical,
             "mkey": self.mkey, "parent_mkey": self.parent_mkey, "kind": self.kind,
             "depth": self.depth, "status": self.status, "note": self.note,
-            "result": self.result,
+            "result": self.result, "verified": self.verified,
         }
 
 
@@ -199,6 +205,35 @@ def _row_key(row: dict) -> str:
         if v not in (None, ""):
             return str(v)
     return ""
+
+
+def _content_keys(payload) -> list:
+    """The distinguishing (business) fields of a by-parent row: scalar, non-empty,
+    server-managed keys stripped, and the auto-assigned ``id`` excluded (it differs
+    per box). These identify "the same row" across two appliances."""
+    if not isinstance(payload, dict):
+        return []
+    clean = clean_for_write(payload)
+    return [k for k, v in clean.items()
+            if k != "id" and not isinstance(v, (dict, list)) and str(v) != ""]
+
+
+def _subrow_in(payload, rows) -> bool:
+    """Is a by-parent row with this CONTENT already present in ``rows``?
+
+    Matched by business content (:func:`_content_keys`), NOT by ``id`` — sub-table
+    ids are auto-assigned, so the same logical row has different ids on source vs
+    destination. A row with no distinguishing content is treated as present (never
+    recreate ⇒ never risk a duplicate)."""
+    keys = _content_keys(payload)
+    if not keys:
+        return True
+    clean_src = clean_for_write(payload)
+    for r in rows:
+        cr = clean_for_write(r) if isinstance(r, dict) else {}
+        if all(str(clean_src.get(k, "")) == str(cr.get(k, "")) for k in keys):
+            return True
+    return False
 
 
 def scoped_rows(reader: Any, urn: str, logical: str | None, parent_mkey: str) -> list[dict]:
@@ -234,6 +269,7 @@ class ClonePlanner:
         self.src = src
         self.dst = dst
         self.urn_index = registry_urn_index()  # collection -> logical
+        self._follow_wpp = True  # set per-plan; False prunes the WPP subtree
 
     def _lg(self, urn: str) -> str | None:
         """Logical name for a urn, matched on the normalised collection so a
@@ -261,6 +297,8 @@ class ClonePlanner:
         # 1) referenced named objects FIRST (deepest-first: deps before dependents)
         for child in node.children:
             if _is_named_ref(child):
+                if not self._follow_wpp and child.urn in _WPP_URNS:
+                    continue  # "don't copy the WPP" — prune the whole subtree
                 for ref in referenced_names(obj, child.via):
                     self._visit(_rich(child), ref, depth + 1, items, visited)
 
@@ -279,6 +317,8 @@ class ClonePlanner:
             for row in scoped_rows(self.src, child.urn, self._lg(child.urn), mkey) or []:
                 for g in child.children:
                     if _is_named_ref(g):
+                        if not self._follow_wpp and g.urn in _WPP_URNS:
+                            continue  # content-routing rows can name a WPP too
                         for ref in referenced_names(row, g.via):
                             self._visit(_rich(g), ref, depth + 2, items, visited)
                 items.append(CloneItem(
@@ -293,11 +333,41 @@ class ClonePlanner:
             return False
         return bool(scoped_rows(self.dst, urn, self._lg(urn), mkey))
 
-    def collect(self, root: DepNode, mkey: str, *, new_name: str = "") -> list[CloneItem]:
+    def _dst_subrows(self, urn: str, logical, parent_mkey: str):
+        """Destination sub-table rows for (urn, parent), cached per ``plan()``.
+        ``None`` means the destination could not be read (never recreate then)."""
+        cache = getattr(self, "_subrow_cache", None)
+        if cache is None:
+            cache = self._subrow_cache = {}
+        key = (urn, parent_mkey)
+        if key not in cache:
+            try:
+                cache[key] = scoped_rows(self.dst, urn, logical, parent_mkey)
+            except Exception:  # noqa: BLE001 — unreadable dst ⇒ assume present
+                cache[key] = None
+        return cache[key]
+
+    def _subrow_exists_at_dst(self, it: "CloneItem") -> bool:
+        """Is THIS by-parent row already present under its (existing) parent on the
+        destination? The gap that left a partial clone's binding rows uncreated:
+        a parent that survived a failed run existed, so its missing sub-rows were
+        wrongly assumed present. Matched by content, so recovery re-clones only the
+        rows that are genuinely absent."""
+        rows = self._dst_subrows(it.urn, it.logical, it.parent_mkey)
+        if rows is None:
+            return True
+        return _subrow_in(it.payload, rows)
+
+    def collect(self, root: DepNode, mkey: str, *, new_name: str = "",
+                follow_wpp: bool = True) -> list[CloneItem]:
         """Walk the source tree and return every object + sub-table row WITH ITS
         LIVE PAYLOAD, deepest-first, WITHOUT destination classification."""
         items: list[CloneItem] = []
-        self._visit(_rich(root), mkey, 0, items, set())
+        self._follow_wpp = follow_wpp
+        try:
+            self._visit(_rich(root), mkey, 0, items, set())
+        finally:
+            self._follow_wpp = True
 
         if new_name:
             root_item = next(
@@ -313,9 +383,25 @@ class ClonePlanner:
                             it.parent_mkey = new_name
         return items
 
-    def plan(self, root: DepNode, mkey: str, *, new_name: str = "") -> list[CloneItem]:
-        """Walk the source tree and classify each item vs the destination."""
-        items = self.collect(root, mkey, new_name=new_name)
+    def plan(self, root: DepNode, mkey: str, *, new_name: str = "",
+             follow_wpp: bool = True, wpp_new_name: str = "",
+             wpp_suffix: str = "") -> list[CloneItem]:
+        """Walk the source tree and classify each item vs the destination.
+
+        ``follow_wpp=False`` prunes the Web Protection Profile subtree (the copy
+        keeps naming the profile — the destination must already have it).
+        ``wpp_new_name`` re-labels the copied WPP (and re-points the root
+        policy's reference) so a differing same-name profile on the destination
+        is never silently reused; ``wpp_suffix`` does the same per-profile
+        (``<wpp>-suffix``) — the bulk form, where one fixed name would collide
+        across policies binding different profiles."""
+        items = self.collect(root, mkey, new_name=new_name, follow_wpp=follow_wpp)
+        self._subrow_cache = {}
+        if follow_wpp and (wpp_new_name or wpp_suffix):
+            wpp = next((it for it in items
+                        if it.urn in _WPP_URNS and it.kind == "object"), None)
+            if wpp is not None:
+                rename_wpp(items, wpp_new_name or (wpp.mkey + wpp_suffix))
         existing_parents: set[str] = set()
         created_parents: set[str] = set()
         for it in items:
@@ -330,7 +416,10 @@ class ClonePlanner:
                 existing_parents.add(it.mkey)
             elif it.kind == "subrow" and it.parent_mkey not in created_parents:
                 if it.parent_mkey in existing_parents:
-                    it.status, it.note = "exists", "the parent already exists on destination"
+                    if self._subrow_exists_at_dst(it):
+                        it.status, it.note = "exists", "row already present under the existing parent"
+                    else:
+                        it.status, it.note = "create", "missing under an existing parent \u2014 recreating"
                 else:
                     it.status, it.note = "empty", "parent object is not being created"
             else:
@@ -383,6 +472,59 @@ def disable_root(items: list[CloneItem]) -> None:
             payload["status"] = "disable"
             it.payload = payload
             return
+
+
+def vip_items(items: list[CloneItem]) -> list[CloneItem]:
+    """The VIP address objects in a plan (source of the current IPs)."""
+    return [it for it in items if it.urn == _VIP_URN and it.kind == "object"]
+
+
+def set_vip_ip(items: list[CloneItem], ip: str = "",
+               transform: Callable[[str], str] | None = None) -> list[str]:
+    """Rewrite every TO-CREATE VIP's address, keeping its mask.
+
+    ``ip``        — one explicit address for all VIPs (the single-policy dialog).
+    ``transform`` — per-VIP mapping old-IP → new-IP (the bulk dummy rules).
+
+    Only ``create`` items are touched — a VIP that already exists on the
+    destination is never mutated. Returns the list of ``old → new`` notes."""
+    changed: list[str] = []
+    for it in items:
+        if it.urn != _VIP_URN or it.kind != "object" or it.status != "create":
+            continue
+        if not isinstance(it.payload, dict):
+            continue
+        cur = str(it.payload.get("vip") or "")
+        cur_ip, _, mask = cur.partition("/")
+        new_ip = ip or (transform(cur_ip) if transform else "")
+        if not new_ip or new_ip == cur_ip:
+            continue
+        it.payload = {**it.payload, "vip": new_ip + (("/" + mask) if mask else "")}
+        it.note = (it.note + " · " if it.note else "") + "IP %s → %s" % (cur_ip or "?", new_ip)
+        changed.append("%s: %s → %s" % (it.mkey, cur_ip or "?", new_ip))
+    return changed
+
+
+def rename_wpp(items: list[CloneItem], new_name: str) -> str:
+    """Re-label the copied Web Protection Profile as ``new_name`` and re-point
+    every reference to it (the root policy's ``web-protection-profile`` field,
+    content-routing rows, and any WPP-owned sub-rows). Returns the old name
+    ('' when the plan carries no WPP)."""
+    wpp = next((it for it in items if it.urn in _WPP_URNS and it.kind == "object"), None)
+    if wpp is None or not new_name or new_name == wpp.mkey:
+        return ""
+    old = wpp.mkey
+    wpp.mkey = new_name
+    if isinstance(wpp.payload, dict):
+        wpp.payload = {**wpp.payload, "name": new_name}
+    for it in items:
+        if it.kind == "subrow" and it.urn.startswith(wpp.urn) and it.parent_mkey == old:
+            it.parent_mkey = new_name
+        if it.kind in ("object", "subrow") and isinstance(it.payload, dict) \
+                and it.urn not in _WPP_URNS \
+                and it.payload.get("web-protection-profile") == old:
+            it.payload = {**it.payload, "web-protection-profile": new_name}
+    return old
 
 
 # --------------------------------------------------------------------------- #
@@ -442,6 +584,55 @@ def template_body(items: list[CloneItem], new_name: str) -> dict:
     }
 
 
+# --------------------------------------------------------------------------- #
+#  Clone RESULT reconciliation (what was planned vs created vs verified live)    #
+# --------------------------------------------------------------------------- #
+def verify_created(items: list[CloneItem], reader: Any) -> list[CloneItem]:
+    """Re-read the DESTINATION for every item we actually created and annotate
+    it ``present`` | ``missing`` | ``unverifiable``. Best-effort and read-only —
+    a device that can't be read (license flap) yields ``unverifiable``, never an
+    exception. This is the post-apply confirmation the operator asked for: the
+    box, not our optimism, is the source of truth about what landed."""
+    for it in items:
+        if not it.applied:
+            continue
+        try:
+            if it.kind == "subrow":
+                rows = scoped_rows(reader, it.urn, it.logical, it.parent_mkey)
+                found = _subrow_in(it.payload, rows)
+            else:
+                rows = scoped_rows(reader, it.urn, it.logical, it.mkey)
+                found = bool(rows)
+            it.verified = "present" if found else "missing"
+        except Exception:  # noqa: BLE001 — verification never sinks the clone
+            it.verified = "unverifiable"
+    return items
+
+
+def outcome(items: list[CloneItem]) -> dict:
+    """A JSON-able reconciliation of a planned/applied clone: the full item list
+    plus the three buckets the operator compares — what SHOULD have been created
+    (``planned_create``), what WAS created (``created``, with the live-verify
+    verdict), and what FAILED (``failed``, with the device error). Feeds the
+    clone-result report page linked from the job."""
+    def row(it: CloneItem) -> dict:
+        d = it.to_dict()
+        d["applied"] = bool(it.applied)
+        return d
+    rows = [row(it) for it in items]
+    created = [r for r in rows if r["applied"]]
+    return {
+        "total": len(rows),
+        "counts": summarize(items),
+        "items": rows,
+        "planned_create": [r for r in rows if r["status"] == "create"],
+        "created": created,
+        "failed": [r for r in rows if (r["result"] or "").startswith("error")],
+        "verified_missing": [r for r in created if r.get("verified") == "missing"],
+        "unverifiable": [r for r in created if r.get("verified") == "unverifiable"],
+    }
+
+
 # Root nodes exposed by name.
 ROOT_SERVER_POLICY = SERVER_POLICY
 ROOT_WPP = WEB_PROTECTION_PROFILE
@@ -451,5 +642,6 @@ __all__ = [
     "CloneItem", "ClonePlanner", "ClientReader", "Reader",
     "apply_clone", "summarize", "render_plan", "referenced_names",
     "disable_root", "template_body", "registry_urn_index",
+    "outcome", "verify_created",
     "ROOT_SERVER_POLICY", "ROOT_WPP",
 ]

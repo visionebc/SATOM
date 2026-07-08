@@ -86,6 +86,11 @@
     <div class="card shadow-sm h-100">
       <div class="card-header fw-card-header"><i class="bi bi-arrow-counterclockwise me-1"></i>Restore now</div>
       <div class="card-body">
+        {% if appliance.kind == 'fortiadc' %}
+        <div class="fw-alert fw-alert-warning mb-0">
+          <i class="bi bi-info-circle me-1"></i>FortiADC has no REST configuration-restore endpoint, so the manager can't apply a backup to the box from here. Use the <b>vault</b> on the left to pull (over SSH), store and download backups, then apply one from the FortiADC GUI (<i>System &gt; Settings &gt; Restore</i>) or CLI (<code>execute restore config</code>).
+        </div>
+        {% else %}
         <form method="POST" action="{{ url_for('appliances.restore_run', id=appliance.id) }}" enctype="multipart/form-data">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="mb-3">
@@ -116,6 +121,7 @@
           </div>
           <button class="btn fw-btn-primary" type="submit"><i class="bi bi-check2-circle me-1"></i>Validate / Restore</button>
         </form>
+        {% endif %}
       </div>
     </div>
   </div>

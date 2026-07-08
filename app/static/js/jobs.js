@@ -225,7 +225,7 @@
   // Append a persistent link (e.g. a before/after report) into a toast's message.
   function addToastLink(key, href, text) {
     var t = toasts[key]; if (!t || !t.msg) return;
-    if (t.msg.querySelector('a.jt-link')) return;
+    if (t.msg.querySelector('a.jt-link[href="' + href + '"]')) return;
     var a = document.createElement('a');
     a.className = 'jt-link'; a.href = href; a.target = '_blank'; a.rel = 'noopener';
     a.textContent = text;
@@ -233,6 +233,11 @@
                       'font-weight:600;text-decoration:none';
     t.msg.appendChild(document.createElement('br'));
     t.msg.appendChild(a);
+  }
+  function jobUrl(id) { return '/jobs/manager?focus=' + encodeURIComponent(id); }
+  function reportLabel(url) {
+    return (url && url.indexOf('clone-report') >= 0)
+      ? 'View clone report \u2192' : 'View before/after report \u2192';
   }
 
   function trackJob(jobId, name) {
@@ -252,8 +257,9 @@
             var res = j.result || {};
             showToast(key, { title: (res.filename || label) + ' ready', state: 'ok',
                              percent: 100, message: j.message || 'Done' });
-            if (res.report_url) addToastLink(key, res.report_url, 'View before/after report →');
-            autoDismiss(key, res.report_url ? 60000 : 6000); delete tracked[jobId];
+            if (res.report_url) addToastLink(key, res.report_url, reportLabel(res.report_url));
+            addToastLink(key, jobUrl(jobId), 'View job →');
+            autoDismiss(key, res.report_url ? 60000 : 12000); delete tracked[jobId];
             if (res.reload &&
                 location.pathname.indexOf(res.reload_path || '/firmware') === 0)
               setTimeout(function () {
@@ -274,13 +280,17 @@
             showToast(key, { title: label + ' stopped', state: 'stopped',
                              percent: j.percent || 0,
                              message: (j.message || 'Stopped') + extra });
-            autoDismiss(key, (cres.mid_change && cres.mid_change.length) ? 60000 : 8000);
+            addToastLink(key, jobUrl(jobId), 'View job →');
+            autoDismiss(key, (cres.mid_change && cres.mid_change.length) ? 60000 : 15000);
             delete tracked[jobId]; return;
           }
           if (j.status === 'error') {
+            var eres = j.result || {};
             showToast(key, { title: label + ' failed', state: 'err',
                              message: j.error || j.message || 'Error' });
-            autoDismiss(key, 10000); delete tracked[jobId]; return;
+            if (eres.report_url) addToastLink(key, eres.report_url, reportLabel(eres.report_url));
+            addToastLink(key, jobUrl(jobId), 'View job →');
+            autoDismiss(key, eres.report_url ? 60000 : 20000); delete tracked[jobId]; return;
           }
           // running, pausing/paused or cancelling
           var stopping = j.status === 'cancelling';

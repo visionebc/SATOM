@@ -51,7 +51,7 @@ import json as _json
 
 K_ARCH_FILTERS = "architecture.filters"
 _ARCH_KEYS = ("zone", "line", "department", "text", "status",
-              "kind", "firmware", "data", "proto", "waf")
+              "kind", "firmware", "data", "proto", "waf", "view")
 
 
 def architecture_filters(user_id: int) -> dict:

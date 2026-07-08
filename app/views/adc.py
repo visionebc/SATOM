@@ -126,6 +126,44 @@ def menu_page(item_key):
 
 
 # --------------------------------------------------------------------------- #
+#  WAF Signatures — the ADC signature policies (live, read-only overview)       #
+# --------------------------------------------------------------------------- #
+@bp.route('/signatures')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def signatures():
+    """FortiADC Web Attack Signature policies — one row per signature set with
+    its enabled category / sub-category counts, disabled-signature count and
+    per-severity actions, read LIVE off the selected device (FortiADC has no
+    signature-catalog cache pipeline yet; deep editing goes through the
+    generic object editor)."""
+    appliance = _current_adc()
+    rows, error = [], None
+    if appliance is not None:
+        raw, error = FortiADCClient(appliance).list_with_error(
+            'security_waf_web_attack_signature')
+        for o in raw or []:
+            if not isinstance(o, dict):
+                continue
+            rows.append({
+                'mkey': _mkey_of(o),
+                'status': o.get('status', ''),
+                'categories': o.get('enabled_category_count',
+                                    o.get('category_id_list_size', '')),
+                'sub_categories': o.get('enabled_sub_category_count',
+                                        o.get('sub_category_id_list_size', '')),
+                'disabled': o.get('disabled_signature_count', 0),
+                'high': o.get('high_severity_action', ''),
+                'medium': o.get('medium_severity_action', ''),
+                'low': o.get('low_severity_action', ''),
+                'exception': o.get('exception_name', ''),
+                'builtin': bool(o.get('_nondeletable')),
+            })
+    return render_template('adc/signatures.html', appliance=appliance,
+                           fleet=_adc_fleet(), rows=rows, error=error)
+
+
+# --------------------------------------------------------------------------- #
 #  Object detail — FortiWeb-style field form + child tables (raw JSON escape)   #
 # --------------------------------------------------------------------------- #
 @bp.route('/obj/<logical>')

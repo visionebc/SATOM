@@ -385,7 +385,9 @@ def detach_member(id, mid):
 
 # ===========================================================================
 # Appliance actions (ported from the desktop app): Policy Inspector,
-# Rediscovery, Console, Upgrade Preparation, Upgrade. FortiWeb only.
+# Rediscovery, Console, Upgrade Preparation, Upgrade. Inspector/Rediscovery/
+# Console/Upgrade-Prep serve BOTH kinds (FortiADC branches via services/
+# adc_ops); the firmware flash routes stay FortiWeb-only.
 # ===========================================================================
 
 def _fortiweb_or_404(id):
@@ -396,21 +398,35 @@ def _fortiweb_or_404(id):
     return appliance, appliance
 
 
-# -- 1. Policy Inspector -----------------------------------------------------
+def _managed_or_404(id):
+    """An appliance whose kind has the action services wired (both today)."""
+    appliance = visible_appliance_or_404(id)
+    if appliance.kind not in ('fortiweb', 'fortiadc'):
+        flash('This action is not available for this appliance kind.', 'warning')
+        return None
+    return appliance
+
+
+# -- 1. Policy Inspector (FortiWeb) / VS Inspector (FortiADC) -----------------
 @bp.route('/<int:id>/inspector')
 @login_required
 @require_permission('appliances.view')
 def inspector(id):
-    appliance, _ = _fortiweb_or_404(id)
+    appliance = _managed_or_404(id)
     if appliance is None:
         return redirect(url_for('appliances.detail', id=id))
-    from ..services import inspector as insp
+    if appliance.kind == 'fortiadc':
+        from ..services import adc_ops as insp
+    else:
+        from ..services import inspector as insp
     policy = request.args.get('policy', '').strip()
     result, error = None, None
     try:
         client = appliance.build_client()
         if policy:
-            result = {'policies': [insp.inspect_policy(client, policy)], 'errors': [], 'count': 1}
+            one = insp.inspect_vs(client, policy) if appliance.kind == 'fortiadc' \
+                else insp.inspect_policy(client, policy)
+            result = {'policies': [one], 'errors': [], 'count': 1}
         else:
             result = insp.inspect_all(client)
         log_action('appliance.inspect', target=appliance.name,
@@ -426,25 +442,27 @@ def inspector(id):
 @login_required
 @require_permission('appliances.view')
 def rediscover(id):
-    appliance, _ = _fortiweb_or_404(id)
+    appliance = _managed_or_404(id)
     if appliance is None:
         return redirect(url_for('appliances.detail', id=id))
     from ..services import rediscovery, analysis
-    deep_fresh = analysis.deep_freshness([appliance.id]).get(str(appliance.id))
+    is_adc = appliance.kind == 'fortiadc'
+    deep_fresh = None if is_adc \
+        else analysis.deep_freshness([appliance.id]).get(str(appliance.id))
     return render_template('appliances/rediscover.html', appliance=appliance,
                            progress=rediscovery.status(appliance.id),
                            snapshot=rediscovery.latest_snapshot_meta(appliance.id),
-                           deep_fresh=deep_fresh,
-                           plan_size=len(rediscovery.sweep_plan()))
+                           deep_fresh=deep_fresh, allow_deep=not is_adc,
+                           plan_size=len(rediscovery.plan_for(appliance)))
 
 
 @bp.route('/<int:id>/rediscover/start', methods=['POST'])
 @login_required
 @require_permission('appliances.apply')
 def rediscover_start(id):
-    appliance, _ = _fortiweb_or_404(id)
+    appliance = _managed_or_404(id)
     if appliance is None:
-        return jsonify({'started': False, 'reason': 'not a FortiWeb'}), 400
+        return jsonify({'started': False, 'reason': 'unsupported appliance kind'}), 400
     from ..services import rediscovery
     from flask_login import current_user
     deep = (request.form.get('deep') or request.args.get('deep') or '').lower() \
@@ -479,21 +497,25 @@ def rediscover_status(id):
 @login_required
 @require_permission('appliances.view')
 def console(id):
-    appliance, _ = _fortiweb_or_404(id)
+    appliance = _managed_or_404(id)
     if appliance is None:
         return redirect(url_for('appliances.detail', id=id))
     from ..services import ssh_ops
+    if appliance.kind == 'fortiadc':
+        from ..services.adc_ops import TROUBLESHOOT_ADC as presets
+    else:
+        presets = ssh_ops.TROUBLESHOOT
     return render_template('appliances/console.html', appliance=appliance,
-                           presets=ssh_ops.TROUBLESHOOT)
+                           presets=presets)
 
 
 @bp.route('/<int:id>/console/run', methods=['POST'])
 @login_required
 @require_permission('appliances.apply')
 def console_run(id):
-    appliance, _ = _fortiweb_or_404(id)
+    appliance = _managed_or_404(id)
     if appliance is None:
-        return jsonify({'ok': False, 'error': 'not a FortiWeb'}), 400
+        return jsonify({'ok': False, 'error': 'unsupported appliance kind'}), 400
     from ..services import ssh_ops
     command = (request.json or {}).get('command', '') if request.is_json \
         else request.form.get('command', '')
@@ -515,7 +537,7 @@ def console_run(id):
 @login_required
 @require_permission(Permission.BACKUP)
 def upgrade_prep(id):
-    appliance, _ = _fortiweb_or_404(id)
+    appliance = _managed_or_404(id)
     if appliance is None:
         return redirect(url_for('appliances.detail', id=id))
     return render_template('appliances/upgrade_prep.html', appliance=appliance)
@@ -525,9 +547,9 @@ def upgrade_prep(id):
 @login_required
 @require_permission(Permission.BACKUP)
 def upgrade_prep_run(id):
-    appliance, _ = _fortiweb_or_404(id)
+    appliance = _managed_or_404(id)
     if appliance is None:
-        return jsonify({'ok': False, 'error': 'not a FortiWeb'}), 400
+        return jsonify({'ok': False, 'error': 'unsupported appliance kind'}), 400
     from ..services import upgrade
     opts = request.json or {}
     try:
@@ -1103,7 +1125,7 @@ def _restore_context(appliance):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def restore(id):
-    appliance, _ = _fortiweb_or_404(id)
+    appliance = _managed_or_404(id)
     if appliance is None:
         return redirect(url_for('appliances.detail', id=id))
     fw, backups = _restore_context(appliance)
@@ -1115,7 +1137,7 @@ def restore(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def restore_upload(id):
-    appliance, _ = _fortiweb_or_404(id)
+    appliance = _managed_or_404(id)
     if appliance is None:
         return redirect(url_for('appliances.detail', id=id))
     from ..services import backup as backup_svc
@@ -1148,15 +1170,13 @@ def restore_upload(id):
 @require_permission(Permission.USER_MANAGE)
 def restore_fetch(id):
     """Pull a fresh backup off the device into the vault (best-effort)."""
-    appliance, _ = _fortiweb_or_404(id)
+    appliance = _managed_or_404(id)
     if appliance is None:
         return redirect(url_for('appliances.detail', id=id))
     from ..services import backup as backup_svc
     try:
-        client = appliance.build_client(timeout=120)
-        cb = backup_svc.fetch_device_backup(
-            client, appliance_id=appliance.id, appliance_name=appliance.name,
-            created_by=getattr(current_user, 'username', '') or '')
+        cb = backup_svc.fetch_device_backup_auto(
+            appliance, created_by=getattr(current_user, 'username', '') or '')
     except Exception as exc:
         flash(f'Could not fetch a backup from {appliance.name}: {type(exc).__name__}: {exc}. '
               f'You can upload a .conf manually instead.', 'warning')
@@ -1195,7 +1215,7 @@ def restore_delete(id, backup_id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def restore_run(id):
-    appliance, _ = _fortiweb_or_404(id)
+    appliance = _managed_or_404(id)
     if appliance is None:
         return redirect(url_for('appliances.detail', id=id))
     from ..services import backup as backup_svc
@@ -1237,6 +1257,23 @@ def restore_run(id):
     if not dry_run and request.form.get('confirm_name', '').strip() != appliance.name:
         flash('Live restore requires typing the exact appliance name to confirm.', 'danger')
         return redirect(url_for('appliances.restore', id=id))
+
+    # FortiADC exposes no REST configuration-restore endpoint (verified live on
+    # 8.0.3: only /api/platform/version + /reboot). The file stays in the vault;
+    # applying it is a GUI/CLI step on the box.
+    if appliance.kind == 'fortiadc':
+        result = {
+            'dry_run': dry_run, 'filename': filename, 'size': len(data),
+            'endpoint': '(FortiADC — no REST restore endpoint)',
+            'encrypted': backup_svc.is_encrypted(data), 'ok': False,
+            'message': ('FortiADC 8.0.3 exposes no REST configuration-restore endpoint, so the '
+                        'manager cannot apply this backup automatically. It is kept in the vault — '
+                        'download it and apply via the FortiADC GUI (System > Settings > Restore) '
+                        'or CLI (execute restore config).'),
+        }
+        fw, backups = _restore_context(appliance)
+        return render_template('appliances/restore.html', appliance=appliance, firmware=fw,
+                               backups=backups, result=result, pre_backup=None)
 
     try:
         client = appliance.build_client(timeout=600)

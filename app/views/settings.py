@@ -34,6 +34,9 @@ from ..services import twofa
 from ..services import git_service
 from ..services import user_settings_store as user_store
 from ..services import system_info
+from ..services import dns_tool as dns_tool_svc
+from ..services import policy_links as policy_links_svc
+from ..services import clone_rules as clone_rules_svc
 from ..services.audit import log_action
 
 bp = Blueprint('settings', __name__, url_prefix='/settings')
@@ -93,6 +96,10 @@ def index():
         cert_acme=(store.cert_manager_acme() if _is_admin() else None),
         acme_cmd_tokens=store.ACME_CMD_TOKENS,
         cert_lifecycle=(store.cert_lifecycle_policy() if _is_admin() else None),
+        dns_tool_servers=(dns_tool_svc.dns_servers() if _is_admin() else []),
+        policy_links=(policy_links_svc.links() if _is_admin() else []),
+        policy_link_tokens=policy_links_svc.TOKENS,
+        clone_rules_cfg=(clone_rules_svc.config() if _is_admin() else None),
         system_info=system_info.collect(),
         is_admin=_is_admin(),
     )
@@ -515,3 +522,93 @@ def recovery_email():
     log_action('settings.recovery_email', target=current_user.username)
     flash('Recovery email updated.' if addr else 'Recovery email cleared.', 'success')
     return redirect(url_for('settings.index') + '#tab-security')
+@bp.route('/dns-tool', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_dns_tool():
+    """Persist the DNS & LB Lookup resolver list (AppSetting ``dnstool.servers``).
+
+    The list is variable by design — rows are parallel ``dns_name[]`` /
+    ``dns_server[]`` arrays plus ``dns_enabled`` checkboxes carrying the row
+    index; blank rows are dropped, so removing a server = clearing its row."""
+    names = request.form.getlist('dns_name')
+    servers = request.form.getlist('dns_server')
+    enabled = set(request.form.getlist('dns_enabled'))
+    rows = [{'name': n, 'server': s, 'enabled': str(i) in enabled}
+            for i, (n, s) in enumerate(zip(names, servers))]
+    try:
+        saved = dns_tool_svc.save_dns_servers(rows)
+    except ValueError as exc:
+        flash(str(exc), 'danger')
+        return redirect(url_for('settings.index'))
+    log_action('settings.dns_tool', target='dnstool.servers')
+    flash(f'DNS server list saved ({len(saved)} servers).', 'success')
+    return redirect(url_for('settings.index'))
+
+
+@bp.route('/clone-rules', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_clone_rules():
+    """Persist the Clone / Migrate policy (AppSetting ``clone.rules``): the
+    dummy-IP transformation rules (leading-octet match → replace, e.g. 10 → 240),
+    the fallback dummy IP, and whether a clone/migrate copies the Web Protection
+    Profile by default. Variable-length rows like the DNS-tool list — blank rows
+    are dropped, so clearing a row removes that rule."""
+    matches = request.form.getlist('rule_match')
+    replaces = request.form.getlist('rule_replace')
+    rows = [{'match': m, 'replace': r} for m, r in zip(matches, replaces)]
+    try:
+        cfg = clone_rules_svc.save_config(
+            rows,
+            request.form.get('fallback_ip', ''),
+            request.form.get('copy_wpp_default') == 'on')
+    except ValueError as exc:
+        flash('Clone/Migrate rules NOT saved: %s' % exc, 'danger')
+        return redirect(url_for('settings.index') + '#tab-clonerules')
+    log_action('settings.clone_rules', target=clone_rules_svc.SETTING_KEY,
+               detail='rules=%d fallback=%s copy_wpp=%s' % (
+                   len(cfg['ip_rules']), cfg['fallback_ip'], cfg['copy_wpp_default']))
+    flash('Clone/Migrate rules saved (%d IP rule%s).'
+          % (len(cfg['ip_rules']), '' if len(cfg['ip_rules']) == 1 else 's'), 'success')
+    return redirect(url_for('settings.index') + '#tab-clonerules')
+
+
+@bp.route('/policy-links', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_policy_links():
+    """Persist the dynamic policy-link list (AppSetting ``policy.links``).
+
+    Variable-length by design — rows are parallel ``link_label[]`` / ``link_url[]``
+    arrays plus ``link_newtab`` / ``link_enabled`` checkboxes carrying the row
+    index; blank rows are dropped, so clearing a row removes that link."""
+    # Each row carries a stable per-row token (``link_row``) in a hidden input
+    # plus its ``link_label`` / ``link_url`` (text inputs always submit, so the
+    # three lists stay aligned). The enabled / new-tab checkboxes carry that
+    # SAME token as their value — so we map state BY TOKEN, never by position
+    # (robust to rows added/removed in any order in the browser).
+    row_ids = request.form.getlist('link_row')
+    labels = request.form.getlist('link_label')
+    urls = request.form.getlist('link_url')
+    enabled = set(request.form.getlist('link_enabled'))
+    newtab = set(request.form.getlist('link_newtab'))
+    if len(row_ids) != len(labels):  # fallback if a client omits link_row
+        row_ids = [str(i) for i in range(len(labels))]
+    rows = [{'label': lbl, 'url': u,
+             'enabled': rid in enabled, 'new_tab': rid in newtab}
+            for rid, lbl, u in zip(row_ids, labels, urls)]
+    saved, errors = policy_links_svc.save_links(rows)
+    log_action('settings.policy_links', target='policy.links')
+    for msg in errors:
+        flash(msg, 'warning')
+    submitted = any((lbl.strip() or u.strip()) for lbl, u in zip(labels, urls))
+    if saved:
+        flash('Policy links saved (%d link%s).'
+              % (len(saved), '' if len(saved) == 1 else 's'), 'success')
+    elif submitted:
+        flash('No links were saved — see the message(s) above. Each link '
+              'needs both a label and a URL.', 'danger')
+    else:
+        flash('Policy links cleared.', 'success')
+    return redirect(url_for('settings.index') + '#tab-policylinks')

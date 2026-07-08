@@ -12,6 +12,7 @@
   <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-model" type="button">Relational model</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-tables" type="button">Tables</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-console" type="button">SQL console</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-reports" type="button" id="tab-reports-btn">Reports &amp; dashboards</button></li>
 </ul>
 
 <div class="tab-content">
@@ -22,7 +23,7 @@
         <p class="text-muted small mb-0">{{ tables|length }} tables · {{ edges|length }} foreign-key relationships.
           <span class="text-muted">Layered schema layout — parents left, dependents right; crow's-foot = many side.
           Drag a table, scroll to zoom, drag the canvas to pan; click a table to pin its relationships.</span></p>
-        <button class="btn btn-outline-light btn-sm ms-auto" type="button" data-bs-toggle="collapse" data-bs-target="#er-list">
+        <button class="btn btn-outline-secondary btn-sm ms-auto" type="button" data-bs-toggle="collapse" data-bs-target="#er-list">
           <i class="bi bi-list-ul me-1"></i>Show as list</button>
       </div>
       <div id="er-diagram" style="width:100%;height:72vh;min-height:640px;"></div>
@@ -64,8 +65,8 @@
         </select>
         <span id="tbl-meta" class="small text-muted"></span>
         <div class="ms-auto btn-group btn-group-sm">
-          <button id="tbl-prev" class="btn btn-outline-light" disabled>&laquo; Prev</button>
-          <button id="tbl-next" class="btn btn-outline-light" disabled>Next &raquo;</button>
+          <button id="tbl-prev" class="btn btn-outline-secondary" disabled>&laquo; Prev</button>
+          <button id="tbl-next" class="btn btn-outline-secondary" disabled>Next &raquo;</button>
         </div>
       </div>
       <div class="table-responsive"><table class="table table-sm table-striped" id="tbl-data">
@@ -85,13 +86,73 @@
         <form id="sql-csv-form" method="post" action="{{ url_for('database.query_csv') }}" class="d-inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="sql" id="sql-csv-field">
-          <button type="submit" class="btn btn-outline-light btn-sm"><i class="bi bi-download me-1"></i>Export CSV</button>
+          <button type="submit" class="btn btn-outline-secondary btn-sm"><i class="bi bi-download me-1"></i>Export CSV</button>
         </form>
         <span id="sql-meta" class="small text-muted align-self-center"></span>
       </div>
       <div id="sql-error" class="alert alert-danger py-2 small d-none"></div>
       <div class="table-responsive"><table class="table table-sm table-striped" id="sql-data">
         <thead></thead><tbody></tbody></table></div>
+    </div></div>
+  </div>
+
+  <!-- Reports & dashboards -->
+  <div class="tab-pane fade" id="tab-reports">
+    <div class="card"><div class="card-body">
+      <div class="d-flex align-items-center mb-2 gap-2 flex-wrap">
+        <p class="text-muted small mb-0 me-auto">Saved reports run over the same read-only query layer as the SQL console
+          (SELECT-only, sensitive columns masked). Each report renders as a live dashboard and exports to PDF.</p>
+        <a href="{{ url_for('database.report_new', wizard=1) }}" class="btn btn-fw-primary text-nowrap">
+          <i class="bi bi-magic me-1"></i>Build a report (no SQL needed)</a>
+        <a href="{{ url_for('database.report_new') }}" class="btn btn-outline-secondary btn-sm text-nowrap">
+          <i class="bi bi-plus-lg me-1"></i>New (blank)</a>
+      </div>
+      <div class="alert py-2 px-3 small mb-3" style="background:rgba(37,99,235,.08);border:1px solid rgba(37,99,235,.25)">
+        <i class="bi bi-lightbulb me-1 text-accent"></i><strong>New to reports?</strong>
+        Click <em>Build a report (no SQL needed)</em> for a guided step-by-step wizard, or start from a
+        <strong>built-in</strong> below &mdash; hit its <i class="bi bi-files"></i> Clone button to get an editable copy.
+      </div>
+      {% if reports %}
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+          <thead><tr><th>Name</th><th>Description</th><th>Widgets</th><th>By</th><th>Updated</th><th class="text-end">Actions</th></tr></thead>
+          <tbody>
+          {% for r in reports %}
+            <tr>
+              <td class="fw-bold"><a href="{{ url_for('database.report_view', report_id=r.id) }}">{{ r.name }}</a>{% if r.builtin %} <span class="badge bg-dark border" title="Built-in template">built-in</span>{% endif %}</td>
+              <td class="small text-muted">{{ (r.description or '')[:90] }}</td>
+              <td><span class="badge bg-dark border">{{ r.widgets|length }}</span></td>
+              <td class="small">{{ r.created_by or '—' }}</td>
+              <td class="small text-muted">{{ r.updated_at.strftime('%Y-%m-%d %H:%M') if r.updated_at else '—' }}</td>
+              <td class="text-end text-nowrap">
+                <a class="btn btn-sm btn-outline-primary btn-sm-icon me-1" href="{{ url_for('database.report_view', report_id=r.id) }}" title="Open dashboard" aria-label="Open dashboard"><i class="bi bi-graph-up"></i></a>
+                <a class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" href="{{ url_for('database.report_pdf', report_id=r.id) }}" title="Download PDF" aria-label="Download PDF"><i class="bi bi-file-earmark-pdf"></i></a>
+                <form method="post" action="{{ url_for('database.report_clone', report_id=r.id) }}" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Clone" aria-label="Clone"><i class="bi bi-files"></i></button>
+                </form>
+                {% if not r.builtin %}
+                <a class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" href="{{ url_for('database.report_edit', report_id=r.id) }}" title="Edit" aria-label="Edit"><i class="bi bi-pencil"></i></a>
+                <form method="post" action="{{ url_for('database.report_delete', report_id=r.id) }}" class="d-inline js-del-report">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-sm btn-outline-danger btn-sm-icon" title="Delete" aria-label="Delete"><i class="bi bi-trash"></i></button>
+                </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-center text-muted py-5">
+        <i class="bi bi-clipboard-data" style="font-size:2rem;"></i>
+        <p class="mt-2 mb-1">No reports yet.</p>
+        <p class="small">Build one with the guided wizard &mdash; no SQL required. Tables, charts and stat cards, exportable to PDF.</p>
+        <a href="{{ url_for('database.report_new', wizard=1) }}" class="btn btn-fw-primary btn-sm mt-2">
+          <i class="bi bi-magic me-1"></i>Build a report (no SQL needed)</a>
+      </div>
+      {% endif %}
     </div></div>
   </div>
 </div>
@@ -153,6 +214,17 @@
           return '<tr>'+row.map(function(c){return '<td class="small">'+(c===''?'<span class="text-muted">∅</span>':escapeHtml(c))+'</td>';}).join('')+'</tr>';
         }).join('');
       });
+  });
+
+  // ----- Reports tab helpers -----
+  if(location.hash==='#tab-reports'){
+    var btn=document.getElementById('tab-reports-btn');
+    if(btn && window.bootstrap){ new bootstrap.Tab(btn).show(); }
+  }
+  document.querySelectorAll('.js-del-report').forEach(function(f){
+    f.addEventListener('submit', function(ev){
+      if(!confirm('Delete this report?')) ev.preventDefault();
+    });
   });
 })();
 </script>

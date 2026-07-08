@@ -24,9 +24,12 @@ bp = Blueprint('capacity', __name__, url_prefix='/capacity')
 
 def _grouped_rows():
     """OrderedDict[(product, fw_major, model)] -> [CapacityLimit …] in the
-    catalog's object-type order."""
+    catalog's object-type order, scoped to the active ADOM's product (a
+    FortiADC session sees only 'fortiadc' groups, FortiWeb the rest, Global
+    everything)."""
+    from ..services.product_scope import scope_query
     order = {k: i for i, (k, _) in enumerate(capsvc.object_types_ordered())}
-    rows = CapacityLimit.query.order_by(
+    rows = scope_query(CapacityLimit.query, CapacityLimit.product).order_by(
         CapacityLimit.model, CapacityLimit.firmware_major).all()
     groups: OrderedDict = OrderedDict()
     for r in rows:
@@ -37,9 +40,11 @@ def _grouped_rows():
 
 
 def _fleet_usage():
-    """(model, fw_major) -> {object_type: max used across matching appliances}."""
+    """(model, fw_major) -> {object_type: max used across matching appliances},
+    over the ADOM-visible fleet only."""
+    from ..models import visible_appliances
     usage: dict = {}
-    for a in Appliance.query.all():
+    for a in visible_appliances().all():
         fw = capsvc.firmware_major(a.firmware)
         if not a.model or not fw:
             continue
@@ -53,11 +58,12 @@ def _fleet_usage():
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def index():
+    from ..models import visible_appliances
     groups = _grouped_rows()
     usage = _fleet_usage()
     fleet = []
     known = {(m, f) for (_p, f, m) in groups}
-    for a in Appliance.query.order_by(Appliance.name).all():
+    for a in visible_appliances().order_by(Appliance.name).all():
         fw = capsvc.firmware_major(a.firmware)
         if a.model and fw and (a.model, fw) not in known:
             if (a.model, fw) not in [(x['model'], x['fw']) for x in fleet]:

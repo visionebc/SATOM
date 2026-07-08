@@ -329,6 +329,20 @@ def policy_detail(appliance_id, name):
             # the operator switches Deployment Mode to HTTP Content Routing.
             cr_entries = client._safe_list(
                 '%s?mkey=%s' % (EP_CRLIST, quote(name, safe='')))
+            # Break each routing rule down to its back-end pool: the CR-list row
+            # only names the routing policy; the pool lives on that
+            # http-content-routing-policy object's server-pool field.
+            for e in cr_entries:
+                crp = e.get('content-routing-policy-name')
+                if not crp:
+                    continue
+                hcr = client._safe_one(
+                    '%s?mkey=%s' % (EP_CRPOLICY, quote(crp, safe=''))) or {}
+                pool_name = hcr.get('server-pool') or ''
+                e['pool'] = pool_name
+                e['backends'] = (client._safe_list(
+                    '%s?mkey=%s' % (EP_PSERVER, quote(pool_name, safe='')))
+                    if pool_name else [])
             cache_meta = {"generated_at": None, "source": "live", "cached": False}
         except Exception as exc:
             error = str(exc)

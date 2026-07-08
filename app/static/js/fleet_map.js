@@ -8,6 +8,7 @@
 
   var viewport = document.getElementById('mapViewport');
   var svg = document.getElementById('mapSvg');
+  var listEl = document.getElementById('mapList');
   if (!viewport || !svg) return;
 
   var NS = 'http://www.w3.org/2000/svg';
@@ -51,12 +52,15 @@
   // Everything starts COLLAPSED on every page load (user rule) — expansion is
   // in-page state only, never restored from a previous visit.
   var expanded = {};                       // devId -> true
+  // Multi-select filters: each facet holds an ARRAY of accepted values.
+  // Empty array = facet inactive. Within a facet values OR; facets AND.
   var filters = {
-    zone: '', line: '', dept: '',          // device facets
-    kind: '', firmware: '', data: '',      // device facets (new)
-    proto: '', waf: '', status: ''         // service facets (filter policies)
+    zone: [], line: [], dept: [],          // device facets
+    kind: [], firmware: [], data: [],      // device facets
+    proto: [], waf: [], status: []         // service facets (filter policies)
   };
   var query = '';
+  var viewMode = (CFG.savedView === 'list') ? 'list' : 'map';
   var tx = 0, ty = 0, scale = 1;
   var world = null;
 
@@ -106,30 +110,38 @@
 
   // ---- data → layout --------------------------------------------------------
   function policyPasses(p) {
-    if (filters.proto === 'HTTPS' && !(p.https_service || p.ssl)) return false;
-    if (filters.proto === 'HTTP' && (p.https_service || p.ssl)) return false;
-    if (filters.waf === 'protected' && !p.wpp) return false;
-    if (filters.waf === 'no WAF' && p.wpp) return false;
-    if (filters.status === 'enabled' && p.status !== 'enable') return false;
-    if (filters.status === 'disabled' && p.status === 'enable') return false;
+    if (filters.proto.length) {
+      var proto = (p.https_service || p.ssl) ? 'HTTPS' : 'HTTP';
+      if (filters.proto.indexOf(proto) === -1) return false;
+    }
+    if (filters.waf.length) {
+      var waf = p.wpp ? 'protected' : 'no WAF';
+      if (filters.waf.indexOf(waf) === -1) return false;
+    }
+    if (filters.status.length) {
+      var st = p.status === 'enable' ? 'enabled' : 'disabled';
+      if (filters.status.indexOf(st) === -1) return false;
+    }
     return true;
   }
   function serviceFilterOn() {
-    return !!(filters.proto || filters.waf || filters.status);
+    return !!(filters.proto.length || filters.waf.length || filters.status.length);
   }
   function policiesOf(d) {
     return serviceFilterOn() ? d.policies.filter(policyPasses) : d.policies;
   }
 
+  function facetPasses(key, value) {
+    return !filters[key].length || filters[key].indexOf(value) !== -1;
+  }
   function visibleDevices() {
     return model.devices.filter(function (d) {
-      if (filters.zone && (d.zone || '(no zone)') !== filters.zone) return false;
-      if (filters.line && (d.line || '(no line)') !== filters.line) return false;
-      if (filters.dept && (d.department || '(no department)') !== filters.dept) return false;
-      if (filters.kind && (d.kind || '?').toUpperCase() !== filters.kind) return false;
-      if (filters.firmware && (d.firmware || '(unknown)') !== filters.firmware) return false;
-      if (filters.data === 'cached' && !d.cached) return false;
-      if (filters.data === 'no data' && d.cached) return false;
+      if (!facetPasses('zone', d.zone || '(no zone)')) return false;
+      if (!facetPasses('line', d.line || '(no line)')) return false;
+      if (!facetPasses('dept', d.department || '(no department)')) return false;
+      if (!facetPasses('kind', (d.kind || '?').toUpperCase())) return false;
+      if (!facetPasses('firmware', d.firmware || '(unknown)')) return false;
+      if (!facetPasses('data', d.cached ? 'cached' : 'no data')) return false;
       if (serviceFilterOn() && !policiesOf(d).length) return false;
       return true;
     });
@@ -417,12 +429,21 @@
       chips.push({ t: hwParts.join(' \u00b7 '), c: '#f59e0b' });
     }
     var cx = 36;
-    chips.forEach(function (ch) {
-      var cw = ch.t.length * 6.4 + 16;
+    var CHIP_R = w - 12;                       // right edge the chips must never cross
+    for (var ci = 0; ci < chips.length; ci++) {
+      var ch = chips[ci];
+      if (cx > CHIP_R - 20) break;             // no usable room left on this card
+      var clabel = ch.t;
+      var cw = clabel.length * 6.4 + 16;
+      if (cx + cw > CHIP_R) {                   // chip would spill past the card edge -> truncate to fit
+        clabel = trunc(clabel, Math.max(2, Math.floor((CHIP_R - cx - 16) / 6.4)));
+        cw = clabel.length * 6.4 + 16;
+        if (cx + cw > CHIP_R) break;            // still doesn't fit -> stop here
+      }
       el('rect', { x: cx, y: 56, width: cw, height: 18, rx: 9, fill: ch.c, 'fill-opacity': '0.16', stroke: ch.c, 'stroke-opacity': '0.45', 'stroke-width': '1' }, g);
-      txt(g, cx + cw / 2, 68.5, ch.t, 'fm-t-chip', 'middle').setAttribute('fill', ch.c);
+      txt(g, cx + cw / 2, 68.5, clabel, 'fm-t-chip', 'middle').setAttribute('fill', ch.c);
       cx += cw + 7;
-    });
+    }
     // freshness + summary line
     var beN = 0;
     pols.forEach(function (p) { beN += p.backends.length; });
@@ -483,6 +504,7 @@
 
   // ---- render ----------------------------------------------------------------
   function render() {
+    if (viewMode === 'list') { renderList(); return; }
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     buildDefs();
     world = el('g', { id: 'fmWorld' }, svg);
@@ -786,6 +808,7 @@
     if (world) world.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
   }
   function fit() {
+    if (viewMode === 'list') return;
     var w = parseFloat(svg.getAttribute('data-w')) || 1200;
     var h = parseFloat(svg.getAttribute('data-h')) || 800;
     var vw = viewport.clientWidth, vh = viewport.clientHeight;
@@ -1174,23 +1197,146 @@
   function persistFilters() {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(function () {
+      // The server stores one string per facet; a multi-selection is encoded
+      // as a JSON array string ('["A","B"]'). A legacy single-value string
+      // restores as a 1-element selection (see _decodeFacet).
+      var enc = function (k) { return filters[k].length ? JSON.stringify(filters[k]) : ''; };
       fetch(CFG.filtersUrl || '/architecture/filters', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
         body: JSON.stringify({
-          zone: filters.zone, line: filters.line, department: filters.dept,
-          kind: filters.kind, firmware: filters.firmware, data: filters.data,
-          proto: filters.proto, waf: filters.waf, status: filters.status,
-          text: query
+          zone: enc('zone'), line: enc('line'), department: enc('dept'),
+          kind: enc('kind'), firmware: enc('firmware'), data: enc('data'),
+          proto: enc('proto'), waf: enc('waf'), status: enc('status'),
+          text: query, view: viewMode
         })
       }).catch(function () {});
     }, 600);
   }
 
+  function anyFilterActive() {
+    for (var k in filters) if (filters[k].length) return true;
+    return false;
+  }
+  function updateClearBtn() {
+    var btn = document.getElementById('fmClearFilters');
+    if (!btn) return;
+    btn.classList.toggle('show', anyFilterActive() || !!query.trim());
+  }
+  function closeAllPanels(except) {
+    document.querySelectorAll('.fm-msel-panel').forEach(function (p) {
+      if (p !== except) p.remove();
+    });
+  }
+
+  // One dropdown button per facet; its panel is a checkbox list (multi-select).
+  function buildFacetSelect(f, names, colorOf) {
+    var wrap = document.createElement('div');
+    wrap.className = 'fm-msel';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'fm-msel-btn';
+    wrap.appendChild(btn);
+
+    function syncBtn() {
+      var sel = filters[f.key];
+      btn.innerHTML = '';
+      btn.appendChild(document.createTextNode(f.label));
+      if (sel.length) {
+        var cnt = document.createElement('span');
+        cnt.className = 'fm-msel-count';
+        cnt.textContent = sel.length;
+        btn.appendChild(cnt);
+      }
+      var caret = document.createElement('i');
+      caret.className = 'bi bi-chevron-down';
+      caret.style.fontSize = '10px';
+      btn.appendChild(caret);
+      btn.classList.toggle('active', !!sel.length);
+      btn.title = sel.length ? f.label + ': ' + sel.join(', ') : f.label + ' — all';
+    }
+
+    function applyChange() {
+      syncBtn();
+      updateClearBtn();
+      render();
+      fit();
+      persistFilters();
+    }
+
+    function openPanel() {
+      closeAllPanels();
+      var panel = document.createElement('div');
+      panel.className = 'fm-msel-panel';
+      names.forEach(function (name) {
+        var item = document.createElement('label');
+        item.className = 'fm-msel-item';
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = filters[f.key].indexOf(name) !== -1;
+        item.appendChild(cb);
+        var dot = document.createElement('span');
+        dot.className = 'fm-msel-dot';
+        dot.style.background = colorOf(name);
+        item.appendChild(dot);
+        item.appendChild(document.createTextNode(name));
+        cb.addEventListener('change', function () {
+          var idx = filters[f.key].indexOf(name);
+          if (cb.checked && idx === -1) filters[f.key].push(name);
+          if (!cb.checked && idx !== -1) filters[f.key].splice(idx, 1);
+          applyChange();
+        });
+        panel.appendChild(item);
+      });
+      var actions = document.createElement('div');
+      actions.className = 'fm-msel-actions';
+      var allA = document.createElement('a');
+      allA.textContent = 'Select all';
+      allA.addEventListener('click', function () {
+        filters[f.key] = names.slice();
+        panel.querySelectorAll('input').forEach(function (i) { i.checked = true; });
+        applyChange();
+      });
+      var noneA = document.createElement('a');
+      noneA.textContent = 'Clear';
+      noneA.addEventListener('click', function () {
+        filters[f.key] = [];
+        panel.querySelectorAll('input').forEach(function (i) { i.checked = false; });
+        applyChange();
+      });
+      actions.appendChild(allA);
+      actions.appendChild(noneA);
+      panel.appendChild(actions);
+      wrap.appendChild(panel);
+    }
+
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var open = wrap.querySelector('.fm-msel-panel');
+      if (open) { open.remove(); } else { openPanel(); }
+    });
+    wrap.addEventListener('click', function (e) { e.stopPropagation(); });
+
+    syncBtn();
+    return wrap;
+  }
+
+  var FIXED_COLORS = {
+    'cached': '#22c55e', 'no data': '#64748b',
+    'HTTPS': '#22c55e', 'HTTP': '#4f8cff',
+    'protected': '#22c55e', 'no WAF': '#ef4444',
+    'enabled': '#22c55e', 'disabled': '#64748b'
+  };
+
   function buildFilterPills() {
     var container = document.getElementById('mapFilters');
     if (!container) return;
     container.innerHTML = '';
+    var lbl = document.createElement('span');
+    lbl.textContent = 'Filters';
+    lbl.className = 'fm-filter-label';
+    container.appendChild(lbl);
+
     // device facets discovered from the data
     var facets = [
       { label: 'Zone', key: 'zone', vals: {} },
@@ -1212,67 +1358,202 @@
     facets.push({ label: 'WAF', key: 'waf', vals: { 'protected': 1, 'no WAF': 1 }, fixed: true });
     facets.push({ label: 'Policy', key: 'status', vals: { 'enabled': 1, 'disabled': 1 }, fixed: true });
 
-    var FIXED_COLORS = {
-      'cached': '#22c55e', 'no data': '#64748b',
-      'HTTPS': '#22c55e', 'HTTP': '#4f8cff',
-      'protected': '#22c55e', 'no WAF': '#ef4444',
-      'enabled': '#22c55e', 'disabled': '#64748b'
-    };
-
-    var anyActive = false;
     facets.forEach(function (f) {
       var names = Object.keys(f.vals);
       if (!f.fixed) names.sort();
       // hide single-value discovered facets (nothing to filter) except zone
       if (!f.fixed && names.length < 2 && f.key !== 'zone') return;
-      var lbl = document.createElement('span');
-      lbl.textContent = f.label;
-      lbl.className = 'fm-filter-label';
-      container.appendChild(lbl);
-      names.forEach(function (name) {
-        var c = f.fixed ? (FIXED_COLORS[name] || '#4f8cff') : paletteColor(name);
-        var pill = document.createElement('span');
-        pill.textContent = name;
-        pill.className = 'fm-filter-pill';
-        pill.style.color = '#eaf0fb';
-        pill.style.background = c + '22';
-        pill.style.borderColor = c + '66';
-        pill.dataset.attr = f.key;
-        pill.dataset.val = name;
-        if (filters[f.key] === name) {
-          anyActive = true;
-          pill.classList.add('active');
-          pill.style.background = c + '88';
-        }
-        pill.addEventListener('click', function () {
-          var on = filters[f.key] === name;
-          filters[f.key] = on ? '' : name;
-          buildFilterPills();
-          render();
-          fit();
-          persistFilters();
-        });
-        container.appendChild(pill);
-      });
+      var colorOf = function (name) {
+        return f.fixed ? (FIXED_COLORS[name] || '#4f8cff') : paletteColor(name);
+      };
+      container.appendChild(buildFacetSelect(f, names, colorOf));
     });
 
-    // clear-all pill (only when something is active)
-    if (anyActive || query.trim()) {
-      var clr = document.createElement('span');
-      clr.textContent = '✕ clear filters';
-      clr.className = 'fm-filter-pill fm-filter-clear';
-      clr.addEventListener('click', function () {
-        for (var k in filters) filters[k] = '';
-        query = '';
-        var ms2 = document.getElementById('mapSearch');
-        if (ms2) ms2.value = '';
-        buildFilterPills();
-        render();
-        fit();
-        persistFilters();
-      });
-      container.appendChild(clr);
+    // clear-all button (visible only while something is active)
+    var clr = document.createElement('button');
+    clr.type = 'button';
+    clr.id = 'fmClearFilters';
+    clr.className = 'fm-filter-clearbtn';
+    clr.innerHTML = '<i class="bi bi-x-lg"></i> Clear filters';
+    clr.addEventListener('click', function () {
+      for (var k in filters) filters[k] = [];
+      query = '';
+      var ms2 = document.getElementById('mapSearch');
+      if (ms2) ms2.value = '';
+      buildFilterPills();
+      render();
+      fit();
+      persistFilters();
+    });
+    container.appendChild(clr);
+    updateClearBtn();
+
+    // close any open panel when clicking elsewhere (bound once)
+    if (!window.__fmMselCloseBound) {
+      window.__fmMselCloseBound = true;
+      document.addEventListener('click', function () { closeAllPanels(); });
     }
+  }
+
+  // ---- list view -----------------------------------------------------------------------------
+  // A grouped, scannable alternative to the network map: devices arranged by
+  // Zone -> Line -> Department. Respects every active filter + the search box.
+  function applyViewMode() {
+    var isList = viewMode === 'list';
+    if (viewport) viewport.style.display = isList ? 'none' : '';
+    if (listEl) listEl.classList.toggle('show', isList);
+    var mapTools = document.querySelector('.fm-toolbtns');
+    if (mapTools) mapTools.style.display = isList ? 'none' : '';
+    var mb = document.getElementById('fmViewMap');
+    var lb = document.getElementById('fmViewList');
+    if (mb) mb.classList.toggle('active', !isList);
+    if (lb) lb.classList.toggle('active', isList);
+  }
+
+  function listTextPasses(d) {
+    var q = query.trim().toLowerCase();
+    if (!q) return true;
+    var hay = [d.name, d.host, d.zone, d.line, d.department, d.firmware, d.kind]
+      .join(' ').toLowerCase();
+    if (hay.indexOf(q) !== -1) return true;
+    return policiesOf(d).some(function (p) { return polSearchText(p).indexOf(q) !== -1; });
+  }
+
+  function listCell(row, cls) {
+    var td = document.createElement('td');
+    if (cls) td.className = cls;
+    row.appendChild(td);
+    return td;
+  }
+
+  function listDeviceRow(d) {
+    var tr = document.createElement('tr');
+    tr.className = 'fm-list-row';
+    tr.addEventListener('click', function () { openModal(d.id); });
+
+    var tdName = listCell(tr);
+    var nm = document.createElement('div');
+    nm.className = 'fm-list-name';
+    nm.textContent = d.name || '(unnamed)';
+    var hs = document.createElement('div');
+    hs.className = 'fm-list-host';
+    hs.textContent = (d.host || '') + (d.port ? ':' + d.port : '');
+    tdName.appendChild(nm); tdName.appendChild(hs);
+
+    var tdKind = listCell(tr);
+    var kb = document.createElement('span');
+    var kind = (d.kind || 'fortiweb').toLowerCase();
+    kb.className = 'fm-list-badge k-' + kind;
+    kb.textContent = kind.toUpperCase();
+    tdKind.appendChild(kb);
+
+    listCell(tr).textContent = d.firmware || '—';
+
+    var tdPol = listCell(tr);
+    var pols = policiesOf(d);
+    var wc = pols.filter(function (p) { return p.wpp; }).length;
+    var ps = document.createElement('span');
+    ps.textContent = pols.length + (pols.length === 1 ? ' policy' : ' policies');
+    tdPol.appendChild(ps);
+    if (wc) {
+      var waf = document.createElement('span');
+      waf.style.marginLeft = '8px';
+      waf.style.color = '#22c55e';
+      waf.style.fontWeight = '700';
+      waf.textContent = '🛡 ' + wc;
+      tdPol.appendChild(waf);
+    }
+
+    var tdFresh = listCell(tr, 'fm-list-host');
+    tdFresh.textContent = d.freshness || (d.cached ? '' : 'no local data');
+
+    var tdStat = listCell(tr);
+    var dot = document.createElement('span');
+    dot.className = 'fm-list-dotstat';
+    dot.style.background = d.cached ? '#22c55e' : '#64748b';
+    dot.title = d.cached ? 'Topology cached' : 'No local data';
+    tdStat.appendChild(dot);
+
+    return tr;
+  }
+
+  function renderList() {
+    if (!listEl) return;
+    listEl.innerHTML = '';
+    var devs = visibleDevices().filter(listTextPasses).slice().sort(function (a, b) {
+      var ka = [(a.zone || '~'), (a.line || '~'), (a.department || '~'), a.name].join(' ');
+      var kb = [(b.zone || '~'), (b.line || '~'), (b.department || '~'), b.name].join(' ');
+      return ka < kb ? -1 : ka > kb ? 1 : 0;
+    });
+    if (!devs.length) {
+      var empty = document.createElement('div');
+      empty.className = 'fm-list-empty';
+      empty.textContent = query.trim() || anyFilterActive()
+        ? 'No devices match the current filters.'
+        : 'No appliances to show.';
+      listEl.appendChild(empty);
+      updateStats();
+      return;
+    }
+
+    var zones = [], tree = {};
+    devs.forEach(function (d) {
+      var z = d.zone || '(no zone)', l = d.line || '(no line)', dp = d.department || '(no department)';
+      if (!tree[z]) { tree[z] = { lines: {}, order: [], count: 0 }; zones.push(z); }
+      tree[z].count++;
+      if (!tree[z].lines[l]) { tree[z].lines[l] = { depts: {}, order: [] }; tree[z].order.push(l); }
+      if (!tree[z].lines[l].depts[dp]) { tree[z].lines[l].depts[dp] = []; tree[z].lines[l].order.push(dp); }
+      tree[z].lines[l].depts[dp].push(d);
+    });
+
+    zones.forEach(function (z) {
+      var zc = tree[z];
+      var zwrap = document.createElement('div');
+      zwrap.className = 'fm-list-zone';
+      var zh = document.createElement('div');
+      zh.className = 'fm-list-zone-head';
+      zh.style.borderLeftColor = paletteColor(z);
+      var zt = document.createElement('span');
+      zt.textContent = z;
+      zh.appendChild(zt);
+      var zcnt = document.createElement('span');
+      zcnt.className = 'fm-zcount';
+      zcnt.textContent = zc.count + (zc.count === 1 ? ' device' : ' devices');
+      zh.appendChild(zcnt);
+      zwrap.appendChild(zh);
+
+      zc.order.forEach(function (l) {
+        var lwrap = document.createElement('div');
+        lwrap.className = 'fm-list-line';
+        var lh = document.createElement('div');
+        lh.className = 'fm-list-line-head';
+        var ldot = document.createElement('span');
+        ldot.className = 'fm-dot';
+        ldot.style.background = paletteColor(l);
+        lh.appendChild(ldot);
+        lh.appendChild(document.createTextNode(l));
+        lwrap.appendChild(lh);
+
+        tree[z].lines[l].order.forEach(function (dp) {
+          var dwrap = document.createElement('div');
+          dwrap.className = 'fm-list-dept';
+          var dh = document.createElement('div');
+          dh.className = 'fm-list-dept-head';
+          dh.textContent = dp;
+          dwrap.appendChild(dh);
+          var table = document.createElement('table');
+          table.className = 'fm-list-table';
+          var tb = document.createElement('tbody');
+          tree[z].lines[l].depts[dp].forEach(function (d) { tb.appendChild(listDeviceRow(d)); });
+          table.appendChild(tb);
+          dwrap.appendChild(table);
+          lwrap.appendChild(dwrap);
+        });
+        zwrap.appendChild(lwrap);
+      });
+      listEl.appendChild(zwrap);
+    });
+    updateStats();
   }
 
   // ---- toolbar -------------------------------------------------------------------------------
@@ -1293,6 +1574,14 @@
       expanded = {};
       rememberExpanded(); render(); fit();
     });
+    if ((b = document.getElementById('fmViewMap'))) b.addEventListener('click', function () {
+      if (viewMode === 'map') return;
+      viewMode = 'map'; applyViewMode(); render(); fit(); persistFilters();
+    });
+    if ((b = document.getElementById('fmViewList'))) b.addEventListener('click', function () {
+      if (viewMode === 'list') return;
+      viewMode = 'list'; applyViewMode(); render(); persistFilters();
+    });
     var ms = document.getElementById('mapSearch');
     if (ms) {
       var lastMode = false;
@@ -1303,7 +1592,7 @@
         // re-fit when entering/leaving search mode or while results reshape
         if (nowMode || lastMode !== nowMode) fit();
         lastMode = nowMode;
-        buildFilterPills();          // keep the "clear filters" pill in sync
+        updateClearBtn();            // keep the "clear filters" button in sync
         persistFilters();
       });
     }
@@ -1311,15 +1600,27 @@
 
   // ---- boot ------------------------------------------------------------------------------------
   var saved = CFG.savedFilters || {};
-  if (saved.zone) filters.zone = saved.zone;
-  if (saved.line) filters.line = saved.line;
-  if (saved.dept || saved.department) filters.dept = saved.dept || saved.department;
-  if (saved.kind) filters.kind = saved.kind;
-  if (saved.firmware) filters.firmware = saved.firmware;
-  if (saved.data) filters.data = saved.data;
-  if (saved.proto) filters.proto = saved.proto;
-  if (saved.waf) filters.waf = saved.waf;
-  if (saved.status) filters.status = saved.status;
+  // A saved facet is either a JSON array string (multi-select, new format) or
+  // a bare legacy single value — both restore into the array-based filters.
+  function _decodeFacet(v) {
+    if (!v) return [];
+    if (typeof v === 'string' && v.charAt(0) === '[') {
+      try {
+        var a = JSON.parse(v);
+        return Array.isArray(a) ? a.filter(Boolean).map(String) : [];
+      } catch (e) { return []; }
+    }
+    return [String(v)];
+  }
+  filters.zone = _decodeFacet(saved.zone);
+  filters.line = _decodeFacet(saved.line);
+  filters.dept = _decodeFacet(saved.dept || saved.department);
+  filters.kind = _decodeFacet(saved.kind);
+  filters.firmware = _decodeFacet(saved.firmware);
+  filters.data = _decodeFacet(saved.data);
+  filters.proto = _decodeFacet(saved.proto);
+  filters.waf = _decodeFacet(saved.waf);
+  filters.status = _decodeFacet(saved.status);
 
   var statsEl = document.getElementById('mapStats');
   if (statsEl) statsEl.textContent = 'Loading topology from the device cache…';
@@ -1332,6 +1633,7 @@
       if (saved.text && ms) { ms.value = saved.text; query = saved.text; }
       buildFilterPills();
       bindToolbar();
+      applyViewMode();
       render();
       fit();
     })

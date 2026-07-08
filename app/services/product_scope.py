@@ -23,9 +23,22 @@ GLOBAL = "global"
 
 
 def session_product() -> str:
-    """The active session's product, '' outside a request context."""
+    """The EFFECTIVE product of the active request, '' outside a request
+    context. Per-tab ADOM (2026-07-07): resolution order is ``g.product``
+    (stamped by the app-factory product gate: URL scope > X-ADOM header >
+    session) > the raw ``X-ADOM`` header (a caller running before/without
+    the gate) > the session cookie. The session is only the default for
+    header-less requests — one browser tab switching ADOM no longer changes
+    what another tab sees."""
     try:
         if has_request_context():
+            from flask import g, request
+            p = getattr(g, "product", None)
+            if p in (GLOBAL, FORTIWEB, FORTIADC):
+                return p
+            h = (request.headers.get("X-ADOM") or "").strip().lower()
+            if h in (GLOBAL, FORTIWEB, FORTIADC):
+                return h
             return session.get("product") or ""
     except Exception:  # noqa: BLE001 — scoping must never break a caller
         pass

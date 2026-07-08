@@ -93,7 +93,7 @@
   <div class="col-6 col-md-3">
     <div class="fw-card text-center h-100">
       <div class="fw-card-body py-3">
-        <div class="text-muted small mb-1"><i class="bi bi-shield-check me-1"></i>Server Policies</div>
+        <div class="text-muted small mb-1"><i class="bi bi-shield-check me-1"></i>{{ inv_labels.server_policy }}</div>
         <div class="display-6 fw-bold" id="cardServerPolicy" style="color:#3b82f6">{{ inv_totals.server_policy if inv_totals else "—" }}</div>
         <div class="text-muted" style="font-size:.7rem">total now</div>
       </div>
@@ -102,7 +102,7 @@
   <div class="col-6 col-md-3">
     <div class="fw-card text-center h-100">
       <div class="fw-card-body py-3">
-        <div class="text-muted small mb-1"><i class="bi bi-diagram-3 me-1"></i>Backends</div>
+        <div class="text-muted small mb-1"><i class="bi bi-diagram-3 me-1"></i>{{ inv_labels.backend }}</div>
         <div class="display-6 fw-bold" id="cardBackend" style="color:#8b5cf6">{{ inv_totals.backend if inv_totals else "—" }}</div>
         <div class="text-muted" style="font-size:.7rem">total now</div>
       </div>
@@ -111,7 +111,7 @@
   <div class="col-6 col-md-3">
     <div class="fw-card text-center h-100">
       <div class="fw-card-body py-3">
-        <div class="text-muted small mb-1"><i class="bi bi-shield-lock me-1"></i>WPPs</div>
+        <div class="text-muted small mb-1"><i class="bi bi-shield-lock me-1"></i>{{ inv_labels.wpp }}</div>
         <div class="display-6 fw-bold" id="cardWpp" style="color:#f59e0b">{{ inv_totals.wpp if inv_totals else "—" }}</div>
         <div class="text-muted" style="font-size:.7rem">total now</div>
       </div>
@@ -120,7 +120,7 @@
   <div class="col-6 col-md-3">
     <div class="fw-card text-center h-100">
       <div class="fw-card-body py-3">
-        <div class="text-muted small mb-1"><i class="bi bi-patch-check me-1"></i>Certificates</div>
+        <div class="text-muted small mb-1"><i class="bi bi-patch-check me-1"></i>{{ inv_labels.certificate }}</div>
         <div class="display-6 fw-bold" id="cardCertificate" style="color:#10b981">{{ inv_totals.certificate if inv_totals else "—" }}</div>
         <div class="text-muted" style="font-size:.7rem">total now</div>
       </div>
@@ -222,10 +222,10 @@
             <th>Date</th>
             <th class="text-end">Actions</th>
             <th class="text-end">Changes</th>
-            <th class="text-end" style="color:#3b82f6">Server Policy</th>
-            <th class="text-end" style="color:#8b5cf6">Backend</th>
-            <th class="text-end" style="color:#f59e0b">WPP</th>
-            <th class="text-end" style="color:#10b981">Certificate</th>
+            <th class="text-end" style="color:#3b82f6">{{ inv_labels.server_policy }}</th>
+            <th class="text-end" style="color:#8b5cf6">{{ inv_labels.backend }}</th>
+            <th class="text-end" style="color:#f59e0b">{{ inv_labels.wpp }}</th>
+            <th class="text-end" style="color:#10b981">{{ inv_labels.certificate }}</th>
             <th class="text-end" id="thDelta" style="display:none;">Δ Actions</th>
           </tr>
         </thead>
@@ -432,23 +432,29 @@
     document.getElementById('cardCertificate').textContent  = (t.certificate    || 0).toLocaleString();
   }
 
+  const INV_LABELS = {{ inv_labels|tojson }};
+  const INV_IS_ADC = {{ 'true' if inv_labels.server_policy == 'Virtual Servers' else 'false' }};
+
   function renderObjectTypeChart(inv){
     const ctx = document.getElementById('chartObjType').getContext('2d');
     const d = (inv && inv.series) || {labels:[]};
+    const L = (inv && inv.labels) || INV_LABELS;
     const keys = ['server_policy','backend','wpp','certificate'];
     const hasData = d.labels && d.labels.length && keys.some(k => (d[k]||[]).some(v=>v>0));
     if(!hasData){
-      ctx.canvas.parentElement.innerHTML = '<p class="text-muted text-center small py-4">No inventory snapshots yet. A snapshot is recorded once per day &mdash; schedule the &ldquo;Record inventory snapshot&rdquo; action (Automation) to build the daily trend.</p>';
+      ctx.canvas.parentElement.innerHTML = INV_IS_ADC
+        ? '<p class="text-muted text-center small py-4">FortiADC inventory is counted live (cards above); the daily trend needs a snapshot pipeline, which FortiADC does not have yet.</p>'
+        : '<p class="text-muted text-center small py-4">No inventory snapshots yet. A snapshot is recorded once per day &mdash; schedule the &ldquo;Record inventory snapshot&rdquo; action (Automation) to build the daily trend.</p>';
       return;
     }
     const mk = (label,key,color,bg)=>({label,data:d[key]||[],borderColor:color,backgroundColor:bg,borderWidth:2,tension:.3,pointRadius:3,pointHoverRadius:5,fill:true});
     charts.objType = new Chart(ctx, {
       type: 'line',
       data: { labels: d.labels, datasets: [
-        mk('Server Policies','server_policy','#3b82f6','rgba(59,130,246,0.08)'),
-        mk('Backends','backend','#8b5cf6','rgba(139,92,246,0.08)'),
-        mk('WPPs','wpp','#f59e0b','rgba(245,158,11,0.08)'),
-        mk('Certificates','certificate','#10b981','rgba(16,185,129,0.08)'),
+        mk(L.server_policy,'server_policy','#3b82f6','rgba(59,130,246,0.08)'),
+        mk(L.backend,'backend','#8b5cf6','rgba(139,92,246,0.08)'),
+        mk(L.wpp,'wpp','#f59e0b','rgba(245,158,11,0.08)'),
+        mk(L.certificate,'certificate','#10b981','rgba(16,185,129,0.08)'),
       ]},
       options: {
         ...chartDefaults,

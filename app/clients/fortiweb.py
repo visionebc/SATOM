@@ -245,6 +245,21 @@ class FortiWebClient(BaseClient):
                 v['ip_source'] = ''
         return vips
 
+    # --- runtime backend health (policy status monitor, NOT cmdb) -----------
+    def policy_health(self, name: str):
+        """Live per-backend health for one server policy.
+
+        Reads the RUNTIME monitor endpoint policy/policystatus.detail
+        (?policy_name=<name> query param, not a cmdb read) -> one row per
+        pool member carrying healthCheckStatus (enable=UP / disable=DOWN /
+        N-A=no health check). Returns (members, error) so a device refusal
+        (license lock, auth failure, unreachable host) is surfaced rather than
+        read as an empty list. Verified live on fw6 7.6.8.
+        """
+        path = ('/api/v2.0/policy/policystatus.detail?policy_name=%s'
+                % quote(name, safe=''))
+        return self.list_with_error(path)
+
     def api_call(self, method: str, path: str, data=None):
         return self._request(method, path, headers=self._headers(), json=data)
 

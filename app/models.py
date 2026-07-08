@@ -1538,6 +1538,53 @@ class DeviceHardware(db.Model):
         }
 
 
+class DbReport(db.Model):
+    """A user-authored report/dashboard over the read-only SQL layer.
+
+    ``definition`` is JSON: {"widgets": [{"title", "sql", "viz", "x", "y",
+    "limit", "width"}]}. Queries always execute through
+    services.dbintrospect.run_query (SELECT-only, sensitive columns masked),
+    so a report can never mutate or leak more than the SQL console can.
+    """
+
+    __tablename__ = "db_reports"
+
+    VIZ_KINDS = ("table", "bar", "line", "pie", "stat")
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=False, default="")
+    definition = db.Column(db.Text, nullable=False, default="{}")
+    created_by = db.Column(db.String(64), nullable=False, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow, nullable=False)
+    builtin = db.Column(db.Boolean, nullable=False, default=False)
+
+    @property
+    def widgets(self) -> list:
+        import json as _json
+        try:
+            data = _json.loads(self.definition or "{}")
+        except Exception:
+            return []
+        w = data.get("widgets")
+        return w if isinstance(w, list) else []
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id, "name": self.name,
+            "description": self.description,
+            "widgets": self.widgets, "created_by": self.created_by,
+            "builtin": bool(self.builtin),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self) -> str:
+        return f"<DbReport {self.id} {self.name!r}>"
+
+
 # Device-structure cache models (source-of-truth substrate) — import so
 # create_all()/Alembic register them.
 from . import models_cache  # noqa: E402,F401

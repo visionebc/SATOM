@@ -38,6 +38,69 @@
 {% if error %}<div class="fw-alert fw-alert-warning mb-3"><i class="bi bi-exclamation-triangle me-2"></i>{{ error }}</div>{% endif %}
 {% if not policy and not error %}<div class="fw-alert fw-alert-warning mb-3"><i class="bi bi-exclamation-triangle me-2"></i>The device returned no data for this policy.</div>{% endif %}
 
+{% if policy_links %}
+<!-- ─────────────── Dynamic Policy Links (Settings → Policy Links) ─────────────── -->
+<div class="fw-card mb-3">
+  <div class="fw-card-body d-flex align-items-center flex-wrap" style="gap:8px;">
+    <span class="text-muted me-1" style="font-size:12px;"><i class="bi bi-link-45deg me-1"></i>Links</span>
+    {% for l in policy_links %}
+    <a href="{{ l.url }}" class="btn btn-sm btn-fw-outline"{% if l.new_tab %} target="_blank" rel="noopener noreferrer"{% endif %}>
+      <i class="bi bi-box-arrow-up-right me-1"></i>{{ l.label }}</a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ─────────────── Service Topology & Backend Health ─────────────── -->
+<div class="fw-card mb-3" id="topoCard">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-diagram-3-fill me-2 text-accent"></i>Service Topology &amp; Backend Health</span>
+    {% if appliance and appliance.kind == 'fortiweb' %}
+    <button type="button" class="btn btn-sm btn-fw-outline" id="fwHealthBtn"
+            data-url="{{ url_for('workspace.policy_health', appliance_id=appliance.id, name=policy_name) }}"
+            title="Query the device live (policy status monitor) for the REAL per-backend health-check state">
+      <i class="bi bi-heart-pulse me-1"></i>Check live health</button>
+    {% endif %}
+  </div>
+  <div class="fw-card-body">
+    {% set st_colors = {'enable':'#10b981','enabled':'#10b981','disable':'#ef4444','disabled':'#ef4444','maintain':'#fbbf24','maintenance':'#fbbf24'} %}
+    {% set pcol = '#10b981' if policy_on else '#ef4444' %}
+    <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+      <span class="fw-topo-node" title="Server policy — {{ 'Enabled' if policy_on else 'Disabled' }}" style="border-color:{{ pcol }};">
+        <span class="fw-topo-dot" style="background:{{ pcol }};"></span><i class="bi bi-shield-fill-check me-1"></i>{{ policy.name or policy_name }}</span>
+      {% set vip_ip = (vips|map(attribute='effective_ip')|select|list|join(', ')) %}
+      {% if vip_ip %}
+      <span class="fw-topo-arrow">&#9472;&#9654;</span>
+      <span class="fw-topo-node font-monospace" title="Virtual server VIP"><i class="bi bi-hdd-network me-1"></i>{{ vip_ip }}</span>
+      {% endif %}
+      {% if pool_name %}
+      <span class="fw-topo-arrow">&#9472;&#9654;</span>
+      <span class="fw-topo-node" title="Server pool"><i class="bi bi-diagram-3 me-1"></i>{{ pool_name }}</span>
+      {% endif %}
+      <span class="fw-topo-arrow">&#9472;&#9654;</span>
+      {% for b in backends %}
+      {% set bcol = st_colors.get((b.get('status')|string)|lower, '#94a3b8') %}
+      <span class="fw-topo-node fw-topo-be font-monospace"
+            data-hk="{{ (b.get('ip') or b.get('domain') or '') }}:{{ b.get('port') or '' }}"
+            title="Back-end · configured status: {{ b.get('status') or 'unknown' }}" style="border-color:{{ bcol }};">
+        <span class="fw-topo-dot" style="background:{{ bcol }};"></span>{{ b.get('ip') or b.get('domain') or '—' }}{% if b.get('port') %}:{{ b.get('port') }}{% endif %}<span class="fw-topo-hc"></span></span>
+      {% else %}
+      <span class="text-muted fst-italic">no back-ends in cache</span>
+      {% endfor %}
+    </div>
+    <div class="mt-2 d-flex align-items-center flex-wrap" style="gap:14px; font-size:11px;">
+      <span class="text-muted">Dots = <strong>configured</strong> status (green enabled · red disabled · amber maintenance).</span>
+      <span id="fwHealthLegend" class="d-none text-muted">
+        <span class="me-2">Live health:</span>
+        <span class="me-2"><span class="fw-topo-dot" style="background:#10b981;"></span>UP</span>
+        <span class="me-2"><span class="fw-topo-dot" style="background:#ef4444;"></span>DOWN</span>
+        <span><span class="fw-topo-dot" style="background:#94a3b8;"></span>N/A (no health check)</span>
+      </span>
+      <span id="fwHealthMsg"></span>
+    </div>
+  </div>
+</div>
+
 <!-- ───────────────────────── Virtual Server / VIP ───────────────────────── -->
 <div class="fw-card mb-3">
   <div class="fw-card-header d-flex justify-content-between align-items-center">
@@ -289,6 +352,10 @@
 .fw-row-card{border:1px solid rgba(148,163,184,.12);border-radius:12px;padding:12px;margin-bottom:12px;}
 .fw-vip-ip{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
 .fw-vip-addr{font-size:16px;font-weight:700;color:#e2e8f0;}
+.fw-topo-node{display:inline-flex;align-items:center;padding:3px 10px;border-radius:10px;border:1.5px solid var(--fw-border,#dee2e6);background:#fff;color:var(--fw-text-primary,#212529);white-space:nowrap;font-size:12px;}
+.fw-topo-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#94a3b8;margin-right:6px;flex-shrink:0;}
+.fw-topo-arrow{color:#94a3b8;}
+.fw-topo-hc{font-size:10.5px;margin-left:2px;}
 </style>
 <script nonce="{{ csp_nonce }}">
 const APPL_ID = {{ appliance.id }};
@@ -661,6 +728,58 @@ document.addEventListener('DOMContentLoaded', () => {
       else window.open('/objedit/' + APPL_ID + '/edit?collection=' + encodeURIComponent(el.dataset.coll)
                        + '&mkey=' + encodeURIComponent(el.dataset.mkey), '_blank');
     });
+  });
+})();
+</script>
+<script nonce="{{ csp_nonce }}">
+(function(){
+  const btn = document.getElementById('fwHealthBtn');
+  if(!btn) return;
+  const HCOL = {up:'#10b981', down:'#ef4444', na:'#94a3b8'};
+  const HLBL = {up:'UP', down:'DOWN', na:'N/A'};
+  btn.addEventListener('click', async function(){
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Checking…';
+    const msg = document.getElementById('fwHealthMsg');
+    const legend = document.getElementById('fwHealthLegend');
+    const bes = document.querySelectorAll('.fw-topo-be');
+    try{
+      const r = await fetch(btn.dataset.url, {headers:{'Accept':'application/json'}});
+      const j = await r.json();
+      if(!j || !j.ok){
+        msg.className = 'text-danger';
+        msg.textContent = 'Live probe failed: ' + ((j && j.error) || ('HTTP ' + r.status));
+        return;
+      }
+      const byKey = {};
+      (j.members||[]).forEach(m => { byKey[(m.ip||'')+':'+(m.port||'')] = m; });
+      let hit = 0;
+      bes.forEach(node => {
+        const m = byKey[node.dataset.hk];
+        const hc = node.querySelector('.fw-topo-hc');
+        const dot = node.querySelector('.fw-topo-dot');
+        if(m){
+          hit++;
+          const col = HCOL[m.health] || '#94a3b8';
+          if(dot) dot.style.background = col;
+          node.style.borderColor = col;
+          if(hc){ hc.textContent = ' · ' + HLBL[m.health]; hc.style.color = col; hc.style.fontWeight = '700'; }
+          node.title = 'Back-end · live health check: ' + (m.raw || m.health);
+        } else if(hc){
+          hc.textContent = ' · (not in status)';
+        }
+      });
+      legend.classList.remove('d-none');
+      msg.className = 'text-muted';
+      msg.textContent = hit + ' of ' + bes.length + ' back-end(s) matched live status.';
+    }catch(e){
+      msg.className = 'text-danger';
+      msg.textContent = 'Live probe error: ' + e;
+    }finally{
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
   });
 })();
 </script>

@@ -271,6 +271,49 @@
           <label class="fw-fld-label">New policy name</label>
           <input type="text" class="form-control form-control-sm" id="actionNewName" placeholder="new-policy-name" autocomplete="off">
         </div>
+        <div id="actionFieldVip" class="mb-3 d-none">
+          <label class="fw-fld-label">VIP IP for the copy</label>
+          <input type="text" class="form-control form-control-sm" id="actionVipIp" placeholder="e.g. 240.1.10.1" autocomplete="off">
+          <div class="form-text" id="actionVipHint" style="font-size:12px;"></div>
+        </div>
+        <div id="actionBulkIpNote" class="mb-3 d-none">
+          <span class="fw-badge fw-badge-secondary">Bulk</span>
+          <span class="text-muted" style="font-size:12.5px;">Each copy's VIP gets a <strong>dummy IP</strong> automatically, per the admin rules:
+            <code>{{ clone_rules_summary }}</code> (Settings → Clone / Migrate).</span>
+        </div>
+        <div id="actionFieldWppOpts" class="mb-3 d-none">
+          <div class="d-flex align-items-center flex-wrap gap-3">
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" id="actionCopyWpp" {{ 'checked' if clone_cfg.copy_wpp_default }} disabled>
+              <label class="form-check-label" for="actionCopyWpp" style="font-size:13px;">Copy Web Protection Profile</label>
+            </div>
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" id="actionOverrideDefaults">
+              <label class="form-check-label" for="actionOverrideDefaults" style="font-size:13px;">Override admin defaults</label>
+            </div>
+          </div>
+          <div class="form-text" style="font-size:12px;">Values come from the administrator (Settings → Clone / Migrate). Tick "Override admin defaults" to change them for this run only.</div>
+          <div id="actionWppChoice" class="d-none mt-2 p-2" style="border:1px solid rgba(251,191,36,.45);border-radius:8px;">
+            <div style="font-size:13px;" class="mb-1"><i class="bi bi-exclamation-triangle text-warning me-1"></i><span id="actionWppChoiceText"></span></div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="wppChoice" id="wppChoiceDest" value="use_dest">
+              <label class="form-check-label" for="wppChoiceDest" style="font-size:13px;">Use the destination's existing profile (accepting its differing values)</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="wppChoice" id="wppChoiceNew" value="new" checked>
+              <label class="form-check-label" for="wppChoiceNew" style="font-size:13px;">Copy the source profile under a <strong>new name</strong></label>
+            </div>
+            <input type="text" class="form-control form-control-sm mt-1" id="actionWppNewName" autocomplete="off">
+            <div class="form-text" id="actionWppNewHint" style="font-size:12px;"></div>
+          </div>
+        </div>
+        <div id="actionChecklist" class="mb-3 d-none">
+          <div class="d-flex align-items-center justify-content-between mb-1">
+            <strong style="font-size:13px;"><i class="bi bi-clipboard-check me-1"></i>Pre-flight checklist</strong>
+            <button type="button" class="btn btn-sm btn-fw-outline" id="actionChecklistBtn"><i class="bi bi-arrow-repeat me-1"></i>Re-run checks</button>
+          </div>
+          <div id="actionChecklistBody" style="font-size:12.5px;max-height:280px;overflow:auto;"><span class="text-muted">Running checks…</span></div>
+        </div>
         <div id="actionTargets" class="mb-3"></div>
         <div id="actionPreview" class="d-none">
           <hr>
@@ -298,6 +341,10 @@
   var hasOtherFw = {{ 'true' if other_appliances else 'false' }};
   var previewUrl = "{{ url_for('workspace.policy_action_preview', appliance_id=appliance.id) if appliance else '' }}";
   var applyUrl   = "{{ url_for('workspace.policy_action', appliance_id=appliance.id) if appliance else '' }}";
+  var checklistUrl = "{{ url_for('workspace.policy_action_checklist', appliance_id=appliance.id) if appliance else '' }}";
+  var CLONE_ACTIONS = { clone_here: 1, clone_to: 1, migrate_to: 1 };
+  var ADMIN_COPY_WPP = {{ 'true' if clone_cfg.copy_wpp_default else 'false' }};
+  var SRC_APPL_NAME = {{ (appliance.name if appliance else '')|tojson }};
 
   var LABELS = {
     enable: 'Enable', disable: 'Disable', delete: 'Delete',
@@ -511,15 +558,42 @@
       '<div class="fw-badge fw-badge-secondary mb-1">Targets</div><br>' +
       policies.map(function (p) { return '<span class="fw-badge fw-badge-info">' + esc(p) + '</span>'; }).join(' ');
     document.getElementById('actionFieldDest').classList.toggle('d-none', !NEEDS_DEST[action]);
-    var showName = (action === 'clone_here' && policies.length === 1);
+    var isClone = !!CLONE_ACTIONS[action];
+    var single = policies.length === 1;
+    // Every single-policy clone/migrate asks for the NEW NAME (and the IP below);
+    // clone-to/migrate-to prefill the original name, clone-here needs a distinct one.
+    var showName = (isClone && single);
     var nameField = document.getElementById('actionFieldName');
     nameField.classList.toggle('d-none', !showName);
-    if (showName) document.getElementById('actionNewName').value = policies[0] + '-copy';
+    if (showName) document.getElementById('actionNewName').value =
+      (action === 'clone_here') ? (policies[0] + '-copy') : policies[0];
+    // VIP IP: asked on a single clone/migrate; bulk auto-assigns dummy IPs.
+    document.getElementById('actionFieldVip').classList.toggle('d-none', !(isClone && single));
+    document.getElementById('actionVipIp').value = '';
+    document.getElementById('actionVipHint').textContent = '';
+    document.getElementById('actionBulkIpNote').classList.toggle('d-none', !(isClone && !single));
+    // WPP options: admin defaults, editable only after "Override admin defaults".
+    document.getElementById('actionFieldWppOpts').classList.toggle('d-none', !isClone);
+    var copyWpp = document.getElementById('actionCopyWpp');
+    copyWpp.checked = ADMIN_COPY_WPP; copyWpp.disabled = true;
+    document.getElementById('actionOverrideDefaults').checked = false;
+    document.getElementById('actionWppChoice').classList.add('d-none');
+    document.getElementById('actionChecklist').classList.toggle('d-none', !isClone);
+    document.getElementById('actionChecklistBody').innerHTML = '<span class="text-muted">Running checks…</span>';
+    chk.hasBlock = false; chk.previewDone = false;
     document.getElementById('actionPreview').classList.add('d-none');
     document.getElementById('actionPreviewBody').innerHTML = '';
     document.getElementById('actionError').classList.add('d-none');
-    document.getElementById('actionApplyBtn').disabled = true;
+    updateApply();
     modal.show();
+    if (isClone) runChecklist();
+  }
+
+  function wppChoiceValue() {
+    var box = document.getElementById('actionWppChoice');
+    if (box.classList.contains('d-none')) return '';
+    var sel = document.querySelector('input[name="wppChoice"]:checked');
+    return sel ? sel.value : '';
   }
 
   function collectPayload() {
@@ -527,7 +601,95 @@
     if (NEEDS_DEST[current.action]) p.dest_id = document.getElementById('actionDest').value;
     var nameField = document.getElementById('actionFieldName');
     if (!nameField.classList.contains('d-none')) p.new_name = document.getElementById('actionNewName').value.trim();
+    if (CLONE_ACTIONS[current.action]) {
+      var single = current.policies.length === 1;
+      if (single) p.vip_ip = document.getElementById('actionVipIp').value.trim();
+      var choice = wppChoiceValue();
+      if (choice === 'use_dest') {
+        p.copy_wpp = false;
+      } else {
+        p.copy_wpp = document.getElementById('actionCopyWpp').checked;
+        if (choice === 'new' && p.copy_wpp) {
+          var v = document.getElementById('actionWppNewName').value.trim();
+          if (single) p.wpp_new_name = v; else p.wpp_suffix = v;
+        }
+      }
+    }
     return p;
+  }
+
+  var chk = { hasBlock: false, previewDone: false };
+  function updateApply() {
+    document.getElementById('actionApplyBtn').disabled = !(chk.previewDone && !chk.hasBlock);
+  }
+
+  function renderChecklist(data) {
+    var LV = { ok: ['#10b981', 'bi-check-circle'], warn: ['#fbbf24', 'bi-exclamation-triangle'],
+               choice: ['#fbbf24', 'bi-signpost-split'], block: ['#ef4444', 'bi-x-octagon'] };
+    var hasBlock = false, wppDiff = null, html = '';
+    (data.policies || []).forEach(function (pr) {
+      html += '<div style="margin:6px 0 2px;"><strong>' + esc(pr.policy) + '</strong></div>';
+      (pr.checks || []).forEach(function (c) {
+        var lv = LV[c.level] || LV.warn;
+        if (c.level === 'block') hasBlock = true;
+        html += '<div class="d-flex" style="gap:6px;align-items:baseline;">'
+          + '<i class="bi ' + lv[1] + '" style="color:' + lv[0] + ';"></i>'
+          + '<div><span>' + esc(c.label) + '</span>'
+          + (c.detail ? ' <span class="text-muted">— ' + esc(c.detail) + '</span>' : '')
+          + '</div></div>';
+      });
+      var sg = pr.suggest || {};
+      if (sg.wpp_status === 'different' && !wppDiff) wppDiff = sg;
+    });
+    document.getElementById('actionChecklistBody').innerHTML = html || '<span class="text-muted">No checks.</span>';
+    chk.hasBlock = hasBlock;
+    // Prefill the VIP suggestion (single) from the admin dummy-IP rules.
+    var single = current.policies.length === 1;
+    if (single && data.policies && data.policies.length === 1) {
+      var s = data.policies[0].suggest || {};
+      var ipEl = document.getElementById('actionVipIp');
+      if (!ipEl.value && s.vip_ip) ipEl.value = s.vip_ip;
+      document.getElementById('actionVipHint').textContent =
+        (s.source_vip_ip ? ('Source VIP: ' + s.source_vip_ip + ' · ') : '')
+        + 'Suggested by admin rules: ' + (s.vip_ip || '—') + ' — edit if needed.';
+    }
+    // WPP differs on the destination → surface the operator's choice.
+    var box = document.getElementById('actionWppChoice');
+    if (wppDiff && document.getElementById('actionCopyWpp').checked) {
+      box.classList.remove('d-none');
+      document.getElementById('actionWppChoiceText').textContent =
+        'The destination already has "' + wppDiff.wpp_name + '" but its values DIFFER from the source'
+        + (wppDiff.wpp_diff_fields && wppDiff.wpp_diff_fields.length
+           ? ' (' + wppDiff.wpp_diff_fields.slice(0, 6).join(', ') + '…)' : '') + '.';
+      var nn = document.getElementById('actionWppNewName');
+      if (single) {
+        nn.value = nn.value || wppDiff.wpp_new_name || (wppDiff.wpp_name + '-' + SRC_APPL_NAME);
+        document.getElementById('actionWppNewHint').textContent = 'Full name for the copied profile.';
+      } else {
+        nn.value = nn.value || ('-' + SRC_APPL_NAME);
+        document.getElementById('actionWppNewHint').textContent =
+          'SUFFIX appended to each differing profile name (bulk mode).';
+      }
+    } else {
+      box.classList.add('d-none');
+    }
+    updateApply();
+  }
+
+  function runChecklist() {
+    if (!CLONE_ACTIONS[current.action]) return;
+    document.getElementById('actionChecklistBody').innerHTML = '<span class="text-muted">Running checks…</span>';
+    post(checklistUrl, collectPayload()).then(function (d) {
+      if (!d.ok) {
+        document.getElementById('actionChecklistBody').innerHTML =
+          '<span style="color:#fbbf24;">Checks failed: ' + esc(d.error || '?') + '</span>';
+        return;
+      }
+      renderChecklist(d);
+    }).catch(function (e) {
+      document.getElementById('actionChecklistBody').innerHTML =
+        '<span style="color:#fbbf24;">Checks failed: ' + esc('' + e) + '</span>';
+    });
   }
 
   function showErr(msg) {
@@ -571,7 +733,8 @@
       btn.disabled = false; btn.innerHTML = '<i class="bi bi-eye me-1"></i>Preview (dry-run)';
       if (!d.ok) { showErr(d.error || 'Preview failed'); return; }
       renderPreview(d);
-      document.getElementById('actionApplyBtn').disabled = false;
+      chk.previewDone = true;
+      updateApply();
     }).catch(function (e) {
       btn.disabled = false; btn.innerHTML = '<i class="bi bi-eye me-1"></i>Preview (dry-run)';
       showErr('' + e);
@@ -591,6 +754,21 @@
       btn.disabled = false; btn.innerHTML = '<i class="bi bi-lightning-charge me-1"></i>Apply for real';
       showErr('' + e);
     });
+  });
+
+  // Clone/migrate extras: admin-default override, WPP choice, checklist re-runs.
+  document.getElementById('actionOverrideDefaults').addEventListener('change', function () {
+    var copyWpp = document.getElementById('actionCopyWpp');
+    copyWpp.disabled = !this.checked;
+    if (!this.checked) { copyWpp.checked = ADMIN_COPY_WPP; runChecklist(); }
+  });
+  document.getElementById('actionCopyWpp').addEventListener('change', runChecklist);
+  document.getElementById('actionDest').addEventListener('change', function () {
+    if (CLONE_ACTIONS[current.action]) { chk.previewDone = false; updateApply(); runChecklist(); }
+  });
+  document.getElementById('actionChecklistBtn').addEventListener('click', runChecklist);
+  document.getElementById('actionNewName').addEventListener('change', function () {
+    if (CLONE_ACTIONS[current.action]) runChecklist();
   });
 
   // Row ⚙ actions + bulk bar buttons

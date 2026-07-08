@@ -293,6 +293,29 @@ def fetch_device_backup_auto(appliance, *, created_by: str = "",
     if method not in ("auto", "rest", "ssh"):
         method = "auto"
 
+    if getattr(appliance, "kind", "") == "fortiadc":
+        # FortiADC: no REST local-backup family — the CLI dump IS the config
+        # backup (``show full-configuration``, LIVE-VERIFIED on FortiADC-KVM
+        # 8.0.3: same SSH session mechanics as FortiWeb, clean config…end).
+        if method == "rest":
+            raise RuntimeError(
+                "FortiADC has no REST config-backup endpoint — use the SSH "
+                "method (show full-configuration) or Auto.")
+        data = ssh_config_backup(appliance)
+        fw = ""
+        try:
+            from .adc_ops import firmware_string
+            fw = firmware_string(appliance.build_client(timeout=15))
+        except Exception:  # noqa: BLE001 — firmware is optional metadata
+            pass
+        fname = (f"{(appliance.name or 'appliance')}_"
+                 f"{time.strftime('%Y%m%d_%H%M%S')}_cli.conf")
+        return store_bytes(
+            appliance_id=appliance.id, appliance_name=appliance.name or "",
+            data=data, filename=fname, source="device", created_by=created_by,
+            firmware=fw or None,
+            note="FortiADC — captured over SSH (show full-configuration).")
+
     rest_err = ""
     if method in ("auto", "rest"):
         try:

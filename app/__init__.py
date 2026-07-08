@@ -147,13 +147,67 @@ def create_app(config_override: object | None = None) -> Flask:
         return Response('', status=204)
 
     # -- product selection gate ------------------------------------------
+    # PER-TAB ADOM (2026-07-07): the ADOM a request runs in is resolved PER
+    # REQUEST into ``g.product`` — URL scope > X-ADOM header (each browser
+    # tab's sessionStorage, sent by turbo-boot.js/main.js) > ``_adom`` form
+    # field (native form posts can't carry headers) > session cookie. The
+    # session is only the DEFAULT for header-less full loads / brand-new
+    # tabs; NAVIGATION NEVER MUTATES IT anymore (the old ADOM-jump wrote
+    # session['product'], so switching ADOM in one tab flipped every other
+    # tab). Only the explicit switches (product.enter / product.set_product
+    # and the '/' + '/web/' homes) still write the session.
     @app.before_request
     def _product_gate():
-        from flask import session, redirect, url_for
+        from flask import g, session, redirect, url_for
         from flask_login import current_user
         if not current_user.is_authenticated:
             return None
         ep = request.endpoint or ''
+        bp_name = ep.split('.', 1)[0]
+        valid = ('fortiweb', 'fortiadc', 'global')
+        sess_prod = session.get('product')
+        if sess_prod not in valid:
+            # No product chosen yet (fresh login / deep link) — default to the
+            # Global ADOM instead of bouncing to the selector: every page is
+            # reachable from Global and the ADOM switcher is one click away.
+            session['product'] = sess_prod = 'global'
+            session.permanent = True
+        # NOTE: 'classification' is a Global-ADOM admin page (2026-07-07) and
+        # 'templates'/'naming'/'capacity' are product-aware shared pages
+        # linked from BOTH product ADOMs — none of them are URL-scoped.
+        fortiweb_scoped = {
+            'workspace', 'objedit', 'regex_lab', 'server_objects',
+            'web_protection', 'exceptions', 'backups', 'logs',
+            'import_backup', 'section_config', 'section_catalog',
+            'signatures', 'structure',
+            'segments', 'scheduled_actions', 'change_requests',
+            'provisioning', 'registry', 'api_explorer',
+        }
+        hdr = (request.headers.get('X-ADOM') or '').strip().lower()
+        if hdr not in valid and request.method == 'POST' \
+                and request.mimetype == 'application/x-www-form-urlencoded':
+            # Native (non-Turbo) form posts carry the tab's ADOM as a hidden
+            # field. urlencoded only — parsing multipart here would consume
+            # the stream of large uploads before the view sees it.
+            hdr = (request.form.get('_adom') or '').strip().lower()
+        eff = hdr if hdr in valid else sess_prod
+        if ep == 'index':
+            eff = 'global'
+        elif ep == 'fortiweb_home':
+            eff = 'fortiweb'
+        elif eff == 'global':
+            # The Global ADOM sees EVERYTHING (both products). Opening a
+            # product-scoped page is an ADOM jump for THIS TAB ONLY
+            # (FortiManager-style); a concrete ADOM still bounces off the
+            # other product's pages (the fortiadc branch below).
+            if bp_name in fortiweb_scoped:
+                eff = 'fortiweb'
+            elif bp_name in ('adc', 'adc_api'):
+                eff = 'fortiadc'
+        elif eff == 'fortiweb' and bp_name in ('adc', 'adc_api'):
+            # Entering the ADC area is always an explicit ADOM jump.
+            eff = 'fortiadc'
+        g.product = eff
         always = {
             'static', 'index', 'fortiweb_home', 'service_worker',
             'upload_worker', 'updiag', 'healthz', 'healthz_primary',
@@ -162,28 +216,7 @@ def create_app(config_override: object | None = None) -> Flask:
         }
         if ep in always or ep.startswith('auth.'):
             return None
-        product = session.get('product')
-        if product not in ('fortiweb', 'fortiadc', 'global'):
-            return redirect(url_for('product.select'))
-        if product == 'global':
-            # The Global ADOM sees EVERYTHING (both products). Opening a
-            # product-scoped page is an ADOM jump: the session switches to
-            # that product and the request proceeds (FortiManager-style).
-            fortiweb_scoped = {
-                'workspace', 'objedit', 'regex_lab', 'server_objects',
-                'web_protection', 'exceptions', 'backups', 'logs',
-                'import_backup', 'section_config', 'section_catalog',
-                'templates', 'signatures', 'structure', 'classification',
-                'segments', 'naming', 'scheduled_actions', 'change_requests',
-                'provisioning', 'capacity', 'registry', 'api_explorer',
-            }
-            bp_name = ep.split('.', 1)[0]
-            if bp_name in fortiweb_scoped:
-                session['product'] = 'fortiweb'
-            elif bp_name == 'adc':
-                session['product'] = 'fortiadc'
-            return None
-        if product == 'fortiadc':
+        if eff == 'fortiadc':
             # FortiADC sessions get the ADC area + the product-neutral shared
             # pages (fleet admin, audit, jobs, notifications, own profile) +
             # the fleet-wide sections that are product-neutral or ADC-aware:
@@ -192,13 +225,20 @@ def create_app(config_override: object | None = None) -> Flask:
             # 'adc_api' is the ADC-scoped API hub. RBAC still gates each write.
             adc_bps = {'adc', 'adc_api', 'appliances', 'settings', 'audit',
                        'jobs', 'notifications', 'profiles', 'users', 'docs',
-                       'cert_manager', 'database', 'locks',
-                       # ADC-aware / product-scoped Fleet pages mirrored into the ADC
-                       # ADOM. FortiWeb-only pages (search, analysis,
-                       # fleet_objects) are intentionally excluded.
-                       'monitoring', 'architecture', 'metrics'}
+                       'database', 'locks',
+                       # Product-scoped Fleet pages mirrored into the ADC ADOM
+                       # (visible_appliances / product_scope keep them ADC-only).
+                       # Monitoring + Certificate Manager live ONLY in the
+                       # Global ADOM (2026-07-07 nav restructure).
+                       'architecture', 'metrics', 'search', 'analysis',
+                       'fleet_objects', 'dns_tool',
+                       # Backup vault (per-appliance; the ADC transport is the
+                       # SSH config dump — services/backup.py kind branch).
+                       'backups',
+                       # Product-aware admin pages shared with FortiWeb.
+                       'templates', 'naming', 'capacity', 'api_tokens', 'api_v1'}
             adc_eps = {'product.fortiadc_home'}
-            if ep.split('.', 1)[0] not in adc_bps and ep not in adc_eps:
+            if bp_name not in adc_bps and ep not in adc_eps:
                 return redirect(url_for('adc.index'))
         return None
 
@@ -237,11 +277,11 @@ def create_app(config_override: object | None = None) -> Flask:
     # -- device-first gate: per-device pages need a selected device ------
     @app.before_request
     def _device_gate():
-        from flask import session, redirect, url_for
+        from flask import g, session, redirect, url_for
         from flask_login import current_user
         if not current_user.is_authenticated:
             return None
-        if session.get('product') != 'fortiweb':
+        if getattr(g, 'product', session.get('product')) != 'fortiweb':
             return None
         ep = request.endpoint or ''
         # Pure-metadata JSON endpoints need no device context — gating them
@@ -286,7 +326,8 @@ def create_app(config_override: object | None = None) -> Flask:
         from .branding import get_product
         from .services import settings_store as _store
         from .services import user_settings_store as _ustore
-        prod = get_product(session.get('product'))
+        from flask import g as _g
+        prod = get_product(getattr(_g, 'product', None) or session.get('product'))
         try:
             # Per-user banner (DB-backed) for a logged-in user; global/default
             # otherwise. No cookie is involved.
@@ -407,7 +448,7 @@ def create_app(config_override: object | None = None) -> Flask:
         # FortiADC sidebar menu (only built for fortiadc sessions; pure data,
         # registry-resolved, cached per process — see services.adc_menu).
         try:
-            if session.get('product') == 'fortiadc':
+            if prod.get('key') == 'fortiadc':
                 from .services import adc_menu as _adcm
                 _adc_nav = _adcm.menu()
             else:
@@ -652,6 +693,9 @@ def create_app(config_override: object | None = None) -> Flask:
             'scheduled_action': [
                 ('product', "VARCHAR(16) DEFAULT 'fortiweb'"),
             ],
+            'db_reports': [
+                ('builtin', 'BOOLEAN DEFAULT FALSE'),
+            ],
         }
         insp = inspect(db.engine)
         added: set[tuple[str, str]] = set()
@@ -730,6 +774,8 @@ def create_app(config_override: object | None = None) -> Flask:
             _assign_missing_profiles()
             _seed_registry()
             _seed_capacity()
+            if not app.config.get("TESTING"):
+                _seed_reports()
 
     # -- orphaned background jobs ------------------------------------------
     # A restart kills job worker threads without touching their state files,
@@ -802,6 +848,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.backups", "bp"),
         ("app.views.logs", "bp"),
         ("app.views.search", "bp"),
+        ("app.views.dns_tool", "bp"),
         ("app.views.users", "bp"),
         ("app.views.profiles", "bp"),
         ("app.views.metrics", "bp"),
@@ -832,6 +879,8 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.self_update", "bp"),
         ("app.views.docs", "bp"),
         ("app.api", "bp"),
+        ("app.api_v1", "bp"),
+        ("app.views.api_tokens", "bp"),
     ]
 
     # FortiWeb-scoped areas live under the /web ADOM prefix (2026-07-07).
@@ -885,6 +934,21 @@ def _seed_profiles() -> None:
             p.description = perm.SYSTEM_PROFILE_META.get(name, "")
             p.permission_set = set(keys)
         db.session.commit()
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()
+
+
+
+def _seed_reports() -> None:
+    """Insert-only seed of the curated builtin reports (never overwrites an
+    existing builtin; operator clones survive). Never blocks boot."""
+    import logging
+    try:
+        from .services import report_builder
+        created = report_builder.seed_builtin_reports()
+        if created:
+            logging.getLogger(__name__).info(
+                "Report seed: %d builtin reports imported", created)
     except Exception:  # noqa: BLE001 — never block boot on seeding
         db.session.rollback()
 

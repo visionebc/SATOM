@@ -40,11 +40,24 @@ def set_product():
 @login_required
 def enter(key):
     """ADOM jump — switch the session product and land on that ADOM's home."""
+    if _is_prefetch(request):
+        # Turbo/browser link prefetch (hover). A prefetch must never switch
+        # the ADOM — respond empty and uncacheable; a real click re-requests.
+        return '', 204
     if not is_valid(key):
         return redirect(url_for('product.select'))
     session['product'] = key
     session.permanent = True
     return _home_for(key)
+
+
+def _is_prefetch(req):
+    """True when the request is a speculative prefetch (Turbo sends
+    X-Sec-Purpose: prefetch; browsers use Sec-Purpose/Purpose)."""
+    vals = (req.headers.get('X-Sec-Purpose', '')
+            + ' ' + req.headers.get('Sec-Purpose', '')
+            + ' ' + req.headers.get('Purpose', ''))
+    return 'prefetch' in vals.lower()
 
 
 @bp.route('/switch')

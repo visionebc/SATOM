@@ -13,6 +13,7 @@ from ..services.fortiweb_field_schema import (
 )
 from ..services import policy_form
 from ..services import policy_ops
+from ..services import policy_links
 from ..services.fortiweb_ops import FortiWebOps
 from ..errors import flash_error, json_error, log_exception
 
@@ -116,9 +117,17 @@ def appliance(appliance_id):
         other_appliances = [a for a in visible_appliances()
                             .filter(Appliance.kind == 'fortiweb')
                             .order_by(Appliance.name).all() if a.id != appl.id]
+    from ..services import clone_rules as _cr
+    try:
+        clone_cfg = _cr.config()
+        clone_rules_summary = _cr.rules_summary(clone_cfg)
+    except Exception:  # noqa: BLE001 — never let settings break the list page
+        clone_cfg, clone_rules_summary = {'copy_wpp_default': True}, ''
     return render_template('workspace/policies.html', appliance=appl,
                            policies=policies, error=error, cache_meta=meta,
                            facets=facets, other_appliances=other_appliances,
+                           clone_cfg=clone_cfg,
+                           clone_rules_summary=clone_rules_summary,
                            cache_freshness=_rl.freshness_label(meta) if appl.kind == 'fortiweb' else '')
 
 
@@ -161,29 +170,55 @@ _CHILD_EPS = _CHILD_EPS | {EP_CRLIST}
 # a bell notification, and every object write is audited via FortiWebOps.
 def _parse_action(appliance_id):
     """Validate an action request. Returns ``(appl, action, policies, new_name,
-    dest, None)`` or ``(None, …, error_response)`` on a bad request."""
+    dest, opts, None)`` or ``(…, error_response)`` on a bad request.
+
+    ``opts`` = the clone/migrate knobs from the dialog: ``vip_ip`` (explicit
+    IPv4 for a SINGLE clone/migrate; every BULK run is forced to ``"auto"`` so
+    the admin dummy-IP rules apply), ``copy_wpp`` (defaults to the admin
+    setting) and ``wpp_new_name`` (copy the WPP under a new name)."""
+    import ipaddress as _ip
+    from ..services import clone_rules
     appl = visible_appliance_or_404(appliance_id)
     body = request.get_json(silent=True) or {}
     action = body.get('action', '')
     policies = [p for p in (body.get('policies') or []) if p]
     new_name = (body.get('new_name') or '').strip()
     dest_id = body.get('dest_id')
+    _err = lambda msg, code=400: (appl, None, None, None, None, None,
+                                  (jsonify(ok=False, error=msg), code))
     if action not in policy_ops.ACTIONS:
-        return appl, None, None, None, None, (jsonify(ok=False, error='unknown action'), 400)
+        return _err('unknown action')
     if appl.kind != 'fortiweb':
-        return appl, None, None, None, None, (jsonify(ok=False, error='FortiWeb-only'), 400)
+        return _err('FortiWeb-only')
     if not policies:
-        return appl, None, None, None, None, (jsonify(ok=False, error='no policies selected'), 400)
+        return _err('no policies selected')
     dest = None
     if action in policy_ops._NEEDS_TARGET:
         if not dest_id:
-            return appl, None, None, None, None, (jsonify(ok=False, error='destination appliance required'), 400)
+            return _err('destination appliance required')
         dest = visible_appliance_or_404(int(dest_id))
         if dest.id == appl.id:
-            return appl, None, None, None, None, (jsonify(ok=False, error='pick a DIFFERENT destination'), 400)
+            return _err('pick a DIFFERENT destination')
+        if dest.kind != 'fortiweb':
+            return _err('destination must be a FortiWeb')
     if action in policy_ops._NEEDS_NAME and len(policies) == 1 and not new_name:
-        return appl, None, None, None, None, (jsonify(ok=False, error='a new name is required'), 400)
-    return appl, action, policies, new_name, dest, None
+        return _err('a new name is required')
+    opts = {}
+    if action in policy_ops._CLONE_ACTIONS:
+        cfg = clone_rules.config()
+        copy_wpp = body.get('copy_wpp')
+        opts['copy_wpp'] = cfg['copy_wpp_default'] if copy_wpp is None else bool(copy_wpp)
+        opts['wpp_new_name'] = (body.get('wpp_new_name') or '').strip()
+        vip_ip = (body.get('vip_ip') or '').strip()
+        if len(policies) > 1:
+            vip_ip = 'auto'   # bulk ⇒ dummy IP per the admin rules, always
+        elif vip_ip and vip_ip != 'auto':
+            try:
+                _ip.IPv4Address(vip_ip)
+            except ValueError:
+                return _err('VIP IP %r is not a valid IPv4 address' % vip_ip)
+        opts['vip_ip'] = vip_ip
+    return appl, action, policies, new_name, dest, opts, None
 
 
 @bp.route('/<int:appliance_id>/policy-action/preview', methods=['POST'])
@@ -192,16 +227,58 @@ def _parse_action(appliance_id):
 def policy_action_preview(appliance_id):
     """Synchronous dry-run of an action across the selected policies — no device
     writes. For clone/migrate this reads the source (and validates the target)."""
-    appl, action, policies, new_name, dest, err = _parse_action(appliance_id)
+    appl, action, policies, new_name, dest, opts, err = _parse_action(appliance_id)
     if err:
         return err
     try:
         results = policy_ops.preview(action, source_appl=appl, dest_appl=dest,
-                                     policies=policies, new_name=new_name)
+                                     policies=policies, new_name=new_name, opts=opts)
     except Exception as exc:  # noqa: BLE001
         return json_error(exc, 'Preview failed', context='workspace.policy_action_preview')
     return jsonify(ok=True, action=action, label=policy_ops.action_label(action),
                    dest=(dest.name if dest else ''), results=results)
+
+
+@bp.route('/<int:appliance_id>/policy-action/checklist', methods=['POST'])
+@login_required
+@require_permission('config_write')
+def policy_action_checklist(appliance_id):
+    """Pre-flight checklist for clone/migrate (read-only): WPP present/identical
+    at the destination, target-name and VIP-IP collisions, certificate
+    carry-over, capacity — plus the dummy-IP / copy-WPP suggestions the dialog
+    prefills from the admin defaults."""
+    appl, action, policies, new_name, dest, opts, err = _parse_action(appliance_id)
+    if err:
+        return err
+    if action not in policy_ops._CLONE_ACTIONS:
+        return jsonify(ok=False, error='checklist applies to clone/migrate only'), 400
+    try:
+        data = policy_ops.preflight(action, source_appl=appl, dest_appl=dest,
+                                    policies=policies, new_name=new_name, opts=opts)
+    except Exception as exc:  # noqa: BLE001
+        return json_error(exc, 'Checklist failed', context='workspace.policy_action_checklist')
+    return jsonify(ok=True, action=action, dest=(dest.name if dest else ''), **data)
+
+
+@bp.route('/clone-report/<job_id>')
+@login_required
+@require_permission('config_write')
+def clone_report(job_id):
+    """Reconciliation report for a clone/migrate job: per policy, what SHOULD
+    have been created vs what WAS created (verified live) vs what FAILED. Reads
+    the persisted job result — no device call. Owner or admin only."""
+    from flask_login import current_user
+    from ..services import jobs as jobsvc
+    job = jobsvc.get_job(job_id)
+    if not job:
+        return render_template('workspace/clone_report.html', job=None), 404
+    me = getattr(current_user, 'username', '') or ''
+    can = getattr(current_user, 'can', None)
+    if (job.get('by') or '') != me and not (can and can('user_manage')):
+        return render_template('workspace/clone_report.html', job=None), 403
+    result = job.get('result') or {}
+    return render_template('workspace/clone_report.html', job=job, result=result,
+                           policies=result.get('results') or [])
 
 
 @bp.route('/<int:appliance_id>/policy-action', methods=['POST'])
@@ -211,7 +288,7 @@ def policy_action(appliance_id):
     """Apply an action for real. Spawns a background job (poll ``/jobs/<id>``)."""
     from flask import current_app
     from flask_login import current_user
-    appl, action, policies, new_name, dest, err = _parse_action(appliance_id)
+    appl, action, policies, new_name, dest, opts, err = _parse_action(appliance_id)
     if err:
         return err
     try:
@@ -219,7 +296,7 @@ def policy_action(appliance_id):
             current_app._get_current_object(), action=action, source_appl=appl,
             dest_appl=dest, policies=policies, new_name=new_name,
             by=getattr(current_user, 'username', '') or 'system',
-            user_id=getattr(current_user, 'id', None))
+            user_id=getattr(current_user, 'id', None), opts=opts)
     except Exception as exc:  # noqa: BLE001
         return json_error(exc, 'Could not start the action', context='workspace.policy_action')
     return jsonify(ok=True, job_id=job['id'])
@@ -264,6 +341,20 @@ def policy_detail(appliance_id, name):
     policy = data.get('policy') or {}
     pool = data.get('pool') or {}
     wpp_sel = policy.get('web-protection-profile') or ''
+    # Dynamic admin-configured deep links (Splunk, Grafana, tickets…), rendered
+    # with THIS policy's own context substituted for {tokens}. Pure DB read, no
+    # device call; a link naming an empty field is dropped (policy_links).
+    link_ctx = {
+        'policy': policy.get('name') or name,
+        'device': appl.name,
+        'device_ip': appl.host,
+        'vip': ', '.join(v.get('effective_ip') for v in (data.get('vips') or [])
+                         if v.get('effective_ip')),
+        'port': policy.get('https-service') or policy.get('service') or '',
+        'pool': policy.get('server-pool') or '',
+        'vserver': policy.get('vserver') or '',
+        'wpp': wpp_sel,
+    }
     return render_template(
         'workspace/policy_detail.html',
         appliance=appl, policy_name=name, policy=policy,
@@ -284,8 +375,52 @@ def policy_detail(appliance_id, name):
         eps={'policy': EP_POLICY, 'pool': EP_POOL, 'wpp': EP_WPP,
              'viplist': EP_VIPLIST, 'pserver': EP_PSERVER,
              'crlist': EP_CRLIST, 'crpolicy': EP_CRPOLICY},
+        policy_links=policy_links.rendered_links(link_ctx),
         error=error,
     )
+
+
+# Live backend-health mapping: healthCheckStatus enable=UP / disable=DOWN /
+# anything else (N/A) = no health check. Same authoritative field the team's
+# fortiweb_pool_health.py script keys on.
+_HC_UP = {'enable', 'enabled', 'up', 'ok'}
+_HC_DOWN = {'disable', 'disabled', 'down', 'dead'}
+
+
+def _hc_state(v):
+    v = str(v or '').strip().lower()
+    if v in _HC_UP:
+        return 'up'
+    if v in _HC_DOWN:
+        return 'down'
+    return 'na'
+
+
+@bp.route('/<int:appliance_id>/policy/<path:name>/health')
+@login_required
+def policy_health(appliance_id, name):
+    """Live per-backend health for one policy (runtime policystatus.detail probe).
+
+    OPT-IN from the topology card only — it is NOT part of the DB-first page
+    render, so a license-locked / offline box never blocks the policy page. A
+    device refusal is surfaced as ok=false with the reason."""
+    appl = visible_appliance_or_404(appliance_id)
+    if appl.kind != 'fortiweb':
+        return jsonify(ok=False, error='FortiWeb-only', members=[]), 400
+    try:
+        rows, err = FortiWebClient(appl).policy_health(name)
+    except Exception as exc:  # noqa: BLE001
+        return json_error(exc, 'Health probe failed', context='workspace.policy_health')
+    if err:
+        return jsonify(ok=False, error=err, members=[])
+    members = [{
+        'pool': str(m.get('pool') or ''),
+        'ip': str(m.get('ipDomainName') or m.get('ip') or ''),
+        'port': str(m.get('port') or ''),
+        'health': _hc_state(m.get('healthCheckStatus')),
+        'raw': str(m.get('healthCheckStatus') or ''),
+    } for m in (rows or []) if isinstance(m, dict)]
+    return jsonify(ok=True, members=members)
 
 
 @bp.route('/<int:appliance_id>/cmdb-options')

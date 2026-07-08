@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Clone report{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1 class="page-title"><i class="bi bi-clipboard2-check"></i> Clone / Migrate result</h1>
+</div>
+
+{% if not job %}
+  <div class="alert alert-warning">This clone report is not available (unknown job or no access).</div>
+{% else %}
+  {% set res = result or {} %}
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="d-flex flex-wrap gap-3 align-items-center">
+        <div><span class="text-muted small">Action</span><br><strong>{{ res.label or job.type }}</strong></div>
+        <div><span class="text-muted small">Source</span><br><strong>{{ res.source or '—' }}</strong></div>
+        <div><span class="text-muted small">Destination</span><br><strong>{{ res.dest or res.source or '—' }}</strong></div>
+        <div><span class="text-muted small">Result</span><br>
+          {% if job.status == 'success' %}<span class="badge bg-success">success</span>
+          {% elif job.status == 'error' %}<span class="badge bg-danger">{{ res.failed }} failed / {{ res.total }}</span>
+          {% else %}<span class="badge bg-secondary">{{ job.status }}</span>{% endif %}
+        </div>
+        <div class="ms-auto small text-muted">job <code>{{ job.id }}</code></div>
+      </div>
+      {% if job.message %}<div class="small text-muted mt-2">{{ job.message }}</div>{% endif %}
+    </div>
+  </div>
+
+  {% for pol in policies %}
+    {% set d = pol.detail or {} %}
+    {% set c = d.clone %}
+    <div class="card mb-3">
+      <div class="card-header d-flex align-items-center gap-2">
+        <strong>{{ pol.policy }}</strong>
+        {% if pol.ok %}<span class="badge bg-success">ok</span>
+        {% else %}<span class="badge bg-danger">failed</span>{% endif %}
+        {% if d.dest %}<span class="text-muted small">→ {{ d.dest }}{% if d.new_name %} / {{ d.new_name }}{% endif %}</span>{% endif %}
+      </div>
+      <div class="card-body">
+        {% if pol.error %}<div class="alert alert-danger py-2">{{ pol.error }}</div>{% endif %}
+        {% if not c %}
+          <div class="text-muted small">No object-level detail was recorded for this policy
+            {% if pol.error %}(it failed before the tree was planned){% endif %}.</div>
+        {% else %}
+          {% set fp = c.failed or [] %}
+          {% set vm = c.verified_missing or [] %}
+          {% set uv = c.unverifiable or [] %}
+          <div class="row g-2 mb-3">
+            <div class="col-auto"><span class="badge bg-primary">{{ (c.planned_create or [])|length }} planned to create</span></div>
+            <div class="col-auto"><span class="badge bg-success">{{ (c.created or [])|length }} created</span></div>
+            <div class="col-auto"><span class="badge bg-secondary">{{ c.counts.get('exists', 0) }} already existed</span></div>
+            {% if fp %}<div class="col-auto"><span class="badge bg-danger">{{ fp|length }} failed</span></div>{% endif %}
+            {% if vm %}<div class="col-auto"><span class="badge bg-warning text-dark">{{ vm|length }} not found on device after write</span></div>{% endif %}
+            {% if uv %}<div class="col-auto"><span class="badge bg-warning text-dark">{{ uv|length }} could not verify</span></div>{% endif %}
+          </div>
+
+          {% if fp %}
+          <h6 class="text-danger">Failed objects</h6>
+          <table class="table table-sm table-dark align-middle mb-3">
+            <thead><tr><th>Object</th><th>Name</th><th>Type</th><th>Error</th></tr></thead>
+            <tbody>
+            {% for r in fp %}
+              <tr><td>{{ r.label }}</td><td><code>{{ r.mkey }}</code></td>
+                  <td class="small text-muted">{{ r.logical or r.urn }}</td>
+                  <td class="small text-danger">{{ r.result }}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+
+          <details {% if fp or vm %}open{% endif %}>
+            <summary class="small text-muted mb-2">Full reconciliation ({{ (c['items'] or [])|length }} objects) — planned vs created vs verified</summary>
+            <table class="table table-sm table-dark align-middle">
+              <thead><tr><th>Object</th><th>Name</th><th>Plan</th><th>Result</th><th>On device</th></tr></thead>
+              <tbody>
+              {% for r in c['items'] %}
+                <tr>
+                  <td style="padding-left:{{ 6 + (r.depth or 0) * 16 }}px">{{ r.label }}</td>
+                  <td><code>{{ r.mkey }}</code></td>
+                  <td><span class="badge bg-{{ 'primary' if r.status=='create' else 'secondary' }}">{{ r.status }}</span></td>
+                  <td class="small">
+                    {% if (r.result or '').startswith('error') %}<span class="text-danger">{{ r.result }}</span>
+                    {% elif r.result %}{{ r.result }}{% else %}—{% endif %}
+                  </td>
+                  <td class="small">
+                    {% if r.verified == 'present' %}<span class="text-success">✓ present</span>
+                    {% elif r.verified == 'missing' %}<span class="text-warning">✗ missing</span>
+                    {% elif r.verified == 'unverifiable' %}<span class="text-muted">? unverifiable</span>
+                    {% else %}—{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </details>
+        {% endif %}
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-info">This job recorded no per-policy detail.</div>
+  {% endfor %}
+
+  <p class="text-muted small">Note: a partial clone is left <strong>disabled</strong> on the destination for a manual cutover — nothing is auto-rolled-back. Review the failures above, fix the cause, then re-run the clone (it skips whatever already exists) or delete the partial from the Server Policy page.</p>
+{% endif %}
+{% endblock %}

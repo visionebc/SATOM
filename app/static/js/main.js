@@ -14,12 +14,21 @@
     var method = (init.method || (input && input.method) || 'GET').toUpperCase();
     var url = (typeof input === 'string') ? input : (input && input.url) || '';
     var sameOrigin = url.indexOf('/') === 0 || url.indexOf(location.origin) === 0;
-    if (sameOrigin && method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+    if (sameOrigin) {
       var h = new Headers(init.headers || (typeof input === 'object' && input && input.headers) || {});
-      if (!h.has('X-CSRFToken')) {
-        var meta = document.querySelector('meta[name="csrf-token"]');
-        if (meta && meta.content) h.set('X-CSRFToken', meta.content);
+      if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+        if (!h.has('X-CSRFToken')) {
+          var meta = document.querySelector('meta[name="csrf-token"]');
+          if (meta && meta.content) h.set('X-CSRFToken', meta.content);
+        }
       }
+      // Per-tab ADOM: every same-origin call carries this tab's ADOM so
+      // product-scoped JSON feeds (jobs, notifications, metrics…) answer for
+      // THIS tab, not whatever ADOM another tab switched the session to.
+      try {
+        var adom = sessionStorage.getItem('fmAdom');
+        if (adom && !h.has('X-ADOM')) h.set('X-ADOM', adom);
+      } catch (e2) {}
       init.headers = h;
     }
     return _fetch.call(this, input, init);

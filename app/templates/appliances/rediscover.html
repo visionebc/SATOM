@@ -5,7 +5,7 @@
   <h4>{% if snapshot %}<i class="bi bi-arrow-repeat me-2"></i>Rediscovery{% else %}<i class="bi bi-binoculars me-2"></i>Discovery{% endif %} — {{ appliance.name }}</h4>
   <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; Back</a>
 </div>
-<p class="text-muted">A full read-only sweep of every CMDB endpoint ({{ plan_size }} in the registry) — refreshes the whole appliance's object inventory in one pass and writes a config snapshot.</p>
+<p class="text-muted">A full read-only sweep of every {{ 'FortiADC' if appliance.kind == 'fortiadc' else 'CMDB' }} endpoint ({{ plan_size }} in the registry) — refreshes the whole appliance's object inventory in one pass and writes a config snapshot.</p>
 
 <div class="card shadow-sm mb-3">
   <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -16,6 +16,7 @@
       {% else %}
         <div class="small text-muted">No rediscovery has been run yet.</div>
       {% endif %}
+      {% if allow_deep is not defined or allow_deep %}
       <div class="small mt-1">
         {% if deep_fresh and deep_fresh.captured_at %}
           <span class="badge bg-info-subtle text-info-emphasis"><i class="bi bi-diagram-3 me-1"></i>Depth captured: {{ deep_fresh.captured_at }}</span>
@@ -23,12 +24,15 @@
           <span class="badge bg-secondary-subtle text-secondary-emphasis"><i class="bi bi-diagram-3 me-1"></i>Depth: not captured</span>
         {% endif %}
       </div>
+      {% endif %}
     </div>
     <div class="d-flex align-items-center gap-3 flex-wrap">
+      {% if allow_deep is not defined or allow_deep %}
       <div class="form-check form-switch mb-0" title="Also walk every WPP + Server Policy dependency graph (sub-tables, rule-lists, disabled signatures, exceptions) and cache it for the Analysis page. Slower — reads more from the box.">
         <input class="form-check-input" type="checkbox" id="redisc-deep">
         <label class="form-check-label small" for="redisc-deep">Capture full WPP + policy depth <span class="text-muted">(slow)</span></label>
       </div>
+      {% endif %}
       <button id="redisc-start" class="btn fw-btn-primary"><i class="bi bi-play-fill me-1"></i>Start {{ 'rediscovery' if snapshot else 'discovery' }}</button>
     </div>
   </div>
@@ -77,7 +81,13 @@
       line.textContent = txt;
       startBtn.disabled = false;
     }
-    errs.textContent = (p.errors && p.errors.length) ? (p.errors.length + ' endpoint error(s)') : '';
+    if (p.errors && p.errors.length) {
+      const seen = {};
+      p.errors.forEach(function(e){ var m=(e&&e.error)||'unknown'; (seen[m]=seen[m]||[]).push(e&&e.endpoint); });
+      const reasons = Object.keys(seen).slice(0,3).map(function(m){ return '\u2022 '+m+' ('+seen[m].length+'\u00d7, e.g. '+seen[m].slice(0,3).join(', ')+')'; });
+      errs.style.whiteSpace = 'pre-wrap';
+      errs.textContent = p.errors.length + ' endpoint error(s):\n' + reasons.join('\n');
+    } else { errs.textContent = ''; }
   }
   async function poll() {
     try {
@@ -91,7 +101,8 @@
   async function start() {
     startBtn.disabled = true;
     errs.textContent = '';
-    const deep = document.getElementById('redisc-deep').checked;
+    const deepEl = document.getElementById('redisc-deep');   // absent on FortiADC
+    const deep = deepEl ? deepEl.checked : false;
     const freshToken = document.querySelector('meta[name="csrf-token"]').content;
     try {
       const r = await fetch('{{ url_for("appliances.rediscover_start", id=appliance.id) }}', {

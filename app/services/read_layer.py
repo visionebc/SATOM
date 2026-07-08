@@ -223,6 +223,48 @@ def _resolve_vips_cached(appliance_id: int, vip_rows, vip_children, *, session=N
     return vip_rows
 
 
+def _cr_pool_resolve(appliance_id: int, crp_name: str, *, session=None):
+    """Break a content-routing rule down to its back-end pool.
+
+    A CR-list row only NAMES the routing policy (``content-routing-policy-name``);
+    the server pool lives on that ``http_content_routing`` object's ``server-pool``
+    field, and the back-ends hang under the pool. Resolve them from the cache
+    (deep layer first for sub-rows, config layer fallback for the top-level
+    payloads). Returns ``(pool_name, pool_payload, backends)``.
+    """
+    if not crp_name:
+        return "", {}, []
+    hcr = (object_by_mkey(appliance_id, "http_content_routing", crp_name,
+                          layer="deep", session=session)
+           or object_by_mkey(appliance_id, "http_content_routing", crp_name,
+                             session=session))
+    pool_name = ((hcr.payload or {}).get("server-pool") if hcr else "") or ""
+    if not pool_name:
+        return "", {}, []
+    pool = (object_by_mkey(appliance_id, "server_pool", pool_name, layer="deep",
+                           session=session)
+            or object_by_mkey(appliance_id, "server_pool", pool_name,
+                              session=session))
+    pool_payload = dict(pool.payload or {}) if pool else {}
+    backends = ([dict(r.payload or {}) for r in
+                 _children(pool, subtable="pserver-list", session=session)]
+                if pool else [])
+    return pool_name, pool_payload, backends
+
+
+def _enrich_cr_entries(appliance_id: int, cr_entries, *, session=None):
+    """Attach each content-routing rule's resolved pool + back-ends in place, so
+    the detail view shows the pool that hangs under content routing (the desglose
+    the raw CR-list row is missing)."""
+    for e in cr_entries:
+        pool_name, pool_payload, backends = _cr_pool_resolve(
+            appliance_id, e.get("content-routing-policy-name"), session=session)
+        e["pool"] = pool_name
+        e["pool_payload"] = pool_payload
+        e["backends"] = backends
+    return cr_entries
+
+
 def policy_full_cached(appliance_id: int, name: str, *, session=None):
     """Reassemble ``FortiWebClient.policy_full``'s shape from the cache.
 
@@ -242,6 +284,7 @@ def policy_full_cached(appliance_id: int, name: str, *, session=None):
             by_sub.setdefault(k.subtable or "", []).append(k)
         for k in by_sub.get("http-content-routing-list", []):
             cr_entries.append(dict(k.payload or {}))
+        _enrich_cr_entries(appliance_id, cr_entries, session=session)
         vs = by_sub.get("vserver", [])
         if vs:
             data["vserver"] = dict(vs[0].payload or {})

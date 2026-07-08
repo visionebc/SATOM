@@ -79,6 +79,17 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
     items = planner.plan(clone.ROOT_SERVER_POLICY, policy, new_name=new_name,
                          follow_wpp=copy_wpp, wpp_new_name=wpp_new_name,
                          wpp_suffix=wpp_suffix)
+    if not dry_run:
+        # HARD BLOCK: never write a partial tree. A referenced object that came
+        # back empty from the source (renamed/deleted/unreadable) would leave the
+        # copy dangling (-651 / empty pool). Refuse the real apply and name it.
+        gaps = clone.validate_completeness(items)
+        if gaps:
+            names = ", ".join('%s "%s"' % (g["object"], g["mkey"]) for g in gaps[:6])
+            raise RuntimeError(
+                "source tree incomplete — refusing to clone with missing object(s): "
+                + names + ("…" if len(gaps) > 6 else "")
+                + ". Re-sync the source device and retry.")
     if disable:
         clone.disable_root(items)
     if vip_ip == "auto":
@@ -306,6 +317,32 @@ def _wpp_diff(src: dict, dst: dict) -> list[str]:
     return [k for k in keys if a.get(k) != b.get(k) and k != "name"]
 
 
+def _source_gate(pol, src_name, *, live_ok, src_err, root_present, issues):
+    """SOURCE decision for the clone/migrate pre-flight. HARD BLOCK, no soft
+    warn, no cache fallback: a clone may only proceed when the source device
+    answered LIVE and its whole dependency tree resolved. Returns one check dict
+    whose level is exactly ``block`` or ``ok``."""
+    if not live_ok:
+        return {"key": "source", "level": "block",
+                "label": "Source %s is not reachable" % src_name,
+                "detail": "live sync required before cloning \u2014 %s. Nothing is "
+                          "cloned from stale cache." % (src_err or "device did not answer")}
+    if not root_present:
+        return {"key": "source", "level": "block",
+                "label": 'Source policy "%s" not found on %s' % (pol, src_name),
+                "detail": "the device answered but returned no such policy"}
+    if issues:
+        names = ", ".join('%s "%s"' % (i["object"], i["mkey"]) for i in issues[:6])
+        more = "\u2026" if len(issues) > 6 else ""
+        return {"key": "source", "level": "block",
+                "label": "Source tree is INCOMPLETE \u2014 %d missing object(s)" % len(issues),
+                "detail": "%s%s \u2014 sync/repair the source before cloning "
+                          "(these are referenced but did not resolve live)" % (names, more)}
+    return {"key": "source", "level": "ok",
+            "label": "Source tree synced live & complete",
+            "detail": "validated on %s" % src_name}
+
+
 def preflight(action: str, *, source_appl, dest_appl=None, policies: list[str],
               new_name: str = "", opts: dict | None = None) -> dict:
     """The clone/migrate PRE-FLIGHT CHECKLIST the dialog shows before anything
@@ -329,6 +366,7 @@ def preflight(action: str, *, source_appl, dest_appl=None, policies: list[str],
     src_reader = clone.ClientReader(FortiWebClient(source_appl))
     dst_reader = (src_reader if not cross_box
                   else clone.ClientReader(FortiWebClient(dest)))
+    planner = clone.ClonePlanner(src_reader, dst_reader)
 
     # Destination reachability + its VIP address inventory (one read, reused).
     dest_vips: list[dict] = []
@@ -367,16 +405,31 @@ def preflight(action: str, *, source_appl, dest_appl=None, policies: list[str],
             checks.append({"key": key, "level": level, "label": label,
                            "detail": detail})
 
-        # 1) source policy
+        # 1) source tree — SYNCED LIVE + VALIDATED COMPLETE. Hard block: a
+        #    clone off stale or partial data is forbidden (no cache fallback).
+        try:
+            _srows, src_err = src_reader.client.list_with_error(
+                "/api/v2.0/cmdb/server-policy/policy")
+        except Exception as exc:  # noqa: BLE001
+            src_err = str(exc)
+        live_ok = not src_err
+        items: list = []
+        root_item = None
+        if live_ok:
+            try:
+                items = planner.collect(clone.ROOT_SERVER_POLICY, pol)
+            except Exception as exc:  # noqa: BLE001
+                live_ok, src_err = False, str(exc)
+            else:
+                root_item = next((it for it in items
+                                  if it.depth == 0 and it.kind == "object"), None)
+        issues = clone.validate_completeness(items) if (live_ok and root_item) else []
+        checks.append(_source_gate(
+            pol, source_appl.name, live_ok=live_ok, src_err=src_err,
+            root_present=bool(root_item and root_item.payload), issues=issues))
+        policy_obj = dict(root_item.payload) if (root_item and root_item.payload) else {}
+        # cached composite is used ONLY for the (non-blocking) VIP/WPP hints below.
         data, _cr, _meta = read_layer.policy_full_cached(source_appl.id, pol)
-        policy_obj = (data or {}).get("policy") or {}
-        if not policy_obj:
-            policy_obj = _live_lookup(src_reader, "server_policy", pol)
-        if policy_obj:
-            add("source", "ok", "Source policy readable", pol)
-        else:
-            add("source", "block", "Source policy not found",
-                "not in the local cache and the device did not return it — refresh the device first")
         # 2) destination reachability
         if cross_box:
             add("dest", "ok" if dest_live else "warn",

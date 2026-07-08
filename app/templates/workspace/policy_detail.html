@@ -179,7 +179,7 @@
     <p class="text-muted" style="font-size:12px;margin:0 0 10px;">Each rule routes matching requests to a back-end pool. Use <strong>New routing policy…</strong> to create one (default pool + Web Protection Profile, then its Match Conditions), or <strong>Add rule</strong> to bind an existing one. <strong>Conditions…</strong> edits a policy's match conditions and pool.</p>
     <div class="table-responsive">
     <table class="table table-sm align-middle" style="font-size:12.5px;">
-      <thead><tr><th style="width:60px">#</th><th>Routing Policy</th><th style="width:120px">Default</th><th style="width:280px"></th></tr></thead>
+      <thead><tr><th style="width:60px">#</th><th>Routing Policy</th><th>Server Pool</th><th style="width:120px">Default</th><th style="width:280px"></th></tr></thead>
       <tbody id="crBody">
         {% for e in cr_entries %}
         <tr data-cr-id="{{ e.get('id') }}">
@@ -189,6 +189,15 @@
               <option value="">— none —</option>
               {% if e.get('content-routing-policy-name') %}<option value="{{ e.get('content-routing-policy-name') }}" selected>{{ e.get('content-routing-policy-name') }}</option>{% endif %}
             </select>
+          </td>
+          <td>
+            {% if e.get('pool') %}
+              <span class="fw-topo-node" title="Back-end pool bound to this routing rule"><i class="bi bi-diagram-3 me-1"></i>{{ e.get('pool') }}</span>
+              {% if e.get('backends') %}<span class="text-muted mono" style="font-size:11px;">({{ e.get('backends')|length }})</span>{% endif %}
+              <button type="button" class="btn btn-sm btn-fw-outline fw-open-obj" data-coll="server-policy/server-pool" data-mkey="{{ e.get('pool') }}" data-label="Server Pool" title="Open this pool in the full editor (add / remove back-end members)"><i class="bi bi-layout-sidebar-inset-reverse me-1"></i>Members…</button>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
           </td>
           <td>{{ switch('', (e.get('is-default')|string).lower() in ['enable','enabled','yes'], 'Default', '—', 'fw-toggle-sw-sm', 'fw-cr-default') }}</td>
           <td>

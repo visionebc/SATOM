@@ -150,3 +150,32 @@ def test_subrow_all_present_under_existing_parent_are_skipped():
     items = _planner(FakeReader(data), FakeReader(dst)).plan(_WPP, "wpp1")
     subs = [it.status for it in items if it.kind == "subrow"]
     assert subs == ["exists", "exists"]
+
+
+def test_content_routing_pools_carry_their_members():
+    """Regression: every server-pool node in the SERVER_POLICY tree (incl. the
+    content-routing default/per-match pools) must carry its pserver-list members
+    child. Without it the planner discovers the pool but never walks its backends,
+    so a cloned content-routing policy lands with an EMPTY pool (no backends).
+    See the fw6->fw7 pol-full-cr incident (2026-07-08)."""
+    from app.registry.dependencies import SERVER_POLICY
+
+    POOL_URN = "cmdb/server-policy/server-pool"
+    MEMBERS_URN = "cmdb/server-policy/server-pool/pserver-list"
+
+    pools = []
+
+    def walk(node):
+        if node.urn == POOL_URN:
+            pools.append(node)
+        for c in node.children:
+            walk(c)
+
+    walk(SERVER_POLICY)
+    assert pools, "expected at least one server-pool node in the tree"
+    for pool in pools:
+        child_urns = {c.urn for c in pool.children}
+        assert MEMBERS_URN in child_urns, (
+            "server-pool node %r is missing its pserver-list members child "
+            "(would clone as an empty pool)" % pool.name
+        )

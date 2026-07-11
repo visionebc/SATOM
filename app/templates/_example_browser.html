@@ -1,0 +1,23 @@
+{# Shared Studio example browser modal.
+   Include AFTER setting exb_title, e.g.:
+     {% set exb_title = target ~ ' script examples' %}
+     {% include '_example_browser.html' %}
+   The page must also provide:
+     - a JSON island  <script type="application/json" id="ex-catalog">[...]</script>
+     - a nonced init:  ExampleBrowser.init({ ...onInsert... });
+   Loads its own CSS/JS (both 'self' assets, CSP-safe). #}
+<link rel="stylesheet" href="{{ asset('css/example_browser.css') }}">
+<div id="exb-modal" class="exb-modal">
+  <div class="exb-panel">
+    <div class="exb-head">
+      <h2><i class="bi bi-collection"></i>{{ exb_title|default('Examples') }}</h2>
+      <input class="exb-search" type="search" placeholder="Search examples…" aria-label="Search examples">
+      <button type="button" class="exb-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="exb-body">
+      <aside class="exb-nav"></aside>
+      <div class="exb-cards"></div>
+    </div>
+  </div>
+</div>
+<script src="{{ asset('js/example_browser.js') }}"></script>

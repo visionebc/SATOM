@@ -19,3 +19,4 @@ qrcode==7.4.2
 pyrad==2.4
 markdown==3.7
 reportlab==5.0.0
+pdfplumber==0.11.10

@@ -23,6 +23,9 @@ from ..auth.decorators import require_permission
 from ..services import dbintrospect
 from ..services import db_reports as reports_svc
 from ..services import report_builder
+from ..services import plugin_sandbox
+from ..services import py_console as pyc
+from ..services import py_examples
 from ..services.audit import log_action
 from ..extensions import db
 from ..models import DbReport
@@ -242,3 +245,70 @@ def report_pdf(report_id: int):
     return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition":
                              f"attachment; filename={fname}.pdf"})
+
+
+# --- Python console (sandboxed admin scripting) -----------------------------
+# A locked-down bwrap sandbox (services.py_console) runs ADMIN-authored arbitrary
+# Python over the SAME curated, masked, SELECT-only datasets the plugins use
+# (services.plugin_sandbox.load_datasets). The sandbox has NO secrets, NO
+# network and NO app filesystem — the security contract is pinned by
+# tests/test_py_console.py. Every run is audited. USER_MANAGE only.
+_PYC_EXAMPLES = {
+    "fleet": {
+        "datasets": ["fleet_appliances"],
+        "src": "from collections import Counter\n\n"
+               "rows = data['fleet_appliances']['rows']\n"
+               "by_kind = Counter(r['kind'] for r in rows)\n"
+               "for kind, n in by_kind.most_common():\n"
+               "    print(f\"{kind:12} {n}\")\n"
+               "print('total', len(rows))\n",
+    },
+    "policies": {
+        "datasets": ["server_policies_full"],
+        "src": "rows = data['server_policies_full']['rows']\n"
+               "missing = [r for r in rows if not r.get('wpp')]\n"
+               "print(f\"{len(missing)} of {len(rows)} policies have NO WAF profile\")\n"
+               "for r in missing:\n"
+               "    print(' -', r['device'], '/', r['policy'])\n",
+    },
+    "expiry": {
+        "datasets": ["certificates"],
+        "src": "rows = [r for r in data['certificates']['rows'] if r.get('not_after')]\n"
+               "rows.sort(key=lambda r: str(r['not_after']))\n"
+               "print('Soonest-expiring certificates:')\n"
+               "for r in rows[:15]:\n"
+               "    print(r['not_after'], '·', r.get('common_name'))\n",
+    },
+}
+
+
+@bp.route("/py-console")
+@login_required
+@require_permission("studio.python_console")
+def py_console_page():
+    return render_template("database/py_console.html",
+                           datasets=plugin_sandbox.dataset_catalog(),
+                           examples=py_examples.all_examples())
+
+
+@bp.route("/py-console/run", methods=["POST"])
+@login_required
+@require_permission("studio.python_console")
+def py_console_run():
+    body = request.get_json(silent=True) or {}
+    source = (body.get("source") or "")[:100_000]
+    req_keys = body.get("datasets") or []
+    known = {d["key"] for d in plugin_sandbox.dataset_catalog()}
+    # dedupe + keep only entitled dataset keys — a client can never widen access
+    keys = [k for k in dict.fromkeys(req_keys) if k in known]
+    bundle = plugin_sandbox.load_datasets(keys)
+    result = pyc.run_python(source, bundle)
+    log_action("py_console.run", target="python-console", extra={
+        "datasets": keys,
+        "ok": result["ok"],
+        "returncode": result["returncode"],
+        "timed_out": result["timed_out"],
+        "duration_ms": result["duration_ms"],
+        "source": source[:1000],
+    })
+    return jsonify({**result, "datasets": keys})

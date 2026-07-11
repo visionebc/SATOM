@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+{% block title %}AppIDs{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a><span class="separator">/</span><span>AppIDs</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-tags me-2 text-accent"></i>AppIDs</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      The billing + access-control catalog. Each Server Policy belongs to exactly
+      one AppID (one customer). Imports are additive — a vanished AppID is flagged
+      <span class="badge bg-warning text-dark">stale</span>, never deleted.
+    </p>
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-3" id="appidTabs" role="tablist">
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-catalog" type="button">Catalog</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-import" type="button">Upload &amp; map</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-source" type="button">Nightly source</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-assign" type="button">Assign policies</button></li>
+</ul>
+
+<div class="tab-content">
+  <!-- ============================ CATALOG ============================ -->
+  <div class="tab-pane fade show active" id="tab-catalog">
+    <div class="fw-card p-3 mb-3">
+      <form method="POST" action="{{ url_for('appids.create') }}" class="row g-2 align-items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-md-2"><label class="form-label">AppID *</label><input name="app_id" class="form-control form-control-sm" required></div>
+        <div class="col-md-3"><label class="form-label">Customer</label><input name="customer" class="form-control form-control-sm"></div>
+        <div class="col-md-3"><label class="form-label">Label</label><input name="label" class="form-control form-control-sm"></div>
+        <div class="col-md-2"><label class="form-label">Rate</label><input name="rate" class="form-control form-control-sm" placeholder="e.g. 50"></div>
+        <div class="col-md-2"><button class="btn btn-fw btn-sm w-100">Add AppID</button></div>
+      </form>
+    </div>
+    <div class="fw-card p-0">
+      <table class="table table-sm mb-0 fw-table">
+        <thead><tr><th>AppID</th><th>Customer</th><th>Label</th><th>Rate</th><th>Source</th><th>Status</th><th>Policies</th><th></th></tr></thead>
+        <tbody>
+        {% for a in catalog %}
+          {% set nbind = bindings|selectattr('app_id_id','equalto',a.id)|list|length %}
+          <tr>
+            <td class="mono">{{ a.app_id }}</td>
+            <td>{{ a.customer or '—' }}</td>
+            <td>{{ a.label or '—' }}</td>
+            <td>{{ a.rate or '—' }}</td>
+            <td><span class="badge bg-secondary">{{ a.source }}</span></td>
+            <td>
+              {% if a.stale %}<span class="badge bg-warning text-dark" title="{{ a.stale_reason }}">stale</span>
+              {% elif a.active %}<span class="badge bg-success">active</span>
+              {% else %}<span class="badge bg-secondary">inactive</span>{% endif %}
+            </td>
+            <td>{{ nbind }}</td>
+            <td class="text-end">
+              <form method="POST" action="{{ url_for('appids.delete', app_id_pk=a.id) }}" class="d-inline"
+                    data-confirm="Delete AppID {{ a.app_id }} and its {{ nbind }} policy binding(s)?">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="8" class="text-muted p-3">No AppIDs yet. Add one above or import a catalog.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ============================ UPLOAD & MAP ============================ -->
+  <div class="tab-pane fade" id="tab-import">
+    <div class="fw-card p-3">
+      <p class="text-muted" style="font-size:13px;">
+        Upload a CSV / TSV / TXT / PDF. It's normalized to a table so you can map
+        each column to a field <strong>once</strong> — the mapping is saved and
+        reused by later uploads and the nightly action.
+      </p>
+      <form id="importForm" method="POST" action="{{ url_for('appids.do_import') }}" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="row g-2 align-items-end mb-2">
+          <div class="col-md-6"><label class="form-label">File</label>
+            <input type="file" name="catalog_file" id="catalogFile" class="form-control form-control-sm" accept=".csv,.tsv,.txt,.pdf" required></div>
+          <div class="col-md-3"><button type="button" id="previewBtn" class="btn btn-fw-outline btn-sm w-100">Preview &amp; map</button></div>
+          <div class="col-md-3 form-check mt-4"><input class="form-check-input" type="checkbox" name="has_header" value="1" id="hasHeader" checked>
+            <label class="form-check-label" for="hasHeader">First row is a header</label></div>
+        </div>
+
+        <div id="previewNote" class="alert alert-info py-2" style="display:none;font-size:12px;"></div>
+        <div id="previewWrap" style="display:none;">
+          <div class="table-responsive mb-3"><table class="table table-sm table-bordered mono" style="font-size:11px;" id="previewTable"></table></div>
+
+          <h6>Map columns → fields</h6>
+          <div class="row g-2 mb-2">
+            {% set saved = mapping.get('fields', {}) %}
+            <div class="col-md-3"><label class="form-label">AppID column *</label>
+              <select name="map_app_id" id="map_app_id" class="form-select form-select-sm map-col" data-saved="{{ saved.get('app_id','') }}" required></select></div>
+            <div class="col-md-3"><label class="form-label">Customer column</label>
+              <select name="map_customer" class="form-select form-select-sm map-col" data-saved="{{ saved.get('customer','') }}"></select></div>
+            <div class="col-md-3"><label class="form-label">Label column</label>
+              <select name="map_label" class="form-select form-select-sm map-col" data-saved="{{ saved.get('label','') }}"></select></div>
+            <div class="col-md-3"><label class="form-label">Rate column</label>
+              <select name="map_rate" class="form-select form-select-sm map-col" data-saved="{{ saved.get('rate','') }}"></select></div>
+          </div>
+
+          <h6>Extra columns (kept per AppID)</h6>
+          <div id="extraRows"></div>
+          <button type="button" id="addExtra" class="btn btn-sm btn-fw-outline mb-3"><i class="bi bi-plus"></i> Add extra field</button>
+
+          <div><button class="btn btn-fw btn-sm">Import (additive)</button></div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================ NIGHTLY SOURCE ============================ -->
+  <div class="tab-pane fade" id="tab-source">
+    <div class="fw-card p-3">
+      <p class="text-muted" style="font-size:13px;">
+        For the nightly action, point at a URL that serves the catalog (the file
+        that "changes every day"). It reuses the saved column mapping. Create the
+        scheduled action from Automation → Scheduled Actions (<span class="mono">appid_import</span>,
+        left disabled by default).
+      </p>
+      <form method="POST" action="{{ url_for('appids.save_source') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="row g-2 mb-2">
+          <div class="col-md-3"><label class="form-label">Source type</label>
+            <select name="source_type" class="form-select form-select-sm">
+              <option value="manual" {{ 'selected' if source.get('type')=='manual' else '' }}>Manual upload only</option>
+              <option value="url" {{ 'selected' if source.get('type')=='url' else '' }}>Fetch from URL (nightly)</option>
+            </select></div>
+          <div class="col-md-6"><label class="form-label">URL</label>
+            <input name="source_url" class="form-control form-control-sm" value="{{ source.get('url','') }}" placeholder="https://catalog.example/appids.csv"></div>
+          <div class="col-md-3"><label class="form-label">Auth</label>
+            <select name="source_auth" class="form-select form-select-sm">
+              {% for a in ['none','basic','bearer'] %}<option value="{{ a }}" {{ 'selected' if source.get('auth')==a else '' }}>{{ a }}</option>{% endfor %}
+            </select></div>
+        </div>
+        <div class="row g-2 mb-2">
+          <div class="col-md-3"><label class="form-label">Username (basic)</label>
+            <input name="source_username" class="form-control form-control-sm" value="{{ source.get('username','') }}"></div>
+          <div class="col-md-3"><label class="form-label">Password (basic)</label>
+            <input name="source_password" type="password" class="form-control form-control-sm" placeholder="{{ '••••••' if source.get('has_password') else '' }}"></div>
+          <div class="col-md-6"><label class="form-label">Bearer token</label>
+            <input name="source_token" type="password" class="form-control form-control-sm" placeholder="{{ '••••••' if source.get('has_token') else '' }}"></div>
+        </div>
+        <button class="btn btn-fw btn-sm">Save source</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================ ASSIGN ============================ -->
+  <div class="tab-pane fade" id="tab-assign">
+    <div class="fw-card p-3 mb-3">
+      <form method="POST" action="{{ url_for('appids.assign') }}" class="row g-2 align-items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-md-3"><label class="form-label">AppID *</label>
+          <select name="app_id_pk" class="form-select form-select-sm" required>
+            <option value="">—</option>
+            {% for a in catalog %}<option value="{{ a.id }}">{{ a.app_id }} — {{ a.customer or 'no customer' }}</option>{% endfor %}
+          </select></div>
+        <div class="col-md-3"><label class="form-label">Device *</label>
+          <select name="appliance_id" class="form-select form-select-sm" required>
+            <option value="">—</option>
+            {% for d in appliances %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
+          </select></div>
+        <div class="col-md-4"><label class="form-label">Server Policy name *</label>
+          <input name="server_policy" class="form-control form-control-sm" required placeholder="pol-..."></div>
+        <div class="col-md-2"><button class="btn btn-fw btn-sm w-100">Assign</button></div>
+      </form>
+    </div>
+    <div class="fw-card p-0">
+      <table class="table table-sm mb-0 fw-table">
+        <thead><tr><th>Server Policy</th><th>AppID</th><th>Customer</th><th></th></tr></thead>
+        <tbody>
+        {% for b in bindings %}
+          <tr>
+            <td class="mono">{{ b.server_policy }}</td><td class="mono">{{ b.app_id }}</td><td>{{ b.customer or '—' }}</td>
+            <td class="text-end">
+              <form method="POST" action="{{ url_for('appids.unassign') }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="appliance_id" value="{{ b.appliance_id }}">
+                <input type="hidden" name="server_policy" value="{{ b.server_policy }}">
+                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x-lg"></i></button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="text-muted p-3">No policies assigned yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var csrf = document.querySelector('meta[name="csrf-token"]').content;
+  var cols = [];               // current parsed columns
+
+  function optionsFor(select, chosen) {
+    select.innerHTML = '';
+    var blank = document.createElement('option'); blank.value = ''; blank.textContent = '—';
+    select.appendChild(blank);
+    cols.forEach(function (c, i) {
+      var o = document.createElement('option');
+      o.value = document.getElementById('hasHeader').checked ? c : String(i);
+      o.textContent = c + (document.getElementById('hasHeader').checked ? '' : ' (col ' + i + ')');
+      select.appendChild(o);
+    });
+    if (chosen) select.value = chosen;
+  }
+
+  function refreshSelects() {
+    document.querySelectorAll('.map-col').forEach(function (s) {
+      optionsFor(s, s.getAttribute('data-saved') || '');
+    });
+    document.querySelectorAll('.extra-col').forEach(function (s) { optionsFor(s, s.value); });
+  }
+
+  function renderPreview(data) {
+    cols = data.columns || [];
+    var tbl = document.getElementById('previewTable');
+    tbl.innerHTML = '';
+    var thead = document.createElement('thead'), htr = document.createElement('tr');
+    cols.forEach(function (c) { var th = document.createElement('th'); th.textContent = c; htr.appendChild(th); });
+    thead.appendChild(htr); tbl.appendChild(thead);
+    var tb = document.createElement('tbody');
+    (data.rows || []).forEach(function (r) {
+      var tr = document.createElement('tr');
+      r.forEach(function (v) { var td = document.createElement('td'); td.textContent = v; tr.appendChild(td); });
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb);
+    document.getElementById('previewWrap').style.display = '';
+    var note = document.getElementById('previewNote');
+    if (data.note) { note.textContent = data.note + ' (' + data.row_count + ' rows)'; note.style.display = ''; }
+    else { note.style.display = 'none'; }
+    refreshSelects();
+  }
+
+  document.getElementById('previewBtn').addEventListener('click', function () {
+    var f = document.getElementById('catalogFile');
+    if (!f.files.length) { alert('Choose a file first.'); return; }
+    var fd = new FormData();
+    fd.append('catalog_file', f.files[0]);
+    fetch('{{ url_for("appids.preview") }}', { method: 'POST', headers: { 'X-CSRFToken': csrf }, body: fd })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) { if (!res.ok) { alert(res.j.error || 'preview failed'); return; } renderPreview(res.j); })
+      .catch(function (e) { alert('preview failed: ' + e); });
+  });
+
+  document.getElementById('hasHeader').addEventListener('change', refreshSelects);
+
+  document.getElementById('addExtra').addEventListener('click', function () {
+    var wrap = document.getElementById('extraRows');
+    var row = document.createElement('div');
+    row.className = 'row g-2 mb-1';
+    var c1 = document.createElement('div'); c1.className = 'col-md-4';
+    var name = document.createElement('input'); name.name = 'extra_name'; name.className = 'form-control form-control-sm';
+    name.placeholder = 'field name (e.g. environment)'; c1.appendChild(name);
+    var c2 = document.createElement('div'); c2.className = 'col-md-4';
+    var sel = document.createElement('select'); sel.name = 'extra_col'; sel.className = 'form-select form-select-sm extra-col map-col';
+    optionsFor(sel, ''); c2.appendChild(sel);
+    var c3 = document.createElement('div'); c3.className = 'col-md-2';
+    var del = document.createElement('button'); del.type = 'button'; del.className = 'btn btn-sm btn-outline-danger';
+    del.textContent = '×'; del.addEventListener('click', function () { row.remove(); }); c3.appendChild(del);
+    row.appendChild(c1); row.appendChild(c2); row.appendChild(c3);
+    wrap.appendChild(row);
+  });
+})();
+</script>
+{% endblock %}

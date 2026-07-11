@@ -11,6 +11,15 @@
 {% endblock %}
 
 {% block content %}
+{% set CAP_DESC = {
+  'backend_edit': 'enable/disable pool backends',
+  'backend_config': 'change a backend IP / port',
+  'policy_status': 'enable/disable server policies',
+  'cert_swap': "swap a policy's certificate",
+  'maintenance': 'backups / sync / signatures (fleet)',
+  'reports': 'stats / inventory / health (read-only, fleet)',
+} %}
+{% set SCOPE_DESC = {'read': '(GET)', 'write': '(run actions / config_write)', 'admin': '(admin)'} %}
 <div class="d-flex align-items-center mb-3">
   <h4 class="mb-0"><i class="bi bi-key me-2"></i>API Tokens</h4>
 </div>
@@ -30,6 +39,8 @@
   <div class="small text-muted mt-1">
     Owner: <strong>{{ new_token_row.owner.username }}</strong> ·
     Scopes: <strong>{{ new_token_row.scope_list|join(', ') }}</strong> ·
+    Capabilities: <strong>{{ new_token_row.capability_list|join(', ') if new_token_row.capability_list else 'all' }}</strong> ·
+    AppID scope: <strong>{{ new_token_row.app_id_list|join(', ') if new_token_row.app_id_list else 'any' }}</strong> ·
     ADOM: <strong>{{ new_token_row.product }}</strong>
   </div>
 </div>
@@ -77,6 +88,37 @@
         </div>
         {% endfor %}
       </div>
+
+      <div class="col-md-6">
+        <label class="form-label d-block">Capabilities <span class="text-muted small">(what — leave all unchecked for no restriction)</span></label>
+        {% for c in capabilities %}
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="capabilities" value="{{ c }}"
+                 id="cap-{{ c }}">
+          <label class="form-check-label" for="cap-{{ c }}">
+            {{ c }}
+            <span class="text-muted small">
+              {%- if CAP_DESC.get(c) %} — {{ CAP_DESC.get(c) }}{% endif -%}
+            </span>
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label d-block">AppID scope <span class="text-muted small">(where — leave empty for no restriction)</span></label>
+        <select class="form-select" name="app_ids" multiple size="6">
+          {% for a in appid_catalog %}
+          <option value="{{ a.app_id }}">{{ a.app_id }}{% if a.customer %} — {{ a.customer }}{% endif %} ({{ a.product }})</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">
+          A token pinned to AppIDs may run only backend/policy/cert actions whose
+          target server policy is bound to one of these AppIDs — and no fleet-wide
+          action at all. Assign policies under <a href="/web/appids">AppIDs</a>.
+          Only AppIDs of the token's ADOM resolve.
+        </div>
+      </div>
+
       <div class="col-12">
         <button class="btn btn-primary" type="submit">
           <i class="bi bi-plus-lg me-1"></i>Create token</button>
@@ -92,6 +134,7 @@
       <thead>
         <tr>
           <th>Name</th><th>Token</th><th>Owner</th><th>Scopes</th>
+          <th>Capabilities</th><th>AppID scope</th>
           <th>ADOM</th><th>Status</th><th>Last used</th><th></th>
         </tr>
       </thead>
@@ -102,6 +145,8 @@
           <td><code>{{ t.masked }}</code></td>
           <td>{{ t.owner.username if t.owner else '—' }}</td>
           <td>{{ t.scope_list|join(', ') }}</td>
+          <td class="small">{{ t.capability_list|join(', ') if t.capability_list else 'all' }}</td>
+          <td class="small">{{ t.app_id_list|join(', ') if t.app_id_list else 'any' }}</td>
           <td>{{ t.product }}</td>
           <td>
             {% if t.revoked %}<span class="badge bg-secondary">revoked</span>
@@ -111,6 +156,8 @@
           <td class="small text-muted">
             {{ t.last_used_at.strftime('%Y-%m-%d %H:%M') if t.last_used_at else 'never' }}</td>
           <td class="text-end">
+            <button type="button" class="btn btn-sm btn-outline-secondary"
+                    data-bs-toggle="modal" data-bs-target="#editTok{{ t.id }}">Edit</button>
             {% if not t.revoked %}
             <form method="post" action="{{ url_for('api_tokens.revoke', id=t.id) }}" class="d-inline">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -124,10 +171,100 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="8" class="text-center text-muted py-4">No tokens yet.</td></tr>
+        <tr><td colspan="10" class="text-center text-muted py-4">No tokens yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+
+{# ---- Edit modals (one per token). Secret is a one-way hash → never editable;
+       only name / ADOM / scopes / capabilities / AppID scope / expiry change. #}
+{% for t in tokens %}
+<div class="modal fade" id="editTok{{ t.id }}" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('api_tokens.edit', id=t.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Edit token — <code>{{ t.masked }}</code></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Name</label>
+              <input class="form-control" name="name" value="{{ t.name }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">ADOM</label>
+              <select class="form-select" name="product">
+                {% for p in products %}
+                <option value="{{ p }}" {{ 'selected' if p == t.product else '' }}>{{ p }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Expiry (days)</label>
+              <input class="form-control" name="expires_days" type="number"
+                     placeholder="keep" min="-1">
+              <div class="form-text">
+                blank = keep{% if t.expires_at %} (now {{ t.expires_at.strftime('%Y-%m-%d') }}){% else %} (never expires){% endif %},
+                a number re-anchors from today, <code>-1</code> clears.
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label d-block">Scopes</label>
+              {% for s in scopes %}
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" name="scopes" value="{{ s }}"
+                       id="escope-{{ t.id }}-{{ s }}" {{ 'checked' if s in t.scope_list else '' }}>
+                <label class="form-check-label" for="escope-{{ t.id }}-{{ s }}">
+                  {{ s }} <span class="text-muted small">{{ SCOPE_DESC.get(s, '') }}</span>
+                </label>
+              </div>
+              {% endfor %}
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label d-block">Capabilities
+                <span class="text-muted small">(what — all unchecked = no restriction)</span></label>
+              {% for c in capabilities %}
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="capabilities" value="{{ c }}"
+                       id="ecap-{{ t.id }}-{{ c }}" {{ 'checked' if c in t.capability_list else '' }}>
+                <label class="form-check-label" for="ecap-{{ t.id }}-{{ c }}">
+                  {{ c }}
+                  <span class="text-muted small">
+                    {%- if CAP_DESC.get(c) %} — {{ CAP_DESC.get(c) }}{% endif -%}
+                  </span>
+                </label>
+              </div>
+              {% endfor %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label d-block">AppID scope
+                <span class="text-muted small">(where — empty = no restriction)</span></label>
+              <select class="form-select" name="app_ids" multiple size="6">
+                {% for a in appid_catalog %}
+                <option value="{{ a.app_id }}" {{ 'selected' if a.app_id in t.app_id_list else '' }}>
+                  {{ a.app_id }}{% if a.customer %} — {{ a.customer }}{% endif %} ({{ a.product }})</option>
+                {% endfor %}
+              </select>
+              {% if t.app_id_list %}
+              <div class="form-text">Currently: {{ t.app_id_list|join(', ') }}</div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endfor %}
 {% endblock %}

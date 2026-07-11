@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Lua Studio{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-braces me-2 text-accent"></i>Lua Studio</h1>
+    <p class="fw-page-sub">Author, lint (<code>luac -p</code>, never executed), analyse and dry-run deploy Lua for FortiWeb Web Scripting / FortiADC Scripting. Scoped to the <strong>{{ product.name if product else 'current' }}</strong> ADOM.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-fw-primary" href="{{ url_for('lua_studio.new', target='fortiweb') }}"><i class="bi bi-plus-lg me-1"></i>FortiWeb</a>
+    <a class="btn btn-fw-outline" href="{{ url_for('lua_studio.new', target='fortiadc') }}"><i class="bi bi-plus-lg me-1"></i>FortiADC</a>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-body d-flex align-items-center gap-3 flex-wrap">
+    <i class="bi bi-collection text-accent" style="font-size:26px"></i>
+    <div class="flex-grow-1" style="min-width:320px">
+      <div class="fw-semibold">Start from an example script</div>
+      <div class="text-secondary" style="font-size:13px">Ready-made, lint-clean templates grouped by what they do — security headers, access control &amp; blocking, redirects &amp; rewrites, logging, and (FortiADC) load-balancing routing. Open a new script and click “Browse examples”.</div>
+    </div>
+    <a class="btn btn-fw-outline" href="{{ url_for('lua_studio.new', target='fortiweb') }}">New FortiWeb script<i class="bi bi-arrow-right ms-1"></i></a>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title">Scripts</h2></div>
+  {% if scripts %}
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <thead><tr><th>Name</th><th>Target</th><th>Status</th><th>Object</th><th>Updated</th><th></th></tr></thead>
+      <tbody>
+        {% for s in scripts %}
+        <tr>
+          <td>{{ s.name }}</td>
+          <td><span class="fw-badge fw-badge-secondary">{{ s.target }}</span></td>
+          <td><span class="fw-badge fw-badge-{{ {'draft':'secondary','tested':'warning','deployed':'success'}[s.status] }}">{{ s.status }}</span></td>
+          <td class="text-secondary" style="font-size:12px">{{ s.deploy_object or '—' }}</td>
+          <td class="text-secondary" style="font-size:12px">{{ s.updated_at.strftime('%Y-%m-%d %H:%M') if s.updated_at }}</td>
+          <td class="text-end"><a class="btn btn-sm btn-fw-outline" href="{{ url_for('lua_studio.edit', sid=s.id) }}">Open</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}<div class="fw-card-body text-secondary">No scripts yet in this ADOM.</div>{% endif %}
+</div>
+{% endblock %}

@@ -19,6 +19,7 @@ from flask import g, jsonify, request
 from ..extensions import db, limiter
 from ..models import Appliance, visible_appliance_or_404, visible_appliances
 from ..models import ScheduledAction, ScheduledActionRun
+from ..services import appids
 from ..services import scheduled_actions as sa
 from ..services.audit import log_action
 from ..services.product_scope import scope_query
@@ -66,6 +67,8 @@ def ping():
         "name": tok.name,
         "owner": getattr(tok.owner, "username", None),
         "scopes": tok.scope_list,
+        "capabilities": tok.capability_list,
+        "app_ids": tok.app_id_list,
         "product": tok.product,
     })
 
@@ -95,7 +98,14 @@ def get_appliance(id):
 def _action_json(row: ScheduledAction) -> dict:
     spec = sa.get_spec(row.action)
     danger = bool(spec and spec.danger)
-    return {
+    tok = getattr(g, "api_token", None)
+    # Reflect THIS token's authorization: destructive is never runnable, and a
+    # capability/AppID-restricted token also can't run what it isn't granted.
+    cap_ok, cap_reason = True, ""
+    if tok is not None:
+        cap_ok, cap_reason, _msg = tok.authorize_capability(row.action)
+    runnable = (not danger) and cap_ok and bool(row.enabled)
+    out = {
         "id": row.id,
         "name": row.name,
         "action": row.action,
@@ -109,8 +119,11 @@ def _action_json(row: ScheduledAction) -> dict:
         "next_run": row.next_run.isoformat() if row.next_run else None,
         # Destructive actions are visible but NEVER API-runnable.
         "danger": danger,
-        "api_runnable": (not danger),
+        "api_runnable": runnable,
     }
+    if not runnable and cap_reason:
+        out["blocked_reason"] = cap_reason
+    return out
 
 
 @bp.route("/actions", methods=["GET"])
@@ -150,6 +163,42 @@ def run_action(id):
     if not row.enabled:
         return jsonify({"error": "disabled",
                         "message": "This action is disabled."}), 409
+
+    # ---- Fine-grained authorization (Phase 2): the "what" then the "where" --
+    tok = g.api_token
+    cap_ok, cap_code, cap_msg = tok.authorize_capability(row.action)
+    if not cap_ok:
+        log_action("api.action_run_denied", target=f"action:{row.id}",
+                   extra=audit_extra(action=row.action, reason=cap_code))
+        return jsonify({"error": cap_code, "message": cap_msg}), 403
+
+    # AppID scope — a token pinned to AppIDs may act only on the server policies
+    # those AppIDs own. Resolve the action's concrete target and require it to be
+    # a SUBSET of the token's allowed (appliance, policy) set. Fail CLOSED: an
+    # unresolvable/empty target (e.g. a content-routing-only pool, or an empty
+    # cache) is denied rather than allowed.
+    if tok.is_appid_scoped:
+        allowed = appids.token_scope_targets(tok.app_id_list, product=tok.product)
+        target = appids.action_target_scope(row)
+        if not target:
+            log_action("api.action_run_denied", target=f"action:{row.id}",
+                       extra=audit_extra(action=row.action, reason="target_unresolved"))
+            return jsonify({
+                "error": "appid_scope_unresolved",
+                "message": "Could not confirm this action's target server policy "
+                           "belongs to your AppIDs (the pool may be shared, "
+                           "content-routing-only, or not yet cached). Ask an admin.",
+            }), 403
+        outside = target - allowed
+        if outside:
+            log_action("api.action_run_denied", target=f"action:{row.id}",
+                       extra=audit_extra(action=row.action, reason="appid_scope",
+                                         outside=sorted(f"{a}:{p}" for a, p in outside)))
+            return jsonify({
+                "error": "appid_scope_denied",
+                "message": "This action targets a server policy outside your "
+                           "AppID scope.",
+            }), 403
 
     run = sa.execute_and_record(row, trigger="api")
     if run is None:

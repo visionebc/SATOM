@@ -226,6 +226,10 @@ def create_app(config_override: object | None = None) -> Flask:
             adc_bps = {'adc', 'adc_api', 'appliances', 'settings', 'audit',
                        'jobs', 'notifications', 'profiles', 'users', 'docs',
                        'database', 'locks',
+                       # Custom Views: Plugin Studio + Lua Studio are
+                       # product-scoped (records stamped per ADOM), so the
+                       # ADC ADOM reaches them and sees only its own.
+                       'plugins', 'lua_studio',
                        # Product-scoped Fleet pages mirrored into the ADC ADOM
                        # (visible_appliances / product_scope keep them ADC-only).
                        # Monitoring + Certificate Manager live ONLY in the
@@ -560,22 +564,29 @@ def create_app(config_override: object | None = None) -> Flask:
 
     @app.after_request
     def set_security_headers(response):
-        response.headers["X-Frame-Options"] = "DENY"
+        # Plugin frame route (views/plugins.py) sets SAMEORIGIN so it can be
+        # embedded in its own sandboxed iframe; don't clobber it with DENY.
+        if "X-Frame-Options" not in response.headers:
+            response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         nonce = getattr(g, "csp_nonce", "")
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
-            f"script-src-elem 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
-            "script-src-attr 'none'; "
-            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-            f"style-src-elem 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
-            "style-src-attr 'unsafe-inline'; "
-            "img-src 'self' data: https:; "
-            "font-src 'self' data: https://cdn.jsdelivr.net;"
-        )
+        # Plugin sandbox routes (views/plugins.py: frame()/preview()) set their
+        # own relaxed CSP for author-supplied HTML/CSS/JS inside a sandboxed
+        # iframe. Don't clobber it with the app-wide strict/nonce-based policy.
+        if "Content-Security-Policy" not in response.headers:
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
+                f"script-src-elem 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
+                "script-src-attr 'none'; "
+                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                f"style-src-elem 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
+                "style-src-attr 'unsafe-inline'; "
+                "img-src 'self' data: https:; "
+                "font-src 'self' data: https://cdn.jsdelivr.net;"
+            )
         # Never serve authenticated HTML (e.g. the nav menu) from a stale
         # browser cache after a deploy. Static assets stay cacheable.
         if response.mimetype == "text/html":
@@ -696,6 +707,15 @@ def create_app(config_override: object | None = None) -> Flask:
             'db_reports': [
                 ('builtin', 'BOOLEAN DEFAULT FALSE'),
             ],
+            # --- Plugin Studio input parameters (selectors) ---
+            'plugins': [
+                ('params', "TEXT DEFAULT '[]'"),
+            ],
+            # --- AppID-scoped API tokens (Phase 2 enforcement) ---
+            'api_tokens': [
+                ('capabilities', "TEXT DEFAULT '[]'"),
+                ('app_ids', "TEXT DEFAULT '[]'"),
+            ],
         }
         insp = inspect(db.engine)
         added: set[tuple[str, str]] = set()
@@ -732,6 +752,24 @@ def create_app(config_override: object | None = None) -> Flask:
                 db.session.commit()
             except Exception:  # noqa: BLE001
                 db.session.rollback()
+
+        # --- AppID goes GLOBAL (cross-product) 2026-07-09 ---
+        # The catalog was keyed (product, app_id) with product='fortiweb'. AppIDs
+        # now span FortiWeb + FortiADC, so the key is app_id alone and product is
+        # the constant 'global'. Drop the old composite unique, collapse product,
+        # add a name-only unique INDEX (distinct name so a fresh DB's model-level
+        # UniqueConstraint never clashes). Best-effort; never blocks boot.
+        try:
+            if insp.has_table('app_ids'):
+                db.session.execute(text(
+                    'ALTER TABLE app_ids DROP CONSTRAINT IF EXISTS uq_appid_product_key'))
+                db.session.execute(text(
+                    "UPDATE app_ids SET product='global' WHERE product <> 'global'"))
+                db.session.execute(text(
+                    'CREATE UNIQUE INDEX IF NOT EXISTS ix_appid_uq ON app_ids (app_id)'))
+                db.session.commit()
+        except Exception:  # noqa: BLE001 — never block boot on a migration
+            db.session.rollback()
 
     def _ensure_indexes():
         """Create covering indexes on foreign-key columns that lack one.
@@ -877,10 +915,13 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.database", "bp"),
         ("app.views.system_backup", "bp"),
         ("app.views.self_update", "bp"),
+        ("app.views.plugins", "bp"),
+        ("app.views.lua_studio", "bp"),
         ("app.views.docs", "bp"),
         ("app.api", "bp"),
         ("app.api_v1", "bp"),
         ("app.views.api_tokens", "bp"),
+        ("app.views.appids", "bp"),
     ]
 
     # FortiWeb-scoped areas live under the /web ADOM prefix (2026-07-07).
@@ -898,6 +939,7 @@ def _register_blueprints(app: Flask) -> None:
         "app.views.provisioning", "app.views.firmware",
         "app.views.release_notes", "app.views.capacity",
         "app.views.registry", "app.views.api_explorer",
+        "app.views.appids",
     }
     for module_path, attr in blueprints:
         try:

@@ -13,9 +13,16 @@
 <div class="fw-page-header"><h1 class="fw-h1"><i class="bi bi-plus-square me-2 text-accent"></i>New Server Policy <span class="mono text-muted">{{ appliance.name }}</span></h1></div>
 
 <div class="fw-card mb-3"><div class="fw-card-header"><span class="fw-card-title">Identity</span></div>
-  <div class="fw-card-body"><div class="fw-fld-grid" style="grid-template-columns:minmax(280px,460px);">
+  <div class="fw-card-body"><div class="fw-fld-grid" style="grid-template-columns:minmax(280px,460px) minmax(280px,460px);">
     <div class="fw-fld"><label class="fw-fld-label">Policy name <span class="fw-key">name</span></label>
       <input type="text" class="form-control form-control-sm" id="policyName" placeholder="e.g. pol-myapp" required></div>
+    <div class="fw-fld"><label class="fw-fld-label">AppID <span class="text-muted">(billing &amp; token scope)</span></label>
+      <select class="form-select form-select-sm" id="appIdSel">
+        <option value="">— none —</option>
+        {% for a in appid_catalog %}
+        <option value="{{ a.id }}">{{ a.app_id }}{% if a.customer %} — {{ a.customer }}{% endif %}</option>
+        {% endfor %}
+      </select></div>
   </div></div>
 </div>
 
@@ -107,6 +114,8 @@ async function doCreate(apply){
     pool_name:document.getElementById('poolName').value.trim(),
     pool:collect('#poolScope'), pservers:collectRows('.ps-row','.psf')};
   body.policy.name=pname;
+  const appidEl=document.getElementById('appIdSel');
+  if(appidEl&&appidEl.value) body.app_id_pk=appidEl.value;
   const r=await (await fetch(`/workspace/${APPL_ID}/create-policy`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
   const box=document.getElementById('result');
   if(r.ok&&r.dry_run){

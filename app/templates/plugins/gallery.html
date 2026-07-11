@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Custom Views{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-grid-1x2 me-2 text-accent"></i>Custom Views</h1>
+    <p class="fw-page-sub">Published views for the <strong>{{ product.name if product else 'current' }}</strong> ADOM — built by super-admins in the Plugin Studio, rendered in a hard sandbox.</p>
+  </div>
+  {% if current_user.is_admin_capable %}
+  <div><a class="btn btn-fw-outline" href="{{ url_for('plugins.index') }}"><i class="bi bi-puzzle me-1"></i>Plugin Studio</a></div>
+  {% endif %}
+</div>
+
+{% if not plugins %}
+<div class="fw-card"><div class="fw-card-body text-secondary">
+  No published custom views in this ADOM yet.
+  {% if current_user.is_admin_capable %}Create one in the <a href="{{ url_for('plugins.index') }}">Plugin Studio</a>.{% endif %}
+</div></div>
+{% else %}
+<div class="row g-3">
+  {% for p in plugins %}
+  <div class="col-md-4">
+    <a class="fw-card fw-card-link h-100 d-block" href="{{ url_for('plugins.view', slug=p.slug) }}">
+      <div class="fw-card-body">
+        <div class="fw-semibold"><i class="bi {{ p.icon }} me-2 text-accent"></i>{{ p.name }}</div>
+        <div class="text-secondary mt-1" style="font-size:12px">{{ p.kind }} · by {{ p.created_by }}</div>
+      </div>
+    </a>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if script else 'New' }} Lua script{% endblock %}
+{% block content %}
+
+<div class="fw-breadcrumb">
+  <a href="{{ url_for('lua_studio.index') }}">Lua Studio</a>
+  <span class="separator">/</span>{{ script.name if script else 'New Lua script' }}
+</div>
+
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-braces me-2 text-accent"></i>{{ script.name if script else 'New Lua script' }}</h1>
+    <p class="fw-page-sub">Target: <strong>{{ target }}</strong>. Lint runs <code>luac -p</code> (parse only — never executed). Deploy is dry-run unless you confirm.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-fw-outline btn-sm" type="button" id="btn-examples"><i class="bi bi-collection me-1"></i>Browse examples</button>
+    <a class="btn btn-fw-secondary btn-sm" href="{{ url_for('lua_studio.index') }}"><i class="bi bi-arrow-left me-1"></i>All scripts</a>
+  </div>
+</div>
+
+{% if script %}
+{% set steps = [('draft','Draft','bi-pencil'),('tested','Tested','bi-check2-circle'),('deployed','Deployed','bi-upload')] %}
+{% set order = {'draft':0,'tested':1,'deployed':2} %}
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>Lifecycle</h2>
+    <span class="fw-badge fw-badge-{{ {'draft':'secondary','tested':'warning','deployed':'success'}[script.status] }}">{{ script.status }}</span>
+  </div>
+  <div class="fw-card-body">
+    <div class="lc-steps">
+      {% for key,label,icon in steps %}
+      <div class="lc-step {{ 'done' if order[script.status] > order[key] else ('now' if script.status==key else 'todo') }}">
+        <div class="lc-dot"><i class="bi {{ icon }}"></i></div><div class="lc-lbl">{{ label }}</div>
+      </div>
+      {% if not loop.last %}<div class="lc-line {{ 'fill' if order[script.status] > order[key] else '' }}"></div>{% endif %}
+      {% endfor %}
+    </div>
+    <div class="lc-actions">
+      <form method="post" action="{{ url_for('lua_studio.mark_tested', sid=script.id) }}" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm {{ 'btn-fw-primary' if script.status=='draft' else 'btn-fw-outline' }}"><i class="bi bi-check2-circle me-1"></i>Mark tested (lint gate)</button>
+      </form>
+      {% if script.status != 'draft' %}
+      <form method="post" action="{{ url_for('lua_studio.set_status', sid=script.id) }}" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="status" value="draft">
+        <button class="btn btn-sm btn-fw-secondary"><i class="bi bi-arrow-left me-1"></i>Back to Draft</button>
+      </form>
+      {% endif %}
+      <span class="lc-hint"><strong>Deployed</strong> is reached only by a confirmed real push (below); dry-run never changes status. The fleet is license-locked, so deploy stays dry-run by default.</span>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('lua_studio.save', sid=script.id) if script else url_for('lua_studio.save') }}" id="lua-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="target" value="{{ target }}">
+  <div class="ed-grid">
+    <div class="fw-card">
+      <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-code-square me-2 text-accent"></i>Script</h2></div>
+      <div class="fw-card-body">
+        <div class="row g-3 mb-3">
+          <div class="col-sm-5"><label class="fw-form-label">Name</label>
+            <input class="form-control fw-form-control" name="name" id="fld-name" value="{{ script.name if script else '' }}" required></div>
+          <div class="col-sm-4"><label class="fw-form-label">Device</label>
+            <select class="form-select fw-form-control" name="appliance_id">
+              <option value="">— none (author only) —</option>
+              {% for a in appliances %}<option value="{{ a.id }}" {{ 'selected' if script and script.appliance_id==a.id }}>{{ a.name }}</option>{% endfor %}
+            </select></div>
+          <div class="col-sm-3"><label class="fw-form-label">Scripting object</label>
+            <input class="form-control fw-form-control" name="deploy_object" value="{{ script.deploy_object if script else '' }}" placeholder="e.g. rewrite-legacy"></div>
+        </div>
+        <label class="fw-form-label">Lua code</label>
+        <textarea class="form-control fw-form-control font-monospace" name="code" id="fld-code" rows="20">{{ script.code if script else '-- ' ~ target ~ ' Lua\nlocal ua = get_request_header(\"User-Agent\")\nif ua == nil then\n  block()\nend' }}</textarea>
+      </div>
+      <div class="fw-card-footer d-flex gap-2 flex-wrap align-items-center">
+        <button class="btn btn-fw-primary" type="submit"><i class="bi bi-save me-1"></i>Save</button>
+        <button class="btn btn-fw-outline" type="button" id="btn-analyze"><i class="bi bi-search me-1"></i>Lint &amp; analyse</button>
+        {% if script %}
+        <button class="btn btn-fw-outline" type="button" id="btn-dryrun"><i class="bi bi-clipboard-check me-1"></i>Deploy (dry-run)</button>
+        <button class="btn btn-fw-danger" type="button" id="btn-deploy"><i class="bi bi-upload me-1"></i>Deploy for real</button>
+        <button class="btn btn-fw-danger ms-auto" type="button" id="btn-luadel"><i class="bi bi-trash me-1"></i>Delete</button>
+        <form method="post" action="{{ url_for('lua_studio.delete', sid=script.id) }}" id="lua-del" class="d-none">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="fw-card">
+      <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-clipboard-data me-2 text-accent"></i>Lint &amp; static analysis</h2></div>
+      <div class="fw-card-body">
+        <div id="analysis-out" style="font-size:13px;color:var(--fw-text-primary)">Run “Lint &amp; analyse” — it parses the script with <code>luac -p</code> and reports what it does on the {{ target }}.</div>
+      </div>
+    </div>
+  </div>
+</form>
+
+<!-- Example browser (shared component) -->
+{% set exb_title = target ~ ' script examples' %}
+{% include '_example_browser.html' %}
+
+<script type="application/json" id="ex-catalog">{{ examples_json|safe }}</script>
+<script nonce="{{ csp_nonce }}">
+(function(){
+  var out = document.getElementById('analysis-out');
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function code(){ return document.getElementById('fld-code').value; }
+  var target = '{{ target }}';
+
+  function renderAnalysis(d){
+    var h = ''; var lint = d.lint || {};
+    if (lint.ok) h += '<div class="an-ok"><i class="bi bi-check2-circle"></i> Lint passed ('+esc(lint.engine||'luac')+')</div>';
+    else { h += '<div class="an-err"><i class="bi bi-x-octagon"></i> Lint errors:</div><ul>';
+      (lint.errors||[]).forEach(function(e){ h += '<li>line '+e.line+': '+esc(e.message)+'</li>'; }); h += '</ul>'; }
+    var a = d.analysis || {};
+    if ((a.does||[]).length){ h += '<div class="an-h">What it does</div><ul class="an-list">'; a.does.forEach(function(x){ h+='<li>'+esc(x)+'</li>'; }); h+='</ul>'; }
+    if ((a.warnings||[]).length){ h += '<div class="an-h an-warn">Warnings</div><ul class="an-list">'; a.warnings.forEach(function(w){ h+='<li>line '+w.line+': '+esc(w.message)+'</li>'; }); h+='</ul>'; }
+    if ((a.unknown_calls||[]).length){ h += '<div class="an-note">Calls not in the '+esc(target)+' API: '+esc(a.unknown_calls.join(', '))+'</div>'; }
+    if (typeof a.line_count !== 'undefined'){ h += '<div class="an-note">'+a.line_count+' line(s)</div>'; }
+    if (a.hint){ h += '<div class="an-note">'+esc(a.hint)+'</div>'; }
+    out.innerHTML = h;
+  }
+
+  document.getElementById('btn-analyze').addEventListener('click', function(){
+    out.textContent = 'Analysing…';
+    var fd = new FormData(); fd.append('code', code()); fd.append('target', target);
+    fetch('{{ url_for("lua_studio.analyze") }}', {method:'POST', body:fd})
+      .then(function(r){return r.json();}).then(renderAnalysis)
+      .catch(function(e){ out.textContent = 'Error: '+e; });
+  });
+
+  {% if script %}
+  function doDeploy(real){
+    out.textContent = real ? 'Deploying…' : 'Building dry-run plan…';
+    var fd = new FormData(); if (real) fd.append('confirm','yes');
+    fd.append('csrf_token','{{ csrf_token() }}');
+    fetch('{{ url_for("lua_studio.deploy", sid=script.id) }}', {method:'POST', body:fd})
+      .then(function(r){return r.json();}).then(function(d){
+        var r = d.result || {};
+        var h = '<div class="'+(d.ok?'an-ok':'an-err')+'">'+(d.dry_run?'Dry-run plan':'Deploy result')+'</div>';
+        if (r.error) h += '<div class="an-err">'+esc(r.error)+'</div>';
+        h += '<pre class="an-pre">'+esc(JSON.stringify(r.body_preview||r, null, 2))+'</pre>';
+        if (r.note) h += '<div class="an-warn">'+esc(r.note)+'</div>';
+        out.innerHTML = h;
+        if (real && d.ok) setTimeout(function(){ location.reload(); }, 800);
+      }).catch(function(e){ out.textContent = 'Error: '+e; });
+  }
+  document.getElementById('btn-dryrun').addEventListener('click', function(){ doDeploy(false); });
+  document.getElementById('btn-deploy').addEventListener('click', function(){ if (confirm('Push this script to the live device now?')) doDeploy(true); });
+  var ld = document.getElementById('btn-luadel');
+  if (ld) ld.addEventListener('click', function(){ if(confirm('Delete this script?')) document.getElementById('lua-del').submit(); });
+  {% endif %}
+
+  // --- Example browser (shared component) ---
+  ExampleBrowser.init({
+    previewField: 'code',
+    onInsert: function(ex){
+      var nm = document.getElementById('fld-name');
+      if (nm && !nm.value) nm.value = ex.name || ex.title || '';
+      document.getElementById('fld-code').value = ex.code || '';
+      var ab = document.getElementById('btn-analyze'); if (ab) ab.click();
+      window.scrollTo({top:0, behavior:'smooth'});
+    }
+  });
+})();
+</script>
+
+<style nonce="{{ csp_nonce }}">
+.ed-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:20px}
+@media(max-width:1100px){.ed-grid{grid-template-columns:1fr}}
+.an-ok{color:var(--fw-success)}
+.an-err{color:var(--fw-danger)}
+.an-h{margin-top:10px;color:var(--fw-text-secondary);text-transform:uppercase;font-size:11px;letter-spacing:.05em}
+.an-warn{color:#856404}
+.an-list{margin:4px 0 0;padding-left:18px}
+.an-note{margin-top:8px;color:var(--fw-text-secondary);font-size:12px}
+.an-pre{white-space:pre-wrap;font-size:12px;color:var(--fw-text-primary);background:#FAFBFC;border:1px solid var(--fw-border);border-radius:var(--fw-radius);padding:10px;margin-top:8px}
+/* lifecycle stepper */
+.lc-steps{display:flex;align-items:center;margin-bottom:16px}
+.lc-step{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:90px}
+.lc-dot{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;border:2px solid var(--fw-border);color:var(--fw-text-secondary);background:#FFFFFF}
+.lc-step.now .lc-dot{border-color:var(--fw-accent);color:#fff;background:var(--fw-accent);box-shadow:0 2px 8px rgba(239,84,36,.35)}
+.lc-step.done .lc-dot{border-color:var(--fw-success);color:var(--fw-success);background:rgba(40,167,69,.08)}
+.lc-lbl{font-size:12px;color:var(--fw-text-primary);font-weight:500}.lc-step.todo .lc-lbl{color:var(--fw-text-secondary)}
+.lc-line{flex:1;height:2px;background:var(--fw-border);margin:0 -6px 22px}
+.lc-line.fill{background:var(--fw-success)}
+.lc-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.lc-hint{font-size:12px;color:var(--fw-text-secondary);margin-left:auto;max-width:420px}
+/* example modal styles moved to static/css/example_browser.css */
+</style>
+{% endblock %}

@@ -130,6 +130,14 @@ ADMIN_ACTIONS: list[ActionSpec] = [
         summary="Aggregate a fleet statistics summary. No device call.",
     ),
     ActionSpec(
+        "appid_import", "Import AppID catalog (nightly)", "admin",
+        needs_targets=False,
+        summary="Fetch the external AppID catalog configured in AppIDs → Nightly "
+                "source (a URL, reusing the saved column mapping) and import it "
+                "ADDITIVELY into the app_ids table — never deletes; a vanished "
+                "AppID is flagged stale (services.appids). No device call.",
+    ),
+    ActionSpec(
         "inventory_snapshot", "Record inventory snapshot (daily counts)",
         "admin", needs_targets=False,
         summary="Record today's fleet inventory counts (server policies, "
@@ -230,6 +238,12 @@ USER_ACTIONS: list[ActionSpec] = [
                 "drain a backend for maintenance or restore it on schedule.",
     ),
     ActionSpec(
+        "backend_set_config", "Change a backend's IP / port", "user",
+        needs_targets=True, single_target=True,
+        summary="Change a back-end real server's address and/or port (a server-"
+                "pool member) at a scheduled time - repoint or re-port a backend.",
+    ),
+    ActionSpec(
         "swap_certificate", "Swap a server-policy certificate", "user",
         needs_targets=True, single_target=True,
         summary="Change the local certificate bound to a server policy at a "
@@ -295,6 +309,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_system_backup(params, dry_run)
         if key == "stats":
             return _do_stats(dry_run)
+        if key == "appid_import":
+            return _do_appid_import(params, dry_run)
         if key == "inventory_snapshot":
             return _do_inventory_snapshot(dry_run)
         if key == "upgrade_prep":
@@ -313,7 +329,7 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_cert_manager(key, appliance, params, dry_run)
         if key == "custom_rest":
             return _do_custom_rest(appliance, params, dry_run)
-        if key in ("policy_set_status", "backend_set_status", "swap_certificate"):
+        if key in ("policy_set_status", "backend_set_status", "backend_set_config", "swap_certificate"):
             return _do_user_op(key, appliance, params, dry_run)
         return {"ok": False, "summary": f"No executor for {key!r}.", "log": ""}
     except Exception as exc:  # noqa: BLE001 - run_action must never raise
@@ -430,6 +446,38 @@ def _do_stats(dry_run: bool) -> dict:
     return {"ok": True,
             "summary": f"Statistics {verb} the fleet ({count} FortiWeb appliance(s)).",
             "log": ""}
+
+
+def _do_appid_import(params: dict, dry_run: bool) -> dict:
+    """Nightly AppID catalog import — fetch the configured URL source, reuse the
+    saved column mapping, import ADDITIVELY. A manual-only source (no URL) is
+    reported as skipped, not a failure. Never deletes."""
+    from . import appids as _appids
+    product = str(params.get("product") or "fortiweb")
+    mapping = _appids.get_mapping(product)
+    source = mapping.get("source") or {}
+    if source.get("type") != "url" or not source.get("url"):
+        return {"ok": True,
+                "summary": "AppID import skipped — no external URL source is "
+                           "configured (upload is manual-only).", "log": ""}
+    if dry_run:
+        return {"ok": True,
+                "summary": f"[dry-run] would fetch {source.get('url')} and import "
+                           "the AppID catalog additively.", "log": ""}
+    try:
+        filename, data = _appids.fetch_source(source)
+        table = _appids.parse_upload(filename, data)
+        records = _appids.apply_mapping(table, mapping)
+    except Exception as exc:  # noqa: BLE001 - report, never raise out of a run
+        return {"ok": False, "summary": f"AppID import failed: {exc}", "log": ""}
+    if not records:
+        return {"ok": False,
+                "summary": "AppID import: fetched source had no rows with an "
+                           "AppID — check the saved column mapping.", "log": ""}
+    res = _appids.import_records(records, product=product, source="import",
+                                 created_by="scheduler")
+    return {"ok": True, "summary": f"AppID import: {res.summary()}.",
+            "log": json.dumps(res.as_dict())[:_LOG_MAX]}
 
 
 def _do_upgrade_prep(appliance, dry_run: bool) -> dict:
@@ -727,6 +775,25 @@ def _do_user_op(key: str, appliance, params: dict, dry_run: bool) -> dict:
             {"mkey": pool, "sub_mkey": member})
         result = ops.update(endpoint, None, {"status": status_val}, dry_run=dry_run)
         label = f"{verb} backend {member}@{pool} on {appliance.name}"
+    elif key == "backend_set_config":
+        pool = str(params.get("server_pool") or "").strip()
+        member = str(params.get("member") or "").strip()
+        if not pool or not member:
+            return {"ok": False, "summary": "set the server pool + member id.", "log": ""}
+        payload = {}
+        ip = str(params.get("ip") or params.get("host") or "").strip()
+        port = str(params.get("port") or "").strip()
+        if ip:
+            payload["ip"] = ip
+        if port:
+            payload["port"] = int(port) if port.isdigit() else port
+        if not payload:
+            return {"ok": False, "summary": "set a new ip and/or port.", "log": ""}
+        endpoint = SERVER_POOL_MEMBER_EP + "?" + urlencode(
+            {"mkey": pool, "sub_mkey": member})
+        result = ops.update(endpoint, None, payload, dry_run=dry_run)
+        changed = ", ".join(f"{k}={v}" for k, v in payload.items())
+        label = f"backend {member}@{pool} -> {changed} on {appliance.name}"
     else:  # swap_certificate
         policy = str(params.get("policy") or "").strip()
         cert = str(params.get("certificate") or "").strip()

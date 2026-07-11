@@ -1585,6 +1585,237 @@ class DbReport(db.Model):
         return f"<DbReport {self.id} {self.name!r}>"
 
 
+# ---------------------------------------------------------------------------
+# AppID — the billing + access-control authority (see services.appids)
+# ---------------------------------------------------------------------------
+class AppId(db.Model):
+    """A customer application identifier.
+
+    It is BOTH a billing key (which customer a Server Policy is charged to) and
+    the unit an API token can be scoped to. The catalog is fed manually or by an
+    ADDITIVE import (file / URL) through a saved column→field mapping; a row that
+    vanishes from a feed is flagged ``stale`` — never deleted (that would de-bill
+    a client). ``extra_json`` carries the extra columns a source PDF/CSV brings
+    beyond the core fields, so the schema doesn't need a column per source field.
+    """
+
+    __tablename__ = "app_ids"
+    __table_args__ = (
+        # AppID is a GLOBAL catalog (spans FortiWeb + FortiADC): unique on the
+        # NAME alone; which product a binding touches is decided by the appliance.
+        db.UniqueConstraint("app_id", name="uq_appid_key"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    app_id = db.Column(db.String(128), nullable=False, index=True)
+    product = db.Column(db.String(16), nullable=False, default="global")
+    customer = db.Column(db.String(200), nullable=False, default="")
+    label = db.Column(db.String(200), nullable=False, default="")
+    rate = db.Column(db.String(64), nullable=True, default="")
+    extra_json = db.Column(db.Text, nullable=False, default="{}")
+    source = db.Column(db.String(16), nullable=False, default="manual")  # manual|import
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    stale = db.Column(db.Boolean, nullable=False, default=False)
+    stale_reason = db.Column(db.Text, nullable=False, default="")
+    last_seen = db.Column(db.DateTime, nullable=True)
+    created_by = db.Column(db.String(64), nullable=True, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow, nullable=False)
+
+    @property
+    def extra_dict(self) -> dict[str, Any]:
+        try:
+            v = json.loads(self.extra_json or "{}")
+            return v if isinstance(v, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id, "app_id": self.app_id, "product": self.product,
+            "customer": self.customer, "label": self.label, "rate": self.rate,
+            "extra": self.extra_dict, "source": self.source,
+            "active": bool(self.active), "stale": bool(self.stale),
+            "stale_reason": self.stale_reason,
+            "last_seen": self.last_seen.isoformat() if self.last_seen else None,
+        }
+
+    def __repr__(self) -> str:
+        return f"<AppId {self.app_id!r} product={self.product}>"
+
+
+class AppIdPolicy(db.Model):
+    """Binding of a FortiWeb Server Policy to exactly one :class:`AppId`.
+
+    ``UNIQUE(appliance_id, server_policy)`` is what makes a policy belong to one
+    AppID (one customer). This junction — not a policy comment — is the authority
+    a token's scope and the billing rollup resolve against."""
+
+    __tablename__ = "app_id_policies"
+    __table_args__ = (
+        db.UniqueConstraint("appliance_id", "server_policy",
+                            name="uq_appidpolicy_policy"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    app_id_id = db.Column(
+        db.Integer, db.ForeignKey("app_ids.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    appliance_id = db.Column(
+        db.Integer, db.ForeignKey("appliances.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    server_policy = db.Column(db.String(256), nullable=False)
+    assigned_by = db.Column(db.String(64), nullable=True, default="")
+    assigned_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    app = db.relationship("AppId", lazy="joined")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id, "app_id_id": self.app_id_id,
+            "appliance_id": self.appliance_id, "server_policy": self.server_policy,
+            "app_id": getattr(self.app, "app_id", None),
+            "customer": getattr(self.app, "customer", None),
+        }
+
+    def __repr__(self) -> str:
+        return f"<AppIdPolicy {self.server_policy!r} -> app={self.app_id_id}>"
+
+
 # Device-structure cache models (source-of-truth substrate) — import so
 # create_all()/Alembic register them.
 from . import models_cache  # noqa: E402,F401
+
+
+# ---------------------------------------------------------------------------
+# Plugin Sandbox — operator-authored HTML/Jinja/JS views (super-admin only)
+# ---------------------------------------------------------------------------
+class Plugin(db.Model):
+    """A super-admin authored custom view/widget.
+
+    SECURITY MODEL (see services.plugin_sandbox):
+      * The Jinja body renders in an ``ImmutableSandboxedEnvironment`` against a
+        CURATED, READ-ONLY data API — it can never mutate the DB or reach app
+        internals.
+      * The rendered document (css + html + js) is served ONLY inside an
+        ``<iframe sandbox="allow-scripts">`` WITHOUT ``allow-same-origin`` — an
+        opaque origin, so the plugin's JS cannot read the app's cookies, DOM or
+        session, and cannot call back to authenticated endpoints.
+      * A render failure is caught and shown as an error card — a broken plugin
+        never 500s the host app (see ``plugin_sandbox.safe_render``).
+    Lifecycle: draft -> testing -> published. Only ``published`` plugins appear
+    in the Custom Views nav; ``testing`` is previewable by the author only.
+    """
+
+    __tablename__ = "plugins"
+
+    KINDS = ("view", "widget")
+    STATUSES = ("draft", "testing", "published")
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    slug = db.Column(db.String(120), unique=True, nullable=False, index=True)
+    kind = db.Column(db.String(16), nullable=False, default="view")
+    status = db.Column(db.String(16), nullable=False, default="draft")
+    icon = db.Column(db.String(32), nullable=False, default="bi-puzzle")
+    # Author-supplied source. ``jinja`` is the server-rendered body (sandboxed);
+    # css/js are injected verbatim into the isolated iframe document.
+    jinja = db.Column(db.Text, nullable=False, default="")
+    css = db.Column(db.Text, nullable=False, default="")
+    js = db.Column(db.Text, nullable=False, default="")
+    # JSON list of curated dataset keys this plugin is allowed to read.
+    data_sources = db.Column(db.Text, nullable=False, default="[]")
+    # JSON list of author-defined INPUT PARAMETERS (selectors) the consumer of
+    # the view fills in; each filters the curated data in the plugin body via
+    # ``params.<name>``. Optional by design — an empty selection shows all.
+    params = db.Column(db.Text, nullable=False, default="[]")
+    created_by = db.Column(db.String(64), nullable=False, default="")
+    product = db.Column(db.String(16), nullable=False, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow, nullable=False)
+    published_at = db.Column(db.DateTime, nullable=True)
+
+    @property
+    def datasets(self) -> list:
+        try:
+            v = json.loads(self.data_sources or "[]")
+            return [str(x) for x in v] if isinstance(v, list) else []
+        except Exception:
+            return []
+
+    @property
+    def param_defs(self) -> list:
+        """Author-defined input parameters (selectors). List of dicts:
+        {name,label,type,options,default,required}. Never raises."""
+        try:
+            v = json.loads(self.params or "[]")
+            return v if isinstance(v, list) else []
+        except Exception:
+            return []
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id, "name": self.name, "slug": self.slug,
+            "kind": self.kind, "status": self.status, "icon": self.icon,
+            "datasets": self.datasets, "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self) -> str:
+        return f"<Plugin {self.id} {self.slug!r} {self.status}>"
+
+
+# ---------------------------------------------------------------------------
+# Lua Script Studio — author / lint / analyze / deploy Lua for FortiWeb/ADC
+# ---------------------------------------------------------------------------
+class LuaScript(db.Model):
+    """A Lua script targeting a FortiWeb or FortiADC scripting object.
+
+    The studio LINTS with ``luac -p`` (parse only, NEVER executes device code),
+    STATICALLY ANALYSES what the script does against a curated API dictionary,
+    and DEPLOYS through the versioned scripting endpoint (dry-run default). The
+    device stays the source of truth; ``analysis`` is the last computed report.
+    """
+
+    __tablename__ = "lua_scripts"
+
+    TARGETS = ("fortiweb", "fortiadc")
+    STATUSES = ("draft", "tested", "deployed")
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    target = db.Column(db.String(16), nullable=False, default="fortiweb")
+    appliance_id = db.Column(db.Integer, nullable=True, index=True)
+    deploy_object = db.Column(db.String(200), nullable=False, default="")
+    code = db.Column(db.Text, nullable=False, default="")
+    status = db.Column(db.String(16), nullable=False, default="draft")
+    analysis = db.Column(db.Text, nullable=False, default="{}")
+    created_by = db.Column(db.String(64), nullable=False, default="")
+    product = db.Column(db.String(16), nullable=False, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow, nullable=False)
+    deployed_at = db.Column(db.DateTime, nullable=True)
+
+    @property
+    def analysis_obj(self) -> dict:
+        try:
+            v = json.loads(self.analysis or "{}")
+            return v if isinstance(v, dict) else {}
+        except Exception:
+            return {}
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id, "name": self.name, "target": self.target,
+            "appliance_id": self.appliance_id, "deploy_object": self.deploy_object,
+            "status": self.status, "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self) -> str:
+        return f"<LuaScript {self.id} {self.name!r} {self.target}>"

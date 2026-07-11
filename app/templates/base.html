@@ -314,6 +314,8 @@
             <i class="bi bi-speedometer2 fw-nav-icon"></i><span>Capacity Limits</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' else '' }}" href="{{ url_for('database.index') }}">
             <i class="bi bi-hdd fw-nav-icon"></i><span>Database</span></a>
+          <a class="fw-nav-item {{ 'active' if request.endpoint == 'database.py_console_page' else '' }}" href="{{ url_for('database.py_console_page') }}">
+            <i class="bi bi-terminal fw-nav-icon"></i><span>Python Console</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'naming' else '' }}" href="{{ url_for('naming.index', product='fortiadc') }}">
             <i class="bi bi-tag fw-nav-icon"></i><span>Naming</span></a>
           <a class="fw-nav-item {{ 'active' if request.endpoint == 'adc.signatures' else '' }}" href="{{ url_for('adc.signatures') }}">
@@ -366,7 +368,9 @@
       </div>
 
       {% if current_user and current_user.can('user_manage') %}
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['appliances','audit','users','classification','database','system_backup','self_update','reports'] }}" data-nav-group="Administrator">
+      <a class="fw-nav-item {{ 'active' if request.endpoint == 'plugins.gallery' else '' }}" href="{{ url_for('plugins.gallery') }}">
+        <i class="bi bi-grid-1x2 fw-nav-icon"></i><span>Custom Views</span></a>
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['appliances','audit','users','appids','classification','database','system_backup','self_update','reports','plugins','lua_studio'] }}" data-nav-group="Administrator">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>Administrator</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'appliances' else '' }}" href="{{ url_for('appliances.index') }}">
@@ -375,6 +379,8 @@
             <i class="bi bi-clipboard-check fw-nav-icon"></i><span>Audit Log</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'users' else '' }}" href="{{ url_for('users.index') }}">
             <i class="bi bi-people fw-nav-icon"></i><span>Users</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'appids' else '' }}" href="{{ url_for('appids.index') }}">
+            <i class="bi bi-tags fw-nav-icon"></i><span>AppIDs</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'classification' else '' }}" href="{{ url_for('classification.index') }}">
             <i class="bi bi-tags fw-nav-icon"></i><span>Classification</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' else '' }}" href="{{ url_for('database.index') }}">
@@ -385,6 +391,28 @@
             <i class="bi bi-arrow-repeat fw-nav-icon"></i><span>Software Update &amp; HA</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'reports' else '' }}" href="{{ url_for('reports.inbox') }}">
             <i class="bi bi-bug fw-nav-icon"></i><span>Bug Reports</span></a>
+          {% set _can_pyc = current_user.can('studio.python_console') %}
+          {% set _can_plg = current_user.can('studio.plugin_studio') %}
+          {% set _can_lua = current_user.can('studio.lua_studio') %}
+          {% if _can_pyc or _can_plg or _can_lua %}
+          <div class="fw-nav-subgroup {{ 'open' if request.endpoint == 'database.py_console_page' or request.blueprint in ['plugins','lua_studio'] }}" data-nav-subgroup="Studio">
+            <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-code-slash fw-nav-icon"></i><span>Studio</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+            <div class="fw-nav-subgroup-body">
+              {% if _can_pyc %}
+              <a class="fw-nav-item {{ 'active' if request.endpoint == 'database.py_console_page' else '' }}" href="{{ url_for('database.py_console_page') }}">
+                <i class="bi bi-terminal fw-nav-icon"></i><span>Python Console</span></a>
+              {% endif %}
+              {% if _can_plg %}
+              <a class="fw-nav-item {{ 'active' if request.blueprint == 'plugins' and request.endpoint != 'plugins.gallery' else '' }}" href="{{ url_for('plugins.index') }}">
+                <i class="bi bi-puzzle fw-nav-icon"></i><span>Plugin Studio</span></a>
+              {% endif %}
+              {% if _can_lua %}
+              <a class="fw-nav-item {{ 'active' if request.blueprint == 'lua_studio' else '' }}" href="{{ url_for('lua_studio.index') }}">
+                <i class="bi bi-braces fw-nav-icon"></i><span>Lua Studio</span></a>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
         </div>
       </div>
       {% endif %}
@@ -401,7 +429,7 @@
       {% set _g_ops  = request.blueprint in ['backups','logs','import_backup'] %}
       {% set _g_api  = request.blueprint in ['registry','api_explorer','structure'] %}
       {% set _g_auto = request.blueprint in ['scheduled_actions','provisioning','change_requests'] %}
-      {% set _g_adm  = request.blueprint in ['templates','audit','appliances','segments','naming','firmware','capacity','signatures'] %}
+      {% set _g_adm  = request.blueprint in ['templates','audit','appliances','segments','naming','firmware','capacity','signatures','api_tokens'] %}
 
       <!-- ADOM back-link — ALWAYS the first entry (same format as FortiADC) -->
       <div class="fw-nav-context" data-nav-context="ADOM">
@@ -696,6 +724,23 @@
       </div>
       {% endif %}
 
+      {% endif %}
+
+      {% if product.key in ('fortiweb', 'fortiadc') %}
+      <!-- PLUGINS — Custom Views + the studios, scoped to THIS ADOM -->
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['plugins','lua_studio'] }}" data-nav-group="Plugins">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-puzzle fw-nav-section-icon" style="color:#3b82f6;"></i><span>Plugins</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item {{ 'active' if request.endpoint == 'plugins.gallery' else '' }}" href="{{ url_for('plugins.gallery') }}">
+            <i class="bi bi-grid-1x2 fw-nav-icon"></i><span>Custom Views</span></a>
+          {% if current_user and current_user.is_admin_capable %}
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'plugins' and request.endpoint != 'plugins.gallery' else '' }}" href="{{ url_for('plugins.index') }}">
+            <i class="bi bi-puzzle fw-nav-icon"></i><span>Plugin Studio</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'lua_studio' else '' }}" href="{{ url_for('lua_studio.index') }}">
+            <i class="bi bi-braces fw-nav-icon"></i><span>Lua Studio</span></a>
+          {% endif %}
+        </div>
+      </div>
       {% endif %}
 
       </div><!-- /.fw-nav-top -->

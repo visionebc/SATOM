@@ -41,6 +41,63 @@ VALID_PRODUCTS = ("fortiweb", "fortiadc", "global")
 
 TOKEN_PREFIX = "fmk"  # Fortinet-Manager-Key
 
+# --------------------------------------------------------------------------- #
+#  Fine-grained authorization — the "what" and the "where" (Phase 2)           #
+# --------------------------------------------------------------------------- #
+# scope (read|write|admin) answers "how privileged". CAPABILITIES answer "which
+# KINDS of action" and app_ids answer "on WHICH server policies". Both are
+# ALLOW-LISTS with a permissive empty default so existing tokens keep working:
+#
+#   * capabilities == []  -> no action-type restriction (any non-danger action
+#                            the scope + product already allow).
+#   * capabilities != []  -> the action's capability tag MUST be in the list.
+#   * app_ids == []       -> no location restriction.
+#   * app_ids != []       -> the action must target a server policy bound to one
+#                            of these AppIDs; a non-policy/fleet action is denied
+#                            (an AppID-scoped token has no fleet-wide reach).
+#
+# This is exactly the operator's ask: "un token que SOLO puede editar backends
+# de estos AppIDs".
+CAPABILITIES = ("backend_edit", "backend_config", "policy_status", "cert_swap", "maintenance", "reports")
+
+# Every runnable catalog action → the capability tag it belongs to. An action
+# missing here has tag None, so a capability-restricted token can never run it
+# (fail-closed) while an unrestricted token still can.
+ACTION_CAPABILITY = {
+    # user-scope object mutations (the AppID-scopable ones)
+    "backend_set_status": "backend_edit",
+    "backend_set_config": "backend_config",
+    "policy_set_status": "policy_status",
+    "swap_certificate": "cert_swap",
+    # admin non-destructive maintenance
+    "backup": "maintenance",
+    "device_sync": "maintenance",
+    "device_inspect": "maintenance",
+    "deep_capture": "maintenance",
+    "signature_sync": "maintenance",
+    "system_backup": "maintenance",
+    "cert_scan": "maintenance",
+    "cert_lifecycle": "maintenance",
+    "upgrade_prep": "maintenance",
+    "appid_import": "maintenance",
+    "custom_rest": "maintenance",
+    # read/report style
+    "stats": "reports",
+    "inventory_snapshot": "reports",
+    "health_check": "reports",
+    "ha_check": "reports",
+}
+
+# Capabilities that act on ONE concrete server policy, so an AppID scope can be
+# resolved and enforced. A token carrying an app_ids allow-list may run ONLY
+# these; anything else (fleet maintenance/reports) is denied for such a token.
+APPID_SCOPABLE = {"backend_edit", "backend_config", "policy_status", "cert_swap"}
+
+
+def capability_for(action_key: str) -> str | None:
+    """The capability tag of a catalog action key (None if unmapped)."""
+    return ACTION_CAPABILITY.get(action_key)
+
 
 class ApiToken(db.Model):
     __tablename__ = "api_tokens"
@@ -59,6 +116,10 @@ class ApiToken(db.Model):
 
     scopes = db.Column(db.Text, nullable=False, default='["read"]')  # JSON list
     product = db.Column(db.String(16), nullable=False, default="fortiweb")
+
+    # Fine-grained authorization (Phase 2). Both JSON lists; empty = unrestricted.
+    capabilities = db.Column(db.Text, nullable=False, default="[]")   # CAPABILITIES
+    app_ids = db.Column(db.Text, nullable=False, default="[]")        # AppId.app_id names
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     created_by = db.Column(db.String(64), nullable=True, default="")
@@ -86,6 +147,54 @@ class ApiToken(db.Model):
         if want is None:
             return False
         return any(_SCOPE_RANK.get(s, -1) >= want for s in self.scope_list)
+
+    # ---------------------------------------------- capabilities + AppID scope
+    @property
+    def capability_list(self) -> list[str]:
+        try:
+            v = json.loads(self.capabilities or "[]")
+            return [c for c in v if c in CAPABILITIES] if isinstance(v, list) else []
+        except (ValueError, TypeError):
+            return []
+
+    def set_capabilities(self, caps: list[str]) -> None:
+        clean = [c for c in dict.fromkeys(caps or []) if c in CAPABILITIES]
+        self.capabilities = json.dumps(clean)
+
+    @property
+    def app_id_list(self) -> list[str]:
+        try:
+            v = json.loads(self.app_ids or "[]")
+            return [str(a).strip() for a in v if str(a).strip()] if isinstance(v, list) else []
+        except (ValueError, TypeError):
+            return []
+
+    def set_app_ids(self, ids: list[str]) -> None:
+        clean = [s for s in dict.fromkeys((i or "").strip() for i in (ids or [])) if s]
+        self.app_ids = json.dumps(clean)
+
+    @property
+    def is_appid_scoped(self) -> bool:
+        return bool(self.app_id_list)
+
+    def authorize_capability(self, action_key: str) -> tuple[bool, str, str]:
+        """Gate an action by the token's capability allow-list (the "what").
+
+        Returns ``(ok, error_code, message)``. Empty capability list = allow.
+        An AppID-scoped token additionally may run ONLY AppID-scopable actions.
+        """
+        tag = ACTION_CAPABILITY.get(action_key)
+        caps = self.capability_list
+        if caps and tag not in caps:
+            return (False, "capability_denied",
+                    f"This token is not allowed to run '{action_key}' "
+                    f"(capability '{tag}' not granted).")
+        if self.is_appid_scoped and tag not in APPID_SCOPABLE:
+            return (False, "not_appid_scopable",
+                    "This token is AppID-scoped; it can only run actions that "
+                    "target a specific server policy (backend/policy/cert ops), "
+                    "not fleet-wide actions.")
+        return (True, "", "")
 
     # --------------------------------------------------------------- lifecycle
     @property
@@ -115,6 +224,8 @@ class ApiToken(db.Model):
             "masked": self.masked,
             "owner": getattr(self.owner, "username", None),
             "scopes": self.scope_list,
+            "capabilities": self.capability_list,
+            "app_ids": self.app_id_list,
             "product": self.product,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
@@ -135,7 +246,8 @@ def _new_public_id() -> str:
     return secrets.token_hex(8)  # 16 hex chars
 
 
-def mint_token(*, name, owner, scopes, product, expires_at=None, created_by=""):
+def mint_token(*, name, owner, scopes, product, expires_at=None, created_by="",
+               capabilities=None, app_ids=None):
     """Create + persist a token. Returns ``(ApiToken, plaintext)``.
 
     The plaintext (``fmk_<public_id>_<secret>``) is returned ONCE and never
@@ -162,6 +274,8 @@ def mint_token(*, name, owner, scopes, product, expires_at=None, created_by=""):
         expires_at=expires_at,
     )
     tok.set_scopes(scopes)
+    tok.set_capabilities(capabilities or [])
+    tok.set_app_ids(app_ids or [])
     db.session.add(tok)
     db.session.commit()
     plaintext = f"{TOKEN_PREFIX}_{public_id}_{secret}"

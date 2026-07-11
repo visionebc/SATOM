@@ -397,6 +397,15 @@ window.fwSync = fwSync;
   if (!window.__fwNavAccordionBound) {
     window.__fwNavAccordionBound = true;
 
+    // Nested Studio subgroup: toggle ONLY itself; do not touch .fw-nav-group
+    // (its own class keeps it out of the flat accordion above). 2026-07-11
+    document.addEventListener('click', function (e) {
+      var sh = e.target.closest ? e.target.closest('.fw-nav-subtoggle') : null;
+      if (!sh) return;
+      var sg = sh.closest('.fw-nav-subgroup');
+      if (sg) { e.preventDefault(); sg.classList.toggle('open'); }
+    });
+
     document.addEventListener('click', function (e) {
       var head = e.target.closest ? e.target.closest('.fw-nav-toggle') : null;
       if (!head) return;

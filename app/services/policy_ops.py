@@ -221,22 +221,56 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
             rec["error"] = res.get("error", "") if hasattr(res, "get") else ""
             rec["detail"] = {"request": res.get("request") if hasattr(res, "get") else None}
         elif action == "delete":
-            res = delete_policy(_ops(source_appl), policy, dry_run=dry_run)
-            rec["ok"] = bool(getattr(res, "ok", False))
-            rec["error"] = res.get("error", "") if hasattr(res, "get") else ""
-            rec["detail"] = {"request": res.get("request") if hasattr(res, "get") else None}
-            # Lifecycle hook (WAF rule 1): a deleted policy takes its authored
-            # desired-state carve-outs with it (shared ones just lose the
-            # binding) — no orphans waiting for a manual Purge. Best-effort:
-            # a store hiccup never turns a successful device delete into a
-            # failure; it just leaves the manual Purge as the fallback.
-            if rec["ok"] and not dry_run:
-                try:
-                    from . import wpp_exceptions as exc_store
-                    purged = exc_store.delete_for_policy(source_appl.id, policy)
-                    rec["detail"]["carveouts_purged"] = purged
-                except Exception:  # noqa: BLE001
-                    rec["detail"]["carveouts_purged"] = None
+            from . import policy_graph as _pg
+            from . import clone as _clone
+            from ..clients.fortiweb import FortiWebClient
+            reader = _clone.ClientReader(FortiWebClient(source_appl))
+            plan = _pg.plan_cascade_delete(reader, policy)
+            if dry_run:
+                rec["ok"] = True
+                rec["detail"] = {
+                    "cascade_plan": {
+                        "root": plan["root"],
+                        "to_delete": [
+                            {"urn": u, "mkey": m, "label": l}
+                            for u, m, l in plan["to_delete"]
+                        ],
+                        "to_keep": [
+                            {"urn": u, "mkey": m, "label": l, "reason": r,
+                             "shared_with": sw}
+                            for u, m, l, r, sw in plan["to_keep"]
+                        ],
+                        "by_parent_count": len(plan["by_parent"]),
+                    },
+                    "to_delete_count": len(plan["to_delete"]) + 1,
+                    "to_keep_count": len(plan["to_keep"]),
+                }
+            else:
+                cascade = _pg.execute_delete_plan(_ops(source_appl), plan, dry_run=False)
+                root_r = next(
+                    (r for r in cascade if r["urn"] == "cmdb/server-policy/policy"),
+                    {}
+                )
+                rec["ok"] = bool(root_r.get("ok", False))
+                rec["error"] = root_r.get("error", "") or ""
+                deleted = [r for r in cascade if r.get("action") == "deleted"]
+                kept = [r for r in cascade
+                        if r.get("action") in ("kept", "kept_shared")]
+                failed_items = [r for r in cascade if r.get("action") == "failed"]
+                rec["detail"] = {
+                    "cascade": cascade,
+                    "deleted_count": len(deleted),
+                    "kept_count": len(kept),
+                    "failed_count": len(failed_items),
+                }
+                # Lifecycle hook: purge WPP carve-outs for this policy.
+                if rec["ok"]:
+                    try:
+                        from . import wpp_exceptions as exc_store
+                        purged = exc_store.delete_for_policy(source_appl.id, policy)
+                        rec["detail"]["carveouts_purged"] = purged
+                    except Exception:  # noqa: BLE001
+                        rec["detail"]["carveouts_purged"] = None
         elif action == "clone_here":
             planner = _planner(source_appl, source_appl)
             items = clone_policy(planner, _ops(source_appl), policy,

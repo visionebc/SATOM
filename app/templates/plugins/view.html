@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}{{ plugin.name }}{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <div class="fw-breadcrumb"><a href="{{ url_for('plugins.gallery') }}">Custom Views</a><span class="separator">/</span>{{ plugin.name }}</div>
+    <h1 class="fw-page-title"><i class="bi {{ plugin.icon }} me-2 text-accent"></i>{{ plugin.name }}</h1>
+  </div>
+  {% if current_user.is_admin_capable %}
+  <div><a class="btn btn-fw-outline btn-sm" href="{{ url_for('plugins.edit', pid=plugin.id) }}"><i class="bi bi-pencil me-1"></i>Edit</a></div>
+  {% endif %}
+</div>
+
+{% if param_defs %}
+<div class="fw-card mb-3">
+  <div class="fw-card-body pv-inputs">
+    {% for pd in param_defs %}
+    <div class="pv-field">
+      <label class="pv-lbl">{{ pd.label }}{% if pd.required %} <span class="pv-req">*</span>{% endif %}</label>
+      {% if pd.type in ('device', 'select') %}
+      <select class="form-select fw-form-control pv-input" data-name="{{ pd.name }}">
+        {% if not pd.required %}<option value="">All</option>{% endif %}
+        {% for o in pd.options %}<option value="{{ o.value }}" {{ 'selected' if initial.get(pd.name)|string == o.value|string else '' }}>{{ o.label }}</option>{% endfor %}
+      </select>
+      {% elif pd.type == 'number' %}
+      <input type="number" class="form-control fw-form-control pv-input" data-name="{{ pd.name }}"
+             value="{{ initial.get(pd.name) if initial.get(pd.name) not in (None, '') else '' }}"
+             placeholder="{{ pd.default or 'any' }}">
+      {% elif pd.type == 'date' %}
+      <input type="date" class="form-control fw-form-control pv-input" data-name="{{ pd.name }}" value="{{ initial.get(pd.name) or '' }}">
+      {% else %}
+      <input type="text" class="form-control fw-form-control pv-input" data-name="{{ pd.name }}"
+             value="{{ initial.get(pd.name) or '' }}" placeholder="{{ pd.default or 'filter…' }}">
+      {% endif %}
+    </div>
+    {% endfor %}
+    <button type="button" class="btn btn-fw-outline btn-sm pv-reset"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset</button>
+  </div>
+</div>
+{% endif %}
+
+<div class="fw-card">
+  <div class="fw-card-body p-0">
+    <iframe id="pv-frame" sandbox="allow-scripts" title="{{ plugin.name }}"
+      src="{{ url_for('plugins.frame', pid=plugin.id) }}"
+      style="width:100%;height:calc(100vh - 220px);border:0;border-radius:var(--fw-radius-lg);background:#fff;display:block"></iframe>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function(){
+  var base = "{{ url_for('plugins.frame', pid=plugin.id) }}";
+  var frame = document.getElementById('pv-frame');
+  var inputs = Array.prototype.slice.call(document.querySelectorAll('.pv-input'));
+  if (!inputs.length) return;
+  function apply(){
+    var parts = [];
+    inputs.forEach(function(el){
+      var v = el.value;
+      if (v !== null && v !== '') {
+        parts.push('p_' + encodeURIComponent(el.getAttribute('data-name')) + '=' + encodeURIComponent(v));
+      }
+    });
+    frame.src = base + (parts.length ? ('?' + parts.join('&')) : '');
+  }
+  var t = null;
+  inputs.forEach(function(el){
+    var ev = (el.tagName === 'SELECT' || el.type === 'date') ? 'change' : 'input';
+    el.addEventListener(ev, function(){
+      clearTimeout(t); t = setTimeout(apply, el.tagName === 'SELECT' ? 0 : 350);
+    });
+  });
+  var reset = document.querySelector('.pv-reset');
+  if (reset) reset.addEventListener('click', function(){ inputs.forEach(function(el){ el.value = ''; }); apply(); });
+})();
+</script>
+<style nonce="{{ csp_nonce }}">
+.pv-inputs{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end}
+.pv-field{display:flex;flex-direction:column;gap:4px;min-width:170px}
+.pv-lbl{font-size:12px;color:var(--fw-text-secondary);font-weight:500}
+.pv-req{color:var(--fw-danger)}
+.pv-reset{margin-left:auto}
+</style>
+{% endblock %}

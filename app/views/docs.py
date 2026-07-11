@@ -35,6 +35,7 @@ _TITLES: dict[str, str] = {
     "web_protection_profile.md": "Web Protection Profile Reference",
     "wpp_exceptions.md": "WPP Exceptions & Signatures",
     "release_notes.md": "Release Notes & Upgrade Planning",
+    "api_v1.md": "API v1 — Integration Manual",
 }
 
 # One-line descriptions for the catalog cards.
@@ -46,6 +47,7 @@ _BLURBS: dict[str, str] = {
     "web_protection_profile.md": "The ~40 sub-policy WAF bundle, field by field.",
     "wpp_exceptions.md": "Authoring and injecting WAF exceptions and signature carve-outs.",
     "release_notes.md": "Known/resolved issues corpus and the upgrade advisor.",
+    "api_v1.md": "How third parties authenticate and drive /api/v1 with a token.",
 }
 
 _MD_EXTENSIONS = ["toc", "fenced_code", "tables", "sane_lists", "nl2br"]
@@ -97,4 +99,29 @@ def view(slug: str):
         content=html,
         slug=slug,
         docs=_catalog(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# PUBLIC API manual — readable WITHOUT login (documentation only, no secrets).
+# Linked from the sign-in page so integrators can learn how to use /api/v1
+# before they have an account. Rendered in a standalone (no-sidebar) template
+# so it needs no authenticated session context.
+# ---------------------------------------------------------------------------
+_API_DOC = "api_v1.md"
+
+
+@bp.route("/api")
+def api_public():
+    import markdown as md_lib
+
+    path = (DOCS_DIR / _API_DOC).resolve()
+    if DOCS_DIR.resolve() not in path.parents or not path.is_file():
+        abort(404)
+    text = path.read_text(encoding="utf-8")
+    html = Markup(md_lib.markdown(text, extensions=_MD_EXTENSIONS, output_format="html5"))
+    return render_template(
+        "docs/public.html",
+        title="API v1 — Integration Manual",
+        content=html,
     )

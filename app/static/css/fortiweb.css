@@ -501,6 +501,24 @@ div.fw-nav-section.fw-nav-context-label {
   color: #FFFFFF;
 }
 
+/* Secondary (neutral) button — back/cancel/close actions. Added 2026-07-11:
+   was used by 5 templates (cert_manager, provisioning, docs) + plugin/lua
+   studio but never defined, so it fell back to an unstyled .btn. */
+.btn-fw-secondary {
+  background: #FFFFFF;
+  border: 1px solid var(--fw-border);
+  color: var(--fw-text-secondary);
+  font-weight: 500;
+  border-radius: var(--fw-radius);
+  transition: all var(--fw-transition);
+}
+.btn-fw-secondary:hover, .btn-fw-secondary:focus {
+  background: var(--fw-border-light);
+  color: var(--fw-text-primary);
+  border-color: var(--fw-text-secondary);
+}
+
+
 .btn-sm-icon {
   padding: 4px 8px;
   font-size: 12px;
@@ -518,6 +536,12 @@ div.fw-nav-section.fw-nav-context-label {
   background: #FFFFFF;
   box-shadow: var(--fw-card-shadow);
 }
+
+/* Actions dropdown must escape the horizontal-scroll clip of the table wrapper.
+   overflow-x:auto forces overflow-y to auto too, trapping the menu inside the
+   div (internal scrollbar). Un-clip only while a row dropdown is open. */
+.fw-table-wrapper:has(.dropdown-menu.show) { overflow: visible; }
+
 
 .fw-table {
   width: 100%;
@@ -1430,3 +1454,31 @@ details[open] > .fw-group-head::before { transform: rotate(90deg); }
 .fw-doc-content ul, .fw-doc-content ol { padding-left: 1.4em; margin-bottom: .85em; }
 .fw-doc-content li { margin-bottom: .25em; }
 .fw-doc-content hr { border: none; border-top: 1px solid var(--fw-border); margin: 1.5em 0; }
+
+
+/* ============================================================
+   Nested Studio subgroup — a collapsible group INSIDE a nav
+   group (Administrator > Studio). Uses its own classes so the
+   flat top-level accordion (.fw-nav-group / .fw-nav-toggle in
+   main.js) never captures or collapses it. 2026-07-11
+   ============================================================ */
+.fw-nav-subtoggle {
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+.fw-nav-subtoggle > span { flex: 1 1 auto; }
+.fw-nav-subgroup:not(.open) .fw-nav-subtoggle .fw-nav-caret { transform: rotate(-90deg); }
+.fw-nav-subgroup-body {
+  overflow: hidden;
+  transition: opacity .2s ease;
+  margin-left: 23px;
+  border-left: 1px solid rgba(255,255,255,0.08);
+}
+.fw-nav-subgroup:not(.open) > .fw-nav-subgroup-body { max-height: 0; opacity: 0; }
+.fw-nav-subgroup.open > .fw-nav-subgroup-body { max-height: none; opacity: 1; }
+.fw-nav-subgroup-body > .fw-nav-item { padding-left: 16px; }

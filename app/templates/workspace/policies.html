@@ -711,7 +711,49 @@
         body += '<div class="text-muted">to create: ' + (s.to_create || 0)
           + ' · already exists: ' + (s.exists || 0) + ' · total: ' + (s.total || 0) + '</div>';
       }
-      if (det.plan) body += '<pre style="white-space:pre-wrap;margin:4px 0;background:rgba(148,163,184,.06);padding:6px;border-radius:6px;">' + esc(det.plan) + '</pre>';
+      if (det.cascade_plan) {
+        var cp = det.cascade_plan;
+        var cpHtml = '<div style="margin:8px 0 4px;">';
+        cpHtml += '<div style="margin-bottom:8px;font-size:12px;">'
+          + '<span style="color:#f87171;font-weight:600;">&#10005;&nbsp;' + (det.to_delete_count || 0) + ' will be deleted</span>'
+          + '&ensp;&middot;&ensp;'
+          + '<span style="color:#94a3b8;">' + (det.to_keep_count || 0) + ' kept (shared/exempt)</span>';
+        if (cp.by_parent_count) {
+          cpHtml += '&ensp;&middot;&ensp;<span style="color:#94a3b8;">' + cp.by_parent_count + ' auto-removed with parent</span>';
+        }
+        cpHtml += '</div>';
+        if (cp.to_delete && cp.to_delete.length) {
+          cpHtml += '<div style="color:#f87171;font-weight:600;font-size:11px;letter-spacing:.04em;margin-bottom:3px;">WILL BE DELETED</div>';
+          cpHtml += '<div style="background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:6px;padding:6px 8px;margin-bottom:6px;">';
+          cpHtml += '<div style="padding:2px 0;"><span style="color:#fca5a5;font-weight:600;">' + esc(cp.root) + '</span>'
+            + ' <span style="color:#64748b;font-size:11px;">(server policy)</span></div>';
+          cp.to_delete.forEach(function(obj) {
+            cpHtml += '<div style="padding:1px 0;padding-left:10px;color:#fca5a5;">&#10005; ' + esc(obj.label || obj.mkey)
+              + ' <span style="color:#64748b;font-size:11px;">' + esc(obj.urn) + '</span></div>';
+          });
+          cpHtml += '</div>';
+        }
+        if (cp.to_keep && cp.to_keep.length) {
+          cpHtml += '<div style="color:#fbbf24;font-weight:600;font-size:11px;letter-spacing:.04em;margin-bottom:3px;">WILL BE KEPT</div>';
+          cpHtml += '<div style="background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.2);border-radius:6px;padding:6px 8px;">';
+          cp.to_keep.forEach(function(obj) {
+            var reasonLabel;
+            if (obj.reason === 'shared') {
+              var names = obj.shared_with || [];
+              reasonLabel = names.length
+                ? 'shared with: <span style="color:#cbd5e1;">' + names.map(esc).join(', ') + '</span>'
+                : 'shared &mdash; used by other policies';
+            } else if (obj.reason === 'always_skip') {
+              reasonLabel = 'exempt from auto-deletion';
+            } else { reasonLabel = esc(obj.reason || ''); }
+            cpHtml += '<div style="padding:1px 0;padding-left:10px;color:#94a3b8;">&#9675; ' + esc(obj.label || obj.mkey)
+              + ' <span style="color:#64748b;font-size:11px;">&mdash; ' + reasonLabel + '</span></div>';
+          });
+          cpHtml += '</div>';
+        }
+        cpHtml += '</div>';
+        body += cpHtml;
+      } else if (det.plan) body += '<pre style="white-space:pre-wrap;margin:4px 0;background:rgba(148,163,184,.06);padding:6px;border-radius:6px;">' + esc(det.plan) + '</pre>';
       else if (det.request) body += '<pre style="white-space:pre-wrap;margin:4px 0;background:rgba(148,163,184,.06);padding:6px;border-radius:6px;">' + esc(JSON.stringify(det.request, null, 1)) + '</pre>';
       return head + body;
     }).join('');

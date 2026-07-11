@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if plugin else 'New' }} view — Plugin Studio{% endblock %}
+{% block content %}
+
+<div class="fw-breadcrumb">
+  <a href="{{ url_for('plugins.index') }}">Plugin Studio</a>
+  <span class="separator">/</span>{{ plugin.name if plugin else 'New custom view' }}
+</div>
+
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-puzzle me-2 text-accent"></i>{{ plugin.name if plugin else 'New custom view' }}</h1>
+    <p class="fw-page-sub">Body is Jinja (sandboxed). CSS/JS run inside an isolated <code>sandbox=allow-scripts</code> iframe. Read data with <code>{{ '{{ data.KEY.rows }}' }}</code> in the body or <code>window.pluginData.KEY.rows</code> in JS.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-fw-outline btn-sm" type="button" id="btn-examples"><i class="bi bi-collection me-1"></i>Browse examples</button>
+    <a class="btn btn-fw-secondary btn-sm" href="{{ url_for('plugins.index') }}"><i class="bi bi-arrow-left me-1"></i>All views</a>
+  </div>
+</div>
+
+{% if plugin %}
+{% set steps = [('draft','Draft','bi-pencil'),('testing','Testing','bi-eye'),('published','Published','bi-broadcast')] %}
+{% set order = {'draft':0,'testing':1,'published':2} %}
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>Lifecycle</h2>
+    <span class="fw-badge fw-badge-{{ {'draft':'secondary','testing':'warning','published':'success'}[plugin.status] }}">{{ plugin.status }}</span>
+  </div>
+  <div class="fw-card-body">
+    <div class="lc-steps">
+      {% for key,label,icon in steps %}
+      <div class="lc-step {{ 'done' if order[plugin.status] > order[key] else ('now' if plugin.status==key else 'todo') }}">
+        <div class="lc-dot"><i class="bi {{ icon }}"></i></div>
+        <div class="lc-lbl">{{ label }}</div>
+      </div>
+      {% if not loop.last %}<div class="lc-line {{ 'fill' if order[plugin.status] > order[key] else '' }}"></div>{% endif %}
+      {% endfor %}
+    </div>
+    <div class="lc-actions">
+      {% for key,label,icon in steps %}
+        {% if plugin.status != key %}
+        <form method="post" action="{{ url_for('plugins.set_status', pid=plugin.id) }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="status" value="{{ key }}">
+          {% if order[plugin.status] < order[key] %}
+          <button class="btn btn-sm {{ 'btn-fw-primary' if key=='published' else 'btn-fw-outline' }}">Promote to {{ label }}<i class="bi bi-arrow-right ms-1"></i></button>
+          {% else %}
+          <button class="btn btn-sm btn-fw-secondary"><i class="bi bi-arrow-left me-1"></i>Back to {{ label }}</button>
+          {% endif %}
+        </form>
+        {% endif %}
+      {% endfor %}
+      <span class="lc-hint">Publishing requires a clean render in <strong>Testing</strong>; published views appear under <em>Custom Views</em> for every engineer.</span>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('plugins.save', pid=plugin.id) if plugin else url_for('plugins.save') }}" id="plugin-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="params" id="fld-params" value="[]">
+  <div class="ed-grid">
+    <div class="fw-card">
+      <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-code-square me-2 text-accent"></i>Definition</h2></div>
+      <div class="fw-card-body">
+        <div class="row g-3 mb-3">
+          <div class="col-sm-6"><label class="fw-form-label">Name</label>
+            <input class="form-control fw-form-control" name="name" id="fld-name" value="{{ plugin.name if plugin else '' }}" required></div>
+          <div class="col-sm-3"><label class="fw-form-label">Kind</label>
+            <select class="form-select fw-form-control" name="kind" id="fld-kind">
+              {% for k in ['view','widget'] %}<option value="{{ k }}" {{ 'selected' if plugin and plugin.kind==k }}>{{ k }}</option>{% endfor %}
+            </select></div>
+          <div class="col-sm-3"><label class="fw-form-label">Icon</label>
+            <input class="form-control fw-form-control" name="icon" id="fld-icon" value="{{ plugin.icon if plugin else 'bi-puzzle' }}"></div>
+        </div>
+
+        <div class="mb-3">
+          <label class="fw-form-label">Datasets <span class="text-secondary fw-normal">(read-only)</span></label>
+          <div class="d-flex flex-wrap gap-2">
+            {% for d in datasets %}
+            <label class="ds-chip" title="{{ d.description }}">
+              <input type="checkbox" name="datasets" value="{{ d.key }}" class="ds-cb"
+                {{ 'checked' if plugin and d.key in plugin.datasets }}> {{ d.label }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <div class="d-flex align-items-center justify-content-between mb-1">
+            <label class="fw-form-label mb-0">Inputs <span class="text-secondary fw-normal">(selectors the viewer fills — read as <code>{{ '{{ params.NAME }}' }}</code> in the body)</span></label>
+            <button class="btn btn-fw-outline btn-sm" type="button" id="btn-add-param"><i class="bi bi-plus-lg me-1"></i>Add input</button>
+          </div>
+          <div id="param-rows" class="param-rows"></div>
+        </div>
+
+        <div class="mb-3">
+          <label class="fw-form-label">Body <span class="text-secondary fw-normal">(Jinja / HTML)</span></label>
+          <textarea class="form-control fw-form-control font-monospace" name="jinja" id="fld-jinja" rows="12">{{ plugin.jinja if plugin else '<h2>Hello fleet</h2>\n<p>Devices: {{ data.fleet_counts.rows[0].devices }}</p>' }}</textarea>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6"><label class="fw-form-label">CSS</label>
+            <textarea class="form-control fw-form-control font-monospace" name="css" id="fld-css" rows="6">{{ plugin.css if plugin else '' }}</textarea></div>
+          <div class="col-md-6"><label class="fw-form-label">JavaScript</label>
+            <textarea class="form-control fw-form-control font-monospace" name="js" id="fld-js" rows="6">{{ plugin.js if plugin else '' }}</textarea></div>
+        </div>
+      </div>
+      <div class="fw-card-footer d-flex gap-2 flex-wrap align-items-center">
+        <button class="btn btn-fw-primary" type="submit"><i class="bi bi-save me-1"></i>Save</button>
+        <button class="btn btn-fw-outline" type="button" id="btn-preview"><i class="bi bi-eye me-1"></i>Live preview</button>
+        {% if plugin %}
+        <button class="btn btn-fw-danger ms-auto" type="button" id="btn-del"
+                data-action="{{ url_for('plugins.delete', pid=plugin.id) }}"
+                data-csrf="{{ csrf_token() }}"><i class="bi bi-trash me-1"></i>Delete</button>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <h2 class="fw-card-title"><i class="bi bi-window me-2 text-accent"></i>Sandboxed preview</h2>
+        <span class="text-secondary" style="font-size:11px">opaque origin · no cookies · read-only</span>
+      </div>
+      <div class="fw-card-body">
+        <div id="param-bar" class="param-bar" style="display:none"></div>
+        <iframe id="preview-frame" sandbox="allow-scripts" title="preview"
+          {% if plugin %}src="{{ url_for('plugins.frame', pid=plugin.id) }}"{% endif %}
+          style="width:100%;height:560px;border:1px solid var(--fw-border);border-radius:var(--fw-radius);background:#fff"></iframe>
+      </div>
+    </div>
+  </div>
+</form>
+
+<!-- Example browser (shared component) -->
+{% set exb_title = 'Example custom views' %}
+{% include '_example_browser.html' %}
+
+<script type="application/json" id="ex-catalog">{{ examples_json|safe }}</script>
+<script nonce="{{ csp_nonce }}">
+(function(){
+  var frame = document.getElementById('preview-frame');
+  // --- Live preview ---
+  var btn = document.getElementById('btn-preview');
+  if (btn) btn.addEventListener('click', function(){
+    if (window.serializePluginParams) window.serializePluginParams();
+    var fd = new FormData(document.getElementById('plugin-form'));
+    fetch('{{ url_for("plugins.preview") }}', {method:'POST', body:fd})
+      .then(function(r){ return r.text(); })
+      .then(function(html){ frame.removeAttribute('src'); frame.srcdoc = html; })
+      .catch(function(e){ frame.srcdoc = '<pre style="color:#fca5a5">'+e+'</pre>'; });
+  });
+  // --- Delete ---
+  var del = document.getElementById('btn-del');
+  if (del) del.addEventListener('click', function(){
+    if (!confirm('Delete this plugin?')) return;
+    var f = document.createElement('form');
+    f.method = 'post';
+    f.action = del.getAttribute('data-action');
+    var t = document.createElement('input');
+    t.type = 'hidden'; t.name = 'csrf_token'; t.value = del.getAttribute('data-csrf');
+    f.appendChild(t);
+    document.body.appendChild(f);
+    f.submit();
+  });
+
+  // --- Example browser (shared component) ---
+  ExampleBrowser.init({
+    previewField: 'jinja',
+    onInsert: function(ex){
+      document.getElementById('fld-name').value = ex.name || ex.title || '';
+      document.getElementById('fld-icon').value = ex.icon || 'bi-puzzle';
+      document.getElementById('fld-jinja').value = ex.jinja || '';
+      document.getElementById('fld-css').value = ex.css || '';
+      document.getElementById('fld-js').value = ex.js || '';
+      var want = {}; (ex.datasets||[]).forEach(function(k){ want[k]=1; });
+      document.querySelectorAll('.ds-cb').forEach(function(cb){ cb.checked = !!want[cb.value]; });
+      if (window.setPluginParamDefs) window.setPluginParamDefs(ex.params||[]);
+      var pb = document.getElementById('btn-preview'); if (pb) pb.click();
+      window.scrollTo({top:0, behavior:'smooth'});
+    }
+  });
+})();
+</script>
+
+<script type="application/json" id="pl-params">{{ params_json|safe }}</script>
+<script type="application/json" id="pl-devices">{{ device_options_json|safe }}</script>
+<script nonce="{{ csp_nonce }}">
+(function(){
+  var TYPES=[['device','Device'],['select','Select (fixed options)'],['text','Text'],['number','Number'],['date','Date']];
+  var defs=[], devices=[];
+  try{ defs=JSON.parse(document.getElementById('pl-params').textContent||'[]')||[]; }catch(e){}
+  try{ devices=JSON.parse(document.getElementById('pl-devices').textContent||'[]')||[]; }catch(e){}
+  var rows=document.getElementById('param-rows');
+  var bar=document.getElementById('param-bar');
+  var hidden=document.getElementById('fld-params');
+  var addBtn=document.getElementById('btn-add-param');
+  var preview=document.getElementById('btn-preview');
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function slug(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
+  function optionsText(d){return (d.options||[]).map(function(o){return o.value+(o.label&&o.label!==o.value?('|'+o.label):'');}).join('\n');}
+  function parseOptions(txt){return String(txt||'').split(/\n+/).map(function(l){return l.trim();}).filter(Boolean).map(function(l){var i=l.indexOf('|');if(i<0)return {value:l,label:l};return {value:l.slice(0,i).trim(),label:l.slice(i+1).trim()||l.slice(0,i).trim()};});}
+  function renderBuilder(){
+    rows.innerHTML='';
+    defs.forEach(function(d,idx){
+      var wrap=document.createElement('div');wrap.className='pb-row';
+      var typeOpts=TYPES.map(function(t){return '<option value="'+t[0]+'" '+(d.type===t[0]?'selected':'')+'>'+t[1]+'</option>';}).join('');
+      wrap.innerHTML='<div class="pb-grid">'
+        +'<div><label class="pb-l">Name <span class="pb-hint">params.<b>'+esc(d.name||'name')+'</b></span></label><input class="form-control fw-form-control pb-name" value="'+esc(d.name)+'"></div>'
+        +'<div><label class="pb-l">Label</label><input class="form-control fw-form-control pb-label" value="'+esc(d.label)+'"></div>'
+        +'<div><label class="pb-l">Type</label><select class="form-select fw-form-control pb-type">'+typeOpts+'</select></div>'
+        +'<div><label class="pb-l">Default</label><input class="form-control fw-form-control pb-default" value="'+esc(d.default)+'"></div>'
+        +'<div class="pb-opts" style="'+(d.type==='select'?'':'display:none')+'"><label class="pb-l">Options (one per line, <code>value|Label</code>)</label><textarea class="form-control fw-form-control pb-options" rows="3">'+esc(optionsText(d))+'</textarea></div>'
+        +'<div class="pb-req-wrap"><label class="pb-req"><input type="checkbox" class="pb-required" '+(d.required?'checked':'')+'> required</label></div>'
+        +'</div><button type="button" class="btn btn-fw-danger btn-sm pb-del" title="Remove">&times;</button>';
+      wrap.querySelector('.pb-name').addEventListener('input',function(e){defs[idx].name=slug(e.target.value);var b=wrap.querySelector('.pb-l b');if(b)b.textContent=defs[idx].name||'name';renderBar();});
+      wrap.querySelector('.pb-label').addEventListener('input',function(e){defs[idx].label=e.target.value;renderBar();});
+      wrap.querySelector('.pb-default').addEventListener('input',function(e){defs[idx].default=e.target.value;renderBar();});
+      wrap.querySelector('.pb-required').addEventListener('change',function(e){defs[idx].required=e.target.checked;renderBar();});
+      wrap.querySelector('.pb-type').addEventListener('change',function(e){defs[idx].type=e.target.value;renderBuilder();renderBar();});
+      var opts=wrap.querySelector('.pb-options');if(opts)opts.addEventListener('input',function(e){defs[idx].options=parseOptions(e.target.value);renderBar();});
+      wrap.querySelector('.pb-del').addEventListener('click',function(){defs.splice(idx,1);renderBuilder();renderBar();});
+      rows.appendChild(wrap);
+    });
+    if(!defs.length){rows.innerHTML='<p class="text-secondary" style="font-size:13px;margin:0">No inputs. Add one so the viewer can filter this view (e.g. pick a device).</p>';}
+  }
+  function renderBar(){
+    if(!bar)return;bar.innerHTML='';
+    var live=defs.filter(function(d){return d.name;});
+    if(!live.length){bar.style.display='none';return;}
+    bar.style.display='flex';
+    live.forEach(function(d){
+      var f=document.createElement('div');f.className='pbar-f';var input;
+      if(d.type==='device'||d.type==='select'){
+        input=document.createElement('select');input.className='form-select fw-form-control';
+        var src=(d.type==='device')?devices:(d.options||[]);
+        var html=(d.required?'':'<option value="">All</option>');
+        src.forEach(function(o){html+='<option value="'+esc(o.value)+'" '+(String(d.default)===String(o.value)?'selected':'')+'>'+esc(o.label)+'</option>';});
+        input.innerHTML=html;
+      }else{
+        input=document.createElement('input');input.type=(d.type==='number')?'number':(d.type==='date'?'date':'text');
+        input.className='form-control fw-form-control';input.value=d.default||'';input.placeholder=d.default||'any';
+      }
+      input.setAttribute('name','p_'+d.name);
+      var ev=(input.tagName==='SELECT'||input.type==='date')?'change':'input';var t=null;
+      input.addEventListener(ev,function(){clearTimeout(t);t=setTimeout(function(){if(preview)preview.click();},input.tagName==='SELECT'?0:400);});
+      f.innerHTML='<label class="pbar-l">'+esc(d.label||d.name)+'</label>';f.appendChild(input);bar.appendChild(f);
+    });
+  }
+  function serialize(){
+    hidden.value=JSON.stringify(defs.filter(function(d){return d.name;}).map(function(d){
+      return {name:d.name,label:d.label||d.name,type:d.type||'text',options:(d.type==='select'?(d.options||[]):[]),default:d.default||'',required:!!d.required};
+    }));
+  }
+  if(addBtn)addBtn.addEventListener('click',function(){defs.push({name:'',label:'',type:'device',options:[],default:'',required:false});renderBuilder();renderBar();});
+  var form=document.getElementById('plugin-form');
+  if(form)form.addEventListener('submit',serialize);
+  window.serializePluginParams=serialize;
+  window.setPluginParamDefs=function(newDefs){defs=Array.isArray(newDefs)?JSON.parse(JSON.stringify(newDefs)):[];renderBuilder();renderBar();serialize();};
+  renderBuilder();renderBar();serialize();
+})();
+</script>
+
+<style nonce="{{ csp_nonce }}">
+.ed-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:1100px){.ed-grid{grid-template-columns:1fr}}
+.ds-chip{font-size:13px;display:inline-flex;align-items:center;gap:6px;background:#FFFFFF;border:1px solid var(--fw-border);border-radius:var(--fw-radius);padding:6px 10px;cursor:pointer;color:var(--fw-text-primary)}
+.ds-chip:hover{border-color:var(--fw-accent)}
+/* lifecycle stepper */
+.lc-steps{display:flex;align-items:center;gap:0;margin-bottom:16px}
+.lc-step{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:90px}
+.lc-dot{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;border:2px solid var(--fw-border);color:var(--fw-text-secondary);background:#FFFFFF}
+.lc-step.now .lc-dot{border-color:var(--fw-accent);color:#fff;background:var(--fw-accent);box-shadow:0 2px 8px rgba(239,84,36,.35)}
+.lc-step.done .lc-dot{border-color:var(--fw-success);color:var(--fw-success);background:rgba(40,167,69,.08)}
+.lc-lbl{font-size:12px;color:var(--fw-text-primary);font-weight:500}
+.lc-step.todo .lc-lbl{color:var(--fw-text-secondary)}
+.lc-line{flex:1;height:2px;background:var(--fw-border);margin:0 -6px 22px}
+.lc-line.fill{background:var(--fw-success)}
+.lc-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.lc-hint{font-size:12px;color:var(--fw-text-secondary);margin-left:auto}
+/* example modal styles moved to static/css/example_browser.css */
+/* input parameters builder */
+.param-rows{display:flex;flex-direction:column;gap:10px}
+.pb-row{display:flex;gap:10px;align-items:flex-start;background:#FAFBFC;border:1px solid var(--fw-border);border-radius:var(--fw-radius-lg);padding:12px}
+.pb-grid{flex:1;display:grid;grid-template-columns:1.2fr 1.2fr .9fr .9fr;gap:10px;align-items:start}
+.pb-grid .pb-opts{grid-column:1 / -1}
+.pb-l{font-size:11px;color:var(--fw-text-secondary);display:block;margin-bottom:3px}
+.pb-l b{color:var(--fw-accent)}
+.pb-hint{color:var(--fw-text-secondary);font-weight:400}
+.pb-req{font-size:12px;color:var(--fw-text-primary);display:flex;align-items:center;gap:6px;margin-top:22px}
+.pb-del{align-self:center}
+/* test-input bar over the preview */
+.param-bar{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:12px;padding:10px;background:#FAFBFC;border:1px solid var(--fw-border);border-radius:var(--fw-radius)}
+.pbar-f{display:flex;flex-direction:column;gap:4px;min-width:150px}
+.pbar-l{font-size:11px;color:var(--fw-text-secondary)}
+@media(max-width:900px){.pb-grid{grid-template-columns:1fr 1fr}}
+</style>
+{% endblock %}

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Plugin Studio{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-puzzle me-2 text-accent"></i>Plugin Studio</h1>
+    <p class="fw-page-sub">Super-admin authored HTML/Jinja/JS views, scoped to the <strong>{{ product.name if product else 'current' }}</strong> ADOM. Rendered in a hard sandbox — read-only data, isolated iframe, a broken plugin never touches the server.</p>
+  </div>
+  <div>
+    <a class="btn btn-fw-primary" href="{{ url_for('plugins.new') }}"><i class="bi bi-plus-lg me-1"></i>New view</a>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-body d-flex align-items-center gap-3 flex-wrap">
+    <i class="bi bi-collection text-accent" style="font-size:26px"></i>
+    <div class="flex-grow-1" style="min-width:320px">
+      <div class="fw-semibold">Start from an example</div>
+      <div class="text-secondary" style="font-size:13px">A dozen ready-made views — fleet KPIs, a full server-policy table, <strong>traffic-log-enabled policies</strong>, <strong>policies grouped by App&nbsp;ID</strong>, WAF-coverage gaps, certificate expiry and more. Open <em>New view</em> and click “Browse examples”.</div>
+    </div>
+    <a class="btn btn-fw-outline" href="{{ url_for('plugins.new') }}">Open the example browser<i class="bi bi-arrow-right ms-1"></i></a>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title">Custom views</h2></div>
+  {% if plugins %}
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <thead><tr><th>Name</th><th>Kind</th><th>Status</th><th>Datasets</th><th>Updated</th><th></th></tr></thead>
+      <tbody>
+        {% for p in plugins %}
+        <tr>
+          <td><i class="bi {{ p.icon }} me-2 text-accent"></i>{{ p.name }}</td>
+          <td><span class="fw-badge fw-badge-secondary">{{ p.kind }}</span></td>
+          <td><span class="fw-badge fw-badge-{{ {'draft':'secondary','testing':'warning','published':'success'}[p.status] }}">{{ p.status }}</span></td>
+          <td class="text-secondary" style="font-size:12px">{{ p.datasets|join(', ') or '—' }}</td>
+          <td class="text-secondary" style="font-size:12px">{{ p.updated_at.strftime('%Y-%m-%d %H:%M') if p.updated_at }}</td>
+          <td class="text-end">
+            <div class="d-inline-flex gap-1 justify-content-end flex-wrap">
+              <a class="btn btn-sm btn-fw-outline" href="{{ url_for('plugins.edit', pid=p.id) }}">Open</a>
+              {% if p.status == 'published' %}
+              <a class="btn btn-sm btn-fw-secondary" href="{{ url_for('plugins.view', slug=p.slug) }}">View</a>
+              <form method="post" action="{{ url_for('plugins.set_status', pid=p.id) }}" class="d-inline js-confirm" data-confirm="Disable (unpublish) &ldquo;{{ p.name }}&rdquo;? It will be removed from Custom Views.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="status" value="draft">
+                <button class="btn btn-sm btn-fw-outline" type="submit"><i class="bi bi-slash-circle me-1"></i>Disable</button>
+              </form>
+              {% endif %}
+              <form method="post" action="{{ url_for('plugins.delete', pid=p.id) }}" class="d-inline js-confirm" data-confirm="Delete &ldquo;{{ p.name }}&rdquo; permanently? This cannot be undone.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-fw-danger" type="submit"><i class="bi bi-trash me-1"></i>Delete</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="fw-card-body text-secondary">No plugins yet in this ADOM. Create your first custom view.</div>
+  {% endif %}
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title">Available datasets <span class="text-secondary fw-normal">(read-only)</span></h2></div>
+  <div class="fw-card-body">
+    <ul class="mb-0" style="font-size:13px">
+      {% for d in datasets %}<li><code>{{ d.key }}</code> — {{ d.description }}</li>{% endfor %}
+    </ul>
+  </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+document.querySelectorAll('form.js-confirm').forEach(function(f){
+  f.addEventListener('submit', function(e){
+    if(!confirm(f.getAttribute('data-confirm')||'Are you sure?')) e.preventDefault();
+  });
+});
+</script>
+{% endblock %}

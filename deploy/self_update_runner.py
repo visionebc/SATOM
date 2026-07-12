@@ -299,6 +299,200 @@ def process(req_path):
                       error="%s ; rollback error: %s" % (e, e2))
 
 
+_PKG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+_VER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+!_-]*$")
+
+
+def _pip_allowlist():
+    """The curated set of libraries the card shows — the ONLY packages this
+    runner will touch. Loaded from the app's own system_info._LIBRARIES so the
+    allowlist has exactly one source of truth; a hardcoded fallback guarantees
+    the runner still refuses arbitrary names if the import ever fails."""
+    fallback = {
+        "Flask", "Werkzeug", "Jinja2", "SQLAlchemy", "Flask-SQLAlchemy",
+        "Flask-Login", "Flask-WTF", "Flask-Limiter", "psycopg", "gunicorn",
+        "paramiko", "httpx", "cryptography", "requests", "PyYAML",
+    }
+    try:
+        import sys
+        if str(APP) not in sys.path:
+            sys.path.insert(0, str(APP))
+        from app.services.system_info import _LIBRARIES  # type: ignore
+        return {n for n in _LIBRARIES} or fallback
+    except Exception:
+        return fallback
+
+
+def _installed_version(pkg):
+    """Currently-installed version of pkg in the venv, or '' if absent."""
+    r = run([str(VENV / "python"), "-c",
+             "import importlib.metadata as m,sys;"
+             "sys.stdout.write(m.version(sys.argv[1]))", pkg],
+            timeout=30, user=APP_USER, cwd=str(APP))
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def _pip_install(spec):
+    """pip install a single pinned spec (pkg==ver) as the app user."""
+    return run([str(VENV / "pip"), "install", "-q", spec],
+               timeout=900, user=APP_USER)
+
+
+def _record_lib_version(pkg, previous, current, action, by):
+    """Persist the per-node rollback point for pkg so the card can offer a
+    'Rollback to <previous>' button. One file per package under
+    data/lib-versions/ (per-node, because the venv is per-node)."""
+    d = APP / "data" / "lib-versions"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / (pkg + ".json")).write_text(json.dumps({
+        "package": pkg, "previous": previous, "current": current,
+        "action": action, "by": by, "at": now()}, indent=2))
+
+
+def _bump_requirements(pkg, version):
+    """Rewrite pkg's pin in requirements.txt to ==version (so the next code
+    update's `pip install -r` does not silently revert this change). Matches
+    the package line case-insensitively on the distribution name. Returns
+    (changed, detail)."""
+    req = APP / "requirements.txt"
+    try:
+        lines = req.read_text().splitlines()
+    except Exception as e:
+        return False, "read failed: %s" % e
+    name_re = re.compile(r"^\s*%s\s*([<>=!~].*)?$" % re.escape(pkg), re.IGNORECASE)
+    out, hit = [], False
+    for ln in lines:
+        if name_re.match(ln) and not ln.lstrip().startswith("#"):
+            out.append("%s==%s" % (pkg, version))
+            hit = True
+        else:
+            out.append(ln)
+    if not hit:
+        out.append("%s==%s" % (pkg, version))
+    req.write_text("\n".join(out) + "\n")
+    return True, ("updated pin" if hit else "added pin")
+
+
+def _git_commit_push_requirements(pkg, version, by):
+    """Commit + push the requirements.txt bump on the PRIMARY only (single git
+    writer). Non-fatal: a push failure (conflict/offline) leaves the lib
+    installed and the pin committed locally — reported as a warning step."""
+    git("add", "requirements.txt")
+    msg = "chore(deps): pin %s==%s via Libraries GUI (by %s)" % (pkg, version, by)
+    c = git("commit", "-m", msg)
+    if c.returncode != 0:
+        # nothing to commit (pin already matched) is fine
+        return True, (c.stdout or c.stderr or "nothing to commit").strip()[-200:]
+    p = git("push", "origin", "HEAD", timeout=120)
+    return (p.returncode == 0), (p.stderr or p.stdout or "").strip()[-200:]
+
+
+def pip_change(req_path):
+    """Per-package pip upgrade/rollback (root-triggered, curated-only).
+
+    The unprivileged web worker only ENQUEUES a JSON request; this handler does
+    the privileged install. It is strictly bounded: the package MUST be in the
+    curated allowlist and both names are regex-validated, so a forged request
+    can never turn this into 'pip install <arbitrary>'. Records the prior
+    version for a one-click rollback, auto-reverts on a failed health/import
+    check, and (on the primary) bumps requirements.txt so the change survives
+    the next code update."""
+    req = json.loads(Path(req_path).read_text())
+    uid = req.get("id") or Path(req_path).stem
+    st = Status(uid, req)
+    try:
+        os.remove(req_path)  # dequeue so the .path unit stops re-firing
+    except OSError:
+        pass
+
+    pkg = (req.get("package") or "").strip()
+    version = (req.get("version") or "").strip()
+    action = req.get("action") or "upgrade"
+    by = req.get("requested_by") or "?"
+    bump = bool(req.get("bump_requirements", True))
+    st.d["package"] = pkg
+    st.d["action"] = action
+    st.flush()
+
+    # ---- hard guardrails (defense in depth; the web side validates too) ----
+    if not _PKG_RE.match(pkg) or pkg not in _pip_allowlist():
+        st.step("validate package", False, "%r not in curated allowlist" % pkg)
+        st.finish("failed", error="package not allowed")
+        return
+    if not _VER_RE.match(version):
+        st.step("validate version", False, "%r is not a valid version" % version)
+        st.finish("failed", error="bad version")
+        return
+    st.step("validate", True, "%s -> %s (%s)" % (pkg, version, action))
+
+    role = req.get("role") or ("standby" if pg_in_recovery() else "primary")
+    previous = _installed_version(pkg)
+    st.step("snapshot installed version", True, "%s==%s" % (pkg, previous or "(absent)"))
+    if previous == version:
+        st.step("noop", True, "already at %s" % version)
+        _record_lib_version(pkg, previous, version, action, by)
+        st.finish("success", package=pkg, previous_version=previous,
+                  new_version=version, rolled_back=False)
+        return
+
+    try:
+        p = _pip_install("%s==%s" % (pkg, version))
+        st.step("pip install %s==%s" % (pkg, version), p.returncode == 0, p.stderr or p.stdout)
+        if p.returncode != 0:
+            raise RuntimeError("pip install failed")
+
+        ok, detail = import_smoke_ok()
+        st.step("import smoke", ok, "app imports with new %s" % pkg if ok else detail[:300])
+        if not ok:
+            raise RuntimeError("import smoke failed: %s" % detail[:200])
+
+        # Reload the running workers so the new lib is actually loaded.
+        subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
+        subprocess.run(["systemctl", "restart", SCHED], timeout=60)
+        st.step("restart services", True, "%s + scheduler" % SERVICE)
+        if not health_ok():
+            raise RuntimeError("health check did not return 200 within %ds" % HEALTH_TIMEOUT)
+        st.step("health check", True, "200 OK with %s==%s" % (pkg, version))
+
+        _record_lib_version(pkg, previous, version, action, by)
+
+        # Keep requirements.txt honest so the next code update doesn't revert us
+        # (primary only — single git writer). Non-fatal.
+        if bump and role == "primary":
+            ch, d1 = _bump_requirements(pkg, version)
+            st.step("bump requirements.txt", ch, d1)
+            gok, d2 = _git_commit_push_requirements(pkg, version, by)
+            st.step("commit + push requirements.txt", gok,
+                    d2 if gok else "installed OK but push failed: %s" % d2)
+        elif bump:
+            st.step("bump requirements.txt", True, "skipped on standby (primary is the git writer)")
+
+        st.finish("success", package=pkg, previous_version=previous,
+                  new_version=version, rolled_back=False)
+        return
+
+    except Exception as e:
+        st.step("ERROR", False, str(e))
+        # ---- auto-rollback to the previously-installed version ----
+        try:
+            if previous:
+                rb = _pip_install("%s==%s" % (pkg, previous))
+                subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
+                subprocess.run(["systemctl", "restart", SCHED], timeout=60)
+                ok = health_ok()
+                st.step("rollback to %s==%s" % (pkg, previous),
+                        rb.returncode == 0 and ok,
+                        "recovered" if ok else "STILL UNHEALTHY after rollback")
+            else:
+                st.step("rollback", False, "no previous version recorded — cannot auto-revert")
+                ok = False
+            st.finish("failed", package=pkg, previous_version=previous,
+                      new_version=previous, rolled_back=True, recovered=ok, error=str(e))
+        except Exception as e2:
+            st.finish("failed", package=pkg, rolled_back=True, recovered=False,
+                      error="%s ; rollback error: %s" % (e, e2))
+
+
 def promote(req_path):
     """Guarded failover handler (root): promote this node's Postgres standby and
     bring the app up via deploy/fm-promote.sh. Enqueued by the web UI after a
@@ -346,6 +540,8 @@ def main():
                 kind = ""
             if kind == "promote":
                 promote(rp)
+            elif kind == "pip":
+                pip_change(rp)
             else:
                 process(rp)
         except Exception:

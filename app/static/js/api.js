@@ -1,5 +1,5 @@
 /* ============================================================
-   OFortMAut — api.js
+   OFortMAuT — api.js
    Centralized fetch wrapper + per-feature API helpers
    ============================================================ */
 

@@ -478,7 +478,7 @@ def create_adom():
     adom = Adom(
         key=key,
         name=(request.form.get('name') or key).strip()[:128],
-        title=(request.form.get('title') or 'OFortMAut').strip()[:128],
+        title=(request.form.get('title') or 'OFortMAuT').strip()[:128],
         tagline=(request.form.get('tagline') or '').strip()[:200],
         description=(request.form.get('description') or '').strip(),
         active=(request.form.get('active') in ('1', 'on', 'true')),
@@ -512,7 +512,7 @@ def update_adom(key):
     adom = Adom.query.filter_by(key=key).first_or_404()
     caps = _adom_form_caps()
     adom.name = (request.form.get('name') or adom.name).strip()[:128]
-    adom.title = (request.form.get('title') or 'OFortMAut').strip()[:128]
+    adom.title = (request.form.get('title') or 'OFortMAuT').strip()[:128]
     adom.tagline = (request.form.get('tagline') or '').strip()[:200]
     adom.description = (request.form.get('description') or '').strip()
     adom.active = (request.form.get('active') in ('1', 'on', 'true'))

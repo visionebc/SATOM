@@ -38,7 +38,7 @@ DEFAULT_PRODUCT = "fortiweb"
 # Order here is the display order (sort_order is assigned from it).
 _FALLBACK: list[dict] = [
     {
-        "key": "global", "name": "Global", "title": "OFortMAut",
+        "key": "global", "name": "Global", "title": "OFortMAuT",
         "tagline": "Global — all products", "mark": "img/global-mark.svg",
         "description": "One console over the whole fleet — dashboards, "
                        "metrics, jobs, certificates and administration "
@@ -48,7 +48,7 @@ _FALLBACK: list[dict] = [
         "cap_naming": False, "cap_regex": False,
     },
     {
-        "key": "fortiweb", "name": "FortiWeb", "title": "OFortMAut",
+        "key": "fortiweb", "name": "FortiWeb", "title": "OFortMAuT",
         "tagline": "Web Application Firewall", "mark": "img/fortiweb-mark.svg",
         "description": "Manage server policies, web protection, exceptions, "
                        "backups and the full FortiWeb appliance fleet.",
@@ -57,7 +57,7 @@ _FALLBACK: list[dict] = [
         "cap_naming": True, "cap_regex": True,
     },
     {
-        "key": "fortiadc", "name": "FortiADC", "title": "OFortMAut",
+        "key": "fortiadc", "name": "FortiADC", "title": "OFortMAuT",
         "tagline": "Application Delivery Controller",
         "mark": "img/fortiadc-mark.svg",
         "description": "Manage virtual servers, server/link/global load "
@@ -69,7 +69,7 @@ _FALLBACK: list[dict] = [
     },
     {
         "key": "fortiauthenticator", "name": "FortiAuthenticator",
-        "title": "OFortMAut", "tagline": "Identity & Access Management",
+        "title": "OFortMAuT", "tagline": "Identity & Access Management",
         "mark": "img/fortiauthenticator-mark.svg",
         "description": "Identity management, two-factor authentication, "
                        "certificate authority and RADIUS/LDAP services — "
@@ -79,7 +79,7 @@ _FALLBACK: list[dict] = [
         "cap_naming": False, "cap_regex": False,
     },
     {
-        "key": "fortianalyzer", "name": "FortiAnalyzer", "title": "OFortMAut",
+        "key": "fortianalyzer", "name": "FortiAnalyzer", "title": "OFortMAuT",
         "tagline": "Logging & Analytics",
         "mark": "img/fortianalyzer-mark.svg",
         "description": "Centralized logging, reporting and security analytics "
@@ -255,7 +255,7 @@ def seed_defaults() -> int:
         if d["key"] in existing:
             continue
         a = Adom(
-            key=d["key"], name=d["name"], title=d.get("title", "OFortMAut"),
+            key=d["key"], name=d["name"], title=d.get("title", "OFortMAuT"),
             tagline=d.get("tagline", ""), description=d.get("description", ""),
             mark=d.get("mark", "img/global-mark.svg"),
             active=d.get("active", True), placeholder=d.get("placeholder", False),

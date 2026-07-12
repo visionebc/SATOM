@@ -271,8 +271,17 @@ def full_state() -> dict:
     # for a running peer. Fall back to the replication view if unreachable.
     for n in nodes:
         if n.get("name") == this:
+            # our own card: live local DB + live revision (the stored self-report
+            # can lag a restart; /healthz is authoritative, mirror it here).
             rpt = n.get("report") or {}
             rpt["db"] = db_summary(rep)
+            try:
+                _cur = su.current_revision()
+                rpt["revision"] = {"short": _cur.get("short"), "sha": _cur.get("sha")}
+            except Exception:
+                pass
+            rpt.setdefault("healthy", True)
+            rpt["reachable"] = True
             n["report"] = rpt
             continue
         if mode != "ha":

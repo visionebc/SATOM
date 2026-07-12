@@ -16,12 +16,62 @@ from ..services import system_backup
 bp = Blueprint("system_backup", __name__, url_prefix="/system-backup")
 
 
+def _peer_host() -> str:
+    """First registered HA node that is not this one (ha_nodes.json) — the
+    backup server the page compares against."""
+    try:
+        from ..services import self_update as su
+        this = su.this_node_name()
+        for n in su.load_nodes():
+            host = (n.get("host") or "").strip()
+            if n.get("name") != this and host and host != "127.0.0.1":
+                return host
+    except Exception:
+        pass
+    return ""
+
+
+def _page_context(**extra) -> dict:
+    from ..services import git_service
+    local = system_backup.local_inventory()
+    peer_host = _peer_host()
+    peer = system_backup.peer_inventory(peer_host) if peer_host else {
+        "reachable": False, "host": "", "bundles": [], "vault": None}
+    ctx = dict(
+        backups=local["bundles"],
+        vault=local["vault"],
+        peer=peer,
+        inv_rows=system_backup.compare_inventories(local, peer),
+        git=git_service.git_info(),
+        git_history=git_service.reports_history(),
+        git_dirty=git_service.reports_dirty(),
+        diff=None,
+    )
+    ctx.update(extra)
+    return ctx
+
+
 @bp.route("/")
 @login_required
 @require_permission("user_manage")
 def index():
+    return render_template("system_backup/index.html", **_page_context())
+
+
+@bp.route("/compare")
+@login_required
+@require_permission("user_manage")
+def compare():
+    """Compare two git versions of the reports/ source of truth (rollback /
+    version inspection)."""
+    from ..services import git_service
+    ref_a = (request.args.get("ref_a") or "").strip()
+    ref_b = (request.args.get("ref_b") or "").strip() or "HEAD"
+    device = (request.args.get("device") or "").strip()
+    diff = git_service.reports_diff(ref_a, ref_b, device) if ref_a else \
+        {"ok": False, "error": "pick the base version (ref A)"}
     return render_template("system_backup/index.html",
-                           backups=system_backup.list_backups())
+                           **_page_context(diff=diff))
 
 
 @bp.route("/create", methods=["POST"])
@@ -73,8 +123,9 @@ def restore():
 @login_required
 @require_permission("user_manage")
 def publish_json():
-    """Commit the per-device JSON tree (reports/) to git — the opt-in off-box
-    source-of-truth backup."""
+    """Commit the per-device JSON tree (reports/) to git — the off-box
+    versioned source-of-truth backup (also runs hourly via
+    fm-git-publish.timer; this button is the on-demand path)."""
     try:
         from ..services import git_service
         git_service.git_publish("source-of-truth: publish device JSON", ["reports"])

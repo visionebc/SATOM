@@ -201,3 +201,68 @@ def git_publish(message: str, paths: list[str]) -> str:
     else:
         _run_git(root, ("push",), lines, redact)
     return "\n\n".join(lines)
+
+
+# ── reports/ source-of-truth helpers (System Backup & Restore page) ──────────
+
+def reports_history(limit: int = 12) -> list[dict]:
+    """Commits that touched ``reports/`` (the per-device JSON source of truth),
+    newest first, with a per-commit change summary — the page's "what is in
+    git" view."""
+    root = _repo_root()
+    raw = _git_out(root, "log", f"-{int(limit)}",
+                   "--format=%h|%cs|%s", "--", "reports/", default="")
+    out: list[dict] = []
+    for line in raw.splitlines():
+        parts = line.split("|", 2)
+        if len(parts) != 3:
+            continue
+        sha, date, subject = parts
+        stat = _git_out(root, "show", "--stat", "--format=", sha, "--",
+                        "reports/", default="")
+        files = [ln.split("|")[0].strip() for ln in stat.splitlines()
+                 if "|" in ln]
+        summary = stat.splitlines()[-1].strip() if stat.strip() else ""
+        out.append({"hash": sha, "date": date, "subject": subject,
+                    "files": files[:12], "n_files": len(files),
+                    "summary": summary})
+    return out
+
+
+def reports_dirty() -> list[dict]:
+    """Un-published (uncommitted) changes under ``reports/`` — drift between
+    the running instance and the git source of truth."""
+    root = _repo_root()
+    raw = _git_out(root, "status", "--porcelain", "--", "reports/", default="")
+    out: list[dict] = []
+    for line in raw.splitlines():
+        if len(line) < 4:
+            continue
+        out.append({"state": line[:2].strip() or "??", "path": line[3:].strip()})
+    return out
+
+
+def reports_diff(ref_a: str, ref_b: str, device: str = "") -> dict:
+    """Compare two versions of the ``reports/`` tree (rollback / version
+    comparison). Returns the ``--stat`` summary and a size-capped unified diff.
+    Refs are validated (rev-parse) before use — no arbitrary git args."""
+    root = _repo_root()
+    safe = re.compile(r"^[0-9A-Za-z_./~^-]{1,64}$")
+    if not (safe.match(ref_a or "") and safe.match(ref_b or "")):
+        return {"ok": False, "error": "invalid ref"}
+    for ref in (ref_a, ref_b):
+        if not _git_out(root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"):
+            return {"ok": False, "error": f"unknown ref: {ref}"}
+    scope = "reports/"
+    if device:
+        if not re.match(r"^[0-9A-Za-z_.-]{1,64}$", device):
+            return {"ok": False, "error": "invalid device"}
+        scope = f"reports/{device}/"
+    stat = _git_out(root, "diff", "--stat", ref_a, ref_b, "--", scope, default="")
+    diff = _git_out(root, "diff", ref_a, ref_b, "--", scope, default="")
+    truncated = False
+    if len(diff) > 60_000:
+        diff, truncated = diff[:60_000], True
+    return {"ok": True, "ref_a": ref_a, "ref_b": ref_b, "scope": scope,
+            "stat": stat, "diff": diff, "truncated": truncated,
+            "identical": not stat.strip()}

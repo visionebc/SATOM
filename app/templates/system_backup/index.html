@@ -4,7 +4,7 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-hdd-stack me-2 text-accent"></i>System Backup &amp; Restore</h1>
-    <p class="text-muted mb-0" style="font-size:13px;">Back up the whole instance — PostgreSQL (pg_dump) + the per-device JSON tree — and restore from a bundle.</p>
+    <p class="text-muted mb-0" style="font-size:13px;">Back up the whole instance — PostgreSQL (pg_dump) + the per-device JSON tree — and restore from a bundle. Three copies: this node, the standby (rsync), and git (versioned).</p>
   </div>
 </div>
 
@@ -19,23 +19,50 @@
             <label class="form-check-label small" for="ir">Include per-device JSON (<code>reports/</code>)</label>
           </div>
           <div class="form-check mb-3">
-            <input class="form-check-input" type="checkbox" name="publish_git" id="pg">
-            <label class="form-check-label small" for="pg">Also publish JSON to git (off-box versioned backup)</label>
+            <input class="form-check-input" type="checkbox" name="publish_git" id="pg" checked>
+            <label class="form-check-label small" for="pg">Also publish JSON to git (off-box versioned backup — default)</label>
           </div>
           <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>Create backup now</button>
         </form>
         <hr>
         <form method="post" action="{{ url_for('system_backup.publish_json') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="btn btn-outline-light btn-sm"><i class="bi bi-git me-1"></i>Publish device JSON to git</button>
-          <div class="form-text">Commits <code>reports/&lt;device&gt;/_config.json</code> to the repo.</div>
+          <button type="submit" class="btn btn-outline-light btn-sm"><i class="bi bi-git me-1"></i>Publish device JSON to git now</button>
+          <div class="form-text">Commits <code>reports/&lt;device&gt;/_config.json</code> to the repo. Also runs automatically every hour (<code>fm-git-publish.timer</code>).</div>
         </form>
+      </div>
+    </div>
+
+    <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-git me-1"></i>Git source of truth</strong></div>
+      <div class="card-body">
+        <table class="table table-sm mb-2"><tbody>
+          <tr><td class="small text-muted" style="width:110px;">Remote</td><td class="small font-monospace">{{ git.remote }}</td></tr>
+          <tr><td class="small text-muted">Branch</td><td class="small font-monospace">{{ git.branch }}</td></tr>
+          <tr><td class="small text-muted">Last commit</td><td class="small font-monospace">{{ git.commit }}</td></tr>
+          <tr><td class="small text-muted">Sync state</td>
+            <td class="small">
+              {% if git.ahead %}<span class="badge bg-warning text-dark">{{ git.ahead }} ahead (not pushed)</span>{% endif %}
+              {% if git.behind %}<span class="badge bg-warning text-dark">{{ git.behind }} behind</span>{% endif %}
+              {% if not git.ahead and not git.behind %}<span class="badge bg-success">in sync with remote</span>{% endif %}
+            </td></tr>
+        </tbody></table>
+        {% if git_dirty %}
+        <div class="alert alert-warning small py-2 mb-0">
+          <i class="bi bi-exclamation-triangle me-1"></i><strong>{{ git_dirty|length }} un-published change(s)</strong> under <code>reports/</code> — the git copy is behind this node:
+          <ul class="mb-0 mt-1">
+            {% for d in git_dirty[:8] %}<li class="font-monospace">{{ d.state }} {{ d.path }}</li>{% endfor %}
+            {% if git_dirty|length > 8 %}<li>… {{ git_dirty|length - 8 }} more</li>{% endif %}
+          </ul>
+        </div>
+        {% else %}
+        <div class="alert alert-success small py-2 mb-0"><i class="bi bi-check-circle me-1"></i>No drift — <code>reports/</code> matches the last git commit.</div>
+        {% endif %}
       </div>
     </div>
   </div>
 
   <div class="col-lg-7">
-    <div class="card"><div class="card-header"><strong>Existing backups</strong></div>
+    <div class="card mb-3"><div class="card-header"><strong>Existing backups (this node)</strong></div>
       <div class="card-body">
         {% if not backups %}
           <p class="text-muted small mb-0">No backups yet.</p>
@@ -59,7 +86,125 @@
         {% endif %}
       </div>
     </div>
+
+    <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-hdd-network me-1"></i>Backup server (standby{% if peer.host %} — {{ peer.host }}{% endif %})</strong></div>
+      <div class="card-body">
+        {% if not peer.host %}
+          <p class="text-muted small mb-0">No peer registered (standalone mode) — off-box copy is git only.</p>
+        {% elif not peer.reachable %}
+          <div class="alert alert-danger small py-2 mb-0"><i class="bi bi-x-circle me-1"></i>Peer {{ peer.host }} unreachable — off-box bundle copy cannot be verified right now.</div>
+        {% else %}
+        <table class="table table-sm table-hover align-middle mb-2">
+          <thead><tr><th>Bundle</th><th class="text-center">This node</th><th class="text-center">Backup server</th></tr></thead>
+          <tbody>
+          {% for r in inv_rows %}
+            <tr>
+              <td class="small font-monospace">{{ r.name }}</td>
+              <td class="text-center">{% if r.local %}<i class="bi bi-check-circle text-success"></i>{% else %}<i class="bi bi-dash-circle text-muted"></i>{% endif %}</td>
+              <td class="text-center">
+                {% if r.peer and r.size_match %}<i class="bi bi-check-circle text-success"></i>
+                {% elif r.peer %}<span class="badge bg-warning text-dark">size differs</span>
+                {% else %}<span class="badge bg-danger">missing</span>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        <div class="small text-muted">
+          Device-config vault: <strong>{{ vault.entries }}</strong> entr{{ 'y' if vault.entries == 1 else 'ies' }} here
+          {% if peer.vault %} / <strong>{{ peer.vault.entries }}</strong> on the backup server{% endif %}
+          {% if vault.latest %} · latest {{ vault.latest }} UTC{% endif %}.
+          Synced by <code>fm-ha-datasync.timer</code> (standby pulls <code>data/</code> every 5 min).
+        </div>
+        {% endif %}
+      </div>
+    </div>
   </div>
+</div>
+
+<div class="card mb-3"><div class="card-header"><strong><i class="bi bi-clock-history me-1"></i>Versions in git — compare / rollback</strong></div>
+  <div class="card-body">
+    {% if not git_history %}
+      <p class="text-muted small mb-0">No commits touching <code>reports/</code> yet — publish once to start the version history.</p>
+    {% else %}
+    <form method="get" action="{{ url_for('system_backup.compare') }}">
+      <table class="table table-sm table-hover align-middle">
+        <thead><tr><th style="width:34px;">A</th><th style="width:34px;">B</th><th>Commit</th><th>Date</th><th>Subject</th><th>Changes</th></tr></thead>
+        <tbody>
+        {% for c in git_history %}
+          <tr>
+            <td><input type="radio" name="ref_a" value="{{ c.hash }}" class="form-check-input" {% if loop.index == 2 %}checked{% endif %}></td>
+            <td><input type="radio" name="ref_b" value="{{ c.hash }}" class="form-check-input" {% if loop.first %}checked{% endif %}></td>
+            <td class="small font-monospace">{{ c.hash }}</td>
+            <td class="small">{{ c.date }}</td>
+            <td class="small">{{ c.subject }}</td>
+            <td class="small text-muted">{{ c.n_files }} file(s){% if c.summary %} — {{ c.summary }}{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <div class="d-flex gap-2 align-items-center">
+        <input type="text" name="device" class="form-control form-control-sm" style="max-width:220px;" placeholder="device filter (optional, e.g. fw7)">
+        <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-file-diff me-1"></i>Compare A → B</button>
+      </div>
+    </form>
+
+    {% if diff %}
+      <hr>
+      {% if not diff.ok %}
+        <div class="alert alert-danger small py-2 mb-0">Compare failed: {{ diff.error }}</div>
+      {% elif diff.identical %}
+        <div class="alert alert-success small py-2 mb-0"><i class="bi bi-check-circle me-1"></i>{{ diff.ref_a }} and {{ diff.ref_b }} are identical under <code>{{ diff.scope }}</code>.</div>
+      {% else %}
+        <p class="small mb-1"><strong>{{ diff.ref_a }} → {{ diff.ref_b }}</strong> (scope <code>{{ diff.scope }}</code>){% if diff.truncated %} — <span class="badge bg-warning text-dark">diff truncated</span>{% endif %}</p>
+        <pre class="small p-2 rounded" style="background:rgba(0,0,0,.35); max-height:120px; overflow:auto;">{{ diff.stat }}</pre>
+        <pre class="small p-2 rounded" style="background:rgba(0,0,0,.35); max-height:420px; overflow:auto;">{{ diff.diff }}</pre>
+      {% endif %}
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong><i class="bi bi-book me-1"></i>How this works — backup architecture &amp; runbook</strong>
+    <button class="btn btn-outline-light btn-sm" data-bs-toggle="collapse" data-bs-target="#sbDocs">Show / hide</button>
+  </div>
+  <div class="collapse" id="sbDocs"><div class="card-body small">
+    <h6>The three copies</h6>
+    <table class="table table-sm">
+      <thead><tr><th>Copy</th><th>What</th><th>How it gets there</th><th>RPO</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1. This node (primary)</strong></td>
+            <td>Postgres (live) · bundles <code>data/system_backups/</code> · device vault <code>data/backups/</code> · JSON tree <code>reports/</code></td>
+            <td>Created here (manual bundles, device backups, device sync)</td><td>—</td></tr>
+        <tr><td><strong>2. Standby / backup server</strong></td>
+            <td>Postgres (streaming replica) · full <code>data/</code> copy (bundles + vault)</td>
+            <td>Postgres streaming replication (continuous) + <code>fm-ha-datasync.timer</code> rsync every 5 min (standby pulls; inert on the primary and in standalone mode)</td>
+            <td>≈ seconds (DB) / ≤ 5 min (files)</td></tr>
+        <tr><td><strong>3. Git (Gitea)</strong></td>
+            <td>Per-device JSON <code>reports/&lt;device&gt;/_config.json</code> — versioned, human-diffable</td>
+            <td>Auto-publish hourly via <code>fm-git-publish.timer</code> (primary only) + on backup creation (default-on checkbox) + the manual button</td>
+            <td>≤ 1 h (or on demand)</td></tr>
+      </tbody>
+    </table>
+    <p class="text-muted mb-2">Git holds only the JSON source of truth (text, diffable). Binary artifacts — pg_dump bundles and raw device-config exports — deliberately stay OUT of git and travel via rsync to the standby: git is the wrong tool for binary blobs.</p>
+
+    <h6>Rollback / restore procedures</h6>
+    <ol>
+      <li><strong>Whole instance</strong> — pick a bundle above → <em>Restore</em> (type <code>RESTORE</code>). Takes a safety dump first, then <code>pg_restore --clean</code> + replaces <code>reports/</code>. If this node is dead, the same bundles exist on the backup server under <code>/opt/fortinet-manager/data/system_backups/</code>.</li>
+      <li><strong>One device's JSON to an older version</strong> — find the commit in <em>Versions in git</em>, verify with <em>Compare</em>, then in Settings → Git run: <code>git checkout &lt;commit&gt; -- reports/&lt;device&gt;/</code> and publish. This rolls back the JSON snapshot only — it does NOT push config to the device (use Templates/Provisioning for that).</li>
+      <li><strong>Single appliance config</strong> — use the per-appliance Backups page (vault); device-level restore is currently dry-run gated pending a live canary round-trip.</li>
+      <li><strong>Total loss of both nodes</strong> — clone the repo from Gitea (reports tree = last published state), restore the newest bundle from any surviving copy (downloaded bundle or backup-server disk).</li>
+    </ol>
+
+    <h6>Failover notes</h6>
+    <ul class="mb-0">
+      <li>After a promote, <code>fm-ha-datasync</code> on the new primary becomes a no-op automatically (role guard) and <code>fm-git-publish</code> activates there (same guard, inverted) — no unit reconfiguration needed.</li>
+      <li>Gitea (192.0.2.53) and the standby live on the same Proxmox host (hypervisor03): if hypervisor03 dies, copies 2 and 3 are both offline until it returns — copy 1 (primary, hypervisor06) remains. Bundles downloaded via the button above are the operator-held fourth copy.</li>
+      <li>This page probes the peer over HTTP (<code>/healthz/backups</code>) — no SSH between nodes is required to verify the off-box copy.</li>
+    </ul>
+  </div></div>
 </div>
 
 <!-- Restore confirm modal -->

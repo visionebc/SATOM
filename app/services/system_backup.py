@@ -174,3 +174,67 @@ def restore_backup(name: str, *, conn: dict | None = None,
                 "stderr": (res.stderr or "")[:300]}
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+# ── off-box inventory (System Backup & Restore page) ─────────────────────────
+
+def vault_dir() -> Path:
+    """Per-appliance config-backup vault (services/backup.py blobs)."""
+    return _repo_root() / "data" / "backups"
+
+
+def local_inventory() -> dict:
+    """What THIS node holds: system bundles + the per-appliance vault. Used by
+    the page and by the unauthenticated ``/healthz/backups`` probe so the peer
+    can render a side-by-side comparison."""
+    bundles = list_backups()
+    vault = {"entries": 0, "latest": None}
+    vd = vault_dir()
+    if vd.exists():
+        newest = 0.0
+        for child in vd.iterdir():
+            if child.is_dir():
+                vault["entries"] += 1
+                try:
+                    newest = max(newest, child.stat().st_mtime)
+                except OSError:
+                    pass
+        if newest:
+            vault["latest"] = datetime.utcfromtimestamp(newest).isoformat(
+                timespec="seconds")
+    return {"bundles": bundles, "vault": vault}
+
+
+def peer_inventory(host: str, timeout: float = 2.5) -> dict:
+    """Probe the peer's ``/healthz/backups`` (same HTTP pattern as
+    cluster._probe_peer) so the admin sees what the backup server / standby
+    actually holds — no SSH needed. Best-effort: unreachable → reachable=False."""
+    import json as _json
+    import urllib.request
+    out = {"reachable": False, "host": host, "bundles": [], "vault": None}
+    if not host or host == "127.0.0.1":
+        return out
+    try:
+        with urllib.request.urlopen(f"http://{host}:8000/healthz/backups",
+                                    timeout=timeout) as r:
+            data = _json.loads(r.read().decode("utf-8", "replace"))
+        out.update(reachable=True,
+                   bundles=data.get("bundles") or [],
+                   vault=data.get("vault"))
+    except Exception:
+        pass
+    return out
+
+
+def compare_inventories(local: dict, peer: dict) -> list:
+    """Union of bundle names, flagged present/missing on each side — the
+    at-a-glance 'is my off-box copy complete?' table."""
+    mine = {b["name"]: b for b in local.get("bundles", [])}
+    theirs = {b["name"]: b for b in (peer.get("bundles") or [])}
+    rows = []
+    for name in sorted(set(mine) | set(theirs), reverse=True):
+        a, b = mine.get(name), theirs.get(name)
+        rows.append({"name": name,
+                     "local": a, "peer": b,
+                     "size_match": bool(a and b and a.get("size") == b.get("size"))})
+    return rows

@@ -212,6 +212,7 @@ def create_app(config_override: object | None = None) -> Flask:
         always = {
             'static', 'index', 'fortiweb_home', 'service_worker',
             'upload_worker', 'updiag', 'healthz', 'healthz_primary',
+            'healthz_backups',
             'product.select', 'product.set_product', 'product.switch',
             'product.enter', 'product.fortiadc_home',
             'product.placeholder_home',
@@ -648,6 +649,21 @@ def create_app(config_override: object | None = None) -> Flask:
         if in_recovery:
             return jsonify({'ok': False, 'role': 'standby'}), 503
         return jsonify({'ok': True, 'role': 'primary'}), 200
+
+    # -- off-box backup inventory probe (unauthenticated, like /healthz) ---
+    # The PEER's System Backup page calls this to render a side-by-side
+    # local-vs-backup-server comparison without any SSH between nodes.
+    # Exposes only bundle names/sizes/dates + vault entry count — no content.
+    @app.route('/healthz/backups')
+    def healthz_backups():
+        from flask import jsonify
+        try:
+            from .services import system_backup as _sb
+            inv = _sb.local_inventory()
+            return jsonify({'ok': True, 'bundles': inv['bundles'],
+                            'vault': inv['vault']}), 200
+        except Exception as exc:
+            return jsonify({'ok': False, 'error': str(exc)}), 500
 
     # -- CLI commands -----------------------------------------------------
     @app.cli.command('create-db')

@@ -109,6 +109,21 @@ def index():
     )
 
 
+@bp.route('/library-updates')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def library_updates():
+    """Best-effort 'update available?' check for the Settings → Libraries card.
+
+    Kept out of the page render (see ``services.library_updates``): the PyPI
+    lookup runs only here, is cached in-process, and never blocks the Settings
+    page. ``?force=1`` bypasses the cache (the 'Check for updates' button).
+    """
+    from ..services import library_updates as libupd
+    data = libupd.check(force=(request.args.get('force') == '1'))
+    return jsonify(data)
+
+
 # NOTE: the read-only Database browser (schema + relational model + SQL console)
 # moved out of Settings into its own top-level section — see app/views/database.py
 # (blueprint ``database``, /database). Its backend is app/services/dbintrospect.py.

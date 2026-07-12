@@ -247,13 +247,22 @@
                 <tr><td class="text-muted">Operating system</td><td>{{ system_info.os }} <span class="text-muted">({{ system_info.machine }})</span></td></tr>
               </tbody>
             </table>
-            <div class="fw-card-header px-0 mt-2">
+            <div class="fw-card-header px-0 mt-2 d-flex justify-content-between align-items-center">
               <span class="fw-card-title" style="font-size:13px;"><i class="bi bi-boxes me-2 text-accent"></i>Libraries</span>
+              {% if is_admin %}
+              <button type="button" class="btn btn-sm btn-primary" id="lib-check-btn"
+                      style="font-size:12px;padding:2px 10px;">
+                <i class="bi bi-arrow-repeat me-1"></i>Check for updates
+              </button>
+              {% endif %}
             </div>
+            {% if is_admin %}
+            <div id="lib-updates-meta" class="text-muted mb-1" style="font-size:11px;display:none;"></div>
+            {% endif %}
             <table class="table table-sm mb-0" style="font-size:13px;">
               <tbody>
                 {% for lib in system_info.libraries %}
-                <tr><td class="text-muted" style="width:50%;">{{ lib.name }}</td><td><code>{{ lib.version }}</code></td></tr>
+                <tr data-lib="{{ lib.name }}"><td class="text-muted" style="width:50%;">{{ lib.name }}</td><td><code>{{ lib.version }}</code> <span class="lib-update-badge"></span></td></tr>
                 {% endfor %}
               </tbody>
             </table>
@@ -1545,6 +1554,60 @@
 
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
+{% if is_admin %}
+// --- Libraries: best-effort 'update available' check (PyPI, cached server-side) ---
+var LIB_UPDATES_URL = "{{ url_for('settings.library_updates') }}";
+function libBadge(sev, latest) {
+  var map = {
+    major:  ['#ef4444', '#fff',    'major update'],
+    minor:  ['#fbbf24', '#1f2937', 'minor update'],
+    patch:  ['#3b82f6', '#fff',    'patch'],
+    update: ['#64748b', '#fff',    'update available']
+  };
+  if (sev === 'none' || !latest) {
+    return '<span class="lib-update-badge" title="up to date" style="color:#10b981;font-size:12px;">'
+         + '<i class="bi bi-check-circle-fill"></i></span>';
+  }
+  var m = map[sev] || map.update;
+  return '<span class="lib-update-badge" title="' + m[2] + ' — latest ' + latest + '"'
+       + ' style="display:inline-block;padding:1px 7px;border-radius:8px;font-size:11px;'
+       + 'font-weight:600;background:' + m[0] + ';color:' + m[1] + ';">&uarr; ' + latest + '</span>';
+}
+function checkLibraryUpdates(force) {
+  var btn = document.getElementById('lib-check-btn');
+  var meta = document.getElementById('lib-updates-meta');
+  if (btn && force) { btn.disabled = true; btn.innerHTML =
+    '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Checking…'; }
+  fetch(LIB_UPDATES_URL + (force ? '?force=1' : ''), { headers: { 'Accept': 'application/json' } })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (data) {
+      var pkgs = (data && data.packages) || [];
+      var outdated = 0;
+      pkgs.forEach(function (p) {
+        var row = document.querySelector('tr[data-lib="' + (window.CSS && CSS.escape ? CSS.escape(p.name) : p.name) + '"]');
+        if (!row) return;
+        var cell = row.querySelector('.lib-update-badge');
+        if (cell) cell.outerHTML = libBadge(p.severity, p.latest);
+        if (p.severity !== 'none' && p.latest) outdated++;
+      });
+      if (meta && data && data.checked_at) {
+        var when = new Date(data.checked_at * 1000).toLocaleString();
+        meta.style.display = '';
+        meta.textContent = (outdated
+          ? outdated + ' update' + (outdated === 1 ? '' : 's') + ' available'
+          : 'All tracked libraries up to date') + ' · checked ' + when;
+      }
+    })
+    .catch(function () {
+      if (meta) { meta.style.display = ''; meta.textContent = 'Update check unavailable (PyPI unreachable).'; }
+    })
+    .finally(function () {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Check for updates'; }
+    });
+}
+document.addEventListener('DOMContentLoaded', function () { checkLibraryUpdates(false); });
+{% endif %}
+
 // --- activate the tab named in the URL hash (after a save redirect) ---
 (function () {
   var hash = window.location.hash;
@@ -1921,6 +1984,9 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!confirm('Disable two-factor authentication?')) event.preventDefault();
   });
   on('newPwd', 'input', function (event) { checkStrength(event.target.value); });
+  {% if is_admin %}
+  on('lib-check-btn', 'click', function (event) { checkLibraryUpdates(true); });
+  {% endif %}
 })();
 </script>
 {% endblock %}

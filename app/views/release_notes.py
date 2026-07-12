@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import (
-    Blueprint, current_app, jsonify, render_template, request,
+    Blueprint, current_app, g, jsonify, render_template, request, session,
 )
 from flask_login import current_user, login_required
 
@@ -41,8 +41,18 @@ from ..services.audit import log_action
 
 bp = Blueprint("release_notes", __name__, url_prefix="/release-notes")
 
-_PRODUCT = "fortiweb"
+_SUPPORTED_PRODUCTS = ("fortiweb", "fortiadc")
 _SCAN_FILE = "_release_notes_scan.json"   # progress/status (under data/, worker-shared)
+
+
+def _product() -> str:
+    """The ADOM/product this request is scoped to. The Release-Notes modal is only
+    surfaced in the FortiWeb and FortiADC ADOMs (see base.html), so anything else
+    (the Global ADOM, or an unset session) safely defaults to FortiWeb. Every
+    corpus read/scan is filtered by this so the two products never cross-contaminate
+    (the shared ``reports/_release_notes.json`` holds both, tagged per row)."""
+    p = getattr(g, "product", None) or session.get("product")
+    return p if p in _SUPPORTED_PRODUCTS else "fortiweb"
 
 
 # --------------------------------------------------------------------------- #
@@ -67,8 +77,19 @@ def _corpus_root() -> Path:
     return rn.reports_root()
 
 
-def _load() -> rn.ReleaseNotesDB:
-    return rn.load_db(root=_corpus_root()) or rn.ReleaseNotesDB(generated_at="")
+def _load(product: str | None = None) -> rn.ReleaseNotesDB:
+    """The corpus SCOPED to the active product. Issues/sections are filtered by
+    ``product`` and the version list is derived from the surviving rows (not the
+    flat cross-product ``db.versions``), so a FortiADC ADOM never sees FortiWeb
+    rows and vice-versa — even though both live in the one shared JSON."""
+    product = product or _product()
+    db = rn.load_db(root=_corpus_root()) or rn.ReleaseNotesDB(generated_at="")
+    issues = [i for i in db.issues if i.product == product]
+    sections = [s for s in db.sections if s.product == product]
+    versions = sorted({i.version for i in issues} | {s.version for s in sections},
+                      key=rn.version_key)
+    return rn.ReleaseNotesDB(generated_at=db.generated_at, versions=versions,
+                             issues=issues, sections=sections)
 
 
 def _counts(db: rn.ReleaseNotesDB) -> dict:
@@ -260,7 +281,7 @@ def sync():
 # --------------------------------------------------------------------------- #
 #  🔎 Scan from Fortinet (background thread + worker-shared progress file)       #
 # --------------------------------------------------------------------------- #
-def _do_scan(app, *, majors, use_direct, fc_endpoint, fc_key, publish, username):
+def _do_scan(app, *, product, majors, use_direct, fc_endpoint, fc_key, publish, username):
     with app.app_context():
         path = _scan_path()
         root = _corpus_root()
@@ -271,14 +292,14 @@ def _do_scan(app, *, majors, use_direct, fc_endpoint, fc_key, publish, username)
         try:
             fetch = rn.make_fetcher(use_direct=use_direct,
                                     firecrawl_endpoint=fc_endpoint, firecrawl_key=fc_key)
-            emit("Discovering versions…")
-            all_versions = rn.discover_versions(fetch)
+            emit(f"Discovering {product} versions…")
+            all_versions = rn.discover_versions(fetch, product=product)
             emit(f"Discovered {len(all_versions)} versions.")
             versions = rn.select_versions(all_versions, majors)
             if not versions:
                 raise RuntimeError("No versions matched. Check the majors or tick 'All'.")
             emit(f"Harvesting {len(versions)} version(s)…")
-            new = rn.scan_release_notes(fetch, versions, on_progress=emit)
+            new = rn.scan_release_notes(fetch, versions, product=product, on_progress=emit)
             merged = rn.merge_db(rn.load_db(root=root), new)
             stored = rn.save_db(merged, root=root)
             published = False
@@ -287,7 +308,8 @@ def _do_scan(app, *, majors, use_direct, fc_endpoint, fc_key, publish, username)
                     from ..services.git_service import git_publish
                     rel = os.path.relpath(str(stored), os.path.dirname(app.root_path))
                     log = git_publish(
-                        f"chore(release-notes): scan {len(new.versions)} version(s) "
+                        f"chore(release-notes): scan {product} "
+                        f"{len(new.versions)} version(s) "
                         f"({len(new.issues)} issues)", [rel])
                     published = "fatal" not in (log or "").lower()
                     emit("Published corpus to git." if published
@@ -341,15 +363,17 @@ def scan():
     if not (use_direct or fc_endpoint):
         return jsonify({"error": "Enable at least one transport (direct or Firecrawl)."}), 400
 
-    _scan_write(path, {"running": True, "lines": ["Starting scan…"], "result": None,
-                       "error": None, "started_at": _now(),
-                       "started_by": current_user.username})
+    product = _product()
+    _scan_write(path, {"running": True, "lines": [f"Starting {product} scan…"],
+                       "result": None, "error": None, "started_at": _now(),
+                       "started_by": current_user.username, "product": product})
 
     app = current_app._get_current_object()
     t = threading.Thread(
         target=_do_scan, args=(app,),
-        kwargs=dict(majors=majors, use_direct=use_direct, fc_endpoint=fc_endpoint,
-                    fc_key=fc_key, publish=publish, username=current_user.username),
+        kwargs=dict(product=product, majors=majors, use_direct=use_direct,
+                    fc_endpoint=fc_endpoint, fc_key=fc_key, publish=publish,
+                    username=current_user.username),
         daemon=True)
     t.start()
     return jsonify({"started": True}), 202

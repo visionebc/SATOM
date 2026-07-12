@@ -8,6 +8,102 @@
   </div>
 </div>
 
+{# ── Everything at a glance: every backup stream, its format, destinations, cadence and LIVE state ── #}
+<div class="card mb-3"><div class="card-header"><strong><i class="bi bi-clipboard-check me-1"></i>Backup coverage — everything, at a glance</strong></div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0" style="font-size:12.5px;">
+      <thead><tr>
+        <th style="min-width:150px;">What</th><th>Format</th><th>Where it lives</th><th>How / cadence</th><th>State</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Application code</strong></td>
+          <td>git repo (source)</td>
+          <td>Gitea app repo + checked out on both nodes</td>
+          <td>Every commit / push; rollback via self-update queue</td>
+          <td>{% if code_history %}<span class="badge bg-success">running {{ git.commit }}</span>{% else %}<span class="badge bg-secondary">no history</span>{% endif %}</td>
+        </tr>
+        <tr>
+          <td><strong>Database — live</strong></td>
+          <td>PostgreSQL</td>
+          <td>Primary 248 (read-write) · standby 249 (streaming replica)</td>
+          <td>WAL streaming replication (continuous)</td>
+          <td>{% if peer.reachable %}<span class="badge bg-success">replica reachable</span>{% elif peer.host %}<span class="badge bg-danger">standby unreachable</span>{% else %}<span class="badge bg-secondary">standalone</span>{% endif %}</td>
+        </tr>
+        <tr>
+          <td><strong>Database — bundles</strong></td>
+          <td><code>.tar.gz</code> (pg_dump + <code>reports/</code>)</td>
+          <td>This node <code>data/system_backups/</code> · standby (rsync) · <strong>backup-server <code>/system/</code></strong> (off-rack)</td>
+          <td>Nightly 01:30 (<code>system_backup</code>, id11) + manual; pushed to backup-server by default</td>
+          <td>
+            <span class="badge bg-{{ 'success' if backups else 'secondary' }}">{{ backups|length }} local</span>
+            {% if bk_system.configured %}
+              {% if bk_system.reachable %}<span class="badge bg-{{ 'success' if bk_system.files else 'warning text-dark' }}">{{ bk_system.files|length }} on backup-server</span>
+              {% else %}<span class="badge bg-danger">backup-server unreachable</span>{% endif %}
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td><strong>Device config — source of truth</strong></td>
+          <td><code>_config.json</code> (text, diffable)</td>
+          <td>Gitea <code>reports/&lt;device&gt;/</code> (versioned) · cache in Postgres</td>
+          <td>Hourly sync (id5) + hourly <code>fm-git-publish.timer</code> + nightly publish 02:45 (id12) — FortiWeb <em>and</em> FortiADC</td>
+          <td>
+            {% set covered = sot|selectattr('has_json')|list|length %}
+            <span class="badge bg-{{ 'success' if covered == sot|length and sot else 'warning text-dark' }}">{{ covered }}/{{ sot|length }} devices in git</span>
+            {% if git_dirty %}<span class="badge bg-warning text-dark">{{ git_dirty|length }} unpublished</span>{% else %}<span class="badge bg-success">no drift</span>{% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td><strong>Device config — vault</strong></td>
+          <td>raw device export</td>
+          <td>This node <code>data/backups/</code> · standby (rsync)</td>
+          <td>On-demand per-appliance backup; mirrored every 5 min</td>
+          <td><span class="badge bg-{{ 'success' if vault.entries else 'secondary' }}">{{ vault.entries }} entr{{ 'y' if vault.entries == 1 else 'ies' }}</span></td>
+        </tr>
+        <tr>
+          <td><strong>Appliance-pushed config</strong></td>
+          <td>Fortinet config archive (zip)</td>
+          <td>backup-server <code>/configs/&lt;device&gt;/</code> (independent of this app)</td>
+          <td>Each appliance pushes on its own schedule (<code>config system backup</code> → SFTP; fw6 daily 02:00)</td>
+          <td>
+            {% if not bk.configured %}<span class="badge bg-secondary">not configured</span>
+            {% elif not bk.reachable %}<span class="badge bg-danger">unreachable</span>
+            {% else %}<span class="badge bg-{{ 'success' if bk.devices else 'warning text-dark' }}">{{ bk.devices|length }} device(s)</span>{% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td><strong>Firmware</strong></td>
+          <td><code>.out</code> binaries + manifest</td>
+          <td>backup-server <code>/firmware/</code> · manifest in firmware SoT repo · pullable into the console</td>
+          <td>Uploaded to the backup server; Pull → Infrastructure → Firmware (sha256-verified)</td>
+          <td>
+            {% if not bk.configured %}<span class="badge bg-secondary">not configured</span>
+            {% elif not bk.reachable %}<span class="badge bg-danger">unreachable</span>
+            {% else %}<span class="badge bg-{{ 'success' if bk.firmware else 'secondary' }}">{{ bk.firmware|length }} image(s)</span>{% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="card-body py-2 border-top">
+      <div class="small text-muted d-flex flex-wrap gap-3 align-items-center">
+        <span><i class="bi bi-hdd-stack me-1"></i><strong>Per-device SoT:</strong></span>
+        {% for d in sot %}
+          <span class="font-monospace">{{ d.name }} <span class="text-muted">({{ d.kind }})</span>
+            {% if d.has_json %}<i class="bi bi-check-circle-fill text-success" title="in git — snapshot {{ d.mtime }} UTC"></i>
+            {% else %}<i class="bi bi-x-circle-fill text-danger" title="no reports/ snapshot yet"></i>{% endif %}
+          </span>
+        {% endfor %}
+        {% if bk_system.configured and bk_system.files %}
+          <span class="ms-auto"><i class="bi bi-hdd-network me-1"></i>Newest DB bundle off-rack: <span class="font-monospace">{{ bk_system.files[0].name }}</span> ({{ (bk_system.files[0].size/1024)|round(0)|int }} KB, {{ bk_system.files[0].mtime }} UTC)</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="row g-3">
   <div class="col-lg-5">
     <div class="card mb-3"><div class="card-header"><strong>Create backup</strong></div>
@@ -266,7 +362,7 @@
     <button class="btn btn-outline-light btn-sm" data-bs-toggle="collapse" data-bs-target="#sbDocs">Show / hide</button>
   </div>
   <div class="collapse" id="sbDocs"><div class="card-body small">
-    <h6>The three copies</h6>
+    <h6>The copies (per artifact)</h6>
     <table class="table table-sm">
       <thead><tr><th>Copy</th><th>What</th><th>How it gets there</th><th>RPO</th></tr></thead>
       <tbody>
@@ -278,16 +374,16 @@
             <td>Postgres streaming replication (continuous) + <code>fm-ha-datasync.timer</code> rsync every 5 min (standby pulls; inert on the primary and in standalone mode)</td>
             <td>≈ seconds (DB) / ≤ 5 min (files)</td></tr>
         <tr><td><strong>3. Git (Gitea)</strong></td>
-            <td>Per-device JSON <code>reports/&lt;device&gt;/_config.json</code> — versioned, human-diffable. Application CODE lives in the same repo; the firmware SoT is a <em>separate</em> repo (manifest only)</td>
-            <td>Auto-publish hourly via <code>fm-git-publish.timer</code> (primary only) + on backup creation (default-on checkbox) + the manual button</td>
+            <td>Per-device JSON <code>reports/&lt;device&gt;/_config.json</code> — versioned, human-diffable, for <strong>every</strong> appliance (FortiWeb <em>and</em> FortiADC). Application CODE lives in the same repo; the firmware SoT is a <em>separate</em> repo (manifest only)</td>
+            <td>Hourly sync (<code>device_sync</code>, id5) writes the JSON; <code>fm-git-publish.timer</code> commits hourly (primary only); nightly <code>device_inspect</code> (id12, 02:45) publishes all devices; plus on backup creation + the manual button</td>
             <td>≤ 1 h (or on demand)</td></tr>
-        <tr><td><strong>4. External backup server</strong></td>
-            <td>Device-pushed config backups (<code>/configs/&lt;device&gt;/</code>) + firmware <code>.out</code> binaries (<code>/firmware/</code>)</td>
-            <td>The appliances push it THEMSELVES on their own schedule (<code>config system backup</code> → SFTP, e.g. fw6 daily 02:00) — zero dependency on this app or either HA node</td>
-            <td>per device schedule (fw6: ≤ 24 h)</td></tr>
+        <tr><td><strong>4. External backup server (backup-server)</strong></td>
+            <td><strong>App-pushed DB bundle</strong> (<code>/system/</code> — this app's pg_dump, off-rack) · device-pushed config backups (<code>/configs/&lt;device&gt;/</code>) · firmware <code>.out</code> binaries (<code>/firmware/</code>)</td>
+            <td>The nightly <code>system_backup</code> (id11) pushes the pg_dump bundle to <code>/system/</code> over SFTP (default on). Separately, the appliances push their OWN config backups (<code>config system backup</code> → SFTP, e.g. fw6 daily 02:00) — zero dependency on this app or either HA node</td>
+            <td>DB: ≤ 24 h · per-device schedule (fw6: ≤ 24 h)</td></tr>
       </tbody>
     </table>
-    <p class="text-muted mb-2">Git holds only the JSON source of truth (text, diffable). Binary artifacts — pg_dump bundles and raw device-config exports — deliberately stay OUT of git and travel via rsync to the standby: git is the wrong tool for binary blobs.</p>
+    <p class="text-muted mb-2">Git holds only the JSON source of truth (text, diffable). Binary artifacts — pg_dump bundles and raw device-config exports — deliberately stay OUT of git: they travel via rsync to the standby, and the pg_dump bundle is additionally pushed to backup-server <code>/system/</code> so the database has a third, off-rack copy on a separate failure domain (hypervisor04). Git is the wrong tool for binary blobs.</p>
     <p class="text-muted mb-2">The device-pushed backups on the external server are browsable here: <em>External backup server</em> card → <strong>Browse</strong> — compare two pushes (A → B), search inside B, <strong>click a filename</strong> (or <em>View B</em>) to read the extracted config text inline, or download the raw archive. Firmware <code>.out</code> images listed there are pulled into Infrastructure → Firmware, sha256-verified.</p>
 
     <h6>Rollback / restore procedures</h6>

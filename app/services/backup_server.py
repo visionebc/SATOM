@@ -102,6 +102,237 @@ def inventory() -> dict:
     return out
 
 
+# ── device-config backup browser (System Backup page modal) ─────────────────
+#
+# The appliances push their backups as a zip wrapping a Fortinet multi-file
+# container (``fwb_system.conf``): a [header] with a ``file_split`` marker,
+# then alternating [file] metadata / payload blocks. The plain-text config
+# sections (encrypt=no) are extracted for diff & search; the encrypted
+# extend-tar blob is listed but skipped.
+
+_MAX_FETCH = 200 * 1024 * 1024  # refuse to pull anything bigger over SFTP
+
+# tiny cache so an interactive diff+search session doesn't re-download the
+# same multi-MB file on every request: (device, name, size) → extraction
+_CACHE: dict = {}
+_CACHE_MAX = 6
+
+
+def _safe_names(device: str, filename: str) -> tuple[str, str]:
+    dev = posixpath.basename((device or "").strip())
+    fn = posixpath.basename((filename or "").strip())
+    if not dev or not fn:
+        raise RuntimeError("missing device or file name")
+    return dev, fn
+
+
+def device_files(device: str) -> dict:
+    """Full listing of one device's folder on the backup server (the card
+    itself only shows a summary)."""
+    dev = posixpath.basename((device or "").strip())
+    if not dev:
+        return {"ok": False, "error": "missing device", "files": []}
+    try:
+        cfg = store.backup_server(reveal_secret=True)
+        t, sftp = _connect(cfg)
+        try:
+            files = _listing(sftp, posixpath.join(cfg["config_path"], dev))
+        finally:
+            t.close()
+        return {"ok": True, "device": dev, "files": files}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc), "files": []}
+
+
+def _fetch_raw(device: str, filename: str) -> bytes:
+    dev, fn = _safe_names(device, filename)
+    cfg = store.backup_server(reveal_secret=True)
+    t, sftp = _connect(cfg)
+    try:
+        remote = posixpath.join(cfg["config_path"], dev, fn)
+        st = sftp.stat(remote)
+        if (st.st_size or 0) > _MAX_FETCH:
+            raise RuntimeError(f"{fn} is {st.st_size} bytes — too large to fetch")
+        with sftp.open(remote, "rb") as fh:
+            fh.prefetch()
+            return fh.read()
+    finally:
+        t.close()
+
+
+def _looks_text(sample: bytes) -> bool:
+    if not sample:
+        return False
+    if b"\x00" in sample:
+        return False
+    printable = sum(1 for b in sample if 32 <= b < 127 or b in (9, 10, 13))
+    return printable / len(sample) > 0.95
+
+
+def _parse_container(blob: bytes) -> list[dict]:
+    """Split a Fortinet multi-file backup container into its [file] entries.
+    Returns [{name, encrypt, compress, payload}] in on-disk order."""
+    import re
+    m = re.search(rb"file_split=(.+?)\n", blob)
+    if not m:
+        return []
+    parts = blob.split(m.group(1))
+    out, pending = [], None
+    for part in parts:
+        if b"[file]" in part[:200]:
+            meta = {}
+            for line in part.split(b"[file]", 1)[1].splitlines():
+                if b"=" in line:
+                    k, v = line.split(b"=", 1)
+                    meta[k.decode("ascii", "replace").strip()] = \
+                        v.decode("utf-8", "replace").strip()
+            pending = meta
+        elif pending is not None:
+            pending["payload"] = part.lstrip(b"\n")
+            out.append(pending)
+            pending = None
+    return out
+
+
+def _extract_texts(filename: str, data: bytes) -> dict:
+    """Unwrap zip / gzip / Fortinet container down to the plain-text config
+    sections. → {sections: [{name, text, lines}], skipped: [names]}."""
+    import gzip
+    import io
+    import zipfile
+    if data[:2] == b"PK":
+        try:
+            z = zipfile.ZipFile(io.BytesIO(data))
+            inner = [(i.filename, z.read(i)) for i in z.infolist()]
+        except Exception:
+            inner = [(filename, data)]
+    else:
+        inner = [(filename, data)]
+    sections, skipped = [], []
+    for name, blob in inner:
+        if blob[:2] == b"\x1f\x8b":
+            try:
+                blob = gzip.decompress(blob)
+            except Exception:
+                skipped.append(name)
+                continue
+        if b"file_split=" in blob[:512] and blob[:8].startswith(b"[header]"):
+            for ent in _parse_container(blob):
+                ename = ent.get("name") or name
+                payload = ent.get("payload") or b""
+                if ent.get("encrypt") == "yes":
+                    skipped.append(f"{ename} (encrypted)")
+                    continue
+                if payload[:2] == b"\x1f\x8b":
+                    try:
+                        payload = gzip.decompress(payload)
+                    except Exception:
+                        skipped.append(ename)
+                        continue
+                if not _looks_text(payload[:4096]):
+                    skipped.append(ename)
+                    continue
+                text = payload.decode("utf-8", "replace")
+                sections.append({"name": ename, "text": text,
+                                 "lines": text.count("\n") + 1})
+        elif _looks_text(blob[:4096]):
+            text = blob.decode("utf-8", "replace")
+            sections.append({"name": name, "text": text,
+                             "lines": text.count("\n") + 1})
+        else:
+            skipped.append(name)
+    return {"sections": sections, "skipped": skipped}
+
+
+def _extraction(device: str, filename: str) -> dict:
+    """Cached download+extract of one pushed backup."""
+    dev, fn = _safe_names(device, filename)
+    key = (dev, fn)
+    if key in _CACHE:
+        return _CACHE[key]
+    data = _fetch_raw(dev, fn)
+    res = _extract_texts(fn, data)
+    res["size"] = len(data)
+    while len(_CACHE) >= _CACHE_MAX:
+        _CACHE.pop(next(iter(_CACHE)))
+    _CACHE[key] = res
+    return res
+
+
+def backup_outline(device: str, filename: str) -> dict:
+    """What's inside one pushed backup — section names/sizes, no content."""
+    try:
+        res = _extraction(device, filename)
+        return {"ok": True, "size": res["size"], "skipped": res["skipped"],
+                "sections": [{"name": s["name"], "lines": s["lines"]}
+                             for s in res["sections"]]}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+
+
+def diff_device_backups(device: str, file_a: str, file_b: str) -> dict:
+    """Unified diff of the plain-text config sections between two pushed
+    backups of the same device (e.g. yesterday vs today)."""
+    import difflib
+    try:
+        a = _extraction(device, file_a)
+        b = _extraction(device, file_b)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+    sa = {s["name"]: s for s in a["sections"]}
+    sb = {s["name"]: s for s in b["sections"]}
+    out, identical, truncated = [], True, False
+    for name in sorted(set(sa) | set(sb)):
+        ta = sa.get(name, {}).get("text", "")
+        tb = sb.get(name, {}).get("text", "")
+        if ta == tb:
+            continue
+        identical = False
+        lines = list(difflib.unified_diff(
+            ta.splitlines(), tb.splitlines(),
+            fromfile=f"{file_a}:{name}", tofile=f"{file_b}:{name}", lineterm=""))
+        if len(lines) > 3000:
+            lines = lines[:3000]
+            truncated = True
+        out.append({"section": name, "diff": "\n".join(lines),
+                    "changes": sum(1 for l in lines
+                                   if l[:1] in "+-" and l[:3] not in ("+++", "---"))})
+    return {"ok": True, "identical": identical, "sections": out,
+            "truncated": truncated,
+            "skipped": sorted(set(a["skipped"]) | set(b["skipped"]))}
+
+
+def search_device_backup(device: str, filename: str, query: str,
+                         context: int = 2, limit: int = 300) -> dict:
+    """Case-insensitive substring search inside one pushed backup's text
+    sections, with a little context around each hit."""
+    q = (query or "").strip()
+    if len(q) < 2:
+        return {"ok": False, "error": "query too short (min 2 chars)"}
+    try:
+        res = _extraction(device, filename)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+    ql = q.lower()
+    hits, total = [], 0
+    for sec in res["sections"]:
+        lines = sec["text"].splitlines()
+        for i, line in enumerate(lines):
+            if ql in line.lower():
+                total += 1
+                if len(hits) < limit:
+                    lo, hi = max(0, i - context), min(len(lines), i + context + 1)
+                    hits.append({"section": sec["name"], "line": i + 1,
+                                 "context": "\n".join(lines[lo:hi])})
+    return {"ok": True, "query": q, "total": total, "hits": hits,
+            "truncated": total > len(hits), "skipped": res["skipped"]}
+
+
+def download_backup_stream(device: str, filename: str):
+    """Raw bytes of one pushed backup, for the browser download button."""
+    return _fetch_raw(device, filename)
+
+
 def _firmware_root() -> str:
     """Same derivation as views/firmware.py: next to the data dir."""
     uri = current_app.config.get("SQLALCHEMY_DATABASE_URI", "") or ""

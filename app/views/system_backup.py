@@ -6,8 +6,10 @@ git" (the off-box, versioned source-of-truth backup).
 """
 from __future__ import annotations
 
+import io
+
 from flask import (Blueprint, render_template, request, redirect, url_for,
-                   flash, send_file, abort)
+                   flash, send_file, abort, jsonify)
 from flask_login import login_required
 
 from ..auth.decorators import require_permission
@@ -109,6 +111,23 @@ def download(name):
     return send_file(str(path), as_attachment=True, download_name=name)
 
 
+@bp.route("/delete", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def delete():
+    """Delete an old bundle. Primary-only: the standby mirrors data/ FROM the
+    primary (rsync --delete), so deletions here replicate within 5 min while
+    a standby-side delete would be resurrected by the next sync."""
+    from ..services import self_update as su
+    if su.node_role() == "standby":
+        flash("This node is the standby — delete bundles on the primary; "
+              "the datasync mirrors the deletion here within 5 minutes.", "warning")
+        return redirect(url_for("system_backup.index"))
+    res = system_backup.delete_backup(request.form.get("name", ""))
+    flash(res["detail"], "success" if res["ok"] else "danger")
+    return redirect(url_for("system_backup.index"))
+
+
 @bp.route("/restore", methods=["POST"])
 @login_required
 @require_permission("user_manage")
@@ -167,6 +186,66 @@ def firmware_pull():
           ("Firmware pull failed: " + res["detail"]),
           "success" if res["ok"] else "danger")
     return redirect(url_for("system_backup.index"))
+
+
+# ── external backup server browser (modal, JSON endpoints) ──────────────────
+
+@bp.route("/external/files")
+@login_required
+@require_permission("user_manage")
+def external_files():
+    """All pushed backups for one device on the external backup server."""
+    from ..services import backup_server as bksrv
+    return jsonify(bksrv.device_files(request.args.get("device", "")))
+
+
+@bp.route("/external/outline")
+@login_required
+@require_permission("user_manage")
+def external_outline():
+    """Sections inside one pushed backup (text vs skipped/encrypted)."""
+    from ..services import backup_server as bksrv
+    return jsonify(bksrv.backup_outline(request.args.get("device", ""),
+                                        request.args.get("name", "")))
+
+
+@bp.route("/external/diff")
+@login_required
+@require_permission("user_manage")
+def external_diff():
+    """Config diff between two pushed backups of the same device."""
+    from ..services import backup_server as bksrv
+    return jsonify(bksrv.diff_device_backups(request.args.get("device", ""),
+                                             request.args.get("a", ""),
+                                             request.args.get("b", "")))
+
+
+@bp.route("/external/search")
+@login_required
+@require_permission("user_manage")
+def external_search():
+    """Search inside one pushed backup's plain-text config sections."""
+    from ..services import backup_server as bksrv
+    return jsonify(bksrv.search_device_backup(request.args.get("device", ""),
+                                              request.args.get("name", ""),
+                                              request.args.get("q", "")))
+
+
+@bp.route("/external/download")
+@login_required
+@require_permission("user_manage")
+def external_download():
+    """Grab one pushed backup file (raw, as the appliance pushed it)."""
+    from ..services import backup_server as bksrv
+    device = request.args.get("device", "")
+    name = request.args.get("name", "")
+    try:
+        data = bksrv.download_backup_stream(device, name)
+    except Exception:  # noqa: BLE001 — bad name / unreachable → 404
+        abort(404)
+    import posixpath
+    return send_file(io.BytesIO(data), as_attachment=True,
+                     download_name=posixpath.basename(name))
 
 
 @bp.route("/publish-json", methods=["POST"])

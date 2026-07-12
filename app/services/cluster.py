@@ -39,7 +39,7 @@ def _probe_peer(host: str, timeout: float = 1.5) -> dict:
     import urllib.request
     import urllib.error
     base = "http://%s:8000" % host
-    out = {"reachable": False, "role": None, "revision": None, "app_up": False}
+    out = {"reachable": False, "role": None, "revision": None, "app_up": False, "db": None}
     try:
         with urllib.request.urlopen(base + "/healthz/primary", timeout=timeout) as r:
             out["reachable"] = True
@@ -55,6 +55,7 @@ def _probe_peer(host: str, timeout: float = 1.5) -> dict:
             d = json.loads(r.read().decode("utf-8", "replace"))
             out["app_up"] = bool(d.get("ok"))
             out["revision"] = {"short": d.get("revision"), "sha": d.get("sha")}
+            out["db"] = d.get("db")
     except Exception:
         pass
     return out
@@ -114,6 +115,40 @@ def replication() -> dict:
             pass
         out["error"] = str(e)[:200]
     return out
+
+
+def db_summary(rep: dict | None = None) -> dict:
+    """Compact, display-ready DB/replication status for ONE node — shown on the
+    HA card and embedded in /healthz so a peer can render our DB state too (no
+    SSH needed). Symmetric across failover: the primary shows its sender/replica
+    view, a standby shows its apply-lag view."""
+    rep = rep if rep is not None else replication()
+    role = rep.get("role")
+    if rep.get("error"):
+        return {"role": role, "state": "error", "healthy": False,
+                "lag_bytes": None, "detail": rep.get("error")}
+    if role == "primary":
+        senders = rep.get("senders", [])
+        streaming = bool(rep.get("streaming"))
+        lag = max([s.get("lag_bytes") or 0 for s in senders], default=0)
+        if streaming:
+            state = "streaming"
+        elif senders:
+            state = senders[0].get("state") or "connected"
+        else:
+            state = "no standby"
+        return {"role": "primary", "state": state, "healthy": streaming,
+                "replicas": len(senders),
+                "sync_state": (senders[0].get("sync_state") if senders else None),
+                "lag_bytes": (lag if senders else None)}
+    if role == "standby":
+        recv = rep.get("receiver") or {}
+        streaming = bool(rep.get("streaming"))
+        return {"role": "standby",
+                "state": "replicating" if streaming else "not receiving",
+                "healthy": streaming, "replicas": None, "sync_state": None,
+                "lag_bytes": recv.get("apply_lag_bytes")}
+    return {"role": role, "state": "unknown", "healthy": None, "lag_bytes": None}
 
 
 def scheduler_local() -> dict:
@@ -236,11 +271,14 @@ def full_state() -> dict:
     # for a running peer. Fall back to the replication view if unreachable.
     for n in nodes:
         if n.get("name") == this:
+            rpt = n.get("report") or {}
+            rpt["db"] = db_summary(rep)
+            n["report"] = rpt
             continue
         if mode != "ha":
             n["report"] = {"role": None, "healthy": None, "revision": None,
                            "reported_at": "standalone mode — probe disabled",
-                           "source": "disabled", "reachable": None}
+                           "source": "disabled", "reachable": None, "db": None}
             continue
         host = n.get("host")
         pr = _probe_peer(host) if host and host != "127.0.0.1" else {"reachable": False}
@@ -252,15 +290,21 @@ def full_state() -> dict:
                 "reported_at": "live probe",
                 "source": "probe",
                 "reachable": True,
+                "db": pr.get("db"),
             }
         elif not n.get("report") and host in addrs:
+            snd = next((s for s in rep.get("senders", [])
+                        if s.get("client_addr") == host), None)
             n["report"] = {"role": "standby", "healthy": True, "revision": None,
                            "reported_at": "replicating (app unreachable)",
-                           "source": "replication", "reachable": False}
+                           "source": "replication", "reachable": False,
+                           "db": {"role": "standby", "state": "replicating",
+                                  "healthy": True,
+                                  "lag_bytes": (snd.get("lag_bytes") if snd else None)}}
         elif not n.get("report"):
             n["report"] = {"role": None, "healthy": False, "revision": None,
                            "reported_at": "unreachable", "source": "none",
-                           "reachable": False}
+                           "reachable": False, "db": None}
     return {
         "this_node": su.this_node_name(),
         "this_role": role,

@@ -154,7 +154,7 @@
     <!-- Notifications — bell dropdown: preview + Clear (dismiss, kept on page) -->
     {% set _notif_count = unread_notification_count|default(0) %}
     <div class="dropdown fw-notif-menu">
-      <a class="fw-topbar-btn position-relative"
+      <a class="fw-topbar-btn position-relative" id="fwNotifBell"
          href="{{ url_for('notifications.index') }}"
          data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"
          title="{{ (_notif_count ~ ' unread notification(s)') if _notif_count else 'Notifications' }}">
@@ -901,6 +901,41 @@
     e.preventDefault();
     FWRegexLab.open(null, '', '{{ product.key }}', t.getAttribute('data-fw-regex-open'));
   });
+})();
+</script>
+<script nonce="{{ csp_nonce }}">
+(function(){
+  if (window.__fwBellPoll) return;
+  if (!document.getElementById('fwNotifBell')) return;
+  window.__fwBellPoll = true;
+  function updateBell(count){
+    var bell = document.getElementById('fwNotifBell');
+    if (!bell) return;
+    var icon = bell.querySelector('i.bi');
+    if (icon) icon.className = 'bi bi-bell' + (count > 0 ? '-fill' : '');
+    var badge = bell.querySelector('.badge');
+    if (count > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger';
+        badge.style.fontSize = '9px';
+        bell.appendChild(badge);
+      }
+      badge.textContent = count;
+    } else if (badge) {
+      badge.remove();
+    }
+    bell.setAttribute('title', count > 0 ? (count + ' unread notification(s)') : 'Notifications');
+  }
+  function poll(){
+    fetch('/notifications/unread', {credentials: 'same-origin', headers: {'Accept': 'application/json'}})
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){ if (d && typeof d.count === 'number') updateBell(d.count); })
+      .catch(function(){});
+  }
+  window.FW = window.FW || {};
+  window.FW.refreshBell = poll;
+  setInterval(poll, 30000);
 })();
 </script>
 <script src="{{ url_for('static', filename='js/release_notes.js') }}"></script>

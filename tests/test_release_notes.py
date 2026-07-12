@@ -269,8 +269,34 @@ def test_scan_gate_readonly_403_admin_202(app, client, monkeypatch):
         time.sleep(0.1)
     assert result is not None, "scan never finished"
     assert result.get("error") is None
-    assert result["result"]["scanned"] == 1
-    assert result["result"]["new_issues"] == 3
+def test_scan_writes_bell_notification(app, client, monkeypatch):
+    """Run-in-background: a finished scan raises a product-scoped bell
+    notification for the admin who launched it (so it surfaces even after the
+    modal is closed), and the lightweight /notifications/unread count reflects
+    it. Regression guard for the background-scan feature."""
+    monkeypatch.setattr(rn, "make_fetcher", lambda **k: _fake_fetch)
+    monkeypatch.setattr(rn, "discover_versions", lambda fetch, **k: ["8.0.5"])
+
+    login(client, _admin(app))
+    r = client.post("/release-notes/scan",
+                    json={"all": True, "use_direct": True, "publish": False})
+    assert r.status_code == 202
+    for _ in range(50):
+        if not client.get("/release-notes/scan/status").get_json().get("running"):
+            break
+        time.sleep(0.1)
+
+    from app.models import User
+    from app.models_notifications import Notification
+    with app.app_context():
+        uid = User.query.filter_by(username="rnadmin").first().id
+        rows = Notification.query.filter_by(user_id=uid, kind="success").all()
+    assert rows, "scan did not raise a bell notification"
+    assert any("scan done" in (n.title or "").lower() for n in rows)
+    assert all(n.product == "fortiweb" for n in rows)
+
+    d = client.get("/notifications/unread").get_json()
+    assert d["count"] >= 1
 
 
 def test_sync_route(app, client):

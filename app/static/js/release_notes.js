@@ -213,12 +213,15 @@
     if (out) out.classList.remove('d-none');
     const startBtn = $('rnScanStart');
     if (startBtn) startBtn.disabled = true;
+    const bgBtn = $('rnScanBg');
+    if (bgBtn) bgBtn.classList.remove('d-none');
     scanPoll = setInterval(async () => {
       let st;
       try { st = await get(`${BASE}/scan/status`); } catch (e) { return; }
       if (!st || typeof st !== 'object') {
         clearInterval(scanPoll); scanPoll = null;
         if (startBtn) startBtn.disabled = false;
+        if (bgBtn) bgBtn.classList.add('d-none');
         const m = 'Lost the scan status (session or ADOM permission changed?). '
           + 'Reload the page and try again.';
         if (out) out.textContent = m;
@@ -229,6 +232,8 @@
       if (!st.running) {
         clearInterval(scanPoll); scanPoll = null;
         if (startBtn) startBtn.disabled = false;
+        if (bgBtn) bgBtn.classList.add('d-none');
+        window.FW?.refreshBell?.();
         if (st.error) window.FW?.toast?.('Scan failed: ' + st.error, 'danger');
         else if (st.result) window.FW?.toast?.(
           `Scan done — ${st.result.scanned} version(s), ${st.result.new_issues} issue(s).`, 'success');
@@ -282,4 +287,11 @@
   if (scanToggle) scanToggle.addEventListener('click', () => $('rnScanPanel').classList.toggle('d-none'));
   const scanStart = $('rnScanStart');
   if (scanStart) scanStart.addEventListener('click', startScan);
+  const scanBg = $('rnScanBg');
+  if (scanBg) scanBg.addEventListener('click', () => {
+    const inst = (window.bootstrap && bootstrap.Modal.getInstance(modalEl))
+      || (window.bootstrap && bootstrap.Modal.getOrCreateInstance(modalEl));
+    if (inst) inst.hide();
+    window.FW?.toast?.('Scan running in background — a bell notification will appear when it finishes.', 'info');
+  });
 })();

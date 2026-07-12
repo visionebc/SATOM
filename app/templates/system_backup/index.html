@@ -407,6 +407,7 @@
             <button class="btn btn-outline-light" id="eb-search"><i class="bi bi-search"></i></button>
           </div>
           <button class="btn btn-outline-light btn-sm" id="eb-outline"><i class="bi bi-list-nested me-1"></i>What's inside B</button>
+          <button class="btn btn-outline-light btn-sm" id="eb-view"><i class="bi bi-eye me-1"></i>View B</button>
           <a class="btn btn-outline-light btn-sm" id="eb-download" href="#"><i class="bi bi-download me-1"></i>Download B</a>
         </div>
         <div id="eb-busy" class="text-muted small d-none"><span class="spinner-border spinner-border-sm me-1"></span>Fetching &amp; extracting on the backup server link — first hit on a big backup takes a few seconds…</div>
@@ -485,6 +486,30 @@
     return '<pre class="small p-2 rounded" style="background:rgba(0,0,0,.35); max-height:380px; overflow:auto;">' + esc(t) + '</pre>';
   };
 
+  var loadContent = function (name) {
+    if (!name) { result('<div class="alert alert-warning small py-2">pick a file first</div>'); return; }
+    api('content', {device: ebDevice, name: name}, function (d) {
+      if (!d.ok) { result('<div class="alert alert-danger small py-2">' + esc(d.error) + '</div>'); return; }
+      var html = '<p class="small mb-1"><strong class="font-monospace">' + esc(name) + '</strong> \u2014 ' + (d.size / 1048576).toFixed(1) + ' MB \u00b7 ' + d.sections.length + ' text section(s)</p>';
+      html += d.sections.map(function (s) {
+        return '<p class="small mb-1 mt-2"><strong class="font-monospace">' + esc(s.name) + '</strong> \u2014 ' + s.lines + ' lines</p>' + pre(s.text);
+      }).join('');
+      if (!d.sections.length) html += '<div class="alert alert-info small py-2">No plain-text config in this archive \u2014 all sections are encrypted/binary. Use Download.</div>';
+      if (d.skipped.length) html += '<div class="small text-muted mt-1">not shown (binary/encrypted): ' + esc(d.skipped.join(', ')) + '</div>';
+      result(html);
+    });
+  };
+  document.getElementById('eb-files').addEventListener('click', function (e) {
+    var a = e.target.closest('[data-js="ext-view"]');
+    if (!a) return;
+    e.preventDefault();
+    var name = a.dataset.name;
+    document.querySelectorAll('input[name="eb-b"]').forEach(function (r) {
+      if (r.value === name) r.checked = true;
+    });
+    loadContent(name);
+  });
+
   document.querySelectorAll('[data-js="ext-browse"]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       ebDevice = this.dataset.device;
@@ -504,7 +529,7 @@
           return '<tr>' +
             '<td><input type="radio" class="form-check-input" name="eb-a" value="' + esc(f.name) + '"' + (i === 1 ? ' checked' : '') + '></td>' +
             '<td><input type="radio" class="form-check-input" name="eb-b" value="' + esc(f.name) + '"' + (i === 0 ? ' checked' : '') + '></td>' +
-            '<td class="small font-monospace">' + esc(f.name) + '</td>' +
+            '<td class="small font-monospace"><a href="#" class="link-light text-decoration-none" data-js="ext-view" data-name="' + esc(f.name) + '" title="view live config of this backup">' + esc(f.name) + '</a></td>' +
             '<td class="small">' + (f.size / 1048576).toFixed(1) + ' MB</td>' +
             '<td class="small">' + esc(f.mtime) + '</td></tr>';
         }).join('');
@@ -562,6 +587,10 @@
       html += '</ul>';
       result(html);
     });
+  });
+
+  document.getElementById('eb-view').addEventListener('click', function () {
+    loadContent(picked('b'));
   });
 
   document.getElementById('eb-download').addEventListener('click', function (e) {

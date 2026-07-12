@@ -243,6 +243,10 @@ def create_app(config_override: object | None = None) -> Flask:
                        # SSH config dump — services/backup.py kind branch).
                        'backups',
                        # Product-aware admin pages shared with FortiWeb.
+                       # Release Notes: product-scoped harvester/browser
+                       # (corpus filtered by g.product); reached from the
+                       # ADC ADOM top-banner modal (2026-07-12).
+                       'release_notes',
                        'templates', 'naming', 'capacity', 'api_tokens', 'api_v1'}
             adc_eps = {'product.fortiadc_home'}
             if bp_name not in adc_bps and ep not in adc_eps:

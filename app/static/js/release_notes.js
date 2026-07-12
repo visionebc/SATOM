@@ -216,6 +216,15 @@
     scanPoll = setInterval(async () => {
       let st;
       try { st = await get(`${BASE}/scan/status`); } catch (e) { return; }
+      if (!st || typeof st !== 'object') {
+        clearInterval(scanPoll); scanPoll = null;
+        if (startBtn) startBtn.disabled = false;
+        const m = 'Lost the scan status (session or ADOM permission changed?). '
+          + 'Reload the page and try again.';
+        if (out) out.textContent = m;
+        window.FW?.toast?.(m, 'danger');
+        return;
+      }
       if (out) { out.textContent = (st.lines || []).join('\n'); out.scrollTop = out.scrollHeight; }
       if (!st.running) {
         clearInterval(scanPoll); scanPoll = null;
@@ -241,7 +250,11 @@
     const out = $('rnScanOut');
     if (out) { out.classList.remove('d-none'); out.textContent = 'Starting…'; }
     try {
-      await post(`${BASE}/scan`, body);
+      const r = await post(`${BASE}/scan`, body);
+      if (!r || typeof r !== 'object' || !r.started) {
+        throw new Error('Could not start the scan — your session or ADOM '
+          + 'permission may have changed. Reload the page and try again.');
+      }
       startScanPolling();
     } catch (e) {
       let msg = e.message; try { msg = JSON.parse(e.message).error || msg; } catch (_) {}

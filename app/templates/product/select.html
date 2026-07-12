@@ -68,11 +68,13 @@
       border-radius: 14px;
       padding: 22px 16px 18px; color: #e7edf5;
       transition: background .18s var(--ps-ease), border-color .18s var(--ps-ease), transform .18s var(--ps-ease);
-      opacity: 0; animation: psRow .5s var(--ps-ease) forwards;
+      opacity: 0; animation: psRow .34s var(--ps-ease) forwards;
     }
-    .ps-form:nth-child(1) .ps-card { animation-delay: .12s; }
-    .ps-form:nth-child(2) .ps-card { animation-delay: .20s; }
-    .ps-form:nth-child(3) .ps-card { animation-delay: .28s; }
+    .ps-form:nth-child(1) .ps-card { animation-delay: .04s; }
+    .ps-form:nth-child(2) .ps-card { animation-delay: .09s; }
+    .ps-form:nth-child(3) .ps-card { animation-delay: .14s; }
+    .ps-form:nth-child(4) .ps-card { animation-delay: .19s; }
+    .ps-form:nth-child(5) .ps-card { animation-delay: .24s; }
     @keyframes psRow { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
     .ps-card:hover { background: rgba(48, 127, 226, 0.14); border-color: rgba(48, 127, 226, 0.55); transform: translateY(-2px); }
     .ps-card:active { transform: translateY(0) scale(.995); }
@@ -142,5 +144,22 @@
       </div>
     </div>
   </div>
+  <script nonce="{{ csp_nonce }}">
+    // The product gate IS an explicit ADOM switch. This page has no bundled
+    // JS, so update the per-tab ADOM truth (sessionStorage.fmAdom) here — else
+    // the destination page realigns to the stale ADOM (wrong banner + an extra
+    // navigation). See turbo-boot.js "Per-tab ADOM".
+    (function () {
+      var forms = document.querySelectorAll('form.ps-form');
+      for (var i = 0; i < forms.length; i++) {
+        forms[i].addEventListener('submit', function (ev) {
+          try {
+            var inp = ev.currentTarget.querySelector('input[name="product"]');
+            if (inp && inp.value) sessionStorage.setItem('fmAdom', inp.value);
+          } catch (e) {}
+        });
+      }
+    })();
+  </script>
 </body>
 </html>

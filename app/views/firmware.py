@@ -45,7 +45,11 @@ from ..services.audit import log_action
 bp = Blueprint("firmware", __name__, url_prefix="/firmware")
 
 _ALLOWED_EXT = {".out"}
-_PRODUCTS = {"fortiweb", "fortiadc"}
+# Products that manage firmware images. Derived LIVE from the ADOM registry
+# (``cap_firmware``); ``product not in _PRODUCTS`` works on the live sequence.
+from ..branding import live_products as _live_products  # noqa: E402
+
+_PRODUCTS = _live_products("firmware")
 
 
 def _firmware_root() -> str:

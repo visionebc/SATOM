@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Profile - {{ product.title if product else 'Fortinet Manager' }}{% endblock %}
+{% block title %}Profile - {{ product.title if product else 'OFortMAut' }}{% endblock %}
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
@@ -43,12 +43,12 @@
       <div class="fw-card-body">
         <p class="text-muted" style="font-size:13px;">
           Your personal top-bar banner per product — saved to your account in the database, not shared with other users.
-          FortiWeb and FortiADC can use different banners.
+          Each ADOM can use a different banner.
         </p>
         <form method="POST" action="{{ url_for('settings.save_banners') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="row g-4">
-            {% for pkey, plabel in [('fortiweb','FortiWeb'), ('fortiadc','FortiADC')] %}
+            {% for pkey, plabel in banner_products %}
             <div class="col-lg-6">
               <label class="form-label fw-semibold">{{ plabel }}</label>
               <div class="banner-options" data-product="{{ pkey }}">
@@ -76,7 +76,7 @@
   <div class="col-lg-5">
     <div class="fw-card">
       <div class="fw-card-header">
-        <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>About {{ product.title if product else 'Fortinet Manager' }}</span>
+        <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>About {{ product.title if product else 'OFortMAut' }}</span>
       </div>
       <div class="fw-card-body">
         <div class="d-flex align-items-center gap-3 mb-4">

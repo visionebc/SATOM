@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Settings — Fortinet Manager Web{% endblock %}
+{% block title %}Settings — OFortMAut{% endblock %}
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
@@ -74,6 +74,11 @@
   <li class="nav-item" role="presentation">
     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-clonerules" type="button">
       <i class="bi bi-files me-1"></i>Clone / Migrate
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-adoms" type="button">
+      <i class="bi bi-grid-1x2 me-1"></i>ADOMs
     </button>
   </li>
   {% endif %}
@@ -518,7 +523,7 @@
                 <div class="col-5">
                   <label class="fw-form-label">From name</label>
                   <input type="text" name="from_name" class="form-control fw-form-control"
-                         value="{{ email_config.from_name }}" placeholder="Fortinet Manager">
+                         value="{{ email_config.from_name }}" placeholder="OFortMAut">
                 </div>
                 <div class="col-7">
                   <label class="fw-form-label">From address</label>
@@ -1084,6 +1089,179 @@
             </label>
           </div>
           <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save clone/migrate rules</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADOMS TAB -->
+  <div class="tab-pane fade" id="tab-adoms">
+    <div class="row g-3 mb-2">
+      <div class="col-12">
+        <div class="fw-card">
+          <div class="fw-card-body">
+            <h5 class="mb-1"><i class="bi bi-grid-1x2 me-1"></i>ADOMs / Products</h5>
+            <p class="text-muted small mb-0">
+              The catalog of ADOMs (products) is stored in the database — logo,
+              name, description, whether it's active, and which subsystems it
+              supports. Deactivating an ADOM removes it from the product selector
+              and 404s/redirects its routes. The <strong>capability flags</strong>
+              (Banner, API&nbsp;Tokens, Firmware, Naming, Regex) replace the old
+              hardcoded product lists: turn one on and every subsystem picks the
+              ADOM up automatically — nothing else to edit.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% set cap_labels = {'banner':'Banner','tokens':'API Tokens','firmware':'Firmware','naming':'Naming','regex':'Regex'} %}
+
+    <!-- existing ADOMs -->
+    {% for a in adoms %}
+    <div class="fw-card mb-3">
+      <div class="fw-card-body">
+        <form method="POST" action="{{ url_for('settings.update_adom', key=a.key) }}" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="row g-3 align-items-start">
+            <div class="col-auto text-center" style="width:120px">
+              <img src="{{ url_for('static', filename=a.mark) }}" alt="{{ a.name }}"
+                   style="width:64px;height:64px;object-fit:contain;background:#0c1422;border-radius:12px;padding:8px">
+              <div class="mt-2">
+                <input type="file" name="logo" accept=".png,.jpg,.jpeg,.webp,.gif,.svg"
+                       class="form-control form-control-sm" style="font-size:.72rem">
+                <div class="text-muted" style="font-size:.66rem">PNG/JPG resized · SVG sanitised</div>
+              </div>
+            </div>
+            <div class="col">
+              <div class="row g-2">
+                <div class="col-md-3">
+                  <label class="form-label small mb-1">Key</label>
+                  <input class="form-control form-control-sm" value="{{ a.key }}" disabled>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label small mb-1">Name</label>
+                  <input class="form-control form-control-sm" name="name" value="{{ a.name }}">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label small mb-1">Title</label>
+                  <input class="form-control form-control-sm" name="title" value="{{ a.title }}">
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label small mb-1">Order</label>
+                  <input class="form-control form-control-sm" name="sort_order" value="{{ a.sort_order }}">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label small mb-1">Tagline</label>
+                  <input class="form-control form-control-sm" name="tagline" value="{{ a.tagline }}">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label small mb-1">Default banner</label>
+                  <select class="form-select form-select-sm" name="banner_default">
+                    {% for tid, t in banner_templates.items() %}
+                    <option value="{{ tid }}" {{ 'selected' if a.banner_default == tid else '' }}>{{ t.name }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label small mb-1">Description</label>
+                  <textarea class="form-control form-control-sm" name="description" rows="2">{{ a.description }}</textarea>
+                </div>
+                <div class="col-12 d-flex flex-wrap gap-3 align-items-center pt-1">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="active" value="1" id="act-{{ a.key }}" {{ 'checked' if a.active else '' }}>
+                    <label class="form-check-label small" for="act-{{ a.key }}">Active</label>
+                  </div>
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="placeholder" value="1" id="ph-{{ a.key }}" {{ 'checked' if a.get('placeholder') else '' }}>
+                    <label class="form-check-label small" for="ph-{{ a.key }}">Placeholder (scaffold only)</label>
+                  </div>
+                  <span class="text-muted small ms-2">Capabilities:</span>
+                  {% for c in adom_caps %}
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="cap_{{ c }}" value="1" id="cap-{{ a.key }}-{{ c }}" {{ 'checked' if a['cap_' + c] else '' }}>
+                    <label class="form-check-label small" for="cap-{{ a.key }}-{{ c }}">{{ cap_labels[c] }}</label>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="d-flex justify-content-between mt-3">
+            <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-check-lg me-1"></i>Save {{ a.name }}</button>
+          </div>
+        </form>
+        {% if a.key not in ('global','fortiweb','fortiadc') %}
+        <form method="POST" action="{{ url_for('settings.delete_adom', key=a.key) }}"
+              onsubmit="return confirm('Delete ADOM {{ a.key }}? This cannot be undone.');" class="mt-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash me-1"></i>Delete</button>
+        </form>
+        {% else %}
+        <div class="text-muted small mt-2"><i class="bi bi-lock me-1"></i>Core product — can be deactivated but not deleted.</div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+
+    <!-- new ADOM -->
+    <div class="fw-card mb-3" style="border:1px dashed rgba(148,163,184,.3)">
+      <div class="fw-card-body">
+        <h6 class="mb-3"><i class="bi bi-plus-circle me-1"></i>Add a new ADOM</h6>
+        <form method="POST" action="{{ url_for('settings.create_adom') }}" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="row g-2">
+            <div class="col-md-3">
+              <label class="form-label small mb-1">Key <span class="text-danger">*</span></label>
+              <input class="form-control form-control-sm" name="key" placeholder="e.g. fortigate" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small mb-1">Name</label>
+              <input class="form-control form-control-sm" name="name" placeholder="FortiGate">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small mb-1">Title</label>
+              <input class="form-control form-control-sm" name="title" value="OFortMAut">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small mb-1">Logo</label>
+              <input type="file" name="logo" accept=".png,.jpg,.jpeg,.webp,.gif,.svg" class="form-control form-control-sm" style="font-size:.72rem">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small mb-1">Tagline</label>
+              <input class="form-control form-control-sm" name="tagline" placeholder="Next-Gen Firewall">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small mb-1">Default banner</label>
+              <select class="form-select form-select-sm" name="banner_default">
+                {% for tid, t in banner_templates.items() %}
+                <option value="{{ tid }}">{{ t.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label small mb-1">Description</label>
+              <textarea class="form-control form-control-sm" name="description" rows="2" placeholder="What this ADOM manages…"></textarea>
+            </div>
+            <div class="col-12 d-flex flex-wrap gap-3 align-items-center pt-1">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="active" value="1" id="new-act" checked>
+                <label class="form-check-label small" for="new-act">Active</label>
+              </div>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="placeholder" value="1" id="new-ph" checked>
+                <label class="form-check-label small" for="new-ph">Placeholder (scaffold only)</label>
+              </div>
+              <span class="text-muted small ms-2">Capabilities:</span>
+              {% for c in adom_caps %}
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="cap_{{ c }}" value="1" id="new-cap-{{ c }}" {{ 'checked' if c == 'banner' else '' }}>
+                <label class="form-check-label small" for="new-cap-{{ c }}">{{ cap_labels[c] }}</label>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          <button type="submit" class="btn btn-fw-primary btn-sm mt-3"><i class="bi bi-plus-lg me-1"></i>Create ADOM</button>
         </form>
       </div>
     </div>

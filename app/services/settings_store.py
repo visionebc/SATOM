@@ -37,7 +37,7 @@ CLASSIFICATION_KINDS = ("zones", "lines", "departments")
 SEGMENT_FIELDS = ("name", "zone", "line", "department", "cidr", "interface", "gateway", "note")
 
 DEFAULTS = {
-    K_APP_NAME: "Fortinet Manager Web",
+    K_APP_NAME: "OFortMAut",
     K_DEFAULT_KIND: "FortiWeb",
     K_SESSION_TIMEOUT: "60",
     K_POLL_INTERVAL: "30",
@@ -121,7 +121,7 @@ def save_general(app_name: str, default_kind: str, session_timeout: Any,
                  poll_interval: Any, show_raw_config: bool,
                  log_levels: list[str], timezone: str = "",
                  log_format: str = "plain") -> None:
-    set_str(K_APP_NAME, (app_name or "Fortinet Manager Web").strip())
+    set_str(K_APP_NAME, (app_name or "OFortMAut").strip())
     set_str(K_DEFAULT_KIND, default_kind if default_kind in ("FortiWeb", "FortiWeb-Cloud", "FortiADC") else "FortiWeb")
     set_str(K_SESSION_TIMEOUT, max(5, min(1440, _to_int(session_timeout, 60))))
     set_str(K_POLL_INTERVAL, max(10, min(3600, _to_int(poll_interval, 30))))
@@ -256,12 +256,29 @@ BANNER_TEMPLATES = {
     "aurora":   {"name": "Aurora",          "bg": "linear-gradient(135deg, #0b2545 0%, #1d63b0 45%, #10b981 100%)"},
     "fortinet": {"name": "Fortinet",        "bg": "linear-gradient(135deg, #14233a 0%, #ee3124 100%)"},
 }
-BANNER_DEFAULT = {"fortiweb": "slate", "fortiadc": "ember"}
+# ADOMs that carry a personal top-bar banner. Derived LIVE from the ADOM
+# registry (``cap_banner``) — adding/removing a banner ADOM is now a Settings →
+# ADOMs edit, not a code change. Kept as a module name so ``store.BANNER_PRODUCTS``
+# (settings view, auth/routes, user_settings_store) keeps working; the object is
+# a live sequence that re-reads the registry on every access.
+from ..branding import live_products as _live_products  # noqa: E402
+
+BANNER_PRODUCTS = _live_products("banner")
 
 
 def banner_template(product: str) -> str:
     val = get_str(K_BANNER_PREFIX + product)
-    return val if val in BANNER_TEMPLATES else BANNER_DEFAULT.get(product, "slate")
+    if val in BANNER_TEMPLATES:
+        return val
+    # Per-ADOM default now lives on the registry row (``banner_default``).
+    try:
+        from ..branding import get_product
+        default = get_product(product).get("banner_default")
+        if default in BANNER_TEMPLATES:
+            return default
+    except Exception:
+        pass
+    return "slate"
 
 
 def banner_bg(product: str) -> str:
@@ -537,10 +554,10 @@ def cert_manager_configured() -> bool:
 
 
 def all_banners() -> dict:
-    return {p: banner_template(p) for p in ("fortiweb", "fortiadc")}
+    return {p: banner_template(p) for p in BANNER_PRODUCTS}
 
 
 def save_banners(mapping: dict) -> None:
     for product, tpl in (mapping or {}).items():
-        if product in ("fortiweb", "fortiadc") and tpl in BANNER_TEMPLATES:
+        if product in BANNER_PRODUCTS and tpl in BANNER_TEMPLATES:
             set_str(K_BANNER_PREFIX + product, tpl)

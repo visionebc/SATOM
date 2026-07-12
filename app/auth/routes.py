@@ -23,6 +23,7 @@ from ..extensions import db, limiter
 from ..services.audit import log_action
 from ..services import settings_store as store
 from ..services import user_settings_store as user_store
+from ..branding import PRODUCTS as _BRAND_PRODUCTS
 from ..services import auth_store, twofa, email_service
 
 # Per-account lockout policy (complements the per-IP rate limit).
@@ -208,13 +209,13 @@ def forgot_password():
             token = twofa.make_reset_token(user.id)
             link = url_for('auth.reset_password', token=token, _external=True)
             body = (f"Hello {user.username},\n\n"
-                    f"A password reset was requested for your Fortinet Manager account.\n"
+                    f"A password reset was requested for your OFortMAut account.\n"
                     f"Open this link to choose a new password (valid for 1 hour):\n\n"
                     f"{link}\n\n"
                     f"If you did not request this, you can ignore this email.\n")
             if email_service.is_configured():
                 email_service.send_email(user.recovery_email,
-                                         "Fortinet Manager — password reset", body)
+                                         "OFortMAut — password reset", body)
             log_action('password_reset.request', target=user.username)
         else:
             # Don't reveal whether the account/recovery email exists.
@@ -284,4 +285,6 @@ def profile():
         settings=store.general(),
         banner_templates=store.BANNER_TEMPLATES,
         banners=user_store.all_banners(current_user.id),
+        banner_products=[(k, _BRAND_PRODUCTS[k]['name'])
+                         for k in store.BANNER_PRODUCTS],
     )

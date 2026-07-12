@@ -23,7 +23,11 @@ MAX_SAMPLES = 100
 MAX_SAMPLE_LEN = 4096
 MAX_REPLACEMENT = 2048
 
-PRODUCTS = ("fortiweb", "fortiadc")
+# Products the regex lab covers. Derived LIVE from the ADOM registry
+# (``cap_regex``) — a live sequence, so ``p in PRODUCTS`` re-reads the registry.
+from ..branding import live_products as _live_products  # noqa: E402
+
+PRODUCTS = _live_products("regex")
 
 
 def _norm_product(product: str) -> str:

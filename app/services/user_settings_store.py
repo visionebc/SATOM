@@ -18,7 +18,7 @@ from ..models import UserSetting
 from . import settings_store as _g
 
 K_BANNER_PREFIX = "branding.banner."   # + fortiweb|fortiadc -> template id
-PRODUCTS = ("fortiweb", "fortiadc")
+PRODUCTS = _g.BANNER_PRODUCTS
 
 
 def banner_template(user_id: int, product: str) -> str:

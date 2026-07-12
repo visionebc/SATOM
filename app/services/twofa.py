@@ -30,7 +30,7 @@ import pyotp
 
 from . import encryption
 
-ISSUER = "Fortinet Manager"
+ISSUER = "OFortMAut"
 BACKUP_CODE_COUNT = 10
 RESET_MAX_AGE = 3600  # seconds a password-reset link stays valid
 

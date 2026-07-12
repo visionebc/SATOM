@@ -950,6 +950,19 @@
         body.querySelectorAll('style').forEach(function(os){var ns=document.createElement('style');ns.nonce=(document.querySelector('meta[name=csp-nonce]')||{}).content||'';ns.textContent=os.textContent;os.replaceWith(ns);});
       }).catch(function(){ body.innerHTML='<div class="text-danger">Failed to load devices.</div>'; });
   });
+  // Pick a device: animate the modal closed, flag the next page to cross-fade
+  // in (native POST to /architecture/select never rides Turbo), THEN submit.
+  el.addEventListener('submit', function(ev){
+    var form = ev.target.closest ? ev.target.closest('form.dp-form') : null;
+    if(!form) return;
+    ev.preventDefault();
+    try { sessionStorage.setItem('fmDeviceEnter','1'); } catch(e){}
+    var inst = (window.bootstrap && bootstrap.Modal) ? bootstrap.Modal.getOrCreateInstance(el) : null;
+    if(inst){
+      el.addEventListener('hidden.bs.modal', function once(){ el.removeEventListener('hidden.bs.modal', once); form.submit(); }, { once:true });
+      inst.hide();
+    } else { form.submit(); }
+  });
 })();
 </script>
 {% endif %}

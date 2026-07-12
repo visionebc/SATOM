@@ -77,6 +77,10 @@
     if (main) main.classList.remove('fw-navigating');
     var whole = fullPageNext;
     fullPageNext = false;
+    // Selecting a device is a native full-page POST (/architecture/select),
+    // so it never rides turbo:visit. A flag set at submit time survives the
+    // reload; consume it here to cross-fade the whole page in, same as ADOM.
+    try { if (sessionStorage.getItem('fmDeviceEnter') === '1') { whole = true; sessionStorage.removeItem('fmDeviceEnter'); } } catch (e) {}
     var target = whole ? document.body : main;
     if (!target) return;
     var cls = whole ? 'fw-entering-page' : 'fw-entering';

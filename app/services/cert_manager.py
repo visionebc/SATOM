@@ -323,7 +323,7 @@ def sign_csr(cert_class: str, csr_pem: str) -> tuple[str, str]:
     ``(cert_pem, log)``.
 
     The command template ({csr}/{out}/… — ADCS or ACME tokens) is fully
-    admin-defined — this is the "el usuario indica los parámetros del comando"
+    admin-defined — this is the "the user specifies the command parameters"
     contract. Raises :class:`CertManagerError` on failure."""
     protocol, cmd_tmpl, mapping, secret = _signing_context(cert_class)
     if not cmd_tmpl:

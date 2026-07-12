@@ -66,7 +66,15 @@
   });
   origAdd('turbo:load', function () {
     var main = document.getElementById('fw-main');
-    if (main) main.classList.remove('fw-navigating');
+    if (!main) return;
+    main.classList.remove('fw-navigating');
+    // Cross-fade the freshly-rendered page in. Self-clean on animationend so
+    // it re-triggers on the next visit.
+    main.classList.add('fw-entering');
+    main.addEventListener('animationend', function handler() {
+      main.classList.remove('fw-entering');
+      main.removeEventListener('animationend', handler);
+    });
   });
   // Safety: clear dim if render happens without a load (cached pages).
   origAdd('turbo:before-render', function () {

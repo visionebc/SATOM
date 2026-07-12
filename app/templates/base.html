@@ -391,8 +391,7 @@
       </div>
 
       {% if current_user and current_user.can('user_manage') %}
-      <a class="fw-nav-item {{ 'active' if request.endpoint == 'plugins.gallery' else '' }}" href="{{ url_for('plugins.gallery') }}">
-        <i class="bi bi-grid-1x2 fw-nav-icon"></i><span>Custom Views</span></a>
+      {# Custom Views (Plugin Studio) are ADOM-scoped (FortiWeb/FortiADC) — not surfaced in the Global ADOM. #}
       <div class="fw-nav-group {{ 'open' if request.blueprint in ['appliances','audit','users','appids','classification','database','system_backup','self_update','ha','reports','plugins','lua_studio'] }}" data-nav-group="Administrator">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>Administrator</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">

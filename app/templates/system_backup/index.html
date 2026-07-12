@@ -62,7 +62,10 @@
   </div>
 
   <div class="col-lg-7">
-    <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-database me-1"></i>Database backups — pg_dump bundles (this node)</strong></div>
+    <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center">
+        <strong><i class="bi bi-database me-1"></i>Database backups — pg_dump bundles (this node)</strong>
+        {% if backups %}<button class="btn btn-outline-light btn-sm py-0" data-bs-toggle="modal" data-bs-target="#bundlesModal"><i class="bi bi-list-check me-1"></i>Manage / clean up</button>{% endif %}
+      </div>
       <div class="card-body">
         {% if not backups %}
           <p class="text-muted small mb-0">No backups yet.</p>
@@ -163,13 +166,16 @@
         {% else %}
         <p class="small text-muted mb-2">Config backups the appliances push here themselves (<code>config system backup</code>, SFTP) — independent of this app and of both HA nodes.</p>
         <table class="table table-sm table-hover align-middle mb-3">
-          <thead><tr><th>Device</th><th>Backups</th><th>Latest push (UTC)</th></tr></thead>
+          <thead><tr><th>Device</th><th>Backups</th><th>Latest push (UTC)</th><th class="text-end"></th></tr></thead>
           <tbody>
           {% for d in bk.devices %}
             <tr>
               <td class="small font-monospace">{{ d.device }}</td>
               <td class="small">{{ d.count }}</td>
               <td class="small">{{ d.latest or '—' }}{% if d.files %} <span class="text-muted">({{ d.files[0].name|truncate(40) }}, {{ (d.files[0].size/1048576)|round(1) }} MB)</span>{% endif %}</td>
+              <td class="text-end">
+                <button class="btn btn-outline-light btn-sm py-0" data-js="ext-browse" data-device="{{ d.device }}" title="browse, compare and search this device's pushed backups"><i class="bi bi-search me-1"></i>Browse</button>
+              </td>
             </tr>
           {% endfor %}
           </tbody>
@@ -346,6 +352,69 @@
     </form>
   </div></div>
 </div>
+<!-- Bundle management modal (list all + delete old) -->
+<div class="modal fade" id="bundlesModal" tabindex="-1">
+  <div class="modal-dialog modal-lg"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title"><i class="bi bi-database me-1"></i>Database bundles on this node</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <p class="small text-muted mb-2">Deleting here (on the <strong>primary</strong>) replicates to the standby automatically — <code>fm-ha-datasync</code> mirrors <code>data/</code> with <code>rsync --delete</code> every 5 min. Deleting on the standby is blocked (it would be undone by the next sync).</p>
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead><tr><th>Bundle</th><th>Created (UTC)</th><th>Size</th><th class="text-end"></th></tr></thead>
+        <tbody>
+        {% for b in backups %}
+          <tr>
+            <td class="small font-monospace">{{ b.name }}</td>
+            <td class="small">{{ b.created }}</td>
+            <td class="small">{{ (b.size/1024)|round(1) }} KB</td>
+            <td class="text-end text-nowrap">
+              <a class="btn btn-outline-light btn-sm py-0" href="{{ url_for('system_backup.download', name=b.name) }}" title="download"><i class="bi bi-download"></i></a>
+              <form method="post" action="{{ url_for('system_backup.delete') }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="name" value="{{ b.name }}">
+                <button type="submit" class="btn btn-outline-danger btn-sm py-0" data-js="two-click" data-armed-label="Sure? click again" title="delete this bundle (replicates to standby)"><i class="bi bi-trash"></i></button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div></div>
+</div>
+
+<!-- External backup browser modal (device-pushed configs: compare / search / pull) -->
+<div class="modal fade" id="extBrowserModal" tabindex="-1">
+  <div class="modal-dialog modal-xl"><div class="modal-content">
+    <div class="modal-header">
+      <h5 class="modal-title"><i class="bi bi-hdd-network me-1"></i>Device backups on {{ bk.host }} — <span id="eb-device" class="font-monospace"></span></h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <div id="eb-loading" class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Listing pushed backups…</div>
+      <div id="eb-error" class="alert alert-danger small py-2 d-none"></div>
+      <div id="eb-main" class="d-none">
+        <p class="small text-muted mb-2">Pick <strong>A</strong> and <strong>B</strong> to compare two pushes (e.g. yesterday vs today); <em>Search</em> and <em>Download</em> act on <strong>B</strong>. Text config sections are extracted from the pushed archive on the fly — encrypted blobs inside it are listed but not searchable.</p>
+        <div class="table-responsive" style="max-height:260px; overflow:auto;">
+          <table class="table table-sm table-hover align-middle mb-2">
+            <thead><tr><th style="width:34px;">A</th><th style="width:34px;">B</th><th>File</th><th>Size</th><th>Pushed (UTC)</th></tr></thead>
+            <tbody id="eb-files"></tbody>
+          </table>
+        </div>
+        <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+          <button class="btn btn-fw-primary btn-sm" id="eb-compare"><i class="bi bi-file-diff me-1"></i>Compare A → B</button>
+          <div class="input-group input-group-sm" style="max-width:340px;">
+            <input type="text" class="form-control" id="eb-query" placeholder="search in B… (e.g. server-policy, 10.0.0.)">
+            <button class="btn btn-outline-light" id="eb-search"><i class="bi bi-search"></i></button>
+          </div>
+          <button class="btn btn-outline-light btn-sm" id="eb-outline"><i class="bi bi-list-nested me-1"></i>What's inside B</button>
+          <a class="btn btn-outline-light btn-sm" id="eb-download" href="#"><i class="bi bi-download me-1"></i>Download B</a>
+        </div>
+        <div id="eb-busy" class="text-muted small d-none"><span class="spinner-border spinner-border-sm me-1"></span>Fetching &amp; extracting on the backup server link — first hit on a big backup takes a few seconds…</div>
+        <div id="eb-result"></div>
+      </div>
+    </div>
+  </div></div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -363,6 +432,143 @@
       document.getElementById('cr-label').textContent = this.dataset.sha;
       document.getElementById('cr-subject').textContent = this.dataset.subject;
     });
+  });
+
+  // two-click destructive confirm (bundle delete)
+  document.querySelectorAll('[data-js="two-click"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) {
+      if (!this.dataset.armed) {
+        event.preventDefault();
+        this.dataset.armed = '1';
+        this.classList.replace('btn-outline-danger', 'btn-danger');
+        this.innerHTML = this.dataset.armedLabel;
+        var self = this;
+        setTimeout(function () {
+          delete self.dataset.armed;
+          self.classList.replace('btn-danger', 'btn-outline-danger');
+          self.innerHTML = '<i class="bi bi-trash"></i>';
+        }, 4000);
+      }
+    });
+  });
+
+  // ── external backup browser ────────────────────────────────────────────
+  var ebModal = document.getElementById('extBrowserModal');
+  if (!ebModal) return;
+  var ebDevice = '';
+  var esc = function (s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  };
+  var show = function (id, on) { document.getElementById(id).classList.toggle('d-none', !on); };
+  var picked = function (col) {
+    var r = document.querySelector('input[name="eb-' + col + '"]:checked');
+    return r ? r.value : '';
+  };
+  var api = function (path, params, cb) {
+    show('eb-busy', true);
+    document.getElementById('eb-result').innerHTML = '';
+    var q = new URLSearchParams(params).toString();
+    fetch('{{ url_for("system_backup.index") }}external/' + path + '?' + q,
+          {headers: {'Accept': 'application/json'}})
+      .then(function (r) { return r.json(); })
+      .then(function (d) { show('eb-busy', false); cb(d); })
+      .catch(function (e) {
+        show('eb-busy', false);
+        document.getElementById('eb-result').innerHTML =
+          '<div class="alert alert-danger small py-2">' + esc(e) + '</div>';
+      });
+  };
+  var result = function (html) { document.getElementById('eb-result').innerHTML = html; };
+  var pre = function (t) {
+    return '<pre class="small p-2 rounded" style="background:rgba(0,0,0,.35); max-height:380px; overflow:auto;">' + esc(t) + '</pre>';
+  };
+
+  document.querySelectorAll('[data-js="ext-browse"]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      ebDevice = this.dataset.device;
+      document.getElementById('eb-device').textContent = ebDevice;
+      show('eb-loading', true); show('eb-error', false); show('eb-main', false);
+      document.getElementById('eb-result').innerHTML = '';
+      new bootstrap.Modal(ebModal).show();
+      api('files', {device: ebDevice}, function (d) {
+        show('eb-loading', false);
+        if (!d.ok) {
+          var err = document.getElementById('eb-error');
+          err.textContent = d.error || 'listing failed';
+          show('eb-error', true);
+          return;
+        }
+        var rows = d.files.map(function (f, i) {
+          return '<tr>' +
+            '<td><input type="radio" class="form-check-input" name="eb-a" value="' + esc(f.name) + '"' + (i === 1 ? ' checked' : '') + '></td>' +
+            '<td><input type="radio" class="form-check-input" name="eb-b" value="' + esc(f.name) + '"' + (i === 0 ? ' checked' : '') + '></td>' +
+            '<td class="small font-monospace">' + esc(f.name) + '</td>' +
+            '<td class="small">' + (f.size / 1048576).toFixed(1) + ' MB</td>' +
+            '<td class="small">' + esc(f.mtime) + '</td></tr>';
+        }).join('');
+        document.getElementById('eb-files').innerHTML =
+          rows || '<tr><td colspan="5" class="small text-muted">no pushed backups yet</td></tr>';
+        show('eb-main', true);
+      });
+    });
+  });
+
+  document.getElementById('eb-compare').addEventListener('click', function () {
+    var a = picked('a'), b = picked('b');
+    if (!a || !b) { result('<div class="alert alert-warning small py-2">pick A and B first</div>'); return; }
+    if (a === b) { result('<div class="alert alert-info small py-2">A and B are the same file</div>'); return; }
+    api('diff', {device: ebDevice, a: a, b: b}, function (d) {
+      if (!d.ok) { result('<div class="alert alert-danger small py-2">' + esc(d.error) + '</div>'); return; }
+      if (d.identical) {
+        result('<div class="alert alert-success small py-2"><i class="bi bi-check-circle me-1"></i>No config differences between ' + esc(a) + ' and ' + esc(b) + '.</div>');
+        return;
+      }
+      var html = d.sections.map(function (s) {
+        return '<p class="small mb-1 mt-2"><strong class="font-monospace">' + esc(s.section) + '</strong> — ' + s.changes + ' changed line(s)</p>' + pre(s.diff);
+      }).join('');
+      if (d.truncated) html += '<div class="small text-warning">diff truncated</div>';
+      if (d.skipped.length) html += '<div class="small text-muted">not compared (binary/encrypted): ' + esc(d.skipped.join(', ')) + '</div>';
+      result(html);
+    });
+  });
+
+  document.getElementById('eb-search').addEventListener('click', function () {
+    var b = picked('b'), q = document.getElementById('eb-query').value;
+    if (!b) { result('<div class="alert alert-warning small py-2">pick B first</div>'); return; }
+    api('search', {device: ebDevice, name: b, q: q}, function (d) {
+      if (!d.ok) { result('<div class="alert alert-danger small py-2">' + esc(d.error) + '</div>'); return; }
+      if (!d.total) { result('<div class="alert alert-info small py-2">no matches for “' + esc(d.query) + '” in ' + esc(b) + '</div>'); return; }
+      var html = '<p class="small mb-1"><strong>' + d.total + '</strong> match(es) for “' + esc(d.query) + '”' + (d.truncated ? ' (showing first ' + d.hits.length + ')' : '') + '</p>';
+      html += d.hits.map(function (h) {
+        return '<p class="small mb-0 mt-2 text-muted font-monospace">' + esc(h.section) + ':' + h.line + '</p>' + pre(h.context);
+      }).join('');
+      result(html);
+    });
+  });
+  document.getElementById('eb-query').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('eb-search').click(); }
+  });
+
+  document.getElementById('eb-outline').addEventListener('click', function () {
+    var b = picked('b');
+    if (!b) { result('<div class="alert alert-warning small py-2">pick B first</div>'); return; }
+    api('outline', {device: ebDevice, name: b}, function (d) {
+      if (!d.ok) { result('<div class="alert alert-danger small py-2">' + esc(d.error) + '</div>'); return; }
+      var html = '<p class="small mb-1"><strong class="font-monospace">' + esc(b) + '</strong> — ' + (d.size / 1048576).toFixed(1) + ' MB pushed archive</p><ul class="small mb-0">';
+      html += d.sections.map(function (s) { return '<li><span class="font-monospace">' + esc(s.name) + '</span> — ' + s.lines + ' config lines (searchable)</li>'; }).join('');
+      html += d.skipped.map(function (s) { return '<li class="text-muted"><span class="font-monospace">' + esc(s) + '</span> — binary/encrypted, download to inspect</li>'; }).join('');
+      html += '</ul>';
+      result(html);
+    });
+  });
+
+  document.getElementById('eb-download').addEventListener('click', function (e) {
+    var b = picked('b');
+    if (!b) { e.preventDefault(); result('<div class="alert alert-warning small py-2">pick B first</div>'); return; }
+    this.href = '{{ url_for("system_backup.index") }}external/download?' +
+      new URLSearchParams({device: ebDevice, name: b}).toString();
   });
 })();
 </script>

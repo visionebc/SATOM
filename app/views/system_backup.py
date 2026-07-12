@@ -32,11 +32,14 @@ def _peer_host() -> str:
 
 
 def _page_context(**extra) -> dict:
-    from ..services import git_service
+    from ..services import git_service, settings_store
+    from ..services import backup_server as bksrv
+    from ..models_firmware import FirmwareImage
     local = system_backup.local_inventory()
     peer_host = _peer_host()
     peer = system_backup.peer_inventory(peer_host) if peer_host else {
         "reachable": False, "host": "", "bundles": [], "vault": None}
+    local_fw = {f.filename: f for f in FirmwareImage.query.all()}
     ctx = dict(
         backups=local["bundles"],
         vault=local["vault"],
@@ -45,6 +48,10 @@ def _page_context(**extra) -> dict:
         git=git_service.git_info(),
         git_history=git_service.reports_history(),
         git_dirty=git_service.reports_dirty(),
+        code_history=git_service.code_history(),
+        bk=bksrv.inventory(),
+        local_fw=local_fw,
+        fw_repo=settings_store.firmware_repo(),
         diff=None,
     )
     ctx.update(extra)
@@ -116,6 +123,49 @@ def restore():
               "success")
     else:
         flash(f"Restore failed: {res['detail']}", "danger")
+    return redirect(url_for("system_backup.index"))
+
+
+@bp.route("/code-rollback", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def code_rollback():
+    """Roll the application CODE back (or forward) to a chosen commit — a
+    thin wrapper over the self-update queue: the privileged runner
+    (fortinet-manager-updater) does checkout + pip + migrate + restart, with
+    all the usual step logging on the Software Update page."""
+    from flask_login import current_user
+    from ..services import self_update as su
+    target = (request.form.get("target") or "").strip()
+    if not target or len(target) > 64 or any(ch in target for ch in " ;|&"):
+        flash("Pick a commit to roll back to.", "warning")
+        return redirect(url_for("system_backup.index"))
+    if request.form.get("confirm") != "ROLLBACK":
+        flash("Rollback not confirmed — type ROLLBACK to proceed.", "warning")
+        return redirect(url_for("system_backup.index"))
+    info = su.current_revision()
+    if target == info.get("sha", "")[:len(target)]:
+        flash("Already running that revision.", "info")
+        return redirect(url_for("system_backup.index"))
+    uid = su.request_update(target, current_user.username, origin="code-rollback")
+    flash(f"Code rollback to {target} queued ({uid}) — follow it on the "
+          "Software Update page. The service restarts when it applies.", "success")
+    return redirect(url_for("system_backup.index"))
+
+
+@bp.route("/firmware-pull", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def firmware_pull():
+    """Pull one firmware image from the external backup server into the local
+    firmware store, ready for the console-driven Upgrade/Downgrade actions."""
+    from flask_login import current_user
+    from ..services import backup_server as bksrv
+    name = request.form.get("name", "")
+    res = bksrv.pull_firmware(name, by=current_user.username)
+    flash(("Firmware: " + res["detail"]) if res["ok"] else
+          ("Firmware pull failed: " + res["detail"]),
+          "success" if res["ok"] else "danger")
     return redirect(url_for("system_backup.index"))
 
 

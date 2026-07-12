@@ -581,3 +581,73 @@ def save_banners(mapping: dict) -> None:
     for product, tpl in (mapping or {}).items():
         if product in BANNER_PRODUCTS and tpl in BANNER_TEMPLATES:
             set_str(K_BANNER_PREFIX + product, tpl)
+
+
+# ---------------------------------------------------------------------------
+#  SoT & Backup server (Settings → admin console → "SoT & Backup" tab)
+#
+#  Two pieces of the fleet source-of-truth architecture that live OUTSIDE the
+#  code repo:
+#   * the firmware SoT repository — a SEPARATE git repo (manifest only; the
+#     .out binaries live on the backup server, git is the wrong tool for them)
+#   * the external backup server (backup-server) — the SFTP box the Fortinet
+#     appliances push their own scheduled config backups to, and where the
+#     firmware binaries are stored. OFortMAut reads it to list/pull.
+#  The SFTP password is Fernet-encrypted at rest, same pattern as the
+#  Certificate Manager domain secret.
+# ---------------------------------------------------------------------------
+K_FW_REPO_URL = "sot.firmware_repo_url"
+K_FW_REPO_BRANCH = "sot.firmware_repo_branch"
+K_BACKUPSRV = "backup_server.config"                # JSON dict, password_enc inside
+
+_BACKUPSRV_DEFAULTS = {
+    "host": "", "port": 22, "protocol": "sftp", "username": "",
+    "password_enc": "", "config_path": "/configs", "firmware_path": "/firmware",
+}
+
+
+def firmware_repo() -> dict:
+    return {
+        "url": get_str(K_FW_REPO_URL, "") or "",
+        "branch": get_str(K_FW_REPO_BRANCH, "main") or "main",
+    }
+
+
+def save_firmware_repo(url: str, branch: str) -> None:
+    set_str(K_FW_REPO_URL, (url or "").strip())
+    set_str(K_FW_REPO_BRANCH, (branch or "main").strip() or "main")
+
+
+def backup_server(reveal_secret: bool = False) -> dict:
+    raw = get_json(K_BACKUPSRV, {}) or {}
+    cfg = dict(_BACKUPSRV_DEFAULTS)
+    if isinstance(raw, dict):
+        cfg.update({k: raw.get(k, v) for k, v in _BACKUPSRV_DEFAULTS.items()})
+    try:
+        cfg["port"] = int(cfg.get("port") or 22)
+    except (TypeError, ValueError):
+        cfg["port"] = 22
+    cfg["password"] = _certmgr_decrypt(cfg.get("password_enc", "")) if reveal_secret else ""
+    cfg["configured"] = bool(cfg.get("host") and cfg.get("username"))
+    return cfg
+
+
+def save_backup_server(form: dict) -> None:
+    cur = get_json(K_BACKUPSRV, {}) or {}
+    out = {
+        "host": (form.get("host") or "").strip(),
+        "port": form.get("port") or 22,
+        "protocol": "sftp",
+        "username": (form.get("username") or "").strip(),
+        "password_enc": cur.get("password_enc", ""),
+        "config_path": (form.get("config_path") or "/configs").strip() or "/configs",
+        "firmware_path": (form.get("firmware_path") or "/firmware").strip() or "/firmware",
+    }
+    try:
+        out["port"] = max(1, min(65535, int(out["port"])))
+    except (TypeError, ValueError):
+        out["port"] = 22
+    pwd = (form.get("password") or "").strip()
+    if pwd:  # blank = keep current, same convention as the git token field
+        out["password_enc"] = _certmgr_encrypt(pwd)
+    set_json(K_BACKUPSRV, out)

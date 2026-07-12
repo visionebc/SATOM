@@ -49,7 +49,7 @@ def session_product() -> str:
 def stamp() -> str:
     """Value to store on a record created now ('' = unscoped)."""
     p = session_product()
-    return p if p in (FORTIWEB, FORTIADC) else ""
+    return p if p in (FORTIWEB, FORTIADC, FORTIANALYZER) else ""
 
 
 def visible_product(record_product: str | None) -> bool:
@@ -58,8 +58,10 @@ def visible_product(record_product: str | None) -> bool:
     rp = (record_product or "").strip()
     if p == FORTIADC:
         return rp == FORTIADC
+    if p == FORTIANALYZER:
+        return rp == FORTIANALYZER
     if p == FORTIWEB:
-        return rp != FORTIADC
+        return rp not in (FORTIADC, FORTIANALYZER)
     return True
 
 
@@ -70,9 +72,14 @@ def scope_query(query, column):
     p = session_product()
     if p == FORTIADC:
         return query.filter(column == FORTIADC)
+    if p == FORTIANALYZER:
+        return query.filter(column == FORTIANALYZER)
     if p == FORTIWEB:
-        from sqlalchemy import or_
-        return query.filter(or_(column.is_(None), column != FORTIADC))
+        from sqlalchemy import and_, or_
+        return query.filter(or_(
+            column.is_(None),
+            and_(column != FORTIADC, column != FORTIANALYZER),
+        ))
     return query
 
 

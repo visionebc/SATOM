@@ -466,10 +466,20 @@ def create_app(config_override: object | None = None) -> Flask:
             _env_mode = _store.env_mode()
         except Exception:
             _env_mode = 'development'
+        try:
+            from .services import self_update as _su
+            _ha_mode = _su.ha_mode()
+            _node_role = _su.node_role()
+            _node_name = _su.this_node_name()
+        except Exception:
+            _ha_mode, _node_role, _node_name = 'standalone', 'unknown', ''
         return {
             'product': prod,
             'products': PRODUCTS,
             'env_mode': _env_mode,
+            'ha_mode': _ha_mode,
+            'node_role': _node_role,
+            'node_name': _node_name,
             'adc_nav': _adc_nav,
             'current_appliance': _cur_appl,
             'banner_bg': _bg,

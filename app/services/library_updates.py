@@ -82,7 +82,7 @@ def _collect() -> dict[str, Any]:
             continue
 
     packages: list[dict[str, Any]] = []
-    headers = {"Accept": "application/json", "User-Agent": "OFortMAut-update-check"}
+    headers = {"Accept": "application/json", "User-Agent": "OFortMAuT-update-check"}
     try:
         with httpx.Client(headers=headers, follow_redirects=True,
                           timeout=_HTTP_TIMEOUT) as client:

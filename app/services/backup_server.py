@@ -3,7 +3,7 @@
 The Fortinet appliances push their own scheduled config backups here
 (``config system backup`` → SFTP, e.g. fw6 daily 02:00), and the firmware
 ``.out`` binaries referenced by the firmware SoT repo live here too. This
-module is OFortMAut's read side: verify the box is reachable, inventory what
+module is OFortMAuT's read side: verify the box is reachable, inventory what
 the devices have pushed, and pull a firmware image into the app's local
 firmware store (``FirmwareImage``) so a restore/downgrade can be driven from
 the console without re-uploading by hand.
@@ -417,3 +417,88 @@ def pull_firmware(filename: str, by: str = "") -> dict:
         return {"ok": False, "detail": str(exc)}
     finally:
         t.close()
+
+
+# ── system-bundle push (write side) ─────────────────────────────────────────
+#
+# The device configs live on backup-server because the appliances push them; the
+# firmware ``.out`` images live there too. The one copy that was NOT off-boxed
+# was OFortMAuT's OWN backup (the Postgres pg_dump + reports/ bundle) — it only
+# existed on the primary and its rsync mirror on the standby (same two racks).
+# ``push_bundle`` closes that: it SFTP-puts a system bundle into the server's
+# ``system_path`` so the DB backup lives in a third failure domain (hypervisor04),
+# separate from the primary (hypervisor06) and the Gitea/standby pair (hypervisor03).
+
+def push_bundle(local_path: str, remote_name: str | None = None) -> dict:
+    """Upload one system backup bundle to the external server's ``system_path``.
+    Best-effort and self-contained: returns ``{ok, detail, remote?, size?}`` and
+    never raises (the caller records the detail line either way).
+
+    The chroot root on backup-server is ``root:root`` (an sftp-chroot requirement),
+    so the ``/system`` folder itself is created out-of-band as the sftp user;
+    here we ``stat`` it, fall back to ``mkdir`` (works only if the folder is
+    user-owned), then ``put`` and verify the size round-trips."""
+    name = remote_name or os.path.basename(local_path)
+    if not os.path.exists(local_path):
+        return {"ok": False, "detail": f"local bundle missing: {local_path}"}
+    try:
+        cfg = store.backup_server(reveal_secret=True)
+        if not cfg.get("configured"):
+            return {"ok": False, "detail": "backup server not configured "
+                                           "(Settings → SoT & Backup)"}
+        sys_path = cfg.get("system_path") or "/system"
+        local_size = os.path.getsize(local_path)
+        t, sftp = _connect(cfg)
+        try:
+            try:
+                sftp.stat(sys_path)
+            except IOError:
+                try:
+                    sftp.mkdir(sys_path)
+                except IOError as exc:  # root-owned chroot → must be pre-created
+                    return {"ok": False,
+                            "detail": f"{sys_path} does not exist and could not be "
+                                      f"created ({exc}); create it on the server "
+                                      f"owned by the sftp user."}
+            remote = posixpath.join(sys_path, name)
+            sftp.put(local_path, remote)
+            st = sftp.stat(remote)
+            if int(st.st_size or 0) != local_size:
+                return {"ok": False,
+                        "detail": f"size mismatch after upload "
+                                  f"({st.st_size} != {local_size})"}
+        finally:
+            t.close()
+        return {"ok": True, "remote": remote, "size": local_size,
+                "detail": f"{name} ({local_size // 1024} KB) → "
+                          f"{cfg['host']}:{remote}"}
+    except Exception as exc:  # noqa: BLE001 — never raise into the backup flow
+        return {"ok": False, "detail": str(exc)}
+
+
+def system_inventory() -> dict:
+    """What system bundles the app has pushed to the external server's
+    ``system_path`` — the third off-box copy, rendered on the System Backup
+    page next to the primary/standby ones. Never raises."""
+    cfg = store.backup_server()
+    out = {"configured": cfg["configured"], "reachable": False,
+           "host": cfg["host"], "path": cfg.get("system_path") or "/system",
+           "error": "", "files": []}
+    if not cfg["configured"]:
+        return out
+    try:
+        full = store.backup_server(reveal_secret=True)
+        sys_path = full.get("system_path") or "/system"
+        t, sftp = _connect(full)
+        try:
+            try:
+                out["files"] = _listing(sftp, sys_path)
+            except IOError:
+                out["files"] = []  # folder not created / nothing pushed yet
+        finally:
+            t.close()
+        out["reachable"] = True
+        out["path"] = sys_path
+    except Exception as exc:  # noqa: BLE001
+        out["error"] = str(exc)
+    return out

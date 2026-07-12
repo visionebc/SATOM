@@ -78,9 +78,14 @@ def _run(cmd: list, conn: dict, timeout: int = 600):
 
 
 def create_backup(*, include_reports: bool = True, publish_git: bool = False,
-                  conn: dict | None = None, label: str = "manual") -> dict:
+                  push_server: bool = False, conn: dict | None = None,
+                  label: str = "manual") -> dict:
     """Create a bundle: pg_dump + reports/ + manifest → one .tar.gz. Returns
-    {ok, name, path, size, detail}."""
+    {ok, name, path, size, detail}.
+
+    ``push_server`` also uploads the finished bundle to the external backup
+    server (backup-server) so the DB backup lives off both racks — best-effort, a
+    push failure is recorded in ``detail`` but does not fail the backup."""
     conn = conn or _conn_from_app()
     ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     stage = backups_dir() / f"_stage-{ts}"
@@ -115,6 +120,15 @@ def create_backup(*, include_reports: bool = True, publish_git: bool = False,
                 detail.append("git: reports published")
             except Exception as exc:  # noqa: BLE001
                 detail.append(f"git error: {type(exc).__name__}")
+
+        if push_server:
+            try:
+                from . import backup_server as _bk
+                pr = _bk.push_bundle(str(bundle))
+                detail.append("backup-server: " + (pr["detail"] if pr.get("ok")
+                              else "push failed: " + pr.get("detail", "")))
+            except Exception as exc:  # noqa: BLE001
+                detail.append(f"backup-server push error: {type(exc).__name__}")
         return {"ok": True, "name": name, "path": str(bundle), "size": size,
                 "detail": "; ".join(detail)}
     finally:

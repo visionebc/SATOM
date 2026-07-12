@@ -25,6 +25,7 @@ from flask import (
     abort,
     current_app,
     flash,
+    g,
     jsonify,
     redirect,
     render_template,
@@ -37,9 +38,9 @@ from flask_wtf.csrf import validate_csrf
 
 from ..auth.decorators import require_permission
 from ..extensions import csrf, db
-from ..models import Permission
+from ..models import Appliance, Permission
 from ..models_firmware import FirmwareImage
-from ..services import jobs as jobsvc
+from ..services import device_context, jobs as jobsvc
 from ..services.audit import log_action
 
 bp = Blueprint("firmware", __name__, url_prefix="/firmware")
@@ -140,10 +141,20 @@ def index():
     from ..branding import products_with, get_product
     fw_products = [{"key": k, "name": get_product(k).get("name", k.title())}
                    for k in products_with("firmware")]
+    # Device identity banner (host/line/zone/dept) for the ACTIVE ADOM so the
+    # Firmware page carries the same header as the product home. Generic by
+    # product scope (g.product): current selection, else the sole appliance of
+    # that product. Not FortiAnalyzer-specific.
+    header_dev = device_context.current_appliance()
+    _scope = getattr(g, "product", None)
+    if _scope and _scope != "global" and (
+            header_dev is None or header_dev.kind != _scope):
+        _same = Appliance.query.filter(Appliance.kind == _scope).all()
+        header_dev = _same[0] if len(_same) == 1 else None
     # Per-box downgrade deep-links moved to Appliances > (device) >
     # Appliance Actions > Downgrade; this page keeps the rollback guidance.
     return render_template("firmware/index.html", images=images,
-                           fw_products=fw_products)
+                           fw_products=fw_products, header_dev=header_dev)
 
 
 @bp.route("/upload", methods=["POST"])

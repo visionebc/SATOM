@@ -10,14 +10,6 @@
     <h1 class="h4 mb-0">OFortMAut</h1>
     <div class="text-muted" style="font-size:13px;">Log Analytics &amp; Reporting
       · {{ n_items }} sections across {{ groups|length }} areas</div>
-    {% if header_dev %}
-    <div class="d-flex flex-wrap align-items-center gap-2 mt-2" style="font-size:12px;">
-      <span class="fw-badge fw-badge-secondary" title="Device host"><i class="bi bi-hdd-network me-1"></i>{{ header_dev.host }}{% if header_dev.port %}:{{ header_dev.port }}{% endif %}</span>
-      <span class="fw-badge fw-badge-primary" title="Línea / Line">Line: {{ header_dev.line or '—' }}</span>
-      <span class="fw-badge fw-badge-primary" title="Zona / Zone">Zone: {{ header_dev.zone or '—' }}</span>
-      <span class="fw-badge fw-badge-primary" title="Departamento / Department">Dept: {{ header_dev.department or '—' }}</span>
-    </div>
-    {% endif %}
   </div>
   <div class="ms-auto">
     <a href="{{ url_for('product.switch') }}" class="btn btn-outline-secondary btn-sm">

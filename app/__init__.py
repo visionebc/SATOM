@@ -442,6 +442,19 @@ def create_app(config_override: object | None = None) -> Flask:
         try:
             from .services import device_context as _dc
             _cur_appl = _dc.current_appliance()
+            if _cur_appl is None:
+                # Display-only fallback: single-device products (FortiADC,
+                # FortiAnalyzer) show their sole device in the topbar/menu
+                # without a manual pick. Views still resolve their own device
+                # context via device_context.current_appliance().
+                from .services.product_scope import session_product, FORTIADC, FORTIANALYZER
+                from .models import Appliance as _ApplFB
+                _kmap = {FORTIADC: 'fortiadc', FORTIANALYZER: 'fortianalyzer'}
+                _kfb = _kmap.get(session_product())
+                if _kfb:
+                    _cands = _ApplFB.query.filter_by(kind=_kfb).all()
+                    if len(_cands) == 1:
+                        _cur_appl = _cands[0]
         except Exception:
             _cur_appl = None
         try:

@@ -65,10 +65,11 @@ class ActionSpec:
       key                  catalog key stored in ``ScheduledAction.action``
       label                human label shown in the editor / history
       scope                'admin' | 'user'
-      needs_targets        acts on FortiWeb appliances? (False = no device call)
+      needs_targets        acts on appliances? (False = no device call)
       single_target        exactly one device (the user-scope object ops)
       danger               destructive / requires care (the UI flags it)
       forced_schedule_kind lock the schedule to one kind ('' = any; upgrade='once')
+      products             appliance kinds this action fires against (target set)
       summary              short English description (optional, for the UI)
     """
 
@@ -79,6 +80,7 @@ class ActionSpec:
     single_target: bool = False
     danger: bool = False
     forced_schedule_kind: str = ""
+    products: tuple[str, ...] = ("fortiweb",)
     summary: str = ""
 
 
@@ -91,18 +93,18 @@ ADMIN_ACTIONS: list[ActionSpec] = [
     ),
     ActionSpec(
         "device_sync", "Sync device to local source of truth", "admin",
-        needs_targets=True,
-        summary="Read each target FortiWeb's full config over REST and refresh "
-                "the local Postgres source-of-truth cache + per-device JSON "
-                "backup (services.device_sync). DB-first reads serve the UI from "
-                "this. Read-only against the box.",
+        needs_targets=True, products=("fortiweb", "fortiadc"),
+        summary="Read each target FortiWeb/FortiADC's full config over REST and "
+                "refresh the local Postgres source-of-truth cache + per-device "
+                "JSON backup (services.device_sync). DB-first reads serve the UI "
+                "from this. Read-only against the box.",
     ),
     ActionSpec(
         "device_inspect", "Sync device + publish backup to git", "admin",
-        needs_targets=True,
+        needs_targets=True, products=("fortiweb", "fortiadc"),
         summary="Like Sync, plus PUBLISH each device's JSON backup to the git "
-                "repo (off-box versioned backup). Use for the scheduled, "
-                "git-backed source-of-truth snapshot.",
+                "repo (off-box versioned backup). Covers FortiWeb and FortiADC. "
+                "Use for the scheduled, git-backed source-of-truth snapshot.",
     ),
     ActionSpec(
         "deep_capture", "Deep capture (full policy/WPP tree)", "admin",
@@ -931,7 +933,8 @@ def _run_targets(action_row, spec: ActionSpec, params: dict):
     """
     targets = _resolve_targets(action_row, spec)
     if spec.needs_targets and not targets:
-        return "skipped", "No matching FortiWeb appliance.", ["no targets resolved"]
+        kinds = "/".join(spec.products) or "appliance"
+        return "skipped", f"No matching {kinds} appliance.", ["no targets resolved"]
 
     ok_n = 0
     total = 0
@@ -961,18 +964,18 @@ def _resolve_targets(action_row, spec: ActionSpec) -> list:
     """The appliances an action fires against.
 
     A no-target action (``needs_targets`` False) runs exactly once (``[None]``).
-    Otherwise ``targets_list`` selects FortiWeb appliances by id; an empty list
-    means the whole FortiWeb fleet. ``single_target`` actions take only the first.
+    Otherwise ``targets_list`` selects appliances by id, constrained to the
+    action's ``spec.products`` kinds; an empty list means the whole fleet of
+    those kinds. ``single_target`` actions take only the first.
     """
     if not spec.needs_targets:
         return [None]
+    kinds = list(spec.products) or ["fortiweb"]
     ids = [v for v in (_as_int(t) for t in action_row.targets_list) if v is not None]
+    q = Appliance.query.filter(Appliance.kind.in_(kinds))
     if ids:
-        devices = (Appliance.query
-                   .filter(Appliance.kind == "fortiweb", Appliance.id.in_(ids))
-                   .all())
-    else:
-        devices = Appliance.query.filter_by(kind="fortiweb").all()
+        q = q.filter(Appliance.id.in_(ids))
+    devices = q.all()
     if spec.single_target:
         devices = devices[:1]
     return devices

@@ -1290,18 +1290,18 @@ details[open] > .fw-group-head::before { transform: rotate(90deg); }
 
 /* Dim main content while the next page is being fetched */
 #fw-main.fw-navigating {
-  opacity: 0.5;
+  opacity: 0.85;
   pointer-events: none;
   transition: opacity 0.2s ease;
 }
 
 /* Ease the incoming page in after a Turbo visit (cross-fade + slight rise) */
 @keyframes fw-page-in {
-  from { opacity: 0; transform: translateY(9px); }
+  from { opacity: 0; transform: translateY(3px); }
   to   { opacity: 1; transform: none; }
 }
 #fw-main.fw-entering {
-  animation: fw-page-in 0.33s cubic-bezier(0.22, 0.61, 0.36, 1);
+  animation: fw-page-in 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
   will-change: opacity, transform;
 }
 

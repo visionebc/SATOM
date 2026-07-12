@@ -30,14 +30,19 @@ bp = Blueprint("ha", __name__, url_prefix="/high-availability")
 @require_permission("user_manage")
 def index():
     su.self_report()  # refresh this node's entry in the shared (replicated) state
+    # full_state() live-probes the peer over HTTP, so the secondary node card
+    # shows its real role/revision/health even though a read-only standby cannot
+    # self-report into the replicated settings store. Feed the same probed list
+    # to the cards (nodes=) and to the rest of the page (ha=).
+    ha = cluster.full_state()
     return render_template(
         "high_availability/index.html",
-        nodes=su.node_reports(),
+        nodes=ha["nodes"],
         this_node=su.this_node_name(),
         this_role=su.node_role(),
         validated=su.validated_state(),
         branch=su.BRANCH,
-        ha=cluster.full_state(),
+        ha=ha,
         deploy_mode=reconciler.deploy_mode_orm(),
         reconcile=reconciler.last_status_orm(),
         watch_promote=request.args.get("watch_promote", ""),

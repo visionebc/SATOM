@@ -39,7 +39,7 @@ CLASSIFICATION_KINDS = ("zones", "lines", "departments")
 SEGMENT_FIELDS = ("name", "zone", "line", "department", "cidr", "interface", "gateway", "note")
 
 DEFAULTS = {
-    K_APP_NAME: "OFortMAut",
+    K_APP_NAME: "OFortMAuT",
     K_DEFAULT_KIND: "FortiWeb",
     K_SESSION_TIMEOUT: "60",
     K_POLL_INTERVAL: "30",
@@ -139,7 +139,7 @@ def save_general(app_name: str, default_kind: str, session_timeout: Any,
                  poll_interval: Any, show_raw_config: bool,
                  log_levels: list[str], timezone: str = "",
                  log_format: str = "plain", env_mode: str = "") -> None:
-    set_str(K_APP_NAME, (app_name or "OFortMAut").strip())
+    set_str(K_APP_NAME, (app_name or "OFortMAuT").strip())
     set_str(K_DEFAULT_KIND, default_kind if default_kind in ("FortiWeb", "FortiWeb-Cloud", "FortiADC") else "FortiWeb")
     set_str(K_SESSION_TIMEOUT, max(5, min(1440, _to_int(session_timeout, 60))))
     set_str(K_POLL_INTERVAL, max(10, min(3600, _to_int(poll_interval, 30))))
@@ -592,7 +592,7 @@ def save_banners(mapping: dict) -> None:
 #     .out binaries live on the backup server, git is the wrong tool for them)
 #   * the external backup server (backup-server) — the SFTP box the Fortinet
 #     appliances push their own scheduled config backups to, and where the
-#     firmware binaries are stored. OFortMAut reads it to list/pull.
+#     firmware binaries are stored. OFortMAuT reads it to list/pull.
 #  The SFTP password is Fernet-encrypted at rest, same pattern as the
 #  Certificate Manager domain secret.
 # ---------------------------------------------------------------------------
@@ -603,6 +603,7 @@ K_BACKUPSRV = "backup_server.config"                # JSON dict, password_enc in
 _BACKUPSRV_DEFAULTS = {
     "host": "", "port": 22, "protocol": "sftp", "username": "",
     "password_enc": "", "config_path": "/configs", "firmware_path": "/firmware",
+    "system_path": "/system",
 }
 
 
@@ -642,6 +643,7 @@ def save_backup_server(form: dict) -> None:
         "password_enc": cur.get("password_enc", ""),
         "config_path": (form.get("config_path") or "/configs").strip() or "/configs",
         "firmware_path": (form.get("firmware_path") or "/firmware").strip() or "/firmware",
+        "system_path": (form.get("system_path") or "/system").strip() or "/system",
     }
     try:
         out["port"] = max(1, min(65535, int(out["port"])))

@@ -122,8 +122,9 @@ ADMIN_ACTIONS: list[ActionSpec] = [
         "system_backup", "System backup (Postgres + JSON)", "admin",
         needs_targets=False,
         summary="Back up the whole instance: a Postgres pg_dump + the per-device "
-                "JSON tree, bundled to a downloadable archive (services.system_backup). "
-                "No device call.",
+                "JSON tree, bundled to a downloadable archive (services.system_backup), "
+                "and (params.push_server, default on) uploaded to the external backup "
+                "server so the DB backup lives off-rack too. No device call.",
     ),
     ActionSpec(
         "stats", "Build statistics summary", "admin", needs_targets=False,
@@ -425,9 +426,13 @@ def _do_system_backup(params: dict, dry_run: bool) -> dict:
         return {"ok": True, "summary": "[dry-run] would back up Postgres + JSON.",
                 "log": ""}
     from . import system_backup
+    params = params or {}
+    # default ON for scheduled runs so the nightly bundle always reaches the
+    # off-box server; a row may set push_server=false to opt out.
     res = system_backup.create_backup(
         include_reports=True,
-        publish_git=bool((params or {}).get("publish_git")),
+        publish_git=bool(params.get("publish_git")),
+        push_server=bool(params.get("push_server", True)),
         label="scheduled")
     return {"ok": res["ok"],
             "summary": (f"Backup {res['name']} ({res['size']//1024} KB)"

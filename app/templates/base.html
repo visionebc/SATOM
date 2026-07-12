@@ -96,7 +96,7 @@
 
   <div class="fw-topbar-spacer"></div>
 
-  {% if product.key == 'fortiweb' %}
+  {% if product.key in ('fortiweb', 'fortiadc') %}
   <!-- Device context (zone/line/dept/host) — centered in the header -->
   <button class="fw-topbar-btn fw-device-switch fw-device-center" type="button"
           title="{% if current_appliance %}{{ current_appliance.host }} — {% endif %}Architecture / switch device"
@@ -843,8 +843,8 @@
   </main>
 </div>
 
-{% if current_user and current_user.is_authenticated and product and product.key == 'fortiweb' %}
-{% include 'partials/release_notes_modal.html' %}
+{% if current_user and current_user.is_authenticated and product and product.key in ('fortiweb', 'fortiadc') %}
+{% if product.key == 'fortiweb' %}{% include 'partials/release_notes_modal.html' %}{% endif %}
 <div class="modal fade" id="deviceSwitchModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content" style="background:#0b1322;color:#eaf0fb;border:1px solid rgba(148,163,184,.16);border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.55);">

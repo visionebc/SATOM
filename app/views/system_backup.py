@@ -33,6 +33,33 @@ def _peer_host() -> str:
     return ""
 
 
+def _sot_devices() -> list[dict]:
+    """Per-device source-of-truth coverage: which appliances have a
+    ``reports/<slug>/_config.json`` snapshot and how fresh it is. Drives the
+    'Backup coverage' matrix so a device missing from git (e.g. FortiADC before
+    the harvest was wired) is visible at a glance. Never raises."""
+    from datetime import datetime
+    from ..models import Appliance
+    from ..services import device_sync as ds
+    rows: list[dict] = []
+    try:
+        for a in Appliance.query.order_by(Appliance.kind, Appliance.name).all():
+            p = ds.device_json_path(a)
+            has = p.exists()
+            mtime = ""
+            if has:
+                try:
+                    mtime = datetime.utcfromtimestamp(
+                        p.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+                except OSError:
+                    mtime = ""
+            rows.append({"name": a.name, "kind": a.kind,
+                         "has_json": has, "mtime": mtime})
+    except Exception:  # noqa: BLE001 — coverage view must never sink the page
+        return rows
+    return rows
+
+
 def _page_context(**extra) -> dict:
     from ..services import git_service, settings_store
     from ..services import backup_server as bksrv
@@ -52,6 +79,8 @@ def _page_context(**extra) -> dict:
         git_dirty=git_service.reports_dirty(),
         code_history=git_service.code_history(),
         bk=bksrv.inventory(),
+        bk_system=bksrv.system_inventory(),
+        sot=_sot_devices(),
         local_fw=local_fw,
         fw_repo=settings_store.firmware_repo(),
         diff=None,

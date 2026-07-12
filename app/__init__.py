@@ -620,8 +620,15 @@ def create_app(config_override: object | None = None) -> Flask:
             rev = _su.current_revision()
         except Exception:
             pass
+        db_state = None
+        try:
+            from .services import cluster as _cluster
+            db_state = _cluster.db_summary()
+        except Exception:
+            pass
         return jsonify({'ok': True, 'revision': rev.get('short'),
-                        'sha': rev.get('sha'), 'branch': rev.get('branch')}), 200
+                        'sha': rev.get('sha'), 'branch': rev.get('branch'),
+                        'db': db_state}), 200
 
     # -- primary-aware probe (for a load balancer health check) -----------
     # Returns 200 ONLY when the local Postgres is the PRIMARY. A standby

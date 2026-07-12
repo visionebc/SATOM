@@ -129,7 +129,7 @@
       <p class="text-muted small mb-0">No updates run yet.</p>
     {% else %}
     <table class="table table-sm align-middle mb-0">
-      <thead><tr><th>When</th><th>By</th><th>Origin</th><th>Node</th><th>Target</th><th>Result</th></tr></thead>
+      <thead><tr><th>When</th><th>By</th><th>Origin</th><th>Node</th><th>Target</th><th>Result</th><th>Log</th></tr></thead>
       <tbody>
       {% for h in history %}
         <tr>
@@ -143,6 +143,30 @@
             {% elif h.state == 'failed' %}<span class="badge bg-danger">failed{% if h.rolled_back %} · rolled back{% endif %}</span>
             {% elif h.state == 'running' %}<span class="badge bg-warning text-dark">running</span>
             {% else %}<span class="badge bg-secondary">{{ h.state }}</span>{% endif %}
+          </td>
+          <td>
+            <button class="btn btn-sm btn-outline-secondary py-0 px-1" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#log-{{ loop.index }}"
+                    aria-expanded="false" aria-controls="log-{{ loop.index }}">
+              log{% if h.steps %} ({{ h.steps|length }}){% endif %}
+            </button>
+          </td>
+        </tr>
+        <tr class="collapse" id="log-{{ loop.index }}">
+          <td colspan="7" class="bg-body-tertiary">
+            {% if h.steps %}
+            <ol class="small mb-0 font-monospace" style="list-style:decimal inside;">
+              {% for st in h.steps %}
+              <li>
+                {% if st.ok %}<span class="text-success">✓</span>{% else %}<span class="text-danger">✗</span>{% endif %}
+                {{ st.name }}{% if st.detail %} — <span class="text-muted" style="white-space:pre-wrap;">{{ st.detail }}</span>{% endif %}
+                {% if st.at %}<span class="text-muted"> · {{ st.at }}</span>{% endif %}
+              </li>
+              {% endfor %}
+            </ol>
+            {% else %}
+            <p class="text-muted small mb-0">No steps recorded{% if h.state == 'queued' %} — request is still queued (not yet picked up by the updater runner){% endif %}.</p>
+            {% endif %}
           </td>
         </tr>
       {% endfor %}

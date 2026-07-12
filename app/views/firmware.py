@@ -135,9 +135,15 @@ def _finalize_upload(app, job_id: str, image_id: int, dest_path: str,
 @require_permission(Permission.USER_MANAGE)
 def index():
     images = FirmwareImage.query.order_by(FirmwareImage.created_at.desc()).all()
+    # Product dropdown is driven LIVE from the ADOM registry (cap_firmware) so a
+    # new firmware-capable product (e.g. FortiAnalyzer) shows up without edits.
+    from ..branding import products_with, get_product
+    fw_products = [{"key": k, "name": get_product(k).get("name", k.title())}
+                   for k in products_with("firmware")]
     # Per-box downgrade deep-links moved to Appliances > (device) >
     # Appliance Actions > Downgrade; this page keeps the rollback guidance.
-    return render_template("firmware/index.html", images=images)
+    return render_template("firmware/index.html", images=images,
+                           fw_products=fw_products)
 
 
 @bp.route("/upload", methods=["POST"])

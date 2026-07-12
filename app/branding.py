@@ -83,10 +83,11 @@ _FALLBACK: list[dict] = [
         "tagline": "Logging & Analytics",
         "mark": "img/fortianalyzer-mark.svg",
         "description": "Centralized logging, reporting and security analytics "
-                       "across the fabric — scaffold in place, modules "
-                       "coming soon.",
-        "active": True, "placeholder": True, "banner_default": "amber",
-        "cap_banner": True, "cap_tokens": False, "cap_firmware": False,
+                       "across the fabric — Fleet, Firmware and Administration "
+                       "live; Configuration/Operation/Automation scaffolded "
+                       "until the JSON-RPC backend is wired.",
+        "active": True, "placeholder": False, "banner_default": "amber",
+        "cap_banner": True, "cap_tokens": True, "cap_firmware": True,
         "cap_naming": False, "cap_regex": False,
     },
 ]

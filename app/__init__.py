@@ -208,6 +208,9 @@ def create_app(config_override: object | None = None) -> Flask:
         elif eff == 'fortiweb' and bp_name in ('adc', 'adc_api'):
             # Entering the ADC area is always an explicit ADOM jump.
             eff = 'fortiadc'
+        if bp_name == 'faz':
+            # Entering the FortiAnalyzer area is always an explicit ADOM jump.
+            eff = 'fortianalyzer'
         g.product = eff
         always = {
             'static', 'index', 'fortiweb_home', 'service_worker',
@@ -251,6 +254,22 @@ def create_app(config_override: object | None = None) -> Flask:
             adc_eps = {'product.fortiadc_home'}
             if bp_name not in adc_bps and ep not in adc_eps:
                 return redirect(url_for('adc.index'))
+        if eff == 'fortianalyzer':
+            # FortiAnalyzer sessions get the FAZ area + the product-neutral
+            # shared pages + the product-scoped Fleet/Administration pages
+            # (Firmware, Network segment, Appliances, Audit). The
+            # Configuration/Operation/Automation sections are faz-blueprint
+            # scaffolds. RBAC still gates each write.
+            faz_bps = {'faz', 'appliances', 'settings', 'audit', 'jobs',
+                       'notifications', 'profiles', 'users', 'docs',
+                       'database', 'locks', 'firmware', 'segments',
+                       'architecture', 'metrics', 'search', 'analysis',
+                       'fleet_objects', 'dns_tool', 'backups',
+                       'release_notes', 'templates', 'naming', 'capacity',
+                       'api_tokens', 'api_explorer', 'api_v1',
+                       'plugins', 'lua_studio'}
+            if bp_name not in faz_bps:
+                return redirect(url_for('faz.index'))
         return None
 
     # -- access control gate (IP whitelist + allowed users) --------------
@@ -466,6 +485,16 @@ def create_app(config_override: object | None = None) -> Flask:
                 _adc_nav = ()
         except Exception:
             _adc_nav = ()
+        # FortiAnalyzer sidebar menu (only built for fortianalyzer sessions;
+        # static curated menu — no backend yet, see services.faz_menu).
+        try:
+            if prod.get("key") == "fortianalyzer":
+                from .services import faz_menu as _fazm
+                _faz_nav = _fazm.menu()
+            else:
+                _faz_nav = ()
+        except Exception:
+            _faz_nav = ()
         try:
             _env_mode = _store.env_mode()
         except Exception:
@@ -485,6 +514,7 @@ def create_app(config_override: object | None = None) -> Flask:
             'node_role': _node_role,
             'node_name': _node_name,
             'adc_nav': _adc_nav,
+            'faz_nav': _faz_nav,
             'current_appliance': _cur_appl,
             'banner_bg': _bg,
             'now': datetime.utcnow(),
@@ -916,6 +946,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.product", "bp"),
         ("app.views.adc", "bp"),
         ("app.views.adc_api", "bp"),
+        ("app.views.faz", "bp"),
         ("app.views.appliances", "bp"),
         ("app.views.firmware", "bp"),
         ("app.views.jobs", "bp"),

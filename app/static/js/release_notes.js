@@ -11,6 +11,8 @@
   if (!modalEl) return;
 
   const BASE = '/release-notes';
+  const PRODUCT = (document.querySelector('meta[name="current-product"]') || {}).content || 'fortiweb';
+  const PLABEL = { fortiweb: 'FortiWeb', fortiadc: 'FortiADC' }[PRODUCT] || 'Fortinet';
   let loaded = false;
   let scanPoll = null;
 
@@ -118,7 +120,7 @@
     let html =
       `<h6 class="mb-1">Bug ${esc(r.bug_id)} ` +
       `<span class="${STATUS_BADGE[r.status] || ''}">${esc(STATUS_LABEL[r.status] || r.status)}</span></h6>` +
-      `<div class="small text-muted mb-2">FortiWeb ${esc(r.version)} · ${esc(r.topic)}</div>` +
+      `<div class="small text-muted mb-2">${PLABEL} ${esc(r.version)} · ${esc(r.topic)}</div>` +
       `<div>${esc(r.description)}</div>`;
     if (r.workaround) html += `<div class="mt-2"><b>Workaround:</b> ${esc(r.workaround)}</div>`;
     if (r.source_url) html += `<div class="mt-2"><a href="${esc(r.source_url)}" target="_blank" rel="noopener">Open release note ↗</a></div>`;
@@ -147,7 +149,7 @@
     }
     const verb = d.is_upgrade ? 'Upgrading' : 'Downgrading';
     let html =
-      `<h5>${verb} FortiWeb ${esc(d.current)} → ${esc(d.target)}</h5>` +
+      `<h5>${verb} ${PLABEL} ${esc(d.current)} → ${esc(d.target)}</h5>` +
       `<p><b>${d.resolved.length}</b> issue(s) resolved in this range · ` +
       `<b>${d.known_in_target.length}</b> known in target · ` +
       `<b>${d.notes.length}</b> upgrade note(s).</p>`;

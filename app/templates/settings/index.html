@@ -258,14 +258,21 @@
             </div>
             {% if is_admin %}
             <div id="lib-updates-meta" class="text-muted mb-1" style="font-size:11px;display:none;"></div>
+            <div id="lib-node-note" class="text-muted mb-1" style="font-size:11px;display:none;"></div>
             {% endif %}
             <table class="table table-sm mb-0" style="font-size:13px;">
               <tbody>
                 {% for lib in system_info.libraries %}
-                <tr data-lib="{{ lib.name }}"><td class="text-muted" style="width:50%;">{{ lib.name }}</td><td><code>{{ lib.version }}</code> <span class="lib-update-badge"></span></td></tr>
+                <tr data-lib="{{ lib.name }}"><td class="text-muted" style="width:50%;">{{ lib.name }}</td><td><code class="lib-version">{{ lib.version }}</code> <span class="lib-update-badge"></span> <span class="lib-actions"></span></td></tr>
                 {% endfor %}
               </tbody>
             </table>
+            {% if is_admin %}
+            <div id="lib-pip-out" class="mt-2" style="display:none;font-size:11px;">
+              <div class="text-muted mb-1" id="lib-pip-title"></div>
+              <pre id="lib-pip-pre" class="mb-0 p-2" style="max-height:220px;overflow:auto;background:rgba(15,23,42,0.6);border:1px solid rgba(148,163,184,0.12);border-radius:8px;white-space:pre-wrap;"></pre>
+            </div>
+            {% endif %}
           </div>
         </div>
       </div>
@@ -1573,6 +1580,119 @@ function libBadge(sev, latest) {
        + ' style="display:inline-block;padding:1px 7px;border-radius:8px;font-size:11px;'
        + 'font-weight:600;background:' + m[0] + ';color:' + m[1] + ';">&uarr; ' + latest + '</span>';
 }
+function libRowEl(name) {
+  return document.querySelector('tr[data-lib="' + (window.CSS && CSS.escape ? CSS.escape(name) : name) + '"]');
+}
+function libCsrf() {
+  var m = document.querySelector('meta[name="csrf-token"]');
+  return m ? m.content : '';
+}
+function libPipOut(title) {
+  var box = document.getElementById('lib-pip-out');
+  var t = document.getElementById('lib-pip-title');
+  var pre = document.getElementById('lib-pip-pre');
+  if (box) box.style.display = '';
+  if (t) t.textContent = title || '';
+  if (pre) pre.textContent = '…';
+  return pre;
+}
+function libRenderSteps(pre, st) {
+  if (!pre) return;
+  var lines = [];
+  lines.push('state: ' + (st.state || '?') + (st.rolled_back ? ' (rolled back)' : ''));
+  (st.steps || []).forEach(function (s) {
+    lines.push((s.ok ? '✓' : '✗') + ' ' + s.name + (s.detail ? ' — ' + s.detail : ''));
+  });
+  pre.textContent = lines.join('\n');
+}
+function libPollStatus(uid, pre) {
+  fetch('/settings/library-pip/status/' + encodeURIComponent(uid),
+        { headers: { 'Accept': 'application/json' } })
+    .then(function (r) { return r.json(); })
+    .then(function (st) {
+      libRenderSteps(pre, st);
+      if (st.state === 'running' || st.state === 'queued') {
+        setTimeout(function () { libPollStatus(uid, pre); }, 2000);
+      } else {
+        // done — refresh installed versions + rollback buttons
+        setTimeout(function () { libLoadState(); checkLibraryUpdates(false); }, 1500);
+      }
+    })
+    .catch(function () {
+      if (pre) pre.textContent += '\n(status poll failed)';
+    });
+}
+function libPipChange(pkg, version, action) {
+  var verb = action === 'rollback' ? 'Roll back' : 'Upgrade';
+  if (!window.confirm(verb + ' ' + pkg + ' to ' + version + ' on THIS node?\n\n'
+      + 'The privileged runner installs it and restarts the service; on failure '
+      + 'it auto-reverts to the current version.')) { return; }
+  var pre = libPipOut(verb + ' ' + pkg + ' → ' + version + ' …');
+  fetch('/settings/library-pip', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': libCsrf() },
+    body: JSON.stringify({ package: pkg, version: version, action: action })
+  })
+    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+    .then(function (res) {
+      if (!res.ok) { if (pre) pre.textContent = 'Error: ' + (res.d.error || 'request rejected'); return; }
+      if (pre) pre.textContent = 'queued (' + res.d.uid + ') on ' + res.d.node + ' — applying…';
+      libPollStatus(res.d.uid, pre);
+    })
+    .catch(function (e) { if (pre) pre.textContent = 'Error: ' + e.message; });
+}
+function libLoadState() {
+  fetch('/settings/library-pip/state', { headers: { 'Accept': 'application/json' } })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (data) {
+      var note = document.getElementById('lib-node-note');
+      if (note) {
+        note.style.display = '';
+        note.innerHTML = '<i class="bi bi-hdd-network me-1"></i>Changes apply to THIS node only: <strong>'
+          + (data.node || '?') + '</strong> (' + (data.role || '?')
+          + '). Apply on each node to keep the HA pair in sync.';
+      }
+      var rb = data.rollbacks || {};
+      Object.keys(rb).forEach(function (name) {
+        var row = libRowEl(name);
+        if (!row) return;
+        row.setAttribute('data-rollback', rb[name].previous || '');
+      });
+      libRenderActions();
+    })
+    .catch(function () {});
+}
+function libRenderActions() {
+  var rows = document.querySelectorAll('tr[data-lib]');
+  rows.forEach(function (row) {
+    var name = row.getAttribute('data-lib');
+    var actions = row.querySelector('.lib-actions');
+    if (!actions) return;
+    var html = '';
+    var latest = row.getAttribute('data-latest');
+    var sev = row.getAttribute('data-severity');
+    var installed = (row.querySelector('.lib-version') || {}).textContent || '';
+    if (latest && sev && sev !== 'none' && latest !== installed) {
+      html += '<button type="button" class="btn btn-sm btn-primary lib-upgrade-btn" '
+        + 'data-pkg="' + name + '" data-ver="' + latest + '" '
+        + 'style="font-size:10px;padding:0 7px;margin-left:4px;">Upgrade → ' + latest + '</button>';
+    }
+    var rb = row.getAttribute('data-rollback');
+    if (rb && rb !== installed) {
+      html += '<button type="button" class="btn btn-sm btn-outline-secondary lib-rollback-btn" '
+        + 'data-pkg="' + name + '" data-ver="' + rb + '" '
+        + 'style="font-size:10px;padding:0 7px;margin-left:4px;">Rollback → ' + rb + '</button>';
+    }
+    actions.innerHTML = html;
+  });
+  // (re)bind the freshly-rendered buttons
+  document.querySelectorAll('.lib-upgrade-btn').forEach(function (b) {
+    b.onclick = function () { libPipChange(b.getAttribute('data-pkg'), b.getAttribute('data-ver'), 'upgrade'); };
+  });
+  document.querySelectorAll('.lib-rollback-btn').forEach(function (b) {
+    b.onclick = function () { libPipChange(b.getAttribute('data-pkg'), b.getAttribute('data-ver'), 'rollback'); };
+  });
+}
 function checkLibraryUpdates(force) {
   var btn = document.getElementById('lib-check-btn');
   var meta = document.getElementById('lib-updates-meta');
@@ -1584,12 +1704,15 @@ function checkLibraryUpdates(force) {
       var pkgs = (data && data.packages) || [];
       var outdated = 0;
       pkgs.forEach(function (p) {
-        var row = document.querySelector('tr[data-lib="' + (window.CSS && CSS.escape ? CSS.escape(p.name) : p.name) + '"]');
+        var row = libRowEl(p.name);
         if (!row) return;
         var cell = row.querySelector('.lib-update-badge');
         if (cell) cell.outerHTML = libBadge(p.severity, p.latest);
+        row.setAttribute('data-severity', p.severity || 'none');
+        if (p.latest) row.setAttribute('data-latest', p.latest);
         if (p.severity !== 'none' && p.latest) outdated++;
       });
+      libRenderActions();
       if (meta && data && data.checked_at) {
         var when = new Date(data.checked_at * 1000).toLocaleString();
         meta.style.display = '';
@@ -1605,7 +1728,7 @@ function checkLibraryUpdates(force) {
       if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Check for updates'; }
     });
 }
-document.addEventListener('DOMContentLoaded', function () { checkLibraryUpdates(false); });
+document.addEventListener('DOMContentLoaded', function () { libLoadState(); checkLibraryUpdates(false); });
 {% endif %}
 
 // --- activate the tab named in the URL hash (after a save redirect) ---

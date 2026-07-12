@@ -124,6 +124,57 @@ def library_updates():
     return jsonify(data)
 
 
+@bp.route('/library-pip/state')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def library_pip_state():
+    """This node's identity + per-package rollback points for the Libraries
+    card. Cheap, no network — safe to call on every card render."""
+    from ..services import self_update as su
+    return jsonify({
+        'node': su.this_node_name(),
+        'role': su.node_role(),
+        'rollbacks': su.lib_versions(),
+    })
+
+
+@bp.route('/library-pip', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def library_pip():
+    """Enqueue a curated-only per-package pip upgrade/rollback. The web worker
+    NEVER runs pip — it writes a request the privileged updater service applies
+    (curated allowlist enforced both here and in the runner). Node-local."""
+    from ..services import self_update as su
+    payload = request.get_json(silent=True) or {}
+    package = (payload.get('package') or '').strip()
+    version = (payload.get('version') or '').strip()
+    action = (payload.get('action') or 'upgrade').strip()
+    try:
+        uid = su.request_pip_change(package, version,
+                                    by=getattr(current_user, 'username', '?'),
+                                    action=action)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    log_action('settings.library_pip',
+               detail='%s %s==%s on %s' % (action, package, version, su.this_node_name()))
+    return jsonify({'uid': uid, 'node': su.this_node_name()})
+
+
+@bp.route('/library-pip/status/<uid>')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def library_pip_status(uid):
+    """Poll a queued pip change's live status (steps written by the runner)."""
+    from ..services import self_update as su
+    st = su.update_status(uid)
+    if st is None:
+        return jsonify({'state': 'unknown'}), 404
+    return jsonify(st)
+
+
 # NOTE: the read-only Database browser (schema + relational model + SQL console)
 # moved out of Settings into its own top-level section — see app/views/database.py
 # (blueprint ``database``, /database). Its backend is app/services/dbintrospect.py.

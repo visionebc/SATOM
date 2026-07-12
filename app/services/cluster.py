@@ -272,4 +272,15 @@ def full_state() -> dict:
         "promote_eligible": mode == "ha" and role == "standby",
         "last_promote": last_promote(),
         "lb_probe": LB_PROBE_PATH,
+        "reconcile": _reconcile_view(),
     }
+
+
+def _reconcile_view() -> dict:
+    """Deploy-automation mode + the reconciler's last published tick, for the
+    HA panel. Kept import-lazy to avoid any import-order coupling."""
+    try:
+        from . import reconciler as _rec
+        return {"mode": _rec.deploy_mode_orm(), "last": _rec.last_status_orm()}
+    except Exception:
+        return {"mode": "manual", "last": None}

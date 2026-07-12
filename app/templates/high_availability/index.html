@@ -276,6 +276,14 @@
   var svg = document.getElementById('ha-links');
   if (!arch) return;
 
+  function fmtBytes(b) {
+    if (b === undefined || b === null) return '—';
+    b = Number(b); if (!isFinite(b)) return '—';
+    if (b < 1024) return b + ' B';
+    var u = ['KB','MB','GB','TB'], i = -1;
+    do { b /= 1024; i++; } while (b >= 1024 && i < u.length - 1);
+    return b.toFixed(1) + ' ' + u[i];
+  }
   nodes.forEach(function (n) {
     var role = roleOf(n);
     var rep = n.report || {};
@@ -288,8 +296,18 @@
     el.setAttribute('data-desc', n.desc || '');
     el.setAttribute('tabindex', '0');
     el.setAttribute('role', 'button');
-    var dotcls = unreachable ? 'down' : (healthy ? 'up' : 'unk');
-    var health = unreachable ? 'unreachable' : (healthy ? 'up' : '—');
+    var codeCls = unreachable ? 'down' : (healthy ? 'up' : 'unk');
+    var codeTxt = unreachable ? 'unreachable' : (healthy ? 'up' : '—');
+    var db = rep.db || null;
+    var dbCls = 'unk', dbTxt = '—';
+    if (db) {
+      dbCls = db.healthy === true ? 'up' : (db.healthy === false ? 'down' : 'unk');
+      dbTxt = esc(db.state || 'unknown');
+      if (db.role === 'primary' && (db.replicas !== undefined && db.replicas !== null))
+        dbTxt += ' · ' + db.replicas + ' rep' + (db.replicas === 1 ? '' : 's');
+      if (db.lag_bytes !== undefined && db.lag_bytes !== null)
+        dbTxt += ' · lag ' + fmtBytes(db.lag_bytes);
+    }
     var pill = role === 'primary' ? 'primary' : (role === 'standby' ? 'standby' : 'unknown');
     el.innerHTML =
       '<div class="ha-node-top">' +
@@ -301,8 +319,8 @@
         '<span class="ha-role-pill ' + pill + '">' + esc(role) + '</span>' +
       '</div>' +
       '<div class="ha-node-meta">' +
-        '<div><span class="k">revision</span> <span class="font-monospace">' + esc(rev) + '</span></div>' +
-        '<div><span class="k">health</span> <span class="ha-dot ' + dotcls + '"></span> ' + esc(health) + '</div>' +
+        '<div><span class="k">code</span> <span class="ha-dot ' + codeCls + '"></span> <span class="font-monospace">' + esc(rev) + '</span> · ' + codeTxt + '</div>' +
+        '<div><span class="k">db</span> <span class="ha-dot ' + dbCls + '"></span> ' + dbTxt + '</div>' +
         '<div><span class="k">reported</span> ' + esc(rep.reported_at || 'no report yet') + '</div>' +
       '</div>';
     function configure() {

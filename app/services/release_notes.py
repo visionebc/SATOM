@@ -49,18 +49,46 @@ _UA = "Mozilla/5.0 (fortinet-manager release-notes harvester)"
 # fallback transport for pages a plain GET can't retrieve.
 FIRECRAWL_LAN_DEFAULT = "http://192.0.2.66:3002"
 
-# section key -> (numeric doc id, url slug). The ids are STABLE across FortiWeb
-# 7.x/8.x release notes (discovered from the TOC; a version that lacks a section
-# simply 404s and is skipped).
-SECTIONS: dict[str, tuple[str, str]] = {
-    "known":               ("54989",  "known-issues"),
-    "resolved":            ("91537",  "resolved-issues"),
-    "whats_new":           ("639023", "whats-new"),
-    "upgrade_notes":       ("745354", "upgrade-notes-and-important-information"),
-    "upgrading_from":      ("81434",  "upgrading-from-previous-releases"),
-    "product_integration": ("756870", "product-integration-and-support"),
-    "introduction":        ("950216", "introduction"),
+# section key -> (numeric doc id, url slug), PER PRODUCT. The ids are stable
+# WITHIN a product's docset (across its 7.x/8.x lines) but DIFFER across products:
+# FortiWeb and FortiADC use entirely different MadCap doc-ids for the same logical
+# section, so they MUST be keyed by product — pointing FortiWeb's ids at a FortiADC
+# URL 302-redirects to the wrong page. A version that lacks a section 404s and is
+# skipped. (FortiADC ids/slugs verified live from the 8.0.3 RN TOC, 2026-07-12.)
+SECTIONS_BY_PRODUCT: dict[str, dict[str, tuple[str, str]]] = {
+    "fortiweb": {
+        "known":               ("54989",  "known-issues"),
+        "resolved":            ("91537",  "resolved-issues"),
+        "whats_new":           ("639023", "whats-new"),
+        "upgrade_notes":       ("745354", "upgrade-notes-and-important-information"),
+        "upgrading_from":      ("81434",  "upgrading-from-previous-releases"),
+        "product_integration": ("756870", "product-integration-and-support"),
+        "introduction":        ("950216", "introduction"),
+    },
+    "fortiadc": {
+        "known":               ("454516", "known-issues"),
+        "resolved":            ("32196",  "resolved-issues"),
+        "whats_new":           ("652683", "whats-new"),
+        "upgrade_notes":       ("746643", "upgrade-notes"),
+        "upgrading_from":      ("765922", "supported-upgrade-paths"),
+        "product_integration": ("583910", "hardware-vm-cloud-platform-and-browser-support"),
+        "introduction":        ("391727", "introduction"),
+    },
 }
+# Back-compat alias: bare ``SECTIONS`` is the FortiWeb map (the historical default).
+SECTIONS: dict[str, tuple[str, str]] = SECTIONS_BY_PRODUCT["fortiweb"]
+
+# Latest GA release-notes version per product, used only to SEED version discovery
+# (that page's version-history dropdown enumerates the rest). Maintained by hand —
+# bump when a newer GA ships. A stale seed keeps working until the version is
+# retired from docs.fortinet.com, then discovery falls back to the introduction
+# page and finally returns [].
+SEED_VERSION_BY_PRODUCT: dict[str, str] = {"fortiweb": "8.0.4", "fortiadc": "8.0.3"}
+
+
+def sections_for(product: str) -> dict[str, tuple[str, str]]:
+    """The section map for ``product`` (FortiWeb map as the safe default)."""
+    return SECTIONS_BY_PRODUCT.get(product, SECTIONS)
 ISSUE_SECTIONS: tuple[str, ...] = ("known", "resolved")           # Bug ID tables
 PROSE_SECTIONS: tuple[str, ...] = (
     "whats_new", "upgrade_notes", "upgrading_from", "product_integration")
@@ -143,7 +171,7 @@ def _now() -> str:
 #  URLs                                                                          #
 # --------------------------------------------------------------------------- #
 def section_url(version: str, section: str, product: str = PRODUCT_DEFAULT) -> str:
-    sid, slug = SECTIONS[section]
+    sid, slug = sections_for(product)[section]
     return f"{_DOC_HOST}/document/{product}/{version}/release-notes/{sid}/{slug}"
 
 
@@ -437,12 +465,15 @@ def make_fetcher(
 #  Version discovery + scan orchestration                                        #
 # --------------------------------------------------------------------------- #
 def discover_versions(fetch: Callable[[str], str], *, product: str = PRODUCT_DEFAULT,
-                      seed_version: str = "8.0.4",
+                      seed_version: str | None = None,
                       min_version: tuple[int, int] = MIN_SUPPORTED_VERSION) -> list[str]:
     """``x.y.z`` versions referenced by a seed release-notes page (its version
     history), sorted oldest→newest, **floored at ``min_version``** so pre-modern
     lines (5.x/6.x) — which appear in the dropdown but publish no resolved/known
-    issues pages — are never scanned. ``[]`` on failure."""
+    issues pages — are never scanned. ``[]`` on failure. ``seed_version`` defaults
+    to the product's latest GA (:data:`SEED_VERSION_BY_PRODUCT`)."""
+    if not seed_version:
+        seed_version = SEED_VERSION_BY_PRODUCT.get(product, "8.0.4")
     try:
         html = fetch(section_url(seed_version, "resolved", product))
     except Exception:  # noqa: BLE001
@@ -483,12 +514,13 @@ def scan_release_notes(
     issues: list[ReleaseIssue] = []
     sects: list[ReleaseSection] = []
     done: list[str] = []
+    secmap = sections_for(product)
 
     for v in versions:
         got = False
         n_iss = 0
         for sec in sections:
-            if sec not in SECTIONS:
+            if sec not in secmap:
                 continue
             url = section_url(v, sec, product)
             try:
@@ -531,13 +563,20 @@ def scan_release_notes(
 
 def merge_db(old: ReleaseNotesDB | None, new: ReleaseNotesDB) -> ReleaseNotesDB:
     """Merge a freshly-scanned subset into an existing corpus, REPLACING the
-    versions present in ``new`` and keeping the rest."""
+    ``(product, version)`` pairs present in ``new`` and keeping the rest.
+
+    The key MUST include ``product``: FortiWeb and FortiADC share version numbers
+    (both ship 7.x/8.0.x), so a version-only key would let a FortiADC scan silently
+    delete the same-numbered FortiWeb rows (and vice-versa)."""
     if old is None:
         return new
-    fresh = set(new.versions)
-    issues = [i for i in old.issues if i.version not in fresh] + new.issues
-    sections = [s for s in old.sections if s.version not in fresh] + new.sections
-    versions = sorted(set(old.versions) | fresh, key=version_key)
+    prods = {i.product for i in new.issues} | {s.product for s in new.sections}
+    fresh = {(i.product, i.version) for i in new.issues} \
+        | {(s.product, s.version) for s in new.sections} \
+        | {(p, v) for p in prods for v in new.versions}
+    issues = [i for i in old.issues if (i.product, i.version) not in fresh] + new.issues
+    sections = [s for s in old.sections if (s.product, s.version) not in fresh] + new.sections
+    versions = sorted(set(old.versions) | set(new.versions), key=version_key)
     return ReleaseNotesDB(generated_at=new.generated_at, versions=versions,
                           issues=issues, sections=sections)
 
@@ -658,7 +697,8 @@ def load_db(*, root: Path | None = None) -> ReleaseNotesDB | None:
 
 __all__ = [
     "PRODUCT_DEFAULT", "MIN_SUPPORTED_VERSION", "DB_NAME", "FIRECRAWL_LAN_DEFAULT",
-    "SECTIONS", "ISSUE_SECTIONS", "PROSE_SECTIONS", "DEFAULT_SECTIONS",
+    "SECTIONS", "SECTIONS_BY_PRODUCT", "SEED_VERSION_BY_PRODUCT", "sections_for",
+    "ISSUE_SECTIONS", "PROSE_SECTIONS", "DEFAULT_SECTIONS",
     "SECTION_LABEL", "ALL_TOPICS", "TOPIC_RULES",
     "ReleaseIssue", "ReleaseSection", "ReleaseNotesDB", "UpgradeAdvisory",
     "version_tuple", "version_key", "major_of", "section_url",

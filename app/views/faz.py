@@ -1,27 +1,40 @@
 """FortiAnalyzer manager area — the FAZ ADOM shell.
 
 FortiAnalyzer is a log aggregator / SIEM: it speaks JSON-RPC and its 'objects'
-are logs, reports, event handlers and incidents. The Configuration / Device
-Manager / Operation / Automation sections are curated menu leaves
-(:mod:`app.services.faz_menu`) whose tabs bind to registry endpoints
+are logs, reports, event handlers and incidents. The sidebar mirrors the REAL
+FAZ 7.6.7 GUI panes (:mod:`app.services.faz_menu` — crawled from the official
+administration guide); every leaf's tabs bind to registry endpoints
 (product='fortianalyzer', DB-first — see ``registry.loader.load_faz_registry``)
 and render LIVE device data through
-:class:`app.clients.fortianalyzer.FortiAnalyzerClient`. The Fleet
-(Architecture / Analysis / Metrics) and Administration (Appliances / Audit /
-Firmware / Network segment) areas reuse the SAME shared, product-scoped
-blueprints every ADOM uses; the DB row carries cap_firmware/cap_tokens so
-Firmware and API tokens scope to this ADOM automatically.
+:class:`app.clients.fortianalyzer.FortiAnalyzerClient`.
+
+Config-tree tabs are EDITABLE like the real unit's toolbar (Create New /
+Edit / Delete): writes go through the same dry-run-default contract as the
+FortiWeb/FortiADC editors — the endpoint returns the exact JSON-RPC request
+it would send, a real device write needs ``apply=true``, requires the
+``config_write`` permission and is audited. Which endpoints accept writes is
+decided by :mod:`app.services.faz_objform` (config families only — the
+operational panes stay read-only, exactly like the real GUI).
+
+The Fleet (Architecture / Analysis / Metrics) and Administration (Appliances
+/ Audit / Firmware / Network segment) areas reuse the SAME shared,
+product-scoped blueprints every ADOM uses; the DB row carries
+cap_firmware/cap_tokens so Firmware and API tokens scope to this ADOM
+automatically.
 """
 from __future__ import annotations
 
-from flask import (Blueprint, abort, redirect, render_template, request,
-                   url_for)
-from flask_login import login_required
+from flask import (Blueprint, abort, jsonify, redirect, render_template,
+                   request, url_for)
+from flask_login import current_user, login_required
 
+from ..auth.decorators import require_permission
 from ..clients.fortianalyzer import FortiAnalyzerClient
-from ..models import Appliance, visible_appliances, visible_appliance_or_404
+from ..models import (Appliance, Permission, visible_appliances,
+                      visible_appliance_or_404)
 from ..registry import loader
-from ..services import device_context, faz_menu
+from ..services import device_context, faz_menu, faz_objform
+from ..services.audit import log_action
 
 bp = Blueprint('faz', __name__, url_prefix='/faz')
 
@@ -82,11 +95,16 @@ def _load_tab(appliance, logical: str, label: str) -> dict:
     request one device round-trip). A device refusal / moved URI degrades to
     an inline error — the page shell stays up."""
     reg = loader.load_faz_registry()
-    tab = {'logical': logical, 'label': label, 'urn': reg.get(logical),
+    urn = reg.get(logical) or ''
+    writable = faz_objform.is_writable(logical, urn)
+    tab = {'logical': logical, 'label': label, 'urn': urn,
            'rows': [], 'kv': None, 'columns': [], 'error': None,
-           'truncated': False}
+           'truncated': False, 'writable': writable,
+           'can_create': writable and faz_objform.can_create(logical),
+           'can_delete': writable and faz_objform.can_delete(logical),
+           'mkey': ''}
     client = FortiAnalyzerClient(appliance, timeout=20.0)
-    rows, err = client.list_with_error(logical)
+    rows, err = client.list_with_error(logical, **faz_objform.extra_params(logical))
     try:
         client.logout()
     except Exception:  # noqa: BLE001 — best-effort session hygiene
@@ -98,10 +116,12 @@ def _load_tab(appliance, logical: str, label: str) -> dict:
     if len(rows) == 1 and not logical.startswith('dvmdb_'):
         # single config object → key/value card (CLI 'get' style)
         tab['kv'] = rows[0]
+        tab['kv_fields'] = faz_objform.clean_fields(rows[0])
     else:
         tab['truncated'] = len(rows) > _MAX_ROWS
         tab['rows'] = rows[:_MAX_ROWS]
         tab['columns'] = _columns_for(tab['rows'])
+        tab['mkey'] = faz_objform.mkey_field(logical, tab['rows'])
     return tab
 
 
@@ -123,5 +143,89 @@ def menu_page(item_key):
                 logical, label = lg, lb
                 break
         tab = _load_tab(appliance, logical, label)
+    can_write = current_user.can(Permission.CONFIG_WRITE)
     return render_template('faz/section.html', group=group, item=item,
-                           fleet=_faz_fleet(), appliance=appliance, tab=tab)
+                           fleet=_faz_fleet(), appliance=appliance, tab=tab,
+                           can_write=can_write)
+
+
+# --------------------------------------------------------------------------- #
+#  Section-page writes — DRY-RUN DEFAULT (the objedit/ADC contract): the       #
+#  endpoint returns the exact JSON-RPC request it would send; a real device    #
+#  write needs apply=true. Config families only (faz_objform allow-list) so    #
+#  this can never be pointed at an arbitrary JSON-RPC url.                     #
+# --------------------------------------------------------------------------- #
+def _write_request(op: str, urn: str, mkey_fld: str, mkey: str, fields: dict):
+    """(verb, url, data) for one write — the single place the JSON-RPC write
+    dialect lives. Legacy CLI/dvmdb tables address rows path-style; report
+    config (apiver 3) addresses them by name in the body."""
+    v3 = urn.startswith('/report/')
+    if op == 'create':
+        return 'add', urn, {mkey_fld: mkey, **fields}
+    if op == 'update':
+        if not mkey:                       # singleton (kv card) edit
+            return 'update', urn, fields
+        if v3:
+            return 'update', urn, {mkey_fld: mkey, **fields}
+        return 'update', f'{urn}/{mkey}', {mkey_fld: mkey, **fields}
+    if op == 'delete':
+        if v3:
+            return 'delete', urn, {mkey_fld: mkey}
+        return 'delete', f'{urn}/{mkey}', None
+    raise ValueError(f'unknown op {op!r}')
+
+
+@bp.route('/write/<logical>', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def write(logical):
+    appliance = _current_faz()
+    if appliance is None:
+        return jsonify(ok=False, error='no FortiAnalyzer selected'), 400
+    reg = loader.load_faz_registry()
+    urn = reg.get(logical)
+    if not urn or not faz_objform.is_writable(logical, urn):
+        return jsonify(ok=False, error='endpoint not writable'), 400
+
+    body = request.get_json(silent=True) or {}
+    op = (body.get('op') or '').strip()
+    mkey = str(body.get('mkey') or '').strip()
+    fields = faz_objform.clean_fields(body.get('fields') or {})
+    do_apply = bool(body.get('apply'))
+
+    if op not in ('create', 'update', 'delete'):
+        return jsonify(ok=False, error=f'unknown op: {op}'), 400
+    if op == 'create' and not faz_objform.can_create(logical):
+        return jsonify(ok=False, error='create not supported here'), 400
+    if op == 'delete' and not faz_objform.can_delete(logical):
+        return jsonify(ok=False, error='delete not supported here'), 400
+    if op == 'create' and not mkey:
+        return jsonify(ok=False, error='name (mkey) required'), 400
+    if op == 'delete' and not mkey:
+        return jsonify(ok=False, error='mkey required'), 400
+    if op in ('create', 'update') and not fields and not (op == 'create' and mkey):
+        return jsonify(ok=False, error='no changes to save'), 400
+
+    mkey_fld = faz_objform.mkey_field(logical)
+    try:
+        verb, url, data = _write_request(op, urn, mkey_fld, mkey, fields)
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+
+    if not do_apply:
+        return jsonify(ok=True, dry_run=True,
+                       request={'method': verb, 'path': url, 'body': data})
+
+    client = FortiAnalyzerClient(appliance, timeout=20.0)
+    try:
+        _out, err = client.call(verb, url, data)
+    finally:
+        try:
+            client.logout()
+        except Exception:  # noqa: BLE001
+            pass
+    if err:
+        return jsonify(ok=False, error=err), 502
+    log_action(f'faz.{op}', target=f'{logical}/{mkey or "(singleton)"}',
+               detail={'fields': sorted(fields)}, appliance_id=appliance.id)
+    return jsonify(ok=True, dry_run=False)

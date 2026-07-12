@@ -29,12 +29,12 @@ def test_faz_dashboard_and_scaffolds_render(app, client):
     r = client.get('/faz/')
     assert r.status_code == 200
     body = r.get_data(as_text=True)
-    for label in ('Configuration', 'Operation', 'Automation',
-                  'Architecture', 'Analysis', 'Metrics'):
+    for label in ('Device Manager', 'Log View', 'Fabric View',
+                  'System Settings', 'Architecture', 'Analysis', 'Metrics'):
         assert label in body, f'dashboard missing {label}'
     # a menu leaf renders; with no FAZ selected it asks for a device instead
     # of exploding (sections are LIVE, registry-bound — 2026-07-12)
-    r = client.get('/faz/m/system-global')
+    r = client.get('/faz/m/misc')
     assert r.status_code == 200
     assert 'No FortiAnalyzer selected' in r.get_data(as_text=True)
 
@@ -124,3 +124,46 @@ def test_appliance_kind_isolation_across_adoms(app):
     assert 'fortianalyzer' not in kinds('fortiadc')
     assert kinds('fortiweb') == {'fortiweb'}          # FAZ+ADC excluded
     assert kinds('fortiadc') == {'fortiadc'}
+
+
+def test_faz_write_endpoint_dry_run_and_guards(app, client):
+    """The section-page write endpoint (/faz/write) builds the correct
+    JSON-RPC request on a dry run, refuses operational/read-only panes, and
+    enforces its mkey guards. Locks the CRUD contract added 2026-07-12 so the
+    FAZ ADOM stays as create/edit-capable as the real 7.6.7 GUI."""
+    faz_id = _mk(app, 'faz-write', 'fortianalyzer')
+    login(client, admin_user_id(app), product='fortianalyzer')
+    # select the FAZ as the session's active device (write context)
+    assert client.get(f'/faz/use/{faz_id}').status_code == 302
+
+    # create on a legacy /cli config table -> JSON-RPC 'add', mkey in body
+    r = client.post('/faz/write/admin_user',
+                    json={'op': 'create', 'mkey': 'qa-admin',
+                          'fields': {'description': 'x'}})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    j = r.get_json()
+    assert j['ok'] and j['dry_run'] is True
+    assert j['request']['method'] == 'add'
+    assert j['request']['path'] == '/cli/global/system/admin/user'
+    assert j['request']['body']['userid'] == 'qa-admin'
+
+    # update addresses a legacy row path-style (.../<mkey>)
+    r = client.post('/faz/write/admin_user',
+                    json={'op': 'update', 'mkey': 'qa-admin',
+                          'fields': {'description': 'y'}})
+    assert r.get_json()['request']['path'] ==         '/cli/global/system/admin/user/qa-admin'
+
+    # delete on a legacy row -> path-style, no body
+    r = client.post('/faz/write/admin_user',
+                    json={'op': 'delete', 'mkey': 'qa-admin'})
+    jd = r.get_json()['request']
+    assert jd['method'] == 'delete' and jd['path'].endswith('/qa-admin')
+
+    # an operational / read-only pane is never writable
+    r = client.post('/faz/write/dvmdb_device',
+                    json={'op': 'create', 'mkey': 'x'})
+    assert r.status_code == 400 and 'not writable' in r.get_json()['error']
+
+    # guard: create without a name (mkey) is rejected
+    assert client.post('/faz/write/admin_user',
+                       json={'op': 'create'}).status_code == 400

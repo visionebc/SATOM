@@ -84,3 +84,19 @@ task_task: /task/task
 fmupdate_service: /cli/global/fmupdate/service
 fmupdate_publicnetwork: /cli/global/fmupdate/publicnetwork
 fmupdate_server_access_priorities: /cli/global/fmupdate/server-access-priorities
+
+# ---- GUI-parity sweep 2026-07-12 (all probed live: get, code 0, faz01
+# v7.6.7-build3737). Added while mirroring the real GUI panes into faz_menu.
+logview_logfiles: /logview/adom/root/logfiles/state
+ueba_endpoints: /ueba/adom/root/endpoints
+ueba_endusers: /ueba/adom/root/endusers
+system_certificate_crl: /cli/global/system/certificate/crl
+system_certificate_remote: /cli/global/system/certificate/remote
+system_certificate_oftp: /cli/global/system/certificate/oftp
+log_fetch_client_profile: /cli/global/system/log-fetch/client-profile
+log_fetch_server_settings: /cli/global/system/log-fetch/server-settings
+system_soc_fabric: /cli/global/system/soc-fabric
+log_forward_service: /cli/global/system/log-forward-service
+# get needs state=generated + a time-range — app.services.faz_objform
+# supplies them (extra_params).
+report_generated: /report/adom/root/reports/state

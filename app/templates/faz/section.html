@@ -1,46 +1,162 @@
 {% extends "base.html" %}
-{% block title %}FortiAnalyzer — {{ item.label }}{% endblock %}
+
+{% block title %}{{ item.label }} — FortiAnalyzer{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="{{ url_for('faz.index') }}">FortiAnalyzer</a>
+  <span class="separator">/</span>
+  <span>{{ group.label }}</span>
+  <span class="separator">/</span>
+  <span>{{ item.label }}</span>
+</div>
+{% endblock %}
 
 {% block content %}
-<div class="fw-page-header d-flex align-items-center gap-3 mb-4">
-  <i class="bi {{ item.icon }}" style="font-size:30px;color:#d97706;"></i>
+<div class="fw-page-header">
   <div>
-    <h1 class="h4 mb-0">{{ item.label }}</h1>
-    <div class="text-muted" style="font-size:13px;">FortiAnalyzer · {{ group.label }}</div>
+    <h1 class="fw-page-title"><i class="bi {{ item.icon }} me-2 text-accent"></i>{{ item.label }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ group.label }} &gt; {{ item.label }}
+      {% if appliance %} on <strong>{{ appliance.name }}</strong> <span class="fw-badge fw-badge-secondary ms-1" title="Read live from the device over JSON-RPC">LIVE</span>{% endif %}
+    </p>
   </div>
-  <div class="ms-auto d-flex gap-2">
-    <a href="{{ url_for('faz.index') }}" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-grid me-1"></i>Dashboard</a>
+  <div class="d-flex align-items-center gap-2">
+    {% if appliance %}
+    <a class="btn btn-outline-light btn-sm" href="{{ request.full_path }}" title="Re-read from the device">
+      <i class="bi bi-arrow-clockwise me-1"></i>Refresh</a>
+    {% endif %}
   </div>
 </div>
 
-{% if appliance %}
-<div class="fw-card mb-3" style="padding:12px 16px;">
-  <i class="bi bi-hdd-rack text-accent me-1"></i>
-  Selected device: <strong>{{ appliance.name }}</strong>
-  <span class="text-muted">· {{ appliance.host }}:{{ appliance.port }}</span>
+{% if not appliance %}
+<div class="fw-alert fw-alert-warning d-flex align-items-center gap-2 mb-3">
+  <i class="bi bi-hdd-rack"></i>
+  <div>No FortiAnalyzer selected — sections are read live from a device.
+    <a href="{{ url_for('faz.index') }}">Pick one on the FortiAnalyzer dashboard</a>
+    {% if not fleet %} (none registered yet — add the unit under
+    <a href="{{ url_for('appliances.index') }}">Appliances</a>){% endif %}.
+  </div>
+</div>
+{% elif tab and tab.error %}
+<div class="fw-alert fw-alert-danger d-flex align-items-center gap-2 mb-3">
+  <i class="bi bi-exclamation-triangle-fill"></i>
+  <div>Device error: {{ tab.error }}</div>
 </div>
 {% endif %}
 
+{% if appliance and item.logicals %}
+{# FortiAnalyzer's own tabs for this menu entry — one JSON-RPC read per load #}
+<ul class="nav nav-tabs mb-3">
+  {% for lg, lb in item.logicals %}
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if tab and lg == tab.logical else '' }}"
+       href="{{ url_for('faz.menu_page', item_key=item.key, tab=lg) }}">
+      {{ lb }}
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if tab and not tab.error %}
+  {% if tab.kv is not none %}
+  {# single config object → key/value card (CLI 'get' style) #}
+  <div class="fw-toolbar mb-2 d-flex align-items-center gap-2">
+    <span class="text-muted ms-auto" style="font-size:12px;">
+      {{ tab.kv|length }} setting(s) · <code style="font-size:11px;">{{ tab.urn }}</code></span>
+  </div>
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <thead><tr><th style="width:320px;">Setting</th><th>Value</th></tr></thead>
+      <tbody>
+        {% for k, v in tab.kv.items() if k != 'obj flags' %}
+        <tr>
+          <td class="fw-semibold">{{ k }}</td>
+          <td>
+            {% if v is mapping or v is sequence and v is not string %}
+              <code style="font-size:11px;">{{ v|tojson }}</code>
+            {% elif v is none or v == '' %}<span class="text-muted">—</span>
+            {% else %}{{ v }}{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="fw-toolbar mb-2 d-flex align-items-center gap-2 flex-wrap">
+    <div class="fw-search-box">
+      <i class="bi bi-search search-icon"></i>
+      <input type="text" id="faz-obj-search" placeholder="Search…">
+    </div>
+    <span class="text-muted ms-auto" style="font-size:12px;">
+      {{ tab.rows|length }}{{ '+' if tab.truncated }} row(s)
+      · <code style="font-size:11px;">{{ tab.urn }}</code></span>
+  </div>
+  {% if tab.truncated %}
+  <div class="fw-alert fw-alert-warning mb-2" style="font-size:12px;">
+    <i class="bi bi-scissors me-1"></i>Showing the first {{ tab.rows|length }} rows.
+  </div>
+  {% endif %}
+  <div class="fw-table-wrapper">
+    <table class="fw-table" id="faz-obj-table">
+      <thead>
+        <tr>
+          {% for col in tab.columns %}<th>{{ col.replace('_',' ').replace('-',' ')|title }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% if tab.rows %}
+          {% for r in tab.rows %}
+          <tr>
+            {% for col in tab.columns %}
+            {% set v = r.get(col) %}
+            <td>
+              {% if v is mapping or (v is sequence and v is not string) %}
+                <code style="font-size:11px;">{{ v|tojson|truncate(120) }}</code>
+              {% elif v in ('enable', 'enabled') %}<span class="fw-badge fw-badge-success">{{ v }}</span>
+              {% elif v in ('disable', 'disabled') %}<span class="fw-badge fw-badge-secondary">{{ v }}</span>
+              {% elif v is none or v == '' %}<span class="text-muted">—</span>
+              {% else %}{{ v|string|truncate(140) }}{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="{{ tab.columns|length or 1 }}"><div class="fw-empty-state py-4">
+            <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi {{ item.icon }}"></i></div>
+            <div class="fw-empty-state-title">No {{ tab.label }} entries</div>
+            <div class="fw-empty-state-text">The device returned an empty set for
+              <code>{{ tab.urn }}</code>.</div>
+          </div></td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+{% elif appliance and not item.logicals %}
 <div class="fw-card" style="padding:40px 24px;text-align:center;">
   <i class="bi bi-cone-striped" style="font-size:38px;color:#d97706;"></i>
-  <h2 class="h5 mt-3 mb-2">Not wired to a FortiAnalyzer backend yet</h2>
-  <p class="text-muted mb-3" style="max-width:560px;margin-inline:auto;">
-    {{ item.desc }}
+  <h2 class="h5 mt-3 mb-2">No registry endpoints bound to this section yet</h2>
+  <p class="text-muted mb-0" style="max-width:560px;margin-inline:auto;">
+    {{ item.desc }} Bind endpoints in <a href="{{ url_for('faz_api.index') }}">API &amp; Registry</a>.
   </p>
-  <p class="text-muted mb-4" style="max-width:560px;margin-inline:auto;font-size:12px;">
-    FortiAnalyzer exposes this over its JSON-RPC API. The section shell, menu and
-    routing are in place; the live data binding lands when the FortiAnalyzer
-    client is added. Fleet (Architecture / Analysis / Metrics), Firmware and the
-    Administration areas are already live for this ADOM.
-  </p>
-  <div class="d-inline-flex gap-2">
-    {% if not appliance %}
-    <a href="{{ url_for('faz.index') }}" class="btn btn-fw-primary btn-sm">
-      <i class="bi bi-hdd-rack me-1"></i>Select a device</a>
-    {% endif %}
-    <a href="{{ url_for('appliances.index') }}" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-server me-1"></i>Appliances</a>
-  </div>
 </div>
+{% endif %}
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var box = document.getElementById('faz-obj-search');
+  var table = document.getElementById('faz-obj-table');
+  if (!box || !table) return;
+  box.addEventListener('input', function () {
+    var q = box.value.toLowerCase();
+    table.querySelectorAll('tbody tr').forEach(function (tr) {
+      tr.style.display = tr.textContent.toLowerCase().indexOf(q) === -1 ? 'none' : '';
+    });
+  });
+})();
+</script>
 {% endblock %}

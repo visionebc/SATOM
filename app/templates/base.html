@@ -876,6 +876,9 @@
         {% elif product.key == 'fortiadc' and current_user and current_user.can('user_manage') %}
         <a class="fw-nav-item {{ 'active' if request.blueprint == 'adc_api' }}" href="{{ url_for('adc_api.index') }}">
           <i class="bi bi-code-slash fw-nav-icon"></i><span>API</span></a>
+        {% elif product.key == 'fortianalyzer' and current_user and current_user.can('user_manage') %}
+        <a class="fw-nav-item {{ 'active' if request.blueprint == 'faz_api' }}" href="{{ url_for('faz_api.index') }}">
+          <i class="bi bi-code-slash fw-nav-icon"></i><span>API</span></a>
         {% endif %}
         <div class="fw-nav-divider"></div>
         <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('settings.') else '' }}"

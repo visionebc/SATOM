@@ -1,0 +1,614 @@
+{% extends "base.html" %}
+
+{% block title %}FortiAnalyzer API-Registry Explorer{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="{{ url_for('faz.index') }}">FortiAnalyzer</a>
+  <span class="separator">/</span>
+  <span>API-Registry Explorer</span>
+</div>
+{% endblock %}
+
+{% block content %}
+{# Same hub layout as the FortiWeb/FortiADC API areas — one tab: the fused
+   catalog + live console. FortiAnalyzer speaks JSON-RPC over a single
+   POST /jsonrpc, so the console picks a JSON-RPC verb, not an HTTP method. #}
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link active" href="{{ url_for('faz_api.index') }}">
+      <i class="bi bi-code-square me-1"></i>API-Registry Explorer
+    </a>
+  </li>
+</ul>
+
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-code-square me-2 text-accent"></i>FortiAnalyzer API-Registry Explorer</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      The FortiAnalyzer endpoint <strong>catalog</strong> ({{ total }} endpoints, stored in the database,
+      seeded from <code>endpoints_fortianalyzer.yaml</code>) and the live <strong>JSON-RPC console</strong> in one
+      place — browse &amp; edit urls on the menu tree, execute them against a real unit on the right.
+      When a FAZ upgrade moves an URI, fix it HERE — no code change.
+      {% if can_edit %}Catalog changes are audited and survive deploys.{% endif %}
+    </p>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    {% if can_edit %}
+    <button class="btn btn-fw-primary btn-sm" data-js="new-endpoint">
+      <i class="bi bi-plus-lg me-1"></i>New Endpoint
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+<style nonce="{{ csp_nonce }}">
+  /* API Menu tree (left sidebar) — caret rotates with Bootstrap collapse state */
+  #apiTree .api-tree-section-header .api-tree-caret { transition: transform .15s ease; }
+  #apiTree .api-tree-section-header:not(.collapsed) .api-tree-caret { transform: rotate(90deg); }
+  #apiTree .api-tree-leaf { border-bottom: 1px solid #F4F5F7; }
+  #apiTree .api-tree-leaf:hover { background: #FAFBFC; }
+  #apiTree .api-tree-leaf-btn { color: inherit; }
+  #apiTree .api-tree-leaf-btn:focus { box-shadow: none; }
+  #apiTree .api-tree-copy { opacity: 0; transition: opacity .12s ease; }
+  #apiTree .api-tree-leaf:hover .api-tree-copy { opacity: 1; }
+</style>
+
+<div class="row g-3">
+  <!-- API Menu: registry-backed FAZ menu tree; editable in place when can_edit -->
+  <div class="col-lg-3">
+    <div class="fw-card mb-3">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>API Menu</span>
+        <div class="d-flex align-items-center gap-2">
+          {% if can_edit %}
+          <button class="btn btn-sm btn-fw-primary" data-js="new-endpoint" title="Add a catalog endpoint" style="padding:2px 8px;">
+            <i class="bi bi-plus-lg"></i>
+          </button>
+          {% endif %}
+          <span class="fw-badge fw-badge-secondary">{{ total }}</span>
+        </div>
+      </div>
+      <div class="fw-card-body p-0">
+        <div class="fw-search-box" style="padding:10px 12px; border-bottom:1px solid #F0F2F5;">
+          <i class="bi bi-search search-icon" style="left:22px;"></i>
+          <input type="text" id="apiTreeSearch" placeholder="Filter endpoints…"
+                 style="padding-left:34px; font-size:13px;">
+        </div>
+        <div id="apiTree" style="max-height:640px; overflow-y:auto;">
+          {% for g in groups %}
+            {% set sid = 'apisec-' ~ loop.index %}
+            <div class="api-tree-section">
+              <button class="api-tree-section-header list-group-item list-group-item-action d-flex align-items-center justify-content-between {{ '' if loop.first else 'collapsed' }}"
+                      type="button" data-bs-toggle="collapse" data-bs-target="#{{ sid }}"
+                      aria-expanded="{{ 'true' if loop.first else 'false' }}" aria-controls="{{ sid }}"
+                      style="font-size:13px; font-weight:600; padding:8px 12px; border:none; background:#FAFBFC;">
+                <span class="text-truncate">
+                  <i class="bi bi-caret-right-fill me-1 api-tree-caret" style="font-size:10px;"></i>{{ g.label }}
+                </span>
+                <span class="fw-badge fw-badge-secondary">{{ g.items|map(attribute='logicals')|map('length')|sum }}</span>
+              </button>
+              <div class="collapse {{ 'show' if loop.first else '' }}" id="{{ sid }}">
+                {% for item in g.items %}{% for lg, lb in item.logicals %}
+                  {% set urn = reg.get(lg) %}
+                  {% set row = db_rows.get(lg) if can_edit else none %}
+                  <div class="api-tree-leaf d-flex align-items-center"
+                       data-search="{{ (lg ~ ' ' ~ item.label ~ ' ' ~ lb ~ ' ' ~ (urn or ''))|lower }}">
+                    <button type="button" class="btn btn-link text-start flex-grow-1 text-decoration-none api-tree-leaf-btn"
+                            data-method="get" data-path="{{ urn or '' }}"
+                            style="padding:6px 8px 6px 24px;">
+                      <span class="fw-api-method fw-api-method-get me-1" style="font-size:9px;">GET</span>
+                      <span style="font-size:12.5px;">{{ lb }}</span>
+                      <br><code class="text-muted" style="font-size:10.5px;">{{ urn }}</code>
+                    </button>
+                    {% if row %}
+                    <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy me-1"
+                            title="Edit catalog endpoint" data-js="edit-endpoint"
+                            data-id="{{ row.id }}" data-name="{{ row.name }}"
+                            data-urn="{{ row.urn }}" data-apiver="{{ row.api_version }}"
+                            style="padding:2px 7px;">
+                      <i class="bi bi-pencil" style="font-size:11px;"></i>
+                    </button>
+                    <form method="post" action="{{ url_for('faz_api.registry_toggle', rid=row.id) }}"
+                          data-js="disable-endpoint" data-name="{{ row.name }}" class="d-inline me-1">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="btn btn-sm btn-fw-outline border-0 api-tree-copy"
+                              title="Disable catalog endpoint (soft delete)" style="padding:2px 7px;">
+                        <i class="bi bi-eye-slash" style="font-size:11px;"></i>
+                      </button>
+                    </form>
+                    {% endif %}
+                    <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy me-1"
+                            title="Copy URN" data-urn="{{ urn or '' }}"
+                            style="padding:2px 7px;">
+                      <i class="bi bi-clipboard" style="font-size:11px;"></i>
+                    </button>
+                  </div>
+                {% endfor %}{% endfor %}
+              </div>
+            </div>
+          {% endfor %}
+          {% if extras %}
+            <div class="api-tree-section">
+              <button class="api-tree-section-header list-group-item list-group-item-action d-flex align-items-center justify-content-between collapsed"
+                      type="button" data-bs-toggle="collapse" data-bs-target="#apisec-extra"
+                      aria-expanded="false" aria-controls="apisec-extra"
+                      style="font-size:13px; font-weight:600; padding:8px 12px; border:none; background:#FAFBFC;">
+                <span class="text-truncate">
+                  <i class="bi bi-caret-right-fill me-1 api-tree-caret" style="font-size:10px;"></i>Other endpoints
+                </span>
+                <span class="fw-badge fw-badge-secondary">{{ extras|length }}</span>
+              </button>
+              <div class="collapse" id="apisec-extra">
+                {% for e in extras %}
+                  {% set row = db_rows.get(e.name) if can_edit else none %}
+                  <div class="api-tree-leaf d-flex align-items-center"
+                       data-search="{{ (e.name ~ ' ' ~ (e.urn or ''))|lower }}">
+                    <button type="button" class="btn btn-link text-start flex-grow-1 text-decoration-none api-tree-leaf-btn"
+                            data-method="get" data-path="{{ e.urn or '' }}"
+                            style="padding:6px 8px 6px 24px;">
+                      <span class="fw-api-method fw-api-method-get me-1" style="font-size:9px;">GET</span>
+                      <span style="font-size:12.5px;">{{ e.name }}</span>
+                      <br><code class="text-muted" style="font-size:10.5px;">{{ e.urn }}</code>
+                    </button>
+                    {% if row %}
+                    <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy me-1"
+                            title="Edit catalog endpoint" data-js="edit-endpoint"
+                            data-id="{{ row.id }}" data-name="{{ row.name }}"
+                            data-urn="{{ row.urn }}" data-apiver="{{ row.api_version }}"
+                            style="padding:2px 7px;">
+                      <i class="bi bi-pencil" style="font-size:11px;"></i>
+                    </button>
+                    <form method="post" action="{{ url_for('faz_api.registry_toggle', rid=row.id) }}"
+                          data-js="disable-endpoint" data-name="{{ row.name }}" class="d-inline me-1">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="btn btn-sm btn-fw-outline border-0 api-tree-copy"
+                              title="Disable catalog endpoint (soft delete)" style="padding:2px 7px;">
+                        <i class="bi bi-eye-slash" style="font-size:11px;"></i>
+                      </button>
+                    </form>
+                    {% endif %}
+                    <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy me-1"
+                            title="Copy URN" data-urn="{{ e.urn or '' }}"
+                            style="padding:2px 7px;">
+                      <i class="bi bi-clipboard" style="font-size:11px;"></i>
+                    </button>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% if can_edit and disabled_rows %}
+    <div class="fw-card mb-3">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-eye-slash me-2"></i>Disabled</span>
+        <span class="fw-badge fw-badge-secondary">{{ disabled_rows|length }}</span>
+      </div>
+      <div class="fw-card-body p-0">
+        <div style="max-height:260px; overflow-y:auto;">
+          {% for r in disabled_rows %}
+          <div class="d-flex align-items-center justify-content-between" style="padding:6px 12px; border-bottom:1px solid #F4F5F7;">
+            <div style="min-width:0;">
+              <div style="font-size:12px; font-weight:500;" class="text-truncate">{{ r.name }}</div>
+              <code class="text-muted d-block text-truncate" style="font-size:10px;">{{ r.urn }}</code>
+            </div>
+            <form method="post" action="{{ url_for('faz_api.registry_toggle', rid=r.id) }}" class="ms-2">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-success btn-sm-icon" title="Restore endpoint">
+                <i class="bi bi-arrow-counterclockwise"></i>
+              </button>
+            </form>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Request Panel -->
+  <div class="col-lg-4">
+    <div class="fw-card mb-3">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-send me-2 text-accent"></i>Request</span>
+      </div>
+      <div class="fw-card-body">
+        <!-- Appliance selector -->
+        <div class="mb-3">
+          <label class="fw-form-label">Appliance <span class="text-danger">*</span></label>
+          <select id="sel-appliance" class="form-select fw-form-control">
+            {% if fleet %}
+              {% for a in fleet %}
+                <option value="{{ a.id }}">{{ a.name }} — {{ a.host }}</option>
+              {% endfor %}
+            {% else %}
+              <option value="">No FortiAnalyzer appliances configured</option>
+            {% endif %}
+          </select>
+        </div>
+
+        <!-- JSON-RPC verb + url -->
+        <div class="mb-3">
+          <label class="fw-form-label">JSON-RPC verb &amp; url <span class="text-danger">*</span></label>
+          <div class="d-flex gap-2">
+            <select id="sel-method" class="form-select fw-form-control" style="width:110px; flex-shrink:0;">
+              {% for v in verbs %}
+              <option{% if v != 'get' and not can_write %} disabled{% endif %}>{{ v }}</option>
+              {% endfor %}
+            </select>
+            <input type="text" id="inp-path" class="form-control fw-form-control"
+                   placeholder="/dvmdb/device or a logical name">
+          </div>
+          {% if not can_write %}
+          <div class="text-muted mt-1" style="font-size:11px;">
+            <i class="bi bi-info-circle me-1"></i>Verbs other than <code>get</code> need the "Execute write API calls" permission.
+          </div>
+          {% endif %}
+          <div id="selected-urn" class="text-muted mt-1" style="font-size:11px;"></div>
+          <div class="mt-1">
+            <small class="text-muted">Common urls:</small>
+            <div class="d-flex flex-wrap gap-1 mt-1">
+              {% for path in [
+                '/sys/status',
+                '/dvmdb/device',
+                '/cli/global/system/global',
+                '/eventmgmt/adom/root/alerts',
+                '/report/adom/root/config/layout',
+              ] %}
+                <button class="fw-tag" style="cursor:pointer;border:none;font-size:10.5px;"
+                        data-js="common-path" data-path="{{ path }}">
+                  {{ path.rsplit('/', 1)[-1] }}
+                </button>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        <!-- Request data -->
+        <div class="mb-3">
+          <label class="fw-form-label">Param <code>data</code> (JSON)</label>
+          <textarea id="inp-body" class="form-control fw-form-control font-monospace"
+                    rows="6" placeholder='{"devtype": "FortiGate"}'
+                    style="font-family:Consolas,Monaco,monospace; font-size:12.5px;"></textarea>
+          <div class="text-muted mt-1" style="font-size:11px;">
+            Sent as the JSON-RPC param <code>data</code> — valid for <code>get</code> too
+            (e.g. <code>logview_logfields</code> takes <code>{"devtype": …}</code>).
+          </div>
+        </div>
+
+        <button class="btn btn-fw-primary w-100" id="btn-execute">
+          <i class="bi bi-play-circle me-1"></i>Execute Request
+        </button>
+      </div>
+    </div>
+
+    <!-- Request History -->
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-clock-history me-2"></i>History</span>
+        <button class="btn btn-sm btn-secondary" data-js="clear-history">Clear</button>
+      </div>
+      <div id="history-list" class="fw-card-body p-0" style="max-height:200px;overflow-y:auto;">
+        <div class="text-muted text-center py-3" style="font-size:13px;" id="history-empty">
+          No requests yet
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Response Panel -->
+  <div class="col-lg-5">
+    <div class="fw-card h-100">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-arrow-down-circle me-2 text-accent"></i>Response</span>
+        <div class="d-flex align-items-center gap-3">
+          <span id="resp-time" class="text-muted" style="font-size:12px;"></span>
+          <span id="resp-status" class="fw-badge fw-badge-secondary">—</span>
+          <button class="btn btn-sm btn-fw-outline" data-js="copy-response">
+            <i class="bi bi-clipboard me-1"></i>Copy
+          </button>
+        </div>
+      </div>
+      <div class="fw-card-body p-0" style="height: calc(100% - 52px);">
+        <pre id="resp-body"
+             class="fw-code-block m-0"
+             style="min-height:500px; border-radius:0 0 8px 8px;">Execute a request to see the response here.</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if can_edit %}
+<!-- Catalog endpoint editor modal (writes through faz_api.registry_save) -->
+<div class="modal fade" id="endpointModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('faz_api.registry_save') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="id" id="epId" value="">
+        <div class="modal-header">
+          <h5 class="modal-title" id="epModalTitle">Edit Endpoint</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label" for="epName">Logical name</label>
+            <input type="text" class="form-control" name="name" id="epName" required
+                   pattern="[A-Za-z0-9_.\-]+" placeholder="dvmdb_device">
+            <div class="form-text">The stable key services resolve by — letters, digits, "_", "-", ".".</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="epUrn">URN / JSON-RPC url</label>
+            <input type="text" class="form-control" name="urn" id="epUrn" required
+                   placeholder="/dvmdb/device">
+            <div class="form-text">The JSON-RPC <code>url</code> param. /logview /eventmgmt /incidentmgmt
+              /report /fortiview /fazsys urls get the apiver-3 envelope automatically.</div>
+          </div>
+          <div class="mb-1">
+            <label class="form-label" for="epApiVer">API version</label>
+            <input type="text" class="form-control" name="api_version" id="epApiVer" value="jsonrpc">
+            <div class="form-text">One JSON-RPC transport — keep "jsonrpc" unless a future generation appears.</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-fw-outline btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-check-lg me-1"></i>Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+var requestHistory = [];
+
+async function runRequest() {
+  const btn      = document.getElementById('btn-execute');
+  const appId    = document.getElementById('sel-appliance').value;
+  const method   = document.getElementById('sel-method').value;
+  const path     = document.getElementById('inp-path').value.trim();
+  const bodyTxt  = document.getElementById('inp-body').value.trim();
+  const respEl   = document.getElementById('resp-body');
+  const statusEl = document.getElementById('resp-status');
+  const timeEl   = document.getElementById('resp-time');
+
+  if (!appId) { window.FW.toast('Select an appliance first', 'warning'); return; }
+  if (!path)  { window.FW.toast('Enter a JSON-RPC url or logical name', 'warning'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="fw-loading-spinner"></span> Executing…';
+  respEl.textContent = 'Loading…';
+  statusEl.textContent = '…';
+  statusEl.className = 'fw-badge fw-badge-secondary';
+  timeEl.textContent = '';
+
+  const t0 = Date.now();
+  try {
+    const form = new URLSearchParams();
+    form.set('appliance_id', appId);
+    form.set('endpoint', path);
+    form.set('method', method);
+    if (bodyTxt) form.set('body', bodyTxt);
+
+    const r  = await fetch('{{ url_for("faz_api.execute") }}', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+      },
+      body: form.toString()
+    });
+    const ms = Date.now() - t0;
+    const j  = await r.json();
+
+    if (j.ok) {
+      // JSON-RPC rides HTTP 200 — surface the device status code instead.
+      let code = '—';
+      try {
+        const res = j.result && j.result.result;
+        const one = Array.isArray(res) ? res[0] : res;
+        if (j.result && j.result.error) code = 'ERR ' + j.result.error.code;
+        else if (one && one.status && one.status.code !== undefined) code = 'code ' + one.status.code;
+        else code = 'OK';
+      } catch (e) { code = 'OK'; }
+      const isErr = String(code).indexOf('ERR') === 0 || /code -\d/.test(String(code));
+      statusEl.textContent = code;
+      statusEl.className   = 'fw-badge ' + (isErr ? 'fw-badge-danger' : 'fw-badge-success');
+      const formatted = typeof j.result === 'object' ? JSON.stringify(j.result, null, 2) : String(j.result);
+      respEl.innerHTML = syntaxHighlight(formatted);
+      addHistory(method, (j.path || path).split('?')[0], code);
+    } else {
+      statusEl.textContent = 'Error';
+      statusEl.className   = 'fw-badge fw-badge-danger';
+      respEl.textContent   = j.error || 'Request failed';
+      addHistory(method, path.split('?')[0], 'ERR');
+    }
+    timeEl.textContent = ms + 'ms';
+  } catch (err) {
+    statusEl.textContent = 'Error';
+    statusEl.className   = 'fw-badge fw-badge-danger';
+    respEl.textContent   = 'Request failed: ' + err.message;
+    timeEl.textContent   = '';
+    window.FW.toast('Request failed: ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-play-circle me-1"></i>Execute Request';
+  }
+}
+
+function syntaxHighlight(json) {
+  return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+    let cls = 'json-number';
+    if (/^"/.test(match)) { cls = /:$/.test(match) ? 'json-key' : 'json-string'; }
+    else if (/true|false/.test(match)) { cls = 'json-bool'; }
+    else if (/null/.test(match)) { cls = 'json-null'; }
+    return '<span class="' + cls + '">' + match + '</span>';
+  });
+}
+
+function addHistory(method, path, status) {
+  requestHistory.unshift({ method, path, status, ts: new Date().toLocaleTimeString() });
+  if (requestHistory.length > 20) requestHistory.pop();
+  renderHistory();
+}
+
+function renderHistory() {
+  const list = document.getElementById('history-list');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!requestHistory.length) {
+    const empty = document.createElement('div');
+    empty.id = 'history-empty';
+    empty.className = 'text-muted text-center py-3';
+    empty.style.fontSize = '13px';
+    empty.textContent = 'No requests yet';
+    list.appendChild(empty);
+    return;
+  }
+  requestHistory.forEach(function (h) {
+    const btn = document.createElement('button');
+    btn.className = 'list-group-item list-group-item-action text-start';
+    btn.style.cssText = 'font-size:12px;padding:8px 14px;border:none;';
+
+    const methodEl = document.createElement('span');
+    methodEl.className = 'fw-api-method fw-api-method-' + (h.method === 'get' ? 'get' : 'post') + ' me-2';
+    methodEl.textContent = h.method;
+
+    const pathEl = document.createElement('span');
+    pathEl.className = 'text-truncate';
+    pathEl.style.cssText = 'max-width:260px;display:inline-block;vertical-align:middle;';
+    pathEl.textContent = h.path;
+
+    const tsEl = document.createElement('span');
+    tsEl.className = 'float-end text-muted';
+    tsEl.style.cssText = 'font-size:11px;';
+    tsEl.textContent = h.ts;
+
+    btn.appendChild(methodEl);
+    btn.appendChild(pathEl);
+    btn.appendChild(tsEl);
+    btn.addEventListener('click', function () { loadHistory(h.method, h.path); });
+    list.appendChild(btn);
+  });
+}
+
+function loadHistory(method, path) {
+  document.getElementById('sel-method').value = method;
+  document.getElementById('inp-path').value   = path;
+}
+
+function clearHistory() {
+  requestHistory.length = 0;
+  renderHistory();
+}
+
+function copyResponse() {
+  const text = document.getElementById('resp-body').textContent;
+  navigator.clipboard.writeText(text)
+    .then(() => window.FW.toast('Response copied', 'success'))
+    .catch(() => window.FW.toast('Copy failed', 'danger'));
+}
+
+// --- API Menu tree (left sidebar) ----------------------------------------
+
+function loadEndpoint(method, path) {
+  const methodEl = document.getElementById('sel-method');
+  const pathEl   = document.getElementById('inp-path');
+  const urnEl    = document.getElementById('selected-urn');
+  if (methodEl) methodEl.value = method;
+  if (pathEl)   pathEl.value   = path;
+  if (urnEl)    urnEl.textContent = 'URN: ' + path;
+  if (pathEl)   pathEl.focus();
+}
+
+function copyUrn(urn) {
+  navigator.clipboard.writeText(urn)
+    .then(() => window.FW.toast('URN copied', 'success'))
+    .catch(() => window.FW.toast('Copy failed', 'danger'));
+}
+
+function filterApiTree(q) {
+  q = (q || '').toLowerCase().trim();
+  document.querySelectorAll('#apiTree .api-tree-section').forEach(function (sec) {
+    let any = false;
+    sec.querySelectorAll('.api-tree-leaf').forEach(function (leaf) {
+      const hit = !q || (leaf.dataset.search || '').includes(q);
+      leaf.style.display = hit ? '' : 'none';
+      if (hit) any = true;
+    });
+    sec.style.display = any ? '' : 'none';
+    const body = sec.querySelector('.collapse');
+    if (body && q) body.classList.toggle('show', any);
+  });
+}
+
+// Ctrl+Enter to submit
+document.addEventListener('keydown', function (e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    runRequest();
+  }
+});
+
+// Event bindings (no inline on* attributes — CSP script-src-attr 'none').
+(function () {
+  document.getElementById('apiTreeSearch').addEventListener('input', function (event) { filterApiTree(this.value); });
+  document.getElementById('btn-execute').addEventListener('click', function (event) { runRequest(); });
+  document.querySelector('[data-js="clear-history"]').addEventListener('click', function (event) { clearHistory(); });
+  document.querySelector('[data-js="copy-response"]').addEventListener('click', function (event) { copyResponse(); });
+
+  document.querySelectorAll('#apiTree .api-tree-leaf-btn').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { loadEndpoint(this.dataset.method, this.dataset.path); });
+  });
+  document.querySelectorAll('#apiTree .api-tree-copy[data-urn]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { copyUrn(this.dataset.urn); });
+  });
+  document.querySelectorAll('[data-js="common-path"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { document.getElementById('inp-path').value = this.dataset.path; });
+  });
+})();
+
+// --- Catalog editor (only rendered for registry_edit users) --------------
+(function () {
+  var modalEl = document.getElementById('endpointModal');
+  if (!modalEl) return;
+
+  function openModal(title, data) {
+    document.getElementById('epModalTitle').textContent = title;
+    document.getElementById('epId').value = data.id || '';
+    document.getElementById('epName').value = data.name || '';
+    document.getElementById('epUrn').value = data.urn || '';
+    document.getElementById('epApiVer').value = data.apiver || 'jsonrpc';
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  }
+
+  document.querySelectorAll('[data-js="new-endpoint"]').forEach(function (btn) {
+    btn.addEventListener('click', function () { openModal('New Endpoint', {}); });
+  });
+
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('[data-js="edit-endpoint"]');
+    if (!btn) return;
+    openModal('Edit Endpoint', {
+      id: btn.dataset.id, name: btn.dataset.name,
+      urn: btn.dataset.urn, apiver: btn.dataset.apiver
+    });
+  });
+
+  document.addEventListener('submit', function (ev) {
+    var form = ev.target.closest('[data-js="disable-endpoint"]');
+    if (!form) return;
+    if (!window.confirm('Disable endpoint "' + form.dataset.name + '"?\n\nServices resolving this name will fail loudly until it is restored. The row is kept (soft delete) and can be restored from the "Disabled" panel.')) {
+      ev.preventDefault();
+    }
+  });
+})();
+</script>
+{% endblock %}

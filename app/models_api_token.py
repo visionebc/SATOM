@@ -61,8 +61,8 @@ TOKEN_PREFIX = "fmk"  # Fortinet-Manager-Key
 #                            of these AppIDs; a non-policy/fleet action is denied
 #                            (an AppID-scoped token has no fleet-wide reach).
 #
-# This is exactly the operator's ask: "un token que SOLO puede editar backends
-# de estos AppIDs".
+# This is exactly the operator's ask (translated from Spanish): "a token that can ONLY
+# edit the backends of these AppIDs".
 CAPABILITIES = ("backend_edit", "backend_config", "policy_status", "cert_swap", "maintenance", "reports")
 
 # Every runnable catalog action → the capability tag it belongs to. An action

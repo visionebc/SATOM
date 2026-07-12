@@ -525,7 +525,7 @@ plus new tests below.
   admin seeded, login 200), then fully torn down.
 - **Phase 7 — fleet DB-first (completed the big read-path roll-out).** The
   fleet-wide object browser (`services/fleet_objects.py`, the
-  Settings → «Fleet objects» / `/fleet-objects` page) NO LONGER aggregates live
+  Settings → "Fleet objects" / `/fleet-objects` page) NO LONGER aggregates live
   across every appliance on each request — `_fetch_objects` now reads **DB-first**
   from the Postgres cache (`device_objects` via `read_layer`), mapping each type to
   its cached logical name(s) (WPP = inline+offline, kind-tagged). Verified live:
@@ -534,7 +534,7 @@ plus new tests below.
   (`tests/test_fleet_objects.py`).
 
 **Now genuinely remaining (and why):** the FortiADC reader (deferred by the
-user's own decision — "fortiadc aparte y después"); and the `search` page +
+user's own decision — "fortiadc separately and later" [translated from Spanish]); and the `search` page +
 `architecture` map still read their existing sources (git Policy-Inspector
 reports / topology snapshots) which are already file/DB-backed, not the
 live-2000-row problem. The core source-of-truth architecture (Postgres + JSON +

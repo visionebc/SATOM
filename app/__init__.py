@@ -329,7 +329,7 @@ def create_app(config_override: object | None = None) -> Flask:
     def _inject_branding():
         from flask import session
         from flask_login import current_user
-        from .branding import get_product
+        from .branding import get_product, PRODUCTS
         from .services import settings_store as _store
         from .services import user_settings_store as _ustore
         from flask import g as _g
@@ -463,6 +463,7 @@ def create_app(config_override: object | None = None) -> Flask:
             _adc_nav = ()
         return {
             'product': prod,
+            'products': PRODUCTS,
             'adc_nav': _adc_nav,
             'current_appliance': _cur_appl,
             'banner_bg': _bg,

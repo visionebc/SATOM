@@ -266,3 +266,23 @@ def reports_diff(ref_a: str, ref_b: str, device: str = "") -> dict:
     return {"ok": True, "ref_a": ref_a, "ref_b": ref_b, "scope": scope,
             "stat": stat, "diff": diff, "truncated": truncated,
             "identical": not stat.strip()}
+
+
+def code_history(limit: int = 15) -> list[dict]:
+    """Application-code commits (whole repo, newest first) for the System
+    Backup page's code-rollback section. Marks the running revision so the UI
+    can show "you are here". Rollback itself goes through the self_update
+    queue (privileged runner) — this is only the read side."""
+    root = _repo_root()
+    head = _git_out(root, "rev-parse", "--short", "HEAD", default="")
+    raw = _git_out(root, "log", f"-{int(limit)}", "--format=%h|%cs|%an|%s",
+                   default="")
+    out: list[dict] = []
+    for line in raw.splitlines():
+        parts = line.split("|", 3)
+        if len(parts) != 4:
+            continue
+        sha, date, author, subject = parts
+        out.append({"hash": sha, "date": date, "author": author,
+                    "subject": subject, "current": sha == head})
+    return out

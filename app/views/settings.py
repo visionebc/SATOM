@@ -102,6 +102,8 @@ def index():
         policy_links=(policy_links_svc.links() if _is_admin() else []),
         policy_link_tokens=policy_links_svc.TOKENS,
         clone_rules_cfg=(clone_rules_svc.config() if _is_admin() else None),
+        sot_firmware_repo=(store.firmware_repo() if _is_admin() else None),
+        sot_backup_server=(store.backup_server() if _is_admin() else None),
         system_info=system_info.collect(),
         is_admin=_is_admin(),
     )
@@ -547,6 +549,29 @@ def git_configure():
     transcript = git_service.git_configure(remote_url, token, branch)
     log_action("settings.git_configure", detail=f"remote={bool(remote_url)} branch={branch!r}")
     return jsonify({"transcript": transcript})
+
+
+# ── SoT & Backup server (firmware SoT repo + backup-server SFTP access) ──────────
+
+@bp.route('/sot-backup', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_sot_backup():
+    store.save_firmware_repo(request.form.get('fw_repo_url', ''),
+                             request.form.get('fw_repo_branch', ''))
+    store.save_backup_server(request.form)
+    log_action("settings.sot_backup",
+               detail=f"backup_server={request.form.get('host','')!r}")
+    flash('SoT & Backup server settings saved.', 'success')
+    return redirect(url_for('settings.index') + '#tab-sotbackup')
+
+
+@bp.route('/sot-backup/test', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def test_sot_backup():
+    from ..services import backup_server as bksrv
+    return jsonify(bksrv.test_connection())
 
 
 # ── Email / SMTP ──────────────────────────────────────────

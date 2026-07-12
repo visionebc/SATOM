@@ -288,6 +288,7 @@
       </tbody>
     </table>
     <p class="text-muted mb-2">Git holds only the JSON source of truth (text, diffable). Binary artifacts — pg_dump bundles and raw device-config exports — deliberately stay OUT of git and travel via rsync to the standby: git is the wrong tool for binary blobs.</p>
+    <p class="text-muted mb-2">The device-pushed backups on the external server are browsable here: <em>External backup server</em> card → <strong>Browse</strong> — compare two pushes (A → B), search inside B, <strong>click a filename</strong> (or <em>View B</em>) to read the extracted config text inline, or download the raw archive. Firmware <code>.out</code> images listed there are pulled into Infrastructure → Firmware, sha256-verified.</p>
 
     <h6>Rollback / restore procedures</h6>
     <ol>
@@ -393,7 +394,7 @@
       <div id="eb-loading" class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Listing pushed backups…</div>
       <div id="eb-error" class="alert alert-danger small py-2 d-none"></div>
       <div id="eb-main" class="d-none">
-        <p class="small text-muted mb-2">Pick <strong>A</strong> and <strong>B</strong> to compare two pushes (e.g. yesterday vs today); <em>Search</em> and <em>Download</em> act on <strong>B</strong>. Text config sections are extracted from the pushed archive on the fly — encrypted blobs inside it are listed but not searchable.</p>
+        <p class="small text-muted mb-2">Pick <strong>A</strong> and <strong>B</strong> to compare two pushes (e.g. yesterday vs today); <em>Search</em>, <em>View</em> and <em>Download</em> act on <strong>B</strong>. <strong>Click a filename</strong> (or <em>View B</em>) to read its config inline — text sections are extracted from the pushed archive on the fly; encrypted blobs inside it are listed but not viewable or searchable.</p>
         <div class="table-responsive" style="max-height:260px; overflow:auto;">
           <table class="table table-sm table-hover align-middle mb-2">
             <thead><tr><th style="width:34px;">A</th><th style="width:34px;">B</th><th>File</th><th>Size</th><th>Pushed (UTC)</th></tr></thead>

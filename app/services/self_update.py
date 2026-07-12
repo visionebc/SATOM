@@ -325,6 +325,82 @@ def request_update(target: str, by: str, *, do_pip: bool = True,
     return uid
 
 
+LIB_VERSIONS_DIR = APP_DIR / "data" / "lib-versions"
+
+
+def _pip_allowlist() -> set[str]:
+    """Curated libraries the GUI may pip-change — single source of truth is
+    system_info._LIBRARIES (the same set the card renders)."""
+    try:
+        from .system_info import _LIBRARIES
+        return {n for n in _LIBRARIES}
+    except Exception:
+        return set()
+
+
+def lib_versions() -> dict:
+    """Per-package rollback points written by the privileged runner
+    (``data/lib-versions/<pkg>.json``). Feeds the card's 'Rollback to X' button.
+    Per-node, because each node has its own venv."""
+    out: dict = {}
+    if not LIB_VERSIONS_DIR.exists():
+        return out
+    for p in LIB_VERSIONS_DIR.glob("*.json"):
+        try:
+            d = json.loads(p.read_text())
+            if d.get("package"):
+                out[d["package"]] = d
+        except Exception:
+            pass
+    return out
+
+
+def request_pip_change(package: str, version: str, by: str, *,
+                       action: str = "upgrade",
+                       bump_requirements: bool = True) -> str:
+    """Enqueue a curated-only per-package pip change for the privileged runner.
+
+    Validates against the curated allowlist HERE (the runner re-validates as
+    defense in depth) so a request for an arbitrary package never reaches the
+    queue. Node-local: the runner on THIS node installs into THIS node's venv.
+    """
+    package = (package or "").strip()
+    version = (version or "").strip()
+    if package not in _pip_allowlist():
+        raise ValueError("package %r is not in the curated allowlist" % package)
+    if action not in ("upgrade", "rollback"):
+        raise ValueError("action must be 'upgrade' or 'rollback'")
+    if not version:
+        raise ValueError("a target version is required")
+
+    REQ_DIR.mkdir(parents=True, exist_ok=True)
+    STATUS_DIR.mkdir(parents=True, exist_ok=True)
+    uid = datetime.utcnow().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
+    req = {
+        "id": uid,
+        "kind": "pip",
+        "package": package,
+        "version": version,
+        "action": action,
+        "bump_requirements": bool(bump_requirements),
+        "requested_by": by,
+        "requested_at": datetime.utcnow().isoformat() + "Z",
+        "node": this_node_name(),
+        "role": node_role(),
+        "origin": "libraries-card",
+    }
+    (STATUS_DIR / (uid + ".json")).write_text(json.dumps({
+        "id": uid, "state": "queued", "steps": [], "kind": "pip",
+        "package": package, "action": action, "target": version,
+        "requested_by": by, "node": req["node"], "role": req["role"],
+        "origin": "libraries-card",
+        "updated_at": datetime.utcnow().isoformat() + "Z"}))
+    tmp = REQ_DIR / ("." + uid + ".tmp")
+    tmp.write_text(json.dumps(req))
+    tmp.rename(REQ_DIR / (uid + ".json"))
+    return uid
+
+
 def update_status(uid: str) -> dict | None:
     p = STATUS_DIR / (uid + ".json")
     if not p.exists():

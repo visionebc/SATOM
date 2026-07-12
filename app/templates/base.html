@@ -442,6 +442,91 @@
       </div>
       {% endif %}
 
+      {% elif product.key == 'fortianalyzer' %}
+      <!-- ===== FortiAnalyzer — the FAZ ADOM left menu (static faz_menu) ===== -->
+      {% set _faz_item = (request.view_args.get('item_key') if (request.endpoint == 'faz.menu_page' and request.view_args) else '') %}
+
+      {# ADOM back-link — ALWAYS first (same format as FortiWeb/FortiADC) #}
+      <div class="fw-nav-context" data-nav-context="ADOM">
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item" href="{{ url_for('product.enter', key='global') }}" title="Back to the Global ADOM">
+            <i class="bi bi-globe2 fw-nav-icon" style="color:#3b82f6;"></i><span>&lsaquo; Global</span></a>
+        </div>
+      </div>
+
+      {# Device context #}
+      <div class="fw-nav-context" data-nav-context="Device">
+        <div class="fw-nav-section fw-nav-context-label"><i class="bi bi-hdd-rack fw-nav-section-icon" style="color:#d97706;"></i><span>Device</span></div>
+        <div class="fw-nav-group-body">
+          {% if current_appliance and current_appliance.kind == 'fortianalyzer' %}
+          <a class="fw-nav-item" href="{{ url_for('faz.index') }}" title="Switch device">
+            <i class="bi bi-hdd-rack fw-nav-icon"></i>
+            <span>{{ current_appliance.name }} <small style="opacity:.55;">· change</small></span></a>
+          {% else %}
+          <a class="fw-nav-item {{ 'active' if request.endpoint == 'faz.index' else '' }}" href="{{ url_for('faz.index') }}">
+            <i class="bi bi-hdd-rack fw-nav-icon"></i><span>Select a device</span></a>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- FLEET — Architecture / Analysis / Metrics (shared, product-scoped) -->
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['architecture','analysis','metrics','search','dns_tool','fleet_objects','jobs'] }}" data-nav-group="Fleet">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>Fleet</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
+            <i class="bi bi-hdd-network fw-nav-icon"></i><span>Architecture</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'analysis' else '' }}" href="{{ url_for('analysis.index') }}">
+            <i class="bi bi-graph-up fw-nav-icon"></i><span>Analysis</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics' else '' }}" href="{{ url_for('metrics.index') }}">
+            <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>Metrics</span></a>
+        </div>
+      </div>
+
+      {# Configuration / Operation / Automation — static faz_menu groups #}
+      {% for g in faz_nav %}
+      {% set _g_active = g.items|selectattr('key', 'equalto', _faz_item)|list %}
+      <div class="fw-nav-group {{ 'open' if _g_active }}" data-nav-group="{{ g.label }}">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi {{ g.icon }} fw-nav-section-icon" style="color:#d97706;"></i><span>{{ g.label }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          {% for item in g.items %}
+          <a class="fw-nav-item {{ 'active' if _faz_item == item.key else '' }}"
+             href="{{ url_for('faz.menu_page', item_key=item.key) }}">
+            <i class="bi {{ item.icon }} fw-nav-icon"></i><span>{{ item.label }}</span></a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+
+      {# Administration — Appliances / Audit log / Firmware / Network segment #}
+      {% if current_user and current_user.can('user_manage') %}
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['appliances','audit','firmware','segments'] }}" data-nav-group="Administration">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>Administration</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'appliances' else '' }}" href="{{ url_for('appliances.index') }}">
+            <i class="bi bi-server fw-nav-icon"></i><span>Appliances</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'audit' else '' }}" href="{{ url_for('audit.index') }}">
+            <i class="bi bi-clipboard-check fw-nav-icon"></i><span>Audit Log</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'firmware' else '' }}" href="{{ url_for('firmware.index') }}">
+            <i class="bi bi-cpu fw-nav-icon"></i><span>Firmware</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'segments' else '' }}" href="{{ url_for('segments.index') }}">
+            <i class="bi bi-diagram-3 fw-nav-icon"></i><span>Network Segment</span></a>
+        </div>
+      </div>
+      {% endif %}
+
+      {# Documentation / API / Settings #}
+      <div class="fw-nav-context" data-nav-context="Resources">
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'docs' else '' }}" href="{{ url_for('docs.index') }}">
+            <i class="bi bi-book fw-nav-icon"></i><span>Documentation</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'api_tokens' else '' }}" href="{{ url_for('api_tokens.index') }}">
+            <i class="bi bi-braces-asterisk fw-nav-icon"></i><span>API</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'settings' else '' }}" href="{{ url_for('settings.index') }}">
+            <i class="bi bi-gear fw-nav-icon"></i><span>Settings</span></a>
+        </div>
+      </div>
+
+
       {% elif product.placeholder %}
       <!-- ===== Placeholder ADOM (FortiAuthenticator / FortiAnalyzer / future) ===== -->
       <div class="fw-nav-context" data-nav-context="ADOM">

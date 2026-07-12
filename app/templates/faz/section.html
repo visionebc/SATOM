@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}FortiAnalyzer — {{ item.label }}{% endblock %}
+
+{% block content %}
+<div class="fw-page-header d-flex align-items-center gap-3 mb-4">
+  <i class="bi {{ item.icon }}" style="font-size:30px;color:#d97706;"></i>
+  <div>
+    <h1 class="h4 mb-0">{{ item.label }}</h1>
+    <div class="text-muted" style="font-size:13px;">FortiAnalyzer · {{ group.label }}</div>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <a href="{{ url_for('faz.index') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-grid me-1"></i>Dashboard</a>
+  </div>
+</div>
+
+{% if appliance %}
+<div class="fw-card mb-3" style="padding:12px 16px;">
+  <i class="bi bi-hdd-rack text-accent me-1"></i>
+  Selected device: <strong>{{ appliance.name }}</strong>
+  <span class="text-muted">· {{ appliance.host }}:{{ appliance.port }}</span>
+</div>
+{% endif %}
+
+<div class="fw-card" style="padding:40px 24px;text-align:center;">
+  <i class="bi bi-cone-striped" style="font-size:38px;color:#d97706;"></i>
+  <h2 class="h5 mt-3 mb-2">Not wired to a FortiAnalyzer backend yet</h2>
+  <p class="text-muted mb-3" style="max-width:560px;margin-inline:auto;">
+    {{ item.desc }}
+  </p>
+  <p class="text-muted mb-4" style="max-width:560px;margin-inline:auto;font-size:12px;">
+    FortiAnalyzer exposes this over its JSON-RPC API. The section shell, menu and
+    routing are in place; the live data binding lands when the FortiAnalyzer
+    client is added. Fleet (Architecture / Analysis / Metrics), Firmware and the
+    Administration areas are already live for this ADOM.
+  </p>
+  <div class="d-inline-flex gap-2">
+    {% if not appliance %}
+    <a href="{{ url_for('faz.index') }}" class="btn btn-fw-primary btn-sm">
+      <i class="bi bi-hdd-rack me-1"></i>Select a device</a>
+    {% endif %}
+    <a href="{{ url_for('appliances.index') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-server me-1"></i>Appliances</a>
+  </div>
+</div>
+{% endblock %}

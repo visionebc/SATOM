@@ -81,6 +81,19 @@
     {{ 'PRODUCTION' if _is_prod else 'DEVELOPMENT' }}
   </span>
 
+  {# HA node role (Primary/Standby)  only meaningful in HA mode #}
+  {% if ha_mode == 'ha' %}
+  {% set _is_primary = node_role == 'primary' %}
+  {% set _is_standby = node_role == 'standby' %}
+  {% set _ha_c = '#10b981' if _is_primary else ('#3b82f6' if _is_standby else '#64748b') %}
+  <span class="fw-harole-badge"
+        title="HA node {{ node_name }}  {{ 'read-write primary' if _is_primary else ('read-only standby' if _is_standby else 'role unknown') }}"
+        style="display:inline-flex;align-items:center;gap:6px;margin-left:10px;padding:3px 12px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.9px;text-transform:uppercase;white-space:nowrap;color:#eaf0fb;background:{{ _ha_c }}26;border:1px solid {{ _ha_c }};">
+    <i class="bi {{ 'bi-star-fill' if _is_primary else ('bi-hdd-stack' if _is_standby else 'bi-question-circle') }}" style="color:{{ _ha_c }};"></i>
+    {{ 'PRIMARY' if _is_primary else ('STANDBY' if _is_standby else 'NODE ?') }}
+  </span>
+  {% endif %}
+
   <div class="fw-topbar-spacer"></div>
 
   {% if product.key == 'fortiweb' %}

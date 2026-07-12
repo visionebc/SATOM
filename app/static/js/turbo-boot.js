@@ -60,26 +60,41 @@
   };
 
   // ── Navigation loading feedback (progress bar + content dim) ─────────────────
-  origAdd('turbo:visit', function () {
+  // Selecting an ADOM (/product/enter/<key>) swaps the whole chrome -- topbar
+  // banner, sidebar menu, device switcher -- not just #fw-main, so a fade
+  // limited to the content column is invisible. For ADOM switches cross-fade
+  // the ENTIRE page; ordinary visits keep the light content-only fade so
+  // normal navigation stays snappy.
+  var fullPageNext = false;
+  origAdd('turbo:visit', function (e) {
+    var url = (e && e.detail && e.detail.url) || '';
+    fullPageNext = url.indexOf('/product/enter/') !== -1;
     var main = document.getElementById('fw-main');
     if (main) main.classList.add('fw-navigating');
   });
   origAdd('turbo:load', function () {
     var main = document.getElementById('fw-main');
-    if (!main) return;
-    main.classList.remove('fw-navigating');
-    // Cross-fade the freshly-rendered page in. Self-clean on animationend so
-    // it re-triggers on the next visit.
-    main.classList.add('fw-entering');
-    main.addEventListener('animationend', function handler() {
-      main.classList.remove('fw-entering');
-      main.removeEventListener('animationend', handler);
+    if (main) main.classList.remove('fw-navigating');
+    var whole = fullPageNext;
+    fullPageNext = false;
+    var target = whole ? document.body : main;
+    if (!target) return;
+    var cls = whole ? 'fw-entering-page' : 'fw-entering';
+    // Cross-fade the freshly-rendered view in. Self-clean on animationend;
+    // guard on ev.target so a child's animationend (gradient buttons, skeleton
+    // shimmer) bubbling up cannot cut the page fade short.
+    target.classList.add(cls);
+    target.addEventListener('animationend', function handler(ev) {
+      if (ev.target !== target) return;
+      target.classList.remove(cls);
+      target.removeEventListener('animationend', handler);
     });
   });
-  // Safety: clear dim if render happens without a load (cached pages).
+  // Safety: clear dim/fade if render happens without a load (cached pages).
   origAdd('turbo:before-render', function () {
     var main = document.getElementById('fw-main');
     if (main) main.classList.remove('fw-navigating');
+    document.body.classList.remove('fw-entering-page');
   });
 
   // ── Let file downloads go native (Turbo would try to render the binary) ─────

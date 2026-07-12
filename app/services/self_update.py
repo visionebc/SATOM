@@ -294,7 +294,8 @@ def reconcile_interlock(status: dict | None) -> None:
 # enqueue + status (the privileged runner does the actual work)
 # ---------------------------------------------------------------------------
 def request_update(target: str, by: str, *, do_pip: bool = True,
-                   do_migrate: bool = True) -> str:
+                   do_migrate: bool = True, role: str | None = None,
+                   origin: str = "manual") -> str:
     REQ_DIR.mkdir(parents=True, exist_ok=True)
     STATUS_DIR.mkdir(parents=True, exist_ok=True)
     uid = datetime.utcnow().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
@@ -307,13 +308,15 @@ def request_update(target: str, by: str, *, do_pip: bool = True,
         "requested_by": by,
         "requested_at": datetime.utcnow().isoformat() + "Z",
         "node": this_node_name(),
-        "role": node_role(),
+        "role": role or node_role(),
+        "origin": origin,
     }
     # A "queued" status up front so the UI has something to poll immediately.
     (STATUS_DIR / (uid + ".json")).write_text(json.dumps({
         "id": uid, "state": "queued", "steps": [],
         "requested_by": by, "target": req["target"],
         "node": req["node"], "role": req["role"],
+        "origin": req.get("origin", "manual"),
         "updated_at": datetime.utcnow().isoformat() + "Z"}))
     # Write to a hidden temp then rename INTO the watched dir → atomic trigger.
     tmp = REQ_DIR / ("." + uid + ".tmp")

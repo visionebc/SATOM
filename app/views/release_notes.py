@@ -37,6 +37,7 @@ from flask_login import current_user, login_required
 from ..auth.decorators import require_permission
 from ..models import Permission
 from ..services import release_notes as rn
+from ..services import notifications as notify
 from ..services.audit import log_action
 
 bp = Blueprint("release_notes", __name__, url_prefix="/release-notes")
@@ -281,7 +282,23 @@ def sync():
 # --------------------------------------------------------------------------- #
 #  🔎 Scan from Fortinet (background thread + worker-shared progress file)       #
 # --------------------------------------------------------------------------- #
-def _do_scan(app, *, product, majors, use_direct, fc_endpoint, fc_key, publish, username):
+def _notify_scan_done(user_id, product, *, ok, result=None, error=None, lines=None):
+    """Raise a bell notification for the admin who launched the scan, so a scan
+    that finishes after they closed the modal ('Run in background') still surfaces.
+    Product-scoped so it lights the bell only in the matching ADOM. Best-effort."""
+    plabel = {"fortiweb": "FortiWeb", "fortiadc": "FortiADC"}.get(product, "Fortinet")
+    tail = "\n".join((lines or [])[-8:]) or None
+    if ok:
+        r = result or {}
+        title = (f"{plabel} release-notes scan done — "
+                 f"{r.get('scanned', 0)} version(s), {r.get('new_issues', 0)} new issue(s)")
+        notify.push(user_id, title, kind="success", body=tail, product=product)
+    else:
+        notify.push(user_id, f"{plabel} release-notes scan failed",
+                    kind="error", body=(error or tail), product=product)
+
+
+def _do_scan(app, *, product, majors, use_direct, fc_endpoint, fc_key, publish, username, user_id):
     with app.app_context():
         path = _scan_path()
         root = _corpus_root()
@@ -328,6 +345,8 @@ def _do_scan(app, *, product, majors, use_direct, fc_endpoint, fc_key, publish, 
             st = _scan_read(path)
             st.update(running=False, result=result, error=None, finished_at=_now())
             _scan_write(path, st)
+            _notify_scan_done(user_id, product, ok=True, result=result,
+                              lines=st.get("lines"))
             try:
                 log_action("release_notes.scan", target=username,
                            extra={"scanned": result["scanned"],
@@ -339,6 +358,9 @@ def _do_scan(app, *, product, majors, use_direct, fc_endpoint, fc_key, publish, 
             st.update(running=False, error=f"{type(exc).__name__}: {exc}",
                       finished_at=_now())
             _scan_write(path, st)
+            _notify_scan_done(user_id, product, ok=False,
+                              error=f"{type(exc).__name__}: {exc}",
+                              lines=st.get("lines"))
 
 
 @bp.route("/scan", methods=["POST"])
@@ -373,7 +395,7 @@ def scan():
         target=_do_scan, args=(app,),
         kwargs=dict(product=product, majors=majors, use_direct=use_direct,
                     fc_endpoint=fc_endpoint, fc_key=fc_key, publish=publish,
-                    username=current_user.username),
+                    username=current_user.username, user_id=current_user.id),
         daemon=True)
     t.start()
     return jsonify({"started": True}), 202

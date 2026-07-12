@@ -7,7 +7,8 @@ before the mark so the just-arrived rows still stand out.
 """
 from __future__ import annotations
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash
+from flask import (Blueprint, render_template, redirect, url_for, request,
+                   flash, jsonify)
 from flask_login import login_required, current_user
 
 from ..services import notifications as notify
@@ -30,6 +31,14 @@ def index():
     notify.mark_all_read(uid)
     return render_template("notifications/index.html",
                            notifications=items, unread_ids=unread_ids)
+
+
+@bp.route("/unread", methods=["GET"])
+@login_required
+def unread():
+    """Lightweight JSON count for the top-bar bell poller (base.html). Product-
+    scoped exactly like the server-rendered badge, so it matches on every ADOM."""
+    return jsonify({"count": notify.unread_count(_me())})
 
 
 @bp.route("/clear", methods=["POST"])

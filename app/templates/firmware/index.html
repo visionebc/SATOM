@@ -20,14 +20,6 @@
       Upload and keep {{ fw_products | map(attribute='name') | join(' / ') }} firmware images (<span class="mono">.out</span>)
       for use in appliance upgrades.
     </p>
-    {% if header_dev %}
-    <div class="d-flex flex-wrap align-items-center gap-2 mt-2" style="font-size:12px;">
-      <span class="fw-badge fw-badge-secondary" title="Device host"><i class="bi bi-hdd-network me-1"></i>{{ header_dev.host }}{% if header_dev.port %}:{{ header_dev.port }}{% endif %}</span>
-      <span class="fw-badge fw-badge-primary" title="Linea / Line">Line: {{ header_dev.line or 'â' }}</span>
-      <span class="fw-badge fw-badge-primary" title="Zona / Zone">Zone: {{ header_dev.zone or 'â' }}</span>
-      <span class="fw-badge fw-badge-primary" title="Departamento / Department">Dept: {{ header_dev.department or 'â' }}</span>
-    </div>
-    {% endif %}
   </div>
 </div>
 

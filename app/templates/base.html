@@ -96,7 +96,7 @@
 
   <div class="fw-topbar-spacer"></div>
 
-  {% if product.key in ('fortiweb', 'fortiadc') %}
+  {% if product.key in ('fortiweb', 'fortiadc', 'fortianalyzer') %}
   <!-- Device context (zone/line/dept/host) — centered in the header -->
   <button class="fw-topbar-btn fw-device-switch fw-device-center" type="button"
           title="{% if current_appliance %}{{ current_appliance.host }} — {% endif %}Architecture / switch device"

@@ -175,6 +175,74 @@ def _write_request(op: str, urn: str, mkey_fld: str, mkey: str, fields: dict):
     raise ValueError(f'unknown op {op!r}')
 
 
+# --------------------------------------------------------------------------- #
+#  Device Manager toolbar — device-authorization commands (NOT table CRUD).    #
+#  Same dry-run-default contract as writes: the endpoint returns the exact      #
+#  JSON-RPC ``exec`` it would send; a real device command needs apply=true,     #
+#  requires CONFIG_WRITE and is audited. Only the fixed verbs below are         #
+#  reachable. Verified live on faz01 7.6.7: ``add/dev-list`` is accepted        #
+#  (returns a taskid) — ``del`` shapes are best-effort and the device's own     #
+#  error is surfaced verbatim, never faked as success.                          #
+# --------------------------------------------------------------------------- #
+_DEVICE_ACTIONS = ('authorize', 'delete')
+
+
+def _device_action_request(action: str, names: list, adom: str):
+    """(verb, url, data) for one Device Manager command."""
+    if action == 'authorize':
+        return ('exec', '/dvm/cmd/add/dev-list',
+                {'adom': adom, 'flags': ['create_task', 'nonblocking'],
+                 'add-dev-list': [{'name': n} for n in names]})
+    if action == 'delete':
+        return ('exec', '/dvm/cmd/del/dev-list',
+                {'adom': adom,
+                 'del-dev-member-list': [{'name': n} for n in names]})
+    raise ValueError(f'unknown device action {action!r}')
+
+
+@bp.route('/device-action', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def device_action():
+    """Device Manager toolbar (Authorize / Delete): dry-run-default exec."""
+    appliance = _current_faz()
+    if appliance is None:
+        return jsonify(ok=False, error='no FortiAnalyzer selected'), 400
+    body = request.get_json(silent=True) or {}
+    action = (body.get('action') or '').strip()
+    names = [str(n).strip() for n in (body.get('names') or []) if str(n).strip()]
+    adom = (str(body.get('adom') or '').strip() or 'root')
+    do_apply = bool(body.get('apply'))
+
+    if action not in _DEVICE_ACTIONS:
+        return jsonify(ok=False, error=f'unknown action: {action}'), 400
+    if not names:
+        return jsonify(ok=False, error='no devices selected'), 400
+
+    try:
+        verb, url, data = _device_action_request(action, names, adom)
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+
+    if not do_apply:
+        return jsonify(ok=True, dry_run=True,
+                       request={'method': verb, 'path': url, 'body': data})
+
+    client = FortiAnalyzerClient(appliance, timeout=30.0)
+    try:
+        out, err = client.call(verb, url, data)
+    finally:
+        try:
+            client.logout()
+        except Exception:  # noqa: BLE001
+            pass
+    if err:
+        return jsonify(ok=False, error=err), 502
+    log_action(f'faz.device.{action}', target=','.join(names),
+               detail={'adom': adom}, appliance_id=appliance.id)
+    return jsonify(ok=True, dry_run=False, result=out)
+
+
 @bp.route('/write/<logical>', methods=['POST'])
 @login_required
 @require_permission(Permission.CONFIG_WRITE)

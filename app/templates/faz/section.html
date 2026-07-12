@@ -60,6 +60,7 @@
 {% endif %}
 
 {% set editable = tab and tab.writable and can_write and not tab.error %}
+{% set is_devices = tab and tab.logical == 'dvmdb_device' and not tab.error %}
 
 {% if tab and not tab.error %}
   {% if tab.kv is not none %}
@@ -97,6 +98,27 @@
     <button type="button" class="btn btn-sm btn-fw-primary" id="faz-create">
       <i class="bi bi-plus-lg me-1"></i>Create New</button>
     {% endif %}
+    {% if is_devices %}
+    <div class="btn-group btn-group-sm" role="group" aria-label="Device actions">
+      {% if can_write %}
+      <button type="button" class="btn btn-outline-success" id="fazdev-authorize" disabled
+              title="Authorize the selected device(s) — exec /dvm/cmd/add/dev-list">
+        <i class="bi bi-check2-circle me-1"></i>Authorize</button>{% endif %}
+      <button type="button" class="btn btn-outline-light" id="fazdev-hide" disabled
+              title="Hide the selected device(s) from this view">
+        <i class="bi bi-eye-slash me-1"></i>Hide</button>
+      {% if can_write %}
+      <button type="button" class="btn btn-outline-danger" id="fazdev-delete" disabled
+              title="Delete the selected device(s) — exec /dvm/cmd/del/dev-list">
+        <i class="bi bi-trash me-1"></i>Delete</button>{% endif %}
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-showhidden"
+            title="Toggle showing devices you have hidden">
+      <i class="bi bi-eye me-1"></i>Display Hidden Devices</button>
+    <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-fullscreen"
+            title="Full screen">
+      <i class="bi bi-arrows-fullscreen me-1"></i>Full Screen</button>
+    {% endif %}
     <div class="fw-search-box">
       <i class="bi bi-search search-icon"></i>
       <input type="text" id="faz-obj-search" placeholder="Search…">
@@ -114,6 +136,7 @@
     <table class="fw-table" id="faz-obj-table">
       <thead>
         <tr>
+          {% if is_devices %}<th style="width:34px;text-align:center;"><input type="checkbox" id="fazdev-all" title="Select all"></th>{% endif %}
           {% for col in tab.columns %}<th>{{ col.replace('_',' ').replace('-',' ')|title }}</th>{% endfor %}
           {% if editable %}<th style="width:110px;text-align:right;">Actions</th>{% endif %}
         </tr>
@@ -121,7 +144,8 @@
       <tbody>
         {% if tab.rows %}
           {% for r in tab.rows %}
-          <tr>
+          <tr{% if is_devices %} class="fazdev-row" data-devname="{{ r.get(tab.mkey, '') }}" data-devhidden="{{ '1' if r.get('hidden') else '0' }}"{% endif %}>
+            {% if is_devices %}<td style="text-align:center;"><input type="checkbox" class="fazdev-sel" value="{{ r.get(tab.mkey, '') }}"></td>{% endif %}
             {% for col in tab.columns %}
             {% set v = r.get(col) %}
             <td>
@@ -154,7 +178,7 @@
           </tr>
           {% endfor %}
         {% else %}
-          <tr><td colspan="{{ (tab.columns|length or 1) + (1 if editable else 0) }}"><div class="fw-empty-state py-4">
+          <tr><td colspan="{{ (tab.columns|length or 1) + (1 if editable else 0) + (1 if is_devices else 0) }}"><div class="fw-empty-state py-4">
             <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi {{ item.icon }}"></i></div>
             <div class="fw-empty-state-title">No {{ tab.label }} entries</div>
             <div class="fw-empty-state-text">The device returned an empty set for
@@ -356,4 +380,156 @@
 })();
 {% endif %}
 </script>
+
+{% if is_devices %}
+{# ---- Device Manager toolbar: hide (client pref) + authorize/delete dry-run ---- #}
+{% if can_write %}
+<div id="fazdev-modal" style="display:none;position:fixed;inset:0;z-index:1080;background:rgba(2,6,17,.72);backdrop-filter:blur(3px);">
+  <div class="fw-card" style="max-width:640px;margin:8vh auto;max-height:80vh;display:flex;flex-direction:column;padding:0;">
+    <div class="d-flex align-items-center justify-content-between" style="padding:14px 18px;border-bottom:1px solid rgba(148,163,184,.12);">
+      <strong id="fazdev-modal-title">Device action</strong>
+      <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-modal-close"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div id="fazdev-modal-body" style="padding:16px 18px;overflow:auto;"></div>
+    <div style="padding:12px 18px;border-top:1px solid rgba(148,163,184,.12);">
+      <div id="fazdev-modal-result"></div>
+      <div class="d-flex gap-2 mt-2">
+        <button type="button" class="btn btn-sm btn-fw-primary" id="fazdev-modal-preview">Preview request</button>
+        <span class="text-muted ms-auto align-self-center" style="font-size:11px;">
+          Dry-run first — nothing is sent to the device until you apply.</span>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var CANW = {{ 'true' if can_write else 'false' }};
+  var HKEY = 'faz-hidden-{{ appliance.id if appliance else 0 }}';
+  var table = document.getElementById('faz-obj-table');
+  if (!table) return;
+  var showHidden = false;
+  function hiddenSet() {
+    try { return new Set(JSON.parse(localStorage.getItem(HKEY) || '[]')); }
+    catch (e) { return new Set(); }
+  }
+  function saveHidden(set) { localStorage.setItem(HKEY, JSON.stringify(Array.from(set))); }
+  function selNames() {
+    return Array.from(table.querySelectorAll('.fazdev-sel:checked')).map(function (c) { return c.value; });
+  }
+  function refreshButtons() {
+    var n = selNames().length;
+    ['fazdev-authorize', 'fazdev-delete', 'fazdev-hide'].forEach(function (id) {
+      var b = document.getElementById(id);
+      if (b) b.disabled = (n === 0);
+    });
+  }
+  function applyHidden() {
+    var set = hiddenSet();
+    table.querySelectorAll('tr.fazdev-row').forEach(function (tr) {
+      var isHidden = tr.getAttribute('data-devhidden') === '1' || set.has(tr.getAttribute('data-devname'));
+      tr.classList.toggle('fazdev-is-hidden', isHidden);
+      tr.style.opacity = (isHidden && showHidden) ? '0.55' : '';
+      tr.style.display = (isHidden && !showHidden) ? 'none' : '';
+    });
+  }
+  // selection wiring
+  table.querySelectorAll('.fazdev-sel').forEach(function (c) { c.addEventListener('change', refreshButtons); });
+  var all = document.getElementById('fazdev-all');
+  if (all) all.addEventListener('change', function () {
+    table.querySelectorAll('tr.fazdev-row:not([style*="display: none"]) .fazdev-sel').forEach(function (c) { c.checked = all.checked; });
+    refreshButtons();
+  });
+  // Hide / Unhide (per-admin display preference — the dvmdb hidden field is not writable)
+  var hideBtn = document.getElementById('fazdev-hide');
+  if (hideBtn) hideBtn.addEventListener('click', function () {
+    var set = hiddenSet();
+    selNames().forEach(function (nm) { if (set.has(nm)) set.delete(nm); else set.add(nm); });
+    saveHidden(set);
+    table.querySelectorAll('.fazdev-sel:checked').forEach(function (c) { c.checked = false; });
+    refreshButtons(); applyHidden();
+  });
+  // Display Hidden Devices toggle
+  var showBtn = document.getElementById('fazdev-showhidden');
+  if (showBtn) showBtn.addEventListener('click', function () {
+    showHidden = !showHidden;
+    showBtn.classList.toggle('active', showHidden);
+    showBtn.classList.toggle('btn-fw-primary', showHidden);
+    showBtn.classList.toggle('btn-outline-light', !showHidden);
+    applyHidden();
+  });
+  // Full Screen
+  var fsBtn = document.getElementById('fazdev-fullscreen');
+  if (fsBtn) fsBtn.addEventListener('click', function () {
+    var wrap = table.closest('.fw-table-wrapper') || table;
+    if (document.fullscreenElement) { document.exitFullscreen(); }
+    else if (wrap.requestFullscreen) { wrap.requestFullscreen(); }
+  });
+
+  // Authorize / Delete — dry-run -> apply
+  if (CANW) {
+    var ACT_URL = '{{ url_for('faz.device_action') }}';
+    var CSRF = document.querySelector('meta[name="csrf-token"]').content;
+    var modal = document.getElementById('fazdev-modal');
+    var mTitle = document.getElementById('fazdev-modal-title');
+    var mBody = document.getElementById('fazdev-modal-body');
+    var mResult = document.getElementById('fazdev-modal-result');
+    var pending = null; // {action, names}
+    function esc(x) {
+      return String(x == null ? '' : x).replace(/[&<>"']/g, function (c) {
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+      });
+    }
+    function post(apply) {
+      return fetch(ACT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+        body: JSON.stringify({ action: pending.action, names: pending.names, apply: !!apply })
+      }).then(function (r) { return r.json(); });
+    }
+    function show(j) {
+      if (!j.ok) {
+        mResult.innerHTML = '<div class="fw-alert fw-alert-danger" style="font-size:12px;">' + esc(j.error || 'failed') + '</div>';
+        return;
+      }
+      if (j.dry_run) {
+        var req = j.request || {};
+        mResult.innerHTML = '<div class="fw-alert fw-alert-warning" style="font-size:12px;">' +
+          '<div class="text-muted mb-1">JSON-RPC <strong>' + esc(req.method) + '</strong> ' + esc(req.path) + '</div>' +
+          '<pre class="mb-2" style="max-height:200px;overflow:auto;font-size:11px;">' + esc(JSON.stringify(req.body, null, 2)) + '</pre>' +
+          '<button type="button" class="btn btn-sm btn-fw-danger" id="fazdev-apply">' +
+          '<i class="bi bi-exclamation-triangle me-1"></i>Apply to device</button></div>';
+        document.getElementById('fazdev-apply').onclick = function () {
+          post(true).then(show);
+        };
+      } else {
+        mResult.innerHTML = '<div class="fw-alert fw-alert-success" style="font-size:12px;">' +
+          '<i class="bi bi-check-circle me-1"></i>Sent to device — reloading…</div>';
+        setTimeout(function () { window.location.reload(); }, 900);
+      }
+    }
+    function openModal(action, names) {
+      pending = { action: action, names: names };
+      mTitle.textContent = (action === 'authorize' ? 'Authorize' : 'Delete') + ' device(s)';
+      mBody.innerHTML = '<div class="fw-alert ' + (action === 'delete' ? 'fw-alert-danger' : 'fw-alert-warning') +
+        '" style="font-size:13px;">This will run <code>' +
+        (action === 'authorize' ? 'exec /dvm/cmd/add/dev-list' : 'exec /dvm/cmd/del/dev-list') +
+        '</code> against <strong>' + esc(names.join(', ')) + '</strong>. Preview the exact request first.</div>';
+      mResult.innerHTML = '';
+      modal.style.display = 'block';
+    }
+    document.getElementById('fazdev-modal-close').onclick = function () { modal.style.display = 'none'; };
+    modal.addEventListener('click', function (e) { if (e.target === modal) modal.style.display = 'none'; });
+    document.getElementById('fazdev-modal-preview').onclick = function () { post(false).then(show); };
+    var aBtn = document.getElementById('fazdev-authorize');
+    if (aBtn) aBtn.addEventListener('click', function () { var n = selNames(); if (n.length) openModal('authorize', n); });
+    var dBtn = document.getElementById('fazdev-delete');
+    if (dBtn) dBtn.addEventListener('click', function () { var n = selNames(); if (n.length) openModal('delete', n); });
+  }
+
+  refreshButtons();
+  applyHidden();
+})();
+</script>
+{% endif %}
 {% endblock %}

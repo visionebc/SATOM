@@ -4,7 +4,7 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-hdd-stack me-2 text-accent"></i>System Backup &amp; Restore</h1>
-    <p class="text-muted mb-0" style="font-size:13px;">Back up the whole instance — PostgreSQL (pg_dump) + the per-device JSON tree — and restore from a bundle. Three copies: this node, the standby (rsync), and git (versioned).</p>
+    <p class="text-muted mb-0" style="font-size:13px;">Everything needed to roll this system back: application <strong>code</strong> (git → self-update queue), <strong>database</strong> (pg_dump bundles), <strong>device configs</strong> (reports/ in git + device-pushed backups on the external backup server) and <strong>firmware</strong> (binaries on the backup server, pullable into the console).</p>
   </div>
 </div>
 
@@ -62,7 +62,7 @@
   </div>
 
   <div class="col-lg-7">
-    <div class="card mb-3"><div class="card-header"><strong>Existing backups (this node)</strong></div>
+    <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-database me-1"></i>Database backups — pg_dump bundles (this node)</strong></div>
       <div class="card-body">
         {% if not backups %}
           <p class="text-muted small mb-0">No backups yet.</p>
@@ -122,7 +122,96 @@
   </div>
 </div>
 
-<div class="card mb-3"><div class="card-header"><strong><i class="bi bi-clock-history me-1"></i>Versions in git — compare / rollback</strong></div>
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-code-square me-1"></i>Application code — versions &amp; rollback</strong></div>
+      <div class="card-body">
+        <p class="small text-muted mb-2">Code is versioned in the app repo (Gitea). Rolling back enqueues the target commit on the <em>self-update</em> queue — the privileged runner does checkout + pip + migrate + service restart on this node (sync the standby the same way afterwards).</p>
+        {% if not code_history %}
+          <p class="text-muted small mb-0">No git history available.</p>
+        {% else %}
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead><tr><th>Commit</th><th>Date</th><th>Subject</th><th class="text-end"></th></tr></thead>
+          <tbody>
+          {% for c in code_history %}
+            <tr {% if c.current %}class="table-active"{% endif %}>
+              <td class="small font-monospace">{{ c.hash }}{% if c.current %} <span class="badge bg-success">running</span>{% endif %}</td>
+              <td class="small">{{ c.date }}</td>
+              <td class="small">{{ c.subject|truncate(60) }}</td>
+              <td class="text-end">
+                {% if not c.current %}
+                <button class="btn btn-outline-danger btn-sm py-0" data-bs-toggle="modal" data-bs-target="#codeRollbackModal" data-js="code-rollback" data-sha="{{ c.hash }}" data-subject="{{ c.subject|e }}">
+                  <i class="bi bi-arrow-counterclockwise"></i></button>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-hdd-network me-1"></i>External backup server{% if bk.host %} — {{ bk.host }}{% endif %}</strong></div>
+      <div class="card-body">
+        {% if not bk.configured %}
+          <p class="text-muted small mb-0">Not configured — set host / credentials in <a href="{{ url_for('settings.index') }}#tab-sotbackup">Settings → SoT &amp; Backup</a>.</p>
+        {% elif not bk.reachable %}
+          <div class="alert alert-danger small py-2 mb-0"><i class="bi bi-x-circle me-1"></i>{{ bk.host }}:{{ bk.port }} unreachable — {{ bk.error }}</div>
+        {% else %}
+        <p class="small text-muted mb-2">Config backups the appliances push here themselves (<code>config system backup</code>, SFTP) — independent of this app and of both HA nodes.</p>
+        <table class="table table-sm table-hover align-middle mb-3">
+          <thead><tr><th>Device</th><th>Backups</th><th>Latest push (UTC)</th></tr></thead>
+          <tbody>
+          {% for d in bk.devices %}
+            <tr>
+              <td class="small font-monospace">{{ d.device }}</td>
+              <td class="small">{{ d.count }}</td>
+              <td class="small">{{ d.latest or '—' }}{% if d.files %} <span class="text-muted">({{ d.files[0].name|truncate(40) }}, {{ (d.files[0].size/1048576)|round(1) }} MB)</span>{% endif %}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+
+        <h6 class="small"><i class="bi bi-cpu me-1"></i>Firmware on the backup server
+          {% if fw_repo.url %}<span class="text-muted fw-normal">· manifest SoT: <a href="{{ fw_repo.url }}" target="_blank" rel="noopener" class="font-monospace">{{ fw_repo.url|replace('https://','')|replace('http://','')|truncate(48) }}</a></span>{% endif %}</h6>
+        {% if not bk.firmware %}
+          <p class="text-muted small mb-0">No <code>.out</code> images under the firmware folder yet.</p>
+        {% else %}
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead><tr><th>Image</th><th>Size</th><th>Uploaded</th><th class="text-end"></th></tr></thead>
+          <tbody>
+          {% for f in bk.firmware %}
+            <tr>
+              <td class="small font-monospace">{{ f.name|truncate(46) }}</td>
+              <td class="small">{{ (f.size/1048576)|round(1) }} MB</td>
+              <td class="small">{{ f.mtime }}</td>
+              <td class="text-end">
+                {% if f.name in local_fw %}
+                  <a class="btn btn-outline-success btn-sm py-0" href="{{ url_for('firmware.index') }}" title="already in the local firmware store"><i class="bi bi-check-circle me-1"></i>in console</a>
+                {% else %}
+                <form method="post" action="{{ url_for('system_backup.firmware_pull') }}" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="name" value="{{ f.name }}">
+                  <button class="btn btn-outline-light btn-sm py-0" title="pull to this server for console-driven restore/upgrade"><i class="bi bi-download me-1"></i>Pull</button>
+                </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        <div class="form-text mt-1">Pulled images land in <a href="{{ url_for('firmware.index') }}">Infrastructure → Firmware</a> (sha256-verified) and feed the per-appliance Upgrade / Downgrade actions — the console-driven firmware restore.</div>
+        {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3"><div class="card-header"><strong><i class="bi bi-clock-history me-1"></i>Device configs in git (reports/) — compare / rollback</strong></div>
   <div class="card-body">
     {% if not git_history %}
       <p class="text-muted small mb-0">No commits touching <code>reports/</code> yet — publish once to start the version history.</p>
@@ -183,9 +272,13 @@
             <td>Postgres streaming replication (continuous) + <code>fm-ha-datasync.timer</code> rsync every 5 min (standby pulls; inert on the primary and in standalone mode)</td>
             <td>≈ seconds (DB) / ≤ 5 min (files)</td></tr>
         <tr><td><strong>3. Git (Gitea)</strong></td>
-            <td>Per-device JSON <code>reports/&lt;device&gt;/_config.json</code> — versioned, human-diffable</td>
+            <td>Per-device JSON <code>reports/&lt;device&gt;/_config.json</code> — versioned, human-diffable. Application CODE lives in the same repo; the firmware SoT is a <em>separate</em> repo (manifest only)</td>
             <td>Auto-publish hourly via <code>fm-git-publish.timer</code> (primary only) + on backup creation (default-on checkbox) + the manual button</td>
             <td>≤ 1 h (or on demand)</td></tr>
+        <tr><td><strong>4. External backup server</strong></td>
+            <td>Device-pushed config backups (<code>/configs/&lt;device&gt;/</code>) + firmware <code>.out</code> binaries (<code>/firmware/</code>)</td>
+            <td>The appliances push it THEMSELVES on their own schedule (<code>config system backup</code> → SFTP, e.g. fw6 daily 02:00) — zero dependency on this app or either HA node</td>
+            <td>per device schedule (fw6: ≤ 24 h)</td></tr>
       </tbody>
     </table>
     <p class="text-muted mb-2">Git holds only the JSON source of truth (text, diffable). Binary artifacts — pg_dump bundles and raw device-config exports — deliberately stay OUT of git and travel via rsync to the standby: git is the wrong tool for binary blobs.</p>
@@ -195,7 +288,9 @@
       <li><strong>Whole instance</strong> — pick a bundle above → <em>Restore</em> (type <code>RESTORE</code>). Takes a safety dump first, then <code>pg_restore --clean</code> + replaces <code>reports/</code>. If this node is dead, the same bundles exist on the backup server under <code>/opt/fortinet-manager/data/system_backups/</code>.</li>
       <li><strong>One device's JSON to an older version</strong> — find the commit in <em>Versions in git</em>, verify with <em>Compare</em>, then in Settings → Git run: <code>git checkout &lt;commit&gt; -- reports/&lt;device&gt;/</code> and publish. This rolls back the JSON snapshot only — it does NOT push config to the device (use Templates/Provisioning for that).</li>
       <li><strong>Single appliance config</strong> — use the per-appliance Backups page (vault); device-level restore is currently dry-run gated pending a live canary round-trip.</li>
-      <li><strong>Total loss of both nodes</strong> — clone the repo from Gitea (reports tree = last published state), restore the newest bundle from any surviving copy (downloaded bundle or backup-server disk).</li>
+      <li><strong>Total loss of both nodes</strong> — clone the repo from Gitea (reports tree = last published state), restore the newest bundle from any surviving copy (downloaded bundle, standby disk, or the device-pushed backups on the external backup server).</li>
+      <li><strong>Application code to an older version</strong> — <em>Application code</em> card above → pick the commit → Queue rollback. Goes through the self-update runner (checkout + pip + migrate + restart). Roll the standby the same way afterwards. Note: newer DB schema is not auto-downgraded — pair a code rollback with a database bundle restore when a migration was involved.</li>
+      <li><strong>Firmware</strong> — the <code>.out</code> images live on the external backup server (<code>/firmware/</code>), inventoried in the firmware SoT repo (manifest). <em>Pull</em> brings the image into Infrastructure → Firmware (sha256-verified) and the per-appliance <em>Upgrade / Downgrade</em> action flashes it from the console. A device factory-reset recovery = flash firmware + restore its own pushed config backup from <code>/configs/&lt;device&gt;/</code>.</li>
     </ol>
 
     <h6>Failover notes</h6>
@@ -204,6 +299,29 @@
       <li>Gitea (192.0.2.53) and the standby live on the same Proxmox host (hypervisor03): if hypervisor03 dies, copies 2 and 3 are both offline until it returns — copy 1 (primary, hypervisor06) remains. Bundles downloaded via the button above are the operator-held fourth copy.</li>
       <li>This page probes the peer over HTTP (<code>/healthz/backups</code>) — no SSH between nodes is required to verify the off-box copy.</li>
     </ul>
+  </div></div>
+</div>
+
+<!-- Code rollback confirm modal -->
+<div class="modal fade" id="codeRollbackModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <form method="post" action="{{ url_for('system_backup.code_rollback') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="target" id="cr-target">
+      <div class="modal-header"><h5 class="modal-title">Roll back application code</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="alert alert-warning small"><i class="bi bi-exclamation-triangle me-1"></i>
+          This queues a self-update to <strong id="cr-label"></strong> (<span id="cr-subject" class="fst-italic"></span>).
+          The privileged runner checks out that commit, reinstalls deps, runs migrations and <strong>restarts the service</strong>.
+          Database schema from newer code is NOT downgraded automatically. Type <code>ROLLBACK</code> to confirm.</div>
+        <input type="text" name="confirm" class="form-control" placeholder="ROLLBACK" autocomplete="off">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-danger btn-sm">Queue rollback</button>
+      </div>
+    </form>
   </div></div>
 </div>
 
@@ -237,6 +355,13 @@
     btn.addEventListener('click', function (event) {
       document.getElementById('restore-name').value = this.dataset.name;
       document.getElementById('restore-label').textContent = this.dataset.name;
+    });
+  });
+  document.querySelectorAll('[data-js="code-rollback"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) {
+      document.getElementById('cr-target').value = this.dataset.sha;
+      document.getElementById('cr-label').textContent = this.dataset.sha;
+      document.getElementById('cr-subject').textContent = this.dataset.subject;
     });
   });
 })();

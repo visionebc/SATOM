@@ -47,6 +47,11 @@
     </button>
   </li>
   <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-sotbackup" type="button">
+      <i class="bi bi-hdd-network me-1"></i>SoT &amp; Backup
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-email" type="button">
       <i class="bi bi-envelope me-1"></i>Email
     </button>
@@ -433,6 +438,85 @@
   </div>
 
   {% if is_admin %}
+  <!-- SOT & BACKUP TAB -->
+  <div class="tab-pane fade" id="tab-sotbackup">
+    <form method="post" action="{{ url_for('settings.save_sot_backup') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row g-3">
+        <div class="col-lg-6">
+          <div class="fw-card">
+            <div class="fw-card-header">
+              <i class="bi bi-cpu me-1"></i>Firmware source-of-truth repository
+            </div>
+            <div class="p-3">
+              <p class="text-muted" style="font-size:13px;">A <strong>separate</strong> git repo from the application code — it versions the firmware <em>manifest</em> (filenames, versions, sha256, storage location). The <code>.out</code> binaries themselves stay on the backup server below; git is the wrong tool for multi-hundred-MB blobs.</p>
+              <div class="mb-3">
+                <label class="form-label">Repository URL</label>
+                <input type="url" name="fw_repo_url" class="form-control fw-form-control font-monospace"
+                       value="{{ sot_firmware_repo.url }}" placeholder="https://git.example.net/visionebc/fortinet-firmware.git">
+              </div>
+              <div class="mb-2" style="max-width:220px;">
+                <label class="form-label">Branch</label>
+                <input type="text" name="fw_repo_branch" class="form-control fw-form-control font-monospace"
+                       value="{{ sot_firmware_repo.branch }}" placeholder="main">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-6">
+          <div class="fw-card">
+            <div class="fw-card-header">
+              <i class="bi bi-hdd-network me-1"></i>Backup server access (SFTP)
+            </div>
+            <div class="p-3">
+              <p class="text-muted" style="font-size:13px;">The external box the Fortinet appliances push their scheduled config backups to (<code>config system backup</code>) and where firmware binaries live. This app connects read-mostly: inventory on the System Backup page + pulling firmware for console-driven restores.</p>
+              <div class="row g-2 mb-2">
+                <div class="col-8">
+                  <label class="form-label">Host</label>
+                  <input type="text" name="host" class="form-control fw-form-control font-monospace"
+                         value="{{ sot_backup_server.host }}" placeholder="backup-server.example.net">
+                </div>
+                <div class="col-4">
+                  <label class="form-label">Port</label>
+                  <input type="number" name="port" class="form-control fw-form-control" value="{{ sot_backup_server.port }}">
+                </div>
+              </div>
+              <div class="row g-2 mb-2">
+                <div class="col-6">
+                  <label class="form-label">Username</label>
+                  <input type="text" name="username" class="form-control fw-form-control font-monospace"
+                         value="{{ sot_backup_server.username }}" placeholder="fmbackup">
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Password</label>
+                  <input type="password" name="password" class="form-control fw-form-control"
+                         placeholder="{{ 'Leave blank to keep current' if sot_backup_server.configured else '' }}" autocomplete="new-password">
+                </div>
+              </div>
+              <div class="row g-2 mb-3">
+                <div class="col-6">
+                  <label class="form-label">Config backups path</label>
+                  <input type="text" name="config_path" class="form-control fw-form-control font-monospace" value="{{ sot_backup_server.config_path }}">
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Firmware path</label>
+                  <input type="text" name="firmware_path" class="form-control fw-form-control font-monospace" value="{{ sot_backup_server.firmware_path }}">
+                </div>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-light" id="sot-test-btn"><i class="bi bi-plug me-1"></i>Test connection</button>
+              <span id="sot-test-out" class="ms-2" style="font-size:13px;"></span>
+              <div class="form-text mt-2">The password is stored Fernet-encrypted. Paths are as seen inside the SFTP session (the server chroots the backup user).</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="mt-3">
+        <button type="submit" class="btn fw-btn-primary btn-sm"><i class="bi bi-save me-1"></i>Save SoT &amp; Backup settings</button>
+      </div>
+    </form>
+  </div>
+
   <!-- USERS TAB -->
   <div class="tab-pane fade" id="tab-users">
     {% include 'users/_panel.html' %}
@@ -1686,6 +1770,23 @@ function gitConsoleRun() {
 document.addEventListener('DOMContentLoaded', function() {
   var gitTabBtn = document.querySelector('[data-bs-target="#tab-git"]');
   if (gitTabBtn) { gitTabBtn.addEventListener('shown.bs.tab', function() { gitRefresh(); }); }
+  var sotBtn = document.getElementById('sot-test-btn');
+  if (sotBtn) sotBtn.addEventListener('click', function() {
+    var out = document.getElementById('sot-test-out');
+    var csrfMeta = document.querySelector('meta[name=csrf-token]');
+    sotBtn.disabled = true;
+    out.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Connecting…</span>';
+    fetch('/settings/sot-backup/test', {method: 'POST',
+        headers: {'X-CSRFToken': csrfMeta ? csrfMeta.content : ''}})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        out.innerHTML = d.ok
+          ? '<span class="text-success"><i class="bi bi-check-circle me-1"></i>' + d.detail + '</span>'
+          : '<span class="text-danger"><i class="bi bi-x-circle me-1"></i>' + d.detail + '</span>';
+      })
+      .catch(function(e){ out.innerHTML = '<span class="text-danger">Error: ' + e.message + '</span>'; })
+      .finally(function(){ sotBtn.disabled = false; });
+  });
 });
 
 function emailToggleMode() {

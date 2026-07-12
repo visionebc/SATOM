@@ -21,6 +21,7 @@ from ..models import Appliance
 
 SESSION_KEY = "appliance_id"           # FortiWeb slot (legacy key, kept)
 SESSION_KEY_ADC = "appliance_id_adc"   # FortiADC slot
+SESSION_KEY_FAZ = "appliance_id_faz"   # FortiAnalyzer slot
 _G_CACHE = "_current_appliance"
 
 
@@ -30,12 +31,22 @@ def _is_adc(appl: Appliance) -> bool:
 
 def _active_key() -> str:
     """The slot the active session product reads (global reads FortiWeb's)."""
-    from .product_scope import session_product, FORTIADC
-    return SESSION_KEY_ADC if session_product() == FORTIADC else SESSION_KEY
+    from .product_scope import session_product, FORTIADC, FORTIANALYZER
+    p = session_product()
+    if p == FORTIADC:
+        return SESSION_KEY_ADC
+    if p == FORTIANALYZER:
+        return SESSION_KEY_FAZ
+    return SESSION_KEY
 
 
 def _key_for(appl: Appliance) -> str:
-    return SESSION_KEY_ADC if _is_adc(appl) else SESSION_KEY
+    kind = appl.kind or "fortiweb"
+    if kind == "fortiadc":
+        return SESSION_KEY_ADC
+    if kind == "fortianalyzer":
+        return SESSION_KEY_FAZ
+    return SESSION_KEY
 
 
 def current_appliance() -> Appliance | None:

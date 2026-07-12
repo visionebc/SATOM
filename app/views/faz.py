@@ -60,8 +60,14 @@ def index():
     """FortiAnalyzer dashboard + device picker."""
     groups = faz_menu.menu()
     n_items = sum(len(g.items) for g in groups)
-    return render_template('faz/index.html', fleet=_faz_fleet(), groups=groups,
-                           n_items=n_items, current=_current_faz())
+    fleet = _faz_fleet()
+    current = _current_faz()
+    # With a single FAZ appliance the header should always describe it, even
+    # before an explicit pick -- otherwise the device metadata banner looks
+    # 'missing'. Selection state (picker) still tracks the real session slot.
+    header_dev = current or (fleet[0] if len(fleet) == 1 else None)
+    return render_template('faz/index.html', fleet=fleet, groups=groups,
+                           n_items=n_items, current=current, header_dev=header_dev)
 
 
 @bp.route('/use/<int:id>')

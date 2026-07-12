@@ -59,10 +59,17 @@
 </ul>
 {% endif %}
 
+{% set editable = tab and tab.writable and can_write and not tab.error %}
+
 {% if tab and not tab.error %}
   {% if tab.kv is not none %}
   {# single config object → key/value card (CLI 'get' style) #}
   <div class="fw-toolbar mb-2 d-flex align-items-center gap-2">
+    {% if editable %}
+    <button type="button" class="btn btn-sm btn-fw-primary" id="faz-edit-kv"
+            data-fields='{{ tab.kv_fields|tojson|forceescape }}'>
+      <i class="bi bi-pencil me-1"></i>Edit</button>
+    {% endif %}
     <span class="text-muted ms-auto" style="font-size:12px;">
       {{ tab.kv|length }} setting(s) · <code style="font-size:11px;">{{ tab.urn }}</code></span>
   </div>
@@ -86,6 +93,10 @@
   </div>
   {% else %}
   <div class="fw-toolbar mb-2 d-flex align-items-center gap-2 flex-wrap">
+    {% if editable and tab.can_create %}
+    <button type="button" class="btn btn-sm btn-fw-primary" id="faz-create">
+      <i class="bi bi-plus-lg me-1"></i>Create New</button>
+    {% endif %}
     <div class="fw-search-box">
       <i class="bi bi-search search-icon"></i>
       <input type="text" id="faz-obj-search" placeholder="Search…">
@@ -104,6 +115,7 @@
       <thead>
         <tr>
           {% for col in tab.columns %}<th>{{ col.replace('_',' ').replace('-',' ')|title }}</th>{% endfor %}
+          {% if editable %}<th style="width:110px;text-align:right;">Actions</th>{% endif %}
         </tr>
       </thead>
       <tbody>
@@ -121,10 +133,28 @@
               {% else %}{{ v|string|truncate(140) }}{% endif %}
             </td>
             {% endfor %}
+            {% if editable %}
+            {% set flds = {} %}
+            {% for k, v in r.items() if not k.startswith('_') and k != 'obj flags'
+                   and v is not mapping and (v is string or v is not sequence) %}
+              {% if flds.update({k: v}) %}{% endif %}
+            {% endfor %}
+            <td style="text-align:right;white-space:nowrap;">
+              <button type="button" class="btn btn-sm btn-outline-light faz-edit-row" title="Edit"
+                      data-mkey="{{ r.get(tab.mkey, '') }}"
+                      data-fields='{{ flds|tojson|forceescape }}'>
+                <i class="bi bi-pencil"></i></button>
+              {% if tab.can_delete %}
+              <button type="button" class="btn btn-sm btn-outline-danger faz-del-row" title="Delete"
+                      data-mkey="{{ r.get(tab.mkey, '') }}">
+                <i class="bi bi-trash"></i></button>
+              {% endif %}
+            </td>
+            {% endif %}
           </tr>
           {% endfor %}
         {% else %}
-          <tr><td colspan="{{ tab.columns|length or 1 }}"><div class="fw-empty-state py-4">
+          <tr><td colspan="{{ (tab.columns|length or 1) + (1 if editable else 0) }}"><div class="fw-empty-state py-4">
             <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi {{ item.icon }}"></i></div>
             <div class="fw-empty-state-title">No {{ tab.label }} entries</div>
             <div class="fw-empty-state-text">The device returned an empty set for
@@ -139,10 +169,32 @@
 {% elif appliance and not item.logicals %}
 <div class="fw-card" style="padding:40px 24px;text-align:center;">
   <i class="bi bi-cone-striped" style="font-size:38px;color:#d97706;"></i>
-  <h2 class="h5 mt-3 mb-2">No registry endpoints bound to this section yet</h2>
+  <h2 class="h5 mt-3 mb-2">No JSON-RPC surface for this pane on 7.6.7</h2>
   <p class="text-muted mb-0" style="max-width:560px;margin-inline:auto;">
-    {{ item.desc }} Bind endpoints in <a href="{{ url_for('faz_api.index') }}">API &amp; Registry</a>.
+    {{ item.desc }} If a future firmware exposes an URI for it, bind it in
+    <a href="{{ url_for('faz_api.index') }}">API &amp; Registry</a>.
   </p>
+</div>
+{% endif %}
+
+{% if editable %}
+{# ---- edit/create modal — dry-run preview then explicit Apply ------------- #}
+<div id="faz-modal" style="display:none;position:fixed;inset:0;z-index:1080;background:rgba(2,6,17,.72);backdrop-filter:blur(3px);">
+  <div class="fw-card" style="max-width:640px;margin:6vh auto;max-height:84vh;display:flex;flex-direction:column;padding:0;">
+    <div class="d-flex align-items-center justify-content-between" style="padding:14px 18px;border-bottom:1px solid rgba(148,163,184,.12);">
+      <strong id="faz-modal-title">Edit</strong>
+      <button type="button" class="btn btn-sm btn-outline-light" id="faz-modal-close"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div id="faz-modal-body" style="padding:16px 18px;overflow:auto;"></div>
+    <div style="padding:12px 18px;border-top:1px solid rgba(148,163,184,.12);">
+      <div id="faz-modal-result"></div>
+      <div class="d-flex gap-2 mt-2">
+        <button type="button" class="btn btn-sm btn-fw-primary" id="faz-modal-preview">Preview request</button>
+        <span class="text-muted ms-auto align-self-center" style="font-size:11px;">
+          Dry-run first — nothing is written until you apply.</span>
+      </div>
+    </div>
+  </div>
 </div>
 {% endif %}
 
@@ -150,13 +202,158 @@
 (function () {
   var box = document.getElementById('faz-obj-search');
   var table = document.getElementById('faz-obj-table');
-  if (!box || !table) return;
-  box.addEventListener('input', function () {
-    var q = box.value.toLowerCase();
-    table.querySelectorAll('tbody tr').forEach(function (tr) {
-      tr.style.display = tr.textContent.toLowerCase().indexOf(q) === -1 ? 'none' : '';
+  if (box && table) {
+    box.addEventListener('input', function () {
+      var q = box.value.toLowerCase();
+      table.querySelectorAll('tbody tr').forEach(function (tr) {
+        tr.style.display = tr.textContent.toLowerCase().indexOf(q) === -1 ? 'none' : '';
+      });
     });
+  }
+})();
+
+{% if editable %}
+(function () {
+  var WRITE_URL = '{{ url_for('faz.write', logical=tab.logical) }}';
+  var MKEY = {{ tab.mkey|tojson }};
+  var CSRF = document.querySelector('meta[name="csrf-token"]').content;
+  var modal = document.getElementById('faz-modal');
+  var mBody = document.getElementById('faz-modal-body');
+  var mTitle = document.getElementById('faz-modal-title');
+  var mResult = document.getElementById('faz-modal-result');
+  var state = null; // {op, mkey, original}
+
+  function post(payload) {
+    return fetch(WRITE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+      body: JSON.stringify(payload)
+    }).then(function (r) { return r.json(); });
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function openModal(op, title, fields, mkey) {
+    state = { op: op, mkey: mkey || '', original: fields || {} };
+    mTitle.textContent = title;
+    mResult.innerHTML = '';
+    var html = '';
+    if (op === 'create') {
+      html += '<div class="mb-2"><label class="form-label" style="font-size:12px;">' + esc(MKEY) +
+              ' <span class="text-danger">*</span></label>' +
+              '<input class="form-control form-control-sm" data-faz-mkey placeholder="new object ' + esc(MKEY) + '"></div>';
+    }
+    Object.keys(state.original).forEach(function (k) {
+      if (op !== 'create' && k === MKEY) return; // key is fixed on edit
+      var v = state.original[k];
+      html += '<div class="mb-2"><label class="form-label" style="font-size:12px;">' + esc(k) + '</label>';
+      if (v === 'enable' || v === 'disable') {
+        html += '<select class="form-select form-select-sm" data-faz-field="' + esc(k) + '">' +
+                '<option' + (v === 'enable' ? ' selected' : '') + '>enable</option>' +
+                '<option' + (v === 'disable' ? ' selected' : '') + '>disable</option></select>';
+      } else {
+        html += '<input class="form-control form-control-sm" data-faz-field="' + esc(k) + '" value="' + esc(v) + '">';
+      }
+      html += '</div>';
+    });
+    if (!html) html = '<div class="text-muted" style="font-size:13px;">No editable scalar fields on this object.</div>';
+    mBody.innerHTML = html;
+    modal.style.display = 'block';
+  }
+  function closeModal() { modal.style.display = 'none'; state = null; }
+  function collect() {
+    var fields = {};
+    mBody.querySelectorAll('[data-faz-field]').forEach(function (el) {
+      var k = el.getAttribute('data-faz-field');
+      var v = el.value;
+      if (state.op === 'create') {
+        if (v !== '') fields[k] = v;
+      } else if (String(state.original[k]) !== v) {
+        fields[k] = v;
+      }
+    });
+    return fields;
+  }
+  function payload(apply) {
+    var mkeyEl = mBody.querySelector('[data-faz-mkey]');
+    return { op: state.op,
+             mkey: state.op === 'create' ? (mkeyEl ? mkeyEl.value.trim() : '') : state.mkey,
+             fields: collect(), apply: !!apply };
+  }
+  function show(j, applyFn) {
+    if (!j.ok) {
+      mResult.innerHTML = '<div class="fw-alert fw-alert-danger" style="font-size:12px;">' + esc(j.error || 'failed') + '</div>';
+      return;
+    }
+    if (j.dry_run) {
+      var req = j.request || {};
+      mResult.innerHTML = '<div class="fw-alert fw-alert-warning" style="font-size:12px;">' +
+        '<div class="text-muted mb-1">JSON-RPC <strong>' + esc(req.method) + '</strong> ' + esc(req.path) + '</div>' +
+        '<pre class="mb-2" style="max-height:180px;overflow:auto;font-size:11px;">' + esc(JSON.stringify(req.body, null, 2)) + '</pre>' +
+        '<button type="button" class="btn btn-sm btn-fw-danger" id="faz-apply">Apply to device</button></div>';
+      document.getElementById('faz-apply').onclick = applyFn;
+    } else {
+      mResult.innerHTML = '<div class="fw-alert fw-alert-success" style="font-size:12px;">' +
+        '<i class="bi bi-check-circle me-1"></i>Applied — reloading…</div>';
+      setTimeout(function () { window.location.reload(); }, 700);
+    }
+  }
+  function preview() {
+    var p = payload(false);
+    if (state.op === 'create' && !p.mkey) {
+      mResult.innerHTML = '<div class="fw-alert fw-alert-danger" style="font-size:12px;">' + esc(MKEY) + ' is required.</div>';
+      return;
+    }
+    if (state.op === 'update' && !Object.keys(p.fields).length) {
+      mResult.innerHTML = '<div class="fw-alert fw-alert-warning" style="font-size:12px;">No changes.</div>';
+      return;
+    }
+    post(p).then(function (j) {
+      show(j, function () { post(payload(true)).then(function (jj) { show(jj); }); });
+    });
+  }
+
+  document.getElementById('faz-modal-close').onclick = closeModal;
+  document.getElementById('faz-modal-preview').onclick = preview;
+  modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+
+  var kvBtn = document.getElementById('faz-edit-kv');
+  if (kvBtn) kvBtn.onclick = function () {
+    openModal('update', 'Edit {{ tab.label }}', JSON.parse(kvBtn.getAttribute('data-fields')), '');
+  };
+  var createBtn = document.getElementById('faz-create');
+  if (createBtn) createBtn.onclick = function () {
+    var sample = {};
+    var first = document.querySelector('.faz-edit-row');
+    if (first) {
+      sample = JSON.parse(first.getAttribute('data-fields'));
+      Object.keys(sample).forEach(function (k) {
+        if (!(sample[k] === 'enable' || sample[k] === 'disable')) sample[k] = '';
+      });
+    }
+    openModal('create', 'Create New — {{ tab.label }}', sample, '');
+  };
+  document.querySelectorAll('.faz-edit-row').forEach(function (btn) {
+    btn.onclick = function () {
+      openModal('update', 'Edit ' + btn.getAttribute('data-mkey'),
+                JSON.parse(btn.getAttribute('data-fields')), btn.getAttribute('data-mkey'));
+    };
+  });
+  document.querySelectorAll('.faz-del-row').forEach(function (btn) {
+    btn.onclick = function () {
+      var mk = btn.getAttribute('data-mkey');
+      if (!mk) return;
+      state = { op: 'delete', mkey: mk, original: {} };
+      mTitle.textContent = 'Delete ' + mk;
+      mBody.innerHTML = '<div class="fw-alert fw-alert-danger" style="font-size:13px;">' +
+        'This deletes <strong>' + esc(mk) + '</strong> from the device. Preview the request first.</div>';
+      mResult.innerHTML = '';
+      modal.style.display = 'block';
+    };
   });
 })();
+{% endif %}
 </script>
 {% endblock %}

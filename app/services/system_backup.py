@@ -121,6 +121,21 @@ def create_backup(*, include_reports: bool = True, publish_git: bool = False,
         shutil.rmtree(stage, ignore_errors=True)
 
 
+def delete_backup(name: str) -> dict:
+    """Delete one bundle from this node's store. Primary-only by design: the
+    standby re-syncs ``data/`` FROM the primary (rsync --delete), so a delete
+    here propagates to the standby within 5 min, while a standby-side delete
+    would just be undone by the next sync."""
+    if not name.startswith("fmw-backup-") or "/" in name or ".." in name:
+        return {"ok": False, "detail": "unknown backup"}
+    path = backups_dir() / name
+    if not path.exists():
+        return {"ok": False, "detail": "unknown backup"}
+    size = path.stat().st_size
+    path.unlink()
+    return {"ok": True, "detail": f"{name} deleted ({size // 1024} KB)"}
+
+
 def list_backups() -> list:
     """Existing bundles, newest first."""
     out = []

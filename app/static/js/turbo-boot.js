@@ -94,7 +94,7 @@
   // switching to fortiweb landed on a fortiweb-scoped page still carrying
   // X-ADOM: fortiadc and the gate bounced it right back to /adc/ (trapped).
   function fwAdomSwitchKey(href) {
-    var m = /\/product\/enter\/(fortiweb|fortiadc|global)(?:[/?#]|$)/.exec(String(href || ''));
+    var m = /\/product\/enter\/([a-z][a-z0-9_-]*)(?:[/?#]|$)/.exec(String(href || ''));
     return m ? m[1] : null;
   }
   origAdd('click', function (e) {

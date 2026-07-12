@@ -34,6 +34,8 @@ INV_LABELS = {
                  'wpp': 'WPPs', 'certificate': 'Certificates'},
     'fortiadc': {'server_policy': 'Virtual Servers', 'backend': 'Real Servers',
                  'wpp': 'Server Pools', 'certificate': 'Certificates'},
+    'fortianalyzer': {'server_policy': 'Devices', 'backend': 'Log Sources',
+                      'wpp': 'Reports', 'certificate': 'Certificates'},
 }
 
 # ADC logical collection per inventory slot (registry-resolved by the client).
@@ -50,7 +52,7 @@ _ADC_INV_TTL = 600  # seconds
 
 def _inv_labels():
     from ..services.product_scope import session_product
-    return INV_LABELS['fortiadc' if session_product() == 'fortiadc' else 'fortiweb']
+    return INV_LABELS.get(session_product(), INV_LABELS['fortiweb'])
 
 
 def _adc_inventory_totals() -> dict:
@@ -123,8 +125,11 @@ def index():
     # Server-side inventory totals so the cards show even if JS fails to run.
     try:
         from ..services.product_scope import session_product
-        if session_product() == 'fortiadc':
+        _p = session_product()
+        if _p == 'fortiadc':
             inv_totals = _adc_inventory_totals()
+        elif _p == 'fortianalyzer':
+            inv_totals = None
         else:
             from ..services import inventory_metrics
             inv_totals = inventory_metrics.current_totals()
@@ -158,9 +163,14 @@ def api_data():
     def _al(q):
         return scope_query(q, AuditLog.product)
 
+    _faz_ids = db.session.query(Appliance.id).filter(
+        Appliance.kind == 'fortianalyzer')
+
     def _ch(q):
         if _prod == 'fortiadc':
             return q.filter(ChangeHistory.appliance_id.in_(_adc_ids))
+        if _prod == 'fortianalyzer':
+            return q.filter(ChangeHistory.appliance_id.in_(_faz_ids))
         if _prod == 'fortiweb':
             return q.filter(or_(ChangeHistory.appliance_id.is_(None),
                                 ~ChangeHistory.appliance_id.in_(_adc_ids)))
@@ -363,6 +373,9 @@ def api_data():
             'totals': _adc_inventory_totals(),
             'series': {'labels': []},
         }
+    elif _prod == 'fortianalyzer':
+        # FAZ has no config-object inventory (logs/reports, not server policies).
+        inventory = {'totals': {}, 'series': {'labels': []}}
     else:
         from ..services import inventory_metrics
         inventory = {

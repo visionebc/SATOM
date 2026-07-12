@@ -13,6 +13,7 @@
       <select name="kind" class="form-select">
         <option value="fortiweb" {{ 'selected' if appliance.kind=='fortiweb' }}>FortiWeb</option>
         <option value="fortiadc" {{ 'selected' if appliance.kind=='fortiadc' }}>FortiADC</option>
+        <option value="fortianalyzer" {{ 'selected' if appliance.kind=='fortianalyzer' }}>FortiAnalyzer</option>
       </select>
     </div>
     <div class="col-md-8"><label class="form-label">Host</label><input type="text" name="host" class="form-control" value="{{ appliance.host }}" required></div>

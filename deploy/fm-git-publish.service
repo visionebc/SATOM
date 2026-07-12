@@ -1,0 +1,5 @@
+[Unit]
+Description=Fortinet Manager: auto-publish reports/ JSON to git (primary only)
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/fm-git-publish.sh

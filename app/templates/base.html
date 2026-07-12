@@ -360,10 +360,11 @@
       <div class="fw-nav-group open" data-nav-group="ADOMs">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-grid-1x2 fw-nav-section-icon" style="color:#10b981;"></i><span>ADOMs</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
-          <a class="fw-nav-item" href="{{ url_for('product.enter', key='fortiweb') }}">
-            <img src="{{ url_for('static', filename='img/fortiweb-mark.svg') }}" alt="" class="fw-nav-icon" style="width:16px;height:16px;"><span>FortiWeb</span></a>
-          <a class="fw-nav-item" href="{{ url_for('product.enter', key='fortiadc') }}">
-            <img src="{{ url_for('static', filename='img/fortiadc-mark.svg') }}" alt="" class="fw-nav-icon" style="width:16px;height:16px;"><span>FortiADC</span></a>
+          {# ADOM list is DB-driven (branding registry) — every active non-global ADOM shows here automatically. #}
+          {% for _k, _p in products.items() if _k != 'global' %}
+          <a class="fw-nav-item" href="{{ url_for('product.enter', key=_k) }}">
+            <img src="{{ url_for('static', filename=_p.mark) }}" alt="" class="fw-nav-icon" style="width:16px;height:16px;"><span>{{ _p.name }}</span></a>
+          {% endfor %}
         </div>
       </div>
 

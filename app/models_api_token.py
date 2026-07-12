@@ -37,7 +37,12 @@ SCOPE_REQUIRED_PERMISSION = {
     "admin": "user_manage",
 }
 
-VALID_PRODUCTS = ("fortiweb", "fortiadc", "global")
+# Products an API token can be scoped to. Derived LIVE from the ADOM registry
+# (``cap_tokens``) — a live sequence so ``from ..models_api_token import
+# VALID_PRODUCTS`` (api_tokens view) stays in sync after admin edits.
+from .branding import live_products as _live_products  # noqa: E402
+
+VALID_PRODUCTS = _live_products("tokens")
 
 TOKEN_PREFIX = "fmk"  # Fortinet-Manager-Key
 

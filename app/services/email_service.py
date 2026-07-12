@@ -68,7 +68,7 @@ DEFAULTS = {
     K_AUTH: "0",
     K_USERNAME: "",
     K_FROM_ADDR: "",
-    K_FROM_NAME: "Fortinet Manager",
+    K_FROM_NAME: "OFortMAut",
     K_DEFAULT_TO: "",
     K_TIMEOUT: "20",
 }
@@ -196,7 +196,7 @@ def save_config(form) -> None:
     AppSetting.set(K_ENABLED, "1" if form.get("enabled") in ("1", "on", "true") else "0")
     AppSetting.set(K_MODE, mode)
     AppSetting.set(K_FROM_ADDR, g("from_addr"))
-    AppSetting.set(K_FROM_NAME, g("from_name") or "Fortinet Manager")
+    AppSetting.set(K_FROM_NAME, g("from_name") or "OFortMAut")
     AppSetting.set(K_DEFAULT_TO, g("default_to"))
     AppSetting.set(K_TIMEOUT, str(max(5, min(120, _to_int(g("timeout"), 20)))))
 
@@ -228,7 +228,7 @@ def _build_message(cfg: dict, to: list[str], subject: str,
                    body: str, html: str | None) -> EmailMessage:
     msg = EmailMessage()
     from_addr = cfg["from_addr"] or (cfg["username"] if cfg.get("username") else "")
-    msg["From"] = formataddr((cfg.get("from_name") or "Fortinet Manager", from_addr))
+    msg["From"] = formataddr((cfg.get("from_name") or "OFortMAut", from_addr))
     msg["To"] = ", ".join(to)
     msg["Subject"] = subject
     msg.set_content(body or "")
@@ -300,10 +300,10 @@ def send_test(to: str = "") -> dict:
     if not recipients:
         return {"ok": False, "detail": "Enter a recipient (or set a default recipient).",
                 "recipients": []}
-    body = ("This is a test message from Fortinet Manager Web.\n\n"
+    body = ("This is a test message from OFortMAut.\n\n"
             "If you received this, your email settings are working.\n")
     return send_email(recipients,
-                      "Fortinet Manager — test email", body, cfg=cfg)
+                      "OFortMAut — test email", body, cfg=cfg)
 
 
 __all__ = [

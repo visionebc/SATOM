@@ -164,7 +164,8 @@ def create_app(config_override: object | None = None) -> Flask:
             return None
         ep = request.endpoint or ''
         bp_name = ep.split('.', 1)[0]
-        valid = ('fortiweb', 'fortiadc', 'global')
+        from .branding import PRODUCTS as _BRAND_PRODUCTS
+        valid = tuple(_BRAND_PRODUCTS.keys())
         sess_prod = session.get('product')
         if sess_prod not in valid:
             # No product chosen yet (fresh login / deep link) — default to the
@@ -213,6 +214,7 @@ def create_app(config_override: object | None = None) -> Flask:
             'upload_worker', 'updiag', 'healthz', 'healthz_primary',
             'product.select', 'product.set_product', 'product.switch',
             'product.enter', 'product.fortiadc_home',
+            'product.placeholder_home',
         }
         if ep in always or ep.startswith('auth.'):
             return None
@@ -811,6 +813,7 @@ def create_app(config_override: object | None = None) -> Flask:
             _seed_admin()
             _assign_missing_profiles()
             _seed_registry()
+            _seed_adoms()
             _seed_capacity()
             if not app.config.get("TESTING"):
                 _seed_reports()
@@ -1051,6 +1054,21 @@ def _seed_admin() -> None:
     except IntegrityError:
         db.session.rollback()
         return  # Another worker seeded first — that's fine
+
+
+def _seed_adoms() -> None:
+    """Insert-only seed of the ADOM registry (``adoms`` table) from the
+    canonical defaults in ``branding._FALLBACK``. Operator edits are never
+    touched (seed is keyed by ADOM ``key``); see ``branding.seed_defaults``."""
+    import logging
+    try:
+        from .branding import seed_defaults
+        added = seed_defaults()
+        if added:
+            logging.getLogger(__name__).info(
+                "ADOM seed: %d ADOMs imported into the registry", added)
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()
 
 
 def _seed_registry() -> None:

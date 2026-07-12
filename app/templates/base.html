@@ -12,7 +12,7 @@
      turbo-boot.js mirrors it into sessionStorage (per browser tab) and sends
      it back as X-ADOM on every request, so each tab keeps its own ADOM. #}
   <meta name="current-product" content="{{ product.key if product else '' }}">
-  <title>{% block title %}{{ product.title if product else 'Fortinet Manager' }}{% endblock %}</title>
+  <title>{% block title %}{{ product.title if product else 'OFortMAut' }}{% endblock %}</title>
 
   <!-- Favicon (Fortinet) -->
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
@@ -57,7 +57,7 @@
     <i class="bi bi-list"></i>
   </button>
 
-  <a href="{{ url_for('product.fortiadc_home') if product.key == 'fortiadc' else (url_for('index') if product.key == 'global' else url_for('workspace.index')) }}"
+  <a href="{{ url_for('product.fortiadc_home') if product.key == 'fortiadc' else (url_for('index') if product.key == 'global' else (url_for('product.placeholder_home') if product.placeholder else url_for('workspace.index'))) }}"
      class="fw-topbar-brand">
     <img src="{{ url_for('static', filename=product.mark) }}" alt="{{ product.name }}"
          style="width:28px;height:28px;flex-shrink:0;">
@@ -65,11 +65,11 @@
   </a>
 
   {# Active ADOM indicator — always visible so an ADOM jump is never silent #}
-  {% set _adom_c = {'global': '#3b82f6', 'fortiweb': '#ef4444', 'fortiadc': '#10b981'}[product.key if product.key in ('global','fortiweb','fortiadc') else 'global'] %}
+  {% set _adom_c = {'global': '#3b82f6', 'fortiweb': '#ef4444', 'fortiadc': '#10b981', 'fortiauthenticator': '#7c3aed', 'fortianalyzer': '#d97706'}.get(product.key, '#3b82f6') %}
   <span class="fw-adom-badge" title="Active administrative domain"
         style="display:inline-flex;align-items:center;gap:6px;margin-left:12px;padding:3px 12px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;white-space:nowrap;color:#eaf0fb;background:{{ _adom_c }}26;border:1px solid {{ _adom_c }}99;">
     <i class="bi {{ 'bi-globe2' if product.key == 'global' else 'bi-hdd-rack' }}" style="color:{{ _adom_c }};"></i>
-    ADOM: {{ 'GLOBAL' if product.key == 'global' else ('FortiWeb' if product.key == 'fortiweb' else 'FortiADC') }}
+    ADOM: {{ product.name }}
   </span>
 
   <div class="fw-topbar-spacer"></div>
@@ -416,6 +416,22 @@
         </div>
       </div>
       {% endif %}
+
+      {% elif product.placeholder %}
+      <!-- ===== Placeholder ADOM (FortiAuthenticator / FortiAnalyzer / future) ===== -->
+      <div class="fw-nav-context" data-nav-context="ADOM">
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item" href="{{ url_for('product.enter', key='global') }}" title="Back to the Global ADOM">
+            <i class="bi bi-globe2 fw-nav-icon" style="color:#3b82f6;"></i><span>&lsaquo; Global</span></a>
+        </div>
+      </div>
+      <div class="fw-nav-context" data-nav-context="{{ product.name }}">
+        <div class="fw-nav-section fw-nav-context-label"><i class="bi bi-hdd-rack fw-nav-section-icon" style="color:#94a3b8;"></i><span>{{ product.name }}</span></div>
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item {{ 'active' if request.endpoint == 'product.placeholder_home' else '' }}" href="{{ url_for('product.placeholder_home') }}">
+            <i class="bi bi-speedometer2 fw-nav-icon"></i><span>Dashboard</span></a>
+        </div>
+      </div>
 
       {% else %}
       <!-- ===== FortiWeb ===== -->

@@ -270,6 +270,26 @@ def backup_outline(device: str, filename: str) -> dict:
         return {"ok": False, "error": str(exc)}
 
 
+def backup_content(device: str, filename: str, section: str = "") -> dict:
+    """Full plain-text of one pushed backup's config sections — the 'view
+    live config' path. Reuses the cached extraction; returns every text
+    section (or just the named one). Encrypted/binary parts are listed in
+    'skipped', never inlined."""
+    try:
+        res = _extraction(device, filename)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+    secs = res["sections"]
+    if section:
+        secs = [s for s in secs if s["name"] == section]
+        if not secs:
+            return {"ok": False, "error": f"no text section named {section!r}"}
+    return {"ok": True, "size": res["size"],
+            "sections": [{"name": s["name"], "text": s["text"],
+                          "lines": s["lines"]} for s in secs],
+            "skipped": res["skipped"]}
+
+
 def diff_device_backups(device: str, file_a: str, file_b: str) -> dict:
     """Unified diff of the plain-text config sections between two pushed
     backups of the same device (e.g. yesterday vs today)."""

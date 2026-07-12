@@ -74,3 +74,33 @@ def test_enter_fortianalyzer_lands_on_faz(app, client):
     login(client, admin_user_id(app), product='global')
     r = client.get('/product/enter/fortianalyzer')
     assert r.status_code == 302 and r.headers['Location'].endswith('/faz/')
+
+
+def _mk(app, name, kind):
+    from app.models import Appliance, db
+    with app.app_context():
+        a = Appliance(name=name, kind=kind, host=f'{name}.local',
+                      port=443, username='admin', verify_ssl=False)
+        a.password = 'secret'
+        db.session.add(a); db.session.commit()
+        return a.id
+
+
+def test_appliance_kind_isolation_across_adoms(app):
+    """A fortianalyzer box is visible ONLY in the FAZ ADOM — it must never
+    leak into the FortiWeb or FortiADC appliance lists (regression for the
+    'Kind' dropdown gaining FortiAnalyzer, 2026-07-12)."""
+    from app.models import visible_appliances
+    _mk(app, 'web-box', 'fortiweb')
+    _mk(app, 'adc-box', 'fortiadc')
+    _mk(app, 'faz-box', 'fortianalyzer')
+
+    def kinds(product):
+        with app.test_request_context(headers={'X-ADOM': product}):
+            return {a.kind for a in visible_appliances().all()}
+
+    assert kinds('fortianalyzer') == {'fortianalyzer'}
+    assert 'fortianalyzer' not in kinds('fortiweb')
+    assert 'fortianalyzer' not in kinds('fortiadc')
+    assert kinds('fortiweb') == {'fortiweb'}          # FAZ+ADC excluded
+    assert kinds('fortiadc') == {'fortiadc'}

@@ -19,6 +19,7 @@ from flask import has_request_context, session
 
 FORTIWEB = "fortiweb"
 FORTIADC = "fortiadc"
+FORTIANALYZER = "fortianalyzer"
 GLOBAL = "global"
 
 
@@ -34,10 +35,10 @@ def session_product() -> str:
         if has_request_context():
             from flask import g, request
             p = getattr(g, "product", None)
-            if p in (GLOBAL, FORTIWEB, FORTIADC):
+            if p in (GLOBAL, FORTIWEB, FORTIADC, FORTIANALYZER):
                 return p
             h = (request.headers.get("X-ADOM") or "").strip().lower()
-            if h in (GLOBAL, FORTIWEB, FORTIADC):
+            if h in (GLOBAL, FORTIWEB, FORTIADC, FORTIANALYZER):
                 return h
             return session.get("product") or ""
     except Exception:  # noqa: BLE001 — scoping must never break a caller
@@ -77,12 +78,18 @@ def scope_query(query, column):
 
 def scope_appliance_query(query, kind_column):
     """Scope an Appliance query by device KIND: the ADC ADOM sees only
-    ``kind == 'fortiadc'``, the FortiWeb ADOM everything else (NULL/'' kinds
-    are FortiWeb-era by construction), Global/workers see all."""
+    ``kind == 'fortiadc'``, the FAZ ADOM only ``kind == 'fortianalyzer'``,
+    the FortiWeb ADOM everything else (NULL/'' kinds are FortiWeb-era by
+    construction) EXCEPT the ADC/FAZ boxes, Global/workers see all."""
     p = session_product()
     if p == FORTIADC:
         return query.filter(kind_column == FORTIADC)
+    if p == FORTIANALYZER:
+        return query.filter(kind_column == FORTIANALYZER)
     if p == FORTIWEB:
-        from sqlalchemy import or_
-        return query.filter(or_(kind_column.is_(None), kind_column != FORTIADC))
+        from sqlalchemy import and_, or_
+        return query.filter(or_(
+            kind_column.is_(None),
+            and_(kind_column != FORTIADC, kind_column != FORTIANALYZER),
+        ))
     return query

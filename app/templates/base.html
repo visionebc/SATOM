@@ -72,6 +72,15 @@
     ADOM: {{ product.name }}
   </span>
 
+  {# Environment badge (PROD/DEV) — replicated setting from the admin console #}
+  {% set _is_prod = env_mode == 'production' %}
+  {% set _env_c = '#ef4444' if _is_prod else '#f59e0b' %}
+  <span class="fw-env-badge" title="Deployment environment (Settings → General → Environment)"
+        style="display:inline-flex;align-items:center;gap:6px;margin-left:10px;padding:3px 12px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.9px;text-transform:uppercase;white-space:nowrap;color:#fff;background:{{ _env_c }}26;border:1px solid {{ _env_c }};">
+    <i class="bi {{ 'bi-broadcast-pin' if _is_prod else 'bi-cone-striped' }}" style="color:{{ _env_c }};"></i>
+    {{ 'PRODUCTION' if _is_prod else 'DEVELOPMENT' }}
+  </span>
+
   <div class="fw-topbar-spacer"></div>
 
   {% if product.key == 'fortiweb' %}
@@ -371,7 +380,7 @@
       {% if current_user and current_user.can('user_manage') %}
       <a class="fw-nav-item {{ 'active' if request.endpoint == 'plugins.gallery' else '' }}" href="{{ url_for('plugins.gallery') }}">
         <i class="bi bi-grid-1x2 fw-nav-icon"></i><span>Custom Views</span></a>
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['appliances','audit','users','appids','classification','database','system_backup','self_update','reports','plugins','lua_studio'] }}" data-nav-group="Administrator">
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['appliances','audit','users','appids','classification','database','system_backup','self_update','ha','reports','plugins','lua_studio'] }}" data-nav-group="Administrator">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>Administrator</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'appliances' else '' }}" href="{{ url_for('appliances.index') }}">
@@ -389,7 +398,9 @@
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'system_backup' else '' }}" href="{{ url_for('system_backup.index') }}">
             <i class="bi bi-safe fw-nav-icon"></i><span>System Backup &amp; Restore</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'self_update' else '' }}" href="{{ url_for('self_update.index') }}">
-            <i class="bi bi-arrow-repeat fw-nav-icon"></i><span>Software Update &amp; HA</span></a>
+            <i class="bi bi-arrow-repeat fw-nav-icon"></i><span>Software Update</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'ha' else '' }}" href="{{ url_for('ha.index') }}">
+            <i class="bi bi-diagram-3 fw-nav-icon"></i><span>High Availability</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'reports' else '' }}" href="{{ url_for('reports.inbox') }}">
             <i class="bi bi-bug fw-nav-icon"></i><span>Bug Reports</span></a>
           {% set _can_pyc = current_user.can('studio.python_console') %}

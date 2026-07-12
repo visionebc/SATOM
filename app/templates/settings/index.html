@@ -117,6 +117,16 @@
               </div>
 
               <div class="mb-4">
+                <label class="fw-form-label">Environment</label>
+                <select name="env_mode" class="form-select fw-form-control" style="max-width:360px;">
+                  <option value="production" {{ 'selected' if settings.env_mode == 'production' else '' }}>Production</option>
+                  <option value="development" {{ 'selected' if settings.env_mode == 'development' else '' }}>Development</option>
+                </select>
+                <div class="form-text">Drives the <strong>PROD</strong>/<strong>DEV</strong> badge shown in the
+                  top bar and on the ADOM (product) picker. Replicated setting — set it on the primary and both HA nodes agree.</div>
+              </div>
+
+              <div class="mb-4">
                 <label class="fw-form-label">Default Appliance Platform</label>
                 <select name="default_kind" class="form-select fw-form-control">
                   <option value="FortiWeb" {{ 'selected' if settings.default_kind == 'FortiWeb' else '' }}>FortiWeb (Hardware / VM)</option>

@@ -461,9 +461,14 @@ def create_app(config_override: object | None = None) -> Flask:
                 _adc_nav = ()
         except Exception:
             _adc_nav = ()
+        try:
+            _env_mode = _store.env_mode()
+        except Exception:
+            _env_mode = 'development'
         return {
             'product': prod,
             'products': PRODUCTS,
+            'env_mode': _env_mode,
             'adc_nav': _adc_nav,
             'current_appliance': _cur_appl,
             'banner_bg': _bg,
@@ -919,6 +924,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.database", "bp"),
         ("app.views.system_backup", "bp"),
         ("app.views.self_update", "bp"),
+        ("app.views.ha", "bp"),
         ("app.views.plugins", "bp"),
         ("app.views.lua_studio", "bp"),
         ("app.views.docs", "bp"),

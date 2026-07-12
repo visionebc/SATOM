@@ -101,15 +101,15 @@ def set_mode():
     mode = (request.form.get("mode") or "").strip().lower()
     if mode not in ("ha", "standalone"):
         flash("Invalid deployment mode.", "danger")
-        return redirect(url_for("self_update.index"))
+        return redirect(url_for("ha.index"))
     if su.node_role() != "primary":
         flash("The deployment mode is stored in the replicated settings — "
               "change it on the PRIMARY node (this node's database is "
               "read-only).", "warning")
-        return redirect(url_for("self_update.index"))
+        return redirect(url_for("ha.index"))
     su.set_ha_mode(mode)
     flash("Deployment mode set to %s." % mode.upper(), "success")
-    return redirect(url_for("self_update.index"))
+    return redirect(url_for("ha.index"))
 
 
 @bp.route("/deploy-mode", methods=["POST"])
@@ -146,16 +146,16 @@ def promote():
     if not cluster.promote_eligible():
         flash("This node is not a standby — promotion is only valid on the node "
               "currently in recovery.", "warning")
-        return redirect(url_for("self_update.index"))
+        return redirect(url_for("ha.index"))
     if confirm != this_node:
         flash("Confirmation failed: type this node's hostname (%s) exactly to "
               "promote it." % this_node, "danger")
-        return redirect(url_for("self_update.index"))
+        return redirect(url_for("ha.index"))
     uid = cluster.request_promote(by=getattr(current_user, "username", "?"))
     flash("Failover queued (%s). The privileged runner is promoting this node to "
           "PRIMARY and starting the app — watch the status below. Only promote "
           "when the old primary is confirmed DOWN." % uid, "success")
-    return redirect(url_for("self_update.index", watch_promote=uid))
+    return redirect(url_for("ha.index", watch_promote=uid))
 
 
 @bp.route("/promote-status/<uid>")
@@ -181,7 +181,7 @@ def save_node():
         flash("HA node '%s' (%s) saved. It propagates to the peer on the next "
               "data sync; its live state is probed on this page." % (name, host),
               "success")
-    return redirect(url_for("self_update.index"))
+    return redirect(url_for("ha.index"))
 
 
 @bp.route("/nodes/delete", methods=["POST"])
@@ -194,4 +194,4 @@ def delete_node():
     else:
         su.remove_node(name)
         flash("HA node '%s' removed from the registry." % name, "info")
-    return redirect(url_for("self_update.index"))
+    return redirect(url_for("ha.index"))

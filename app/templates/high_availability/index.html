@@ -1,0 +1,416 @@
+{% extends "base.html" %}
+{% block title %}High Availability{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>High Availability</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      The manager's cluster — node architecture, deployment mode, the HA node registry,
+      live Postgres streaming replication and the guarded manual failover.
+      Update the code itself from <strong>Software Update</strong>.</p>
+  </div>
+</div>
+
+<style nonce="{{ csp_nonce }}">
+  .ha-arch-wrap { position: relative; }
+  .ha-arch { position: relative; display: flex; flex-wrap: wrap; gap: 46px 90px;
+             align-items: center; justify-content: center; padding: 26px 16px; min-height: 190px; }
+  .ha-arch svg.ha-links { position: absolute; inset: 0; width: 100%; height: 100%;
+             pointer-events: none; z-index: 0; overflow: visible; }
+  .ha-node { position: relative; z-index: 1; width: 236px; cursor: pointer;
+             background: linear-gradient(160deg, rgba(22,32,50,.92), rgba(14,22,38,.92));
+             border: 1px solid rgba(148,163,184,.22); border-radius: 14px; padding: 14px 15px;
+             box-shadow: 0 10px 26px rgba(0,0,0,.35); transition: transform .15s, border-color .15s, box-shadow .15s; }
+  .ha-node:hover { transform: translateY(-3px); border-color: rgba(59,130,246,.65);
+             box-shadow: 0 14px 34px rgba(37,99,235,.28); }
+  .ha-node.role-primary { border-color: rgba(16,185,129,.55); }
+  .ha-node.role-standby { border-color: rgba(56,189,248,.5); }
+  .ha-node.is-self::after { content: "this node"; position: absolute; top: -9px; right: 10px;
+             font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+             background: #1e293b; color: #cbd5e1; border: 1px solid rgba(148,163,184,.3);
+             padding: 1px 7px; border-radius: 999px; }
+  .ha-node-top { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; }
+  .ha-node-ico { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center;
+             justify-content: center; font-size: 17px; background: rgba(59,130,246,.14); color: #93c5fd; flex-shrink: 0; }
+  .ha-node.role-primary .ha-node-ico { background: rgba(16,185,129,.16); color: #6ee7b7; }
+  .ha-node-name { font-family: ui-monospace, monospace; font-size: 13px; font-weight: 600;
+             color: #eaf0fb; line-height: 1.15; word-break: break-all; }
+  .ha-node-host { font-size: 11px; color: #94a3b8; }
+  .ha-role-pill { font-size: 10px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase;
+             padding: 2px 9px; border-radius: 999px; }
+  .ha-role-pill.primary { background: rgba(16,185,129,.16); color: #6ee7b7; border: 1px solid rgba(16,185,129,.5); }
+  .ha-role-pill.standby { background: rgba(56,189,248,.14); color: #7dd3fc; border: 1px solid rgba(56,189,248,.5); }
+  .ha-role-pill.unknown { background: rgba(148,163,184,.14); color: #cbd5e1; border: 1px solid rgba(148,163,184,.4); }
+  .ha-node-meta { display: flex; flex-direction: column; gap: 3px; margin-top: 9px;
+             font-size: 11px; color: #a7b4c6; }
+  .ha-node-meta .k { color: #64748b; }
+  .ha-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; vertical-align: middle; }
+  .ha-dot.up { background: #10b981; box-shadow: 0 0 7px #10b981; }
+  .ha-dot.down { background: #ef4444; box-shadow: 0 0 7px #ef4444; }
+  .ha-dot.unk { background: #64748b; }
+  .ha-edge-label { font-size: 10.5px; font-weight: 600; fill: #cbd5e1; }
+  .ha-edge-sub { font-size: 9.5px; fill: #7f8ea3; }
+  .ha-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  @media (max-width: 640px) { .ha-arch svg.ha-links { display: none; } }
+</style>
+
+<!-- Architecture graph -->
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <strong><i class="bi bi-hdd-network me-1"></i>Cluster architecture</strong>
+    <div class="ha-toolbar">
+      {% if ha.mode == 'ha' %}<span class="badge bg-success">HA — two-node</span>
+      {% else %}<span class="badge bg-secondary">STANDALONE</span>{% endif %}
+      {% if deploy_mode == 'auto' %}<span class="badge bg-info text-dark">reconciler: AUTO</span>
+      {% else %}<span class="badge bg-light text-dark border">reconciler: MANUAL</span>{% endif %}
+      <button type="button" class="btn btn-sm btn-outline-primary" id="ha-add-node-btn">
+        <i class="bi bi-plus-lg me-1"></i>Add node</button>
+    </div>
+  </div>
+  <div class="card-body ha-arch-wrap">
+    <div class="ha-arch" id="ha-arch">
+      <svg class="ha-links" id="ha-links" aria-hidden="true"></svg>
+      <!-- node cards injected by JS -->
+    </div>
+    <div class="small text-muted mt-1"><i class="bi bi-hand-index me-1"></i>
+      Click a node to configure it (loads it into the editor below). The arrow shows the
+      live streaming-replication direction (primary → standby) and WAL lag; the reconciler
+      drives the staged code rollout along the same path.</div>
+  </div>
+</div>
+
+<!-- Deployment mode -->
+<div class="card mb-3">
+  <div class="card-header"><strong><i class="bi bi-toggles me-1"></i>Deployment mode</strong>
+    {% if ha.mode == 'ha' %}<span class="badge bg-success ms-2">HA — two-node</span>
+    {% else %}<span class="badge bg-secondary ms-2">STANDALONE</span>{% endif %}
+  </div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('self_update.set_mode') }}" class="row g-2 align-items-center">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-auto">
+        <select name="mode" class="form-select form-select-sm">
+          <option value="ha" {% if ha.mode == 'ha' %}selected{% endif %}>HA — two-node cluster</option>
+          <option value="standalone" {% if ha.mode == 'standalone' %}selected{% endif %}>Standalone — single node</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-outline-primary"{% if ha.this_role != 'primary' %} disabled title="Change the mode on the PRIMARY node — this node's database is read-only"{% endif %}>Save mode</button>
+      </div>
+      <div class="col-12 small text-muted">
+        <strong>HA</strong>: staged updates (the standby must validate a revision before the primary
+        unlocks), active peer probing, manual failover, and the periodic <code>data/</code> sync —
+        all driven by the peer host registered in <em>HA nodes</em> below (never hardcoded).
+        <strong>Standalone</strong>: every HA behavior above is off and updates apply directly to this node.
+        The toggle governs the manager's behavior only — it does not build or tear down Postgres
+        streaming replication (if configured, replication keeps running harmlessly underneath).
+        Stored in the replicated settings: set it once on the primary and both nodes follow.
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- HA nodes -->
+<div class="card mb-3"><div class="card-header"><strong>HA nodes</strong>
+  <span class="text-muted small ms-2">roles &amp; health are probed live from each node's <code>/healthz</code></span></div>
+  <div class="card-body">
+    <table class="table table-sm table-hover align-middle mb-0">
+      <thead><tr><th>Node</th><th>Role</th><th>Revision</th><th>Health</th><th>State</th><th></th></tr></thead>
+      <tbody>
+      {% for n in nodes %}
+        {% set rep = n.report %}
+        <tr>
+          <td class="font-monospace">{{ n.name }}{% if n.host and n.host != '127.0.0.1' %} <span class="text-muted small">{{ n.host }}</span>{% endif %}{% if n.name == this_node %} <span class="badge bg-light text-dark border">this node</span>{% endif %}</td>
+          <td>
+            {% if rep and rep.role == 'primary' %}<span class="badge bg-success">PRIMARY</span>
+            {% elif rep and rep.role == 'standby' %}<span class="badge bg-info text-dark">STANDBY</span>
+            {% else %}<span class="badge bg-secondary">unknown</span>{% endif %}
+          </td>
+          <td class="font-monospace small">{{ rep.revision.short if rep and rep.revision else '—' }}</td>
+          <td>{% if rep and rep.reachable == false %}<span class="badge bg-danger">unreachable</span>
+              {% elif rep and rep.healthy %}<span class="text-success"><i class="bi bi-check-circle"></i> up</span>
+              {% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td class="small text-muted">{{ rep.reported_at if rep else 'no report yet' }}</td>
+          <td class="text-end">
+            {% if n.name != this_node %}
+            <form method="post" action="{{ url_for('self_update.delete_node') }}" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="name" value="{{ n.name }}">
+              <button class="btn btn-sm btn-outline-danger py-0" type="submit">Remove</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <hr class="my-3">
+    <div class="small text-muted mb-2" id="ha-node-form-hint"><i class="bi bi-hdd-network me-1"></i>
+      Register / update the <strong>secondary node</strong> here (writes
+      <code>data/ha_nodes.json</code>; it propagates to the peer on the next data sync).
+      Its live role &amp; health are probed on this page — no SSH to the peer needed.</div>
+    <form method="post" action="{{ url_for('self_update.save_node') }}" class="row g-2 align-items-end" id="ha-node-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-sm-4">
+        <label class="form-label small mb-0">Node name (hostname)</label>
+        <input name="name" id="ha-f-name" class="form-control form-control-sm" placeholder="fortinet-manager-2" required>
+      </div>
+      <div class="col-sm-3">
+        <label class="form-label small mb-0">Host / LAN IP</label>
+        <input name="host" id="ha-f-host" class="form-control form-control-sm" placeholder="192.0.2.249" required>
+      </div>
+      <div class="col-sm-3">
+        <label class="form-label small mb-0">Label (optional)</label>
+        <input name="desc" id="ha-f-desc" class="form-control form-control-sm" placeholder="node2 / hypervisor03">
+      </div>
+      <div class="col-sm-2">
+        <button class="btn btn-sm btn-primary w-100" type="submit">Save node</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- High Availability: replication + failover -->
+<div class="card mb-3">
+  <div class="card-header"><strong><i class="bi bi-diagram-3 me-1"></i>Database replication &amp; failover</strong></div>
+  <div class="card-body">
+    {% if ha.mode == 'standalone' %}
+    <div class="alert alert-secondary small mb-0"><i class="bi bi-pause-circle me-1"></i>
+      <strong>Standalone mode</strong> — replication monitoring, the staged-update interlock and
+      failover are disabled. Switch the deployment mode to <strong>HA</strong> above to re-enable them.</div>
+    {% else %}
+    <div class="row g-3">
+      <div class="col-lg-7">
+        <div class="text-muted small mb-1">Streaming replication (live from this node's Postgres)</div>
+        {% set rep = ha.replication %}
+        {% if rep.role == 'primary' %}
+          {% if rep.senders %}
+            <table class="table table-sm mb-2"><thead><tr><th>Replica</th><th>State</th><th>Sync</th><th>WAL lag</th></tr></thead><tbody>
+            {% for s in rep.senders %}
+              <tr><td class="font-monospace small">{{ s.client_addr or '—' }}</td>
+                  <td>{% if s.state=='streaming' %}<span class="badge bg-success">streaming</span>{% else %}<span class="badge bg-warning text-dark">{{ s.state }}</span>{% endif %}</td>
+                  <td class="small">{{ s.sync_state }}</td>
+                  <td class="font-monospace small">{{ s.lag_bytes if s.lag_bytes is not none else '?' }} B</td></tr>
+            {% endfor %}
+            </tbody></table>
+          {% else %}
+            <div class="alert alert-warning small mb-2"><i class="bi bi-exclamation-triangle me-1"></i>
+              This node is PRIMARY but <strong>no replica is connected</strong> — the standby is not streaming.</div>
+          {% endif %}
+        {% elif rep.role == 'standby' and rep.receiver %}
+          <div class="mb-2 small"><span class="badge bg-info text-dark">STANDBY receiving</span>
+            apply lag <span class="font-monospace">{{ rep.receiver.apply_lag_bytes if rep.receiver.apply_lag_bytes is not none else '?' }} B</span>
+            <div class="text-muted">receive {{ rep.receiver.receive_lsn }} · replay {{ rep.receiver.replay_lsn }}</div></div>
+        {% else %}
+          <div class="text-muted small mb-2">No replication data{% if rep.error %} — {{ rep.error }}{% endif %}.</div>
+        {% endif %}
+        <div class="small">Scheduler on this node:
+          {% if ha.scheduler.active %}<span class="badge bg-success">active</span>{% else %}<span class="badge bg-secondary">idle</span>{% endif %}
+          <span class="text-muted">(fires only on the primary)</span></div>
+        <div class="small mt-1">Load balancer health probe: <code>{{ ha.lb_probe }}</code>
+          <span class="text-muted">→ 200 on primary, 503 on standby</span></div>
+      </div>
+      <div class="col-lg-5">
+        <div class="text-muted small mb-1">Manual failover</div>
+        {% if ha.promote_eligible %}
+          <div class="alert alert-danger small mb-2"><i class="bi bi-exclamation-octagon me-1"></i>
+            <strong>Only promote when the current primary is confirmed DOWN.</strong>
+            With no quorum, promoting while the primary is alive creates two primaries (split-brain). Manual by design.</div>
+          <form method="post" action="{{ url_for('self_update.promote') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label class="form-label small mb-1">Type <code>{{ ha.this_node }}</code> to confirm promotion of this node to PRIMARY:</label>
+            <input type="text" name="confirm_host" class="form-control form-control-sm mb-2" autocomplete="off" placeholder="{{ ha.this_node }}">
+            <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-lightning-charge me-1"></i>Promote this node to PRIMARY</button>
+          </form>
+        {% elif ha.this_role == 'primary' %}
+          <div class="alert alert-success small mb-0"><i class="bi bi-shield-check me-1"></i>
+            This node is the PRIMARY. Failover is initiated from the STANDBY node's own High Availability page.</div>
+        {% else %}
+          <div class="text-muted small">Role unknown — cannot offer promotion.</div>
+        {% endif %}
+        {% if ha.last_promote %}<div class="mt-2 small text-muted">Last failover: {{ ha.last_promote.state }} · {{ ha.last_promote.updated_at }}</div>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Live status of a running failover -->
+<div id="live-panel" class="card mb-3 d-none"><div class="card-header"><strong>Failover in progress</strong>
+  <span id="live-state" class="badge bg-secondary ms-2">queued</span></div>
+  <div class="card-body">
+    <ol id="live-steps" class="small mb-0" style="list-style:decimal inside;"></ol>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="application/json" id="ha-nodes-json">{{ nodes | tojson }}</script>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var THIS_NODE = {{ this_node|tojson }};
+  var THIS_ROLE = {{ this_role|tojson }};
+  var MODE = {{ ha.mode|tojson }};
+  var raw = [];
+  try { raw = JSON.parse(document.getElementById('ha-nodes-json').textContent) || []; }
+  catch (e) { raw = []; }
+
+  function roleOf(n) {
+    var rep = n.report || {};
+    if (n.name === THIS_NODE) return THIS_ROLE || rep.role || 'unknown';
+    return rep.role || 'unknown';
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; });
+  }
+
+  // Order: primaries first (left), then standbys / unknown (right) — so the
+  // replication arrow reads left→right primary→standby.
+  var nodes = raw.slice().sort(function (a, b) {
+    var pa = roleOf(a) === 'primary' ? 0 : 1, pb = roleOf(b) === 'primary' ? 0 : 1;
+    return pa - pb;
+  });
+
+  var arch = document.getElementById('ha-arch');
+  var svg = document.getElementById('ha-links');
+  if (!arch) return;
+
+  nodes.forEach(function (n) {
+    var role = roleOf(n);
+    var rep = n.report || {};
+    var healthy = rep.healthy === true, unreachable = rep.reachable === false;
+    var rev = (rep.revision && (rep.revision.short || rep.revision.sha)) || '—';
+    var el = document.createElement('div');
+    el.className = 'ha-node role-' + role + (n.name === THIS_NODE ? ' is-self' : '');
+    el.setAttribute('data-name', n.name);
+    el.setAttribute('data-host', n.host || '');
+    el.setAttribute('data-desc', n.desc || '');
+    el.setAttribute('tabindex', '0');
+    el.setAttribute('role', 'button');
+    var dotcls = unreachable ? 'down' : (healthy ? 'up' : 'unk');
+    var health = unreachable ? 'unreachable' : (healthy ? 'up' : '—');
+    var pill = role === 'primary' ? 'primary' : (role === 'standby' ? 'standby' : 'unknown');
+    el.innerHTML =
+      '<div class="ha-node-top">' +
+        '<div class="ha-node-ico"><i class="bi ' + (role === 'primary' ? 'bi-hdd-rack-fill' : 'bi-hdd-rack') + '"></i></div>' +
+        '<div style="min-width:0;flex:1;">' +
+          '<div class="ha-node-name">' + esc(n.name) + '</div>' +
+          '<div class="ha-node-host">' + esc(n.host || '') + '</div>' +
+        '</div>' +
+        '<span class="ha-role-pill ' + pill + '">' + esc(role) + '</span>' +
+      '</div>' +
+      '<div class="ha-node-meta">' +
+        '<div><span class="k">revision</span> <span class="font-monospace">' + esc(rev) + '</span></div>' +
+        '<div><span class="k">health</span> <span class="ha-dot ' + dotcls + '"></span> ' + esc(health) + '</div>' +
+        '<div><span class="k">reported</span> ' + esc(rep.reported_at || 'no report yet') + '</div>' +
+      '</div>';
+    function configure() {
+      var f = document.getElementById('ha-node-form');
+      if (!f) return;
+      document.getElementById('ha-f-name').value = n.name || '';
+      document.getElementById('ha-f-host').value = n.host || '';
+      document.getElementById('ha-f-desc').value = n.desc || '';
+      var hint = document.getElementById('ha-node-form-hint');
+      if (hint) hint.innerHTML = '<i class="bi bi-pencil-square me-1"></i>Editing <strong>' +
+        esc(n.name) + '</strong> — change the host/label and Save, or edit the name to register a new node.';
+      f.scrollIntoView({behavior: 'smooth', block: 'center'});
+      document.getElementById('ha-f-host').focus();
+    }
+    el.addEventListener('click', configure);
+    el.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); configure(); } });
+    arch.appendChild(el);
+  });
+
+  // "Add node" — clear the form and focus it.
+  var addBtn = document.getElementById('ha-add-node-btn');
+  if (addBtn) addBtn.addEventListener('click', function () {
+    var f = document.getElementById('ha-node-form');
+    if (!f) return;
+    ['ha-f-name', 'ha-f-host', 'ha-f-desc'].forEach(function (id) { document.getElementById(id).value = ''; });
+    var hint = document.getElementById('ha-node-form-hint');
+    if (hint) hint.innerHTML = '<i class="bi bi-plus-circle me-1"></i>Registering a <strong>new node</strong> — enter its hostname, LAN IP and an optional label.';
+    f.scrollIntoView({behavior: 'smooth', block: 'center'});
+    document.getElementById('ha-f-name').focus();
+  });
+
+  // Draw replication edges: from each primary to each standby.
+  function drawEdges() {
+    if (!svg) return;
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    var box = arch.getBoundingClientRect();
+    var cards = Array.prototype.slice.call(arch.querySelectorAll('.ha-node'));
+    var prim = cards.filter(function (c) { return c.className.indexOf('role-primary') >= 0; });
+    var stby = cards.filter(function (c) { return c.className.indexOf('role-standby') >= 0; });
+    if (!prim.length || !stby.length) return;
+    var NS = 'http://www.w3.org/2000/svg';
+    var defs = document.createElementNS(NS, 'defs');
+    defs.innerHTML = '<marker id="ha-arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">' +
+      '<path d="M0,0 L7,3 L0,6 Z" fill="#38bdf8"></path></marker>';
+    svg.appendChild(defs);
+    prim.forEach(function (p) {
+      var pr = p.getBoundingClientRect();
+      stby.forEach(function (s) {
+        var sr = s.getBoundingClientRect();
+        var x1 = pr.right - box.left, y1 = pr.top + pr.height / 2 - box.top;
+        var x2 = sr.left - box.left,  y2 = sr.top + sr.height / 2 - box.top;
+        var mx = (x1 + x2) / 2;
+        var path = document.createElementNS(NS, 'path');
+        path.setAttribute('d', 'M' + x1 + ',' + y1 + ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + (x2 - 4) + ',' + y2);
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', MODE === 'ha' ? '#38bdf8' : '#64748b');
+        path.setAttribute('stroke-width', '2');
+        path.setAttribute('stroke-dasharray', '6 5');
+        path.setAttribute('marker-end', 'url(#ha-arrow)');
+        if (MODE === 'ha') { var an = document.createElementNS(NS, 'animate');
+          an.setAttribute('attributeName', 'stroke-dashoffset'); an.setAttribute('from', '22');
+          an.setAttribute('to', '0'); an.setAttribute('dur', '1.1s'); an.setAttribute('repeatCount', 'indefinite');
+          path.appendChild(an); }
+        svg.appendChild(path);
+        var t1 = document.createElementNS(NS, 'text');
+        t1.setAttribute('x', mx); t1.setAttribute('y', (y1 + y2) / 2 - 6);
+        t1.setAttribute('text-anchor', 'middle'); t1.setAttribute('class', 'ha-edge-label');
+        t1.textContent = MODE === 'ha' ? 'streaming ▸' : 'standalone';
+        svg.appendChild(t1);
+        var t2 = document.createElementNS(NS, 'text');
+        t2.setAttribute('x', mx); t2.setAttribute('y', (y1 + y2) / 2 + 8);
+        t2.setAttribute('text-anchor', 'middle'); t2.setAttribute('class', 'ha-edge-sub');
+        t2.textContent = 'WAL replication + staged deploy';
+        svg.appendChild(t2);
+      });
+    });
+  }
+  drawEdges();
+  window.addEventListener('resize', drawEdges);
+  setTimeout(drawEdges, 250);  // after fonts/layout settle
+
+  // --- Failover (promote) status polling (when redirected with ?watch_promote) ---
+  var watchP = {{ watch_promote|tojson }};
+  if (watchP) {
+    var pPanel = document.getElementById('live-panel');
+    var pState = document.getElementById('live-state');
+    var pSteps = document.getElementById('live-steps');
+    if (pPanel) pPanel.classList.remove('d-none');
+    var pdone = false;
+    function pollP() {
+      fetch('/self-update/promote-status/' + encodeURIComponent(watchP), {credentials: 'same-origin'})
+        .then(function (r) { return r.json(); })
+        .then(function (s) {
+          if (pState) { pState.textContent = s.state || 'unknown';
+            pState.className = 'badge ms-2 ' + ({success:'bg-success',failed:'bg-danger',running:'bg-warning text-dark'}[s.state] || 'bg-secondary'); }
+          if (pSteps) { pSteps.innerHTML = '';
+            (s.steps || []).forEach(function (st) { var li = document.createElement('li');
+              li.className = st.ok ? 'text-success' : 'text-danger';
+              li.textContent = st.name + (st.detail ? ' — ' + st.detail : ''); pSteps.appendChild(li); }); }
+          if (s.state === 'success' || s.state === 'failed') {
+            if (!pdone) { pdone = true; setTimeout(function () { window.location = '{{ url_for("ha.index") }}'; }, 5000); }
+            return; }
+          setTimeout(pollP, 2500);
+        })
+        .catch(function () { setTimeout(pollP, 4000); });
+    }
+    pollP();
+  }
+})();
+</script>
+{% endblock %}

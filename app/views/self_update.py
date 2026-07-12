@@ -14,6 +14,7 @@ from flask_login import login_required, current_user
 from ..auth.decorators import require_permission
 from ..services import self_update as su
 from ..services import cluster
+from ..services import reconciler
 
 bp = Blueprint("self_update", __name__, url_prefix="/self-update")
 
@@ -34,6 +35,8 @@ def index():
         history=su.recent_updates(),
         branch=su.BRANCH,
         ha=cluster.full_state(),
+        deploy_mode=reconciler.deploy_mode_orm(),
+        reconcile=reconciler.last_status_orm(),
         watch_promote=request.args.get("watch_promote", ""),
         watch=request.args.get("watch", ""),
     )
@@ -106,6 +109,28 @@ def set_mode():
         return redirect(url_for("self_update.index"))
     su.set_ha_mode(mode)
     flash("Deployment mode set to %s." % mode.upper(), "success")
+    return redirect(url_for("self_update.index"))
+
+
+@bp.route("/deploy-mode", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def set_deploy_mode():
+    """Toggle deploy AUTOMATION: 'auto' (reconciler drives the staged rollout)
+    or 'manual' (reconciler only observes; operator applies). Replicated
+    setting -> writable on the PRIMARY only."""
+    mode = (request.form.get("mode") or "").strip().lower()
+    if mode not in ("auto", "manual"):
+        flash("Invalid deploy mode.", "danger")
+        return redirect(url_for("self_update.index"))
+    if su.node_role() != "primary":
+        flash("Deploy automation is a replicated setting \u2014 change it on the "
+              "PRIMARY node (this node's database is read-only).", "warning")
+        return redirect(url_for("self_update.index"))
+    reconciler.set_deploy_mode(mode)
+    flash("Deploy automation set to %s. In AUTO the reconciler drives the staged "
+          "rollout (standby first, health-gated, then primary); in MANUAL it "
+          "only observes and you apply by hand." % mode.upper(), "success")
     return redirect(url_for("self_update.index"))
 
 

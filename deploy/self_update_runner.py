@@ -37,6 +37,7 @@ HEALTH_TIMEOUT = int(os.environ.get("FM_HEALTH_TIMEOUT", "90"))
 UNIT_FILES = (
     "fortinet-manager.service", "fortinet-manager-scheduler.service",
     "fortinet-manager-updater.service", "fortinet-manager-updater.path",
+    "fortinet-manager-reconciler.service",
 )
 
 
@@ -159,6 +160,7 @@ class Status:
             "target": req.get("target"), "branch": req.get("branch"),
             "requested_by": req.get("requested_by"),
             "node": req.get("node"), "role": req.get("role"),
+            "origin": req.get("origin", "manual"),
             "started_at": now(), "updated_at": now(),
         }
         self.flush()

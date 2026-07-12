@@ -103,6 +103,48 @@
   </div>
 </div>
 
+<!-- Deploy automation (reconciler) -->
+<div class="card mb-3">
+  <div class="card-header"><strong><i class="bi bi-robot me-1"></i>Deploy automation</strong>
+    {% if deploy_mode == 'auto' %}<span class="badge bg-success ms-2">AUTO — reconciler drives</span>
+    {% else %}<span class="badge bg-secondary ms-2">MANUAL — observe only</span>{% endif %}
+  </div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('self_update.set_deploy_mode') }}" class="row g-2 align-items-center">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-auto">
+        <select name="mode" class="form-select form-select-sm">
+          <option value="manual" {% if deploy_mode != 'auto' %}selected{% endif %}>Manual — I apply updates by hand</option>
+          <option value="auto" {% if deploy_mode == 'auto' %}selected{% endif %}>Auto — reconciler deploys (standby first, then primary)</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-outline-primary"{% if ha.this_role != 'primary' %} disabled title="Change automation on the PRIMARY node — this node's database is read-only"{% endif %}>Save</button>
+      </div>
+      <div class="col-12 small text-muted">
+        <strong>Auto</strong>: the <code>fortinet-manager-reconciler</code> service (both nodes) checks
+        <code>origin/{{ branch }}</code> every 60s and, when behind, drives the staged rollout —
+        the STANDBY updates and health-validates first, then the PRIMARY. A failed step auto-rolls-back
+        and the reconciler backs off. <strong>Manual</strong>: the reconciler only observes and logs the
+        drift; you apply with the buttons above. Every tick is written to
+        <code>journalctl -u fortinet-manager-reconciler</code>. Replicated setting — set it on the primary.
+      </div>
+    </form>
+    <hr class="my-2">
+    {% if reconcile %}
+    <div class="small">
+      <span class="text-muted">Reconciler last tick:</span>
+      <span class="badge bg-info text-dark">{{ reconcile.decision }}</span>
+      on <span class="font-monospace">{{ reconcile.node }} ({{ reconcile.role }})</span>,
+      {{ reconcile.behind }} behind — <em>{{ reconcile.detail }}</em>
+      <span class="text-muted">({{ reconcile.at }})</span>
+    </div>
+    {% else %}
+    <div class="small text-muted">Reconciler has not published a tick yet (the standby's state is probed live).</div>
+    {% endif %}
+  </div>
+</div>
+
 <!-- HA nodes -->
 <div class="card mb-3"><div class="card-header"><strong>HA nodes</strong>
   <span class="text-muted small ms-2">roles &amp; health are probed live from each node's <code>/healthz</code></span></div>
@@ -244,12 +286,13 @@
       <p class="text-muted small mb-0">No updates run yet.</p>
     {% else %}
     <table class="table table-sm align-middle mb-0">
-      <thead><tr><th>When</th><th>By</th><th>Node</th><th>Target</th><th>Result</th></tr></thead>
+      <thead><tr><th>When</th><th>By</th><th>Origin</th><th>Node</th><th>Target</th><th>Result</th></tr></thead>
       <tbody>
       {% for h in history %}
         <tr>
           <td class="small">{{ h.updated_at or h.started_at }}</td>
           <td class="small">{{ h.requested_by }}</td>
+          <td>{% if h.origin == 'auto' %}<span class="badge bg-info text-dark">auto</span>{% else %}<span class="badge bg-light text-dark border">manual</span>{% endif %}</td>
           <td class="small font-monospace">{{ h.node }} ({{ h.role }})</td>
           <td class="small font-monospace">{{ (h.result_sha or h.target or '')[:12] }}</td>
           <td>

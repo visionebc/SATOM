@@ -17,7 +17,7 @@
       <i class="bi bi-hdd-stack me-2 text-accent"></i>Firmware
     </h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      Upload and keep FortiWeb / FortiADC firmware images (<span class="mono">.out</span>)
+      Upload and keep {{ fw_products | map(attribute='name') | join(' / ') }} firmware images (<span class="mono">.out</span>)
       for use in appliance upgrades.
     </p>
   </div>
@@ -41,8 +41,7 @@
       <div class="col-md-2">
         <label class="fw-form-label" style="font-size:12px;">Product</label>
         <select name="product" class="form-select">
-          <option value="fortiweb" selected>FortiWeb</option>
-          <option value="fortiadc">FortiADC</option>
+          {% for p in fw_products %}<option value="{{ p.key }}"{{ ' selected' if loop.first else '' }}>{{ p.name }}</option>{% endfor %}
         </select>
       </div>
       <div class="col-md-2">
@@ -141,7 +140,7 @@
               <div class="fw-empty-state-icon"><i class="bi bi-hdd-stack"></i></div>
               <div class="fw-empty-state-title">No firmware uploaded yet</div>
               <div class="fw-empty-state-text">
-                Add a FortiWeb/FortiADC <span class="mono">.out</span> image above.
+                Add a {{ fw_products | map(attribute='name') | join('/') }} <span class="mono">.out</span> image above.
               </div>
             </div>
           </td>

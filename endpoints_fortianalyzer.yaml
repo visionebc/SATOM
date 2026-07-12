@@ -1,0 +1,86 @@
+# FortiAnalyzer JSON-RPC endpoint registry SEED (product=fortianalyzer,
+# api_version=jsonrpc).
+#
+# Same contract as endpoints.yaml (FortiWeb) / endpoints_fortiadc.yaml:
+# flat friendly_key: urn map, INSERT-ONLY seeded into registry_endpoints at
+# boot — DB edits/disables win. This is the knob to turn when a FAZ upgrade
+# moves an URI (the FortiWeb-API lesson): fix the URN in the Registry page,
+# no code change needed.
+#
+# URNs are JSON-RPC *urls* (single transport endpoint POST /jsonrpc), NOT
+# REST paths. Two dialects, auto-selected by the client from the URL family
+# (see app/clients/fortianalyzer.py): /cli /dvmdb /sys /task = legacy
+# envelope; /logview /eventmgmt /incidentmgmt /report /fortiview /fazsys =
+# JSON-RPC 2.0 + apiver 3. ADOM-scoped URIs keep 'adom/root' — verified to
+# work even with Admin Domains disabled on the unit.
+#
+# EVERY entry below was probed live (get, code 0) against faz01
+# v7.6.7-build3737 on 2026-07-12 unless marked otherwise.
+
+# ---- System (CLI config tree) ---------------------------------------------
+system_global: /cli/global/system/global
+system_interface: /cli/global/system/interface
+system_route: /cli/global/system/route
+system_dns: /cli/global/system/dns
+system_ntp: /cli/global/system/ntp
+system_ha: /cli/global/system/ha
+system_certificate_local: /cli/global/system/certificate/local
+system_certificate_ca: /cli/global/system/certificate/ca
+system_password_policy: /cli/global/system/password-policy
+system_backup_all_settings: /cli/global/system/backup/all-settings
+system_auto_delete: /cli/global/system/auto-delete
+system_saml: /cli/global/system/saml
+system_syslog: /cli/global/system/syslog
+system_snmp_sysinfo: /cli/global/system/snmp/sysinfo
+system_mail_server: /cli/global/system/mail
+system_alert_console: /cli/global/system/alert-console
+system_alertemail: /cli/global/system/alertemail
+system_metadata_admins: /cli/global/system/metadata/admins
+system_fortiview_setting: /cli/global/system/fortiview/setting
+system_workflow_approval_matrix: /cli/global/system/workflow/approval-matrix
+
+# ---- Admin & access ---------------------------------------------------------
+admin_user: /cli/global/system/admin/user
+admin_profile: /cli/global/system/admin/profile
+admin_setting: /cli/global/system/admin/setting
+admin_ldap: /cli/global/system/admin/ldap
+admin_radius: /cli/global/system/admin/radius
+
+# ---- Logging & storage ------------------------------------------------------
+log_settings: /cli/global/system/log/settings
+log_forward: /cli/global/system/log-forward
+locallog_setting: /cli/global/system/locallog/setting
+sql_settings: /cli/global/system/sql
+sql_custom_index: /cli/global/system/sql/custom-index
+storage_info: /fazsys/adom/root/storage-info
+logview_logstats: /logview/adom/root/logstats
+logview_logfields: /logview/adom/root/logfields
+report_est_browse_time: /cli/global/system/report/est-browse-time
+
+# ---- Device manager (dvmdb) -------------------------------------------------
+dvmdb_adom: /dvmdb/adom
+dvmdb_device: /dvmdb/device
+dvmdb_group: /dvmdb/group
+
+# ---- Events & incidents (v3) -----------------------------------------------
+eventmgmt_alerts: /eventmgmt/adom/root/alerts
+# alertlogs needs ?alertid=<id> (probed: -32002 without) — detail drill-down.
+eventmgmt_alertlogs: /eventmgmt/adom/root/alertlogs
+incidentmgmt_incidents: /incidentmgmt/adom/root/incidents
+
+# ---- Reports (v3) -----------------------------------------------------------
+report_layouts: /report/adom/root/config/layout
+report_schedules: /report/adom/root/config/schedule
+report_datasets: /report/adom/root/config/dataset
+report_charts: /report/adom/root/config/chart
+report_macros: /report/adom/root/config/macro
+report_outputs: /report/adom/root/config/output
+report_languages: /report/adom/root/config/language
+
+# ---- Platform / updates -----------------------------------------------------
+sys_status: /sys/status
+sys_ha_status: /sys/ha/status
+task_task: /task/task
+fmupdate_service: /cli/global/fmupdate/service
+fmupdate_publicnetwork: /cli/global/fmupdate/publicnetwork
+fmupdate_server_access_priorities: /cli/global/fmupdate/server-access-priorities

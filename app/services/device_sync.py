@@ -131,12 +131,86 @@ def snapshot_from_adc(appliance, *, timeout: float = 20.0) -> dict:
     }
 
 
+# FortiAnalyzer registry endpoints that are OPERATIONAL data (live alerts,
+# log rates, clocks, task queues) — excluded from the config SoT harvest so
+# reports/<faz>/_config.json only changes when the CONFIG changes (no hourly
+# git churn from moving timestamps/counters).
+_FAZ_SOT_EXCLUDE = {
+    "sys_status", "sys_ha_status", "task_task",
+    "eventmgmt_alerts", "eventmgmt_alertlogs", "incidentmgmt_incidents",
+    "logview_logstats", "logview_logfields", "storage_info",
+}
+
+
+def snapshot_from_faz(appliance, *, timeout: float = 20.0) -> dict:
+    """Live, read-only sweep of a FortiAnalyzer unit -> snapshot dict.
+
+    The FAZ counterpart of :func:`snapshot_from_adc`: every enabled
+    ``product='fortianalyzer'`` registry endpoint except the operational ones
+    (``_FAZ_SOT_EXCLUDE``), fetched over one authenticated JSON-RPC session,
+    emitting the SAME snapshot shape so ``device_store.ingest_snapshot`` + the
+    ``reports/<slug>/_config.json`` writer + git publish are shared verbatim.
+    Sections come from the FAZ menu groups; unmapped endpoints land in
+    "Other". Must run in an app context (the registry is DB-first)."""
+    from ..clients.fortianalyzer import FortiAnalyzerClient
+    from ..registry import loader
+    from . import faz_menu
+
+    reg = loader.load_faz_registry()
+    section_of: dict[str, str] = {}
+    try:
+        for g in faz_menu.menu():
+            for item in g.items:
+                for logical, _label in item.logicals:
+                    section_of.setdefault(logical, g.label)
+    except Exception:  # noqa: BLE001 — the menu is cosmetic for the sweep
+        pass
+
+    client = FortiAnalyzerClient(appliance, timeout=timeout)
+    sections: dict = {}
+    total = 0
+    errors: list[dict] = []
+    consecutive = 0
+    for name in sorted(reg):
+        if name in _FAZ_SOT_EXCLUDE:
+            continue
+        rows, err = client.list_with_error(name)
+        if err:
+            errors.append({"endpoint": name, "error": str(err)[:160]})
+            consecutive += 1
+            if consecutive >= _SWEEP_ABORT_AFTER:
+                # A dead/locked box fails EVERY endpoint; don't burn the plan.
+                errors.append({"endpoint": "_sweep",
+                               "error": f"aborted after {consecutive} consecutive "
+                                        "device-level failures"})
+                break
+            continue
+        consecutive = 0
+        rows = [r for r in rows if isinstance(r, dict)]
+        if rows:
+            sections.setdefault(section_of.get(name, "Other"), {})[name] = rows
+            total += len(rows)
+    try:
+        client.logout()
+    except Exception:  # noqa: BLE001 — best-effort session hygiene
+        pass
+    return {
+        "device": appliance.name, "appliance_id": appliance.id,
+        "generated_at": datetime.utcnow().isoformat(), "total_objects": total,
+        "section_count": len(sections), "sections": sections, "errors": errors,
+    }
+
+
 def snapshot_for(appliance, *, timeout: float = 20.0) -> dict:
-    """Product-aware config sweep: dispatch to the FortiADC or FortiWeb sweep by
-    ``appliance.kind``. Both return the same snapshot dict shape, so every
-    downstream (cache ingest, JSON backup, git publish) is product-agnostic."""
-    if str(getattr(appliance, "kind", "") or "").lower() == "fortiadc":
+    """Product-aware config sweep: dispatch to the FortiADC, FortiAnalyzer or
+    FortiWeb sweep by ``appliance.kind``. All return the same snapshot dict
+    shape, so every downstream (cache ingest, JSON backup, git publish) is
+    product-agnostic."""
+    kind = str(getattr(appliance, "kind", "") or "").lower()
+    if kind == "fortiadc":
         return snapshot_from_adc(appliance, timeout=timeout)
+    if kind == "fortianalyzer":
+        return snapshot_from_faz(appliance, timeout=timeout)
     return snapshot_from_device(appliance, timeout=timeout)
 
 

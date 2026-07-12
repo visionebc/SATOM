@@ -32,10 +32,30 @@ def test_faz_dashboard_and_scaffolds_render(app, client):
     for label in ('Configuration', 'Operation', 'Automation',
                   'Architecture', 'Analysis', 'Metrics'):
         assert label in body, f'dashboard missing {label}'
-    # a scaffold leaf renders and is honest about the missing backend
+    # a menu leaf renders; with no FAZ selected it asks for a device instead
+    # of exploding (sections are LIVE, registry-bound — 2026-07-12)
     r = client.get('/faz/m/system-global')
     assert r.status_code == 200
-    assert 'Not wired to a FortiAnalyzer backend yet' in r.get_data(as_text=True)
+    assert 'No FortiAnalyzer selected' in r.get_data(as_text=True)
+
+
+def test_faz_registry_seeded_and_api_explorer_renders(app, client):
+    """The FortiAnalyzer endpoint registry seeds from
+    endpoints_fortianalyzer.yaml (DB-first, product='fortianalyzer') and the
+    JSON-RPC API explorer page renders with the catalog."""
+    from app.registry import loader
+    with app.app_context():
+        reg = loader.load_faz_registry()
+        assert reg.get('dvmdb_device') == '/dvmdb/device'
+        assert reg.get('sys_status') == '/sys/status'
+        # v3-family url present so the client's apiver-3 envelope is exercised
+        assert (reg.get('report_layouts') or '').startswith('/report/')
+    login(client, admin_user_id(app), product='fortianalyzer')
+    r = client.get('/faz/api/')
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert 'FortiAnalyzer API-Registry Explorer' in body
+    assert '/dvmdb/device' in body
 
 
 def test_faz_menu_unknown_item_404(app, client):

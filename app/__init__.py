@@ -208,7 +208,7 @@ def create_app(config_override: object | None = None) -> Flask:
         elif eff == 'fortiweb' and bp_name in ('adc', 'adc_api'):
             # Entering the ADC area is always an explicit ADOM jump.
             eff = 'fortiadc'
-        if bp_name == 'faz':
+        if bp_name in ('faz', 'faz_api'):
             # Entering the FortiAnalyzer area is always an explicit ADOM jump.
             eff = 'fortianalyzer'
         g.product = eff
@@ -260,7 +260,7 @@ def create_app(config_override: object | None = None) -> Flask:
             # (Firmware, Network segment, Appliances, Audit). The
             # Configuration/Operation/Automation sections are faz-blueprint
             # scaffolds. RBAC still gates each write.
-            faz_bps = {'faz', 'appliances', 'settings', 'audit', 'jobs',
+            faz_bps = {'faz', 'faz_api', 'appliances', 'settings', 'audit', 'jobs',
                        'notifications', 'profiles', 'users', 'docs',
                        'database', 'locks', 'firmware', 'segments',
                        'architecture', 'metrics', 'search', 'analysis',
@@ -947,6 +947,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.adc", "bp"),
         ("app.views.adc_api", "bp"),
         ("app.views.faz", "bp"),
+        ("app.views.faz_api", "bp"),
         ("app.views.appliances", "bp"),
         ("app.views.firmware", "bp"),
         ("app.views.jobs", "bp"),
@@ -1167,5 +1168,14 @@ def _seed_registry() -> None:
             logging.getLogger(__name__).info(
                 "Registry seed: %d FortiADC endpoints imported from "
                 "endpoints_fortiadc.yaml", added)
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()
+    try:
+        from .registry import loader
+        added = loader.seed_faz_from_yaml()
+        if added:
+            logging.getLogger(__name__).info(
+                "Registry seed: %d FortiAnalyzer endpoints imported from "
+                "endpoints_fortianalyzer.yaml", added)
     except Exception:  # noqa: BLE001 — never block boot on seeding
         db.session.rollback()

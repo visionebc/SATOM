@@ -171,21 +171,31 @@ def test_save_rejects_bad_input_and_duplicates(app, client):
 
 
 def test_registry_page_shows_editor_only_to_editors(app, client):
+    """The standalone Registry page was FUSED into the API-Registry Explorer
+    (2026-07-05): /registry/ redirects there, and the editor modal renders on
+    the Explorer only for users with REGISTRY_EDIT."""
     login(client, admin_user_id(app))
-    html = client.get("/registry/").data.decode()
+    resp = client.get("/registry/")
+    assert resp.status_code == 302
+    assert "/web/api-explorer/" in resp.headers["Location"]
+    html = client.get("/registry/", follow_redirects=True).data.decode()
     assert 'id="endpointModal"' in html and "New Endpoint" in html
 
     uid = make_user(app, username="viewer", role="readonly")
     login(client, uid)
-    html = client.get("/registry/").data.decode()
+    html = client.get("/registry/", follow_redirects=True).data.decode()
     assert 'id="endpointModal"' not in html
 
 
 def test_section_page_renders_unified_template(app, client):
+    """Old by-section URLs keep resolving via redirect to the fused Explorer
+    (bookmark compatibility — the bare table view is gone)."""
     login(client, admin_user_id(app))
     resp = client.get("/registry/System")
+    assert resp.status_code == 302
+    assert "/web/api-explorer/" in resp.headers["Location"]
+    resp = client.get("/registry/System", follow_redirects=True)
     assert resp.status_code == 200
-    assert b"Sections" in resp.data  # index template sidebar, not the old bare table
 
 
 # ---------------------------------------------------------------------------

@@ -315,8 +315,11 @@ class Appliance(db.Model):
         """The vendor client for THIS row's own host/creds (no HA resolution)."""
         from .clients.fortiweb import FortiWebClient
         from .clients.fortiadc import FortiADCClient
+        from .clients.fortianalyzer import FortiAnalyzerClient
         if self.kind == "fortiadc":
             return FortiADCClient(self, timeout=timeout)
+        if self.kind == "fortianalyzer":
+            return FortiAnalyzerClient(self, timeout=timeout)
         return FortiWebClient(self, timeout=timeout)
 
     def build_client(self, timeout: float = 30.0):

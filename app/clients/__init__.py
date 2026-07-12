@@ -7,8 +7,12 @@ from __future__ import annotations
 
 def client_for(appliance):
     """Return the right REST client for the appliance's product kind."""
-    if getattr(appliance, "kind", "") == "fortiadc":
+    kind = getattr(appliance, "kind", "")
+    if kind == "fortiadc":
         from .fortiadc import FortiADCClient
         return FortiADCClient(appliance)
+    if kind == "fortianalyzer":
+        from .fortianalyzer import FortiAnalyzerClient
+        return FortiAnalyzerClient(appliance)
     from .fortiweb import FortiWebClient
     return FortiWebClient(appliance)

@@ -514,17 +514,6 @@
       </div>
       {% endif %}
 
-      {# Documentation / API / Settings #}
-      <div class="fw-nav-context" data-nav-context="Resources">
-        <div class="fw-nav-group-body">
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'docs' else '' }}" href="{{ url_for('docs.index') }}">
-            <i class="bi bi-book fw-nav-icon"></i><span>Documentation</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'api_tokens' else '' }}" href="{{ url_for('api_tokens.index') }}">
-            <i class="bi bi-braces-asterisk fw-nav-icon"></i><span>API</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'settings' else '' }}" href="{{ url_for('settings.index') }}">
-            <i class="bi bi-gear fw-nav-icon"></i><span>Settings</span></a>
-        </div>
-      </div>
 
 
       {% elif product.placeholder %}

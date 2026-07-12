@@ -49,7 +49,7 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="row g-4">
             {% for pkey, plabel in banner_products %}
-            <div class="col-lg-6">
+            <div class="col-lg-3 col-md-6">
               <label class="form-label fw-semibold">{{ plabel }}</label>
               <div class="banner-options" data-product="{{ pkey }}">
                 {% for tkey, t in banner_templates.items() %}
@@ -114,16 +114,16 @@
 
 {% block scripts %}
 <style nonce="{{ csp_nonce }}">
-  .banner-options { display: flex; flex-direction: column; gap: 8px; }
+  .banner-options { display: flex; flex-direction: column; gap: 4px; }
   .banner-opt {
-    display: flex; align-items: center; gap: 12px; cursor: pointer;
+    display: flex; align-items: center; gap: 6px; cursor: pointer;
     border: 2px solid var(--fw-border); border-radius: var(--fw-radius-lg);
-    padding: 8px 12px; transition: border-color .15s ease, box-shadow .15s ease;
+    padding: 4px 6px; transition: border-color .15s ease, box-shadow .15s ease;
   }
   .banner-opt:hover { border-color: var(--fw-accent); }
   .banner-opt.selected { border-color: var(--fw-accent); box-shadow: 0 0 0 3px var(--fw-accent-light); }
-  .banner-swatch { width: 80px; height: 28px; border-radius: 4px; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
-  .banner-name { font-size: 13px; color: var(--fw-text-primary); }
+  .banner-swatch { width: 40px; height: 14px; border-radius: 3px; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+  .banner-name { font-size: 11px; color: var(--fw-text-primary); }
 </style>
 <script nonce="{{ csp_nonce }}">
   document.querySelectorAll('.banner-options').forEach(function(group){

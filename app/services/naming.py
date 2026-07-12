@@ -47,18 +47,21 @@ PRODUCT_FORTIWEB = "fortiweb"
 PRODUCT_FORTIADC = "fortiadc"
 
 # (key, label) in display order — drives the product selector on the page.
-PRODUCTS: tuple[tuple[str, str], ...] = (
-    (PRODUCT_FORTIWEB, "FortiWeb"),
-    (PRODUCT_FORTIADC, "FortiADC"),
-)
+# Derived LIVE from the ADOM registry (``cap_naming``); a live sequence so the
+# selector reflects Settings → ADOMs edits without a code change.
+from ..branding import naming_products as _naming_products  # noqa: E402
+
+PRODUCTS = _naming_products()
 DEFAULT_PRODUCT = PRODUCT_FORTIWEB
 
-_PRODUCT_KEYS = {p for p, _ in PRODUCTS}
+
+def _product_keys() -> set[str]:
+    return {p for p, _ in PRODUCTS}
 
 
 def valid_product(product: str | None) -> str:
     """Sanitise a product id from the request → a known product (else default)."""
-    return product if product in _PRODUCT_KEYS else DEFAULT_PRODUCT
+    return product if product in _product_keys() else DEFAULT_PRODUCT
 
 
 @dataclass(frozen=True)

@@ -5,7 +5,7 @@ from flask import (Blueprint, redirect, render_template, request, session,
                    url_for)
 from flask_login import login_required
 
-from ..branding import PRODUCTS, is_valid
+from ..branding import PRODUCTS, get_product, is_valid
 
 bp = Blueprint('product', __name__, url_prefix='/product')
 
@@ -15,6 +15,10 @@ def _home_for(key: str):
         return redirect(url_for('index'))
     if key == 'fortiadc':
         return redirect(url_for('adc.index'))
+    if get_product(key).get('placeholder'):
+        # Placeholder ADOMs (FortiAuthenticator / FortiAnalyzer / future) have
+        # no backend yet — land on the shared scaffold dashboard.
+        return redirect(url_for('product.placeholder_home'))
     return redirect(url_for('fortiweb_home'))
 
 
@@ -73,3 +77,17 @@ def switch():
 def fortiadc_home():
     """Legacy entry point — the ADC area now has a real dashboard."""
     return redirect(url_for('adc.index'))
+
+
+@bp.route('/home')
+@login_required
+def placeholder_home():
+    """Scaffold dashboard shared by every placeholder ADOM (branding-driven).
+
+    The active product is resolved by the app-factory context processor, so a
+    single template renders whichever placeholder ADOM the session is in. A
+    concrete ADOM lands on its real home instead."""
+    prod = get_product(session.get('product'))
+    if not prod.get('placeholder'):
+        return _home_for(prod.get('key'))
+    return render_template('product/placeholder.html')

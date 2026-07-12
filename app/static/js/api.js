@@ -1,5 +1,5 @@
 /* ============================================================
-   Fortinet Manager Web — api.js
+   OFortMAut — api.js
    Centralized fetch wrapper + per-feature API helpers
    ============================================================ */
 

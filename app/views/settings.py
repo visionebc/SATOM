@@ -22,7 +22,7 @@ from __future__ import annotations
 import ipaddress
 
 from flask import (Blueprint, render_template, request, flash, redirect, url_for,
-                   jsonify, abort, session)
+                   jsonify, abort, session, current_app)
 from flask_login import login_required, current_user
 
 from ..auth.decorators import require_permission
@@ -77,6 +77,8 @@ def index():
                           for p in Profile.query.all()} if _is_admin() else {}),
         banner_templates=store.BANNER_TEMPLATES,
         banners=store.all_banners(),
+        adoms=(branding.all_adoms() if _is_admin() else []),
+        adom_caps=Adom.CAPS,
         email_config=email.config(),
         auth_config=(auth_store.config() if _is_admin() else None),
         auth_backends=auth_store.BACKENDS,
@@ -297,15 +299,189 @@ def save_access():
 def save_banners():
     # Branding is a PER-USER preference now: every authenticated user picks
     # their own banner, saved against their user_id in the DB (no cookie).
-    mapping = {
-        'fortiweb': request.form.get('banner_fortiweb', ''),
-        'fortiadc': request.form.get('banner_fortiadc', ''),
-    }
+    mapping = {p: request.form.get('banner_' + p, '')
+               for p in store.BANNER_PRODUCTS}
     user_store.save_banners(current_user.id, mapping)
     log_action('settings.banners',
-               detail="fortiweb=" + mapping['fortiweb'] + ", fortiadc=" + mapping['fortiadc'])
+               detail=", ".join(f"{p}={v}" for p, v in mapping.items() if v))
     flash('Banner templates saved.', 'success')
     return redirect(url_for('auth.profile'))
+
+
+# --------------------------------------------------------------------------- #
+#  ADOM registry (Settings → ADOMs) — the data-driven product catalog.         #
+#  Admin-only. The registry itself (branding.PRODUCTS + capability sequences)   #
+#  reads the ``adoms`` table; these routes are the CRUD + logo upload for it.   #
+# --------------------------------------------------------------------------- #
+import os as _os
+import re as _re
+
+from ..models_adom import Adom
+from .. import branding
+
+_ADOM_KEY_RE = _re.compile(r'^[a-z][a-z0-9_-]{1,63}$')
+# The three real ADOMs may be edited/deactivated but NOT deleted (their keys are
+# wired into URL scoping and would orphan data). Custom/placeholder ADOMs are
+# fully deletable.
+_ADOM_UNDELETABLE = {'global', 'fortiweb', 'fortiadc'}
+_LOGO_RASTER_EXT = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
+_LOGO_MAX_PX = 256   # rasters are fit within this box (aspect preserved)
+
+
+def _adom_form_caps():
+    """Read the five capability checkboxes off the current request form."""
+    return {c: (request.form.get('cap_' + c) in ('1', 'on', 'true'))
+            for c in Adom.CAPS}
+
+
+def _bump_registry():
+    branding.invalidate()
+
+
+def _save_logo(adom: Adom, file) -> str | None:
+    """Persist an uploaded logo for ``adom``. Rasters are resized server-side to
+    fit ``_LOGO_MAX_PX`` (aspect preserved, transparency kept); SVGs are
+    sanitised (scripts/handlers stripped) rather than resized. Returns an error
+    string on failure, else ``None`` and sets ``adom.mark``."""
+    if not file or not file.filename:
+        return None
+    ext = _os.path.splitext(file.filename)[1].lower()
+    img_dir = _os.path.join(current_app.static_folder, 'img')
+    _os.makedirs(img_dir, exist_ok=True)
+
+    if ext == '.svg':
+        raw = file.read()
+        if len(raw) > 512 * 1024:
+            return 'SVG too large (max 512 KB).'
+        try:
+            text = raw.decode('utf-8', 'replace')
+        except Exception:
+            return 'SVG could not be decoded.'
+        # Strip the obvious XSS vectors — third-party SVG goes into the DOM.
+        text = _re.sub(r'(?is)<script.*?>.*?</script>', '', text)
+        text = _re.sub(r'(?is)<foreignObject.*?>.*?</foreignObject>', '', text)
+        text = _re.sub(r'(?i)\son\w+\s*=\s*"[^"]*"', '', text)
+        text = _re.sub(r"(?i)\son\w+\s*=\s*'[^']*'", '', text)
+        text = _re.sub(r'(?i)javascript:', '', text)
+        if '<svg' not in text.lower():
+            return 'Not a valid SVG file.'
+        rel = 'img/adom-%s-mark.svg' % adom.key
+        with open(_os.path.join(current_app.static_folder, rel), 'w',
+                  encoding='utf-8') as fh:
+            fh.write(text)
+        adom.mark = rel
+        return None
+
+    if ext in _LOGO_RASTER_EXT:
+        try:
+            from PIL import Image
+            img = Image.open(file.stream)
+            img.load()
+            if img.mode not in ('RGBA', 'RGB'):
+                img = img.convert('RGBA')
+            img.thumbnail((_LOGO_MAX_PX, _LOGO_MAX_PX), Image.LANCZOS)
+            rel = 'img/adom-%s-mark.png' % adom.key
+            img.save(_os.path.join(current_app.static_folder, rel), 'PNG')
+            adom.mark = rel
+            return None
+        except Exception as exc:  # noqa: BLE001
+            return 'Image could not be processed: %s' % exc
+
+    return 'Unsupported logo type (use PNG, JPG, WEBP, GIF or SVG).'
+
+
+@bp.route('/adoms', methods=['POST'])
+@login_required
+def create_adom():
+    if not _is_admin():
+        abort(403)
+    key = (request.form.get('key') or '').strip().lower()
+    if not _ADOM_KEY_RE.match(key):
+        flash('Invalid ADOM key — use lowercase letters, digits, - and _ '
+              '(2-64 chars, starting with a letter).', 'danger')
+        return redirect(url_for('settings.index') + '#tab-adoms')
+    if Adom.query.filter_by(key=key).first():
+        flash('An ADOM with key %r already exists.' % key, 'danger')
+        return redirect(url_for('settings.index') + '#tab-adoms')
+
+    caps = _adom_form_caps()
+    max_order = db.session.query(db.func.max(Adom.sort_order)).scalar() or 0
+    adom = Adom(
+        key=key,
+        name=(request.form.get('name') or key).strip()[:128],
+        title=(request.form.get('title') or 'OFortMAut').strip()[:128],
+        tagline=(request.form.get('tagline') or '').strip()[:200],
+        description=(request.form.get('description') or '').strip(),
+        active=(request.form.get('active') in ('1', 'on', 'true')),
+        placeholder=(request.form.get('placeholder') in ('1', 'on', 'true')),
+        sort_order=int(max_order) + 1,
+        banner_default=(request.form.get('banner_default') or 'slate').strip()[:32],
+        mark='img/global-mark.svg',
+        cap_banner=caps['banner'], cap_tokens=caps['tokens'],
+        cap_firmware=caps['firmware'], cap_naming=caps['naming'],
+        cap_regex=caps['regex'],
+    )
+    db.session.add(adom)
+    db.session.flush()
+    err = _save_logo(adom, request.files.get('logo'))
+    if err:
+        db.session.rollback()
+        flash(err, 'danger')
+        return redirect(url_for('settings.index') + '#tab-adoms')
+    db.session.commit()
+    _bump_registry()
+    log_action('settings.adom.create', detail='key=%s' % key)
+    flash('ADOM %r created.' % key, 'success')
+    return redirect(url_for('settings.index') + '#tab-adoms')
+
+
+@bp.route('/adoms/<key>', methods=['POST'])
+@login_required
+def update_adom(key):
+    if not _is_admin():
+        abort(403)
+    adom = Adom.query.filter_by(key=key).first_or_404()
+    caps = _adom_form_caps()
+    adom.name = (request.form.get('name') or adom.name).strip()[:128]
+    adom.title = (request.form.get('title') or 'OFortMAut').strip()[:128]
+    adom.tagline = (request.form.get('tagline') or '').strip()[:200]
+    adom.description = (request.form.get('description') or '').strip()
+    adom.active = (request.form.get('active') in ('1', 'on', 'true'))
+    adom.placeholder = (request.form.get('placeholder') in ('1', 'on', 'true'))
+    adom.banner_default = (request.form.get('banner_default')
+                           or adom.banner_default).strip()[:32]
+    for c in Adom.CAPS:
+        setattr(adom, 'cap_' + c, caps[c])
+    if request.form.get('sort_order', '').strip().isdigit():
+        adom.sort_order = int(request.form['sort_order'])
+    err = _save_logo(adom, request.files.get('logo'))
+    if err:
+        db.session.rollback()
+        flash(err, 'danger')
+        return redirect(url_for('settings.index') + '#tab-adoms')
+    db.session.commit()
+    _bump_registry()
+    log_action('settings.adom.update', detail='key=%s' % key)
+    flash('ADOM %r updated.' % key, 'success')
+    return redirect(url_for('settings.index') + '#tab-adoms')
+
+
+@bp.route('/adoms/<key>/delete', methods=['POST'])
+@login_required
+def delete_adom(key):
+    if not _is_admin():
+        abort(403)
+    if key in _ADOM_UNDELETABLE:
+        flash('The %r ADOM is a core product and cannot be deleted — '
+              'deactivate it instead.' % key, 'danger')
+        return redirect(url_for('settings.index') + '#tab-adoms')
+    adom = Adom.query.filter_by(key=key).first_or_404()
+    db.session.delete(adom)
+    db.session.commit()
+    _bump_registry()
+    log_action('settings.adom.delete', detail='key=%s' % key)
+    flash('ADOM %r deleted.' % key, 'success')
+    return redirect(url_for('settings.index') + '#tab-adoms')
 
 
 @bp.route('/change-password', methods=['POST'])

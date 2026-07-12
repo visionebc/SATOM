@@ -89,6 +89,57 @@ def snapshot_from_device(appliance, *, timeout: float = 20.0) -> dict:
     }
 
 
+def snapshot_from_adc(appliance, *, timeout: float = 20.0) -> dict:
+    """Live, read-only sweep of a FortiADC appliance -> snapshot dict.
+
+    The ADC counterpart of :func:`snapshot_from_device`: it reuses the ADC
+    discovery plan (``services.adc_ops.discovery_plan`` — every enabled
+    ``product='fortiadc'`` registry endpoint, child tables excluded) and a single
+    authenticated ``FortiADCClient`` fetcher, and emits the SAME snapshot shape so
+    ``device_store.ingest_snapshot`` and the ``reports/<slug>/_config.json`` writer
+    are shared verbatim. Must run in an app context (the registry is DB-first)."""
+    from . import adc_ops
+
+    plan = adc_ops.discovery_plan()
+    fetch = adc_ops.make_fetcher(appliance)
+    sections: dict = {}
+    total = 0
+    errors: list[dict] = []
+    consecutive = 0
+    for ep in plan:
+        try:
+            rows = fetch(ep)
+        except Exception as exc:  # noqa: BLE001 — device-level refusal / dead host
+            errors.append({"endpoint": ep["name"], "error": str(exc)[:160]})
+            consecutive += 1
+            if consecutive >= _SWEEP_ABORT_AFTER:
+                # A dead/locked box fails EVERY endpoint; don't burn the whole plan.
+                errors.append({"endpoint": "_sweep",
+                               "error": f"aborted after {consecutive} consecutive "
+                                        "device-level failures"})
+                break
+            continue
+        consecutive = 0
+        rows = [r for r in rows if isinstance(r, dict)]
+        if rows:
+            sections.setdefault(ep["section"], {})[ep["name"]] = rows
+            total += len(rows)
+    return {
+        "device": appliance.name, "appliance_id": appliance.id,
+        "generated_at": datetime.utcnow().isoformat(), "total_objects": total,
+        "section_count": len(sections), "sections": sections, "errors": errors,
+    }
+
+
+def snapshot_for(appliance, *, timeout: float = 20.0) -> dict:
+    """Product-aware config sweep: dispatch to the FortiADC or FortiWeb sweep by
+    ``appliance.kind``. Both return the same snapshot dict shape, so every
+    downstream (cache ingest, JSON backup, git publish) is product-agnostic."""
+    if str(getattr(appliance, "kind", "") or "").lower() == "fortiadc":
+        return snapshot_from_adc(appliance, timeout=timeout)
+    return snapshot_from_device(appliance, timeout=timeout)
+
+
 def persist_snapshot(appliance, snapshot: dict, *, source: str = "live",
                      trigger: str = "manual", user_label: str | None = None,
                      publish: bool = False, session=None):
@@ -130,8 +181,11 @@ def persist_snapshot(appliance, snapshot: dict, *, source: str = "live",
 
 def sync_device(appliance, *, publish: bool = False, user_label: str | None = None,
                 trigger: str = "manual", session=None):
-    """Live sync one device: sweep -> ingest -> JSON -> (git) -> SyncRun."""
-    snapshot = snapshot_from_device(appliance)
+    """Live sync one device: sweep -> ingest -> JSON -> (git) -> SyncRun.
+
+    Product-aware: FortiWeb and FortiADC appliances both flow through here (the
+    sweep is picked by ``kind`` in :func:`snapshot_for`)."""
+    snapshot = snapshot_for(appliance)
     if not snapshot.get("total_objects"):
         # Device-level failure (license lock -20010, dead host, auth): EVERY
         # endpoint failed. Record an error run and do NOT ingest or overwrite

@@ -185,6 +185,14 @@ def create_app(config_override: object | None = None) -> Flask:
             'provisioning', 'registry', 'api_explorer',
         }
         hdr = (request.headers.get('X-ADOM') or '').strip().lower()
+        # Explicit per-navigation ADOM pin via query string. Hard links /
+        # non-Turbo navigations cannot send the X-ADOM header, so a shared
+        # non-URL-scoped page (e.g. Firmware reached from the FAZ menu) would
+        # fall back to the session cookie (often 'global') and lose its ADOM.
+        # A '?_adom=<product>' on the link makes the scope deterministic.
+        _qadom = (request.args.get('_adom') or '').strip().lower()
+        if _qadom in valid:
+            hdr = _qadom
         if hdr not in valid and request.method == 'POST' \
                 and request.mimetype == 'application/x-www-form-urlencoded':
             # Native (non-Turbo) form posts carry the tab's ADOM as a hidden

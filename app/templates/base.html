@@ -506,7 +506,7 @@
             <i class="bi bi-server fw-nav-icon"></i><span>Appliances</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'audit' else '' }}" href="{{ url_for('audit.index') }}">
             <i class="bi bi-clipboard-check fw-nav-icon"></i><span>Audit Log</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'firmware' else '' }}" href="{{ url_for('firmware.index') }}">
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'firmware' else '' }}" href="{{ url_for('firmware.index', _adom='fortianalyzer') }}">
             <i class="bi bi-cpu fw-nav-icon"></i><span>Firmware</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'segments' else '' }}" href="{{ url_for('segments.index') }}">
             <i class="bi bi-diagram-3 fw-nav-icon"></i><span>Network Segment</span></a>

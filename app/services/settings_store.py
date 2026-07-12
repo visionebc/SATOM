@@ -29,8 +29,10 @@ K_IP_WHITELIST = "access.ip_whitelist"              # JSON list of {ip, note}
 K_ALLOWED_USERS = "access.allowed_users"            # JSON list of usernames
 K_TIMEZONE = "general.timezone"                     # IANA tz name, e.g. Europe/Zurich
 K_LOG_FORMAT = "general.log_format"                 # plain | detailed | json
+K_ENV_MODE = "general.env_mode"                     # production | development
 
 LOG_LEVELS_ALL = ["DEBUG", "INFO", "WARNING", "ERROR"]
+ENV_MODES = ("production", "development")
 LOG_FORMATS = ["plain", "detailed", "json"]
 DEFAULT_TIMEZONE = "Europe/Zurich"
 CLASSIFICATION_KINDS = ("zones", "lines", "departments")
@@ -44,7 +46,22 @@ DEFAULTS = {
     K_SHOW_RAW: "0",
     K_TIMEZONE: DEFAULT_TIMEZONE,
     K_LOG_FORMAT: "plain",
+    K_ENV_MODE: "development",
 }
+
+
+def env_mode() -> str:
+    """Deployment environment: 'production' or 'development'. Drives the
+    PROD/DEV badge shown in the top bar and the ADOM (product) picker. Stored in
+    the replicated app_settings table, so it is set once on the primary and both
+    HA nodes agree."""
+    val = (get_str(K_ENV_MODE) or "development").strip().lower()
+    return val if val in ENV_MODES else "development"
+
+
+def save_env_mode(mode: str) -> None:
+    mode = (mode or "").strip().lower()
+    set_str(K_ENV_MODE, mode if mode in ENV_MODES else "development")
 
 
 # ---- low-level ------------------------------------------------------------
@@ -114,13 +131,14 @@ def general() -> dict[str, Any]:
         "log_levels": [lv for lv in get_json(K_LOG_LEVELS, LOG_LEVELS_ALL) if lv in LOG_LEVELS_ALL],
         "timezone": _valid_tz(get_str(K_TIMEZONE)),
         "log_format": (get_str(K_LOG_FORMAT) or "plain") if (get_str(K_LOG_FORMAT) or "plain") in LOG_FORMATS else "plain",
+        "env_mode": env_mode(),
     }
 
 
 def save_general(app_name: str, default_kind: str, session_timeout: Any,
                  poll_interval: Any, show_raw_config: bool,
                  log_levels: list[str], timezone: str = "",
-                 log_format: str = "plain") -> None:
+                 log_format: str = "plain", env_mode: str = "") -> None:
     set_str(K_APP_NAME, (app_name or "OFortMAut").strip())
     set_str(K_DEFAULT_KIND, default_kind if default_kind in ("FortiWeb", "FortiWeb-Cloud", "FortiADC") else "FortiWeb")
     set_str(K_SESSION_TIMEOUT, max(5, min(1440, _to_int(session_timeout, 60))))
@@ -129,6 +147,8 @@ def save_general(app_name: str, default_kind: str, session_timeout: Any,
     set_json(K_LOG_LEVELS, [lv for lv in log_levels if lv in LOG_LEVELS_ALL] or ["INFO", "WARNING", "ERROR"])
     set_str(K_TIMEZONE, _valid_tz(timezone))
     set_str(K_LOG_FORMAT, log_format if log_format in LOG_FORMATS else "plain")
+    if env_mode:
+        save_env_mode(env_mode)
 
 
 # ---- Naming ---------------------------------------------------------------

@@ -126,6 +126,7 @@ def save_general():
             log_levels=request.form.getlist('log_levels'),
             timezone=request.form.get('timezone', ''),
             log_format=request.form.get('log_format', 'plain'),
+            env_mode=request.form.get('env_mode', ''),
         )
         log_action('settings.general', detail='Updated general settings')
         flash('General settings saved.', 'success')

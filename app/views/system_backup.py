@@ -231,6 +231,17 @@ def external_search():
                                               request.args.get("q", "")))
 
 
+@bp.route("/external/content")
+@login_required
+@require_permission("user_manage")
+def external_content():
+    """Full plain-text config of one pushed backup (view live)."""
+    from ..services import backup_server as bksrv
+    return jsonify(bksrv.backup_content(request.args.get("device", ""),
+                                        request.args.get("name", ""),
+                                        request.args.get("section", "")))
+
+
 @bp.route("/external/download")
 @login_required
 @require_permission("user_manage")

@@ -1482,3 +1482,30 @@ details[open] > .fw-group-head::before { transform: rotate(90deg); }
 .fw-nav-subgroup:not(.open) > .fw-nav-subgroup-body { max-height: 0; opacity: 0; }
 .fw-nav-subgroup.open > .fw-nav-subgroup-body { max-height: none; opacity: 1; }
 .fw-nav-subgroup-body > .fw-nav-item { padding-left: 16px; }
+
+/* ============================================================
+   Fix: Bootstrap .btn-outline-light is near-white (color/border #f8f9fa),
+   invisible on this LIGHT theme until hover fills it dark. It is the
+   app-wide canonical 'secondary' button, so remap it once here to a
+   visible neutral outline using the fw design tokens. (2026-07-12)
+   ============================================================ */
+.btn-outline-light {
+  color: var(--fw-text-secondary);
+  border-color: var(--fw-border);
+  background-color: #fff;
+}
+.btn-outline-light:hover,
+.btn-outline-light:focus-visible,
+.btn-outline-light:active,
+.btn-outline-light.active,
+.btn-check:checked + .btn-outline-light {
+  color: var(--fw-text-primary);
+  background-color: var(--fw-border-light);
+  border-color: var(--fw-border);
+}
+.btn-outline-light:disabled,
+.btn-outline-light.disabled {
+  color: var(--fw-text-secondary);
+  border-color: var(--fw-border-light);
+  opacity: .55;
+}

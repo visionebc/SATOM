@@ -278,3 +278,26 @@ def test_sync_route(app, client):
     login(client, _viewer(app))
     d = client.post("/release-notes/sync").get_json()
     assert d["counts"]["issues"] == 3
+
+
+def test_release_notes_reachable_in_fortiadc_adom(app, client, monkeypatch):
+    """Regression (2026-07-12): the ADC ADOM top-banner Release-Notes modal must
+    reach the blueprint. ``_product_gate`` only allows an allowlist of blueprints
+    in the FortiADC ADOM; ``release_notes`` was missing, so every
+    ``/release-notes/*`` call 302-redirected to ``adc.index`` and the scan
+    silently no-opped (the browser followed the redirect to an HTML page)."""
+    monkeypatch.setattr(rn, "make_fetcher", lambda **k: _fake_fetch)
+    monkeypatch.setattr(rn, "discover_versions", lambda fetch, **k: ["8.0.5"])
+    _seed(app, rn.scan_release_notes(_fake_fetch, ["8.0.5"]))
+    login(client, _admin(app), product="fortiadc")
+
+    # read endpoint must be served, not redirected out of the ADOM
+    r = client.get("/release-notes/data")
+    assert r.status_code == 200, "release-notes bounced out of the FortiADC ADOM"
+
+    # and the scan endpoint itself must be reachable (202 start / 409 busy), not 302
+    r = client.post("/release-notes/scan",
+                    json={"all": False, "majors": "8.0",
+                          "use_direct": True, "publish": False},
+                    headers={"X-ADOM": "fortiadc"})
+    assert r.status_code in (202, 409), f"scan gated out of ADC ADOM: {r.status_code}"

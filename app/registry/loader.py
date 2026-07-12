@@ -223,6 +223,107 @@ def seed_adc_from_yaml() -> int:
 
 
 # ---------------------------------------------------------------------------
+# FortiAnalyzer registry (product='fortianalyzer', api_version='jsonrpc')
+# ---------------------------------------------------------------------------
+# Same DB-first + YAML-fallback contract as FortiWeb/FortiADC, kept as a
+# parallel, product-scoped set of helpers. URNs are JSON-RPC urls (single
+# transport POST /jsonrpc — dialect picked by the client from the URL family,
+# see app/clients/fortianalyzer.py). Seed file: the repo-root
+# ``endpoints_fortianalyzer.yaml`` (flat ``friendly_key: urn`` map, every
+# entry probed live against faz01 v7.6.7).
+
+_faz_yaml_cache: dict | None = None
+_faz_db_cache: dict = {"map": None, "ts": 0.0}
+
+
+def _faz_yaml_registry() -> dict:
+    global _faz_yaml_cache
+    if _faz_yaml_cache is None:
+        yaml_path = os.path.join(os.path.dirname(__file__), '..', '..',
+                                 'endpoints_fortianalyzer.yaml')
+        try:
+            with open(yaml_path) as f:
+                _faz_yaml_cache = yaml.safe_load(f) or {}
+        except FileNotFoundError:
+            _faz_yaml_cache = {}
+    return _faz_yaml_cache
+
+
+def _faz_db_registry() -> dict | None:
+    now = time.monotonic()
+    if _faz_db_cache["map"] is not None and (now - _faz_db_cache["ts"]) < _CACHE_TTL:
+        return _faz_db_cache["map"]
+    try:
+        from ..models import RegistryEndpoint
+        rows = RegistryEndpoint.query.filter_by(product="fortianalyzer", enabled=True).all()
+        if not rows:
+            return None
+        reg = {r.name: r.urn for r in rows}
+    except Exception:  # noqa: BLE001 — any DB hiccup → YAML fallback
+        return None
+    _faz_db_cache["map"] = reg
+    _faz_db_cache["ts"] = now
+    return reg
+
+
+def invalidate_faz_cache() -> None:
+    _faz_db_cache["map"] = None
+    _faz_db_cache["ts"] = 0.0
+
+
+def load_faz_registry() -> dict:
+    """The active FortiAnalyzer ``{friendly_key: urn}`` map (DB first, YAML fallback)."""
+    reg = _faz_db_registry()
+    if reg is not None:
+        return reg
+    return _faz_yaml_registry()
+
+
+def resolve_faz(name: str) -> str:
+    """Resolve a FortiAnalyzer logical endpoint name to its JSON-RPC url."""
+    reg = load_faz_registry()
+    try:
+        return reg[name]
+    except KeyError:
+        raise KeyError(f"unknown FortiAnalyzer registry endpoint: {name!r}") from None
+
+
+def seed_faz_from_yaml() -> int:
+    """INSERT-ONLY sync endpoints_fortianalyzer.yaml → registry_endpoints
+    (product='fortianalyzer'); returns rows added. Operator edits/disables in
+    the DB always win — same contract as the FortiWeb/FortiADC seeds."""
+    from sqlalchemy.exc import IntegrityError
+
+    from ..extensions import db
+    from ..models import RegistryEndpoint
+
+    yaml_map = _faz_yaml_registry()
+    if not yaml_map:
+        return 0
+    existing = {
+        name for (name,) in db.session.query(RegistryEndpoint.name)
+        .filter_by(product="fortianalyzer", api_version="jsonrpc")
+    }
+    added = 0
+    for name, urn in yaml_map.items():
+        if not urn or name in existing:
+            continue
+        db.session.add(RegistryEndpoint(
+            product="fortianalyzer", api_version="jsonrpc",
+            name=str(name), urn=str(urn), updated_by="seed",
+        ))
+        added += 1
+    if added:
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()  # another worker seeded first — fine
+            added = 0
+    invalidate_faz_cache()
+    return added
+
+
+# ---------------------------------------------------------------------------
 # display helpers (unchanged contract)
 # ---------------------------------------------------------------------------
 

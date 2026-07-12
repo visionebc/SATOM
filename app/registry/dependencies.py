@@ -364,7 +364,9 @@ WEB_PROTECTION_PROFILE: DepNode = _n(
            children=[_n("Fuzzy Disable List",
                         "cmdb/waf/webshell-detection-policy/fuzzy-disable-list")]),
         _n("DLP Policy", "cmdb/waf/dlp.policy", "dlp-policy", "Advanced Protection",
-           children=[_n("DLP Rules", "cmdb/waf/dlp.policy/rule-list")]),
+           # sub-table is 'dlp-rules' (fw6 objects carry sz_dlp-rules; registry
+           # key dlp_policy_rule_item) — 'rule-list' was a doc-derived guess.
+           children=[_n("DLP Rules", "cmdb/waf/dlp.policy/dlp-rules")]),
         # -- API / XML / JSON -----------------------------------------------
         _n("XML Validation", "cmdb/waf/xml-validation.policy",
            "xml-validation-policy / xml-protection", "API Protection",

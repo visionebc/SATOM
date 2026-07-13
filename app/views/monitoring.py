@@ -181,3 +181,13 @@ def hw_scan():
     jobsvc.run_async(app_obj, job["id"],
                      lambda app, jid: _run_hw_scan(app, jid, ids, uid, uname, link))
     return jsonify({"job_id": job["id"]})
+
+
+@bp.route('/infra')
+@login_required
+def infra():
+    """Cross-node + off-box infrastructure health (HA peers, Gitea, backup-server).
+    Network probes with short timeouts — fetched by the card AFTER page render,
+    never during a page load."""
+    from ..services import infra_health
+    return jsonify(infra_health.snapshot())

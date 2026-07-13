@@ -502,3 +502,54 @@ def system_inventory() -> dict:
     except Exception as exc:  # noqa: BLE001
         out["error"] = str(exc)
     return out
+
+
+def infra_probe() -> dict:
+    """Light health probe for the infra dashboard: reachable + filesystem usage
+    (SFTP ``statvfs``) + top-level counts. Short-lived connection, never raises.
+    Deliberately does NOT expose CPU/RAM — this box is SFTP-jailed (chroot +
+    ForceCommand internal-sftp), a separate failure domain, and the web worker
+    has no shell there by design."""
+    cfg = store.backup_server()
+    out = {"configured": cfg["configured"], "reachable": False,
+           "host": cfg["host"], "port": cfg["port"], "error": "",
+           "disk": None, "devices": None, "firmware": None}
+    if not cfg["configured"]:
+        return out
+    try:
+        full = store.backup_server(reveal_secret=True)
+        t, sftp = _connect(full)
+        try:
+            try:  # OpenSSH statvfs@openssh.com (paramiko ships no wrapper)
+                from paramiko.sftp import CMD_EXTENDED, CMD_EXTENDED_REPLY
+                rt, msg = sftp._request(CMD_EXTENDED, "statvfs@openssh.com", ".")
+                if rt == CMD_EXTENDED_REPLY:
+                    f = [msg.get_int64() for _ in range(11)]
+                    frsize, blocks, bavail = f[1], f[2], f[4]
+                    total = frsize * blocks
+                    free = frsize * bavail
+                    if total:
+                        out["disk"] = {"total_gb": round(total / 1e9, 1),
+                                       "used_gb": round((total - free) / 1e9, 1),
+                                       "free_gb": round(free / 1e9, 1),
+                                       "pct": round(100.0 * (total - free) / total, 1)}
+            except Exception:
+                pass
+            try:
+                cp = full.get("config_path") or "/configs"
+                out["devices"] = sum(1 for e in sftp.listdir_attr(cp)
+                                     if _stat.S_ISDIR(e.st_mode or 0))
+            except Exception:
+                pass
+            try:
+                fp = full.get("firmware_path") or "/firmware"
+                out["firmware"] = sum(1 for e in sftp.listdir_attr(fp)
+                                      if not _stat.S_ISDIR(e.st_mode or 0))
+            except Exception:
+                pass
+        finally:
+            t.close()
+        out["reachable"] = True
+    except Exception as exc:  # noqa: BLE001
+        out["error"] = str(exc)[:200]
+    return out

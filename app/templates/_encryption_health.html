@@ -24,6 +24,11 @@
     <span style="color:#475569;">— per channel: encrypted? · cipher · how</span></span>
   <span id="encStamp" class="text-muted ih-stamp">loading…</span>
 </div>
+<div class="enc-how" style="margin:2px 0 10px;padding-left:9px;border-left:2px solid rgba(59,130,246,.4);" data-mark="fm-ha-arch-doc">
+  <b>:443</b> is the public web face; the node&#8209;to&#8209;node channels are <b>:8443</b> (health probes),
+  <b>:5432</b> (Postgres replication &mdash; the data channel) and <b>SSH</b> (file sync).
+  Full architecture on the <a href="{{ url_for('ha.index') }}">High Availability</a> page.
+</div>
 <div class="ih-grid" id="encGrid">
   <div id="encBody" style="display:contents">
     <div class="text-muted small">Probing channels (DB TLS · node HTTPS · SoT)…</div>

@@ -79,6 +79,83 @@
   </div>
 </div>
 
+<!-- Node-to-node architecture reference (fm-ha-arch-doc) -->
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <strong><i class="bi bi-shield-lock me-1"></i>Node-to-node architecture &mdash; ports, channels &amp; where the sync happens</strong>
+    <span class="badge bg-dark border">reference</span>
+  </div>
+  <div class="card-body">
+    <p class="small text-muted mb-2">
+      Two roles the ports play &mdash; do not conflate them: <strong>:443 is the public web face</strong>
+      (your browser &rarr; the app), while the <strong>node&#8209;to&#8209;node</strong> traffic rides three
+      separate channels (<code>:8443</code>, <code>:5432</code>, SSH). The heavy sync &mdash; the standby's
+      actual database &mdash; is <strong>Postgres streaming replication on <code>:5432</code></strong>,
+      <em>not</em> :8443. Live per&#8209;channel encryption status is on the
+      <a href="{{ url_for('monitoring.index') }}">Monitoring &rarr; Encryption</a> page.
+    </p>
+
+    <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-3" style="font-size:12.5px;">
+      <thead><tr><th>Channel</th><th style="width:96px;">Port</th><th>Carries</th><th>Direction</th><th>Encryption</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Web access</strong></td>
+          <td><code>:443</code></td>
+          <td>Browser &rarr; the app UI/API (nginx front)</td>
+          <td class="small">client &rarr; node</td>
+          <td class="small"><span class="text-success">TLS</span> &middot; trusted wildcard <code>*.example.net</code></td>
+        </tr>
+        <tr>
+          <td><strong>App probes</strong></td>
+          <td><code>:8443</code></td>
+          <td>Health/status only &mdash; <code>/healthz</code>, infra &amp; cluster probes. <u>No data moves here.</u></td>
+          <td class="small">node &#8644; node</td>
+          <td class="small"><span class="text-success">TLS&nbsp;1.3</span> (node cert) + identity key <code>X-FM-Node-Key</code></td>
+        </tr>
+        <tr>
+          <td><strong>DB replication</strong> <span class="badge bg-success">the data channel</span></td>
+          <td><code>:5432</code></td>
+          <td>Postgres streaming replication &mdash; the standby's live database (all app_settings, requests, configs)</td>
+          <td class="small">primary &rarr; standby</td>
+          <td class="small"><span class="text-success">TLS&nbsp;1.3 &middot; enforced</span> &mdash; <code>hostssl</code> + mutual internal&#8209;CA (plaintext refused)</td>
+        </tr>
+        <tr>
+          <td><strong>File sync</strong></td>
+          <td><code>SSH&nbsp;:22</code></td>
+          <td><code>data/</code> tree &mdash; DB bundles, device config vault</td>
+          <td class="small">standby pulls (5&nbsp;min)</td>
+          <td class="small"><span class="text-success">SSH transport</span> &middot; key <code>/root/.ssh/id_ha_rsync</code></td>
+        </tr>
+        <tr>
+          <td><strong>Config SoT</strong></td>
+          <td class="small">Gitea HTTPS</td>
+          <td><code>reports/&lt;device&gt;/_config.json</code> &mdash; versioned device config</td>
+          <td class="small">primary &rarr; Gitea</td>
+          <td class="small"><span class="text-success">HTTPS</span> &rarr; <code>git.example.net</code></td>
+        </tr>
+        <tr class="text-muted">
+          <td>Edge rollback</td>
+          <td><code>:8000</code></td>
+          <td>Legacy gunicorn path &mdash; kept as rollback until the :443 cutover is confirmed</td>
+          <td class="small">edge &rarr; node</td>
+          <td class="small">plain HTTP &middot; firewalled to edge + peer only</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="small text-muted mb-1"><strong>Where the sync actually happens</strong> &mdash; three independent mechanisms, only one is app code:</div>
+    <ul class="small text-muted mb-0" style="line-height:1.7;">
+      <li><strong>Database</strong> &mdash; Postgres streaming replication, configured in <code>postgresql.conf</code> + <code>pg_hba.conf</code>. Native DB mechanism, <em>not</em> app code; this is why the standby is read&#8209;only.</li>
+      <li><strong>Files</strong> &mdash; <code>deploy/fm-ha-datasync.sh</code> (unit <code>fm-ha-datasync.timer</code>): the standby <strong>pulls</strong> <code>data/</code> over rsync/SSH every 5&nbsp;min (role&#8209;guarded, inert on the primary).</li>
+      <li><strong>App / code</strong> &mdash; <code>app/services/reconciler.py</code> (<code>fortinet-manager-reconciler.service</code>, both nodes): DB&#8209;free orchestration of the HA deploy mode (MANUAL/AUTO) and the staged code rollout. The <em>only</em> sync that is app code.</li>
+      <li><strong>Device SoT &rarr; git</strong> &mdash; <code>app/services/device_sync.py</code> harvests each appliance's config; <code>git_service.py</code> + <code>fm-git-publish.sh</code> (primary&#8209;only, hourly) publish it to Gitea over HTTPS.</li>
+      <li><strong>Inter&#8209;node auth</strong> &mdash; <code>app/services/node_security.py::peer_get()</code> signs the <code>:8443</code> probes with the shared identity key; the node cert is managed in <a href="{{ url_for('settings.index') }}#tab-nodetls">Settings &rarr; Node&nbsp;TLS</a>.</li>
+    </ul>
+  </div>
+</div>
+
 <!-- Deployment mode -->
 <div class="card mb-3">
   <div class="card-header"><strong><i class="bi bi-toggles me-1"></i>Deployment mode</strong>

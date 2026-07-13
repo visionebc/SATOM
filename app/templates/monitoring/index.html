@@ -49,8 +49,6 @@
 </div>
 
 {% include "_infra_health.html" %}
-
-<div class="mon-sec-title"><i class="bi bi-motherboard me-1"></i>Manager system</div>
 <div class="mon-grid" id="monSystem"></div>
 
 <div id="monAlerts"></div>
@@ -71,11 +69,6 @@
     });
   }
   function fmtGB(mb) { return mb ? (mb / 1024).toFixed(mb >= 1024 ? 0 : 1) + ' GB' : '?'; }
-  function fmtUp(s) {
-    if (!s) return '';
-    var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600);
-    return d ? d + 'd ' + h + 'h' : h + 'h ' + Math.floor((s % 3600) / 60) + 'm';
-  }
   function bar(pct, status) {
     var w = pct == null ? 0 : Math.min(100, pct);
     return '<div class="mon-bar"><i class="mon-' + (status || 'ok') + '" style="width:' + w + '%"></i></div>';
@@ -162,17 +155,12 @@
   }
 
   function renderSystem(d) {
-    var sys = d.system || {}, dbs = d.db || {}, red = d.redundancy || {};
+    var dbs = d.db || {}, red = d.redundancy || {};
     var svc = (d.services || []).map(function (s) {
       var color = s.ok ? '#10b981' : (s.state === 'inactive' ? '#64748b' : '#ef4444');
       return '<div class="mon-svc"><span><span class="mon-dot" style="background:' + color + '"></span>' +
         esc(s.unit.replace('.service', '')) + '</span><span class="' + (s.ok ? 't-ok' : 't-crit') + '">' +
         esc(s.state) + '</span></div>';
-    }).join('');
-    var disks = (sys.disks || []).map(function (dd) {
-      return '<div class="mon-caprow"><span class="nm">' + esc(dd.mount) + '</span>' +
-        '<span class="bar">' + bar(dd.pct, dd.pct >= 90 ? 'crit' : dd.pct >= 75 ? 'warn' : 'ok') + '</span>' +
-        '<span class="qt">' + dd.used_gb + ' / ' + dd.total_gb + ' GB</span></div>';
     }).join('');
     var tables = Object.keys(dbs.tables || {}).map(function (t) {
       return '<div class="mon-svc"><span>' + esc(t) + '</span><span>' +
@@ -190,19 +178,6 @@
     var mgr = red.manager || {};
 
     document.getElementById('monSystem').innerHTML =
-      '<div class="fw-card"><div class="fw-card-body">' +
-      '<b><i class="bi bi-motherboard me-1"></i>Host — ' + esc(sys.hostname || '') + '</b>' +
-      '<div class="text-muted small mb-2">' + (sys.cpus || '?') + ' CPU · ' + fmtGB(sys.mem_total_mb) +
-      ' RAM · up ' + fmtUp(sys.uptime_s) + '</div>' + disks +
-      '<div class="mt-2">' +
-      '<div class="mon-caprow"><span class="nm">CPU load</span><span class="bar">' +
-      bar(sys.load_pct, sys.load_pct >= 90 ? 'crit' : sys.load_pct >= 70 ? 'warn' : 'ok') +
-      '</span><span class="qt">' + (sys.load ? sys.load[0] : '?') + ' / ' + (sys.cpus || '?') + '</span></div>' +
-      '<div class="mon-caprow"><span class="nm">Memory</span><span class="bar">' +
-      bar(sys.mem_pct, sys.mem_pct >= 90 ? 'crit' : sys.mem_pct >= 75 ? 'warn' : 'ok') +
-      '</span><span class="qt">' + fmtGB(sys.mem_used_mb) + ' / ' + fmtGB(sys.mem_total_mb) + '</span></div>' +
-      '</div></div></div>' +
-
       '<div class="fw-card"><div class="fw-card-body">' +
       '<b><i class="bi bi-database me-1"></i>Database</b>' +
       '<div class="text-muted small mb-2">' + esc(dbs.dialect || '?') +

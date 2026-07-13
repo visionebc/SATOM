@@ -20,14 +20,6 @@
       {{ group.label }} &gt; {{ item.label }}
       {% if appliance %} on <strong>{{ appliance.name }}</strong> <span class="fw-badge fw-badge-secondary ms-1" title="Read live from the device over JSON-RPC">LIVE</span>{% endif %}
     </p>
-    {% if appliance %}
-    <div class="d-flex flex-wrap align-items-center gap-2 mt-2" style="font-size:12px;">
-      <span class="fw-badge fw-badge-secondary" title="Device host"><i class="bi bi-hdd-network me-1"></i>{{ appliance.host }}{% if appliance.port %}:{{ appliance.port }}{% endif %}</span>
-      <span class="fw-badge fw-badge-primary" title="Línea / Line">Line: {{ appliance.line or '—' }}</span>
-      <span class="fw-badge fw-badge-primary" title="Zona / Zone">Zone: {{ appliance.zone or '—' }}</span>
-      <span class="fw-badge fw-badge-primary" title="Departamento / Department">Dept: {{ appliance.department or '—' }}</span>
-    </div>
-    {% endif %}
   </div>
   <div class="d-flex align-items-center gap-2">
     {% if appliance %}

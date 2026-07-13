@@ -698,9 +698,17 @@ def create_app(config_override: object | None = None) -> Flask:
             host = _sh.host_stats()
         except Exception:
             pass
+        peer_auth = None
+        try:
+            from flask import request as _rq
+            from .services import node_security as _nsec
+            peer_auth = _nsec.verify_request(_rq.headers)
+        except Exception:
+            peer_auth = None
         return jsonify({'ok': True, 'revision': rev.get('short'),
                         'sha': rev.get('sha'), 'branch': rev.get('branch'),
-                        'db': db_state, 'host': host}), 200
+                        'db': db_state, 'host': host,
+                        'peer_authenticated': peer_auth}), 200
 
     # -- primary-aware probe (for a load balancer health check) -----------
     # Returns 200 ONLY when the local Postgres is the PRIMARY. A standby
@@ -737,6 +745,17 @@ def create_app(config_override: object | None = None) -> Flask:
             return jsonify({'ok': False, 'error': str(exc)}), 500
 
     # -- CLI commands -----------------------------------------------------
+    @app.cli.command('cert-renew')
+    def cert_renew_cmd():
+        """Auto-renew the node's CA-issued service cert if within threshold.
+        Invoked by the fm-cert-renew.timer. No-op for imported/bootstrap certs."""
+        from .services import cert_service as _cs
+        try:
+            res = _cs.renew_if_needed(by='timer')
+            print('cert-renew:', res)
+        except Exception as exc:  # noqa: BLE001
+            print('cert-renew error:', exc)
+
     @app.cli.command('create-db')
     def create_db_cmd():
         """Initialise database tables and seed the default admin user."""

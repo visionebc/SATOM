@@ -900,3 +900,80 @@ def save_policy_links():
     else:
         flash('Policy links cleared.', 'success')
     return redirect(url_for('settings.index') + '#tab-policylinks')
+
+
+# ---- Node TLS: the service's own cert + node-to-node SSL policy -----------
+@bp.route('/node-cert/state')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def node_cert_state():
+    from ..services import cert_service as cs
+    from ..services import encryption_health as eh
+    from ..services import node_security as nsec
+    return jsonify({
+        'cert': cs.current(),
+        'pg_ssl': eh.pg_ssl_policy(),
+        'identity_key': nsec.configured(),
+        'hostname': cs.node_hostname(),
+    })
+
+
+@bp.route('/node-cert/import', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def node_cert_import():
+    from ..services import cert_service as cs
+    cert = request.files.get('cert')
+    key = request.files.get('key')
+    chain = request.files.get('chain')
+    if not cert or not key or not cert.filename or not key.filename:
+        return jsonify({'ok': False, 'error': 'cert and key PEM files are required'}), 400
+    try:
+        chb = chain.read() if (chain and chain.filename) else None
+        info = cs.import_pem(cert.read(), key.read(), chb,
+                             by=getattr(current_user, 'username', ''))
+        log_action('node_cert.import', 'security', detail=info.get('subject'))
+        return jsonify({'ok': True, 'cert': info})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)[:300]}), 400
+
+
+@bp.route('/node-cert/issue', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def node_cert_issue():
+    from ..services import cert_service as cs
+    try:
+        info = cs.issue_internal(by=getattr(current_user, 'username', ''))
+        log_action('node_cert.issue', 'security', detail=info.get('subject'))
+        return jsonify({'ok': True, 'cert': info})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)[:300]}), 400
+
+
+@bp.route('/node-cert/renew', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def node_cert_renew():
+    from ..services import cert_service as cs
+    try:
+        res = cs.renew_if_needed(by=getattr(current_user, 'username', ''), force=True)
+        log_action('node_cert.renew', 'security', detail=str(res))
+        return jsonify({'ok': True, 'result': res, 'cert': cs.current()})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)[:300]}), 400
+
+
+@bp.route('/pg-ssl', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_pg_ssl():
+    from ..services import pg_ssl as pgsvc
+    try:
+        res = pgsvc.apply_policy(request.form.get('min_protocol', 'TLSv1.2'),
+                                 request.form.get('ciphers', ''),
+                                 by=getattr(current_user, 'username', ''))
+        log_action('pg_ssl.policy', 'security', detail=str(res))
+        return jsonify({'ok': True, 'result': res})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)[:300]}), 400

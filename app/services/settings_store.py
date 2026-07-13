@@ -135,6 +135,30 @@ def general() -> dict[str, Any]:
     }
 
 
+def to_local(value: Any, fmt: str = "%Y-%m-%d %H:%M %Z") -> str:
+    """Format a datetime (or ISO-8601 string) in the admin-configured timezone
+    (``general.timezone`` in ``app_settings`` — the single, DB-backed source of
+    truth, replicated to every HA node). Naive inputs are treated as UTC. Any
+    failure degrades to the raw value instead of raising. This is the ONE
+    conversion code path shared by the ``localtime`` Jinja filter and every
+    server-side formatter (git_service, monitoring), so the whole UI localizes
+    through a single function reading a single timezone source."""
+    if not value:
+        return "—"
+    try:
+        from datetime import datetime, timezone as _utc
+        from zoneinfo import ZoneInfo
+        dt = datetime.fromisoformat(value) if isinstance(value, str) else value
+        tzname = general().get("timezone") or "UTC"
+        aware = dt.replace(tzinfo=_utc.utc) if dt.tzinfo is None else dt
+        return aware.astimezone(ZoneInfo(tzname)).strftime(fmt)
+    except Exception:
+        try:
+            return value.strftime(fmt) if hasattr(value, "strftime") else str(value)
+        except Exception:
+            return str(value)
+
+
 def save_general(app_name: str, default_kind: str, session_timeout: Any,
                  poll_interval: Any, show_raw_config: bool,
                  log_levels: list[str], timezone: str = "",

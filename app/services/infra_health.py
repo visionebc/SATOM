@@ -101,6 +101,7 @@ def _git() -> dict:
     out = {"remote": info.get("remote") or "—",
            "branch": info.get("branch") or "—",
            "commit": info.get("commit") or "—",
+           "commit_local": info.get("commit_local") or "",
            "dirty": bool(info.get("dirty")),
            "base": None, "reachable": False, "reports_last": None}
     remote = info.get("remote") or ""
@@ -124,6 +125,7 @@ def _git() -> dict:
         if hist:
             h = hist[0]
             out["reports_last"] = {"hash": h.get("hash"), "date": h.get("date"),
+                                   "datetime": h.get("datetime"),
                                    "subject": h.get("subject")}
     except Exception:
         pass

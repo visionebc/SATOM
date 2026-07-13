@@ -97,7 +97,8 @@
       '<div class="ih-svc"><span>branch</span><span>'+esc(g.branch)+
         (g.dirty?' <span class="ih-t-warn">· dirty</span>':'')+'</span></div>'+
       '<div class="ih-svc"><span>code HEAD</span><span class="text-truncate" style="max-width:160px;" title="'+esc(g.commit)+'">'+esc(g.commit)+'</span></div>'+
-      '<div class="ih-svc"><span>reports/ sync</span><span>'+(last?esc(last.date)+' · '+esc(last.hash):'—')+'</span></div>'+
+      (g.commit_local?'<div class="ih-svc"><span>committed</span><span>'+esc(g.commit_local)+'</span></div>':'')+
+      '<div class="ih-svc"><span>reports/ sync</span><span>'+(last?esc(last.datetime||last.date)+' · '+esc(last.hash):'—')+'</span></div>'+
       (last?'<div class="ih-note">'+esc(last.subject)+'</div>':''));
   }
 

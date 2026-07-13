@@ -254,7 +254,7 @@ def snapshot() -> dict:
         db_note = db_detail or "no replica connected"
     channels.append({
         "key": "db_repl",
-        "label": "DB replication (primary ⇄ standby)",
+        "label": "DB replication (primary ⇄ standby · :5432)",
         "encrypted": repl["encrypted"],
         "enforced": repl["enforced"],
         "protocol": repl["protocol"],

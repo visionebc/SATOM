@@ -6,10 +6,13 @@ replication SSL, and the Monitoring "Encryption in transit" cards._
 
 ## TL;DR
 
-OFortMAut does **not** terminate its own public TLS today — the edge nginx
-(`192.0.2.40`) does, with the fleet wildcard. This work gives the app its **own**
-node-level TLS on `:8443` and makes every inter-node channel encrypted and
-verifiable, surfaced honestly per-channel in Monitoring.
+Since the **2026-07-13 Option-B cutover**, each node terminates its **own**
+public TLS directly on `:443` with the trusted fleet wildcard `*.example.net`
+— `fortinet-manager{,-2}.example.net` now resolve straight to the nodes
+(`192.0.2.248` / `192.0.2.249`); the edge `192.0.2.40` stays only as rollback. The
+same nginx vhost also serves `:8443` for node-to-node peer probes and `:80`→301.
+Every inter-node channel is encrypted and verifiable, surfaced honestly
+per-channel in Monitoring.
 
 | Channel | State | Mechanism |
 |---|---|---|

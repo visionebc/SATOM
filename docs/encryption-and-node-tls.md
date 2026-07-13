@@ -16,7 +16,7 @@ verifiable, surfaced honestly per-channel in Monitoring.
 | DB replication (primary ⇄ standby) | **encrypted + enforced + mutual-CA** | Postgres `hostssl` + `clientcert=verify-ca`, TLS 1.3 |
 | Inter-node app probes (`/healthz*`) | **encrypted + authenticated** | HTTPS `:8443` (node cert) + shared identity key |
 | Data sync (`fm-ha-datasync`) | encrypted | rsync over SSH |
-| Config SoT publish (Gitea) | ⚠️ **plaintext** | `http://192.0.2.53:3000` — see "Known gaps" |
+| Config SoT publish (Gitea) | **encrypted** | `git push` over HTTPS to `https://git.example.net` (edge wildcard cert) |
 
 ## PKI layout (node-local, NEVER in git — see `.gitignore`)
 
@@ -94,9 +94,12 @@ encrypted? · protocol+cipher · how · enforced/authenticated, plus a node-cert
 tile (subject/issuer/expiry/source).
 
 ## Known gaps / next steps
-- **Gitea remote is plain HTTP** (`http://192.0.2.53:3000`) — the config-SoT push is
-  unencrypted. Switch `origin` to `https://git.example.net/...` once the cert is
-  trusted by the nodes. The card flags this red on purpose.
+- ~~**Gitea remote is plain HTTP**~~ — RESOLVED 2026-07-13. `origin` on both nodes
+  switched from `http://192.0.2.53:3000` to `https://git.example.net/ofortmaut-dev/ofortmaut.git`
+  (embedded access token preserved; edge presents the trusted fleet wildcard, `ssl_verify=0`).
+  Verified: `ls-remote`, `fetch`, and dry-run `push` all authenticate over TLS on 248 + 249;
+  the encryption card now reports this channel encrypted. Rollback pointer saved at
+  `/root/ofortmaut-origin.http.rollback` on each node.
 - **Cutover to option B** (gunicorn → `127.0.0.1`, nginx sole front on `:8443`,
   then move DNS to the node) is NOT done — `:8000` still serves the edge. Before
   moving DNS, open `:8443` to the client source range in nftables and import a

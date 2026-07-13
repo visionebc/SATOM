@@ -1,42 +1,42 @@
-{# ── Infrastructure health card — HA nodes + Git SoT + backup server ──────────
+{# ── Infrastructure health — HA nodes + Git SoT + backup server ───────────────
    Self-contained (own scoped styles + JS) so it can be included on BOTH the
-   Global ADOM home and /monitoring. Fetches /monitoring/infra AFTER render so a
-   page load never blocks on the network. #}
+   Global ADOM home and /monitoring. Cards use the same fw-card format as the
+   "Manager system" section on /monitoring. Fetches /monitoring/infra AFTER
+   render so a page load never blocks on the network. #}
 <style nonce="{{ csp_nonce }}">
-  .ih-card { margin-bottom:18px; }
-  .ih-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; }
-  .ih-tile { border-radius:12px; padding:13px 15px; background:rgba(15,23,42,.55);
-             border:1px solid rgba(148,163,184,.10); }
-  .ih-tile h6 { font-size:.82rem; margin:0 0 6px; display:flex; align-items:center;
-                justify-content:space-between; gap:6px; }
-  .ih-sub { font-size:.72rem; color:#64748b; }
-  .ih-row { display:flex; align-items:center; gap:8px; font-size:.76rem; margin-top:6px; }
-  .ih-row .nm { width:52px; color:#94a3b8; flex:none; }
-  .ih-row .qt { width:118px; text-align:right; flex:none; color:#cbd5e1; }
-  .ih-bar { flex:1; height:7px; border-radius:4px; background:rgba(148,163,184,.14); overflow:hidden; }
+  .ih-sec-title { font-size:.75rem; text-transform:uppercase; letter-spacing:.08em;
+                  color:#64748b; margin:2px 0 8px; display:flex; align-items:center;
+                  justify-content:space-between; gap:8px; }
+  .ih-sec-title .ih-stamp { text-transform:none; letter-spacing:normal; font-size:.72rem; }
+  .ih-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr));
+             gap:14px; margin-bottom:18px; }
+  .ih-caprow { display:flex; align-items:center; gap:8px; margin-top:6px; font-size:.78rem; }
+  .ih-caprow .nm { width:48px; color:#94a3b8; flex:none; }
+  .ih-caprow .bar { flex:1; }
+  .ih-caprow .qt { width:158px; text-align:right; flex:none; color:#cbd5e1; }
+  .ih-bar { height:7px; border-radius:4px; background:rgba(148,163,184,.14); overflow:hidden; }
   .ih-bar > i { display:block; height:100%; border-radius:4px; }
   .ih-ok{background:#10b981;} .ih-warn{background:#fbbf24;} .ih-crit{background:#ef4444;} .ih-mut{background:#475569;}
-  .ih-dot { display:inline-block; width:9px; height:9px; border-radius:50%; }
-  .ih-badge { font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; padding:1px 7px;
-              border-radius:9px; border:1px solid; }
+  .ih-svc { display:flex; justify-content:space-between; gap:8px; font-size:.82rem; padding:4px 0;
+            border-bottom:1px dashed rgba(148,163,184,.08); }
+  .ih-svc > span:last-child { text-align:right; }
+  .ih-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+  .ih-t-ok{color:#10b981;} .ih-t-warn{color:#fbbf24;} .ih-t-crit{color:#ef4444;} .ih-t-mut{color:#64748b;}
+  .ih-badge { font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; padding:1px 8px;
+              border-radius:9px; border:1px solid; white-space:nowrap; }
   .ih-b-pri { color:#93c5fd; background:rgba(59,130,246,.12); border-color:rgba(59,130,246,.3); }
   .ih-b-sby { color:#c4b5fd; background:rgba(139,92,246,.12); border-color:rgba(139,92,246,.3); }
   .ih-b-off { color:#fca5a5; background:rgba(239,68,68,.12); border-color:rgba(239,68,68,.3); }
-  .ih-t-ok{color:#10b981;} .ih-t-warn{color:#fbbf24;} .ih-t-crit{color:#ef4444;} .ih-t-mut{color:#64748b;}
-  .ih-kv { display:flex; justify-content:space-between; font-size:.78rem; padding:3px 0;
-           border-bottom:1px dashed rgba(148,163,184,.08); }
   .ih-note { font-size:.7rem; color:#64748b; margin-top:8px; }
 </style>
 
-<div class="fw-card ih-card" style="padding:16px 18px;">
-  <div class="d-flex align-items-center justify-content-between mb-2">
-    <h2 class="h6 mb-0"><i class="bi bi-hdd-network me-2 text-accent"></i>Infrastructure health
-      <span class="text-muted" style="font-size:12px;">— HA nodes · Git · backup server</span></h2>
-    <span id="ihStamp" class="text-muted" style="font-size:12px;">loading…</span>
-  </div>
-  <div class="ih-grid" id="ihBody">
-    <div class="text-muted small">Probing nodes, Gitea and backup-server…</div>
-  </div>
+<div class="ih-sec-title">
+  <span><i class="bi bi-hdd-network me-1"></i>Infrastructure health
+    <span style="color:#475569;">— HA nodes · Git · backup server</span></span>
+  <span id="ihStamp" class="text-muted ih-stamp">loading…</span>
+</div>
+<div class="ih-grid" id="ihBody">
+  <div class="text-muted small">Probing nodes, Gitea and backup-server…</div>
 </div>
 
 <script nonce="{{ csp_nonce }}">
@@ -47,9 +47,13 @@
   function cls(p){return p==null?'ih-mut':p>=90?'ih-crit':p>=75?'ih-warn':'ih-ok';}
   function tcls(p){return p==null?'ih-t-mut':p>=90?'ih-t-crit':p>=75?'ih-t-warn':'ih-t-ok';}
   function bar(p){var w=p==null?0:Math.min(100,p);
-    return '<span class="ih-bar"><i class="'+cls(p)+'" style="width:'+w+'%"></i></span>';}
-  function gb(mb){return mb?(mb/1024).toFixed(mb>=1024?1:1)+' GB':'?';}
+    return '<span class="bar"><span class="ih-bar"><i class="'+cls(p)+'" style="width:'+w+'%"></i></span></span>';}
+  function caprow(name,p,qt){
+    return '<div class="ih-caprow"><span class="nm">'+esc(name)+'</span>'+bar(p)+
+      '<span class="qt '+tcls(p)+'">'+qt+'</span></div>';}
+  function gb(mb){return mb?(mb/1024).toFixed(1)+' GB':'?';}
   function dot(ok){return '<span class="ih-dot" style="background:'+(ok?'#10b981':'#ef4444')+'"></span>';}
+  function card(inner){return '<div class="fw-card"><div class="fw-card-body">'+inner+'</div></div>';}
   function roleBadge(role,reach){
     if(!reach) return '<span class="ih-badge ih-b-off">offline</span>';
     if(role==='primary') return '<span class="ih-badge ih-b-pri">primary</span>';
@@ -59,54 +63,58 @@
 
   function nodeTile(n){
     var hs=n.host_stats||{}, d0=(hs.disks||[])[0];
+    var head='<div class="d-flex justify-content-between align-items-start">'+
+      '<b>'+(n.reachable?dot(n.app_up):'')+'<i class="bi bi-hdd-stack me-1"></i>'+esc(n.name)+
+      (n.is_local?' <span class="text-muted" style="font-weight:400;">(this node)</span>':'')+'</b>'+
+      roleBadge(n.role,n.reachable)+'</div>';
     if(!n.reachable){
-      return '<div class="ih-tile"><h6><span>'+esc(n.name)+'</span>'+roleBadge(n.role,false)+'</h6>'+
-        '<div class="ih-sub">'+esc(n.host)+' · '+esc(n.desc||'')+'</div>'+
-        '<div class="ih-t-crit mt-2" style="font-size:.8rem;"><i class="bi bi-exclamation-octagon me-1"></i>unreachable</div></div>';
+      return card(head+
+        '<div class="text-muted small mb-2">'+esc(n.host)+' · '+esc(n.desc||'')+'</div>'+
+        '<div class="ih-t-crit" style="font-size:.82rem;"><i class="bi bi-exclamation-octagon me-1"></i>unreachable</div>');
     }
     var cpu=hs.load_pct, mem=hs.mem_pct, dsk=d0?d0.pct:null;
-    return '<div class="ih-tile"><h6><span>'+dot(n.app_up)+' '+esc(n.name)+
-      (n.is_local?' <span class="ih-sub">(this node)</span>':'')+'</span>'+roleBadge(n.role,true)+'</h6>'+
-      '<div class="ih-sub">'+esc(n.host)+' · '+(hs.cpus||'?')+' CPU · '+gb(hs.mem_total_mb)+' RAM'+
+    return card(head+
+      '<div class="text-muted small mb-2">'+esc(n.host)+' · '+(hs.cpus||'?')+' CPU · '+gb(hs.mem_total_mb)+' RAM'+
       (hs.uptime_s?' · up '+Math.floor(hs.uptime_s/86400)+'d':'')+'</div>'+
-      '<div class="ih-row"><span class="nm">CPU</span>'+bar(cpu)+'<span class="qt '+tcls(cpu)+'">'+
-        (hs.load?hs.load[0]:'?')+' / '+(hs.cpus||'?')+(cpu!=null?' · '+cpu+'%':'')+'</span></div>'+
-      '<div class="ih-row"><span class="nm">RAM</span>'+bar(mem)+'<span class="qt '+tcls(mem)+'">'+
-        gb(hs.mem_used_mb)+(mem!=null?' · '+mem+'%':'')+'</span></div>'+
-      '<div class="ih-row"><span class="nm">Disk</span>'+bar(dsk)+'<span class="qt '+tcls(dsk)+'">'+
-        (d0?d0.used_gb+' / '+d0.total_gb+' GB · '+d0.pct+'%':'?')+'</span></div></div>';
+      caprow('CPU',cpu,(hs.load?hs.load[0]:'?')+' / '+(hs.cpus||'?')+(cpu!=null?' · '+cpu+'%':''))+
+      caprow('RAM',mem,gb(hs.mem_used_mb)+(mem!=null?' · '+mem+'%':''))+
+      caprow('Disk',dsk,(d0?d0.used_gb+' / '+d0.total_gb+' GB · '+d0.pct+'%':'?')));
   }
 
   function gitTile(g){
-    var ok=g.reachable;
-    var last=g.reports_last;
-    return '<div class="ih-tile"><h6><span>'+dot(ok)+' Git repo (Gitea)</span>'+
-      '<span class="ih-badge '+(ok?'ih-b-pri':'ih-b-off')+'">'+(ok?'available':'unreachable')+'</span></h6>'+
-      '<div class="ih-sub">'+esc(g.base||g.remote||'—')+'</div>'+
-      '<div class="ih-kv"><span>branch</span><span>'+esc(g.branch)+
+    var ok=g.reachable, last=g.reports_last;
+    return card(
+      '<div class="d-flex justify-content-between align-items-start">'+
+        '<b>'+dot(ok)+'<i class="bi bi-git me-1"></i>Git repo (Gitea)</b>'+
+        '<span class="ih-badge '+(ok?'ih-b-pri':'ih-b-off')+'">'+(ok?'available':'unreachable')+'</span></div>'+
+      '<div class="text-muted small mb-2">'+esc(g.base||g.remote||'—')+'</div>'+
+      '<div class="ih-svc"><span>branch</span><span>'+esc(g.branch)+
         (g.dirty?' <span class="ih-t-warn">· dirty</span>':'')+'</span></div>'+
-      '<div class="ih-kv"><span>code HEAD</span><span class="text-truncate" style="max-width:150px;" title="'+esc(g.commit)+'">'+esc(g.commit)+'</span></div>'+
-      '<div class="ih-kv"><span>reports/ sync</span><span>'+(last?esc(last.date)+' · '+esc(last.hash):'—')+'</span></div>'+
-      (last?'<div class="ih-note">'+esc(last.subject)+'</div>':'')+'</div>';
+      '<div class="ih-svc"><span>code HEAD</span><span class="text-truncate" style="max-width:160px;" title="'+esc(g.commit)+'">'+esc(g.commit)+'</span></div>'+
+      '<div class="ih-svc"><span>reports/ sync</span><span>'+(last?esc(last.date)+' · '+esc(last.hash):'—')+'</span></div>'+
+      (last?'<div class="ih-note">'+esc(last.subject)+'</div>':''));
   }
 
   function backupTile(b){
     if(!b || !b.configured){
-      return '<div class="ih-tile"><h6><span>Backup server</span><span class="ih-badge ih-b-off">not configured</span></h6>'+
-        '<div class="ih-sub">Settings → SoT &amp; Backup</div></div>';
+      return card('<div class="d-flex justify-content-between align-items-start">'+
+        '<b><i class="bi bi-hdd-network me-1"></i>Backup server</b>'+
+        '<span class="ih-badge ih-b-off">not configured</span></div>'+
+        '<div class="text-muted small">Settings &rarr; SoT &amp; Backup</div>');
     }
     var ok=b.reachable, dk=b.disk;
-    return '<div class="ih-tile"><h6><span>'+dot(ok)+' Backup server (backup-server)</span>'+
-      '<span class="ih-badge '+(ok?'ih-b-pri':'ih-b-off')+'">'+(ok?'available':'unreachable')+'</span></h6>'+
-      '<div class="ih-sub">'+esc(b.host||'')+(b.port?':'+b.port:'')+' · SFTP</div>'+
-      (dk?'<div class="ih-row"><span class="nm">Disk</span>'+bar(dk.pct)+'<span class="qt '+tcls(dk.pct)+'">'+
-        dk.used_gb+' / '+dk.total_gb+' GB · '+dk.pct+'%</span></div>':
+    return card(
+      '<div class="d-flex justify-content-between align-items-start">'+
+        '<b>'+dot(ok)+'<i class="bi bi-hdd-network me-1"></i>Backup server (backup-server)</b>'+
+        '<span class="ih-badge '+(ok?'ih-b-pri':'ih-b-off')+'">'+(ok?'available':'unreachable')+'</span></div>'+
+      '<div class="text-muted small mb-2">'+esc(b.host||'')+(b.port?':'+b.port:'')+' · SFTP</div>'+
+      (dk?caprow('Disk',dk.pct,dk.used_gb+' / '+dk.total_gb+' GB · '+dk.pct+'%'):
         '<div class="ih-note">disk usage n/a</div>')+
-      '<div class="ih-kv"><span>device configs</span><span>'+(b.devices==null?'—':b.devices)+'</span></div>'+
-      '<div class="ih-kv"><span>firmware images</span><span>'+(b.firmware==null?'—':b.firmware)+
+      '<div class="ih-svc"><span>device configs</span><span>'+(b.devices==null?'—':b.devices)+'</span></div>'+
+      '<div class="ih-svc"><span>firmware images</span><span>'+(b.firmware==null?'—':b.firmware)+
         (b.firmware===0?' <span class="ih-t-warn">(empty)</span>':'')+'</span></div>'+
       (b.error?'<div class="ih-note ih-t-crit">'+esc(b.error)+'</div>':'')+
-      '<div class="ih-note"><i class="bi bi-shield-lock me-1"></i>CPU/RAM not shown — SFTP-jailed box (isolated failure domain).</div></div>';
+      '<div class="ih-note"><i class="bi bi-shield-lock me-1"></i>CPU/RAM not shown — SFTP-jailed box (isolated failure domain).</div>');
   }
 
   function render(d){

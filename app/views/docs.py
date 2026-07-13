@@ -36,6 +36,7 @@ _TITLES: dict[str, str] = {
     "wpp_exceptions.md": "WPP Exceptions & Signatures",
     "release_notes.md": "Release Notes & Upgrade Planning",
     "api_v1.md": "API v1 — Integration Manual",
+    "encryption-and-node-tls.md": "Encryption in Transit & Node TLS",
 }
 
 # One-line descriptions for the catalog cards.
@@ -48,6 +49,7 @@ _BLURBS: dict[str, str] = {
     "wpp_exceptions.md": "Authoring and injecting WAF exceptions and signature carve-outs.",
     "release_notes.md": "Known/resolved issues corpus and the upgrade advisor.",
     "api_v1.md": "How third parties authenticate and drive /api/v1 with a token.",
+    "encryption-and-node-tls.md": "Service certificate, node-to-node encryption, enforced Postgres SSL, and the Monitoring encryption cards.",
 }
 
 _MD_EXTENSIONS = ["toc", "fenced_code", "tables", "sane_lists", "nl2br"]

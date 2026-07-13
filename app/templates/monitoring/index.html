@@ -50,14 +50,15 @@
 
 {% include "_infra_health.html" %}
 
+<div class="mon-sec-title"><i class="bi bi-motherboard me-1"></i>Manager system</div>
+<div class="mon-grid" id="monSystem"></div>
+
 <div id="monAlerts"></div>
 <div class="mon-kpis mb-4" id="monKpis"></div>
 
 <div class="mon-sec-title"><i class="bi bi-hdd-rack me-1"></i>Device health &amp; capacity</div>
 <div class="mon-grid" id="monDevices"></div>
 
-<div class="mon-sec-title"><i class="bi bi-motherboard me-1"></i>Manager system</div>
-<div class="mon-grid" id="monSystem"></div>
 
 <script nonce="{{ csp_nonce }}">
 (function () {

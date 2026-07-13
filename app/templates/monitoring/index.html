@@ -4,12 +4,6 @@
 {% block content %}
 <style nonce="{{ csp_nonce }}">
   .mon-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr)); gap:14px; }
-  .mon-kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px; }
-  .mon-kpi { border-radius:12px; padding:14px 16px; background:rgba(15,23,42,.55);
-             border:1px solid rgba(148,163,184,.10); }
-  .mon-kpi .v { font-size:1.45rem; font-weight:700; line-height:1.15; }
-  .mon-kpi .l { font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:#94a3b8; }
-  .mon-kpi .s { font-size:.75rem; color:#64748b; }
   .mon-bar { height:7px; border-radius:4px; background:rgba(148,163,184,.14); overflow:hidden; }
   .mon-bar > i { display:block; height:100%; border-radius:4px; }
   .mon-ok    { background:#10b981; } .mon-warn { background:#fbbf24; }
@@ -58,7 +52,6 @@
 {% include "_infra_health.html" %}{# Database + Services cards render into #monSystem, which lives inside the infra grid #}
 
 <div id="monAlerts"></div>
-<div class="mon-kpis mb-4" id="monKpis"></div>
 
 <div class="mon-sec-title"><i class="bi bi-hdd-rack me-1"></i>Device health &amp; capacity</div>
 <div class="mon-grid" id="monDevices"></div>
@@ -79,38 +72,6 @@
     var w = pct == null ? 0 : Math.min(100, pct);
     return '<div class="mon-bar"><i class="mon-' + (status || 'ok') + '" style="width:' + w + '%"></i></div>';
   }
-  function kpi(label, value, sub, cls) {
-    return '<div class="mon-kpi"><div class="l">' + esc(label) + '</div>' +
-      '<div class="v ' + (cls || '') + '">' + value + '</div>' +
-      '<div class="s">' + (sub || '') + '</div></div>';
-  }
-
-  function renderKpis(d) {
-    var sys = d.system || {}, dbs = d.db || {};
-    var crit = d.alerts.filter(function (a) { return a.status === 'crit'; }).length;
-    var warn = d.alerts.length - crit;
-    var html = '';
-    html += kpi('Devices', d.devices.length,
-      d.devices.filter(function (x) { return x.hw; }).length + ' with hardware inventory');
-    html += kpi('Capacity alerts', (d.alerts.length || 'none'),
-      crit + ' critical · ' + warn + ' warning',
-      crit ? 't-crit' : (warn ? 't-warn' : 't-ok'));
-    html += kpi('Manager CPU', (sys.cpus || '?') + ' cores',
-      sys.load ? 'load ' + sys.load.join(' / ') + (sys.load_pct != null ? ' · ' + sys.load_pct + '%' : '') : '',
-      sys.load_pct >= 90 ? 't-crit' : sys.load_pct >= 70 ? 't-warn' : '');
-    html += kpi('Manager RAM', fmtGB(sys.mem_total_mb),
-      sys.mem_pct != null ? fmtGB(sys.mem_used_mb) + ' used · ' + sys.mem_pct + '%' : '',
-      sys.mem_pct >= 90 ? 't-crit' : sys.mem_pct >= 75 ? 't-warn' : '');
-    var d0 = (sys.disks || [])[0];
-    html += kpi('Manager disk', d0 ? d0.total_gb + ' GB' : '?',
-      d0 ? d0.used_gb + ' GB used · ' + d0.pct + '%' : '',
-      d0 && d0.pct >= 90 ? 't-crit' : d0 && d0.pct >= 75 ? 't-warn' : '');
-    html += kpi('Database', dbs.ok ? (dbs.size || 'up') : 'DOWN',
-      dbs.ok ? esc(dbs.dialect) + (dbs.latency_ms != null ? ' · ' + dbs.latency_ms + ' ms' : '') : esc(dbs.error || ''),
-      dbs.ok ? 't-ok' : 't-crit');
-    document.getElementById('monKpis').innerHTML = html;
-  }
-
   function renderAlerts(d) {
     var box = document.getElementById('monAlerts');
     if (!d.alerts.length) { box.innerHTML = ''; return; }
@@ -227,7 +188,7 @@
     fetch('{{ url_for("monitoring.data") }}', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        renderKpis(d); renderAlerts(d); renderDevices(d); renderSystem(d);
+        renderAlerts(d); renderDevices(d); renderSystem(d);
         document.getElementById('monStamp').textContent =
           'updated ' + new Date().toLocaleTimeString() +
           ' · warn ≥ ' + d.thresholds.warn + '% · crit ≥ ' + d.thresholds.crit + '%';

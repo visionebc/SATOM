@@ -100,8 +100,20 @@ tile (subject/issuer/expiry/source).
   Verified: `ls-remote`, `fetch`, and dry-run `push` all authenticate over TLS on 248 + 249;
   the encryption card now reports this channel encrypted. Rollback pointer saved at
   `/root/ofortmaut-origin.http.rollback` on each node.
-- **Cutover to option B** (gunicorn → `127.0.0.1`, nginx sole front on `:8443`,
-  then move DNS to the node) is NOT done — `:8000` still serves the edge. Before
-  moving DNS, open `:8443` to the client source range in nftables and import a
-  **publicly-trusted** cert (the internal-CA/bootstrap cert triggers browser
-  warnings).
+- **Cutover to option B** — DONE 2026-07-13 (public `:443` path live; final gunicorn
+  lockdown intentionally deferred). Each node now serves the app directly on **`:443`**
+  via nginx with the **trusted fleet wildcard** `*.example.net` (copied from the edge
+  `/etc/nginx/ssl/visionebc-wildcard.{crt,key}` into `pki/public/`, `source=imported`,
+  valid to 2026-09-02 — zero browser warning). `:8443` (peer probes) and `:80`→301
+  are also served from the same vhost (`fm-tls.conf`). nftables on 248 opens `:443`+`:80`
+  from `192.0.2.0/24`; 249's input chain is `policy accept`. DNS
+  `fortinet-manager{,-2}.example.net` resolves to `192.0.2.248/.249`; Power Panel DNS
+  entries 269/275 reconciled to match (were stale at `.40`). Pre-change backups per node:
+  `/root/fm-pub-server.{crt,key}.pre-b-cutover`, `/root/fm-tls.conf.pre-b-cutover`,
+  `/root/fm-pub-meta.json.pre-b-cutover`.
+  STILL OPEN (deliberate): (a) gunicorn stays on `0.0.0.0:8000` so the **edge remains a
+  rollback** through the validation window (feedback_migration_policy) — bind to
+  `127.0.0.1` only after the `:443` path is user-confirmed; (b) the wildcard is **not
+  auto-renewable from the node** (it renews on the edge ~every 90d) — re-copy on renewal
+  or wire a node-side sync. Internal-CA issue/auto-renew still exists for a self-managed
+  cert if the fleet wildcard is ever not desired.

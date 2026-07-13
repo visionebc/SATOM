@@ -32,34 +32,31 @@ LB_PROBE_PATH = "/healthz/primary"
 
 
 def _probe_peer(host: str, timeout: float = 1.5) -> dict:
-    """Actively probe a peer node over HTTP (from THIS node) so the admin sees
-    the secondary's real role + revision + app health WITHOUT SSH access to it.
-    role: /healthz/primary (200=primary, 503=standby); revision + app_up:
-    /healthz. Best-effort — an unreachable peer just reports reachable=False."""
-    import urllib.request
-    import urllib.error
-    base = "http://%s:8000" % host
-    out = {"reachable": False, "role": None, "revision": None, "app_up": False, "db": None}
-    try:
-        with urllib.request.urlopen(base + "/healthz/primary", timeout=timeout) as r:
-            out["reachable"] = True
-            out["role"] = "primary" if r.status == 200 else "standby"
-    except urllib.error.HTTPError as e:
+    """Actively probe a peer over HTTPS :8443 (fallback HTTP :8000) so the admin
+    sees the secondary's real role + revision + app health WITHOUT SSH. Transport
+    is TLS whenever the peer's :8443 front is up; the identity-key header is
+    attached for peer authentication. Best-effort — an unreachable peer just
+    reports reachable=False."""
+    from . import node_security as nsec
+    out = {"reachable": False, "role": None, "revision": None, "app_up": False,
+           "db": None, "secure": None}
+    st, body, secure = nsec.peer_get(host, "/healthz/primary", timeout=timeout)
+    if st is not None:
         out["reachable"] = True
-        out["role"] = "standby" if e.code == 503 else None
-    except Exception:
-        pass
-    try:
-        with urllib.request.urlopen(base + "/healthz", timeout=timeout) as r:
-            out["reachable"] = True
-            d = json.loads(r.read().decode("utf-8", "replace"))
+        out["secure"] = secure
+        out["role"] = "primary" if st == 200 else ("standby" if st == 503 else None)
+    st2, body2, secure2 = nsec.peer_get(host, "/healthz", timeout=timeout)
+    if st2 is not None:
+        out["reachable"] = True
+        out["secure"] = secure2
+        try:
+            d = json.loads(body2.decode("utf-8", "replace"))
             out["app_up"] = bool(d.get("ok"))
             out["revision"] = {"short": d.get("revision"), "sha": d.get("sha")}
             out["db"] = d.get("db")
-    except Exception:
-        pass
+        except Exception:
+            pass
     return out
-
 
 def _num(v):
     """Coerce a Postgres numeric/Decimal to a JSON-safe int (bytes of WAL lag)."""

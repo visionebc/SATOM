@@ -39,34 +39,34 @@ _HTTP_TIMEOUT = 2.0
 # HA nodes
 # ---------------------------------------------------------------------------
 def _peer_health(host: str) -> dict:
-    """Read a peer node's ``/healthz`` (now carries host_stats under ``host``)
-    plus, as a fallback, its authoritative role from ``/healthz/primary``."""
+    """Read a peer node's ``/healthz`` over HTTPS :8443 (fallback :8000), plus its
+    authoritative role from ``/healthz/primary``. Records whether the probe rode
+    TLS (``secure``) and whether the peer accepted our identity key
+    (``authenticated``)."""
+    from . import node_security as nsec
     out = {"reachable": False, "role": None, "app_up": False,
-           "revision": None, "host_stats": None}
-    base = "http://%s:%d" % (host, PEER_PORT)
-    try:
-        with urllib.request.urlopen(base + "/healthz", timeout=_HTTP_TIMEOUT) as r:
-            out["reachable"] = True
-            d = json.loads(r.read().decode("utf-8", "replace"))
+           "revision": None, "host_stats": None, "secure": None,
+           "authenticated": None}
+    st, body, secure = nsec.peer_get(host, "/healthz", timeout=_HTTP_TIMEOUT)
+    if st is not None:
+        out["reachable"] = True
+        out["secure"] = secure
+        try:
+            d = json.loads(body.decode("utf-8", "replace"))
             out["app_up"] = bool(d.get("ok"))
             out["revision"] = d.get("revision")
             out["host_stats"] = d.get("host")
             out["role"] = (d.get("db") or {}).get("role")
-    except Exception:
-        pass
-    if out["role"] is None:  # older peer / db probe failed → LB probe
-        try:
-            with urllib.request.urlopen(base + "/healthz/primary",
-                                        timeout=_HTTP_TIMEOUT) as r:
-                out["reachable"] = True
-                out["role"] = "primary" if r.status == 200 else "standby"
-        except urllib.error.HTTPError as e:
-            out["reachable"] = True
-            out["role"] = "standby" if e.code == 503 else None
+            out["authenticated"] = d.get("peer_authenticated")
         except Exception:
             pass
+    if out["role"] is None:
+        st2, body2, secure2 = nsec.peer_get(host, "/healthz/primary", timeout=_HTTP_TIMEOUT)
+        if st2 is not None:
+            out["reachable"] = True
+            out["secure"] = secure2
+            out["role"] = "primary" if st2 == 200 else ("standby" if st2 == 503 else None)
     return out
-
 
 def _nodes() -> list[dict]:
     this = su.this_node_name()

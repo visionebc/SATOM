@@ -1,0 +1,130 @@
+{# ── Encryption posture — is each inter-node / off-box channel encrypted, with
+   what cipher, and how ────────────────────────────────────────────────────────
+   Self-contained (own scoped JS) so it can ride on /monitoring. Reuses the ih-*
+   / fw-card styles from _infra_health.html (included just above). Fetches
+   /monitoring/encryption AFTER render (a page load never blocks on the TLS
+   probe). Every "encrypted" badge here is backed by a LIVE probe, never
+   assumed. #}
+<style nonce="{{ csp_nonce }}">
+  .enc-badge { font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; padding:1px 8px;
+               border-radius:9px; border:1px solid; white-space:nowrap; }
+  .enc-b-on  { color:#6ee7b7; background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.32); }
+  .enc-b-soft{ color:#fcd34d; background:rgba(251,191,36,.12); border-color:rgba(251,191,36,.32); }
+  .enc-b-off { color:#fca5a5; background:rgba(239,68,68,.12); border-color:rgba(239,68,68,.3); }
+  .enc-b-unk { color:#94a3b8; background:rgba(148,163,184,.10); border-color:rgba(148,163,184,.25); }
+  .enc-ciph  { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.74rem; color:#cbd5e1;
+               background:rgba(148,163,184,.08); border-radius:6px; padding:1px 6px; }
+  .enc-how   { font-size:.74rem; color:#94a3b8; margin-top:6px; }
+  .enc-how b { color:#cbd5e1; font-weight:600; }
+  .enc-note  { font-size:.7rem; margin-top:8px; }
+</style>
+
+<div class="ih-sec-title" style="margin-top:4px;">
+  <span><i class="bi bi-shield-lock me-1"></i>Encryption in transit
+    <span style="color:#475569;">— per channel: encrypted? · cipher · how</span></span>
+  <span id="encStamp" class="text-muted ih-stamp">loading…</span>
+</div>
+<div class="ih-grid" id="encGrid">
+  <div id="encBody" style="display:contents">
+    <div class="text-muted small">Probing channels (DB TLS · node HTTPS · SoT)…</div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  'use strict';
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function card(inner){return '<div class="fw-card"><div class="fw-card-body">'+inner+'</div></div>';}
+
+  // encrypted (true/false/null) + enforced (true/false/null) -> badge
+  function badge(enc, enf){
+    if(enc===true && enf===true)  return '<span class="enc-badge enc-b-on"><i class="bi bi-shield-lock-fill me-1"></i>encrypted · enforced</span>';
+    if(enc===true && enf===false) return '<span class="enc-badge enc-b-soft"><i class="bi bi-shield-exclamation me-1"></i>encrypted · not enforced</span>';
+    if(enc===true)                return '<span class="enc-badge enc-b-on"><i class="bi bi-shield-lock-fill me-1"></i>encrypted</span>';
+    if(enc===false)               return '<span class="enc-badge enc-b-off"><i class="bi bi-shield-slash me-1"></i>plaintext</span>';
+    return '<span class="enc-badge enc-b-unk"><i class="bi bi-shield me-1"></i>unknown</span>';
+  }
+  function noteCls(enc, enf){
+    if(enc===false) return 'ih-t-crit';
+    if(enc===true && enf===false) return 'ih-t-warn';
+    if(enc===true) return 'ih-t-ok';
+    return 'ih-t-mut';
+  }
+  var ICON={db_repl:'bi-database-lock', internode_http:'bi-hdd-network',
+            datasync:'bi-arrow-repeat', git:'bi-git'};
+
+  function chanTile(c){
+    var proto=c.protocol||'—', ciph=c.cipher||'—';
+    var cipherLine = (c.encrypted===false)
+        ? '<div class="enc-how"><b>Cipher:</b> <span class="ih-t-crit">none — traffic is in the clear</span></div>'
+        : '<div class="enc-how"><b>Cipher:</b> <span class="enc-ciph">'+esc(proto)+(ciph&&ciph!=='—'?' · '+esc(ciph):'')+'</span></div>';
+    var peers='';
+    if(c.peers && c.peers.length){
+      peers='<div class="enc-note ih-t-mut">'+c.peers.map(function(p){
+        var pc = (p.encrypted===false||p.https===false)?'ih-t-crit':'ih-t-ok';
+        var pv = p.cipher||p.protocol||(p.https?'HTTPS':(p.https===false?'HTTP':''));
+        return '<span class="'+pc+'">'+esc(p.name||p.client_addr||p.host||'peer')+'</span>'+(pv?' ('+esc(pv)+')':'');
+      }).join(' · ')+'</div>';
+    }
+    return card(
+      '<div class="d-flex justify-content-between align-items-start" style="gap:8px;">'+
+        '<b><i class="bi '+(ICON[c.key]||'bi-shield')+' me-1"></i>'+esc(c.label)+'</b>'+
+        badge(c.encrypted, c.enforced)+'</div>'+
+      cipherLine+
+      '<div class="enc-how"><b>How:</b> '+esc(c.mechanism||'—')+'</div>'+
+      (c.note?'<div class="enc-note '+noteCls(c.encrypted,c.enforced)+'">'+esc(c.note)+'</div>':'')+
+      peers);
+  }
+
+  function certTile(ct, policy){
+    if(!ct || !ct.present){
+      return card('<div class="d-flex justify-content-between align-items-start">'+
+        '<b><i class="bi bi-patch-check me-1"></i>Node service certificate</b>'+
+        '<span class="enc-badge enc-b-off">missing</span></div>'+
+        '<div class="text-muted small">'+esc((ct&&ct.error)||'no cert at pki/public/server.crt')+'</div>');
+    }
+    var dl=ct.days_left, dcls = dl==null?'ih-t-mut':dl<14?'ih-t-crit':dl<45?'ih-t-warn':'ih-t-ok';
+    var src=ct.source||'bootstrap';
+    var srcbadge = src==='imported' ? '<span class="enc-badge enc-b-on">imported</span>'
+                 : src==='issued'   ? '<span class="enc-badge enc-b-on">CA-issued · auto-renew</span>'
+                 : '<span class="enc-badge enc-b-soft">bootstrap (replace)</span>';
+    return card(
+      '<div class="d-flex justify-content-between align-items-start" style="gap:8px;">'+
+        '<b><i class="bi bi-patch-check-fill me-1"></i>Node service certificate</b>'+srcbadge+'</div>'+
+      '<div class="enc-how"><b>Subject:</b> <span class="enc-ciph">'+esc(ct.subject||'—')+'</span></div>'+
+      '<div class="enc-how"><b>Issuer:</b> '+esc(ct.issuer||'—')+(ct.self_signed?' <span class="ih-t-warn">(self-signed)</span>':'')+'</div>'+
+      '<div class="ih-svc"><span>expires</span><span class="'+dcls+'">'+esc((ct.not_after||'').slice(0,10))+
+        (dl!=null?' · '+dl+' d left':'')+'</span></div>'+
+      '<div class="enc-note ih-t-mut">Served by nginx on :8443. '+
+        (src==='bootstrap'?'Internal bootstrap cert — import a trusted cert or issue via cert-manager in Settings.':'')+'</div>');
+  }
+
+  function summaryLine(s, role, node){
+    var b = s.all_encrypted ? 'enc-b-on' : (s.encrypted>0?'enc-b-soft':'enc-b-off');
+    var txt = s.encrypted+' / '+s.known+' channels encrypted'+
+      (s.db_enforced? ' · DB SSL enforced' : ' · DB SSL not enforced');
+    return '<div style="grid-column:1/-1;margin-bottom:2px;">'+
+      '<span class="enc-badge '+b+'">'+esc(txt)+'</span> '+
+      '<span class="text-muted small ms-2">'+esc(node||'')+' · '+esc(role||'')+'</span></div>';
+  }
+
+  function render(d){
+    var s=d.summary||{}, html=summaryLine(s, d.role, d.node);
+    html += (d.channels||[]).map(chanTile).join('');
+    html += certTile(d.node_cert||{}, d.policy||{});
+    document.getElementById('encBody').innerHTML=html||'<div class="text-muted small">No data.</div>';
+    document.getElementById('encStamp').textContent='updated '+new Date().toLocaleTimeString();
+  }
+
+  function load(){
+    fetch('{{ url_for("monitoring.encryption") }}',{headers:{'X-Requested-With':'XMLHttpRequest'}})
+      .then(function(r){return r.json();}).then(render)
+      .catch(function(){document.getElementById('encStamp').textContent='probe failed';
+        document.getElementById('encBody').innerHTML='<div class="ih-t-crit small">Could not reach the encryption probe.</div>';});
+  }
+  load();
+  var t=setInterval(load,60000);
+  document.addEventListener('turbo:before-render',function(){clearInterval(t);},{once:true});
+})();
+</script>

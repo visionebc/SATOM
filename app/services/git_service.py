@@ -70,6 +70,16 @@ def _git_token() -> str:
 
 # ── public API ────────────────────────────────────────────────────────────────
 
+def _local(iso: str) -> str:
+    """Localize a git ISO-8601 committer timestamp (``%cI``) to the admin
+    console timezone via the shared settings_store converter. Empty string when
+    there is nothing to show, so callers can hide the row."""
+    if not iso or iso == "—":
+        return ""
+    from . import settings_store as _stz
+    return _stz.to_local(iso)
+
+
 def git_info() -> dict:
     """Snapshot of the repo for the Settings → Git tab."""
     root = _repo_root()
@@ -81,6 +91,7 @@ def git_info() -> dict:
     remote = _redact_remote(raw_remote)
     branch = out("rev-parse", "--abbrev-ref", "HEAD")
     commit = out("log", "-1", "--format=%h %cs %s")
+    commit_iso = out("log", "-1", "--format=%cI", default="")
     dirty_raw = out("status", "--porcelain", default="")
     dirty = bool(dirty_raw.strip())
     ahead_behind = out("rev-list", "--left-right", "--count", "@{upstream}...HEAD", default="")
@@ -102,6 +113,7 @@ def git_info() -> dict:
         "remote": remote or "—",
         "branch": branch,
         "commit": commit,
+        "commit_local": _local(commit_iso),
         "dirty": dirty,
         "ahead": ahead,
         "behind": behind,
@@ -211,19 +223,20 @@ def reports_history(limit: int = 12) -> list[dict]:
     git" view."""
     root = _repo_root()
     raw = _git_out(root, "log", f"-{int(limit)}",
-                   "--format=%h|%cs|%s", "--", "reports/", default="")
+                   "--format=%h|%cs|%cI|%s", "--", "reports/", default="")
     out: list[dict] = []
     for line in raw.splitlines():
-        parts = line.split("|", 2)
-        if len(parts) != 3:
+        parts = line.split("|", 3)
+        if len(parts) != 4:
             continue
-        sha, date, subject = parts
+        sha, date, iso, subject = parts
         stat = _git_out(root, "show", "--stat", "--format=", sha, "--",
                         "reports/", default="")
         files = [ln.split("|")[0].strip() for ln in stat.splitlines()
                  if "|" in ln]
         summary = stat.splitlines()[-1].strip() if stat.strip() else ""
-        out.append({"hash": sha, "date": date, "subject": subject,
+        out.append({"hash": sha, "date": date, "datetime": _local(iso),
+                    "subject": subject,
                     "files": files[:12], "n_files": len(files),
                     "summary": summary})
     return out

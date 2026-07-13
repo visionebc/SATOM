@@ -206,6 +206,66 @@ def _device_action_request(action: str, names: list, adom: str):
     raise ValueError(f'unknown device action {action!r}')
 
 
+def _task_summary(data):
+    """Compact, JSON-safe view of a /task/task/<id> response for the UI."""
+    lines, errors = [], []
+    for ln in (data.get('line') or []):
+        if not isinstance(ln, dict):
+            continue
+        name = ln.get('name') or ''
+        detail = ln.get('detail') or ''
+        errc = ln.get('err')
+        lines.append({'name': name, 'detail': detail, 'err': errc,
+                      'state': ln.get('state'), 'percent': ln.get('percent')})
+        failed = (ln.get('state') in (5, 7) or (errc not in (0, None))
+                  or (detail and str(detail).startswith('error')))
+        if failed:
+            frag = f'{name}: {detail}' if name else str(detail)
+            if errc not in (0, None):
+                frag += f' (err {errc})'
+            errors.append(frag)
+    return {'id': data.get('id'), 'state': data.get('state'),
+            'percent': data.get('percent'), 'num_err': data.get('num_err'),
+            'num_done': data.get('num_done'), 'title': data.get('title'),
+            'lines': lines, 'errors': errors}
+
+
+def _poll_device_task(client, task_id, timeout=45.0, interval=1.5):
+    """Poll /task/task/<id> until it finishes; return (summary, error).
+
+    ``add/dev-list`` runs create_task+nonblocking: the exec only CREATES the
+    task and returns a taskid - the real authorization work runs async and can
+    fail (snmismatch, error.internal, licence / syslog-only devices, ...) long
+    after the exec reported code 0. We poll the task and surface the device's
+    own per-line error verbatim. Never fake success (the FortiWeb lesson)."""
+    import time
+    deadline = time.monotonic() + float(timeout)
+    data = None
+    while True:
+        data, err = client.call('get', f'/task/task/{task_id}')
+        if err:
+            return None, f'task {task_id}: {err}'
+        if not isinstance(data, dict):
+            return None, f'task {task_id}: unexpected response shape'
+        state = data.get('state')
+        percent = data.get('percent') or 0
+        if percent >= 100 or state in (4, 5, 7):
+            break
+        if time.monotonic() >= deadline:
+            return _task_summary(data), (
+                f'task {task_id} still running after {int(timeout)}s '
+                f'({percent}%) - check the FortiAnalyzer Task Monitor')
+        time.sleep(interval)
+    summary = _task_summary(data)
+    num_err = data.get('num_err') or 0
+    if data.get('state') in (5, 7) or num_err > 0:
+        details = summary.get('errors') or []
+        msg = '; '.join(details) if details else (
+            data.get('title') or 'device task failed')
+        return summary, f'FortiAnalyzer task {task_id} failed: {msg}'
+    return summary, None
+
+
 @bp.route('/device-action', methods=['POST'])
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
@@ -235,18 +295,35 @@ def device_action():
                        request={'method': verb, 'path': url, 'body': data})
 
     client = FortiAnalyzerClient(appliance, timeout=30.0)
+    task_id, task = None, None
     try:
         out, err = client.call(verb, url, data)
+        if err:
+            return jsonify(ok=False, error=err), 502
+        # The exec above only CREATES an async task (create_task+nonblocking)
+        # and returns a taskid; the real work can still fail. Poll it and
+        # surface the device's own error instead of reporting a false success.
+        if isinstance(out, dict):
+            task_id = out.get('taskid') or out.get('task') or out.get('id')
+        if task_id is not None:
+            task, terr = _poll_device_task(client, task_id)
+            if terr:
+                log_action(f'faz.device.{action}.failed',
+                           target=','.join(names),
+                           detail={'adom': adom, 'taskid': task_id,
+                                   'error': terr}, appliance_id=appliance.id)
+                return jsonify(ok=False, error=terr, taskid=task_id,
+                               task=task), 502
     finally:
         try:
             client.logout()
         except Exception:  # noqa: BLE001
             pass
-    if err:
-        return jsonify(ok=False, error=err), 502
     log_action(f'faz.device.{action}', target=','.join(names),
-               detail={'adom': adom}, appliance_id=appliance.id)
-    return jsonify(ok=True, dry_run=False, result=out)
+               detail={'adom': adom, 'taskid': task_id},
+               appliance_id=appliance.id)
+    return jsonify(ok=True, dry_run=False, result=out,
+                   taskid=task_id, task=task)
 
 
 @bp.route('/write/<logical>', methods=['POST'])

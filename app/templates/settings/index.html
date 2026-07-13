@@ -86,6 +86,11 @@
       <i class="bi bi-grid-1x2 me-1"></i>ADOMs
     </button>
   </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-fazmenu" type="button">
+      <i class="bi bi-list-check me-1"></i>FAZ Menu
+    </button>
+  </li>
   {% endif %}
   <li class="nav-item" role="presentation">
     <button class="nav-link {{ 'active' if not is_admin else '' }}" data-bs-toggle="tab" data-bs-target="#tab-security" type="button">
@@ -1375,6 +1380,71 @@
         </form>
       </div>
     </div>
+  </div>
+
+  <!-- FAZ MENU VISIBILITY TAB -->
+  <div class="tab-pane fade" id="tab-fazmenu">
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-list-check me-2 text-accent"></i>FortiAnalyzer menu visibility <span class="text-muted" style="font-size:12px;font-weight:400;">(this ADOM only)</span></span>
+      </div>
+      <div class="fw-card-body">
+        <p class="text-muted" style="font-size:13px;">
+          Turn a menu <strong>group</strong> off to hide it and every sub-item under it (cascade); turn an
+          individual <strong>item</strong> off to hide just that leaf. Hidden entries disappear from the
+          FortiAnalyzer sidebar and dashboard and are not reachable by URL. This applies to every user of this
+          ADOM. FortiAnalyzer devices and the config source-of-truth harvest are unaffected &mdash; this only
+          controls the GUI menu.
+        </p>
+        <form method="POST" action="{{ url_for('settings.save_faz_menu') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="row g-3">
+            {% for g in faz_menu_groups %}
+            <div class="col-lg-6">
+              <div class="fw-card" style="height:100%;">
+                <div class="fw-card-body">
+                  <div class="form-check form-switch mb-2">
+                    <input class="form-check-input faz-menu-group" type="checkbox" role="switch"
+                           id="fazm-{{ g.key }}" name="visible" value="{{ g.key }}"
+                           {{ '' if g.key in faz_menu_hidden else 'checked' }}>
+                    <label class="form-check-label fw-semibold" for="fazm-{{ g.key }}">
+                      <i class="bi {{ g.icon }} me-1 text-accent"></i>{{ g.label }}
+                    </label>
+                  </div>
+                  <div class="ms-4">
+                    {% for it in g.items %}
+                    <div class="form-check form-switch mb-1">
+                      <input class="form-check-input faz-menu-item" type="checkbox" role="switch"
+                             id="fazm-{{ g.key }}-{{ it.key }}" name="visible" value="{{ it.key }}"
+                             data-parent="{{ g.key }}"
+                             {{ '' if (it.key in faz_menu_hidden or g.key in faz_menu_hidden) else 'checked' }}>
+                      <label class="form-check-label" for="fazm-{{ g.key }}-{{ it.key }}" style="font-size:13px;">
+                        {{ it.label }}
+                      </label>
+                    </div>
+                    {% endfor %}
+                  </div>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          <button type="submit" class="btn btn-fw-primary btn-sm mt-3"><i class="bi bi-save me-1"></i>Save menu visibility</button>
+        </form>
+      </div>
+    </div>
+    <script nonce="{{ csp_nonce }}">
+    (function() {
+      var groups = document.querySelectorAll('#tab-fazmenu .faz-menu-group');
+      function sync(g) {
+        var kids = document.querySelectorAll('#tab-fazmenu .faz-menu-item[data-parent="' + g.value + '"]');
+        for (var i = 0; i < kids.length; i++) { kids[i].disabled = !g.checked; }
+      }
+      for (var i = 0; i < groups.length; i++) {
+        (function(g) { g.addEventListener('change', function() { sync(g); }); sync(g); })(groups[i]);
+      }
+    })();
+    </script>
   </div>
 
   {% endif %}

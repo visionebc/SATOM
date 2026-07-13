@@ -209,3 +209,81 @@ def find_item(key: str):
             if it.key == key:
                 return g, it
     return None
+
+
+# --------------------------------------------------------------------------- #
+#  Per-ADOM menu visibility (admin-configurable, this FortiAnalyzer ADOM only).#
+#  The hidden set is a JSON list of group/item keys stored in the replicated   #
+#  ``app_settings`` table (Settings -> FAZ Menu). Filtering happens only in    #
+#  the sidebar/index (``visible_menu``) and is guarded in ``faz.menu_page``;   #
+#  ``menu()`` stays FULL so the SoT harvest (device_sync) keeps covering every #
+#  section regardless of what the operator hides in the GUI.                   #
+# --------------------------------------------------------------------------- #
+_HIDDEN_KEY = 'faz.hidden_menu'
+
+
+def all_keys() -> set:
+    """Every valid group and item key — the allow-list for what may be hidden."""
+    ks: set = set()
+    for g in _MENU:
+        ks.add(g.key)
+        for it in g.items:
+            ks.add(it.key)
+    return ks
+
+
+def hidden_keys() -> set:
+    """The set of currently-hidden group/item keys (empty on any error)."""
+    import json
+    from ..models import AppSetting
+    raw = AppSetting.get(_HIDDEN_KEY)
+    if not raw:
+        return set()
+    try:
+        val = json.loads(raw)
+    except Exception:  # noqa: BLE001
+        return set()
+    if not isinstance(val, list):
+        return set()
+    valid = all_keys()
+    return {k for k in val if k in valid}
+
+
+def set_hidden_keys(keys) -> None:
+    """Persist the hidden set (unknown keys are dropped)."""
+    import json
+    from ..models import AppSetting
+    valid = all_keys()
+    clean = sorted({str(k) for k in keys if str(k) in valid})
+    AppSetting.set(_HIDDEN_KEY, json.dumps(clean))
+
+
+def visible_menu(hidden: set | None = None):
+    """The menu with hidden groups/items removed (cascade). A hidden group key
+    drops the whole group; a group left with no visible items is dropped too."""
+    if hidden is None:
+        hidden = hidden_keys()
+    if not hidden:
+        return _MENU
+    out = []
+    for g in _MENU:
+        if g.key in hidden:
+            continue
+        items = tuple(it for it in g.items if it.key not in hidden)
+        if not items:
+            continue
+        out.append(Group(g.key, g.label, g.icon, items))
+    return tuple(out)
+
+
+def is_hidden(item_key: str, hidden: set | None = None) -> bool:
+    """True if the leaf (or its parent group) is hidden — the URL guard."""
+    if hidden is None:
+        hidden = hidden_keys()
+    if not hidden:
+        return False
+    found = find_item(item_key)
+    if not found:
+        return False
+    g, it = found
+    return g.key in hidden or it.key in hidden

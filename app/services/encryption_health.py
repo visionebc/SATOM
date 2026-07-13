@@ -203,10 +203,17 @@ def internode_channel() -> dict:
 # Node service certificate (served by nginx on :8443)
 # ---------------------------------------------------------------------------
 def node_cert() -> dict:
+    # source is NODE-LOCAL (meta.json) — NOT the replicated app_setting, which on
+    # a standby would reflect the PRIMARY's cert origin, not this node's.
+    src = "bootstrap"
+    try:
+        import json as _j
+        src = (_j.loads((PKI_DIR / "public" / "meta.json").read_text()) or {}).get("source", src)
+    except Exception:
+        src = ss.get_str("security.node_cert.source", "bootstrap")
     out = {"present": False, "subject": None, "issuer": None,
            "not_before": None, "not_after": None, "days_left": None,
-           "self_signed": None, "source": ss.get_str("security.node_cert.source", "bootstrap"),
-           "error": None}
+           "self_signed": None, "source": src, "error": None}
     try:
         from cryptography import x509
         from cryptography.hazmat.primitives.serialization import Encoding  # noqa: F401

@@ -1,0 +1,7 @@
+[Unit]
+Description=OFortMAut node service-cert auto-renew (CA-issued only)
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/fortinet-manager/deploy/fm-cert-renew.sh

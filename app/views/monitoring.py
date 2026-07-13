@@ -191,3 +191,14 @@ def infra():
     never during a page load."""
     from ..services import infra_health
     return jsonify(infra_health.snapshot())
+
+
+@bp.route('/encryption')
+@login_required
+def encryption():
+    """Per-channel encryption posture (DB replication TLS, inter-node HTTPS,
+    datasync SSH, Git SoT, node cert). Live probes with short timeouts — fetched
+    by the card AFTER page render, never during a page load (same contract as
+    /monitoring/infra)."""
+    from ..services import encryption_health
+    return jsonify(encryption_health.snapshot())

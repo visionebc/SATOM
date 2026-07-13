@@ -30,3 +30,6 @@ data/system_backups/
 
 # empty legacy artifact — runtime DB is PostgreSQL
 fortinet.db
+
+# node-local PKI — internal CA key + node/service certs, NEVER commit
+pki/

@@ -67,6 +67,11 @@
     </button>
   </li>
   <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-nodetls" type="button">
+      <i class="bi bi-shield-lock-fill me-1"></i>Node TLS
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-dnstool" type="button">
       <i class="bi bi-globe2 me-1"></i>DNS Lookup
     </button>
@@ -1053,6 +1058,136 @@
     </form>
   </div>
   <!-- DNS LOOKUP TAB -->
+  <div class="tab-pane fade" id="tab-nodetls">
+    <div class="row g-4">
+      <div class="col-lg-6">
+        <div class="fw-card">
+          <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-patch-check me-2 text-accent"></i>Service certificate (nginx :8443)</span></div>
+          <div class="fw-card-body">
+            <div id="nt-cert-loading" class="text-muted" style="font-size:13px;">Loading…</div>
+            <table class="fw-table" id="nt-cert-body" style="display:none;font-size:13px;">
+              <tr><th class="text-muted fw-normal" style="width:110px;">Subject</th><td id="nt-subject" class="font-monospace"></td></tr>
+              <tr><th class="text-muted fw-normal">Issuer</th><td id="nt-issuer" class="font-monospace"></td></tr>
+              <tr><th class="text-muted fw-normal">Source</th><td id="nt-source"></td></tr>
+              <tr><th class="text-muted fw-normal">Expires</th><td id="nt-expires"></td></tr>
+            </table>
+            <div class="d-flex gap-2 mt-3 flex-wrap">
+              <button class="btn btn-sm fw-btn-primary" id="nt-issue-btn"><i class="bi bi-magic me-1"></i>Issue from internal CA</button>
+              <button class="btn btn-sm btn-outline-secondary" id="nt-renew-btn"><i class="bi bi-arrow-repeat me-1"></i>Renew now</button>
+            </div>
+            <div id="nt-cert-msg" class="mt-2" style="font-size:12px;"></div>
+            <div class="text-muted mt-2" style="font-size:11px;">Node-local — each HA node serves its own hostname's cert (never replicated). CA-issued certs auto-renew nightly; imported certs alert on expiry only.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-6">
+        <div class="fw-card">
+          <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-upload me-2 text-accent"></i>Import certificate (PEM)</span></div>
+          <div class="fw-card-body">
+            <form id="nt-import-form">
+              <div class="mb-2"><label class="form-label" style="font-size:12px;">Certificate (PEM)</label>
+                <input type="file" name="cert" accept=".pem,.crt,.cer" class="form-control form-control-sm" required></div>
+              <div class="mb-2"><label class="form-label" style="font-size:12px;">Private key (PEM, unencrypted)</label>
+                <input type="file" name="key" accept=".pem,.key" class="form-control form-control-sm" required></div>
+              <div class="mb-2"><label class="form-label" style="font-size:12px;">Chain / intermediates (optional)</label>
+                <input type="file" name="chain" accept=".pem,.crt,.cer" class="form-control form-control-sm"></div>
+              <button class="btn btn-sm fw-btn-primary" type="submit"><i class="bi bi-shield-check me-1"></i>Validate &amp; install</button>
+            </form>
+            <div class="text-muted mt-2" style="font-size:11px;">The key must match the certificate; nginx is config-tested and rolled back automatically if the new cert is bad.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-6">
+        <div class="fw-card">
+          <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>Node-to-node encryption (Postgres replication)</span></div>
+          <div class="fw-card-body">
+            <div id="nt-pg-state" style="font-size:13px;">Loading…</div>
+            <form id="nt-pgssl-form" class="mt-3">
+              <div class="mb-2"><label class="form-label" style="font-size:12px;">Minimum TLS protocol</label>
+                <select name="min_protocol" id="nt-min-proto" class="form-select form-select-sm">
+                  <option value="TLSv1.2">TLSv1.2</option>
+                  <option value="TLSv1.3">TLSv1.3</option>
+                </select></div>
+              <div class="mb-2"><label class="form-label" style="font-size:12px;">Cipher list (OpenSSL syntax)</label>
+                <input type="text" name="ciphers" id="nt-ciphers" class="form-control form-control-sm font-monospace" placeholder="ECDHE+AESGCM:!aNULL"></div>
+              <button class="btn btn-sm fw-btn-primary" type="submit"><i class="bi bi-save me-1"></i>Apply protocol &amp; ciphers</button>
+            </form>
+            <div id="nt-pg-msg" class="mt-2" style="font-size:12px;"></div>
+            <div class="text-muted mt-2" style="font-size:11px;">Enforcement (hostssl + client-cert verify-ca) is set at rollout. This tunes the negotiated floor; it applies on this node's Postgres and reloads it.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script nonce="{{ csp_nonce }}">
+    (function(){
+      'use strict';
+      var m=document.querySelector('meta[name="csrf-token"]');
+      var CSRF=m?m.content:'';
+      function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+      function post(url, body, isForm){
+        var opts={method:'POST', headers:{'X-CSRFToken':CSRF}};
+        if(isForm){opts.body=body;}
+        else{opts.headers['Content-Type']='application/x-www-form-urlencoded';opts.body=body||'';}
+        return fetch(url,opts).then(function(r){return r.json();});
+      }
+      function srcBadge(src){
+        if(src==='issued') return '<span class="badge bg-success">CA-issued · auto-renew</span>';
+        if(src==='imported') return '<span class="badge bg-primary">imported</span>';
+        return '<span class="badge bg-warning text-dark">bootstrap (replace)</span>';
+      }
+      function loadState(){
+        fetch('{{ url_for("settings.node_cert_state") }}',{headers:{'X-Requested-With':'XMLHttpRequest'}})
+          .then(function(r){return r.json();}).then(function(d){
+          var c=d.cert||{};
+          document.getElementById('nt-cert-loading').style.display='none';
+          document.getElementById('nt-cert-body').style.display='';
+          document.getElementById('nt-subject').textContent=c.subject||'—';
+          document.getElementById('nt-issuer').textContent=c.issuer||'—';
+          document.getElementById('nt-source').innerHTML=srcBadge(c.source);
+          var dl=c.days_left;
+          var cl=dl==null?'':(dl<14?'text-danger':(dl<45?'text-warning':'text-success'));
+          document.getElementById('nt-expires').innerHTML='<span class="'+cl+'">'+esc((c.not_after||'').slice(0,10))+(dl!=null?' · '+dl+' d left':'')+'</span>';
+          document.getElementById('nt-issue-btn').disabled=!c.can_issue_internal;
+          if(!c.can_issue_internal){document.getElementById('nt-issue-btn').title='No internal CA key on this node (standby) — import instead';}
+          var p=d.pg_ssl||{};
+          document.getElementById('nt-pg-state').innerHTML=
+            'Replication: '+(p.enforced?'<span class="text-success"><i class="bi bi-shield-lock-fill"></i> encrypted · enforced</span>':'<span class="text-warning">encrypted · not enforced</span>')+
+            '<br>sslmode=<code>'+esc(p.sslmode||'?')+'</code>'+(p.mutual_tls?' · mutual client-cert':'')+
+            '<br>Identity key: '+(d.identity_key?'<span class="text-success">configured</span>':'<span class="text-danger">missing</span>');
+          if(p.min_protocol) document.getElementById('nt-min-proto').value=p.min_protocol;
+          if(p.ciphers!=null) document.getElementById('nt-ciphers').value=p.ciphers;
+        }).catch(function(){document.getElementById('nt-cert-loading').textContent='Failed to load node TLS state.';});
+      }
+      function busy(btn,on){btn.disabled=on;}
+      var ib=document.getElementById('nt-issue-btn');
+      ib.addEventListener('click',function(){busy(ib,true);
+        post('{{ url_for("settings.node_cert_issue") }}','').then(function(d){
+          document.getElementById('nt-cert-msg').innerHTML=d.ok?'<span class="text-success">Issued &amp; installed.</span>':'<span class="text-danger">'+esc(d.error)+'</span>';
+          loadState();}).finally(function(){busy(ib,false);});});
+      var rb=document.getElementById('nt-renew-btn');
+      rb.addEventListener('click',function(){busy(rb,true);
+        post('{{ url_for("settings.node_cert_renew") }}','').then(function(d){
+          document.getElementById('nt-cert-msg').innerHTML=d.ok?'<span class="text-success">'+esc(JSON.stringify(d.result))+'</span>':'<span class="text-danger">'+esc(d.error)+'</span>';
+          loadState();}).finally(function(){busy(rb,false);});});
+      document.getElementById('nt-import-form').addEventListener('submit',function(e){e.preventDefault();
+        post('{{ url_for("settings.node_cert_import") }}', new FormData(this), true).then(function(d){
+          document.getElementById('nt-cert-msg').innerHTML=d.ok?'<span class="text-success">Imported '+esc(d.cert.subject)+'</span>':'<span class="text-danger">'+esc(d.error)+'</span>';
+          loadState();});});
+      document.getElementById('nt-pgssl-form').addEventListener('submit',function(e){e.preventDefault();
+        var body='min_protocol='+encodeURIComponent(document.getElementById('nt-min-proto').value)+
+                 '&ciphers='+encodeURIComponent(document.getElementById('nt-ciphers').value);
+        post('{{ url_for("settings.save_pg_ssl") }}', body).then(function(d){
+          document.getElementById('nt-pg-msg').innerHTML=d.ok?'<span class="text-success">Applied on '+esc((d.result||{}).node||'')+'.</span>':'<span class="text-danger">'+esc(d.error)+'</span>';
+          loadState();});});
+      loadState();
+    })();
+    </script>
+  </div>
+
   <div class="tab-pane fade" id="tab-dnstool">
     <div class="fw-card" style="max-width:780px;">
       <div class="fw-card-header"><i class="bi bi-globe2 me-1"></i>DNS Lookup — resolver servers</div>

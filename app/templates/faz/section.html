@@ -104,7 +104,7 @@
   <div class="fw-toolbar mb-2 d-flex align-items-center gap-2 flex-wrap">
     {% if editable and tab.can_create %}
     <button type="button" class="btn btn-sm btn-fw-primary" id="faz-create">
-      <i class="bi bi-plus-lg me-1"></i>Create New</button>
+      <i class="bi bi-plus-lg me-1"></i>{{ 'Add Device' if is_devices else 'Create New' }}</button>
     {% endif %}
     {% if is_devices %}
     <div class="fw-toolbar-group" role="group" aria-label="Device actions">
@@ -115,6 +115,11 @@
       <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-hide" disabled
               title="Hide the selected device(s) from this view">
         <i class="bi bi-eye-slash me-1"></i>Hide</button>
+      {% if editable %}
+      <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-edit" disabled
+              title="Edit the selected device (single selection)">
+        <i class="bi bi-pencil me-1"></i>Edit</button>
+      {% endif %}
       {% if can_write %}
       <button type="button" class="btn btn-sm btn-fw-danger" id="fazdev-delete" disabled
               title="Delete the selected device(s) — exec /dvm/cmd/del/dev-list">
@@ -127,6 +132,17 @@
     <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-fullscreen"
             title="Full screen">
       <i class="bi bi-arrows-fullscreen me-1"></i>Full Screen</button>
+    <div class="fw-toolbar-group" role="group" aria-label="List actions">
+      <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-export"
+              title="Export the device list to CSV">
+        <i class="bi bi-download me-1"></i>Export</button>
+      <div style="position:relative;display:inline-block;">
+        <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-columns"
+                title="Choose which columns to display">
+          <i class="bi bi-layout-three-columns me-1"></i>Columns</button>
+        <div id="fazdev-col-panel" class="fw-card" style="display:none;position:absolute;z-index:30;top:110%;left:0;min-width:180px;max-height:260px;overflow:auto;padding:8px 10px;font-size:12px;"></div>
+      </div>
+    </div>
     {% endif %}
     <div class="fw-search-box">
       <i class="bi bi-search search-icon"></i>
@@ -450,6 +466,8 @@
       var b = document.getElementById(id);
       if (b) b.disabled = (n === 0);
     });
+    var eb = document.getElementById('fazdev-edit');
+    if (eb) eb.disabled = (n !== 1);
   }
   function applyHidden() {
     var set = hiddenSet();
@@ -552,6 +570,71 @@
     if (aBtn) aBtn.addEventListener('click', function () { var n = selNames(); if (n.length) openModal('authorize', n); });
     var dBtn = document.getElementById('fazdev-delete');
     if (dBtn) dBtn.addEventListener('click', function () { var n = selNames(); if (n.length) openModal('delete', n); });
+  }
+
+  // Toolbar Edit — reuse the per-row edit modal for the single selected device
+  var editBtn = document.getElementById('fazdev-edit');
+  if (editBtn) editBtn.addEventListener('click', function () {
+    var names = selNames();
+    if (names.length !== 1) return;
+    var sel = (window.CSS && CSS.escape) ? CSS.escape(names[0]) : names[0].replace(/"/g, '\\"');
+    var row = table.querySelector('tr.fazdev-row[data-devname="' + sel + '"]');
+    var rowEdit = row && row.querySelector('.faz-edit-row');
+    if (rowEdit) rowEdit.click();
+  });
+  // Export device list -> CSV (client-side, visible columns only)
+  var expBtn = document.getElementById('fazdev-export');
+  if (expBtn) expBtn.addEventListener('click', function () {
+    function cell(el) {
+      var t = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+      return '"' + t.replace(/"/g, '""') + '"';
+    }
+    function keep(c) {
+      return c.offsetParent !== null && !c.querySelector('input[type=checkbox]') &&
+             !c.querySelector('.faz-edit-row') && c.textContent.trim() !== 'Actions';
+    }
+    var rows = [];
+    var heads = Array.prototype.slice.call(table.querySelectorAll('thead th')).filter(keep);
+    rows.push(heads.map(cell).join(','));
+    table.querySelectorAll('tbody tr.fazdev-row').forEach(function (tr) {
+      if (tr.style.display === 'none') return;
+      var tds = Array.prototype.slice.call(tr.children).filter(keep);
+      rows.push(tds.map(cell).join(','));
+    });
+    var blob = new Blob([rows.join('\r\n')], { type: 'text/csv' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'faz-devices.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+  // Column Settings — toggle column visibility by cell index
+  var colBtn = document.getElementById('fazdev-columns');
+  var colPanel = document.getElementById('fazdev-col-panel');
+  if (colBtn && colPanel) {
+    Array.prototype.slice.call(table.querySelectorAll('thead th')).forEach(function (th, idx) {
+      var label = th.textContent.trim();
+      if (!label || th.querySelector('input[type=checkbox]') || label === 'Actions') return;
+      var row = document.createElement('label');
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:2px 0;cursor:pointer;';
+      row.innerHTML = '<input type="checkbox" checked data-col="' + idx + '"> ' + label;
+      colPanel.appendChild(row);
+    });
+    colPanel.addEventListener('change', function (e) {
+      var idx = e.target.getAttribute('data-col');
+      if (idx === null) return;
+      var n = parseInt(idx, 10) + 1;
+      var disp = e.target.checked ? '' : 'none';
+      table.querySelectorAll('thead th:nth-child(' + n + '), tbody tr td:nth-child(' + n + ')').forEach(function (c) {
+        c.style.display = disp;
+      });
+    });
+    colBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      colPanel.style.display = (colPanel.style.display === 'none') ? 'block' : 'none';
+    });
+    document.addEventListener('click', function (e) {
+      if (!colPanel.contains(e.target) && e.target !== colBtn) colPanel.style.display = 'none';
+    });
   }
 
   refreshButtons();

@@ -1060,6 +1060,24 @@
   <!-- DNS LOOKUP TAB -->
   <div class="tab-pane fade" id="tab-nodetls">
     <div class="row g-4">
+      <div class="col-12" data-mark="fm-ha-arch-doc">
+        <div class="fw-card">
+          <div class="fw-card-body" style="font-size:12.5px;">
+            <div class="mb-1"><i class="bi bi-diagram-3 me-1 text-accent"></i>
+              <strong>What this certificate is for &mdash; and how the nodes talk.</strong></div>
+            <div class="text-muted">
+              The certificate below is served by nginx on <strong>two</strong> ports from the same vhost:
+              <code>:443</code> (public web access &mdash; your browser) and <code>:8443</code> (inter&#8209;node
+              health probes between the primary and standby). It does <u>not</u> carry the replication data.
+              Node&#8209;to&#8209;node data rides two other channels: <strong>Postgres streaming replication on
+              <code>:5432</code></strong> (the standby's live database &mdash; <code>hostssl</code> + mutual
+              internal&#8209;CA, TLS&nbsp;1.3, enforced; tuned in the card below) and <strong>rsync over SSH</strong>
+              for the <code>data/</code> file tree. The full port/channel map and where each sync runs is on the
+              <a href="{{ url_for('ha.index') }}">High Availability</a> page.
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="col-lg-6">
         <div class="fw-card">
           <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-patch-check me-2 text-accent"></i>Service certificate (nginx :443 / :8443)</span></div>

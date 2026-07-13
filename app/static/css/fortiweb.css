@@ -825,6 +825,15 @@ div.fw-nav-section.fw-nav-context-label {
   flex-wrap: wrap;
 }
 
+/* FAZ/CRUD toolbar grouping — tight action cluster + subtle divider before
+   utilities (Display Hidden / Full Screen). Keeps spacing uniform across the
+   whole FAZ space instead of the old Bootstrap btn-group. (2026-07-13) */
+.fw-toolbar-group { display: inline-flex; align-items: center; gap: 6px; }
+.fw-toolbar-sep {
+  width: 1px; align-self: stretch; min-height: 22px;
+  background: var(--fw-border); margin: 0 2px;
+}
+
 .fw-search-box {
   position: relative;
   flex: 1;

@@ -107,19 +107,20 @@
       <i class="bi bi-plus-lg me-1"></i>Create New</button>
     {% endif %}
     {% if is_devices %}
-    <div class="btn-group btn-group-sm" role="group" aria-label="Device actions">
+    <div class="fw-toolbar-group" role="group" aria-label="Device actions">
       {% if can_write %}
-      <button type="button" class="btn btn-outline-success" id="fazdev-authorize" disabled
+      <button type="button" class="btn btn-sm btn-fw-primary" id="fazdev-authorize" disabled
               title="Authorize the selected device(s) — exec /dvm/cmd/add/dev-list">
         <i class="bi bi-check2-circle me-1"></i>Authorize</button>{% endif %}
-      <button type="button" class="btn btn-outline-light" id="fazdev-hide" disabled
+      <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-hide" disabled
               title="Hide the selected device(s) from this view">
         <i class="bi bi-eye-slash me-1"></i>Hide</button>
       {% if can_write %}
-      <button type="button" class="btn btn-outline-danger" id="fazdev-delete" disabled
+      <button type="button" class="btn btn-sm btn-fw-danger" id="fazdev-delete" disabled
               title="Delete the selected device(s) — exec /dvm/cmd/del/dev-list">
         <i class="bi bi-trash me-1"></i>Delete</button>{% endif %}
     </div>
+    <span class="fw-toolbar-sep" aria-hidden="true"></span>
     <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-showhidden"
             title="Toggle showing devices you have hidden">
       <i class="bi bi-eye me-1"></i>Display Hidden Devices</button>
@@ -199,13 +200,31 @@
   {% endif %}
 
 {% elif appliance and not item.logicals %}
-<div class="fw-card" style="padding:40px 24px;text-align:center;">
-  <i class="bi bi-cone-striped" style="font-size:38px;color:#d97706;"></i>
-  <h2 class="h5 mt-3 mb-2">No JSON-RPC surface for this pane on 7.6.7</h2>
-  <p class="text-muted mb-0" style="max-width:560px;margin-inline:auto;">
-    {{ item.desc }} If a future firmware exposes an URI for it, bind it in
-    <a href="{{ url_for('faz_api.index') }}">API &amp; Registry</a>.
-  </p>
+{# 'Approach distinto' for analytics-native panes (FortiView / Log View / Reports /
+   Incidents / Event Handler): OFortMAut does not mirror them — they are rendered by
+   the appliance and have no JSON-RPC object surface. Deep-link to the real console. #}
+<div class="fw-card" style="padding:32px 28px;">
+  <div class="d-flex align-items-start gap-3">
+    <div style="flex:0 0 auto;width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--fw-accent-light);color:var(--fw-accent);font-size:22px;">
+      <i class="bi {{ item.icon }}"></i>
+    </div>
+    <div style="min-width:0;">
+      <h2 class="h5 mb-1">{{ item.label }} lives in the FortiAnalyzer console</h2>
+      <p class="text-muted mb-3" style="max-width:660px;font-size:13.5px;">
+        {{ item.desc or 'This pane is analytics/telemetry native to FortiAnalyzer. OFortMAut does not replicate it — it is rendered by the appliance itself and exposes no JSON-RPC object surface to manage from here.' }}
+      </p>
+      <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-sm btn-fw-primary" target="_blank" rel="noopener"
+           href="https://{{ appliance.host }}{% if appliance.port and appliance.port != 443 %}:{{ appliance.port }}{% endif %}/">
+          <i class="bi bi-box-arrow-up-right me-1"></i>Open in FortiAnalyzer</a>
+        <a class="btn btn-sm btn-outline-light" href="{{ url_for('faz_api.index') }}">
+          <i class="bi bi-hdd-stack me-1"></i>API &amp; Registry</a>
+      </div>
+      <p class="text-muted mb-0 mt-3" style="font-size:11.5px;">
+        <i class="bi bi-info-circle me-1"></i>If a future firmware exposes a JSON-RPC URI for this pane, bind it in API &amp; Registry and it renders here automatically.
+      </p>
+    </div>
+  </div>
 </div>
 {% endif %}
 

@@ -37,6 +37,7 @@ from ..services import system_info
 from ..services import dns_tool as dns_tool_svc
 from ..services import policy_links as policy_links_svc
 from ..services import clone_rules as clone_rules_svc
+from ..services import faz_menu
 from ..services.audit import log_action
 
 bp = Blueprint('settings', __name__, url_prefix='/settings')
@@ -105,6 +106,8 @@ def index():
         sot_firmware_repo=(store.firmware_repo() if _is_admin() else None),
         sot_backup_server=(store.backup_server() if _is_admin() else None),
         system_info=system_info.collect(),
+        faz_menu_groups=(faz_menu.menu() if _is_admin() else []),
+        faz_menu_hidden=(sorted(faz_menu.hidden_keys()) if _is_admin() else []),
         is_admin=_is_admin(),
     )
 
@@ -201,6 +204,23 @@ def save_general():
     except Exception as exc:  # noqa: BLE001
         flash(f'Failed to save settings: {exc}', 'danger')
     return redirect(url_for('settings.index') + '#tab-general')
+
+
+@bp.route('/faz-menu', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_faz_menu():
+    """Hide/show FortiAnalyzer ADOM menu groups & leaves (cascade). Stored in
+    the replicated app_settings table; takes effect on the next page render."""
+    try:
+        visible = set(request.form.getlist('visible'))
+        hidden = [k for k in faz_menu.all_keys() if k not in visible]
+        faz_menu.set_hidden_keys(hidden)
+        log_action('settings.faz_menu', detail='Updated FAZ menu visibility')
+        flash('FortiAnalyzer menu visibility saved.', 'success')
+    except Exception as exc:  # noqa: BLE001
+        flash(f'Failed to save FAZ menu visibility: {exc}', 'danger')
+    return redirect(url_for('settings.index') + '#tab-fazmenu')
 
 
 @bp.route('/cert-manager', methods=['POST'])

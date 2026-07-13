@@ -58,7 +58,7 @@ def _faz_fleet():
 @login_required
 def index():
     """FortiAnalyzer dashboard + device picker."""
-    groups = faz_menu.menu()
+    groups = faz_menu.visible_menu()
     n_items = sum(len(g.items) for g in groups)
     fleet = _faz_fleet()
     current = _current_faz()
@@ -136,7 +136,7 @@ def _load_tab(appliance, logical: str, label: str) -> dict:
 def menu_page(item_key):
     """One menu leaf: live registry-bound tabs off the selected FortiAnalyzer."""
     found = faz_menu.find_item(item_key)
-    if not found:
+    if not found or faz_menu.is_hidden(item_key):
         abort(404)
     group, item = found
     appliance = _current_faz()

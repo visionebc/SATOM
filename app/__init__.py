@@ -511,7 +511,7 @@ def create_app(config_override: object | None = None) -> Flask:
         try:
             if prod.get("key") == "fortianalyzer":
                 from .services import faz_menu as _fazm
-                _faz_nav = _fazm.menu()
+                _faz_nav = _fazm.visible_menu()
             else:
                 _faz_nav = ()
         except Exception:

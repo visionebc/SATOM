@@ -96,7 +96,7 @@
       '<div class="enc-how"><b>Issuer:</b> '+esc(ct.issuer||'—')+(ct.self_signed?' <span class="ih-t-warn">(self-signed)</span>':'')+'</div>'+
       '<div class="ih-svc"><span>expires</span><span class="'+dcls+'">'+esc((ct.not_after||'').slice(0,10))+
         (dl!=null?' · '+dl+' d left':'')+'</span></div>'+
-      '<div class="enc-note ih-t-mut">Served by nginx on :8443. '+
+      '<div class="enc-note ih-t-mut">Served by nginx on :443 (public) + :8443 (peer probes). '+
         (src==='bootstrap'?'Internal bootstrap cert — import a trusted cert or issue via cert-manager in Settings.':'')+'</div>');
   }
 

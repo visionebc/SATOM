@@ -554,20 +554,11 @@ def create_app(config_override: object | None = None) -> Flask:
     # -- timezone-aware timestamp filter ---------------------------------
     @app.template_filter('localtime')
     def _localtime(dt, fmt='%Y-%m-%d %H:%M:%S'):
-        if not dt:
-            return '—'
-        try:
-            from datetime import timezone as _utc
-            from zoneinfo import ZoneInfo
-            from .services import settings_store as _store
-            tzname = _store.general().get('timezone') or 'UTC'
-            aware = dt.replace(tzinfo=_utc.utc) if dt.tzinfo is None else dt
-            return aware.astimezone(ZoneInfo(tzname)).strftime(fmt)
-        except Exception:
-            try:
-                return dt.strftime(fmt)
-            except Exception:
-                return str(dt)
+        # Single conversion path: delegate to settings_store.to_local so the
+        # filter and every server-side formatter (git_service/monitoring) share
+        # one timezone source (general.timezone in app_settings).
+        from .services import settings_store as _store
+        return _store.to_local(dt, fmt)
 
     # -- self-healing CSRF errors ----------------------------------------
     # A stale/expired login (or any) form submitted with an old token used to

@@ -43,6 +43,9 @@ def _parse_filters(args) -> dict:
 @bp.route('/')
 @login_required
 def index():
+    from flask import g
+    if getattr(g, 'product', None) == 'fortianalyzer':
+        return render_template('analysis/faz.html', options=ana.filter_options())
     return render_template('analysis/index.html', options=ana.filter_options())
 
 
@@ -50,6 +53,103 @@ def index():
 @login_required
 def data():
     return jsonify(ana.analyze(_parse_filters(request.args)))
+
+
+@bp.route('/faz-ops')
+@login_required
+def faz_ops():
+    """LIVE FortiAnalyzer operational metrics: incoming log rate + per-ADOM
+    storage/quota, read straight from the appliance via JSON-RPC. This is the
+    ONE endpoint in the Analysis area that leaves the DB-first contract, on
+    purpose (log rate / storage are excluded from the SoT harvest)."""
+    from datetime import datetime
+    from ..clients.fortianalyzer import FortiAnalyzerClient
+
+    appls = visible_appliances().filter_by(kind='fortianalyzer').all()
+    out = {
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "devices": [a.name for a in appls],
+        "lograte": {"total": 0, "devs": []},
+        "storage": {"adoms": [], "total": {"analytics_used": 0,
+                    "analytics_max": 0, "archive_used": 0, "archive_max": 0}},
+        "error": None,
+    }
+    if not appls:
+        out["error"] = "No FortiAnalyzer appliance in scope"
+        return jsonify(out)
+
+    def _num(v):
+        try:
+            return int(float(v))
+        except (TypeError, ValueError):
+            return 0
+
+    errors = []
+    seen = set()
+    for a in appls:
+        c = FortiAnalyzerClient(a)
+        try:
+            c.login()
+        except Exception as exc:  # noqa: BLE001 — transport/auth
+            errors.append(f"{a.name}: login {type(exc).__name__}")
+            continue
+        try:
+            rows, err = c.list_with_error('storage_info')
+            if err:
+                errors.append(f"{a.name}: storage {err}")
+            for r in rows or []:
+                if not isinstance(r, dict):
+                    continue
+                name = (str(r.get('adomname') or '').strip() or '(root)')
+                key = (a.id, name)
+                if key in seen:
+                    continue
+                seen.add(key)
+                au, am = _num(r.get('analytics-storage-usage')), _num(r.get('analytics-storage-max'))
+                ru, rm = _num(r.get('archive-storage-usage')), _num(r.get('archive-storage-max'))
+                out["storage"]["adoms"].append({
+                    "name": name,
+                    "analytics_used": au, "analytics_max": am,
+                    "archive_used": ru, "archive_max": rm,
+                    "analytics_days_config": _num(r.get('analytics-config-days')),
+                    "archive_days_config": _num(r.get('archive-config-days')),
+                })
+                t = out["storage"]["total"]
+                t["analytics_used"] += au
+                t["analytics_max"] += am
+                t["archive_used"] += ru
+                t["archive_max"] += rm
+
+            lrows, lerr = c.list_with_error('logview_logstats')
+            if lerr:
+                errors.append(f"{a.name}: logstats {lerr}")
+            for stat in lrows or []:
+                if not isinstance(stat, dict):
+                    continue
+                for dev in (stat.get('devs') or []):
+                    if not isinstance(dev, dict):
+                        continue
+                    rate = 0
+                    for k in ('lograte', 'log-rate', 'rate', 'lograte_avg'):
+                        if k in dev:
+                            rate = _num(dev.get(k))
+                            break
+                    nm = dev.get('devname') or dev.get('name') or dev.get('devid') or '?'
+                    out["lograte"]["devs"].append({"name": str(nm), "rate": rate})
+                    out["lograte"]["total"] += rate
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{a.name}: {type(exc).__name__}: {exc}")
+        finally:
+            try:
+                c.logout()
+            except Exception:  # noqa: BLE001
+                pass
+
+    out["storage"]["adoms"].sort(key=lambda x: -x["analytics_used"])
+    out["lograte"]["devs"].sort(key=lambda x: -x["rate"])
+    if errors and not out["storage"]["adoms"] and not out["lograte"]["devs"]:
+        out["error"] = "; ".join(errors)
+    return jsonify(out)
 
 
 @bp.route('/dashboard/<int:id>')

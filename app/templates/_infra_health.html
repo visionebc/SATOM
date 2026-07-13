@@ -35,8 +35,14 @@
     <span style="color:#475569;">— HA nodes · Git · backup server</span></span>
   <span id="ihStamp" class="text-muted ih-stamp">loading…</span>
 </div>
-<div class="ih-grid" id="ihBody">
-  <div class="text-muted small">Probing nodes, Gitea and backup-server…</div>
+<div class="ih-grid" id="ihGrid">
+  {# Infra tiles (HA nodes · Git · backup) — filled by this partial's fetch below. #}
+  <div id="ihBody" style="display:contents">
+    <div class="text-muted small">Probing nodes, Gitea and backup-server…</div>
+  </div>
+  {# Filled ONLY on /monitoring by renderSystem() (Database + Services & redundancy),
+     so those cards flow into the SAME grid as the backup card. Inert/empty elsewhere. #}
+  <div id="monSystem" style="display:contents"></div>
 </div>
 
 <script nonce="{{ csp_nonce }}">

@@ -1,0 +1,129 @@
+{# ── Infrastructure health card — HA nodes + Git SoT + backup server ──────────
+   Self-contained (own scoped styles + JS) so it can be included on BOTH the
+   Global ADOM home and /monitoring. Fetches /monitoring/infra AFTER render so a
+   page load never blocks on the network. #}
+<style nonce="{{ csp_nonce }}">
+  .ih-card { margin-bottom:18px; }
+  .ih-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; }
+  .ih-tile { border-radius:12px; padding:13px 15px; background:rgba(15,23,42,.55);
+             border:1px solid rgba(148,163,184,.10); }
+  .ih-tile h6 { font-size:.82rem; margin:0 0 6px; display:flex; align-items:center;
+                justify-content:space-between; gap:6px; }
+  .ih-sub { font-size:.72rem; color:#64748b; }
+  .ih-row { display:flex; align-items:center; gap:8px; font-size:.76rem; margin-top:6px; }
+  .ih-row .nm { width:52px; color:#94a3b8; flex:none; }
+  .ih-row .qt { width:118px; text-align:right; flex:none; color:#cbd5e1; }
+  .ih-bar { flex:1; height:7px; border-radius:4px; background:rgba(148,163,184,.14); overflow:hidden; }
+  .ih-bar > i { display:block; height:100%; border-radius:4px; }
+  .ih-ok{background:#10b981;} .ih-warn{background:#fbbf24;} .ih-crit{background:#ef4444;} .ih-mut{background:#475569;}
+  .ih-dot { display:inline-block; width:9px; height:9px; border-radius:50%; }
+  .ih-badge { font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; padding:1px 7px;
+              border-radius:9px; border:1px solid; }
+  .ih-b-pri { color:#93c5fd; background:rgba(59,130,246,.12); border-color:rgba(59,130,246,.3); }
+  .ih-b-sby { color:#c4b5fd; background:rgba(139,92,246,.12); border-color:rgba(139,92,246,.3); }
+  .ih-b-off { color:#fca5a5; background:rgba(239,68,68,.12); border-color:rgba(239,68,68,.3); }
+  .ih-t-ok{color:#10b981;} .ih-t-warn{color:#fbbf24;} .ih-t-crit{color:#ef4444;} .ih-t-mut{color:#64748b;}
+  .ih-kv { display:flex; justify-content:space-between; font-size:.78rem; padding:3px 0;
+           border-bottom:1px dashed rgba(148,163,184,.08); }
+  .ih-note { font-size:.7rem; color:#64748b; margin-top:8px; }
+</style>
+
+<div class="fw-card ih-card" style="padding:16px 18px;">
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <h2 class="h6 mb-0"><i class="bi bi-hdd-network me-2 text-accent"></i>Infrastructure health
+      <span class="text-muted" style="font-size:12px;">— HA nodes · Git · backup server</span></h2>
+    <span id="ihStamp" class="text-muted" style="font-size:12px;">loading…</span>
+  </div>
+  <div class="ih-grid" id="ihBody">
+    <div class="text-muted small">Probing nodes, Gitea and backup-server…</div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  'use strict';
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function cls(p){return p==null?'ih-mut':p>=90?'ih-crit':p>=75?'ih-warn':'ih-ok';}
+  function tcls(p){return p==null?'ih-t-mut':p>=90?'ih-t-crit':p>=75?'ih-t-warn':'ih-t-ok';}
+  function bar(p){var w=p==null?0:Math.min(100,p);
+    return '<span class="ih-bar"><i class="'+cls(p)+'" style="width:'+w+'%"></i></span>';}
+  function gb(mb){return mb?(mb/1024).toFixed(mb>=1024?1:1)+' GB':'?';}
+  function dot(ok){return '<span class="ih-dot" style="background:'+(ok?'#10b981':'#ef4444')+'"></span>';}
+  function roleBadge(role,reach){
+    if(!reach) return '<span class="ih-badge ih-b-off">offline</span>';
+    if(role==='primary') return '<span class="ih-badge ih-b-pri">primary</span>';
+    if(role==='standby') return '<span class="ih-badge ih-b-sby">standby</span>';
+    return '<span class="ih-badge ih-b-off">'+esc(role||'?')+'</span>';
+  }
+
+  function nodeTile(n){
+    var hs=n.host_stats||{}, d0=(hs.disks||[])[0];
+    if(!n.reachable){
+      return '<div class="ih-tile"><h6><span>'+esc(n.name)+'</span>'+roleBadge(n.role,false)+'</h6>'+
+        '<div class="ih-sub">'+esc(n.host)+' · '+esc(n.desc||'')+'</div>'+
+        '<div class="ih-t-crit mt-2" style="font-size:.8rem;"><i class="bi bi-exclamation-octagon me-1"></i>unreachable</div></div>';
+    }
+    var cpu=hs.load_pct, mem=hs.mem_pct, dsk=d0?d0.pct:null;
+    return '<div class="ih-tile"><h6><span>'+dot(n.app_up)+' '+esc(n.name)+
+      (n.is_local?' <span class="ih-sub">(this node)</span>':'')+'</span>'+roleBadge(n.role,true)+'</h6>'+
+      '<div class="ih-sub">'+esc(n.host)+' · '+(hs.cpus||'?')+' CPU · '+gb(hs.mem_total_mb)+' RAM'+
+      (hs.uptime_s?' · up '+Math.floor(hs.uptime_s/86400)+'d':'')+'</div>'+
+      '<div class="ih-row"><span class="nm">CPU</span>'+bar(cpu)+'<span class="qt '+tcls(cpu)+'">'+
+        (hs.load?hs.load[0]:'?')+' / '+(hs.cpus||'?')+(cpu!=null?' · '+cpu+'%':'')+'</span></div>'+
+      '<div class="ih-row"><span class="nm">RAM</span>'+bar(mem)+'<span class="qt '+tcls(mem)+'">'+
+        gb(hs.mem_used_mb)+(mem!=null?' · '+mem+'%':'')+'</span></div>'+
+      '<div class="ih-row"><span class="nm">Disk</span>'+bar(dsk)+'<span class="qt '+tcls(dsk)+'">'+
+        (d0?d0.used_gb+' / '+d0.total_gb+' GB · '+d0.pct+'%':'?')+'</span></div></div>';
+  }
+
+  function gitTile(g){
+    var ok=g.reachable;
+    var last=g.reports_last;
+    return '<div class="ih-tile"><h6><span>'+dot(ok)+' Git repo (Gitea)</span>'+
+      '<span class="ih-badge '+(ok?'ih-b-pri':'ih-b-off')+'">'+(ok?'available':'unreachable')+'</span></h6>'+
+      '<div class="ih-sub">'+esc(g.base||g.remote||'—')+'</div>'+
+      '<div class="ih-kv"><span>branch</span><span>'+esc(g.branch)+
+        (g.dirty?' <span class="ih-t-warn">· dirty</span>':'')+'</span></div>'+
+      '<div class="ih-kv"><span>code HEAD</span><span class="text-truncate" style="max-width:150px;" title="'+esc(g.commit)+'">'+esc(g.commit)+'</span></div>'+
+      '<div class="ih-kv"><span>reports/ sync</span><span>'+(last?esc(last.date)+' · '+esc(last.hash):'—')+'</span></div>'+
+      (last?'<div class="ih-note">'+esc(last.subject)+'</div>':'')+'</div>';
+  }
+
+  function backupTile(b){
+    if(!b || !b.configured){
+      return '<div class="ih-tile"><h6><span>Backup server</span><span class="ih-badge ih-b-off">not configured</span></h6>'+
+        '<div class="ih-sub">Settings → SoT &amp; Backup</div></div>';
+    }
+    var ok=b.reachable, dk=b.disk;
+    return '<div class="ih-tile"><h6><span>'+dot(ok)+' Backup server (backup-server)</span>'+
+      '<span class="ih-badge '+(ok?'ih-b-pri':'ih-b-off')+'">'+(ok?'available':'unreachable')+'</span></h6>'+
+      '<div class="ih-sub">'+esc(b.host||'')+(b.port?':'+b.port:'')+' · SFTP</div>'+
+      (dk?'<div class="ih-row"><span class="nm">Disk</span>'+bar(dk.pct)+'<span class="qt '+tcls(dk.pct)+'">'+
+        dk.used_gb+' / '+dk.total_gb+' GB · '+dk.pct+'%</span></div>':
+        '<div class="ih-note">disk usage n/a</div>')+
+      '<div class="ih-kv"><span>device configs</span><span>'+(b.devices==null?'—':b.devices)+'</span></div>'+
+      '<div class="ih-kv"><span>firmware images</span><span>'+(b.firmware==null?'—':b.firmware)+
+        (b.firmware===0?' <span class="ih-t-warn">(empty)</span>':'')+'</span></div>'+
+      (b.error?'<div class="ih-note ih-t-crit">'+esc(b.error)+'</div>':'')+
+      '<div class="ih-note"><i class="bi bi-shield-lock me-1"></i>CPU/RAM not shown — SFTP-jailed box (isolated failure domain).</div></div>';
+  }
+
+  function render(d){
+    var html=(d.nodes||[]).map(nodeTile).join('')+gitTile(d.git||{})+backupTile(d.backup||{});
+    document.getElementById('ihBody').innerHTML=html||'<div class="text-muted small">No data.</div>';
+    document.getElementById('ihStamp').textContent='updated '+new Date().toLocaleTimeString()+
+      (d.mode?' · '+esc(d.mode):'')+(d.took_ms!=null?' · '+d.took_ms+' ms':'');
+  }
+
+  function load(){
+    fetch('{{ url_for("monitoring.infra") }}',{headers:{'X-Requested-With':'XMLHttpRequest'}})
+      .then(function(r){return r.json();}).then(render)
+      .catch(function(){document.getElementById('ihStamp').textContent='probe failed';
+        document.getElementById('ihBody').innerHTML='<div class="ih-t-crit small">Could not reach the infra probe.</div>';});
+  }
+  load();
+  var t=setInterval(load,60000);
+  document.addEventListener('turbo:before-render',function(){clearInterval(t);},{once:true});
+})();
+</script>

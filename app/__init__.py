@@ -692,9 +692,15 @@ def create_app(config_override: object | None = None) -> Flask:
             db_state = _cluster.db_summary()
         except Exception:
             pass
+        host = None
+        try:
+            from .services import system_health as _sh
+            host = _sh.host_stats()
+        except Exception:
+            pass
         return jsonify({'ok': True, 'revision': rev.get('short'),
                         'sha': rev.get('sha'), 'branch': rev.get('branch'),
-                        'db': db_state}), 200
+                        'db': db_state, 'host': host}), 200
 
     # -- primary-aware probe (for a load balancer health check) -----------
     # Returns 200 ONLY when the local Postgres is the PRIMARY. A standby

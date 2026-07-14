@@ -112,6 +112,8 @@ def _finalize_upload(app, job_id: str, image_id: int, dest_path: str,
             fw.sha256 = h.hexdigest()
             fw.size_bytes = total
             db.session.commit()
+            from ..services import backup_server as _bksrv
+            _bksrv.write_manifest()  # keep manifest.json in step after upload
             filename, size_mb = fw.filename, fw.size_mb()
         except Exception as exc:  # noqa: BLE001 — notify, then let run_async mark error
             if user_id:
@@ -581,6 +583,19 @@ def delete(image_id):
     db.session.commit()
     if folder and os.path.isdir(folder):
         shutil.rmtree(folder, ignore_errors=True)
+    from ..services import backup_server as _bksrv
+    _bksrv.write_manifest()  # keep manifest.json in step after a removal
     log_action("firmware.delete", target=meta, extra={"id": fw_id})
     flash(f"Deleted firmware {meta}.", "success")
     return redirect(url_for("firmware.index"))
+
+
+@bp.route("/manifest.json", methods=["GET"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def manifest():
+    """Machine-readable firmware inventory, regenerated from the DB on demand.
+    Auto-updated on every pull/upload/delete so it never drifts (closes the
+    'manifest maintained by hand' gap)."""
+    from ..services import backup_server as _bksrv
+    return jsonify(_bksrv.read_manifest())

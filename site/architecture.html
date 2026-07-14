@@ -4,22 +4,29 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Architecture — OFortMAut</title>
-<meta name="description" content="OFortMAut architecture: nginx edge, gunicorn + Flask app factory, PostgreSQL source of truth, scheduler sidecar, two-node HA with TLS-enforced streaming replication, and layered backups across failure domains.">
+<meta name="description" content="OFortMAut architecture: nginx edge, gunicorn + Flask app factory, PostgreSQL source of truth, scheduler sidecar, the manager↔device sync data flow, two-node HA with TLS-enforced streaming replication, and layered backups across failure domains.">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js" defer></script>
 </head>
 <body>
 
 <nav>
   <div class="wrap nav-inner">
-    <a class="brand" href="index.html"><span class="logo">🛡️</span> OFortMAut</a>
-    <div class="nav-links">
-      <a href="index.html">Home</a>
-      <a href="features.html">Features</a>
-      <a href="architecture.html" class="active">Architecture</a>
-      <a href="install.html">Install</a>
+    <a class="brand" href="index.html"><img class="mark" src="assets/visionebc-shield.png" alt="Vision EBC"> OFort<b>MAut</b></a>
+    <button class="nav-toggle" id="nav-toggle" aria-label="Menu">☰</button>
+    <div class="nav-right">
+      <div class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="features.html">Features</a>
+        <a href="architecture.html" class="active">Architecture</a>
+        <a href="install.html">Install</a>
+      </div>
+      <a class="nav-cta" href="https://github.com/visionebc/OFortMAut">Source ↗</a>
     </div>
   </div>
 </nav>
@@ -29,7 +36,7 @@
   <p class="sub">Boring, proven building blocks — arranged for resilience.</p>
 </header>
 
-<section class="wrap">
+<section class="wrap reveal">
   <div class="arch">
 <pre>
 Browser <b>(Turbo Drive · nonce-based CSP · per-tab product header)</b>
@@ -47,7 +54,23 @@ source of truth  rate-limit +        cron catalog: syncs, backups,
   </div>
 </section>
 
-<section class="wrap">
+<section class="wrap reveal">
+  <div class="sec-head">
+    <span class="eyebrow">Data flow</span>
+    <h2>How a device becomes a git commit</h2>
+    <p>Every appliance is harvested, normalized, cached and versioned through one shared pipeline.</p>
+  </div>
+  <div class="flow">
+    <div class="step"><div class="n">1</div><h4>Appliance</h4><p>FortiWeb / FortiADC / FortiAnalyzer</p></div>
+    <div class="step"><div class="n">2</div><h4>Client</h4><p>REST or JSON-RPC, SSH fallback</p></div>
+    <div class="step"><div class="n">3</div><h4>Snapshot</h4><p>Canonical shape per device kind</p></div>
+    <div class="step"><div class="n">4</div><h4>Postgres</h4><p>Device store — DB-first reads</p></div>
+    <div class="step"><div class="n">5</div><h4>Git</h4><p>reports/&lt;device&gt;/_config.json</p></div>
+  </div>
+  <div class="callout"><span class="cico">🔧</span><p>The REST/JSON-RPC endpoint map lives in a database <b>registry</b>, so a firmware upgrade that moves a URI is fixed from the UI — no redeploy.</p></div>
+</section>
+
+<section class="wrap reveal">
   <div class="sec-head">
     <h2>High availability &amp; layered backups</h2>
     <p>Two-node active/standby clustering is built into the installer — not bolted on.</p>
@@ -62,7 +85,7 @@ source of truth  rate-limit +        cron catalog: syncs, backups,
   </div>
 </section>
 
-<section class="wrap">
+<section class="wrap reveal">
   <div class="sec-head">
     <h2>Trust &amp; encryption in transit</h2>
     <p>Every internal channel is encrypted, and the app proves it with live probes — not assumptions.</p>
@@ -85,16 +108,20 @@ source of truth  rate-limit +        cron catalog: syncs, backups,
 
 <footer>
   <div class="wrap">
+    <div class="fbrand"><img src="assets/visionebc-wordmark.png" alt="Vision EBC"></div>
     <div class="flinks">
+      <a href="index.html">Home</a>
       <a href="features.html">Features</a>
       <a href="architecture.html">Architecture</a>
       <a href="install.html">Install</a>
       <a href="https://github.com/visionebc/OFortMAut">Source</a>
     </div>
-    <p><b>OFortMAut</b> · Open Fortinet Management Automation Tool</p>
-    <p style="margin-top:6px;">© 2026 Vision EBC · All rights reserved</p>
+    <p class="addr">http://ofortmaut.visionebc.com</p>
+    <p style="margin-top:8px;"><b>OFortMAut</b> · Open Fortinet Management Automation Tool</p>
+    <p style="margin-top:6px;">© <span class="year">2026</span> Vision EBC · All rights reserved</p>
   </div>
 </footer>
 
+<a id="top" href="#" aria-label="Back to top">↑</a>
 </body>
 </html>

@@ -4,22 +4,29 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OFortMAut — Open Fortinet Management Automation Tool</title>
-<meta name="description" content="A multi-user Flask web platform for managing fleets of Fortinet appliances — FortiWeb, FortiADC and FortiAnalyzer — with HA, a git-versioned configuration source of truth, and full lifecycle automation.">
+<meta name="description" content="A multi-user web platform that manages fleets of Fortinet appliances — FortiWeb, FortiADC and FortiAnalyzer — over REST and SSH, with high availability, a git-versioned configuration source of truth, and full lifecycle automation.">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js" defer></script>
 </head>
 <body>
 
 <nav>
   <div class="wrap nav-inner">
-    <a class="brand" href="index.html"><span class="logo">🛡️</span> OFortMAut</a>
-    <div class="nav-links">
-      <a href="index.html" class="active">Home</a>
-      <a href="features.html">Features</a>
-      <a href="architecture.html">Architecture</a>
-      <a href="install.html">Install</a>
+    <a class="brand" href="index.html"><img class="mark" src="assets/visionebc-shield.png" alt="Vision EBC"> OFort<b>MAut</b></a>
+    <button class="nav-toggle" id="nav-toggle" aria-label="Menu">☰</button>
+    <div class="nav-right">
+      <div class="nav-links">
+        <a href="index.html" class="active">Home</a>
+        <a href="features.html">Features</a>
+        <a href="architecture.html">Architecture</a>
+        <a href="install.html">Install</a>
+      </div>
+      <a class="nav-cta" href="https://github.com/visionebc/OFortMAut">Source ↗</a>
     </div>
   </div>
 </nav>
@@ -36,6 +43,11 @@
     <a class="btn btn-primary" href="install.html">Get started</a>
     <a class="btn btn-ghost" href="features.html">Explore features</a>
   </div>
+  <div class="devchips">
+    <span class="devchip fweb"><img src="assets/fortiweb-mark.svg" alt=""> FortiWeb</span>
+    <span class="devchip fadc"><img src="assets/fortiadc-mark.svg" alt=""> FortiADC</span>
+    <span class="devchip faz"><img src="assets/fortianalyzer-mark.svg" alt=""> FortiAnalyzer</span>
+  </div>
   <div class="stats">
     <div class="stat"><b>~500</b><span>registry endpoints editable</span></div>
     <div class="stat"><b>60+</b><span>Flask blueprints</span></div>
@@ -44,10 +56,11 @@
   </div>
 </header>
 
-<section class="wrap">
+<section class="wrap reveal">
   <div class="sec-head">
-    <h2>Why OFortMAut</h2>
-    <p>Everything the appliance console does — plus the database, audit trail and automation the appliances themselves can't offer.</p>
+    <span class="eyebrow">Why OFortMAut</span>
+    <h2>Everything the console does — plus what it can't</h2>
+    <p>The database, audit trail, git history and automation that the appliances themselves don't offer.</p>
   </div>
   <div class="grid">
     <div class="card"><div class="ico">🗂️</div><h3>Git source of truth</h3>
@@ -63,13 +76,55 @@
     <div class="card"><div class="ico">🔐</div><h3>Security first</h3>
       <p>Two-factor login, role-based access, per-channel encryption monitoring and a hardened deployment profile out of the box.</p></div>
   </div>
-  <div class="cta">
-    <a class="btn btn-ghost" href="features.html">See the full feature catalog →</a>
+</section>
+
+<section class="wrap reveal">
+  <div class="sec-head">
+    <span class="eyebrow">How it works</span>
+    <h2>The manager ↔ device sync, in five steps</h2>
+    <p>A read path that keeps the database and git in lock-step with the live appliances — and a minimal-diff write path back.</p>
+  </div>
+  <div class="flow">
+    <div class="step"><div class="n">1</div><h4>Schedule</h4><p>Hourly sync + nightly inspect, per product</p></div>
+    <div class="step"><div class="n">2</div><h4>Harvest</h4><p>REST API, SSH/CLI fallback</p></div>
+    <div class="step"><div class="n">3</div><h4>Normalize</h4><p>One snapshot shape per device</p></div>
+    <div class="step"><div class="n">4</div><h4>Cache</h4><p>PostgreSQL device store</p></div>
+    <div class="step"><div class="n">5</div><h4>Version</h4><p>JSON tree committed to git</p></div>
+  </div>
+  <div class="callout ok">
+    <span class="cico">↩️</span>
+    <p><b>Writes go the other way, minimally.</b> When you save an object, only the fields you changed are pushed to the device — with a dry-run preview and a full audit entry.</p>
+  </div>
+  <div class="cta"><a class="btn btn-ghost" href="features.html#sync">See the full sync model →</a></div>
+</section>
+
+<section class="wrap reveal">
+  <div class="sec-head">
+    <span class="eyebrow">Supported devices</span>
+    <h2>Three Fortinet product lines, one console</h2>
+  </div>
+  <div class="devgrid">
+    <div class="devcard fweb">
+      <div class="dhead"><img src="assets/fortiweb-mark.svg" alt=""><div><h3>FortiWeb</h3><span>Web Application Firewall</span></div></div>
+      <ul><li>Server policies, WAF signatures &amp; exceptions</li><li>166 curated Web Protection object kinds</li><li>Config backup over REST + SSH/CLI</li></ul>
+      <span class="proto">REST · SSH · tested on 7.6.x</span>
+    </div>
+    <div class="devcard fadc">
+      <div class="dhead"><img src="assets/fortiadc-mark.svg" alt=""><div><h3>FortiADC</h3><span>Application Delivery Controller</span></div></div>
+      <ul><li>Virtual servers, real-server pools, LB objects</li><li>Certificate deploy over REST</li><li>Harvested into the same git source of truth</li></ul>
+      <span class="proto">REST · self-signed aware</span>
+    </div>
+    <div class="devcard faz">
+      <div class="dhead"><img src="assets/fortianalyzer-mark.svg" alt=""><div><h3>FortiAnalyzer</h3><span>Logging &amp; Analytics</span></div></div>
+      <ul><li>Full JSON-RPC, both API dialects</li><li>Device Manager &amp; live registry menu</li><li>Config snapshot in git (~3.5k objects)</li></ul>
+      <span class="proto">JSON-RPC · tested on 7.6.7</span>
+    </div>
   </div>
 </section>
 
-<section class="wrap">
+<section class="wrap reveal">
   <div class="sec-head">
+    <span class="eyebrow">Deploy</span>
     <h2>Run it anywhere Linux runs</h2>
     <p>One interactive installer with online and air-gapped modes, for Debian and RHEL families.</p>
   </div>
@@ -91,16 +146,20 @@
 
 <footer>
   <div class="wrap">
+    <div class="fbrand"><img src="assets/visionebc-wordmark.png" alt="Vision EBC"></div>
     <div class="flinks">
+      <a href="index.html">Home</a>
       <a href="features.html">Features</a>
       <a href="architecture.html">Architecture</a>
       <a href="install.html">Install</a>
       <a href="https://github.com/visionebc/OFortMAut">Source</a>
     </div>
-    <p><b>OFortMAut</b> · Open Fortinet Management Automation Tool</p>
-    <p style="margin-top:6px;">© 2026 Vision EBC · All rights reserved</p>
+    <p class="addr">http://ofortmaut.visionebc.com</p>
+    <p style="margin-top:8px;"><b>OFortMAut</b> · Open Fortinet Management Automation Tool</p>
+    <p style="margin-top:6px;">© <span class="year">2026</span> Vision EBC · All rights reserved</p>
   </div>
 </footer>
 
+<a id="top" href="#" aria-label="Back to top">↑</a>
 </body>
 </html>

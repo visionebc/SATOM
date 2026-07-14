@@ -5,21 +5,28 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Install — OFortMAut</title>
 <meta name="description" content="Install OFortMAut on Linux: one interactive installer with an online mode for any major distro family and air-gapped offline bundles for Debian 12 and RHEL 9, standalone or two-node cluster.">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js" defer></script>
 </head>
 <body>
 
 <nav>
   <div class="wrap nav-inner">
-    <a class="brand" href="index.html"><span class="logo">🛡️</span> OFortMAut</a>
-    <div class="nav-links">
-      <a href="index.html">Home</a>
-      <a href="features.html">Features</a>
-      <a href="architecture.html">Architecture</a>
-      <a href="install.html" class="active">Install</a>
+    <a class="brand" href="index.html"><img class="mark" src="assets/visionebc-shield.png" alt="Vision EBC"> OFort<b>MAut</b></a>
+    <button class="nav-toggle" id="nav-toggle" aria-label="Menu">☰</button>
+    <div class="nav-right">
+      <div class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="features.html">Features</a>
+        <a href="architecture.html">Architecture</a>
+        <a href="install.html" class="active">Install</a>
+      </div>
+      <a class="nav-cta" href="https://github.com/visionebc/OFortMAut">Source ↗</a>
     </div>
   </div>
 </nav>
@@ -29,7 +36,7 @@
   <p class="sub">One interactive installer, two modes. It asks for IP, port, admin password and standalone / cluster — and handles everything else: packages, PostgreSQL, PKI, systemd, nginx TLS.</p>
 </header>
 
-<section class="wrap">
+<section class="wrap reveal">
   <div class="grid g2">
     <div class="card">
       <span class="tag tag-blue">Online</span><span class="tag tag-grn">Any distro family</span>
@@ -63,7 +70,7 @@
   </div>
 </section>
 
-<section class="wrap">
+<section class="wrap reveal">
   <div class="sec-head">
     <h2>Standalone or two-node cluster</h2>
     <p>Cluster setup is part of the same installer run — no separate procedure.</p>
@@ -78,7 +85,7 @@
   </div>
 </section>
 
-<section class="wrap">
+<section class="wrap reveal">
   <div class="sec-head">
     <h2>What the installer sets up</h2>
   </div>
@@ -95,20 +102,25 @@
     <li>A sysadmin manual (<code>INSTALL.md</code>) ships inside every bundle — requirements, permissions to request, sudo/sudoers options, hardening checklist</li>
     <li>Idempotent re-runs: an existing installation is preserved and only dependencies are refreshed</li>
   </ul>
+  <div class="cta"><a class="btn btn-primary" href="features.html">Explore the feature catalog →</a></div>
 </section>
 
 <footer>
   <div class="wrap">
+    <div class="fbrand"><img src="assets/visionebc-wordmark.png" alt="Vision EBC"></div>
     <div class="flinks">
+      <a href="index.html">Home</a>
       <a href="features.html">Features</a>
       <a href="architecture.html">Architecture</a>
       <a href="install.html">Install</a>
       <a href="https://github.com/visionebc/OFortMAut">Source</a>
     </div>
-    <p><b>OFortMAut</b> · Open Fortinet Management Automation Tool</p>
-    <p style="margin-top:6px;">© 2026 Vision EBC · All rights reserved</p>
+    <p class="addr">http://ofortmaut.visionebc.com</p>
+    <p style="margin-top:8px;"><b>OFortMAut</b> · Open Fortinet Management Automation Tool</p>
+    <p style="margin-top:6px;">© <span class="year">2026</span> Vision EBC · All rights reserved</p>
   </div>
 </footer>
 
+<a id="top" href="#" aria-label="Back to top">↑</a>
 </body>
 </html>

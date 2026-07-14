@@ -54,7 +54,7 @@ tar xzf ofortmaut-offline-<ver>-rhel9-x86_64.tar.gz
 cd ofortmaut-installer
 sudo bash install-ofortmaut.sh        # detecta bundle/ y no toca la red
 ```
-Hay un bundle POR FAMILIA de distро — el instalador rechaza un bundle de la
+Hay un bundle POR FAMILIA de distro — el instalador rechaza un bundle de la
 familia equivocada con un mensaje claro:
 - **Debian 12**: cierre completo de dependencias `.deb` + `wheels/` + `app.tar.gz`.
 - **RHEL 9**: `bundle/rpms/` es un repositorio dnf local (con metadatos) — dnf

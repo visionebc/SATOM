@@ -15,8 +15,10 @@ a dependency (``ssh_ops`` uses it for the FortiWeb CLI battery).
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import posixpath
+import re
 import stat as _stat
 from datetime import datetime
 
@@ -372,6 +374,86 @@ def _guess_product(filename: str) -> str:
     return "fortiweb"
 
 
+# Fortinet ``.out`` naming carries the version two ways in the wild:
+#   * dotted, on the real backup-server images:  FWB_KVM-v7.6.8.M-build1128-FORTINET.out
+#   * packed (older/short form):             FWB_KVM-v750-build0387-FORTINET.out
+# and a ``build<n>`` token. All best-effort — a name that matches neither form
+# yields ("", "") and the caller keeps its own fallback rather than storing a
+# wrong version.
+_FW_VER_DOTTED_RE = re.compile(r"v(\d+)\.(\d+)\.(\d+)", re.IGNORECASE)
+_FW_VER_PACKED_RE = re.compile(r"v(\d)(\d)(\d)\b", re.IGNORECASE)
+_FW_BUILD_RE = re.compile(r"build(\d+)", re.IGNORECASE)
+
+
+def parse_fw_version(filename: str) -> tuple[str, str]:
+    """Best-effort ``(version, build)`` from a Fortinet firmware filename.
+
+    ``FWB_KVM-v7.6.8.M-build1128-FORTINET.out`` -> ``("7.6.8", "1128")``;
+    ``FWB_KVM-v750-build0387-FORTINET.out``      -> ``("7.5.0", "0387")``.
+    Returns ``("", "")`` when no recognisable ``v...`` token is present so the
+    caller can keep its own fallback instead of storing a wrong version."""
+    name = posixpath.basename(filename or "")
+    ver = ""
+    m = _FW_VER_DOTTED_RE.search(name) or _FW_VER_PACKED_RE.search(name)
+    if m:
+        ver = ".".join(m.groups())
+    b = _FW_BUILD_RE.search(name)
+    build = b.group(1) if b else ""
+    return ver, build
+
+
+def _manifest_path() -> str:
+    return os.path.join(_firmware_root(), "manifest.json")
+
+
+def write_manifest() -> dict:
+    """Regenerate ``<firmware_root>/manifest.json`` from the FirmwareImage table
+    (the local source of truth). Called after every pull/upload so the machine-
+    readable inventory never drifts from the DB. Never raises — a failure is
+    reported in the return dict, not propagated into the pull/upload flow."""
+    from ..models_firmware import FirmwareImage
+    try:
+        rows = FirmwareImage.query.order_by(FirmwareImage.product,
+                                            FirmwareImage.version).all()
+        images = [{
+            "product": r.product,
+            "model": r.model or "",
+            "platform": r.platform or "",
+            "version": r.version or "",
+            "build": r.build or "",
+            "filename": r.filename,
+            "size_bytes": r.size_bytes or 0,
+            "sha256": r.sha256 or "",
+            "created_at": (r.created_at.isoformat() + "Z") if r.created_at else "",
+        } for r in rows]
+        doc = {
+            "schema": "ofortmaut.firmware-manifest/1",
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "count": len(images),
+            "images": images,
+        }
+        path = _manifest_path()
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh, indent=2, sort_keys=False)
+        os.replace(tmp, path)
+        return {"ok": True, "count": len(images), "path": path}
+    except Exception as exc:  # noqa: BLE001 — manifest is best-effort
+        return {"ok": False, "detail": str(exc)}
+
+
+def read_manifest() -> dict:
+    """Return the current manifest doc (regenerating it if the file is missing)."""
+    path = _manifest_path()
+    if not os.path.exists(path):
+        write_manifest()
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:  # noqa: BLE001
+        return {"schema": "ofortmaut.firmware-manifest/1", "count": 0, "images": []}
+
+
 def pull_firmware(filename: str, by: str = "") -> dict:
     """Download one ``.out`` image from the backup server's firmware folder
     into the local firmware store and register it as a ``FirmwareImage`` so
@@ -392,7 +474,9 @@ def pull_firmware(filename: str, by: str = "") -> dict:
     t, sftp = _connect(cfg)
     try:
         remote = posixpath.join(cfg["firmware_path"], safe)
-        fw = FirmwareImage(product=_guess_product(safe), version="?",
+        ver, build = parse_fw_version(safe)
+        fw = FirmwareImage(product=_guess_product(safe), version=ver or "?",
+                           build=build or None,
                            filename=safe, stored_path="", size_bytes=0,
                            sha256="", uploaded_by=by or "backup-server",
                            notes=f"pulled from backup server {cfg['host']}:{remote}")
@@ -410,6 +494,7 @@ def pull_firmware(filename: str, by: str = "") -> dict:
         fw.size_bytes = os.path.getsize(dest)
         fw.sha256 = h.hexdigest()
         db.session.commit()
+        write_manifest()  # keep the machine-readable inventory in step with the DB
         return {"ok": True, "image_id": fw.id,
                 "detail": f"{safe} pulled — {fw.size_bytes // (1024*1024)} MB, sha256 {fw.sha256[:12]}…"}
     except Exception as exc:  # noqa: BLE001

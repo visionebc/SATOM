@@ -740,7 +740,7 @@ def create_app(config_override: object | None = None) -> Flask:
     @app.cli.command('cert-renew')
     def cert_renew_cmd():
         """Auto-renew the node's CA-issued service cert if within threshold.
-        Invoked by the fm-cert-renew.timer. No-op for imported/bootstrap certs."""
+        Invoked by the ofortmaut-cert-renew.timer. No-op for imported/bootstrap certs."""
         from .services import cert_service as _cs
         try:
             res = _cs.renew_if_needed(by='timer')
@@ -771,7 +771,7 @@ def create_app(config_override: object | None = None) -> Flask:
     @click.option('--force', is_flag=True, help='Ignore the per-alert cooldown.')
     def alerts_run_cmd(dry_run, force):
         """Evaluate the proactive health checks and dispatch new alerts by email +
-        in-app bell. Invoked by fm-alerts.timer; runs on every node."""
+        in-app bell. Invoked by ofortmaut-alerts.timer; runs on every node."""
         from .services import alerts as _al
         try:
             res = _al.run(force=force, dry_run=dry_run)

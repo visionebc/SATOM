@@ -709,7 +709,7 @@
           </div>
           <div class="fw-card-body">
             <p class="text-muted mb-3" style="font-size:13px;">
-              The proactive health engine (<code>fm-alerts.timer</code>, every 15&nbsp;min) checks cert expiry, git divergence, device reachability, backup freshness and config drift, then notifies by <strong>email + in-app bell</strong>. Email uses the transport configured above — set it to external SMTP if the local relay can't reach your inbox.
+              The proactive health engine (<code>ofortmaut-alerts.timer</code>, every 15&nbsp;min) checks cert expiry, git divergence, device reachability, backup freshness and config drift, then notifies by <strong>email + in-app bell</strong>. Email uses the transport configured above — set it to external SMTP if the local relay can't reach your inbox.
             </p>
             <form method="POST" action="{{ url_for('settings.save_alerts') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -847,7 +847,7 @@
                   <div class="col-7"><label class="fw-form-label">Shared secret</label>
                     <input type="password" name="radius_secret" class="form-control fw-form-control" autocomplete="new-password" placeholder="{{ '******** (stored - blank keeps)' if auth_config.radius.has_secret else '' }}"></div>
                   <div class="col-5"><label class="fw-form-label">NAS identifier</label>
-                    <input type="text" name="radius_nas_id" class="form-control fw-form-control" value="{{ auth_config.radius.nas_id }}" placeholder="fortinet-manager"></div>
+                    <input type="text" name="radius_nas_id" class="form-control fw-form-control" value="{{ auth_config.radius.nas_id }}" placeholder="ofortmaut"></div>
                 </div>
               </div>
 

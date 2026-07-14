@@ -850,7 +850,7 @@
     var blob = new Blob(['<?xml version="1.0" encoding="UTF-8"?>\n' + src], { type: "image/svg+xml" });
     var a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "fortinet-manager-schema.svg";
+    a.download = "ofortmaut-schema.svg";
     document.body.appendChild(a);
     a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 250);

@@ -1,6 +1,6 @@
 """Headless scheduler sidecar — the ONLY process that fires scheduled actions.
 
-Runs as its own systemd unit (``fortinet-manager-scheduler.service``), NOT inside
+Runs as its own systemd unit (``ofortmaut-scheduler.service``), NOT inside
 the gunicorn web workers (4 workers would otherwise fire every job up to 4×).
 Single instance + a per-action DB-claim lease (``scheduled_action.running_at``)
 guarantee each due action runs exactly once.
@@ -10,7 +10,7 @@ Ticks every ~45s: claims due actions and runs them through the shared
 badly overdue are rolled forward WITHOUT running (so a box that was off for a
 week doesn't fire a week of backups at once).
 
-Launch:  ``python -m app.scheduler_runtime`` (from /opt/fortinet-manager).
+Launch:  ``python -m app.scheduler_runtime`` (from /opt/ofortmaut).
 """
 from __future__ import annotations
 

@@ -1,0 +1,5 @@
+[Unit]
+Description=OFortMAuT: auto-publish reports/ JSON to git (primary only)
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ofortmaut-git-publish.sh

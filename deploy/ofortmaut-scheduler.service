@@ -1,0 +1,18 @@
+# Fires scheduled actions. SINGLE INSTANCE across the HA pair: the guard script
+# only execs the scheduler on the Postgres primary (pg_is_in_recovery = f), so
+# the standby's copy idles until promoted.
+[Unit]
+Description=OFortMAuT Scheduler (fires scheduled actions; primary-only)
+After=network.target ofortmaut.service postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ofortmaut
+EnvironmentFile=/opt/ofortmaut/.env
+ExecStart=/opt/ofortmaut/deploy/scheduler_guard.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

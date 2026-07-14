@@ -3,7 +3,7 @@
 The **OFortMAuT** exposes a small, versioned, **token-authenticated**
 HTTP API at `/api/v1` for third-party integrations and automation.
 
-- **Base URL:** `https://fortinet-manager.example.net/api/v1`
+- **Base URL:** `https://ofortmaut.example.net/api/v1`
 - **Auth:** every request carries `Authorization: Bearer <token>`
 - **Format:** JSON in, JSON out (always — even on errors)
 
@@ -166,7 +166,7 @@ Then the integrator calls:
 
 ```bash
 TOKEN="fmk_abc123_def456..."
-BASE="https://fortinet-manager.example.net/api/v1"
+BASE="https://ofortmaut.example.net/api/v1"
 
 # 1. Verify the token
 curl -s -H "Authorization: Bearer $TOKEN" $BASE/ping | jq

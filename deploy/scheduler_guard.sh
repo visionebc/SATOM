@@ -7,7 +7,7 @@ set -u
 role() { runuser -u postgres -- psql -tAc "select pg_is_in_recovery()" 2>/dev/null; }
 while :; do
   case "$(role)" in
-    f) exec /opt/fortinet-manager/venv/bin/python -m app.scheduler_runtime ;;  # primary
+    f) exec /opt/ofortmaut/venv/bin/python -m app.scheduler_runtime ;;  # primary
     *) sleep 30 ;;   # standby ('t') or DB not ready ('') → wait, re-check, promote auto-starts us
   esac
 done

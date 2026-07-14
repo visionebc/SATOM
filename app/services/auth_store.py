@@ -187,7 +187,7 @@ def save_config(form) -> None:
     if b == "radius":
         AppSetting.set(K_R_HOST, g("radius_host"))
         AppSetting.set(K_R_PORT, str(_to_int(g("radius_port"), 1812)))
-        AppSetting.set(K_R_NASID, g("radius_nas_id") or "fortinet-manager")
+        AppSetting.set(K_R_NASID, g("radius_nas_id") or "ofortmaut")
         AppSetting.set(K_R_TIMEOUT, str(max(2, min(60, _to_int(g("radius_timeout"), 8)))))
         new_secret = form.get("radius_secret", "")
         if new_secret:
@@ -228,7 +228,7 @@ def test_connection(form) -> dict:
         cfg = {
             "host": (form.get("radius_host") or "").strip(),
             "port": _to_int(form.get("radius_port"), 1812),
-            "nas_id": (form.get("radius_nas_id") or "").strip() or "fortinet-manager",
+            "nas_id": (form.get("radius_nas_id") or "").strip() or "ofortmaut",
             "timeout": _to_int(form.get("radius_timeout"), 8),
             "secret": form.get("radius_secret") or _dec(AppSetting.get(K_R_SECRET)),
         }

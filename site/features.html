@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Features — OFortMAut</title>
+<meta name="description" content="The complete OFortMAut feature catalog: policy and WAF management, spec-driven object editing, multi-product workspaces, git source of truth, HA, security, automation, certificates, observability, reporting and developer tools.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-inner">
+    <a class="brand" href="index.html"><span class="logo">🛡️</span> OFortMAut</a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="features.html" class="active">Features</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="install.html">Install</a>
+    </div>
+  </div>
+</nav>
+
+<header class="page wrap">
+  <h1>Feature <span class="grad">catalog</span></h1>
+  <p class="sub">The complete list, grouped by area. Everything below ships in the repository today — no roadmap items, no vaporware.</p>
+</header>
+
+<section class="wrap">
+  <div class="grid g2">
+    <div class="card"><div class="ico">🧭</div><h3>Policy &amp; WAF management (FortiWeb)</h3>
+      <ul>
+        <li>Server Policy table mirroring the FortiWeb GUI with minimal-diff saves — only changed fields are written to the device</li>
+        <li>Guided policy clone / migrate across devices: pre-flight checklist, dummy-VIP rules, reference resolution</li>
+        <li>Safe cascade delete with dependency preview</li>
+        <li>Full Signatures editor with per-signature exception management</li>
+        <li>Guided WAF exceptions with template locks and lifecycle tracking (detect → inject → review)</li>
+        <li>Web Protection area mirroring the FortiWeb 7.6 menu — 166 curated object kinds</li>
+      </ul></div>
+    <div class="card"><div class="ico">🧩</div><h3>Generic object management</h3>
+      <ul>
+        <li>Spec-driven form engine making ~500 registry endpoints editable through one engine — stacked slide-over panels, create-references-in-place, dry-run preview on every write</li>
+        <li>Endpoint registry in the database: when a firmware upgrade moves a REST URI, the operator fixes it from the UI</li>
+        <li>Live API consoles per product with audited, permission-gated writes</li>
+        <li>Fleet-wide object search across every device's cached configuration</li>
+        <li>Naming-convention rules, section taxonomy, field catalogs, datasheets</li>
+      </ul></div>
+    <div class="card"><div class="ico">🌐</div><h3>Multi-product workspaces</h3>
+      <ul>
+        <li>Global, FortiWeb and FortiADC workspaces with per-browser-tab product context and strict data scoping</li>
+        <li>FortiADC: load-balancer objects, virtual servers, real-server pools, LB lookup, certificate deploy over REST</li>
+        <li>FortiAnalyzer: full JSON-RPC integration speaking both API dialects, live registry-bound menu, Device Manager views</li>
+      </ul></div>
+    <div class="card"><div class="ico">📦</div><h3>Device operations</h3>
+      <ul>
+        <li>Discovery / rediscovery and deep capture into a normalized local cache (DB-first reads, refresh-live escape hatch)</li>
+        <li>Config backups over REST with automatic SSH/CLI fallback, plus a restore vault</li>
+        <li>Firmware upgrade runbooks and boot-partition management</li>
+        <li>Built-in SSH console with read-only command presets</li>
+        <li>Provisioning workflows, hardware inventory, capacity views</li>
+      </ul></div>
+    <div class="card"><div class="ico">🗂️</div><h3>Source of truth &amp; backups</h3>
+      <ul>
+        <li>Git source of truth: every appliance's config harvested into versioned JSON, refreshed hourly, auto-published</li>
+        <li>System Backup &amp; Restore: database bundles, device vault, one-click code rollback, embedded recovery runbook</li>
+        <li>Backup coverage matrix — every stream with format, destinations, cadence and a live state badge</li>
+        <li>External SFTP backup server integration with per-device browse / compare / search / download</li>
+        <li>Firmware source of truth: manifest in git, binaries on the backup server, sha256-verified pulls</li>
+        <li>Git drift view and reports history with an A→B diff viewer</li>
+      </ul></div>
+    <div class="card"><div class="ico">🔁</div><h3>High availability</h3>
+      <ul>
+        <li>Two-node primary/standby with PostgreSQL streaming replication and a role-guarded 5-minute data sync</li>
+        <li>Replication TLS-enforced with mutual certificate verification against an internal CA</li>
+        <li>Git-driven reconciler keeps deployments converged with the repository</li>
+        <li>Cluster status page; node-to-node HTTPS probes authenticated with a shared identity key</li>
+      </ul></div>
+    <div class="card"><div class="ico">🔐</div><h3>Security</h3>
+      <ul>
+        <li>Local users with two-factor authentication, LDAP auth, granular RBAC</li>
+        <li>Audit log on every write path; Change Requests with maintenance-window approval gates</li>
+        <li>Scoped API tokens (read ⊂ write ⊂ admin, owner-capped, product-bound)</li>
+        <li>Secrets encrypted at rest; nonce-based CSP; rate limiting; object locks</li>
+        <li>Node TLS manager: import or issue from the internal CA, nightly auto-renew, auto-rollback on bad imports</li>
+        <li>Encryption-in-transit monitoring — every badge backed by a live probe</li>
+      </ul></div>
+    <div class="card"><div class="ico">⏱️</div><h3>Automation &amp; self-management</h3>
+      <ul>
+        <li>Scheduled actions catalog: config syncs, backups, certificate scans, nightly inspections — per-product targeting</li>
+        <li>Background jobs with pause / resume / stop</li>
+        <li>Self-update from the UI via a privileged runner with per-step logs and health verification</li>
+        <li>Library manager: PyPI update checks plus per-package pip upgrade / rollback with automatic failure rollback</li>
+      </ul></div>
+    <div class="card"><div class="ico">📜</div><h3>Certificates</h3>
+      <ul>
+        <li>Central Certificate Manager with issuance via ADCS or ACME</li>
+        <li>Lifecycle policy: revoke-on-supersede, expiry sweeps, SNI policies</li>
+        <li>Private-key upload over SSH and REST deploy to FortiADC; fleet-wide inventory and live probes</li>
+      </ul></div>
+    <div class="card"><div class="ico">📈</div><h3>Observability &amp; analysis</h3>
+      <ul>
+        <li>Monitoring dashboard, metrics, infrastructure health and system health pages</li>
+        <li>FortiView traffic analysis and packet capture</li>
+        <li>DNS &amp; LB lookup, log collection, flash reports, capacity planning</li>
+        <li>E-mail notifications, release-notes tracker, in-app documentation viewer</li>
+      </ul></div>
+    <div class="card"><div class="ico">📊</div><h3>Reporting</h3>
+      <ul>
+        <li>Report Builder: no-SQL wizard plus 7 built-in reports</li>
+        <li>Live ER diagram of the schema and database introspection views</li>
+      </ul></div>
+    <div class="card"><div class="ico">🛠️</div><h3>Developer &amp; power tools</h3>
+      <ul>
+        <li>Lua Studio and Regex Lab with curated example libraries</li>
+        <li>Plugin system with a sandboxed runtime and examples</li>
+        <li>API explorer, import-from-backup, baselines, built-in bug reporting</li>
+      </ul></div>
+    <div class="card"><div class="ico">🚀</div><h3>Deployment</h3>
+      <ul>
+        <li>Interactive Linux installer — online (any major distro family) or fully air-gapped offline bundles for Debian 12 and RHEL 9</li>
+        <li>Standalone or 2-node cluster: the secondary joins with a single pasted key and mints its own certificate</li>
+        <li>systemd units, nginx TLS front, gunicorn, PKI bootstrap, sysadmin manual with sudoers policy</li>
+        <li>700+ unit and integration tests</li>
+      </ul></div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="flinks">
+      <a href="features.html">Features</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="install.html">Install</a>
+      <a href="https://github.com/visionebc/OFortMAut">Source</a>
+    </div>
+    <p><b>OFortMAut</b> · Open Fortinet Management Automation Tool</p>
+    <p style="margin-top:6px;">© 2026 Vision EBC · All rights reserved</p>
+  </div>
+</footer>
+
+</body>
+</html>

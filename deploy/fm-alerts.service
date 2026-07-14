@@ -1,7 +1,0 @@
-[Unit]
-Description=OFortMAut proactive alert engine (cert/device/git/backup -> email + bell)
-After=network.target postgresql.service
-
-[Service]
-Type=oneshot
-ExecStart=/opt/fortinet-manager/deploy/fm-alerts.sh

@@ -5,7 +5,7 @@
 > detail, fleet map, freshness badges, and the standing refresh schedule
 > (`device_sync` 60 min · `deep_capture` 03:30 · `cert_scan` 04:15 via the
 > scheduler sidecar). This document is kept as the **design record**; the
-> living operational reference is `CLAUDE.md` §4c. Do not implement from here
+> living operational reference is the internal project knowledge base. Do not implement from here
 > without cross-checking the current code.
 
 

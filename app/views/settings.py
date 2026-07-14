@@ -915,7 +915,42 @@ def node_cert_state():
         'pg_ssl': eh.pg_ssl_policy(),
         'identity_key': nsec.configured(),
         'hostname': cs.node_hostname(),
+        'renew_mode': cs.renew_mode(),
+        'autopull': cs.autopull_config(),   # no secret revealed
     })
+
+
+@bp.route('/node-cert/renew-mode', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def node_cert_renew_mode():
+    """Choose how an IMPORTED cert is renewed: 'alert' (warn only) or 'autopull'
+    (fetch+install from a source over SFTP). Saves the mode + connection."""
+    from ..services import cert_service as cs
+    data = request.form if request.form else (request.get_json(silent=True) or {})
+    mode = (data.get('renew_mode') or 'alert').strip().lower()
+    try:
+        cs.save_autopull_config(dict(data), mode=mode)
+        log_action('node_cert.renew_mode', 'security', detail=mode)
+        return jsonify({'ok': True, 'renew_mode': cs.renew_mode(),
+                        'autopull': cs.autopull_config()})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)[:300]}), 400
+
+
+@bp.route('/node-cert/autopull', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def node_cert_autopull():
+    """Trigger a one-off autopull now (test button). Ignores the mode gate."""
+    from ..services import cert_service as cs
+    try:
+        res = cs.autopull(by=getattr(current_user, 'username', ''), force=True)
+        log_action('node_cert.autopull', 'security', detail=str(res))
+        return jsonify({'ok': bool(res.get('pulled') or 'up to date' in (res.get('reason') or '')),
+                        'result': res, 'cert': cs.current()})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)[:300]}), 400
 
 
 @bp.route('/node-cert/import', methods=['POST'])

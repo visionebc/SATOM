@@ -108,7 +108,7 @@ The complete list, grouped by area. Everything below ships in this repository to
 - API explorer, import-from-backup, structure / segments / classification tooling, baselines, and built-in bug reporting.
 
 ### Deployment
-- **Interactive Linux installer** — online, or fully **air-gapped offline bundle** (all .deb packages + Python wheels included).
+- **Interactive Linux installer** — online (any major distro family), or fully **air-gapped offline bundles** per family: Debian 12 (.deb closure) and RHEL/Rocky/Alma 9 (local dnf repository), each with the Python wheels included.
 - Installs **standalone or as a 2-node cluster**: the primary generates a join key; the secondary pastes it and replication, shared keys, and its own locally-minted certificate are set up automatically.
 - systemd units, nginx TLS front, gunicorn app server, PKI bootstrap — plus a sysadmin manual (`docs/INSTALL.md`) covering requirements, sudo/sudoers, hardening, and uninstall.
 - 700+ unit/integration tests.

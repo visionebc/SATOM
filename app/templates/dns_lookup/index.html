@@ -72,12 +72,17 @@
     <div class="fw-card">
       <div class="fw-card-header d-flex align-items-center justify-content-between">
         <span><i class="bi bi-table me-1"></i>Results</span>
-        {% if results %}
         <span class="d-flex gap-2">
+          {% if can_manage_records and dns_provider != 'none' %}
+          <button type="button" class="btn btn-sm btn-primary" id="dnsRecBtnHeader"
+                  data-entry="{{ results[0].resolved if results else '' }}">
+            <i class="bi bi-plus-lg me-1"></i>DNS Records</button>
+          {% endif %}
+          {% if results %}
           <button type="button" class="btn btn-sm btn-outline-warning" id="copyDnsBtn">Copy DNS</button>
           <button type="button" class="btn btn-sm btn-outline-success" id="copyLbBtn">Copy LB</button>
+          {% endif %}
         </span>
-        {% endif %}
       </div>
       <div class="fw-card-body p-0">
         {% if lb_error %}
@@ -107,6 +112,11 @@
                   {{ r.entry }}
                   {% if r.is_wildcard %}
                   <span class="badge text-bg-warning ms-1" style="font-size:9px;">&rarr; {{ r.resolved }}</span>
+                  {% endif %}
+                  {% if can_manage_records and dns_provider != 'none' %}
+                  <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 ms-1 dns-rec-btn"
+                          data-entry="{{ r.resolved }}" title="Manage DNS records for {{ r.resolved }}"
+                          style="font-size:10px;"><i class="bi bi-pencil-square"></i></button>
                   {% endif %}
                 </td>
                 {% for s in servers %}
@@ -237,4 +247,222 @@
   wire('copyLbBtn', 'clipLb', 'LB');
 })();
 </script>
+
+{% if can_manage_records and dns_provider != 'none' %}
+<!-- +DNS Records modal — CRUD against the configured IPAM/DDI provider -->
+<div class="modal fade" id="dnsRecModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i>DNS Records
+          <span class="badge text-bg-primary ms-2" id="dnsRecProviderBadge"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-secondary py-2" id="dnsRecNotes" style="font-size:12.5px;"></div>
+        <div class="row g-2 align-items-end mb-3">
+          <div class="col">
+            <label class="fw-form-label">Name (FQDN)</label>
+            <input type="text" id="dnsRecName" class="form-control fw-form-control form-control-sm font-monospace">
+          </div>
+          <div class="col-auto dnsRec-zone" style="display:none;">
+            <label class="fw-form-label">Zone</label>
+            <input type="text" id="dnsRecZone" class="form-control fw-form-control form-control-sm font-monospace" style="width:170px;">
+          </div>
+          <div class="col-auto dnsRec-view" style="display:none;">
+            <label class="fw-form-label">View</label>
+            <input type="text" id="dnsRecView" class="form-control fw-form-control form-control-sm font-monospace" style="width:130px;">
+          </div>
+          <div class="col-auto">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="dnsRecLoadBtn">
+              <i class="bi bi-search me-1"></i>Load</button>
+          </div>
+        </div>
+
+        <div id="dnsRecMsg" class="mb-2" style="font-size:12.5px;"></div>
+
+        <div class="table-responsive">
+          <table class="table fw-table table-sm align-middle mb-0" style="font-size:12px;">
+            <thead><tr><th>Type</th><th>Name</th><th>Value</th><th>TTL</th><th class="text-end dnsRec-actions-col">Actions</th></tr></thead>
+            <tbody id="dnsRecRows">
+              <tr><td colspan="5" class="text-muted text-center py-3">Press <strong>Load</strong> to list records.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div id="dnsRecEditor" class="mt-3 p-3 rounded" style="background:rgba(59,130,246,.06); border-left:3px solid #3b82f6; display:none;">
+          <div class="fw-semibold mb-2" style="font-size:12px; color:#3b82f6;" id="dnsRecEditorTitle">ADD RECORD</div>
+          <input type="hidden" id="dnsRecId">
+          <div class="row g-2">
+            <div class="col-auto">
+              <label class="fw-form-label">Type</label>
+              <select id="dnsRecType" class="form-select fw-form-control form-select-sm" style="width:110px;"></select>
+            </div>
+            <div class="col">
+              <label class="fw-form-label">Value</label>
+              <input type="text" id="dnsRecValue" class="form-control fw-form-control form-control-sm font-monospace"
+                     placeholder="e.g. 192.0.2.41  ·  MX: '10 mail.host'">
+            </div>
+            <div class="col-auto">
+              <label class="fw-form-label">TTL</label>
+              <input type="text" id="dnsRecTtl" class="form-control fw-form-control form-control-sm" style="width:90px;" placeholder="3600">
+            </div>
+          </div>
+          <div class="d-flex gap-2 mt-2">
+            <button type="button" class="btn btn-sm btn-primary" id="dnsRecSaveBtn"><i class="bi bi-check-lg me-1"></i>Save record</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="dnsRecClearBtn">New</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var CSRF = "{{ csrf_token() }}";
+  var URLS = {
+    schema: "{{ url_for('dns_tool.records_schema') }}",
+    list: "{{ url_for('dns_tool.records_list') }}",
+    crud: "{{ url_for('dns_tool.records_create') }}"
+  };
+  var modalEl = document.getElementById('dnsRecModal');
+  var modal = new bootstrap.Modal(modalEl);
+  var caps = null;
+  var el = function (id) { return document.getElementById(id); };
+
+  function setMsg(text, kind) {
+    var m = el('dnsRecMsg');
+    m.textContent = text || '';
+    m.style.color = kind === 'err' ? '#ef4444' : (kind === 'ok' ? '#10b981' : '#94a3b8');
+  }
+
+  function api(method, body) {
+    var url = (method === 'GET')
+      ? URLS.list + '?name=' + encodeURIComponent(el('dnsRecName').value.trim())
+                  + '&zone=' + encodeURIComponent(el('dnsRecZone').value.trim())
+      : URLS.crud;
+    var opts = { method: method, headers: { 'X-CSRFToken': CSRF } };
+    if (method !== 'GET') {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(body || {});
+    }
+    return fetch(url, opts).then(function (r) {
+      return r.json().then(function (d) {
+        if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+        return d;
+      });
+    });
+  }
+
+  function applyCaps() {
+    el('dnsRecProviderBadge').textContent = caps.label;
+    el('dnsRecNotes').textContent = caps.notes || '';
+    document.querySelector('.dnsRec-zone').style.display = caps.needs_zone ? '' : 'none';
+    document.querySelector('.dnsRec-view').style.display = caps.needs_view ? '' : 'none';
+    var editor = el('dnsRecEditor');
+    editor.style.display = caps.can_write ? '' : 'none';
+    document.querySelectorAll('.dnsRec-actions-col').forEach(function (c) {
+      c.style.display = caps.can_write ? '' : 'none';
+    });
+    var typeSel = el('dnsRecType');
+    typeSel.innerHTML = '';
+    (caps.record_types || []).forEach(function (t) {
+      var o = document.createElement('option'); o.value = t; o.textContent = t; typeSel.appendChild(o);
+    });
+  }
+
+  function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+
+  function renderRows(records) {
+    var tb = el('dnsRecRows');
+    tb.innerHTML = '';
+    if (!records.length) {
+      tb.innerHTML = '<tr><td colspan="5" class="text-muted text-center py-3">No records found.</td></tr>';
+      return;
+    }
+    records.forEach(function (rec) {
+      var tr = document.createElement('tr');
+      var actions = '';
+      if (caps.can_write && rec.id) {
+        actions = '<button class="btn btn-sm btn-outline-primary py-0 px-1 me-1 dnsRec-edit" style="font-size:10px;"><i class="bi bi-pencil"></i></button>'
+                + '<button class="btn btn-sm btn-outline-danger py-0 px-1 dnsRec-del" style="font-size:10px;"><i class="bi bi-trash"></i></button>';
+      }
+      tr.innerHTML = '<td><span class="badge text-bg-secondary">' + esc(rec.type) + '</span></td>'
+        + '<td class="font-monospace">' + esc(rec.name) + '</td>'
+        + '<td class="font-monospace">' + esc(rec.value) + '</td>'
+        + '<td>' + esc(rec.ttl == null ? '' : rec.ttl) + '</td>'
+        + '<td class="text-end dnsRec-actions-col"' + (caps.can_write ? '' : ' style="display:none;"') + '>' + actions + '</td>';
+      var e = tr.querySelector('.dnsRec-edit');
+      if (e) e.addEventListener('click', function () { fillEditor(rec); });
+      var d = tr.querySelector('.dnsRec-del');
+      if (d) d.addEventListener('click', function () { delRecord(rec); });
+      tb.appendChild(tr);
+    });
+  }
+
+  function loadRecords() {
+    if (!el('dnsRecName').value.trim()) { setMsg('Enter a name.', 'err'); return; }
+    setMsg('Loading…');
+    api('GET').then(function (d) { setMsg(''); renderRows(d.records || []); })
+              .catch(function (e) { setMsg(e.message, 'err'); });
+  }
+
+  function fillEditor(rec) {
+    el('dnsRecId').value = rec.id || '';
+    el('dnsRecType').value = rec.type || (caps.record_types[0] || 'A');
+    el('dnsRecValue').value = rec.value || '';
+    el('dnsRecTtl').value = rec.ttl == null ? '' : rec.ttl;
+    if (rec.zone) el('dnsRecZone').value = rec.zone;
+    el('dnsRecEditorTitle').textContent = rec.id ? ('EDIT RECORD #' + rec.id) : 'ADD RECORD';
+  }
+
+  function clearEditor() { fillEditor({}); }
+
+  function saveRecord() {
+    var body = {
+      id: el('dnsRecId').value.trim(),
+      name: el('dnsRecName').value.trim(),
+      type: el('dnsRecType').value,
+      value: el('dnsRecValue').value.trim(),
+      ttl: el('dnsRecTtl').value.trim(),
+      zone: el('dnsRecZone').value.trim(),
+      view: el('dnsRecView').value.trim()
+    };
+    if (!body.name || !body.value) { setMsg('Name and value are required.', 'err'); return; }
+    var method = body.id ? 'PUT' : 'POST';
+    setMsg('Saving…');
+    api(method, body).then(function () { setMsg('Record saved.', 'ok'); clearEditor(); loadRecords(); })
+                     .catch(function (e) { setMsg(e.message, 'err'); });
+  }
+
+  function delRecord(rec) {
+    if (!window.confirm('Delete ' + rec.type + ' ' + rec.name + ' -> ' + rec.value + ' ?')) return;
+    setMsg('Deleting…');
+    api('DELETE', rec).then(function () { setMsg('Record deleted.', 'ok'); loadRecords(); })
+                      .catch(function (e) { setMsg(e.message, 'err'); });
+  }
+
+  function openModal(entry) {
+    el('dnsRecName').value = (entry || '').replace(/^\*\./, '');
+    el('dnsRecRows').innerHTML = '<tr><td colspan="5" class="text-muted text-center py-3">Press <strong>Load</strong> to list records.</td></tr>';
+    setMsg('');
+    clearEditor();
+    modal.show();
+    if (caps) { if (el('dnsRecName').value) loadRecords(); return; }
+    fetch(URLS.schema, { headers: { 'X-CSRFToken': CSRF } })
+      .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || r.status); return d; }); })
+      .then(function (d) { caps = d.capabilities; applyCaps(); if (el('dnsRecName').value) loadRecords(); })
+      .catch(function (e) { setMsg('Provider error: ' + e.message, 'err'); });
+  }
+
+  document.querySelectorAll('.dns-rec-btn, #dnsRecBtnHeader').forEach(function (b) {
+    b.addEventListener('click', function () { openModal(b.getAttribute('data-entry') || ''); });
+  });
+  el('dnsRecLoadBtn').addEventListener('click', loadRecords);
+  el('dnsRecSaveBtn').addEventListener('click', saveRecord);
+  el('dnsRecClearBtn').addEventListener('click', clearEditor);
+})();
+</script>
+{% endif %}
 {% endblock %}

@@ -7,11 +7,16 @@ DNS servers are variable, managed in Settings → admin console.
 """
 from __future__ import annotations
 
-from flask import Blueprint, render_template, request
-from flask_login import login_required
+from flask import Blueprint, render_template, request, jsonify
+from flask_login import login_required, current_user
 
 from ..services import dns_tool
+from ..services import dns_providers
+from ..services.dns_providers import DnsRecord, ProviderError
 from ..services.product_scope import session_product
+from ..services.audit import log_action
+from ..auth.decorators import require_permission
+from ..models import Permission
 
 bp = Blueprint("dns_tool", __name__, url_prefix="/dns-lookup")
 
@@ -95,4 +100,107 @@ def index():
         clip_lb=clip_lb,
         lb_error=lb_error,
         adom=session_product() or "global",
+        dns_provider=dns_providers.provider_key(),
+        can_manage_records=current_user.can("user_manage"),
     )
+
+
+# ------------------------------------------------------------- DNS Records
+# CRUD against the configured IPAM/DDI provider (EfficientIP / phpIPAM /
+# NetBox), driven by the +DNS Records modal. Admin-only (USER_MANAGE); every
+# write is audited. The active provider is chosen in Settings → DNS Records,
+# so the same modal adapts per install (capabilities from schema()).
+
+def _provider_or_400():
+    prov = dns_providers.active_provider()
+    if prov is None:
+        return None, (jsonify(error="No DNS/IPAM provider is configured."), 400)
+    return prov, None
+
+
+@bp.route("/records/schema", methods=["GET"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def records_schema():
+    """Active provider's capabilities — the modal renders itself from this."""
+    prov, err = _provider_or_400()
+    if err:
+        return err
+    try:
+        caps = prov.capabilities().as_dict()
+    except ProviderError as exc:
+        return jsonify(error=str(exc)), 502
+    return jsonify(capabilities=caps)
+
+
+@bp.route("/records/list", methods=["GET"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def records_list():
+    prov, err = _provider_or_400()
+    if err:
+        return err
+    name = (request.args.get("name") or "").strip()
+    zone = (request.args.get("zone") or "").strip()
+    try:
+        records = prov.list_records(name=name, zone=zone)
+    except ProviderError as exc:
+        return jsonify(error=str(exc)), 502
+    return jsonify(records=[r.as_dict() for r in records])
+
+
+@bp.route("/records", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def records_create():
+    prov, err = _provider_or_400()
+    if err:
+        return err
+    rec = DnsRecord.from_form(request.get_json(silent=True) or request.form)
+    if not rec.name or not rec.value:
+        return jsonify(error="Name and value are required."), 400
+    try:
+        saved = prov.create_record(rec)
+    except ProviderError as exc:
+        return jsonify(error=str(exc)), 502
+    log_action("dns_records.create",
+               target=f"{dns_providers.provider_key()}:{rec.type} {rec.name}")
+    return jsonify(record=saved.as_dict()), 201
+
+
+@bp.route("/records", methods=["PUT"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def records_update():
+    prov, err = _provider_or_400()
+    if err:
+        return err
+    rec = DnsRecord.from_form(request.get_json(silent=True) or request.form)
+    if not rec.id:
+        return jsonify(error="Record id is required."), 400
+    try:
+        saved = prov.update_record(rec)
+    except ProviderError as exc:
+        return jsonify(error=str(exc)), 502
+    log_action("dns_records.update",
+               target=f"{dns_providers.provider_key()}:{rec.type} {rec.name}")
+    return jsonify(record=saved.as_dict())
+
+
+@bp.route("/records", methods=["DELETE"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def records_delete():
+    prov, err = _provider_or_400()
+    if err:
+        return err
+    rec = DnsRecord.from_form(request.get_json(silent=True) or request.form)
+    if not rec.id:
+        return jsonify(error="Record id is required."), 400
+    try:
+        prov.delete_record(rec)
+    except ProviderError as exc:
+        return jsonify(error=str(exc)), 502
+    log_action("dns_records.delete",
+               target=f"{dns_providers.provider_key()}:{rec.type} {rec.name}")
+    return jsonify(ok=True)

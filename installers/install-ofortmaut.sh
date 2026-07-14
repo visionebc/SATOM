@@ -77,8 +77,8 @@ done
 # Nombres de paquete por familia (mismo orden de conceptos en todas)
 case "$PKG_MGR" in
     apt)        REQUIRED_PKGS=(python3 python3-venv python3-pip postgresql nginx rsync openssl curl ca-certificates) ;;
-    dnf|yum)    REQUIRED_PKGS=(python3 python3-pip postgresql-server postgresql nginx rsync openssl curl ca-certificates) ;;
-    zypper)     REQUIRED_PKGS=(python3 python3-pip postgresql-server postgresql nginx rsync openssl curl ca-certificates) ;;
+    dnf|yum)    REQUIRED_PKGS=(python3.11 python3.11-pip postgresql-server postgresql nginx rsync openssl curl ca-certificates) ;;
+    zypper)     REQUIRED_PKGS=(python311 python311-pip postgresql-server postgresql nginx rsync openssl curl ca-certificates) ;;
     pacman)     REQUIRED_PKGS=(python python-pip postgresql nginx rsync openssl curl ca-certificates) ;;
 esac
 ONLINE_EXTRA_PKGS=(git)
@@ -131,6 +131,11 @@ OFFLINE=0
 if [ -d "$BUNDLE_DIR" ] && [ -d "$BUNDLE_DIR/debs" ]; then
     [ "$PKG_MGR" = "apt" ] || die "El bundle offline contiene paquetes .deb (familia Debian/Ubuntu) y esta máquina usa ${PKG_MGR}. Usa el instalador en modo ONLINE (borra o renombra bundle/) o genera el bundle para esta familia."
     OFFLINE=1
+elif [ -d "$BUNDLE_DIR" ] && [ -d "$BUNDLE_DIR/rpms" ]; then
+    case "$PKG_MGR" in
+        dnf|yum) OFFLINE=1 ;;
+        *) die "El bundle offline contiene paquetes .rpm (familia RHEL/Rocky/Alma) y esta máquina usa ${PKG_MGR}. Usa el instalador en modo ONLINE (borra o renombra bundle/) o genera el bundle para esta familia." ;;
+    esac
 fi
 
 echo ""
@@ -248,22 +253,39 @@ for p in "${PKGS[@]}"; do
     fi
 done
 
-# Python >= 3.9 exigido por la app
-PYV=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo "0.0")
-if python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3,9) else 1)' 2>/dev/null; then
-    ok "python3 ${PYV} cumple el mínimo (3.9)"
+# Python >= 3.10 exigido por las dependencias pinneadas (Flask-Limiter, psycopg 3.3, gunicorn 26).
+# En RHEL/Rocky/Alma 9 el python3 del sistema es 3.9 → se usa python3.11 del AppStream.
+pick_python() {
+    PYBIN=""
+    local c
+    for c in python3.12 python3.11 python3; do
+        command -v "$c" >/dev/null 2>&1 || continue
+        "$c" -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)' 2>/dev/null \
+            && { PYBIN="$c"; return 0; }
+    done
+    return 1
+}
+if pick_python; then
+    ok "$($PYBIN --version 2>&1) cumple el mínimo (3.10)"
 else
-    warn "python3 ${PYV} es una versión vieja — se actualizará a la del repositorio"
+    warn "No hay un Python >= 3.10 — se instalará el de la distro (${REQUIRED_PKGS[0]})"
     MISSING+=("${REQUIRED_PKGS[0]}")
 fi
 
 if [ ${#MISSING[@]} -gt 0 ]; then
     if [ $OFFLINE -eq 1 ]; then
         say "Instalando desde el bundle offline (${#MISSING[@]} paquetes + dependencias)"
-        # El bundle trae el cierre completo de dependencias; dpkg salta lo ya instalado.
-        dpkg -i --skip-same-version "$BUNDLE_DIR"/debs/*.deb >>"$INSTALL_LOG" 2>&1 \
-            || apt-get -y -f --no-download install >>"$INSTALL_LOG" 2>&1 \
-            || die "Fallo instalando debs del bundle (revisa $INSTALL_LOG)"
+        if [ -d "$BUNDLE_DIR/debs" ]; then
+            # El bundle trae el cierre completo de dependencias; dpkg salta lo ya instalado.
+            dpkg -i --skip-same-version "$BUNDLE_DIR"/debs/*.deb >>"$INSTALL_LOG" 2>&1 \
+                || apt-get -y -f --no-download install >>"$INSTALL_LOG" 2>&1 \
+                || die "Fallo instalando debs del bundle (revisa $INSTALL_LOG)"
+        else
+            # RPM: dnf/yum resuelven el orden con el cierre completo local, sin red.
+            "$PKG_MGR" -y --disablerepo='*' install "$BUNDLE_DIR"/rpms/*.rpm >>"$INSTALL_LOG" 2>&1 \
+                || "$PKG_MGR" -y --disablerepo='*' upgrade "$BUNDLE_DIR"/rpms/*.rpm >>"$INSTALL_LOG" 2>&1 \
+                || die "Fallo instalando rpms del bundle (revisa $INSTALL_LOG)"
+        fi
     else
         say "Instalando desde los mirrors (${PKG_MGR})"
         pkg_install "${MISSING[@]}" || die "La instalación de paquetes falló (revisa $INSTALL_LOG)"
@@ -273,8 +295,10 @@ else
     ok "Toda la paquetería requerida ya está presente"
 fi
 
+# Re-resuelve el intérprete tras instalar paquetes (puede haber llegado ahora)
+pick_python || die "No hay un Python >= 3.10 disponible tras la instalación de paquetes"
 # El módulo venv puede venir en paquete aparte (Debian) o integrado (resto)
-python3 -m venv --help >/dev/null 2>&1 || die "python3 no trae el módulo venv — instala el paquete venv de tu distro"
+"$PYBIN" -m venv --help >/dev/null 2>&1 || die "$PYBIN no trae el módulo venv — instala el paquete venv de tu distro"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PASO 3 — CÓDIGO DE LA APLICACIÓN + VENV
@@ -299,7 +323,7 @@ fi
 mkdir -p "$APP_DIR/data" "$LOG_DIR"
 cd "$APP_DIR"
 
-python3 -m venv venv
+"$PYBIN" -m venv venv
 if [ $OFFLINE -eq 1 ]; then
     venv/bin/pip install --no-index --find-links "$BUNDLE_DIR/wheels" --upgrade pip >>"$INSTALL_LOG" 2>&1 || true
     venv/bin/pip install --no-index --find-links "$BUNDLE_DIR/wheels" -r requirements.txt >>"$INSTALL_LOG" 2>&1 \

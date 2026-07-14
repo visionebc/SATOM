@@ -779,6 +779,45 @@ def create_app(config_override: object | None = None) -> Flask:
         except Exception as exc:  # noqa: BLE001
             print('alerts-run error:', exc)
 
+    @app.cli.command('preflight')
+    @click.option('--label', default='', help='Free-text label for the snapshot.')
+    @click.option('--out', default=None, help='Write the snapshot JSON here '
+                  '(default: data/flight/last-preflight.json).')
+    def preflight_cmd(label, out):
+        """Capture a health baseline BEFORE a risky change (upgrade / restore).
+        Saves it so 'postflight' can diff against it."""
+        from .services import preflight as _pf
+        import json as _json
+        snap = _pf.snapshot(label or 'preflight')
+        path = _pf.save(snap, out)
+        print('preflight saved:', path)
+        print(_json.dumps({'health': snap['health'], 'git': snap['git'].get('head'),
+                           'devices': {k: v.get('reachable') for k, v in snap['devices'].items()}
+                           if isinstance(snap['devices'], dict) and 'error' not in snap['devices']
+                           else snap['devices']}, indent=2))
+
+    @app.cli.command('postflight')
+    @click.option('--baseline', default=None, help='Baseline snapshot path '
+                  '(default: the last preflight).')
+    @click.option('--label', default='', help='Free-text label for the after-snapshot.')
+    def postflight_cmd(baseline, label):
+        """Capture a health snapshot AFTER a risky change and diff it against the
+        preflight baseline. Exits non-zero if a regression is detected."""
+        from .services import preflight as _pf
+        import json as _json, sys as _sys
+        try:
+            before = _pf.load(baseline)
+        except Exception as exc:  # noqa: BLE001
+            print('postflight: cannot load baseline:', exc)
+            _sys.exit(2)
+        after = _pf.snapshot(label or 'postflight')
+        verdict = _pf.compare(before, after)
+        print(_json.dumps(verdict, indent=2))
+        if not verdict['passed']:
+            print('POSTFLIGHT FAILED — regressions detected.')
+            _sys.exit(1)
+        print('postflight OK — no regressions.')
+
     @app.cli.command('create-db')
     def create_db_cmd():
         """Initialise database tables and seed the default admin user."""

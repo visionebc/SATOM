@@ -143,3 +143,9 @@ scripts/             install.sh, offline bundle builder, operational scripts
 tests/               700+ pytest tests (no device needed)
 deploy/              systemd units and deployment artifacts
 ```
+
+## Credits
+
+Developed and maintained by **Vision EBC**. Portions of this project were
+built with AI-assisted development tooling; all changes are reviewed, tested
+(700+ automated tests) and validated on real appliances before release.

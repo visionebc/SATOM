@@ -360,8 +360,7 @@ safe:
 
 ## 13. Conventions & hard-won gotchas
 
-The checked-in `CLAUDE.md` (project knowledge base) carries the full,
-dated history. The ones you will hit first:
+The internal project knowledge base carries the full, dated history. The ones you will hit first:
 
 1. **License-locked devices 423 the whole REST API** (`-20010`) with no
    `results` key — always read through `list_with_error`, never assume

@@ -281,10 +281,21 @@ if [ ${#MISSING[@]} -gt 0 ]; then
                 || apt-get -y -f --no-download install >>"$INSTALL_LOG" 2>&1 \
                 || die "Fallo instalando debs del bundle (revisa $INSTALL_LOG)"
         else
-            # RPM: dnf/yum resuelven el orden con el cierre completo local, sin red.
-            "$PKG_MGR" -y --disablerepo='*' install "$BUNDLE_DIR"/rpms/*.rpm >>"$INSTALL_LOG" 2>&1 \
-                || "$PKG_MGR" -y --disablerepo='*' upgrade "$BUNDLE_DIR"/rpms/*.rpm >>"$INSTALL_LOG" 2>&1 \
+            # RPM: bundle/rpms es un repo dnf local (repodata generado en el
+            # build) — dnf resuelve SOLO lo necesario, sin tocar el resto
+            # del sistema y sin red.
+            "$PKG_MGR" -y --disablerepo='*' \
+                --repofrompath="ofortmaut-bundle,file://$BUNDLE_DIR/rpms" \
+                --setopt=ofortmaut-bundle.gpgcheck=0 \
+                --setopt=install_weak_deps=False \
+                install "${REQUIRED_PKGS[@]}" >>"$INSTALL_LOG" 2>&1 \
                 || die "Fallo instalando rpms del bundle (revisa $INSTALL_LOG)"
+            # Utilería SELinux (semanage) — best-effort, igual que en online
+            "$PKG_MGR" -y --disablerepo='*' \
+                --repofrompath="ofortmaut-bundle,file://$BUNDLE_DIR/rpms" \
+                --setopt=ofortmaut-bundle.gpgcheck=0 \
+                --setopt=install_weak_deps=False \
+                install policycoreutils-python-utils >>"$INSTALL_LOG" 2>&1 || true
         fi
     else
         say "Instalando desde los mirrors (${PKG_MGR})"

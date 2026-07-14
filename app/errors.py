@@ -1,13 +1,13 @@
 """Centralised error handling, logging, and correlation IDs.
 
 ONE place that:
-  * configures a rotating file log (``data/logs/fortinet-manager.log``),
+  * configures a rotating file log (``data/logs/ofortmaut.log``),
   * mints a short **error ID** for every unexpected failure,
   * logs the full traceback tagged with that ID, and
   * shows the SAME ID to the user (HTML page or JSON) so a report can be
     matched to its log line with a single grep::
 
-        grep <ERROR_ID> /opt/fortinet-manager/data/logs/fortinet-manager.log
+        grep <ERROR_ID> /opt/ofortmaut/data/logs/ofortmaut.log
 
 The ID is the contract between the user and the operator: the user sees
 "Error ID: A1B2C3D4", the operator greps that exact string and lands on the
@@ -188,7 +188,7 @@ def configure_logging(app: Flask) -> None:
         log_dir = os.path.abspath(
             os.path.join(app.root_path, os.pardir, "data", "logs"))
         os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(log_dir, "fortinet-manager.log")
+        log_path = os.path.join(log_dir, "ofortmaut.log")
     except OSError:
         return
 

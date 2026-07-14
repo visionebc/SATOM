@@ -3,7 +3,7 @@
 The web process runs UNPRIVILEGED (user ``fortinet``, ``NoNewPrivileges`` +
 ``ProtectSystem=strict``) so it can neither restart itself nor install files.
 The real update therefore runs in a SEPARATE privileged oneshot service
-(``fortinet-manager-updater.service``) triggered by a systemd ``.path`` unit
+(``ofortmaut-updater.service``) triggered by a systemd ``.path`` unit
 that watches ``data/update-requests/``. This module is the app-side half: it
 inspects the current git revision, checks the remote for a newer one, and
 ENQUEUES an update request (a JSON file the root runner picks up). It never
@@ -27,7 +27,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-APP_DIR = Path(os.environ.get("FM_APP_DIR", "/opt/fortinet-manager"))
+APP_DIR = Path(os.environ.get("FM_APP_DIR", "/opt/ofortmaut"))
 REQ_DIR = APP_DIR / "data" / "update-requests"
 STATUS_DIR = APP_DIR / "data" / "update-status"
 NODES_FILE = APP_DIR / "data" / "ha_nodes.json"

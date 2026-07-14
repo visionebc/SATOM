@@ -44,8 +44,8 @@
 set -euo pipefail
 
 VERSION="1.0"
-APP_DIR="/opt/fortinet-manager"
-LOG_DIR="/var/log/fortinet-manager"
+APP_DIR="/opt/ofortmaut"
+LOG_DIR="/var/log/ofortmaut"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUNDLE_DIR="${SCRIPT_DIR}/bundle"
 GIT_URL_DEFAULT="https://git.example.net/ofortmaut-prod/OFortMAut.git"
@@ -548,23 +548,23 @@ fi
 
 # systemd units
 say "Instalando servicios systemd"
-for unit in fortinet-manager.service fortinet-manager-scheduler.service \
-            fortinet-manager-updater.path fortinet-manager-updater.service \
-            fm-cert-renew.service fm-cert-renew.timer; do
+for unit in ofortmaut.service ofortmaut-scheduler.service \
+            ofortmaut-updater.path ofortmaut-updater.service \
+            ofortmaut-cert-renew.service ofortmaut-cert-renew.timer; do
     [ -f "$APP_DIR/deploy/$unit" ] && cp "$APP_DIR/deploy/$unit" /etc/systemd/system/
 done
 # gunicorn SOLO en loopback: nginx termina TLS en ${WEB_PORT}
-sed -i 's#--bind 0\.0\.0\.0:8000#--bind 127.0.0.1:8000#' /etc/systemd/system/fortinet-manager.service
+sed -i 's#--bind 0\.0\.0\.0:8000#--bind 127.0.0.1:8000#' /etc/systemd/system/ofortmaut.service
 
 if [ "$MODE" = "cluster" ]; then
-    cat > /etc/systemd/system/fm-ha-datasync.service <<UNIT
+    cat > /etc/systemd/system/ofortmaut-ha-datasync.service <<UNIT
 [Unit]
 Description=OFortMAut HA data/ sync (standby pulls from primary)
 [Service]
 Type=oneshot
-ExecStart=${APP_DIR}/deploy/fm-ha-datasync.sh
+ExecStart=${APP_DIR}/deploy/ofortmaut-ha-datasync.sh
 UNIT
-    cat > /etc/systemd/system/fm-ha-datasync.timer <<UNIT
+    cat > /etc/systemd/system/ofortmaut-ha-datasync.timer <<UNIT
 [Unit]
 Description=OFortMAut HA data/ sync every 5 min
 [Timer]
@@ -576,10 +576,10 @@ UNIT
 fi
 
 systemctl daemon-reload
-systemctl enable --now fortinet-manager.service fortinet-manager-scheduler.service >>"$INSTALL_LOG" 2>&1
-systemctl enable --now fortinet-manager-updater.path >>"$INSTALL_LOG" 2>&1 || true
-systemctl enable --now fm-cert-renew.timer >>"$INSTALL_LOG" 2>&1 || true
-[ "$MODE" = "cluster" ] && systemctl enable --now fm-ha-datasync.timer >>"$INSTALL_LOG" 2>&1
+systemctl enable --now ofortmaut.service ofortmaut-scheduler.service >>"$INSTALL_LOG" 2>&1
+systemctl enable --now ofortmaut-updater.path >>"$INSTALL_LOG" 2>&1 || true
+systemctl enable --now ofortmaut-cert-renew.timer >>"$INSTALL_LOG" 2>&1 || true
+[ "$MODE" = "cluster" ] && systemctl enable --now ofortmaut-ha-datasync.timer >>"$INSTALL_LOG" 2>&1
 
 # nginx: TLS en el puerto elegido con el cert del nodo.
 # Debian/Ubuntu usan sites-available/enabled; el resto de familias conf.d.
@@ -646,7 +646,7 @@ done
 if [ "$HEALTH" = ok ]; then
     ok "healthz responde 200 — instalación COMPLETA"
 else
-    warn "healthz no respondió en 30 s — revisa: journalctl -u fortinet-manager -n 50"
+    warn "healthz no respondió en 30 s — revisa: journalctl -u ofortmaut -n 50"
 fi
 
 echo ""
@@ -655,7 +655,7 @@ echo "│  OFortMAut instalado                                     │"
 echo "└──────────────────────────────────────────────────────────┘"
 echo "  Consola web : https://${NODE_IP}:${WEB_PORT}/"
 [ "$ROLE" != "secondary" ] && echo "  Usuario     : admin  (clave: la que definiste)"
-echo "  Servicios   : fortinet-manager, fortinet-manager-scheduler$( [ "$MODE" = cluster ] && echo ', fm-ha-datasync.timer' )"
+echo "  Servicios   : ofortmaut, ofortmaut-scheduler$( [ "$MODE" = cluster ] && echo ', ofortmaut-ha-datasync.timer' )"
 echo "  Logs        : ${LOG_DIR}/  ·  instalación: ${INSTALL_LOG}"
 
 if [ "$ROLE" = "primary" ]; then
@@ -697,7 +697,7 @@ if [ "$ROLE" = "secondary" ]; then
     echo ""
     echo "  Nodo SECONDARY unido al clúster:"
     echo "   • Postgres réplica streaming de ${PRIMARY_IP} (TLS verify-ca)"
-    echo "   • data/ se sincroniza cada 5 min (fm-ha-datasync.timer)"
+    echo "   • data/ se sincroniza cada 5 min (ofortmaut-ha-datasync.timer)"
     echo "   • Certificado TLS propio emitido por la CA del clúster"
     echo "   • El scheduler queda en espera (solo se activa si promueves este nodo)"
 fi

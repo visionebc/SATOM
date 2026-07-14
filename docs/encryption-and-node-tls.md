@@ -8,7 +8,7 @@ replication SSL, and the Monitoring "Encryption in transit" cards._
 
 Since the **2026-07-13 Option-B cutover**, each node terminates its **own**
 public TLS directly on `:443` with the trusted fleet wildcard `*.example.net`
-— `fortinet-manager{,-2}.example.net` now resolve straight to the nodes
+— `ofortmaut{,-2}.example.net` now resolve straight to the nodes
 (`192.0.2.248` / `192.0.2.249`); the edge `192.0.2.40` stays only as rollback. The
 same nginx vhost also serves `:8443` for node-to-node peer probes and `:80`→301.
 Every inter-node channel is encrypted and verifiable, surfaced honestly
@@ -18,12 +18,12 @@ per-channel in Monitoring.
 |---|---|---|
 | DB replication (primary ⇄ standby) | **encrypted + enforced + mutual-CA** | Postgres `hostssl` + `clientcert=verify-ca`, TLS 1.3 |
 | Inter-node app probes (`/healthz*`) | **encrypted + authenticated** | HTTPS `:8443` (node cert) + shared identity key |
-| Data sync (`fm-ha-datasync`) | encrypted | rsync over SSH |
+| Data sync (`ofortmaut-ha-datasync`) | encrypted | rsync over SSH |
 | Config SoT publish (Gitea) | **encrypted** | `git push` over HTTPS to `https://git.example.net` (edge wildcard cert) |
 
 ## PKI layout (node-local, NEVER in git — see `.gitignore`)
 
-`/opt/fortinet-manager/pki/` on each node:
+`/opt/ofortmaut/pki/` on each node:
 
 - `internal-ca/` — the internal CA (`ca.crt` + `ca.key`). **Only the primary holds
   `ca.key`** — it is the sole issuer. The standby has `ca.crt` only.
@@ -32,7 +32,7 @@ per-channel in Monitoring.
 - `public/` — the cert nginx serves on `:8443` (`server.crt` [+chain] + `server.key`)
   plus `meta.json` (`source`: `bootstrap` | `imported` | `issued`).
 
-`pki/` is outside `data/`, so `fm-ha-datasync` never replicates it (each node must
+`pki/` is outside `data/`, so `ofortmaut-ha-datasync` never replicates it (each node must
 serve its own hostname's cert).
 
 ## The service certificate — Settings → **Node TLS** (admin)
@@ -47,11 +47,11 @@ serve its own hostname's cert).
   (we didn't issue it).
 - **Issue from the internal CA** (primary only — it holds `ca.key`): mints a leaf
   for the node hostname, installs it, `source=issued`.
-- **Renew**: CA-issued certs auto-renew via `fm-cert-renew.timer` →
+- **Renew**: CA-issued certs auto-renew via `ofortmaut-cert-renew.timer` →
   `flask cert-renew` → `cert_service.renew_if_needed()` (nightly 03:30, no-op
   until within 30 days of expiry, no-op for imported/bootstrap). The standby
   can't self-issue; give it a cert by **import** (or mint on the primary and
-  import on the standby — done for `fortinet-manager-2`).
+  import on the standby — done for `ofortmaut-2`).
 
 The web process runs as **root** on each node (verified in the unit), so it writes
 `pki/public/` and reloads nginx directly — no privileged-runner hop for certs.
@@ -108,11 +108,11 @@ tile (subject/issuer/expiry/source).
   via nginx with the **trusted fleet wildcard** `*.example.net` (copied from the edge
   `/etc/nginx/ssl/visionebc-wildcard.{crt,key}` into `pki/public/`, `source=imported`,
   valid to 2026-09-02 — zero browser warning). `:8443` (peer probes) and `:80`→301
-  are also served from the same vhost (`fm-tls.conf`). nftables on 248 opens `:443`+`:80`
+  are also served from the same vhost (`ofortmaut-tls.conf`). nftables on 248 opens `:443`+`:80`
   from `192.0.2.0/24`; 249's input chain is `policy accept`. DNS
-  `fortinet-manager{,-2}.example.net` resolves to `192.0.2.248/.249`; Power Panel DNS
+  `ofortmaut{,-2}.example.net` resolves to `192.0.2.248/.249`; Power Panel DNS
   entries 269/275 reconciled to match (were stale at `.40`). Pre-change backups per node:
-  `/root/fm-pub-server.{crt,key}.pre-b-cutover`, `/root/fm-tls.conf.pre-b-cutover`,
+  `/root/fm-pub-server.{crt,key}.pre-b-cutover`, `/root/ofortmaut-tls.conf.pre-b-cutover`,
   `/root/fm-pub-meta.json.pre-b-cutover`.
   STILL OPEN (deliberate): (a) gunicorn stays on `0.0.0.0:8000` so the **edge remains a
   rollback** through the validation window (feedback_migration_policy) — bind to

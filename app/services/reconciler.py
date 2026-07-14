@@ -1,6 +1,6 @@
 """Auto-reconciler for the manager's OWN code across the HA pair.
 
-Runs on BOTH nodes as a periodic tick (``fortinet-manager-reconciler.service``),
+Runs on BOTH nodes as a periodic tick (``ofortmaut-reconciler.service``),
 DB-FREE by design: the standby cannot boot the Flask app (create_all writes to
 its read-only replica), so this module never calls ``create_app()``. It reads
 the two replicated settings it needs via raw ``psql`` (reads work on a hot
@@ -37,7 +37,7 @@ from . import self_update as su
 
 log = logging.getLogger("fm.reconciler")
 
-APP_DIR = Path(os.environ.get("FM_APP_DIR", "/opt/fortinet-manager"))
+APP_DIR = Path(os.environ.get("FM_APP_DIR", "/opt/ofortmaut"))
 STATUS_FILE = APP_DIR / "data" / "reconciler-status.json"   # local, per-node (UI reads)
 
 _K_DEPLOY_MODE = "ha.deploy.mode"        # "auto" | "manual" (replicated AppSetting)

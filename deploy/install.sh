@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# install.sh — deploy Fortinet Manager Web on the target LXC
+# install.sh — deploy OFortMAuT Web on the target LXC
 set -euo pipefail
 
-APP_DIR="/opt/fortinet-manager"
-LOG_DIR="/var/log/fortinet-manager"
-SERVICE_NAME="fortinet-manager"
+APP_DIR="/opt/ofortmaut"
+LOG_DIR="/var/log/ofortmaut"
+SERVICE_NAME="ofortmaut"
 
 echo "==> Changing to application directory: $APP_DIR"
 cd "$APP_DIR"
@@ -47,7 +47,7 @@ FLASK_APP=wsgi.py venv/bin/flask create-db
 
 # 6. Install and enable systemd service
 echo "==> Installing systemd service"
-cp deploy/fortinet-manager.service /etc/systemd/system/"${SERVICE_NAME}".service
+cp deploy/ofortmaut.service /etc/systemd/system/"${SERVICE_NAME}".service
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 systemctl restart "$SERVICE_NAME"

@@ -148,9 +148,9 @@
     <div class="small text-muted mb-1"><strong>Where the sync actually happens</strong> &mdash; three independent mechanisms, only one is app code:</div>
     <ul class="small text-muted mb-0" style="line-height:1.7;">
       <li><strong>Database</strong> &mdash; Postgres streaming replication, configured in <code>postgresql.conf</code> + <code>pg_hba.conf</code>. Native DB mechanism, <em>not</em> app code; this is why the standby is read&#8209;only.</li>
-      <li><strong>Files</strong> &mdash; <code>deploy/fm-ha-datasync.sh</code> (unit <code>fm-ha-datasync.timer</code>): the standby <strong>pulls</strong> <code>data/</code> over rsync/SSH every 5&nbsp;min (role&#8209;guarded, inert on the primary).</li>
-      <li><strong>App / code</strong> &mdash; <code>app/services/reconciler.py</code> (<code>fortinet-manager-reconciler.service</code>, both nodes): DB&#8209;free orchestration of the HA deploy mode (MANUAL/AUTO) and the staged code rollout. The <em>only</em> sync that is app code.</li>
-      <li><strong>Device SoT &rarr; git</strong> &mdash; <code>app/services/device_sync.py</code> harvests each appliance's config; <code>git_service.py</code> + <code>fm-git-publish.sh</code> (primary&#8209;only, hourly) publish it to Gitea over HTTPS.</li>
+      <li><strong>Files</strong> &mdash; <code>deploy/ofortmaut-ha-datasync.sh</code> (unit <code>ofortmaut-ha-datasync.timer</code>): the standby <strong>pulls</strong> <code>data/</code> over rsync/SSH every 5&nbsp;min (role&#8209;guarded, inert on the primary).</li>
+      <li><strong>App / code</strong> &mdash; <code>app/services/reconciler.py</code> (<code>ofortmaut-reconciler.service</code>, both nodes): DB&#8209;free orchestration of the HA deploy mode (MANUAL/AUTO) and the staged code rollout. The <em>only</em> sync that is app code.</li>
+      <li><strong>Device SoT &rarr; git</strong> &mdash; <code>app/services/device_sync.py</code> harvests each appliance's config; <code>git_service.py</code> + <code>ofortmaut-git-publish.sh</code> (primary&#8209;only, hourly) publish it to Gitea over HTTPS.</li>
       <li><strong>Inter&#8209;node auth</strong> &mdash; <code>app/services/node_security.py::peer_get()</code> signs the <code>:8443</code> probes with the shared identity key; the node cert is managed in <a href="{{ url_for('settings.index') }}#tab-nodetls">Settings &rarr; Node&nbsp;TLS</a>.</li>
     </ul>
   </div>
@@ -230,7 +230,7 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="col-sm-4">
         <label class="form-label small mb-0">Node name (hostname)</label>
-        <input name="name" id="ha-f-name" class="form-control form-control-sm" placeholder="fortinet-manager-2" required>
+        <input name="name" id="ha-f-name" class="form-control form-control-sm" placeholder="ofortmaut-2" required>
       </div>
       <div class="col-sm-3">
         <label class="form-label small mb-0">Host / LAN IP</label>

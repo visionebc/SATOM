@@ -59,7 +59,7 @@ DEFAULTS = {
     K_DRIFT_WINDOW_MIN: "90",
 }
 
-_REPO_ROOT = "/opt/fortinet-manager"
+_REPO_ROOT = "/opt/ofortmaut"
 
 SEV_CRITICAL = "critical"
 SEV_WARNING = "warning"

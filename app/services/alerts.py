@@ -1,0 +1,363 @@
+"""Proactive alert engine — the *push* side of observability.
+
+Everything else in OFortMAuT is *pull*: you open the Monitoring / System Backup /
+Node TLS page and read a live badge. This engine flips that around — it evaluates
+a handful of cheap health checks on a timer and, when one crosses a threshold,
+*pushes* a notice out through email (``email_service``) and the in-app bell
+(``notifications``) so nobody has to be looking at the page.
+
+Design notes
+------------
+* **Config lives in ``app_settings``** (one source of truth across gunicorn
+  workers), same pattern as ``email_service``/``settings_store``.
+* **Cooldown**: a fired alert is suppressed for ``alerts.cooldown_hours`` (default
+  6h) so a persistent condition (cert 13 days out) does not email every run. The
+  last-fired timestamp per alert key lives in the ``alerts.state`` JSON blob.
+* **Per-node**: cert / device-reachability / git-lag are node-local truths, so the
+  timer runs on BOTH nodes and each reports about itself. The node hostname is in
+  every message so a two-node fleet is legible.
+* **Never raises**: a broken individual check degrades to a logged skip; the run
+  keeps going. Email delivery is best-effort (``send_email`` never raises).
+"""
+from __future__ import annotations
+
+import json
+import socket
+from datetime import datetime, timezone
+
+from ..models import AppSetting
+from . import email_service
+from . import notifications as notify
+
+# ---- config keys ----------------------------------------------------------
+K_ENABLED = "alerts.enabled"              # "1" / "0"
+K_EMAIL_TO = "alerts.email_to"            # falls back to email.default_to
+K_COOLDOWN_H = "alerts.cooldown_hours"    # per-alert suppression window
+K_CERT_DAYS = "alerts.cert_days"          # warn when cert has <= N days left
+K_GIT_BEHIND_MAX = "alerts.git_behind_max"  # warn when standby lags > N commits
+K_BACKUP_MAX_H = "alerts.backup_max_hours"  # warn when newest bundle older than N h
+K_STATE = "alerts.state"                  # JSON {alert_key: last_fired_iso}
+# per-check enable toggles (default on)
+K_CHK_CERT = "alerts.check.cert"
+K_CHK_GIT = "alerts.check.git"
+K_CHK_DEVICE = "alerts.check.device"
+K_CHK_BACKUP = "alerts.check.backup"
+
+DEFAULTS = {
+    K_ENABLED: "0",
+    K_COOLDOWN_H: "6",
+    K_CERT_DAYS: "14",
+    K_GIT_BEHIND_MAX: "25",
+    K_BACKUP_MAX_H: "48",
+    K_CHK_CERT: "1",
+    K_CHK_GIT: "1",
+    K_CHK_DEVICE: "1",
+    K_CHK_BACKUP: "1",
+}
+
+SEV_CRITICAL = "critical"
+SEV_WARNING = "warning"
+SEV_INFO = "info"
+_SEV_RANK = {SEV_INFO: 0, SEV_WARNING: 1, SEV_CRITICAL: 2}
+
+
+# ---- small helpers --------------------------------------------------------
+def _get(key: str) -> str:
+    v = AppSetting.get(key)
+    return DEFAULTS.get(key, "") if v is None else v
+
+
+def _flag(key: str) -> bool:
+    return _get(key) in ("1", "on", "true", "True")
+
+
+def _int(key: str, fallback: int) -> int:
+    try:
+        return int(str(_get(key)).strip())
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _node() -> str:
+    try:
+        return socket.gethostname()
+    except Exception:  # noqa: BLE001
+        return "node"
+
+
+def is_enabled() -> bool:
+    return _flag(K_ENABLED)
+
+
+def recipients() -> list[str]:
+    to = email_service.parse_recipients(_get(K_EMAIL_TO))
+    if not to:
+        cfg = email_service.config()
+        to = email_service.parse_recipients(cfg.get("default_to"))
+    return to
+
+
+# ---- cooldown state -------------------------------------------------------
+def _load_state() -> dict:
+    raw = AppSetting.get(K_STATE)
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw) or {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def _save_state(state: dict) -> None:
+    AppSetting.set(K_STATE, json.dumps(state))
+
+
+def _in_cooldown(state: dict, key: str, cooldown_h: int) -> bool:
+    last = state.get(key)
+    if not last:
+        return False
+    try:
+        prev = datetime.fromisoformat(last)
+    except ValueError:
+        return False
+    if prev.tzinfo is None:
+        prev = prev.replace(tzinfo=timezone.utc)
+    return (_now() - prev).total_seconds() < cooldown_h * 3600
+
+
+# ---- individual checks ----------------------------------------------------
+# Each returns a list of findings: {key, severity, title, detail}.
+def _check_cert() -> list[dict]:
+    from . import cert_service
+    try:
+        cur = cert_service.current()
+    except Exception as exc:  # noqa: BLE001
+        return [{"key": "cert.error", "severity": SEV_WARNING,
+                 "title": "Certificate status unreadable",
+                 "detail": f"cert_service.current() failed: {exc}"}]
+    days = cur.get("days_left")
+    if days is None:
+        return []
+    thresh = _int(K_CERT_DAYS, 14)
+    if days > thresh:
+        return []
+    sev = SEV_CRITICAL if days <= 3 else SEV_WARNING
+    src = cur.get("source") or "?"
+    return [{"key": "cert.expiry", "severity": sev,
+             "title": f"TLS certificate expires in {days} day(s)",
+             "detail": (f"The service certificate on {_node()} expires in {days} "
+                        f"day(s) (source={src}, not_after={cur.get('not_after')}). "
+                        f"Renew or re-copy the wildcard before it lapses.")}]
+
+
+def _check_git() -> list[dict]:
+    from . import git_service
+    try:
+        info = git_service.git_info()
+    except Exception as exc:  # noqa: BLE001
+        return [{"key": "git.error", "severity": SEV_WARNING,
+                 "title": "Git status unreadable",
+                 "detail": f"git_info() failed: {exc}"}]
+    ahead, behind = int(info.get("ahead") or 0), int(info.get("behind") or 0)
+    # True divergence: local has commits the upstream doesn't AND is behind it →
+    # the branches forked and a fast-forward is impossible. This is the dangerous
+    # one (the HA pair can silently disagree).
+    if ahead > 0 and behind > 0:
+        return [{"key": "git.diverged", "severity": SEV_CRITICAL,
+                 "title": f"Git history diverged on {_node()}",
+                 "detail": (f"Local branch is {ahead} ahead AND {behind} behind "
+                            f"origin — the histories have forked and cannot "
+                            f"fast-forward. Reconcile before the nodes disagree.")}]
+    # Benign lag is expected between syncs; only shout when it is stuck far behind.
+    behind_max = _int(K_GIT_BEHIND_MAX, 25)
+    if behind > behind_max:
+        return [{"key": "git.behind", "severity": SEV_WARNING,
+                 "title": f"{_node()} is {behind} commits behind origin",
+                 "detail": (f"This node is {behind} commits behind origin (> "
+                            f"{behind_max}). If it is the standby, the git sync "
+                            f"may be stuck — check the reconciler / datasync.")}]
+    return []
+
+
+def _check_devices() -> list[dict]:
+    from ..models import Appliance
+    findings: list[dict] = []
+    try:
+        appliances = Appliance.query.all()
+    except Exception as exc:  # noqa: BLE001
+        return [{"key": "device.error", "severity": SEV_WARNING,
+                 "title": "Appliance list unreadable",
+                 "detail": f"Appliance.query failed: {exc}"}]
+    for a in appliances:
+        if getattr(a, "maintenance", False):
+            continue
+        host, port = a.host, int(a.port or 443)
+        ok = False
+        try:
+            with socket.create_connection((host, port), timeout=4):
+                ok = True
+        except Exception:  # noqa: BLE001 — unreachable is the finding, not an error
+            ok = False
+        if not ok:
+            findings.append({
+                "key": f"device.unreachable.{a.name}", "severity": SEV_WARNING,
+                "title": f"Device {a.name} unreachable",
+                "detail": (f"{a.kind} appliance '{a.name}' at {host}:{port} did not "
+                           f"accept a TCP connection within 4s (checked from "
+                           f"{_node()}). It may be down or network-partitioned.")})
+    return findings
+
+
+def _check_backup() -> list[dict]:
+    from . import system_backup
+    try:
+        inv = system_backup.local_inventory()
+    except Exception as exc:  # noqa: BLE001
+        return [{"key": "backup.error", "severity": SEV_INFO,
+                 "title": "Backup inventory unreadable",
+                 "detail": f"local_inventory() failed: {exc}"}]
+    bundles = inv.get("bundles") or []
+    if not bundles:
+        return [{"key": "backup.none", "severity": SEV_WARNING,
+                 "title": "No database backup bundles present",
+                 "detail": f"No pg_dump bundles found on {_node()}."}]
+    # Newest bundle mtime; each entry carries an ISO 'modified' or epoch 'mtime'.
+    newest = None
+    for b in bundles:
+        ts = b.get("created") or b.get("modified") or b.get("mtime") or b.get("date")
+        dt = None
+        if isinstance(ts, (int, float)):
+            dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        elif isinstance(ts, str) and ts:
+            try:
+                dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except ValueError:
+                dt = None
+        if dt is not None and (newest is None or dt > newest):
+            newest = dt
+    if newest is None:
+        return []
+    if newest.tzinfo is None:
+        newest = newest.replace(tzinfo=timezone.utc)
+    age_h = (_now() - newest).total_seconds() / 3600
+    max_h = _int(K_BACKUP_MAX_H, 48)
+    if age_h > max_h:
+        return [{"key": "backup.stale", "severity": SEV_WARNING,
+                 "title": f"Newest DB backup is {int(age_h)}h old",
+                 "detail": (f"The most recent database bundle on {_node()} is "
+                            f"{int(age_h)}h old (> {max_h}h). Backups may have "
+                            f"stopped running.")}]
+    return []
+
+
+_CHECKS = [
+    (K_CHK_CERT, _check_cert),
+    (K_CHK_GIT, _check_git),
+    (K_CHK_DEVICE, _check_devices),
+    (K_CHK_BACKUP, _check_backup),
+]
+
+
+def evaluate() -> list[dict]:
+    """Run every enabled check and return the merged findings list (no dispatch,
+    no cooldown) — used by the run loop AND by the Settings 'Preview' button."""
+    findings: list[dict] = []
+    for toggle_key, fn in _CHECKS:
+        if not _flag(toggle_key):
+            continue
+        try:
+            findings.extend(fn() or [])
+        except Exception as exc:  # noqa: BLE001 — one bad check never sinks the run
+            findings.append({"key": "engine.error", "severity": SEV_INFO,
+                             "title": f"Alert check {fn.__name__} errored",
+                             "detail": str(exc)})
+    findings.sort(key=lambda f: _SEV_RANK.get(f.get("severity"), 0), reverse=True)
+    return findings
+
+
+# ---- dispatch -------------------------------------------------------------
+def _admin_ids() -> list[int]:
+    from ..models import User
+    ids = []
+    for u in User.query.all():
+        try:
+            # is_admin_capable is a @property (bool), not a method — no parens.
+            if u.is_admin_capable:
+                ids.append(u.id)
+        except Exception:  # noqa: BLE001
+            pass
+    return ids
+
+
+def _email_body(new_findings: list[dict]) -> tuple[str, str]:
+    node = _node()
+    lines = [f"OFortMAuT alerts from {node} — {len(new_findings)} new:", ""]
+    for f in new_findings:
+        lines.append(f"[{f['severity'].upper()}] {f['title']}")
+        lines.append(f"    {f['detail']}")
+        lines.append("")
+    text = "\n".join(lines)
+    rows = "".join(
+        f"<tr><td style='padding:4px 8px;font-weight:600'>{f['severity'].upper()}</td>"
+        f"<td style='padding:4px 8px'><b>{f['title']}</b><br>"
+        f"<span style='color:#555'>{f['detail']}</span></td></tr>"
+        for f in new_findings)
+    html = (f"<h3>OFortMAuT alerts — {node}</h3>"
+            f"<table style='border-collapse:collapse'>{rows}</table>")
+    return text, html
+
+
+def run(*, force: bool = False, dry_run: bool = False) -> dict:
+    """Evaluate, apply cooldown, and dispatch new findings via email + in-app bell.
+
+    ``force`` ignores the cooldown; ``dry_run`` evaluates and reports what WOULD
+    fire without sending anything or touching state. Returns a summary dict."""
+    findings = evaluate()
+    if dry_run:
+        return {"node": _node(), "evaluated": len(findings),
+                "findings": findings, "dispatched": 0, "dry_run": True}
+
+    state = _load_state()
+    cooldown_h = _int(K_COOLDOWN_H, 6)
+    fresh = [f for f in findings
+             if force or not _in_cooldown(state, f["key"], cooldown_h)]
+
+    result = {"node": _node(), "evaluated": len(findings),
+              "fresh": len(fresh), "dispatched": 0, "email": None,
+              "enabled": is_enabled()}
+    if not fresh:
+        return result
+
+    # In-app bell always fires (cheap, local). Email only when the engine is on.
+    admin_ids = _admin_ids()
+    for f in fresh:
+        kind = (notify.Notification.KIND_ERROR
+                if f["severity"] in (SEV_CRITICAL, SEV_WARNING)
+                else notify.Notification.KIND_INFO)
+        if admin_ids:
+            notify.push_many(admin_ids, f["title"], kind=kind,
+                             body=f["detail"][:400])
+
+    if is_enabled():
+        to = recipients()
+        if to:
+            subject = (f"[OFortMAuT/{_node()}] {len(fresh)} alert(s) — "
+                       f"{fresh[0]['title']}")
+            text, html = _email_body(fresh)
+            result["email"] = email_service.send_email(to, subject, text, html=html)
+        else:
+            result["email"] = {"ok": False, "detail": "no recipients configured"}
+
+    now_iso = _now().isoformat()
+    for f in fresh:
+        state[f["key"]] = now_iso
+    _save_state(state)
+    result["dispatched"] = len(fresh)
+    return result
+
+
+__all__ = ["evaluate", "run", "is_enabled", "recipients", "DEFAULTS"]

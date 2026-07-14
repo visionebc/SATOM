@@ -112,6 +112,63 @@ def is_enabled() -> bool:
     return _flag(K_ENABLED)
 
 
+# ---- admin-console config (read + save) -----------------------------------
+def config() -> dict:
+    """Current alert-engine settings for the admin console. Never raises."""
+    return {
+        "enabled": _flag(K_ENABLED),
+        "email_to": _get(K_EMAIL_TO),
+        "email_fallback": email_service.config().get("default_to") or "",
+        "cooldown_hours": _int(K_COOLDOWN_H, 6),
+        "cert_days": _int(K_CERT_DAYS, 14),
+        "git_behind_max": _int(K_GIT_BEHIND_MAX, 25),
+        "backup_max_hours": _int(K_BACKUP_MAX_H, 48),
+        "drift_window_min": _int(K_DRIFT_WINDOW_MIN, 90),
+        "checks": {
+            "cert": _flag(K_CHK_CERT),
+            "git": _flag(K_CHK_GIT),
+            "device": _flag(K_CHK_DEVICE),
+            "backup": _flag(K_CHK_BACKUP),
+            "drift": _flag(K_CHK_DRIFT),
+        },
+    }
+
+
+def save_config(form) -> None:
+    """Persist alert-engine settings from the admin-console form. Checkbox
+    fields are 'on'/absent; numeric fields are clamped to sane ranges."""
+    def g(key, default=""):
+        try:
+            return (form.get(key, default) or "").strip()
+        except AttributeError:
+            return str(form.get(key, default) or "").strip()
+
+    def cb(key):  # checkbox → "1"/"0"
+        return "1" if form.get(key) in ("on", "1", "true", "True", True) else "0"
+
+    def clamp(key, lo, hi, default):
+        try:
+            n = int(g(key) or default)
+        except ValueError:
+            n = default
+        return str(max(lo, min(hi, n)))
+
+    AppSetting.set(K_ENABLED, cb("enabled"))
+    AppSetting.set(K_EMAIL_TO, g("email_to"))
+    AppSetting.set(K_COOLDOWN_H, clamp("cooldown_hours", 0, 168, 6))
+    AppSetting.set(K_CERT_DAYS, clamp("cert_days", 1, 365, 14))
+    AppSetting.set(K_GIT_BEHIND_MAX, clamp("git_behind_max", 1, 10000, 25))
+    AppSetting.set(K_BACKUP_MAX_H, clamp("backup_max_hours", 1, 8760, 48))
+    AppSetting.set(K_DRIFT_WINDOW_MIN, clamp("drift_window_min", 1, 43200, 90))
+    # per-check toggles (absent checkbox = off)
+    AppSetting.set(K_CHK_CERT, cb("check_cert"))
+    AppSetting.set(K_CHK_GIT, cb("check_git"))
+    AppSetting.set(K_CHK_DEVICE, cb("check_device"))
+    AppSetting.set(K_CHK_BACKUP, cb("check_backup"))
+    AppSetting.set(K_CHK_DRIFT, cb("check_drift"))
+    # AppSetting.set commits per call — no trailing commit needed.
+
+
 def recipients() -> list[str]:
     to = email_service.parse_recipients(_get(K_EMAIL_TO))
     if not to:

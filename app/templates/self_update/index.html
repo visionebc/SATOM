@@ -106,7 +106,7 @@
       <span class="badge bg-info text-dark">{{ reconcile.decision }}</span>
       on <span class="font-monospace">{{ reconcile.node }} ({{ reconcile.role }})</span>,
       {{ reconcile.behind }} behind — <em>{{ reconcile.detail }}</em>
-      <span class="text-muted">({{ reconcile.at }})</span>
+      <span class="text-muted">({{ reconcile.at | localtime }})</span>
     </div>
     {% else %}
     <div class="small text-muted">Reconciler has not published a tick yet (the standby's state is probed live).</div>
@@ -133,7 +133,7 @@
       <tbody>
       {% for h in history %}
         <tr>
-          <td class="small">{{ h.updated_at or h.started_at }}</td>
+          <td class="small">{{ (h.updated_at or h.started_at) | localtime }}</td>
           <td class="small">{{ h.requested_by }}</td>
           <td>{% if h.origin == 'auto' %}<span class="badge bg-info text-dark">auto</span>{% else %}<span class="badge bg-light text-dark border">manual</span>{% endif %}</td>
           <td class="small font-monospace">{{ h.node }} ({{ h.role }})</td>
@@ -160,7 +160,7 @@
               <li>
                 {% if st.ok %}<span class="text-success">✓</span>{% else %}<span class="text-danger">✗</span>{% endif %}
                 {{ st.name }}{% if st.detail %} — <span class="text-muted" style="white-space:pre-wrap;">{{ st.detail }}</span>{% endif %}
-                {% if st.at %}<span class="text-muted"> · {{ st.at }}</span>{% endif %}
+                {% if st.at %}<span class="text-muted"> · {{ st.at | localtime }}</span>{% endif %}
               </li>
               {% endfor %}
             </ol>

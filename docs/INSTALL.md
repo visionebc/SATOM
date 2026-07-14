@@ -46,13 +46,26 @@ Descarga paquetes de los mirrors y clona el repo de producción
 
 ### 2.2 Offline (sin red)
 ```bash
+# Debian 12
 tar xzf ofortmaut-offline-<ver>-debian12-amd64.tar.gz
+# RHEL / Rocky / AlmaLinux 9
+tar xzf ofortmaut-offline-<ver>-rhel9-x86_64.tar.gz
+
 cd ofortmaut-installer
 sudo bash install-ofortmaut.sh        # detecta bundle/ y no toca la red
 ```
-El bundle contiene: cierre completo de dependencias `.deb`, todas las librerías
-Python (`wheels/`) y el código de la aplicación (`app.tar.gz`). Verifica la
-integridad con el `.sha256` que acompaña al tarball.
+Hay un bundle POR FAMILIA de distро — el instalador rechaza un bundle de la
+familia equivocada con un mensaje claro:
+- **Debian 12**: cierre completo de dependencias `.deb` + `wheels/` + `app.tar.gz`.
+- **RHEL 9**: `bundle/rpms/` es un repositorio dnf local (con metadatos) — dnf
+  resuelve solo lo que la máquina necesita; incluye `python3.11` (los pines de
+  la app exigen Python >= 3.10 y el python3 del sistema en EL9 es 3.9) y las
+  `wheels/` correspondientes (cp311).
+
+Verifica la integridad con el `.sha256` que acompaña a cada tarball.
+Los bundles se generan con `installers/build-offline-bundle.sh` (en un Debian 12
+con red) y `installers/build-offline-bundle-rhel.sh` (en una máquina o contenedor
+rockylinux:9 con red).
 
 ---
 

@@ -152,6 +152,25 @@ def health_ok(timeout=HEALTH_TIMEOUT):
     return False
 
 
+def flight(kind, label):
+    """Run 'flask preflight' / 'flask postflight' as the app user and return
+    (ok, detail). BEST-EFFORT and NON-FATAL: these are the before/after health
+    snapshots wrapped around the upgrade. The authoritative rollback gate stays
+    health_ok(); a postflight regression is surfaced in the update log (and by
+    the alert engine on its next tick), it does not itself trigger a rollback,
+    because a device blip can be unrelated to the code change."""
+    try:
+        env = dict(os.environ, FLASK_APP="wsgi.py")
+        args = [str(VENV / "flask"), kind]
+        if label:
+            args += ["--label", label]
+        p = run(args, timeout=90, user=APP_USER, cwd=str(APP), env=env)
+        detail = (p.stdout or "")[-400:] or (p.stderr or "")[-400:]
+        return p.returncode == 0, detail
+    except Exception as exc:  # noqa: BLE001
+        return False, "flight(%s) error: %s" % (kind, exc)
+
+
 class Status:
     def __init__(self, uid, req):
         self.p = STA / (uid + ".json")
@@ -200,6 +219,12 @@ def process(req_path):
     role = req.get("role") or ("standby" if pg_in_recovery() else "primary")
     is_standby = (role == "standby")
     st.step("ha role", True, role)
+
+    # PRE-FLIGHT: health baseline before we touch anything (primary only — the
+    # standby never restarts the app, so there is no health delta to catch).
+    if not is_standby:
+        pok, pdetail = flight("preflight", "upgrade-%s" % snapshot[:12])
+        st.step("preflight (before)", pok, pdetail)
 
     try:
         branch = req.get("branch", "main")
@@ -273,7 +298,13 @@ def process(req_path):
             raise RuntimeError("health check did not return 200 within %ds" % HEALTH_TIMEOUT)
         new = git("rev-parse", "HEAD").stdout.strip()
         st.step("health check", True, "200 OK on new revision %s" % new[:12])
-        st.finish("success", result_sha=new, rolled_back=False)
+        # POST-FLIGHT: compare the after-state against the preflight baseline.
+        # Non-fatal: the health gate above already passed; this surfaces device /
+        # replication / cert deltas the bare health check can't see.
+        fok, fdetail = flight("postflight", "upgrade-%s" % new[:12])
+        st.step("postflight (after)", fok,
+                fdetail if fok else "REGRESSION vs preflight — review: %s" % fdetail)
+        st.finish("success", result_sha=new, rolled_back=False, postflight_ok=fok)
         return
 
     except Exception as e:

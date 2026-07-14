@@ -11,13 +11,14 @@ import ipaddress as _ipaddress
 
 def _host_is_blocked(host: str) -> bool:
     """Refuse proxying to link-local / cloud-metadata addresses (169.254/16,
-    fe80::/10). Hostnames and normal (incl. RFC1918 fleet) IPs are allowed; we
-    don't do DNS on the request path. Defence-in-depth against SSRF."""
+    fe80::/10) and loopback (127.0.0.0/8, ::1). Hostnames and normal (incl.
+    RFC1918 fleet) IPs are allowed; we don't do DNS on the request path.
+    Defence-in-depth against SSRF."""
     try:
         addr = _ipaddress.ip_address(host.strip())
     except ValueError:
         return False
-    return addr.is_link_local
+    return addr.is_link_local or addr.is_loopback
 
 WRITE_METHODS = {'POST', 'PUT', 'DELETE', 'PATCH'}
 

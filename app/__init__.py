@@ -5,6 +5,7 @@ import ipaddress
 import os
 from datetime import datetime
 
+import click
 from flask import Flask, g, request
 
 from .config import get_config
@@ -746,6 +747,19 @@ def create_app(config_override: object | None = None) -> Flask:
             print('cert-renew:', res)
         except Exception as exc:  # noqa: BLE001
             print('cert-renew error:', exc)
+
+    @app.cli.command('alerts-run')
+    @click.option('--dry-run', is_flag=True, help='Evaluate only; send nothing.')
+    @click.option('--force', is_flag=True, help='Ignore the per-alert cooldown.')
+    def alerts_run_cmd(dry_run, force):
+        """Evaluate the proactive health checks and dispatch new alerts by email +
+        in-app bell. Invoked by fm-alerts.timer; runs on every node."""
+        from .services import alerts as _al
+        try:
+            res = _al.run(force=force, dry_run=dry_run)
+            print('alerts-run:', res)
+        except Exception as exc:  # noqa: BLE001
+            print('alerts-run error:', exc)
 
     @app.cli.command('create-db')
     def create_db_cmd():

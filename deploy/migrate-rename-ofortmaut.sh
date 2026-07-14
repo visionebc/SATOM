@@ -70,6 +70,16 @@ if [ -f /etc/systemd/system/fm-ha-datasync.service ]; then
     rm -f /etc/systemd/system/fm-ha-datasync.$e
   done
 fi
+# deployed script copies in /usr/local/sbin (git-publish, datasync, promote run
+# from there, NOT from the repo checkout) — rename preserving any local drift
+for f in /usr/local/sbin/fm-*.sh /usr/local/sbin/fm-*.txt; do
+  [ -f "$f" ] || continue
+  new="/usr/local/sbin/ofortmaut-${f##*/fm-}"
+  sed -e "s|$OLD_APP|$NEW_APP|g" -e "s/fortinet-manager/ofortmaut/g" \
+      -e "s/fm-ha-datasync/ofortmaut-ha-datasync/g" -e "s/fm-git-publish/ofortmaut-git-publish/g" \
+      -e "s/fm-promote/ofortmaut-promote/g" "$f" > "$new"
+  chmod --reference="$f" "$new"; rm -f "$f"
+done
 systemctl daemon-reload
 
 # ------------------------------------------------------------- 5. nginx

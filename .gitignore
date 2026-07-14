@@ -34,3 +34,4 @@ fortinet.db
 # node-local PKI — internal CA key + node/service certs, NEVER commit
 pki/
 dist/
+.gitconfig

@@ -14,7 +14,7 @@ assumed:
   * **Inter-node app probes** (``/healthz*``): whether THIS node reaches the peer
     over HTTPS (:8443, node cert) or still plain HTTP (:8000). A short TLS probe
     reports the negotiated protocol + cipher.
-  * **Data sync** (``fm-ha-datasync``): rsync tunnelled over SSH — transport
+  * **Data sync** (``ofortmaut-ha-datasync``): rsync tunnelled over SSH — transport
     encrypted by construction.
   * **Config SoT publish** (Gitea): HTTPS.
   * **Node service cert**: the leaf nginx serves on :8443 (subject / issuer /
@@ -35,7 +35,7 @@ from pathlib import Path
 from . import self_update as su
 from . import settings_store as ss
 
-PKI_DIR = Path("/opt/fortinet-manager/pki")
+PKI_DIR = Path("/opt/ofortmaut/pki")
 NODE_CERT = PKI_DIR / "public" / "server.crt"
 PEER_HTTPS_PORT = 8443
 PEER_HTTP_PORT = 8000
@@ -283,7 +283,7 @@ def snapshot() -> dict:
     # 3) Data sync — rsync over SSH (encrypted by construction)
     channels.append({
         "key": "datasync",
-        "label": "Data sync (fm-ha-datasync)",
+        "label": "Data sync (ofortmaut-ha-datasync)",
         "encrypted": True,
         "enforced": True,
         "protocol": "SSH",

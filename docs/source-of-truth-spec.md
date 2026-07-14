@@ -9,8 +9,8 @@
 > without cross-checking the current code.
 
 
-> Spec + phased implementation plan. Target: `fortinet-manager-web` on LXC 248
-> (`/opt/fortinet-manager`, Flask + SQLAlchemy, gunicorn 4 workers on 192.0.2.34:8000).
+> Spec + phased implementation plan. Target: `ofortmaut-web` on LXC 248
+> (`/opt/ofortmaut`, Flask + SQLAlchemy, gunicorn 4 workers on 192.0.2.34:8000).
 > Status: design approved over chat (2026-06-29). Decisions locked in §2.
 
 ---
@@ -364,10 +364,10 @@ earlier output, so detailing them now would be guesswork).
 
 ## Phase 0 — detailed TDD tasks (executable now)
 
-> Implement on LXC 248 `/opt/fortinet-manager`. Run app commands inside the
+> Implement on LXC 248 `/opt/ofortmaut`. Run app commands inside the
 > container: `ssh -i /opt/proxmox-power-panel/keys/id_ed25519 root@192.0.2.34
-> "pct exec 248 -- bash -c 'cd /opt/fortinet-manager && …'"`.
-> Restart after deploy: `systemctl restart fortinet-manager.service`.
+> "pct exec 248 -- bash -c 'cd /opt/ofortmaut && …'"`.
+> Restart after deploy: `systemctl restart ofortmaut.service`.
 
 ### Task 0.1 — Install PostgreSQL + role/db
 - [ ] `apt-get install -y postgresql postgresql-contrib`
@@ -393,9 +393,9 @@ earlier output, so detailing them now would be guesswork).
 
 ### Task 0.4 — Point config at Postgres
 - [ ] Set `SQLALCHEMY_DATABASE_URI=postgresql+psycopg://fortinet:<pw>@127.0.0.1/fortinet_mgr`
-      in `/opt/fortinet-manager/.env`.
+      in `/opt/ofortmaut/.env`.
 - [ ] `flask db upgrade` → schema created in Postgres.
-- [ ] Verify app boots: `systemctl restart fortinet-manager.service` + curl `/`.
+- [ ] Verify app boots: `systemctl restart ofortmaut.service` + curl `/`.
 
 ### Task 0.5 — Data migration SQLite → Postgres
 - [ ] **Test** `tests/test_pg_migrate.py`: seed a temp SQLite with N users/

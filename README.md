@@ -161,8 +161,8 @@ plane on every page load. See [docs/engineering.md](docs/engineering.md).
 Requires a Debian-family host with Python 3.11+ and PostgreSQL.
 
 ```bash
-# put the source at /opt/fortinet-manager (git clone / tarball)
-cd /opt/fortinet-manager
+# put the source at /opt/ofortmaut (git clone / tarball)
+cd /opt/ofortmaut
 sudo ./scripts/install.sh          # online install
 # or, air-gapped:
 ./scripts/build_offline_bundle.sh  # on a connected twin host
@@ -210,7 +210,7 @@ Hotwire Turbo (no SPA framework, CSP-safe vanilla JS) · reportlab / pdfplumber
 ## Testing
 
 ```bash
-cd /opt/fortinet-manager
+cd /opt/ofortmaut
 TMPDIR=$PWD/data/tmp venv/bin/python -m pytest -q
 ```
 

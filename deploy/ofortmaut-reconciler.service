@@ -1,0 +1,20 @@
+# HA auto-reconciler. Runs on BOTH nodes (unlike the scheduler, which is
+# primary-only): the loop is role-aware and DB-free, so it is safe on the
+# standby. In MANUAL mode it only observes + logs the drift; in AUTO mode it
+# drives the staged self-update (standby first, health-gated, then primary).
+# The deploy mode is a replicated app_settings row set from the Self-Update page.
+[Unit]
+Description=OFortMAuT HA auto-reconciler (both nodes; staged self-update in AUTO mode)
+After=network.target ofortmaut.service postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ofortmaut
+EnvironmentFile=/opt/ofortmaut/.env
+ExecStart=/opt/ofortmaut/venv/bin/python -m app.reconciler_runtime
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

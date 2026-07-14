@@ -41,7 +41,7 @@ class Config:
     # see get_config(). (2026-06-30)
     SQLALCHEMY_DATABASE_URI: str = os.environ.get(
         "SQLALCHEMY_DATABASE_URI",
-        "sqlite:////opt/fortinet-manager/data/fortinet.db",
+        "sqlite:////opt/ofortmaut/data/fortinet.db",
     )
     SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
     # pool_pre_ping: a connection checked out of the pool is validated with a
@@ -104,7 +104,7 @@ def get_config() -> type[Config]:
     if cfg is ProductionConfig and not os.environ.get("SQLALCHEMY_DATABASE_URI"):
         raise RuntimeError(
             "SQLALCHEMY_DATABASE_URI is required in production "
-            "(set it in /opt/fortinet-manager/.env); "
+            "(set it in /opt/ofortmaut/.env); "
             "refusing to fall back to SQLite."
         )
     return cfg

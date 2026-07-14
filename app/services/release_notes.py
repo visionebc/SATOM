@@ -43,7 +43,7 @@ MIN_SUPPORTED_VERSION = (7, 0)   # modern release-notes docset begins at 7.0;
 #  no resolved/known-issues pages, so they must never be enumerated for a scan.
 DB_NAME = "_release_notes.json"          # git-shared reference (under reports/)
 _DOC_HOST = "https://docs.fortinet.com"
-_UA = "Mozilla/5.0 (fortinet-manager release-notes harvester)"
+_UA = "Mozilla/5.0 (ofortmaut release-notes harvester)"
 
 # Self-hosted Firecrawl on the LAN (no auth) — see the project memory. Used as a
 # fallback transport for pages a plain GET can't retrieve.

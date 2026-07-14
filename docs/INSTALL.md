@@ -105,7 +105,7 @@ configuración+servicios → comprobación de salud.
    - programa la sincronización de `data/` (bundles, vault, estados) cada 5 min
      vía rsync/SSH con llave dedicada;
    - su scheduler queda **en espera**: solo se activa si el nodo se promueve
-     (`deploy/fm-promote.sh`), de modo que dos nodos jamás disparan acciones
+     (`deploy/ofortmaut-promote.sh`), de modo que dos nodos jamás disparan acciones
      a la vez.
 
 > ⚠️ **La clave de unión es un secreto de alto valor** (contiene la CA y las
@@ -130,8 +130,8 @@ ejecuta exactamente estas familias de comandos como root:
 
 ```
 apt-get update / apt-get install / dpkg -i          (paquetería)
-git clone | tar -x                                   (código en /opt/fortinet-manager)
-python3 -m venv | pip install                        (dentro de /opt/fortinet-manager)
+git clone | tar -x                                   (código en /opt/ofortmaut)
+python3 -m venv | pip install                        (dentro de /opt/ofortmaut)
 runuser -u postgres -- psql|createdb|pg_basebackup   (base de datos)
 openssl req|x509 | ssh-keygen                        (certificados y llaves)
 cp a /etc/systemd/system + systemctl daemon-reload/enable/start
@@ -147,7 +147,7 @@ ofminstall ALL=(root) NOPASSWD: /usr/bin/bash /opt/staging/install-ofortmaut.sh
 `/var/log/ofortmaut-install.log` que el instalador escribe siempre).
 
 **Lo que la aplicación necesita en runtime** (queda configurado): servicios
-systemd `fortinet-manager*`, `fm-*`; usuario de BD `fortinet` (local);
+systemd `ofortmaut*`, `fm-*`; usuario de BD `fortinet` (local);
 en cluster el rol de réplica `fm_repl` y SSH root→root entre nodos con la llave
 dedicada `id_ha_rsync` (se puede restringir con `command=` en authorized_keys).
 
@@ -157,8 +157,8 @@ dedicada `id_ha_rsync` (se puede restringir con `command=` en authorized_keys).
 
 - Consola: `https://<IP>:<puerto>/` — usuario `admin` + la clave elegida.
 - Salud: `curl -k https://<IP>:<puerto>/healthz` → `200`.
-- Servicios: `systemctl status fortinet-manager fortinet-manager-scheduler`.
-- Logs: `/var/log/fortinet-manager/` y `journalctl -u fortinet-manager`.
+- Servicios: `systemctl status ofortmaut ofortmaut-scheduler`.
+- Logs: `/var/log/ofortmaut/` y `journalctl -u ofortmaut`.
 
 ### Hardening obligatorio post-instalación
 1. **Cambiar la clave de root** del sistema operativo si se entregó una
@@ -170,13 +170,13 @@ dedicada `id_ha_rsync` (se puede restringir con `command=` en authorized_keys).
 
 ### Desinstalar / revertir
 ```bash
-systemctl disable --now fortinet-manager fortinet-manager-scheduler \
-  fortinet-manager-updater.path fm-cert-renew.timer fm-ha-datasync.timer 2>/dev/null
-rm -f /etc/systemd/system/fortinet-manager* /etc/systemd/system/fm-*
+systemctl disable --now ofortmaut ofortmaut-scheduler \
+  ofortmaut-updater.path ofortmaut-cert-renew.timer ofortmaut-ha-datasync.timer 2>/dev/null
+rm -f /etc/systemd/system/ofortmaut* /etc/systemd/system/fm-*
 rm -f /etc/nginx/sites-enabled/ofortmaut.conf /etc/nginx/sites-available/ofortmaut.conf
 systemctl daemon-reload && systemctl reload nginx
 runuser -u postgres -- dropdb fortinet_mgr; runuser -u postgres -- dropuser fortinet
-rm -rf /opt/fortinet-manager /var/log/fortinet-manager
+rm -rf /opt/ofortmaut /var/log/ofortmaut
 ```
 Los paquetes de sistema (postgres, nginx…) se dejan instalados a propósito;
 si hay que retirarlos lo decide sistemas (`apt-get remove`).

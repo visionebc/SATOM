@@ -1,13 +1,13 @@
 """Headless reconciler loop -- runs on BOTH HA nodes.
 
-Its own systemd unit (``fortinet-manager-reconciler.service``), NOT inside the
+Its own systemd unit (``ofortmaut-reconciler.service``), NOT inside the
 gunicorn workers and NOT the scheduler (which is primary-only). This loop is
 role-aware and DB-free, so it runs safely on the standby too (where Flask
 cannot boot). Every tick calls ``reconciler.tick()`` which decides + logs +
 publishes. In MANUAL mode it only observes; in AUTO it drives the staged
 self-update. See ``app/services/reconciler.py``.
 
-Launch:  ``python -m app.reconciler_runtime`` (from /opt/fortinet-manager).
+Launch:  ``python -m app.reconciler_runtime`` (from /opt/ofortmaut).
 """
 from __future__ import annotations
 

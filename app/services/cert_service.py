@@ -10,7 +10,7 @@ Two ways to put a cert here, exactly as the operator asked:
   re-imports.
 * **Issue via the internal cert-manager** — mint a leaf from the node's internal
   CA (``pki/internal-ca``, primary holds the key) for the node hostname. Because
-  we issued it, we CAN and DO auto-renew it before expiry (``fm-cert-renew``
+  we issued it, we CAN and DO auto-renew it before expiry (``ofortmaut-cert-renew``
   timer → ``flask cert-renew``).
 
 Installing = write ``pki/public/server.{crt,key}``, ``nginx -t`` (roll back on a
@@ -30,7 +30,7 @@ from pathlib import Path
 from . import self_update as su
 from . import settings_store as ss
 
-PKI = Path("/opt/fortinet-manager/pki")
+PKI = Path("/opt/ofortmaut/pki")
 PUB = PKI / "public"
 CA_DIR = PKI / "internal-ca"
 CRT = PUB / "server.crt"
@@ -47,7 +47,7 @@ def node_hostname() -> str:
     h = ss.get_str("security.node_cert.hostname", None)
     if h:
         return h
-    name = su.this_node_name() or "fortinet-manager"
+    name = su.this_node_name() or "ofortmaut"
     return name if "." in name else name + ".example.net"
 
 
@@ -269,7 +269,7 @@ def renew_if_needed(by: str = "auto-renew", force: bool = False) -> dict:
 #                  the node and an SSH trust to the source exists — the operator
 #                  opts into that explicitly.
 #
-# Both run from the SAME nightly ``fm-cert-renew`` timer. The mode + autopull
+# Both run from the SAME nightly ``ofortmaut-cert-renew`` timer. The mode + autopull
 # connection live in app_settings (JSON, SSH password Fernet-encrypted at rest).
 K_RENEW_MODE = "cert.renew_mode"          # "alert" | "autopull"
 K_AUTOPULL = "cert.autopull"              # JSON dict

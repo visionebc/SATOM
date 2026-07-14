@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.1 — 2026-07-15
+
+### Renamed — service & filesystem layout (breaking for existing installs)
+- Project fully renamed from the legacy internal name to **OFortMAuT** at the
+  infrastructure level: app dir `/opt/ofortmaut`, log dir `/var/log/ofortmaut`,
+  and all systemd units (`ofortmaut.service`, `ofortmaut-scheduler.service`,
+  `ofortmaut-reconciler.service`, `ofortmaut-updater.{path,service}`,
+  `ofortmaut-alerts`, `ofortmaut-cert-renew`, `ofortmaut-git-publish`,
+  `ofortmaut-ha-datasync` timers/services).
+- Existing installs: run `deploy/migrate-rename-ofortmaut.sh` (root, one node
+  at a time, standby first). It stops the legacy units, moves the tree, fixes
+  venv shebangs, installs the renamed units, updates nginx and re-verifies
+  `/healthz`.
+- Installers (online + offline bundles) regenerated with the new layout.
+- Unchanged on purpose: Postgres DB name/user, the `backup-server` external backup
+  server (appliance-side push config points at it), and `FM_*` env var names.
+
 All notable changes to OFortMAuT are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/). This is a public, open-source
 project — see [NOTICE](NOTICE) for the trademark disclaimer.

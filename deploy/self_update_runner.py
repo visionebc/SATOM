@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Privileged self-update runner (runs as ROOT).
 
-Triggered by ``fortinet-manager-updater.path`` whenever
+Triggered by ``ofortmaut-updater.path`` whenever
 ``data/update-requests/`` becomes non-empty. It performs the actual, privileged
 update the unprivileged web worker cannot: git checkout of the app code, pip
 install of the Python deps, ``flask db upgrade``, refreshing the unit files and
@@ -25,19 +25,19 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-APP = Path(os.environ.get("FM_APP_DIR", "/opt/fortinet-manager"))
+APP = Path(os.environ.get("FM_APP_DIR", "/opt/ofortmaut"))
 REQ = APP / "data" / "update-requests"
 STA = APP / "data" / "update-status"
 VENV = APP / "venv" / "bin"
-SERVICE = "fortinet-manager.service"
-SCHED = "fortinet-manager-scheduler.service"
+SERVICE = "ofortmaut.service"
+SCHED = "ofortmaut-scheduler.service"
 APP_USER = os.environ.get("FM_APP_USER", "fortinet")
 HEALTH_URL = os.environ.get("FM_HEALTH_URL", "http://127.0.0.1:8000/healthz")
 HEALTH_TIMEOUT = int(os.environ.get("FM_HEALTH_TIMEOUT", "90"))
 UNIT_FILES = (
-    "fortinet-manager.service", "fortinet-manager-scheduler.service",
-    "fortinet-manager-updater.service", "fortinet-manager-updater.path",
-    "fortinet-manager-reconciler.service",
+    "ofortmaut.service", "ofortmaut-scheduler.service",
+    "ofortmaut-updater.service", "ofortmaut-updater.path",
+    "ofortmaut-reconciler.service",
 )
 
 
@@ -526,7 +526,7 @@ def pip_change(req_path):
 
 def promote(req_path):
     """Guarded failover handler (root): promote this node's Postgres standby and
-    bring the app up via deploy/fm-promote.sh. Enqueued by the web UI after a
+    bring the app up via deploy/ofortmaut-promote.sh. Enqueued by the web UI after a
     typed-hostname confirmation; never auto-invoked."""
     req = json.loads(Path(req_path).read_text())
     uid = req.get("id") or Path(req_path).stem
@@ -540,19 +540,19 @@ def promote(req_path):
                 "local Postgres is NOT a standby (already primary?) — refusing")
         st.finish("failed", error="not a standby")
         return
-    script = APP / "deploy" / "fm-promote.sh"
+    script = APP / "deploy" / "ofortmaut-promote.sh"
     st.step("promote standby -> primary", True,
-            "running fm-promote.sh (pg promote + start app)")
+            "running ofortmaut-promote.sh (pg promote + start app)")
     try:
         r = subprocess.run(["bash", str(script)], capture_output=True,
                            text=True, timeout=300)
     except Exception as e:
-        st.step("fm-promote.sh", False, str(e))
+        st.step("ofortmaut-promote.sh", False, str(e))
         st.finish("failed", error=str(e)[:300])
         return
     tail = ((r.stdout or "") + (r.stderr or "")).strip()[-500:]
     ok = (r.returncode == 0) and (not pg_in_recovery())
-    st.step("fm-promote.sh exit %d" % r.returncode, ok, tail)
+    st.step("ofortmaut-promote.sh exit %d" % r.returncode, ok, tail)
     if ok and health_ok():
         st.step("health check", True, "this node is now the read-write PRIMARY")
         st.finish("success", rolled_back=False, promoted=True)

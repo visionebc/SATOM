@@ -1,12 +1,31 @@
-# Fortinet Manager — Web Edition
+# OFortMAuT — Web Edition
 
 A multi-user **Flask web platform for managing fleets of Fortinet appliances**
-(FortiWeb WAFs and FortiADC load balancers) over their REST APIs and SSH/CLI —
-with a local, queryable copy of every device's configuration so the UI stays
-fast even when the appliances are slow, unreachable, or license-locked.
+— **FortiWeb** (WAF), **FortiADC** (ADC/load balancer), and **FortiAnalyzer**
+(logs & analytics), with **FortiAuthenticator** planned — over their REST/JSON-RPC
+APIs and SSH/CLI, with a local, queryable copy of every device's configuration so
+the UI stays fast even when the appliances are slow, unreachable, or license-locked.
 
-- **Version:** 1.0 · **Status:** production (single-site deployment) · **License:** private (not yet published under an OSS license)
+> **Not a firewall manager.** OFortMAuT manages application-delivery and
+> analytics appliances. It is **not** a FortiManager or FortiGate/NGFW tool.
+
+- **Version:** see [`VERSION`](VERSION) · **Status:** production · **License:** [Elastic License 2.0](LICENSE) · [Security policy](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Release pipeline](docs/release-pipeline.md)
 - **~60 Flask blueprints · ~80 service modules · 700+ unit/integration tests · 500 tracked files**
+
+> ⚠️ **Trademark:** OFortMAuT is an independent source-available project, **not
+> affiliated with or endorsed by Fortinet, Inc.** "Fortinet", "FortiWeb",
+> "FortiADC", "FortiAnalyzer" and related marks belong to Fortinet, Inc. and are
+> used here only nominatively to describe interoperability. See [NOTICE](NOTICE).
+>
+> Provided **AS IS, without warranty** (Elastic License 2.0, *No Liability*). You
+> are responsible for how you deploy and operate it. See [SECURITY.md](SECURITY.md).
+
+> 📜 **Licensing:** SATOM is **source-available** under the
+> [Elastic License 2.0](LICENSE), not an OSI open-source license. You may use,
+> modify and run it inside your own organisation — including in production and
+> for commercial purposes — at no cost. You may **not** provide it to third
+> parties as a hosted or managed service. For a commercial license covering
+> that, contact **licensing@visionebc.com**.
 
 ---
 

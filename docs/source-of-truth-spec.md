@@ -1,4 +1,4 @@
-# Source of Truth — Local Persistence Layer for Fortinet Manager (web)
+# Source of Truth — Local Persistence Layer for OFortMAuT
 > **STATUS (2026-07-05): IMPLEMENTED.** The DB-first read layer shipped in full
 > (2026-07-04): `services/read_layer.py`, per-device cache layers (config /
 > deep / inventory), DB-first Configuration sections, Server-Policy & WPP

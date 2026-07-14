@@ -1,4 +1,4 @@
-# Fortinet Manager (Web) — Project Overview & Operational Rules
+# OFortMAuT — Project Overview & Operational Rules
 
 > The web platform for managing **FortiWeb** appliances over their REST API and
 > SSH/CLI. This is the authoritative in-app overview: what the app is, where it

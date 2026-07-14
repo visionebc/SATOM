@@ -38,15 +38,18 @@ command -v dnf >/dev/null || { echo "Necesita familia RHEL/dnf (usa rockylinux:9
 [ "$(id -u)" -eq 0 ] || { echo "Ejecuta como root (dnf lo necesita)"; exit 1; }
 
 echo "==> 0/4 Herramientas de build (dnf-plugins-core, python3.11, tar)"
-dnf -y -q install dnf-plugins-core python3.11 python3.11-pip git-core tar gzip findutils >/dev/null
+dnf -y -q install dnf-plugins-core createrepo_c python3.11 python3.11-pip git-core tar gzip findutils >/dev/null
 
 rm -rf "$STAGE"; mkdir -p "$STAGE/bundle/rpms" "$STAGE/bundle/wheels" "$OUT"
 
 echo "==> 1/4 Descargando .rpms (cierre completo de dependencias)"
 dnf download -q --resolve --alldeps --destdir "$STAGE/bundle/rpms" "${PKGS[@]}"
-N=$(ls "$STAGE/bundle/rpms" | wc -l)
+N=$(ls "$STAGE/bundle/rpms"/*.rpm | wc -l)
 echo "    $N paquetes .rpm"
 [ "$N" -gt 40 ] || { echo "ERROR: muy pocos rpms — algo falló"; exit 1; }
+# Metadatos de repo: en el destino dnf usa bundle/rpms como repo local
+# (--repofrompath) y resuelve SOLO lo necesario sin pelearse con @System.
+createrepo_c -q "$STAGE/bundle/rpms"
 
 echo "==> 2/4 Descargando wheels de Python 3.11 (requirements.txt)"
 python3.11 -m pip -q download -r "$REPO_DIR/requirements.txt" -d "$STAGE/bundle/wheels"

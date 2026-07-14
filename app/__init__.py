@@ -747,6 +747,24 @@ def create_app(config_override: object | None = None) -> Flask:
             print('cert-renew:', res)
         except Exception as exc:  # noqa: BLE001
             print('cert-renew error:', exc)
+        # Imported certs (e.g. the fleet wildcard) don't re-mint here; if the
+        # operator chose the 'autopull' renewal mode, fetch+install the renewed
+        # cert from the configured source in the SAME nightly pass.
+        try:
+            if _cs.renew_mode() == 'autopull':
+                print('cert-autopull:', _cs.autopull(by='timer'))
+        except Exception as exc:  # noqa: BLE001
+            print('cert-autopull error:', exc)
+
+    @app.cli.command('cert-autopull')
+    def cert_autopull_cmd():
+        """Force a one-off autopull of the imported cert from the configured
+        source (ignores the mode gate). For testing the 'autopull' renewal path."""
+        from .services import cert_service as _cs
+        try:
+            print('cert-autopull:', _cs.autopull(by='manual', force=True))
+        except Exception as exc:  # noqa: BLE001
+            print('cert-autopull error:', exc)
 
     @app.cli.command('alerts-run')
     @click.option('--dry-run', is_flag=True, help='Evaluate only; send nothing.')

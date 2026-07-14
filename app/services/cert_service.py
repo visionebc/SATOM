@@ -251,3 +251,146 @@ def renew_if_needed(by: str = "auto-renew", force: bool = False) -> dict:
                 % (days, RENEW_THRESHOLD_DAYS), "days_left": days}
     new = issue_internal(by=by)
     return {"renewed": True, "days_left": new.get("days_left"), "not_after": new.get("not_after")}
+
+
+# ---------------------------------------------------------------------------
+# Renewal strategy for IMPORTED certs — the operator's choice of two ways
+# ---------------------------------------------------------------------------
+# A CA-*issued* cert auto-renews above. An *imported* cert (e.g. the fleet
+# wildcard copied from the edge) can't be re-minted here, so the operator picks:
+#
+#   * ``alert``    (default) — do nothing automatic; the alert engine warns at
+#                  T-N days (services.alerts cert check) and the operator re-
+#                  imports by hand. Zero extra trust, zero key movement.
+#   * ``autopull`` — the node fetches the renewed cert+key from a source over
+#                  SSH/SFTP (typically the edge that runs certbot) and installs
+#                  it through the same validated import path (nginx -t + auto-
+#                  rollback). Convenient, but it means a private key is copied to
+#                  the node and an SSH trust to the source exists — the operator
+#                  opts into that explicitly.
+#
+# Both run from the SAME nightly ``fm-cert-renew`` timer. The mode + autopull
+# connection live in app_settings (JSON, SSH password Fernet-encrypted at rest).
+K_RENEW_MODE = "cert.renew_mode"          # "alert" | "autopull"
+K_AUTOPULL = "cert.autopull"              # JSON dict
+_AUTOPULL_DEFAULTS = {
+    "ssh_host": "", "ssh_port": 22, "ssh_user": "root",
+    "ssh_auth": "key",                    # "key" | "password"
+    "ssh_key_path": "", "ssh_password_enc": "",
+    "remote_cert": "", "remote_key": "", "remote_chain": "",
+}
+
+
+def renew_mode() -> str:
+    m = (ss.get_str(K_RENEW_MODE, "alert") or "alert").strip().lower()
+    return m if m in ("alert", "autopull") else "alert"
+
+
+def autopull_config(reveal_secret: bool = False) -> dict:
+    raw = ss.get_json(K_AUTOPULL, {}) or {}
+    cfg = dict(_AUTOPULL_DEFAULTS)
+    if isinstance(raw, dict):
+        cfg.update({k: raw.get(k, v) for k, v in _AUTOPULL_DEFAULTS.items()})
+    try:
+        cfg["ssh_port"] = int(cfg.get("ssh_port") or 22)
+    except (TypeError, ValueError):
+        cfg["ssh_port"] = 22
+    if reveal_secret:
+        from . import encryption
+        tok = cfg.get("ssh_password_enc") or ""
+        try:
+            cfg["ssh_password"] = encryption.decrypt(tok) if tok else ""
+        except Exception:
+            cfg["ssh_password"] = ""
+    cfg["configured"] = bool(cfg.get("ssh_host") and cfg.get("remote_cert")
+                             and cfg.get("remote_key"))
+    return cfg
+
+
+def save_autopull_config(form: dict, mode: str | None = None) -> None:
+    from . import encryption
+    cur = ss.get_json(K_AUTOPULL, {}) or {}
+    out = dict(_AUTOPULL_DEFAULTS)
+    if isinstance(cur, dict):
+        out.update({k: cur.get(k, v) for k, v in _AUTOPULL_DEFAULTS.items()})
+    for k in ("ssh_host", "ssh_user", "ssh_auth", "ssh_key_path",
+              "remote_cert", "remote_key", "remote_chain"):
+        if k in form:
+            out[k] = (form.get(k) or "").strip()
+    if "ssh_port" in form:
+        try:
+            out["ssh_port"] = int(form.get("ssh_port") or 22)
+        except (TypeError, ValueError):
+            out["ssh_port"] = 22
+    new_pw = form.get("ssh_password", "")
+    if new_pw:
+        out["ssh_password_enc"] = encryption.encrypt(new_pw)
+    ss.set_json(K_AUTOPULL, out)
+    if mode is not None:
+        ss.set_str(K_RENEW_MODE, mode if mode in ("alert", "autopull") else "alert")
+
+
+def autopull(by: str = "autopull-timer", force: bool = False) -> dict:
+    """Fetch the renewed cert/key (+optional chain) from the configured source
+    over SFTP and install it through the validated import path. No-op unless the
+    renewal mode is ``autopull`` and the connection is configured. Never raises —
+    connection/validation failures are reported in the return dict (install has
+    its own nginx-test + rollback)."""
+    if not force and renew_mode() != "autopull":
+        return {"pulled": False, "reason": "renew_mode is not 'autopull'"}
+    cfg = autopull_config(reveal_secret=True)
+    if not cfg.get("configured"):
+        return {"pulled": False, "reason": "autopull source not configured"}
+    try:
+        import paramiko
+    except Exception as exc:  # noqa: BLE001
+        return {"pulled": False, "reason": f"paramiko unavailable: {exc}"}
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    connect_kw = {"hostname": cfg["ssh_host"], "port": cfg["ssh_port"],
+                  "username": cfg["ssh_user"], "timeout": 15, "allow_agent": False,
+                  "look_for_keys": False}
+    if cfg.get("ssh_auth") == "password":
+        connect_kw["password"] = cfg.get("ssh_password") or ""
+    else:
+        if cfg.get("ssh_key_path"):
+            connect_kw["key_filename"] = cfg["ssh_key_path"]
+        connect_kw["look_for_keys"] = True
+    try:
+        client.connect(**connect_kw)
+        sftp = client.open_sftp()
+        try:
+            with sftp.open(cfg["remote_cert"], "rb") as fh:
+                cert_pem = fh.read()
+            with sftp.open(cfg["remote_key"], "rb") as fh:
+                key_pem = fh.read()
+            chain_pem = None
+            if cfg.get("remote_chain"):
+                with sftp.open(cfg["remote_chain"], "rb") as fh:
+                    chain_pem = fh.read()
+        finally:
+            sftp.close()
+    except Exception as exc:  # noqa: BLE001
+        return {"pulled": False, "reason": f"fetch failed: {type(exc).__name__}: {exc}"}
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+    # Skip a redundant reinstall when the fetched cert already matches what we
+    # serve (same bytes) — avoids a needless nginx reload every night.
+    try:
+        full = cert_pem if not chain_pem else cert_pem.rstrip() + b"\n" + chain_pem.lstrip()
+        if CRT.exists() and CRT.read_bytes().strip() == full.strip():
+            return {"pulled": False, "reason": "already up to date (identical cert)",
+                    "days_left": current().get("days_left")}
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        info = import_pem(cert_pem, key_pem, chain_pem, by=by)
+        return {"pulled": True, "days_left": info.get("days_left"),
+                "not_after": info.get("not_after")}
+    except Exception as exc:  # noqa: BLE001 — import_pem already rolled nginx back
+        return {"pulled": False, "reason": f"install rejected: {exc}"}

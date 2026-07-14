@@ -1,4 +1,4 @@
-# Fortinet Manager Web — Management Overview
+# OFortMAuT — Management Overview
 
 > **Audience:** managers and non-technical stakeholders. No networking or
 > programming knowledge is assumed. Technical readers should see the
@@ -8,7 +8,7 @@
 
 ## 1. What is it?
 
-Fortinet Manager Web is an in-house web application that our team uses to
+OFortMAuT is an in-house web application that our team uses to
 operate the company's **Fortinet security appliances** — the devices that sit
 in front of our web applications and protect them (FortiWeb, a *web
 application firewall*) and balance their traffic (FortiADC, a *load

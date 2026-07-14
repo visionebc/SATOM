@@ -1,0 +1,38 @@
+OFortMAuT
+Copyright 2026 Vision EBC and the OFortMAuT contributors
+
+This product is licensed under the Elastic License 2.0 (see LICENSE).
+
+------------------------------------------------------------------------
+TRADEMARK NOTICE
+------------------------------------------------------------------------
+OFortMAuT is an independent, source-available project. It is NOT affiliated
+with, endorsed by, sponsored by, or supported by Fortinet, Inc.
+
+"Fortinet", "FortiWeb", "FortiADC", "FortiAnalyzer", "FortiAuthenticator",
+"FortiGate", "FortiManager", and related marks are trademarks or
+registered trademarks of Fortinet, Inc. and/or its affiliates.
+
+These marks are used in this project ONLY nominatively — i.e. to describe
+the third-party appliances that OFortMAuT interoperates with. Their use
+does not imply any partnership, certification, or approval by Fortinet.
+
+The name "OFortMAuT" is a coined mark of this project. The Elastic License
+2.0 grants you limited rights to the software; it does NOT grant any right to
+use the "OFortMAuT" name, logo, or the third-party trademarks above for
+your own products or forks except as permitted by trademark law
+(nominative/fair use).
+
+------------------------------------------------------------------------
+SCOPE
+------------------------------------------------------------------------
+OFortMAuT manages the following Fortinet application-delivery / analytics
+appliances via their public APIs:
+  - FortiWeb        (Web Application Firewall)
+  - FortiADC        (Application Delivery Controller)
+  - FortiAnalyzer   (Log & analytics)
+  - FortiAuthenticator (planned)
+
+It is NOT a FortiManager or FortiGate management tool and does not manage
+firewalls/next-gen firewalls. Any resemblance of the name to Fortinet
+product names is coincidental and unintended.

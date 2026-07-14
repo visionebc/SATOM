@@ -1,6 +1,6 @@
 # API v1 — Integration Manual
 
-The **Fortinet Manager Web** exposes a small, versioned, **token-authenticated**
+The **OFortMAuT** exposes a small, versioned, **token-authenticated**
 HTTP API at `/api/v1` for third-party integrations and automation.
 
 - **Base URL:** `https://fortinet-manager.example.net/api/v1`

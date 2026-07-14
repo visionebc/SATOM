@@ -25,6 +25,94 @@ fast even when the appliances are slow, unreachable, or license-locked.
 | **Integration API** | Versioned `/api/v1` with scoped bearer tokens (`read ⊂ write ⊂ admin`, owner-capped, product-bound) — deliberately narrow and read-biased |
 | **Reporting** | Report Builder (no-SQL wizard + 7 built-in reports), live ER diagram of the schema, system backup/restore bundles |
 
+## Feature catalog
+
+The complete list, grouped by area. Everything below ships in this repository today.
+
+### Policy & WAF management (FortiWeb)
+- Server Policy table mirroring the FortiWeb GUI, with an editable detail form and **minimal-diff saves** (only changed fields are written to the device).
+- Guided **policy clone / migrate across devices**: pre-flight checklist, dummy-VIP rules, Web Protection Profile handling, reference resolution.
+- Safe **cascade delete** with dependency preview before anything is removed.
+- Full **Signatures editor** — category view, per-signature details, and per-signature exception management.
+- **Guided WAF exceptions** with template locks and lifecycle tracking (detect → inject → review).
+- Web Protection area mirroring the FortiWeb 7.6 GUI menu, with 166 curated object kinds ported from the original desktop app.
+
+### Generic object management
+- **Spec-driven form engine (`objedit`)** that makes ~500 registry endpoints editable through one engine: stacked slide-over panels, create-references-in-place, sub-tables, and a **dry-run preview on every write**.
+- **Endpoint registry in the database** (per product and API version) — when a firmware upgrade moves a REST URI, the operator fixes it from the UI instead of waiting for a code release.
+- **Live API consoles** for each product (FortiWeb, FortiADC, FortiAnalyzer) with audited, permission-gated writes.
+- Fleet-wide **object search** across every device's cached configuration.
+- Naming-convention rules, section catalog / taxonomy, field catalogs, and datasheets.
+
+### Multi-product workspaces (ADOMs)
+- Three scoped workspaces — **Global** `/`, **FortiWeb** `/web/`, **FortiADC** `/adc/` — with per-browser-tab product context and strict data scoping.
+- **FortiADC**: load-balancer objects, virtual servers, real-server pools, LB lookup, certificate deploy over REST.
+- **FortiAnalyzer**: full JSON-RPC integration speaking **both API dialects** (legacy envelope and `apiver: 3`), live menu bound to the endpoint registry, Device Manager (dvmdb) views.
+
+### Device operations
+- Discovery / rediscovery and **deep capture** of whole device configurations into a normalized local cache (DB-first reads, refresh-live escape hatch).
+- Config **backups over REST with automatic SSH/CLI fallback**, and a restore **vault** (device-level restore is dry-run gated).
+- **Firmware upgrade runbooks** and boot-partition management.
+- Built-in **SSH console** with read-only command presets.
+- Provisioning workflows, hardware inventory, and capacity views.
+
+### Source of truth & backups
+- **Git source of truth**: every appliance's config is harvested into versioned JSON (`reports/<device>/_config.json`) — product-aware for FortiWeb, FortiADC, and FortiAnalyzer — refreshed hourly and auto-published to git.
+- **System Backup & Restore page**: database bundles (pg_dump), device vault, application-code versions with **one-click code rollback**, and an embedded recovery runbook.
+- **Backup coverage matrix**: every backup stream (code, live DB, DB bundles, device SoT, vault, appliance-pushed configs, firmware) with format, destinations, cadence, and a **live state badge**, plus a per-device SoT freshness strip.
+- **External backup server integration** (SFTP): inventory of configs the appliances push on their own schedule, with per-device **browse / compare / search / download** modals — including a parser for FortiWeb's multi-file backup container format.
+- **Firmware source of truth**: manifest in git, binaries on the backup server, sha256-verified **pull into the console** for restore/upgrade.
+- Git drift view for the SoT tree, reports commit history with an **A→B diff viewer**.
+- Peer backup inventory over an unauthenticated health probe, so each node renders the other's inventory without SSH.
+
+### High availability
+- **Two-node HA**: primary + standby with **PostgreSQL streaming replication** and a role-guarded 5-minute data sync (vault, bundles, runtime data).
+- Replication is **TLS-enforced with mutual certificate verification** against an internal CA; plain or cert-less connections are refused.
+- Git-driven **reconciler** keeps deployments converged with the repository (manual mode supported).
+- Cluster status page and node-to-node **HTTPS probes authenticated with a shared identity key**.
+
+### Security
+- Local user management with **two-factor authentication**, directory/LDAP auth, and granular RBAC permissions.
+- **Audit log** on every write path; change history preserved.
+- **Change Requests**: maintenance-window approval gates for risky operations.
+- **Scoped API tokens** for the versioned `/api/v1` (`read ⊂ write ⊂ admin`, owner-capped, product-bound, deliberately read-biased).
+- Secrets encrypted at rest (Fernet); nonce-based CSP; rate limiting; object locks.
+- **Node TLS manager** in Settings: import a certificate or issue one from the built-in **internal CA**, with automatic nightly renewal and `nginx -t` + auto-rollback on bad imports.
+- **PostgreSQL TLS policy** (min protocol / ciphers) tunable from the UI.
+- **Encryption-in-transit monitoring**: per-channel cards (app↔app, app↔DB, replication, git) where every badge is backed by a **live probe** — protocol, cipher, enforced, authenticated.
+
+### Automation & self-management
+- **Scheduled actions** catalog (cron-style): config syncs, backups, certificate scans, deep captures, nightly device inspections — per-product targeting.
+- Background **jobs with pause / resume / stop**.
+- **Self-update from the UI**: the web tier only enqueues; a privileged systemd runner performs the update with a per-step log (expandable in the UI) and health verification.
+- **Library manager**: PyPI update checks (cached, off the render path) plus per-package **pip upgrade / rollback buttons** — curated allowlist only, import-smoke test, health check, and automatic rollback on failure; `requirements.txt` is bumped and pushed automatically on success.
+
+### Certificates
+- Central **Certificate Manager** with issuance via **ADCS or ACME** (switchable).
+- Lifecycle policy: revoke-on-supersede, expiry sweeps, SNI policies.
+- Private-key upload over SSH and **REST deploy to FortiADC**; certificate inventory and live probes across the fleet.
+
+### Observability & analysis
+- Monitoring dashboard, metrics, infrastructure health, and system health/info pages.
+- **FortiView traffic analysis** and packet capture.
+- **DNS & LB lookup tool**, log collection, flash reports, capacity planning.
+- Notifications with e-mail delivery; release-notes tracker; in-app documentation viewer.
+
+### Reporting
+- **Report Builder**: no-SQL wizard plus 7 built-in reports.
+- Live **ER diagram** of the schema and database introspection views.
+
+### Developer & power tools
+- **Lua Studio** and **Regex Lab** with curated example libraries.
+- **Plugin system** with a sandboxed runtime and examples.
+- API explorer, import-from-backup, structure / segments / classification tooling, baselines, and built-in bug reporting.
+
+### Deployment
+- **Interactive Linux installer** — online, or fully **air-gapped offline bundle** (all .deb packages + Python wheels included).
+- Installs **standalone or as a 2-node cluster**: the primary generates a join key; the secondary pastes it and replication, shared keys, and its own locally-minted certificate are set up automatically.
+- systemd units, nginx TLS front, gunicorn app server, PKI bootstrap — plus a sysadmin manual (`docs/INSTALL.md`) covering requirements, sudo/sudoers, hardening, and uninstall.
+- 700+ unit/integration tests.
+
 ## Architecture at a glance
 
 ```

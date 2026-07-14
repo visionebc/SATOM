@@ -53,7 +53,7 @@
   </li>
   <li class="nav-item" role="presentation">
     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-email" type="button">
-      <i class="bi bi-envelope me-1"></i>Email
+      <i class="bi bi-envelope me-1"></i>Email &amp; Alerts
     </button>
   </li>
   <li class="nav-item" role="presentation">
@@ -690,6 +690,80 @@
             </button>
             <div id="em-test-out" class="mt-3" style="display:none;">
               <div id="em-test-msg"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- ALERTS / NOTIFICATIONS -->
+    <div class="row g-3 mt-1">
+      <div class="col-12">
+        <div class="fw-card">
+          <div class="fw-card-header">
+            <span class="fw-card-title"><i class="bi bi-bell me-2 text-accent"></i>Alerts &amp; notifications</span>
+          </div>
+          <div class="fw-card-body">
+            <p class="text-muted mb-3" style="font-size:13px;">
+              The proactive health engine (<code>fm-alerts.timer</code>, every 15&nbsp;min) checks cert expiry, git divergence, device reachability, backup freshness and config drift, then notifies by <strong>email + in-app bell</strong>. Email uses the transport configured above — set it to external SMTP if the local relay can't reach your inbox.
+            </p>
+            <form method="POST" action="{{ url_for('settings.save_alerts') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" name="enabled" id="al-enabled"
+                           {{ 'checked' if alerts_config.enabled else '' }}>
+                    <label class="form-check-label" for="al-enabled">Enable alert dispatch</label>
+                  </div>
+                  <div class="mb-3">
+                    <label class="fw-form-label">Alert recipient(s)</label>
+                    <input type="text" name="email_to" class="form-control fw-form-control"
+                           value="{{ alerts_config.email_to }}" placeholder="ops@example.com, noc@example.com">
+                    <div class="form-text">Comma / newline separated. Blank → falls back to the email tab's default recipients{% if alerts_config.email_fallback %} (<code>{{ alerts_config.email_fallback }}</code>){% endif %}.</div>
+                  </div>
+                  <label class="fw-form-label">Checks enabled</label>
+                  <div class="d-flex flex-wrap gap-3 mt-1">
+                    {% for key, lbl in [('check_cert','Cert expiry'),('check_git','Git divergence'),('check_device','Device reachability'),('check_backup','Backup freshness'),('check_drift','Config drift')] %}
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="{{ key }}" id="al-{{ key }}"
+                             {{ 'checked' if alerts_config.checks[key.split('_')[1]] else '' }}>
+                      <label class="form-check-label" for="al-{{ key }}" style="font-size:13px;">{{ lbl }}</label>
+                    </div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="row g-2">
+                    <div class="col-6">
+                      <label class="fw-form-label">Cert warn (days)</label>
+                      <input type="number" name="cert_days" class="form-control fw-form-control" min="1" max="365" value="{{ alerts_config.cert_days }}">
+                    </div>
+                    <div class="col-6">
+                      <label class="fw-form-label">Cooldown (hours)</label>
+                      <input type="number" name="cooldown_hours" class="form-control fw-form-control" min="0" max="168" value="{{ alerts_config.cooldown_hours }}">
+                    </div>
+                    <div class="col-6">
+                      <label class="fw-form-label">Git behind max</label>
+                      <input type="number" name="git_behind_max" class="form-control fw-form-control" min="1" max="10000" value="{{ alerts_config.git_behind_max }}">
+                    </div>
+                    <div class="col-6">
+                      <label class="fw-form-label">Backup stale (hours)</label>
+                      <input type="number" name="backup_max_hours" class="form-control fw-form-control" min="1" max="8760" value="{{ alerts_config.backup_max_hours }}">
+                    </div>
+                    <div class="col-6">
+                      <label class="fw-form-label">Drift window (min)</label>
+                      <input type="number" name="drift_window_min" class="form-control fw-form-control" min="1" max="43200" value="{{ alerts_config.drift_window_min }}">
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="mt-3 d-flex gap-2 align-items-center">
+                <button type="submit" class="btn fw-btn-primary"><i class="bi bi-save me-1"></i>Save alert settings</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="al-preview-btn"><i class="bi bi-search me-1"></i>Preview now (no send)</button>
+              </div>
+            </form>
+            <div id="al-preview-out" class="mt-3" style="display:none;">
+              <div id="al-preview-msg"></div>
             </div>
           </div>
         </div>
@@ -2238,6 +2312,34 @@ function emailTest() {
       btn.innerHTML = '<i class="bi bi-send me-1"></i>Send test';
     });
 }
+function alertsPreview() {
+  var btn = document.getElementById('al-preview-btn');
+  var out = document.getElementById('al-preview-out');
+  var msg = document.getElementById('al-preview-msg');
+  btn.disabled = true;
+  var orig = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Checking...';
+  out.style.display = '';
+  msg.innerHTML = '<span class="text-muted">Running checks...</span>';
+  fetch('/settings/alerts/preview', {headers: {'X-Requested-With': 'fetch'}})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (!d.ok) { msg.innerHTML = '<div class="alert alert-danger py-2 mb-0" style="font-size:13px;">' + (d.detail || 'Failed.') + '</div>'; return; }
+      var to = (d.recipients && d.recipients.length) ? d.recipients.join(', ') : '<em>none configured</em>';
+      if (!d.count) {
+        msg.innerHTML = '<div class="alert alert-success py-2 mb-0" style="font-size:13px;"><i class="bi bi-check-circle me-1"></i>No findings — all checks green. Recipients: ' + to + '</div>';
+        return;
+      }
+      var rows = d.findings.map(function(f){
+        var col = f.severity === 'critical' ? 'danger' : (f.severity === 'warning' ? 'warning' : 'secondary');
+        return '<div class="d-flex gap-2 mb-1"><span class="badge bg-' + col + '">' + (f.severity||'') + '</span>'
+             + '<div><strong>' + (f.title||'') + '</strong><br><span class="text-muted" style="font-size:12px;">' + (f.detail||'') + '</span></div></div>';
+      }).join('');
+      msg.innerHTML = '<div class="alert alert-info py-2" style="font-size:13px;">' + d.count + ' finding(s) would notify ' + to + ' (nothing sent — preview only):</div>' + rows;
+    })
+    .catch(function(e){ msg.innerHTML = '<div class="alert alert-danger py-2 mb-0" style="font-size:13px;">Error: ' + e.message + '</div>'; })
+    .finally(function(){ btn.disabled = false; btn.innerHTML = orig; });
+}
 document.addEventListener('DOMContentLoaded', function() {
   if (document.getElementById('em-mode')) { emailToggleMode(); emailToggleAuth(); }
 });
@@ -2323,6 +2425,7 @@ document.addEventListener('DOMContentLoaded', function() {
   on('em-mode', 'change', function (event) { emailToggleMode(); });
   on('em-auth', 'change', function (event) { emailToggleAuth(); });
   on('em-test-btn', 'click', function (event) { emailTest(); });
+  on('al-preview-btn', 'click', function (event) { alertsPreview(); });
   on('auth-backend', 'change', function (event) { authToggle(); });
   on('auth-test-btn', 'click', function (event) { authTest(); });
   on('tf-setup-btn', 'click', function (event) { tfSetup(); });

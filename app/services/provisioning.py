@@ -150,7 +150,7 @@ class SystemProfile:
 # --------------------------------------------------------------------------- #
 # Endpoints are registry logical names (see endpoints.yaml). singleton/sensitive
 # are best-effort per FortiWeb's cmdb conventions — desired-state authoring, to be
-# validated live on a target box (see CLAUDE.md §5). The desktop's endpoint=None
+# validated live on a target box (see docs/engineering.md §13). The desktop's endpoint=None
 # rows (SMTP, certificate) are intentionally dropped here.
 PROVISION_CATALOG: list[ProvisionSpec] = [
     # ── Identity / system ────────────────────────────────────────────────
@@ -355,7 +355,7 @@ def save_profile(profile: SystemProfile, *, note: str = "", author: str = "",
 
     Secret-looking fields are stripped from every sensitive item BEFORE the body
     is written — secrets are entered again at apply-time and never live in the
-    template (CLAUDE.md §5). Returns the created ``models.Template`` row.
+    template (docs/engineering.md §13). Returns the created ``models.Template`` row.
     """
     from ..models import Template
     from .templates import save_template

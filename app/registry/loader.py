@@ -372,7 +372,7 @@ def resolve(name: str) -> str:
     """Resolve a logical endpoint name to its ``/api/v2.0/...`` path.
 
     The single point where services turn a friendly key into a URL — callers
-    never hardcode paths (see CLAUDE.md §4a). Raises ``KeyError`` if the name is
+    never hardcode paths (see docs/engineering.md §13). Raises ``KeyError`` if the name is
     not in the registry, so a typo/renamed endpoint fails loudly instead of
     silently building a phantom URL.
     """

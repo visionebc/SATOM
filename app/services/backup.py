@@ -2,7 +2,7 @@
 local-backup / restore REST calls.
 
 All device paths are resolved from the endpoint registry
-(``registry.loader.resolve``) — no hardcoded URLs (CLAUDE.md §4a). The real
+(``registry.loader.resolve``) — no hardcoded URLs (docs/engineering.md §13). The real
 FortiWeb endpoints were confirmed live on fw3 (7.6.8):
 
 * ``local_backup_list``   → ``system/maintenance.localbackup.list``   (GET, 200)

@@ -818,6 +818,86 @@ def create_app(config_override: object | None = None) -> Flask:
             _sys.exit(1)
         print('postflight OK — no regressions.')
 
+    @app.cli.command('canary-restore')
+    @click.option('--device', required=True, help='Appliance name (e.g. fw7).')
+    @click.option('--apply', 'do_apply', is_flag=True, default=False,
+                  help='ACTUALLY upload+apply (DESTRUCTIVE — device reboots). '
+                       'Omit for a safe dry-run.')
+    @click.option('--method', default='ssh',
+                  help='Safety-backup capture transport: ssh|rest|auto (default ssh — '
+                       'plaintext, diffable).')
+    def canary_restore_cmd(device, do_apply, method):
+        """Config-restore canary, wrapped in the preflight/postflight harness.
+
+        SAFE steps (always run): preflight snapshot → capture a FRESH on-box
+        backup (the rollback artifact) → restore DRY-RUN (resolves the endpoint,
+        sends nothing). With --apply it additionally uploads that SAME just-taken
+        config back (a neutral re-apply) and the box reboots; then it waits for
+        the device to return and runs a postflight comparison.
+
+        The default (no --apply) is non-destructive end-to-end. Fire --apply only
+        in a maintenance window: the multipart field name is still unconfirmed and
+        a real restore reboots the appliance."""
+        import sys as _sys, time as _time, socket as _socket
+        from .services import preflight as _pf, backup as _bk
+        from .models import Appliance
+        appl = Appliance.query.filter_by(name=device).first()
+        if not appl:
+            print('canary: no appliance named %r' % device); _sys.exit(2)
+
+        pre = _pf.snapshot('canary-%s' % device)
+        _pf.save(pre)
+        devs = pre.get('devices') or {}
+        reachable = devs.get(device, {}).get('reachable') if isinstance(devs, dict) else None
+        print('preflight: %s reachable=%s | health_ok=%s' % (
+            device, reachable, pre.get('health', {}).get('ok')))
+        if not reachable:
+            print('canary: %s is not reachable — aborting before any change.' % device)
+            _sys.exit(1)
+
+        cb = _bk.fetch_device_backup_auto(appl, created_by='canary', method=method)
+        print('safety backup (ROLLBACK ARTIFACT): %s (%s bytes)' % (
+            cb.stored_path, getattr(cb, 'size_bytes', '?')))
+        with open(cb.stored_path, 'rb') as fh:
+            data = fh.read()
+
+        client = appl.build_client(timeout=60)
+        plan = _bk.restore(client, data, cb.filename, dry_run=not do_apply)
+        print('restore plan: dry_run=%s endpoint=%s size=%s ok=%s' % (
+            plan.get('dry_run'), plan.get('endpoint'), plan.get('size'), plan.get('ok')))
+        print('  ' + str(plan.get('message', '')))
+
+        if not do_apply:
+            print('DRY-RUN complete — nothing was sent. To fire for real (device '
+                  'REBOOTS), re-run in a maintenance window with --apply.')
+            return
+
+        # ---- destructive path (maintenance window only) ----
+        print('APPLY: uploaded — device is applying config and rebooting. '
+              'Waiting for it to return...')
+        host, port = appl.host, int(appl.port or 443)
+        deadline = _time.time() + 600
+        back = False
+        while _time.time() < deadline:
+            try:
+                with _socket.create_connection((host, port), timeout=5):
+                    back = True
+                    break
+            except Exception:  # noqa: BLE001
+                _time.sleep(10)
+        if not back:
+            print('canary: %s did NOT return within 600s — restore the rollback '
+                  'artifact from the console: %s' % (device, cb.stored_path))
+            _sys.exit(1)
+        _time.sleep(15)  # let services settle past TCP-up
+        post = _pf.snapshot('canary-%s-after' % device)
+        verdict = _pf.compare(pre, post)
+        print('postflight passed=%s' % verdict['passed'])
+        for r in verdict['regressions']:
+            print('  REGRESSION:', r)
+        print('rollback artifact retained at %s' % cb.stored_path)
+        _sys.exit(0 if verdict['passed'] else 1)
+
     @app.cli.command('create-db')
     def create_db_cmd():
         """Initialise database tables and seed the default admin user."""

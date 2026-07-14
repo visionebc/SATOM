@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Architecture — OFortMAut</title>
+<meta name="description" content="OFortMAut architecture: nginx edge, gunicorn + Flask app factory, PostgreSQL source of truth, scheduler sidecar, two-node HA with TLS-enforced streaming replication, and layered backups across failure domains.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-inner">
+    <a class="brand" href="index.html"><span class="logo">🛡️</span> OFortMAut</a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="features.html">Features</a>
+      <a href="architecture.html" class="active">Architecture</a>
+      <a href="install.html">Install</a>
+    </div>
+  </div>
+</nav>
+
+<header class="page wrap">
+  <h1>Architecture <span class="grad">at a glance</span></h1>
+  <p class="sub">Boring, proven building blocks — arranged for resilience.</p>
+</header>
+
+<section class="wrap">
+  <div class="arch">
+<pre>
+Browser <b>(Turbo Drive · nonce-based CSP · per-tab product header)</b>
+   │ HTTPS
+<span class="hl">nginx edge</span> — TLS · gzip · static cache
+   │
+<span class="hl">Gunicorn</span> (4 workers × 8 threads) ─── <b>Flask app factory</b>
+   │              │                        │
+<b>PostgreSQL</b>     <b>Redis</b>              <b>Scheduler sidecar</b> (systemd)
+source of truth  rate-limit +        cron catalog: syncs, backups,
++ device cache   shared cache        cert scans, upgrade runbooks
+   │
+<span class="hl">Streaming replica</span> (TLS, mutual-CA) ──▶ standby node
+</pre>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="sec-head">
+    <h2>High availability &amp; layered backups</h2>
+    <p>Two-node active/standby clustering is built into the installer — not bolted on.</p>
+  </div>
+  <div class="grid">
+    <div class="card"><div class="ico">🔁</div><h3>Primary / standby pair</h3>
+      <p>PostgreSQL streaming replication with enforced TLS and mutual certificate authentication; application data rsynced to the standby every 5 minutes with role guards, so a promoted standby never overwrites the primary.</p></div>
+    <div class="card"><div class="ico">🔑</div><h3>One-paste cluster join</h3>
+      <p>The primary generates a single join key at install time; paste it on the secondary and replication, shared secrets and node certificates configure themselves. Each node mints its own leaf certificate locally.</p></div>
+    <div class="card"><div class="ico">🧯</div><h3>Defense-in-depth backups</h3>
+      <p>Live database, portable backup bundles, git-versioned device configs and an external SFTP backup server — four independent copies across failure domains, summarized in a live coverage matrix.</p></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="sec-head">
+    <h2>Trust &amp; encryption in transit</h2>
+    <p>Every internal channel is encrypted, and the app proves it with live probes — not assumptions.</p>
+  </div>
+  <div class="grid">
+    <div class="card"><div class="ico">🔏</div><h3>Internal CA</h3>
+      <p>The primary node operates a built-in certificate authority. Node certificates are issued, renewed nightly, and rolled back automatically if an import breaks the web front.</p></div>
+    <div class="card"><div class="ico">🔒</div><h3>Enforced database TLS</h3>
+      <p>Replication and application connections run over TLS with mutual certificate verification — plain or cert-less connections are refused, and the policy (minimum protocol, ciphers) is tunable from the UI.</p></div>
+    <div class="card"><div class="ico">🛰️</div><h3>Authenticated peer probes</h3>
+      <p>Node-to-node health checks ride HTTPS and carry a shared identity key, so each node can trust — and render — the other's state without SSH access.</p></div>
+    <div class="card"><div class="ico">📡</div><h3>Live encryption monitoring</h3>
+      <p>A monitoring page shows one card per channel — app↔app, app↔DB, replication, git — with protocol, cipher, enforcement and authentication, each badge backed by a real probe.</p></div>
+    <div class="card"><div class="ico">🧾</div><h3>Audited writes everywhere</h3>
+      <p>Every write path lands in the audit log; risky operations go through Change Requests with maintenance-window approval gates.</p></div>
+    <div class="card"><div class="ico">🗝️</div><h3>Secrets encrypted at rest</h3>
+      <p>Appliance credentials and integration secrets are Fernet-encrypted in the database; API tokens are scoped, owner-capped and product-bound.</p></div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="flinks">
+      <a href="features.html">Features</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="install.html">Install</a>
+      <a href="https://github.com/visionebc/OFortMAut">Source</a>
+    </div>
+    <p><b>OFortMAut</b> · Open Fortinet Management Automation Tool</p>
+    <p style="margin-top:6px;">© 2026 Vision EBC · All rights reserved</p>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,14 +1,24 @@
 #!/usr/bin/env bash
 # ============================================================================
 # install-ofortmaut.sh — Instalador de OFortMAut (Open Fortinet Management
-# Automation Tool) para Debian 12 (bookworm), amd64.
+# Automation Tool) — GENÉRICO para distribuciones Linux con systemd.
+#
+#   Familias soportadas (detección automática del gestor de paquetes):
+#     • Debian / Ubuntu ............. apt
+#     • RHEL / Rocky / Alma / Fedora  dnf (o yum)
+#     • openSUSE / SLES ............. zypper
+#     • Arch ........................ pacman
+#   Requisito duro: systemd (la app instala unidades systemd). Alpine/musl
+#   no está soportado.
 #
 # MODOS DE OPERACIÓN
-#   • ONLINE : descarga paquetes de los mirrors Debian/PyPI y el código del
-#              repo git de producción.
+#   • ONLINE : descarga paquetes de los mirrors de la distro/PyPI y el código
+#              del repo git de producción. Funciona en TODAS las familias.
 #   • OFFLINE: 100% sin red. Se auto-activa cuando existe un directorio
 #              `bundle/` junto a este script (generado por
 #              build-offline-bundle.sh) con debs/, wheels/ y app.tar.gz.
+#              El bundle trae paquetes .deb → SOLO familia Debian/Ubuntu;
+#              para otras familias usa el modo online.
 #
 # TOPOLOGÍAS
 #   • standalone            — un solo nodo, Postgres local.
@@ -44,10 +54,6 @@ DB_USER="fortinet"
 REPL_USER="fm_repl"
 INSTALL_LOG="/var/log/ofortmaut-install.log"
 
-# Paquetes Debian requeridos (versión mínima informativa para el chequeo)
-REQUIRED_PKGS=(python3 python3-venv python3-pip postgresql nginx rsync openssl curl ca-certificates)
-ONLINE_EXTRA_PKGS=(git)
-
 c_bold=$'\033[1m'; c_grn=$'\033[32m'; c_ylw=$'\033[33m'; c_red=$'\033[31m'; c_off=$'\033[0m'
 say()  { echo "${c_bold}==>${c_off} $*" | tee -a "$INSTALL_LOG"; }
 ok()   { echo "    ${c_grn}✓${c_off} $*" | tee -a "$INSTALL_LOG"; }
@@ -57,8 +63,73 @@ die()  { echo "${c_red}ERROR:${c_off} $*" | tee -a "$INSTALL_LOG" >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || die "Ejecuta como root (o con sudo): sudo bash $0"
 mkdir -p "$(dirname "$INSTALL_LOG")"; touch "$INSTALL_LOG"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CAPA DE ABSTRACCIÓN DE DISTRO — todo lo específico de familia vive aquí
+# ─────────────────────────────────────────────────────────────────────────────
+command -v systemctl >/dev/null 2>&1 || die "Se requiere systemd (Alpine/musl no está soportado)"
+
+PKG_MGR=""
+for m in apt-get dnf yum zypper pacman; do
+    command -v "$m" >/dev/null 2>&1 && { PKG_MGR="${m/apt-get/apt}"; break; }
+done
+[ -n "$PKG_MGR" ] || die "Gestor de paquetes no soportado. Familias válidas: apt, dnf/yum, zypper, pacman"
+
+# Nombres de paquete por familia (mismo orden de conceptos en todas)
+case "$PKG_MGR" in
+    apt)        REQUIRED_PKGS=(python3 python3-venv python3-pip postgresql nginx rsync openssl curl ca-certificates) ;;
+    dnf|yum)    REQUIRED_PKGS=(python3 python3-pip postgresql-server postgresql nginx rsync openssl curl ca-certificates) ;;
+    zypper)     REQUIRED_PKGS=(python3 python3-pip postgresql-server postgresql nginx rsync openssl curl ca-certificates) ;;
+    pacman)     REQUIRED_PKGS=(python python-pip postgresql nginx rsync openssl curl ca-certificates) ;;
+esac
+ONLINE_EXTRA_PKGS=(git)
+
+pkg_installed() {  # pkg_installed <pkg> → 0 si está
+    case "$PKG_MGR" in
+        apt)     dpkg -s "$1" >/dev/null 2>&1 ;;
+        pacman)  pacman -Qi "$1" >/dev/null 2>&1 ;;
+        *)       rpm -q "$1" >/dev/null 2>&1 ;;
+    esac
+}
+
+pkg_version() {  # pkg_version <pkg> → versión instalada (o "?")
+    case "$PKG_MGR" in
+        apt)     dpkg-query -W -f='${Version}' "$1" 2>/dev/null || echo "?" ;;
+        pacman)  pacman -Qi "$1" 2>/dev/null | awk -F': *' '/^Version/{print $2; exit}' || echo "?" ;;
+        *)       rpm -q --qf '%{VERSION}-%{RELEASE}' "$1" 2>/dev/null || echo "?" ;;
+    esac
+}
+
+pkg_install() {  # pkg_install <pkg...> → instala desde los mirrors de la distro
+    case "$PKG_MGR" in
+        apt)     export DEBIAN_FRONTEND=noninteractive
+                 apt-get update -qq >>"$INSTALL_LOG" 2>&1
+                 apt-get install -y -qq "$@" >>"$INSTALL_LOG" 2>&1 ;;
+        dnf)     dnf install -y -q "$@" >>"$INSTALL_LOG" 2>&1 ;;
+        yum)     yum install -y -q "$@" >>"$INSTALL_LOG" 2>&1 ;;
+        zypper)  zypper --non-interactive --quiet install "$@" >>"$INSTALL_LOG" 2>&1 ;;
+        pacman)  pacman -Sy --noconfirm --needed "$@" >>"$INSTALL_LOG" 2>&1 ;;
+    esac
+}
+
+pg_bootstrap() {  # arranca Postgres, inicializando el clúster de datos si hace falta
+    systemctl enable postgresql >>"$INSTALL_LOG" 2>&1 || true
+    if systemctl start postgresql >>"$INSTALL_LOG" 2>&1; then return 0; fi
+    # RHEL/Fedora traen postgresql-setup; en el resto initdb directo en el
+    # home del usuario postgres (Arch: /var/lib/postgres, SUSE: /var/lib/pgsql)
+    if command -v postgresql-setup >/dev/null 2>&1; then
+        postgresql-setup --initdb >>"$INSTALL_LOG" 2>&1 || true
+    else
+        local pghome; pghome=$(getent passwd postgres | cut -d: -f6)
+        [ -s "$pghome/data/PG_VERSION" ] || \
+            runuser -u postgres -- initdb -D "$pghome/data" >>"$INSTALL_LOG" 2>&1 || true
+    fi
+    systemctl start postgresql >>"$INSTALL_LOG" 2>&1 \
+        || die "PostgreSQL no arrancó tras initdb (revisa $INSTALL_LOG)"
+}
+
 OFFLINE=0
 if [ -d "$BUNDLE_DIR" ] && [ -d "$BUNDLE_DIR/debs" ]; then
+    [ "$PKG_MGR" = "apt" ] || die "El bundle offline contiene paquetes .deb (familia Debian/Ubuntu) y esta máquina usa ${PKG_MGR}. Usa el instalador en modo ONLINE (borra o renombra bundle/) o genera el bundle para esta familia."
     OFFLINE=1
 fi
 
@@ -162,16 +233,15 @@ read -rp "¿Continuar con la instalación? [S/n]: " GO
 # ─────────────────────────────────────────────────────────────────────────────
 # PASO 2 — PAQUETES (verifica; instala faltantes; avisa de actualizaciones)
 # ─────────────────────────────────────────────────────────────────────────────
-say "Paso 2/7 — Verificando paquetería"
+say "Paso 2/7 — Verificando paquetería (gestor detectado: ${PKG_MGR})"
 
 PKGS=("${REQUIRED_PKGS[@]}")
 [ $OFFLINE -eq 0 ] && PKGS+=("${ONLINE_EXTRA_PKGS[@]}")
 
 MISSING=()
 for p in "${PKGS[@]}"; do
-    if dpkg -s "$p" >/dev/null 2>&1; then
-        cur=$(dpkg-query -W -f='${Version}' "$p" 2>/dev/null || echo "?")
-        ok "$p ya instalado (versión $cur)"
+    if pkg_installed "$p"; then
+        ok "$p ya instalado (versión $(pkg_version "$p"))"
     else
         MISSING+=("$p")
         warn "$p FALTA — se instalará"
@@ -184,7 +254,7 @@ if python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3,9) else 1)' 2>/d
     ok "python3 ${PYV} cumple el mínimo (3.9)"
 else
     warn "python3 ${PYV} es una versión vieja — se actualizará a la del repositorio"
-    MISSING+=(python3)
+    MISSING+=("${REQUIRED_PKGS[0]}")
 fi
 
 if [ ${#MISSING[@]} -gt 0 ]; then
@@ -195,15 +265,16 @@ if [ ${#MISSING[@]} -gt 0 ]; then
             || apt-get -y -f --no-download install >>"$INSTALL_LOG" 2>&1 \
             || die "Fallo instalando debs del bundle (revisa $INSTALL_LOG)"
     else
-        say "Instalando desde los mirrors (apt-get)"
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update -qq >>"$INSTALL_LOG" 2>&1
-        apt-get install -y -qq "${MISSING[@]}" >>"$INSTALL_LOG" 2>&1 || die "apt-get install falló (revisa $INSTALL_LOG)"
+        say "Instalando desde los mirrors (${PKG_MGR})"
+        pkg_install "${MISSING[@]}" || die "La instalación de paquetes falló (revisa $INSTALL_LOG)"
     fi
     ok "Paquetes instalados"
 else
     ok "Toda la paquetería requerida ya está presente"
 fi
+
+# El módulo venv puede venir en paquete aparte (Debian) o integrado (resto)
+python3 -m venv --help >/dev/null 2>&1 || die "python3 no trae el módulo venv — instala el paquete venv de tu distro"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PASO 3 — CÓDIGO DE LA APLICACIÓN + VENV
@@ -244,11 +315,17 @@ ok "Entorno virtual listo ($(venv/bin/python --version 2>&1))"
 # ─────────────────────────────────────────────────────────────────────────────
 say "Paso 4/7 — Configurando PostgreSQL"
 
-systemctl enable --now postgresql >>"$INSTALL_LOG" 2>&1
-PGV=$(ls /etc/postgresql/ | sort -n | tail -1)
-PGCONF="/etc/postgresql/${PGV}/main"
-PGDATA="/var/lib/postgresql/${PGV}/main"
-ok "PostgreSQL ${PGV} detectado"
+pg_bootstrap
+# Rutas SIEMPRE preguntadas al propio Postgres (válido en cualquier distro:
+# Debian /etc/postgresql/N/main, RHEL/SUSE /var/lib/pgsql/data, Arch /var/lib/postgres/data)
+PGDATA=$(runuser -u postgres -- psql -tAc "SHOW data_directory" | xargs)
+PGCONF_FILE=$(runuser -u postgres -- psql -tAc "SHOW config_file" | xargs)
+PGHBA=$(runuser -u postgres -- psql -tAc "SHOW hba_file" | xargs)
+PGCONF=$(dirname "$PGCONF_FILE")
+PGHOME=$(getent passwd postgres | cut -d: -f6)
+PGV=$(runuser -u postgres -- psql -tAc "SHOW server_version" | xargs)
+[ -n "$PGDATA" ] && [ -n "$PGCONF_FILE" ] || die "No pude interrogar a PostgreSQL (SHOW data_directory/config_file)"
+ok "PostgreSQL ${PGV} — data=${PGDATA} conf=${PGCONF}"
 
 if [ "$ROLE" != "secondary" ]; then
     DB_PASS=$(openssl rand -hex 24)
@@ -344,10 +421,10 @@ ssl_ca_file   = '${PGSSL}/ca.crt'
 wal_level = replica
 max_wal_senders = 5
 PGC
-    grep -q "include_dir = 'conf.d'" "$PGCONF/postgresql.conf" || echo "include_dir = 'conf.d'" >> "$PGCONF/postgresql.conf"
+    grep -q "include_dir = 'conf.d'" "$PGCONF_FILE" || echo "include_dir = 'conf.d'" >> "$PGCONF_FILE"
     # pg_hba: réplica SOLO por TLS con cert de la CA del clúster + scram
-    if ! grep -q "OFORTMAUT-HA" "$PGCONF/pg_hba.conf"; then
-        cat >> "$PGCONF/pg_hba.conf" <<HBA
+    if ! grep -q "OFORTMAUT-HA" "$PGHBA"; then
+        cat >> "$PGHBA" <<HBA
 # OFORTMAUT-HA (añadido por install-ofortmaut.sh)
 hostssl replication ${REPL_USER} ${SECONDARY_CIDR} scram-sha-256 clientcert=verify-ca
 hostssl ${DB_NAME} ${DB_USER} ${SECONDARY_CIDR} scram-sha-256
@@ -367,17 +444,18 @@ fi
 if [ "$ROLE" = "secondary" ]; then
     say "Configurando réplica streaming desde ${PRIMARY_IP}"
     systemctl stop postgresql
-    # Certificado de cliente para la réplica (el que acabamos de emitir)
-    mkdir -p /var/lib/postgresql/.postgresql
-    cp "$PKI/node/leaf.crt" /var/lib/postgresql/.postgresql/postgresql.crt
-    cp "$PKI/node/leaf.key" /var/lib/postgresql/.postgresql/postgresql.key
-    cp "$PKI/internal-ca/ca.crt" /var/lib/postgresql/.postgresql/root.crt
-    chown -R postgres:postgres /var/lib/postgresql/.postgresql
-    chmod 600 /var/lib/postgresql/.postgresql/postgresql.key
+    # Certificado de cliente para la réplica (el que acabamos de emitir).
+    # El home de postgres varía por distro — usamos el real ($PGHOME).
+    mkdir -p "$PGHOME/.postgresql"
+    cp "$PKI/node/leaf.crt" "$PGHOME/.postgresql/postgresql.crt"
+    cp "$PKI/node/leaf.key" "$PGHOME/.postgresql/postgresql.key"
+    cp "$PKI/internal-ca/ca.crt" "$PGHOME/.postgresql/root.crt"
+    chown -R postgres:postgres "$PGHOME/.postgresql"
+    chmod 600 "$PGHOME/.postgresql/postgresql.key"
     rm -rf "${PGDATA}"
     runuser -u postgres -- env PGPASSWORD="$REPL_PASS" pg_basebackup \
         -h "$PRIMARY_IP" -U "$REPL_USER" -D "$PGDATA" -R -X stream -C -S "ofm_$(hostname | tr -c 'a-z0-9' '_')" \
-        -d "sslmode=verify-ca sslrootcert=/var/lib/postgresql/.postgresql/root.crt sslcert=/var/lib/postgresql/.postgresql/postgresql.crt sslkey=/var/lib/postgresql/.postgresql/postgresql.key" \
+        -d "sslmode=verify-ca sslrootcert=$PGHOME/.postgresql/root.crt sslcert=$PGHOME/.postgresql/postgresql.crt sslkey=$PGHOME/.postgresql/postgresql.key" \
         >>"$INSTALL_LOG" 2>&1 || die "pg_basebackup falló — verifica que el primary permite réplica desde esta IP (revisa $INSTALL_LOG)"
     mkdir -p "$PGCONF/conf.d"
     cat > "$PGCONF/conf.d/ofortmaut.conf" <<PGC
@@ -387,7 +465,7 @@ ssl_cert_file = '${PGSSL}/server.crt'
 ssl_key_file  = '${PGSSL}/server.key'
 ssl_ca_file   = '${PGSSL}/ca.crt'
 PGC
-    grep -q "include_dir = 'conf.d'" "$PGCONF/postgresql.conf" || echo "include_dir = 'conf.d'" >> "$PGCONF/postgresql.conf"
+    grep -q "include_dir = 'conf.d'" "$PGCONF_FILE" || echo "include_dir = 'conf.d'" >> "$PGCONF_FILE"
     systemctl start postgresql
     sleep 3
     REC=$(runuser -u postgres -- psql -tAc "SELECT pg_is_in_recovery()" | tr -d '[:space:]')
@@ -465,8 +543,18 @@ systemctl enable --now fortinet-manager-updater.path >>"$INSTALL_LOG" 2>&1 || tr
 systemctl enable --now fm-cert-renew.timer >>"$INSTALL_LOG" 2>&1 || true
 [ "$MODE" = "cluster" ] && systemctl enable --now fm-ha-datasync.timer >>"$INSTALL_LOG" 2>&1
 
-# nginx: TLS en el puerto elegido con el cert del nodo
-cat > /etc/nginx/sites-available/ofortmaut.conf <<NGX
+# nginx: TLS en el puerto elegido con el cert del nodo.
+# Debian/Ubuntu usan sites-available/enabled; el resto de familias conf.d.
+if [ -d /etc/nginx/sites-enabled ]; then
+    NGXCONF=/etc/nginx/sites-available/ofortmaut.conf
+else
+    mkdir -p /etc/nginx/conf.d
+    NGXCONF=/etc/nginx/conf.d/ofortmaut.conf
+    # Arch no incluye conf.d de fábrica — lo enganchamos al bloque http
+    grep -qE '^\s*include\s+/etc/nginx/conf\.d/\*\.conf' /etc/nginx/nginx.conf \
+        || sed -i '0,/http\s*{/s//&\n    include \/etc\/nginx\/conf.d\/*.conf;/' /etc/nginx/nginx.conf
+fi
+cat > "$NGXCONF" <<NGX
 server {
     listen ${WEB_PORT} ssl http2;
     server_name ${HOSTN} ${NODE_IP};
@@ -484,8 +572,26 @@ server {
     }
 }
 NGX
-ln -sf /etc/nginx/sites-available/ofortmaut.conf /etc/nginx/sites-enabled/ofortmaut.conf
-rm -f /etc/nginx/sites-enabled/default
+if [ -d /etc/nginx/sites-enabled ]; then
+    ln -sf /etc/nginx/sites-available/ofortmaut.conf /etc/nginx/sites-enabled/ofortmaut.conf
+    rm -f /etc/nginx/sites-enabled/default
+fi
+# SELinux (RHEL/Fedora): permitir que nginx haga proxy al gunicorn local y
+# escuche en un puerto no estándar — best-effort, nunca rompe la instalación
+if command -v getenforce >/dev/null 2>&1 && [ "$(getenforce 2>/dev/null)" = "Enforcing" ]; then
+    setsebool -P httpd_can_network_connect 1 >>"$INSTALL_LOG" 2>&1 || warn "SELinux: no pude activar httpd_can_network_connect"
+    if command -v semanage >/dev/null 2>&1; then
+        semanage port -a -t http_port_t -p tcp "$WEB_PORT" >>"$INSTALL_LOG" 2>&1 \
+            || semanage port -m -t http_port_t -p tcp "$WEB_PORT" >>"$INSTALL_LOG" 2>&1 || true
+    fi
+fi
+# firewalld (RHEL/SUSE): abrir el puerto web (+5432 en primary de clúster)
+if systemctl is-active --quiet firewalld 2>/dev/null; then
+    firewall-cmd --permanent --add-port="${WEB_PORT}/tcp" >>"$INSTALL_LOG" 2>&1 || true
+    [ "$ROLE" = "primary" ] && firewall-cmd --permanent --add-port=5432/tcp >>"$INSTALL_LOG" 2>&1 || true
+    firewall-cmd --reload >>"$INSTALL_LOG" 2>&1 || true
+    ok "firewalld: puerto ${WEB_PORT}/tcp abierto"
+fi
 nginx -t >>"$INSTALL_LOG" 2>&1 || die "nginx -t falló (revisa $INSTALL_LOG)"
 systemctl enable --now nginx >>"$INSTALL_LOG" 2>&1; systemctl reload nginx
 ok "nginx sirviendo HTTPS en ${NODE_IP}:${WEB_PORT}"

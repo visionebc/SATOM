@@ -38,6 +38,7 @@ from ..services import dns_tool as dns_tool_svc
 from ..services import policy_links as policy_links_svc
 from ..services import clone_rules as clone_rules_svc
 from ..services import faz_menu
+from ..services import alerts as alerts_svc
 from ..services.audit import log_action
 
 bp = Blueprint('settings', __name__, url_prefix='/settings')
@@ -81,6 +82,7 @@ def index():
         adoms=(branding.all_adoms() if _is_admin() else []),
         adom_caps=Adom.CAPS,
         email_config=email.config(),
+        alerts_config=alerts_svc.config(),
         auth_config=(auth_store.config() if _is_admin() else None),
         auth_backends=auth_store.BACKENDS,
         twofa_status={
@@ -673,6 +675,34 @@ def save_email():
     except Exception as exc:  # noqa: BLE001
         flash(f'Failed to save email settings: {exc}', 'danger')
     return redirect(url_for('settings.index') + '#tab-email')
+
+
+@bp.route('/alerts', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_alerts():
+    try:
+        alerts_svc.save_config(request.form)
+        log_action('settings.alerts', detail='Updated alert/notification settings')
+        flash('Alert settings saved.', 'success')
+    except Exception as exc:  # noqa: BLE001
+        flash(f'Failed to save alert settings: {exc}', 'danger')
+    return redirect(url_for('settings.index') + '#tab-email')
+
+
+@bp.route('/alerts/preview')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def preview_alerts():
+    """Run every enabled check once WITHOUT dispatching — lets the admin see what
+    would fire right now before turning alerts on."""
+    try:
+        findings = alerts_svc.evaluate()
+        return jsonify({'ok': True, 'count': len(findings),
+                        'recipients': alerts_svc.recipients(),
+                        'findings': findings})
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'ok': False, 'detail': str(exc)}), 500
 
 
 @bp.route('/email/test', methods=['POST'])

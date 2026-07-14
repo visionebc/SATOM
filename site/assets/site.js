@@ -44,6 +44,38 @@
     Object.keys(map).forEach(function (id) { spy.observe(document.getElementById(id)); });
   }
 
+  // --- screenshots: empty-state detection + lightbox ---
+  var frames = Array.prototype.slice.call(document.querySelectorAll('.shot .frame'));
+  if (frames.length) {
+    // build a single lightbox overlay
+    var lb = document.createElement('div');
+    lb.className = 'lb';
+    lb.innerHTML = '<button class="lb-close" aria-label="Close">✕</button><img alt="">';
+    document.body.appendChild(lb);
+    var lbImg = lb.querySelector('img');
+    function closeLb() { lb.classList.remove('open'); lbImg.src = ''; }
+    lb.addEventListener('click', function (e) { if (e.target === lb || e.target.classList.contains('lb-close')) closeLb(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeLb(); });
+
+    frames.forEach(function (fr) {
+      var img = fr.querySelector('img[data-shot]');
+      if (img) {
+        var markEmpty = function () { fr.classList.add('is-empty'); };
+        var markReady = function () { if (img.naturalWidth > 0) fr.classList.remove('is-empty'); };
+        if (img.complete) { if (img.naturalWidth === 0) markEmpty(); else markReady(); }
+        img.addEventListener('error', markEmpty);
+        img.addEventListener('load', markReady);
+      }
+      fr.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (fr.classList.contains('is-empty')) return;
+        var href = fr.getAttribute('href') || (img && img.getAttribute('src'));
+        if (!href) return;
+        lbImg.src = href; lb.classList.add('open');
+      });
+    });
+  }
+
   // --- back to top ---
   var top = document.getElementById('top');
   if (top) {

@@ -89,6 +89,19 @@ def _node() -> str:
         return "node"
 
 
+def _is_read_only_replica() -> bool:
+    """True when this node's Postgres is a streaming replica (standby), where any
+    write (notifications, cooldown state) would fail. Self-detecting via
+    ``pg_is_in_recovery()`` so no role config is needed and a promoted standby
+    starts dispatching automatically. SQLite / unknown → treated as writable."""
+    from ..extensions import db
+    try:
+        from sqlalchemy import text
+        return bool(db.session.execute(text("SELECT pg_is_in_recovery()")).scalar())
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def is_enabled() -> bool:
     return _flag(K_ENABLED)
 
@@ -320,6 +333,14 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
     if dry_run:
         return {"node": _node(), "evaluated": len(findings),
                 "findings": findings, "dispatched": 0, "dry_run": True}
+
+    # On a read-only standby, dispatch (in-app + cooldown state) can't be written
+    # and email would spam without persistable cooldown. Evaluate + log only; the
+    # writable primary owns dispatch. A promoted standby flips writable and starts.
+    if _is_read_only_replica():
+        return {"node": _node(), "evaluated": len(findings), "fresh": 0,
+                "dispatched": 0, "email": None, "enabled": is_enabled(),
+                "skipped": "read-only replica — dispatch is primary-only"}
 
     state = _load_state()
     cooldown_h = _int(K_COOLDOWN_H, 6)

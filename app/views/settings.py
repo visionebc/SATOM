@@ -35,6 +35,7 @@ from ..services import git_service
 from ..services import user_settings_store as user_store
 from ..services import system_info
 from ..services import dns_tool as dns_tool_svc
+from ..services import dns_providers
 from ..services import policy_links as policy_links_svc
 from ..services import clone_rules as clone_rules_svc
 from ..services import faz_menu
@@ -102,6 +103,12 @@ def index():
         acme_cmd_tokens=store.ACME_CMD_TOKENS,
         cert_lifecycle=(store.cert_lifecycle_policy() if _is_admin() else None),
         dns_tool_servers=(dns_tool_svc.dns_servers() if _is_admin() else []),
+        dnsrec_cfg=(dns_providers.config_public() if _is_admin() else None),
+        dnsrec_providers=([(k, dns_providers.PROVIDERS[k].label)
+                           for k in ('none', 'efficientip', 'phpipam', 'netbox')]
+                          if _is_admin() else []),
+        dnsrec_field_specs=(dns_providers.FIELD_SPECS if _is_admin() else {}),
+        dnsrec_secret_labels=(dns_providers.SECRET_LABELS if _is_admin() else {}),
         policy_links=(policy_links_svc.links() if _is_admin() else []),
         policy_link_tokens=policy_links_svc.TOKENS,
         clone_rules_cfg=(clone_rules_svc.config() if _is_admin() else None),
@@ -862,6 +869,59 @@ def save_dns_tool():
     log_action('settings.dns_tool', target='dnstool.servers')
     flash(f'DNS server list saved ({len(saved)} servers).', 'success')
     return redirect(url_for('settings.index'))
+
+
+def _dnsrec_form_fields(provider):
+    """Pull the non-secret fields for *provider* out of the request form."""
+    fields = {'verify_ssl': bool(request.form.get('dnsrec_verify_ssl'))}
+    for spec in dns_providers.FIELD_SPECS.get(provider, []):
+        fields[spec['key']] = request.form.get('dnsrec_' + spec['key'], '')
+    return fields
+
+
+@bp.route('/dns-records', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_dns_records():
+    """Persist the DNS Records / IPAM provider (AppSetting ``dnsrecords.*``).
+
+    Provider selector + non-secret connection fields + one Fernet-encrypted
+    secret. A blank secret leaves the stored one untouched; the explicit
+    ``dnsrec_clear_secret`` checkbox wipes it (e.g. switching provider)."""
+    provider = (request.form.get('dnsrec_provider') or 'none').strip()
+    if provider not in dns_providers.PROVIDERS:
+        provider = 'none'
+    fields = _dnsrec_form_fields(provider)
+    secret = (request.form.get('dnsrec_secret') or '').strip() or None
+    dns_providers.save_config(provider, fields, secret)
+    if request.form.get('dnsrec_clear_secret'):
+        dns_providers.clear_secret()
+    log_action('settings.dns_records', target=f'dnsrecords.provider={provider}')
+    flash(f'DNS Records provider saved ({dns_providers.PROVIDERS[provider].label}).',
+          'success')
+    return redirect(url_for('settings.index') + '#tab-dnsrecords')
+
+
+@bp.route('/dns-records/test', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def test_dns_records():
+    """Test the connection using the CURRENT form values (unsaved). Falls back
+    to the stored secret when the form leaves the secret blank."""
+    data = request.get_json(silent=True) or {}
+    provider = (data.get('provider') or 'none').strip()
+    if provider == 'none' or provider not in dns_providers.PROVIDERS:
+        return jsonify(ok=False, message='Select a provider first.'), 400
+    fields = {'verify_ssl': bool(data.get('verify_ssl', True))}
+    for spec in dns_providers.FIELD_SPECS.get(provider, []):
+        fields[spec['key']] = data.get(spec['key'], '')
+    secret = (data.get('secret') or '').strip() or None
+    prov = dns_providers.provider_for_test(provider, fields, secret)
+    try:
+        ok, message = prov.test_connection()
+    except Exception as exc:  # noqa: BLE001 — surface any client error to the UI
+        ok, message = False, str(exc)
+    return jsonify(ok=bool(ok), message=message)
 
 
 @bp.route('/clone-rules', methods=['POST'])

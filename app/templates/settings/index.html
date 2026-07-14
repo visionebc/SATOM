@@ -77,6 +77,11 @@
     </button>
   </li>
   <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-dnsrecords" type="button">
+      <i class="bi bi-pencil-square me-1"></i>DNS Records
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-policylinks" type="button">
       <i class="bi bi-link-45deg me-1"></i>Policy Links
     </button>
@@ -1316,6 +1321,124 @@
         </form>
       </div>
     </div>
+  </div>
+
+  <!-- DNS RECORDS / IPAM TAB -->
+  <div class="tab-pane fade" id="tab-dnsrecords">
+    <div class="fw-card" style="max-width:820px;">
+      <div class="fw-card-header"><i class="bi bi-pencil-square me-1"></i>DNS Records — IPAM / DDI provider</div>
+      <div class="fw-card-body">
+        <p class="text-muted" style="font-size:13px;">
+          Pick the backend the <a href="{{ url_for('dns_tool.index') }}">DNS &amp; LB Lookup</a> page writes to via
+          its <strong>+DNS Records</strong> button. Only <strong>EfficientIP SOLIDserver</strong> manages DNS
+          records natively; <strong>NetBox</strong> needs the <code>netbox-dns</code> plugin and <strong>phpIPAM</strong>
+          is read-only over its API (no PowerDNS record CRUD). The +DNS Records modal adapts to the provider's
+          capabilities. The secret is stored Fernet-encrypted and never shown again.
+        </p>
+        {% if dnsrec_cfg %}
+        <form method="POST" action="{{ url_for('settings.save_dns_records') }}" id="dnsrecForm">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="mb-3" style="max-width:360px;">
+            <label class="fw-form-label">Provider</label>
+            <select name="dnsrec_provider" id="dnsrecProvider" class="form-select fw-form-control form-select-sm">
+              {% for key, label in dnsrec_providers %}
+              <option value="{{ key }}" {{ 'selected' if dnsrec_cfg.provider == key }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          {% for pkey, specs in dnsrec_field_specs.items() %}
+          <div class="dnsrec-fields" data-provider="{{ pkey }}"
+               style="{{ '' if dnsrec_cfg.provider == pkey else 'display:none;' }}">
+            {% for spec in specs %}
+            <div class="mb-2" style="max-width:520px;">
+              <label class="fw-form-label">{{ spec.label }}</label>
+              <input type="text" name="dnsrec_{{ spec.key }}"
+                     class="form-control fw-form-control form-control-sm"
+                     placeholder="{{ spec.ph }}"
+                     value="{{ dnsrec_cfg[spec.key] if dnsrec_cfg.provider == pkey else '' }}">
+            </div>
+            {% endfor %}
+            <div class="mb-2" style="max-width:520px;">
+              <label class="fw-form-label">{{ dnsrec_secret_labels[pkey] }}</label>
+              <input type="password" name="dnsrec_secret" autocomplete="new-password"
+                     class="form-control fw-form-control form-control-sm dnsrec-secret"
+                     placeholder="{{ '•••••••• (stored — leave blank to keep)' if dnsrec_cfg.has_secret and dnsrec_cfg.provider == pkey else 'enter secret' }}">
+              {% if dnsrec_cfg.has_secret and dnsrec_cfg.provider == pkey %}
+              <div class="form-check mt-1">
+                <input class="form-check-input" type="checkbox" name="dnsrec_clear_secret" id="dnsrecClearSecret">
+                <label class="form-check-label text-muted" for="dnsrecClearSecret" style="font-size:12px;">Clear stored secret</label>
+              </div>
+              {% endif %}
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input dnsrec-verify" type="checkbox" name="dnsrec_verify_ssl"
+                     {{ 'checked' if (dnsrec_cfg.provider != pkey) or dnsrec_cfg.verify_ssl }}>
+              <label class="form-check-label" style="font-size:13px;">Verify TLS certificate</label>
+            </div>
+          </div>
+          {% endfor %}
+
+          <div class="d-flex align-items-center gap-2 mt-3">
+            <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save provider</button>
+            <button type="button" class="btn btn-outline-secondary" id="dnsrecTestBtn">
+              <i class="bi bi-plug me-1"></i>Test connection</button>
+            <span id="dnsrecTestResult" style="font-size:13px;"></span>
+          </div>
+        </form>
+        {% else %}
+        <div class="text-muted">Admin only.</div>
+        {% endif %}
+      </div>
+    </div>
+    {% if dnsrec_cfg %}
+    <script nonce="{{ csp_nonce }}">
+    (function () {
+      var sel = document.getElementById('dnsrecProvider');
+      var groups = document.querySelectorAll('#dnsrecForm .dnsrec-fields');
+      var testBtn = document.getElementById('dnsrecTestBtn');
+      var out = document.getElementById('dnsrecTestResult');
+      var csrf = document.querySelector('#dnsrecForm [name=csrf_token]').value;
+      function activeGroup() {
+        var p = sel.value, found = null;
+        groups.forEach(function (g) {
+          var on = g.getAttribute('data-provider') === p;
+          g.style.display = on ? '' : 'none';
+          // Disabled inputs are NOT submitted -> stops the other providers'
+          // fields (same names) from colliding on POST.
+          g.querySelectorAll('input').forEach(function (inp) { inp.disabled = !on; });
+          if (on) found = g;
+        });
+        return found;
+      }
+      sel.addEventListener('change', function () { out.textContent = ''; activeGroup(); });
+      testBtn.addEventListener('click', function () {
+        var p = sel.value;
+        if (p === 'none') { out.textContent = 'Select a provider first.'; out.style.color = '#fbbf24'; return; }
+        var g = activeGroup(); if (!g) return;
+        var payload = { provider: p, verify_ssl: g.querySelector('.dnsrec-verify').checked };
+        g.querySelectorAll('input[name^=dnsrec_]').forEach(function (inp) {
+          var k = inp.name.replace(/^dnsrec_/, '');
+          if (k === 'secret') { if (inp.value) payload.secret = inp.value; }
+          else if (k !== 'verify_ssl' && k !== 'clear_secret') payload[k] = inp.value;
+        });
+        out.textContent = 'Testing…'; out.style.color = '#94a3b8';
+        testBtn.disabled = true;
+        fetch('{{ url_for("settings.test_dns_records") }}', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+          body: JSON.stringify(payload)
+        }).then(function (r) { return r.json(); }).then(function (d) {
+          out.textContent = (d.ok ? '✓ ' : '✗ ') + (d.message || '');
+          out.style.color = d.ok ? '#10b981' : '#ef4444';
+        }).catch(function (e) {
+          out.textContent = '✗ ' + e; out.style.color = '#ef4444';
+        }).finally(function () { testBtn.disabled = false; });
+      });
+      activeGroup();
+    })();
+    </script>
+    {% endif %}
   </div>
 
   <!-- POLICY LINKS TAB -->

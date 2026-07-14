@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OFortMAut — Open Fortinet Management Automation Tool</title>
+<meta name="description" content="A multi-user Flask web platform for managing fleets of Fortinet appliances — FortiWeb, FortiADC and FortiAnalyzer — with HA, a git-versioned configuration source of truth, and full lifecycle automation.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080d1a;
+    --card: rgba(15, 23, 42, 0.6);
+    --text: #e2e8f0;
+    --text-2: #94a3b8;
+    --muted: #64748b;
+    --accent-a: #3b82f6;
+    --accent-b: #8b5cf6;
+    --ok: #10b981;
+    --border: rgba(148, 163, 184, 0.08);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, sans-serif;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse 60% 40% at 20% -10%, rgba(59,130,246,.14), transparent),
+      radial-gradient(ellipse 50% 35% at 85% 10%, rgba(139,92,246,.12), transparent);
+    pointer-events: none; z-index: 0;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+  /* nav */
+  nav {
+    position: sticky; top: 0; z-index: 10;
+    backdrop-filter: blur(14px);
+    background: rgba(8, 13, 26, 0.75);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 62px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.05rem; letter-spacing: -.02em; }
+  .brand .logo {
+    width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+    font-size: 1rem;
+  }
+  .nav-links { display: flex; gap: 26px; font-size: .9rem; }
+  .nav-links a { color: var(--text-2); text-decoration: none; transition: color .2s; }
+  .nav-links a:hover { color: var(--text); }
+
+  /* hero */
+  header { padding: 96px 0 72px; text-align: center; animation: fadeUp .7s cubic-bezier(.16,1,.3,1) both; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 14px; border-radius: 999px; font-size: .78rem; font-weight: 600;
+    color: var(--text-2); background: var(--card); border: 1px solid var(--border);
+    margin-bottom: 26px;
+  }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  h1 {
+    font-size: clamp(2.3rem, 6vw, 3.7rem); font-weight: 800; letter-spacing: -.03em; line-height: 1.12;
+  }
+  h1 .grad {
+    background: linear-gradient(120deg, var(--accent-a), var(--accent-b));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .sub { max-width: 680px; margin: 22px auto 0; color: var(--text-2); font-size: 1.13rem; }
+  .cta { margin-top: 38px; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 13px 26px; border-radius: 11px; font-weight: 600; font-size: .95rem;
+    text-decoration: none; transition: transform .2s, box-shadow .2s;
+  }
+  .btn-primary {
+    color: #fff;
+    background: linear-gradient(120deg, var(--accent-a), var(--accent-b));
+    background-size: 160% 160%;
+    animation: gradientShift 6s ease infinite;
+    box-shadow: 0 8px 28px rgba(59,130,246,.35);
+  }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 12px 34px rgba(139,92,246,.45); }
+  .btn-ghost { color: var(--text); background: var(--card); border: 1px solid var(--border); }
+  .btn-ghost:hover { transform: translateY(-2px); border-color: rgba(148,163,184,.25); }
+  .stats { margin-top: 60px; display: flex; gap: 44px; justify-content: center; flex-wrap: wrap; }
+  .stat { text-align: center; }
+  .stat b {
+    display: block; font-size: 1.75rem; font-weight: 800; letter-spacing: -.02em;
+    background: linear-gradient(120deg, var(--accent-a), var(--accent-b));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .stat span { font-size: .82rem; color: var(--muted); }
+
+  /* sections */
+  section { padding: 72px 0; }
+  .sec-head { text-align: center; margin-bottom: 48px; }
+  .sec-head h2 { font-size: clamp(1.6rem, 3.5vw, 2.2rem); font-weight: 800; letter-spacing: -.02em; }
+  .sec-head p { color: var(--text-2); margin-top: 10px; max-width: 640px; margin-inline: auto; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 18px;
+    padding: 26px; backdrop-filter: blur(10px);
+    transition: transform .25s cubic-bezier(.16,1,.3,1), border-color .25s, box-shadow .25s;
+  }
+  .card:hover {
+    transform: translateY(-4px); border-color: rgba(99,102,241,.3);
+    box-shadow: 0 14px 40px rgba(59,130,246,.12);
+  }
+  .card .ico {
+    width: 42px; height: 42px; border-radius: 11px; display: grid; place-items: center;
+    background: linear-gradient(135deg, rgba(59,130,246,.18), rgba(139,92,246,.18));
+    border: 1px solid rgba(99,102,241,.25); font-size: 1.2rem; margin-bottom: 16px;
+  }
+  .card h3 { font-size: 1.02rem; font-weight: 700; margin-bottom: 8px; }
+  .card p { font-size: .88rem; color: var(--text-2); }
+
+  /* architecture */
+  .arch {
+    background: var(--card); border: 1px solid var(--border); border-radius: 18px;
+    padding: 34px; backdrop-filter: blur(10px); overflow-x: auto;
+  }
+  .arch pre {
+    font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+    font-size: .82rem; line-height: 1.7; color: var(--text-2); min-width: 560px;
+  }
+  .arch pre b { color: var(--text); font-weight: 600; }
+  .arch pre .hl { color: var(--accent-a); font-weight: 600; }
+
+  /* install */
+  .install-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 18px; }
+  .code {
+    background: rgba(2, 6, 16, 0.7); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px; margin-top: 16px; overflow-x: auto;
+    font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size: .8rem; color: #a5b4fc;
+    line-height: 1.8;
+  }
+  .code .c { color: var(--muted); }
+  .tag {
+    display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: .72rem; font-weight: 700;
+    letter-spacing: .04em; text-transform: uppercase; margin-bottom: 14px;
+  }
+  .tag-blue  { color: #93c5fd; background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.3); }
+  .tag-vio   { color: #c4b5fd; background: rgba(139,92,246,.12); border: 1px solid rgba(139,92,246,.3); }
+
+  ul.checks { list-style: none; margin-top: 14px; }
+  ul.checks li { padding-left: 26px; position: relative; font-size: .88rem; color: var(--text-2); margin-bottom: 9px; }
+  ul.checks li::before { content: '✓'; position: absolute; left: 0; color: var(--ok); font-weight: 700; }
+
+  footer {
+    border-top: 1px solid var(--border); padding: 40px 0 48px; text-align: center;
+    color: var(--muted); font-size: .85rem;
+  }
+  footer a { color: var(--text-2); text-decoration: none; }
+  footer a:hover { color: var(--text); }
+
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+  @keyframes gradientShift { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+  section { animation: fadeUp .7s cubic-bezier(.16,1,.3,1) both; }
+
+  @media (max-width: 640px) {
+    .nav-links { display: none; }
+    header { padding: 64px 0 48px; }
+    .stats { gap: 26px; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-inner">
+    <div class="brand"><span class="logo">🛡️</span> OFortMAut</div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#ha">High Availability</a>
+      <a href="#install">Install</a>
+    </div>
+  </div>
+</nav>
+
+<header class="wrap">
+  <div class="pill"><span class="dot"></span> v1.0 · Production · 700+ automated tests</div>
+  <h1>Fleet management for<br><span class="grad">Fortinet appliances</span>, automated.</h1>
+  <p class="sub">
+    OFortMAut — the <b>Open Fortinet Management Automation Tool</b> — is a multi-user web
+    platform that manages FortiWeb, FortiADC and FortiAnalyzer fleets over their REST APIs
+    and SSH, keeping a local, queryable, <b>git-versioned copy of every device configuration</b>.
+  </p>
+  <div class="cta">
+    <a class="btn btn-primary" href="#install">Get started</a>
+    <a class="btn btn-ghost" href="#features">Explore features</a>
+  </div>
+  <div class="stats">
+    <div class="stat"><b>~500</b><span>registry endpoints editable</span></div>
+    <div class="stat"><b>60+</b><span>Flask blueprints</span></div>
+    <div class="stat"><b>700+</b><span>unit &amp; integration tests</span></div>
+    <div class="stat"><b>3</b><span>Fortinet product lines</span></div>
+  </div>
+</header>
+
+<section id="features" class="wrap">
+  <div class="sec-head">
+    <h2>Everything the console does — plus what it doesn't</h2>
+    <p>A full mirror of the FortiWeb GUI workflow, backed by a database, an audit trail and automation the appliances themselves can't offer.</p>
+  </div>
+  <div class="grid">
+    <div class="card"><div class="ico">🧭</div><h3>Server Policy management</h3>
+      <p>Policy table with editable detail forms, minimal-diff saves, and guided clone / migrate across devices with pre-flight checklists and safe cascade delete.</p></div>
+    <div class="card"><div class="ico">🛡️</div><h3>Web Protection (WAF)</h3>
+      <p>Signatures editor with per-signature exceptions, 166 curated object kinds, and guided WAF exceptions with template locks and lifecycle tracking.</p></div>
+    <div class="card"><div class="ico">🧩</div><h3>Spec-driven object editor</h3>
+      <p>Any of ~500 registry endpoints editable through one form engine — stacked slide-over panels, create-references-in-place, dry-run previews on every write.</p></div>
+    <div class="card"><div class="ico">📦</div><h3>Device operations</h3>
+      <p>Discovery, deep capture, config backups with SSH fallback, restore vault, firmware upgrade runbooks and an SSH console with read-only presets.</p></div>
+    <div class="card"><div class="ico">🔐</div><h3>Certificate lifecycle</h3>
+      <p>Central Certificate Manager — issuance via ADCS or ACME, revoke-on-supersede policy, expiry sweeps, SNI policies and REST deploy to FortiADC.</p></div>
+    <div class="card"><div class="ico">⏱️</div><h3>Automation &amp; change control</h3>
+      <p>Cron-style scheduled actions, Change Requests with maintenance-window approval gates, and background jobs with pause / resume / stop.</p></div>
+    <div class="card"><div class="ico">🗂️</div><h3>Git source of truth</h3>
+      <p>Every device's configuration is harvested on schedule and versioned in git — drift detection, A→B diff viewer and point-in-time restore included.</p></div>
+    <div class="card"><div class="ico">🌐</div><h3>Multi-product workspaces</h3>
+      <p>Global, FortiWeb and FortiADC workspaces with per-browser-tab product context, plus FortiAnalyzer log &amp; event integration over JSON-RPC.</p></div>
+    <div class="card"><div class="ico">🔌</div><h3>Integration API</h3>
+      <p>Versioned <code>/api/v1</code> with scoped bearer tokens (read ⊂ write ⊂ admin), owner-capped and product-bound — deliberately narrow and read-biased.</p></div>
+  </div>
+</section>
+
+<section id="architecture" class="wrap">
+  <div class="sec-head">
+    <h2>Architecture at a glance</h2>
+    <p>Boring, proven building blocks — arranged for resilience.</p>
+  </div>
+  <div class="arch">
+<pre>
+Browser <b>(Turbo Drive · nonce-based CSP · per-tab product header)</b>
+   │ HTTPS
+<span class="hl">nginx edge</span> — TLS · gzip · static cache
+   │
+<span class="hl">Gunicorn</span> (4 workers × 8 threads) ─── <b>Flask app factory</b>
+   │              │                        │
+<b>PostgreSQL</b>     <b>Redis</b>              <b>Scheduler sidecar</b> (systemd)
+source of truth  rate-limit +        cron catalog: syncs, backups,
++ device cache   shared cache        cert scans, upgrade runbooks
+   │
+<span class="hl">Streaming replica</span> (TLS, mutual-CA) ──▶ standby node
+</pre>
+  </div>
+</section>
+
+<section id="ha" class="wrap">
+  <div class="sec-head">
+    <h2>High availability &amp; layered backups</h2>
+    <p>Two-node active/standby clustering is built into the installer — not bolted on.</p>
+  </div>
+  <div class="grid">
+    <div class="card"><div class="ico">🔁</div><h3>Primary / standby pair</h3>
+      <p>PostgreSQL streaming replication with enforced TLS and mutual certificate authentication; application data rsynced to the standby every 5 minutes.</p></div>
+    <div class="card"><div class="ico">🔑</div><h3>One-paste cluster join</h3>
+      <p>The primary generates a single join key at install time; paste it on the secondary and replication, shared secrets and node certificates configure themselves.</p></div>
+    <div class="card"><div class="ico">🧯</div><h3>Defense-in-depth backups</h3>
+      <p>Live database, portable backup bundles, git-versioned device configs and an external SFTP backup server — four independent copies across failure domains.</p></div>
+  </div>
+</section>
+
+<section id="install" class="wrap">
+  <div class="sec-head">
+    <h2>Installation</h2>
+    <p>One interactive installer, two modes. Debian 12, Python 3.11, PostgreSQL 15 — everything else is handled for you.</p>
+  </div>
+  <div class="install-grid">
+    <div class="card">
+      <span class="tag tag-blue">Online</span>
+      <h3>Connected install</h3>
+      <p>Fetches OS packages and Python wheels as it goes. Prompts for IP, port, admin password and standalone / cluster mode.</p>
+      <div class="code">
+        <span class="c"># as root on a fresh Debian 12 host</span><br>
+        ./install-ofortmaut.sh
+      </div>
+    </div>
+    <div class="card">
+      <span class="tag tag-vio">Offline</span>
+      <h3>Air-gapped install</h3>
+      <p>A self-contained bundle — all .deb packages, Python wheels and the application — for hosts with no internet access. Auto-detected when <code>bundle/</code> is present.</p>
+      <div class="code">
+        tar xzf ofortmaut-offline-&lt;ver&gt;-debian12-amd64.tar.gz<br>
+        cd ofortmaut-offline &amp;&amp; ./install-ofortmaut.sh
+      </div>
+    </div>
+  </div>
+  <ul class="checks" style="max-width:640px;margin-inline:auto;">
+    <li>Checks required packages, installs what's missing, warns on outdated versions</li>
+    <li>Standalone or two-node cluster — the secondary joins with a single pasted key</li>
+    <li>Each node mints its own TLS certificate during installation</li>
+    <li>Ships with a hardening guide and a granular sudoers policy for change approval</li>
+  </ul>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p><b>OFortMAut</b> · Open Fortinet Management Automation Tool</p>
+    <p style="margin-top:6px;">© 2026 Vision EBC · All rights reserved</p>
+  </div>
+</footer>
+
+</body>
+</html>

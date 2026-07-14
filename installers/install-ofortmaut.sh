@@ -104,7 +104,9 @@ pkg_install() {  # pkg_install <pkg...> → instala desde los mirrors de la dist
         apt)     export DEBIAN_FRONTEND=noninteractive
                  apt-get update -qq >>"$INSTALL_LOG" 2>&1
                  apt-get install -y -qq "$@" >>"$INSTALL_LOG" 2>&1 ;;
-        dnf)     dnf install -y -q "$@" >>"$INSTALL_LOG" 2>&1 ;;
+        # --allowerasing: EL9 minimal trae curl-minimal, que conflictúa con
+        # curl completo — dnf debe poder hacer el swap.
+        dnf)     dnf install -y -q --allowerasing "$@" >>"$INSTALL_LOG" 2>&1 ;;
         yum)     yum install -y -q "$@" >>"$INSTALL_LOG" 2>&1 ;;
         zypper)  zypper --non-interactive --quiet install "$@" >>"$INSTALL_LOG" 2>&1 ;;
         pacman)  pacman -Sy --noconfirm --needed "$@" >>"$INSTALL_LOG" 2>&1 ;;
@@ -288,6 +290,7 @@ if [ ${#MISSING[@]} -gt 0 ]; then
                 --repofrompath="ofortmaut-bundle,file://$BUNDLE_DIR/rpms" \
                 --setopt=ofortmaut-bundle.gpgcheck=0 \
                 --setopt=install_weak_deps=False \
+                --allowerasing \
                 install "${REQUIRED_PKGS[@]}" >>"$INSTALL_LOG" 2>&1 \
                 || die "Fallo instalando rpms del bundle (revisa $INSTALL_LOG)"
             # Utilería SELinux (semanage) — best-effort, igual que en online

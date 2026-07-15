@@ -39,3 +39,27 @@ contribution, under other terms.
 - Keep changes minimal and focused; match the surrounding style.
 - Never commit secrets, `.env`, or real device data. The pipeline will
   reject a publish that contains them, but do not rely on it.
+
+## Developer Certificate of Origin (DCO)
+
+To keep the project's provenance clean, every contribution must be signed
+off under the [Developer Certificate of Origin](https://developercertificate.org/)
+(DCO 1.1). Signing off certifies that you wrote the change (or otherwise have
+the right to submit it) and that you agree to license it under the Elastic
+License 2.0 on the terms above.
+
+Add a `Signed-off-by` trailer to each commit using your real name and email:
+
+    Signed-off-by: Jane Doe <jane@example.com>
+
+The easy way is to let git add it automatically:
+
+    git commit -s -m "your message"
+
+Because this public repo is a sanitized, force-updated mirror (see above),
+the sign-off requirement applies to the change as it is re-applied upstream:
+contributions we adopt are committed upstream carrying your `Signed-off-by`
+(with attribution in the changelog). Unsigned contributions can still be
+read and discussed, but cannot be merged until the sign-off is provided.
+
+Full DCO text: <https://developercertificate.org/>

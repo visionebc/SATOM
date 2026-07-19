@@ -5,8 +5,8 @@ manual failover.
 
 All reads are local (the app's own Postgres) — a page load never touches a
 FortiWeb. The promote WRITE is an ENQUEUE only: the privileged
-``ofortmaut-updater`` root runner performs the actual ``pg_ctlcluster
-promote`` (via ``deploy/ofortmaut-promote.sh``), so the unprivileged web worker never
+``satom-updater`` root runner performs the actual ``pg_ctlcluster
+promote`` (via ``deploy/satom-promote.sh``), so the unprivileged web worker never
 needs privilege. Automatic failover is deliberately NOT wired — with two
 standalone Postgres hosts and no quorum, an auto-promote would invite
 split-brain; promotion is always an explicit, confirmed operator action.
@@ -21,10 +21,10 @@ from pathlib import Path
 
 from . import self_update as su
 
-APP_DIR = Path(os.environ.get("FM_APP_DIR", "/opt/ofortmaut"))
+APP_DIR = Path(os.environ.get("FM_APP_DIR", "/opt/satom"))
 REQ_DIR = APP_DIR / "data" / "update-requests"
 STA_DIR = APP_DIR / "data" / "update-status"
-SCHED_UNIT = "ofortmaut-scheduler.service"
+SCHED_UNIT = "satom-scheduler.service"
 
 # The health endpoint a load balancer should probe to route only to the
 # read-write primary (200 = primary, 503 = standby). Wired in app/__init__.py.
@@ -165,7 +165,7 @@ def promote_eligible() -> bool:
 
 def request_promote(by: str) -> str:
     """Enqueue a guarded failover. The privileged root runner picks this up,
-    runs ``deploy/ofortmaut-promote.sh`` (pg promote + start app), and writes a status
+    runs ``deploy/satom-promote.sh`` (pg promote + start app), and writes a status
     JSON the UI polls. Returns the request uid."""
     REQ_DIR.mkdir(parents=True, exist_ok=True)
     uid = "promote-" + datetime.utcnow().strftime("%Y%m%d-%H%M%S")

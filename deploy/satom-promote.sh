@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ofortmaut-promote.sh — guarded MANUAL failover for the OFortMAuT HA pair.
+# satom-promote.sh — guarded MANUAL failover for the SATOM HA pair.
 #
 # Promotes THIS node's Postgres standby to a read-write primary and brings the
 # web app up. Invoked ONLY by the privileged updater runner
@@ -14,11 +14,11 @@
 set -uo pipefail
 
 PGVER="${FM_PGVER:-15}"
-SERVICE="${FM_SERVICE:-ofortmaut.service}"
-SCHED="${FM_SCHED:-ofortmaut-scheduler.service}"
+SERVICE="${FM_SERVICE:-satom.service}"
+SCHED="${FM_SCHED:-satom-scheduler.service}"
 HEALTH="${FM_HEALTH_URL:-http://127.0.0.1:8000/healthz}"
 
-log() { echo "[ofortmaut-promote] $*"; }
+log() { echo "[satom-promote] $*"; }
 
 # 0. Refuse unless we really are a standby (idempotent / anti-footgun).
 inrec="$(runuser -u postgres -- psql -tAc 'SELECT pg_is_in_recovery()' 2>/dev/null | tr -d '[:space:]')"

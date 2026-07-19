@@ -320,7 +320,7 @@ def radius_authenticate(cfg: dict, username: str, password: str) -> tuple[bool, 
         client = _radius_client(cfg)
         req = client.CreateAuthPacket(code=1, User_Name=username)
         req["User-Password"] = req.PwCrypt(password)
-        nas_id = cfg.get("nas_id") or "ofortmaut"
+        nas_id = cfg.get("nas_id") or "satom"
         try:
             req["NAS-Identifier"] = nas_id
         except Exception:  # noqa: BLE001 — optional attribute

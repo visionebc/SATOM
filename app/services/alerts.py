@@ -1,6 +1,6 @@
 """Proactive alert engine — the *push* side of observability.
 
-Everything else in OFortMAuT is *pull*: you open the Monitoring / System Backup /
+Everything else in SATOM is *pull*: you open the Monitoring / System Backup /
 Node TLS page and read a live badge. This engine flips that around — it evaluates
 a handful of cheap health checks on a timer and, when one crosses a threshold,
 *pushes* a notice out through email (``email_service``) and the in-app bell
@@ -59,7 +59,7 @@ DEFAULTS = {
     K_DRIFT_WINDOW_MIN: "90",
 }
 
-_REPO_ROOT = "/opt/ofortmaut"
+_REPO_ROOT = "/opt/satom"
 
 SEV_CRITICAL = "critical"
 SEV_WARNING = "warning"
@@ -384,7 +384,7 @@ def _check_drift() -> list[dict]:
     versions of its source-of-truth (``reports/<slug>/_config.json``) with
     volatile fields normalised out. A surviving change means the live device
     config diverged from the prior baseline — typically a device-side (CLI/GUI)
-    edit made outside OFortMAuT. Only fresh drift (newer than the window) alerts,
+    edit made outside SATOM. Only fresh drift (newer than the window) alerts,
     keyed by commit sha so each distinct drift fires once. Near-zero cost: reads
     git history, never touches the appliance. Noisy devices (rotating fields that
     survive normalisation) can be listed in ``alerts.drift_exclude``."""
@@ -440,7 +440,7 @@ def _check_drift() -> list[dict]:
             "detail": (f"{a.kind} '{slug}' changed in the source-of-truth "
                        f"(commit {new_sha[:8]}, {int(age_min)}m ago) after volatile "
                        f"fields were normalised out. If nobody edited it via "
-                       f"OFortMAuT, a device-side (CLI/GUI) change has drifted from "
+                       f"SATOM, a device-side (CLI/GUI) change has drifted from "
                        f"the baseline — review the A→B diff under reports/{slug}.")})
     return findings
 
@@ -487,7 +487,7 @@ def _admin_ids() -> list[int]:
 
 def _email_body(new_findings: list[dict]) -> tuple[str, str]:
     node = _node()
-    lines = [f"OFortMAuT alerts from {node} — {len(new_findings)} new:", ""]
+    lines = [f"SATOM alerts from {node} — {len(new_findings)} new:", ""]
     for f in new_findings:
         lines.append(f"[{f['severity'].upper()}] {f['title']}")
         lines.append(f"    {f['detail']}")
@@ -498,7 +498,7 @@ def _email_body(new_findings: list[dict]) -> tuple[str, str]:
         f"<td style='padding:4px 8px'><b>{f['title']}</b><br>"
         f"<span style='color:#555'>{f['detail']}</span></td></tr>"
         for f in new_findings)
-    html = (f"<h3>OFortMAuT alerts — {node}</h3>"
+    html = (f"<h3>SATOM alerts — {node}</h3>"
             f"<table style='border-collapse:collapse'>{rows}</table>")
     return text, html
 
@@ -545,7 +545,7 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
     if is_enabled():
         to = recipients()
         if to:
-            subject = (f"[OFortMAuT/{_node()}] {len(fresh)} alert(s) — "
+            subject = (f"[SATOM/{_node()}] {len(fresh)} alert(s) — "
                        f"{fresh[0]['title']}")
             text, html = _email_body(fresh)
             result["email"] = email_service.send_email(to, subject, text, html=html)

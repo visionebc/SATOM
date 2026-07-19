@@ -12,7 +12,7 @@ belt-and-suspenders and its guarantees are pinned by
   * ``--unshare-all``  -> new user/pid/net/ipc/uts/cgroup namespaces. No network
                           namespace = no socket can leave the box (no exfil).
   * only ``/usr`` (+ the usr-merge symlinks), ``/proc``, ``/dev`` and a fresh
-                          ``tmpfs /tmp`` are mounted. ``/opt/ofortmaut``
+                          ``tmpfs /tmp`` are mounted. ``/opt/satom``
                           (the ``.env``, the DB, the keyring, the code) is NOT
                           bound, so a script literally cannot open a secret or
                           write app state.

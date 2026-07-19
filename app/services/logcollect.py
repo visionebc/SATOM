@@ -72,7 +72,7 @@ DIAGNOSTIC_COMMANDS: list[str] = [
 
 
 def _diag_dir() -> Path:
-    """``/opt/ofortmaut/data/diagnostics`` — beside the app package.
+    """``/opt/satom/data/diagnostics`` — beside the app package.
 
     ``FORTINET_DIAG_DIR`` overrides it (tests point it at a tmp dir so the
     status endpoint never reads the production progress file).

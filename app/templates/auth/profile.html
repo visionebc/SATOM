@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Profile - {{ product.title if product else 'OFortMAuT' }}{% endblock %}
+{% block title %}Profile - {{ product.title if product else 'SATOM' }}{% endblock %}
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
@@ -76,7 +76,7 @@
   <div class="col-lg-5">
     <div class="fw-card">
       <div class="fw-card-header">
-        <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>About {{ product.title if product else 'OFortMAuT' }}</span>
+        <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>About {{ product.title if product else 'SATOM' }}</span>
       </div>
       <div class="fw-card-body">
         <div class="d-flex align-items-center gap-3 mb-4">
@@ -84,7 +84,7 @@
                style="width:48px;height:48px;border-radius:10px;">
           <div>
             <h5 class="mb-0" style="font-weight:700;">{{ settings.app_name if settings else product.title }}</h5>
-            <div class="text-muted" style="font-size:12px; font-weight:500; letter-spacing:.2px;">Open Fortinet Management Automation Tool</div>
+            <div class="text-muted" style="font-size:12px; font-weight:500; letter-spacing:.2px;">System Automation & Task Orchestration Manager</div>
             <span class="fw-badge fw-badge-primary">v1.0</span>
           </div>
         </div>
@@ -94,7 +94,7 @@
         </p>
         <dl class="row" style="font-size:13px;">
           <dt class="col-sm-4 text-muted">Repository</dt>
-          <dd class="col-sm-8"><a href="http://192.0.2.53:3000/ofortmaut-dev/ofortmaut" target="_blank">ofortmaut-dev/ofortmaut</a></dd>
+          <dd class="col-sm-8"><a href="http://192.0.2.53:3000/satom-dev/satom" target="_blank">satom-dev/satom</a></dd>
           <dt class="col-sm-4 text-muted">RBAC Roles</dt>
           <dd class="col-sm-8">readonly, operator, admin</dd>
           <dt class="col-sm-4 text-muted">API Target</dt>

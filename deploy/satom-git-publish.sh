@@ -2,7 +2,7 @@
 # Hourly auto-publish of the reports/ per-device JSON tree to git (Gitea) —
 # the off-box VERSIONED source-of-truth copy (System Backup & Restore, copy 3).
 #
-# Mirror image of ofortmaut-ha-datasync.sh: only the PRIMARY publishes (a standby's
+# Mirror image of satom-ha-datasync.sh: only the PRIMARY publishes (a standby's
 # reports/ is a synced copy — publishing from it would race the primary), and
 # standalone-mode nodes publish too (they are their own primary). After a
 # promote this activates on the new primary automatically via the role guard.
@@ -10,7 +10,7 @@
 # Runs git as the app user (fortinet); origin already embeds the Gitea token
 # (same as the in-app publish button), so a plain push authenticates.
 set -u
-APP=/opt/ofortmaut
+APP=/opt/satom
 
 # Only the PRIMARY publishes (pg_is_in_recovery: f=primary, t=standby).
 ROLE=$(cd /tmp && runuser -u postgres -- psql -d fortinet_mgr -tAc \

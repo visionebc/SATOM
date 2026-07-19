@@ -1,0 +1,7 @@
+[Unit]
+Description=SATOM proactive alert engine (cert/device/git/backup -> email + bell)
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/satom/deploy/satom-alerts.sh

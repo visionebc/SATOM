@@ -91,12 +91,12 @@
         <button type="submit" class="btn btn-sm btn-outline-primary"{% if ha.this_role != 'primary' %} disabled title="Change automation on the PRIMARY node — this node's database is read-only"{% endif %}>Save</button>
       </div>
       <div class="col-12 small text-muted">
-        <strong>Auto</strong>: the <code>ofortmaut-reconciler</code> service (both nodes) checks
+        <strong>Auto</strong>: the <code>satom-reconciler</code> service (both nodes) checks
         <code>origin/{{ branch }}</code> every 60s and, when behind, drives the staged rollout —
         the STANDBY updates and health-validates first, then the PRIMARY. A failed step auto-rolls-back
         and the reconciler backs off. <strong>Manual</strong>: the reconciler only observes and logs the
         drift; you apply with the buttons above. Every tick is written to
-        <code>journalctl -u ofortmaut-reconciler</code>. Replicated setting — set it on the primary.
+        <code>journalctl -u satom-reconciler</code>. Replicated setting — set it on the primary.
       </div>
     </form>
     <hr class="my-2">

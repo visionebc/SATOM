@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# install.sh — deploy OFortMAuT Web on the target LXC
+# install.sh — deploy SATOM Web on the target LXC
 set -euo pipefail
 
-APP_DIR="/opt/ofortmaut"
-LOG_DIR="/var/log/ofortmaut"
-SERVICE_NAME="ofortmaut"
+APP_DIR="/opt/satom"
+LOG_DIR="/var/log/satom"
+SERVICE_NAME="satom"
 
 echo "==> Changing to application directory: $APP_DIR"
 cd "$APP_DIR"
@@ -47,7 +47,7 @@ FLASK_APP=wsgi.py venv/bin/flask create-db
 
 # 6. Install and enable systemd service
 echo "==> Installing systemd service"
-cp deploy/ofortmaut.service /etc/systemd/system/"${SERVICE_NAME}".service
+cp deploy/satom.service /etc/systemd/system/"${SERVICE_NAME}".service
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 systemctl restart "$SERVICE_NAME"

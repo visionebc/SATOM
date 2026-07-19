@@ -1,5 +1,5 @@
 [Unit]
-Description=OFortMAuT hourly git publish of the reports/ source of truth
+Description=SATOM hourly git publish of the reports/ source of truth
 [Timer]
 OnBootSec=10min
 OnUnitActiveSec=1h

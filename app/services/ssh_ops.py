@@ -46,7 +46,7 @@ class ReadOnlyViolation(Exception):
 
 
 def _data_dir() -> Path:
-    """``/opt/ofortmaut/data`` — beside the app package (parents[2])."""
+    """``/opt/satom/data`` — beside the app package (parents[2])."""
     d = Path(__file__).resolve().parents[2] / "data"
     try:
         d.mkdir(parents=True, exist_ok=True)

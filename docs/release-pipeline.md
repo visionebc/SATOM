@@ -1,6 +1,6 @@
 # Release & publication pipeline
 
-OFortMAuT is developed privately and published publicly through an
+SATOM is developed privately and published publicly through an
 automated, deterministic gate. Nothing reaches the public mirror by hand.
 This document is the source of truth for that process and is intentionally
 public so users can see exactly how releases are produced and vetted.
@@ -9,7 +9,7 @@ public so users can see exactly how releases are produced and vetted.
    INTERNAL (private)                    GATE                     PUBLIC
   ┌──────────────────┐   ┌───────────────────────────────┐   ┌──────────────┐
   │ Gitea dev repo   │──▶│ 1. Sanitize (git-filter-repo) │──▶│ Gitea prod   │
-  │ ofortmaut-dev    │   │ 2. Secret scan (gitleaks-like) │   │ GitHub mirror│
+  │ satom-dev    │   │ 2. Secret scan (gitleaks-like) │   │ GitHub mirror│
   │ (full history)   │   │ 3. Internal AI vuln audit      │   │ GitHub Pages │
   └──────────────────┘   └───────────────────────────────┘   └──────────────┘
 ```

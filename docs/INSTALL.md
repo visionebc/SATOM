@@ -1,6 +1,6 @@
-# OFortMAut — Manual de instalación
+# SATOM — Manual de instalación
 
-**Producto:** OFortMAut (Open Fortinet Management Automation Tool) — consola web de
+**Producto:** SATOM (System Automation & Task Orchestration Manager) — consola web de
 gestión/automatización para FortiWeb, FortiADC y FortiAnalyzer.
 **Versión del manual:** 1.0 · **Destino:** Debian 12 (bookworm), amd64.
 
@@ -39,20 +39,20 @@ revertirlo.
 
 ### 2.1 Online (con red)
 ```bash
-sudo bash install-ofortmaut.sh
+sudo bash install-satom.sh
 ```
 Descarga paquetes de los mirrors y clona el repo de producción
-(`https://git.example.net/ofortmaut-prod/OFortMAut.git`, configurable en el prompt).
+(`https://git.example.net/satom-prod/SATOM.git`, configurable en el prompt).
 
 ### 2.2 Offline (sin red)
 ```bash
 # Debian 12
-tar xzf ofortmaut-offline-<ver>-debian12-amd64.tar.gz
+tar xzf satom-offline-<ver>-debian12-amd64.tar.gz
 # RHEL / Rocky / AlmaLinux 9
-tar xzf ofortmaut-offline-<ver>-rhel9-x86_64.tar.gz
+tar xzf satom-offline-<ver>-rhel9-x86_64.tar.gz
 
-cd ofortmaut-installer
-sudo bash install-ofortmaut.sh        # detecta bundle/ y no toca la red
+cd satom-installer
+sudo bash install-satom.sh        # detecta bundle/ y no toca la red
 ```
 Hay un bundle POR FAMILIA de distro — el instalador rechaza un bundle de la
 familia equivocada con un mensaje claro:
@@ -105,7 +105,7 @@ configuración+servicios → comprobación de salud.
    - programa la sincronización de `data/` (bundles, vault, estados) cada 5 min
      vía rsync/SSH con llave dedicada;
    - su scheduler queda **en espera**: solo se activa si el nodo se promueve
-     (`deploy/ofortmaut-promote.sh`), de modo que dos nodos jamás disparan acciones
+     (`deploy/satom-promote.sh`), de modo que dos nodos jamás disparan acciones
      a la vez.
 
 > ⚠️ **La clave de unión es un secreto de alto valor** (contiene la CA y las
@@ -122,7 +122,7 @@ nginx, certificados). Dos opciones:
 **Opción A (recomendada): sesión root/sudo completa durante la ventana de
 instalación** (~10–20 min por nodo):
 ```bash
-sudo bash install-ofortmaut.sh
+sudo bash install-satom.sh
 ```
 
 **Opción B: regla sudoers granular** si sistemas prefiere acotar. El instalador
@@ -130,24 +130,24 @@ ejecuta exactamente estas familias de comandos como root:
 
 ```
 apt-get update / apt-get install / dpkg -i          (paquetería)
-git clone | tar -x                                   (código en /opt/ofortmaut)
-python3 -m venv | pip install                        (dentro de /opt/ofortmaut)
+git clone | tar -x                                   (código en /opt/satom)
+python3 -m venv | pip install                        (dentro de /opt/satom)
 runuser -u postgres -- psql|createdb|pg_basebackup   (base de datos)
 openssl req|x509 | ssh-keygen                        (certificados y llaves)
 cp a /etc/systemd/system + systemctl daemon-reload/enable/start
-escritura de /etc/nginx/sites-available/ofortmaut.conf + nginx -t + reload
+escritura de /etc/nginx/sites-available/satom.conf + nginx -t + reload
 escritura de /etc/postgresql/<v>/main/conf.d + pg_hba.conf (solo cluster)
 ```
 
 Regla sudoers de ejemplo para un usuario instalador `ofminstall`:
 ```
-ofminstall ALL=(root) NOPASSWD: /usr/bin/bash /opt/staging/install-ofortmaut.sh
+ofminstall ALL=(root) NOPASSWD: /usr/bin/bash /opt/staging/install-satom.sh
 ```
 (entregándole el script por ruta fija; auditar con `sudo journalctl` y el log
-`/var/log/ofortmaut-install.log` que el instalador escribe siempre).
+`/var/log/satom-install.log` que el instalador escribe siempre).
 
 **Lo que la aplicación necesita en runtime** (queda configurado): servicios
-systemd `ofortmaut*`, `fm-*`; usuario de BD `fortinet` (local);
+systemd `satom*`, `fm-*`; usuario de BD `fortinet` (local);
 en cluster el rol de réplica `fm_repl` y SSH root→root entre nodos con la llave
 dedicada `id_ha_rsync` (se puede restringir con `command=` en authorized_keys).
 
@@ -157,8 +157,8 @@ dedicada `id_ha_rsync` (se puede restringir con `command=` en authorized_keys).
 
 - Consola: `https://<IP>:<puerto>/` — usuario `admin` + la clave elegida.
 - Salud: `curl -k https://<IP>:<puerto>/healthz` → `200`.
-- Servicios: `systemctl status ofortmaut ofortmaut-scheduler`.
-- Logs: `/var/log/ofortmaut/` y `journalctl -u ofortmaut`.
+- Servicios: `systemctl status satom satom-scheduler`.
+- Logs: `/var/log/satom/` y `journalctl -u satom`.
 
 ### Hardening obligatorio post-instalación
 1. **Cambiar la clave de root** del sistema operativo si se entregó una
@@ -170,13 +170,13 @@ dedicada `id_ha_rsync` (se puede restringir con `command=` en authorized_keys).
 
 ### Desinstalar / revertir
 ```bash
-systemctl disable --now ofortmaut ofortmaut-scheduler \
-  ofortmaut-updater.path ofortmaut-cert-renew.timer ofortmaut-ha-datasync.timer 2>/dev/null
-rm -f /etc/systemd/system/ofortmaut* /etc/systemd/system/fm-*
-rm -f /etc/nginx/sites-enabled/ofortmaut.conf /etc/nginx/sites-available/ofortmaut.conf
+systemctl disable --now satom satom-scheduler \
+  satom-updater.path satom-cert-renew.timer satom-ha-datasync.timer 2>/dev/null
+rm -f /etc/systemd/system/satom* /etc/systemd/system/fm-*
+rm -f /etc/nginx/sites-enabled/satom.conf /etc/nginx/sites-available/satom.conf
 systemctl daemon-reload && systemctl reload nginx
 runuser -u postgres -- dropdb fortinet_mgr; runuser -u postgres -- dropuser fortinet
-rm -rf /opt/ofortmaut /var/log/ofortmaut
+rm -rf /opt/satom /var/log/satom
 ```
 Los paquetes de sistema (postgres, nginx…) se dejan instalados a propósito;
 si hay que retirarlos lo decide sistemas (`apt-get remove`).
@@ -185,8 +185,8 @@ si hay que retirarlos lo decide sistemas (`apt-get remove`).
 
 ## 7. Soporte
 
-- Log de instalación: `/var/log/ofortmaut-install.log` (siempre se escribe).
-- Repositorio de producción: `ofortmaut-prod/OFortMAut` (Gitea interno).
-- El catálogo de aplicaciones (apps.example.net → OFortMAut → plataforma web)
+- Log de instalación: `/var/log/satom-install.log` (siempre se escribe).
+- Repositorio de producción: `satom-prod/SATOM` (Gitea interno).
+- El catálogo de aplicaciones (apps.example.net → SATOM → plataforma web)
   publica este instalador y el bundle offline, y tiene los botones
   **Sync Prod with Git/GitHub** para promover código de desarrollo a producción.

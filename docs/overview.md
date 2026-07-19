@@ -1,4 +1,4 @@
-# OFortMAuT — Project Overview & Operational Rules
+# SATOM — Project Overview & Operational Rules
 
 > The web platform for managing **FortiWeb** appliances over their REST API and
 > SSH/CLI. This is the authoritative in-app overview: what the app is, where it
@@ -51,14 +51,14 @@ Browser ──▶ edge nginx (LXC 241 @ 192.0.2.40)
 
 ## 3. Deployment
 
-- **Host:** hypervisor06 (192.0.2.34), **LXC 248**, `/opt/ofortmaut`. Container IP
+- **Host:** hypervisor06 (192.0.2.34), **LXC 248**, `/opt/satom`. Container IP
   `192.0.2.248`. Reach: `ssh root@192.0.2.34 "pct exec 248 -- <cmd>"`.
-- **Service:** `systemctl restart ofortmaut.service` after any code or
-  template change. A scheduler sidecar (`ofortmaut-scheduler.service`)
+- **Service:** `systemctl restart satom.service` after any code or
+  template change. A scheduler sidecar (`satom-scheduler.service`)
   fires scheduled actions.
 - **Runs as** the unprivileged `fortinet` user; hardened systemd unit
   (`NoNewPrivileges`, `ProtectSystem=strict`, `PrivateTmp`).
-- **Config/secrets:** `EnvironmentFile=/opt/ofortmaut/.env` holds
+- **Config/secrets:** `EnvironmentFile=/opt/satom/.env` holds
   `SECRET_KEY`, `FERNET_KEY`, the DB URL, `RATELIMIT_STORAGE_URI`,
   `TRUSTED_PROXIES`. `.env` is git-ignored and `root:fortinet 640`.
 - **Backups:** nightly `pg_dump` → `/var/backups/fortinet-db` (14-day retention).

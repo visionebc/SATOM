@@ -3,11 +3,11 @@
 # DirectoryNotEmpty re-fires if the runner leaves anything queued, so requests
 # are drained one after another.
 [Unit]
-Description=Watch for OFortMAuT self-update requests
+Description=Watch for SATOM self-update requests
 
 [Path]
-DirectoryNotEmpty=/opt/ofortmaut/data/update-requests
-Unit=ofortmaut-updater.service
+DirectoryNotEmpty=/opt/satom/data/update-requests
+Unit=satom-updater.service
 
 [Install]
 WantedBy=multi-user.target

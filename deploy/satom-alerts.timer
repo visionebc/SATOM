@@ -1,5 +1,5 @@
 [Unit]
-Description=Run the OFortMAut alert engine every 15 minutes
+Description=Run the SATOM alert engine every 15 minutes
 
 [Timer]
 OnBootSec=3min

@@ -3,7 +3,7 @@
 The Fortinet appliances push their own scheduled config backups here
 (``config system backup`` → SFTP, e.g. fw6 daily 02:00), and the firmware
 ``.out`` binaries referenced by the firmware SoT repo live here too. This
-module is OFortMAuT's read side: verify the box is reachable, inventory what
+module is SATOM's read side: verify the box is reachable, inventory what
 the devices have pushed, and pull a firmware image into the app's local
 firmware store (``FirmwareImage``) so a restore/downgrade can be driven from
 the console without re-uploading by hand.
@@ -427,7 +427,7 @@ def write_manifest() -> dict:
             "created_at": (r.created_at.isoformat() + "Z") if r.created_at else "",
         } for r in rows]
         doc = {
-            "schema": "ofortmaut.firmware-manifest/1",
+            "schema": "satom.firmware-manifest/1",
             "generated_at": datetime.utcnow().isoformat() + "Z",
             "count": len(images),
             "images": images,
@@ -451,7 +451,7 @@ def read_manifest() -> dict:
         with open(path, encoding="utf-8") as fh:
             return json.load(fh)
     except Exception:  # noqa: BLE001
-        return {"schema": "ofortmaut.firmware-manifest/1", "count": 0, "images": []}
+        return {"schema": "satom.firmware-manifest/1", "count": 0, "images": []}
 
 
 def pull_firmware(filename: str, by: str = "") -> dict:
@@ -508,7 +508,7 @@ def pull_firmware(filename: str, by: str = "") -> dict:
 #
 # The device configs live on backup-server because the appliances push them; the
 # firmware ``.out`` images live there too. The one copy that was NOT off-boxed
-# was OFortMAuT's OWN backup (the Postgres pg_dump + reports/ bundle) — it only
+# was SATOM's OWN backup (the Postgres pg_dump + reports/ bundle) — it only
 # existed on the primary and its rsync mirror on the standby (same two racks).
 # ``push_bundle`` closes that: it SFTP-puts a system bundle into the server's
 # ``system_path`` so the DB backup lives in a third failure domain (hypervisor04),

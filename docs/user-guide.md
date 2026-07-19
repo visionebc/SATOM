@@ -1,4 +1,4 @@
-# OFortMAuT — User Guide
+# SATOM — User Guide
 
 > **Audience:** operators and network/security engineers who use the web UI to
 > manage FortiWeb and FortiADC appliances day to day. No knowledge of the

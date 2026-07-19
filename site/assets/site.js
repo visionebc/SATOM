@@ -1,4 +1,4 @@
-/* OFortMAut site — progressive enhancement (no external deps) */
+/* SATOM site — progressive enhancement (no external deps) */
 (function () {
   'use strict';
 

@@ -1,5 +1,5 @@
 /* ============================================================
-   OFortMAuT — api.js
+   SATOM — api.js
    Centralized fetch wrapper + per-feature API helpers
    ============================================================ */
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# install-ofortmaut.sh — Instalador de OFortMAut (Open Fortinet Management
+# install-satom.sh — Instalador de SATOM (Open Fortinet Management
 # Automation Tool) — GENÉRICO para distribuciones Linux con systemd.
 #
 #   Familias soportadas (detección automática del gestor de paquetes):
@@ -44,15 +44,15 @@
 set -euo pipefail
 
 VERSION="1.0"
-APP_DIR="/opt/ofortmaut"
-LOG_DIR="/var/log/ofortmaut"
+APP_DIR="/opt/satom"
+LOG_DIR="/var/log/satom"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUNDLE_DIR="${SCRIPT_DIR}/bundle"
-GIT_URL_DEFAULT="https://git.example.net/ofortmaut-prod/OFortMAut.git"
+GIT_URL_DEFAULT="https://git.example.net/satom-prod/SATOM.git"
 DB_NAME="fortinet_mgr"
 DB_USER="fortinet"
 REPL_USER="fm_repl"
-INSTALL_LOG="/var/log/ofortmaut-install.log"
+INSTALL_LOG="/var/log/satom-install.log"
 
 c_bold=$'\033[1m'; c_grn=$'\033[32m'; c_ylw=$'\033[33m'; c_red=$'\033[31m'; c_off=$'\033[0m'
 say()  { echo "${c_bold}==>${c_off} $*" | tee -a "$INSTALL_LOG"; }
@@ -142,7 +142,7 @@ fi
 
 echo ""
 echo "┌──────────────────────────────────────────────────────────┐"
-echo "│  OFortMAut ${VERSION} — Instalador $( [ $OFFLINE -eq 1 ] && echo '(OFFLINE, bundle local)' || echo '(ONLINE)' )"
+echo "│  SATOM ${VERSION} — Instalador $( [ $OFFLINE -eq 1 ] && echo '(OFFLINE, bundle local)' || echo '(ONLINE)' )"
 echo "└──────────────────────────────────────────────────────────┘"
 echo ""
 
@@ -287,16 +287,16 @@ if [ ${#MISSING[@]} -gt 0 ]; then
             # build) — dnf resuelve SOLO lo necesario, sin tocar el resto
             # del sistema y sin red.
             "$PKG_MGR" -y --disablerepo='*' \
-                --repofrompath="ofortmaut-bundle,file://$BUNDLE_DIR/rpms" \
-                --setopt=ofortmaut-bundle.gpgcheck=0 \
+                --repofrompath="satom-bundle,file://$BUNDLE_DIR/rpms" \
+                --setopt=satom-bundle.gpgcheck=0 \
                 --setopt=install_weak_deps=False \
                 --allowerasing \
                 install "${REQUIRED_PKGS[@]}" >>"$INSTALL_LOG" 2>&1 \
                 || die "Fallo instalando rpms del bundle (revisa $INSTALL_LOG)"
             # Utilería SELinux (semanage) — best-effort, igual que en online
             "$PKG_MGR" -y --disablerepo='*' \
-                --repofrompath="ofortmaut-bundle,file://$BUNDLE_DIR/rpms" \
-                --setopt=ofortmaut-bundle.gpgcheck=0 \
+                --repofrompath="satom-bundle,file://$BUNDLE_DIR/rpms" \
+                --setopt=satom-bundle.gpgcheck=0 \
                 --setopt=install_weak_deps=False \
                 install policycoreutils-python-utils >>"$INSTALL_LOG" 2>&1 || true
         fi
@@ -390,7 +390,7 @@ else
     if [ ! -f "$PKI/internal-ca/ca.key" ]; then
         openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
             -keyout "$PKI/internal-ca/ca.key" -out "$PKI/internal-ca/ca.crt" \
-            -subj "/CN=OFortMAut Internal CA/O=${HOSTN}" >>"$INSTALL_LOG" 2>&1
+            -subj "/CN=SATOM Internal CA/O=${HOSTN}" >>"$INSTALL_LOG" 2>&1
         ok "CA interna creada (válida 10 años)"
     fi
 fi
@@ -434,7 +434,7 @@ if [ "$ROLE" != "secondary" ]; then
 fi
 
 cat > "$APP_DIR/.env" <<ENV
-# Generado por install-ofortmaut.sh — $(date -u +%Y-%m-%dT%H:%M:%SZ)
+# Generado por install-satom.sh — $(date -u +%Y-%m-%dT%H:%M:%SZ)
 SECRET_KEY=${SECRET_KEY}
 FERNET_KEY=${FERNET_KEY}
 SQLALCHEMY_DATABASE_URI=postgresql+psycopg://${DB_USER}:${DB_PASS}@127.0.0.1/${DB_NAME}
@@ -450,7 +450,7 @@ if [ "$ROLE" = "primary" ]; then
     runuser -u postgres -- psql -qc "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='${REPL_USER}') THEN CREATE ROLE ${REPL_USER} REPLICATION LOGIN PASSWORD '${REPL_PASS}'; ELSE ALTER ROLE ${REPL_USER} REPLICATION LOGIN PASSWORD '${REPL_PASS}'; END IF; END \$\$;"
     # TLS + réplica en postgresql.conf (idempotente vía conf.d)
     mkdir -p "$PGCONF/conf.d"
-    cat > "$PGCONF/conf.d/ofortmaut.conf" <<PGC
+    cat > "$PGCONF/conf.d/satom.conf" <<PGC
 listen_addresses = '*'
 ssl = on
 ssl_cert_file = '${PGSSL}/server.crt'
@@ -461,9 +461,9 @@ max_wal_senders = 5
 PGC
     grep -q "include_dir = 'conf.d'" "$PGCONF_FILE" || echo "include_dir = 'conf.d'" >> "$PGCONF_FILE"
     # pg_hba: réplica SOLO por TLS con cert de la CA del clúster + scram
-    if ! grep -q "OFORTMAUT-HA" "$PGHBA"; then
+    if ! grep -q "SATOM-HA" "$PGHBA"; then
         cat >> "$PGHBA" <<HBA
-# OFORTMAUT-HA (añadido por install-ofortmaut.sh)
+# SATOM-HA (añadido por install-satom.sh)
 hostssl replication ${REPL_USER} ${SECONDARY_CIDR} scram-sha-256 clientcert=verify-ca
 hostssl ${DB_NAME} ${DB_USER} ${SECONDARY_CIDR} scram-sha-256
 HBA
@@ -473,7 +473,7 @@ HBA
 
     # Llave SSH dedicada para el datasync de data/ (el standby hace PULL)
     if [ ! -f /root/.ssh/id_ha_rsync ]; then
-        ssh-keygen -t ed25519 -N "" -q -f /root/.ssh/id_ha_rsync -C "ofortmaut-ha-datasync"
+        ssh-keygen -t ed25519 -N "" -q -f /root/.ssh/id_ha_rsync -C "satom-ha-datasync"
     fi
     grep -qF "$(cat /root/.ssh/id_ha_rsync.pub)" /root/.ssh/authorized_keys 2>/dev/null \
         || cat /root/.ssh/id_ha_rsync.pub >> /root/.ssh/authorized_keys
@@ -496,7 +496,7 @@ if [ "$ROLE" = "secondary" ]; then
         -d "sslmode=verify-ca sslrootcert=$PGHOME/.postgresql/root.crt sslcert=$PGHOME/.postgresql/postgresql.crt sslkey=$PGHOME/.postgresql/postgresql.key" \
         >>"$INSTALL_LOG" 2>&1 || die "pg_basebackup falló — verifica que el primary permite réplica desde esta IP (revisa $INSTALL_LOG)"
     mkdir -p "$PGCONF/conf.d"
-    cat > "$PGCONF/conf.d/ofortmaut.conf" <<PGC
+    cat > "$PGCONF/conf.d/satom.conf" <<PGC
 listen_addresses = '*'
 ssl = on
 ssl_cert_file = '${PGSSL}/server.crt'
@@ -548,25 +548,25 @@ fi
 
 # systemd units
 say "Instalando servicios systemd"
-for unit in ofortmaut.service ofortmaut-scheduler.service \
-            ofortmaut-updater.path ofortmaut-updater.service \
-            ofortmaut-cert-renew.service ofortmaut-cert-renew.timer; do
+for unit in satom.service satom-scheduler.service \
+            satom-updater.path satom-updater.service \
+            satom-cert-renew.service satom-cert-renew.timer; do
     [ -f "$APP_DIR/deploy/$unit" ] && cp "$APP_DIR/deploy/$unit" /etc/systemd/system/
 done
 # gunicorn SOLO en loopback: nginx termina TLS en ${WEB_PORT}
-sed -i 's#--bind 0\.0\.0\.0:8000#--bind 127.0.0.1:8000#' /etc/systemd/system/ofortmaut.service
+sed -i 's#--bind 0\.0\.0\.0:8000#--bind 127.0.0.1:8000#' /etc/systemd/system/satom.service
 
 if [ "$MODE" = "cluster" ]; then
-    cat > /etc/systemd/system/ofortmaut-ha-datasync.service <<UNIT
+    cat > /etc/systemd/system/satom-ha-datasync.service <<UNIT
 [Unit]
-Description=OFortMAut HA data/ sync (standby pulls from primary)
+Description=SATOM HA data/ sync (standby pulls from primary)
 [Service]
 Type=oneshot
-ExecStart=${APP_DIR}/deploy/ofortmaut-ha-datasync.sh
+ExecStart=${APP_DIR}/deploy/satom-ha-datasync.sh
 UNIT
-    cat > /etc/systemd/system/ofortmaut-ha-datasync.timer <<UNIT
+    cat > /etc/systemd/system/satom-ha-datasync.timer <<UNIT
 [Unit]
-Description=OFortMAut HA data/ sync every 5 min
+Description=SATOM HA data/ sync every 5 min
 [Timer]
 OnBootSec=2min
 OnUnitActiveSec=5min
@@ -576,18 +576,18 @@ UNIT
 fi
 
 systemctl daemon-reload
-systemctl enable --now ofortmaut.service ofortmaut-scheduler.service >>"$INSTALL_LOG" 2>&1
-systemctl enable --now ofortmaut-updater.path >>"$INSTALL_LOG" 2>&1 || true
-systemctl enable --now ofortmaut-cert-renew.timer >>"$INSTALL_LOG" 2>&1 || true
-[ "$MODE" = "cluster" ] && systemctl enable --now ofortmaut-ha-datasync.timer >>"$INSTALL_LOG" 2>&1
+systemctl enable --now satom.service satom-scheduler.service >>"$INSTALL_LOG" 2>&1
+systemctl enable --now satom-updater.path >>"$INSTALL_LOG" 2>&1 || true
+systemctl enable --now satom-cert-renew.timer >>"$INSTALL_LOG" 2>&1 || true
+[ "$MODE" = "cluster" ] && systemctl enable --now satom-ha-datasync.timer >>"$INSTALL_LOG" 2>&1
 
 # nginx: TLS en el puerto elegido con el cert del nodo.
 # Debian/Ubuntu usan sites-available/enabled; el resto de familias conf.d.
 if [ -d /etc/nginx/sites-enabled ]; then
-    NGXCONF=/etc/nginx/sites-available/ofortmaut.conf
+    NGXCONF=/etc/nginx/sites-available/satom.conf
 else
     mkdir -p /etc/nginx/conf.d
-    NGXCONF=/etc/nginx/conf.d/ofortmaut.conf
+    NGXCONF=/etc/nginx/conf.d/satom.conf
     # Arch no incluye conf.d de fábrica — lo enganchamos al bloque http
     grep -qE '^\s*include\s+/etc/nginx/conf\.d/\*\.conf' /etc/nginx/nginx.conf \
         || sed -i '0,/http\s*{/s//&\n    include \/etc\/nginx\/conf.d\/*.conf;/' /etc/nginx/nginx.conf
@@ -611,7 +611,7 @@ server {
 }
 NGX
 if [ -d /etc/nginx/sites-enabled ]; then
-    ln -sf /etc/nginx/sites-available/ofortmaut.conf /etc/nginx/sites-enabled/ofortmaut.conf
+    ln -sf /etc/nginx/sites-available/satom.conf /etc/nginx/sites-enabled/satom.conf
     rm -f /etc/nginx/sites-enabled/default
 fi
 # SELinux (RHEL/Fedora): permitir que nginx haga proxy al gunicorn local y
@@ -646,16 +646,16 @@ done
 if [ "$HEALTH" = ok ]; then
     ok "healthz responde 200 — instalación COMPLETA"
 else
-    warn "healthz no respondió en 30 s — revisa: journalctl -u ofortmaut -n 50"
+    warn "healthz no respondió en 30 s — revisa: journalctl -u satom -n 50"
 fi
 
 echo ""
 echo "┌──────────────────────────────────────────────────────────┐"
-echo "│  OFortMAut instalado                                     │"
+echo "│  SATOM instalado                                     │"
 echo "└──────────────────────────────────────────────────────────┘"
 echo "  Consola web : https://${NODE_IP}:${WEB_PORT}/"
 [ "$ROLE" != "secondary" ] && echo "  Usuario     : admin  (clave: la que definiste)"
-echo "  Servicios   : ofortmaut, ofortmaut-scheduler$( [ "$MODE" = cluster ] && echo ', ofortmaut-ha-datasync.timer' )"
+echo "  Servicios   : satom, satom-scheduler$( [ "$MODE" = cluster ] && echo ', satom-ha-datasync.timer' )"
 echo "  Logs        : ${LOG_DIR}/  ·  instalación: ${INSTALL_LOG}"
 
 if [ "$ROLE" = "primary" ]; then
@@ -697,7 +697,7 @@ if [ "$ROLE" = "secondary" ]; then
     echo ""
     echo "  Nodo SECONDARY unido al clúster:"
     echo "   • Postgres réplica streaming de ${PRIMARY_IP} (TLS verify-ca)"
-    echo "   • data/ se sincroniza cada 5 min (ofortmaut-ha-datasync.timer)"
+    echo "   • data/ se sincroniza cada 5 min (satom-ha-datasync.timer)"
     echo "   • Certificado TLS propio emitido por la CA del clúster"
     echo "   • El scheduler queda en espera (solo se activa si promueves este nodo)"
 fi

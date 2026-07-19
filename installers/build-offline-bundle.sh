@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # ============================================================================
-# build-offline-bundle.sh — Genera el instalador OFFLINE de OFortMAut.
+# build-offline-bundle.sh — Genera el instalador OFFLINE de SATOM.
 #
 # Se ejecuta en una máquina Debian 12 amd64 CON internet (misma distro/arch
 # que el destino). Produce:
 #
-#     dist/ofortmaut-offline-<version>-debian12-amd64.tar.gz
-#       └── ofortmaut-installer/
-#           ├── install-ofortmaut.sh     (el mismo instalador; detecta bundle/)
+#     dist/satom-offline-<version>-debian12-amd64.tar.gz
+#       └── satom-installer/
+#           ├── install-satom.sh     (el mismo instalador; detecta bundle/)
 #           ├── INSTALL.md               (manual para el equipo de sistemas)
 #           └── bundle/
 #               ├── debs/     cierre COMPLETO de dependencias .deb
@@ -22,10 +22,10 @@ REF="${1:-main}"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="$(cat "$REPO_DIR/VERSION" 2>/dev/null || echo 0.0)"
 OUT="$REPO_DIR/dist"
-STAGE="$OUT/ofortmaut-installer"
+STAGE="$OUT/satom-installer"
 PKGS=(python3 python3-venv python3-pip postgresql nginx rsync openssl curl ca-certificates)
 
-echo "==> Bundle offline OFortMAut v${VERSION} (ref ${REF})"
+echo "==> Bundle offline SATOM v${VERSION} (ref ${REF})"
 command -v apt-get >/dev/null || { echo "Necesita Debian/apt"; exit 1; }
 [ "$(id -u)" -eq 0 ] || { echo "Ejecuta con sudo (apt necesita root)"; exit 1; }
 
@@ -53,13 +53,13 @@ echo "==> 3/4 Empaquetando el código de la app (git archive ${REF})"
 git -C "$REPO_DIR" archive --format=tar.gz -o "$STAGE/bundle/app.tar.gz" "$REF"
 
 echo "==> 4/4 Instalador + manual + tarball final"
-cp "$REPO_DIR/installers/install-ofortmaut.sh" "$STAGE/"
+cp "$REPO_DIR/installers/install-satom.sh" "$STAGE/"
 cp "$REPO_DIR/docs/INSTALL.md" "$STAGE/" 2>/dev/null || true
-chmod +x "$STAGE/install-ofortmaut.sh"
+chmod +x "$STAGE/install-satom.sh"
 
-TARBALL="$OUT/ofortmaut-offline-${VERSION}-debian12-amd64.tar.gz"
-tar -C "$OUT" -czf "$TARBALL" ofortmaut-installer
+TARBALL="$OUT/satom-offline-${VERSION}-debian12-amd64.tar.gz"
+tar -C "$OUT" -czf "$TARBALL" satom-installer
 sha256sum "$TARBALL" | tee "$TARBALL.sha256"
 echo ""
 echo "Listo: $TARBALL ($(du -h "$TARBALL" | cut -f1))"
-echo "En el destino:  tar xzf $(basename "$TARBALL") && cd ofortmaut-installer && sudo bash install-ofortmaut.sh"
+echo "En el destino:  tar xzf $(basename "$TARBALL") && cd satom-installer && sudo bash install-satom.sh"

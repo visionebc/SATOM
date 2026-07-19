@@ -40,7 +40,7 @@ class Adom(db.Model):
     key = db.Column(db.String(64), unique=True, nullable=False, index=True)
 
     name = db.Column(db.String(128), nullable=False)          # display name
-    title = db.Column(db.String(128), nullable=False, default="OFortMAuT")
+    title = db.Column(db.String(128), nullable=False, default="SATOM")
     tagline = db.Column(db.String(200), nullable=False, default="")
     description = db.Column(db.Text, nullable=False, default="")
     mark = db.Column(db.String(256), nullable=False, default="img/global-mark.svg")
@@ -75,7 +75,7 @@ class Adom(db.Model):
         d = {
             "key": self.key,
             "name": self.name,
-            "title": self.title or "OFortMAuT",
+            "title": self.title or "SATOM",
             "tagline": self.tagline or "",
             "mark": self.mark or "img/global-mark.svg",
             "description": self.description or "",

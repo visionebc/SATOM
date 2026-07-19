@@ -4,15 +4,15 @@
 # drives the staged self-update (standby first, health-gated, then primary).
 # The deploy mode is a replicated app_settings row set from the Self-Update page.
 [Unit]
-Description=OFortMAuT HA auto-reconciler (both nodes; staged self-update in AUTO mode)
-After=network.target ofortmaut.service postgresql.service
+Description=SATOM HA auto-reconciler (both nodes; staged self-update in AUTO mode)
+After=network.target satom.service postgresql.service
 
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/ofortmaut
-EnvironmentFile=/opt/ofortmaut/.env
-ExecStart=/opt/ofortmaut/venv/bin/python -m app.reconciler_runtime
+WorkingDirectory=/opt/satom
+EnvironmentFile=/opt/satom/.env
+ExecStart=/opt/satom/venv/bin/python -m app.reconciler_runtime
 Restart=always
 RestartSec=15
 

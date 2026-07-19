@@ -18,8 +18,8 @@ from sqlalchemy import text as sa_text
 from ..models import db, Appliance
 
 MONITORED_UNITS = (
-    "ofortmaut.service",
-    "ofortmaut-scheduler.service",
+    "satom.service",
+    "satom-scheduler.service",
     "postgresql.service",
     "redis-server.service",
     "nftables.service",
@@ -56,7 +56,7 @@ def host_stats() -> dict:
     cpus = os.cpu_count() or None
     disks = []
     seen_totals = set()
-    for label, path in (("/", "/"), ("app data", "/opt/ofortmaut"),
+    for label, path in (("/", "/"), ("app data", "/opt/satom"),
                         ("logs", "/var/log")):
         try:
             du = shutil.disk_usage(path)
@@ -191,7 +191,7 @@ def redundancy() -> dict:
                          if a.id not in member_ids and a.id not in node0_ids)
     except Exception:
         pass
-    sched = next((s for s in service_status(("ofortmaut-scheduler.service",))), None)
+    sched = next((s for s in service_status(("satom-scheduler.service",))), None)
     return {
         "device_clusters": clusters,
         "device_standalone": standalone,

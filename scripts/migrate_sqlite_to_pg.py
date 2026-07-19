@@ -6,7 +6,7 @@ order (metadata.sorted_tables). Resets Postgres sequences afterwards.
 
 Usage:
     FORTINET_SKIP_DB_BOOTSTRAP=1 python scripts/migrate_sqlite_to_pg.py \
-        --sqlite sqlite:////opt/ofortmaut/data/fortinet.db \
+        --sqlite sqlite:////opt/satom/data/fortinet.db \
         --pg "postgresql+psycopg://fortinet:***@127.0.0.1/fortinet_mgr" [--truncate]
 
 Exit code 0 only if every table's source and destination row counts match.

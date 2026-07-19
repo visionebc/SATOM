@@ -209,13 +209,13 @@ def forgot_password():
             token = twofa.make_reset_token(user.id)
             link = url_for('auth.reset_password', token=token, _external=True)
             body = (f"Hello {user.username},\n\n"
-                    f"A password reset was requested for your OFortMAuT account.\n"
+                    f"A password reset was requested for your SATOM account.\n"
                     f"Open this link to choose a new password (valid for 1 hour):\n\n"
                     f"{link}\n\n"
                     f"If you did not request this, you can ignore this email.\n")
             if email_service.is_configured():
                 email_service.send_email(user.recovery_email,
-                                         "OFortMAuT — password reset", body)
+                                         "SATOM — password reset", body)
             log_action('password_reset.request', target=user.username)
         else:
             # Don't reveal whether the account/recovery email exists.

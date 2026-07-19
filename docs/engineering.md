@@ -1,4 +1,4 @@
-# OFortMAuT — Engineering Manual
+# SATOM — Engineering Manual
 
 > **Audience:** developers extending the codebase and platform engineers
 > operating a deployment. Companion documents: field-level object references

@@ -1,4 +1,4 @@
-# Screenshots — drop your OFortMAut web captures here
+# Screenshots — drop your SATOM web captures here
 
 The gallery on `index.html` ("See it in action") auto-detects these files.
 Until a file exists, its tile shows a clean dashed "screenshot pending"

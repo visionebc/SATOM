@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Settings — OFortMAuT{% endblock %}
+{% block title %}Settings — SATOM{% endblock %}
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
@@ -401,7 +401,7 @@
           <div class="fw-card-body">
             <div class="mb-3">
               <label class="form-label" style="font-size:13px;">Remote URL <span class="text-muted">(without token)</span></label>
-              <input type="url" id="gc-remote" class="form-control fw-form-control font-monospace" placeholder="https://git.example.net/ofortmaut-dev/ofortmaut.git">
+              <input type="url" id="gc-remote" class="form-control fw-form-control font-monospace" placeholder="https://git.example.net/satom-dev/satom.git">
             </div>
             <div class="mb-3">
               <label class="form-label" style="font-size:13px;">Token <span class="text-muted">(optional, embedded in URL)</span></label>
@@ -484,7 +484,7 @@
               <div class="mb-3">
                 <label class="form-label">Repository URL</label>
                 <input type="url" name="fw_repo_url" class="form-control fw-form-control font-monospace"
-                       value="{{ sot_firmware_repo.url }}" placeholder="https://git.example.net/ofortmaut-dev/fortinet-firmware.git">
+                       value="{{ sot_firmware_repo.url }}" placeholder="https://git.example.net/satom-dev/fortinet-firmware.git">
               </div>
               <div class="mb-2" style="max-width:220px;">
                 <label class="form-label">Branch</label>
@@ -648,7 +648,7 @@
                 <div class="col-5">
                   <label class="fw-form-label">From name</label>
                   <input type="text" name="from_name" class="form-control fw-form-control"
-                         value="{{ email_config.from_name }}" placeholder="OFortMAuT">
+                         value="{{ email_config.from_name }}" placeholder="SATOM">
                 </div>
                 <div class="col-7">
                   <label class="fw-form-label">From address</label>
@@ -709,7 +709,7 @@
           </div>
           <div class="fw-card-body">
             <p class="text-muted mb-3" style="font-size:13px;">
-              The proactive health engine (<code>ofortmaut-alerts.timer</code>, every 15&nbsp;min) checks cert expiry, git divergence, device reachability, backup freshness and config drift, then notifies by <strong>email + in-app bell</strong>. Email uses the transport configured above — set it to external SMTP if the local relay can't reach your inbox.
+              The proactive health engine (<code>satom-alerts.timer</code>, every 15&nbsp;min) checks cert expiry, git divergence, device reachability, backup freshness and config drift, then notifies by <strong>email + in-app bell</strong>. Email uses the transport configured above — set it to external SMTP if the local relay can't reach your inbox.
             </p>
             <form method="POST" action="{{ url_for('settings.save_alerts') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -847,7 +847,7 @@
                   <div class="col-7"><label class="fw-form-label">Shared secret</label>
                     <input type="password" name="radius_secret" class="form-control fw-form-control" autocomplete="new-password" placeholder="{{ '******** (stored - blank keeps)' if auth_config.radius.has_secret else '' }}"></div>
                   <div class="col-5"><label class="fw-form-label">NAS identifier</label>
-                    <input type="text" name="radius_nas_id" class="form-control fw-form-control" value="{{ auth_config.radius.nas_id }}" placeholder="ofortmaut"></div>
+                    <input type="text" name="radius_nas_id" class="form-control fw-form-control" value="{{ auth_config.radius.nas_id }}" placeholder="satom"></div>
                 </div>
               </div>
 
@@ -1686,7 +1686,7 @@
             </div>
             <div class="col-md-3">
               <label class="form-label small mb-1">Title</label>
-              <input class="form-control form-control-sm" name="title" value="OFortMAuT">
+              <input class="form-control form-control-sm" name="title" value="SATOM">
             </div>
             <div class="col-md-2">
               <label class="form-label small mb-1">Logo</label>

@@ -1,7 +1,0 @@
-[Unit]
-Description=OFortMAut node service-cert auto-renew (CA-issued only)
-After=network.target postgresql.service
-
-[Service]
-Type=oneshot
-ExecStart=/opt/ofortmaut/deploy/ofortmaut-cert-renew.sh

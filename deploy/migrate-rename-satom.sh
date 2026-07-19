@@ -63,20 +63,11 @@ done
 # -------------------------------------------- 3. fix venv absolute shebangs
 say "rewriting venv shebangs/paths"
 for OLD in $LEGACY_APPS; do
-  grep -rl "$OLD" "$NEW_APP/venv/bin" 2>/dev/null | xargs -r sed -i "s|$OLD|$NEW_APP|g"
+  grep -rl "$OLD" "$NEW_APP/venv/bin" 2>/dev/null | xargs -r sed -i "s|$OLD|$NEW_APP|g" || true
 done
 
 # ------------------------------------------------------- 4. install units
 say "installing renamed units"
-rm -f /etc/systemd/system/ofortmaut*.service /etc/systemd/system/ofortmaut*.timer \
-      /etc/systemd/system/ofortmaut*.path \
-      /etc/systemd/system/fortinet-manager*.service /etc/systemd/system/fortinet-manager*.path \
-      /etc/systemd/system/fm-alerts.* /etc/systemd/system/fm-cert-renew.* \
-      /etc/systemd/system/fm-git-publish.* 2>/dev/null || true
-for f in "$NEW_APP"/deploy/satom*.service "$NEW_APP"/deploy/satom*.timer \
-         "$NEW_APP"/deploy/satom*.path; do
-  [ -e "$f" ] && cp "$f" /etc/systemd/system/
-done
 # datasync unit is node-written (standby only): rename in place if present
 for legacy in ofortmaut-ha-datasync fm-ha-datasync; do
   if [ -f "/etc/systemd/system/$legacy.service" ]; then
@@ -88,6 +79,15 @@ for legacy in ofortmaut-ha-datasync fm-ha-datasync; do
       rm -f "/etc/systemd/system/$legacy.$e"
     done
   fi
+done
+rm -f /etc/systemd/system/ofortmaut*.service /etc/systemd/system/ofortmaut*.timer \
+      /etc/systemd/system/ofortmaut*.path \
+      /etc/systemd/system/fortinet-manager*.service /etc/systemd/system/fortinet-manager*.path \
+      /etc/systemd/system/fm-alerts.* /etc/systemd/system/fm-cert-renew.* \
+      /etc/systemd/system/fm-git-publish.* 2>/dev/null || true
+for f in "$NEW_APP"/deploy/satom*.service "$NEW_APP"/deploy/satom*.timer \
+         "$NEW_APP"/deploy/satom*.path; do
+  [ -e "$f" ] && cp "$f" /etc/systemd/system/
 done
 # deployed script copies in /usr/local/sbin run from there, NOT from the checkout
 for f in /usr/local/sbin/ofortmaut-*.sh /usr/local/sbin/ofortmaut-*.txt \
@@ -113,12 +113,13 @@ for legacy in ofortmaut-tls fm-tls; do
     ln -sf /etc/nginx/sites-available/satom-tls.conf /etc/nginx/sites-enabled/satom-tls.conf
   fi
 done
-if [ -f /etc/nginx/sites-available/ofortmaut-pages.conf ]; then
-  sed -e "s|/opt/ofortmaut|$NEW_APP|g" \
-    /etc/nginx/sites-available/ofortmaut-pages.conf > /etc/nginx/sites-available/satom-pages.conf
+for d in sites-available sites-enabled; do
+  src="/etc/nginx/$d/ofortmaut-pages.conf"
+  [ -f "$src" ] || continue
+  sed -e "s|/opt/ofortmaut|$NEW_APP|g" "$src" > /etc/nginx/sites-available/satom-pages.conf
   rm -f /etc/nginx/sites-enabled/ofortmaut-pages.conf /etc/nginx/sites-available/ofortmaut-pages.conf
   ln -sf /etc/nginx/sites-available/satom-pages.conf /etc/nginx/sites-enabled/satom-pages.conf
-fi
+done
 nginx -t && systemctl reload nginx
 
 # ------------------------------------------------------------ 6. hostname

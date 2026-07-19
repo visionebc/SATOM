@@ -30,7 +30,7 @@ def _err(status: int, code: str, message: str):
     resp = jsonify({"error": code, "message": message})
     resp.status_code = status
     if status == 401:
-        resp.headers["WWW-Authenticate"] = 'Bearer realm="ofortmaut"'
+        resp.headers["WWW-Authenticate"] = 'Bearer realm="satom"'
     return resp
 
 

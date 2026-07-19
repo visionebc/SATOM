@@ -1,9 +1,9 @@
-OFortMAuT — DISCLAIMER
+SATOM — DISCLAIMER
 ======================
 
 NO WARRANTY
 -----------
-OFortMAuT is source-available software provided "AS IS", WITHOUT WARRANTY
+SATOM is source-available software provided "AS IS", WITHOUT WARRANTY
 OF ANY KIND, express or implied, including but not limited to the warranties
 of merchantability, fitness for a particular purpose, and non-infringement.
 See the "No Liability" section of the Elastic License 2.0 (LICENSE) for the
@@ -20,7 +20,7 @@ to use, this software — even if advised of the possibility of such damage.
 
 OPERATIONAL RISK (READ THIS)
 ----------------------------
-OFortMAuT automates configuration, backup, and management operations against
+SATOM automates configuration, backup, and management operations against
 production security appliances (web application firewalls, application
 delivery controllers, and log/analytics devices). Misuse, misconfiguration,
 or a bug can disrupt traffic, expose services, or lock you out of a device.
@@ -31,12 +31,12 @@ YOU are solely responsible for:
     OS hardening, and access control); and
   - complying with all laws and with your own organisation's policies.
 
-Only operate OFortMAuT against devices you own or are explicitly authorised
+Only operate SATOM against devices you own or are explicitly authorised
 to administer.
 
 TRADEMARKS
 ----------
-OFortMAuT is an independent project and is NOT affiliated with, endorsed by,
+SATOM is an independent project and is NOT affiliated with, endorsed by,
 or sponsored by Fortinet, Inc. All third-party trademarks are the property
 of their respective owners. See the NOTICE file for the full trademark
 statement.

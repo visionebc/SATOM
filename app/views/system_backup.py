@@ -180,7 +180,7 @@ def restore():
 def code_rollback():
     """Roll the application CODE back (or forward) to a chosen commit — a
     thin wrapper over the self-update queue: the privileged runner
-    (ofortmaut-updater) does checkout + pip + migrate + restart, with
+    (satom-updater) does checkout + pip + migrate + restart, with
     all the usual step logging on the Software Update page."""
     from flask_login import current_user
     from ..services import self_update as su
@@ -294,7 +294,7 @@ def external_download():
 def publish_json():
     """Commit the per-device JSON tree (reports/) to git — the off-box
     versioned source-of-truth backup (also runs hourly via
-    ofortmaut-git-publish.timer; this button is the on-demand path)."""
+    satom-git-publish.timer; this button is the on-demand path)."""
     try:
         from ..services import git_service
         git_service.git_publish("source-of-truth: publish device JSON", ["reports"])

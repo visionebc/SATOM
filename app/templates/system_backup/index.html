@@ -48,7 +48,7 @@
           <td><strong>Device config — source of truth</strong></td>
           <td><code>_config.json</code> (text, diffable)</td>
           <td>Gitea <code>reports/&lt;device&gt;/</code> (versioned) · cache in Postgres</td>
-          <td>Hourly sync (id5) + hourly <code>ofortmaut-git-publish.timer</code> + nightly publish 02:45 (id12) — FortiWeb <em>and</em> FortiADC</td>
+          <td>Hourly sync (id5) + hourly <code>satom-git-publish.timer</code> + nightly publish 02:45 (id12) — FortiWeb <em>and</em> FortiADC</td>
           <td>
             {% set covered = sot|selectattr('has_json')|list|length %}
             <span class="badge bg-{{ 'success' if covered == sot|length and sot else 'warning text-dark' }}">{{ covered }}/{{ sot|length }} devices in git</span>
@@ -124,7 +124,7 @@
         <form method="post" action="{{ url_for('system_backup.publish_json') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-outline-light btn-sm"><i class="bi bi-git me-1"></i>Publish device JSON to git now</button>
-          <div class="form-text">Commits <code>reports/&lt;device&gt;/_config.json</code> to the repo. Also runs automatically every hour (<code>ofortmaut-git-publish.timer</code>).</div>
+          <div class="form-text">Commits <code>reports/&lt;device&gt;/_config.json</code> to the repo. Also runs automatically every hour (<code>satom-git-publish.timer</code>).</div>
         </form>
       </div>
     </div>
@@ -213,7 +213,7 @@
           Device-config vault: <strong>{{ vault.entries }}</strong> entr{{ 'y' if vault.entries == 1 else 'ies' }} here
           {% if peer.vault %} / <strong>{{ peer.vault.entries }}</strong> on the backup server{% endif %}
           {% if vault.latest %} · latest {{ vault.latest }} UTC{% endif %}.
-          Synced by <code>ofortmaut-ha-datasync.timer</code> (standby pulls <code>data/</code> every 5 min).
+          Synced by <code>satom-ha-datasync.timer</code> (standby pulls <code>data/</code> every 5 min).
         </div>
         {% endif %}
       </div>
@@ -371,11 +371,11 @@
             <td>Created here (manual bundles, device backups, device sync)</td><td>—</td></tr>
         <tr><td><strong>2. Standby / backup server</strong></td>
             <td>Postgres (streaming replica) · full <code>data/</code> copy (bundles + vault)</td>
-            <td>Postgres streaming replication (continuous) + <code>ofortmaut-ha-datasync.timer</code> rsync every 5 min (standby pulls; inert on the primary and in standalone mode)</td>
+            <td>Postgres streaming replication (continuous) + <code>satom-ha-datasync.timer</code> rsync every 5 min (standby pulls; inert on the primary and in standalone mode)</td>
             <td>≈ seconds (DB) / ≤ 5 min (files)</td></tr>
         <tr><td><strong>3. Git (Gitea)</strong></td>
             <td>Per-device JSON <code>reports/&lt;device&gt;/_config.json</code> — versioned, human-diffable, for <strong>every</strong> appliance (FortiWeb <em>and</em> FortiADC). Application CODE lives in the same repo; the firmware SoT is a <em>separate</em> repo (manifest only)</td>
-            <td>Hourly sync (<code>device_sync</code>, id5) writes the JSON; <code>ofortmaut-git-publish.timer</code> commits hourly (primary only); nightly <code>device_inspect</code> (id12, 02:45) publishes all devices; plus on backup creation + the manual button</td>
+            <td>Hourly sync (<code>device_sync</code>, id5) writes the JSON; <code>satom-git-publish.timer</code> commits hourly (primary only); nightly <code>device_inspect</code> (id12, 02:45) publishes all devices; plus on backup creation + the manual button</td>
             <td>≤ 1 h (or on demand)</td></tr>
         <tr><td><strong>4. External backup server (backup-server)</strong></td>
             <td><strong>App-pushed DB bundle</strong> (<code>/system/</code> — this app's pg_dump, off-rack) · device-pushed config backups (<code>/configs/&lt;device&gt;/</code>) · firmware <code>.out</code> binaries (<code>/firmware/</code>)</td>
@@ -388,7 +388,7 @@
 
     <h6>Rollback / restore procedures</h6>
     <ol>
-      <li><strong>Whole instance</strong> — pick a bundle above → <em>Restore</em> (type <code>RESTORE</code>). Takes a safety dump first, then <code>pg_restore --clean</code> + replaces <code>reports/</code>. If this node is dead, the same bundles exist on the backup server under <code>/opt/ofortmaut/data/system_backups/</code>.</li>
+      <li><strong>Whole instance</strong> — pick a bundle above → <em>Restore</em> (type <code>RESTORE</code>). Takes a safety dump first, then <code>pg_restore --clean</code> + replaces <code>reports/</code>. If this node is dead, the same bundles exist on the backup server under <code>/opt/satom/data/system_backups/</code>.</li>
       <li><strong>One device's JSON to an older version</strong> — find the commit in <em>Versions in git</em>, verify with <em>Compare</em>, then in Settings → Git run: <code>git checkout &lt;commit&gt; -- reports/&lt;device&gt;/</code> and publish. This rolls back the JSON snapshot only — it does NOT push config to the device (use Templates/Provisioning for that).</li>
       <li><strong>Single appliance config</strong> — use the per-appliance Backups page (vault); device-level restore is currently dry-run gated pending a live canary round-trip.</li>
       <li><strong>Total loss of both nodes</strong> — clone the repo from Gitea (reports tree = last published state), restore the newest bundle from any surviving copy (downloaded bundle, standby disk, or the device-pushed backups on the external backup server).</li>
@@ -398,7 +398,7 @@
 
     <h6>Failover notes</h6>
     <ul class="mb-0">
-      <li>After a promote, <code>ofortmaut-ha-datasync</code> on the new primary becomes a no-op automatically (role guard) and <code>ofortmaut-git-publish</code> activates there (same guard, inverted) — no unit reconfiguration needed.</li>
+      <li>After a promote, <code>satom-ha-datasync</code> on the new primary becomes a no-op automatically (role guard) and <code>satom-git-publish</code> activates there (same guard, inverted) — no unit reconfiguration needed.</li>
       <li>Gitea (192.0.2.53) and the standby live on the same Proxmox host (hypervisor03): if hypervisor03 dies, copies 2 and 3 are both offline until it returns — copy 1 (primary, hypervisor06) remains. Bundles downloaded via the button above are the operator-held fourth copy.</li>
       <li>This page probes the peer over HTTP (<code>/healthz/backups</code>) — no SSH between nodes is required to verify the off-box copy.</li>
     </ul>
@@ -455,7 +455,7 @@
     <div class="modal-header"><h5 class="modal-title"><i class="bi bi-database me-1"></i>Database bundles on this node</h5>
       <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
     <div class="modal-body">
-      <p class="small text-muted mb-2">Deleting here (on the <strong>primary</strong>) replicates to the standby automatically — <code>ofortmaut-ha-datasync</code> mirrors <code>data/</code> with <code>rsync --delete</code> every 5 min. Deleting on the standby is blocked (it would be undone by the next sync).</p>
+      <p class="small text-muted mb-2">Deleting here (on the <strong>primary</strong>) replicates to the standby automatically — <code>satom-ha-datasync</code> mirrors <code>data/</code> with <code>rsync --delete</code> every 5 min. Deleting on the standby is blocked (it would be undone by the next sync).</p>
       <table class="table table-sm table-hover align-middle mb-0">
         <thead><tr><th>Bundle</th><th>Created (UTC)</th><th>Size</th><th class="text-end"></th></tr></thead>
         <tbody>

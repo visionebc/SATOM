@@ -3,13 +3,13 @@
 ## v1.1 — 2026-07-15
 
 ### Renamed — service & filesystem layout (breaking for existing installs)
-- Project fully renamed from the legacy internal name to **OFortMAuT** at the
-  infrastructure level: app dir `/opt/ofortmaut`, log dir `/var/log/ofortmaut`,
-  and all systemd units (`ofortmaut.service`, `ofortmaut-scheduler.service`,
-  `ofortmaut-reconciler.service`, `ofortmaut-updater.{path,service}`,
-  `ofortmaut-alerts`, `ofortmaut-cert-renew`, `ofortmaut-git-publish`,
-  `ofortmaut-ha-datasync` timers/services).
-- Existing installs: run `deploy/migrate-rename-ofortmaut.sh` (root, one node
+- Project fully renamed from the legacy internal name to **SATOM** at the
+  infrastructure level: app dir `/opt/satom`, log dir `/var/log/satom`,
+  and all systemd units (`satom.service`, `satom-scheduler.service`,
+  `satom-reconciler.service`, `satom-updater.{path,service}`,
+  `satom-alerts`, `satom-cert-renew`, `satom-git-publish`,
+  `satom-ha-datasync` timers/services).
+- Existing installs: run `deploy/migrate-rename-satom.sh` (root, one node
   at a time, standby first). It stops the legacy units, moves the tree, fixes
   venv shebangs, installs the renamed units, updates nginx and re-verifies
   `/healthz`.
@@ -17,7 +17,7 @@
 - Unchanged on purpose: Postgres DB name/user, the `backup-server` external backup
   server (appliance-side push config points at it), and `FM_*` env var names.
 
-All notable changes to OFortMAuT are documented here. Format loosely follows
+All notable changes to SATOM are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/). This is a public, open-source
 project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
@@ -29,7 +29,7 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - **`docs/release-pipeline.md`**: documents the sanitize -> secret-scan ->
   internal-AI vulnerability audit -> publish gate; also surfaced on the site.
 ### Changed
-- Product name **"Fortinet Manager" -> "OFortMAuT"** across docs, README and
+- Product name **"Fortinet Manager" -> "SATOM"** across docs, README and
   the public site. Scope clarified: manages FortiWeb / FortiADC / FortiAnalyzer
   (FortiAuthenticator planned) — **not** FortiManager or FortiGate/NGFW.
 - Public site footer now shows Apache-2.0 + trademark disclaimer.

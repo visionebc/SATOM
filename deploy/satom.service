@@ -1,0 +1,15 @@
+[Unit]
+Description=SATOM Web App
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/satom
+EnvironmentFile=/opt/satom/.env
+ExecStart=/opt/satom/venv/bin/gunicorn --workers 4 --bind 0.0.0.0:8000 --timeout 120 --access-logfile /var/log/satom/access.log --error-logfile /var/log/satom/error.log wsgi:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

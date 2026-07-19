@@ -10,7 +10,7 @@
 # EXCLUDES: node-local operational dirs + self-update trigger/status (would
 # spuriously fire the standby updater) + volatile job ledgers.
 set -u
-APP=/opt/ofortmaut
+APP=/opt/satom
 
 # Only a STANDBY pulls. After a promote this becomes a no-op automatically.
 ROLE=$(cd /tmp && runuser -u postgres -- psql -d fortinet_mgr -tAc \
@@ -26,7 +26,7 @@ MODE=$(cd /tmp && runuser -u postgres -- psql -d fortinet_mgr -tAc \
 PEER=$(python3 - <<'PYEOF'
 import json, socket
 try:
-    nodes = json.load(open('/opt/ofortmaut/data/ha_nodes.json'))
+    nodes = json.load(open('/opt/satom/data/ha_nodes.json'))
 except Exception:
     raise SystemExit
 me = socket.gethostname()

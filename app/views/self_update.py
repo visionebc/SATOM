@@ -2,7 +2,7 @@
 staged across the HA nodes (standby first, primary after validation).
 
 Admin-only (``user_manage``). The write path is an ENQUEUE only: the actual
-privileged update runs in ``ofortmaut-updater.service`` (root), so the
+privileged update runs in ``satom-updater.service`` (root), so the
 web worker is never the thing restarting itself.
 """
 from __future__ import annotations
@@ -139,7 +139,7 @@ def set_deploy_mode():
 @require_permission("user_manage")
 def promote():
     """Guarded MANUAL failover: promote THIS node's Postgres to primary. Enqueue
-    only — the privileged runner runs ofortmaut-promote.sh. Requires typing the node's
+    only — the privileged runner runs satom-promote.sh. Requires typing the node's
     hostname to confirm; only valid on a standby."""
     confirm = (request.form.get("confirm_host") or "").strip()
     this_node = su.this_node_name()

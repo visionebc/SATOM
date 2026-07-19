@@ -1,7 +1,7 @@
 # Security Policy
 
 ## Reporting a Vulnerability
-If you discover a security vulnerability in OFortMAuT, please report it
+If you discover a security vulnerability in SATOM, please report it
 privately. **Do not open a public issue for security problems.**
 
 - Email: **security@example.net**
@@ -17,7 +17,7 @@ Only the latest released `main` line receives security fixes. Older tags
 are provided as-is.
 
 ## AS-IS / No Warranty
-OFortMAuT is provided under the Elastic License 2.0 **without warranty of
+SATOM is provided under the Elastic License 2.0 **without warranty of
 any kind** (see LICENSE, "No Liability"). You run it at your own risk
 and are responsible for securing your own deployment (network exposure,
 credentials, TLS, OS hardening, and access control).

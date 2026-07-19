@@ -1,6 +1,6 @@
-# Contributing to OFortMAuT
+# Contributing to SATOM
 
-Thanks for your interest! OFortMAuT is source-available under the
+Thanks for your interest! SATOM is source-available under the
 [Elastic License 2.0](LICENSE). You are welcome to **use it, modify it, and
 adapt it to your own organisation's needs**, including in production. You may
 not offer it to third parties as a hosted or managed service — for that,

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# build-offline-bundle-rhel.sh — Genera el instalador OFFLINE de OFortMAut
+# build-offline-bundle-rhel.sh — Genera el instalador OFFLINE de SATOM
 # para la familia RHEL (RHEL / Rocky / AlmaLinux 9, x86_64).
 #
 # Se ejecuta EN una máquina o contenedor RHEL-9 CON internet — p.ej.:
@@ -9,9 +9,9 @@
 #       bash installers/build-offline-bundle-rhel.sh
 #
 # Produce:
-#     dist/ofortmaut-offline-<version>-rhel9-x86_64.tar.gz
-#       └── ofortmaut-installer/
-#           ├── install-ofortmaut.sh   (mismo instalador; detecta bundle/rpms)
+#     dist/satom-offline-<version>-rhel9-x86_64.tar.gz
+#       └── satom-installer/
+#           ├── install-satom.sh   (mismo instalador; detecta bundle/rpms)
 #           ├── INSTALL.md
 #           └── bundle/
 #               ├── rpms/    cierre COMPLETO de dependencias .rpm
@@ -27,13 +27,13 @@ REF="${1:-main}"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="$(cat "$REPO_DIR/VERSION" 2>/dev/null || echo 0.0)"
 OUT="${BUNDLE_OUT:-$REPO_DIR/dist}"
-STAGE="$OUT/ofortmaut-installer"
+STAGE="$OUT/satom-installer"
 # Debe coincidir con REQUIRED_PKGS (dnf) del instalador + SELinux best-effort.
 # python3.11: el python3 del sistema en EL9 es 3.9 y los pines exigen >= 3.10.
 PKGS=(python3.11 python3.11-pip postgresql-server postgresql nginx rsync
       openssl curl ca-certificates policycoreutils-python-utils)
 
-echo "==> Bundle offline OFortMAut v${VERSION} — familia RHEL (el9, x86_64)"
+echo "==> Bundle offline SATOM v${VERSION} — familia RHEL (el9, x86_64)"
 command -v dnf >/dev/null || { echo "Necesita familia RHEL/dnf (usa rockylinux:9)"; exit 1; }
 [ "$(id -u)" -eq 0 ] || { echo "Ejecuta como root (dnf lo necesita)"; exit 1; }
 
@@ -66,12 +66,12 @@ else
 fi
 
 echo "==> 4/4 Instalador + manual + tarball final"
-cp "$REPO_DIR/installers/install-ofortmaut.sh" "$STAGE/"
+cp "$REPO_DIR/installers/install-satom.sh" "$STAGE/"
 cp "$REPO_DIR/docs/INSTALL.md" "$STAGE/" 2>/dev/null || true
-chmod +x "$STAGE/install-ofortmaut.sh"
+chmod +x "$STAGE/install-satom.sh"
 
-TARBALL="$OUT/ofortmaut-offline-${VERSION}-rhel9-x86_64.tar.gz"
-tar -C "$OUT" -czf "$TARBALL" ofortmaut-installer
+TARBALL="$OUT/satom-offline-${VERSION}-rhel9-x86_64.tar.gz"
+tar -C "$OUT" -czf "$TARBALL" satom-installer
 ( cd "$OUT" && sha256sum "$(basename "$TARBALL")" > "$(basename "$TARBALL").sha256" )
 rm -rf "$STAGE"
 echo "==> LISTO: $TARBALL"

@@ -1,14 +1,14 @@
-# Privileged self-update runner. Triggered by ofortmaut-updater.path
+# Privileged self-update runner. Triggered by satom-updater.path
 # when data/update-requests/ becomes non-empty. Runs as root (oneshot) so it
 # can install files and restart the web service without the unprivileged
 # gunicorn worker having to restart itself.
 [Unit]
-Description=OFortMAuT self-update runner (privileged, oneshot)
+Description=SATOM self-update runner (privileged, oneshot)
 After=network.target postgresql.service
 
 [Service]
 Type=oneshot
-WorkingDirectory=/opt/ofortmaut
-ExecStart=/opt/ofortmaut/venv/bin/python /opt/ofortmaut/deploy/self_update_runner.py
+WorkingDirectory=/opt/satom
+ExecStart=/opt/satom/venv/bin/python /opt/satom/deploy/self_update_runner.py
 # Runs as root by design (installs unit files, restarts services).
 TimeoutStartSec=1800

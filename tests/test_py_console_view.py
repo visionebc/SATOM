@@ -60,7 +60,7 @@ def test_secrets_isolated_through_endpoint(client, app):
     _login(client, _admin_id(app))
     r = client.post("/database/py-console/run",
                     json={"source": "import os\n"
-                                    "print('ENV', os.path.exists('/opt/ofortmaut/.env'))\n"
+                                    "print('ENV', os.path.exists('/opt/satom/.env'))\n"
                                     "print('FK', os.environ.get('FERNET_KEY'))",
                           "datasets": []})
     out = r.get_json()["stdout"]

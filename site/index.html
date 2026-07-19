@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OFortMAuT — Open Fortinet Management Automation Tool</title>
+<title>SATOM — System Automation & Task Orchestration Manager</title>
 <meta name="description" content="A multi-user web platform that manages fleets of Fortinet appliances — FortiWeb, FortiADC and FortiAnalyzer — over REST and SSH, with high availability, a git-versioned configuration source of truth, and full lifecycle automation.">
 <link rel="icon" type="image/png" href="assets/favicon.png">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
@@ -26,7 +26,7 @@
         <a href="architecture.html">Architecture</a>
         <a href="install.html">Install</a>
       </div>
-      <a class="nav-cta" href="https://github.com/visionebc/OFortMAut">Source ↗</a>
+      <a class="nav-cta" href="https://github.com/visionebc/SATOM">Source ↗</a>
     </div>
   </div>
 </nav>
@@ -35,7 +35,7 @@
   <div class="pill"><span class="dot"></span> v1.0 · Production · 700+ automated tests</div>
   <h1>Fleet management for<br><span class="grad">Fortinet appliances</span>, automated.</h1>
   <p class="sub">
-    OFortMAuT — the <b>Open Fortinet Management Automation Tool</b> — is a multi-user web
+    SATOM — the <b>System Automation & Task Orchestration Manager</b> — is a multi-user web
     platform that manages FortiWeb, FortiADC and FortiAnalyzer fleets over their REST APIs
     and SSH, keeping a local, queryable, <b>git-versioned copy of every device configuration</b>.
   </p>
@@ -58,7 +58,7 @@
 
 <section class="wrap reveal">
   <div class="sec-head">
-    <span class="eyebrow">Why OFortMAuT</span>
+    <span class="eyebrow">Why SATOM</span>
     <h2>Everything the console does — plus what it can't</h2>
     <p>The database, audit trail, git history and automation that the appliances themselves don't offer.</p>
   </div>
@@ -87,7 +87,7 @@
   <div class="shots">
     <figure class="shot">
       <a class="frame" href="assets/shots/dashboard.png" data-lb>
-        <img data-shot src="assets/shots/dashboard.png" alt="OFortMAuT dashboard" loading="lazy">
+        <img data-shot src="assets/shots/dashboard.png" alt="SATOM dashboard" loading="lazy">
         <span class="ph-label"><i>🖼️</i><b>Dashboard</b><small>screenshot pending</small></span>
       </a>
       <figcaption><b>Dashboard</b>Fleet health &amp; device status at a glance</figcaption>
@@ -185,13 +185,13 @@
       <span class="tag tag-blue">Online</span><span class="tag tag-grn">Any distro family</span>
       <h3>Connected install</h3>
       <p>Detects apt, dnf/yum, zypper or pacman and maps package names per family. Prompts for IP, port, admin password and standalone / cluster mode.</p>
-      <div class="code"><span class="c"># as root on a fresh host</span><br>./install-ofortmaut.sh</div>
+      <div class="code"><span class="c"># as root on a fresh host</span><br>./install-satom.sh</div>
     </div>
     <div class="card">
       <span class="tag tag-vio">Offline</span><span class="tag tag-blue">Debian 12</span><span class="tag tag-vio">RHEL 9</span>
       <h3>Air-gapped install</h3>
       <p>Self-contained bundles — OS packages, Python wheels and the application — for hosts with no internet access. Auto-detected when <code>bundle/</code> is present.</p>
-      <div class="code">tar xzf ofortmaut-offline-&lt;ver&gt;-&lt;family&gt;.tar.gz<br>cd ofortmaut-installer &amp;&amp; ./install-ofortmaut.sh</div>
+      <div class="code">tar xzf satom-offline-&lt;ver&gt;-&lt;family&gt;.tar.gz<br>cd satom-installer &amp;&amp; ./install-satom.sh</div>
     </div>
   </div>
 </section>
@@ -204,12 +204,12 @@
       <a href="features.html">Features</a>
       <a href="architecture.html">Architecture</a>
       <a href="install.html">Install</a>
-      <a href="https://github.com/visionebc/OFortMAut">Source</a>
+      <a href="https://github.com/visionebc/SATOM">Source</a>
     </div>
-    <p class="addr">http://ofortmaut.visionebc.com</p>
-    <p style="margin-top:8px;"><b>OFortMAuT</b> · Open Fortinet Management Automation Tool</p>
-    <p style="margin-top:6px;">© <span class="year">2026</span> Vision EBC · Licensed under the <a href="https://github.com/visionebc/OFortMAut/blob/main/LICENSE">Elastic License 2.0</a> · source-available, not OSI open source · provided AS IS, no warranty</p>
-    <p class="disclaimer" style="margin-top:8px;font-size:12px;opacity:.6;line-height:1.5;">OFortMAuT is an independent open-source project, <b>not affiliated with or endorsed by Fortinet, Inc.</b> Fortinet, FortiWeb, FortiADC and FortiAnalyzer are trademarks of Fortinet, Inc., used here nominatively to describe interoperability. OFortMAuT is <b>not</b> a FortiManager or FortiGate product.</p>
+    <p class="addr">http://satom.visionebc.com</p>
+    <p style="margin-top:8px;"><b>SATOM</b> · System Automation & Task Orchestration Manager</p>
+    <p style="margin-top:6px;">© <span class="year">2026</span> Vision EBC · Licensed under the <a href="https://github.com/visionebc/SATOM/blob/main/LICENSE">Elastic License 2.0</a> · source-available, not OSI open source · provided AS IS, no warranty</p>
+    <p class="disclaimer" style="margin-top:8px;font-size:12px;opacity:.6;line-height:1.5;">SATOM is an independent source-available project, <b>not affiliated with or endorsed by Fortinet, Inc.</b> Fortinet, FortiWeb, FortiADC and FortiAnalyzer are trademarks of Fortinet, Inc., used here nominatively to describe interoperability. SATOM is <b>not</b> a FortiManager or FortiGate product.</p>
   </div>
 </footer>
 

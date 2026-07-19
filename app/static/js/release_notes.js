@@ -1,5 +1,5 @@
 /* ============================================================
-   OFortMAuT — release_notes.js
+   SATOM — release_notes.js
    Top-banner Release Notes modal. Same logic as the desktop page:
    Scan from Fortinet / Sync from git + Issues / Upgrade advisor / Notes.
    Backend: app/views/release_notes.py

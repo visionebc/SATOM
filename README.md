@@ -1,4 +1,4 @@
-# OFortMAuT — Web Edition
+# SATOM — Web Edition
 
 A multi-user **Flask web platform for managing fleets of Fortinet appliances**
 — **FortiWeb** (WAF), **FortiADC** (ADC/load balancer), and **FortiAnalyzer**
@@ -6,13 +6,13 @@ A multi-user **Flask web platform for managing fleets of Fortinet appliances**
 APIs and SSH/CLI, with a local, queryable copy of every device's configuration so
 the UI stays fast even when the appliances are slow, unreachable, or license-locked.
 
-> **Not a firewall manager.** OFortMAuT manages application-delivery and
+> **Not a firewall manager.** SATOM manages application-delivery and
 > analytics appliances. It is **not** a FortiManager or FortiGate/NGFW tool.
 
 - **Version:** see [`VERSION`](VERSION) · **Status:** production · **License:** [Elastic License 2.0](LICENSE) · [Security policy](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Release pipeline](docs/release-pipeline.md)
 - **~60 Flask blueprints · ~80 service modules · 700+ unit/integration tests · 500 tracked files**
 
-> ⚠️ **Trademark:** OFortMAuT is an independent source-available project, **not
+> ⚠️ **Trademark:** SATOM is an independent source-available project, **not
 > affiliated with or endorsed by Fortinet, Inc.** "Fortinet", "FortiWeb",
 > "FortiADC", "FortiAnalyzer" and related marks belong to Fortinet, Inc. and are
 > used here only nominatively to describe interoperability. See [NOTICE](NOTICE).
@@ -161,8 +161,8 @@ plane on every page load. See [docs/engineering.md](docs/engineering.md).
 Requires a Debian-family host with Python 3.11+ and PostgreSQL.
 
 ```bash
-# put the source at /opt/ofortmaut (git clone / tarball)
-cd /opt/ofortmaut
+# put the source at /opt/satom (git clone / tarball)
+cd /opt/satom
 sudo ./scripts/install.sh          # online install
 # or, air-gapped:
 ./scripts/build_offline_bundle.sh  # on a connected twin host
@@ -210,7 +210,7 @@ Hotwire Turbo (no SPA framework, CSP-safe vanilla JS) · reportlab / pdfplumber
 ## Testing
 
 ```bash
-cd /opt/ofortmaut
+cd /opt/satom
 TMPDIR=$PWD/data/tmp venv/bin/python -m pytest -q
 ```
 

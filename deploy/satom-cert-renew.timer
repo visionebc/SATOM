@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily auto-renew of the OFortMAut node service certificate
+Description=Daily auto-renew of the SATOM node service certificate
 
 [Timer]
 OnCalendar=*-*-* 03:30:00

@@ -185,7 +185,7 @@ def build_pdf(result: dict, *, author: str = "") -> bytes:
     doc = SimpleDocTemplate(
         buf, pagesize=A4, leftMargin=16 * mm, rightMargin=16 * mm,
         topMargin=16 * mm, bottomMargin=14 * mm,
-        title=result.get("name", "Report"), author=author or "OFortMAuT")
+        title=result.get("name", "Report"), author=author or "SATOM")
     styles = getSampleStyleSheet()
     h1 = ParagraphStyle("RptH1", parent=styles["Title"], fontSize=20,
                         textColor=colors.HexColor("#0f172a"), spaceAfter=2)
@@ -205,7 +205,7 @@ def build_pdf(result: dict, *, author: str = "") -> bytes:
     meta = f"Generated {result.get('generated_at', '')}"
     if author:
         meta += f" · by {_esc(author)}"
-    meta += " · OFortMAuT — Database reports"
+    meta += " · SATOM — Database reports"
     story.append(Paragraph(meta, sub))
     if result.get("description"):
         story.append(Paragraph(_esc(result["description"]), styles["Normal"]))

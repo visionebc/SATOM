@@ -1,7 +1,7 @@
 """Security contract for the sandboxed Python console (services.py_console).
 
 Route B: the admin runs ARBITRARY Python, but inside a bubblewrap sandbox that
-  * cannot see /opt/ofortmaut/.env or any secret file,
+  * cannot see /opt/satom/.env or any secret file,
   * inherits NO environment variables (--clearenv) -> FERNET_KEY/DB creds gone,
   * has no network namespace (no exfiltration),
   * is wall-clock + CPU + memory + proc capped,
@@ -44,7 +44,7 @@ def test_happy_path_reads_bundle_and_captures_stdout():
 
 
 def test_cannot_read_env_secret_file():
-    r = run("import os; print('exists=', os.path.exists('/opt/ofortmaut/.env'))")
+    r = run("import os; print('exists=', os.path.exists('/opt/satom/.env'))")
     assert "exists= False" in r["stdout"]
 
 
@@ -76,7 +76,7 @@ def test_network_is_blocked():
 def test_cannot_write_outside_sandbox():
     src = (
         "try:\n"
-        "    open('/opt/ofortmaut/pwned.txt', 'w').write('x')\n"
+        "    open('/opt/satom/pwned.txt', 'w').write('x')\n"
         "    print('WROTE')\n"
         "except Exception as e:\n"
         "    print('WRITE_BLOCKED', type(e).__name__)\n"

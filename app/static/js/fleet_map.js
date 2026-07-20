@@ -923,21 +923,28 @@
     if (cls) td.className = cls;
   }
 
-  function dmSpecs(d) {
-    var box = document.getElementById('dmSpecs');
-    box.innerHTML = '';
-    [['Platform', DM_HW[d.hw_type] || 'Unknown'],
-     ['Model', d.model],
-     ['Firmware', d.firmware],
-     ['Management', (d.host || '') + (d.port ? ':' + d.port : '')],
-     ['VDOM', d.vdom],
-     ['Zone', d.zone],
-     ['Line', d.line],
-     ['Department', d.department]].forEach(function (kv) {
-      var c = dmEl('div', 'dm-spec', box);
+  // Row 1 = what the box IS (identity), row 2 = where it LIVES (placement).
+  // Management host:port is deliberately not repeated here — it is already a
+  // chip in the modal header.
+  function dmSpecRow(box, cls, pairs) {
+    var row = dmEl('div', 'dm-specs-row ' + cls, box);
+    pairs.forEach(function (kv) {
+      var c = dmEl('div', 'dm-spec', row);
       dmEl('div', 'k', c, kv[0]);
       dmEl('div', 'v', c, (kv[1] === null || kv[1] === undefined || kv[1] === '') ? '—' : kv[1]);
     });
+  }
+
+  function dmSpecs(d) {
+    var box = document.getElementById('dmSpecs');
+    box.innerHTML = '';
+    dmSpecRow(box, 'r1', [['Platform', DM_HW[d.hw_type] || 'Unknown'],
+                          ['Model', d.model],
+                          ['Firmware', d.firmware],
+                          ['VDOM', d.vdom]]);
+    dmSpecRow(box, 'r2', [['Zone', d.zone],
+                          ['Line', d.line],
+                          ['Department', d.department]]);
   }
 
   function dmStatePill(state) {
@@ -977,6 +984,17 @@
        (i2.vlan && i2.vlan !== '0') ? 'VLAN ' + i2.vlan : '']
         .filter(Boolean).forEach(function (t) { dmEl('span', '', meta, t); });
       if (i2.description) dmEl('span', '', meta, i2.description);
+
+      // roles (mgmt / HA heartbeat / health check / gateway …), derived server-side
+      var tdR = dmEl('td', '', tr);
+      var roles = i2.roles || [];
+      if (roles.length) {
+        var rw = dmEl('div', 'dm-roles', tdR);
+        roles.forEach(function (r) {
+          var b = dmEl('span', 'dm-role dm-role-' + r.code, rw, r.label);
+          if (r.title) b.title = r.title;
+        });
+      } else dmDash(tdR);
 
       // state
       var tdS = dmEl('td', '', tr);

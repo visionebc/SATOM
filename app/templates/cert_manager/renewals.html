@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+
+{% block title %}Certificate renewals — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>Automation</span>
+  <span class="separator">/</span>
+  <a href="{{ url_for('cert_manager.index') }}">Certificate Manager</a>
+  <span class="separator">/</span>
+  <span>Renewals</span>
+</div>
+{% endblock %}
+
+{% block content %}
+{% set errors = [] %}
+{% for n in nodes %}{% for r in n.runs %}{% if r.status == 'error' %}
+  {% set _ = errors.append({'node': n.name, 'run': r}) %}
+{% endif %}{% endfor %}{% endfor %}
+
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-arrow-repeat me-2 text-accent"></i>Certificate renewals</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Every renewal attempt on every node — what ran, when, and the exact error when it failed.
+      The nightly <code>satom-cert-renew</code> timer used to leave its result only in
+      <code>journalctl</code>, so a silent failure was invisible until the expiry alert fired.
+      The alert e-mail tells you <em>something</em> is wrong; this page tells you <em>what</em>.
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <form method="post" action="{{ url_for('cert_manager.renewals_run') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-fw-secondary" type="submit"
+              title="Run the same pass the nightly timer runs, on this node, now">
+        <i class="bi bi-play-fill me-1"></i>Run renewal pass now
+      </button>
+    </form>
+    <a class="btn btn-fw-primary" href="{{ url_for('cert_manager.index') }}">
+      <i class="bi bi-shield-lock me-1"></i>Certificates
+    </a>
+  </div>
+</div>
+
+{% if errors %}
+<div class="alert alert-danger" role="alert" style="font-size:13px;">
+  <div class="fw-bold mb-2">
+    <i class="bi bi-exclamation-octagon me-1"></i>
+    {{ errors|length }} failed renewal attempt{{ 's' if errors|length != 1 }} on record
+  </div>
+  {% for e in errors[:5] %}
+  <div class="mb-2">
+    <span class="fw-badge fw-badge-danger me-1">{{ e.run.channel }}</span>
+    <span class="text-muted">{{ e.node }} · {{ e.run.at }}</span> —
+    {{ e.run.summary }}
+    {% if e.run.error %}<div><code style="font-size:12px;">{{ e.run.error }}</code></div>{% endif %}
+  </div>
+  {% endfor %}
+  {% if errors|length > 5 %}<div class="text-muted">…and {{ errors|length - 5 }} more in the tables below.</div>{% endif %}
+</div>
+{% endif %}
+
+{% for n in nodes %}
+<div class="fw-card mt-3 mb-2">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title">
+      <i class="bi bi-hdd-network me-2 text-accent"></i>{{ n.name }}
+      {% if n.is_self %}<span class="fw-badge fw-badge-info ms-1">this node</span>
+      {% else %}<span class="fw-badge fw-badge-secondary ms-1">peer {{ n.host }}</span>{% endif %}
+      {% if n.cert and n.cert.get('renew_mode') %}
+        <span class="fw-badge fw-badge-secondary ms-1">mode: {{ n.cert.renew_mode }}</span>
+      {% endif %}
+      {% if n.desc %}<span class="text-muted ms-2" style="font-size:12px;">{{ n.desc }}</span>{% endif %}
+    </span>
+    <span>
+      {% if not n.reachable and not n.is_self %}
+        <span class="fw-badge fw-badge-danger">unreachable</span>
+      {% elif n.summary and n.summary.get('fail_streak', 0) > 0 %}
+        <span class="fw-badge fw-badge-danger">{{ n.summary.fail_streak }} consecutive failure(s)</span>
+      {% elif n.summary and n.summary.get('errors', 0) > 0 %}
+        <span class="fw-badge fw-badge-warning">{{ n.summary.errors }} past error(s)</span>
+      {% else %}
+        <span class="fw-badge fw-badge-success">no failures recorded</span>
+      {% endif %}
+    </span>
+  </div>
+  <div class="fw-card-body" style="font-size:13px;">
+
+    {% if not n.reachable and not n.is_self %}
+      <div class="text-muted">
+        Could not read this node's journal: {{ n.error or 'no answer' }}.
+        The journal is node-local by design (a standby's Postgres is read-only and
+        <code>data/</code> is wiped by the rsync <code>--delete</code> datasync), so it is
+        served over the authenticated peer channel <code>/healthz/cert-renewals</code>.
+      </div>
+    {% else %}
+
+    {# ---- current certificate state ---- #}
+    {% set c = n.cert or {} %}
+    {% if c.get('error') %}
+      <div class="alert alert-warning mb-3" style="font-size:13px;">
+        Cannot read the current certificate: <code>{{ c.error }}</code>
+      </div>
+    {% else %}
+    <div class="d-flex flex-wrap gap-4 mb-3">
+      <div>
+        <div class="text-muted" style="font-size:11px;text-transform:uppercase;">Expires in</div>
+        {% set d = c.get('days_left') %}
+        <span class="fw-badge fw-badge-{{ 'danger' if d is not none and d < 0 else 'danger' if d is not none and d <= 14 else 'warning' if d is not none and d <= 30 else 'success' }}">
+          {{ d if d is not none else '?' }} d
+        </span>
+        <span class="text-muted ms-1">{{ c.get('not_after') or '' }}</span>
+      </div>
+      <div>
+        <div class="text-muted" style="font-size:11px;text-transform:uppercase;">Source</div>
+        {{ c.get('source') or '?' }}
+        {% if c.get('source') == 'imported' %}
+          <span class="text-muted">— cannot be re-minted here</span>
+        {% endif %}
+      </div>
+      <div>
+        <div class="text-muted" style="font-size:11px;text-transform:uppercase;">Renewal strategy</div>
+        {% if c.get('source') == 'issued' %}
+          auto re-mint from the internal CA
+        {% elif c.get('renew_mode') == 'autopull' %}
+          autopull {{ 'configured' if c.get('autopull_configured') else '— NOT configured' }}
+        {% else %}
+          alert only — an operator must re-import
+        {% endif %}
+      </div>
+      <div>
+        <div class="text-muted" style="font-size:11px;text-transform:uppercase;">Installed</div>
+        {{ c.get('installed_at') or '—' }}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ---- the journal ---- #}
+    {% if not n.runs %}
+      <div class="text-muted">
+        No renewal attempt recorded yet on this node. The journal starts filling at the next
+        nightly run (<code>satom-cert-renew.timer</code>, 03:30) or when you press
+        <em>Run renewal pass now</em>.
+      </div>
+    {% else %}
+    <div class="fw-table-wrapper">
+      <table class="fw-table">
+        <thead>
+          <tr>
+            <th style="width:170px;">When (UTC)</th>
+            <th style="width:110px;">Channel</th>
+            <th style="width:90px;">Result</th>
+            <th>What happened / error</th>
+            <th style="width:110px;">Triggered by</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in n.runs %}
+          <tr>
+            <td class="text-muted">{{ r.at }}</td>
+            <td><span class="fw-badge fw-badge-secondary">{{ r.channel }}</span></td>
+            <td>
+              {% if r.status == 'error' %}<span class="fw-badge fw-badge-danger">error</span>
+              {% elif r.status == 'renewed' %}<span class="fw-badge fw-badge-success">renewed</span>
+              {% else %}<span class="fw-badge fw-badge-secondary">skipped</span>{% endif %}
+            </td>
+            <td>
+              {{ r.summary }}
+              {% if r.error %}
+                <div class="mt-1"><code style="font-size:12px;white-space:pre-wrap;">{{ r.error }}</code></div>
+              {% endif %}
+              {% if r.days_left is not none %}
+                <span class="text-muted" style="font-size:12px;">({{ r.days_left }} d left)</span>
+              {% endif %}
+            </td>
+            <td class="text-muted">{{ r.by or '—' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+
+{# ---- appliance / ACME certificates: failed lifecycle events ---- #}
+<div class="fw-card mt-4 mb-2">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title">
+      <i class="bi bi-hdd-rack me-2 text-accent"></i>Appliance certificates — failed lifecycle events
+    </span>
+    <span>
+      {% if dev_failures %}<span class="fw-badge fw-badge-danger">{{ dev_failures|length }}</span>
+      {% else %}<span class="fw-badge fw-badge-success">none</span>{% endif %}
+    </span>
+  </div>
+  <div class="fw-card-body" style="font-size:13px;">
+    {% if not dev_failures %}
+      <div class="text-muted">
+        No failed sign / deploy / swap / renew / revoke event on any managed certificate.
+        These are the certificates SATOM issues for the appliances (ADCS or ACME), which is a
+        different pipeline from the node's own TLS certificate above.
+      </div>
+    {% else %}
+    <div class="fw-table-wrapper">
+      <table class="fw-table">
+        <thead>
+          <tr>
+            <th style="width:170px;">When</th>
+            <th style="width:110px;">Step</th>
+            <th>Certificate</th>
+            <th>Error</th>
+            <th style="width:110px;">By</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for f in dev_failures %}
+          <tr>
+            <td class="text-muted">{{ f.ts.strftime('%Y-%m-%d %H:%M') if f.ts else '—' }}</td>
+            <td><span class="fw-badge fw-badge-danger">{{ f.kind }}</span></td>
+            <td>
+              <a href="{{ url_for('cert_manager.detail', id=f.cert_id) }}">{{ f.cert_name or ('#' ~ f.cert_id) }}</a>
+              {% if f.cn %}<div class="text-muted" style="font-size:12px;">{{ f.cn }}</div>{% endif %}
+            </td>
+            <td><code style="font-size:12px;white-space:pre-wrap;">{{ f.detail }}</code></td>
+            <td class="text-muted">{{ f.by or '—' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="text-muted mt-3" style="font-size:12px;">
+  Journal retention: the last 400 attempts per node, at
+  <code>/opt/satom/state/cert-renew.jsonl</code> (node-local, outside <code>data/</code> so the
+  HA datasync cannot erase a standby's own record of its own failure).
+</div>
+{% endblock %}

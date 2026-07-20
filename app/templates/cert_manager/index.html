@@ -24,6 +24,10 @@
     </p>
   </div>
   <div class="d-flex gap-2">
+    <a class="btn btn-fw-secondary" href="{{ url_for('cert_manager.renewals') }}"
+       title="Renewal history and failures for every node, with the exact error">
+      <i class="bi bi-arrow-repeat me-1"></i>Renewals
+    </a>
     <a class="btn btn-fw-primary {{ '' if configured else 'disabled' }}" href="{{ url_for('cert_manager.new') }}">
       <i class="bi bi-plus-lg me-1"></i>New Certificate
     </a>

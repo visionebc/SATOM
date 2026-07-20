@@ -207,27 +207,52 @@ def _in_cooldown(state: dict, key: str, cooldown_h: int) -> bool:
 
 # ---- individual checks ----------------------------------------------------
 # Each returns a list of findings: {key, severity, title, detail}.
+def _renewal_failures() -> list[dict]:
+    """A renewal that FAILED is its own alert — until now the only e-mail was the
+    T-N days expiry warning, which means a broken pipeline stayed silent for weeks
+    and then surfaced as an emergency. The failure detail (and the page that shows
+    the full error) goes in the mail body."""
+    try:
+        from . import cert_renew_log as jrn
+        summ = jrn.summary()
+    except Exception:  # noqa: BLE001
+        return []
+    streak = summ.get("fail_streak") or 0
+    if streak <= 0:
+        return []
+    last = summ.get("last_error") or {}
+    sev = SEV_CRITICAL if streak >= 3 else SEV_WARNING
+    return [{"key": "cert.renew_failed", "severity": sev,
+             "title": f"Certificate renewal failing on {_node()} ({streak} consecutive)",
+             "detail": (f"Channel {last.get('channel')}: {last.get('summary')}\n"
+                        f"Error: {last.get('error') or 'n/a'}\n"
+                        f"Last attempt: {last.get('at')}\n"
+                        f"Full history: /cert-manager/renewals")}]
+
+
 def _check_cert() -> list[dict]:
     from . import cert_service
+    out = _renewal_failures()
     try:
         cur = cert_service.current()
     except Exception as exc:  # noqa: BLE001
-        return [{"key": "cert.error", "severity": SEV_WARNING,
-                 "title": "Certificate status unreadable",
-                 "detail": f"cert_service.current() failed: {exc}"}]
+        return out + [{"key": "cert.error", "severity": SEV_WARNING,
+                       "title": "Certificate status unreadable",
+                       "detail": f"cert_service.current() failed: {exc}"}]
     days = cur.get("days_left")
     if days is None:
-        return []
+        return out
     thresh = _int(K_CERT_DAYS, 14)
     if days > thresh:
-        return []
+        return out
     sev = SEV_CRITICAL if days <= 3 else SEV_WARNING
     src = cur.get("source") or "?"
-    return [{"key": "cert.expiry", "severity": sev,
+    return out + [{"key": "cert.expiry", "severity": sev,
              "title": f"TLS certificate expires in {days} day(s)",
              "detail": (f"The service certificate on {_node()} expires in {days} "
                         f"day(s) (source={src}, not_after={cur.get('not_after')}). "
-                        f"Renew or re-copy the wildcard before it lapses.")}]
+                        f"Renew or re-copy the wildcard before it lapses. "
+                        f"Renewal history + errors: /cert-manager/renewals")}]
 
 
 def _check_git() -> list[dict]:

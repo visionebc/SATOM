@@ -35,3 +35,6 @@ fortinet.db
 pki/
 dist/
 .gitconfig
+
+# node-local renewal journal (per-node truth; NEVER replicated)
+/state/

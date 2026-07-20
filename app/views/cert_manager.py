@@ -457,3 +457,69 @@ def _int(v):
         return int(v)
     except (TypeError, ValueError):
         return None
+
+
+# ---------------------------------------------------------------------------
+# Renewals — why a renewal did (or did not) happen, with the error text
+# ---------------------------------------------------------------------------
+@bp.route("/renewals")
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def renewals():
+    """The renewal journal for BOTH nodes plus the appliance-certificate
+    failures, so an operator never has to read journalctl to find out why a
+    certificate was not renewed. Complements the alert e-mail: the mail says
+    'something is wrong', this page says WHAT and shows the exact error."""
+    from ..services import cert_renew_log as jrn
+
+    nodes = jrn.fleet_view(limit=150)
+
+    # Appliance / ACME certificates: the failed lifecycle events (sign, deploy,
+    # renew, revoke). Same question, different pipeline — one page for both.
+    dev_failures = []
+    try:
+        rows = (db.session.query(ManagedCertificateEvent, ManagedCertificate)
+                .join(ManagedCertificate,
+                      ManagedCertificate.id == ManagedCertificateEvent.cert_id)
+                .filter(ManagedCertificateEvent.ok.is_(False))
+                .order_by(ManagedCertificateEvent.ts.desc())
+                .limit(100).all())
+        for ev, cert in rows:
+            dev_failures.append({"ts": ev.ts, "kind": ev.kind, "by": ev.by,
+                                 "detail": ev.detail or "", "cert_id": cert.id,
+                                 "cert_name": cert.name, "cn": cert.subject or ""})
+    except Exception as exc:  # noqa: BLE001 — a broken query must not 500 the page
+        db.session.rollback()
+        dev_failures = []
+        flash("Could not read appliance certificate events: %s" % exc, "warning")
+
+    return render_template("cert_manager/renewals.html",
+                           nodes=nodes, dev_failures=dev_failures)
+
+
+@bp.route("/renewals/run", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def renewals_run():
+    """Run the same pass the nightly timer runs, on THIS node, now. Exists so an
+    operator can prove the pipeline works instead of waiting for 03:30 — and so a
+    misconfiguration shows up as a journal row immediately."""
+    from ..services import cert_service as cs
+    from ..services import cert_renew_log as jrn
+    who = getattr(current_user, "username", "") or "operator"
+    try:
+        res = cs.renew_if_needed(by="manual:%s" % who)
+        msg = "renew: %s" % (res.get("reason") or ("renewed, %s d left" % res.get("days_left")))
+    except Exception as exc:  # noqa: BLE001 — already journaled by the service
+        msg = "renew failed: %s" % exc
+    try:
+        if cs.renew_mode() == "autopull":
+            r2 = cs.autopull(by="manual:%s" % who)
+            msg += " | autopull: %s" % (r2.get("reason") or "pulled + installed")
+    except Exception as exc:  # noqa: BLE001
+        jrn.record(jrn.CH_TIMER, jrn.OK_ERROR, "manual renewal pass aborted",
+                   error="%s: %s" % (type(exc).__name__, exc), by=who)
+        msg += " | autopull failed: %s" % exc
+    log_action("certmgr.renewals.run", target=msg[:190])
+    flash("Renewal pass finished — %s" % msg, "info")
+    return redirect(url_for("cert_manager.renewals"))

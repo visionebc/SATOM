@@ -971,37 +971,84 @@
       </div>
 
       <div class="fw-card mb-3">
-        <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-globe2 me-2 text-accent"></i>ACME client (used when the protocol is ACME)</span></div>
+        <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-globe2 me-2 text-accent"></i>ACME / Let's Encrypt — account</span></div>
         <div class="fw-card-body">
           <p class="text-muted mb-2" style="font-size:12px;">
-            Drives any ACME client (certbot, acme.sh, lego…) through the same command-template
-            contract. Tokens: {% for t in acme_cmd_tokens %}<code>{{ t }}</code>{{ ' ' if not loop.last }}{% endfor %}.
-            The EAB HMAC key is stored encrypted and never displayed.
+            Used when the protocol above is <strong>ACME</strong>. Everything is configured here —
+            nothing about the CA, the client or the DNS provider is hardcoded.
+            The signing/revoke commands are <strong>generated</strong> from these fields
+            (switch to Advanced below to write them by hand).
+            Tokens: {% for t in acme_cmd_tokens %}<code>{{ t }}</code>{{ ' ' if not loop.last }}{% endfor %}.
           </p>
           <div class="row g-3">
             <div class="col-md-3">
-              <label class="fw-form-label">ACME binary <code>{bin}</code></label>
-              <input class="form-control fw-form-control" name="acme_bin" value="{{ cert_acme.bin }}" placeholder="certbot">
-            </div>
-            <div class="col-md-5">
-              <label class="fw-form-label">Directory URL <code>{directory}</code></label>
-              <input class="form-control fw-form-control" name="acme_directory_url" value="{{ cert_acme.directory_url }}"
-                     placeholder="https://acme-v02.api.letsencrypt.org/directory">
-            </div>
-            <div class="col-md-4">
-              <label class="fw-form-label">Account email <code>{email}</code></label>
-              <input class="form-control fw-form-control" name="acme_account_email" value="{{ cert_acme.account_email }}" placeholder="pki@corp.local">
-            </div>
-            <div class="col-md-3">
-              <label class="fw-form-label">Challenge <code>{challenge}</code></label>
-              <select class="form-select fw-form-control" name="acme_challenge">
-                <option value="http-01" {{ 'selected' if cert_acme.challenge == 'http-01' }}>http-01</option>
-                <option value="dns-01" {{ 'selected' if cert_acme.challenge == 'dns-01' }}>dns-01</option>
+              <label class="fw-form-label">Client</label>
+              <select class="form-select fw-form-control" name="acme_client" id="acme-client">
+                <option value="lego" {{ 'selected' if cert_acme.client == 'lego' }}>lego (recommended — one static binary, ~150 DNS providers)</option>
+                <option value="custom" {{ 'selected' if cert_acme.client == 'custom' }}>other (write the commands yourself)</option>
               </select>
             </div>
+            <div class="col-md-3">
+              <label class="fw-form-label">Client binary <code>{bin}</code></label>
+              <input class="form-control fw-form-control" name="acme_bin" value="{{ cert_acme.bin }}" placeholder="lego">
+            </div>
+            <div class="col-md-6">
+              <label class="fw-form-label">Output helper <code>{helper}</code></label>
+              <input class="form-control fw-form-control" name="acme_helper" value="{{ cert_acme.helper }}"
+                     placeholder="/opt/satom/deploy/acme-hooks/satom-lego-run.sh">
+              <div class="form-text" style="font-size:11px;">Copies the issued certificate to the path the pipeline expects. Shipped with SATOM.</div>
+            </div>
+
+            <div class="col-md-7">
+              <label class="fw-form-label">Directory URL <code>{directory}</code></label>
+              <input class="form-control fw-form-control" name="acme_directory_url" id="acme-directory"
+                     value="{{ cert_acme.directory_url }}" list="acme-dir-list"
+                     placeholder="https://acme-v02.api.letsencrypt.org/directory">
+              <datalist id="acme-dir-list">
+                {% for label, url in acme_directories %}<option value="{{ url }}">{{ label }}</option>{% endfor %}
+              </datalist>
+              <div class="form-text" style="font-size:11px;">
+                <strong>Test against staging first.</strong> Let's Encrypt allows only a handful of failed
+                validations per hostname per hour — a mis-typed DNS credential on production locks you out.
+                {% for label, url in acme_directories %}
+                <a href="#" class="acme-dir-pick ms-1" data-url="{{ url }}">{{ label }}</a>{{ ' ·' if not loop.last }}
+                {% endfor %}
+              </div>
+            </div>
+            <div class="col-md-5">
+              <label class="fw-form-label">Account email <code>{email}</code></label>
+              <input class="form-control fw-form-control" name="acme_account_email" value="{{ cert_acme.account_email }}" placeholder="pki@example.com">
+            </div>
+
+            <div class="col-md-5">
+              <label class="fw-form-label">Account key directory <code>{acme_path}</code></label>
+              <input class="form-control fw-form-control" name="acme_account_key_dir" value="{{ cert_acme.account_key_dir }}"
+                     placeholder="/opt/satom/data/acme">
+              <div class="form-text" style="font-size:11px;">
+                Must PERSIST: a new account per issuance burns the CA's registration rate limit and
+                loses the ability to revoke what was issued earlier. Included in the system backups.
+              </div>
+            </div>
+            <div class="col-md-3">
+              <label class="fw-form-label">Key type <code>{key_type}</code></label>
+              <select class="form-select fw-form-control" name="acme_key_type">
+                {% for k in acme_key_types %}<option value="{{ k }}" {{ 'selected' if cert_acme.key_type == k }}>{{ k }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4 d-flex align-items-end">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="acme_tos_agreed" id="acme-tos"
+                       {{ 'checked' if cert_acme.tos_agreed }}>
+                <label class="form-check-label" for="acme-tos" style="font-size:12.5px;">
+                  I accept the CA's Terms of Service
+                </label>
+                <div class="form-text" style="font-size:11px;">Required — the client sends this to the CA on registration.</div>
+              </div>
+            </div>
+
             <div class="col-md-4">
               <label class="fw-form-label">EAB key id <code>{eab_kid}</code></label>
-              <input class="form-control fw-form-control" name="acme_eab_kid" value="{{ cert_acme.eab_kid }}" placeholder="(optional — External Account Binding)">
+              <input class="form-control fw-form-control" name="acme_eab_kid" value="{{ cert_acme.eab_kid }}" placeholder="(only for ZeroSSL / Google / private CAs)">
             </div>
             <div class="col-md-5">
               <label class="fw-form-label">EAB HMAC key <code>{eab_hmac}</code> (encrypted)</label>
@@ -1013,6 +1060,111 @@
                 <label class="form-check-label" for="acme-clr" style="font-size:12px;">Clear stored HMAC key</label>
               </div>
               {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="fw-card mb-3">
+        <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-shield-check me-2 text-accent"></i>ACME — domain validation</span></div>
+        <div class="fw-card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="fw-form-label">Challenge</label>
+              <select class="form-select fw-form-control" name="acme_challenge" id="acme-challenge">
+                <option value="http-01" {{ 'selected' if cert_acme.challenge == 'http-01' }}>http-01 — web authentication</option>
+                <option value="dns-01" {{ 'selected' if cert_acme.challenge == 'dns-01' }}>dns-01 — DNS provider (wildcards, no inbound port)</option>
+                <option value="tls-alpn-01" {{ 'selected' if cert_acme.challenge == 'tls-alpn-01' }}>tls-alpn-01 — TLS on :443</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- http-01 -->
+          <div class="mt-3 acme-ch acme-ch-http-01 acme-ch-tls-alpn-01">
+            <h6 class="text-muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;">Web authentication</h6>
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="fw-form-label">Mode</label>
+                <select class="form-select fw-form-control" name="acme_http_mode" id="acme-http-mode">
+                  <option value="webroot" {{ 'selected' if cert_acme.http_mode == 'webroot' }}>webroot — the local web server keeps :80</option>
+                  <option value="standalone" {{ 'selected' if cert_acme.http_mode == 'standalone' }}>standalone — the client binds the port itself</option>
+                </select>
+              </div>
+              <div class="col-md-5">
+                <label class="fw-form-label">Webroot path <code>{webroot}</code></label>
+                <input class="form-control fw-form-control" name="acme_webroot_path" value="{{ cert_acme.webroot_path }}" placeholder="/var/www/acme">
+                <div class="form-text" style="font-size:11px;">
+                  The server must serve <code>/.well-known/acme-challenge/</code> from here on port 80 for every
+                  hostname being issued — including before any redirect to HTTPS. The SATOM installer adds that snippet.
+                </div>
+              </div>
+              <div class="col-md-3">
+                <label class="fw-form-label">Port <code>{http_port}</code></label>
+                <input class="form-control fw-form-control" name="acme_http_port" value="{{ cert_acme.http_port }}" placeholder="80">
+                <div class="form-text" style="font-size:11px;">Standalone / tls-alpn only. The CA always connects to 80 (or 443) — use a redirect if you change it.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- dns-01 -->
+          <div class="mt-3 acme-ch acme-ch-dns-01">
+            <h6 class="text-muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;">DNS provider</h6>
+            <div class="row g-3">
+              <div class="col-md-5">
+                <label class="fw-form-label">Provider</label>
+                <select class="form-select fw-form-control" name="acme_dns_provider" id="acme-dns-provider">
+                  <option value="">— select a DNS provider —</option>
+                  {% for p in acme_providers %}
+                  <option value="{{ p.slug }}" {{ 'selected' if cert_acme.dns_provider == p.slug }} {{ 'disabled' if not p.enabled }}>
+                    {{ p.label }}{{ ' (disabled)' if not p.enabled }}
+                  </option>
+                  {% endfor %}
+                </select>
+                <div class="form-text" style="font-size:11px;">
+                  Credentials are entered per provider below (encrypted at rest, passed to the client
+                  through the environment — never on the command line). The list is editable: any DNS
+                  with an API can be added without touching code.
+                </div>
+              </div>
+              <div class="col-md-3">
+                <label class="fw-form-label">Resolvers <code>{dns_resolvers}</code></label>
+                <input class="form-control fw-form-control" name="acme_dns_resolvers" value="{{ cert_acme.dns_resolvers }}" placeholder="1.1.1.1:53">
+                <div class="form-text" style="font-size:11px;">Use a PUBLIC resolver when your internal DNS shadows the zone (split horizon).</div>
+              </div>
+              <div class="col-md-2">
+                <label class="fw-form-label">Propagation wait (s)</label>
+                <input class="form-control fw-form-control" name="acme_dns_propagation_wait" value="{{ cert_acme.dns_propagation_wait }}" placeholder="60">
+              </div>
+              <div class="col-md-2 d-flex align-items-center">
+                <div class="form-check mt-3">
+                  <input class="form-check-input" type="checkbox" name="acme_dns_disable_precheck" id="acme-dns-nocp"
+                         {{ 'checked' if cert_acme.dns_disable_precheck }}>
+                  <label class="form-check-label" for="acme-dns-nocp" style="font-size:12px;">Skip propagation check</label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="fw-card mb-3">
+        <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-terminal me-2 text-accent"></i>ACME — commands (advanced)</span></div>
+        <div class="fw-card-body">
+          <div class="row g-3">
+            <div class="col-md-5">
+              <label class="fw-form-label">Command source</label>
+              <select class="form-select fw-form-control" name="acme_template_mode" id="acme-tmode">
+                <option value="auto" {{ 'selected' if cert_acme.template_mode != 'custom' }}>Generated from the fields above (recommended)</option>
+                <option value="custom" {{ 'selected' if cert_acme.template_mode == 'custom' }}>Custom — I write the commands</option>
+              </select>
+            </div>
+            <div class="col-md-7 d-flex align-items-end">
+              <div class="alert alert-warning py-2 mb-0" style="font-size:11.5px;" id="acme-custom-warn">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                A custom command runs <strong>with the privileges of the SATOM service</strong>. Only administrators
+                can set it, it is audited, and every secret is redacted from the logs — but treat it as remote
+                code execution and prefer the generated form.
+              </div>
             </div>
             <div class="col-md-12">
               <label class="fw-form-label">Signing command (submit)</label>
@@ -1135,6 +1287,135 @@
         <a class="btn btn-outline-secondary" href="{{ url_for('cert_manager.index') }}">Open Certificate Manager</a>
       </div>
     </form>
+
+    <!-- DNS-01 provider credentials + catalog. OUTSIDE the settings form on
+         purpose: each provider posts its own form (HTML forbids nesting), and
+         a credential save must never depend on the rest of the tab. -->
+    <div class="fw-card mb-3" id="acme-creds">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-key me-2 text-accent"></i>DNS provider credentials (dns-01)</span>
+      </div>
+      <div class="fw-card-body">
+        <p class="text-muted mb-3" style="font-size:12px;">
+          One credential set per provider — switching provider and back never loses them.
+          Values marked <em>secret</em> are encrypted at rest, never sent back to the browser and
+          redacted from every log line. They reach the ACME client through its <strong>environment</strong>,
+          so they never appear in a command line or in <code>/proc</code>.
+        </p>
+        {% for p in acme_providers %}
+        {% set st = acme_provider_creds.get(p.slug) or {} %}
+        <details class="mb-2" {{ 'open' if cert_acme and cert_acme.dns_provider == p.slug }}>
+          <summary style="cursor:pointer;font-size:13px;">
+            <strong>{{ p.label }}</strong>
+            <code class="ms-1" style="font-size:11px;">{{ p.slug }}</code>
+            {% if cert_acme and cert_acme.dns_provider == p.slug %}
+            <span class="badge bg-primary ms-1" style="font-size:10px;">selected</span>
+            {% endif %}
+            {% if not p.enabled %}<span class="badge bg-secondary ms-1" style="font-size:10px;">disabled</span>{% endif %}
+            {% if st.get('missing') %}
+            <span class="badge bg-warning text-dark ms-1" style="font-size:10px;">missing: {{ st.get('missing')|join(', ') }}</span>
+            {% endif %}
+          </summary>
+          <form method="POST" action="{{ url_for('settings.save_acme_provider_creds', slug=p.slug) }}" class="mt-2 ps-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="row g-2">
+              {% for f in p.fields %}
+              <div class="col-md-6">
+                <label class="fw-form-label" style="font-size:12px;">
+                  {{ f.label or f.env }}
+                  <code style="font-size:10.5px;">{{ f.env }}</code>
+                  {% if f.required %}<span class="text-danger">*</span>{% endif %}
+                </label>
+                {% if f.secret %}
+                <input class="form-control fw-form-control" type="password" name="cred_{{ f.env }}"
+                       placeholder="{{ '•••••• (unchanged)' if st.get('secret_set', {}).get(f.env) else 'not set' }}">
+                {% if st.get('secret_set', {}).get(f.env) %}
+                <div class="form-check mt-1">
+                  <input class="form-check-input" type="checkbox" name="clear_{{ f.env }}" id="clr-{{ p.slug }}-{{ f.env }}">
+                  <label class="form-check-label" for="clr-{{ p.slug }}-{{ f.env }}" style="font-size:11px;">Clear</label>
+                </div>
+                {% endif %}
+                {% else %}
+                <input class="form-control fw-form-control" name="cred_{{ f.env }}"
+                       value="{{ st.get('vals', {}).get(f.env, '') }}" placeholder="{{ f.default or '' }}">
+                {% endif %}
+                {% if f.help %}<div class="form-text" style="font-size:11px;">{{ f.help }}</div>{% endif %}
+              </div>
+              {% endfor %}
+            </div>
+            <div class="mt-2">
+              <button type="submit" class="btn btn-sm btn-fw-primary">Save credentials</button>
+              {% if p.doc_url %}
+              <a class="btn btn-sm btn-outline-secondary" href="{{ p.doc_url }}" target="_blank" rel="noopener">Provider docs</a>
+              {% endif %}
+              {% if not p.builtin %}
+              <button type="submit" class="btn btn-sm btn-outline-danger float-end"
+                      formaction="{{ url_for('settings.delete_acme_provider', slug=p.slug) }}"
+                      data-js="confirm-delete-provider">Delete provider</button>
+              {% endif %}
+            </div>
+          </form>
+        </details>
+        {% else %}
+        <div class="text-muted" style="font-size:12px;">
+          The provider catalog is empty — it seeds itself from <code>acme_providers.yaml</code> at boot.
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="fw-card mb-4">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-plus-square me-2 text-accent"></i>Add or edit a DNS provider</span>
+      </div>
+      <div class="fw-card-body">
+        <p class="text-muted mb-2" style="font-size:12px;">
+          The catalog is <strong>data</strong>, not code: supporting a DNS nobody anticipated — or fixing an
+          environment variable an upstream release renamed — is a row here, never a deploy.
+          Use an existing <code>slug</code> to edit it. <code>Flag</code> is what the client is told to use
+          (<code>lego --dns &lt;flag&gt;</code>); use <code>exec</code> plus an <code>EXEC_PATH</code> field to drive any
+          API through a hook script.
+        </p>
+        <form method="POST" action="{{ url_for('settings.save_acme_provider') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="row g-2">
+            <div class="col-md-3">
+              <label class="fw-form-label" style="font-size:12px;">Slug</label>
+              <input class="form-control fw-form-control" name="slug" required placeholder="my-dns">
+            </div>
+            <div class="col-md-3">
+              <label class="fw-form-label" style="font-size:12px;">Label</label>
+              <input class="form-control fw-form-control" name="label" placeholder="My DNS provider">
+            </div>
+            <div class="col-md-2">
+              <label class="fw-form-label" style="font-size:12px;">Flag</label>
+              <input class="form-control fw-form-control" name="flag" placeholder="exec">
+            </div>
+            <div class="col-md-4">
+              <label class="fw-form-label" style="font-size:12px;">Docs URL</label>
+              <input class="form-control fw-form-control" name="doc_url" placeholder="https://…">
+            </div>
+            <div class="col-md-12">
+              <label class="fw-form-label" style="font-size:12px;">Fields (JSON list of environment variables)</label>
+              <textarea class="form-control fw-form-control" name="fields" rows="4"
+                        style="font-family:monospace;font-size:11.5px;"
+                        placeholder='[{"env":"MYDNS_TOKEN","label":"API token","secret":true,"required":true}]'></textarea>
+            </div>
+            <div class="col-md-2">
+              <label class="fw-form-label" style="font-size:12px;">Sort</label>
+              <input class="form-control fw-form-control" name="sort" value="900">
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" name="enabled" id="acme-prov-en" checked>
+                <label class="form-check-label" for="acme-prov-en" style="font-size:12px;">Enabled</label>
+              </div>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-sm btn-fw-primary mt-2">Save provider</button>
+        </form>
+      </div>
+    </div>
   </div>
   <!-- DNS LOOKUP TAB -->
   <div class="tab-pane fade" id="tab-nodetls">
@@ -2558,6 +2839,48 @@ document.addEventListener('DOMContentLoaded', function() {
   on('newPwd', 'input', function (event) { checkStrength(event.target.value); });
   {% if is_admin %}
   on('lib-check-btn', 'click', function (event) { checkLibraryUpdates(true); });
+
+  // --- Certificate Manager / ACME: show only the fields the chosen challenge
+  //     and command source actually use. Pure display logic — every value is
+  //     still submitted and validated server-side.
+  function acmeToggle() {
+    var chEl = document.getElementById('acme-challenge');
+    if (!chEl) return;
+    var ch = chEl.value;
+    document.querySelectorAll('.acme-ch').forEach(function (el) {
+      el.style.display = el.classList.contains('acme-ch-' + ch) ? '' : 'none';
+    });
+    var mode = (document.getElementById('acme-http-mode') || {}).value;
+    var wr = document.querySelector('input[name="acme_webroot_path"]');
+    if (wr) wr.closest('.col-md-5').style.display = (mode === 'webroot') ? '' : 'none';
+    var custom = (document.getElementById('acme-tmode') || {}).value === 'custom';
+    ['acme_submit_cmd', 'acme_revoke_cmd'].forEach(function (n) {
+      var i = document.querySelector('input[name="' + n + '"]');
+      if (i) { i.readOnly = !custom; i.style.opacity = custom ? '1' : '.65'; }
+    });
+    var warn = document.getElementById('acme-custom-warn');
+    if (warn) warn.style.display = custom ? '' : 'none';
+  }
+  on('acme-challenge', 'change', acmeToggle);
+  on('acme-http-mode', 'change', acmeToggle);
+  on('acme-tmode', 'change', acmeToggle);
+  acmeToggle();
+
+  document.querySelectorAll('.acme-dir-pick').forEach(function (a) {
+    a.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      var f = document.getElementById('acme-directory');
+      if (f) f.value = a.getAttribute('data-url');
+    });
+  });
+
+  document.querySelectorAll('[data-js="confirm-delete-provider"]').forEach(function (b) {
+    b.addEventListener('click', function (ev) {
+      if (!confirm('Delete this DNS provider from the catalog? Stored credentials for it are kept.')) {
+        ev.preventDefault();
+      }
+    });
+  });
   {% endif %}
 })();
 </script>

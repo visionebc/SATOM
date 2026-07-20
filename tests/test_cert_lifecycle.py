@@ -67,12 +67,12 @@ def test_signing_context_follows_protocol(app):
         store.save_cert_manager_protocol("acme")
         store.save_cert_manager_acme({"directory_url": "https://acme/dir",
                                       "account_email": "a@b"})
-        proto, tmpl, mapping, _ = cm._signing_context("server")
+        proto, tmpl, mapping, env, secrets = cm._signing_context("server")
         assert proto == "acme"
-        assert "{csr}" in tmpl and "certonly" in tmpl
+        assert "{csr}" in tmpl and "{out}" in tmpl
         assert mapping["directory"] == "https://acme/dir"
         store.save_cert_manager_protocol("adcs")
-        proto, tmpl, mapping, _ = cm._signing_context("server")
+        proto, tmpl, mapping, env, secrets = cm._signing_context("server")
         assert proto == "adcs"
         assert "certipy req" in tmpl
         assert "template" in mapping
@@ -81,7 +81,9 @@ def test_signing_context_follows_protocol(app):
 def test_cert_manager_configured_is_protocol_aware(app):
     with app.app_context():
         store.save_cert_manager_protocol("acme")
-        store.save_cert_manager_acme({"directory_url": "https://acme/dir"})
+        store.save_cert_manager_acme({"directory_url": "https://acme/dir",
+                                      "tos_agreed": "1",
+                                      "challenge": "http-01"})
         assert store.cert_manager_configured() is True
         store.save_cert_manager_protocol("adcs")
         assert store.cert_manager_configured() is False  # no ADCS CA configured

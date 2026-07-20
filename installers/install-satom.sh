@@ -43,8 +43,10 @@
 # ============================================================================
 set -euo pipefail
 
-VERSION="1.0"
+VERSION="1.1"
 APP_DIR="/opt/satom"
+ACME_WEBROOT="/var/www/acme"
+LEGO_VERSION="5.2.2"
 LOG_DIR="/var/log/satom"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUNDLE_DIR="${SCRIPT_DIR}/bundle"
@@ -351,6 +353,41 @@ ok "Entorno virtual listo ($(venv/bin/python --version 2>&1))"
 # ─────────────────────────────────────────────────────────────────────────────
 # PASO 4 — POSTGRES
 # ─────────────────────────────────────────────────────────────────────────────
+# ---- ACME client (Certificate Manager, protocolo ACME/Let's Encrypt) -------
+# lego = un único binario estático con ~150 proveedores DNS integrados. Se
+# instala aquí para que "Settings → Certificate Manager → ACME" funcione sin
+# pasos manuales. OFFLINE: viene en el bundle. ONLINE: se descarga y se
+# VERIFICA el sha256 del release. Nunca aborta la instalación: sin lego el
+# resto del producto (ADCS, PKI interna) sigue siendo plenamente funcional.
+say "Instalando el cliente ACME (lego ${LEGO_VERSION})"
+if command -v lego >/dev/null 2>&1; then
+    ok "lego ya presente: $(lego --version 2>&1 | head -1)"
+elif [ -f "${BUNDLE_DIR}/lego/lego" ]; then
+    install -m 0755 "${BUNDLE_DIR}/lego/lego" /usr/local/bin/lego && ok "lego instalado desde el bundle offline"
+elif [ $OFFLINE -eq 0 ] && command -v curl >/dev/null 2>&1; then
+    _lt="$(mktemp -d)"
+    if curl -fsSLo "$_lt/lego.tgz" "https://github.com/go-acme/lego/releases/download/v${LEGO_VERSION}/lego_v${LEGO_VERSION}_linux_amd64.tar.gz" \
+       && curl -fsSLo "$_lt/sums" "https://github.com/go-acme/lego/releases/download/v${LEGO_VERSION}/lego_${LEGO_VERSION}_checksums.txt"; then
+        _exp="$(grep "lego_v${LEGO_VERSION}_linux_amd64.tar.gz$" "$_lt/sums" | awk '{print $1}')"
+        _got="$(sha256sum "$_lt/lego.tgz" | awk '{print $1}')"
+        if [ -n "$_exp" ] && [ "$_exp" = "$_got" ]; then
+            tar xzf "$_lt/lego.tgz" -C "$_lt" lego && install -m 0755 "$_lt/lego" /usr/local/bin/lego \
+                && ok "lego $(lego --version 2>&1 | head -1) instalado (sha256 verificado)"
+        else
+            warn "lego: sha256 no coincide — NO instalado. Instálalo a mano si vas a usar ACME."
+        fi
+    else
+        warn "lego: descarga fallida — instálalo a mano si vas a usar ACME."
+    fi
+    rm -rf "$_lt"
+else
+    warn "lego no instalado (sin red y sin bundle). El protocolo ACME quedará inutilizable hasta instalarlo."
+fi
+# Directorio de la CUENTA ACME: debe PERSISTIR entre emisiones (los límites de
+# registro del CA y la capacidad de revocar dependen de la misma clave).
+mkdir -p "$APP_DIR/data/acme" && chmod 700 "$APP_DIR/data/acme"
+chmod 0755 "$APP_DIR/deploy/acme-hooks"/*.sh 2>/dev/null || true
+
 say "Paso 4/7 — Configurando PostgreSQL"
 
 pg_bootstrap
@@ -592,6 +629,8 @@ else
     grep -qE '^\s*include\s+/etc/nginx/conf\.d/\*\.conf' /etc/nginx/nginx.conf \
         || sed -i '0,/http\s*{/s//&\n    include \/etc\/nginx\/conf.d\/*.conf;/' /etc/nginx/nginx.conf
 fi
+mkdir -p "$ACME_WEBROOT/.well-known/acme-challenge"
+chmod 755 "$ACME_WEBROOT"
 cat > "$NGXCONF" <<NGX
 server {
     listen ${WEB_PORT} ssl http2;
@@ -608,6 +647,22 @@ server {
         proxy_set_header X-Forwarded-Proto https;
         proxy_read_timeout 120s;
     }
+}
+# ACME http-01 (webroot) — the Certificate Manager's "web authentication" mode.
+# The CA ALWAYS validates over plain :80, so this listener exists even though the
+# app is served over TLS. The redirect is scoped to "location /" on purpose: a
+# server-level "return" runs before location selection and would swallow the
+# challenge. Not needed if you validate with dns-01.
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    location ^~ /.well-known/acme-challenge/ {
+        root ${ACME_WEBROOT};
+        default_type "text/plain";
+        try_files \$uri =404;
+    }
+    location / { return 301 https://\$host:${WEB_PORT}\$request_uri; }
 }
 NGX
 if [ -d /etc/nginx/sites-enabled ]; then

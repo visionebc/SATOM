@@ -36,6 +36,7 @@ from ..services import user_settings_store as user_store
 from ..services import system_info
 from ..services import dns_tool as dns_tool_svc
 from ..services import dns_providers
+from ..services import acme_providers
 from ..services import policy_links as policy_links_svc
 from ..services import clone_rules as clone_rules_svc
 from ..services import faz_menu
@@ -47,6 +48,23 @@ bp = Blueprint('settings', __name__, url_prefix='/settings')
 
 def _is_admin() -> bool:
     return bool(current_user and current_user.can(Permission.USER_MANAGE))
+
+
+def _acme_creds_state() -> dict:
+    """Per provider: which env vars already have a stored value, and which
+    REQUIRED ones are still missing. Secret VALUES never reach the template —
+    only the fact that one is stored (same contract as every other secret)."""
+    out = {}
+    for p in acme_providers.catalog(enabled_only=False):
+        stored = store.acme_provider_creds(p.slug, p.field_list, reveal=False)
+        out[p.slug] = {
+            'vals': {f['env']: ('' if f.get('secret') else stored.get(f['env'], ''))
+                     for f in p.field_list},
+            'secret_set': {f['env']: bool(stored.get(f['env'] + '__set'))
+                           for f in p.field_list if f.get('secret')},
+            'missing': acme_providers.missing_required(p.slug),
+        }
+    return out
 
 
 @bp.route('/')
@@ -101,6 +119,12 @@ def index():
         cert_protocols=[(p, store.CERT_PROTOCOL_LABELS[p]) for p in store.CERT_PROTOCOLS],
         cert_acme=(store.cert_manager_acme() if _is_admin() else None),
         acme_cmd_tokens=store.ACME_CMD_TOKENS,
+        acme_challenges=store.ACME_CHALLENGES,
+        acme_key_types=store.ACME_KEY_TYPES,
+        acme_directories=acme_providers.KNOWN_DIRECTORIES,
+        acme_providers=([p.to_dict() for p in acme_providers.catalog(enabled_only=False)]
+                        if _is_admin() else []),
+        acme_provider_creds=(_acme_creds_state() if _is_admin() else {}),
         cert_lifecycle=(store.cert_lifecycle_policy() if _is_admin() else None),
         dns_tool_servers=(dns_tool_svc.dns_servers() if _is_admin() else []),
         dnsrec_cfg=(dns_providers.config_public() if _is_admin() else None),
@@ -265,11 +289,24 @@ def save_cert_manager():
     # Issuance protocol (pluggable CA backend) + ACME client config.
     store.save_cert_manager_protocol(f.get('cert_protocol', 'adcs'))
     store.save_cert_manager_acme({
+        'client': f.get('acme_client', 'lego'),
         'bin': f.get('acme_bin', ''),
+        'helper': f.get('acme_helper', ''),
         'directory_url': f.get('acme_directory_url', ''),
         'account_email': f.get('acme_account_email', ''),
+        'account_key_dir': f.get('acme_account_key_dir', ''),
+        'tos_agreed': '1' if f.get('acme_tos_agreed') else '',
+        'key_type': f.get('acme_key_type', 'EC256'),
         'eab_kid': f.get('acme_eab_kid', ''),
         'challenge': f.get('acme_challenge', 'http-01'),
+        'http_mode': f.get('acme_http_mode', 'webroot'),
+        'webroot_path': f.get('acme_webroot_path', ''),
+        'http_port': f.get('acme_http_port', '80'),
+        'dns_provider': f.get('acme_dns_provider', ''),
+        'dns_resolvers': f.get('acme_dns_resolvers', ''),
+        'dns_propagation_wait': f.get('acme_dns_propagation_wait', ''),
+        'dns_disable_precheck': '1' if f.get('acme_dns_disable_precheck') else '',
+        'template_mode': f.get('acme_template_mode', 'auto'),
         'submit_cmd': f.get('acme_submit_cmd', ''),
         'revoke_cmd': f.get('acme_revoke_cmd', ''),
         'eab_hmac': f.get('acme_eab_hmac', ''),
@@ -288,6 +325,72 @@ def save_cert_manager():
     log_action('settings.cert_manager',
                detail=f"protocol={f.get('cert_protocol', 'adcs')} + ADCS/ACME + lifecycle policy saved")
     flash('Certificate Manager settings saved.', 'success')
+    return redirect(url_for('settings.index') + '#tab-certmgr')
+
+
+# --------------------------------------------------------------------------- #
+#  ACME DNS-01 providers — catalog + per-provider credentials                   #
+#  The catalog is DATA (acme_dns_providers, seeded INSERT-ONLY from             #
+#  acme_providers.yaml): adding a provider is a row, never a deploy. The form   #
+#  is rendered FROM the provider's field list, so nothing here is hardcoded.    #
+# --------------------------------------------------------------------------- #
+@bp.route('/acme-provider/<slug>/creds', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_acme_provider_creds(slug):
+    prov = acme_providers.get(slug)
+    if prov is None:
+        flash(f'Unknown DNS provider {slug!r}.', 'danger')
+        return redirect(url_for('settings.index') + '#tab-certmgr')
+    f = request.form
+    values = {}
+    for spec in prov.field_list:
+        env = spec['env']
+        values[env] = f.get(f'cred_{env}', '')
+        values['clear__' + env] = bool(f.get(f'clear_{env}'))
+    store.save_acme_provider_creds(slug, prov.field_list, values)
+    # Never log values — only which variables were touched.
+    log_action('settings.acme_provider_creds', target=slug,
+               detail=f"{len(prov.field_list)} field(s) submitted")
+    flash(f'Credentials for {prov.label} saved.', 'success')
+    return redirect(url_for('settings.index') + '#tab-certmgr')
+
+
+@bp.route('/acme-provider', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_acme_provider():
+    """Create or edit a catalog entry. ``fields`` arrives as the JSON list the
+    UI edits — that is what makes a brand-new provider possible without code."""
+    f = request.form
+    slug = (f.get('slug') or '').strip().lower()
+    try:
+        acme_providers.upsert(slug, {
+            'label': f.get('label', ''),
+            'flag': f.get('flag', ''),
+            'doc_url': f.get('doc_url', ''),
+            'fields': f.get('fields', '[]'),
+            'enabled': f.get('enabled') == 'on',
+            'sort': f.get('sort') or None,
+        })
+    except Exception as exc:  # noqa: BLE001 — a bad JSON blob must not 500
+        flash(f'Provider not saved: {exc}', 'danger')
+        return redirect(url_for('settings.index') + '#tab-certmgr')
+    log_action('settings.acme_provider', target=slug, detail='catalog entry saved')
+    flash(f'DNS provider {slug} saved.', 'success')
+    return redirect(url_for('settings.index') + '#tab-certmgr')
+
+
+@bp.route('/acme-provider/<slug>/delete', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def delete_acme_provider(slug):
+    if acme_providers.delete(slug):
+        log_action('settings.acme_provider_delete', target=slug)
+        flash(f'DNS provider {slug} deleted.', 'success')
+    else:
+        flash('Built-in providers cannot be deleted — disable them instead.',
+              'warning')
     return redirect(url_for('settings.index') + '#tab-certmgr')
 
 

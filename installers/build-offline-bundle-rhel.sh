@@ -40,7 +40,7 @@ command -v dnf >/dev/null || { echo "Necesita familia RHEL/dnf (usa rockylinux:9
 echo "==> 0/4 Herramientas de build (dnf-plugins-core, python3.11, tar)"
 dnf -y -q install dnf-plugins-core createrepo_c python3.11 python3.11-pip git-core tar gzip findutils >/dev/null
 
-rm -rf "$STAGE"; mkdir -p "$STAGE/bundle/rpms" "$STAGE/bundle/wheels" "$OUT"
+rm -rf "$STAGE"; mkdir -p "$STAGE/bundle/rpms" "$STAGE/bundle/wheels" "$OUT" "$STAGE/bundle/lego"
 
 echo "==> 1/4 Descargando .rpms (cierre completo de dependencias)"
 dnf download -q --resolve --alldeps --destdir "$STAGE/bundle/rpms" "${PKGS[@]}"
@@ -62,6 +62,21 @@ if [ -n "${APP_TARBALL:-}" ]; then
     echo "    código desde APP_TARBALL=$APP_TARBALL"
 else
     git -C "$REPO_DIR" archive --format=tar.gz -o "$STAGE/bundle/app.tar.gz" "$REF"
+
+# --- ACME client: el binario estático de lego viaja en el bundle para que una
+# instalación OFFLINE tenga el protocolo ACME/Let's Encrypt operativo. El
+# sha256 del release se verifica AQUÍ, en la máquina de build (la que sí tiene red).
+LEGO_VERSION="${LEGO_VERSION:-5.2.2}"
+_lt="$(mktemp -d)"
+curl -fsSLo "$_lt/lego.tgz" "https://github.com/go-acme/lego/releases/download/v${LEGO_VERSION}/lego_v${LEGO_VERSION}_linux_amd64.tar.gz"
+curl -fsSLo "$_lt/sums"    "https://github.com/go-acme/lego/releases/download/v${LEGO_VERSION}/lego_${LEGO_VERSION}_checksums.txt"
+_exp="$(grep "lego_v${LEGO_VERSION}_linux_amd64.tar.gz$" "$_lt/sums" | awk '{print $1}')"
+_got="$(sha256sum "$_lt/lego.tgz" | awk '{print $1}')"
+[ -n "$_exp" ] && [ "$_exp" = "$_got" ] || { echo "lego sha256 mismatch"; exit 1; }
+tar xzf "$_lt/lego.tgz" -C "$STAGE/bundle/lego" lego
+chmod 0755 "$STAGE/bundle/lego/lego"
+rm -rf "$_lt"
+echo "    lego ${LEGO_VERSION} anadido al bundle (sha256 verificado)"
     echo "    código desde git archive ${REF}"
 fi
 

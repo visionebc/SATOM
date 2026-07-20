@@ -1822,3 +1822,59 @@ class LuaScript(db.Model):
 
     def __repr__(self) -> str:
         return f"<LuaScript {self.id} {self.name!r} {self.target}>"
+
+
+class AcmeDnsProvider(db.Model):
+    """A DNS-01 provider the Certificate Manager can drive.
+
+    THE CATALOG IS DATA, NOT CODE. Rows are seeded INSERT-ONLY from the
+    git-tracked ``acme_providers.yaml`` at boot (same contract as the endpoint
+    registry): an operator edit always wins and a brand-new provider is a row,
+    not a deploy. ``fields`` is the JSON list of environment variables the
+    provider reads — the Settings form is rendered FROM it, so supporting a
+    provider nobody anticipated needs no template change either.
+
+    Credentials are NOT stored here. They live per provider in ``app_settings``
+    under ``certmgr.acme.creds.<slug>``, with every field marked ``secret``
+    Fernet-encrypted (see services.settings_store.acme_provider_creds).
+    """
+
+    __tablename__ = "acme_dns_providers"
+
+    id = db.Column(db.Integer, primary_key=True)
+    slug = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    label = db.Column(db.String(160), nullable=False, default="")
+    # Value handed to the ACME client's DNS selector (lego: `--dns <flag>`).
+    flag = db.Column(db.String(64), nullable=False, default="")
+    doc_url = db.Column(db.String(300), nullable=False, default="")
+    # JSON list: [{env, label, secret, required, help, default}, …]
+    fields = db.Column(db.Text, nullable=False, default="[]")
+    # True = shipped in acme_providers.yaml (protected from delete, still editable).
+    builtin = db.Column(db.Boolean, nullable=False, default=False)
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    sort = db.Column(db.Integer, nullable=False, default=100)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow, nullable=False)
+
+    @property
+    def field_list(self) -> list[dict]:
+        try:
+            v = json.loads(self.fields or "[]")
+            return [f for f in v if isinstance(f, dict) and f.get("env")]
+        except Exception:  # noqa: BLE001 — a corrupt row must not 500 Settings
+            return []
+
+    @property
+    def secret_envs(self) -> list[str]:
+        return [str(f["env"]) for f in self.field_list if f.get("secret")]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id, "slug": self.slug, "label": self.label,
+            "flag": self.flag, "doc_url": self.doc_url,
+            "fields": self.field_list, "builtin": bool(self.builtin),
+            "enabled": bool(self.enabled), "sort": self.sort,
+        }
+
+    def __repr__(self) -> str:
+        return f"<AcmeDnsProvider {self.slug!r} flag={self.flag!r}>"

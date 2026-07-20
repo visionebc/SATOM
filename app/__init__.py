@@ -1074,6 +1074,7 @@ def create_app(config_override: object | None = None) -> Flask:
             _seed_admin()
             _assign_missing_profiles()
             _seed_registry()
+            _seed_acme_providers()
             _seed_adoms()
             _seed_capacity()
             if not app.config.get("TESTING"):
@@ -1318,6 +1319,24 @@ def _seed_admin() -> None:
     except IntegrityError:
         db.session.rollback()
         return  # Another worker seeded first — that's fine
+
+
+def _seed_acme_providers() -> None:
+    """Insert-only seed of the ACME DNS-01 provider catalog from the
+    git-tracked ``acme_providers.yaml``. Operator edits (renamed env vars,
+    custom providers, disabled rows) are never overwritten — same contract as
+    the endpoint registry."""
+    import logging
+
+    try:
+        from .services import acme_providers
+        added = acme_providers.seed_from_yaml()
+        if added:
+            logging.getLogger(__name__).info(
+                "ACME seed: %d DNS providers imported from acme_providers.yaml",
+                added)
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()
 
 
 def _seed_adoms() -> None:

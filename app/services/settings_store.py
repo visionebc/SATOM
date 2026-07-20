@@ -474,22 +474,56 @@ CERT_PROTOCOL_LABELS = {
 
 # Placeholders usable in the ACME submit/revoke command templates.
 ACME_CMD_TOKENS = (
-    "{bin}", "{directory}", "{email}", "{eab_kid}", "{eab_hmac}",
-    "{challenge}", "{csr}", "{out}", "{cert}", "{serial}",
+    "{bin}", "{helper}", "{directory}", "{email}", "{eab_kid}", "{eab_hmac}",
+    "{challenge}", "{key_type}", "{acme_path}", "{dns_flag}", "{dns_resolvers}",
+    "{dns_propagation_wait}", "{webroot}", "{http_port}",
+    "{csr}", "{out}", "{cert}", "{cn}", "{serial}",
 )
 
+ACME_CHALLENGES = ("http-01", "dns-01", "tls-alpn-01")
+ACME_CLIENTS = ("lego", "custom")
+ACME_KEY_TYPES = ("EC256", "EC384", "RSA2048", "RSA3072", "RSA4096")
+ACME_HTTP_MODES = ("webroot", "standalone")
+ACME_TEMPLATE_MODES = ("auto", "custom")
+
+# Default client = lego: ONE static binary, ~150 DNS providers built in, every
+# provider configured purely by ENVIRONMENT. That matters for a product third
+# parties install on Debian/RHEL/SUSE/Arch — no Python-version matrix, and no
+# 8k-line bash script executed as root.
 _CERTMGR_ACME_DEFAULTS = {
-    "bin": "certbot",
-    "directory_url": "",      # {directory} — ACME directory (empty = client default)
-    "account_email": "",      # {email}
-    "eab_kid": "",            # {eab_kid} — External Account Binding key id
-    "challenge": "http-01",   # {challenge} — http-01 | dns-01
-    "submit_cmd": ("{bin} certonly --non-interactive --agree-tos -m {email} "
-                   "--server {directory} --preferred-challenges {challenge} "
-                   "--csr {csr} --cert-path {out} --standalone"),
-    "revoke_cmd": ("{bin} revoke --non-interactive --server {directory} "
-                   "--cert-path {cert} --reason superseded"),
+    "client": "lego",              # lego | custom (custom = operator writes the cmds)
+    "bin": "lego",                 # {bin}
+    "helper": "/opt/satom/deploy/acme-hooks/satom-lego-run.sh",  # {helper}
+    "directory_url": "",           # {directory} — empty = client default
+    "account_email": "",           # {email}
+    # {acme_path} — the ACCOUNT KEY lives here and MUST persist: a fresh
+    # registration per issuance burns the CA's new-account rate limit and
+    # loses the ability to revoke what was issued before.
+    "account_key_dir": "/opt/satom/data/acme",
+    "tos_agreed": "",              # non-empty = operator accepted the CA's ToS
+    "key_type": "EC256",           # {key_type}
+    "eab_kid": "",                 # {eab_kid} — External Account Binding key id
+    "challenge": "http-01",        # http-01 | dns-01 | tls-alpn-01
+    # -- http-01 (web authentication) --------------------------------------
+    "http_mode": "webroot",        # webroot (nginx keeps :80) | standalone
+    "webroot_path": "/var/www/acme",   # {webroot}
+    "http_port": "80",             # {http_port}
+    # -- dns-01 -------------------------------------------------------------
+    "dns_provider": "",            # slug in the acme_dns_providers catalog
+    "dns_resolvers": "",           # {dns_resolvers} — e.g. 1.1.1.1:53
+    "dns_propagation_wait": "",    # {dns_propagation_wait} — seconds
+    "dns_disable_precheck": "",    # non-empty = --dns.disable-cp
+    # -- command templates --------------------------------------------------
+    # "auto": regenerated from the catalog + the fields above on every save.
+    # "custom": the operator owns the raw templates (admin-only, warned in UI).
+    "template_mode": "auto",
+    "submit_cmd": "",
+    "revoke_cmd": "",
 }
+
+# Per-provider credentials: certmgr.acme.creds.<slug>. Kept OUT of the main
+# ACME blob so switching provider and switching back never loses a credential.
+K_CERTMGR_ACME_CREDS = "certmgr.acme.creds."
 
 
 def cert_manager_protocol() -> str:
@@ -518,21 +552,89 @@ def cert_manager_acme(*, reveal_secret: bool = False) -> dict[str, Any]:
 
 
 def save_cert_manager_acme(values: dict[str, Any]) -> None:
-    """Persist the ACME config. A blank ``eab_hmac`` leaves the stored one."""
+    """Persist the ACME config. A blank ``eab_hmac`` leaves the stored one.
+
+    In ``template_mode == "auto"`` the submit/revoke commands are REGENERATED
+    from the catalog here, so the operator configures fields — never a shell
+    command. ``"custom"`` keeps whatever was typed."""
     raw = get_json(K_CERTMGR_ACME, {})
     out = dict(raw) if isinstance(raw, dict) else {}
     for k in _CERTMGR_ACME_DEFAULTS:
         if k in values:
             out[k] = str(values.get(k) or "").strip()
-    out["bin"] = out.get("bin", "").strip() or "certbot"
-    if out.get("challenge") not in ("http-01", "dns-01"):
+    out["bin"] = out.get("bin", "").strip() or "lego"
+    if out.get("client") not in ACME_CLIENTS:
+        out["client"] = "lego"
+    if out.get("challenge") not in ACME_CHALLENGES:
         out["challenge"] = "http-01"
+    if out.get("key_type") not in ACME_KEY_TYPES:
+        out["key_type"] = "EC256"
+    if out.get("http_mode") not in ACME_HTTP_MODES:
+        out["http_mode"] = "webroot"
+    if out.get("template_mode") not in ACME_TEMPLATE_MODES:
+        out["template_mode"] = "auto"
+    if not out.get("account_key_dir"):
+        out["account_key_dir"] = _CERTMGR_ACME_DEFAULTS["account_key_dir"]
     secret = values.get("eab_hmac")
     if secret is not None and str(secret).strip():
         out["eab_hmac_enc"] = _certmgr_encrypt(str(secret).strip())
     if values.get("clear_eab_hmac"):
         out["eab_hmac_enc"] = ""
+
+    if out["template_mode"] == "auto":
+        # Local import: acme_providers imports this module (catalog credentials).
+        from . import acme_providers
+        sub, rev = acme_providers.build_commands(out)
+        out["submit_cmd"], out["revoke_cmd"] = sub, rev
     set_json(K_CERTMGR_ACME, out)
+
+
+# ---- Certificate Manager: per-DNS-provider credentials ---------------------
+# One app_settings row per provider slug. Fields flagged ``secret`` in the
+# catalog are Fernet-encrypted under "<ENV>__enc" and NEVER returned to the
+# browser; the UI only learns that a value is stored.
+def acme_provider_creds(slug: str, fields, *, reveal: bool = False) -> dict[str, Any]:
+    slug = (slug or "").strip()
+    if not slug:
+        return {}
+    raw = get_json(K_CERTMGR_ACME_CREDS + slug, {})
+    raw = raw if isinstance(raw, dict) else {}
+    out: dict[str, Any] = {}
+    for f in fields or []:
+        env = str((f or {}).get("env") or "")
+        if not env:
+            continue
+        if f.get("secret"):
+            enc = raw.get(env + "__enc", "")
+            out[env] = _certmgr_decrypt(enc) if (reveal and enc) else ""
+            out[env + "__set"] = bool(enc)
+        else:
+            out[env] = str(raw.get(env, "") or "")
+    return out
+
+
+def save_acme_provider_creds(slug: str, fields, values: dict[str, Any]) -> None:
+    """Blank secret = keep the stored one (same contract as every other secret
+    in this console). ``clear__<ENV>`` wipes it."""
+    slug = (slug or "").strip()
+    if not slug:
+        return
+    key = K_CERTMGR_ACME_CREDS + slug
+    raw = get_json(key, {})
+    out = dict(raw) if isinstance(raw, dict) else {}
+    for f in fields or []:
+        env = str((f or {}).get("env") or "")
+        if not env:
+            continue
+        if f.get("secret"):
+            v = values.get(env)
+            if v is not None and str(v).strip():
+                out[env + "__enc"] = _certmgr_encrypt(str(v).strip())
+            if values.get("clear__" + env):
+                out[env + "__enc"] = ""
+        elif env in values:
+            out[env] = str(values.get(env) or "").strip()
+    set_json(key, out)
 
 
 # ---- Certificate Manager: lifecycle policy (revocation + device cleanup) ---
@@ -589,8 +691,16 @@ def cert_manager_configured() -> bool:
     a directory URL (or a fully custom submit command)."""
     if cert_manager_protocol() == "acme":
         a = cert_manager_acme()
-        return bool(a.get("directory_url") or
-                    a.get("submit_cmd") != _CERTMGR_ACME_DEFAULTS["submit_cmd"])
+        if not a.get("submit_cmd"):
+            return False
+        if a.get("template_mode") == "custom":
+            return True
+        if not (a.get("directory_url") and a.get("tos_agreed")):
+            return False
+        if a.get("challenge") == "dns-01":
+            return bool(a.get("dns_provider"))
+        return bool(a.get("webroot_path") if a.get("http_mode") == "webroot"
+                    else a.get("http_port"))
     a = cert_manager_adcs()
     if not (a.get("ca") and a.get("ca_name") and a.get("user")):
         return False

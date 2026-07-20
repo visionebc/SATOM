@@ -136,6 +136,146 @@ def _speed_of(payload: dict, kind: str) -> str:
     return raw
 
 
+# --- port roles -------------------------------------------------------------
+# WHAT a port is for, derived from configuration the harvest already holds — no
+# extra device round-trip. Signals verified against live payloads (2026-07-20):
+#
+# * FortiWeb  — the interface object carries NO HA flag; the roles live in
+#   ``system_ha``: ``hbdev``/``hbdev-backup`` (heartbeat), ``monitor``
+#   (HA link health check), ``session-sync-dev``, ``ha-mgmt-interface``.
+# * FortiADC  — per-interface booleans ``is_ha_heartbeat`` / ``is_ha_data`` /
+#   ``is_ha_monitor``, plus ``dedicate-to-management`` and ``default-gw``.
+# * FortiAnalyzer — ``system_ha.hb-interface``; the interface has ``defaultgw``.
+#
+# Every appliance in this fleet is HA ``mode=standalone`` today, so in practice
+# only the management/gateway roles light up; the HA ones are wired so the card
+# is right the day a cluster IS configured, without another code change.
+
+_ROLE_META = {
+    "satom":      ("SATOM link",      "The address SATOM manages this device on"),
+    "mgmt":       ("Management",      "Interface reserved for management"),
+    "ha-hb":      ("HA heartbeat",    "Carries the HA heartbeat"),
+    "ha-data":    ("HA data",         "HA data / session-sync link"),
+    "ha-monitor": ("Health check",    "Monitored by HA — link loss triggers failover"),
+    "gw":         ("Default gateway", "Holds the default route"),
+    "admin":      ("Admin access",    "Accepts administrative logins (allowaccess)"),
+}
+_ROLE_ORDER = ["satom", "mgmt", "ha-hb", "ha-data", "ha-monitor", "gw", "admin"]
+
+_ADMIN_PROTOS = {"https", "ssh", "http", "telnet"}
+
+
+def _flag(v) -> bool:
+    """Fortinet truthiness: True / 1 / 'enable' / 'up' — 'disable' is False."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return bool(v)
+    return _s(v).lower() in ("enable", "enabled", "true", "yes", "1", "up")
+
+
+def _names(raw) -> set[str]:
+    """Interface names out of a CLI-ish list: 'port3 port4', ['port3'], [{...}]."""
+    if raw is None:
+        return set()
+    if isinstance(raw, dict):
+        raw = raw.get("interface") or raw.get("name") or raw.get("mkey") or ""
+    if isinstance(raw, (list, tuple)):
+        out: set[str] = set()
+        for x in raw:
+            out |= _names(x)
+        return out
+    return {t for t in re.split(r"""[\s,"']+""", str(raw)) if t and not t.isdigit()}
+
+
+_DNS_CACHE: dict[str, str] = {}
+
+
+def _mgmt_ip(appliance) -> str:
+    """The IP SATOM reaches this appliance on.
+
+    ``Appliance.host`` is often a hostname (``fw7.example.net``), so matching it
+    against a port address needs one resolve. Memoised per process and failing
+    to '' — the card must never block or 500 on a sick resolver.
+    """
+    host = (appliance.host or "").strip()
+    if not host or re.match(r"^\d{1,3}(\.\d{1,3}){3}$", host):
+        return host
+    if host in _DNS_CACHE:
+        return _DNS_CACHE[host]
+    import socket
+    try:
+        ip = socket.gethostbyname(host)
+    except Exception:  # noqa: BLE001 — no DNS just means no "SATOM link" badge
+        ip = ""
+    _DNS_CACHE[host] = ip
+    return ip
+
+
+def _ha_roles(appliance, kind: str, *, session=None) -> dict[str, set[str]]:
+    """``{role_code: {port names}}`` from the cached ``system_ha`` object."""
+    from ..extensions import db
+    from ..models_cache import DeviceObject
+
+    session = session or db.session
+    row = (session.query(DeviceObject)
+           .filter_by(appliance_id=appliance.id, logical_name="system_ha", depth=0)
+           .order_by(DeviceObject.idx).first())
+    ha = (row.payload if row else None) or {}
+    if kind == "fortiweb":
+        return {
+            "ha-hb": _names(ha.get("hbdev")) | _names(ha.get("hbdev-backup")),
+            "ha-data": _names(ha.get("session-sync-dev")),
+            "ha-monitor": _names(ha.get("monitor")),
+            "mgmt": _names(ha.get("ha-mgmt-interface")),
+        }
+    if kind == "fortiadc":
+        return {
+            "ha-hb": _names(ha.get("hbdev")),
+            "ha-data": _names(ha.get("datadev")),
+            "ha-monitor": _names(ha.get("monitor_list")),
+            "mgmt": _names(ha.get("mgmt-interface")),
+        }
+    if kind == "fortianalyzer":
+        return {"ha-hb": _names(ha.get("hb-interface"))}
+    return {}
+
+
+def _roles_for(row: dict, payload: dict, kind: str,
+               ha_roles: dict[str, set[str]], mgmt_ip: str) -> list[dict]:
+    """Ordered, de-duplicated role badges for one interface row."""
+    codes: set[str] = set()
+    name = row.get("name", "")
+
+    if mgmt_ip and row.get("ip_address", "").split("/")[0] == mgmt_ip:
+        codes.add("satom")
+
+    if kind == "fortiadc":
+        if _flag(payload.get("dedicate-to-management")):
+            codes.add("mgmt")
+        if _flag(payload.get("is_ha_heartbeat")):
+            codes.add("ha-hb")
+        if _flag(payload.get("is_ha_data")):
+            codes.add("ha-data")
+        if _flag(payload.get("is_ha_monitor")):
+            codes.add("ha-monitor")
+        if _flag(payload.get("default-gw")) and row.get("ip_address"):
+            codes.add("gw")
+    elif kind == "fortianalyzer":
+        if _flag(payload.get("defaultgw")) and row.get("ip_address"):
+            codes.add("gw")
+
+    for code, names in ha_roles.items():
+        if name in names:
+            codes.add(code)
+
+    if _ADMIN_PROTOS & set((row.get("allowaccess") or "").lower().split()):
+        codes.add("admin")
+
+    return [{"code": c, "label": _ROLE_META[c][0], "title": _ROLE_META[c][1]}
+            for c in _ROLE_ORDER if c in codes]
+
+
 def cached_interfaces(appliance, *, session=None) -> list[dict]:
     """Normalised interface rows from the device cache (no device is touched).
 
@@ -154,6 +294,9 @@ def cached_interfaces(appliance, *, session=None) -> list[dict]:
             .filter_by(appliance_id=appliance.id, logical_name=logical,
                        layer="config", depth=0)
             .order_by(DeviceObject.idx).all())
+
+    ha_roles = _ha_roles(appliance, kind, session=session)
+    mgmt_ip = _mgmt_ip(appliance)
 
     out: list[dict] = []
     seen: set[str] = set()
@@ -181,6 +324,7 @@ def cached_interfaces(appliance, *, session=None) -> list[dict]:
             "documented": False,
             "cached": True,
         })
+        out[-1]["roles"] = _roles_for(out[-1], p, kind, ha_roles, mgmt_ip)
     out.sort(key=_port_sort)
     return out
 
@@ -353,7 +497,7 @@ def merged(appliance, *, session=None) -> dict:
                    "mtu": "", "vlan": "", "mode": "", "speed": "",
                    "allowaccess": "", "description": "", "mac": "",
                    "connected_to": "", "notes": "", "documented": False,
-                   "cached": False}
+                   "cached": False, "roles": []}
             by_name[name] = row
             rows.append(row)
         row["documented"] = True

@@ -225,6 +225,46 @@ def _redact(text: str, secret: str) -> str:
     return text.replace(secret, "********") if secret else text
 
 
+def _redact_all(text: str, secrets) -> str:
+    """Mask EVERY secret handed to the child process.
+
+    ADCS had exactly one (the enrolment password). ACME can have many: the EAB
+    HMAC plus one credential per DNS-provider field. Longest first, so a secret
+    that contains another one still masks cleanly."""
+    out = text or ""
+    for s in sorted({str(x) for x in (secrets or []) if str(x).strip()},
+                    key=len, reverse=True):
+        out = out.replace(s, "********")
+    return out
+
+
+# The ONLY variables inherited from the web process. The app runs as root and
+# its environment carries FERNET_KEY / SQLALCHEMY_DATABASE_URI — an external
+# signer (or a DNS hook script) must never see them. Everything the child needs
+# is passed EXPLICITLY by the protocol context.
+_ENV_PASSTHROUGH = ("PATH", "LANG", "LC_ALL", "TZ",
+                    "SSL_CERT_FILE", "SSL_CERT_DIR",
+                    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+                    "http_proxy", "https_proxy", "no_proxy")
+_ENV_DEFAULT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+
+def _build_env(extra: dict | None = None, *, home: str = "") -> dict[str, str]:
+    """A MINIMAL environment for the signer: a curated passthrough + whatever
+    the protocol context supplies (DNS-provider credentials, mostly).
+
+    This is the channel that makes a provider catalog possible at all: every
+    ACME client takes provider credentials from the environment, never from
+    argv — which also keeps them out of the command line, /proc and the logs."""
+    env = {k: os.environ[k] for k in _ENV_PASSTHROUGH if os.environ.get(k)}
+    env.setdefault("PATH", _ENV_DEFAULT_PATH)
+    env["HOME"] = home or env.get("HOME") or "/tmp"
+    for k, v in (extra or {}).items():
+        if k and v is not None:
+            env[str(k)] = str(v)
+    return env
+
+
 # --------------------------------------------------------------------------- #
 #  Protocol dispatch — the CA backend is CHOSEN in the admin console            #
 #  (Settings → Certificate Manager): "adcs" = enterprise-CA command template,   #
@@ -232,24 +272,67 @@ def _redact(text: str, secret: str) -> str:
 #  template contract. Adding a protocol = a settings_store entry + a context    #
 #  builder here; the pipeline (generate/sign/deploy/swap/revoke) is shared.     #
 # --------------------------------------------------------------------------- #
-def _signing_context(cert_class: str) -> tuple[str, str, dict, str]:
-    """(protocol, submit command template, base token mapping, secret) for the
+def _acme_common() -> tuple[dict, dict, dict, list[str]]:
+    """(acme cfg, token mapping, child environment, secrets to redact).
+
+    Shared by the submit and revoke contexts. The DNS-provider credentials come
+    from the catalog (:mod:`app.services.acme_providers`) and travel ONLY in the
+    environment — never in argv."""
+    from . import acme_providers  # local: acme_providers imports settings_store
+
+    acme = store.cert_manager_acme(reveal_secret=True)
+    eab = acme.get("eab_hmac", "")
+    acme_path = acme.get("account_key_dir") or "/opt/satom/data/acme"
+    mapping = {
+        "bin": acme.get("bin", "lego"),
+        "helper": acme.get("helper", ""),
+        "directory": acme.get("directory_url", ""),
+        "email": acme.get("account_email", ""),
+        "eab_kid": acme.get("eab_kid", ""),
+        "eab_hmac": eab,
+        "challenge": acme.get("challenge", "http-01"),
+        "key_type": acme.get("key_type", "EC256"),
+        "acme_path": acme_path,
+        "webroot": acme.get("webroot_path", ""),
+        "http_port": acme.get("http_port", "80"),
+        "dns_resolvers": acme.get("dns_resolvers", ""),
+        "dns_propagation_wait": acme.get("dns_propagation_wait", ""),
+        "dns_flag": "",
+    }
+    env, secrets = {}, [eab] if eab else []
+    if acme.get("challenge") == "dns-01" and acme.get("dns_provider"):
+        prov = acme_providers.get(acme["dns_provider"])
+        if prov is None:
+            raise CertManagerError(
+                f"DNS provider {acme['dns_provider']!r} is not in the catalog — "
+                "pick one in Settings → Certificate Manager.")
+        missing = acme_providers.missing_required(prov.slug)
+        if missing:
+            raise CertManagerError(
+                f"DNS provider {prov.label!r} is missing required credentials: "
+                f"{', '.join(missing)}")
+        mapping["dns_flag"] = prov.flag
+        env, psecrets = acme_providers.env_for(prov.slug)
+        secrets += psecrets
+    # The account key MUST survive across issuances (rate limits + revocation).
+    try:
+        os.makedirs(acme_path, mode=0o700, exist_ok=True)
+    except OSError as exc:  # noqa: BLE001 — surfaced as a clean config error
+        raise CertManagerError(
+            f"ACME account directory {acme_path!r} is not creatable: {exc}") from exc
+    return acme, mapping, env, secrets
+
+
+def _signing_context(cert_class: str) -> tuple[str, str, dict, dict, list[str]]:
+    """(protocol, submit template, token mapping, child env, secrets) for the
     ACTIVE issuance protocol. ``{csr}``/``{out}`` are added at run time."""
     protocol = store.cert_manager_protocol()
     ccfg = store.cert_class_config(cert_class)
     if protocol == "acme":
-        acme = store.cert_manager_acme(reveal_secret=True)
-        secret = acme.get("eab_hmac", "")
-        mapping = {
-            "bin": acme.get("bin", "certbot"),
-            "directory": acme.get("directory_url", ""),
-            "email": acme.get("account_email", ""),
-            "eab_kid": acme.get("eab_kid", ""),
-            "eab_hmac": secret,
-            "challenge": acme.get("challenge", "http-01"),
-            "template": ccfg.get("template", ""),
-        }
-        return "acme", (acme.get("submit_cmd") or "").strip(), mapping, secret
+        acme, mapping, env, secrets = _acme_common()
+        mapping["template"] = ccfg.get("template", "")
+        return ("acme", (acme.get("submit_cmd") or "").strip(),
+                mapping, env, secrets)
     adcs = store.cert_manager_adcs(reveal_secret=True)
     secret = adcs.get("secret", "")
     mapping = {
@@ -261,27 +344,21 @@ def _signing_context(cert_class: str) -> tuple[str, str, dict, str]:
         "ca_name": adcs.get("ca_name", ""),
         "template": ccfg.get("template", ""),
     }
-    return "adcs", (ccfg.get("submit_cmd") or "").strip(), mapping, secret
+    return ("adcs", (ccfg.get("submit_cmd") or "").strip(), mapping, {},
+            [secret] if secret else [])
 
 
-def _revoke_context(cert: ManagedCertificate) -> tuple[str, str, dict, str]:
-    """(protocol, revoke command template, base token mapping, secret). The ACME
-    revoke references the CERTIFICATE itself ({cert}, written to a temp file at
-    run time); the ADCS revoke references {serial}/{request_id}."""
+def _revoke_context(cert: ManagedCertificate) -> tuple[str, str, dict, dict, list[str]]:
+    """(protocol, revoke template, token mapping, child env, secrets). The ACME
+    revoke references the CERTIFICATE ({cert}, a temp file) and its {cn}; the
+    ADCS revoke references {serial}/{request_id}."""
     protocol = store.cert_manager_protocol()
     if protocol == "acme":
-        acme = store.cert_manager_acme(reveal_secret=True)
-        secret = acme.get("eab_hmac", "")
-        mapping = {
-            "bin": acme.get("bin", "certbot"),
-            "directory": acme.get("directory_url", ""),
-            "email": acme.get("account_email", ""),
-            "eab_kid": acme.get("eab_kid", ""),
-            "eab_hmac": secret,
-            "challenge": acme.get("challenge", "http-01"),
-            "serial": cert.serial or "",
-        }
-        return "acme", (acme.get("revoke_cmd") or "").strip(), mapping, secret
+        acme, mapping, env, secrets = _acme_common()
+        mapping["serial"] = cert.serial or ""
+        mapping["cn"] = _cn_of(cert)
+        return ("acme", (acme.get("revoke_cmd") or "").strip(),
+                mapping, env, secrets)
     ccfg = store.cert_class_config(cert.cert_class)
     adcs = store.cert_manager_adcs(reveal_secret=True)
     secret = adcs.get("secret", "")
@@ -291,7 +368,8 @@ def _revoke_context(cert: ManagedCertificate) -> tuple[str, str, dict, str]:
         "ca": adcs.get("ca", ""), "ca_name": adcs.get("ca_name", ""),
         "serial": cert.serial or "", "request_id": cert.ca_request_id or "",
     }
-    return "adcs", (ccfg.get("revoke_cmd") or "").strip(), mapping, secret
+    return ("adcs", (ccfg.get("revoke_cmd") or "").strip(), mapping, {},
+            [secret] if secret else [])
 
 
 def _extract_cert_pem(out_path: str, stdout: str, stderr: str) -> str:
@@ -325,7 +403,7 @@ def sign_csr(cert_class: str, csr_pem: str) -> tuple[str, str]:
     The command template ({csr}/{out}/… — ADCS or ACME tokens) is fully
     admin-defined — this is the "the user specifies the command parameters"
     contract. Raises :class:`CertManagerError` on failure."""
-    protocol, cmd_tmpl, mapping, secret = _signing_context(cert_class)
+    protocol, cmd_tmpl, mapping, env, secrets = _signing_context(cert_class)
     if not cmd_tmpl:
         raise CertManagerError(
             f"no signing command configured for protocol {protocol!r} / "
@@ -339,10 +417,11 @@ def sign_csr(cert_class: str, csr_pem: str) -> tuple[str, str]:
         mapping = dict(mapping, csr=csr_path, out=out_path)
         argv = _argv_from_template(cmd_tmpl, mapping)
 
-        safe_cmd = _redact(" ".join(shlex.quote(a) for a in argv), secret)
+        safe_cmd = _redact_all(" ".join(shlex.quote(a) for a in argv), secrets)
         try:
             proc = subprocess.run(argv, capture_output=True, text=True,
-                                  timeout=_SIGN_TIMEOUT, cwd=d)
+                                  timeout=_SIGN_TIMEOUT, cwd=d,
+                                  env=_build_env(env, home=mapping.get("acme_path", "")))
         except FileNotFoundError as exc:
             raise CertManagerError(
                 f"signing binary not found: {argv[0]!r} — install it or set {{bin}} "
@@ -350,8 +429,8 @@ def sign_csr(cert_class: str, csr_pem: str) -> tuple[str, str]:
         except subprocess.TimeoutExpired as exc:
             raise CertManagerError(f"signing command timed out after {_SIGN_TIMEOUT}s") from exc
 
-        stdout = _redact(proc.stdout or "", secret)
-        stderr = _redact(proc.stderr or "", secret)
+        stdout = _redact_all(proc.stdout or "", secrets)
+        stderr = _redact_all(proc.stderr or "", secrets)
         log = (f"$ {safe_cmd}\n[rc={proc.returncode}]\n{stdout}\n{stderr}").strip()
         cert_pem = _extract_cert_pem(out_path, proc.stdout or "", proc.stderr or "")
         if not cert_pem:
@@ -896,11 +975,11 @@ def revoke_certificate(cert: ManagedCertificate, *, delete_from_box: bool = Fals
     """Revoke at the CA (via the ACTIVE protocol's ``revoke_cmd``) and mark the
     row revoked. Deleting the cert off the FortiWeb is refused while it is bound
     to any server policy."""
-    protocol, cmd_tmpl, mapping, secret = _revoke_context(cert)
+    protocol, cmd_tmpl, mapping, env, secrets = _revoke_context(cert)
 
     if dry_run:
-        preview = _redact(_interpolate(cmd_tmpl, dict(mapping, cert="<cert.pem>")),
-                          secret)
+        preview = _redact_all(_interpolate(cmd_tmpl, dict(mapping, cert="<cert.pem>")),
+                              secrets)
         return {"ok": True, "dry_run": True,
                 "summary": f"[dry-run] revoke ({protocol}): {preview}",
                 "bindings": read_bindings_for(cert)}
@@ -915,10 +994,11 @@ def revoke_certificate(cert: ManagedCertificate, *, delete_from_box: bool = Fals
             try:
                 argv = _argv_from_template(cmd_tmpl, dict(mapping, cert=cert_path))
                 proc = subprocess.run(argv, capture_output=True,
-                                      text=True, timeout=_SIGN_TIMEOUT, cwd=d)
+                                      text=True, timeout=_SIGN_TIMEOUT, cwd=d,
+                                      env=_build_env(env, home=mapping.get("acme_path", "")))
                 ca_ok = proc.returncode == 0
-                ca_log = _redact(f"[{protocol}] [rc={proc.returncode}] "
-                                 f"{proc.stdout}\n{proc.stderr}", secret)[:2000]
+                ca_log = _redact_all(f"[{protocol}] [rc={proc.returncode}] "
+                                     f"{proc.stdout}\n{proc.stderr}", secrets)[:2000]
             except Exception as exc:  # noqa: BLE001
                 ca_ok, ca_log = False, f"revoke command error: {exc}"
     else:

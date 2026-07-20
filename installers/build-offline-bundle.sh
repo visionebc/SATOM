@@ -29,7 +29,7 @@ echo "==> Bundle offline SATOM v${VERSION} (ref ${REF})"
 command -v apt-get >/dev/null || { echo "Necesita Debian/apt"; exit 1; }
 [ "$(id -u)" -eq 0 ] || { echo "Ejecuta con sudo (apt necesita root)"; exit 1; }
 
-rm -rf "$STAGE"; mkdir -p "$STAGE/bundle/debs" "$STAGE/bundle/wheels"
+rm -rf "$STAGE"; mkdir -p "$STAGE/bundle/debs" "$STAGE/bundle/wheels" "$STAGE/bundle/lego"
 
 echo "==> 1/4 Descargando .debs (cierre completo de dependencias)"
 apt-get update -qq
@@ -51,6 +51,21 @@ echo "    $(ls "$STAGE/bundle/wheels" | wc -l) wheels/sdists"
 
 echo "==> 3/4 Empaquetando el código de la app (git archive ${REF})"
 git -C "$REPO_DIR" archive --format=tar.gz -o "$STAGE/bundle/app.tar.gz" "$REF"
+
+# --- ACME client: el binario estático de lego viaja en el bundle para que una
+# instalación OFFLINE tenga el protocolo ACME/Let's Encrypt operativo. El
+# sha256 del release se verifica AQUÍ, en la máquina de build (la que sí tiene red).
+LEGO_VERSION="${LEGO_VERSION:-5.2.2}"
+_lt="$(mktemp -d)"
+curl -fsSLo "$_lt/lego.tgz" "https://github.com/go-acme/lego/releases/download/v${LEGO_VERSION}/lego_v${LEGO_VERSION}_linux_amd64.tar.gz"
+curl -fsSLo "$_lt/sums"    "https://github.com/go-acme/lego/releases/download/v${LEGO_VERSION}/lego_${LEGO_VERSION}_checksums.txt"
+_exp="$(grep "lego_v${LEGO_VERSION}_linux_amd64.tar.gz$" "$_lt/sums" | awk '{print $1}')"
+_got="$(sha256sum "$_lt/lego.tgz" | awk '{print $1}')"
+[ -n "$_exp" ] && [ "$_exp" = "$_got" ] || { echo "lego sha256 mismatch"; exit 1; }
+tar xzf "$_lt/lego.tgz" -C "$STAGE/bundle/lego" lego
+chmod 0755 "$STAGE/bundle/lego/lego"
+rm -rf "$_lt"
+echo "    lego ${LEGO_VERSION} anadido al bundle (sha256 verificado)"
 
 echo "==> 4/4 Instalador + manual + tarball final"
 cp "$REPO_DIR/installers/install-satom.sh" "$STAGE/"

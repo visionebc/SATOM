@@ -224,7 +224,7 @@ def create_app(config_override: object | None = None) -> Flask:
         always = {
             'static', 'index', 'fortiweb_home', 'service_worker',
             'upload_worker', 'updiag', 'healthz', 'healthz_primary',
-            'healthz_backups',
+            'healthz_backups', 'healthz_cert_renewals',
             'product.select', 'product.set_product', 'product.switch',
             'product.enter', 'product.fortiadc_home',
             'product.placeholder_home',
@@ -736,16 +736,49 @@ def create_app(config_override: object | None = None) -> Flask:
         except Exception as exc:
             return jsonify({'ok': False, 'error': str(exc)}), 500
 
+    # -- renewal-journal probe (same pattern as /healthz/backups) ---------
+    # The PEER's Renewals page calls this so one page shows BOTH nodes without
+    # any SSH between them. The journal is node-local on purpose: a standby's
+    # Postgres is read-only and data/ is wiped by the rsync --delete datasync,
+    # so the node that fails to renew could not otherwise record that failure.
+    @app.route('/healthz/cert-renewals')
+    def healthz_cert_renewals():
+        from flask import jsonify, request as _rq
+        try:
+            from .services import cert_renew_log as _jrn
+            from .services import cert_service as _cs
+            limit = min(int(_rq.args.get('limit', 100) or 100), 400)
+            cert = {}
+            try:
+                cur = _cs.current()
+                cert = {k: cur.get(k) for k in
+                        ('source', 'days_left', 'not_after', 'subject', 'hostname',
+                         'installed_at', 'can_issue_internal')}
+                cert['renew_mode'] = _cs.renew_mode()
+            except Exception as exc:  # noqa: BLE001
+                cert = {'error': str(exc)}
+            return jsonify({'ok': True, 'cert': cert,
+                            'summary': _jrn.summary(),
+                            'runs': _jrn.history(limit=limit)}), 200
+        except Exception as exc:  # noqa: BLE001
+            return jsonify({'ok': False, 'error': str(exc)}), 500
+
     # -- CLI commands -----------------------------------------------------
     @app.cli.command('cert-renew')
     def cert_renew_cmd():
         """Auto-renew the node's CA-issued service cert if within threshold.
         Invoked by the satom-cert-renew.timer. No-op for imported/bootstrap certs."""
         from .services import cert_service as _cs
+        from .services import cert_renew_log as _jrn
         try:
             res = _cs.renew_if_needed(by='timer')
             print('cert-renew:', res)
         except Exception as exc:  # noqa: BLE001
+            # renew_if_needed journals its own failures; this catches anything
+            # that blew up BEFORE it could (import error, unreadable pki/, ...)
+            # so the Renewals page never shows a silent gap for a night.
+            _jrn.record(_jrn.CH_TIMER, _jrn.OK_ERROR, 'nightly cert-renew aborted',
+                        error='%s: %s' % (type(exc).__name__, exc), by='timer')
             print('cert-renew error:', exc)
         # Imported certs (e.g. the fleet wildcard) don't re-mint here; if the
         # operator chose the 'autopull' renewal mode, fetch+install the renewed
@@ -754,6 +787,8 @@ def create_app(config_override: object | None = None) -> Flask:
             if _cs.renew_mode() == 'autopull':
                 print('cert-autopull:', _cs.autopull(by='timer'))
         except Exception as exc:  # noqa: BLE001
+            _jrn.record(_jrn.CH_TIMER, _jrn.OK_ERROR, 'nightly cert-autopull aborted',
+                        error='%s: %s' % (type(exc).__name__, exc), by='timer')
             print('cert-autopull error:', exc)
 
     @app.cli.command('cert-autopull')
@@ -1335,6 +1370,13 @@ def _seed_acme_providers() -> None:
             logging.getLogger(__name__).info(
                 "ACME seed: %d DNS providers imported from acme_providers.yaml",
                 added)
+        # The catalog is only useful if every `flag` is a code the installed
+        # client implements; repair the rows we shipped with a stale one.
+        repaired = acme_providers.repair_stale_flags()
+        if repaired:
+            logging.getLogger(__name__).warning(
+                "ACME seed: repaired %d provider flag(s) the client rejects",
+                repaired)
     except Exception:  # noqa: BLE001 — never block boot on seeding
         db.session.rollback()
 

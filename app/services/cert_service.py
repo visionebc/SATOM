@@ -182,10 +182,25 @@ def _install(cert_pem: bytes, key_pem: bytes, chain_pem: bytes | None,
     return current()
 
 
-def import_pem(cert_pem: bytes, key_pem: bytes, chain_pem: bytes | None, by: str) -> dict:
-    """Validate + install an externally-issued cert. Import-only (no auto-renew)."""
-    validate_pem(cert_pem, key_pem, chain_pem)
-    return _install(cert_pem, key_pem, chain_pem, source="imported", by=by)
+def import_pem(cert_pem: bytes, key_pem: bytes, chain_pem: bytes | None, by: str,
+               *, _log: bool = True) -> dict:
+    """Validate + install an externally-issued cert. Import-only (no auto-renew).
+
+    _log=False when the caller already journals the attempt (autopull), so a
+    single renewal does not produce two rows on the Renewals page."""
+    from . import cert_renew_log as jrn
+    try:
+        validate_pem(cert_pem, key_pem, chain_pem)
+        info = _install(cert_pem, key_pem, chain_pem, source="imported", by=by)
+    except Exception as exc:  # noqa: BLE001 — _install already rolled nginx back
+        if _log:
+            jrn.record(jrn.CH_IMPORT, jrn.OK_ERROR, "import rejected — cert NOT installed",
+                       error="%s: %s" % (type(exc).__name__, exc), by=by)
+        raise
+    if _log:
+        jrn.record(jrn.CH_IMPORT, jrn.OK_RENEWED, "imported PEM installed", by=by,
+                   days_left=info.get("days_left"), not_after=info.get("not_after"))
+    return info
 
 
 # ---------------------------------------------------------------------------
@@ -225,31 +240,67 @@ def _mint_leaf(hostname: str, days: int = ISSUE_DAYS) -> tuple[bytes, bytes]:
     return crt_pem, key_pem
 
 
-def issue_internal(by: str, hostname: str | None = None) -> dict:
-    """Mint + install a leaf from the internal CA (primary only). Auto-renewable."""
+def issue_internal(by: str, hostname: str | None = None, *, _log: bool = True) -> dict:
+    """Mint + install a leaf from the internal CA (primary only). Auto-renewable.
+
+    _log=False when renew_if_needed already journals the attempt."""
+    from . import cert_renew_log as jrn
     if not can_issue_internal():
         raise RuntimeError("internal CA key not present on this node — this node "
                            "cannot issue (only the CA holder / primary can). Import a cert instead.")
     hostname = hostname or node_hostname()
-    crt_pem, key_pem = _mint_leaf(hostname)
-    ca_pem = (CA_DIR / "ca.crt").read_bytes()  # ship the internal CA as the chain
-    return _install(crt_pem, key_pem, ca_pem, source="issued", by=by)
+    try:
+        crt_pem, key_pem = _mint_leaf(hostname)
+        ca_pem = (CA_DIR / "ca.crt").read_bytes()  # ship the internal CA as the chain
+        info = _install(crt_pem, key_pem, ca_pem, source="issued", by=by)
+    except Exception as exc:  # noqa: BLE001
+        if _log:
+            jrn.record(jrn.CH_ISSUE, jrn.OK_ERROR, "minting from the internal CA failed",
+                       error="%s: %s" % (type(exc).__name__, exc), by=by)
+        raise
+    if _log:
+        jrn.record(jrn.CH_ISSUE, jrn.OK_RENEWED, "minted from the internal CA (%s)" % hostname,
+                   by=by, days_left=info.get("days_left"), not_after=info.get("not_after"))
+    return info
 
 
 def renew_if_needed(by: str = "auto-renew", force: bool = False) -> dict:
     """Re-issue an *issued* cert when it is within the renewal threshold. No-op
-    for imported / bootstrap certs (we cannot renew what we did not issue)."""
+    for imported / bootstrap certs (we cannot renew what we did not issue).
+
+    Every outcome — renewed, skipped, failed — goes to the renewal journal
+    (app.services.cert_renew_log) so the Renewals page can show WHY a
+    night produced no new certificate. Before this existed the only trace was
+    the timer's stdout in journald."""
+    from . import cert_renew_log as jrn
     cur = current()
-    if cur.get("source") != "issued":
-        return {"renewed": False, "reason": "source is %r — only CA-issued certs auto-renew"
-                % cur.get("source"), "days_left": cur.get("days_left")}
-    if not can_issue_internal():
-        return {"renewed": False, "reason": "no CA key on this node", "days_left": cur.get("days_left")}
     days = cur.get("days_left")
+    na = cur.get("not_after")
+    if cur.get("source") != "issued":
+        res = {"renewed": False, "reason": "source is %r — only CA-issued certs auto-renew"
+               % cur.get("source"), "days_left": days}
+        jrn.record(jrn.CH_INTERNAL, jrn.OK_SKIPPED, res["reason"], by=by,
+                   days_left=days, not_after=na)
+        return res
+    if not can_issue_internal():
+        res = {"renewed": False, "reason": "no CA key on this node", "days_left": days}
+        jrn.record(jrn.CH_INTERNAL, jrn.OK_SKIPPED, res["reason"], by=by,
+                   days_left=days, not_after=na)
+        return res
     if not force and days is not None and days > RENEW_THRESHOLD_DAYS:
-        return {"renewed": False, "reason": "not due (%s d left, threshold %s)"
-                % (days, RENEW_THRESHOLD_DAYS), "days_left": days}
-    new = issue_internal(by=by)
+        res = {"renewed": False, "reason": "not due (%s d left, threshold %s)"
+               % (days, RENEW_THRESHOLD_DAYS), "days_left": days}
+        jrn.record(jrn.CH_INTERNAL, jrn.OK_SKIPPED, res["reason"], by=by,
+                   days_left=days, not_after=na)
+        return res
+    try:
+        new = issue_internal(by=by, _log=False)
+    except Exception as exc:  # noqa: BLE001 — journal it, then let the caller see it
+        jrn.record(jrn.CH_INTERNAL, jrn.OK_ERROR, "re-mint from the internal CA failed",
+                   error="%s: %s" % (type(exc).__name__, exc), by=by, days_left=days)
+        raise
+    jrn.record(jrn.CH_INTERNAL, jrn.OK_RENEWED, "re-minted from the internal CA", by=by,
+               days_left=new.get("days_left"), not_after=new.get("not_after"))
     return {"renewed": True, "days_left": new.get("days_left"), "not_after": new.get("not_after")}
 
 
@@ -331,6 +382,30 @@ def save_autopull_config(form: dict, mode: str | None = None) -> None:
 
 
 def autopull(by: str = "autopull-timer", force: bool = False) -> dict:
+    """Journaling wrapper around _autopull — classifies the outcome into
+    renewed / skipped / error and writes it to the renewal journal so a silent
+    nightly failure (bad SSH host, stale remote path, key mismatch) becomes a
+    visible row with its error text instead of a line in journald."""
+    from . import cert_renew_log as jrn
+    try:
+        res = _autopull(by=by, force=force)
+    except Exception as exc:  # noqa: BLE001 — _autopull is documented never to raise
+        jrn.record(jrn.CH_AUTOPULL, jrn.OK_ERROR, "autopull crashed",
+                   error="%s: %s" % (type(exc).__name__, exc), by=by)
+        raise
+    reason = res.get("reason") or ""
+    if res.get("pulled"):
+        jrn.record(jrn.CH_AUTOPULL, jrn.OK_RENEWED, "fetched + installed the renewed cert",
+                   by=by, days_left=res.get("days_left"), not_after=res.get("not_after"))
+    elif reason.startswith(("fetch failed", "install rejected", "paramiko unavailable")):
+        jrn.record(jrn.CH_AUTOPULL, jrn.OK_ERROR, "autopull failed", error=reason, by=by)
+    else:
+        jrn.record(jrn.CH_AUTOPULL, jrn.OK_SKIPPED, reason, by=by,
+                   days_left=res.get("days_left"))
+    return res
+
+
+def _autopull(by: str = "autopull-timer", force: bool = False) -> dict:
     """Fetch the renewed cert/key (+optional chain) from the configured source
     over SFTP and install it through the validated import path. No-op unless the
     renewal mode is ``autopull`` and the connection is configured. Never raises —
@@ -389,7 +464,7 @@ def autopull(by: str = "autopull-timer", force: bool = False) -> dict:
     except Exception:  # noqa: BLE001
         pass
     try:
-        info = import_pem(cert_pem, key_pem, chain_pem, by=by)
+        info = import_pem(cert_pem, key_pem, chain_pem, by=by, _log=False)
         return {"pulled": True, "days_left": info.get("days_left"),
                 "not_after": info.get("not_after")}
     except Exception as exc:  # noqa: BLE001 — import_pem already rolled nginx back

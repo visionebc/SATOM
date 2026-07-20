@@ -401,14 +401,14 @@ chmod 600 "$PKI/internal-ca/ca.key"
 openssl req -newkey rsa:2048 -sha256 -nodes \
     -keyout "$PKI/node/leaf.key" -out "$PKI/node/leaf.csr" \
     -subj "/CN=${HOSTN}" >>"$INSTALL_LOG" 2>&1
-cat > /tmp/ofm-ext.cnf <<EXT
+cat > /tmp/satom-ext.cnf <<EXT
 subjectAltName=IP:${NODE_IP},DNS:${HOSTN}
 extendedKeyUsage=serverAuth,clientAuth
 EXT
 openssl x509 -req -in "$PKI/node/leaf.csr" -CA "$PKI/internal-ca/ca.crt" \
     -CAkey "$PKI/internal-ca/ca.key" -CAcreateserial -days 825 -sha256 \
-    -extfile /tmp/ofm-ext.cnf -out "$PKI/node/leaf.crt" >>"$INSTALL_LOG" 2>&1
-rm -f /tmp/ofm-ext.cnf "$PKI/node/leaf.csr"
+    -extfile /tmp/satom-ext.cnf -out "$PKI/node/leaf.crt" >>"$INSTALL_LOG" 2>&1
+rm -f /tmp/satom-ext.cnf "$PKI/node/leaf.csr"
 chmod 600 "$PKI/node/leaf.key"
 cp "$PKI/node/leaf.crt" "$PKI/public/server.crt"
 cp "$PKI/node/leaf.key" "$PKI/public/server.key"

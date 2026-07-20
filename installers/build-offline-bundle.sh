@@ -42,11 +42,11 @@ echo "    $N paquetes .deb"
 [ "$N" -gt 50 ] || { echo "ERROR: muy pocos debs — algo falló"; exit 1; }
 
 echo "==> 2/4 Descargando wheels de Python (requirements.txt)"
-python3 -m venv /tmp/ofm-bundle-venv
-/tmp/ofm-bundle-venv/bin/pip -q install --upgrade pip
-/tmp/ofm-bundle-venv/bin/pip download -q -r "$REPO_DIR/requirements.txt" \
+python3 -m venv /tmp/satom-bundle-venv
+/tmp/satom-bundle-venv/bin/pip -q install --upgrade pip
+/tmp/satom-bundle-venv/bin/pip download -q -r "$REPO_DIR/requirements.txt" \
     -d "$STAGE/bundle/wheels"
-/tmp/ofm-bundle-venv/bin/pip download -q pip setuptools wheel -d "$STAGE/bundle/wheels"
+/tmp/satom-bundle-venv/bin/pip download -q pip setuptools wheel -d "$STAGE/bundle/wheels"
 echo "    $(ls "$STAGE/bundle/wheels" | wc -l) wheels/sdists"
 
 echo "==> 3/4 Empaquetando el código de la app (git archive ${REF})"

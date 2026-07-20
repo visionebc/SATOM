@@ -83,12 +83,16 @@ def select(id):
     appl = visible_appliance_or_404(id)
     device_context.set_current(appl.id)
     nxt = request.form.get('next') or request.args.get('next')
-    if (appl.kind or 'fortiweb') == 'fortiadc':
-        # An ADC device belongs to the ADC ADOM — never land it on a
-        # FortiWeb page (the product gate would bounce it anyway).
-        if nxt and nxt.startswith('/adc'):
+    kind = appl.kind or 'fortiweb'
+    # A device belongs to its own ADOM — never land it on a FortiWeb page
+    # (the product gate would bounce it anyway). Same rule for every product.
+    _home = {'fortiadc': ('/adc', 'adc.index'),
+             'fortianalyzer': ('/faz', 'faz.index')}.get(kind)
+    if _home:
+        prefix, endpoint = _home
+        if nxt and nxt.startswith(prefix):
             return redirect(nxt)
-        return redirect(url_for('adc.index'))
+        return redirect(url_for(endpoint))
     if nxt and nxt.startswith('/'):
         return redirect(nxt)
     return redirect(url_for('workspace.index'))

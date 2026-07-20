@@ -273,20 +273,7 @@
         </div>
       </div>
 
-      {# Device context — right below the Global link, like FortiWeb #}
-      <div class="fw-nav-context" data-nav-context="Device">
-        <div class="fw-nav-section fw-nav-context-label"><i class="bi bi-hdd-rack fw-nav-section-icon" style="color:#10b981;"></i><span>Device</span></div>
-        <div class="fw-nav-group-body">
-          {% if current_appliance and current_appliance.kind == 'fortiadc' %}
-          <a class="fw-nav-item" href="{{ url_for('adc.index') }}" title="Switch device">
-            <i class="bi bi-hdd-rack fw-nav-icon"></i>
-            <span>{{ current_appliance.name }} <small style="opacity:.55;">· change</small></span></a>
-          {% else %}
-          <a class="fw-nav-item {{ 'active' if request.endpoint == 'adc.index' else '' }}" href="{{ url_for('adc.index') }}">
-            <i class="bi bi-hdd-rack fw-nav-icon"></i><span>Select a device</span></a>
-          {% endif %}
-        </div>
-      </div>
+      {% include 'partials/nav_device_context.html' %}
 
       <!-- FLEET — the Global-ADOM menu, mirrored here but scoped to this
            product's devices/policies (visible_appliances + product_scope). -->
@@ -453,20 +440,7 @@
         </div>
       </div>
 
-      {# Device context #}
-      <div class="fw-nav-context" data-nav-context="Device">
-        <div class="fw-nav-section fw-nav-context-label"><i class="bi bi-hdd-rack fw-nav-section-icon" style="color:#d97706;"></i><span>Device</span></div>
-        <div class="fw-nav-group-body">
-          {% if current_appliance and current_appliance.kind == 'fortianalyzer' %}
-          <a class="fw-nav-item" href="{{ url_for('faz.index') }}" title="Switch device">
-            <i class="bi bi-hdd-rack fw-nav-icon"></i>
-            <span>{{ current_appliance.name }} <small style="opacity:.55;">· change</small></span></a>
-          {% else %}
-          <a class="fw-nav-item {{ 'active' if request.endpoint == 'faz.index' else '' }}" href="{{ url_for('faz.index') }}">
-            <i class="bi bi-hdd-rack fw-nav-icon"></i><span>Select a device</span></a>
-          {% endif %}
-        </div>
-      </div>
+      {% include 'partials/nav_device_context.html' %}
 
       <!-- FLEET — Architecture / Analysis / Metrics (shared, product-scoped) -->
       <div class="fw-nav-group {{ 'open' if request.blueprint in ['architecture','analysis','metrics','search','dns_tool','fleet_objects','jobs'] }}" data-nav-group="Fleet">
@@ -554,16 +528,7 @@
         </div>
       </div>
 
-      {% if current_appliance %}
-      <div class="fw-nav-context" data-nav-context="Device">
-        <div class="fw-nav-section fw-nav-context-label"><i class="bi bi-hdd-rack fw-nav-section-icon" style="color:#10b981;"></i><span>Device</span></div>
-        <div class="fw-nav-group-body">
-          <a class="fw-nav-item" href="{{ url_for('architecture.index') }}" title="Switch device">
-            <i class="bi bi-hdd-rack fw-nav-icon"></i>
-            <span>{{ current_appliance.name }} <small style="opacity:.55;">· change</small></span></a>
-        </div>
-      </div>
-      {% endif %}
+      {% include 'partials/nav_device_context.html' %}
 
       <!-- FLEET — the Global-ADOM menu, mirrored here but scoped to this
            product's devices/policies (visible_appliances + product_scope). -->
@@ -920,7 +885,7 @@
   </main>
 </div>
 
-{% if current_user and current_user.is_authenticated and product and product.key in ('fortiweb', 'fortiadc') %}
+{% if current_user and current_user.is_authenticated and product and product.key in ('fortiweb', 'fortiadc', 'fortianalyzer') %}
 {% if product.key in ('fortiweb', 'fortiadc') %}{% include 'partials/release_notes_modal.html' %}{% endif %}
 <div class="modal fade" id="deviceSwitchModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -934,7 +899,7 @@
       </div>
       <div class="modal-footer" style="background:#0e1626;border-top:1px solid rgba(148,163,184,.12);">
         <span style="color:#5b6b85;font-size:12px;" class="me-auto">Pick a device to make it the active context.</span>
-        <a href="{{ url_for('architecture.index') }}" class="btn btn-sm" style="background:rgba(148,163,184,.12);color:#cdd7ea;border:1px solid rgba(148,163,184,.18);"><i class="bi bi-map me-1"></i>Open full map</a>
+        {% if product.key == 'fortiweb' %}<a href="{{ url_for('architecture.index') }}" class="btn btn-sm" style="background:rgba(148,163,184,.12);color:#cdd7ea;border:1px solid rgba(148,163,184,.18);"><i class="bi bi-map me-1"></i>Open full map</a>{% endif %}
       </div>
     </div>
   </div>
@@ -944,7 +909,9 @@
   var el=document.getElementById('deviceSwitchModal'); if(!el) return;
   el.addEventListener('show.bs.modal', function(){
     var body=document.getElementById('deviceSwitchBody');
-    fetch('{{ url_for("architecture.picker") }}').then(function(r){return r.text();})
+    // X-ADOM pins the picker to THIS tab's ADOM (per-tab product, 2026-07-07)
+    // so the fleet it lists is scoped to this product's own devices only.
+    fetch('{{ url_for("architecture.picker") }}', {headers:{'X-ADOM':'{{ product.key }}'}}).then(function(r){return r.text();})
       .then(function(html){ body.innerHTML=html;
         body.querySelectorAll('script').forEach(function(os){var ns=document.createElement('script');ns.nonce=(document.querySelector('meta[name=csp-nonce]')||{}).content||'';ns.textContent=os.textContent;os.replaceWith(ns);});
         body.querySelectorAll('style').forEach(function(os){var ns=document.createElement('style');ns.nonce=(document.querySelector('meta[name=csp-nonce]')||{}).content||'';ns.textContent=os.textContent;os.replaceWith(ns);});

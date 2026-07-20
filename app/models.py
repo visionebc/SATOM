@@ -532,6 +532,39 @@ class ApplianceInterface(db.Model):
 
 
 # ---------------------------------------------------------------------------
+# ApplianceNic - cached hardware address per port.
+#
+# Deliberately SEPARATE from ApplianceInterface: that table is operator-authored
+# documentation and is rebuilt replace-all whenever the appliance is edited, so
+# a machine-populated MAC would be wiped by the next save. MACs are not exposed
+# by the REST cmdb on any of the three products (verified live), so they are
+# probed with a read-only CLI command over SSH and cached here.
+# ---------------------------------------------------------------------------
+
+class ApplianceNic(db.Model):
+    __tablename__ = "appliance_nics"
+
+    id = db.Column(db.Integer, primary_key=True)
+    appliance_id = db.Column(
+        db.Integer,
+        db.ForeignKey("appliances.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name = db.Column(db.String(64), nullable=False, default="")     # e.g. "port1"
+    mac = db.Column(db.String(32), nullable=True)                   # AA:BB:CC:DD:EE:FF
+    source = db.Column(db.String(16), nullable=False, default="cli")
+    fetched_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint("appliance_id", "name", name="uq_appliance_nic"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ApplianceNic {self.name!r} {self.mac!r} of appliance={self.appliance_id}>"
+
+
+# ---------------------------------------------------------------------------
 # AuditLog
 # ---------------------------------------------------------------------------
 

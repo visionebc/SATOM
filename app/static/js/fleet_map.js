@@ -904,17 +904,131 @@
     f.submit();
   }
 
-  // ---- inventory modal ------------------------------------------------------------------
+  // ---- inventory card -------------------------------------------------------------
+  // Everything rendered here is DB-only (device cache + operator documentation +
+  // cached MACs) so the card opens instantly even against a powered-off box.
+  // The single live action is the explicit "Fetch MAC addresses" button.
+  var DM_HW = { hardware: 'Hardware appliance', vm: 'Virtual machine', unknown: 'Unknown' };
+
+  function dmEl(tag, cls, parent, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = text;
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+
+  function dmDash(td, cls) {
+    dmEl('span', 'dm-dash', td, '—');
+    if (cls) td.className = cls;
+  }
+
+  function dmSpecs(d) {
+    var box = document.getElementById('dmSpecs');
+    box.innerHTML = '';
+    [['Platform', DM_HW[d.hw_type] || 'Unknown'],
+     ['Model', d.model],
+     ['Firmware', d.firmware],
+     ['Management', (d.host || '') + (d.port ? ':' + d.port : '')],
+     ['VDOM', d.vdom],
+     ['Zone', d.zone],
+     ['Line', d.line],
+     ['Department', d.department]].forEach(function (kv) {
+      var c = dmEl('div', 'dm-spec', box);
+      dmEl('div', 'k', c, kv[0]);
+      dmEl('div', 'v', c, (kv[1] === null || kv[1] === undefined || kv[1] === '') ? '—' : kv[1]);
+    });
+  }
+
+  function dmStatePill(state) {
+    var s = (state || '').toLowerCase().trim();
+    if (s === 'up' || s === 'online' || s === 'enable') return ['dm-pill dm-pill-up', s || 'up'];
+    if (s === 'down' || s === 'offline' || s === 'disable') return ['dm-pill dm-pill-down', s];
+    return ['dm-pill dm-pill-mut', s || 'unknown'];
+  }
+
+  function dmRenderIfaces(ifaces) {
+    var tb = document.getElementById('dmIfaces');
+    var empty = document.getElementById('dmNoIfaces');
+    var wrap = document.querySelector('.dm-iftable-wrap');
+    tb.innerHTML = '';
+    document.getElementById('dmIfCount').textContent =
+      ifaces.length ? ifaces.length + (ifaces.length === 1 ? ' port' : ' ports') : '';
+    if (!ifaces.length) {
+      empty.classList.remove('d-none');
+      if (wrap) wrap.classList.add('d-none');
+      return;
+    }
+    empty.classList.add('d-none');
+    if (wrap) wrap.classList.remove('d-none');
+
+    ifaces.forEach(function (i2) {
+      var tr = dmEl('tr', i2.ip_address ? '' : 'dm-idle', tb);
+
+      // port + provenance icons + secondary chips (type / mtu / vlan / speed)
+      var tdP = dmEl('td', '', tr);
+      var head = dmEl('div', 'dm-port', tdP);
+      dmEl('span', '', head, i2.name);
+      if (i2.cached) { var ic = dmEl('i', 'bi bi-database', head); ic.title = 'From the device cache'; }
+      if (i2.documented) { var id2 = dmEl('i', 'bi bi-pencil-square', head); id2.title = 'Operator-documented'; }
+      var meta = dmEl('div', 'dm-meta', tdP);
+      [i2.if_type, i2.mode, i2.speed && i2.speed !== 'auto' ? i2.speed : '',
+       i2.mtu ? 'MTU ' + i2.mtu : '',
+       (i2.vlan && i2.vlan !== '0') ? 'VLAN ' + i2.vlan : '']
+        .filter(Boolean).forEach(function (t) { dmEl('span', '', meta, t); });
+      if (i2.description) dmEl('span', '', meta, i2.description);
+
+      // state
+      var tdS = dmEl('td', '', tr);
+      var pill = dmStatePill(i2.status);
+      dmEl('span', pill[0], tdS, pill[1]);
+
+      // address (+ allowed management access underneath)
+      var tdA = dmEl('td', '', tr);
+      if (i2.ip_address) {
+        dmEl('div', 'dm-addr', tdA, i2.ip_address);
+        if (i2.allowaccess) dmEl('div', 'dm-meta', tdA).appendChild(
+          dmEl('span', '', null, i2.allowaccess.trim()));
+      } else dmDash(tdA);
+
+      // MAC (click to copy)
+      var tdM = dmEl('td', '', tr);
+      if (i2.mac) {
+        var m = dmEl('span', 'dm-mac', tdM, i2.mac);
+        m.title = 'Click to copy';
+        m.addEventListener('click', function () {
+          if (navigator.clipboard) navigator.clipboard.writeText(i2.mac);
+          var was = m.textContent; m.textContent = 'copied';
+          setTimeout(function () { m.textContent = was; }, 900);
+        });
+      } else dmDash(tdM);
+
+      var tdC = dmEl('td', '', tr);
+      if (i2.connected_to) dmEl('span', '', tdC, i2.connected_to); else dmDash(tdC);
+
+      var tdN = dmEl('td', '', tr);
+      if (i2.notes) dmEl('span', '', tdN, i2.notes); else dmDash(tdN);
+    });
+  }
+
+  function dmFreshness(d) {
+    var el = document.getElementById('dmIfFresh');
+    var bits = [];
+    var g = (d.iface_cache || {}).generated_at;
+    if (g) bits.push('cache ' + String(g).replace('T', ' ').slice(0, 16));
+    if (d.mac_fetched_at) bits.push('MACs ' + String(d.mac_fetched_at).replace('T', ' ').slice(0, 16));
+    el.textContent = bits.join(' · ');
+  }
+
   function openModal(id) {
     var modalEl = document.getElementById('deviceModal');
     if (!modalEl || !window.bootstrap) return;
     var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     var $ = function (i) { return document.getElementById(i); };
-    var HW = { hardware: 'Hardware', vm: 'Virtual Machine', unknown: 'Unknown' };
-    function setT(i, v) { $(i).textContent = (v === null || v === undefined || v === '') ? '—' : v; }
     $('dmLoading').classList.remove('d-none');
     $('dmContent').classList.add('d-none');
     $('dmError').classList.add('d-none');
+    $('dmMacErr').classList.add('d-none');
     $('dmName').textContent = 'Device';
     var ef = $('dmEnterForm');
     if (ef) ef.action = (CFG.selectBase || '/architecture/select/') + id;
@@ -923,35 +1037,29 @@
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function (d) {
         $('dmName').textContent = d.name || 'Device';
-        setT('dmKind', d.kind);
-        setT('dmHwType', HW[d.hw_type] || 'Unknown');
-        setT('dmModel', d.model);
-        setT('dmHost', (d.host || '') + (d.port ? ':' + d.port : ''));
-        setT('dmStatus', d.status);
-        setT('dmVdom', d.vdom);
-        setT('dmZone', d.zone);
-        setT('dmLine', d.line);
-        setT('dmDept', d.department);
+        var sp = dmStatePill(d.status);
+        var pill = $('dmStatusPill');
+        pill.className = sp[0]; pill.textContent = sp[1];
+        $('dmKindChip').textContent = d.kind || '';
+        $('dmHostChip').textContent = (d.host || '') + (d.port ? ':' + d.port : '');
+        var fw = $('dmFwChip');
+        if (d.firmware) { fw.textContent = d.firmware; fw.classList.remove('d-none'); }
+        else fw.classList.add('d-none');
+
+        dmSpecs(d);
+        dmFreshness(d);
+        dmRenderIfaces(d.interfaces || []);
+
         var dsWrap = $('dmDatasheetWrap');
         if (d.datasheet_url) { $('dmDatasheet').href = d.datasheet_url; dsWrap.classList.remove('d-none'); }
         else dsWrap.classList.add('d-none');
         $('dmDetailLink').href = d.detail_url || '#';
-        var tb = $('dmIfaces'); tb.innerHTML = '';
-        var ifaces = d.interfaces || [];
-        if (!ifaces.length) $('dmNoIfaces').classList.remove('d-none');
-        else {
-          $('dmNoIfaces').classList.add('d-none');
-          ifaces.forEach(function (i2) {
-            var tr = document.createElement('tr');
-            [i2.name, i2.if_type, i2.connected_to, i2.ip_address, i2.notes].forEach(function (v, idx) {
-              var td = document.createElement('td');
-              if (idx === 3 && v) { var c = document.createElement('code'); c.textContent = v; td.appendChild(c); }
-              else td.textContent = v || '';
-              tr.appendChild(td);
-            });
-            tb.appendChild(tr);
-          });
-        }
+
+        var btn = $('dmMacBtn');
+        btn.disabled = false;
+        $('dmMacBtnTxt').textContent = d.mac_fetched_at ? 'Refresh MAC addresses' : 'Fetch MAC addresses';
+        btn.onclick = function () { dmFetchMacs(d); };
+
         $('dmLoading').classList.add('d-none');
         $('dmContent').classList.remove('d-none');
       })
@@ -959,6 +1067,37 @@
         $('dmLoading').classList.add('d-none');
         $('dmError').textContent = 'Could not load device details: ' + err.message;
         $('dmError').classList.remove('d-none');
+      });
+  }
+
+  function dmFetchMacs(d) {
+    var btn = document.getElementById('dmMacBtn');
+    var txt = document.getElementById('dmMacBtnTxt');
+    var err = document.getElementById('dmMacErr');
+    err.classList.add('d-none');
+    btn.disabled = true;
+    txt.textContent = 'Probing device…';
+    fetch(d.macs_url, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'X-CSRFToken': CSRF, 'Content-Type': 'application/json' }
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        btn.disabled = false;
+        if (!res.ok || !res.j.ok) {
+          txt.textContent = 'Retry MAC addresses';
+          err.textContent = 'MAC probe failed: ' + (res.j.error || 'unknown error');
+          err.classList.remove('d-none');
+          return;
+        }
+        txt.textContent = 'Refresh MAC addresses';
+        dmRenderIfaces(res.j.interfaces || []);
+      })
+      .catch(function (e) {
+        btn.disabled = false;
+        txt.textContent = 'Retry MAC addresses';
+        err.textContent = 'MAC probe failed: ' + e.message;
+        err.classList.remove('d-none');
       });
   }
 

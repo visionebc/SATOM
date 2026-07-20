@@ -113,14 +113,48 @@ def save_filters():
 @bp.route('/device/<int:id>')
 @login_required
 def device_detail(id):
-    """Read-only physical-inventory payload for the Fleet Map modal."""
+    """Read-only physical-inventory payload for the Fleet Map device card.
+
+    The interface list is the MERGE of the device cache (hourly harvest), the
+    operator's manual documentation and the cached MACs - see
+    :mod:`app.services.interface_inventory`. Reading only the manual table (as
+    this did before) left the card empty for every appliance nobody had
+    documented by hand.
+    """
+    from ..services import interface_inventory
+
     a = visible_appliance_or_404(id)
     data = a.inventory_view()
+    inv = interface_inventory.merged(a)
+    data['interfaces'] = inv['interfaces']
+    data['iface_cache'] = inv['cache']
+    data['mac_fetched_at'] = inv['mac_fetched_at']
+    data['firmware'] = a.firmware or ''
+    data['macs_url'] = url_for('architecture.device_macs', id=a.id)
     data['detail_url'] = url_for('appliances.detail', id=a.id)
     data['datasheet_url'] = (
         url_for('appliances.datasheet', id=a.id) if a.datasheet_filename else None
     )
     return jsonify(data)
+
+
+@bp.route('/device/<int:id>/macs', methods=['POST'])
+@login_required
+def device_macs(id):
+    """Probe the appliance for hardware addresses (read-only CLI over SSH).
+
+    Explicitly user-triggered: the card itself is DB-only and must stay instant,
+    and an SSH round-trip against a powered-off or license-locked box would
+    otherwise hang the modal.
+    """
+    from ..services import interface_inventory
+
+    a = visible_appliance_or_404(id)
+    res = interface_inventory.refresh_macs(a)
+    if not res['ok']:
+        return jsonify(ok=False, error=res['error']), 502
+    return jsonify(ok=True, count=res['count'],
+                   interfaces=interface_inventory.merged(a)['interfaces'])
 
 
 # --- DB-first topology feeds -------------------------------------------------

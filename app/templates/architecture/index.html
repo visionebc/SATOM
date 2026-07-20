@@ -97,43 +97,74 @@
 </div>
 {% endif %}
 
-<!-- Read-only device inventory modal -->
+<!-- Read-only device inventory card -->
 <div class="modal fade" id="deviceModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable">
-    <div class="modal-content" style="background:#fff;border:1px solid var(--fw-border);color:var(--fw-text-primary);border-radius:var(--fw-radius-lg);">
-      <div class="modal-header" style="border-color:var(--fw-border);background:var(--fw-content-bg);">
-        <h5 class="modal-title" style="color:var(--fw-text-primary);"><i class="bi bi-server me-2" style="color:var(--fw-accent);"></i><span id="dmName">Device</span></h5>
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content dm-card">
+      <div class="modal-header dm-head">
+        <div class="dm-head-main">
+          <div class="dm-avatar"><i class="bi bi-hdd-rack"></i></div>
+          <div>
+            <h5 class="modal-title dm-title"><span id="dmName">Device</span>
+              <span id="dmStatusPill" class="dm-pill dm-pill-mut">unknown</span>
+            </h5>
+            <div class="dm-sub">
+              <span id="dmKindChip" class="dm-chip"></span>
+              <span id="dmHostChip" class="dm-chip dm-mono"></span>
+              <span id="dmFwChip" class="dm-chip d-none"></span>
+            </div>
+          </div>
+        </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
-        <div id="dmLoading" class="text-muted py-4 text-center">Loading…</div>
+      <div class="modal-body dm-body">
+        <div id="dmLoading" class="text-muted py-5 text-center">Loading…</div>
         <div id="dmContent" class="d-none">
-          <div class="row g-2 mb-3" style="font-size:13px;">
-            <div class="col-md-3"><div class="text-muted">Kind</div><div id="dmKind"></div></div>
-            <div class="col-md-3"><div class="text-muted">Type</div><div id="dmHwType"></div></div>
-            <div class="col-md-6"><div class="text-muted">Model</div><div id="dmModel"></div></div>
-            <div class="col-md-5"><div class="text-muted">Host</div><div id="dmHost" style="font-family:monospace;"></div></div>
-            <div class="col-md-3"><div class="text-muted">Status</div><div id="dmStatus"></div></div>
-            <div class="col-md-4"><div class="text-muted">VDOM</div><div id="dmVdom"></div></div>
-            <div class="col-md-4"><div class="text-muted">Zone</div><div id="dmZone"></div></div>
-            <div class="col-md-4"><div class="text-muted">Line</div><div id="dmLine"></div></div>
-            <div class="col-md-4"><div class="text-muted">Department</div><div id="dmDept"></div></div>
-          </div>
+
+          <div class="dm-specs" id="dmSpecs"></div>
+
           <div id="dmDatasheetWrap" class="mb-3 d-none">
-            <a id="dmDatasheet" href="#" target="_blank" rel="noopener" class="btn btn-sm fw-btn-secondary"><i class="bi bi-file-earmark-pdf me-1"></i>Datasheet (PDF)</a>
+            <a id="dmDatasheet" href="#" target="_blank" rel="noopener" class="btn btn-sm fw-btn-secondary">
+              <i class="bi bi-file-earmark-pdf me-1"></i>Datasheet (PDF)</a>
           </div>
-          <h6 class="text-uppercase text-muted mb-2" style="font-size:11px;letter-spacing:.5px;">Interfaces / Connections</h6>
-          <div class="table-responsive">
-            <table class="table table-sm mb-0" style="color:var(--fw-text-primary);">
-              <thead><tr style="color:var(--fw-text-secondary);font-size:11px;text-transform:uppercase;letter-spacing:.5px;"><th>Interface</th><th>Type</th><th>Connected to</th><th>IP</th><th>Notes</th></tr></thead>
+
+          <div class="dm-sec-head">
+            <div>
+              <span class="dm-sec-title">Interfaces</span>
+              <span id="dmIfCount" class="dm-count"></span>
+            </div>
+            <div class="dm-sec-tools">
+              <span id="dmIfFresh" class="dm-note"></span>
+              <button type="button" id="dmMacBtn" class="btn btn-sm fw-btn-secondary">
+                <i class="bi bi-ethernet me-1"></i><span id="dmMacBtnTxt">Fetch MAC addresses</span>
+              </button>
+            </div>
+          </div>
+          <div id="dmMacErr" class="alert alert-warning py-2 px-3 mb-2 d-none" style="font-size:12.5px;"></div>
+
+          <div class="dm-iftable-wrap">
+            <table class="dm-iftable">
+              <thead>
+                <tr><th>Port</th><th>State</th><th>Address</th><th>MAC</th><th>Connected to</th><th>Notes</th></tr>
+              </thead>
               <tbody id="dmIfaces"></tbody>
             </table>
           </div>
-          <div id="dmNoIfaces" class="text-muted d-none" style="font-size:13px;">No interfaces documented.</div>
+          <div id="dmNoIfaces" class="dm-empty d-none">
+            <i class="bi bi-plug"></i>
+            <div>No interfaces in the cache for this device.<br>
+              <span class="dm-note">Run a device sync (or document ports on the appliance) and they will appear here.</span>
+            </div>
+          </div>
+          <div class="dm-legend">
+            <span><i class="bi bi-database"></i> harvested from the device cache</span>
+            <span><i class="bi bi-pencil-square"></i> operator-documented</span>
+            <span><i class="bi bi-ethernet"></i> MAC via read-only CLI, cached</span>
+          </div>
         </div>
         <div id="dmError" class="alert alert-danger d-none mb-0"></div>
       </div>
-      <div class="modal-footer" style="border-color:var(--fw-border);background:var(--fw-content-bg);">
+      <div class="modal-footer dm-foot">
         <form id="dmEnterForm" method="post" action="" class="me-auto" style="margin:0;">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn fw-btn-primary btn-sm"><i class="bi bi-box-arrow-in-right me-1"></i>Enter device</button>
@@ -461,6 +492,59 @@
 .fm-list-badge.k-fortiadc { background: rgba(139,92,246,.18); color: #a78bfa; }
 .fm-list-dotstat { width: 9px; height: 9px; border-radius: 999px; display: inline-block; }
 .fm-list-empty { color: var(--fw-text-secondary); font-size: 13px; padding: 40px; text-align: center; }
+
+/* ---- device inventory card ------------------------------------------------ */
+.dm-card{background:#fff;border:1px solid var(--fw-border);color:var(--fw-text-primary);
+  border-radius:var(--fw-radius-lg);overflow:hidden;}
+.dm-head{border-color:var(--fw-border);background:linear-gradient(135deg,rgba(59,130,246,.10),rgba(139,92,246,.10));
+  align-items:flex-start;padding:14px 18px;}
+.dm-head-main{display:flex;gap:12px;align-items:center;}
+.dm-avatar{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,#3b82f6,#8b5cf6);color:#fff;font-size:19px;flex:0 0 auto;
+  box-shadow:0 4px 12px rgba(59,130,246,.28);}
+.dm-title{margin:0;font-size:17px;font-weight:650;display:flex;align-items:center;gap:8px;color:var(--fw-text-primary);}
+.dm-sub{display:flex;flex-wrap:wrap;gap:6px;margin-top:5px;}
+.dm-chip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;padding:2px 8px;border-radius:999px;
+  background:var(--fw-content-bg);border:1px solid var(--fw-border);color:var(--fw-text-secondary);}
+.dm-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+.dm-pill{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
+  padding:2px 8px;border-radius:999px;}
+.dm-pill-up{background:rgba(16,185,129,.15);color:#059669;}
+.dm-pill-down{background:rgba(239,68,68,.15);color:#dc2626;}
+.dm-pill-mut{background:rgba(148,163,184,.18);color:#64748b;}
+.dm-body{padding:16px 18px;}
+.dm-specs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:16px;}
+.dm-spec{background:var(--fw-content-bg);border:1px solid var(--fw-border);border-radius:10px;padding:8px 10px;}
+.dm-spec .k{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--fw-text-secondary);}
+.dm-spec .v{font-size:13.5px;font-weight:600;margin-top:2px;word-break:break-word;}
+.dm-sec-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
+.dm-sec-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--fw-text-secondary);}
+.dm-count{font-size:11px;color:var(--fw-text-secondary);margin-left:6px;}
+.dm-sec-tools{display:flex;align-items:center;gap:10px;}
+.dm-note{font-size:11.5px;color:var(--fw-text-secondary);}
+.dm-iftable-wrap{border:1px solid var(--fw-border);border-radius:12px;overflow:auto;}
+.dm-iftable{width:100%;border-collapse:collapse;font-size:13px;}
+.dm-iftable thead th{position:sticky;top:0;background:var(--fw-content-bg);z-index:1;
+  font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--fw-text-secondary);
+  font-weight:700;padding:8px 12px;text-align:left;border-bottom:1px solid var(--fw-border);white-space:nowrap;}
+.dm-iftable tbody td{padding:9px 12px;border-bottom:1px solid var(--fw-border);vertical-align:top;}
+.dm-iftable tbody tr:last-child td{border-bottom:0;}
+.dm-iftable tbody tr:hover{background:rgba(59,130,246,.045);}
+.dm-iftable tbody tr.dm-idle td{opacity:.62;}
+.dm-port{font-weight:650;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;display:flex;align-items:center;gap:6px;}
+.dm-port i{font-size:11px;color:var(--fw-text-secondary);}
+.dm-meta{font-size:11px;color:var(--fw-text-secondary);margin-top:3px;display:flex;flex-wrap:wrap;gap:6px;}
+.dm-meta span{background:var(--fw-content-bg);border-radius:5px;padding:0 5px;}
+.dm-addr{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;}
+.dm-mac{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;letter-spacing:.2px;
+  cursor:pointer;border-bottom:1px dotted var(--fw-border);}
+.dm-mac:hover{color:var(--fw-accent);}
+.dm-dash{color:var(--fw-text-secondary);}
+.dm-empty{display:flex;gap:12px;align-items:center;padding:22px;border:1px dashed var(--fw-border);
+  border-radius:12px;color:var(--fw-text-secondary);font-size:13px;}
+.dm-empty i{font-size:22px;}
+.dm-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;font-size:11px;color:var(--fw-text-secondary);}
+.dm-foot{border-color:var(--fw-border);background:var(--fw-content-bg);}
 </style>
 <script src="{{ asset('js/fleet_map.js') }}" nonce="{{ csp_nonce }}"></script>
 {% endblock %}

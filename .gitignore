@@ -33,6 +33,10 @@ fortinet.db
 
 # node-local PKI — internal CA key + node/service certs, NEVER commit
 pki/
+
+# node-local SSH del datasync HA — en el standby contiene la llave PRIVADA
+# (id_ha_rsync) y en el primary el authorized_keys del peer. NEVER commit.
+/.ssh/
 dist/
 .gitconfig
 

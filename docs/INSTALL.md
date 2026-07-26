@@ -24,10 +24,18 @@ revertirlo.
 - Distribución con **systemd como PID 1** (Alpine/musl no está soportado).
   Referencia: Debian 12 amd64. Soportadas también RHEL/Rocky/Alma 9, openSUSE
   y Arch — el instalador detecta el gestor de paquetes.
-- Acceso **root** durante la instalación (ver §5). El instalador lo comprueba
-  antes de nada y **verifica además que root pueda escribir de verdad** en
-  `/opt`, `/etc`, `/etc/systemd/system`, `/var/log` y `/usr/local/sbin`: en un
-  contenedor no privilegiado o con `/` en sólo lectura, ser uid 0 no basta.
+- **Una cuenta con `sudo` acotado al instalador** durante la ventana de
+  instalación — **no hace falta entregar la contraseña de root** (§5 trae la
+  regla `sudoers` lista para copiar). Los pasos privilegiados se siguen
+  ejecutando como root, porque crear cuentas, instalar paquetes y escribir
+  unidades de systemd *es* root; lo que se evita es una sesión root
+  interactiva y anónima. El instalador comprueba antes de nada que **puede
+  escribir de verdad** en `/opt`, `/etc`, `/etc/systemd/system`, `/var/log` y
+  `/usr/local/sbin`: en un contenedor no privilegiado o con `/` en sólo
+  lectura, ser uid 0 no basta.
+- **La aplicación instalada NO corre como root**: usa una cuenta de servicio
+  sin shell y una allowlist de dos comandos `sudo` (§5 y
+  [`privilege-model.md`](privilege-model.md)).
 - Python **>= 3.10** (lo exigen las dependencias pinneadas). Si no está, el
   instalador instala el de la distribución.
 - **Online:** salida HTTPS a los mirrors de la distro + PyPI + el repositorio
@@ -231,17 +239,74 @@ configuración+servicios → comprobación de salud.
 
 ## 5. Permisos que hay que solicitar a sistemas
 
-La instalación **requiere privilegios de root** (paquetes, systemd, Postgres,
-nginx, certificados). Dos opciones:
+Hay **dos cuentas distintas** en juego y conviene no mezclarlas:
 
-**Opción A (recomendada): sesión root/sudo completa durante la ventana de
-instalación** (~10–20 min por nodo):
+| | cuenta | cuándo | privilegio |
+|---|---|---|---|
+| **Instalación** | `satominstall` (nominal, del operador) | sólo la ventana de instalación, ~10–20 min por nodo | `sudo` a **un binario en una ruta fija** |
+| **Runtime** | `satom` (cuenta de servicio, sin shell) | permanente | `sudo` a **dos comandos** (`nginx -t`, `systemctl reload nginx`) |
+
+**Opción A (recomendada): cuenta instaladora nominal con regla `sudoers`.**
+No se entrega la contraseña de root a nadie y queda traza de quién instaló y
+cuándo. El fichero está en el repo
+([`deploy/satom-installer.sudoers`](../deploy/satom-installer.sudoers)) y el
+propio instalador lo emite, así que se puede entregar a sistemas sin mandarles
+el repositorio entero:
+
+```bash
+bash install-satom.sh --print-sudoers            # usuario por defecto: satominstall
+bash install-satom.sh --print-sudoers opsuser    # o el nombre que use sistemas
+```
+
+(`--print-sudoers` no requiere root y no toca nada.)
+
+```bash
+useradd -m -s /bin/bash satominstall
+install -d -m 0755 /opt/staging
+install -m 0755 install-satom.sh /opt/staging/install-satom.sh
+chown root:root /opt/staging/install-satom.sh     # el operador NO puede editarlo
+install -m 0440 deploy/satom-installer.sudoers /etc/sudoers.d/satom-installer
+visudo -c                                          # validar antes de salir
+```
+
+```
+Cmnd_Alias SATOM_INSTALL = /usr/bin/bash /opt/staging/install-satom.sh, \
+                           /usr/bin/bash /opt/staging/install-satom.sh --preflight, \
+                           /usr/bin/bash /opt/staging/install-satom.sh --check, \
+                           /usr/bin/bash /opt/staging/install-satom.sh --authorize-peer *
+
+satominstall ALL=(root) NOPASSWD: SATOM_INSTALL
+```
+
+Luego, como `satominstall` y sin ser root en ningún momento:
+```bash
+sudo /usr/bin/bash /opt/staging/install-satom.sh --preflight   # no toca nada
+sudo /usr/bin/bash /opt/staging/install-satom.sh               # instala
+```
+
+> ⚠️ **La ruta tiene que ser fija y el fichero pertenecer a `root`.** Si el
+> operador pudiera escribir en `/opt/staging/install-satom.sh`, la regla
+> equivaldría a `NOPASSWD: ALL`. Retirar `/etc/sudoers.d/satom-installer` al
+> cerrar la ventana de instalación.
+
+**Opción B: sesión root/sudo completa**, si sistemas prefiere no gestionar la
+regla:
 ```bash
 sudo bash install-satom.sh
 ```
 
-**Opción B: regla sudoers granular** si sistemas prefiere acotar. El instalador
-ejecuta exactamente estas familias de comandos como root:
+### Por qué el instalador no puede correr con menos que esto
+
+No existe un subconjunto honesto: crear cuentas, instalar paquetes de la
+distribución, escribir unidades de systemd y reconfigurar Postgres y nginx
+**son** root. Una regla que concediera `apt-get install` sería equivalente a
+root de todas formas — un `.deb` ejecuta sus propios scripts de mantenedor como
+root. La reducción real de riesgo está en (1) acotar el privilegio a **un
+binario concreto**, (2) que sea **temporal**, y (3) que lo que queda corriendo
+después **no** sea root. Eso es lo que hacen la Opción A y el modelo de runtime
+de aquí abajo.
+
+Estas son las familias de comandos que el instalador ejecuta como root:
 
 ```
 apt-get update / apt-get install / dpkg -i          (paquetería)
@@ -254,17 +319,18 @@ escritura de /etc/nginx/sites-available/satom.conf + nginx -t + reload
 escritura de /etc/postgresql/<v>/main/conf.d + pg_hba.conf (solo cluster)
 ```
 
-Regla sudoers de ejemplo para un usuario instalador `satominstall`:
-```
-satominstall ALL=(root) NOPASSWD: /usr/bin/bash /opt/staging/install-satom.sh
-```
-(entregándole el script por ruta fija; auditar con `sudo journalctl` y el log
-`/var/log/satom-install.log` que el instalador escribe siempre).
+Auditoría de la ventana de instalación: `journalctl _COMM=sudo` registra cada
+invocación con el usuario nominal, y el instalador escribe siempre
+`/var/log/satom-install.log`.
 
-### Lo que la aplicación necesita en RUNTIME
+### Lo que la aplicación necesita en RUNTIME (cuenta `satom`)
 
-**La aplicación NO corre como root.** Detalle completo y justificación en
-[`privilege-model.md`](privilege-model.md). Resumen:
+**La aplicación NO corre como root.** El instalador crea la cuenta de servicio,
+le da la propiedad del árbol y fija `User=` en un **drop-in** de systemd, así que
+no hay ningún camino por el que el proceso web acabe siendo root.
+
+Detalle completo y justificación en [`privilege-model.md`](privilege-model.md).
+Resumen:
 
 * Cuenta de servicio sin shell interactivo (`satom` por defecto; una
   instalación heredada puede conservar `fortinet` con `SATOM_APP_USER`). Posee
@@ -304,8 +370,9 @@ sudo bash /opt/satom/deploy/migrate-deprivilege.sh
 - Logs: `/var/log/satom/` y `journalctl -u satom`.
 
 ### Hardening obligatorio post-instalación
-1. **Cambiar la clave de root** del sistema operativo si se entregó una
-   temporal para la instalación.
+1. **Retirar el permiso de instalación**: `rm /etc/sudoers.d/satom-installer`
+   (y la copia del script en `/opt/staging`). Si en vez de la Opción A se
+   entregó una clave de root temporal, cambiarla.
 2. Deshabilitar SSH por contraseña (`PasswordAuthentication no`) y dejar solo
    llaves.
 3. Borrar la clave de unión de cualquier nota/chat.

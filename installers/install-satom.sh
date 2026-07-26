@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================================
-# install-satom.sh — Instalador de SATOM (Open Fortinet Management
-# Automation Tool) — GENÉRICO para distribuciones Linux con systemd.
+# install-satom.sh — Instalador de SATOM (System Automation & Task
+# Orchestration Manager) — GENÉRICO para distribuciones Linux con systemd.
 #
 #   Familias soportadas (detección automática del gestor de paquetes):
 #     • Debian / Ubuntu ............. apt
@@ -65,6 +65,41 @@ say()  { echo "${c_bold}==>${c_off} $*" | tee -a "$INSTALL_LOG"; }
 ok()   { echo "    ${c_grn}✓${c_off} $*" | tee -a "$INSTALL_LOG"; }
 warn() { echo "    ${c_ylw}!${c_off} $*" | tee -a "$INSTALL_LOG"; }
 die()  { echo "${c_red}ERROR:${c_off} $*" | tee -a "$INSTALL_LOG" >&2; exit 1; }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SUBCOMANDO: --print-sudoers  (NO requiere root — va antes del chequeo)
+# Emite la regla sudoers de la CUENTA INSTALADORA, para entregarla a sistemas
+# sin tener que enviarles el repositorio entero. Instalar SATOM es root; lo que
+# esta regla evita es ENTREGAR LA CONTRASEÑA DE ROOT: se da una cuenta nominal
+# que sólo puede lanzar un binario en una ruta fija. No confundir con
+# /etc/sudoers.d/satom, que es la allowlist de dos comandos del RUNTIME.
+#   sudo bash install-satom.sh --print-sudoers > /etc/sudoers.d/satom-installer
+#   visudo -c
+# ─────────────────────────────────────────────────────────────────────────────
+if [ "${1:-}" = "--print-sudoers" ]; then
+    INSTALLER_USER="${2:-satominstall}"
+    cat <<SUDOEOF
+# /etc/sudoers.d/satom-installer — permiso para EJECUTAR EL INSTALADOR.
+# Generado por: install-satom.sh --print-sudoers ${INSTALLER_USER}
+#
+# Requisitos para que esto sea seguro:
+#   install -d -m 0755 /opt/staging
+#   install -m 0755 install-satom.sh /opt/staging/install-satom.sh
+#   chown root:root /opt/staging/install-satom.sh   # el operador NO debe poder editarlo
+# Si el operador pudiera escribir ese fichero, la regla equivale a NOPASSWD: ALL.
+#
+# Retirar al cerrar la ventana de instalación:
+#   rm /etc/sudoers.d/satom-installer
+
+Cmnd_Alias SATOM_INSTALL = /usr/bin/bash /opt/staging/install-satom.sh, \\
+                           /usr/bin/bash /opt/staging/install-satom.sh --preflight, \\
+                           /usr/bin/bash /opt/staging/install-satom.sh --check, \\
+                           /usr/bin/bash /opt/staging/install-satom.sh --authorize-peer *
+
+${INSTALLER_USER} ALL=(root) NOPASSWD: SATOM_INSTALL
+SUDOEOF
+    exit 0
+fi
 
 [ "$(id -u)" -eq 0 ] || die "Ejecuta como root (o con sudo): sudo bash $0"
 mkdir -p "$(dirname "$INSTALL_LOG")"; touch "$INSTALL_LOG"
@@ -896,7 +931,7 @@ if [ "$ROLE" = "secondary" ]; then
     chmod 600 "$PGHOME/.postgresql/postgresql.key"
     rm -rf "${PGDATA}"
     runuser -u postgres -- env PGPASSWORD="$REPL_PASS" pg_basebackup \
-        -h "$PRIMARY_IP" -U "$REPL_USER" -D "$PGDATA" -R -X stream -C -S "ofm_$(hostname | tr -c 'a-z0-9' '_')" \
+        -h "$PRIMARY_IP" -U "$REPL_USER" -D "$PGDATA" -R -X stream -C -S "satom_$(hostname | tr -c 'a-z0-9' '_')" \
         -d "sslmode=verify-ca sslrootcert=$PGHOME/.postgresql/root.crt sslcert=$PGHOME/.postgresql/postgresql.crt sslkey=$PGHOME/.postgresql/postgresql.key" \
         >>"$INSTALL_LOG" 2>&1 || die "pg_basebackup falló — verifica que el primary permite réplica desde esta IP (revisa $INSTALL_LOG)"
     mkdir -p "$PGCONF/conf.d"
@@ -947,7 +982,7 @@ fi
 if [ "$ROLE" != "secondary" ]; then
     set -a; . "$APP_DIR/.env"; set +a
     FLASK_APP=wsgi.py venv/bin/flask create-db >>"$INSTALL_LOG" 2>&1
-    export OFM_ADMIN_PASS="$ADMIN_PASS"
+    export SATOM_ADMIN_PASS="$ADMIN_PASS"
     venv/bin/python - <<PYADM >>"$INSTALL_LOG" 2>&1
 from wsgi import app
 from app.extensions import db
@@ -955,12 +990,12 @@ from app.models import User
 import os
 with app.app_context():
     u = User.query.filter_by(username="admin").first()
-    u.set_password(os.environ["OFM_ADMIN_PASS"])
+    u.set_password(os.environ["SATOM_ADMIN_PASS"])
     db.session.commit()
     print("admin password set")
 PYADM
     ok "BD inicializada y clave de 'admin' establecida"
-    unset OFM_ADMIN_PASS
+    unset SATOM_ADMIN_PASS
 fi
 
 # systemd units

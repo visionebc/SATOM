@@ -63,6 +63,7 @@ def _sot_devices() -> list[dict]:
 def _page_context(**extra) -> dict:
     from ..services import git_service, settings_store
     from ..services import backup_server as bksrv
+    from ..services import git_backup
     from ..models_firmware import FirmwareImage
     local = system_backup.local_inventory()
     peer_host = _peer_host()
@@ -80,6 +81,12 @@ def _page_context(**extra) -> dict:
         code_history=git_service.code_history(),
         bk=bksrv.inventory(),
         bk_system=bksrv.system_inventory(),
+        gitb=git_backup.list_bundles(),
+        gitb_state=git_backup.unpushed_state(),
+        gitb_refs=git_backup.safety_refs(),
+        gitb_cfg={"keep": git_backup.keep_count(),
+                  "push_server": git_backup.push_enabled(),
+                  "remote_dir": git_backup.remote_dir()},
         sot=_sot_devices(),
         local_fw=local_fw,
         fw_repo=settings_store.firmware_repo(),
@@ -286,6 +293,88 @@ def external_download():
     import posixpath
     return send_file(io.BytesIO(data), as_attachment=True,
                      download_name=posixpath.basename(name))
+
+
+# ── git repository backup (bundles) ─────────────────────────────────────────
+#
+# Gitea is a distribution point, not custody: while it is unreachable the local
+# commits (reports/ source of truth) exist on this node only. A `git bundle` is
+# the whole repo — every ref, full history — in one verifiable, clonable file,
+# kept here, mirrored to the standby via data/ rsync, pushed to backup-server, and
+# downloadable from this page.
+
+@bp.route("/git-bundle/create", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def git_bundle_create():
+    from flask_login import current_user
+    from ..services import git_backup
+    push = request.form.get("push_server") == "on"
+    res = git_backup.create_bundle(label="manual", push_server=push,
+                                   by=current_user.username)
+    flash(("Git bundle: " + res["detail"]) if res["ok"] else
+          ("Git bundle failed: " + res["detail"]),
+          "success" if res["ok"] else "danger")
+    return redirect(url_for("system_backup.index"))
+
+
+@bp.route("/git-bundle/config", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def git_bundle_config():
+    from ..services import git_backup
+    cfg = git_backup.save_config(request.form)
+    flash(f"Git bundle settings saved (keep {cfg['keep']}, "
+          f"push to backup server {'on' if cfg['push_server'] else 'off'}).",
+          "success")
+    return redirect(url_for("system_backup.index"))
+
+
+@bp.route("/git-bundle/download/<name>")
+@login_required
+@require_permission("user_manage")
+def git_bundle_download(name):
+    from ..services import git_backup
+    path = git_backup.bundle_path(name)
+    if not path:
+        abort(404)
+    return send_file(str(path), as_attachment=True, download_name=name)
+
+
+@bp.route("/git-bundle/delete", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def git_bundle_delete():
+    from ..services import git_backup
+    res = git_backup.delete_bundle(request.form.get("name", ""))
+    flash(res["detail"], "success" if res["ok"] else "danger")
+    return redirect(url_for("system_backup.index"))
+
+
+@bp.route("/git-bundle/external/list")
+@login_required
+@require_permission("user_manage")
+def git_bundle_external_list():
+    """On demand, not in the page context: this opens an SFTP session, and the
+    page already opens two — an unreachable backup server must not be able to
+    slow the whole page down."""
+    from ..services import git_backup
+    return jsonify(git_backup.external_inventory())
+
+
+@bp.route("/git-bundle/external/download")
+@login_required
+@require_permission("user_manage")
+def git_bundle_external_download():
+    """Pull a bundle back DOWN from backup-server — the recovery direction, for
+    when this node is the one that was lost."""
+    from ..services import git_backup
+    name = request.args.get("name", "")
+    try:
+        data = git_backup.external_download(name)
+    except Exception:  # noqa: BLE001 — bad name / unreachable → 404
+        abort(404)
+    return send_file(io.BytesIO(data), as_attachment=True, download_name=name)
 
 
 @bp.route("/publish-json", methods=["POST"])

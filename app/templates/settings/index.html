@@ -752,6 +752,11 @@
                       <input type="number" name="git_behind_max" class="form-control fw-form-control" min="1" max="10000" value="{{ alerts_config.git_behind_max }}">
                     </div>
                     <div class="col-6">
+                      <label class="fw-form-label">Git unpushed max (hours)</label>
+                      <input type="number" name="git_ahead_max_hours" class="form-control fw-form-control" min="1" max="8760" value="{{ alerts_config.git_ahead_max_hours }}">
+                      <div class="form-text">Alert when a local commit has not reached the remote for this long (silent push failure).</div>
+                    </div>
+                    <div class="col-6">
                       <label class="fw-form-label">Backup stale (hours)</label>
                       <input type="number" name="backup_max_hours" class="form-control fw-form-control" min="1" max="8760" value="{{ alerts_config.backup_max_hours }}">
                     </div>

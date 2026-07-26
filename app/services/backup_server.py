@@ -514,7 +514,8 @@ def pull_firmware(filename: str, by: str = "") -> dict:
 # ``system_path`` so the DB backup lives in a third failure domain (hypervisor04),
 # separate from the primary (hypervisor06) and the Gitea/standby pair (hypervisor03).
 
-def push_bundle(local_path: str, remote_name: str | None = None) -> dict:
+def push_bundle(local_path: str, remote_name: str | None = None,
+                remote_dir: str | None = None) -> dict:
     """Upload one system backup bundle to the external server's ``system_path``.
     Best-effort and self-contained: returns ``{ok, detail, remote?, size?}`` and
     never raises (the caller records the detail line either way).
@@ -522,7 +523,12 @@ def push_bundle(local_path: str, remote_name: str | None = None) -> dict:
     The chroot root on backup-server is ``root:root`` (an sftp-chroot requirement),
     so the ``/system`` folder itself is created out-of-band as the sftp user;
     here we ``stat`` it, fall back to ``mkdir`` (works only if the folder is
-    user-owned), then ``put`` and verify the size round-trips."""
+    user-owned), then ``put`` and verify the size round-trips.
+
+    ``remote_dir`` overrides the destination — used by ``git_backup`` to land
+    the repo bundles in ``<system_path>/git``. That subfolder IS creatable here
+    because ``system_path`` itself is owned by the sftp user; only the chroot
+    root is not."""
     name = remote_name or os.path.basename(local_path)
     if not os.path.exists(local_path):
         return {"ok": False, "detail": f"local bundle missing: {local_path}"}
@@ -531,7 +537,7 @@ def push_bundle(local_path: str, remote_name: str | None = None) -> dict:
         if not cfg.get("configured"):
             return {"ok": False, "detail": "backup server not configured "
                                            "(Settings → SoT & Backup)"}
-        sys_path = cfg.get("system_path") or "/system"
+        sys_path = remote_dir or cfg.get("system_path") or "/system"
         local_size = os.path.getsize(local_path)
         t, sftp = _connect(cfg)
         try:
@@ -559,6 +565,45 @@ def push_bundle(local_path: str, remote_name: str | None = None) -> dict:
                           f"{cfg['host']}:{remote}"}
     except Exception as exc:  # noqa: BLE001 — never raise into the backup flow
         return {"ok": False, "detail": str(exc)}
+
+
+def dir_inventory(path: str) -> dict:
+    """Generic listing of one folder on the backup server. Same shape as
+    :func:`system_inventory` (which predates it and is kept for the DB-bundle
+    card); used by ``git_backup`` for ``<system_path>/git``. Never raises — a
+    folder that was never created reads as an empty, reachable listing."""
+    cfg = store.backup_server()
+    out = {"configured": cfg["configured"], "reachable": False,
+           "host": cfg["host"], "path": path, "error": "", "files": []}
+    if not cfg["configured"]:
+        return out
+    try:
+        t, sftp = _connect(store.backup_server(reveal_secret=True))
+        try:
+            try:
+                out["files"] = _listing(sftp, path)
+            except IOError:
+                out["files"] = []  # nothing pushed yet
+        finally:
+            t.close()
+        out["reachable"] = True
+    except Exception as exc:  # noqa: BLE001
+        out["error"] = str(exc)
+    return out
+
+
+def fetch_file(path: str, filename: str) -> bytes:
+    """Raw bytes of one file under *path* on the backup server, for a browser
+    download. Caller validates *filename* — this refuses separators only."""
+    if "/" in filename or ".." in filename:
+        raise ValueError("invalid filename")
+    t, sftp = _connect()
+    try:
+        with sftp.open(posixpath.join(path, filename), "rb") as fh:
+            fh.prefetch()
+            return fh.read()
+    finally:
+        t.close()
 
 
 def system_inventory() -> dict:

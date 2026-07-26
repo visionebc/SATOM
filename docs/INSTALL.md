@@ -321,7 +321,18 @@ sudo bash /opt/satom/deploy/migrate-deprivilege.sh
    sudo -u satom sudo -n apt-get install hello     # DEBE fallar
    sudo -u satom sudo -n systemctl restart satom   # DEBE fallar
    ```
-6. En cluster, comprobar que la llave del peer no da shell:
+6. **Comprobar que el modelo sobrevive a un update.** La cuenta de servicio se
+   fija en un **drop-in** (`/etc/systemd/system/satom.service.d/10-app-user.conf`)
+   justamente porque las plantillas de `deploy/` declaran `User=root` y cada
+   actualización las recopia. Detalle en
+   [`privilege-model.md`](privilege-model.md) §5b.
+
+   ```bash
+   systemctl show satom.service -p User --value      # debe ser la cuenta de servicio
+   cat /etc/systemd/system/satom.service.d/10-app-user.conf
+   ```
+
+7. En cluster, comprobar que la llave del peer no da shell:
 
    ```bash
    # desde el standby — debe ser RECHAZADO

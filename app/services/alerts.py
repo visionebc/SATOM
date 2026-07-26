@@ -35,6 +35,7 @@ K_EMAIL_TO = "alerts.email_to"            # falls back to email.default_to
 K_COOLDOWN_H = "alerts.cooldown_hours"    # per-alert suppression window
 K_CERT_DAYS = "alerts.cert_days"          # warn when cert has <= N days left
 K_GIT_BEHIND_MAX = "alerts.git_behind_max"  # warn when standby lags > N commits
+K_GIT_AHEAD_MAX_H = "alerts.git_ahead_max_hours"  # warn when a commit stays unpushed
 K_BACKUP_MAX_H = "alerts.backup_max_hours"  # warn when newest bundle older than N h
 K_STATE = "alerts.state"                  # JSON {alert_key: last_fired_iso}
 # per-check enable toggles (default on)
@@ -50,6 +51,7 @@ DEFAULTS = {
     K_COOLDOWN_H: "6",
     K_CERT_DAYS: "14",
     K_GIT_BEHIND_MAX: "25",
+    K_GIT_AHEAD_MAX_H: "6",
     K_BACKUP_MAX_H: "48",
     K_CHK_CERT: "1",
     K_CHK_GIT: "1",
@@ -122,6 +124,7 @@ def config() -> dict:
         "cooldown_hours": _int(K_COOLDOWN_H, 6),
         "cert_days": _int(K_CERT_DAYS, 14),
         "git_behind_max": _int(K_GIT_BEHIND_MAX, 25),
+        "git_ahead_max_hours": _int(K_GIT_AHEAD_MAX_H, 6),
         "backup_max_hours": _int(K_BACKUP_MAX_H, 48),
         "drift_window_min": _int(K_DRIFT_WINDOW_MIN, 90),
         "checks": {
@@ -158,6 +161,7 @@ def save_config(form) -> None:
     AppSetting.set(K_COOLDOWN_H, clamp("cooldown_hours", 0, 168, 6))
     AppSetting.set(K_CERT_DAYS, clamp("cert_days", 1, 365, 14))
     AppSetting.set(K_GIT_BEHIND_MAX, clamp("git_behind_max", 1, 10000, 25))
+    AppSetting.set(K_GIT_AHEAD_MAX_H, clamp("git_ahead_max_hours", 1, 8760, 6))
     AppSetting.set(K_BACKUP_MAX_H, clamp("backup_max_hours", 1, 8760, 48))
     AppSetting.set(K_DRIFT_WINDOW_MIN, clamp("drift_window_min", 1, 43200, 90))
     # per-check toggles (absent checkbox = off)
@@ -273,6 +277,32 @@ def _check_git() -> list[dict]:
                  "detail": (f"Local branch is {ahead} ahead AND {behind} behind "
                             f"origin — the histories have forked and cannot "
                             f"fast-forward. Reconcile before the nodes disagree.")}]
+    # ahead>0 with behind==0 is the signature of an unreachable remote (Gitea
+    # down, token expired, DNS): the hourly reports/ publisher keeps committing
+    # locally and the push silently fails — `satom-git-publish.timer` still
+    # exits 0, so nothing else notices. Those local-only commits are the off-box
+    # copy of the device source of truth, and the update runner's reset would
+    # discard them (it parks them under refs/backup/ now, but recovering a ref
+    # is not the same as having published). Age, not count, is the signal: one
+    # unpushed commit for three days is worse than twenty in the last hour.
+    if ahead > 0:
+        from . import git_backup
+        state = git_backup.unpushed_state()
+        age = float(state.get("oldest_age_h") or 0.0)
+        max_h = _int(K_GIT_AHEAD_MAX_H, 6)
+        if age >= max_h:
+            crit = age >= max_h * 8
+            return [{"key": "git.ahead_unpushed",
+                     "severity": SEV_CRITICAL if crit else SEV_WARNING,
+                     "title": (f"{_node()} has {ahead} commit(s) unpushed for "
+                               f"{age:.0f}h"),
+                     "detail": (f"The oldest local commit has been waiting "
+                                f"{age:.0f}h to reach {state.get('upstream') or 'origin'} "
+                                f"(threshold {max_h}h). The push is failing "
+                                f"silently — check the git remote / Gitea. Until "
+                                f"it succeeds these commits exist on this node "
+                                f"only: take a git bundle from System Backup & "
+                                f"Restore to get them off-box.")}]
     # Benign lag is expected between syncs; only shout when it is stuck far behind.
     behind_max = _int(K_GIT_BEHIND_MAX, 25)
     if behind > behind_max:

@@ -218,6 +218,55 @@ def flight(kind, label):
         return False, "flight(%s) error: %s" % (kind, exc)
 
 
+def preserve_local_commits(target, snapshot, st):
+    """Park commits that exist here but not on *target* under ``refs/backup/``
+    before a destructive reset, plus any uncommitted worktree state.
+
+    Returns True when something was preserved, None when there was nothing to
+    preserve, and False when preservation was needed but FAILED (the caller
+    aborts the update in that case).
+
+    Uncommitted changes go through ``git stash create``, which builds a commit
+    object without touching the index or the worktree — so this guard has zero
+    effect on the update path that follows."""
+    n = 0
+    c = git("rev-list", "--count", "%s..HEAD" % target, timeout=60)
+    if c.returncode == 0:
+        try:
+            n = int((c.stdout or "0").strip() or 0)
+        except ValueError:
+            n = 0
+    dirty = bool((git("status", "--porcelain", timeout=60).stdout or "").strip())
+    if not n and not dirty:
+        return None
+
+    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    ok = True
+    if n:
+        ref = "refs/backup/pre-reset-%s" % stamp
+        u = git("update-ref", ref, snapshot, timeout=60)
+        ok = ok and u.returncode == 0
+        st.step("preserve %d local commit(s)" % n, u.returncode == 0,
+                ("%s → %s (recover: git log %s)" % (ref, snapshot[:12], ref))
+                if u.returncode == 0 else (u.stderr or "update-ref failed"))
+    if dirty:
+        s = git("stash", "create", "pre-reset %s" % stamp, timeout=120)
+        sha = (s.stdout or "").strip()
+        if s.returncode == 0 and sha:
+            ref = "refs/backup/pre-reset-%s-dirty" % stamp
+            u = git("update-ref", ref, sha, timeout=60)
+            st.step("preserve uncommitted changes", u.returncode == 0,
+                    "%s → %s" % (ref, sha[:12]) if u.returncode == 0
+                    else (u.stderr or "update-ref failed"))
+            # A dirty worktree is normal here (device_sync rewrites reports/
+            # between publishes) and is regenerated on the next sync, so a
+            # failure to stash it is reported but does NOT abort the update.
+        else:
+            st.step("preserve uncommitted changes", False,
+                    "git stash create failed: %s" % (s.stderr or "")[:200])
+    return ok
+
+
 class Status:
     def __init__(self, uid, req):
         self.p = STA / (uid + ".json")
@@ -281,6 +330,24 @@ def process(req_path):
             raise RuntimeError("git fetch failed")
 
         target = req.get("target") or ("origin/%s" % branch)
+
+        # ── SAFETY GUARD before the reset ────────────────────────────────
+        # `reset --hard <target>` rewrites this checkout to the remote tip.
+        # Anything committed here and NOT on the remote becomes unreachable
+        # and is eventually gc'd. That is not a theoretical case: while Gitea
+        # is unreachable the hourly `satom-git-publish` keeps committing the
+        # reports/ source of truth locally with nothing to push to, and the
+        # reconciler in AUTO mode can fire this path on its own the moment
+        # Gitea comes back. Park those commits on a permanent ref first —
+        # refs are never pruned, `git log <ref>` recovers them, and the git
+        # bundles (data/git-bundles, created with --all) carry them off-box.
+        # If the parking fails we ABORT: losing history silently is worse
+        # than a deferred update.
+        preserved = preserve_local_commits(target, snapshot, st)
+        if preserved is False:
+            raise RuntimeError("refusing to reset: local commits could not be "
+                               "preserved")
+
         r = git("reset", "--hard", target)
         st.step("checkout %s" % target[:20], r.returncode == 0, r.stderr)
         if r.returncode != 0:

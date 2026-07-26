@@ -345,7 +345,15 @@ def git_bundle_download(name):
 @login_required
 @require_permission("user_manage")
 def git_bundle_delete():
+    """Primary-only, same reason as the DB bundles: the standby mirrors data/
+    FROM the primary with rsync --delete, so a standby-side delete is undone by
+    the next sync."""
     from ..services import git_backup
+    from ..services import self_update as su
+    if su.node_role() == "standby":
+        flash("This node is the standby — delete bundles on the primary; "
+              "the datasync mirrors the deletion here within 5 minutes.", "warning")
+        return redirect(url_for("system_backup.index"))
     res = git_backup.delete_bundle(request.form.get("name", ""))
     flash(res["detail"], "success" if res["ok"] else "danger")
     return redirect(url_for("system_backup.index"))

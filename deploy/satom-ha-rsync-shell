@@ -1,0 +1,53 @@
+#!/bin/sh
+# SATOM HA datasync — forced command for the peer's SSH key.
+#
+# WHY THIS EXISTS
+# The standby pulls /opt/satom/data/ from the primary every 5 minutes over
+# SSH. Before this wrapper the peer key was an UNRESTRICTED entry in root's
+# authorized_keys: anyone holding it got an interactive root shell on the
+# primary from any source address. This wrapper degrades that key to exactly
+# one capability: "serve a read-only rsync of the data directory".
+#
+# We do NOT depend on rrsync: it ships in different paths per distro
+# (/usr/bin/rrsync on Debian, /usr/share/rsync/scripts/rrsync elsewhere) and
+# is absent entirely on some. SATOM ships its own auditable wrapper instead,
+# so the generic installer behaves identically on every supported family.
+#
+# SECURITY MODEL
+#   * --server --sender  is rsync's read side. A client cannot write through
+#     a sender-mode server, so this key can never modify the primary.
+#   * The path is pinned to $DATA. No traversal, no other directory.
+#   * Shell metacharacters are rejected outright, so the exec below cannot be
+#     turned into a compound command.
+# Pair this with  from="<peer-ip>",restrict  in authorized_keys.
+
+set -u
+
+DATA="${SATOM_DATA_DIR:-/opt/satom/data}"
+CMD="${SSH_ORIGINAL_COMMAND:-}"
+
+deny() {
+    printf 'satom-ha-rsync-shell: refused (%s)\n' "$1" >&2
+    logger -t satom-ha-rsync-shell "refused from ${SSH_CONNECTION:-?}: $1" 2>/dev/null || true
+    exit 1
+}
+
+[ -n "$CMD" ] || deny "interactive shell not permitted"
+
+# Reject anything that could chain or redirect a second command. The pattern
+# match below inspects one string; without this a payload like
+# "rsync --server --sender . /opt/satom/data/; curl evil" could slip past a
+# naive prefix check.
+case "$CMD" in
+    *';'*|*'&'*|*'|'*|*'`'*|*'$('*|*'>'*|*'<'*|*'
+'*) deny "metacharacter in command" ;;
+esac
+
+# rsync always invokes the remote as: rsync --server --sender <flags> . <path>
+case "$CMD" in
+    "rsync --server --sender "*" . $DATA/") ;;
+    "rsync --server --sender "*" . $DATA")  ;;
+    *) deny "only a read-only rsync of $DATA is allowed" ;;
+esac
+
+exec $CMD

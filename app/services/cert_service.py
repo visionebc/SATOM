@@ -19,6 +19,7 @@ performs the install + reload directly; there is no separate privileged runner
 hop for cert changes. Node-local by design — each node serves its OWN hostname's
 cert, so this is NEVER replicated (pki/ is outside ``data/``).
 """
+import os
 from __future__ import annotations
 
 import json
@@ -127,13 +128,30 @@ def validate_pem(cert_pem: bytes, key_pem: bytes, chain_pem: bytes | None = None
     }
 
 
+def _priv(argv: list[str]) -> list[str]:
+    """Prefix a command with non-interactive sudo unless we are already root.
+
+    The web worker runs as the unprivileged SATOM service account (see
+    docs/privilege-model.md). Exactly two commands are allowlisted in
+    /etc/sudoers.d/satom -- `nginx -t` and `systemctl reload nginx` -- and both
+    live in this module, because activating a TLS certificate is the only thing
+    the worker does that genuinely needs root.
+
+    Kept conditional so a node that has not run deploy/migrate-deprivilege.sh
+    yet (app still User=root) behaves identically instead of hard-failing on a
+    missing sudoers file.
+    """
+    return argv if os.geteuid() == 0 else ["sudo", "-n", *argv]
+
+
 def _reload_nginx() -> None:
     """Validate config then reload. Raises RuntimeError with nginx's message on a
     bad config (the caller has already restored the previous cert on failure)."""
-    t = subprocess.run(["nginx", "-t"], capture_output=True, text=True)
+    t = subprocess.run(_priv(["nginx", "-t"]), capture_output=True, text=True)
     if t.returncode != 0:
         raise RuntimeError("nginx -t failed: " + (t.stderr or t.stdout)[-400:])
-    r = subprocess.run(["systemctl", "reload", "nginx"], capture_output=True, text=True)
+    r = subprocess.run(_priv(["systemctl", "reload", "nginx"]),
+                       capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError("nginx reload failed: " + (r.stderr or r.stdout)[-400:])
 
@@ -161,7 +179,8 @@ def _install(cert_pem: bytes, key_pem: bytes, chain_pem: bytes | None,
             if b.exists():
                 shutil.copy2(b, f)
         try:
-            subprocess.run(["systemctl", "reload", "nginx"], capture_output=True, text=True)
+            subprocess.run(_priv(["systemctl", "reload", "nginx"]),
+                           capture_output=True, text=True)
         except Exception:
             pass
         raise

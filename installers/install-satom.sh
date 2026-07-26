@@ -43,11 +43,15 @@
 # ============================================================================
 set -euo pipefail
 
-VERSION="1.1"
+VERSION="1.2"
 APP_DIR="/opt/satom"
 ACME_WEBROOT="/var/www/acme"
 LEGO_VERSION="5.2.2"
 LOG_DIR="/var/log/satom"
+# Cuenta de servicio sin privilegios. La app NO corre como root: ver
+# docs/privilege-model.md. Se puede sobreescribir para migrar una instalación
+# heredada que ya use otro nombre (p.ej. SATOM_APP_USER=fortinet).
+APP_USER="${SATOM_APP_USER:-satom}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUNDLE_DIR="${SCRIPT_DIR}/bundle"
 GIT_URL_DEFAULT="https://git.example.net/satom-prod/SATOM.git"
@@ -66,6 +70,65 @@ die()  { echo "${c_red}ERROR:${c_off} $*" | tee -a "$INSTALL_LOG" >&2; exit 1; }
 mkdir -p "$(dirname "$INSTALL_LOG")"; touch "$INSTALL_LOG"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# SUBCOMANDO: --authorize-peer <ip-del-standby> "<clave-publica-ssh>"
+# Se ejecuta en el PRIMARY para confiar en un standby. Sustituye al viejo
+# modelo donde el primary generaba el par y mandaba la PRIVADA dentro de la
+# join key. Aquí sólo entra una clave PÚBLICA, y encima acotada:
+#   from=      → sólo desde la IP del standby
+#   restrict   → sin pty, sin agent/port/X11 forwarding, sin user-rc
+#   command=   → sólo un rsync de SÓLO LECTURA de data/ (wrapper propio)
+# ─────────────────────────────────────────────────────────────────────────────
+if [ "${1:-}" = "--authorize-peer" ]; then
+    PEER_IP="${2:-}"; PEER_PUBKEY="${3:-}"
+    [ -n "$PEER_IP" ] && [ -n "$PEER_PUBKEY" ] \
+        || die "Uso: $0 --authorize-peer <ip-del-standby> \"<clave-publica-ssh>\""
+    [[ "$PEER_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+        || die "La IP del standby no es válida: $PEER_IP"
+    [[ "$PEER_PUBKEY" == ssh-ed25519\ * || "$PEER_PUBKEY" == ssh-rsa\ * ]] \
+        || die "Eso no parece una clave pública SSH (debe empezar por ssh-ed25519 o ssh-rsa)"
+    id -u "$APP_USER" >/dev/null 2>&1 || die "El usuario de servicio ${APP_USER} no existe — ¿instalaste este nodo?"
+
+    # ---- SHELL PARA EL DATASYNC -----------------------------------------
+    # La cuenta de servicio es 'nologin' por defecto, y eso es lo correcto
+    # mientras no reciba SSH. Este subcomando es justo el punto donde
+    # decidimos que SÍ lo recibe: sshd ejecuta el login shell para lanzar el
+    # forced command, así que con nologin la conexión se rechaza siempre.
+    # Abrimos el shell mínimo AQUÍ y no antes. Sigue acotado por:
+    #   · contraseña bloqueada (la cuenta no tiene login interactivo)
+    #   · from= + restrict + command= en authorized_keys
+    CUR_SHELL="$(getent passwd "$APP_USER" | cut -d: -f7)"
+    case "$CUR_SHELL" in
+        */nologin|*/false)
+            SH_BIN="$(command -v sh || echo /bin/sh)"
+            usermod -s "$SH_BIN" "$APP_USER"
+            warn "Shell de ${APP_USER}: ${CUR_SHELL} → ${SH_BIN} (sshd lo necesita para el forced command)"
+            ;;
+    esac
+    # La contraseña DEBE seguir bloqueada: el shell no es una vía de entrada.
+    passwd -l "$APP_USER" >/dev/null 2>&1 || true
+
+    SHELL_WRAPPER=/usr/local/sbin/satom-ha-rsync-shell
+    [ -x "$SHELL_WRAPPER" ] || die "Falta $SHELL_WRAPPER (reinstala o copia deploy/satom-ha-rsync-shell)"
+
+    AK="$APP_DIR/.ssh/authorized_keys"
+    install -d -m 700 -o "$APP_USER" -g "$APP_USER" "$APP_DIR/.ssh"
+    touch "$AK"; chown "$APP_USER:$APP_USER" "$AK"; chmod 600 "$AK"
+    KEYBODY="$(echo "$PEER_PUBKEY" | awk '{print $1" "$2}')"
+    if grep -qF "$KEYBODY" "$AK"; then
+        ok "Esa clave ya estaba autorizada — no se duplica"
+    else
+        printf 'from="%s",restrict,command="%s" %s\n' \
+            "$PEER_IP" "$SHELL_WRAPPER" "$PEER_PUBKEY" >> "$AK"
+        ok "Standby ${PEER_IP} autorizado (sólo rsync de lectura sobre data/)"
+    fi
+    echo ""
+    echo "Compruébalo desde el standby:"
+    echo "  sudo -u ${APP_USER} ssh -i ${APP_DIR}/.ssh/id_ha_rsync ${APP_USER}@<ip-primary> true"
+    echo "  → debe RECHAZAR la shell interactiva. Eso es correcto."
+    exit 0
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
 # CAPA DE ABSTRACCIÓN DE DISTRO — todo lo específico de familia vive aquí
 # ─────────────────────────────────────────────────────────────────────────────
 command -v systemctl >/dev/null 2>&1 || die "Se requiere systemd (Alpine/musl no está soportado)"
@@ -78,12 +141,22 @@ done
 
 # Nombres de paquete por familia (mismo orden de conceptos en todas)
 case "$PKG_MGR" in
-    apt)        REQUIRED_PKGS=(python3 python3-venv python3-pip postgresql nginx rsync openssl curl ca-certificates) ;;
-    dnf|yum)    REQUIRED_PKGS=(python3.11 python3.11-pip postgresql-server postgresql nginx rsync openssl curl ca-certificates) ;;
-    zypper)     REQUIRED_PKGS=(python311 python311-pip postgresql-server postgresql nginx rsync openssl curl ca-certificates) ;;
-    pacman)     REQUIRED_PKGS=(python python-pip postgresql nginx rsync openssl curl ca-certificates) ;;
+    apt)        REQUIRED_PKGS=(python3 python3-venv python3-pip postgresql nginx rsync openssl curl ca-certificates sudo) ;;
+    dnf|yum)    REQUIRED_PKGS=(python3.11 python3.11-pip postgresql-server postgresql nginx rsync openssl curl ca-certificates sudo) ;;
+    zypper)     REQUIRED_PKGS=(python311 python311-pip postgresql-server postgresql nginx rsync openssl curl ca-certificates sudo) ;;
+    pacman)     REQUIRED_PKGS=(python python-pip postgresql nginx rsync openssl curl ca-certificates sudo) ;;
 esac
 ONLINE_EXTRA_PKGS=(git)
+
+# Paquetes de SSH: SÓLO se instalan en modo cluster (el canal de sincronización
+# de data/ es rsync sobre SSH). Un nodo standalone no necesita sshd para el
+# producto, así que no se le impone.                                    [PFSSH]
+case "$PKG_MGR" in
+    apt)        SSH_PKGS=(openssh-client openssh-server) ;;
+    dnf|yum)    SSH_PKGS=(openssh-clients openssh-server) ;;
+    zypper)     SSH_PKGS=(openssh) ;;
+    pacman)     SSH_PKGS=(openssh) ;;
+esac
 
 pkg_installed() {  # pkg_installed <pkg> → 0 si está
     case "$PKG_MGR" in
@@ -149,6 +222,229 @@ echo "└───────────────────────�
 echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# PASO 0 — PREFLIGHT: ¿tenemos permisos y entorno para instalar?          [PF0]
+#
+# Corre ANTES de preguntar nada y ANTES de modificar el sistema. Acumula TODOS
+# los problemas y los reporta juntos: quien pide una ventana de cambio necesita
+# la lista completa, no el primer fallo. Se puede correr en seco:
+#
+#     sudo bash install-satom.sh --preflight
+#
+# Devuelve 0 si la máquina está lista, 1 con la lista de bloqueadores si no.
+# ─────────────────────────────────────────────────────────────────────────────
+PF_FAIL=(); PF_WARN=()
+pf_bad()  { PF_FAIL+=("$1"); echo "    ${c_red}✗${c_off} $1" | tee -a "$INSTALL_LOG"; }
+pf_warn() { PF_WARN+=("$1"); warn "$1"; }
+pf_have() { command -v "$1" >/dev/null 2>&1; }
+
+pf_writable() {  # pf_writable <dir> → 0 si se puede escribir (sube al padre si no existe)
+    local d="$1"
+    while [ ! -d "$d" ] && [ "$d" != "/" ]; do d="$(dirname "$d")"; done
+    local p="${d}/.satom-probe.$$"
+    if ( : > "$p" ) 2>/dev/null; then rm -f "$p"; return 0; fi
+    return 1
+}
+
+pf_free_mb() {   # pf_free_mb <ruta> → MB libres en su punto de montaje
+    local d="$1"
+    while [ ! -d "$d" ] && [ "$d" != "/" ]; do d="$(dirname "$d")"; done
+    df -Pk "$d" 2>/dev/null | awk 'NR==2{printf "%d", $4/1024}'
+}
+
+pf_https_ok() {  # pf_https_ok <url> → 0 alcanzable · 1 no · 2 sin herramienta [PFHTTPS]
+    if pf_have curl; then curl -fsSk -m 8 -o /dev/null "$1" 2>/dev/null; return $?; fi
+    # Una imagen mínima puede no traer curl (se instala en el paso 2), pero
+    # python3 sí está: sirve igual para comprobar la salida HTTPS.
+    local py="" c
+    for c in python3.12 python3.11 python3; do pf_have "$c" && { py="$c"; break; }; done
+    [ -n "$py" ] || return 2
+    "$py" - "$1" <<'PFPY' 2>/dev/null
+import sys, ssl, urllib.request
+ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+try:
+    urllib.request.urlopen(sys.argv[1], timeout=8, context=ctx)
+except Exception:
+    sys.exit(1)
+PFPY
+}
+
+pf_port_owner() {  # pf_port_owner <puerto> → nombre del proceso que escucha, o vacío
+    local line="" name=""                                              # [PFOWNER]
+    if pf_have ss; then
+        line="$(ss -Hlntp "sport = :$1" 2>/dev/null | head -1)"
+    elif pf_have netstat; then
+        line="$(netstat -lntp 2>/dev/null | awk -v p=":$1\$" '$4 ~ p {print; exit}')"
+    fi
+    [ -n "$line" ] || return 0
+    # ss/netstat imprimen users:(("nginx",pid=…)) — nos quedamos con el nombre.
+    name="$(printf '%s' "$line" | grep -oE '"[^"]+"' | head -1 | tr -d '"')"
+    [ -z "$name" ] && name="$(printf '%s' "$line" | awk '{print $NF}')"
+    echo "$name"
+}
+
+preflight() {
+    say "Paso 0/7 — Preflight: permisos y entorno (no se modifica nada)"
+
+    # ---- 1. PRIVILEGIOS -----------------------------------------------------
+    # Ser uid 0 no basta: un LXC no privilegiado, un / montado en ro o SELinux
+    # pueden dejarte "root" y sin poder escribir donde hace falta.
+    ok "Identidad: root (uid 0)"
+    local d
+    for d in /opt /etc /etc/systemd/system /var/log /usr/local/sbin; do
+        if pf_writable "$d"; then ok "Escritura verificada en ${d}"
+        else pf_bad "Sin escritura en ${d} — eres root pero el sistema de ficheros lo impide (montaje ro, LXC no privilegiado o SELinux)"; fi
+    done
+
+    # ---- 2. INIT ------------------------------------------------------------
+    if [ -d /run/systemd/system ]; then ok "systemd es el init (PID 1)"
+    else pf_bad "systemd no está corriendo como PID 1 (el binario systemctl existe pero no hay bus). Contenedores sin systemd no están soportados."; fi
+
+    # ---- 3. PAQUETERÍA ------------------------------------------------------
+    ok "Gestor de paquetes: ${PKG_MGR}$( [ $OFFLINE -eq 1 ] && echo ' (modo OFFLINE, bundle local)' )"
+
+    # ---- 4. BINARIOS QUE DEBEN VENIR EN LA IMAGEN BASE ----------------------
+    # Estos NO los instala el paso 2: si faltan, la imagen es demasiado mínima.
+    local miss=() b
+    for b in useradd usermod passwd getent install runuser tar awk sed grep hostname df; do
+        pf_have "$b" || miss+=("$b")
+    done
+    if [ ${#miss[@]} -eq 0 ]; then ok "Utilidades base presentes (shadow, util-linux, coreutils)"
+    else pf_bad "Faltan utilidades base: ${miss[*]} — instala los paquetes shadow/util-linux/coreutils de tu distro"; fi
+    pf_have ss || pf_have netstat || pf_warn "Sin 'ss' ni 'netstat': no se puede comprobar si los puertos están libres"
+
+    # ---- 5. PYTHON ----------------------------------------------------------
+    local pv="" c
+    for c in python3.12 python3.11 python3; do
+        pf_have "$c" || continue
+        if "$c" -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)' 2>/dev/null; then
+            pv="$($c --version 2>&1)"; break
+        fi
+    done
+    if [ -n "$pv" ]; then ok "Python apto: ${pv} (mínimo 3.10)"
+    else pf_warn "No hay Python >= 3.10 — se instalará el de la distro en el paso 2"; fi
+
+    # ---- 6. DISCO Y MEMORIA -------------------------------------------------
+    local opt_mb var_mb ram_mb
+    opt_mb=$(pf_free_mb /opt); var_mb=$(pf_free_mb /var)
+    if [ "${opt_mb:-0}" -lt 4000 ]; then pf_bad "Sólo ${opt_mb} MB libres en /opt — el código + venv + reportes necesitan bastante más (mínimo operable 4 GB, recomendado 15 GB)"
+    elif [ "${opt_mb:-0}" -lt 15000 ]; then pf_warn "/opt tiene ${opt_mb} MB libres; se recomiendan 15 GB (crece con backups y reportes)"
+    else ok "/opt: ${opt_mb} MB libres"; fi
+    if [ "${var_mb:-0}" -lt 2000 ]; then pf_warn "/var tiene sólo ${var_mb} MB libres (ahí viven Postgres y los logs)"
+    else ok "/var: ${var_mb} MB libres"; fi
+    ram_mb=$(awk '/^MemTotal:/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo 0)
+    if [ "${ram_mb:-0}" -lt 1800 ]; then pf_warn "RAM total ${ram_mb} MB — el mínimo soportado son 2 GB"
+    else ok "RAM: ${ram_mb} MB"; fi
+
+    # ---- 7. INSTALACIÓN YA EXISTENTE ---------------------------------------
+    # Reinstalar encima de un nodo vivo reescribe .env y la configuración de
+    # servicios. Es un bloqueador explícito, no un aviso.
+    if systemctl is-active --quiet satom.service 2>/dev/null; then
+        if [ "${SATOM_ALLOW_REINSTALL:-0}" = "1" ]; then
+            pf_warn "satom.service está ACTIVO y SATOM_ALLOW_REINSTALL=1 — se reinstalará encima bajo tu responsabilidad"
+        else
+            pf_bad "satom.service ya está ACTIVO en esta máquina: reinstalar encima reescribe .env y las unidades. Para actualizar usa la página Software Update, o exporta SATOM_ALLOW_REINSTALL=1 si de verdad quieres reinstalar."
+        fi
+    elif [ -d "${APP_DIR}/app" ]; then
+        pf_warn "${APP_DIR} ya contiene código (servicio parado) — se conservará y sólo se actualizarán dependencias"
+    else
+        ok "No hay instalación previa en ${APP_DIR}"
+    fi
+
+    # ---- 8. PUERTOS FIJOS DEL PRODUCTO -------------------------------------
+    # El puerto de la consola se pregunta en el paso 1 y se comprueba allí.
+    # 80 (redirección + challenge ACME) y 8443 (sondas entre nodos) son fijos.
+    local o
+    for p in 80 8443; do
+        o="$(pf_port_owner "$p")"
+        [ -n "$o" ] && pf_warn "El puerto ${p} ya está ocupado (${o}) — nginx lo necesita para $( [ "$p" = 80 ] && echo 'la redirección y el challenge ACME' || echo 'las sondas entre nodos' )"
+    done
+
+    # ---- 9. RELOJ -----------------------------------------------------------
+    # Un reloj desviado rompe TLS, la validación ACME y la réplica con verify-ca.
+    if pf_have timedatectl; then
+        if [ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" = "yes" ]; then
+            ok "Reloj sincronizado por NTP ($(date -u '+%Y-%m-%dT%H:%M:%SZ'))"
+        else
+            pf_warn "El reloj NO está sincronizado por NTP — los certificados TLS y el challenge ACME fallarán si hay desviación"
+        fi
+    fi
+
+    # ---- 10. RED (sólo modo ONLINE) ----------------------------------------
+    if [ $OFFLINE -eq 0 ]; then
+        local githost; githost="$(echo "$GIT_URL_DEFAULT" | awk -F/ '{print $3}')"
+        if pf_have getent && ! getent hosts "$githost" >/dev/null 2>&1; then
+            pf_warn "DNS no resuelve ${githost} (podrás indicar otra URL de repo en el paso 3)"
+        fi
+        pf_https_ok "https://pypi.org/simple/"; case $? in            # [PFNET2]
+            0) ok "Salida a PyPI verificada (necesaria para el venv)" ;;
+            1) pf_bad "Sin acceso a PyPI — el venv NO se puede construir. Usa el bundle OFFLINE o abre la salida HTTPS." ;;
+            *) pf_warn "Sin curl ni python3: no se puede comprobar la salida a Internet" ;;
+        esac
+        pf_https_ok "https://${githost}/"; case $? in
+            0) ok "Repositorio de código alcanzable (${githost})" ;;
+            1) pf_warn "Sin acceso a https://${githost} — el clonado fallará (podrás indicar otra URL en el paso 3)" ;;
+        esac
+    fi
+
+    # ---- 11. SELINUX / APPARMOR (informativo) ------------------------------
+    if pf_have getenforce; then
+        ok "SELinux: $(getenforce 2>/dev/null) $( [ "$(getenforce 2>/dev/null)" = "Enforcing" ] && echo '(el instalador aplicará los booleanos y puertos necesarios)' )"
+    fi
+
+    # ---- RESUMEN ------------------------------------------------------------
+    echo ""
+    if [ ${#PF_FAIL[@]} -gt 0 ]; then
+        echo "${c_red}${c_bold}PREFLIGHT: ${#PF_FAIL[@]} bloqueador(es).${c_off} Nada se ha modificado." | tee -a "$INSTALL_LOG"
+        local f; for f in "${PF_FAIL[@]}"; do echo "  ${c_red}✗${c_off} $f" | tee -a "$INSTALL_LOG"; done
+        [ ${#PF_WARN[@]} -gt 0 ] && { echo "  — y ${#PF_WARN[@]} advertencia(s) —" ; for f in "${PF_WARN[@]}"; do echo "  ${c_ylw}!${c_off} $f"; done; }
+        echo ""
+        die "Corrige los bloqueadores y vuelve a ejecutar (o 'bash $0 --preflight' para re-verificar sin instalar)"
+    fi
+    if [ ${#PF_WARN[@]} -gt 0 ]; then
+        echo "${c_ylw}${c_bold}PREFLIGHT OK con ${#PF_WARN[@]} advertencia(s):${c_off}" | tee -a "$INSTALL_LOG"
+        local w; for w in "${PF_WARN[@]}"; do echo "  ${c_ylw}!${c_off} $w" | tee -a "$INSTALL_LOG"; done
+    else
+        echo "${c_grn}${c_bold}PREFLIGHT OK — la máquina cumple todos los requisitos.${c_off}" | tee -a "$INSTALL_LOG"
+    fi
+    echo ""
+}
+
+# Preflight específico de clúster. Se llama en cuanto se conoce el modo, que es
+# lo antes posible: los binarios de SSH sólo hacen falta si hay un segundo nodo.
+preflight_cluster() {
+    say "Preflight de clúster — canal SSH entre nodos"
+    local miss=() b
+    for b in ssh ssh-keygen ssh-keyscan rsync; do pf_have "$b" || miss+=("$b"); done
+    if [ ${#miss[@]} -eq 0 ]; then
+        ok "Cliente SSH y rsync presentes"
+    elif [ $OFFLINE -eq 1 ]; then
+        die "Modo cluster: faltan ${miss[*]} y estás en OFFLINE. Instálalos desde el medio de la distro (paquetes: ${SSH_PKGS[*]} rsync) y repite."
+    else
+        warn "Faltan ${miss[*]} — el paso 2 los instalará (${SSH_PKGS[*]} rsync)"
+    fi
+    # El PRIMARY debe tener sshd activo: el standby sincroniza data/ tirando (pull).
+    if systemctl list-unit-files 2>/dev/null | grep -qE '^(ssh|sshd)\.service'; then
+        if systemctl is-active --quiet ssh 2>/dev/null || systemctl is-active --quiet sshd 2>/dev/null; then
+            ok "Servidor SSH instalado y activo"
+        else
+            warn "El servidor SSH está instalado pero no activo. En el PRIMARY debe estar arrancado: el standby sincroniza data/ por SSH."
+        fi
+    else
+        warn "No hay servidor SSH instalado. Es obligatorio en el PRIMARY (el standby hace pull de data/ por SSH); se instalará ${SSH_PKGS[*]}."
+    fi
+}
+
+if [ "${1:-}" = "--preflight" ] || [ "${1:-}" = "--check" ]; then
+    echo ""
+    echo "Modo verificación: sólo se comprueban permisos y requisitos. No se instala nada."
+    preflight
+    exit 0
+fi
+
+preflight
+
+# ─────────────────────────────────────────────────────────────────────────────
 # PASO 1 — PREGUNTAS (todo por adelantado; nada se toca hasta terminar aquí)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -159,9 +455,24 @@ NODE_IP="${NODE_IP:-$DETECTED_IP}"
 [[ "$NODE_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "IP inválida: $NODE_IP"
 
 # 1b. Puerto HTTPS
-read -rp "Puerto HTTPS de la consola web [443]: " WEB_PORT
-WEB_PORT="${WEB_PORT:-443}"
-[[ "$WEB_PORT" =~ ^[0-9]+$ ]] && [ "$WEB_PORT" -ge 1 ] && [ "$WEB_PORT" -le 65535 ] || die "Puerto inválido"
+WEB_PORT=""
+while [ -z "$WEB_PORT" ]; do                                            # [PFPORT]
+    read -rp "Puerto HTTPS de la consola web [443]: " WEB_PORT
+    WEB_PORT="${WEB_PORT:-443}"
+    if ! [[ "$WEB_PORT" =~ ^[0-9]+$ ]] || [ "$WEB_PORT" -lt 1 ] || [ "$WEB_PORT" -gt 65535 ]; then
+        warn "Puerto inválido: $WEB_PORT"; WEB_PORT=""; continue
+    fi
+    PORT_OWNER="$(pf_port_owner "$WEB_PORT")"
+    if [ -n "$PORT_OWNER" ]; then
+        # Si ya es nginx, es probablemente una reinstalación y se reutilizará.
+        case "$PORT_OWNER" in
+            *nginx*) warn "El puerto ${WEB_PORT} lo escucha nginx — se reutilizará su configuración" ;;
+            *) warn "El puerto ${WEB_PORT} YA ESTÁ OCUPADO por: ${PORT_OWNER}"
+               read -rp "  ¿Usarlo igualmente? nginx no podrá arrancar si el otro proceso sigue ahí [s/N]: " _pf_yes
+               case "${_pf_yes,,}" in s|si|sí|y|yes) : ;; *) WEB_PORT=""; continue ;; esac ;;
+        esac
+    fi
+done
 
 # 1c. Modo
 MODE=""; ROLE="standalone"
@@ -173,6 +484,8 @@ while [ -z "$MODE" ]; do
         *) warn "Responde 'standalone' o 'cluster'"; MODE="" ;;
     esac
 done
+
+if [ "$MODE" = "cluster" ]; then preflight_cluster; fi     # [PFCL]
 
 JOIN_KEY_RAW=""
 if [ "$MODE" = "cluster" ]; then
@@ -190,11 +503,17 @@ fi
 if [ "$ROLE" = "secondary" ]; then
     echo ""
     echo "Pega la CLAVE DE UNIÓN generada por el instalador del nodo primary"
-    echo "(una sola línea, empieza por OFMJOIN1.):"
+    echo "(una sola línea, empieza por SATOMJOIN1.):"
     read -rp "> " JOIN_KEY_RAW
     JOIN_KEY_RAW="${JOIN_KEY_RAW// /}"
-    [[ "$JOIN_KEY_RAW" == OFMJOIN1.* ]] || die "La clave de unión no es válida (debe empezar por OFMJOIN1.)"
-    JOIN_JSON=$(echo "${JOIN_KEY_RAW#OFMJOIN1.}" | base64 -d 2>/dev/null) || die "La clave de unión no se pudo decodificar"
+    # Se acepta el prefijo heredado OFMJOIN1. para no invalidar claves ya
+    # emitidas; las nuevas se emiten siempre como SATOMJOIN1.
+    case "$JOIN_KEY_RAW" in
+        SATOMJOIN1.*) JOIN_B64="${JOIN_KEY_RAW#SATOMJOIN1.}" ;;
+        OFMJOIN1.*)   JOIN_B64="${JOIN_KEY_RAW#OFMJOIN1.}" ;;
+        *) die "La clave de unión no es válida (debe empezar por SATOMJOIN1.)" ;;
+    esac
+    JOIN_JSON=$(echo "$JOIN_B64" | base64 -d 2>/dev/null) || die "La clave de unión no se pudo decodificar"
     jget() { echo "$JOIN_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('$1',''))"; }
     PRIMARY_IP=$(jget primary_ip);   [ -n "$PRIMARY_IP" ]  || die "Join key sin primary_ip"
     PRIMARY_PORT=$(jget primary_port)
@@ -204,7 +523,6 @@ if [ "$ROLE" = "secondary" ]; then
     REPL_PASS=$(jget repl_password); [ -n "$REPL_PASS" ]   || die "Join key sin repl_password"
     CA_CRT=$(jget ca_crt);           [ -n "$CA_CRT" ]      || die "Join key sin ca_crt"
     CA_KEY=$(jget ca_key);           [ -n "$CA_KEY" ]      || die "Join key sin ca_key"
-    RSYNC_PRIV=$(jget rsync_key)
     PRIMARY_NAME=$(jget primary_name)
     ok "Join key válida — primary en ${PRIMARY_IP}:${PRIMARY_PORT:-$WEB_PORT}"
     # Comprobar alcanzabilidad del primary ANTES de instalar nada
@@ -245,7 +563,9 @@ read -rp "¿Continuar con la instalación? [S/n]: " GO
 say "Paso 2/7 — Verificando paquetería (gestor detectado: ${PKG_MGR})"
 
 PKGS=("${REQUIRED_PKGS[@]}")
-[ $OFFLINE -eq 0 ] && PKGS+=("${ONLINE_EXTRA_PKGS[@]}")
+if [ $OFFLINE -eq 0 ]; then PKGS+=("${ONLINE_EXTRA_PKGS[@]}"); fi
+# El canal de sincronización de data/ es rsync sobre SSH: sólo cluster.  [PFSSH2]
+if [ "$MODE" = "cluster" ]; then PKGS+=("${SSH_PKGS[@]}"); fi
 
 MISSING=()
 for p in "${PKGS[@]}"; do
@@ -349,6 +669,51 @@ else
     venv/bin/pip install --quiet -r requirements.txt >>"$INSTALL_LOG" 2>&1 || die "pip install falló (revisa $INSTALL_LOG)"
 fi
 ok "Entorno virtual listo ($(venv/bin/python --version 2>&1))"
+
+# ---------------------------------------------------------------------------
+# Cuenta de servicio + privilegios mínimos
+# ---------------------------------------------------------------------------
+say "Creando cuenta de servicio '${APP_USER}' y aplicando privilegios mínimos"
+NOLOGIN="$(command -v nologin || echo /usr/sbin/nologin)"
+[ -x "$NOLOGIN" ] || NOLOGIN=/bin/false
+if ! id -u "$APP_USER" >/dev/null 2>&1; then
+    useradd --system --home-dir "$APP_DIR" --shell "$NOLOGIN" \
+            --comment "SATOM service account" "$APP_USER" \
+        || die "No se pudo crear el usuario de servicio ${APP_USER}"
+    ok "Usuario de servicio ${APP_USER} creado (sin shell, sin login)"
+else
+    ok "Usuario de servicio ${APP_USER} ya existe — se reutiliza"
+fi
+
+# La app escribe en todo el árbol salvo .env (que sólo LEE).
+mkdir -p "$APP_DIR/data" "$APP_DIR/state" "$LOG_DIR" "$APP_DIR/.ssh"
+chown -R "${APP_USER}:${APP_USER}" "$APP_DIR" "$LOG_DIR"
+chmod 750 "$APP_DIR"
+chmod 700 "$APP_DIR/state" "$APP_DIR/.ssh"
+if [ -f "$APP_DIR/.env" ]; then
+    chown root:"$APP_USER" "$APP_DIR/.env"; chmod 640 "$APP_DIR/.env"
+fi
+
+# ---- sudoers: allowlist DELIBERADAMENTE DIMINUTA -------------------------
+# Sólo dos comandos. NO se concede instalación de paquetes (apt/dnf/pip) ni
+# systemctl sin restringir: ambos son EQUIVALENTES A ROOT — un paquete
+# ejecuta sus propios scripts postinst como root, y `systemctl` sin unidad
+# fijada permite arrancar cualquier unidad. Todo lo que necesita privilegio
+# real (instalar unidades, pip, reiniciar el propio servicio) pasa por el
+# runner satom-updater.service, que es root por diseño y valida su entrada.
+NGINX_BIN="$(command -v nginx || echo /usr/sbin/nginx)"
+SYSTEMCTL_BIN="$(command -v systemctl || echo /usr/bin/systemctl)"
+cat > /etc/sudoers.d/satom <<SUDOERS
+# Generado por install-satom.sh — ver docs/privilege-model.md
+# NO añadir aquí gestores de paquetes ni systemctl genérico: sería root.
+Cmnd_Alias SATOM_CERT_RELOAD = ${NGINX_BIN} -t, ${SYSTEMCTL_BIN} reload nginx
+${APP_USER} ALL=(root) NOPASSWD: SATOM_CERT_RELOAD
+Defaults:${APP_USER} !requiretty
+SUDOERS
+chmod 440 /etc/sudoers.d/satom
+visudo -cf /etc/sudoers.d/satom >>"$INSTALL_LOG" 2>&1 \
+    || { rm -f /etc/sudoers.d/satom; die "La regla sudoers generada es inválida"; }
+ok "sudoers: ${APP_USER} sólo puede 'nginx -t' y 'systemctl reload nginx'"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PASO 4 — POSTGRES
@@ -508,12 +873,14 @@ HBA
     systemctl restart postgresql
     ok "Postgres primary: TLS forzado + rol de réplica (${REPL_USER}) listo"
 
-    # Llave SSH dedicada para el datasync de data/ (el standby hace PULL)
-    if [ ! -f /root/.ssh/id_ha_rsync ]; then
-        ssh-keygen -t ed25519 -N "" -q -f /root/.ssh/id_ha_rsync -C "satom-ha-datasync"
-    fi
-    grep -qF "$(cat /root/.ssh/id_ha_rsync.pub)" /root/.ssh/authorized_keys 2>/dev/null \
-        || cat /root/.ssh/id_ha_rsync.pub >> /root/.ssh/authorized_keys
+    # NOTA DE SEGURIDAD — el primary ya NO genera el par de llaves del
+    # datasync. Antes lo hacía y metía la clave PRIVADA dentro de la join
+    # key, que viaja por el portapapeles de un humano; además la entrada de
+    # authorized_keys no llevaba from= ni command=, así que esa llave era una
+    # shell de root desde cualquier IP. Ahora el SECONDARY genera su propio
+    # par (la privada nunca sale de su disco) y el admin autoriza la pública
+    # en el primary con:  install-satom.sh --authorize-peer <ip> "<pubkey>"
+    install -d -m 700 -o "$APP_USER" -g "$APP_USER" "$APP_DIR/.ssh"
 fi
 
 if [ "$ROLE" = "secondary" ]; then
@@ -547,11 +914,24 @@ PGC
     [ "$REC" = "t" ] && ok "Réplica streaming ACTIVA (pg_is_in_recovery = t)" \
                      || die "La réplica no quedó en recovery — revisa $INSTALL_LOG"
 
-    # Llave del datasync + registro de nodos
-    if [ -n "$RSYNC_PRIV" ]; then
-        printf '%s\n' "$RSYNC_PRIV" > /root/.ssh/id_ha_rsync
-        chmod 600 /root/.ssh/id_ha_rsync
+    # Llave del datasync: se genera AQUÍ. La privada nunca viaja.
+    install -d -m 700 -o "$APP_USER" -g "$APP_USER" "$APP_DIR/.ssh"
+    HA_KEY="$APP_DIR/.ssh/id_ha_rsync"
+    if [ ! -f "$HA_KEY" ]; then
+        runuser -u "$APP_USER" -- ssh-keygen -t ed25519 -N "" -q -f "$HA_KEY" \
+            -C "satom-ha-datasync@$(hostname)"
     fi
+    chown "$APP_USER:$APP_USER" "$HA_KEY" "$HA_KEY.pub"; chmod 600 "$HA_KEY"
+
+    # Sembrar la host key del primary AHORA, por SSH autenticado con la CA
+    # que ya trae la join key. Así el primer rsync no depende de TOFU
+    # (StrictHostKeyChecking=accept-new aceptaba lo que contestara esa IP).
+    KNOWN="$APP_DIR/.ssh/known_hosts"
+    ssh-keyscan -T 10 -t ed25519,rsa "$PRIMARY_IP" 2>/dev/null >> "$KNOWN" || true
+    sort -u "$KNOWN" -o "$KNOWN" 2>/dev/null || true
+    chown "$APP_USER:$APP_USER" "$KNOWN" 2>/dev/null || true
+
+    PEER_PUB="$(cat "$HA_KEY.pub")"
     python3 - <<PYNODES
 import json
 nodes = [
@@ -585,13 +965,40 @@ fi
 
 # systemd units
 say "Instalando servicios systemd"
+# satom-updater.{path,service} corre como ROOT a propósito (instala
+# unidades y reinicia servicios). El resto baja a la cuenta de servicio.
+# git-publish / alerts / reconciler FALTABAN: sin ellos una instalación nueva
+# se queda sin la copia 3 del backup (SoT en git) y sin los correos de fallo
+# de certificado, aunque la UI los prometa.
 for unit in satom.service satom-scheduler.service \
             satom-updater.path satom-updater.service \
-            satom-cert-renew.service satom-cert-renew.timer; do
+            satom-cert-renew.service satom-cert-renew.timer \
+            satom-reconciler.service \
+            satom-alerts.service satom-alerts.timer \
+            satom-git-publish.service satom-git-publish.timer; do
     [ -f "$APP_DIR/deploy/$unit" ] && cp "$APP_DIR/deploy/$unit" /etc/systemd/system/
 done
 # gunicorn SOLO en loopback: nginx termina TLS en ${WEB_PORT}
 sed -i 's#--bind 0\.0\.0\.0:8000#--bind 127.0.0.1:8000#' /etc/systemd/system/satom.service
+
+# Degradar a la cuenta de servicio todo lo que no necesite root.
+for unit in satom.service satom-scheduler.service satom-reconciler.service \
+            satom-alerts.service satom-cert-renew.service \
+            satom-git-publish.service; do
+    f="/etc/systemd/system/$unit"
+    [ -f "$f" ] || continue
+    if grep -qE '^User=' "$f"; then
+        sed -i "s#^User=.*#User=${APP_USER}#" "$f"
+    else
+        sed -i "/^\[Service\]/a User=${APP_USER}" "$f"
+    fi
+    grep -qE '^Group=' "$f" || sed -i "/^User=/a Group=${APP_USER}" "$f"
+done
+# Los scripts auxiliares se ejecutan desde /usr/local/sbin en ambos nodos.
+for s in satom-git-publish.sh satom-ha-datasync.sh satom-promote.sh \
+         satom-ha-rsync-shell; do
+    [ -f "$APP_DIR/deploy/$s" ] && install -m 0755 "$APP_DIR/deploy/$s" /usr/local/sbin/
+done
 
 if [ "$MODE" = "cluster" ]; then
     cat > /etc/systemd/system/satom-ha-datasync.service <<UNIT
@@ -616,6 +1023,11 @@ systemctl daemon-reload
 systemctl enable --now satom.service satom-scheduler.service >>"$INSTALL_LOG" 2>&1
 systemctl enable --now satom-updater.path >>"$INSTALL_LOG" 2>&1 || true
 systemctl enable --now satom-cert-renew.timer >>"$INSTALL_LOG" 2>&1 || true
+# Ambos timers llevan guarda de rol interna (primary-only), así que se
+# habilitan en los dos nodos: tras un promote el nodo nuevo ya está listo.
+systemctl enable --now satom-alerts.timer >>"$INSTALL_LOG" 2>&1 || true
+systemctl enable --now satom-git-publish.timer >>"$INSTALL_LOG" 2>&1 || true
+systemctl enable --now satom-reconciler.service >>"$INSTALL_LOG" 2>&1 || true
 [ "$MODE" = "cluster" ] && systemctl enable --now satom-ha-datasync.timer >>"$INSTALL_LOG" 2>&1
 
 # nginx: TLS en el puerto elegido con el cert del nodo.
@@ -732,9 +1144,10 @@ blob = {
     "repl_password": "${REPL_PASS}",
     "ca_crt": open("${PKI}/internal-ca/ca.crt").read(),
     "ca_key": open("${PKI}/internal-ca/ca.key").read(),
-    "rsync_key": open("/root/.ssh/id_ha_rsync").read(),
+    # rsync_key ELIMINADO a propósito: la clave privada del datasync ya no
+    # viaja en la join key. El secondary genera la suya localmente.
 }
-print("OFMJOIN1." + base64.b64encode(json.dumps(blob).encode()).decode())
+print("SATOMJOIN1." + base64.b64encode(json.dumps(blob).encode()).decode())
 PYJOIN
 )
     echo ""
@@ -749,6 +1162,17 @@ PYJOIN
 fi
 
 if [ "$ROLE" = "secondary" ]; then
+    echo ""
+    echo "${c_bold}════════════ AUTORIZA ESTE NODO EN EL PRIMARY ════════════${c_off}"
+    echo ""
+    echo "  Esta es una clave PÚBLICA: es seguro pegarla donde quieras."
+    echo "  La privada NUNCA sale de este disco. Ejecuta en ${PRIMARY_IP}:"
+    echo ""
+    echo "    sudo ./install-satom.sh --authorize-peer ${NODE_IP} \\"
+    echo "      \"${PEER_PUB}\""
+    echo ""
+    echo "  Hasta entonces el datasync de data/ fallará (Postgres SÍ replica ya)."
+    echo "═══════════════════════════════════════════════════════════════"
     echo ""
     echo "  Nodo SECONDARY unido al clúster:"
     echo "   • Postgres réplica streaming de ${PRIMARY_IP} (TLS verify-ca)"

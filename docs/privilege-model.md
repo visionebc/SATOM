@@ -198,6 +198,74 @@ both nodes; before v1.2 it was installed only on the standby.
 
 ---
 
+## 5b. Why `User=` lives in a drop-in, not in the unit file
+
+**This is the single most important durability detail of the whole model, and it
+was learned the hard way.** After the v1.2 migration the standby was found back
+on `User=root` for exactly three units: `satom.service`,
+`satom-scheduler.service` and `satom-reconciler.service`.
+
+Those three are precisely the ones that exist as templates in `deploy/`, and
+`deploy/self_update_runner.py` re-copies `deploy/<unit>` into
+`/etc/systemd/system/` on **every** update:
+
+```python
+for unit in UNIT_FILES:
+    src = APP / "deploy" / unit
+    if src.exists():
+        subprocess.run(["cp", str(src), "/etc/systemd/system/" + unit])
+```
+
+The templates declare `User=root`, so a `sed` applied to the live unit file is
+erased by the next code update. The privilege model silently reverts — the app
+goes back to root and nothing alerts anyone.
+
+The fix is a systemd drop-in, which is a **separate file** and therefore
+survives overwriting the unit:
+
+```
+/etc/systemd/system/satom.service.d/10-app-user.conf
+```
+```ini
+[Service]
+User=satom
+Group=satom
+```
+
+Three writers keep it in place, and all three derive the account the same way so
+there is no environment variable to forget:
+
+| Writer | When |
+|---|---|
+| `installers/install-satom.sh` (`satom_enforce_unit_user`) | at install, once every unit exists |
+| `deploy/migrate-deprivilege.sh` | when migrating a legacy node |
+| `deploy/self_update_runner.py` (`enforce_unit_user`) | after the unit copy, before `daemon-reload` |
+
+`satom-updater.{service,path}` is deliberately **excluded** from that list: it
+*is* the privileged runner and must stay root.
+
+`self_update_runner.APP_USER` is derived from the **owner of the app tree**
+(`_app_user_from_tree()`), not from `FM_APP_USER`'s old `fortinet` default: a
+fresh install creates `satom` and nobody sets that variable, so the runner would
+otherwise run `pip` and `flask` as the wrong account. If the tree is root-owned
+(an un-migrated node) it returns `root` and no drop-in is written — self-healing
+and safe on any node.
+
+Verify durability by reproducing the original breakage:
+
+```bash
+cp /opt/satom/deploy/satom.service /etc/systemd/system/satom.service   # says root
+systemctl daemon-reload && systemctl restart satom.service
+systemctl show satom.service -p User --value      # -> satom  (the drop-in wins)
+ps -o user= -p $(systemctl show satom.service -p MainPID --value)
+```
+
+**Lesson for any future privilege or hardening change:** if the setting lives in
+a file that a deploy step regenerates, it is not applied — it is merely
+scheduled for deletion. Put it in a drop-in, a `conf.d/`, or the generator.
+
+---
+
 ## 6. Migrating an existing node
 
 `deploy/migrate-deprivilege.sh`, one node at a time, **standby first**. It

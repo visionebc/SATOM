@@ -122,7 +122,17 @@ for unit in "${DEPRIV[@]}"; do
     else
         sed -i "/^User=/a Group=${APP_GROUP}" "$f"
     fi
-    ok "$unit → User=${APP_USER}"
+    # El sed de arriba deja la unidad coherente, pero NO es durable: cada
+    # self-update recopia deploy/<unit> (User=root). El drop-in sí sobrevive.
+    install -d -m 0755 "${f}.d"
+    cat > "${f}.d/10-app-user.conf" <<DROPIN
+# Generado por migrate-deprivilege.sh. Vive en un drop-in porque las plantillas
+# de deploy/ declaran User=root y cada update las recopia. NO editar a mano.
+[Service]
+User=${APP_USER}
+Group=${APP_GROUP}
+DROPIN
+    ok "$unit → User=${APP_USER} (unidad + drop-in)"
 done
 warn "satom-updater.{path,service} se dejan como ROOT a propósito (runner privilegiado)"
 echo "    backup de las unidades: $BACKUP"

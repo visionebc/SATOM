@@ -31,7 +31,20 @@ STA = APP / "data" / "update-status"
 VENV = APP / "venv" / "bin"
 SERVICE = "satom.service"
 SCHED = "satom-scheduler.service"
-APP_USER = os.environ.get("FM_APP_USER", "fortinet")
+
+
+def _app_user_from_tree():
+    """Dueño del árbol de la app = cuenta de servicio. Única fuente de verdad:
+    una env var (FM_APP_USER) se olvida al instalar un nodo nuevo, el dueño del
+    directorio no. Devuelve 'root' en una instalación sin degradar."""
+    try:
+        import pwd
+        return pwd.getpwuid(APP.stat().st_uid).pw_name
+    except Exception:
+        return "root"
+
+
+APP_USER = os.environ.get("FM_APP_USER") or _app_user_from_tree()
 HEALTH_URL = os.environ.get("FM_HEALTH_URL", "http://127.0.0.1:8000/healthz")
 HEALTH_TIMEOUT = int(os.environ.get("FM_HEALTH_TIMEOUT", "90"))
 UNIT_FILES = (
@@ -39,6 +52,40 @@ UNIT_FILES = (
     "satom-updater.service", "satom-updater.path",
     "satom-reconciler.service",
 )
+
+
+# Unidades que DEBEN correr como la cuenta de servicio. satom-updater.{service,
+# path} está deliberadamente fuera: ES el runner privilegiado.
+NONROOT_UNITS = (
+    "satom.service", "satom-scheduler.service", "satom-reconciler.service",
+    "satom-alerts.service", "satom-cert-renew.service",
+    "satom-git-publish.service", "satom-ha-datasync.service",
+)
+
+UNIT_DROPIN = """# Generado por SATOM (instalador / migrate-deprivilege.sh / self_update_runner).
+# Vive en un drop-in y no en la unidad porque las plantillas de deploy/ declaran
+# User=root y cada update las recopia: el drop-in sobrevive a esa copia.
+# NO editar a mano.
+[Service]
+User=%s
+Group=%s
+"""
+
+
+def enforce_unit_user(user):
+    """Fija User=/Group= por drop-in en las unidades no privilegiadas."""
+    if not user or user == "root":
+        return
+    for unit in NONROOT_UNITS:
+        p = Path("/etc/systemd/system/" + unit)
+        if not p.exists():
+            continue
+        d = Path(str(p) + ".d")
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "10-app-user.conf").write_text(UNIT_DROPIN % (user, user))
+        except OSError:
+            pass
 
 
 def now():
@@ -268,6 +315,10 @@ def process(req_path):
             src = APP / "deploy" / unit
             if src.exists():
                 subprocess.run(["cp", str(src), "/etc/systemd/system/" + unit])
+        # ...y VOLVER a fijar la cuenta de servicio. Las plantillas de deploy/
+        # declaran User=root, así que la copia de arriba degradaría el modelo de
+        # privilegio en cada update si no fuera por el drop-in.
+        enforce_unit_user(APP_USER)
         subprocess.run(["systemctl", "daemon-reload"])
 
         if is_standby:

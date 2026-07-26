@@ -964,6 +964,29 @@ PYADM
 fi
 
 # systemd units
+# Fija la cuenta de servicio por DROP-IN, no editando la unidad: las plantillas
+# de deploy/ declaran User=root y el runner de self-update las recopia en cada
+# actualización — sin el drop-in, el primer update devolvería la app a root.
+satom_enforce_unit_user() {                                          # [PFDROPIN]
+    local unit d
+    for unit in satom.service satom-scheduler.service satom-reconciler.service \
+                satom-alerts.service satom-cert-renew.service \
+                satom-git-publish.service satom-ha-datasync.service; do
+        [ -f "/etc/systemd/system/$unit" ] || continue
+        d="/etc/systemd/system/${unit}.d"
+        install -d -m 0755 "$d"
+        cat > "$d/10-app-user.conf" <<DROPIN
+# Generado por install-satom.sh. Vive en un drop-in porque las plantillas de
+# deploy/ declaran User=root y cada update las recopia. NO editar a mano.
+[Service]
+User=${APP_USER}
+Group=${APP_USER}
+DROPIN
+    done
+    systemctl daemon-reload
+    ok "Cuenta de servicio fijada por drop-in (sobrevive a los updates)"
+}
+
 say "Instalando servicios systemd"
 # satom-updater.{path,service} corre como ROOT a propósito (instala
 # unidades y reinicia servicios). El resto baja a la cuenta de servicio.
@@ -1029,6 +1052,10 @@ systemctl enable --now satom-alerts.timer >>"$INSTALL_LOG" 2>&1 || true
 systemctl enable --now satom-git-publish.timer >>"$INSTALL_LOG" 2>&1 || true
 systemctl enable --now satom-reconciler.service >>"$INSTALL_LOG" 2>&1 || true
 [ "$MODE" = "cluster" ] && systemctl enable --now satom-ha-datasync.timer >>"$INSTALL_LOG" 2>&1
+
+# Todas las unidades ya existen: blinda la cuenta de servicio contra el próximo
+# self-update, que recopia las plantillas de deploy/ (User=root).   [PFDROPCALL]
+satom_enforce_unit_user
 
 # nginx: TLS en el puerto elegido con el cert del nodo.
 # Debian/Ubuntu usan sites-available/enabled; el resto de familias conf.d.

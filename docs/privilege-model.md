@@ -29,6 +29,7 @@ open a shell on the peer node.
 | `satom` (default; `SATOM_APP_USER` overrides) | web, scheduler, reconciler, alerts, cert-renew, git-publish, ha-datasync | `nologin` | Owns `/opt/satom` and `/var/log/satom` |
 | `root` | `satom-updater.service` only | — | The single privileged runner |
 | `fortinet` | Postgres role **only** | n/a | Legacy name, deliberately not renamed |
+| `satominstall` (any name) | running the installer | `bash` | **Temporary.** `sudo` to one binary at one fixed path; removed after the install window |
 
 `fortinet` as a *Linux* user is a legacy artifact on nodes installed before
 v1.2. It is unrelated to the Postgres role of the same name — the app connects
@@ -49,6 +50,41 @@ setting `SATOM_APP_USER=fortinet`; fresh installs get `satom`.
 `.env` is root-owned on purpose: it holds `FERNET_KEY` and the DB password. The
 app only ever needs to read it, so a write primitive in the web worker cannot
 rewrite the app's own secrets.
+
+### The installer account is not the service account
+
+Two accounts, two lifetimes, two `sudoers` files. Conflating them is the single
+easiest way to undo this whole document:
+
+| | `/etc/sudoers.d/satom-installer` | `/etc/sudoers.d/satom` |
+|---|---|---|
+| Grantee | the human running the install | the service account |
+| Grant | `bash /opt/staging/install-satom.sh` (+ its subcommands) | `nginx -t`, `systemctl reload nginx` |
+| Lifetime | the install window, then `rm` | permanent |
+| Equivalent to root? | **yes, in practice** | no |
+
+Installing *is* root: it creates accounts, installs distro packages, writes unit
+files and reconfigures Postgres and nginx. There is no honest subset — a rule
+granting `apt-get install` is root anyway, because a `.deb` runs its own
+maintainer scripts as root. So the installer rule does not pretend to reduce
+privilege during the install; what it buys is:
+
+1. **No root password is handed out.** The operator uses their own nominal
+   account, and `journalctl _COMM=sudo` records who ran it.
+2. **The privilege is pinned to one binary at one path**, not a shell.
+3. **It is temporary** — the rule is removed once the node is up.
+4. **What keeps running afterwards is not root**, which is the part that
+   actually matters, because that is the process parsing appliance input.
+
+The path must be fixed and the script must be `root:root`. If the operator can
+write `/opt/staging/install-satom.sh`, the rule is `NOPASSWD: ALL` with extra
+steps.
+
+Generate the file without shipping the repo:
+
+```bash
+bash install-satom.sh --print-sudoers [account]   # needs no root, touches nothing
+```
 
 ---
 
@@ -290,3 +326,16 @@ app account on legacy nodes.
   runner.
 - Does it add a secret to the join key? Justify it in review — that blob is
   already the highest-value artifact in the product.
+- **Does it call `runuser` or `su`?** Those only work as root. Any helper script
+  that a v1.1 node ran as root and a v1.2 node runs as the service account must
+  branch on `id -u` (see `deploy/satom-git-publish.sh::as_app`). This is not
+  theoretical: `satom-git-publish.sh` kept `runuser -u fortinet -- git`, so
+  after the de-privileging it failed every hour — and because the failure was
+  swallowed by `|| exit 0`, systemd reported SUCCESS while copy 3 of the backup
+  architecture silently stopped being published.
+- **Does it hardcode the service account or the database name?** Derive the
+  account from the tree owner (`stat -c %U /opt/satom`) and the database from
+  `SQLALCHEMY_DATABASE_URI` in `.env`. A fresh install uses `satom` and a
+  migrated one may keep `fortinet`; both must work from the same script.
+- **Does a failure exit 0?** Then nobody will ever find out. Prefer a non-zero
+  exit so the unit shows `failed` and the alerting picks it up.

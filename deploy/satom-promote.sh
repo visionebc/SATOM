@@ -13,6 +13,10 @@
 # (see the runbook), not this script.
 set -uo pipefail
 
+# Este script SI necesita root: usa `runuser -u postgres` y toca unidades
+# de systemd. Falla ruidosamente si lo lanza la cuenta de servicio.
+[ "$(id -u)" -eq 0 ] || { echo "satom-promote: ejecutar como root (sudo)" >&2; exit 1; }
+
 PGVER="${FM_PGVER:-15}"
 SERVICE="${FM_SERVICE:-satom.service}"
 SCHED="${FM_SCHED:-satom-scheduler.service}"

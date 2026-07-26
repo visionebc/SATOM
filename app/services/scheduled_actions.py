@@ -131,6 +131,17 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "server so the DB backup lives off-rack too. No device call.",
     ),
     ActionSpec(
+        "git_bundle", "Git repository backup (bundle)", "admin",
+        needs_targets=False,
+        summary="Write a self-contained `git bundle` of the whole repo — code, "
+                "the reports/ source-of-truth history and every ref, including "
+                "the refs/backup/* commits the update runner parks — into "
+                "data/git-bundles, and (params.push_server, default on) upload "
+                "it to the external backup server. This is the copy that "
+                "survives a Gitea outage, when local commits have nowhere to "
+                "push. No device call.",
+    ),
+    ActionSpec(
         "stats", "Build statistics summary", "admin", needs_targets=False,
         summary="Aggregate a fleet statistics summary. No device call.",
     ),
@@ -312,6 +323,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_signature_sync(appliance, dry_run)
         if key == "system_backup":
             return _do_system_backup(params, dry_run)
+        if key == "git_bundle":
+            return _do_git_bundle(params, dry_run)
         if key == "stats":
             return _do_stats(dry_run)
         if key == "appid_import":
@@ -441,6 +454,22 @@ def _do_system_backup(params: dict, dry_run: bool) -> dict:
     return {"ok": res["ok"],
             "summary": (f"Backup {res['name']} ({res['size']//1024} KB)"
                         if res["ok"] else f"Backup failed: {res['detail']}"),
+            "log": res.get("detail", "")}
+
+
+def _do_git_bundle(params: dict, dry_run: bool) -> dict:
+    if dry_run:
+        return {"ok": True, "summary": "[dry-run] would bundle the git repo.",
+                "log": ""}
+    from . import git_backup
+    params = params or {}
+    res = git_backup.create_bundle(
+        label="scheduled",
+        push_server=params.get("push_server"),  # None → the saved default
+        by="scheduler")
+    return {"ok": res["ok"],
+            "summary": (f"Git bundle {res['name']} ({res['size'] // (1024 * 1024)} MB)"
+                        if res["ok"] else f"Git bundle failed: {res['detail']}"),
             "log": res.get("detail", "")}
 
 

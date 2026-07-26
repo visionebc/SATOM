@@ -56,6 +56,17 @@
           </td>
         </tr>
         <tr>
+          <td><strong>Git repository</strong></td>
+          <td><code>.bundle</code> (full history, all refs)</td>
+          <td>This node <code>data/git-bundles/</code> · standby (rsync) · <strong>backup-server <code>{{ gitb_cfg.remote_dir }}</code></strong> · your laptop (download)</td>
+          <td>Manual + the <code>git_bundle</code> automation; captures commits that cannot reach Gitea</td>
+          <td>
+            <span class="badge bg-{{ 'success' if gitb else 'secondary' }}">{{ gitb|length }} local</span>
+            {% if gitb_state.ahead %}<span class="badge bg-{{ 'danger' if gitb_state.oldest_age_h >= 24 else 'warning text-dark' }}">{{ gitb_state.ahead }} unpushed{% if gitb_state.oldest_age_h %} · {{ gitb_state.oldest_age_h }}h{% endif %}</span>
+            {% elif gitb_state.upstream %}<span class="badge bg-success">in sync with remote</span>{% endif %}
+          </td>
+        </tr>
+        <tr>
           <td><strong>Device config — vault</strong></td>
           <td>raw device export</td>
           <td>This node <code>data/backups/</code> · standby (rsync)</td>
@@ -313,6 +324,108 @@
   </div>
 </div>
 
+<div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center">
+    <strong><i class="bi bi-git me-1"></i>Git repository backup — bundles (code + <code>reports/</code> history + all refs)</strong>
+    <button class="btn btn-outline-light btn-sm py-0" data-js="gitb-external"><i class="bi bi-hdd-network me-1"></i>Check backup server</button>
+  </div>
+  <div class="card-body">
+    <p class="small text-muted">
+      A <code>git bundle</code> is the whole repository — every commit, branch and tag — in ONE file you can verify
+      (<code>git bundle verify</code>) and clone directly (<code>git clone &lt;file&gt;</code>). It is the copy that survives a
+      Gitea outage: while the remote is unreachable the hourly publisher keeps committing <code>reports/</code>
+      <em>locally</em>, and those commits exist nowhere else. Bundles are written to <code>data/git-bundles/</code> (so the
+      standby mirrors them within 5 min via <code>satom-ha-datasync</code>), pushed to the external backup server
+      (<code class="small">{{ gitb_cfg.remote_dir }}</code>), and downloadable below.
+    </p>
+
+    {% if gitb_state.ahead %}
+    <div class="alert {% if gitb_state.oldest_age_h >= 24 %}alert-danger{% else %}alert-warning{% endif %} small py-2">
+      <i class="bi bi-exclamation-triangle me-1"></i>
+      <strong>{{ gitb_state.ahead }} commit(s) not on {{ gitb_state.upstream or 'origin' }}</strong>
+      {% if gitb_state.oldest_age_h %}— the oldest has been waiting <strong>{{ gitb_state.oldest_age_h }} h</strong>{% endif %}.
+      The push is failing silently. Take a bundle now: it is the only off-box copy of that history until the remote is back.
+    </div>
+    {% elif gitb_state.upstream %}
+    <div class="alert alert-success small py-2"><i class="bi bi-check-circle me-1"></i>Everything committed here is on <code>{{ gitb_state.upstream }}</code>.</div>
+    {% endif %}
+
+    {% if gitb_refs %}
+    <div class="alert alert-info small py-2">
+      <i class="bi bi-shield-check me-1"></i><strong>{{ gitb_refs|length }} safety ref(s)</strong> under <code>refs/backup/</code> — commits the
+      update runner parked before a <code>git reset --hard</code> would have discarded them. They are inside every bundle
+      (created with <code>--all</code>). Inspect one with <code>git log &lt;ref&gt;</code>.
+      <ul class="mb-0 mt-1">
+        {% for r in gitb_refs[:5] %}<li class="font-monospace">{{ r.ref }} → {{ r.sha }} <span class="text-muted">({{ r.created }})</span></li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <div class="row">
+      <div class="col-lg-7">
+        {% if not gitb %}
+          <p class="text-muted small">No repository bundle yet.</p>
+        {% else %}
+        <table class="table table-sm table-hover align-middle">
+          <thead><tr><th>Bundle</th><th>Created (UTC)</th><th>Size</th><th>Head</th><th>sha256</th><th></th></tr></thead>
+          <tbody>
+          {% for b in gitb %}
+            <tr>
+              <td class="small font-monospace">{{ b.name }}
+                {% if b.unpushed %}<span class="badge bg-warning text-dark ms-1" title="unpushed commits captured">+{{ b.unpushed }}</span>{% endif %}
+                {% if b.pushed %}<span class="badge bg-success ms-1" title="{{ b.pushed }}">off-box</span>{% endif %}
+              </td>
+              <td class="small">{{ b.mtime }}</td>
+              <td class="small">{{ (b.size/1048576)|round(1) }} MB</td>
+              <td class="small font-monospace">{{ b.head }} <span class="text-muted">({{ b.refs }} refs)</span></td>
+              <td class="small font-monospace" title="{{ b.sha256 }}">{{ b.sha256[:12] }}…</td>
+              <td class="text-end text-nowrap">
+                <a class="btn btn-outline-light btn-sm" href="{{ url_for('system_backup.git_bundle_download', name=b.name) }}" title="Download"><i class="bi bi-download"></i></a>
+                <form method="post" action="{{ url_for('system_backup.git_bundle_delete') }}" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="name" value="{{ b.name }}">
+                  <button class="btn btn-outline-danger btn-sm" data-js="two-click" data-armed-label="Sure? click again" title="delete this bundle (replicates to the standby)"><i class="bi bi-trash"></i></button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        <div class="form-text">Restore anywhere: <code>git clone &lt;bundle&gt; satom</code>, or into an existing checkout
+          <code>git fetch &lt;bundle&gt; '+refs/*:refs/recovered/*'</code>. Verify first with <code>sha256sum</code> against the value above.</div>
+        {% endif %}
+        <div id="gitb-ext" class="small mt-2"></div>
+      </div>
+
+      <div class="col-lg-5">
+        <form method="post" action="{{ url_for('system_backup.git_bundle_create') }}" class="mb-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="push_server" id="gbps" {% if gitb_cfg.push_server %}checked{% endif %}>
+            <label class="form-check-label small" for="gbps">Also push to the external backup server (separate failure domain)</label>
+          </div>
+          <button class="btn btn-fw-primary btn-sm"><i class="bi bi-box-seam me-1"></i>Create repository bundle now</button>
+          <div class="form-text">Packs the full history, delta-compressed — a few MB and a few seconds.</div>
+        </form>
+        <form method="post" action="{{ url_for('system_backup.git_bundle_config') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="fw-form-label small">Bundles to keep on each node</label>
+          <div class="input-group input-group-sm mb-2" style="max-width:220px;">
+            <input type="number" class="form-control fw-form-control" name="keep" min="1" max="50" value="{{ gitb_cfg.keep }}">
+            <button class="btn btn-outline-light">Save</button>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="push_server" id="gbpd" {% if gitb_cfg.push_server %}checked{% endif %}>
+            <label class="form-check-label small" for="gbpd">Push to the backup server by default (scheduled runs too)</label>
+          </div>
+          <div class="form-text">Schedule it with the <code>git_bundle</code> action in
+            <a href="{{ url_for('scheduled_actions.index') }}">Automation</a>. Deletes must be done on the primary —
+            the standby re-syncs <code>data/</code> with <code>rsync --delete</code>.</div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-clock-history me-1"></i>Device configs in git (reports/) — compare / rollback</strong></div>
   <div class="card-body">
     {% if not git_history %}
@@ -549,6 +662,48 @@
       }
     });
   });
+
+  // ── git bundles on the external backup server (on demand: the page must
+  //    not block on an unreachable SFTP box) ─────────────────────────────
+  var gbBtn = document.querySelector('[data-js="gitb-external"]');
+  if (gbBtn) {
+    var gbEsc = function (s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+      });
+    };
+    gbBtn.addEventListener('click', function () {
+      var box = document.getElementById('gitb-ext');
+      box.innerHTML = '<span class="text-muted">checking the backup server…</span>';
+      fetch('{{ url_for("system_backup.git_bundle_external_list") }}', {credentials: 'same-origin'})
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.configured) {
+            box.innerHTML = '<div class="alert alert-warning small py-2 mb-0">No backup server configured (Settings → SoT &amp; Backup).</div>';
+            return;
+          }
+          if (!d.reachable) {
+            box.innerHTML = '<div class="alert alert-danger small py-2 mb-0">' + gbEsc(d.host) + ' unreachable: ' + gbEsc(d.error || 'no answer') + '</div>';
+            return;
+          }
+          if (!d.files.length) {
+            box.innerHTML = '<div class="alert alert-info small py-2 mb-0">Reachable, but no bundle in <code>' + gbEsc(d.path) + '</code> yet — create one with the push option on.</div>';
+            return;
+          }
+          var html = '<div class="alert alert-success small py-2 mb-0"><strong>' + d.files.length +
+                     '</strong> bundle(s) on ' + gbEsc(d.host) + ' <code>' + gbEsc(d.path) + '</code>:<ul class="mb-0 mt-1">';
+          html += d.files.map(function (f) {
+            var url = '{{ url_for("system_backup.git_bundle_external_download") }}?name=' + encodeURIComponent(f.name);
+            return '<li class="font-monospace">' + gbEsc(f.name) + ' — ' + (f.size / 1048576).toFixed(1) +
+                   ' MB, ' + gbEsc(f.mtime) + ' <a class="link-light" href="' + url + '" title="download from the backup server"><i class="bi bi-download"></i></a></li>';
+          }).join('');
+          box.innerHTML = html + '</ul></div>';
+        })
+        .catch(function (e) {
+          box.innerHTML = '<div class="alert alert-danger small py-2 mb-0">' + gbEsc(e) + '</div>';
+        });
+    });
+  }
 
   // ── external backup browser ────────────────────────────────────────────
   var ebModal = document.getElementById('extBrowserModal');

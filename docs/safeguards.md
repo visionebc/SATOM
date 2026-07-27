@@ -178,7 +178,42 @@ cooldown `alerts.cooldown_hours`):
 | `drift.error` | The drift comparison could not run |
 | `engine.error` | The alert engine itself failed — the guard on the guard |
 
-## 10. Known gaps (kept honest, on purpose)
+## 10. Fresh installs, and what an offline bundle can promise
+
+The guards travel with the code. A node installed from the online path or from an
+offline bundle has, from first boot, the anti-`reset` history guard, the pip
+allowlist, the service-account drop-in, the peer forced command, the certificate
+validate-and-rollback and the read-only assertion on appliance CLI.
+
+What does **not** ship armed is everything that lives in the database — seeds are
+INSERT-ONLY and operator edits outrank them (rule 6), so nothing is created on the
+operator's behalf. A brand-new install has **no scheduled actions and no alert
+recipient**, which means:
+
+* no periodic device sync — the source of truth in `reports/` freezes at install day;
+* no `git_bundle` run — none of the repository backup copies is ever produced;
+* no database bundles;
+* every signal in §9 is computed and delivered nowhere.
+
+This is a deliberate trade (the product never invents schedules against live
+appliances) but it is also the most common way an install ends up unprotected.
+The install manual carries the recommended minimum set; arm it before calling the
+install finished.
+
+An offline bundle carries one extra caveat: it is a **snapshot of the repository
+at build time**, so the guards inside it are the ones that existed then. Check the
+version it contains before assuming a fix is present —
+
+```bash
+tar xzOf satom-offline-<ver>-*.tar.gz --wildcards '*/bundle/app.tar.gz' | tar xzO VERSION
+```
+
+The bundle also carries the ACME client and the `sudo` / OpenSSH packages, because
+an air-gapped host has no way to fetch them and a missing `sudo` used to abort the
+install after the service account had already been created — a half-applied state,
+which rule 3 exists to prevent.
+
+## 11. Known gaps (kept honest, on purpose)
 
 * Per-device configuration restore is dry-run gated — no live canary round-trip yet.
 * The public wildcard certificate is not auto-renewable from the node; it is

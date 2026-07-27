@@ -72,6 +72,7 @@
       <a href="#files">Files from outside</a>
       <a href="#web">Sessions &amp; web surface</a>
       <a href="#alerts">The alert catalog</a>
+      <a href="#install">Fresh installs</a>
       <a href="#limits">Known limits</a>
     </aside>
 
@@ -197,6 +198,14 @@
           <tr><td>Drift error</td><td>The configuration drift comparison could not run</td></tr>
           <tr><td>Engine error</td><td>The alert engine itself failed — the guard on the guard</td></tr>
         </table>
+      </div>
+
+      <div class="dsec reveal" id="install">
+        <h2><span class="hico">📦</span> Fresh installs</h2>
+        <p>The guards travel with the code: a node installed from the connected path or from an air-gapped bundle has the history guard, the dependency allowlist, the pinned service account, the restricted peer channel and the certificate rollback from its first boot.</p>
+        <p>What does <b>not</b> arrive armed is everything that lives in the database. Seeds are insert-only and operator edits outrank them, so nothing is scheduled on the operator's behalf: a brand-new install has <b>no scheduled actions and no alert recipient</b>. Its signals are computed and delivered nowhere, its source of truth is never refreshed, and no repository or database backup is ever produced.</p>
+        <p>That is a deliberate trade — the product never invents schedules against live appliances — and it is also the most common way an install ends up unprotected. The install manual ships the recommended minimum set; arming it is part of finishing the install, not an optimisation.</p>
+        <p>An air-gapped bundle carries one extra caveat: it is a <b>snapshot of the product at build time</b>, so the guards inside are the ones that existed then. The bundle records its own version, and it carries the ACME client and the privilege-escalation and SSH packages, because a host with no network cannot fetch them — and a missing one used to abort the install <em>after</em> the service account had been created, exactly the half-applied state the verify-then-commit rule exists to prevent.</p>
       </div>
 
       <div class="dsec reveal" id="limits">

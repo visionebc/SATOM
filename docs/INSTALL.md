@@ -166,6 +166,21 @@ familia equivocada con un mensaje claro:
   la app exigen Python >= 3.10 y el python3 del sistema en EL9 es 3.9) y las
   `wheels/` correspondientes (cp311).
 
+**Qué trae el bundle**, además del cierre de dependencias: el árbol completo de la
+aplicación, los manuales de `docs/` — legibles sin red desde la propia consola, en
+**Documentación** — y el cliente ACME `lego` en `bundle/lego/`. Desde **1.2** los
+bundles incluyen además `sudo` y `openssh-*`: sin ellos una imagen mínima sin red
+fallaba a mitad de instalación, ya con la cuenta de servicio creada. Los bundles
+1.1 y anteriores no llevaban ni eso ni `lego` en la variante RHEL.
+
+El bundle es una **foto del repositorio en el momento de construirlo**: las
+guardias que contiene son las que existían entonces. Para saber exactamente qué
+versión llevas antes de instalar:
+
+```bash
+tar xzOf satom-offline-<ver>-*.tar.gz --wildcards '*/bundle/app.tar.gz' | tar xzO VERSION
+```
+
 Verifica la integridad con el `.sha256` que acompaña a cada tarball.
 Los bundles se generan con `installers/build-offline-bundle.sh` (en un Debian 12
 con red) y `installers/build-offline-bundle-rhel.sh` (en una máquina o contenedor
@@ -405,6 +420,45 @@ sudo bash /opt/satom/deploy/migrate-deprivilege.sh
    # desde el standby — debe ser RECHAZADO
    sudo -u satom ssh -i /opt/satom/.ssh/id_ha_rsync satom@<ip-primary> id
    ```
+
+### Protecciones que hay que ARMAR (no vienen encendidas)
+
+El código de las guardias viaja en el instalador y queda activo por el simple
+hecho de existir: la guardia anti-`reset --hard` del historial, la allowlist de
+pip, el drop-in que fija la cuenta de servicio, el forced command de la llave del
+peer, el rollback de certificados. Da igual instalación online u offline.
+
+Lo que **no** nace armado es todo lo que vive en la base de datos, porque las
+semillas son INSERT-ONLY y la edición del operador manda. Una instalación nueva
+**no tiene ninguna acción programada ni destinatario de alertas**: el producto
+funciona, calcula sus señales y no avisa a nadie. Hay que armarlo a mano:
+
+1. **Alertas** — Settings → Alerts: activar, poner destinatario SMTP y revisar
+   umbrales. Entre ellos `git_ahead_max_hours` (6 h): avisa cuando un commit
+   lleva demasiado tiempo sin empujarse, que es la firma exacta de un servidor
+   git caído — un caso que antes no disparaba nada.
+2. **Acciones programadas** — Automation → Scheduled actions. No se siembra
+   ninguna. El juego mínimo recomendado:
+
+   | Acción | Cadencia sugerida | Para qué |
+   |---|---|---|
+   | `device_sync` | horaria | refresca el SoT de cada appliance en `reports/` |
+   | `device_inspect` | 02:45 | inspección nocturna + publicación del SoT en git |
+   | `system_backup` | diaria | volcado de la base de datos (bundle) |
+   | `git_bundle` | 03:15 | respaldo del repositorio (`git bundle --all`) |
+
+   Sin `git_bundle` no existe ninguna de las copias del repositorio; sin
+   `device_sync` el SoT de los equipos se queda congelado en el día de la
+   instalación.
+3. **Servidor de respaldo externo** — Settings → SoT & Backup. Sin él, todas las
+   copias viven dentro del mismo par de nodos.
+4. **Publicación del SoT en git** — comprobar que `satom-git-publish.timer` está
+   `enabled --now` **en los dos nodos**, y `satom-updater.path` también: si el
+   `.path` está parado, las actualizaciones encoladas se quedan en `queued` para
+   siempre.
+
+Cómo verificar que quedaron armadas, comando a comando:
+[`safeguards.md`](safeguards.md) § *Verifying the guards are armed*.
 
 ### Desinstalar / revertir
 ```bash

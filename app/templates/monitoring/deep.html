@@ -221,14 +221,15 @@
               <input type="number" class="form-control form-control-sm" name="tls_warn_days" id="dpFtls" value="21"></div>
           </div>
           <div class="row g-2 dp-f-proxyd">
-            <div class="col-6"><label class="form-label small">Process</label>
+            <div class="col-12"><label class="form-label small">Process</label>
               <input class="form-control form-control-sm" name="process_name" id="dpFproc" value="proxyd">
               <div class="form-text small">Matched on the command basename, so
-                <code>proxyd</code> finds <code>/bin/proxyd</code>.</div></div>
-            <div class="col-6"><label class="form-label small">Daemon MEM warn %</label>
-              <input type="number" class="form-control form-control-sm" name="warn_mem" id="dpFmem" value="80">
-              <div class="form-text small">The daemon's own share (%VSZ). The appliance's
-                processor and RAM are separate probes.</div></div>
+                <code>proxyd</code> finds <code>/bin/proxyd</code>. This probe grades the
+                daemon alone &mdash; running, and whether its PID set changed &mdash; and
+                charts the memory <b>consumed</b> and <b>free</b> on the appliance. There is
+                no threshold here on purpose: box memory belongs to the <b>Memory usage</b>
+                probe, and the daemon's own <code>%VSZ</code> is virtual size, which sums
+                past 100&nbsp;% across processes.</div></div>
           </div>
           <div class="row g-2 dp-f-box">
             <div class="col-6"><label class="form-label small">Warn at %</label>
@@ -794,7 +795,7 @@
         dpFkind: p.kind, dpFname: p.name || '', dpFdev: p.appliance_id || '',
         dpFurl: p.url || '', dpFexp: p.expect_status, dpFms: p.warn_ms,
         dpFtls: p.tls_warn_days, dpFproc: p.process_name || 'proxyd',
-        dpFmem: p.warn_mem, dpFwarnp: p.warn_pct, dpFcritp: p.crit_pct,
+        dpFwarnp: p.warn_pct, dpFcritp: p.crit_pct,
         dpFstale: p.stale_after_h, dpFint: p.interval_min, dpFto: p.timeout_s
       };
       Object.keys(set).forEach(function (k) {

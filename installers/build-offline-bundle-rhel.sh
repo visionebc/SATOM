@@ -30,8 +30,10 @@ OUT="${BUNDLE_OUT:-$REPO_DIR/dist}"
 STAGE="$OUT/satom-installer"
 # Debe coincidir con REQUIRED_PKGS (dnf) del instalador + SELinux best-effort.
 # python3.11: el python3 del sistema en EL9 es 3.9 y los pines exigen >= 3.10.
+# sudo/openssh: ver nota en build-offline-bundle.sh — imprescindibles en OFFLINE.
 PKGS=(python3.11 python3.11-pip postgresql-server postgresql nginx rsync
-      openssl curl ca-certificates policycoreutils-python-utils)
+      openssl curl ca-certificates policycoreutils-python-utils
+      sudo openssh-clients openssh-server)
 
 echo "==> Bundle offline SATOM v${VERSION} — familia RHEL (el9, x86_64)"
 command -v dnf >/dev/null || { echo "Necesita familia RHEL/dnf (usa rockylinux:9)"; exit 1; }

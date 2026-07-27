@@ -272,6 +272,14 @@ PF_FAIL=(); PF_WARN=()
 pf_bad()  { PF_FAIL+=("$1"); echo "    ${c_red}✗${c_off} $1" | tee -a "$INSTALL_LOG"; }
 pf_warn() { PF_WARN+=("$1"); warn "$1"; }
 pf_have() { command -v "$1" >/dev/null 2>&1; }
+# ¿el bundle OFFLINE trae este paquete? Evita prometer "el paso 2 lo instala"
+# cuando no hay red y el paquete no viaja en el medio.  [PFSUDO]
+pf_bundle_has() {
+    [ $OFFLINE -eq 1 ] || return 1
+    ls "$BUNDLE_DIR"/debs/"$1"_*.deb  >/dev/null 2>&1 && return 0
+    ls "$BUNDLE_DIR"/rpms/"$1"-[0-9]*.rpm >/dev/null 2>&1 && return 0
+    return 1
+}
 
 pf_writable() {  # pf_writable <dir> → 0 si se puede escribir (sube al padre si no existe)
     local d="$1"
@@ -347,6 +355,23 @@ preflight() {
     if [ ${#miss[@]} -eq 0 ]; then ok "Utilidades base presentes (shadow, util-linux, coreutils)"
     else pf_bad "Faltan utilidades base: ${miss[*]} — instala los paquetes shadow/util-linux/coreutils de tu distro"; fi
     pf_have ss || pf_have netstat || pf_warn "Sin 'ss' ni 'netstat': no se puede comprobar si los puertos están libres"
+
+    # ---- 4b. SUDO — el modelo de privilegio depende de él  [PFSUDO] ---------
+    # El paso 6 escribe /etc/sudoers.d/satom y lo valida con 'visudo -cf'. Si sudo
+    # no está, esa validación falla y el instalador aborta DESPUÉS de haber creado
+    # el usuario y hecho chown -R del árbol. Se comprueba aquí para que sea un
+    # bloqueador temprano y legible, no un fallo tardío a medio camino.
+    local sudo_miss=() sb
+    for sb in sudo visudo; do pf_have "$sb" || sudo_miss+=("$sb"); done
+    if [ ${#sudo_miss[@]} -eq 0 ]; then
+        ok "sudo y visudo presentes (allowlist del servicio: nginx -t, systemctl reload nginx)"
+    elif [ $OFFLINE -eq 0 ]; then
+        pf_warn "Faltan ${sudo_miss[*]} — el paso 2 instalará el paquete 'sudo'"
+    elif pf_bundle_has sudo; then
+        ok "Faltan ${sudo_miss[*]}, pero el bundle offline trae el paquete 'sudo'"
+    else
+        pf_bad "Faltan ${sudo_miss[*]} y el bundle OFFLINE no trae 'sudo'. Instálalo desde el medio de tu distro y repite (el paso 6 lo necesita para escribir /etc/sudoers.d)."
+    fi
 
     # ---- 5. PYTHON ----------------------------------------------------------
     local pv="" c
@@ -454,7 +479,23 @@ preflight_cluster() {
     if [ ${#miss[@]} -eq 0 ]; then
         ok "Cliente SSH y rsync presentes"
     elif [ $OFFLINE -eq 1 ]; then
-        die "Modo cluster: faltan ${miss[*]} y estás en OFFLINE. Instálalos desde el medio de la distro (paquetes: ${SSH_PKGS[*]} rsync) y repite."
+        # OFFLINE: sólo es fatal si el bundle tampoco los trae. Se comprueba el
+        # paquete que corresponde a CADA binario que falta, no "alguno".  [PFSUDO]
+        local nocover=() m sp covered
+        for m in "${miss[@]}"; do
+            covered=0
+            if [ "$m" = "rsync" ]; then
+                pf_bundle_has rsync && covered=1
+            else
+                for sp in "${SSH_PKGS[@]}"; do pf_bundle_has "$sp" && covered=1; done
+            fi
+            [ $covered -eq 1 ] || nocover+=("$m")
+        done
+        if [ ${#nocover[@]} -eq 0 ]; then
+            ok "Faltan ${miss[*]}, pero el bundle offline trae sus paquetes"
+        else
+            die "Modo cluster: faltan ${nocover[*]}, estás en OFFLINE y el bundle no los trae (paquetes: ${SSH_PKGS[*]} rsync). Instálalos desde el medio de la distro y repite."
+        fi
     else
         warn "Faltan ${miss[*]} — el paso 2 los instalará (${SSH_PKGS[*]} rsync)"
     fi

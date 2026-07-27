@@ -23,6 +23,17 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 ### Added
+- **Repository backup & git-outage survival**: `git bundle --all` artifacts
+  (node + standby + external backup server + download), a guard that parks
+  unpushed commits on `refs/backup/*` before `git reset --hard` (and aborts
+  the update if it cannot), and a `git.ahead_unpushed` alert keyed on the age
+  of the oldest unpushed commit. Docs: `docs/git-backup-and-outage.md`.
+- **`docs/safeguards.md`**: single-page catalog of every protection in the
+  product — what it prevents, where it lives, and how to verify it is armed.
+  Surfaced in-app under Documentation and publicly on the site
+  (`site/safeguards.html`).
+- In-app Documentation index now curates titles and descriptions for every
+  manual (previously half of them fell through to auto-titled entries).
 - **Open-source governance**: Apache-2.0 `LICENSE`, `NOTICE` (Fortinet
   trademark disclaimer + scope), `SECURITY.md`, `CONTRIBUTING.md`,
   `CODE_OF_CONDUCT.md`, GitHub issue templates.

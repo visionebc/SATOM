@@ -1,0 +1,472 @@
+{% extends "base.html" %}
+{% block title %}Deep monitors{% endblock %}
+
+{% block content %}
+<style nonce="{{ csp_nonce }}">
+  .dp-sum { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:14px; margin-bottom:18px; }
+  .dp-sum .fw-card-body { padding:14px 16px; }
+  .dp-kpi { font-size:1.6rem; font-weight:600; line-height:1.1; }
+  .dp-badge { font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; padding:1px 8px;
+              border-radius:9px; border:1px solid; white-space:nowrap; }
+  .dp-b-ok      { color:#6ee7b7; background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.3); }
+  .dp-b-warn    { color:#fcd34d; background:rgba(245,158,11,.12); border-color:rgba(245,158,11,.3); }
+  .dp-b-crit    { color:#fca5a5; background:rgba(239,68,68,.12);  border-color:rgba(239,68,68,.3); }
+  .dp-b-error   { color:#c4b5fd; background:rgba(139,92,246,.12); border-color:rgba(139,92,246,.3); }
+  .dp-b-unknown { color:#94a3b8; background:rgba(100,116,139,.12);border-color:rgba(100,116,139,.3); }
+  .dp-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+  .dp-tbl { width:100%; font-size:.85rem; }
+  .dp-tbl th { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:#64748b;
+               font-weight:600; padding:6px 8px; border-bottom:1px solid rgba(148,163,184,.12); }
+  .dp-tbl td { padding:8px; border-bottom:1px dashed rgba(148,163,184,.08); vertical-align:middle; }
+  .dp-tbl tr:hover td { background:rgba(59,130,246,.04); }
+  .dp-name { font-weight:600; }
+  .dp-sub  { font-size:.74rem; color:#64748b; }
+  .dp-detail { font-size:.78rem; color:#cbd5e1; }
+  .dp-spark { display:block; }
+  .dp-kind { font-size:.66rem; padding:1px 7px; border-radius:8px; white-space:nowrap;
+             background:rgba(59,130,246,.12); border:1px solid rgba(59,130,246,.25); color:#93c5fd; }
+  .dp-kind.interface { background:rgba(16,185,129,.10); border-color:rgba(16,185,129,.28); color:#6ee7b7; }
+  .dp-kind.proxyd    { background:rgba(245,158,11,.10); border-color:rgba(245,158,11,.28); color:#fcd34d; }
+  .dp-off td { opacity:.45; }
+  .dp-note { font-size:.72rem; color:#64748b; margin-top:10px; }
+  .dp-hist pre { font-size:.72rem; max-height:260px; overflow:auto; background:rgba(2,6,23,.5);
+                 border:1px solid rgba(148,163,184,.1); border-radius:8px; padding:10px; }
+  .dp-hrow { display:flex; gap:10px; align-items:baseline; padding:4px 0;
+             border-bottom:1px dashed rgba(148,163,184,.08); font-size:.78rem; }
+  .dp-hrow .ts { color:#64748b; width:140px; flex:none; font-variant-numeric:tabular-nums; }
+</style>
+
+<div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h1 class="fw-page-title mb-0"><i class="bi bi-activity me-2 text-accent"></i>Deep monitors</h1>
+    <p class="text-muted small mb-0">
+      Does the service actually serve? Synthetic HTTPS against a server policy's published front-end,
+      interface IP&nbsp;/&nbsp;link drift, and the <code>proxyd</code> daemon — each stored as a time series,
+      because the signal is the value <em>changing</em>.
+    </p>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <span id="dpStamp" class="text-muted small"></span>
+    {% if can_edit %}
+    <button id="dpDiscoverBtn" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-magic me-1"></i>Discover from device</button>
+    <button id="dpAddBtn" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-plus-lg me-1"></i>Add probe</button>
+    <button id="dpRunBtn" class="btn btn-sm btn-primary">
+      <i class="bi bi-play-fill me-1"></i>Probe now</button>
+    {% endif %}
+    <button id="dpRefreshBtn" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-clockwise"></i></button>
+  </div>
+</div>
+
+<div class="dp-sum" id="dpSummary"></div>
+
+<div class="fw-card">
+  <div class="fw-card-body">
+    <div class="table-responsive">
+      <table class="dp-tbl">
+        <thead><tr>
+          <th style="width:26%">Probe</th>
+          <th style="width:9%">Type</th>
+          <th style="width:9%">Status</th>
+          <th style="width:14%">Trend</th>
+          <th>Last result</th>
+          <th style="width:12%">Checked</th>
+          <th style="width:9%"></th>
+        </tr></thead>
+        <tbody id="dpRows"><tr><td colspan="7" class="text-muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="dp-note">
+      <i class="bi bi-info-circle me-1"></i>
+      A page load never contacts an appliance — every row is read from the stored samples.
+      Probing runs as a background job (<b>Probe now</b>) or on a schedule via the
+      <code>deep_monitor</code> scheduled action. Interface data comes from the device cache
+      refreshed by the hourly <code>device_sync</code>, so interface drift is detected at harvest
+      cadence, not instantly.
+    </div>
+  </div>
+</div>
+
+<!-- history drawer -->
+<div class="modal fade" id="dpHistModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="dpHistTitle">History</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body dp-hist" id="dpHistBody"></div>
+    </div>
+  </div>
+</div>
+
+{% if can_edit %}
+<!-- add / edit probe -->
+<div class="modal fade" id="dpEditModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="dpForm">
+        <div class="modal-header">
+          <h5 class="modal-title" id="dpEditTitle">Add probe</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="id" id="dpFid">
+          <div class="mb-2">
+            <label class="form-label small">Type</label>
+            <select class="form-select form-select-sm" name="kind" id="dpFkind">
+              <option value="https">Service policy (HTTPS)</option>
+              <option value="interface">Interface IP / link</option>
+              <option value="proxyd">proxyd process</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">Name</label>
+            <input class="form-control form-control-sm" name="name" id="dpFname" placeholder="fw6 · shop-policy">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">Device</label>
+            <select class="form-select form-select-sm" name="appliance_id" id="dpFdev"></select>
+            <div class="form-text small">Required for interface and proxyd probes; optional for a bare URL.</div>
+          </div>
+          <div class="mb-2 dp-f-https">
+            <label class="form-label small">URL</label>
+            <input class="form-control form-control-sm" name="url" id="dpFurl" placeholder="https://192.0.2.80:443/">
+          </div>
+          <div class="row g-2 dp-f-https">
+            <div class="col-4"><label class="form-label small">Expect status</label>
+              <input type="number" class="form-control form-control-sm" name="expect_status" id="dpFexp" value="0">
+              <div class="form-text small">0 = any &lt; 400</div></div>
+            <div class="col-4"><label class="form-label small">Slow above (ms)</label>
+              <input type="number" class="form-control form-control-sm" name="warn_ms" id="dpFms" value="2000"></div>
+            <div class="col-4"><label class="form-label small">TLS warn (days)</label>
+              <input type="number" class="form-control form-control-sm" name="tls_warn_days" id="dpFtls" value="21"></div>
+          </div>
+          <div class="row g-2 dp-f-proxyd">
+            <div class="col-4"><label class="form-label small">Process</label>
+              <input class="form-control form-control-sm" name="process_name" id="dpFproc" value="proxyd"></div>
+            <div class="col-4"><label class="form-label small">CPU warn %</label>
+              <input type="number" class="form-control form-control-sm" name="warn_cpu" id="dpFcpu" value="80"></div>
+            <div class="col-4"><label class="form-label small">MEM warn %</label>
+              <input type="number" class="form-control form-control-sm" name="warn_mem" id="dpFmem" value="80"></div>
+          </div>
+          <div class="mb-2 dp-f-interface">
+            <label class="form-label small">Warn if the harvest is older than (hours)</label>
+            <input type="number" class="form-control form-control-sm" name="stale_after_h" id="dpFstale" value="6">
+          </div>
+          <div class="row g-2 mt-1">
+            <div class="col-6"><label class="form-label small">Interval (min)</label>
+              <input type="number" class="form-control form-control-sm" name="interval_min" id="dpFint" value="5"></div>
+            <div class="col-6"><label class="form-label small">Timeout (s)</label>
+              <input type="number" class="form-control form-control-sm" name="timeout_s" id="dpFto" value="10"></div>
+          </div>
+          <div class="alert alert-danger py-2 px-3 mt-2 small d-none" id="dpFerr"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- discover -->
+<div class="modal fade" id="dpDiscModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="dpDiscForm">
+        <div class="modal-header">
+          <h5 class="modal-title">Discover probes from a device</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="small text-muted">
+            Resolves every server policy's published front-end (explicit IP → system VIP → bound
+            interface — the same order the upgrade runbook uses) and creates one HTTPS probe each,
+            plus the interface watch and the <code>proxyd</code> monitor. Idempotent: an existing
+            probe for the same URL is left alone.
+          </p>
+          <select class="form-select form-select-sm" name="appliance_id" id="dpDiscDev"></select>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-primary">Discover</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  'use strict';
+  var CAN_EDIT = {{ 'true' if can_edit else 'false' }};
+  var URLS = {
+    data:     '{{ url_for("deep_monitor.data") }}',
+    run:      '{{ url_for("deep_monitor.run") }}',
+    create:   '{{ url_for("deep_monitor.create") }}',
+    discover: '{{ url_for("deep_monitor.discover") }}'
+  };
+  var STATE = { probes: [], devices: [] };
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function color(st) {
+    return st === 'crit' ? '#ef4444' : st === 'warn' ? '#fbbf24'
+         : st === 'error' ? '#8b5cf6' : st === 'ok' ? '#10b981' : '#64748b';
+  }
+  function badge(st) {
+    return '<span class="dp-badge dp-b-' + (st || 'unknown') + '">' + esc(st || 'unknown') + '</span>';
+  }
+  function ago(iso) {
+    if (!iso) return 'never';
+    var t = new Date(iso + 'Z').getTime();
+    if (isNaN(t)) return esc(iso);
+    var s = Math.max(0, (Date.now() - t) / 1000);
+    if (s < 90) return Math.round(s) + ' s ago';
+    if (s < 5400) return Math.round(s / 60) + ' min ago';
+    if (s < 172800) return Math.round(s / 3600) + ' h ago';
+    return Math.round(s / 86400) + ' d ago';
+  }
+
+  // Sparkline: value line where a value exists, status band underneath always —
+  // so an outage (no value) still shows as a red segment instead of a gap.
+  function spark(series) {
+    if (!series || !series.length) return '<span class="dp-sub">no samples</span>';
+    var W = 120, H = 26, n = series.length;
+    var vals = series.map(function (s) { return s.value_num; });
+    var nums = vals.filter(function (v) { return typeof v === 'number'; });
+    var bands = series.map(function (s, i) {
+      var w = W / n;
+      return '<rect x="' + (i * w).toFixed(2) + '" y="' + (H - 3) + '" width="' + (w + .6).toFixed(2) +
+             '" height="3" fill="' + color(s.status) + '" opacity=".85"/>';
+    }).join('');
+    var path = '';
+    if (nums.length > 1) {
+      var mn = Math.min.apply(null, nums), mx = Math.max.apply(null, nums);
+      var rng = (mx - mn) || 1;
+      var pts = [];
+      series.forEach(function (s, i) {
+        if (typeof s.value_num !== 'number') return;
+        var x = n > 1 ? (i * (W / (n - 1))) : 0;
+        var y = (H - 7) - ((s.value_num - mn) / rng) * (H - 12);
+        pts.push(x.toFixed(2) + ',' + y.toFixed(2));
+      });
+      if (pts.length > 1) {
+        path = '<polyline points="' + pts.join(' ') + '" fill="none" stroke="#3b82f6" ' +
+               'stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>';
+      }
+    }
+    return '<svg class="dp-spark" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H +
+           '" role="img" aria-label="last ' + n + ' samples">' + path + bands + '</svg>';
+  }
+
+  function renderSummary(d) {
+    var cards = d.kinds.map(function (k) {
+      var s = (d.summary || {})[k.key] || { count: 0, worst: 'unknown' };
+      var mine = STATE.probes.filter(function (p) { return p.kind === k.key; });
+      var bad = mine.filter(function (p) { return p.status === 'crit' || p.status === 'error'; }).length;
+      return '<div class="fw-card"><div class="fw-card-body">' +
+        '<div class="d-flex justify-content-between align-items-start">' +
+        '<span class="text-muted small">' + esc(k.label) + '</span>' + badge(s.worst) + '</div>' +
+        '<div class="dp-kpi mt-1">' + s.count + '</div>' +
+        '<div class="dp-sub">' + (s.count ? (bad ? bad + ' failing' : 'all healthy') : 'no probes configured') +
+        '</div></div></div>';
+    }).join('');
+    document.getElementById('dpSummary').innerHTML = cards;
+  }
+
+  function renderRows(d) {
+    if (!d.probes.length) {
+      document.getElementById('dpRows').innerHTML =
+        '<tr><td colspan="7" class="text-muted">No probes yet.' +
+        (CAN_EDIT ? ' Use <b>Discover from device</b> to create one per server policy.' : '') +
+        '</td></tr>';
+      return;
+    }
+    document.getElementById('dpRows').innerHTML = d.probes.map(function (p) {
+      var where = p.appliance ? esc(p.appliance) : 'no device';
+      if (p.kind === 'https' && p.url) where += ' · ' + esc(p.url);
+      else if (p.kind === 'proxyd') where += ' · ' + esc(p.process_name);
+      var act = CAN_EDIT
+        ? '<button class="btn btn-sm btn-link p-0 me-2 dp-act" data-act="run" data-id="' + p.id +
+            '" title="Probe now"><i class="bi bi-play-fill"></i></button>' +
+          '<button class="btn btn-sm btn-link p-0 me-2 dp-act" data-act="toggle" data-id="' + p.id +
+            '" title="' + (p.enabled ? 'Disable' : 'Enable') + '"><i class="bi bi-' +
+            (p.enabled ? 'pause' : 'play') + '-circle"></i></button>' +
+          '<button class="btn btn-sm btn-link p-0 text-danger dp-act" data-act="delete" data-id="' + p.id +
+            '" title="Delete"><i class="bi bi-trash"></i></button>'
+        : '';
+      return '<tr class="' + (p.enabled ? '' : 'dp-off') + '">' +
+        '<td><div class="dp-name"><span class="dp-dot" style="background:' + color(p.status) + '"></span>' +
+          esc(p.name) + '</div><div class="dp-sub">' + where + '</div></td>' +
+        '<td><span class="dp-kind ' + esc(p.kind) + '">' + esc(p.kind) + '</span></td>' +
+        '<td>' + badge(p.status) + '</td>' +
+        '<td>' + spark(p.series) + '</td>' +
+        '<td><span class="dp-detail dp-hist-open" role="button" data-id="' + p.id + '">' +
+          esc(p.latest ? p.latest.detail : 'never run') + '</span></td>' +
+        '<td class="dp-sub">' + esc(ago(p.last_run_at)) + '<br><span class="dp-sub">every ' +
+          p.interval_min + ' min</span></td>' +
+        '<td class="text-end">' + act + '</td></tr>';
+    }).join('');
+  }
+
+  function load() {
+    return fetch(URLS.data, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        STATE.probes = d.probes; STATE.devices = d.devices;
+        renderSummary(d); renderRows(d);
+        document.getElementById('dpStamp').textContent =
+          d.probes.length + ' probe(s) · updated ' + new Date().toLocaleTimeString();
+        fillDevices();
+      })
+      .catch(function () {
+        document.getElementById('dpStamp').textContent = 'refresh failed';
+      });
+  }
+
+  function fillDevices() {
+    ['dpFdev', 'dpDiscDev'].forEach(function (id) {
+      var sel = document.getElementById(id);
+      if (!sel) return;
+      var cur = sel.value;
+      var blank = id === 'dpFdev' ? '<option value="">— none (bare URL) —</option>' : '';
+      sel.innerHTML = blank + STATE.devices.map(function (a) {
+        return '<option value="' + a.id + '">' + esc(a.name) + ' (' + esc(a.kind) + ')</option>';
+      }).join('');
+      if (cur) sel.value = cur;
+    });
+  }
+
+  function post(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: body
+    }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); });
+  }
+
+  // ---- history drawer -----------------------------------------------------
+  document.addEventListener('click', function (ev) {
+    var h = ev.target.closest('.dp-hist-open');
+    if (!h) return;
+    var id = h.getAttribute('data-id');
+    var probe = STATE.probes.filter(function (p) { return String(p.id) === String(id); })[0];
+    document.getElementById('dpHistTitle').textContent = probe ? probe.name : 'History';
+    document.getElementById('dpHistBody').innerHTML = '<div class="text-muted small">Loading…</div>';
+    new bootstrap.Modal(document.getElementById('dpHistModal')).show();
+    fetch('/monitoring/deep/probe/' + encodeURIComponent(id) + '/history',
+          { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var rows = (d.samples || []).map(function (s) {
+          return '<div class="dp-hrow"><span class="ts">' + esc(s.ts.replace('T', ' ')) + '</span>' +
+                 badge(s.status) + '<span>' + esc(s.detail) + '</span></div>';
+        }).join('') || '<div class="text-muted small">No samples yet.</div>';
+        var last = (d.samples || [])[0];
+        var raw = last && last.payload
+          ? '<div class="mt-3"><div class="text-muted small mb-1">Latest raw payload</div><pre>' +
+            esc(JSON.stringify(last.payload, null, 2)) + '</pre></div>'
+          : '';
+        document.getElementById('dpHistBody').innerHTML = rows + raw;
+      })
+      .catch(function () {
+        document.getElementById('dpHistBody').innerHTML =
+          '<div class="text-danger small">Could not load history.</div>';
+      });
+  });
+
+  document.getElementById('dpRefreshBtn').addEventListener('click', load);
+
+  if (CAN_EDIT) {
+    var runBtn = document.getElementById('dpRunBtn');
+    runBtn.addEventListener('click', function () {
+      runBtn.disabled = true;
+      runBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Probing…';
+      post(URLS.run, new URLSearchParams()).then(function () {
+        runBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Started (see Jobs dock)';
+        setTimeout(function () {
+          runBtn.disabled = false;
+          runBtn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Probe now';
+          load();
+        }, 6000);
+      }).catch(function () {
+        runBtn.disabled = false;
+        runBtn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Probe now';
+      });
+    });
+
+    document.getElementById('dpAddBtn').addEventListener('click', function () {
+      document.getElementById('dpForm').reset();
+      document.getElementById('dpFid').value = '';
+      document.getElementById('dpEditTitle').textContent = 'Add probe';
+      document.getElementById('dpFerr').classList.add('d-none');
+      syncKind();
+      new bootstrap.Modal(document.getElementById('dpEditModal')).show();
+    });
+
+    function syncKind() {
+      var k = document.getElementById('dpFkind').value;
+      ['https', 'interface', 'proxyd'].forEach(function (kind) {
+        document.querySelectorAll('.dp-f-' + kind).forEach(function (el) {
+          el.style.display = (kind === k) ? '' : 'none';
+        });
+      });
+    }
+    document.getElementById('dpFkind').addEventListener('change', syncKind);
+
+    document.getElementById('dpForm').addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var fd = new FormData(ev.target);
+      var id = fd.get('id');
+      var url = id ? ('/monitoring/deep/probe/' + encodeURIComponent(id)) : URLS.create;
+      post(url, new URLSearchParams(fd)).then(function (res) {
+        var box = document.getElementById('dpFerr');
+        if (!res.ok || res.j.error) {
+          box.textContent = res.j.error || 'save failed';
+          box.classList.remove('d-none');
+          return;
+        }
+        bootstrap.Modal.getInstance(document.getElementById('dpEditModal')).hide();
+        load();
+      });
+    });
+
+    document.getElementById('dpDiscoverBtn').addEventListener('click', function () {
+      new bootstrap.Modal(document.getElementById('dpDiscModal')).show();
+    });
+    document.getElementById('dpDiscForm').addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      post(URLS.discover, new URLSearchParams(new FormData(ev.target))).then(function () {
+        bootstrap.Modal.getInstance(document.getElementById('dpDiscModal')).hide();
+        setTimeout(load, 4000);
+      });
+    });
+
+    document.addEventListener('click', function (ev) {
+      var b = ev.target.closest('.dp-act');
+      if (!b) return;
+      var id = b.getAttribute('data-id'), act = b.getAttribute('data-act');
+      if (act === 'delete' && !confirm('Delete this probe and its history?')) return;
+      var url = act === 'run' ? URLS.run : ('/monitoring/deep/probe/' + id + '/' + act);
+      var body = new URLSearchParams();
+      if (act === 'run') body.append('id', id);
+      b.disabled = true;
+      post(url, body).then(function () { setTimeout(load, act === 'run' ? 3000 : 200); });
+    });
+  }
+
+  load();
+  var timer = setInterval(load, 30000);
+  document.addEventListener('turbo:before-render', function () { clearInterval(timer); }, { once: true });
+})();
+</script>
+{% endblock %}

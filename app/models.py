@@ -1911,3 +1911,123 @@ class AcmeDnsProvider(db.Model):
 
     def __repr__(self) -> str:
         return f"<AcmeDnsProvider {self.slug!r} flag={self.flag!r}>"
+
+
+# ---------------------------------------------------------------------------
+# Deep monitors (Monitoring → Deep monitors)
+# ---------------------------------------------------------------------------
+
+class MonitorProbe(db.Model):
+    """One configured deep check: a service URL, an interface table, or a daemon.
+
+    Kept as DATA rather than code so adding a monitor is a row, not a deploy —
+    the same contract as ``registry_endpoints`` and ``acme_dns_providers``. A
+    probe with no ``appliance_id`` is a bare URL check (useful for the published
+    hostname in front of a VIP, which may traverse an upstream proxy).
+    """
+
+    __tablename__ = "monitor_probe"
+
+    id = db.Column(db.Integer, primary_key=True)
+    appliance_id = db.Column(
+        db.Integer, db.ForeignKey("appliances.id", ondelete="CASCADE"),
+        nullable=True, index=True)
+    kind = db.Column(db.String(16), nullable=False, default="https", index=True)
+    name = db.Column(db.String(120), nullable=False, default="")
+    note = db.Column(db.String(250), nullable=True, default="")
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+
+    # https
+    target = db.Column(db.String(120), nullable=True, default="")   # policy name
+    url = db.Column(db.String(500), nullable=True, default="")
+    expect_status = db.Column(db.Integer, nullable=False, default=0)  # 0 = any <400
+    warn_ms = db.Column(db.Integer, nullable=False, default=2000)
+    tls_warn_days = db.Column(db.Integer, nullable=False, default=21)
+
+    # interface
+    stale_after_h = db.Column(db.Integer, nullable=False, default=6)
+
+    # proxyd / process
+    process_name = db.Column(db.String(48), nullable=True, default="proxyd")
+    warn_cpu = db.Column(db.Integer, nullable=False, default=80)
+    warn_mem = db.Column(db.Integer, nullable=False, default=80)
+
+    timeout_s = db.Column(db.Integer, nullable=False, default=10)
+    interval_min = db.Column(db.Integer, nullable=False, default=5)
+    retention = db.Column(db.Integer, nullable=False, default=500)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    last_run_at = db.Column(db.DateTime, nullable=True)
+    last_status = db.Column(db.String(16), nullable=False, default="unknown")
+    last_detail = db.Column(db.String(1000), nullable=True, default="")
+
+    appliance = db.relationship("Appliance", lazy="joined")
+    # NOT passive_deletes: the ORM must issue the child deletes itself. The FK
+    # carries ON DELETE CASCADE for direct SQL, but SQLite ships with foreign
+    # keys DISABLED, so leaning on the engine would leak orphan samples on any
+    # non-Postgres deployment (and in the test suite). Retention caps a probe at
+    # a few hundred rows, so the extra SELECT is free.
+    samples = db.relationship(
+        "MonitorSample", backref="probe", lazy="dynamic",
+        cascade="all, delete-orphan")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id, "kind": self.kind, "name": self.name,
+            "note": self.note or "", "enabled": bool(self.enabled),
+            "appliance_id": self.appliance_id,
+            "appliance": getattr(self.appliance, "name", "") or "",
+            "device_kind": getattr(self.appliance, "kind", "") or "",
+            "target": self.target or "", "url": self.url or "",
+            "expect_status": self.expect_status, "warn_ms": self.warn_ms,
+            "tls_warn_days": self.tls_warn_days,
+            "stale_after_h": self.stale_after_h,
+            "process_name": self.process_name or "proxyd",
+            "warn_cpu": self.warn_cpu, "warn_mem": self.warn_mem,
+            "timeout_s": self.timeout_s, "interval_min": self.interval_min,
+            "retention": self.retention,
+            "last_run_at": self.last_run_at.isoformat(timespec="seconds")
+                           if self.last_run_at else "",
+            "last_status": self.last_status or "unknown",
+            "last_detail": self.last_detail or "",
+        }
+
+    def __repr__(self) -> str:
+        return f"<MonitorProbe {self.kind} {self.name!r}>"
+
+
+class MonitorSample(db.Model):
+    """One observation of a :class:`MonitorProbe`.
+
+    ``fingerprint`` is what makes drift detectable: the PID set for a process,
+    the ``name→ip/status`` hash for interfaces, the body hash for HTTPS. A
+    sample whose fingerprint differs from its predecessor is an event even when
+    every individual value still looks healthy.
+    """
+
+    __tablename__ = "monitor_sample"
+
+    id = db.Column(db.Integer, primary_key=True)
+    probe_id = db.Column(
+        db.Integer, db.ForeignKey("monitor_probe.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    ts = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    status = db.Column(db.String(16), nullable=False, default="unknown")
+    ok = db.Column(db.Boolean, nullable=False, default=False)
+    value_num = db.Column(db.Float, nullable=True)    # latency ms | cpu% | ifaces with IP
+    value2_num = db.Column(db.Float, nullable=True)   # tls days | mem% | iface count
+    fingerprint = db.Column(db.String(64), nullable=True, default="")
+    detail = db.Column(db.String(1000), nullable=True, default="")
+    payload = db.Column(db.Text, nullable=True, default="")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id, "ts": self.ts.isoformat(timespec="seconds"),
+            "status": self.status, "ok": bool(self.ok),
+            "value_num": self.value_num, "value2_num": self.value2_num,
+            "fingerprint": self.fingerprint or "",
+            "detail": self.detail or "",
+        }
+
+    def __repr__(self) -> str:
+        return f"<MonitorSample probe={self.probe_id} {self.status}>"

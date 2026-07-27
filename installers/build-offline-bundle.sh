@@ -23,7 +23,11 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="$(cat "$REPO_DIR/VERSION" 2>/dev/null || echo 0.0)"
 OUT="$REPO_DIR/dist"
 STAGE="$OUT/satom-installer"
-PKGS=(python3 python3-venv python3-pip postgresql nginx rsync openssl curl ca-certificates)
+# sudo: el modelo de privilegio escribe /etc/sudoers.d y valida con visudo — sin él
+# la instalación OFFLINE aborta DESPUÉS de crear el usuario (ver install-satom.sh [PFSUDO]).
+# openssh-*: canal de replicación de data/ en modo cluster; sin red no hay dónde bajarlo.
+PKGS=(python3 python3-venv python3-pip postgresql nginx rsync openssl curl ca-certificates
+      sudo openssh-client openssh-server)
 
 echo "==> Bundle offline SATOM v${VERSION} (ref ${REF})"
 command -v apt-get >/dev/null || { echo "Necesita Debian/apt"; exit 1; }

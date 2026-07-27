@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Monitoring{% endblock %}
+{% block title %}Fleet health{% endblock %}
 
 {% block content %}
 <style nonce="{{ csp_nonce }}">
@@ -36,8 +36,8 @@
 
 <div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
   <div>
-    <h1 class="fw-page-title mb-0"><i class="bi bi-activity me-2 text-accent"></i>Monitoring</h1>
-    <p class="text-muted small mb-0">Fleet health, capacity guardrails, and manager self-diagnostics — data from the local cache, no live device calls.</p>
+    <h1 class="fw-page-title mb-0"><i class="bi bi-heart-pulse me-2 text-accent"></i>Fleet health</h1>
+    <p class="text-muted small mb-0">Appliance health, capacity guardrails, and manager self-diagnostics — data from the local cache, no live device calls.</p>
   </div>
   <div class="d-flex align-items-center gap-2">
     <span id="monStamp" class="text-muted small"></span>

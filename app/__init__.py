@@ -1193,6 +1193,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.profiles", "bp"),
         ("app.views.metrics", "bp"),
         ("app.views.monitoring", "bp"),
+        ("app.views.deep_monitor", "bp"),
         ("app.views.capacity", "bp"),
         ("app.views.audit", "bp"),
         ("app.views.registry", "bp"),

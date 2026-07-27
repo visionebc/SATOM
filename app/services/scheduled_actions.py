@@ -142,6 +142,16 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "push. No device call.",
     ),
     ActionSpec(
+        "deep_monitor", "Deep monitors — probe sweep", "admin",
+        needs_targets=False,
+        summary="Run every enabled deep monitor whose interval has elapsed: "
+                "synthetic HTTPS against each watched server policy, the "
+                "interface IP/link fingerprint, and the proxyd process read "
+                "(services.deep_monitor). Schedule EVERY 5 MINUTES — the page "
+                "only shows samples this sweep records. Contacts appliances "
+                "read-only (HTTP GET + `diagnose system top`).",
+    ),
+    ActionSpec(
         "stats", "Build statistics summary", "admin", needs_targets=False,
         summary="Aggregate a fleet statistics summary. No device call.",
     ),
@@ -299,6 +309,24 @@ def _do_inventory_snapshot(dry_run: bool = False) -> dict:
             "log": ""}
 
 
+def _do_deep_monitor(params: dict, dry_run: bool = False) -> dict:
+    """Sweep the deep monitors (Monitoring -> Deep monitors). No writes."""
+    from . import deep_monitor as dm
+    if dry_run:
+        due = dm.due_probes()
+        return {"ok": True,
+                "summary": "[dry-run] %d deep monitor probe(s) are due." % len(due),
+                "log": "\n".join("%s (%s)" % (p.name, p.kind) for p in due)[:4000]}
+    force = bool(params.get("force"))
+    res = dm.sweep(force=force)
+    counts = ", ".join("%s %s" % (v, k) for k, v in sorted(res["counts"].items()))
+    return {"ok": res["worst"] in ("ok", "unknown"),
+            "summary": "Deep monitors: %d probe(s) run%s"
+                       % (res["ran"], (" - " + counts) if counts else ""),
+            "log": "\n".join("%s: %s - %s" % (r["status"], r["probe"], r["detail"])
+                              for r in res["results"])[:4000]}
+
+
 def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> dict:
     """Run ONE catalog action against ONE appliance (or ``None`` for a no-device
     action such as ``stats``). Returns ``{"ok": bool, "summary": str, "log": str}``
@@ -331,6 +359,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_appid_import(params, dry_run)
         if key == "inventory_snapshot":
             return _do_inventory_snapshot(dry_run)
+        if key == "deep_monitor":
+            return _do_deep_monitor(params, dry_run)
         if key == "upgrade_prep":
             return _do_upgrade_prep(appliance, dry_run)
         if key == "upgrade":

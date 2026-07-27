@@ -4,6 +4,48 @@ All notable changes to SATOM are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/). This is a public, open-source
 project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
+## [Unreleased]
+
+### Changed
+- **The `proxyd` probe reports memory CONSUMED and FREE, in megabytes**, instead
+  of the daemon's `%VSZ`. `%VSZ` is *virtual* size: measured on fw6, the eight
+  largest processes sum to 240 % of installed RAM, because every shared mapping
+  is counted once per process. A figure that can exceed 100 % is not memory
+  used and must not be displayed as though it were. The new numbers come from
+  the `Mem:` header of the same `diagnose system top` output — real, box-wide,
+  no extra round trip. The daemon is still graded alone (running? PID set
+  changed?); thresholds on box memory remain the `memory` probe's job, which
+  already covers every appliance. `%VSZ` is kept in the sample payload as
+  `daemon_vsz_pct`.
+  **Upgrade note:** `value_num` changed units, so `deep_monitor.reset_series(
+  "proxyd")` clears the pre-existing samples of that kind. Charting `59.7` next
+  to `2328` on one axis is a lie no axis label can repair.
+- **Chart.js is served from `static/vendor` (4.4.4) instead of
+  `cdn.jsdelivr.net`.** SATOM ships offline installers for air-gapped
+  management networks; a chart that only renders with public internet access
+  does not render where it matters. The vendored copy was already in the tree
+  and unused.
+
+### Added
+- **Drill-down charts on the deep monitors.** Clicking any sparkline opens
+  1 h / 24 h / 7 d / 30 d or an explicit date range, with min/average/max, the
+  status strip, healthy-percentage and threshold lines.
+- **`monitor_rollup` — pre-aggregated history.** Raw samples are capped per
+  probe (~2 days at the default interval and retention), so depth is bought
+  with buckets instead: hourly kept 90 days, daily kept 2 years, under 400 KB
+  per probe for two years of history against roughly 35 MB if the raw rows and
+  their CLI payloads were retained for the same window. Both extremes are
+  stored, not just the mean — a four-minute spike is invisible in an average
+  and is exactly what an operator opens a chart to find.
+  The rollup runs **inside `run_probe`, before the retention prune**, rather
+  than as its own scheduled action: nothing in this product seeds a
+  `ScheduledAction` row, so a feature that depends on the operator creating one
+  does not exist on a fresh install.
+- **`GET /monitoring/deep/probe/<id>/series`** — chart data. The resolution
+  (raw samples, hourly buckets, daily buckets) is chosen server-side and
+  reported back in `source`, and the UI prints which one it drew: an hourly
+  average and a five-minute reading are not the same claim about the device.
+
 ## [1.2.2] - 2026-07-27
 
 ### Fixed

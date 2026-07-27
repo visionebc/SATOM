@@ -65,6 +65,9 @@ if [ -n "${APP_TARBALL:-}" ]; then
 else
     git -C "$REPO_DIR" archive --format=tar.gz -o "$STAGE/bundle/app.tar.gz" "$REF"
 
+    echo "    código desde git archive ${REF}"
+fi
+
 # --- ACME client: el binario estático de lego viaja en el bundle para que una
 # instalación OFFLINE tenga el protocolo ACME/Let's Encrypt operativo. El
 # sha256 del release se verifica AQUÍ, en la máquina de build (la que sí tiene red).
@@ -79,8 +82,6 @@ tar xzf "$_lt/lego.tgz" -C "$STAGE/bundle/lego" lego
 chmod 0755 "$STAGE/bundle/lego/lego"
 rm -rf "$_lt"
 echo "    lego ${LEGO_VERSION} anadido al bundle (sha256 verificado)"
-    echo "    código desde git archive ${REF}"
-fi
 
 echo "==> 4/4 Instalador + manual + tarball final"
 cp "$REPO_DIR/installers/install-satom.sh" "$STAGE/"

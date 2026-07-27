@@ -50,12 +50,25 @@ from typing import Any
 # Status vocabulary shared with the UI (worst-first ordering).
 STATUS_ORDER = {"crit": 0, "error": 1, "warn": 2, "ok": 3, "unknown": 4}
 
-KINDS = ("https", "interface", "proxyd")
+KINDS = ("https", "interface", "cpu", "memory", "proxyd")
 
 KIND_LABEL = {
     "https": "Service policy (HTTPS)",
     "interface": "Interface IP / link",
+    "cpu": "Processor load",
+    "memory": "Memory usage",
     "proxyd": "proxyd process",
+}
+
+# Box-level metrics, each its OWN probe kind. They used to ride along inside the
+# proxyd check, which printed "MEM 59.7%" (the daemon's %VSZ) next to "box mem
+# 52%" (the appliance's RAM) — two unrelated numbers with near-identical labels,
+# and no way to give either its own threshold or interval. A pegged appliance
+# and a restarted daemon are different incidents; they get different rows.
+# The value indexes :func:`parse_performance` output.
+BOX_METRICS = {
+    "cpu": {"key": "cpu_busy", "label": "CPU"},
+    "memory": {"key": "mem_used_pct", "label": "memory"},
 }
 
 # How many samples to keep per probe before the oldest are dropped.
@@ -107,8 +120,12 @@ PERF_CMD = "get system performance"
 # top` is a first-iteration BusyBox artefact: four consecutive reads of an idle
 # fw6 returned 100% idle, 100% idle, 90.9% idle and 0% idle. Thresholding on
 # that would page the operator at random.
-_PERF_CPU = re.compile(r"CPU states:\s*(?P<used>[\d.]+)\s*%\s*used", re.I)
-_PERF_MEM = re.compile(r"Memory states:\s*(?P<used>[\d.]+)\s*%\s*used", re.I)
+# FortiADC answers the SAME command with different wording — VERIFIED live on
+# fadc (2026-07-28): "CPU usage:  2% used, 98% idle" / "Memory usage: 62% used".
+# One pattern covers both products; a FortiWeb-only pattern would have meant the
+# CPU and memory probes silently produced nothing on FortiADC.
+_PERF_CPU = re.compile(r"CPU\s+(?:states|usage)\s*:\s*(?P<used>[\d.]+)\s*%\s*used", re.I)
+_PERF_MEM = re.compile(r"Memory\s+(?:states|usage)\s*:\s*(?P<used>[\d.]+)\s*%\s*used", re.I)
 _PERF_UP = re.compile(r"Up:\s*(?P<up>.+?)\.?\s*$", re.I | re.M)
 
 # Default name of the daemon we watch. Kept configurable per probe because a
@@ -264,6 +281,29 @@ def select_process(parsed: dict, name: str) -> dict:
     }
 
 
+def parse_ports(target: str | None) -> list[str]:
+    """Ports an interface probe watches. Empty list = every port on the device."""
+    raw = (target or "").replace(";", ",").replace("\n", ",")
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+
+def select_ports(rows: list[dict],
+                 ports: list[str]) -> tuple[list[dict], list[str]]:
+    """Filter harvested rows down to ``ports``. Returns ``(kept, missing)``.
+
+    ``missing`` is returned rather than quietly ignored: a watched port that is
+    no longer in the harvest is precisely the drift this probe exists to catch,
+    and silently shortening the list would make the check read "all good".
+    """
+    if not ports:
+        return list(rows or []), []
+    want = {p.lower(): p for p in ports}
+    kept = [r for r in (rows or [])
+            if str(r.get("name") or "").strip().lower() in want]
+    seen = {str(r.get("name") or "").strip().lower() for r in kept}
+    return kept, sorted(orig for low, orig in want.items() if low not in seen)
+
+
 def iface_rows_fingerprint(rows: list[dict]) -> tuple[str, list[dict]]:
     """Canonical ``name → ip/status`` fingerprint for a set of interfaces.
 
@@ -337,8 +377,17 @@ def classify_https(res: dict, *, expect_status: int, warn_ms: int,
 def classify_interface(fingerprint: str, prev_fingerprint: str,
                        slim: list[dict], prev_slim: list[dict],
                        *, cache_age_h: float | None,
-                       stale_after_h: float) -> tuple[str, str]:
-    """Grade an interface snapshot: drift is a warn, a lost IP is critical."""
+                       stale_after_h: float,
+                       missing: list[str] | None = None) -> tuple[str, str]:
+    """Grade an interface snapshot: drift is a warn, a lost IP is critical.
+
+    ``missing`` names watched ports the harvest no longer holds. That is graded
+    critical: a port the operator explicitly selected disappearing is the
+    loudest drift there is, and it must not degrade into "fewer interfaces".
+    """
+    if missing:
+        return "crit", ("watched port(s) absent from the device cache: "
+                        + ", ".join(missing))
     if not slim:
         return "error", "no interfaces in the device cache — run a device sync"
     no_ip = [s["name"] for s in slim
@@ -367,33 +416,63 @@ def classify_interface(fingerprint: str, prev_fingerprint: str,
     return status, "; ".join(bits)
 
 
-def classify_proxyd(agg: dict, parsed: dict, prev_fingerprint: str,
-                    *, warn_cpu: float, warn_mem: float) -> tuple[str, str]:
-    """Grade a process snapshot: absent = critical, new PIDs = restart.
+def classify_box(kind: str, perf: dict, *, warn_pct: float,
+                 crit_pct: float) -> tuple[str, str]:
+    """Grade ONE box metric (CPU or memory) from ``get system performance``.
 
-    ``warn_mem`` thresholds the DAEMON's memory share (``%VSZ``, meaningful in a
-    single shot). ``warn_cpu`` thresholds the BOX's busy CPU, not the process's
-    — BusyBox top reports 0.0% per process on its first iteration, so a
-    per-process CPU threshold would never fire and would read as "healthy" on a
-    pegged appliance. Grading on a number that cannot move is worse than not
-    grading at all.
+    Deliberately separate from :func:`classify_proxyd`. The source is the same
+    command, but the question is not: "is the appliance under load" and "is the
+    proxy daemon healthy" have different thresholds, different intervals and
+    different owners. Two thresholds are exposed rather than one so a warning
+    does not have to escalate to a page — ``crit_pct`` is the paging line.
+    A threshold of 0 disables that level.
+    """
+    meta = BOX_METRICS.get(kind)
+    if not meta:
+        return "error", f"unknown box metric {kind!r}"
+    val = perf.get(meta["key"])
+    if val is None:
+        return "error", (f"`{PERF_CMD}` returned no {meta['label']} reading — "
+                         "raw output captured in the sample payload")
+    bits = [f"{meta['label']} {val}%"]
+    if kind == "cpu" and perf.get("cpu_idle") is not None:
+        bits.append(f"{perf['cpu_idle']}% idle")
+    if perf.get("uptime"):
+        bits.append(f"up {perf['uptime']}")
+    status = "ok"
+    if crit_pct and val >= crit_pct:
+        status = "crit"
+        bits.append(f"at or over the critical threshold ({crit_pct}%)")
+    elif warn_pct and val >= warn_pct:
+        status = "warn"
+        bits.append(f"over the warning threshold ({warn_pct}%)")
+    return status, "; ".join(bits)
+
+
+def classify_proxyd(agg: dict, parsed: dict, prev_fingerprint: str,
+                    *, warn_mem: float) -> tuple[str, str]:
+    """Grade the DAEMON alone: absent = critical, new PIDs = a silent restart.
+
+    Box CPU and box memory were graded here until 2026-07-28. They are now
+    ``cpu`` and ``memory`` probes of their own: an appliance can be pegged while
+    proxyd is perfectly healthy, and a single row that mixes both cannot tell
+    the operator which of the two actually happened.
+
+    ``warn_mem`` thresholds the daemon's own memory share (``%VSZ``) — the one
+    per-process number a single BusyBox ``top`` shot reports honestly. There is
+    deliberately NO per-process CPU threshold: BusyBox reports 0.0% on its first
+    iteration, so it could never fire, and a threshold that cannot fire reads as
+    health that was never measured.
     """
     if not parsed.get("parsed"):
         return "error", (f"could not parse `{TOP_CMD}` output — raw response "
                          "captured in the sample payload")
     if agg["count"] == 0:
         return "crit", f"{agg['process']} is NOT running"
-    summary = parsed.get("summary") or {}
-    box_cpu = summary.get("cpu_busy")
 
     bits = [f"{agg['count']} worker" + ("s" if agg["count"] != 1 else ""),
             f"MEM {agg['mem']}%"
             + (f" ({agg['vsz_mb']:.0f} MB)" if agg.get("vsz_mb") else "")]
-    if box_cpu is not None:
-        bits.append(f"box CPU {box_cpu}%")
-    if summary.get("mem_used_pct") is not None:
-        bits.append(f"box mem {summary['mem_used_pct']}%")
-
     status = "ok"
     if prev_fingerprint and prev_fingerprint != agg["pid_fingerprint"]:
         status = "warn"
@@ -401,9 +480,6 @@ def classify_proxyd(agg: dict, parsed: dict, prev_fingerprint: str,
     if warn_mem and agg["mem"] >= warn_mem:
         status = "warn"
         bits.append(f"MEM over {warn_mem}%")
-    if warn_cpu and box_cpu is not None and box_cpu >= warn_cpu:
-        status = "warn"
-        bits.append(f"box CPU over {warn_cpu}%")
     return status, "; ".join(bits)
 
 
@@ -518,7 +594,8 @@ def run_interface(probe, prev) -> dict:
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "detail": f"cache read failed: {exc}",
                 "payload": {}}
-    rows = data.get("interfaces") or []
+    ports = parse_ports(probe.target)
+    rows, missing = select_ports(data.get("interfaces") or [], ports)
     fingerprint, slim = iface_rows_fingerprint(rows)
 
     cache = data.get("cache") or {}
@@ -542,13 +619,15 @@ def run_interface(probe, prev) -> dict:
 
     status, detail = classify_interface(
         fingerprint, prev_fp, slim, prev_slim,
-        cache_age_h=age_h, stale_after_h=float(probe.stale_after_h or 6))
+        cache_age_h=age_h, stale_after_h=float(probe.stale_after_h or 6),
+        missing=missing)
     with_ip = sum(1 for s in slim if s["ip"])
     return {
         "status": status, "detail": detail,
         "value_num": with_ip, "value2_num": len(slim),
         "fingerprint": fingerprint,
         "payload": {"interfaces": slim, "cache_age_h": age_h,
+                    "watching": ports or "all ports", "missing": missing,
                     "changes": diff_ifaces(prev_slim, slim) if prev_fp else []},
     }
 
@@ -571,46 +650,62 @@ def run_proxyd(probe, prev) -> dict:
         return {"status": "crit", "detail": f"CLI unreachable: {exc}",
                 "payload": {"command": TOP_CMD, "error": str(exc)}}
     parsed = parse_top(raw)
-
-    # Overlay the trustworthy box figures from `get system performance` before
-    # grading. Best-effort: a firmware without the command keeps top's noisy
-    # numbers, which is why `box_cpu_source` is recorded in the payload — an
-    # operator must be able to tell which number a warning was based on.
-    perf = ""
-    try:
-        perf = ssh_ops.run_command(probe.appliance, PERF_CMD, timeout=10.0)
-    except Exception:  # noqa: BLE001 — context only, never fails the check
-        perf = ""
-    perf_vals = parse_performance(perf)
-    summary = dict(parsed.get("summary") or {})
-    summary["top_cpu_busy"] = summary.get("cpu_busy")
-    summary.update(perf_vals)
-    summary["box_cpu_source"] = PERF_CMD if "cpu_busy" in perf_vals else TOP_CMD
-    parsed["summary"] = summary
-
     agg = select_process(parsed, probe.process_name or DEFAULT_PROCESS)
     prev_fp = (prev.fingerprint or "") if prev is not None else ""
-    status, detail = classify_proxyd(
-        agg, parsed, prev_fp,
-        warn_cpu=float(probe.warn_cpu or 0), warn_mem=float(probe.warn_mem or 0))
-    # The trended value is the daemon's MEMORY share: it is the one per-process
-    # number a single BusyBox top shot reports honestly. Box CPU rides along as
-    # the secondary series.
+    status, detail = classify_proxyd(agg, parsed, prev_fp,
+                                     warn_mem=float(probe.warn_mem or 0))
+    # ONE SSH round trip now: `get system performance` left with the box metrics
+    # it feeds, so this probe costs half of what it used to. Both trended values
+    # describe the daemon — memory share and worker count. The box's own load is
+    # the cpu / memory probes' job.
     return {
         "status": status, "detail": detail,
         "value_num": agg["mem"],
-        "value2_num": (parsed.get("summary") or {}).get("cpu_busy"),
+        "value2_num": agg["count"],
         "fingerprint": agg["pid_fingerprint"],
         "payload": {"command": TOP_CMD, "process": agg["process"],
                     "count": agg["count"], "pids": agg["pids"],
                     "vsz_mb": agg.get("vsz_mb"),
                     "workers": agg["workers"][:12],
-                    "box": parsed.get("summary") or {},
                     "load": parsed.get("load") or "",
                     "parsed": parsed.get("parsed"),
                     "cpu_per_process_reliable": parsed.get("cpu_per_process_reliable"),
-                    "raw": (raw or "")[:4000],
-                    "performance": (perf or "")[:2000]},
+                    "raw": (raw or "")[:4000]},
+    }
+
+
+def run_box(probe, kind: str) -> dict:
+    """Read ``get system performance`` and grade ONE box metric. Never raises.
+
+    Works on FortiWeb *and* FortiADC (both verified live). No product gate: a
+    firmware that answers in either wording is covered, and one that does not
+    returns ``error`` with the raw text rather than a fabricated number.
+    """
+    from . import ssh_ops
+
+    meta = BOX_METRICS.get(kind)
+    if not meta:
+        return {"status": "error", "detail": f"unknown box metric {kind!r}",
+                "payload": {}}
+    if probe.appliance is None:
+        return {"status": "error", "detail": "probe has no device", "payload": {}}
+    try:
+        raw = ssh_ops.run_command(probe.appliance, PERF_CMD,
+                                  timeout=float(probe.timeout_s or 15))
+    except Exception as exc:  # noqa: BLE001 — an unreachable box is a result
+        return {"status": "crit", "detail": f"CLI unreachable: {exc}",
+                "payload": {"command": PERF_CMD, "error": str(exc)}}
+    perf = parse_performance(raw)
+    status, detail = classify_box(
+        kind, perf, warn_pct=float(probe.warn_pct or 0),
+        crit_pct=float(probe.crit_pct or 0))
+    return {
+        "status": status, "detail": detail,
+        "value_num": perf.get(meta["key"]),
+        "value2_num": perf.get("cpu_idle") if kind == "cpu" else None,
+        "fingerprint": "",
+        "payload": {"command": PERF_CMD, "metric": kind, "performance": perf,
+                    "raw": (raw or "")[:2000]},
     }
 
 
@@ -659,6 +754,8 @@ def run_probe(probe, *, session=None) -> dict:
             out = run_https(probe)
         elif probe.kind == "interface":
             out = run_interface(probe, prev)
+        elif probe.kind in BOX_METRICS:
+            out = run_box(probe, probe.kind)
         elif probe.kind == "proxyd":
             out = run_proxyd(probe, prev)
         else:
@@ -846,13 +943,62 @@ def discover_https_probes(appliance, *, session=None) -> dict:
             "total_targets": len(targets)}
 
 
+def discover_interface_probes(appliance, *, session=None) -> dict:
+    """One interface probe PER PORT, from the cache.
+
+    The granular alternative to the single whole-device watch: each port gets
+    its own series, its own interval and its own history. Both shapes exist
+    because they answer different questions — "did anything on this box move?"
+    versus "chart me port3". Idempotent by (device, port).
+    """
+    from . import interface_inventory
+    from ..models import MonitorProbe, db
+
+    session = session or db.session
+    try:
+        rows = (interface_inventory.merged(appliance, session=session)
+                .get("interfaces") or [])
+    except Exception as exc:  # noqa: BLE001
+        return {"created": 0, "skipped": 0, "total_targets": 0,
+                "error": f"cache read failed: {exc}"}
+    have = {(p.target or "").strip().lower() for p in
+            session.query(MonitorProbe)
+            .filter(MonitorProbe.appliance_id == appliance.id,
+                    MonitorProbe.kind == "interface").all()}
+    created, skipped = 0, 0
+    for r in sorted(rows, key=lambda x: str(x.get("name") or "")):
+        name = str(r.get("name") or "").strip()
+        if not name:
+            continue
+        if name.lower() in have:
+            skipped += 1
+            continue
+        session.add(MonitorProbe(
+            appliance_id=appliance.id, kind="interface",
+            name=f"{appliance.name} · {name}"[:120], target=name[:120],
+            enabled=True, interval_min=15,
+            note=f"IP / link watch for {name} only"[:250]))
+        have.add(name.lower())
+        created += 1
+    session.commit()
+    return {"created": created, "skipped": skipped, "total_targets": len(rows)}
+
+
 def ensure_baseline(appliance, *, session=None) -> dict:
-    """Create the two device-level probes (interface watch + proxyd) if absent."""
+    """Create the device-level probes if absent: interfaces, CPU, memory, and —
+    FortiWeb only — the proxyd daemon.
+
+    CPU and memory are separate rows on purpose (see :func:`classify_box`), and
+    both work on FortiADC as well as FortiWeb; only the process monitor is
+    FortiWeb-specific, because FortiADC exposes no ``diagnose system top``.
+    """
     from ..models import MonitorProbe, db
 
     session = session or db.session
     made = []
-    wanted = [("interface", f"{appliance.name} · interfaces", 15)]
+    wanted = [("interface", f"{appliance.name} · interfaces", 15),
+              ("cpu", f"{appliance.name} · CPU", 5),
+              ("memory", f"{appliance.name} · memory", 5)]
     if (appliance.kind or "fortiweb") == "fortiweb":
         wanted.append(("proxyd", f"{appliance.name} · proxyd", 5))
     for kind, name, interval in wanted:
@@ -867,3 +1013,39 @@ def ensure_baseline(appliance, *, session=None) -> dict:
         made.append(kind)
     session.commit()
     return {"created": made}
+
+
+def split_legacy_proxyd(*, session=None) -> dict:
+    """One-shot: give every pre-existing proxyd probe its cpu/memory siblings.
+
+    Until 2026-07-28 a proxyd probe also thresholded box CPU and box memory.
+    Removing that from it without creating the replacements would silently
+    DELETE coverage from an appliance that had it, so the migration adds the two
+    rows instead of leaving the operator to notice the gap. Idempotent; the
+    inherited CPU warn level comes from the old ``warn_cpu`` so a tuned
+    threshold survives the split.
+    """
+    from ..models import MonitorProbe, db
+
+    session = session or db.session
+    created = []
+    for p in (session.query(MonitorProbe)
+              .filter(MonitorProbe.kind == "proxyd").all()):
+        if not p.appliance_id:
+            continue
+        dev = getattr(p.appliance, "name", "") or f"device {p.appliance_id}"
+        for kind, label in (("cpu", "CPU"), ("memory", "memory")):
+            if (session.query(MonitorProbe)
+                    .filter(MonitorProbe.appliance_id == p.appliance_id,
+                            MonitorProbe.kind == kind).first()):
+                continue
+            session.add(MonitorProbe(
+                appliance_id=p.appliance_id, kind=kind,
+                name=f"{dev} · {label}"[:120], enabled=bool(p.enabled),
+                interval_min=int(p.interval_min or 5),
+                warn_pct=int(p.warn_cpu or 80) if kind == "cpu" else 80,
+                crit_pct=95,
+                note="split out of the proxyd probe (2026-07-28)"[:250]))
+            created.append(f"{dev}:{kind}")
+    session.commit()
+    return {"created": created}

@@ -113,12 +113,58 @@ def history(pid: int):
     return jsonify({"probe": probe.to_dict(), "samples": out})
 
 
+@bp.route('/device/<int:aid>/ports')
+@login_required
+def ports(aid: int):
+    """Interface names for the probe form's port picker.
+
+    Read from the harvest CACHE, never the box: the operator picks from what the
+    device actually has instead of typing a name blind, the modal opens
+    instantly, and it still works with the appliance powered off.
+    """
+    from ..services import interface_inventory
+
+    if aid not in _visible_ids():
+        return jsonify({"error": "not visible in this ADOM"}), 403
+    appliance = Appliance.query.get_or_404(aid)
+    try:
+        rows = interface_inventory.merged(appliance).get("interfaces") or []
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"ports": [], "error": str(exc)})
+    out = [{"name": str(r.get("name") or "").strip(),
+            "ip": str(r.get("ip_address") or "").strip(),
+            "status": str(r.get("status") or "").strip()}
+           for r in rows if str(r.get("name") or "").strip()]
+    out.sort(key=lambda r: r["name"])
+    return jsonify({"ports": out})
+
+
 # ---------------------------------------------------------------------------
 # Mutations (CONFIG_WRITE)
 # ---------------------------------------------------------------------------
 
 _INT_FIELDS = ("expect_status", "warn_ms", "tls_warn_days", "stale_after_h",
-               "warn_cpu", "warn_mem", "timeout_s", "interval_min", "retention")
+               "warn_cpu", "warn_mem", "warn_pct", "crit_pct",
+               "timeout_s", "interval_min", "retention")
+
+
+def _interface_target(form) -> str:
+    """Join the ticked ports into ``target`` without ever slicing a name in half.
+
+    ``target`` is 120 chars. Truncating mid-name would produce a port that
+    matches nothing and a probe that silently watches less than it claims, so a
+    list that does not fit drops whole names at the end instead.
+    """
+    joined = ""
+    for raw in form.getlist('target'):
+        name = (raw or '').strip()
+        if not name:
+            continue
+        cand = (joined + "," + name) if joined else name
+        if len(cand) > 120:
+            break
+        joined = cand
+    return joined
 
 
 def _apply_form(probe: MonitorProbe, form) -> str:
@@ -133,7 +179,14 @@ def _apply_form(probe: MonitorProbe, form) -> str:
     probe.appliance_id = aid or None
     if probe.appliance_id and probe.appliance_id not in _visible_ids():
         return "that device is not visible in this ADOM"
-    probe.target = (form.get('target') or '').strip()[:120]
+    if kind == 'interface':
+        # Multi-select: no tick at all means "every port", which is the
+        # whole-device watch the discovery job creates.
+        probe.target = _interface_target(form)
+    elif 'target' in form:
+        # Never blank an HTTPS probe's policy name just because the edit form
+        # for another kind does not render the field.
+        probe.target = (form.get('target') or '').strip()[:120]
     probe.url = (form.get('url') or '').strip()[:500]
     probe.process_name = (form.get('process_name') or 'proxyd').strip()[:48]
     for f in _INT_FIELDS:
@@ -146,8 +199,11 @@ def _apply_form(probe: MonitorProbe, form) -> str:
 
     if kind == 'https' and not probe.url:
         return "an HTTPS probe needs a URL"
-    if kind in ('interface', 'proxyd') and not probe.appliance_id:
+    if kind != 'https' and not probe.appliance_id:
         return f"a {kind} probe needs a device"
+    if kind in dm.BOX_METRICS and probe.warn_pct and probe.crit_pct \
+            and probe.crit_pct < probe.warn_pct:
+        return "the critical threshold must be at or above the warning one"
     if not probe.name:
         probe.name = (probe.url or probe.kind)[:120]
     return ''
@@ -266,23 +322,40 @@ def run():
     return jsonify({"job_id": job["id"]})
 
 
-def _run_discover(app, job_id, aid, uid, link):
+def _run_discover(app, job_id, aid, what, uid, link):
     with app.app_context():
         try:
             appliance = Appliance.query.get(aid)
             jobsvc.update_job(job_id, percent=10,
-                              message=f"Resolving policies on {appliance.name}…")
-            res = dm.discover_https_probes(appliance)
-            base = dm.ensure_baseline(appliance)
-            if res.get("error"):
-                jobsvc.finish_error(job_id, res["error"])
-                return
-            msg = (f"{res['created']} service probe(s) created, "
-                   f"{res['skipped']} already present"
-                   + (f"; baseline: {', '.join(base['created'])}"
-                      if base.get("created") else ""))
+                              message=f"Reading the cache for {appliance.name}…")
+            parts, total = [], 0
+            if 'policies' in what:
+                res = dm.discover_https_probes(appliance)
+                if res.get("error"):
+                    # FortiADC / FortiAnalyzer have no server policies. That is
+                    # not a failure of the whole run — say so and keep going.
+                    parts.append(res["error"])
+                else:
+                    total += res["created"]
+                    parts.append(f"{res['created']} service probe(s) "
+                                 f"({res['skipped']} already present)")
+            if 'interfaces' in what:
+                res = dm.discover_interface_probes(appliance)
+                if res.get("error"):
+                    parts.append(res["error"])
+                else:
+                    total += res["created"]
+                    parts.append(f"{res['created']} per-port probe(s) "
+                                 f"({res['skipped']} already present)")
+            if 'baseline' in what:
+                base = dm.ensure_baseline(appliance)
+                total += len(base["created"])
+                parts.append("baseline: "
+                             + (", ".join(base["created"]) or "nothing missing"))
+            msg = "; ".join(parts) or "nothing selected"
             jobsvc.finish_success(job_id, message=msg,
-                                  result={"reload": True, "reload_path": link, **res})
+                                  result={"reload": True, "reload_path": link,
+                                          "created": total})
             if uid:
                 notify.push(uid, f"Deep monitors: {msg}",
                             kind=notify.Notification.KIND_SUCCESS, link=link)
@@ -295,17 +368,25 @@ def _run_discover(app, job_id, aid, uid, link):
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
 def discover():
-    """Auto-create one HTTPS probe per server policy on a device, plus the two
-    device-level probes (interface watch + proxyd). Idempotent."""
+    """Auto-create probes for a device. Idempotent, and the operator picks what:
+
+    ``policies``    one HTTPS probe per server policy front-end (FortiWeb)
+    ``baseline``    interfaces (all ports), CPU, memory, proxyd on FortiWeb
+    ``interfaces``  one probe PER PORT — a separate series per interface
+    """
     aid = request.form.get('appliance_id', type=int)
     if not aid or aid not in _visible_ids():
         return jsonify({"error": "pick a visible device"}), 400
+    allowed = {'policies', 'baseline', 'interfaces'}
+    what = [w for w in request.form.getlist('what') if w in allowed]
+    if not what:
+        what = ['policies', 'baseline']
     job = jobsvc.create_job("deep_monitor_discover", "Deep monitors — discover",
                             by=getattr(current_user, 'username', '') or '',
-                            meta={"appliance_id": aid})
+                            meta={"appliance_id": aid, "what": what})
     link = url_for('deep_monitor.index')
     jobsvc.run_async(current_app._get_current_object(), job["id"],
-                     lambda app, jid: _run_discover(app, jid, aid,
+                     lambda app, jid: _run_discover(app, jid, aid, what,
                                                     getattr(current_user, 'id', None),
                                                     link))
     return jsonify({"job_id": job["id"]})

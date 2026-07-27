@@ -66,6 +66,8 @@
       <ul class="checks">
         <li>Debian bundle: full .deb dependency closure + wheels</li>
         <li>RHEL bundle: a local dnf repository (with metadata) + wheels for Python 3.11 — dnf resolves only what the host actually needs</li>
+        <li>Both bundles carry the ACME client and the privilege-escalation and SSH packages — a host with no network cannot fetch them mid-install</li>
+        <li>A bundle is a snapshot of the product at build time and records its own version — <a href="safeguards.html#install">what it ships armed</a> is the version it contains</li>
       </ul>
     </div>
   </div>

@@ -19,10 +19,10 @@ performs the install + reload directly; there is no separate privileged runner
 hop for cert changes. Node-local by design — each node serves its OWN hostname's
 cert, so this is NEVER replicated (pki/ is outside ``data/``).
 """
-import os
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from datetime import datetime, timedelta, timezone

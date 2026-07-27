@@ -307,3 +307,141 @@ def test_split_legacy_proxyd_creates_the_siblings_once(app):
         cpu = MonitorProbe.query.filter_by(appliance_id=a.id, kind="cpu").one()
         assert cpu.warn_pct == 70          # the tuned threshold survives
         assert dm.split_legacy_proxyd()["created"] == []       # idempotent
+
+
+# --------------------------------------------------------------------------
+# Drill-down chart: rollups + the /series feed
+# --------------------------------------------------------------------------
+
+from datetime import datetime, timedelta  # noqa: E402
+
+from app.models import MonitorRollup  # noqa: E402
+from app.services import deep_monitor as dm  # noqa: E402
+
+
+def _probe_with_history(app, *, hours=100, every_min=30, kind="proxyd"):
+    """A probe whose raw samples span `hours`, oldest first."""
+    with app.app_context():
+        p = MonitorProbe(kind=kind, name=f"hist-{kind}-{hours}", enabled=False,
+                         interval_min=every_min, retention=10000)
+        db.session.add(p)
+        db.session.commit()
+        now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+        start = now - timedelta(hours=hours)
+        n = int(hours * 60 / every_min)
+        for i in range(n):
+            ts = start + timedelta(minutes=i * every_min)
+            db.session.add(MonitorSample(
+                probe_id=p.id, ts=ts, status="ok" if i % 10 else "warn",
+                ok=bool(i % 10), value_num=100 + (i % 7), value2_num=50.0,
+                fingerprint="fp" if i < n - 1 else "fp2"))
+        db.session.commit()
+        dm.rollup_probe(p.id)
+        db.session.commit()
+        return p.id
+
+
+def test_rollup_builds_hourly_and_daily_buckets(app):
+    pid = _probe_with_history(app, hours=100)
+    with app.app_context():
+        hours = MonitorRollup.query.filter_by(probe_id=pid, span="hour").count()
+        days = MonitorRollup.query.filter_by(probe_id=pid, span="day").count()
+        assert hours >= 95            # ~100 hourly buckets
+        assert 4 <= days <= 6         # ~4 days of them
+        one = (MonitorRollup.query.filter_by(probe_id=pid, span="hour")
+               .order_by(MonitorRollup.bucket).first())
+        assert one.samples == 2       # two 30-minute samples per hour
+        assert one.v_min is not None and one.v_max is not None
+
+
+def test_rollup_is_idempotent(app):
+    """It runs on every probe execution; a second pass must not duplicate."""
+    pid = _probe_with_history(app, hours=30)
+    with app.app_context():
+        before = MonitorRollup.query.filter_by(probe_id=pid).count()
+        dm.rollup_probe(pid)
+        db.session.commit()
+        dm.rollup_probe(pid)
+        db.session.commit()
+        assert MonitorRollup.query.filter_by(probe_id=pid).count() == before
+
+
+def test_rollups_survive_raw_pruning(app):
+    """The whole point: depth outlives the retention cap."""
+    pid = _probe_with_history(app, hours=100)
+    with app.app_context():
+        dm.prune(pid, keep=5)
+        db.session.commit()
+        assert MonitorSample.query.filter_by(probe_id=pid).count() == 5
+        assert MonitorRollup.query.filter_by(probe_id=pid, span="hour").count() >= 95
+
+
+def test_deleting_a_probe_takes_its_rollups(app):
+    pid = _probe_with_history(app, hours=10)
+    with app.app_context():
+        db.session.delete(MonitorProbe.query.get(pid))
+        db.session.commit()
+        assert MonitorRollup.query.filter_by(probe_id=pid).count() == 0
+
+
+def test_series_endpoint_ranges(client, admin_id, app):
+    pid = _probe_with_history(app, hours=100)
+    login(client, admin_id, product="global")
+
+    d = client.get(f"/monitoring/deep/probe/{pid}/series?range=24h").get_json()
+    assert d["source"] == "raw" and d["points"]
+    assert d["meta"]["unit"] == "MB"           # proxyd trends megabytes now
+    assert d["points"][0]["avg"] is not None
+
+    d7 = client.get(f"/monitoring/deep/probe/{pid}/series?range=7d").get_json()
+    assert d7["source"] == "hour" and d7["bucket_seconds"] == 3600
+    assert d7["points"][0]["min"] is not None and d7["points"][0]["max"] is not None
+
+    d30 = client.get(f"/monitoring/deep/probe/{pid}/series?range=30d").get_json()
+    assert d30["source"] == "hour"
+    assert d30["totals"]["samples"] >= d7["totals"]["samples"]
+
+
+def test_series_custom_dates(client, admin_id, app):
+    pid = _probe_with_history(app, hours=100)
+    login(client, admin_id, product="global")
+    end = datetime.utcnow()
+    start = end - timedelta(days=3)
+    d = client.get(f"/monitoring/deep/probe/{pid}/series?range=custom"
+                   f"&from={start.isoformat(timespec='seconds')}"
+                   f"&to={end.isoformat(timespec='seconds')}").get_json()
+    assert d["points"] and d["range"] == "custom"
+
+
+def test_series_rejects_a_backwards_or_oversized_range(client, admin_id, app):
+    pid = _probe_with_history(app, hours=5)
+    login(client, admin_id, product="global")
+    now = datetime.utcnow()
+    bad = client.get(f"/monitoring/deep/probe/{pid}/series?range=custom"
+                     f"&from={now.isoformat()}&to={(now - timedelta(days=1)).isoformat()}")
+    assert bad.status_code == 400
+    huge = client.get(f"/monitoring/deep/probe/{pid}/series?range=custom"
+                      f"&from={(now - timedelta(days=3000)).isoformat()}"
+                      f"&to={now.isoformat()}")
+    assert huge.status_code == 400
+    assert client.get(f"/monitoring/deep/probe/{pid}/series?range=nope").status_code == 400
+
+
+def test_series_reports_healthy_pct_and_changes(client, admin_id, app):
+    pid = _probe_with_history(app, hours=100)
+    login(client, admin_id, product="global")
+    d = client.get(f"/monitoring/deep/probe/{pid}/series?range=7d").get_json()
+    assert 0 <= d["healthy_pct"] <= 100
+    assert d["totals"]["changes"] >= 0
+    assert d["retention"]["hourly_days"] == dm.HOURLY_KEEP_DAYS
+
+
+def test_reset_series_clears_samples_and_buckets(app):
+    """Used when value_num changes UNITS — mixing % and MB on one axis is a lie
+    no label can repair."""
+    pid = _probe_with_history(app, hours=20, kind="proxyd")
+    with app.app_context():
+        out = dm.reset_series("proxyd")
+        assert out["samples"] > 0 and out["rollups"] > 0
+        assert MonitorSample.query.filter_by(probe_id=pid).count() == 0
+        assert MonitorRollup.query.filter_by(probe_id=pid).count() == 0

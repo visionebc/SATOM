@@ -111,46 +111,87 @@ def test_select_process_absent_daemon():
 def test_classify_proxyd_absent_is_critical():
     parsed = dm.parse_top(TOP_SAMPLE)
     agg = dm.select_process(parsed, "nosuchd")
-    st, detail = dm.classify_proxyd(agg, parsed, "", warn_mem=80)
+    st, detail = dm.classify_proxyd(agg, parsed, "", memory=parsed["summary"])
     assert st == "crit" and "NOT running" in detail
 
 
 def test_classify_proxyd_unparseable_is_error_not_crit():
     parsed = dm.parse_top("garbage")
     agg = dm.select_process(parsed, "proxyd")
-    st, detail = dm.classify_proxyd(agg, parsed, "", warn_mem=80)
+    st, detail = dm.classify_proxyd(agg, parsed, "", memory=parsed["summary"])
     assert st == "error" and "parse" in detail
 
 
 def test_classify_proxyd_pid_change_is_a_restart():
     parsed = dm.parse_top(TOP_SAMPLE)
     agg = dm.select_process(parsed, "proxyd")
-    st, detail = dm.classify_proxyd(agg, parsed, "deadbeef", warn_mem=0)
+    st, detail = dm.classify_proxyd(agg, parsed, "deadbeef",
+                                    memory=parsed["summary"])
     assert st == "warn" and "restarted" in detail
     # same fingerprint -> healthy
-    st2, _ = dm.classify_proxyd(agg, parsed, agg["pid_fingerprint"], warn_mem=0)
+    st2, _ = dm.classify_proxyd(agg, parsed, agg["pid_fingerprint"],
+                                memory=parsed["summary"])
     assert st2 == "ok"
 
 
-def test_classify_proxyd_mem_threshold_uses_the_daemon_share():
+def test_parse_top_reports_memory_consumed_in_megabytes():
+    """The `Mem:` header is the only honest consumption figure in this output."""
+    s = dm.parse_top(TOP_SAMPLE)["summary"]
+    assert s["mem_used_mb"] == pytest.approx(2221.0, abs=1.0)
+    assert s["mem_free_mb"] == pytest.approx(1505.9, abs=1.0)
+    # used + free must reconstruct the total, or the two numbers on screen
+    # would not describe the same machine.
+    assert s["mem_used_mb"] + s["mem_free_mb"] == pytest.approx(s["mem_total_mb"], abs=0.2)
+
+
+def test_proxyd_reports_used_and_free_never_the_daemon_vsz():
+    """%VSZ is VIRTUAL size and is not memory consumed.
+
+    Live proof from fw6: the eight largest processes report 240 % of RAM
+    between them, because every shared mapping is counted once per process. A
+    figure that can exceed 100 % must never be labelled 'memory used'.
+    """
     parsed = dm.parse_top(TOP_SAMPLE)
-    agg = dm.select_process(parsed, "proxyd")          # 73.4 %VSZ
+    assert sum(p["mem"] for p in parsed["processes"]) > 100.0
+
+    agg = dm.select_process(parsed, "proxyd")
+    assert agg["mem"] == pytest.approx(73.4)          # %VSZ, still in the payload
     st, detail = dm.classify_proxyd(agg, parsed, agg["pid_fingerprint"],
-                                    warn_mem=70)
-    assert st == "warn" and "MEM over 70" in detail
+                                    memory=parsed["summary"])
+    assert st == "ok"
+    assert "2,221 MB used" in detail and "1,506 MB free" in detail
+    assert "73.4" not in detail                       # the virtual share is not shown
+    assert "%" not in detail                          # nor any other percentage
+    assert "2 workers" in detail
 
 
 def test_classify_proxyd_grades_only_the_daemon():
-    """The box's CPU and RAM moved out to their own probes. A proxyd row that
-    still printed them made two unrelated numbers look like one measurement."""
+    """Box CPU and box RAM live in their own probes. A proxyd row that graded
+    them too would re-merge exactly what was split apart."""
     parsed = dm.parse_top(TOP_SAMPLE.replace("100% idle", "6.0% idle"))
     agg = dm.select_process(parsed, "proxyd")
     assert agg["cpu"] == 0.0            # BusyBox per-process CPU: never usable
     st, detail = dm.classify_proxyd(agg, parsed, agg["pid_fingerprint"],
-                                    warn_mem=0)
+                                    memory=parsed["summary"])
     assert st == "ok"
     assert "box CPU" not in detail and "box mem" not in detail
-    assert "worker" in detail and "MEM" in detail
+
+
+def test_classify_proxyd_says_so_when_the_mem_header_is_missing():
+    """Silence about memory must read as 'unreadable', never as zero."""
+    raw = "\n".join(l for l in TOP_SAMPLE.splitlines() if not l.startswith("Mem:"))
+    parsed = dm.parse_top(raw)
+    agg = dm.select_process(parsed, "proxyd")
+    st, detail = dm.classify_proxyd(agg, parsed, agg["pid_fingerprint"],
+                                    memory=parsed["summary"])
+    assert st == "ok" and "memory unreadable" in detail
+
+
+def test_fmt_memory_is_empty_without_both_halves():
+    assert dm.fmt_memory({}) == ""
+    assert dm.fmt_memory({"mem_used_mb": 10}) == ""
+    assert dm.fmt_memory({"mem_used_mb": 10, "mem_free_mb": 5}) == \
+        "10 MB used · 5 MB free"
 
 
 # --------------------------------------------------------------------------
@@ -415,3 +456,112 @@ def test_worst_orders_by_severity():
 
 def test_kind_labels_cover_every_kind():
     assert set(dm.KINDS) == set(dm.KIND_LABEL)
+
+
+# --------------------------------------------------------------------------
+# Rollups — the storage model behind the 7 / 30 day charts
+# --------------------------------------------------------------------------
+
+from datetime import datetime, timedelta  # noqa: E402
+
+
+def _s(minute, status="ok", v=None, v2=None, fp=""):
+    return {"ts": datetime(2026, 7, 27, 10, minute), "status": status,
+            "value_num": v, "value2_num": v2, "fingerprint": fp}
+
+
+def test_bucket_key_floors_to_hour_and_day():
+    ts = datetime(2026, 7, 27, 14, 37, 12)
+    assert dm.bucket_key(ts, "hour") == datetime(2026, 7, 27, 14, 0)
+    assert dm.bucket_key(ts, "day") == datetime(2026, 7, 27, 0, 0)
+
+
+def test_aggregate_samples_keeps_both_extremes():
+    """An average hides the spike. The spike is the reason anyone opens this."""
+    agg = dm.aggregate_samples([_s(0, v=10), _s(5, v=90), _s(10, v=20)])
+    assert (agg["v_min"], agg["v_max"]) == (10, 90)
+    assert agg["v_avg"] == pytest.approx(40.0)
+    assert agg["samples"] == 3 and agg["ok_n"] == 3
+
+
+def test_aggregate_samples_counts_statuses_and_ignores_missing_values():
+    agg = dm.aggregate_samples([
+        _s(0, "ok", v=1), _s(5, "warn"), _s(10, "crit", v=3), _s(15, "error"),
+    ])
+    assert (agg["ok_n"], agg["warn_n"], agg["crit_n"], agg["error_n"]) == (1, 1, 1, 1)
+    assert agg["v_min"] == 1 and agg["v_max"] == 3      # the two Nones skipped
+    assert agg["samples"] == 4
+
+
+def test_aggregate_samples_counts_fingerprint_changes():
+    """Three PID sets in an hour is three restarts, and it survives the rollup
+    even after the raw samples are pruned."""
+    agg = dm.aggregate_samples([_s(0, fp="a"), _s(5, fp="a"), _s(10, fp="b"),
+                                _s(15, fp="c")])
+    assert agg["changes"] == 2
+
+
+def test_aggregate_rollups_weights_the_average_by_sample_count():
+    """A mean of means would let an hour with one reading outvote a full one."""
+    hours = [
+        {"samples": 12, "ok_n": 12, "warn_n": 0, "crit_n": 0, "error_n": 0,
+         "changes": 0, "v_min": 10, "v_avg": 10, "v_max": 10,
+         "v2_min": None, "v2_avg": None, "v2_max": None},
+        {"samples": 1, "ok_n": 0, "warn_n": 1, "crit_n": 0, "error_n": 0,
+         "changes": 2, "v_min": 100, "v_avg": 100, "v_max": 100,
+         "v2_min": None, "v2_avg": None, "v2_max": None},
+    ]
+    agg = dm.aggregate_rollups(hours)
+    assert agg["samples"] == 13 and agg["warn_n"] == 1 and agg["changes"] == 2
+    assert agg["v_min"] == 10 and agg["v_max"] == 100
+    assert agg["v_avg"] == pytest.approx((10 * 12 + 100) / 13, abs=0.01)
+    assert agg["v_avg"] < 55                # a naive mean would have said 55
+
+
+def test_pick_source_by_span():
+    now = datetime(2026, 7, 27, 12, 0)
+    old = now - timedelta(days=400)
+    assert dm.pick_source(now - timedelta(hours=6), now, old) == "raw"
+    assert dm.pick_source(now - timedelta(days=7), now, old) == "hour"
+    assert dm.pick_source(now - timedelta(days=200), now, old) == "day"
+
+
+def test_pick_source_falls_back_when_raw_does_not_reach_back():
+    """A one-minute probe holds ~8 h of raw at the default retention. Drawing a
+    24 h chart from raw would show 8 h and look like the box went silent."""
+    now = datetime(2026, 7, 27, 12, 0)
+    shallow = now - timedelta(hours=8)
+    deep = now - timedelta(days=20)
+    assert dm.pick_source(now - timedelta(hours=24), now, shallow, deep) == "hour"
+    assert dm.pick_source(now - timedelta(hours=4), now, shallow, deep) == "raw"
+
+
+def test_pick_source_keeps_raw_when_buckets_hold_nothing_older():
+    """A young probe's buckets were built from the samples still on disk.
+    Downgrading there would coarsen the chart and label it an hourly average
+    while showing the very same readings."""
+    now = datetime(2026, 7, 27, 12, 0)
+    young = now - timedelta(hours=2)
+    assert dm.pick_source(now - timedelta(hours=24), now, young,
+                          dm.bucket_key(young, "hour")) == "raw"
+    assert dm.pick_source(now - timedelta(hours=24), now, young, None) == "raw"
+    # ...but a 7-day window is still bucket territory, whatever raw holds.
+    assert dm.pick_source(now - timedelta(days=7), now, young, young) == "hour"
+
+
+def test_pick_source_with_no_samples_at_all():
+    now = datetime(2026, 7, 27, 12, 0)
+    assert dm.pick_source(now - timedelta(hours=6), now, None) == "raw"
+
+
+def test_metric_meta_covers_every_kind():
+    """An unlabelled axis is a lie waiting to happen: 2328 MB and 59.7 % look
+    identical without one."""
+    assert set(dm.METRIC_META) == set(dm.KINDS)
+    assert dm.METRIC_META["proxyd"]["unit"] == "MB"
+    assert dm.METRIC_META["cpu"]["unit"] == "%"
+
+
+def test_rollup_horizons_are_bounded():
+    assert dm.HOURLY_KEEP_DAYS <= 400 and dm.DAILY_KEEP_DAYS <= 3660
+    assert dm.MAX_RANGE_DAYS <= dm.DAILY_KEEP_DAYS + 1

@@ -42,16 +42,20 @@ def test_page_renders(client, admin_id):
     assert r.status_code == 200
     body = r.get_data(as_text=True)
     assert "Deep monitors" in body
-    # the three families must be offered in the editor
-    assert "proxyd process" in body
-    assert "Interface IP / link" in body
+    # every family must be offered in the editor, each on its own
+    for label in ("proxyd process", "Interface IP / link", "Processor load",
+                  "Memory usage"):
+        assert label in body
+    assert 'data-act="edit"' in body            # probes are editable
+    assert 'id="dpFports"' in body              # per-port picker exists
 
 
 def test_data_feed_shape(client, admin_id):
     login(client, admin_id, product="global")
     d = client.get("/monitoring/deep/data").get_json()
     assert set(d) >= {"probes", "summary", "worst", "kinds", "devices"}
-    assert [k["key"] for k in d["kinds"]] == ["https", "interface", "proxyd"]
+    assert [k["key"] for k in d["kinds"]] == ["https", "interface", "cpu",
+                                              "memory", "proxyd"]
 
 
 def test_create_validates_kind_requirements(client, admin_id):
@@ -191,8 +195,10 @@ def test_policy_discovery_is_fortiweb_only(app):
         db.session.add(a)
         db.session.commit()
         assert "FortiWeb-only" in dm.discover_https_probes(a)["error"]
-        # and the baseline must NOT create a proxyd probe for it
-        assert dm.ensure_baseline(a)["created"] == ["interface"]
+        # The box metrics DO apply to FortiADC (`get system performance` works
+        # there, verified live); only the process monitor is FortiWeb-specific.
+        assert dm.ensure_baseline(a)["created"] == ["interface", "cpu", "memory"]
+        assert dm.ensure_baseline(a)["created"] == []       # idempotent
 
 
 def test_scheduled_action_is_registered_and_dry_runs():
@@ -208,3 +214,96 @@ def test_scheduled_action_dry_run_touches_no_device(app, admin_id):
     with app.app_context():
         res = sa.run_action("deep_monitor", None, {}, dry_run=True)
         assert res["ok"] is True and "dry-run" in res["summary"]
+
+
+def test_edit_keeps_the_https_policy_target(client, admin_id, app):
+    """The edit form for an HTTPS probe renders no `target` field. A blind
+    `form.get('target')` would blank the policy name on every save."""
+    login(client, admin_id, product="global")
+    pid = client.post("/monitoring/deep/probe",
+                      data={"kind": "https", "name": "pol", "url": "https://192.0.2.8/",
+                            "target": "pol-shop-main"}).get_json()["probe"]["id"]
+    r = client.post(f"/monitoring/deep/probe/{pid}",
+                    data={"kind": "https", "name": "pol renamed",
+                          "url": "https://192.0.2.8/"})
+    assert r.status_code == 200
+    assert r.get_json()["probe"]["target"] == "pol-shop-main"
+    assert r.get_json()["probe"]["name"] == "pol renamed"
+
+
+def test_interface_probe_takes_a_port_selection(client, admin_id, app):
+    from app.models import Appliance
+    login(client, admin_id, product="global")
+    with app.app_context():
+        a = Appliance(name="fwports", host="192.0.2.20", kind="fortiweb",
+                      username="admin")
+        a.password = "pw"
+        db.session.add(a)
+        db.session.commit()
+        aid = a.id
+    r = client.post("/monitoring/deep/probe",
+                    data={"kind": "interface", "name": "two ports",
+                          "appliance_id": str(aid),
+                          "target": ["port1", "port3"]})
+    assert r.status_code == 200
+    assert r.get_json()["probe"]["target"] == "port1,port3"
+    # no tick at all = the whole-device watch
+    r = client.post("/monitoring/deep/probe",
+                    data={"kind": "interface", "name": "all ports",
+                          "appliance_id": str(aid)})
+    assert r.get_json()["probe"]["target"] == ""
+
+
+def test_box_probe_rejects_an_inverted_threshold(client, admin_id, app):
+    from app.models import Appliance
+    login(client, admin_id, product="global")
+    with app.app_context():
+        a = Appliance(name="fwbox", host="192.0.2.21", kind="fortiweb",
+                      username="admin")
+        a.password = "pw"
+        db.session.add(a)
+        db.session.commit()
+        aid = a.id
+    r = client.post("/monitoring/deep/probe",
+                    data={"kind": "cpu", "name": "bad", "appliance_id": str(aid),
+                          "warn_pct": "90", "crit_pct": "70"})
+    assert r.status_code == 400 and "critical" in r.get_json()["error"]
+    r = client.post("/monitoring/deep/probe",
+                    data={"kind": "memory", "name": "good", "appliance_id": str(aid),
+                          "warn_pct": "70", "crit_pct": "90"})
+    assert r.status_code == 200 and r.get_json()["probe"]["crit_pct"] == 90
+
+
+def test_ports_endpoint_reads_the_cache_and_honours_visibility(client, admin_id, app):
+    from app.models import Appliance
+    login(client, admin_id, product="global")
+    with app.app_context():
+        a = Appliance(name="fwcache", host="192.0.2.22", kind="fortiweb",
+                      username="admin")
+        a.password = "pw"
+        db.session.add(a)
+        db.session.commit()
+        aid = a.id
+    d = client.get(f"/monitoring/deep/device/{aid}/ports").get_json()
+    assert "ports" in d and isinstance(d["ports"], list)   # empty cache is fine
+    assert client.get("/monitoring/deep/device/99999/ports").status_code in (403, 404)
+
+
+def test_split_legacy_proxyd_creates_the_siblings_once(app):
+    """Dropping box CPU/mem from the proxyd probe must not delete coverage."""
+    from app.models import Appliance
+    from app.services import deep_monitor as dm
+    with app.app_context():
+        a = Appliance(name="fwsplit", host="192.0.2.23", kind="fortiweb",
+                      username="admin")
+        a.password = "pw"
+        db.session.add(a)
+        db.session.commit()
+        db.session.add(MonitorProbe(appliance_id=a.id, kind="proxyd",
+                                    name="fwsplit · proxyd", warn_cpu=70))
+        db.session.commit()
+        made = dm.split_legacy_proxyd()["created"]
+        assert made == ["fwsplit:cpu", "fwsplit:memory"]
+        cpu = MonitorProbe.query.filter_by(appliance_id=a.id, kind="cpu").one()
+        assert cpu.warn_pct == 70          # the tuned threshold survives
+        assert dm.split_legacy_proxyd()["created"] == []       # idempotent

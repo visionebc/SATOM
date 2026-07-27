@@ -1947,10 +1947,17 @@ class MonitorProbe(db.Model):
     # interface
     stale_after_h = db.Column(db.Integer, nullable=False, default=6)
 
-    # proxyd / process
+    # proxyd / process. `warn_cpu` is legacy: the daemon's CPU cannot be read
+    # from a single BusyBox top shot, so the box CPU threshold moved to its own
+    # `cpu` probe. Kept as the seed value when an old probe is split.
     process_name = db.Column(db.String(48), nullable=True, default="proxyd")
     warn_cpu = db.Column(db.Integer, nullable=False, default=80)
     warn_mem = db.Column(db.Integer, nullable=False, default=80)
+
+    # cpu / memory — box metrics from `get system performance`. Two levels so a
+    # warning does not have to escalate to a page; 0 disables that level.
+    warn_pct = db.Column(db.Integer, nullable=False, default=80)
+    crit_pct = db.Column(db.Integer, nullable=False, default=95)
 
     timeout_s = db.Column(db.Integer, nullable=False, default=10)
     interval_min = db.Column(db.Integer, nullable=False, default=5)
@@ -1984,6 +1991,7 @@ class MonitorProbe(db.Model):
             "stale_after_h": self.stale_after_h,
             "process_name": self.process_name or "proxyd",
             "warn_cpu": self.warn_cpu, "warn_mem": self.warn_mem,
+            "warn_pct": self.warn_pct, "crit_pct": self.crit_pct,
             "timeout_s": self.timeout_s, "interval_min": self.interval_min,
             "retention": self.retention,
             "last_run_at": self.last_run_at.isoformat(timespec="seconds")

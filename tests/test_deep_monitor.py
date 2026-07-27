@@ -111,26 +111,24 @@ def test_select_process_absent_daemon():
 def test_classify_proxyd_absent_is_critical():
     parsed = dm.parse_top(TOP_SAMPLE)
     agg = dm.select_process(parsed, "nosuchd")
-    st, detail = dm.classify_proxyd(agg, parsed, "", warn_cpu=80, warn_mem=80)
+    st, detail = dm.classify_proxyd(agg, parsed, "", warn_mem=80)
     assert st == "crit" and "NOT running" in detail
 
 
 def test_classify_proxyd_unparseable_is_error_not_crit():
     parsed = dm.parse_top("garbage")
     agg = dm.select_process(parsed, "proxyd")
-    st, detail = dm.classify_proxyd(agg, parsed, "", warn_cpu=80, warn_mem=80)
+    st, detail = dm.classify_proxyd(agg, parsed, "", warn_mem=80)
     assert st == "error" and "parse" in detail
 
 
 def test_classify_proxyd_pid_change_is_a_restart():
     parsed = dm.parse_top(TOP_SAMPLE)
     agg = dm.select_process(parsed, "proxyd")
-    st, detail = dm.classify_proxyd(agg, parsed, "deadbeef",
-                                    warn_cpu=0, warn_mem=0)
+    st, detail = dm.classify_proxyd(agg, parsed, "deadbeef", warn_mem=0)
     assert st == "warn" and "restarted" in detail
     # same fingerprint -> healthy
-    st2, _ = dm.classify_proxyd(agg, parsed, agg["pid_fingerprint"],
-                                warn_cpu=0, warn_mem=0)
+    st2, _ = dm.classify_proxyd(agg, parsed, agg["pid_fingerprint"], warn_mem=0)
     assert st2 == "ok"
 
 
@@ -138,25 +136,21 @@ def test_classify_proxyd_mem_threshold_uses_the_daemon_share():
     parsed = dm.parse_top(TOP_SAMPLE)
     agg = dm.select_process(parsed, "proxyd")          # 73.4 %VSZ
     st, detail = dm.classify_proxyd(agg, parsed, agg["pid_fingerprint"],
-                                    warn_cpu=0, warn_mem=70)
+                                    warn_mem=70)
     assert st == "warn" and "MEM over 70" in detail
 
 
-def test_classify_proxyd_cpu_threshold_uses_the_BOX_not_the_process():
-    """Per-process CPU is always 0.0 in a single BusyBox shot, so a per-process
-    threshold could never fire. The grader must read the box's busy CPU."""
-    raw = TOP_SAMPLE.replace("100% idle", "6.0% idle")
-    parsed = dm.parse_top(raw)
+def test_classify_proxyd_grades_only_the_daemon():
+    """The box's CPU and RAM moved out to their own probes. A proxyd row that
+    still printed them made two unrelated numbers look like one measurement."""
+    parsed = dm.parse_top(TOP_SAMPLE.replace("100% idle", "6.0% idle"))
     agg = dm.select_process(parsed, "proxyd")
-    assert agg["cpu"] == 0.0                    # the misleading number
+    assert agg["cpu"] == 0.0            # BusyBox per-process CPU: never usable
     st, detail = dm.classify_proxyd(agg, parsed, agg["pid_fingerprint"],
-                                    warn_cpu=80, warn_mem=0)
-    assert st == "warn" and "box CPU over 80" in detail
-    # and an idle box with the same threshold stays healthy
-    st2, _ = dm.classify_proxyd(dm.select_process(dm.parse_top(TOP_SAMPLE), "proxyd"),
-                                dm.parse_top(TOP_SAMPLE),
-                                agg["pid_fingerprint"], warn_cpu=80, warn_mem=0)
-    assert st2 == "ok"
+                                    warn_mem=0)
+    assert st == "ok"
+    assert "box CPU" not in detail and "box mem" not in detail
+    assert "worker" in detail and "MEM" in detail
 
 
 # --------------------------------------------------------------------------
@@ -220,6 +214,36 @@ def test_classify_interface_stale_harvest_warns():
     st, detail = dm.classify_interface(fp, fp, cur, cur,
                                        cache_age_h=48.0, stale_after_h=6)
     assert st == "warn" and "stale" in detail
+
+
+def test_parse_ports_accepts_the_form_encodings():
+    assert dm.parse_ports("") == []
+    assert dm.parse_ports(None) == []
+    assert dm.parse_ports("port1,port2") == ["port1", "port2"]
+    assert dm.parse_ports(" port1 ; port2 \n port3 ") == ["port1", "port2", "port3"]
+
+
+def test_select_ports_empty_selection_means_every_port():
+    rows = [{"name": "port1"}, {"name": "port2"}]
+    kept, missing = dm.select_ports(rows, [])
+    assert len(kept) == 2 and missing == []
+
+
+def test_select_ports_filters_and_reports_what_vanished():
+    rows = [{"name": "port1"}, {"name": "port2"}]
+    kept, missing = dm.select_ports(rows, ["PORT1", "port9"])
+    assert [r["name"] for r in kept] == ["port1"]
+    assert missing == ["port9"]                 # never silently dropped
+
+
+def test_classify_interface_missing_watched_port_is_critical():
+    """A port the operator explicitly selected disappearing from the harvest is
+    the loudest drift there is — it must not degrade to 'fewer interfaces'."""
+    st, detail = dm.classify_interface("a", "a", [{"name": "port1", "ip": "192.0.2.1",
+                                                   "status": "up"}], [],
+                                       cache_age_h=0.1, stale_after_h=6,
+                                       missing=["port9"])
+    assert st == "crit" and "port9" in detail
 
 
 def test_classify_interface_empty_cache_is_error():
@@ -316,21 +340,62 @@ def test_parse_performance_tolerates_missing_command():
     assert dm.parse_performance("Unknown action 0") == {}
 
 
-def test_perf_overrides_the_noisy_top_cpu():
+# FortiADC answers the same command with different wording — captured live
+# from fadc (2026-07-28). One parser has to read both or the CPU and memory
+# probes silently produce nothing on half the fleet.
+PERF_SAMPLE_ADC = """CPU usage:     2% used, 98% idle
+Memory usage: 62% used
+Up:           14 days,  3 hours,  2 minutes.
+"""
+
+
+def test_parse_performance_reads_the_fortiadc_wording_too():
+    out = dm.parse_performance(PERF_SAMPLE_ADC)
+    assert out["cpu_busy"] == 2.0
+    assert out["cpu_idle"] == 98.0
+    assert out["mem_used_pct"] == 62.0
+
+
+def test_perf_is_the_source_for_the_box_metrics_not_top():
     """`diagnose system top`'s CPU line swung 100/100/90.9/0 %idle across four
     consecutive reads of an IDLE fw6. `get system performance` said 5% used.
-    The grader must follow performance, not top."""
+    The box probes read performance; top is never their source."""
     top = dm.parse_top(TOP_SAMPLE.replace("100% idle", "0.0% idle"))
-    summary = dict(top["summary"])
-    summary["top_cpu_busy"] = summary.get("cpu_busy")
-    summary.update(dm.parse_performance(PERF_SAMPLE))
-    top["summary"] = summary
-    assert summary["top_cpu_busy"] == 100.0     # what top claimed
-    assert summary["cpu_busy"] == 5.0           # what is true
-    agg = dm.select_process(top, "proxyd")
-    st, detail = dm.classify_proxyd(agg, top, agg["pid_fingerprint"],
-                                    warn_cpu=80, warn_mem=0)
-    assert st == "ok" and "box CPU 5.0%" in detail
+    assert top["summary"]["cpu_busy"] == 100.0          # what top claimed
+    perf = dm.parse_performance(PERF_SAMPLE)
+    assert perf["cpu_busy"] == 5.0                      # what is true
+    st, detail = dm.classify_box("cpu", perf, warn_pct=80, crit_pct=95)
+    assert st == "ok" and "CPU 5.0%" in detail
+
+
+def test_classify_box_two_levels():
+    st, detail = dm.classify_box("cpu", {"cpu_busy": 84.0, "cpu_idle": 16.0},
+                                 warn_pct=80, crit_pct=95)
+    assert st == "warn" and "warning threshold" in detail
+    st, detail = dm.classify_box("cpu", {"cpu_busy": 97.0},
+                                 warn_pct=80, crit_pct=95)
+    assert st == "crit" and "critical threshold" in detail
+    st, _ = dm.classify_box("memory", {"mem_used_pct": 62.0},
+                            warn_pct=80, crit_pct=95)
+    assert st == "ok"
+
+
+def test_classify_box_zero_threshold_disables_that_level():
+    st, _ = dm.classify_box("cpu", {"cpu_busy": 99.0}, warn_pct=0, crit_pct=0)
+    assert st == "ok"
+
+
+def test_classify_box_missing_reading_is_error_not_zero():
+    """A firmware that does not answer the command must never be graded as 0%
+    load — that is a fabricated healthy reading."""
+    st, detail = dm.classify_box("memory", dm.parse_performance("Unknown action"),
+                                 warn_pct=80, crit_pct=95)
+    assert st == "error" and "no memory reading" in detail
+
+
+def test_classify_box_rejects_an_unknown_metric():
+    st, _ = dm.classify_box("disk", {"cpu_busy": 1.0}, warn_pct=80, crit_pct=95)
+    assert st == "error"
 
 
 def test_vsz_units():

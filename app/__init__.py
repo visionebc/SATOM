@@ -1009,6 +1009,11 @@ def create_app(config_override: object | None = None) -> Flask:
             'plugins': [
                 ('params', "TEXT DEFAULT '[]'"),
             ],
+            # --- Deep monitors: box CPU / memory split out of the proxyd probe ---
+            'monitor_probe': [
+                ('warn_pct', 'INTEGER DEFAULT 80'),
+                ('crit_pct', 'INTEGER DEFAULT 95'),
+            ],
             # --- AppID-scoped API tokens (Phase 2 enforcement) ---
             'api_tokens': [
                 ('capabilities', "TEXT DEFAULT '[]'"),

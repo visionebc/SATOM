@@ -27,6 +27,18 @@
              background:rgba(59,130,246,.12); border:1px solid rgba(59,130,246,.25); color:#93c5fd; }
   .dp-kind.interface { background:rgba(16,185,129,.10); border-color:rgba(16,185,129,.28); color:#6ee7b7; }
   .dp-kind.proxyd    { background:rgba(245,158,11,.10); border-color:rgba(245,158,11,.28); color:#fcd34d; }
+  .dp-kind.cpu       { background:rgba(139,92,246,.10); border-color:rgba(139,92,246,.28); color:#c4b5fd; }
+  .dp-kind.memory    { background:rgba(236,72,153,.10); border-color:rgba(236,72,153,.28); color:#f9a8d4; }
+  .dp-ports { max-height:190px; overflow:auto; border:1px solid rgba(148,163,184,.14);
+              border-radius:8px; padding:8px 10px; }
+  .dp-ports label { display:flex; gap:8px; align-items:center; font-size:.8rem; padding:2px 0;
+                    cursor:pointer; }
+  .dp-ports .ip { color:#64748b; font-size:.72rem; margin-left:auto;
+                  font-variant-numeric:tabular-nums; }
+  .dp-disc label { display:flex; gap:9px; align-items:flex-start; font-size:.82rem;
+                   padding:7px 9px; border:1px solid rgba(148,163,184,.12);
+                   border-radius:9px; margin-bottom:7px; cursor:pointer; }
+  .dp-disc label:hover { background:rgba(59,130,246,.05); }
   .dp-off td { opacity:.45; }
   .dp-note { font-size:.72rem; color:#64748b; margin-top:10px; }
   .dp-hist pre { font-size:.72rem; max-height:260px; overflow:auto; background:rgba(2,6,23,.5);
@@ -41,8 +53,9 @@
     <h1 class="fw-page-title mb-0"><i class="bi bi-activity me-2 text-accent"></i>Deep monitors</h1>
     <p class="text-muted small mb-0">
       Does the service actually serve? Synthetic HTTPS against a server policy's published front-end,
-      interface IP&nbsp;/&nbsp;link drift, and the <code>proxyd</code> daemon — each stored as a time series,
-      because the signal is the value <em>changing</em>.
+      interface IP&nbsp;/&nbsp;link drift, processor load, memory usage and the <code>proxyd</code> daemon —
+      each its own probe with its own thresholds, and each stored as a time series, because the
+      signal is the value <em>changing</em>.
     </p>
   </div>
   <div class="d-flex align-items-center gap-2">
@@ -84,7 +97,9 @@
       Probing runs as a background job (<b>Probe now</b>) or on a schedule via the
       <code>deep_monitor</code> scheduled action. Interface data comes from the device cache
       refreshed by the hourly <code>device_sync</code>, so interface drift is detected at harvest
-      cadence, not instantly.
+      cadence, not instantly. Processor load and memory usage read
+      <code>get system performance</code> over the read-only CLI on FortiWeb and FortiADC;
+      <code>proxyd</code> reads <code>diagnose system top</code> and is FortiWeb-only.
     </div>
   </div>
 </div>
@@ -119,6 +134,8 @@
             <select class="form-select form-select-sm" name="kind" id="dpFkind">
               <option value="https">Service policy (HTTPS)</option>
               <option value="interface">Interface IP / link</option>
+              <option value="cpu">Processor load</option>
+              <option value="memory">Memory usage</option>
               <option value="proxyd">proxyd process</option>
             </select>
           </div>
@@ -145,12 +162,32 @@
               <input type="number" class="form-control form-control-sm" name="tls_warn_days" id="dpFtls" value="21"></div>
           </div>
           <div class="row g-2 dp-f-proxyd">
-            <div class="col-4"><label class="form-label small">Process</label>
-              <input class="form-control form-control-sm" name="process_name" id="dpFproc" value="proxyd"></div>
-            <div class="col-4"><label class="form-label small">CPU warn %</label>
-              <input type="number" class="form-control form-control-sm" name="warn_cpu" id="dpFcpu" value="80"></div>
-            <div class="col-4"><label class="form-label small">MEM warn %</label>
-              <input type="number" class="form-control form-control-sm" name="warn_mem" id="dpFmem" value="80"></div>
+            <div class="col-6"><label class="form-label small">Process</label>
+              <input class="form-control form-control-sm" name="process_name" id="dpFproc" value="proxyd">
+              <div class="form-text small">Matched on the command basename, so
+                <code>proxyd</code> finds <code>/bin/proxyd</code>.</div></div>
+            <div class="col-6"><label class="form-label small">Daemon MEM warn %</label>
+              <input type="number" class="form-control form-control-sm" name="warn_mem" id="dpFmem" value="80">
+              <div class="form-text small">The daemon's own share (%VSZ). The appliance's
+                processor and RAM are separate probes.</div></div>
+          </div>
+          <div class="row g-2 dp-f-box">
+            <div class="col-6"><label class="form-label small">Warn at %</label>
+              <input type="number" class="form-control form-control-sm" name="warn_pct" id="dpFwarnp" value="80"></div>
+            <div class="col-6"><label class="form-label small">Critical at %</label>
+              <input type="number" class="form-control form-control-sm" name="crit_pct" id="dpFcritp" value="95"></div>
+            <div class="col-12"><div class="form-text small">Read from
+              <code>get system performance</code> — works on FortiWeb and FortiADC.
+              0 disables that level.</div></div>
+          </div>
+          <div class="mb-2 dp-f-interface">
+            <label class="form-label small">Ports to watch</label>
+            <div class="dp-ports" id="dpFports"><span class="dp-sub">pick a device first</span></div>
+            <div class="form-text small">
+              Nothing ticked = every port on the device, as one series.
+              Tick a subset to watch only those. For a series <em>per port</em> use
+              <b>Discover from device</b> → <i>one probe per interface</i>.
+            </div>
           </div>
           <div class="mb-2 dp-f-interface">
             <label class="form-label small">Warn if the harvest is older than (hours)</label>
@@ -184,12 +221,23 @@
         </div>
         <div class="modal-body">
           <p class="small text-muted">
-            Resolves every server policy's published front-end (explicit IP → system VIP → bound
-            interface — the same order the upgrade runbook uses) and creates one HTTPS probe each,
-            plus the interface watch and the <code>proxyd</code> monitor. Idempotent: an existing
-            probe for the same URL is left alone.
+            Everything is read from the harvest cache, so this works with the appliance powered
+            off, and every step is idempotent — an existing probe is left alone.
           </p>
-          <select class="form-select form-select-sm" name="appliance_id" id="dpDiscDev"></select>
+          <select class="form-select form-select-sm mb-3" name="appliance_id" id="dpDiscDev"></select>
+          <div class="dp-disc">
+            <label><input type="checkbox" name="what" value="policies" checked>
+              <span><b>Server policies</b> — one HTTPS probe per published front-end
+                (explicit IP → system VIP → bound interface, the same order the upgrade
+                runbook uses). FortiWeb only.</span></label>
+            <label><input type="checkbox" name="what" value="baseline" checked>
+              <span><b>Device baseline</b> — one interface watch covering all ports, plus
+                processor load and memory usage, plus <code>proxyd</code> on FortiWeb.</span></label>
+            <label><input type="checkbox" name="what" value="interfaces">
+              <span><b>One probe per interface</b> — a separate series, interval and history
+                for every port. Pick this instead of the all-ports watch when you want to
+                chart or alert on ports individually.</span></label>
+          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -295,8 +343,14 @@
       var where = p.appliance ? esc(p.appliance) : 'no device';
       if (p.kind === 'https' && p.url) where += ' · ' + esc(p.url);
       else if (p.kind === 'proxyd') where += ' · ' + esc(p.process_name);
+      else if (p.kind === 'cpu' || p.kind === 'memory')
+        where += ' · warn ' + p.warn_pct + '% / crit ' + p.crit_pct + '%';
+      else if (p.kind === 'interface')
+        where += ' · ' + (p.target ? esc(p.target) : 'all ports');
       var act = CAN_EDIT
-        ? '<button class="btn btn-sm btn-link p-0 me-2 dp-act" data-act="run" data-id="' + p.id +
+        ? '<button class="btn btn-sm btn-link p-0 me-2 dp-act" data-act="edit" data-id="' + p.id +
+            '" title="Edit"><i class="bi bi-pencil"></i></button>' +
+          '<button class="btn btn-sm btn-link p-0 me-2 dp-act" data-act="run" data-id="' + p.id +
             '" title="Probe now"><i class="bi bi-play-fill"></i></button>' +
           '<button class="btn btn-sm btn-link p-0 me-2 dp-act" data-act="toggle" data-id="' + p.id +
             '" title="' + (p.enabled ? 'Disable' : 'Enable') + '"><i class="bi bi-' +
@@ -410,18 +464,78 @@
       document.getElementById('dpEditTitle').textContent = 'Add probe';
       document.getElementById('dpFerr').classList.add('d-none');
       syncKind();
+      loadPorts('', []);
       new bootstrap.Modal(document.getElementById('dpEditModal')).show();
     });
 
+    // cpu and memory share one field group ('box'): identical thresholds, and a
+    // single element cannot carry two kind classes without the loop fighting itself.
     function syncKind() {
       var k = document.getElementById('dpFkind').value;
-      ['https', 'interface', 'proxyd'].forEach(function (kind) {
-        document.querySelectorAll('.dp-f-' + kind).forEach(function (el) {
-          el.style.display = (kind === k) ? '' : 'none';
+      var group = (k === 'cpu' || k === 'memory') ? 'box' : k;
+      ['https', 'interface', 'proxyd', 'box'].forEach(function (g) {
+        document.querySelectorAll('.dp-f-' + g).forEach(function (el) {
+          el.style.display = (g === group) ? '' : 'none';
         });
       });
     }
     document.getElementById('dpFkind').addEventListener('change', syncKind);
+
+    // The picker lists what the HARVEST holds, so the operator ticks real port
+    // names instead of typing one blind — and it answers with the box powered off.
+    function loadPorts(devId, picked) {
+      var box = document.getElementById('dpFports');
+      if (!box) return;
+      if (!devId) { box.innerHTML = '<span class="dp-sub">pick a device first</span>'; return; }
+      box.innerHTML = '<span class="dp-sub">reading the cache…</span>';
+      fetch('/monitoring/deep/device/' + encodeURIComponent(devId) + '/ports',
+            { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var sel = {};
+          (picked || []).forEach(function (n) { if (n) sel[String(n).toLowerCase()] = 1; });
+          box.innerHTML = (d.ports || []).map(function (p) {
+            var on = sel[p.name.toLowerCase()] ? ' checked' : '';
+            return '<label><input type="checkbox" name="target" value="' + esc(p.name) + '"' + on +
+                   '><span>' + esc(p.name) + '</span><span class="ip">' +
+                   esc(p.ip || 'no IP') + (p.status ? ' · ' + esc(p.status) : '') +
+                   '</span></label>';
+          }).join('') ||
+          '<span class="dp-sub">no interfaces cached — run a device sync first</span>';
+        })
+        .catch(function () {
+          box.innerHTML = '<span class="dp-sub">could not read the cache</span>';
+        });
+    }
+    document.getElementById('dpFdev').addEventListener('change', function () {
+      loadPorts(this.value, []);
+    });
+
+    function openEdit(id) {
+      var p = STATE.probes.filter(function (x) { return String(x.id) === String(id); })[0];
+      if (!p) return;
+      document.getElementById('dpForm').reset();
+      document.getElementById('dpFid').value = p.id;
+      document.getElementById('dpEditTitle').textContent = 'Edit probe';
+      document.getElementById('dpFerr').classList.add('d-none');
+      fillDevices();
+      var set = {
+        dpFkind: p.kind, dpFname: p.name || '', dpFdev: p.appliance_id || '',
+        dpFurl: p.url || '', dpFexp: p.expect_status, dpFms: p.warn_ms,
+        dpFtls: p.tls_warn_days, dpFproc: p.process_name || 'proxyd',
+        dpFmem: p.warn_mem, dpFwarnp: p.warn_pct, dpFcritp: p.crit_pct,
+        dpFstale: p.stale_after_h, dpFint: p.interval_min, dpFto: p.timeout_s
+      };
+      Object.keys(set).forEach(function (k) {
+        var el = document.getElementById(k);
+        if (el) el.value = set[k];
+      });
+      syncKind();
+      loadPorts(p.appliance_id, String(p.target || '').split(',').map(function (s) {
+        return s.trim();
+      }));
+      new bootstrap.Modal(document.getElementById('dpEditModal')).show();
+    }
 
     document.getElementById('dpForm').addEventListener('submit', function (ev) {
       ev.preventDefault();
@@ -455,6 +569,7 @@
       var b = ev.target.closest('.dp-act');
       if (!b) return;
       var id = b.getAttribute('data-id'), act = b.getAttribute('data-act');
+      if (act === 'edit') { openEdit(id); return; }
       if (act === 'delete' && !confirm('Delete this probe and its history?')) return;
       var url = act === 'run' ? URLS.run : ('/monitoring/deep/probe/' + id + '/' + act);
       var body = new URLSearchParams();

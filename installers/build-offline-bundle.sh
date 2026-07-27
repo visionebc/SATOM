@@ -78,7 +78,10 @@ chmod +x "$STAGE/install-satom.sh"
 
 TARBALL="$OUT/satom-offline-${VERSION}-debian12-amd64.tar.gz"
 tar -C "$OUT" -czf "$TARBALL" satom-installer
-sha256sum "$TARBALL" | tee "$TARBALL.sha256"
+# El .sha256 lleva SOLO el basename: asi "sha256sum -c fichero.sha256" funciona
+# en el directorio de descarga del usuario (con ruta absoluta fallaba).
+( cd "$(dirname "$TARBALL")" && sha256sum "$(basename "$TARBALL")" > "$(basename "$TARBALL").sha256" )
+cat "$TARBALL.sha256"
 echo ""
 echo "Listo: $TARBALL ($(du -h "$TARBALL" | cut -f1))"
 echo "En el destino:  tar xzf $(basename "$TARBALL") && cd satom-installer && sudo bash install-satom.sh"

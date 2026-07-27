@@ -344,10 +344,15 @@
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.endpoint == 'index' else '' }}" href="{{ url_for('index') }}">
             <i class="bi bi-speedometer2 fw-nav-icon"></i><span>Dashboard</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'monitoring' else '' }}" href="{{ url_for('monitoring.index') }}">
-            <i class="bi bi-activity fw-nav-icon"></i><span>Monitoring</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics' else '' }}" href="{{ url_for('metrics.index') }}">
-            <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>Metrics</span></a>
+          <div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['monitoring','metrics'] }}" data-nav-subgroup="Monitoring">
+            <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-activity fw-nav-icon"></i><span>Monitoring</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+            <div class="fw-nav-subgroup-body">
+              <a class="fw-nav-item {{ 'active' if request.blueprint == 'monitoring' else '' }}" href="{{ url_for('monitoring.index') }}">
+                <i class="bi bi-heart-pulse fw-nav-icon"></i><span>Fleet health</span></a>
+              <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics' else '' }}" href="{{ url_for('metrics.index') }}">
+                <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>Metrics</span></a>
+            </div>
+          </div>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
             <i class="bi bi-search fw-nav-icon"></i><span>Search</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'dns_tool' else '' }}" href="{{ url_for('dns_tool.index') }}">

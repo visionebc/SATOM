@@ -4,6 +4,26 @@ All notable changes to SATOM are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/). This is a public, open-source
 project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
+## [1.2.2] - 2026-07-27
+
+### Fixed
+- **`app/services/cert_service.py` did not parse.** An `import os` had been
+  placed above `from __future__ import annotations`, which is a hard
+  `SyntaxError`, so the module could not be imported at all. Introduced on
+  2026-07-26 with the privilege-model work and shipped in the 1.2 and 1.2.1
+  offline bundles. Consequences while it was live: the nightly
+  `satom-cert-renew` service failed on both nodes, the Node TLS settings and
+  Certificate Manager endpoints raised on import, and the cert alert degraded
+  to reporting the import error instead of the certificate's real state.
+
+### Added
+- **`tests/test_every_module_imports.py`** — every shipped module under `app/`
+  and `deploy/` must compile, and the modules that callers import *lazily*
+  (inside functions) must actually import. The 757-test suite stayed green for
+  a full day with a module that could not be parsed, because nothing imported
+  it at collection time; the only signal was a timer failing where nobody
+  looks. Verified by reintroducing the fault: both checks fail.
+
 ## [1.2.1] - 2026-07-27
 
 Documentation release. No application code changed; the offline bundles were

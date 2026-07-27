@@ -1977,6 +1977,9 @@ class MonitorProbe(db.Model):
     samples = db.relationship(
         "MonitorSample", backref="probe", lazy="dynamic",
         cascade="all, delete-orphan")
+    rollups = db.relationship(
+        "MonitorRollup", backref="probe", lazy="dynamic",
+        cascade="all, delete-orphan")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -2039,3 +2042,58 @@ class MonitorSample(db.Model):
 
     def __repr__(self) -> str:
         return f"<MonitorSample probe={self.probe_id} {self.status}>"
+
+class MonitorRollup(db.Model):
+    """A pre-aggregated bucket of :class:`MonitorSample` rows.
+
+    Raw samples are capped per probe (``retention``), so without this table the
+    deep monitors could only ever chart the last ~two days. Buckets buy depth at
+    roughly 100 bytes an hour: 90 days hourly plus 2 years daily costs under
+    400 KB per probe, against ~35 MB if the raw rows (and their CLI payloads)
+    were kept for the same window.
+
+    Both extremes of a bucket are stored, not just the mean: a spike that lasted
+    four minutes inside an hour is invisible in an average and is exactly what
+    an operator is looking for.
+    """
+
+    __tablename__ = "monitor_rollup"
+    __table_args__ = (
+        db.UniqueConstraint("probe_id", "span", "bucket", name="uq_rollup_bucket"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    probe_id = db.Column(
+        db.Integer, db.ForeignKey("monitor_probe.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    span = db.Column(db.String(8), nullable=False, default="hour", index=True)
+    bucket = db.Column(db.DateTime, nullable=False, index=True)
+
+    samples = db.Column(db.Integer, nullable=False, default=0)
+    ok_n = db.Column(db.Integer, nullable=False, default=0)
+    warn_n = db.Column(db.Integer, nullable=False, default=0)
+    crit_n = db.Column(db.Integer, nullable=False, default=0)
+    error_n = db.Column(db.Integer, nullable=False, default=0)
+    # Fingerprint transitions inside the bucket: PID sets, interface maps.
+    changes = db.Column(db.Integer, nullable=False, default=0)
+
+    v_min = db.Column(db.Float, nullable=True)
+    v_avg = db.Column(db.Float, nullable=True)
+    v_max = db.Column(db.Float, nullable=True)
+    v2_min = db.Column(db.Float, nullable=True)
+    v2_avg = db.Column(db.Float, nullable=True)
+    v2_max = db.Column(db.Float, nullable=True)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "bucket": self.bucket.isoformat(timespec="seconds"),
+            "span": self.span, "samples": self.samples,
+            "ok_n": self.ok_n, "warn_n": self.warn_n,
+            "crit_n": self.crit_n, "error_n": self.error_n,
+            "changes": self.changes,
+            "v_min": self.v_min, "v_avg": self.v_avg, "v_max": self.v_max,
+            "v2_min": self.v2_min, "v2_avg": self.v2_avg, "v2_max": self.v2_max,
+        }
+
+    def __repr__(self) -> str:
+        return f"<MonitorRollup probe={self.probe_id} {self.span} {self.bucket}>"

@@ -14,6 +14,7 @@ or triggering a probe needs CONFIG_WRITE.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 
 from flask import (Blueprint, current_app, jsonify, render_template, request,
                    url_for)
@@ -111,6 +112,79 @@ def history(pid: int):
             item["payload"] = {}
         out.append(item)
     return jsonify({"probe": probe.to_dict(), "samples": out})
+
+
+# Fixed windows the chart offers. `custom` takes explicit from/to.
+SERIES_RANGES = {
+    "1h": timedelta(hours=1),
+    "24h": timedelta(hours=24),
+    "7d": timedelta(days=7),
+    "30d": timedelta(days=30),
+}
+
+
+def _parse_dt(raw: str | None):
+    """Accept an ISO instant (what the picker sends) or a bare ``YYYY-MM-DD``."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    txt = raw.replace("Z", "").replace(" ", "T")
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S",
+                "%Y-%m-%dT%H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(txt, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _thresholds(probe) -> dict:
+    """Threshold lines to draw, per kind — empty when the kind has none."""
+    if probe.kind in ("cpu", "memory"):
+        return {"warn": probe.warn_pct or 0, "crit": probe.crit_pct or 0}
+    if probe.kind == "https":
+        return {"warn": probe.warn_ms or 0, "crit": 0}
+    return {}
+
+
+@bp.route('/probe/<int:pid>/series')
+@login_required
+def probe_series(pid: int):
+    """Chart data for the drill-down: 1 h / 24 h / 7 d / 30 d or explicit dates.
+
+    Resolution is chosen server-side (raw samples, hourly buckets or daily
+    buckets) and reported back in ``source`` — the UI states which one it drew,
+    because an average over a day and a reading every five minutes are not the
+    same claim about the device.
+    """
+    probe = MonitorProbe.query.get_or_404(pid)
+    if probe.appliance_id and probe.appliance_id not in _visible_ids():
+        return jsonify({"error": "not visible in this ADOM"}), 403
+
+    rng = (request.args.get('range') or '24h').strip()
+    now = datetime.utcnow()
+    if rng == 'custom':
+        start = _parse_dt(request.args.get('from'))
+        end = _parse_dt(request.args.get('to'))
+        if start is None or end is None:
+            return jsonify({"error": "from/to must be ISO timestamps"}), 400
+        if end <= start:
+            return jsonify({"error": "'to' must be after 'from'"}), 400
+        if end - start > timedelta(days=dm.MAX_RANGE_DAYS):
+            return jsonify({"error": f"range capped at {dm.MAX_RANGE_DAYS} days"}), 400
+    else:
+        delta = SERIES_RANGES.get(rng)
+        if delta is None:
+            return jsonify({"error": f"unknown range {rng!r}"}), 400
+        end, start = now, now - delta
+
+    out = dm.series(pid, start, end)
+    out["range"] = rng
+    out["probe"] = probe.to_dict()
+    out["meta"] = dm.METRIC_META.get(probe.kind, {})
+    out["thresholds"] = _thresholds(probe)
+    out["retention"]["raw_samples"] = int(probe.retention or 0)
+    return jsonify(out)
 
 
 @bp.route('/device/<int:aid>/ports')

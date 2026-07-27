@@ -41,7 +41,11 @@
   <script src="{{ url_for('static', filename='js/turbo.min.js') }}"></script>
   <script src="{{ asset('js/turbo-boot.js') }}" data-turbo-track="reload"></script>
   <script src="/static/vendor/bootstrap/bootstrap.bundle.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  {# Chart.js is served from the app, NOT a CDN. This product ships offline
+     installers for air-gapped management networks; a chart that only renders
+     with public internet is a chart that does not render where it matters.
+     The vendored copy (4.4.4) was already in static/vendor and unused. #}
+  <script src="/static/vendor/chart/chart.umd.min.js"></script>
   <script src="{{ asset('js/jobs.js') }}"></script>
   <script src="{{ asset('js/objedit_drawer.js') }}"></script>
 

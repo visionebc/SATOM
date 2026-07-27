@@ -123,3 +123,13 @@ The **Documentation** section also carries the deep field-level references:
 Server Policy, Web Protection Profile, WPP Exceptions & Signatures, Release Notes,
 the Source-of-Truth spec, and the Installation guide. Keep them current in the
 same change that alters the behaviour they describe.
+
+Two of them are operational rather than field-level and are read before touching
+anything destructive:
+
+* `docs/safeguards.md` — **every protection in one page**: what it prevents, where
+  it lives and how to verify it is armed. Any new guard belongs in that catalog in
+  the same commit that introduces it; a protection nobody can find is a protection
+  nobody trusts.
+* `docs/privilege-model.md` — which account runs what, the sudo allowlist, the
+  privileged-runner boundary and the trust between HA nodes.

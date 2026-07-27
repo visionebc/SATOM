@@ -23,6 +23,24 @@
   .dp-sub  { font-size:.74rem; color:#64748b; }
   .dp-detail { font-size:.78rem; color:#cbd5e1; }
   .dp-spark { display:block; }
+  .dp-chart-open { display:block; cursor:pointer; border-radius:6px; padding:2px;
+                   transition:background .12s ease; }
+  .dp-chart-open:hover { background:rgba(59,130,246,.12); }
+  .dp-ch-bar { display:flex; flex-wrap:wrap; gap:12px; align-items:center;
+               justify-content:space-between; margin-bottom:14px; }
+  .dp-ch-dates { display:flex; gap:7px; align-items:center; }
+  .dp-ch-dates input { width:150px; }
+  .dp-ch-kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));
+                gap:10px; margin-bottom:12px; }
+  .dp-ch-kpi { border:1px solid rgba(148,163,184,.12); border-radius:10px; padding:8px 11px; }
+  .dp-ch-kpi .k { font-size:.66rem; text-transform:uppercase; letter-spacing:.06em;
+                  color:#64748b; }
+  .dp-ch-kpi .v { font-size:1.05rem; font-weight:600; font-variant-numeric:tabular-nums; }
+  .dp-ch-wrap { position:relative; height:300px; }
+  .dp-strip { display:flex; gap:1px; height:10px; margin-top:10px; border-radius:3px;
+              overflow:hidden; }
+  .dp-strip span { flex:1 1 0; min-width:1px; }
+  .dp-ch-empty { text-align:center; color:#64748b; font-size:.85rem; padding:60px 0; }
   .dp-kind { font-size:.66rem; padding:1px 7px; border-radius:8px; white-space:nowrap;
              background:rgba(59,130,246,.12); border:1px solid rgba(59,130,246,.25); color:#93c5fd; }
   .dp-kind.interface { background:rgba(16,185,129,.10); border-color:rgba(16,185,129,.28); color:#6ee7b7; }
@@ -99,7 +117,48 @@
       refreshed by the hourly <code>device_sync</code>, so interface drift is detected at harvest
       cadence, not instantly. Processor load and memory usage read
       <code>get system performance</code> over the read-only CLI on FortiWeb and FortiADC;
-      <code>proxyd</code> reads <code>diagnose system top</code> and is FortiWeb-only.
+      <code>proxyd</code> reads <code>diagnose system top</code> and is FortiWeb-only 
+      &mdash; it reports the memory consumed and free on the box, never the daemon's
+      <code>%VSZ</code> (virtual size, which sums past 100&nbsp;% across processes).
+      <b>Click any sparkline</b> for 1&nbsp;h / 24&nbsp;h / 7&nbsp;d / 30&nbsp;d or a date
+      range. Raw samples are capped per probe; beyond that the chart is served from
+      hourly buckets (90 days) and daily buckets (2 years), so depth costs kilobytes
+      instead of gigabytes.
+    </div>
+  </div>
+</div>
+
+<!-- drill-down chart: click any sparkline -->
+<div class="modal fade" id="dpChartModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title" id="dpChTitle">History</h5>
+          <div class="dp-sub" id="dpChSub"></div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="dp-ch-bar">
+          <div class="btn-group btn-group-sm" role="group" aria-label="Time range">
+            <button type="button" class="btn btn-outline-secondary dp-ch-r" data-range="1h">1 h</button>
+            <button type="button" class="btn btn-outline-secondary dp-ch-r active" data-range="24h">24 h</button>
+            <button type="button" class="btn btn-outline-secondary dp-ch-r" data-range="7d">7 days</button>
+            <button type="button" class="btn btn-outline-secondary dp-ch-r" data-range="30d">30 days</button>
+          </div>
+          <div class="dp-ch-dates">
+            <input type="date" class="form-control form-control-sm" id="dpChFrom" aria-label="From date">
+            <span class="dp-sub">&rarr;</span>
+            <input type="date" class="form-control form-control-sm" id="dpChTo" aria-label="To date">
+            <button type="button" class="btn btn-sm btn-primary" id="dpChApply">Apply</button>
+          </div>
+        </div>
+        <div class="dp-ch-kpis" id="dpChKpis"></div>
+        <div class="dp-ch-wrap"><canvas id="dpChCanvas"></canvas></div>
+        <div class="dp-strip" id="dpChStrip"></div>
+        <div class="dp-sub mt-2" id="dpChSrc"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -363,7 +422,9 @@
           esc(p.name) + '</div><div class="dp-sub">' + where + '</div></td>' +
         '<td><span class="dp-kind ' + esc(p.kind) + '">' + esc(p.kind) + '</span></td>' +
         '<td>' + badge(p.status) + '</td>' +
-        '<td>' + spark(p.series) + '</td>' +
+        '<td><span class="dp-chart-open" role="button" tabindex="0" data-id="' +
+          p.id + '" title="Open the chart — 24 h, 7 days, 30 days or a date range">' +
+          spark(p.series) + '</span></td>' +
         '<td><span class="dp-detail dp-hist-open" role="button" data-id="' + p.id + '">' +
           esc(p.latest ? p.latest.detail : 'never run') + '</span></td>' +
         '<td class="dp-sub">' + esc(ago(p.last_run_at)) + '<br><span class="dp-sub">every ' +
@@ -407,6 +468,216 @@
       body: body
     }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); });
   }
+
+  // ---- drill-down chart ---------------------------------------------------
+  // Raw samples are capped per probe, so anything past ~2 days is served from
+  // pre-aggregated buckets. The server says which resolution it used and the
+  // footer prints it: an hourly average and a five-minute reading are not the
+  // same claim about the device, and the chart must not blur the two.
+  var CH = { id: null, range: '24h', from: '', to: '', chart: null };
+
+  function chNum(v, unit) {
+    if (v === null || v === undefined || isNaN(v)) return '—';
+    var n = Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 10) / 10;
+    return n.toLocaleString() + (unit ? ' ' + unit : '');
+  }
+
+  function chLabel(iso, source) {
+    var d = new Date(iso + 'Z');
+    if (isNaN(d.getTime())) return iso;
+    if (source === 'day') return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    if (source === 'hour') return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit' });
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // A date input is a LOCAL day; the store is UTC. Convert here so "27 July"
+  // means the operator's 27 July, not a window shifted by the offset.
+  function chIso(value, endOfDay) {
+    if (!value) return '';
+    var p = value.split('-');
+    if (p.length !== 3) return '';
+    var d = new Date(+p[0], +p[1] - 1, +p[2],
+                     endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0);
+    return d.toISOString().replace(/\.\d+Z$/, '');
+  }
+
+  function chSetRange(range) {
+    CH.range = range;
+    Array.prototype.forEach.call(document.querySelectorAll('.dp-ch-r'), function (b) {
+      b.classList.toggle('active', b.getAttribute('data-range') === range);
+    });
+  }
+
+  function openChart(id) {
+    var p = STATE.probes.filter(function (x) { return String(x.id) === String(id); })[0];
+    CH.id = id;
+    document.getElementById('dpChTitle').textContent = p ? p.name : 'History';
+    document.getElementById('dpChSub').textContent =
+      p ? (p.kind + (p.appliance ? ' · ' + p.appliance : '')) : '';
+    document.getElementById('dpChKpis').innerHTML = '';
+    document.getElementById('dpChStrip').innerHTML = '';
+    document.getElementById('dpChSrc').textContent = 'Loading…';
+    chSetRange('24h');
+    new bootstrap.Modal(document.getElementById('dpChartModal')).show();
+    loadChart();
+  }
+
+  function loadChart() {
+    var url = '/monitoring/deep/probe/' + encodeURIComponent(CH.id) +
+              '/series?range=' + encodeURIComponent(CH.range);
+    if (CH.range === 'custom') {
+      url += '&from=' + encodeURIComponent(CH.from) + '&to=' + encodeURIComponent(CH.to);
+    }
+    document.getElementById('dpChSrc').textContent = 'Loading…';
+    fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          document.getElementById('dpChSrc').innerHTML =
+            '<span class="text-danger">' + esc(res.j.error || 'could not load') + '</span>';
+          return;
+        }
+        renderChart(res.j);
+      })
+      .catch(function () {
+        document.getElementById('dpChSrc').innerHTML =
+          '<span class="text-danger">Could not load the series.</span>';
+      });
+  }
+
+  function renderChart(d) {
+    var pts = d.points || [];
+    var meta = d.meta || {};
+    var unit = meta.unit || '';
+    var t = d.totals || {};
+    var kpis = [
+      { k: 'Minimum', v: chNum(t.v_min, unit) },
+      { k: 'Average', v: chNum(t.v_avg, unit) },
+      { k: 'Maximum', v: chNum(t.v_max, unit) },
+      { k: 'Healthy', v: (d.healthy_pct === null || d.healthy_pct === undefined)
+                          ? '—' : d.healthy_pct + ' %' },
+      { k: 'Samples', v: (t.samples || 0).toLocaleString() },
+      { k: 'Changes', v: (t.changes || 0).toLocaleString() }
+    ];
+    document.getElementById('dpChKpis').innerHTML = kpis.map(function (x) {
+      return '<div class="dp-ch-kpi"><div class="k">' + esc(x.k) + '</div>' +
+             '<div class="v">' + esc(x.v) + '</div></div>';
+    }).join('');
+
+    document.getElementById('dpChStrip').innerHTML = pts.map(function (p) {
+      return '<span style="background:' + color(p.status) + '" title="' +
+             esc(chLabel(p.t, d.source) + ' · ' + p.status) + '"></span>';
+    }).join('');
+
+    var srcTxt = d.source === 'raw'
+      ? 'Drawn from raw samples — every probe run, full fidelity.'
+      : d.source === 'hour'
+        ? 'Drawn from hourly buckets (min / average / max per hour), kept ' +
+          d.retention.hourly_days + ' days.'
+        : 'Drawn from daily buckets (min / average / max per day), kept ' +
+          d.retention.daily_days + ' days.';
+    document.getElementById('dpChSrc').textContent =
+      srcTxt + ' Raw samples are capped at ' + (d.retention.raw_samples || 0) +
+      ' per probe. Times are local; the store is UTC.';
+
+    if (CH.chart) { CH.chart.destroy(); CH.chart = null; }
+    var wrap = document.querySelector('.dp-ch-wrap');
+    if (!pts.length) {
+      wrap.innerHTML = '<div class="dp-ch-empty">No data in this window.' +
+        (d.earliest ? '<br>Oldest stored sample: ' + esc(chLabel(d.earliest, 'raw')) : '') +
+        '</div>';
+      return;
+    }
+    wrap.innerHTML = '<canvas id="dpChCanvas"></canvas>';
+
+    var labels = pts.map(function (p) { return chLabel(p.t, d.source); });
+    var band = d.source !== 'raw';
+    var sets = [];
+    if (band) {
+      sets.push({ label: 'max', data: pts.map(function (p) { return p.max; }),
+                  borderColor: 'rgba(59,130,246,0)', backgroundColor: 'rgba(59,130,246,.14)',
+                  pointRadius: 0, borderWidth: 0, fill: '+1', tension: .25 });
+      sets.push({ label: 'min', data: pts.map(function (p) { return p.min; }),
+                  borderColor: 'rgba(59,130,246,0)', pointRadius: 0, borderWidth: 0,
+                  fill: false, tension: .25 });
+    }
+    sets.push({ label: (meta.label || 'value') + (unit ? ' (' + unit + ')' : ''),
+                data: pts.map(function (p) { return p.avg; }),
+                borderColor: '#3b82f6', backgroundColor: '#3b82f6',
+                pointRadius: 0, borderWidth: 1.8, tension: .25, fill: false });
+    if (meta.v2_label) {
+      sets.push({ label: meta.v2_label + (meta.v2_unit ? ' (' + meta.v2_unit + ')' : ''),
+                  data: pts.map(function (p) { return p.v2; }),
+                  borderColor: '#8b5cf6', backgroundColor: '#8b5cf6',
+                  pointRadius: 0, borderWidth: 1.4, tension: .25, fill: false,
+                  hidden: true });
+    }
+    var th = d.thresholds || {};
+    [['warn', '#fbbf24'], ['crit', '#ef4444']].forEach(function (pair) {
+      var v = th[pair[0]];
+      if (!v) return;
+      sets.push({ label: pair[0] + ' ' + v + (unit ? ' ' + unit : ''),
+                  data: pts.map(function () { return v; }),
+                  borderColor: pair[1], borderDash: [5, 4], pointRadius: 0,
+                  borderWidth: 1, fill: false });
+    });
+
+    CH.chart = new Chart(document.getElementById('dpChCanvas').getContext('2d'), {
+      type: 'line',
+      data: { labels: labels, datasets: sets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { filter: function (i) { return i.text !== 'min' && i.text !== 'max'; },
+                              color: '#94a3b8', boxWidth: 12 } },
+          tooltip: {
+            callbacks: {
+              afterBody: function (items) {
+                var p = pts[items[0].dataIndex];
+                if (!p) return '';
+                var out = [];
+                if (d.source !== 'raw') {
+                  out.push('min ' + chNum(p.min, unit) + ' · max ' + chNum(p.max, unit));
+                  out.push(p.n + ' sample(s) in bucket');
+                }
+                out.push('status: ' + p.status);
+                if (p.changes) out.push(p.changes + ' fingerprint change(s)');
+                return out;
+              }
+            }
+          }
+        },
+        scales: {
+          x: { ticks: { color: '#64748b', maxTicksLimit: 12, autoSkip: true,
+                        maxRotation: 0 },
+               grid: { color: 'rgba(148,163,184,.07)' } },
+          y: { ticks: { color: '#64748b' }, grid: { color: 'rgba(148,163,184,.07)' },
+               title: { display: !!unit, text: unit, color: '#64748b' } }
+        }
+      }
+    });
+  }
+
+  document.addEventListener('click', function (ev) {
+    var open = ev.target.closest('.dp-chart-open');
+    if (open) { openChart(open.getAttribute('data-id')); return; }
+    var r = ev.target.closest('.dp-ch-r');
+    if (r) { chSetRange(r.getAttribute('data-range')); loadChart(); }
+  });
+
+  document.getElementById('dpChApply').addEventListener('click', function () {
+    var f = chIso(document.getElementById('dpChFrom').value, false);
+    var t = chIso(document.getElementById('dpChTo').value, true);
+    if (!f || !t) {
+      document.getElementById('dpChSrc').innerHTML =
+        '<span class="text-danger">Pick both a start and an end date.</span>';
+      return;
+    }
+    CH.from = f; CH.to = t;
+    chSetRange('custom');
+    loadChart();
+  });
 
   // ---- history drawer -----------------------------------------------------
   document.addEventListener('click', function (ev) {

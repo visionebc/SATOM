@@ -16,9 +16,14 @@ signal is almost never the current value — it is the value CHANGING:
                chart an IP address; you detect it moving. A sample whose
                fingerprint differs from its predecessor IS the event.
 ``proxyd``     FortiWeb's HTTP proxy daemon, read over the read-only CLI
-               (``diagnose system top``). Records worker count, aggregate CPU%
-               and MEM%, and the PID set — a changed PID set is a silent
-               restart, the failure mode a plain health check never surfaces.
+               (``diagnose system top``). Grades the daemon ALONE — running or
+               not, and whether its PID set changed, which is a silent restart
+               no plain health check surfaces. The trended numbers are the
+               megabytes of memory consumed and free, read from the ``Mem:``
+               header of the same output; the daemon's own ``%VSZ`` is virtual
+               size and is NOT reported as consumption (on fw6 the top eight
+               processes sum to 240 % of RAM, because shared mappings are
+               counted once per process).
 
 **Parsing is deliberately separated from I/O.** ``parse_top``,
 ``iface_fingerprint``, ``classify_*`` and ``prune`` are network-free and unit
@@ -206,7 +211,9 @@ def parse_top(raw: str) -> dict:
         if mm:
             used, free = _f(mm.group("used")) / 1024.0, _f(mm.group("free")) / 1024.0
             total = used + free
-            summary.update(mem_total_mb=round(total, 1), mem_free_mb=round(free, 1),
+            summary.update(mem_total_mb=round(total, 1),
+                           mem_used_mb=round(used, 1),
+                           mem_free_mb=round(free, 1),
                            mem_used_pct=round(100.0 * used / total, 1) if total else None)
             continue
         mc = _TOP_CPU.match(line)
@@ -235,6 +242,7 @@ def parse_top(raw: str) -> dict:
                 idle = _f(ms.group("idle"))
                 summary = {"cpu_idle": idle, "cpu_busy": round(100.0 - idle, 1),
                            "mem_total_mb": total, "mem_free_mb": free,
+                           "mem_used_mb": round(total - free, 1),
                            "mem_used_pct": round(100.0 * (total - free) / total, 1)
                                            if total else None}
 
@@ -449,20 +457,34 @@ def classify_box(kind: str, perf: dict, *, warn_pct: float,
     return status, "; ".join(bits)
 
 
+def fmt_memory(summary: dict) -> str:
+    """``2328 MB used · 1398 MB free`` from a :func:`parse_top` summary."""
+    used, free = summary.get("mem_used_mb"), summary.get("mem_free_mb")
+    if used is None or free is None:
+        return ""
+    return f"{used:,.0f} MB used · {free:,.0f} MB free"
+
+
 def classify_proxyd(agg: dict, parsed: dict, prev_fingerprint: str,
-                    *, warn_mem: float) -> tuple[str, str]:
-    """Grade the DAEMON alone: absent = critical, new PIDs = a silent restart.
+                    *, memory: dict | None = None) -> tuple[str, str]:
+    """Grade the DAEMON alone: absent = critical, a new PID set = silent restart.
 
-    Box CPU and box memory were graded here until 2026-07-28. They are now
-    ``cpu`` and ``memory`` probes of their own: an appliance can be pegged while
-    proxyd is perfectly healthy, and a single row that mixes both cannot tell
-    the operator which of the two actually happened.
+    Memory is REPORTED here, never graded, and it is reported as megabytes
+    consumed and megabytes free — not as the daemon's ``%VSZ``. %VSZ is
+    *virtual* size: measured live on fw6, the top eight processes sum to 240 %
+    of installed RAM because every shared mapping is counted once per process.
+    A number that can exceed 100 % is not "memory consumed" and must not be
+    displayed as though it were.
 
-    ``warn_mem`` thresholds the daemon's own memory share (``%VSZ``) — the one
-    per-process number a single BusyBox ``top`` shot reports honestly. There is
-    deliberately NO per-process CPU threshold: BusyBox reports 0.0% on its first
-    iteration, so it could never fire, and a threshold that cannot fire reads as
-    health that was never measured.
+    ``used``/``free`` come from the ``Mem:`` header of the SAME ``diagnose
+    system top`` output — real, box-wide, and free of an extra round trip.
+
+    There is deliberately NO memory threshold on this probe. Box memory belongs
+    to the ``memory`` probe, which has warn *and* crit levels and already covers
+    every appliance; thresholding it here as well would re-merge precisely what
+    was split apart on 2026-07-28. Nor is there a per-process CPU threshold:
+    BusyBox top reports 0.0 % on its first iteration, so it could never fire,
+    and a threshold that cannot fire reads as health that was never measured.
     """
     if not parsed.get("parsed"):
         return "error", (f"could not parse `{TOP_CMD}` output — raw response "
@@ -470,16 +492,13 @@ def classify_proxyd(agg: dict, parsed: dict, prev_fingerprint: str,
     if agg["count"] == 0:
         return "crit", f"{agg['process']} is NOT running"
 
-    bits = [f"{agg['count']} worker" + ("s" if agg["count"] != 1 else ""),
-            f"MEM {agg['mem']}%"
-            + (f" ({agg['vsz_mb']:.0f} MB)" if agg.get("vsz_mb") else "")]
+    bits = [f"{agg['count']} worker" + ("s" if agg["count"] != 1 else "")]
+    mem = fmt_memory(memory or {})
+    bits.append(mem or "memory unreadable")
     status = "ok"
     if prev_fingerprint and prev_fingerprint != agg["pid_fingerprint"]:
         status = "warn"
         bits.append(f"PIDs CHANGED — {agg['process']} restarted since last check")
-    if warn_mem and agg["mem"] >= warn_mem:
-        status = "warn"
-        bits.append(f"MEM over {warn_mem}%")
     return status, "; ".join(bits)
 
 
@@ -651,21 +670,28 @@ def run_proxyd(probe, prev) -> dict:
                 "payload": {"command": TOP_CMD, "error": str(exc)}}
     parsed = parse_top(raw)
     agg = select_process(parsed, probe.process_name or DEFAULT_PROCESS)
+    mem = parsed.get("summary") or {}
     prev_fp = (prev.fingerprint or "") if prev is not None else ""
-    status, detail = classify_proxyd(agg, parsed, prev_fp,
-                                     warn_mem=float(probe.warn_mem or 0))
-    # ONE SSH round trip now: `get system performance` left with the box metrics
-    # it feeds, so this probe costs half of what it used to. Both trended values
-    # describe the daemon — memory share and worker count. The box's own load is
-    # the cpu / memory probes' job.
+    status, detail = classify_proxyd(agg, parsed, prev_fp, memory=mem)
+    # ONE SSH round trip: the `Mem:` header of `diagnose system top` already
+    # carries real consumption, so no second command is needed for it.
+    #
+    # The trended pair is MEMORY CONSUMED and MEMORY FREE, both in MB. It used
+    # to be the daemon's %VSZ and its worker count; %VSZ is virtual size and
+    # overstates consumption by design, and the worker count survives in the
+    # detail line, the payload and the PID fingerprint — which is what actually
+    # detects a worker dying, since a restart changes the PID set whether or not
+    # the count moves.
     return {
         "status": status, "detail": detail,
-        "value_num": agg["mem"],
-        "value2_num": agg["count"],
+        "value_num": mem.get("mem_used_mb"),
+        "value2_num": mem.get("mem_free_mb"),
         "fingerprint": agg["pid_fingerprint"],
         "payload": {"command": TOP_CMD, "process": agg["process"],
                     "count": agg["count"], "pids": agg["pids"],
-                    "vsz_mb": agg.get("vsz_mb"),
+                    "memory": mem,
+                    "daemon_vsz_mb": agg.get("vsz_mb"),
+                    "daemon_vsz_pct": agg.get("mem"),
                     "workers": agg["workers"][:12],
                     "load": parsed.get("load") or "",
                     "parsed": parsed.get("parsed"),
@@ -776,6 +802,17 @@ def run_probe(probe, *, session=None) -> dict:
     probe.last_run_at = sample.ts
     probe.last_status = sample.status
     probe.last_detail = sample.detail
+    session.commit()
+    # Roll up BEFORE pruning. The buckets have to see the samples the retention
+    # cap is about to delete, or a probe with a short retention would lose the
+    # very history the 7/30-day charts exist to keep. History is never worth
+    # failing a probe over, so a rollup error is swallowed after the sample is
+    # already durable.
+    try:
+        rollup_probe(probe.id, session=session)
+        session.commit()
+    except Exception:  # noqa: BLE001
+        session.rollback()
     prune(probe.id, int(probe.retention or DEFAULT_RETENTION), session=session)
     session.commit()
     return {"probe": probe.name, "status": sample.status, "detail": sample.detail}
@@ -1049,3 +1086,358 @@ def split_legacy_proxyd(*, session=None) -> dict:
             created.append(f"{dev}:{kind}")
     session.commit()
     return {"created": created}
+
+
+# ---------------------------------------------------------------------------
+# Rollups — depth without volume
+# ---------------------------------------------------------------------------
+# Raw samples answer "what happened in the last two days" and are capped per
+# probe (``retention``, 500 by default = ~41 h at a 5 min interval). Keeping a
+# month of raw would mean 8 640 rows AND 8 640 payload blobs per probe — the
+# payload, not the row, is what would actually cost disk (each carries up to
+# 4 KB of raw CLI output).
+#
+# So the depth is bought with pre-aggregated buckets instead:
+#
+#   raw     capped at ``probe.retention``      ~2 days   full fidelity + payload
+#   hour    90 days                            2 160 rows/probe, ~100 B each
+#   day     730 days                             730 rows/probe
+#
+# Under 400 KB per probe for two years of history. The rollup runs inside the
+# sweep (see :func:`run_probe`) rather than as a separate scheduled action **on
+# purpose**: nothing in this product seeds a ``ScheduledAction`` row, so a
+# feature that depends on the operator remembering to create one is a feature
+# that silently does not exist on a fresh install.
+
+ROLLUP_SPANS = ("hour", "day")
+HOURLY_KEEP_DAYS = 90
+DAILY_KEEP_DAYS = 730
+
+# Chart source selection. A span wider than this reads the next coarser table.
+RAW_MAX_SPAN_H = 48
+HOURLY_MAX_SPAN_D = 45
+MAX_RANGE_DAYS = 731
+
+# What the trended numbers MEAN, per kind. The chart is unreadable without it:
+# 2328 and 59.7 look alike until one is labelled MB and the other a percentage.
+METRIC_META = {
+    "https": {"label": "Response time", "unit": "ms",
+              "v2_label": "TLS days left", "v2_unit": "d"},
+    "interface": {"label": "Ports with an IP", "unit": "",
+                  "v2_label": "Ports watched", "v2_unit": ""},
+    "cpu": {"label": "CPU used", "unit": "%",
+            "v2_label": "CPU idle", "v2_unit": "%"},
+    "memory": {"label": "Memory used", "unit": "%",
+               "v2_label": "", "v2_unit": ""},
+    "proxyd": {"label": "Memory consumed", "unit": "MB",
+               "v2_label": "Memory free", "v2_unit": "MB"},
+}
+
+
+def bucket_key(ts: datetime, span: str) -> datetime:
+    """Floor ``ts`` to the start of its ``hour`` / ``day`` bucket (UTC-naive)."""
+    if span == "day":
+        return ts.replace(hour=0, minute=0, second=0, microsecond=0)
+    return ts.replace(minute=0, second=0, microsecond=0)
+
+
+def _stats(values: list[float]) -> tuple[float | None, float | None, float | None]:
+    if not values:
+        return None, None, None
+    return min(values), round(sum(values) / len(values), 3), max(values)
+
+
+def aggregate_samples(rows: list[dict]) -> dict:
+    """Fold raw samples into one bucket. Pure — this is the tested surface.
+
+    ``changes`` counts fingerprint transitions INSIDE the bucket, so a chart can
+    show "three restarts that hour" without keeping the raw rows. Transitions
+    across a bucket boundary are not counted; the raw sample and its detail line
+    still carry them for as long as raw retention holds.
+    """
+    out = {"samples": 0, "ok_n": 0, "warn_n": 0, "crit_n": 0, "error_n": 0,
+           "v_min": None, "v_avg": None, "v_max": None,
+           "v2_min": None, "v2_avg": None, "v2_max": None, "changes": 0}
+    v: list[float] = []
+    v2: list[float] = []
+    prev_fp = None
+    for r in rows:
+        out["samples"] += 1
+        key = f"{(r.get('status') or 'unknown')}_n"
+        if key in out:
+            out[key] += 1
+        for src, dst in ((r.get("value_num"), v), (r.get("value2_num"), v2)):
+            if isinstance(src, (int, float)) and not isinstance(src, bool):
+                dst.append(float(src))
+        fp = r.get("fingerprint") or ""
+        if fp:
+            if prev_fp is not None and fp != prev_fp:
+                out["changes"] += 1
+            prev_fp = fp
+    out["v_min"], out["v_avg"], out["v_max"] = _stats(v)
+    out["v2_min"], out["v2_avg"], out["v2_max"] = _stats(v2)
+    return out
+
+
+def aggregate_rollups(rows: list[dict]) -> dict:
+    """Fold hourly buckets into a daily one.
+
+    Averages are weighted by ``samples``: an hour with 12 readings must not
+    count the same as an hour with 1, which is exactly what a naive mean of
+    means would do after an outage.
+    """
+    out = {"samples": 0, "ok_n": 0, "warn_n": 0, "crit_n": 0, "error_n": 0,
+           "v_min": None, "v_avg": None, "v_max": None,
+           "v2_min": None, "v2_avg": None, "v2_max": None, "changes": 0}
+    acc = {"v": [0.0, 0], "v2": [0.0, 0]}
+    for r in rows:
+        n = int(r.get("samples") or 0)
+        out["samples"] += n
+        out["changes"] += int(r.get("changes") or 0)
+        for k in ("ok_n", "warn_n", "crit_n", "error_n"):
+            out[k] += int(r.get(k) or 0)
+        for pre, bag in (("v", "v"), ("v2", "v2")):
+            lo, hi = r.get(f"{pre}_min"), r.get(f"{pre}_max")
+            if lo is not None:
+                out[f"{pre}_min"] = lo if out[f"{pre}_min"] is None else min(out[f"{pre}_min"], lo)
+            if hi is not None:
+                out[f"{pre}_max"] = hi if out[f"{pre}_max"] is None else max(out[f"{pre}_max"], hi)
+            av = r.get(f"{pre}_avg")
+            if av is not None and n:
+                acc[bag][0] += float(av) * n
+                acc[bag][1] += n
+    for pre, bag in (("v", "v"), ("v2", "v2")):
+        total, weight = acc[bag]
+        if weight:
+            out[f"{pre}_avg"] = round(total / weight, 3)
+    return out
+
+
+def _write_buckets(probe_id: int, span: str, buckets: dict, *, session) -> int:
+    """Replace ``buckets`` for one probe/span. Delete-then-insert = idempotent."""
+    from ..models import MonitorRollup
+
+    if not buckets:
+        return 0
+    keys = list(buckets.keys())
+    (session.query(MonitorRollup)
+     .filter(MonitorRollup.probe_id == probe_id,
+             MonitorRollup.span == span,
+             MonitorRollup.bucket.in_(keys))
+     .delete(synchronize_session=False))
+    for key, agg in buckets.items():
+        session.add(MonitorRollup(probe_id=probe_id, span=span, bucket=key, **agg))
+    return len(buckets)
+
+
+def rollup_probe(probe_id: int, *, now: datetime | None = None, session=None) -> dict:
+    """Rebuild the recent hourly buckets from raw, then the daily ones from hourly.
+
+    The rebuild window starts at the LAST stored bucket (which is normally still
+    partial and must be recomputed), not at a fixed "last 3 hours". A scheduler
+    that was dead for a day therefore still gets every bucket its raw samples
+    can still prove — and the window is bounded anyway, because raw is capped by
+    ``probe.retention``.
+    """
+    from ..models import MonitorRollup, MonitorSample, db
+    from sqlalchemy import func
+
+    session = session or db.session
+    now = now or datetime.utcnow()
+    written = {"hour": 0, "day": 0}
+
+    last_hour = (session.query(func.max(MonitorRollup.bucket))
+                 .filter(MonitorRollup.probe_id == probe_id,
+                         MonitorRollup.span == "hour").scalar())
+    q = (session.query(MonitorSample)
+         .filter(MonitorSample.probe_id == probe_id))
+    if last_hour is not None:
+        q = q.filter(MonitorSample.ts >= last_hour)
+    raw = q.order_by(MonitorSample.ts.asc()).all()
+    hourly: dict[datetime, list[dict]] = {}
+    for s in raw:
+        hourly.setdefault(bucket_key(s.ts, "hour"), []).append(
+            {"status": s.status, "value_num": s.value_num,
+             "value2_num": s.value2_num, "fingerprint": s.fingerprint})
+    written["hour"] = _write_buckets(
+        probe_id, "hour", {k: aggregate_samples(v) for k, v in hourly.items()},
+        session=session)
+
+    last_day = (session.query(func.max(MonitorRollup.bucket))
+                .filter(MonitorRollup.probe_id == probe_id,
+                        MonitorRollup.span == "day").scalar())
+    q = (session.query(MonitorRollup)
+         .filter(MonitorRollup.probe_id == probe_id, MonitorRollup.span == "hour"))
+    if last_day is not None:
+        q = q.filter(MonitorRollup.bucket >= last_day)
+    daily: dict[datetime, list[dict]] = {}
+    for r in q.order_by(MonitorRollup.bucket.asc()).all():
+        daily.setdefault(bucket_key(r.bucket, "day"), []).append(r.to_dict())
+    written["day"] = _write_buckets(
+        probe_id, "day", {k: aggregate_rollups(v) for k, v in daily.items()},
+        session=session)
+
+    written["pruned"] = prune_rollups(probe_id, session=session, now=now)
+    return written
+
+
+def prune_rollups(probe_id: int, *, session=None,
+                  now: datetime | None = None) -> int:
+    """Drop buckets past their horizon. Returns rows removed."""
+    from ..models import MonitorRollup, db
+
+    session = session or db.session
+    now = now or datetime.utcnow()
+    removed = 0
+    for span, days in (("hour", HOURLY_KEEP_DAYS), ("day", DAILY_KEEP_DAYS)):
+        removed += (session.query(MonitorRollup)
+                    .filter(MonitorRollup.probe_id == probe_id,
+                            MonitorRollup.span == span,
+                            MonitorRollup.bucket < now - timedelta(days=days))
+                    .delete(synchronize_session=False))
+    return removed
+
+
+def pick_source(start: datetime, end: datetime,
+                earliest_raw: datetime | None,
+                earliest_hour: datetime | None = None) -> str:
+    """Which table answers this window: ``raw`` / ``hour`` / ``day``.
+
+    Span alone is not enough. A probe running every minute holds only ~8 h of
+    raw at the default retention, so a 24 h chart drawn from raw would show 8 h
+    and look like the device went silent before that.
+
+    But falling back is only worth it when the buckets genuinely reach FURTHER
+    BACK than the raw rows. On a young probe they do not — every bucket was
+    built from the very samples still on disk — and downgrading there would
+    coarsen the chart and label it "hourly average" while showing exactly the
+    same readings. Raw wins unless hourly can prove more history.
+    """
+    span = end - start
+    if span > timedelta(days=HOURLY_MAX_SPAN_D):
+        return "day"
+    if span > timedelta(hours=RAW_MAX_SPAN_H):
+        return "hour"
+    if earliest_raw is None:
+        return "hour" if earliest_hour is not None else "raw"
+    if earliest_raw <= start:
+        return "raw"
+    # Compare BUCKETS, not instants: the hour bucket holding the oldest raw
+    # sample always starts before that sample, so a naive < would send every
+    # young probe to the coarse table.
+    if earliest_hour is not None and earliest_hour < bucket_key(earliest_raw, "hour"):
+        return "hour"
+    return "raw"
+
+
+def _worst_of_counts(row: dict) -> str:
+    if row.get("crit_n"):
+        return "crit"
+    if row.get("error_n"):
+        return "error"
+    if row.get("warn_n"):
+        return "warn"
+    if row.get("ok_n"):
+        return "ok"
+    return "unknown"
+
+
+def series(probe_id: int, start: datetime, end: datetime, *, session=None) -> dict:
+    """Points for the drill-down chart, at whatever resolution the window needs."""
+    from ..models import MonitorRollup, MonitorSample, db
+    from sqlalchemy import func
+
+    session = session or db.session
+    earliest_raw = (session.query(func.min(MonitorSample.ts))
+                    .filter(MonitorSample.probe_id == probe_id).scalar())
+    earliest_hour = (session.query(func.min(MonitorRollup.bucket))
+                     .filter(MonitorRollup.probe_id == probe_id,
+                             MonitorRollup.span == "hour").scalar())
+    source = pick_source(start, end, earliest_raw, earliest_hour)
+
+    points: list[dict] = []
+    if source == "raw":
+        rows = (session.query(MonitorSample)
+                .filter(MonitorSample.probe_id == probe_id,
+                        MonitorSample.ts >= start, MonitorSample.ts <= end)
+                .order_by(MonitorSample.ts.asc()).all())
+        for s in rows:
+            points.append({"t": s.ts.isoformat(timespec="seconds"),
+                           "min": s.value_num, "avg": s.value_num,
+                           "max": s.value_num, "v2": s.value2_num,
+                           "n": 1, "status": s.status, "changes": 0})
+        totals = aggregate_samples([{"status": s.status, "value_num": s.value_num,
+                                     "value2_num": s.value2_num,
+                                     "fingerprint": s.fingerprint} for s in rows])
+    else:
+        rows = (session.query(MonitorRollup)
+                .filter(MonitorRollup.probe_id == probe_id,
+                        MonitorRollup.span == source,
+                        MonitorRollup.bucket >= start,
+                        MonitorRollup.bucket <= end)
+                .order_by(MonitorRollup.bucket.asc()).all())
+        dicts = [r.to_dict() for r in rows]
+        for r in dicts:
+            points.append({"t": r["bucket"], "min": r["v_min"], "avg": r["v_avg"],
+                           "max": r["v_max"], "v2": r["v2_avg"], "n": r["samples"],
+                           "status": _worst_of_counts(r), "changes": r["changes"]})
+        totals = aggregate_rollups(dicts)
+
+    graded = totals["ok_n"] + totals["warn_n"] + totals["crit_n"] + totals["error_n"]
+    return {
+        "source": source,
+        "bucket_seconds": {"raw": 0, "hour": 3600, "day": 86400}[source],
+        "from": start.isoformat(timespec="seconds"),
+        "to": end.isoformat(timespec="seconds"),
+        "points": points,
+        "totals": totals,
+        "healthy_pct": round(100.0 * totals["ok_n"] / graded, 1) if graded else None,
+        "earliest": earliest_raw.isoformat(timespec="seconds") if earliest_raw else "",
+        "retention": {"raw_samples": None, "hourly_days": HOURLY_KEEP_DAYS,
+                      "daily_days": DAILY_KEEP_DAYS},
+    }
+
+
+def backfill_rollups(*, session=None) -> dict:
+    """Build rollups for every probe from whatever raw history exists.
+
+    One-shot for an upgrade: without it the 7/30-day views are empty until the
+    hourly buckets accumulate, which reads exactly like "the feature is broken".
+    """
+    from ..models import MonitorProbe, db
+
+    session = session or db.session
+    out: dict[str, Any] = {"probes": 0, "hour": 0, "day": 0}
+    for p in session.query(MonitorProbe).all():
+        res = rollup_probe(p.id, session=session)
+        out["probes"] += 1
+        out["hour"] += res["hour"]
+        out["day"] += res["day"]
+    session.commit()
+    return out
+
+
+def reset_series(kind: str, *, session=None) -> dict:
+    """Delete every sample and bucket of one probe kind.
+
+    Used when the MEANING of ``value_num`` changes — ``proxyd`` moved from the
+    daemon's %VSZ to megabytes consumed on 2026-07-28. Charting both on one axis
+    would draw 59.7 next to 2328 and call them the same series, which is a lie
+    that no axis label can fix. Deliberately NOT run at boot: destructive
+    migrations are an operator action, not a side effect of a restart.
+    """
+    from ..models import MonitorProbe, MonitorRollup, MonitorSample, db
+
+    session = session or db.session
+    ids = [p.id for p in session.query(MonitorProbe)
+           .filter(MonitorProbe.kind == kind).all()]
+    if not ids:
+        return {"probes": 0, "samples": 0, "rollups": 0}
+    n_s = (session.query(MonitorSample)
+           .filter(MonitorSample.probe_id.in_(ids))
+           .delete(synchronize_session=False))
+    n_r = (session.query(MonitorRollup)
+           .filter(MonitorRollup.probe_id.in_(ids))
+           .delete(synchronize_session=False))
+    session.commit()
+    return {"probes": len(ids), "samples": n_s, "rollups": n_r}

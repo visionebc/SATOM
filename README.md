@@ -186,10 +186,16 @@ Three levels, written for three audiences:
 | [**User Guide**](docs/user-guide.md) | Operators & engineers using the UI | Every screen and workflow: devices, policies, WAF, exceptions, certificates, automation, troubleshooting |
 | [**Engineering Manual**](docs/engineering.md) | Developers & platform admins | Architecture, data layer, registry, clients, jobs framework, security engineering, testing, deployment, conventions & gotchas |
 | [**Management Overview**](docs/management-overview.md) | Non-technical stakeholders | What it is, business value, risk posture, costs, roadmap — no jargon |
+| [**Safeguards**](docs/safeguards.md) | Operators, auditors, reviewers | Every protection in one page: what it prevents, where it lives, and the commands to verify it is armed |
 
 Reference documents (deep dives):
 
 - [docs/overview.md](docs/overview.md) — project overview & operational rules
+- [docs/safeguards.md](docs/safeguards.md) — the guard-rail catalog (anti-reset, verified updates, single-writer HA, alerts)
+- [docs/privilege-model.md](docs/privilege-model.md) — service account, sudo allowlist, privileged runner, HA trust
+- [docs/git-backup-and-outage.md](docs/git-backup-and-outage.md) — surviving a git-server outage; repository bundles
+- [docs/encryption-and-node-tls.md](docs/encryption-and-node-tls.md) — TLS in transit, node identity, enforced Postgres SSL
+- [docs/acme-certificate-manager.md](docs/acme-certificate-manager.md) — ACME issuance & the DNS-provider catalog
 - [docs/api_v1.md](docs/api_v1.md) — API v1 integration manual (tokens, endpoints, examples)
 - [docs/server_policy.md](docs/server_policy.md) — Server Policy object model, field-level
 - [docs/web_protection_profile.md](docs/web_protection_profile.md) — WPP / WAF dependency graph

@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Safeguards — SATOM</title>
+<meta name="description" content="The guard rails inside SATOM: anti-reset git protection, verified self-updates with automatic rollback, an unprivileged service account, single-writer HA, read-only device commands, approval-gated firmware upgrades and an alert catalog.">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js" defer></script>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-inner">
+    <a class="brand" href="index.html"><img class="mark" src="assets/visionebc-shield.png" alt="Vision EBC"> <span class="wordmark">SA<b>TOM</b></span></a>
+    <button class="nav-toggle" id="nav-toggle" aria-label="Menu">☰</button>
+    <div class="nav-right">
+      <div class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="features.html">Features</a>
+        <a href="architecture.html">Architecture</a>
+        <a href="safeguards.html" class="active">Safeguards</a>
+        <a href="install.html">Install</a>
+      </div>
+      <a class="nav-cta" href="https://github.com/visionebc/SATOM">Source ↗</a>
+    </div>
+  </div>
+</nav>
+
+<header class="page wrap">
+  <h1>Safeguards &amp; <span class="grad">guard rails</span></h1>
+  <p class="sub">SATOM writes to production appliances, rewrites its own checkout, installs its own dependencies and reloads its own web server. Every one of those is a way to lose data or lock yourself out. This page is the catalog of what prevents that — and every item ships today.</p>
+</header>
+
+<section class="wrap reveal">
+  <div class="sec-head">
+    <span class="eyebrow">Design rules</span>
+    <h2>Six rules every guard follows</h2>
+    <p>The failure mode this product defends against hardest is not a missing guard — it is a guard that silently takes the wrong branch and reports success.</p>
+  </div>
+  <div class="grid">
+    <div class="card"><div class="ico">📣</div><h3>Fail loud</h3>
+      <p>A guard that cannot do its job <b>aborts the operation</b>. No step is allowed to report success while doing nothing.</p></div>
+    <div class="card"><div class="ico">📸</div><h3>Snapshot first</h3>
+      <p>Nothing destructive runs before the previous state is parked somewhere that survives the destruction.</p></div>
+    <div class="card"><div class="ico">✅</div><h3>Verify, then commit</h3>
+      <p>Every self-mutation is followed by a real check — import smoke, config test, HTTP health — and <b>auto-reverts</b> on failure.</p></div>
+    <div class="card"><div class="ico">🔒</div><h3>Allowlist, never free-form</h3>
+      <p>Package names, provider fields, document slugs, remote filenames, device verbs — closed sets, re-validated at the privileged end.</p></div>
+    <div class="card"><div class="ico">✍️</div><h3>One writer</h3>
+      <p>On a cluster the primary owns every replicated write. The standby refuses rather than producing state its own sync will undo.</p></div>
+    <div class="card"><div class="ico">🎛️</div><h3>Operator edits outrank seeds</h3>
+      <p>Tunable data is seeded <b>insert-only</b> into the database, so an upgrade never resurrects what an operator deliberately removed.</p></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="doc">
+    <aside class="toc">
+      <div class="toc-title">On this page</div>
+      <a href="#git">Git history</a>
+      <a href="#updates">Updates &amp; dependencies</a>
+      <a href="#privilege">Privilege boundary</a>
+      <a href="#ha">Two-node correctness</a>
+      <a href="#devices">Writing to appliances</a>
+      <a href="#certs">Certificates</a>
+      <a href="#files">Files from outside</a>
+      <a href="#web">Sessions &amp; web surface</a>
+      <a href="#alerts">The alert catalog</a>
+      <a href="#limits">Known limits</a>
+    </aside>
+
+    <div class="doc-body">
+
+      <div class="dsec reveal" id="git">
+        <h2><span class="hico">🌳</span> Git history</h2>
+        <p class="lead">The repository carries two assets: the application code and a diffable per-device configuration snapshot, refreshed on a schedule. The git remote is a <b>distribution</b> point, not a custody point — and the dangerous moment is not the outage, it is the return.</p>
+        <table class="cmp">
+          <tr><th>Guard</th><th>What it prevents</th></tr>
+          <tr><td>Commit preservation before <code>reset --hard</code></td><td>Losing commits that exist only on this node. They are parked on permanent <code>refs/backup/*</code> refs, a dirty tree included. <b>If they cannot be parked, the update aborts</b> — a deferred update beats silent history loss</td></tr>
+          <tr><td>Unpushed-commit alert</td><td>A push failing quietly for days. The signal keys off the <b>age</b> of the oldest unpushed commit, not the count, because one commit stuck for three days is worse than twenty in the last hour</td></tr>
+          <tr><td>Repository bundles</td><td>Total loss. One verifiable, clonable file with the entire history and every ref — kept on the node, mirrored to the standby, pushed to an external backup server in a different failure domain, and downloadable from the UI</td></tr>
+          <tr><td>Deletes are primary-only</td><td>Deleting a bundle on the standby, where the next data sync would restore it and make the UI look broken</td></tr>
+          <tr><td>Insert-only catalog seeds</td><td>A deploy overwriting endpoint or provider rows an operator corrected. A vendor moving a REST path stays a row edit, not a release</td></tr>
+        </table>
+        <div class="callout ok"><span class="cico">📦</span>
+          <p><b>Bundles are verifiable offline.</b> <code>git bundle verify</code> proves integrity, <code>git clone &lt;bundle&gt;</code> rebuilds the whole repository, and a checksum sidecar lets you trust a copy before you use it. No server, no daemon, no embedded credentials.</p></div>
+      </div>
+
+      <div class="dsec reveal" id="updates">
+        <h2><span class="hico">⬆️</span> Updates &amp; dependencies</h2>
+        <p class="lead">The web process never mutates the installation. It writes a request; a privileged runner picks it up and does the work — so the update path cannot be reached by whatever reaches the web app.</p>
+        <div class="flow">
+          <div class="step"><div class="n">1</div><h4>Snapshot</h4><p>Current revision or package version recorded</p></div>
+          <div class="step"><div class="n">2</div><h4>Apply</h4><p>Update code or install the pinned version</p></div>
+          <div class="step"><div class="n">3</div><h4>Smoke</h4><p>The application must still import</p></div>
+          <div class="step"><div class="n">4</div><h4>Health</h4><p>Restart, then a real HTTP check</p></div>
+          <div class="step"><div class="n">5</div><h4>Revert</h4><p>Any failure restores the snapshot</p></div>
+        </div>
+        <ul class="checks">
+          <li><b>Dependency upgrades are curated-only.</b> The allowlist is the application's own library inventory, validated when the request is queued <i>and again</i> inside the privileged runner, with name and version pattern checks. There is deliberately no "install any package" path from the browser — that would be remote code execution as the service account</li>
+          <li><b>Rollback is one click</b>, because the previous version is recorded per node before the change</li>
+          <li><b>Per node by design</b> — the virtualenv is not replicated, so the card names the node it will affect; the dependency pin is committed from the primary only, so the next code update does not undo it</li>
+        </ul>
+      </div>
+
+      <div class="dsec reveal" id="privilege">
+        <h2><span class="hico">🛡️</span> Privilege boundary</h2>
+        <p class="lead">The application does not run as root. What needs root is reached through a queue, not a function call.</p>
+        <ul class="checks">
+          <li>The service runs under a dedicated unprivileged account; its <code>sudo</code> grants are an explicit short allowlist, not <code>ALL</code></li>
+          <li>The account is pinned in a <b>systemd drop-in</b>, not in the shipped unit file, so a self-update that replaces units cannot silently hand the application root again</li>
+          <li>The privileged runner is triggered by a <b>watched request directory</b> — the web process submits a typed request and can never pass a command</li>
+          <li>Every HA guard probes the node's role through a path that works <b>unprivileged</b>. The obvious probe needs root, and unprivileged it returns empty — which made guards take the "not primary" branch while the service reported success. That class of silent failure is now impossible by construction</li>
+        </ul>
+      </div>
+
+      <div class="dsec reveal" id="ha">
+        <h2><span class="hico">⚖️</span> Two-node correctness</h2>
+        <p class="lead">A cluster multiplies the ways state can diverge. Each guard here exists because divergence, not downtime, is the expensive failure.</p>
+        <table class="cmp">
+          <tr><th>Guard</th><th>What it prevents</th></tr>
+          <tr><td>Update and promotion refuse on the standby</td><td>Two nodes rewriting the deployment — split brain</td></tr>
+          <tr><td>Backup and bundle deletes refuse on the standby</td><td>Deletions the mirroring sync immediately undoes</td></tr>
+          <tr><td>Data sync runs on the standby and pulls</td><td>The primary ever pushing over a peer; the job is inert anywhere else</td></tr>
+          <tr><td>Forced command on the peer key</td><td>The synchronization key being usable as a shell</td></tr>
+          <tr><td>Peer identity matched against the real hostname</td><td>Falling back to the first configured node and synchronizing a node against <i>itself</i> — an incident this project actually had after a rename</td></tr>
+          <tr><td>Best-effort writes on the replica</td><td>A sign-in failing on the read-only standby just because it could not stamp a timestamp</td></tr>
+          <tr><td>Authenticated TLS between nodes</td><td>Cleartext or unauthenticated node-to-node calls; database replication refuses non-TLS and certificate-less connections outright</td></tr>
+        </table>
+      </div>
+
+      <div class="dsec reveal" id="devices">
+        <h2><span class="hico">🧯</span> Writing to appliances</h2>
+        <p class="lead">This is the part that can take a customer offline, so it has the most gates.</p>
+        <ul class="checks">
+          <li><b>Read-only means read-only.</b> Every line of a device command is validated, not just the first — a pasted read followed by a write cannot sneak past a legitimate opening line</li>
+          <li><b>Dry-run, then apply.</b> Writes are computed as a minimal diff and shown before anything is sent, with a full audit entry on the way out</li>
+          <li><b>Lease locks.</b> One operator holds a lease per object, refreshed by heartbeat, re-entrant for the same user, and expiring on its own if a browser tab is abandoned — so a closed laptop never blocks an object permanently</li>
+          <li><b>Change requests gate the dangerous ones.</b> A firmware upgrade refuses to flash unless its change request is approved and the clock is inside the maintenance window — re-checked <i>at fire time</i>, not only when it was scheduled. Every transition stamps a timeline event</li>
+          <li>Per-device configuration restore is <b>still dry-run gated</b>. Listed here as a limit, not sold as a feature</li>
+        </ul>
+      </div>
+
+      <div class="dsec reveal" id="certs">
+        <h2><span class="hico">📜</span> Certificates</h2>
+        <ul class="checks">
+          <li><b>An import cannot take the UI down.</b> The PEM is parsed, the private key must match the certificate, the web server configuration is tested, and the files are <b>rolled back and reloaded</b> if it is rejected</li>
+          <li><b>ACME signing runs in a minimal environment.</b> The application's own environment carries encryption keys and the database URI; the signer is handed a curated passthrough instead of inheriting it. Provider credentials travel as environment variables, never on the command line</li>
+          <li><b>Secrets are redacted</b> from the stored log and from the command preview — and the command is a plain argument vector, never a shell string, so there is no injection surface</li>
+          <li><b>The renewal journal is node-local</b>, deliberately outside the replicated set: the node that fails to renew may be exactly the one with a read-only database. Each node publishes its own journal, and the page shows both</li>
+          <li>A failed renewal is <b>its own alert</b> — escalating to critical after three in a row — instead of being implied weeks later by an expiry warning</li>
+        </ul>
+      </div>
+
+      <div class="dsec reveal" id="files">
+        <h2><span class="hico">📁</span> Files from outside</h2>
+        <ul class="checks">
+          <li>Every external listing, preview and download resolves through a name validator — path traversal and forged names return a 404, not a file</li>
+          <li>Firmware pulled from a backup server is <b>checksum-verified</b> on arrival; backup bundles carry a checksum sidecar</li>
+          <li>Copies are spread across <b>distinct failure domains</b> on purpose: node, standby, external backup server, and your own download. A single host loss can never take out every copy</li>
+        </ul>
+      </div>
+
+      <div class="dsec reveal" id="web">
+        <h2><span class="hico">🔐</span> Sessions &amp; web surface</h2>
+        <table class="cmp">
+          <tr><th>Guard</th><th>Detail</th></tr>
+          <tr><td>Content-Security-Policy</td><td>Per-request nonce, and inline event attributes are blocked outright — an injected handler is inert</td></tr>
+          <tr><td>Framing, sniffing, referrer</td><td>Framing denied, MIME sniffing off, referrer restricted to same origin</td></tr>
+          <tr><td>Authenticated pages are never cached</td><td>A stale page cannot survive a deployment in the browser</td></tr>
+          <tr><td>CSRF protection</td><td>Application-wide, including the JSON endpoints the UI drives</td></tr>
+          <tr><td>Per-IP rate limits</td><td>Sign-in, second-factor challenge, password recovery and the public API each have their own budget</td></tr>
+          <tr><td>Per-account lockout</td><td>Repeated failures lock the account for a window — an IP limit alone cannot isolate a distributed attack on one account</td></tr>
+          <tr><td>Local accounts never fall through to the directory</td><td>A directory account with the same name cannot take over the built-in administrator</td></tr>
+          <tr><td>Anti-lockout on access administration</td><td>A change that would leave <b>zero</b> active administrators is refused</td></tr>
+          <tr><td>Two-factor authentication</td><td>TOTP with backup codes for local accounts; directory accounts do MFA at the directory</td></tr>
+        </table>
+      </div>
+
+      <div class="dsec reveal" id="alerts">
+        <h2><span class="hico">🔔</span> The alert catalog</h2>
+        <p class="lead">All of the above is only useful if silence means healthy. Thresholds and recipients live in settings; each signal has its own cooldown.</p>
+        <table class="cmp">
+          <tr><th>Signal</th><th>Fires when</th></tr>
+          <tr><td>Certificate expiry / error</td><td>The service certificate is inside the warning window, or cannot be read</td></tr>
+          <tr><td>Renewal failed</td><td>A renewal attempt failed — critical from three consecutive</td></tr>
+          <tr><td>Unpushed commits</td><td>Local history has been waiting to reach the remote for too long</td></tr>
+          <tr><td>Behind / diverged</td><td>The checkout trails the remote past the limit, or both sides moved</td></tr>
+          <tr><td>Backup missing / stale / error</td><td>No backup at all, none recent enough, or the check itself failed</td></tr>
+          <tr><td>Device error</td><td>A registered appliance is unreachable or erroring</td></tr>
+          <tr><td>Drift error</td><td>The configuration drift comparison could not run</td></tr>
+          <tr><td>Engine error</td><td>The alert engine itself failed — the guard on the guard</td></tr>
+        </table>
+      </div>
+
+      <div class="dsec reveal" id="limits">
+        <h2><span class="hico">🚧</span> Known limits</h2>
+        <p class="lead">Published on purpose. A safeguards page that lists only strengths is marketing, not documentation.</p>
+        <ul class="checks">
+          <li>Per-device configuration restore is dry-run gated — no live canary round-trip yet</li>
+          <li>A publicly-issued wildcard certificate is not auto-renewable from the node; certificates issued by the internal CA are</li>
+          <li>The firmware manifest in the source-of-truth repository is maintained by hand</li>
+          <li>Co-locating the git server and the standby on one host is a real single point of failure. The external bundle exists because of it — it mitigates rather than fixes it</li>
+        </ul>
+        <div class="callout warn"><span class="cico">📖</span>
+          <p>The in-product documentation ships the operator version of this page — <b>Safeguards — Protections &amp; Guard Rails</b> — with file paths, function names and the commands to verify each guard is armed on your install.</p></div>
+        <div class="cta"><a class="btn btn-primary" href="architecture.html">See the architecture →</a> <a class="btn btn-ghost" href="install.html">Install it</a></div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="fbrand"><img src="assets/visionebc-wordmark.png" alt="Vision EBC"></div>
+    <div class="flinks">
+      <a href="index.html">Home</a>
+      <a href="features.html">Features</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="safeguards.html">Safeguards</a>
+      <a href="install.html">Install</a>
+      <a href="https://github.com/visionebc/SATOM">Source</a>
+    </div>
+    <p class="addr">http://satom.visionebc.com</p>
+    <p style="margin-top:8px;"><b>SATOM</b> · System Automation &amp; Task Orchestration Manager</p>
+    <p style="margin-top:6px;">© <span class="year">2026</span> Vision EBC · Licensed under the <a href="https://github.com/visionebc/SATOM/blob/main/LICENSE">Elastic License 2.0</a> · source-available, not OSI open source · provided AS IS, no warranty</p>
+    <p class="disclaimer" style="margin-top:8px;font-size:12px;opacity:.6;line-height:1.5;">SATOM is an independent source-available project, <b>not affiliated with or endorsed by Fortinet, Inc.</b> Fortinet, FortiWeb, FortiADC and FortiAnalyzer are trademarks of Fortinet, Inc., used here nominatively to describe interoperability. SATOM is <b>not</b> a FortiManager or FortiGate product.</p>
+  </div>
+</footer>
+
+<a id="top" href="#" aria-label="Back to top">↑</a>
+</body>
+</html>

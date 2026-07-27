@@ -29,27 +29,45 @@ DOCS_DIR = (pathlib.Path(__file__).resolve().parents[2] / "docs")
 # here still appear (auto-titled from the filename) after the curated ones.
 _TITLES: dict[str, str] = {
     "overview.md": "Project Overview & Operational Rules",
+    "management-overview.md": "Management Overview (non-technical)",
+    "user-guide.md": "User Guide",
     "INSTALL.md": "Installation & Deployment",
+    "safeguards.md": "Safeguards — Protections & Guard Rails",
+    "privilege-model.md": "Privilege Model & HA Trust",
+    "git-backup-and-outage.md": "Git Backup & Surviving a Gitea Outage",
+    "encryption-and-node-tls.md": "Encryption in Transit & Node TLS",
+    "acme-certificate-manager.md": "ACME / Let's Encrypt Certificates",
     "source-of-truth-spec.md": "Source-of-Truth Specification",
+    "engineering.md": "Engineering Manual",
     "server_policy.md": "Server Policy Reference",
     "web_protection_profile.md": "Web Protection Profile Reference",
     "wpp_exceptions.md": "WPP Exceptions & Signatures",
+    "fortiadc.md": "FortiADC — API Conventions",
     "release_notes.md": "Release Notes & Upgrade Planning",
+    "release-pipeline.md": "Release & Publication Pipeline",
     "api_v1.md": "API v1 — Integration Manual",
-    "encryption-and-node-tls.md": "Encryption in Transit & Node TLS",
 }
 
 # One-line descriptions for the catalog cards.
 _BLURBS: dict[str, str] = {
     "overview.md": "What this app is, architecture, deployment, security posture and the operational rules.",
+    "management-overview.md": "The same system explained without jargon: what it solves, how mature it is, risks and cost.",
+    "user-guide.md": "Day-to-day operation, screen by screen.",
     "INSTALL.md": "How to install, configure and migrate the manager.",
+    "safeguards.md": "Every protection in one page: what it prevents, where it lives, and how to verify it is armed.",
+    "privilege-model.md": "Which account runs what, the sudo allowlist, the privileged-runner boundary and node-to-node trust.",
+    "git-backup-and-outage.md": "Surviving a Gitea outage: the anti-reset guard, the unpushed-commit alert and the repository bundles.",
+    "encryption-and-node-tls.md": "Service certificate, node-to-node encryption, enforced Postgres SSL, and the Monitoring encryption cards.",
+    "acme-certificate-manager.md": "ACME issuance, the DNS-provider catalog, and how credentials reach the signer without leaking.",
     "source-of-truth-spec.md": "The authoritative behavioural specification.",
+    "engineering.md": "Internal architecture for developers: layers, registry, device clients, jobs and testing.",
     "server_policy.md": "Field-level reference for the Server Policy object graph.",
     "web_protection_profile.md": "The ~40 sub-policy WAF bundle, field by field.",
     "wpp_exceptions.md": "Authoring and injecting WAF exceptions and signature carve-outs.",
+    "fortiadc.md": "REST conventions, object map and current coverage for FortiADC.",
     "release_notes.md": "Known/resolved issues corpus and the upgrade advisor.",
+    "release-pipeline.md": "How a release is sanitized, secret-scanned, audited and published.",
     "api_v1.md": "How third parties authenticate and drive /api/v1 with a token.",
-    "encryption-and-node-tls.md": "Service certificate, node-to-node encryption, enforced Postgres SSL, and the Monitoring encryption cards.",
 }
 
 _MD_EXTENSIONS = ["toc", "fenced_code", "tables", "sane_lists", "nl2br"]

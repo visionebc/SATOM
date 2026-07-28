@@ -331,6 +331,21 @@ def _reachable(host: str, port: int) -> bool:
         return False
 
 
+_PRODUCT_KINDS = ("fortiweb", "fortiadc", "fortianalyzer")
+
+
+def _product_of(appliance) -> str:
+    """ADOM a device-scoped finding belongs to, '' when the kind is unknown.
+
+    The alert engine runs in a background thread with NO request context, so
+    ``product_scope.stamp()`` returns '' for everything it raises — and an
+    unscoped notification is visible in the FortiWeb ADOM by construction. That
+    made the FortiWeb bell the catch-all for fadc and faz01 too. A device
+    finding's ADOM is not the session's, it is the DEVICE's kind."""
+    kind = (getattr(appliance, "kind", "") or "").strip().lower()
+    return kind if kind in _PRODUCT_KINDS else ""
+
+
 def _check_devices() -> list[dict]:
     """One finding per unhealthy appliance, graded on the SAME ladder the
     Monitoring page prints.
@@ -371,6 +386,7 @@ def _check_devices() -> list[dict]:
         except Exception as exc:  # noqa: BLE001 — one bad device never sinks the run
             findings.append({"key": f"device.error.{a.name}", "severity": SEV_WARNING,
                              "title": f"Health roll-up failed for {a.name}",
+                             "product": _product_of(a),
                              "detail": f"device_health.collect_for() raised: {exc}"})
             continue
 
@@ -392,6 +408,7 @@ def _check_devices() -> list[dict]:
             "key": f"device.health.{a.name}.{status}",
             "severity": SEV_CRITICAL if crit else SEV_WARNING,
             "title": f"Device {a.name} is {'critical' if crit else 'degraded'}",
+            "product": _product_of(a),
             "detail": ("\n".join(lines) +
                        f"\n\n{a.kind} appliance at {host}:{port}, probed from "
                        f"{_node()}. Full picture: /monitoring/")})
@@ -547,6 +564,7 @@ def _check_drift() -> list[dict]:
         findings.append({
             "key": f"drift.{slug}.{new_sha[:12]}", "severity": SEV_WARNING,
             "title": f"Config drift on {slug}",
+            "product": _product_of(a),
             "detail": (f"{a.kind} '{slug}' changed in the source-of-truth "
                        f"(commit {new_sha[:8]}, {int(age_min)}m ago) after volatile "
                        f"fields were normalised out. If nobody edited it via "
@@ -649,8 +667,11 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
                 if f["severity"] in (SEV_CRITICAL, SEV_WARNING)
                 else notify.Notification.KIND_INFO)
         if admin_ids:
+            # product=None means "stamp from the session", which is '' in this
+            # worker thread. Device findings carry the device's ADOM instead.
             notify.push_many(admin_ids, f["title"], kind=kind,
-                             body=f["detail"][:400])
+                             body=f["detail"][:400],
+                             product=f.get("product") or None)
 
     if is_enabled():
         to = recipients()

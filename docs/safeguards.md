@@ -291,6 +291,39 @@ ADOMs, each sees only its own devices and probes, the manager sections and their
 endpoints are Global-only, and neither fleet-wide action can reach out of its
 ADOM.
 
+### 9c-bis. An alert about a device belongs to that device's ADOM
+
+`alerts.run()` executes in a background thread (`satom-alerts.timer`), so there
+is no request context and `product_scope.stamp()` returns `''` for everything it
+raises. An unscoped notification is visible in the FortiWeb ADOM **by
+construction** (§9c: `''` predates stamping and is FortiWeb-era). The result:
+every alert about `fadc` and `faz01` rang the FortiWeb bell. On 2026-07-28 that
+was 132 of 145 rows on the primary, and the operator reported the FortiWeb ADOM
+as flooded.
+
+The rule: **a device finding's ADOM is the DEVICE's `kind`, never the session's.**
+`alerts._product_of(appliance)` maps the kind, and `run()` forwards
+`finding["product"]` to `notifications.push_many`. Applies to every per-device
+check — `_check_devices` (health + roll-up error) and `_check_drift`. Findings
+about the manager itself (cert, git, backup) keep the old behaviour and stay
+unscoped on purpose: they concern the installation, not a product.
+
+An unrecognised kind maps to `''`, not to a guess — failing open into the
+catch-all is recoverable, filing a FortiWeb alert under FortiADC is not.
+
+**How to check it is armed.**
+
+```bash
+psql -h 127.0.0.1 -U <db-user> <db> -c \
+  "select coalesce(nullif(product,''),'(unscoped)'), count(*) \
+     from notifications where title like 'Device %' group by 1;"
+# expect one bucket per device kind, no '(unscoped)' for new rows
+```
+
+`tests/test_alerts_product_scope.py` pins the three kinds, the unknown-kind
+fallback, and the end-to-end hand-off into the notification layer (a finding
+that carries the ADOM but writes an unscoped row is the same bug).
+
 ### 9d. A scheduled run says whether it RAN, not whether it liked what it found
 
 `_do_deep_monitor` used to return `ok = worst in ("ok", "unknown")`. One server

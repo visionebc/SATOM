@@ -7,6 +7,17 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Changed
+- **Service Monitor (and every other probe) now sweeps every 3 minutes** instead
+  of 5. The scheduled sweep action was retimed and *all* probe intervals were
+  aligned to a multiple of the new tick: `due_probes` needs the whole interval
+  to elapse before a tick can fire it, so a 5-minute probe under a 3-minute
+  sweep silently becomes a 6-minute probe. `cpu`, `memory` and `proxyd` moved
+  5 -> 3 rather than being allowed to drift to 6; `interface` and `transactions`
+  stay at 15 (already a multiple of 3). New constants
+  `deep_monitor.DEFAULT_PROBE_INTERVAL_MIN` / `SLOW_PROBE_INTERVAL_MIN` carry
+  the rule into every discovery path so a bare literal cannot reintroduce it.
+  Measured end-to-end cadence is ~3.4-3.7 min: the scheduler anchors `next_run`
+  to run *completion* and ticks every 45 s. See `docs/safeguards.md` §9i.
 - **Background work no longer opens a floating window.** A monitoring sweep used
   to raise the same toast — progress bar, **Stop** button — as a firmware flash
   someone was waiting on, and pushed a bell notification on *every* successful
@@ -26,6 +37,15 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
   landing unscoped, i.e. under FortiWeb). See `docs/safeguards.md` §9g.
 
 ### Added
+- **Device traffic cards are collapsible** on Deep monitors and Service Monitor,
+  with the state persisted in `localStorage` keyed per page — `renderDevices()`
+  rewrites `innerHTML` on every 20 s poll, so DOM-only state would re-expand
+  every card three times a minute. A collapsed card keeps its status badge and a
+  headline chip (avg throughput / policy count) so folding hides the detail, not
+  the finding. Keyboard reachable, no inline handlers (CSP).
+  See `docs/safeguards.md` §9j.
+- Device cards restyled to the fleet visual standard: layered gradient +
+  glassmorphism surface, blue->violet accent rule, hover elevation.
 - **Traffic per appliance, and a real drill-down per server policy.** Service
   Monitor was a flat table of probes: the box-wide `Total HTTP Throughput`
   reading was one row among twenty, and answering *"what is going on inside this

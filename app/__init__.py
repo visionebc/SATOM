@@ -247,10 +247,16 @@ def create_app(config_override: object | None = None) -> Flask:
                        'plugins', 'lua_studio',
                        # Product-scoped Fleet pages mirrored into the ADC ADOM
                        # (visible_appliances / product_scope keep them ADC-only).
-                       # Monitoring + Certificate Manager live ONLY in the
-                       # Global ADOM (2026-07-07 nav restructure).
+                       # Monitoring, Metrics and Deep monitors are mirrored into
+                       # every ADOM as of 2026-07-28 (reversing the 2026-07-07
+                       # Global-only restructure): all three already scope their
+                       # rows through visible_appliances(), so an ADOM sees only
+                       # its own devices and probes, and anything added from the
+                       # Global ADOM for a device of this product shows up here
+                       # automatically. Certificate Manager stays Global-only.
                        'architecture', 'metrics', 'search', 'analysis',
                        'fleet_objects', 'dns_tool',
+                       'monitoring', 'deep_monitor',
                        # Backup vault (per-appliance; the ADC transport is the
                        # SSH config dump — services/backup.py kind branch).
                        'backups',
@@ -274,6 +280,9 @@ def create_app(config_override: object | None = None) -> Flask:
                        'database', 'locks', 'firmware', 'segments',
                        'architecture', 'metrics', 'search', 'analysis',
                        'fleet_objects', 'dns_tool', 'backups',
+                       # Mirrored per-ADOM monitoring (2026-07-28) — see the
+                       # ADC note above; scoping is by device kind.
+                       'monitoring', 'deep_monitor',
                        'release_notes', 'templates', 'naming', 'capacity',
                        'api_tokens', 'api_explorer', 'api_v1',
                        'plugins', 'lua_studio'}

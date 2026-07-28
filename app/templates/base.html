@@ -281,7 +281,7 @@
 
       <!-- FLEET — the Global-ADOM menu, mirrored here but scoped to this
            product's devices/policies (visible_appliances + product_scope). -->
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['search','dns_tool','architecture','analysis','fleet_objects','metrics','jobs'] }}" data-nav-group="Fleet">
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['search','dns_tool','architecture','analysis','fleet_objects','metrics','monitoring','deep_monitor','jobs'] }}" data-nav-group="Fleet">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>Fleet</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
@@ -294,8 +294,7 @@
             <i class="bi bi-graph-up fw-nav-icon"></i><span>Analysis</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'fleet_objects' else '' }}" href="{{ url_for('fleet_objects.index') }}">
             <i class="bi bi-box-seam fw-nav-icon"></i><span>Fleet Objects</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics' else '' }}" href="{{ url_for('metrics.index') }}">
-            <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>Metrics</span></a>
+          {% include 'partials/nav_monitoring.html' %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">
             <i class="bi bi-list-task fw-nav-icon"></i><span>Jobs</span></a>
         </div>
@@ -348,17 +347,7 @@
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.endpoint == 'index' else '' }}" href="{{ url_for('index') }}">
             <i class="bi bi-speedometer2 fw-nav-icon"></i><span>Dashboard</span></a>
-          <div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['monitoring','metrics','deep_monitor'] }}" data-nav-subgroup="Monitoring">
-            <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-activity fw-nav-icon"></i><span>Monitoring</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
-            <div class="fw-nav-subgroup-body">
-              <a class="fw-nav-item {{ 'active' if request.blueprint == 'monitoring' else '' }}" href="{{ url_for('monitoring.index') }}">
-                <i class="bi bi-heart-pulse fw-nav-icon"></i><span>Fleet health</span></a>
-              <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics' else '' }}" href="{{ url_for('metrics.index') }}">
-                <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>Metrics</span></a>
-              <a class="fw-nav-item {{ 'active' if request.blueprint == 'deep_monitor' else '' }}" href="{{ url_for('deep_monitor.index') }}">
-                <i class="bi bi-broadcast-pin fw-nav-icon"></i><span>Deep monitors</span></a>
-            </div>
-          </div>
+          {% include 'partials/nav_monitoring.html' %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
             <i class="bi bi-search fw-nav-icon"></i><span>Search</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'dns_tool' else '' }}" href="{{ url_for('dns_tool.index') }}">
@@ -454,15 +443,14 @@
       {% include 'partials/nav_device_context.html' %}
 
       <!-- FLEET — Architecture / Analysis / Metrics (shared, product-scoped) -->
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['architecture','analysis','metrics','search','dns_tool','fleet_objects','jobs'] }}" data-nav-group="Fleet">
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['architecture','analysis','metrics','monitoring','deep_monitor','search','dns_tool','fleet_objects','jobs'] }}" data-nav-group="Fleet">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>Fleet</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
             <i class="bi bi-hdd-network fw-nav-icon"></i><span>Architecture</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'analysis' else '' }}" href="{{ url_for('analysis.index') }}">
             <i class="bi bi-graph-up fw-nav-icon"></i><span>Analysis</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics' else '' }}" href="{{ url_for('metrics.index') }}">
-            <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>Metrics</span></a>
+          {% include 'partials/nav_monitoring.html' %}
         </div>
       </div>
 
@@ -543,7 +531,7 @@
 
       <!-- FLEET — the Global-ADOM menu, mirrored here but scoped to this
            product's devices/policies (visible_appliances + product_scope). -->
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['search','dns_tool','architecture','analysis','fleet_objects','metrics','jobs'] }}" data-nav-group="Fleet">
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['search','dns_tool','architecture','analysis','fleet_objects','metrics','monitoring','deep_monitor','jobs'] }}" data-nav-group="Fleet">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>Fleet</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
@@ -556,8 +544,7 @@
             <i class="bi bi-graph-up fw-nav-icon"></i><span>Analysis</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'fleet_objects' else '' }}" href="{{ url_for('fleet_objects.index') }}">
             <i class="bi bi-box-seam fw-nav-icon"></i><span>Fleet Objects</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics' else '' }}" href="{{ url_for('metrics.index') }}">
-            <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>Metrics</span></a>
+          {% include 'partials/nav_monitoring.html' %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'jobs' else '' }}" href="{{ url_for('jobs.manager') }}">
             <i class="bi bi-list-task fw-nav-icon"></i><span>Jobs</span></a>
         </div>

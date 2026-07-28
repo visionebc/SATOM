@@ -38,6 +38,12 @@ def _visible_ids() -> set[int]:
     return {a.id for a in visible_appliances().all()}
 
 
+def _global_adom() -> bool:
+    """True in the Global ADOM (or outside a request context)."""
+    from ..services.product_scope import session_product, GLOBAL
+    return (session_product() or GLOBAL) == GLOBAL
+
+
 def _probes_query():
     """Probes for devices this session can see, plus device-less URL probes."""
     ids = _visible_ids()
@@ -383,6 +389,14 @@ def run():
         allowed = {p.id for p in MonitorProbe.query.filter(MonitorProbe.id.in_(ids)).all()
                    if not p.appliance_id or p.appliance_id in vis}
         ids = sorted(allowed)
+        if not ids:
+            return jsonify({"error": "nothing to run"}), 400
+    elif not _global_adom():
+        # "Probe now" with no selection means EVERY due probe. In a product
+        # ADOM that would SSH into appliances of other products, so the sweep
+        # is pinned to this ADOM's enabled probes. Global keeps ids=None so the
+        # scheduler's own due/force semantics are unchanged.
+        ids = sorted(p.id for p in _probes_query().filter_by(enabled=True).all())
         if not ids:
             return jsonify({"error": "nothing to run"}), 400
     job = jobsvc.create_job("deep_monitor", "Deep monitors — probe",

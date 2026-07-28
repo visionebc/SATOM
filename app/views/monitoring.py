@@ -18,6 +18,20 @@ from ..services import notifications as notify
 bp = Blueprint('monitoring', __name__, url_prefix='/monitoring')
 
 
+def _global_adom() -> bool:
+    """True when the active session is the Global ADOM.
+
+    Manager self-health -- HA peers, the Git SoT, the external backup server,
+    the local database, the systemd units and the encryption posture --
+    describes the SATOM installation, not any one product. It belongs to Global
+    only: a product ADOM shows the appliances of its own kind and nothing else.
+    Before 2026-07-28 the ADOM views inherited these sections wholesale, which
+    leaked node names and infrastructure IPs into every product view.
+    """
+    from ..services.product_scope import session_product, GLOBAL
+    return (session_product() or GLOBAL) == GLOBAL
+
+
 def _thresholds() -> tuple[float, float]:
     try:
         warn = float(AppSetting.get('capacity.warn_pct', '80') or 80)
@@ -84,20 +98,30 @@ def _device_payload(warn: float, crit: float) -> tuple[list[dict], list[dict], l
 
 
 def _payload() -> dict:
-    from ..services import system_health as shealth
+    from ..services.product_scope import session_product
 
     warn, crit = _thresholds()
     devices, alerts, health_alerts = _device_payload(warn, crit)
-    return {
+    is_global = _global_adom()
+    out = {
+        'scope': 'global' if is_global else (session_product() or 'global'),
         'thresholds': {'warn': warn, 'crit': crit},
         'devices': devices,
         'alerts': sorted(alerts, key=lambda x: (x['status'] != 'crit', -(x['pct'] or 0))),
         'health_alerts': sorted(health_alerts, key=lambda x: x['status'] != 'crit'),
-        'system': shealth.host_stats(),
-        'services': shealth.service_status(),
-        'db': shealth.db_stats(),
-        'redundancy': shealth.redundancy(),
     }
+    if is_global:
+        # Manager self-health is Global-only (see _global_adom). Not merely
+        # hidden in the template: the collection itself is skipped so an ADOM
+        # request never even reads the host/systemd/DB state.
+        from ..services import system_health as shealth
+        out.update({
+            'system': shealth.host_stats(),
+            'services': shealth.service_status(),
+            'db': shealth.db_stats(),
+            'redundancy': shealth.redundancy(),
+        })
+    return out
 
 
 @bp.route('/')
@@ -107,7 +131,8 @@ def index():
         can_scan = current_user.can(Permission.CONFIG_WRITE)
     except Exception:
         can_scan = False
-    return render_template('monitoring/index.html', can_scan=can_scan)
+    return render_template('monitoring/index.html', can_scan=can_scan,
+                           is_global=_global_adom())
 
 
 @bp.route('/data')
@@ -118,9 +143,11 @@ def data():
 
 def _run_hw_scan(app, job_id, ids, user_id, uname, link):
     with app.app_context():
-        q = Appliance.query
-        if ids:
-            q = q.filter(Appliance.id.in_(ids))
+        # ids are resolved in the REQUEST (visible_appliances needs the session
+        # product); this worker thread has no ADOM of its own, so an unscoped
+        # Appliance.query here would SSH into every box in the fleet from a
+        # single-product ADOM.
+        q = Appliance.query.filter(Appliance.id.in_(ids or [-1]))
         targets = q.order_by(Appliance.name).all()
         total = len(targets) or 1
         done, errors = [], {}
@@ -165,11 +192,14 @@ def _run_hw_scan(app, job_id, ids, user_id, uname, link):
 @require_permission(Permission.CONFIG_WRITE)
 def hw_scan():
     """Fleet hardware inventory scan (read-only SSH battery) as a background job."""
-    ids = request.form.getlist('id', type=int) or None
+    visible = [a.id for a in visible_appliances().all()]
+    ids = [i for i in request.form.getlist('id', type=int) if i in visible] or visible
+    if not ids:
+        return jsonify({"error": "no visible appliance to scan"}), 400
     uname = getattr(current_user, 'username', '') or ''
     uid = getattr(current_user, 'id', None)
     job = jobsvc.create_job("hardware_scan", "Hardware scan — fleet",
-                            by=uname, meta={"ids": ids or "all"})
+                            by=uname, meta={"ids": ids})
     link = url_for('monitoring.index')
     app_obj = current_app._get_current_object()
     jobsvc.run_async(app_obj, job["id"],
@@ -182,7 +212,11 @@ def hw_scan():
 def infra():
     """Cross-node + off-box infrastructure health (HA peers, Gitea, backup-server).
     Network probes with short timeouts — fetched by the card AFTER page render,
-    never during a page load."""
+    never during a page load.
+
+    Global ADOM only: this describes the manager, not a product."""
+    if not _global_adom():
+        return jsonify({"error": "global ADOM only"}), 403
     from ..services import infra_health
     return jsonify(infra_health.snapshot())
 
@@ -193,6 +227,10 @@ def encryption():
     """Per-channel encryption posture (DB replication TLS, inter-node HTTPS,
     datasync SSH, Git SoT, node cert). Live probes with short timeouts — fetched
     by the card AFTER page render, never during a page load (same contract as
-    /monitoring/infra)."""
+    /monitoring/infra).
+
+    Global ADOM only: this describes the manager, not a product."""
+    if not _global_adom():
+        return jsonify({"error": "global ADOM only"}), 403
     from ..services import encryption_health
     return jsonify(encryption_health.snapshot())

@@ -959,7 +959,8 @@ def execute_and_record(action_row, *, trigger: str = "schedule"):
                     gated = True
             # (4) Run per target.
             if not gated:
-                status, summary, log_lines = _run_targets(action_row, spec, params)
+                status, summary, log_lines = _run_targets(
+                    action_row, spec, params, trigger=trigger)
     except Exception as exc:  # noqa: BLE001 - a run must never crash the sidecar
         status = "failed"
         summary = f"{type(exc).__name__}: {exc}"
@@ -997,14 +998,24 @@ def execute_and_record(action_row, *, trigger: str = "schedule"):
     return run
 
 
-def _run_targets(action_row, spec: ActionSpec, params: dict):
+def _run_targets(action_row, spec: ActionSpec, params: dict, *,
+                 trigger: str = "schedule"):
     """Resolve the action's targets and run it against each; aggregate the outcome.
 
     Returns ``(status, summary, log_lines)`` where status is one of
     'ok' | 'failed' | 'skipped'.
+
+    An automatic run skips appliances in maintenance and, if that empties the
+    target set, reports **skipped** rather than failed — a parked box is not a
+    fault, and grading it as one pins the action permanently red.
     """
-    targets = _resolve_targets(action_row, spec)
+    targets = _resolve_targets(action_row, spec, trigger=trigger)
     if spec.needs_targets and not targets:
+        parked = _parked_targets(action_row, spec) if trigger != "manual" else []
+        if parked:
+            names = ", ".join(sorted(parked))
+            return ("skipped", f"{spec.label}: all targets in maintenance ({names}).",
+                    [f"skipped: {names} are in maintenance"])
         kinds = "/".join(spec.products) or "appliance"
         return "skipped", f"No matching {kinds} appliance.", ["no targets resolved"]
 
@@ -1027,12 +1038,16 @@ def _run_targets(action_row, spec: ActionSpec, params: dict):
 
     status = "ok" if (total and ok_n == total) else ("failed" if total else "skipped")
     summary = f"{spec.label}: {ok_n}/{total} ok"
+    parked = _parked_targets(action_row, spec) if trigger != "manual" else []
+    if parked:
+        summary += " (maintenance, skipped: " + ", ".join(sorted(parked)) + ")"
     if fails:
         summary += " (failed: " + ", ".join(fails) + ")"
     return status, summary, lines
 
 
-def _resolve_targets(action_row, spec: ActionSpec) -> list:
+def _resolve_targets(action_row, spec: ActionSpec, *,
+                     trigger: str = "schedule") -> list:
     """The appliances an action fires against.
 
     A no-target action (``needs_targets`` False) runs exactly once (``[None]``).
@@ -1048,9 +1063,28 @@ def _resolve_targets(action_row, spec: ActionSpec) -> list:
     if ids:
         q = q.filter(Appliance.id.in_(ids))
     devices = q.all()
+    if trigger != "manual":
+        # Maintenance suppressed alerts but not work: the hourly sweep kept
+        # hammering parked boxes and grading each as a failure, which pinned the
+        # action permanently 'failed'. A manual run still reaches them on purpose
+        # — you park a box precisely to work on it.
+        devices = [d for d in devices if not getattr(d, "maintenance", False)]
     if spec.single_target:
         devices = devices[:1]
     return devices
+
+
+def _parked_targets(action_row, spec: ActionSpec) -> list[str]:
+    """Names of this action's in-maintenance appliances (for the run summary)."""
+    if not spec.needs_targets:
+        return []
+    kinds = list(spec.products) or ["fortiweb"]
+    ids = [v for v in (_as_int(t) for t in action_row.targets_list) if v is not None]
+    q = Appliance.query.filter(Appliance.kind.in_(kinds),
+                               Appliance.maintenance.is_(True))
+    if ids:
+        q = q.filter(Appliance.id.in_(ids))
+    return [a.name for a in q.all()]
 
 
 # --------------------------------------------------------------------------- #

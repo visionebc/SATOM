@@ -1959,6 +1959,14 @@ class MonitorProbe(db.Model):
     warn_pct = db.Column(db.Integer, nullable=False, default=80)
     crit_pct = db.Column(db.Integer, nullable=False, default=95)
 
+    # sessions / policy_sessions / throughput / transactions — ABSOLUTE
+    # thresholds, because a session count and a Mbps figure have no percentage
+    # of anything to be measured against. Unit depends on the kind and is
+    # published in ``deep_monitor.NUM_UNIT``; 0 disables that level, matching
+    # the warn_pct/crit_pct convention.
+    warn_num = db.Column(db.Float, nullable=False, default=0)
+    crit_num = db.Column(db.Float, nullable=False, default=0)
+
     timeout_s = db.Column(db.Integer, nullable=False, default=10)
     interval_min = db.Column(db.Integer, nullable=False, default=5)
     retention = db.Column(db.Integer, nullable=False, default=500)
@@ -1995,6 +2003,7 @@ class MonitorProbe(db.Model):
             "process_name": self.process_name or "proxyd",
             "warn_cpu": self.warn_cpu, "warn_mem": self.warn_mem,
             "warn_pct": self.warn_pct, "crit_pct": self.crit_pct,
+            "warn_num": self.warn_num or 0, "crit_num": self.crit_num or 0,
             "timeout_s": self.timeout_s, "interval_min": self.interval_min,
             "retention": self.retention,
             "last_run_at": self.last_run_at.isoformat(timespec="seconds")

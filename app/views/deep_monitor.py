@@ -150,6 +150,8 @@ def _thresholds(probe) -> dict:
         return {"warn": probe.warn_pct or 0, "crit": probe.crit_pct or 0}
     if probe.kind == "https":
         return {"warn": probe.warn_ms or 0, "crit": 0}
+    if probe.kind in dm.API_KINDS:
+        return {"warn": probe.warn_num or 0, "crit": probe.crit_num or 0}
     return {}
 
 
@@ -227,6 +229,11 @@ _INT_FIELDS = ("expect_status", "warn_ms", "tls_warn_days", "stale_after_h",
                "warn_cpu", "warn_mem", "warn_pct", "crit_pct",
                "timeout_s", "interval_min", "retention")
 
+# Absolute thresholds for the REST-monitor kinds. Float, not int: a throughput
+# ceiling is naturally fractional ("warn at 0.5 Mbps") and rounding it to an
+# integer would silently disable the level on a slow link.
+_FLOAT_FIELDS = ("warn_num", "crit_num")
+
 
 def _interface_target(form) -> str:
     """Join the ticked ports into ``target`` without ever slicing a name in half.
@@ -273,6 +280,10 @@ def _apply_form(probe: MonitorProbe, form) -> str:
         val = form.get(f, type=int)
         if val is not None:
             setattr(probe, f, max(0, val))
+    for f in _FLOAT_FIELDS:
+        val = form.get(f, type=float)
+        if val is not None:
+            setattr(probe, f, max(0.0, val))
     probe.interval_min = max(1, int(probe.interval_min or 5))
     probe.timeout_s = max(1, int(probe.timeout_s or 10))
     probe.retention = max(10, int(probe.retention or dm.DEFAULT_RETENTION))
@@ -284,6 +295,13 @@ def _apply_form(probe: MonitorProbe, form) -> str:
     if kind in dm.BOX_METRICS and probe.warn_pct and probe.crit_pct \
             and probe.crit_pct < probe.warn_pct:
         return "the critical threshold must be at or above the warning one"
+    if kind in dm.API_KINDS:
+        if probe.warn_num and probe.crit_num and probe.crit_num < probe.warn_num:
+            return "the critical threshold must be at or above the warning one"
+        # `sessions` is box-wide and takes no target; the other three address one
+        # policy, and without a name they would silently grade nothing.
+        if kind in ("policy_sessions", "transactions") and not (probe.target or "").strip():
+            return f"a {dm.KIND_LABEL[kind]} probe needs a server policy name"
     if not probe.name:
         probe.name = (probe.url or probe.kind)[:120]
     return ''
@@ -435,6 +453,14 @@ def _run_discover(app, job_id, aid, what, uid, link):
                     total += res["created"]
                     parts.append(f"{res['created']} per-port probe(s) "
                                  f"({res['skipped']} already present)")
+            if 'api' in what:
+                res = dm.discover_api_probes(appliance)
+                if res.get("error"):
+                    parts.append(res["error"])
+                else:
+                    total += res["created"]
+                    parts.append(f"{res['created']} REST telemetry probe(s) "
+                                 f"({res['skipped']} already present)")
             if 'baseline' in what:
                 base = dm.ensure_baseline(appliance)
                 total += len(base["created"])
@@ -461,11 +487,14 @@ def discover():
     ``policies``    one HTTPS probe per server policy front-end (FortiWeb)
     ``baseline``    interfaces (all ports), CPU, memory, proxyd on FortiWeb
     ``interfaces``  one probe PER PORT — a separate series per interface
+    ``api``         REST telemetry: box sessions + per-policy sessions and
+                    throughput (FortiWeb; works even when the cmdb is
+                    licence-locked)
     """
     aid = request.form.get('appliance_id', type=int)
     if not aid or aid not in _visible_ids():
         return jsonify({"error": "pick a visible device"}), 400
-    allowed = {'policies', 'baseline', 'interfaces'}
+    allowed = {'policies', 'baseline', 'interfaces', 'api'}
     what = [w for w in request.form.getlist('what') if w in allowed]
     if not what:
         what = ['policies', 'baseline']

@@ -6,6 +6,37 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **Per-appliance runtime telemetry over the REST API — sessions, HTTP
+  throughput and throughput per server policy.** Four new Deep monitor probe
+  kinds that open **no SSH session**: `sessions` (box-wide concurrent sessions
+  and connection rate), `policy_sessions` (per-policy sessions, conn/s, client
+  and server RTT, application response time, plus each pool member's up/health),
+  `throughput` (per-policy or `Total HTTP Throughput` aggregate, charted in
+  Mbps) and `transactions` (bucketed HTTP transaction counts). Thresholds are
+  absolute (`warn_num`/`crit_num`), with the unit shown per kind; the drill-down
+  charts, rollups and 7/30-day history all work unchanged. *Discover from
+  device* gained a **REST telemetry** option.
+
+  FortiWeb 7.6 has no `/api/v2.0/monitor/<resource>` tree — that prefix serves
+  only `monitor/permission-check`. The endpoints used here were enumerated from
+  the appliance's own GUI bundle and verified live against FortiWeb 7.6.8
+  build1128. Notably they keep answering on an appliance whose **cmdb is
+  licence-locked**: fw7 returns HTTP 423 `-20010` for every config read while
+  `policystatus` and `policytraffic` answer 200, so these probes cover exactly
+  the devices whose hourly `device_sync` has been failing. FortiWeb only —
+  FortiADC and FortiAnalyzer are refused by name rather than measured as zero.
+  See `docs/safeguards.md` §9e.
+
+### Changed
+- **A scheduled deep-monitor sweep now reports whether it RAN, not whether it
+  liked what it found.** `ok` was `worst in ("ok","unknown")`, so a single
+  policy with every backend down marked the sweep *failed* and kept it failed
+  until the backend was repaired — making a sweep that could not execute look
+  identical to a healthy one that found something, and pinning the action
+  permanently red. The worst status and per-status counts moved into the
+  summary. See `docs/safeguards.md` §9d.
+
 ### Fixed
 - **A product ADOM inherited the manager's own infrastructure.** Fleet health
   rendered *Infrastructure health — HA nodes · Git · backup server*, the

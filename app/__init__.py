@@ -1022,6 +1022,9 @@ def create_app(config_override: object | None = None) -> Flask:
             'monitor_probe': [
                 ('warn_pct', 'INTEGER DEFAULT 80'),
                 ('crit_pct', 'INTEGER DEFAULT 95'),
+                # --- REST monitor API probes (sessions / throughput) ---
+                ('warn_num', 'DOUBLE PRECISION DEFAULT 0'),
+                ('crit_num', 'DOUBLE PRECISION DEFAULT 0'),
             ],
             # --- AppID-scoped API tokens (Phase 2 enforcement) ---
             'api_tokens': [

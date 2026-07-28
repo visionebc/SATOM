@@ -55,7 +55,8 @@ from typing import Any
 # Status vocabulary shared with the UI (worst-first ordering).
 STATUS_ORDER = {"crit": 0, "error": 1, "warn": 2, "ok": 3, "unknown": 4}
 
-KINDS = ("https", "interface", "cpu", "memory", "proxyd")
+KINDS = ("https", "interface", "cpu", "memory", "proxyd",
+         "sessions", "policy_sessions", "throughput", "transactions")
 
 KIND_LABEL = {
     "https": "Service policy (HTTPS)",
@@ -63,6 +64,51 @@ KIND_LABEL = {
     "cpu": "Processor load",
     "memory": "Memory usage",
     "proxyd": "proxyd process",
+    "sessions": "Concurrent sessions (box)",
+    "policy_sessions": "Server-policy sessions & latency",
+    "throughput": "HTTP throughput",
+    "transactions": "HTTP transactions",
+}
+
+# Kinds that read the appliance's REST monitor API and never open an SSH
+# session. Two consequences worth knowing:
+#
+#  * They keep reporting on an appliance whose *cmdb* is licence-locked.
+#    VERIFIED on fw7 (2026-07-28): every cmdb read returns HTTP 423
+#    ``-20010 The license of peer VM FortiWeb is not valid``, yet
+#    ``status.systemresource``, ``policystatus`` and ``policytraffic`` all
+#    answer 200. So these probes cover exactly the devices whose hourly
+#    ``device_sync`` has been failing for days.
+#  * They are FortiWeb-only. FortiADC and FortiAnalyzer expose runtime
+#    telemetry under entirely different paths; a shared implementation would
+#    have produced silent zeroes on those products rather than an error, so
+#    discovery refuses to create them and the runner reports ``error``.
+API_KINDS = ("sessions", "policy_sessions", "throughput", "transactions")
+API_PRODUCTS = ("fortiweb",)
+
+# The aggregate pseudo-policies ``policytraffic`` accepts in place of a real
+# policy name (read out of the GUI's throughput widget). In VDOM mode the
+# appliance renames them to "Administrative Domain <X> Traffic".
+TOTAL_HTTP = "Total HTTP Throughput"
+TRAFFIC_AGGREGATES = (
+    TOTAL_HTTP, "Total ADFS Throughput", "Total FTP Throughput",
+    "Administrative Domain HTTP Traffic", "Administrative Domain ADFS Traffic",
+    "Administrative Domain FTP Traffic",
+)
+
+# ``policytraffic`` returns 60 one-second samples, so a 5-minute probe interval
+# sees 60s of every 300s. That is a sampling window, not full coverage, and the
+# payload records it so a flat chart is not mistaken for a flat link.
+TRAFFIC_WINDOW_S = 60
+
+# Units of the numeric thresholds, per kind. ``warn_num``/``crit_num`` are
+# deliberately unit-less columns reused across kinds (same shape as
+# ``warn_pct``/``crit_pct``); 0 disables that level.
+NUM_UNIT = {
+    "sessions": "sessions",
+    "policy_sessions": "sessions",
+    "throughput": "Mbps",
+    "transactions": "transactions",
 }
 
 # Box-level metrics, each its OWN probe kind. They used to ride along inside the
@@ -735,6 +781,444 @@ def run_box(probe, kind: str) -> dict:
     }
 
 
+
+# ---------------------------------------------------------------------------
+# REST monitor API — pure parsing / classification
+# ---------------------------------------------------------------------------
+
+def _i(v: Any, default: int = 0) -> int:
+    """Coerce to int. The appliance mixes ints and numeric STRINGS in the same
+    payload (``policytraffic`` returns ``["0","0",...]``), so every read of a
+    monitor field goes through this."""
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return default
+
+
+def parse_system_resource(res: Any) -> dict:
+    """Normalise ``system/status.systemresource``.
+
+    Live shape on fortiweb08 7.6.8::
+
+        {"cpu": 5, "mem": 51, "logDisk": "Available", "dbStatus": "Available",
+         "diskUsage": 1, "sessionCount": 0, "connCntPerSec": 0}
+    """
+    if not isinstance(res, dict):
+        return {}
+    return {
+        "cpu_pct": _i(res.get("cpu")),
+        "mem_pct": _i(res.get("mem")),
+        "disk_pct": _i(res.get("diskUsage")),
+        "sessions": _i(res.get("sessionCount")),
+        "conn_per_sec": _i(res.get("connCntPerSec")),
+        "log_disk": str(res.get("logDisk") or "").strip(),
+        "db_status": str(res.get("dbStatus") or "").strip(),
+    }
+
+
+def classify_sessions(box: dict, *, warn_num: float, crit_num: float) -> tuple[str, str]:
+    """Grade the box-wide concurrent session count.
+
+    The subsystem strings are graded too: ``logDisk``/``dbStatus`` turning
+    anything other than *Available* means the appliance is still passing traffic
+    while losing its own telemetry, which no session count would reveal.
+    """
+    if not box:
+        return "error", "device returned no resource data"
+    bits = ["%d sessions" % box["sessions"], "%d conn/s" % box["conn_per_sec"]]
+    status = "ok"
+    for label, value in (("log disk", box["log_disk"]), ("DB", box["db_status"])):
+        if value and value.lower() != "available":
+            bits.append("%s %s" % (label, value))
+            status = "warn"
+    n = box["sessions"]
+    if crit_num and n >= crit_num:
+        status = "crit"
+        bits.append(">= crit %g" % crit_num)
+    elif warn_num and n >= warn_num:
+        status = worst([status, "warn"])
+        bits.append(">= warn %g" % warn_num)
+    return status, "; ".join(bits)
+
+
+def parse_policy_rows(rows: Any) -> list[dict]:
+    """Normalise ``policy/policystatus``.
+
+    ``policy`` is the appliance's RUNTIME handle for the policy (1488, 1489 …),
+    distinct from the display ``id``. It is carried into the fingerprint: see
+    :func:`policy_fingerprint`.
+    """
+    out = []
+    for r in (rows or []):
+        if not isinstance(r, dict):
+            continue
+        out.append({
+            "name": str(r.get("name") or r.get("_id") or "").strip(),
+            "handle": _i(r.get("policy"), -1),
+            "status": str(r.get("status") or "").strip(),
+            "protocol": str(r.get("protocol") or "").strip(),
+            "vserver": str(r.get("vserver") or "").strip(),
+            "port": str(r.get("httpPort") or "").strip(),
+            "sessions": _i(r.get("sessionCount")),
+            "conn_per_sec": _i(r.get("connCntPerSec")),
+            "client_rtt": _i(r.get("client_rtt")),
+            "server_rtt": _i(r.get("server_rtt")),
+            "app_response_time": _i(r.get("app_response_time")),
+        })
+    return out
+
+
+def parse_pool_members(rows: Any) -> list[dict]:
+    """Normalise ``policy/policystatus.detail`` (one row per pool member)."""
+    out = []
+    for r in (rows or []):
+        if not isinstance(r, dict):
+            continue
+        out.append({
+            "pool": str(r.get("pool") or "").strip(),
+            "server": str(r.get("ipDomainName") or "").strip(),
+            "port": _i(r.get("port")),
+            "health": str(r.get("healthCheckStatus") or "").strip() or "N/A",
+            "sessions": _i(r.get("sessionCount")),
+            "up": _i(r.get("status")) == 1,
+            "server_rtt": _i(r.get("server_rtt")),
+            "app_response_time": _i(r.get("app_response_time")),
+        })
+    return out
+
+
+def policy_fingerprint(row: dict, members: list[dict]) -> str:
+    """Fingerprint the policy's *shape*, not its load.
+
+    Covers the administrative status, the runtime ``policy`` handle and each
+    pool member's up/health — so a policy being disabled, a backend flapping, or
+    the appliance reassigning handles all register as an event even while the
+    session count sits at zero.
+
+    NOTE on the handle: a proxyd restart re-creating its policy table would
+    change these numbers, which would make this an API-only restart signal.
+    That is inference, NOT verified — confirming it requires restarting proxyd
+    on a live appliance. The CLI ``proxyd`` probe watches the actual PID set and
+    remains the authoritative restart check.
+    """
+    parts = ["%s=%s@%d" % (row.get("name"), row.get("status"), row.get("handle", -1))]
+    for m in sorted(members, key=lambda x: (x["server"], x["port"])):
+        parts.append("%s:%d=%s/%s" % (m["server"], m["port"],
+                                      "up" if m["up"] else "down", m["health"]))
+    return sha8("|".join(parts))
+
+
+def classify_policy_sessions(row: dict, members: list[dict], *,
+                             warn_num: float, crit_num: float,
+                             warn_ms: int, fingerprint: str,
+                             prev_fingerprint: str) -> tuple[str, str]:
+    """Grade one server policy.
+
+    A *disabled* policy is reported ``warn``, never ``ok``: a policy that is not
+    admitting traffic is the outage, and grading it green because it has no
+    sessions would hide exactly the failure this page exists to show.
+    """
+    if not row:
+        return "error", "policy not present in policystatus"
+    bits = ["%d sessions" % row["sessions"], "%d conn/s" % row["conn_per_sec"]]
+    status = "ok"
+    if row["status"].lower() != "enable":
+        status = "warn"
+        bits.append("policy %s" % (row["status"] or "unknown"))
+    art = row["app_response_time"]
+    if art:
+        bits.append("app %d ms" % art)
+        if warn_ms and art >= warn_ms:
+            status = worst([status, "warn"])
+            bits.append(">= %d ms" % warn_ms)
+    down = [m for m in members if not m["up"] or m["health"].lower() == "disable"]
+    if members:
+        bits.append("%d/%d backends up" % (len(members) - len(down), len(members)))
+    if down and len(down) == len(members):
+        status = "crit"
+        bits.append("ALL backends down")
+    elif down:
+        status = worst([status, "warn"])
+        bits.append("down: " + ", ".join("%s:%d" % (m["server"], m["port"])
+                                        for m in down[:4]))
+    n = row["sessions"]
+    if crit_num and n >= crit_num:
+        status = "crit"
+        bits.append(">= crit %g" % crit_num)
+    elif warn_num and n >= warn_num:
+        status = worst([status, "warn"])
+        bits.append(">= warn %g" % warn_num)
+    if prev_fingerprint and fingerprint != prev_fingerprint:
+        status = worst([status, "warn"])
+        bits.append("shape changed since last sample")
+    return status, "; ".join(bits)
+
+
+def parse_traffic(res: Any) -> dict:
+    """Normalise ``policy/policytraffic``.
+
+    Two shapes, both live-verified: a bare list for the aggregate
+    pseudo-policies, and ``{throughput, cache_enabled, cache_tp}`` for a named
+    policy. Values are **bytes per second**, oldest sample first — the GUI
+    renders ``value * 8 / 1024`` as Kb/s.
+    """
+    cache_enabled = False
+    cache: list[int] | None = None
+    if isinstance(res, dict):
+        series = res.get("throughput") or []
+        cache_enabled = bool(res.get("cache_enabled"))
+        if cache_enabled:
+            cache = [_i(v) for v in (res.get("cache_tp") or [])]
+    elif isinstance(res, list):
+        series = res
+    else:
+        return {}
+    return {"bps": [_i(v) for v in series],
+            "cache_enabled": cache_enabled, "cache_bps": cache}
+
+
+def traffic_stats(bps: list[int]) -> dict:
+    """Average / peak / latest throughput over the returned window.
+
+    Peak is kept alongside the average because a four-second burst vanishes into
+    a 60-point mean, and the burst is usually what the operator opened the chart
+    to find.
+    """
+    if not bps:
+        return {"samples": 0, "avg_bps": 0.0, "peak_bps": 0.0, "last_bps": 0.0,
+                "avg_mbps": 0.0, "peak_mbps": 0.0, "last_mbps": 0.0}
+    avg = sum(bps) / float(len(bps))
+    peak = float(max(bps))
+    last = float(bps[-1])
+    mb = lambda v: round(v * 8.0 / 1_000_000.0, 4)  # noqa: E731
+    return {"samples": len(bps), "avg_bps": avg, "peak_bps": peak,
+            "last_bps": last, "avg_mbps": mb(avg), "peak_mbps": mb(peak),
+            "last_mbps": mb(last)}
+
+
+def fmt_mbps(v: float) -> str:
+    if v >= 1.0:
+        return "%.2f Mbps" % v
+    return "%.0f Kbps" % (v * 1000.0)
+
+
+def classify_throughput(stats: dict, *, warn_num: float,
+                        crit_num: float) -> tuple[str, str]:
+    """Grade throughput on the PEAK of the window, in Mbps.
+
+    Peak rather than average: a link saturating for part of the window is the
+    event, and averaging it away is how a saturation alert gets missed.
+    """
+    if not stats or not stats.get("samples"):
+        return "error", "device returned no traffic samples"
+    bits = ["avg %s" % fmt_mbps(stats["avg_mbps"]),
+            "peak %s" % fmt_mbps(stats["peak_mbps"]),
+            "%ds window" % stats["samples"]]
+    status = "ok"
+    peak = stats["peak_mbps"]
+    if crit_num and peak >= crit_num:
+        status = "crit"
+        bits.append(">= crit %g Mbps" % crit_num)
+    elif warn_num and peak >= warn_num:
+        status = "warn"
+        bits.append(">= warn %g Mbps" % warn_num)
+    return status, "; ".join(bits)
+
+
+def parse_transactions(rows: Any) -> dict:
+    """Normalise ``system/status.httptransactions`` (``[{time, count}, ...]``)."""
+    buckets = []
+    for r in (rows or []):
+        if not isinstance(r, dict):
+            continue
+        buckets.append({"time": str(r.get("time") or ""), "count": _i(r.get("count"))})
+    total = sum(b["count"] for b in buckets)
+    return {"buckets": buckets, "total": total,
+            "last": buckets[-1]["count"] if buckets else 0,
+            "peak": max((b["count"] for b in buckets), default=0)}
+
+
+def classify_transactions(tx: dict, *, warn_num: float,
+                          crit_num: float) -> tuple[str, str]:
+    """Grade HTTP transaction volume over the window.
+
+    An empty bucket list is ``error``, not ``ok``: the appliance answers
+    ``errcode 0`` with no rows when the policy name is unknown, so "no buckets"
+    means the probe is misconfigured rather than idle.
+    """
+    if not tx or not tx["buckets"]:
+        return "error", "no transaction buckets returned (unknown policy name?)"
+    bits = ["%d transactions" % tx["total"],
+            "peak %d/bucket" % tx["peak"],
+            "%d buckets" % len(tx["buckets"])]
+    status = "ok"
+    if crit_num and tx["total"] >= crit_num:
+        status = "crit"
+        bits.append(">= crit %g" % crit_num)
+    elif warn_num and tx["total"] >= warn_num:
+        status = "warn"
+        bits.append(">= warn %g" % warn_num)
+    return status, "; ".join(bits)
+
+
+# ---------------------------------------------------------------------------
+# REST monitor API — runners (network I/O)
+# ---------------------------------------------------------------------------
+
+def _api_client(probe):
+    """Build a FortiWeb client for an API probe, or explain why we cannot.
+
+    Returns ``(client, error_dict)``. The product gate is explicit rather than
+    an ``AttributeError`` later: FortiADC/FortiAnalyzer answer completely
+    different monitor paths, and a shared client would have reported zeroes
+    instead of "unsupported".
+    """
+    ap = getattr(probe, "appliance", None)
+    if ap is None:
+        return None, {"status": "error", "detail": "probe has no device",
+                      "payload": {}}
+    if (ap.kind or "") not in API_PRODUCTS:
+        return None, {"status": "error",
+                      "detail": "monitor API probes support %s only (device is %s)"
+                                % ("/".join(API_PRODUCTS), ap.kind or "unknown"),
+                      "payload": {"product": ap.kind}}
+    from ..clients.fortiweb import FortiWebClient
+    return FortiWebClient(ap, timeout=float(probe.timeout_s or 15)), None
+
+
+def run_sessions(probe) -> dict:
+    """Box-wide concurrent sessions + connection rate, over REST."""
+    client, err = _api_client(probe)
+    if err:
+        return err
+    res, error = client.system_resource()
+    if error:
+        return {"status": "crit", "detail": "API unreachable: %s" % error,
+                "payload": {"endpoint": "system/status.systemresource",
+                            "error": error}}
+    box = parse_system_resource(res)
+    status, detail = classify_sessions(
+        box, warn_num=float(probe.warn_num or 0),
+        crit_num=float(probe.crit_num or 0))
+    return {
+        "status": status, "detail": detail,
+        "value_num": box.get("sessions"),
+        "value2_num": box.get("conn_per_sec"),
+        "fingerprint": sha8("%s|%s" % (box.get("log_disk"), box.get("db_status"))),
+        "payload": {"endpoint": "system/status.systemresource", "box": box,
+                    "raw": res},
+    }
+
+
+def run_policy_sessions(probe, prev) -> dict:
+    """Sessions, connection rate and latency for ONE server policy.
+
+    Two calls: ``policystatus`` for the policy row and ``policystatus.detail``
+    for its pool members. The member call is best-effort — losing backend health
+    must degrade the detail, not void the session count.
+    """
+    client, err = _api_client(probe)
+    if err:
+        return err
+    name = (probe.target or "").strip()
+    if not name:
+        return {"status": "error", "detail": "probe has no policy name",
+                "payload": {}}
+    rows, error = client.policy_status()
+    if error:
+        return {"status": "crit", "detail": "API unreachable: %s" % error,
+                "payload": {"endpoint": "policy/policystatus", "error": error}}
+    parsed = parse_policy_rows(rows)
+    row = next((r for r in parsed if r["name"] == name), None)
+    if row is None:
+        return {"status": "crit",
+                "detail": "policy %r not reported by the device (deleted?)" % name,
+                "payload": {"endpoint": "policy/policystatus",
+                            "known": [r["name"] for r in parsed]}}
+    members, m_err = client.policy_health(name)
+    parsed_members = parse_pool_members(members)
+    fp = policy_fingerprint(row, parsed_members)
+    status, detail = classify_policy_sessions(
+        row, parsed_members,
+        warn_num=float(probe.warn_num or 0), crit_num=float(probe.crit_num or 0),
+        warn_ms=int(probe.warn_ms or 0), fingerprint=fp,
+        prev_fingerprint=(prev.fingerprint if prev else ""))
+    if m_err:
+        detail = "%s; backend health unavailable: %s" % (detail, m_err)
+    return {
+        "status": status, "detail": detail,
+        "value_num": row["sessions"], "value2_num": row["app_response_time"],
+        "fingerprint": fp,
+        "payload": {"endpoint": "policy/policystatus(+.detail)", "policy": row,
+                    "members": parsed_members, "members_error": m_err},
+    }
+
+
+def run_throughput(probe) -> dict:
+    """HTTP throughput for one policy, or for the ``Total HTTP Throughput``
+    aggregate when the probe targets it."""
+    client, err = _api_client(probe)
+    if err:
+        return err
+    name = (probe.target or "").strip() or TOTAL_HTTP
+    res, error = client.policy_traffic(name)
+    if error:
+        return {"status": "crit", "detail": "API unreachable: %s" % error,
+                "payload": {"endpoint": "policy/policytraffic", "target": name,
+                            "error": error}}
+    tr = parse_traffic(res)
+    stats = traffic_stats(tr.get("bps") or [])
+    status, detail = classify_throughput(
+        stats, warn_num=float(probe.warn_num or 0),
+        crit_num=float(probe.crit_num or 0))
+    if tr.get("cache_enabled"):
+        c = traffic_stats(tr.get("cache_bps") or [])
+        detail = "%s; cached avg %s" % (detail, fmt_mbps(c["avg_mbps"]))
+    return {
+        "status": status, "detail": detail,
+        "value_num": stats["avg_mbps"], "value2_num": stats["peak_mbps"],
+        "fingerprint": "",
+        "payload": {"endpoint": "policy/policytraffic", "target": name,
+                    "stats": stats, "cache_enabled": tr.get("cache_enabled"),
+                    "window_s": stats["samples"], "unit": "Mbps",
+                    "note": "device returns %ds of 1s samples in bytes/s"
+                            % TRAFFIC_WINDOW_S},
+    }
+
+
+def run_transactions(probe) -> dict:
+    """HTTP transaction counts for one policy over ``stale_after_h`` hours."""
+    client, err = _api_client(probe)
+    if err:
+        return err
+    name = (probe.target or "").strip()
+    if not name:
+        return {"status": "error", "detail": "probe has no policy name",
+                "payload": {}}
+    if name in TRAFFIC_AGGREGATES:
+        return {"status": "error",
+                "detail": "httptransactions needs a real policy name, not %r" % name,
+                "payload": {"target": name}}
+    hours = max(1, int(probe.stale_after_h or 1))
+    rows, error = client.http_transactions(name, hours)
+    if error:
+        return {"status": "crit", "detail": "API unreachable: %s" % error,
+                "payload": {"endpoint": "system/status.httptransactions",
+                            "target": name, "error": error}}
+    tx = parse_transactions(rows)
+    status, detail = classify_transactions(
+        tx, warn_num=float(probe.warn_num or 0),
+        crit_num=float(probe.crit_num or 0))
+    return {
+        "status": status, "detail": "%s over %dh" % (detail, hours),
+        "value_num": tx["total"], "value2_num": tx["last"],
+        "fingerprint": "",
+        "payload": {"endpoint": "system/status.httptransactions",
+                    "target": name, "hours": hours, "total": tx["total"],
+                    "peak": tx["peak"], "buckets": tx["buckets"][-24:]},
+    }
+
 # ---------------------------------------------------------------------------
 # Orchestration + persistence
 # ---------------------------------------------------------------------------
@@ -784,6 +1268,14 @@ def run_probe(probe, *, session=None) -> dict:
             out = run_box(probe, probe.kind)
         elif probe.kind == "proxyd":
             out = run_proxyd(probe, prev)
+        elif probe.kind == "sessions":
+            out = run_sessions(probe)
+        elif probe.kind == "policy_sessions":
+            out = run_policy_sessions(probe, prev)
+        elif probe.kind == "throughput":
+            out = run_throughput(probe)
+        elif probe.kind == "transactions":
+            out = run_transactions(probe)
         else:
             out = {"status": "error",
                    "detail": f"unknown probe kind {probe.kind!r}", "payload": {}}
@@ -944,6 +1436,74 @@ def resolve_targets_from_cache(appliance, *, session=None) -> list[dict]:
             "note": f"{scheme.upper()} · vserver {pol.vserver or '?'} · {service}",
         })
     return out
+
+
+def discover_api_probes(appliance, *, session=None) -> dict:
+    """Create the REST-monitor probes for ``appliance``: box sessions, the
+    ``Total HTTP Throughput`` aggregate, and per-policy sessions + throughput.
+
+    Policies come from the LIVE ``policystatus`` call, NOT from the harvest
+    cache, for one concrete reason: on a licence-locked appliance every cmdb
+    read fails with ``-20010`` while ``policystatus`` still answers 200
+    (verified on fw7, 2026-07-28). Discovering from the cache would create zero
+    probes on exactly the devices that most need them.
+
+    ``transactions`` probes are NOT created here. That endpoint aggregates over
+    hours, so a 5-minute probe would resample the same window twenty times; add
+    those by hand at a 15-minute interval when a policy needs request-volume
+    history. Idempotent by (device, kind, target).
+    """
+    from ..models import MonitorProbe, db
+
+    session = session or db.session
+    if (appliance.kind or "fortiweb") not in API_PRODUCTS:
+        return {"created": 0, "skipped": 0, "total_targets": 0,
+                "error": "monitor API discovery is %s-only"
+                         % "/".join(API_PRODUCTS)}
+    from ..clients.fortiweb import FortiWebClient
+    try:
+        rows, error = FortiWebClient(appliance).policy_status()
+    except Exception as exc:  # noqa: BLE001
+        return {"created": 0, "skipped": 0, "total_targets": 0,
+                "error": "policystatus failed: %s" % exc}
+    if error:
+        return {"created": 0, "skipped": 0, "total_targets": 0,
+                "error": "policystatus failed: %s" % error}
+    policies = parse_policy_rows(rows)
+
+    have = {(p.kind, (p.target or "").strip().lower()) for p in
+            session.query(MonitorProbe)
+            .filter(MonitorProbe.appliance_id == appliance.id).all()}
+    created, skipped = 0, 0
+
+    def add(kind: str, target: str, label: str, note: str, interval: int = 5,
+            enabled: bool = True) -> None:
+        nonlocal created, skipped
+        key = (kind, target.strip().lower())
+        if key in have:
+            skipped += 1
+            return
+        session.add(MonitorProbe(
+            appliance_id=appliance.id, kind=kind, target=target[:120],
+            name=("%s · %s" % (appliance.name, label))[:120],
+            enabled=enabled, interval_min=interval, note=note[:250]))
+        have.add(key)
+        created += 1
+
+    add("sessions", "", "sessions",
+        "Box-wide concurrent sessions + connection rate over REST")
+    add("throughput", TOTAL_HTTP, "total throughput",
+        "Aggregate HTTP throughput across every policy")
+    for p in policies:
+        if p["protocol"].upper() not in ("HTTP", "HTTPS"):
+            continue
+        add("policy_sessions", p["name"], "%s sessions" % p["name"],
+            "Sessions, conn/s, app latency and backend health for %s" % p["name"])
+        add("throughput", p["name"], "%s throughput" % p["name"],
+            "HTTP throughput for policy %s" % p["name"])
+    session.commit()
+    return {"created": created, "skipped": skipped,
+            "total_targets": len(policies)}
 
 
 def discover_https_probes(appliance, *, session=None) -> dict:
@@ -1131,6 +1691,16 @@ METRIC_META = {
                "v2_label": "", "v2_unit": ""},
     "proxyd": {"label": "Memory consumed", "unit": "MB",
                "v2_label": "Memory free", "v2_unit": "MB"},
+    "sessions": {"label": "Concurrent sessions", "unit": "",
+                 "v2_label": "New connections", "v2_unit": "/s"},
+    "policy_sessions": {"label": "Concurrent sessions", "unit": "",
+                        "v2_label": "App response time", "v2_unit": "ms"},
+    # Average on the primary axis, peak on the secondary: they share a unit, so
+    # they can share a chart — which is the whole point of keeping both.
+    "throughput": {"label": "Throughput (avg)", "unit": "Mbps",
+                   "v2_label": "Throughput (peak)", "v2_unit": "Mbps"},
+    "transactions": {"label": "Transactions in window", "unit": "",
+                     "v2_label": "Latest bucket", "v2_unit": ""},
 }
 
 

@@ -45,6 +45,7 @@ K_CHK_DEVICE = "alerts.check.device"
 K_CHK_BACKUP = "alerts.check.backup"
 K_CHK_DRIFT = "alerts.check.drift"
 K_DRIFT_WINDOW_MIN = "alerts.drift_window_min"  # only alert on drift newer than this
+K_DEV_MIN = "alerts.device_min_status"    # "warn" (default) or "crit"
 
 DEFAULTS = {
     K_ENABLED: "0",
@@ -59,6 +60,7 @@ DEFAULTS = {
     K_CHK_BACKUP: "1",
     K_CHK_DRIFT: "1",
     K_DRIFT_WINDOW_MIN: "90",
+    K_DEV_MIN: "warn",
 }
 
 _REPO_ROOT = "/opt/satom"
@@ -127,6 +129,7 @@ def config() -> dict:
         "git_ahead_max_hours": _int(K_GIT_AHEAD_MAX_H, 6),
         "backup_max_hours": _int(K_BACKUP_MAX_H, 48),
         "drift_window_min": _int(K_DRIFT_WINDOW_MIN, 90),
+        "device_min_status": _get(K_DEV_MIN) or "warn",
         "checks": {
             "cert": _flag(K_CHK_CERT),
             "git": _flag(K_CHK_GIT),
@@ -164,6 +167,10 @@ def save_config(form) -> None:
     AppSetting.set(K_GIT_AHEAD_MAX_H, clamp("git_ahead_max_hours", 1, 8760, 6))
     AppSetting.set(K_BACKUP_MAX_H, clamp("backup_max_hours", 1, 8760, 48))
     AppSetting.set(K_DRIFT_WINDOW_MIN, clamp("drift_window_min", 1, 43200, 90))
+    # Only "warn" and "crit" are dispatchable floors: "ok"/"unknown" would mail
+    # about every device on every run.
+    _dev_min = g("device_min_status")
+    AppSetting.set(K_DEV_MIN, _dev_min if _dev_min in ("warn", "crit") else "warn")
     # per-check toggles (absent checkbox = off)
     AppSetting.set(K_CHK_CERT, cb("check_cert"))
     AppSetting.set(K_CHK_GIT, cb("check_git"))
@@ -314,32 +321,80 @@ def _check_git() -> list[dict]:
     return []
 
 
+def _reachable(host: str, port: int) -> bool:
+    """TCP liveness. The ONLY signal in this module that touches the network —
+    the Monitoring page is DB-first by contract and deliberately cannot probe."""
+    try:
+        with socket.create_connection((host, int(port or 443)), timeout=4):
+            return True
+    except Exception:  # noqa: BLE001 — unreachable is the finding, not an error
+        return False
+
+
 def _check_devices() -> list[dict]:
+    """One finding per unhealthy appliance, graded on the SAME ladder the
+    Monitoring page prints.
+
+    Until 2026-07-28 this check opened a TCP socket and nothing else, so it was
+    blind to every failure where the box answers the port but stops being
+    useful: fw6 and fw7 accepted :443 for a week while their harvest died on an
+    invalid licence — the page went red and no mail was ever sent. The socket
+    probe stays (it is the only network-touching signal here) but it is now one
+    input among the four DB-first signals from :mod:`device_health`, merged into
+    a single per-device message: one device, one alert, every failing signal
+    listed. Sharing ``device_health`` is the point — two ladders would let the
+    page and the mailbox disagree about the same box."""
     from ..models import Appliance
-    findings: list[dict] = []
+    from . import device_health as devhealth
+
     try:
         appliances = Appliance.query.all()
     except Exception as exc:  # noqa: BLE001
         return [{"key": "device.error", "severity": SEV_WARNING,
                  "title": "Appliance list unreadable",
                  "detail": f"Appliance.query failed: {exc}"}]
+
+    floor = devhealth.RANK.get(_get(K_DEV_MIN), 0) or devhealth.RANK["warn"]
+    try:
+        warn_pct, crit_pct = devhealth.thresholds()
+    except Exception:  # noqa: BLE001
+        warn_pct, crit_pct = 80.0, 95.0
+
+    findings: list[dict] = []
     for a in appliances:
         if getattr(a, "maintenance", False):
             continue
         host, port = a.host, int(a.port or 443)
-        ok = False
+        reachable = _reachable(host, port)
         try:
-            with socket.create_connection((host, port), timeout=4):
-                ok = True
-        except Exception:  # noqa: BLE001 — unreachable is the finding, not an error
-            ok = False
-        if not ok:
-            findings.append({
-                "key": f"device.unreachable.{a.name}", "severity": SEV_WARNING,
-                "title": f"Device {a.name} unreachable",
-                "detail": (f"{a.kind} appliance '{a.name}' at {host}:{port} did not "
-                           f"accept a TCP connection within 4s (checked from "
-                           f"{_node()}). It may be down or network-partitioned.")})
+            health = devhealth.collect_for(a, warn_pct, crit_pct)
+        except Exception as exc:  # noqa: BLE001 — one bad device never sinks the run
+            findings.append({"key": f"device.error.{a.name}", "severity": SEV_WARNING,
+                             "title": f"Health roll-up failed for {a.name}",
+                             "detail": f"device_health.collect_for() raised: {exc}"})
+            continue
+
+        lines = [] if reachable else [
+            f"- Reachability: no TCP connection to {host}:{port} within 4s "
+            f"(probed from {_node()}) — down or network-partitioned"]
+        lines += [f"- {r['label']}: {r['text']}" for r in health["reasons"]
+                  if r["status"] in ("warn", "crit")]
+
+        status = devhealth.worst_of([health["status"]] +
+                                    ([] if reachable else ["warn"]))
+        if not lines or devhealth.RANK.get(status, 0) < floor:
+            continue
+
+        crit = status == "crit"
+        findings.append({
+            # The status is part of the key ON PURPOSE: an escalation from warn
+            # to crit inside the cooldown window must still reach the operator.
+            "key": f"device.health.{a.name}.{status}",
+            "severity": SEV_CRITICAL if crit else SEV_WARNING,
+            "title": f"Device {a.name} is {'critical' if crit else 'degraded'}",
+            "detail": ("\n".join(lines) +
+                       f"\n\n{a.kind} appliance at {host}:{port}, probed from "
+                       f"{_node()}. Full picture: /monitoring/")})
     return findings
 
 

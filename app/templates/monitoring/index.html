@@ -46,7 +46,7 @@
 <div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
   <div>
     <h1 class="fw-page-title mb-0"><i class="bi bi-heart-pulse me-2 text-accent"></i>Fleet health</h1>
-    <p class="text-muted small mb-0">Appliance health, capacity guardrails, and manager self-diagnostics — data from the local cache, no live device calls.</p>
+    <p class="text-muted small mb-0">{% if is_global %}Appliance health, capacity guardrails, and manager self-diagnostics — data from the local cache, no live device calls.{% else %}{{ product.name }} appliance health and capacity guardrails — data from the local cache, no live device calls.{% endif %}</p>
   </div>
   <div class="d-flex align-items-center gap-2">
     <span id="monStamp" class="text-muted small"></span>
@@ -58,9 +58,16 @@
   </div>
 </div>
 
+{# Manager self-health (HA peers · Git · backup server · DB · units · encryption)
+   describes the SATOM installation, not a product, so it is Global-only. A
+   product ADOM renders device cards ONLY. The server agrees: /monitoring/data
+   omits the system/db/redundancy keys outside Global and /monitoring/{infra,
+   encryption} answer 403 — the template is not the enforcement point. #}
+{% if is_global %}
 {% include "_infra_health.html" %}{# Database + Services cards render into #monSystem, which lives inside the infra grid #}
 
 {% include "_encryption_health.html" %}
+{% endif %}
 
 <div id="monHealthAlerts"></div>
 <div id="monAlerts"></div>
@@ -73,6 +80,9 @@
 (function () {
   'use strict';
   var CAN_SCAN = {{ 'true' if can_scan else 'false' }};
+  // Global-only sections are not rendered in a product ADOM; renderSystem would
+  // dereference a null #monSystem and kill the whole load() chain.
+  var IS_GLOBAL = {{ 'true' if is_global else 'false' }};
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -174,6 +184,8 @@
   }
 
   function renderSystem(d) {
+    var host = document.getElementById('monSystem');
+    if (!host) return;              // product ADOM — manager self-health hidden
     var dbs = d.db || {}, red = d.redundancy || {};
     var svc = (d.services || []).map(function (s) {
       var color = s.ok ? '#10b981' : (s.state === 'inactive' ? '#64748b' : '#ef4444');
@@ -196,7 +208,7 @@
     }).join('') || '<div class="text-muted small">No HA clusters registered.</div>';
     var mgr = red.manager || {};
 
-    document.getElementById('monSystem').innerHTML =
+    host.innerHTML =
       '<div class="fw-card"><div class="fw-card-body">' +
       '<b><i class="bi bi-database me-1"></i>Database</b>' +
       '<div class="text-muted small mb-2">' + esc(dbs.dialect || '?') +
@@ -224,7 +236,8 @@
     fetch('{{ url_for("monitoring.data") }}', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        renderHealthAlerts(d); renderAlerts(d); renderDevices(d); renderSystem(d);
+        renderHealthAlerts(d); renderAlerts(d); renderDevices(d);
+        if (IS_GLOBAL) renderSystem(d);
         document.getElementById('monStamp').textContent =
           'updated ' + new Date().toLocaleTimeString() +
           ' · warn ≥ ' + d.thresholds.warn + '% · crit ≥ ' + d.thresholds.crit + '%';

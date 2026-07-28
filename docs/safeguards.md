@@ -249,6 +249,48 @@ regression (uncapped + unreachable + never cached must not be `ok`) and
 `tests/test_alerts_device_health.py` asserts the alert one (a device whose port
 answers but whose harvest is failing must still produce a finding).
 
+### 9c. An ADOM shows its own product, and nothing about the manager
+
+Monitoring (Fleet health · Metrics · Deep monitors) lives in every ADOM. What an
+ADOM must NOT inherit is the manager's own diagnostics — HA peers, the Git SoT,
+the external backup server, the local database, the systemd units, the
+encryption posture. Those describe the SATOM installation, not FortiWeb or
+FortiADC or FortiAnalyzer, and rendering them inside a product view puts node
+hostnames and infrastructure addresses on a page whose whole promise is "this is
+your product".
+
+Three rules:
+
+* **The template is not the enforcement point.** `{% if is_global %}` hides the
+  sections; `/monitoring/data` also *omits* `system`/`services`/`db`/
+  `redundancy` outside Global (the collection is skipped, not filtered), and
+  `/monitoring/infra` and `/monitoring/encryption` answer **403**. A hidden card
+  whose endpoint still answers is a hidden card, not a scoped one.
+* **Scoping is by device kind, never by who created the row.** Every page
+  filters through `visible_appliances()`, so a probe created from Global against
+  a FortiWeb box appears in the FortiWeb ADOM with no extra bookkeeping.
+* **Fleet-wide ACTIONS are scoped too, not just the views.** Both "Scan
+  hardware (SSH)" and Deep monitors' "Probe now" default to *everything* when
+  nothing is selected, and both then open an SSH session per device. The target
+  list is resolved in the request (where the ADOM exists) and passed to the
+  worker thread; an unscoped `Appliance.query` inside the worker would log into
+  the FortiADC and FortiAnalyzer boxes from the FortiWeb ADOM. Global keeps
+  `ids=None` so the scheduler's own due/force semantics are untouched.
+
+**How to check it is armed.** From a product ADOM:
+
+```bash
+curl -sk -H 'X-ADOM: fortiweb' https://<node>/monitoring/infra        # expect 403
+curl -sk -H 'X-ADOM: fortiweb' https://<node>/monitoring/data | \
+  python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["scope"], \
+    [k for k in ("system","services","db","redundancy") if k in d])'  # fortiweb []
+```
+
+`tests/test_adom_monitoring.py` pins all of it: the pages answer in all three
+ADOMs, each sees only its own devices and probes, the manager sections and their
+endpoints are Global-only, and neither fleet-wide action can reach out of its
+ADOM.
+
 ## 10. Fresh installs, and what an offline bundle can promise
 
 The guards travel with the code. A node installed from the online path or from an
@@ -318,7 +360,10 @@ git bundle verify /opt/satom/data/git-bundles/<latest>.bundle
 curl -sk https://<node>/monitoring/data | python3 -c \
   'import json,sys; d=json.load(sys.stdin); print([(x["name"],x["worst"]) for x in d["devices"]])'
 
-# 7. The security headers are actually being sent
+# 7. A product ADOM cannot see the manager's own infrastructure
+curl -sk -H 'X-ADOM: fortiweb' https://<node>/monitoring/infra -o /dev/null -w '%{http_code}\n'   # 403
+
+# 8. The security headers are actually being sent
 curl -sI https://<node>/ | grep -iE 'content-security-policy|x-frame|x-content-type'
 ```
 

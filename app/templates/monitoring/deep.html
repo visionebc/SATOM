@@ -47,6 +47,10 @@
   .dp-kind.proxyd    { background:rgba(245,158,11,.10); border-color:rgba(245,158,11,.28); color:#fcd34d; }
   .dp-kind.cpu       { background:rgba(139,92,246,.10); border-color:rgba(139,92,246,.28); color:#c4b5fd; }
   .dp-kind.memory    { background:rgba(236,72,153,.10); border-color:rgba(236,72,153,.28); color:#f9a8d4; }
+  .dp-kind.sessions        { background:rgba(56,189,248,.10); border-color:rgba(56,189,248,.28); color:#7dd3fc; }
+  .dp-kind.policy_sessions { background:rgba(56,189,248,.10); border-color:rgba(56,189,248,.28); color:#7dd3fc; }
+  .dp-kind.throughput      { background:rgba(59,130,246,.12); border-color:rgba(59,130,246,.30); color:#93c5fd; }
+  .dp-kind.transactions    { background:rgba(168,85,247,.10); border-color:rgba(168,85,247,.28); color:#d8b4fe; }
   .dp-ports { max-height:190px; overflow:auto; border:1px solid rgba(148,163,184,.14);
               border-radius:8px; padding:8px 10px; }
   .dp-ports label { display:flex; gap:8px; align-items:center; font-size:.8rem; padding:2px 0;
@@ -196,6 +200,10 @@
               <option value="cpu">Processor load</option>
               <option value="memory">Memory usage</option>
               <option value="proxyd">proxyd process</option>
+              <option value="sessions">Concurrent sessions (box)</option>
+              <option value="policy_sessions">Server-policy sessions &amp; latency</option>
+              <option value="throughput">HTTP throughput</option>
+              <option value="transactions">HTTP transactions</option>
             </select>
           </div>
           <div class="mb-2">
@@ -253,6 +261,43 @@
             <label class="form-label small">Warn if the harvest is older than (hours)</label>
             <input type="number" class="form-control form-control-sm" name="stale_after_h" id="dpFstale" value="6">
           </div>
+          <div class="mb-2 dp-f-api">
+            <label class="form-label small">Server policy</label>
+            <input class="form-control form-control-sm" name="target" id="dpFpol"
+                   placeholder="pol-shop-main">
+            <div class="form-text small">
+              The policy name exactly as the appliance reports it in
+              <code>policy/policystatus</code>. For <b>HTTP throughput</b> you may instead
+              use the aggregate <code>Total HTTP Throughput</code>; leave it empty on a
+              <b>Concurrent sessions</b> probe, which is box-wide.
+            </div>
+          </div>
+          <div class="row g-2 dp-f-api">
+            <div class="col-6"><label class="form-label small">Warn at</label>
+              <input type="number" step="any" class="form-control form-control-sm"
+                     name="warn_num" id="dpFwarnn" value="0"></div>
+            <div class="col-6"><label class="form-label small">Critical at</label>
+              <input type="number" step="any" class="form-control form-control-sm"
+                     name="crit_num" id="dpFcritn" value="0"></div>
+            <div class="col-12"><div class="form-text small" id="dpFnumUnit"></div></div>
+          </div>
+          <div class="mb-2 dp-f-api" id="dpFhoursRow">
+            <label class="form-label small">Window (hours)</label>
+            <input type="number" class="form-control form-control-sm" name="stale_after_h"
+                   id="dpFhours" value="1">
+            <div class="form-text small">Only used by <b>HTTP transactions</b>: the
+              appliance picks the bucket width from this (1&nbsp;h → 5-minute buckets,
+              24&nbsp;h → 2-hour buckets).</div>
+          </div>
+          <div class="mb-2 dp-f-api">
+            <div class="form-text small">
+              These four read the appliance's REST monitor API and never open an SSH
+              session, so they keep reporting on a device whose <em>cmdb</em> is
+              licence-locked — verified on fw7, where every config read fails with
+              <code>-20010</code> while <code>policystatus</code> still answers 200.
+              FortiWeb only. 0 disables a threshold level.
+            </div>
+          </div>
           <div class="row g-2 mt-1">
             <div class="col-6"><label class="form-label small">Interval (min)</label>
               <input type="number" class="form-control form-control-sm" name="interval_min" id="dpFint" value="5"></div>
@@ -293,6 +338,13 @@
             <label><input type="checkbox" name="what" value="baseline" checked>
               <span><b>Device baseline</b> — one interface watch covering all ports, plus
                 processor load and memory usage, plus <code>proxyd</code> on FortiWeb.</span></label>
+            <label><input type="checkbox" name="what" value="api">
+              <span><b>REST telemetry</b> — box concurrent sessions, the
+                <code>Total HTTP Throughput</code> aggregate, and per-policy sessions +
+                throughput. Policies come from the LIVE <code>policystatus</code> call, not
+                the cache, so this is the one step that needs the appliance reachable — and
+                the one that still works when its cmdb is licence-locked. FortiWeb
+                only.</span></label>
             <label><input type="checkbox" name="what" value="interfaces">
               <span><b>One probe per interface</b> — a separate series, interval and history
                 for every port. Pick this instead of the all-ports watch when you want to
@@ -405,6 +457,14 @@
       else if (p.kind === 'proxyd') where += ' · ' + esc(p.process_name);
       else if (p.kind === 'cpu' || p.kind === 'memory')
         where += ' · warn ' + p.warn_pct + '% / crit ' + p.crit_pct + '%';
+      else if (p.kind === 'throughput')
+        where += ' · ' + esc(p.target || 'Total HTTP Throughput') +
+                 (p.warn_num ? ' · warn ' + p.warn_num + ' Mbps' : '');
+      else if (p.kind === 'policy_sessions' || p.kind === 'transactions')
+        where += ' · ' + esc(p.target || '(no policy)') +
+                 (p.warn_num ? ' · warn ' + p.warn_num : '');
+      else if (p.kind === 'sessions')
+        where += ' · box-wide' + (p.warn_num ? ' · warn ' + p.warn_num : '');
       else if (p.kind === 'interface')
         where += ' · ' + (p.target ? esc(p.target) : 'all ports');
       var act = CAN_EDIT
@@ -742,14 +802,32 @@
 
     // cpu and memory share one field group ('box'): identical thresholds, and a
     // single element cannot carry two kind classes without the loop fighting itself.
+    // The four REST-monitor kinds share one field group ('api') because they take
+    // the same shape of input: a policy name plus two absolute thresholds. Only
+    // the UNIT of those thresholds differs, so that is a label, not a form.
+    var API_KINDS = { sessions: 'sessions', policy_sessions: 'sessions',
+                      throughput: 'Mbps (graded on the window PEAK)',
+                      transactions: 'transactions in the window' };
     function syncKind() {
       var k = document.getElementById('dpFkind').value;
-      var group = (k === 'cpu' || k === 'memory') ? 'box' : k;
-      ['https', 'interface', 'proxyd', 'box'].forEach(function (g) {
+      var group = (k === 'cpu' || k === 'memory') ? 'box'
+                : (API_KINDS[k] ? 'api' : k);
+      ['https', 'interface', 'proxyd', 'box', 'api'].forEach(function (g) {
         document.querySelectorAll('.dp-f-' + g).forEach(function (el) {
           el.style.display = (g === group) ? '' : 'none';
         });
       });
+      if (group === 'api') {
+        document.getElementById('dpFnumUnit').textContent =
+          'Threshold unit for this type: ' + API_KINDS[k] + '.';
+        // Hours only mean something to `transactions`; showing the box on the
+        // others would invite a value that is read but never used.
+        document.getElementById('dpFhoursRow').style.display =
+          (k === 'transactions') ? '' : 'none';
+        // `sessions` is box-wide: a policy name here would be silently ignored.
+        document.getElementById('dpFpol').closest('.dp-f-api').style.display =
+          (k === 'sessions') ? 'none' : '';
+      }
     }
     document.getElementById('dpFkind').addEventListener('change', syncKind);
 
@@ -796,6 +874,8 @@
         dpFurl: p.url || '', dpFexp: p.expect_status, dpFms: p.warn_ms,
         dpFtls: p.tls_warn_days, dpFproc: p.process_name || 'proxyd',
         dpFwarnp: p.warn_pct, dpFcritp: p.crit_pct,
+        dpFwarnn: p.warn_num, dpFcritn: p.crit_num,
+        dpFpol: p.target || '', dpFhours: p.stale_after_h,
         dpFstale: p.stale_after_h, dpFint: p.interval_min, dpFto: p.timeout_s
       };
       Object.keys(set).forEach(function (k) {

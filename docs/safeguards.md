@@ -291,6 +291,63 @@ ADOMs, each sees only its own devices and probes, the manager sections and their
 endpoints are Global-only, and neither fleet-wide action can reach out of its
 ADOM.
 
+### 9d. A scheduled run says whether it RAN, not whether it liked what it found
+
+`_do_deep_monitor` used to return `ok = worst in ("ok", "unknown")`. One server
+policy with every backend down therefore marked the *Deep monitors — probe
+sweep* scheduled action **failed**, and kept it failed until somebody repaired
+the backend. Two things break at once when a run status carries a finding:
+
+* a sweep that genuinely could not execute becomes indistinguishable from a
+  healthy sweep that found something real, and
+* the action sits permanently red, which is precisely how an operator learns to
+  stop reading it — the same failure mode as a probe left pointing at a
+  powered-off appliance.
+
+`ok` is now `True` whenever the sweep completed; the worst status and the
+per-status counts go in the summary, and every finding keeps its own probe row,
+page badge and alert. A sweep that truly fails still raises and `run_action`
+catches it.
+
+**Where:** `app/services/scheduled_actions.py::_do_deep_monitor`.
+**Tests:** `tests/test_deep_monitor_api.py::test_sweep_action_stays_ok_when_a_probe_is_critical`
+(verified by mutation — reverting the flag fails it).
+
+### 9e. Runtime telemetry survives a licence lock, and never invents a number
+
+The four REST-monitor probe kinds (`sessions`, `policy_sessions`, `throughput`,
+`transactions`) read the appliance's monitor API and open no SSH session. Three
+rules hold them honest:
+
+* **A licence-locked device is still measurable.** Every *cmdb* read on fw6/fw7
+  returns HTTP 423 `-20010`, which is why their hourly `device_sync` has been
+  failing for days — yet `system/status.systemresource`, `policy/policystatus`
+  and `policy/policytraffic` all answer 200. Discovery therefore reads the LIVE
+  `policystatus` rather than the harvest cache; discovering from the cache would
+  have created zero probes on exactly the devices that most need them.
+* **Wrong product fails loudly.** FortiADC and FortiAnalyzer publish runtime
+  telemetry under entirely different paths. `_api_client` refuses any device
+  whose `kind` is not FortiWeb and returns `error` with the product named,
+  because a shared client would have reported a confident **0 Mbps** instead.
+* **Absent data is never health.** A disabled policy grades `warn`, not `ok`
+  (a policy admitting no traffic *is* the outage); an empty transaction bucket
+  list grades `error`, not `ok`, because the appliance answers `errcode 0` with
+  no rows when the policy name is unknown; and throughput is graded on the
+  window **peak**, not the mean, so a four-second burst is not averaged away.
+
+Known limit, stated rather than hidden: no endpoint in the appliance's entire
+non-cmdb API surface exposes daemon or process state. The runtime `policy`
+handle is carried in the policy fingerprint and *would* change if proxyd
+rebuilt its policy table, but that is inference and is **not verified**. The CLI
+`proxyd` probe watches the actual PID set and remains the authoritative restart
+check.
+
+**Where:** `app/services/deep_monitor.py` (`API_KINDS`, `_api_client`,
+`discover_api_probes`, the `classify_*` graders), `app/clients/fortiweb.py`
+(the monitor endpoint block).
+**Tests:** `tests/test_deep_monitor_api.py` — 48 cases over payloads captured
+verbatim from a live appliance.
+
 ## 10. Fresh installs, and what an offline bundle can promise
 
 The guards travel with the code. A node installed from the online path or from an
@@ -336,6 +393,23 @@ which rule 3 exists to prevent.
   because of that, but it mitigates rather than fixes it.
 
 ## Verifying the guards are armed
+### The REST monitor probes (§9d, §9e)
+
+    # the sweep reports "ran", not "healthy" — a crit finding must not fail the run
+    python3 - <<'PY'
+    from app.services import scheduled_actions as sa, deep_monitor as dm
+    dm.sweep = lambda **k: {"ran":1,"counts":{"crit":1},"worst":"crit","results":[]}
+    assert sa._do_deep_monitor({}, False)["ok"] is True
+    PY
+
+    # a non-FortiWeb device is refused by name, never measured as zero
+    python3 -c "from app.services import deep_monitor as dm; \
+      print(dm._api_client(type('P',(),{'kind':'fortiadc','appliance':None})()))"
+
+    # telemetry answers on a licence-locked box while its cmdb does not
+    curl -sk -H "Authorization: $TOKEN" https://<fw>/api/v2.0/cmdb/system/interface   # 423 -20010
+    curl -sk -H "Authorization: $TOKEN" https://<fw>/api/v2.0/policy/policystatus     # 200
+
 
 ```bash
 # 1. HA guards answer correctly at the service account's privilege level

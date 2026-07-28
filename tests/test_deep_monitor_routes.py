@@ -55,7 +55,9 @@ def test_data_feed_shape(client, admin_id):
     d = client.get("/monitoring/deep/data").get_json()
     assert set(d) >= {"probes", "summary", "worst", "kinds", "devices"}
     assert [k["key"] for k in d["kinds"]] == ["https", "interface", "cpu",
-                                              "memory", "proxyd"]
+                                              "memory", "proxyd", "sessions",
+                                              "policy_sessions", "throughput",
+                                              "transactions"]
 
 
 def test_create_validates_kind_requirements(client, admin_id):

@@ -60,6 +60,7 @@ def all_jobs():
     except ValueError:
         limit = 100
     by = None if _is_admin() else _me()
+    jobsvc.maybe_sweep_orphans()
     jobs = jobsvc.list_jobs(limit=limit, by=by, status=status, type_=type_)
     jobs = [j for j in jobs
             if visible_product((j.get("meta") or {}).get("product"))]
@@ -87,6 +88,9 @@ def index():
     Manager (``/jobs/all``), and a failure still reaches the bell.
     """
     active = (request.args.get("active") or "").lower() in ("1", "true", "yes")
+    # Retire ghosts before answering: a job whose worker no longer exists would
+    # otherwise reopen a toast on every navigation, forever.
+    jobsvc.maybe_sweep_orphans()
     jobs = jobsvc.list_jobs(limit=30, by=_me(), active_only=active)
     jobs = [j for j in jobs
             if not j.get("background")

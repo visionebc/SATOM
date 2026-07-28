@@ -79,7 +79,17 @@ class JobCancelled(Exception):
 
 
 def _state_dir() -> Path:
-    d = Path(__file__).resolve().parents[2] / "data" / "jobs"
+    """Where the job ledger lives.
+
+    ``SATOM_JOBS_DIR`` overrides the in-tree default. This exists so a test run
+    -- or any throwaway process -- cannot write into the PRODUCTION ledger: the
+    suite creates real job files that nobody ever finishes, and the toast dock
+    replays every active job on every navigation, so those ghosts become a
+    floating window with a Stop button that can never work. Same isolation
+    pattern as FORTINET_DIAG_DIR."""
+    override = os.environ.get("SATOM_JOBS_DIR")
+    d = (Path(override) if override
+         else Path(__file__).resolve().parents[2] / "data" / "jobs")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -420,7 +430,8 @@ def _pid_alive(pid: int) -> bool:
         return True
 
 
-def sweep_orphans(*, stale_after_s: int = 3600) -> list[dict]:
+def sweep_orphans(*, stale_after_s: int = 3600,
+                  no_pid_stale_after_s: int = 600) -> list[dict]:
     """Mark active jobs whose worker no longer exists as terminal ``error``.
 
     A worker is a daemon thread inside a gunicorn worker process: a service
@@ -429,8 +440,11 @@ def sweep_orphans(*, stale_after_s: int = 3600) -> list[dict]:
     booting worker may run it, the atomic write makes it idempotent. Rules:
 
     * active job, ``pid`` recorded, that pid is gone → orphan.
-    * active job with NO pid (pre-upgrade files) not updated for
-      ``stale_after_s`` → orphan.
+    * active job with NO pid not updated for ``no_pid_stale_after_s`` →
+      orphan. ``run_async`` stamps the pid the instant the worker thread
+      starts, so a job still missing one minutes later was never dispatched
+      (the request died, or a test built it and walked away). A false positive
+      self-heals: if the worker does start, it rewrites status + pid.
     * a job on another host (shared/synced data dir) is never touched.
     """
     swept: list[dict] = []
@@ -447,7 +461,7 @@ def sweep_orphans(*, stale_after_s: int = 3600) -> list[dict]:
                     st.get("updated") or st.get("created")).timestamp()
             except Exception:  # noqa: BLE001
                 age = stale_after_s + 1
-            if age <= stale_after_s:
+            if age <= no_pid_stale_after_s:
                 continue
         updated = update_job(
             st["id"], status=ERROR,
@@ -457,6 +471,31 @@ def sweep_orphans(*, stale_after_s: int = 3600) -> list[dict]:
         if updated:
             swept.append(updated)
     return swept
+
+
+_SWEEP_EVERY_S = 120.0
+_SWEEP_LOCK = threading.Lock()   # NOT _LOCK: sweep_orphans writes under _LOCK
+_last_sweep = 0.0
+
+
+def maybe_sweep_orphans() -> list[dict]:
+    """Throttled sweep for the read paths (the dock feed, the Job Manager).
+
+    Sweeping only at boot is not enough: a job that goes stale AFTER boot stays
+    active until the next restart, and the dock re-opens a toast for it on
+    every single navigation. Runs at most every ``_SWEEP_EVERY_S`` and scans
+    active jobs only, so the poll stays cheap. Never raises -- housekeeping must
+    not be able to break the feed it is cleaning."""
+    global _last_sweep
+    now = time.monotonic()
+    with _SWEEP_LOCK:
+        if now - _last_sweep < _SWEEP_EVERY_S:
+            return []
+        _last_sweep = now
+    try:
+        return sweep_orphans()
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def prune(older_than_days: int = 7, *, keep_active: bool = True) -> int:

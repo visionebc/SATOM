@@ -178,6 +178,45 @@ cooldown `alerts.cooldown_hours`):
 | `drift.error` | The drift comparison could not run |
 | `engine.error` | The alert engine itself failed — the guard on the guard |
 
+### 9b. A health badge that can never go red is not a guard
+
+**What it prevents.** Monitoring → Fleet health scored each appliance card
+*only* from capacity headroom. No appliance in this fleet has an admin cap, so
+every headroom row graded `nocap`, the roll-up loop could never reach
+warn/crit, and a device that was powered off, whose hourly harvest had been
+failing for days, and that had no cached configuration at all still rendered
+**healthy** (found 2026-07-28 on an appliance that had been off the network for
+weeks). A page that is structurally incapable of delivering bad news trains the
+operator to stop reading it.
+
+**Where it lives.** `app/services/device_health.py`. The badge is now the worst
+of four signals, and every non-ok signal is printed on the card so the state is
+never unexplained:
+
+| Signal | Warns | Critical |
+|---|---|---|
+| `sync` — last `SyncRun` rows | one failed harvest | `ERROR_STREAK_CRIT` (3) in a row |
+| `cache` — newest `DeviceSnapshot` | nothing cached, or older than `monitoring.stale_hours` (6 h) | older than 4× that |
+| `probe` — enabled deep monitors | a probe alerting, or *all* probes disabled | a probe critical |
+| `capacity` — headroom | over `capacity.warn_pct` | over `capacity.crit_pct` |
+
+Two design rules carry the guard:
+
+* **`unknown` is its own state**, ranked below `ok`. A device we have measured
+  nothing about renders `unknown`, never `healthy`. Uncapped object types and a
+  device that has never been harvested produce `unknown`, not a free pass.
+* **A disabled probe is not a passing probe.** Switching off a monitor that
+  always fails removes coverage, and the card says so.
+
+This is complementary to the `device.unreachable.*` alert in the catalog above:
+that one opens a TCP connection on the nightly alert pass, this one is DB-first
+and renders on every page load without touching an appliance.
+
+**How to check it is armed.** `GET /monitoring/data` and confirm each device
+row carries a `health` block with `signals` and `reasons`, and that
+`worst == health.status`. `tests/test_device_health.py` asserts the specific
+regression (uncapped + unreachable + never cached must not be `ok`).
+
 ## 10. Fresh installs, and what an offline bundle can promise
 
 The guards travel with the code. A node installed from the online path or from an
@@ -243,7 +282,11 @@ git bundle verify /opt/satom/data/git-bundles/<latest>.bundle
 # 5. Alerts are on and thresholds set — Settings → Alerts, or:
 #    signals fire only if alerts.enabled is true and a recipient exists
 
-# 6. The security headers are actually being sent
+# 6. The health badge is wired to reachability, not just capacity
+curl -sk https://<node>/monitoring/data | python3 -c \
+  'import json,sys; d=json.load(sys.stdin); print([(x["name"],x["worst"]) for x in d["devices"]])'
+
+# 7. The security headers are actually being sent
 curl -sI https://<node>/ | grep -iE 'content-security-policy|x-frame|x-content-type'
 ```
 

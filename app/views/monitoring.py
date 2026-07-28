@@ -38,7 +38,6 @@ def _device_payload(warn: float, crit: float) -> tuple[list[dict], list[dict], l
     2026-07-28 it was capacity-only, and since no appliance in this fleet has an
     admin cap it could never leave 'healthy' even for a box that was powered off.
     """
-    from ..services import capacity as capsvc
     from ..services import device_health as devhealth
     from ..services import read_layer
     from ..services.hardware import hardware_map
@@ -47,33 +46,15 @@ def _device_payload(warn: float, crit: float) -> tuple[list[dict], list[dict], l
     stale_h = devhealth.stale_hours()
     devices, alerts, health_alerts = [], [], []
     for a in visible_appliances().order_by(Appliance.name).all():
-        caps = []
-        for h in capsvc.fleet_headroom(a):
-            pct = None
-            status = 'nocap'
-            if h.effective_cap:
-                pct = round(100.0 * h.used / h.effective_cap, 1)
-                status = 'ok'
-                if pct >= crit:
-                    status = 'crit'
-                elif pct >= warn:
-                    status = 'warn'
-            row = h.to_dict()
-            row.update(pct=pct, status=status)
-            caps.append(row)
-            if status in ('warn', 'crit'):
+        # Gathering lives in device_health so the alert engine grades identically.
+        caps = devhealth.capacity_rows(a, warn, crit)
+        for row in caps:
+            if row['status'] in ('warn', 'crit'):
                 alerts.append({'appliance_id': a.id, 'appliance': a.name,
-                               'object': h.label, 'used': h.used,
-                               'cap': h.effective_cap, 'pct': pct,
-                               'status': status})
-        meta = {}
-        for layer in ('deep', 'config'):
-            try:
-                meta = read_layer._layer_meta(a.id, layer=layer) or {}
-            except Exception:
-                meta = {}
-            if meta:
-                break
+                               'object': row.get('label'), 'used': row.get('used'),
+                               'cap': row.get('effective_cap'), 'pct': row.get('pct'),
+                               'status': row['status']})
+        meta = devhealth.cache_meta(a)
         try:
             fresh = read_layer.freshness_label(meta) if meta else 'no local data'
         except Exception:
@@ -90,7 +71,9 @@ def _device_payload(warn: float, crit: float) -> tuple[list[dict], list[dict], l
             'model': a.model or '', 'firmware': a.firmware or '',
             'kind': (a.kind or 'fortiweb'),
             'ha_mode': a.ha_mode or '', 'ha_role': a.ha_role_hint or '',
-            'maintenance': bool(getattr(a, 'maintenance_mode', False)),
+            # Appliance.maintenance is the column; 'maintenance_mode' never existed,
+            # so this flag was permanently False before 2026-07-28.
+            'maintenance': bool(getattr(a, 'maintenance', False)),
             'freshness': fresh,
             'hw': hw.get(a.id),
             'capacity': caps,

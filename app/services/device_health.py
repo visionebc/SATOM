@@ -212,3 +212,69 @@ def collect(appliance, caps=None, meta=None, hours: float | None = None) -> dict
     return {"status": status, "signals": signals, "reasons": reasons,
             "maintenance": bool(getattr(appliance, "maintenance_mode", False)
                                 or getattr(appliance, "maintenance", False))}
+
+
+# --- shared gathering path ---------------------------------------------------
+# The Monitoring view and the alert engine MUST grade a device the same way.
+# Two ladders would let the page print "critical" while the mail stays silent --
+# which is the failure this whole module exists to remove. These helpers are the
+# single gathering path; the view still owns rendering, the engine owns dispatch.
+
+def thresholds() -> tuple[float, float]:
+    """Capacity warn/crit percentages from ``capacity.warn_pct`` / ``crit_pct``."""
+    from ..models import AppSetting
+
+    def _f(key, default):
+        try:
+            return float(AppSetting.get(key, str(default)) or default)
+        except (TypeError, ValueError):
+            return float(default)
+
+    return _f("capacity.warn_pct", 80.0), _f("capacity.crit_pct", 95.0)
+
+
+def capacity_rows(appliance, warn: float, crit: float) -> list:
+    """Headroom rows for *appliance*, each graded ok/warn/crit/nocap.
+
+    ``nocap`` means no admin cap is set for that object type -- deliberately NOT
+    graded, so :func:`capacity_signal` can report it as unknown instead of
+    passing it off as healthy."""
+    from . import capacity as capsvc
+    rows = []
+    try:
+        headroom = capsvc.fleet_headroom(appliance)
+    except Exception:  # noqa: BLE001 -- a broken cap table must not sink the page
+        return rows
+    for h in headroom:
+        pct, status = None, "nocap"
+        if h.effective_cap:
+            pct = round(100.0 * h.used / h.effective_cap, 1)
+            status = "crit" if pct >= crit else ("warn" if pct >= warn else "ok")
+        row = h.to_dict()
+        row.update(pct=pct, status=status)
+        rows.append(row)
+    return rows
+
+
+def cache_meta(appliance) -> dict:
+    """Newest cached-layer metadata for *appliance* (deep layer first)."""
+    from . import read_layer
+    for layer in ("deep", "config"):
+        try:
+            meta = read_layer._layer_meta(appliance.id, layer=layer) or {}
+        except Exception:  # noqa: BLE001
+            meta = {}
+        if meta:
+            return meta
+    return {}
+
+
+def collect_for(appliance, warn=None, crit=None, hours: float | None = None) -> dict:
+    """:func:`collect` for a caller that has not gathered caps/meta itself --
+    the entry point for everything outside the Monitoring view."""
+    if warn is None or crit is None:
+        w, c = thresholds()
+        warn = w if warn is None else warn
+        crit = c if crit is None else crit
+    return collect(appliance, capacity_rows(appliance, warn, crit),
+                   cache_meta(appliance), hours=hours)

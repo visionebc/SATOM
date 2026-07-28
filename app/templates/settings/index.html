@@ -728,7 +728,7 @@
                   </div>
                   <label class="fw-form-label">Checks enabled</label>
                   <div class="d-flex flex-wrap gap-3 mt-1">
-                    {% for key, lbl in [('check_cert','Cert expiry'),('check_git','Git divergence'),('check_device','Device reachability'),('check_backup','Backup freshness'),('check_drift','Config drift')] %}
+                    {% for key, lbl in [('check_cert','Cert expiry'),('check_git','Git divergence'),('check_device','Device health'),('check_backup','Backup freshness'),('check_drift','Config drift')] %}
                     <div class="form-check">
                       <input class="form-check-input" type="checkbox" name="{{ key }}" id="al-{{ key }}"
                              {{ 'checked' if alerts_config.checks[key.split('_')[1]] else '' }}>
@@ -763,6 +763,14 @@
                     <div class="col-6">
                       <label class="fw-form-label">Drift window (min)</label>
                       <input type="number" name="drift_window_min" class="form-control fw-form-control" min="1" max="43200" value="{{ alerts_config.drift_window_min }}">
+                    </div>
+                    <div class="col-6">
+                      <label class="fw-form-label">Device alert floor</label>
+                      <select name="device_min_status" class="form-select fw-form-control">
+                        <option value="warn" {{ 'selected' if alerts_config.device_min_status != 'crit' }}>Degraded and worse</option>
+                        <option value="crit" {{ 'selected' if alerts_config.device_min_status == 'crit' }}>Critical only</option>
+                      </select>
+                      <div class="form-text">Device health mails on the same ladder the Monitoring page prints (harvest, cache age, deep monitors, capacity) plus a live TCP probe.</div>
                     </div>
                   </div>
                 </div>

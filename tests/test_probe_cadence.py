@@ -99,10 +99,45 @@ def test_device_cards_are_collapsible(tpl):
 
 def test_collapse_state_is_not_kept_in_the_dom(tpl):
     """renderDevices() rewrites innerHTML every poll -- DOM state would reset."""
-    assert "localStorage.getItem(COLL_KEY" in tpl
-    assert "localStorage.setItem(COLL_KEY" in tpl
+    assert "localStorage.getItem(OPEN_KEY" in tpl
+    assert "localStorage.setItem(OPEN_KEY" in tpl
     # Keyed per page so Deep monitors and Service Monitor do not share state.
-    assert "'satom.probecards.collapsed.' + BASE" in tpl
+    assert "'satom.probecards.open.' + BASE" in tpl
+
+
+def test_cards_are_collapsed_by_default(tpl):
+    """A fleet page that opens with ~100 expanded cards shows nothing.
+
+    The store holds the OPEN set, so an operator who has never touched the
+    page has an empty set and therefore every card folded.
+    """
+    assert "var collapsed = !OPEN.has(String(dev.id));" in tpl
+    # The old key must NOT come back: it stored the inverse set, so reusing the
+    # name would read a saved closed-set as an open-set.
+    assert "probecards.collapsed" not in tpl
+
+
+def test_folded_cards_tile_and_an_open_one_takes_the_row(tpl):
+    """Density is the point: ~100 folded tiles must fit, not stack."""
+    assert "grid-template-columns:repeat(auto-fill, minmax(258px,1fr))" in tpl
+    assert ".dp-dev-card:not(.is-collapsed) { grid-column:1 / -1;" in tpl
+    assert ".dp-dev-card.is-collapsed .dp-dev-sub { display:none; }" in tpl
+
+
+def test_probe_page_uses_the_light_chrome(tpl):
+    """SATOM has no dark mode (static/css/fortiweb.css: .fw-card is #FFFFFF).
+
+    The fleet's dark glassmorphism palette renders as a grey slab here and
+    makes the light-on-light pills vanish -- reported 2026-07-28.
+    """
+    assert "background:#fff; border:1px solid var(--fw-border)" in tpl
+    assert "box-shadow:var(--fw-card-shadow)" in tpl
+    for dark in ("rgba(30,41,59,",     # slate-800 card gradient
+                 "rgba(15,23,42,",     # slate-900
+                 "backdrop-filter",    # glassmorphism blur
+                 "#cbd5e1",            # slate-300 body text
+                 "#93c5fd", "#6ee7b7", "#fcd34d", "#fca5a5", "#c4b5fd"):
+        assert dark not in tpl, "dark-theme value %s leaked back in" % dark
 
 
 def test_collapse_toggle_is_keyboard_reachable(tpl):
@@ -135,6 +170,6 @@ def test_probe_page_renders_collapsible_cards(client, url):
     assert r.status_code == 200, r.status_code
     html = r.get_data(as_text=True)
     for token in ("dp-dev-toggle", "dp-dev-body", "is-collapsed",
-                  "satom.probecards.collapsed", "dp-caret", "dp-hchip"):
+                  "satom.probecards.open", "dp-caret", "dp-hchip"):
         assert token in html, "%s missing from %s" % (token, url)
     assert "function toggleDev(" in html

@@ -6,6 +6,29 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+- **The device cards on the probe pages were painted for a dark theme.** SATOM
+  has no dark mode — `static/css/fortiweb.css` is a light chrome (`#F4F5F7`
+  content, `#FFFFFF` cards, `#EF5424` accent) — but the rollup cards added on
+  2026-07-28 used the wider fleet's dark-glassmorphism palette, so on a white
+  page they rendered as a **grey slab**. The same leak had made the status
+  pills unreadable across *both* probe pages: pastel text on a 12 % tint of its
+  own hue is roughly 1.4:1 contrast, so a badge could say `crit` and be
+  invisible. The whole page-local stylesheet, and the Chart.js grid/legend
+  colours in the drill-down modal, now build from `.fw-card` and the `--fw-*`
+  custom properties.
+
+### Changed
+- **Device cards start folded and tile densely.** Expanded-by-default is
+  unusable past a handful of appliances: a hundred of them was a kilometre of
+  scroll. The cards now open collapsed, tile in a dense ~258 px grid so a large
+  fleet fits in one screenful, and an expanded card takes the full row (the
+  policy table needs the width, and a tall item in a narrow column stretches
+  every tile beside it). The persisted state is now the set of **open** cards,
+  not the closed ones, under a new `localStorage` key — the old key held the
+  inverse set, and reusing the name would have expanded exactly the cards an
+  operator had folded.
+
 ### Added
 - **A scheduled automation that breaks now raises its own alert.** Silencing
   successful housekeeping runs is only safe if the failing run is loud, and it

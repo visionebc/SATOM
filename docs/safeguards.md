@@ -524,6 +524,65 @@ as "no traffic" rather than "not applicable".
 `app/templates/monitoring/_probe_page.html`.
 **Tests:** `tests/test_service_rollup.py`.
 
+### 9i. A probe interval that is not a multiple of the sweep tick is a lie
+
+`deep_monitor.due_probes` fires a probe only when its **whole** `interval_min`
+has elapsed *and* a sweep tick happens. The sweep is a scheduled action, so the
+effective cadence is `tick * ceil(interval / tick)` — a 5-minute probe under a
+3-minute sweep is really a **6-minute** probe, and nothing on the page says so.
+The row keeps claiming 5.
+
+That is the quiet kind of failure this repo does not accept: the operator reads
+a number that is not true, and the check they care about most (`proxyd`, whose
+whole purpose is catching a silent daemon restart) gets slower without a single
+warning. Lowering the sweep to 3 minutes for Service Monitor therefore came with
+**aligning every other interval to a multiple of 3** rather than letting the
+5-minute box probes drift to 6.
+
+Two named constants carry the rule so a future discovery path cannot reintroduce
+a bare literal:
+
+* `deep_monitor.DEFAULT_PROBE_INTERVAL_MIN` (3) — every probe discovery creates.
+* `deep_monitor.SLOW_PROBE_INTERVAL_MIN` (15) — endpoints that aggregate over
+  hours (`transactions`) are sampled coarsely on purpose; 15 is a multiple of 3,
+  so they still land on a tick instead of drifting.
+
+**A residual offset remains, and it is the scheduler's, not the probe's.**
+`scheduled_actions` computes `next_run = compute_next_run(...)` inside the
+`finally` block, i.e. anchored to when the run *finished*, and the sidecar ticks
+every `scheduler_runtime.TICK_SECONDS` (45 s). So a 3-minute sweep is observed
+at roughly 3.4–3.7 min end to end: `interval + run duration + up to one tick`.
+Measured, not assumed. Tightening it means anchoring `next_run` to the run start
+and is a scheduler-wide change, deliberately out of scope here.
+
+**Where:** `app/services/deep_monitor.py` (`DEFAULT_PROBE_INTERVAL_MIN`,
+`SLOW_PROBE_INTERVAL_MIN`, `due_probes`, `discover_api_probes`,
+`ensure_baseline`).
+**Tests:** `tests/test_probe_cadence.py`.
+
+### 9j. Collapse state cannot live in the DOM
+
+The device cards on both probe pages are collapsible. `renderDevices()` replaces
+the container's `innerHTML` on **every** poll (20 s), so a collapsed/expanded
+flag held only in the DOM is wiped three times a minute — the operator collapses
+a card, looks away, and it is open again with no explanation. The state is
+persisted in `localStorage`, keyed by `PageSpec.base` so Deep monitors and
+Service Monitor do not share it, and re-applied while the card markup is built.
+
+Two supporting rules:
+
+* **Collapsing is not hiding.** A collapsed card keeps its status badge and a
+  headline chip (`avg throughput · N policies`) in the header, so a folded
+  device still reports. Hiding the detail must not hide the finding.
+* **No inline handlers.** The toggle binds through document-level delegation
+  like the rest of the page — the CSP forbids `on*` attributes — and is
+  keyboard-reachable (`role="button"`, `tabindex`, `aria-expanded`,
+  Enter/Space).
+
+**Where:** `app/templates/monitoring/_probe_page.html` (`COLL_KEY`, `toggleDev`,
+`.dp-dev-toggle`, `.dp-dev-body`).
+**Tests:** `tests/test_probe_cadence.py`.
+
 ## 10. Fresh installs, and what an offline bundle can promise
 
 The guards travel with the code. A node installed from the online path or from an
@@ -569,6 +628,28 @@ which rule 3 exists to prevent.
   because of that, but it mitigates rather than fixes it.
 
 ## Verifying the guards are armed
+
+**9i — every probe interval is a multiple of the sweep tick.** A non-multiple
+row runs slower than it claims:
+
+```sql
+-- tick = the sweep action's interval, in minutes (scheduled_action id for
+-- action='deep_monitor'); every probe must divide evenly into it.
+SELECT id, kind, name, interval_min
+  FROM monitor_probe
+ WHERE enabled AND interval_min % 3 <> 0;   -- expect: 0 rows
+```
+
+**9j — collapse state survives a refresh.** Collapse a device card on
+`/monitoring/services`, wait past one auto-refresh (20 s), and confirm it is
+still folded; reload the page and confirm it is still folded. Then check the
+markup carries no inline handler:
+
+```bash
+grep -c 'localStorage.setItem(COLL_KEY' app/templates/monitoring/_probe_page.html  # 1
+grep -c 'onclick="' app/templates/monitoring/_probe_page.html                      # 0
+```
+
 ### The REST monitor probes (§9d, §9e)
 
     # the sweep reports "ran", not "healthy" — a crit finding must not fail the run

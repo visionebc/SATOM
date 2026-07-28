@@ -106,7 +106,7 @@ def _new_id() -> str:
 
 def create_job(type_: str, title: str, *, by: str = "",
                meta: dict | None = None, cancelable: bool = True,
-               reversible: bool = False) -> dict:
+               reversible: bool = False, background: bool = False) -> dict:
     """Create a pending job.
 
     ``cancelable`` — the UI offers a Stop control (default True). Set False for
@@ -114,6 +114,12 @@ def create_job(type_: str, title: str, *, by: str = "",
     ``reversible`` — this job type can compensate committed changes on cancel
     (default False; read-only jobs stay False). Purely advisory metadata the UI
     reads so it never promises an undo the worker can't deliver.
+    ``background`` — nobody is waiting on this job. It is housekeeping fired
+    from a page that refreshes itself (a monitoring sweep), so the toast dock
+    skips it ENTIRELY: it still lives on the Jobs page with its full progress
+    and log, and the only thing that reaches the operator unprompted is a bell
+    notification when it FAILS. Default False — a job is foreground unless it
+    says otherwise, so no new job type can go silent by accident.
     """
     job_id = _new_id()
     now = datetime.utcnow().isoformat()
@@ -130,6 +136,7 @@ def create_job(type_: str, title: str, *, by: str = "",
         "percent": 0, "message": "", "result": None, "error": None,
         "by": by or "", "meta": meta,
         "cancelable": bool(cancelable), "reversible": bool(reversible),
+        "background": bool(background),
         "cancel_requested": False, "pause_requested": False,
         "host": _HOST, "pid": None,
         "created": now, "updated": now, "finished": None,

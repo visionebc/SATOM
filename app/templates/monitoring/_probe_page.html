@@ -807,7 +807,7 @@
       runBtn.disabled = true;
       runBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Probing…';
       post(URLS.run, new URLSearchParams()).then(function () {
-        runBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Started (see Jobs dock)';
+        runBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Probing in the background…';
         setTimeout(function () {
           runBtn.disabled = false;
           runBtn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Probe now';

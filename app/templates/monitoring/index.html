@@ -256,7 +256,7 @@
       fetch('{{ url_for("monitoring.hw_scan") }}', {
         method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }
       }).then(function (r) { return r.json(); }).then(function () {
-        sb.innerHTML = '<i class="bi bi-check2 me-1"></i>Scan started (see Jobs dock)';
+        sb.innerHTML = '<i class="bi bi-check2 me-1"></i>Scanning in the background…';
         setTimeout(function () {
           sb.disabled = false;
           sb.innerHTML = '<i class="bi bi-cpu me-1"></i>Scan hardware (SSH)';

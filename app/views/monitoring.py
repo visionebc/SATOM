@@ -141,7 +141,14 @@ def data():
     return jsonify(_payload())
 
 
-def _run_hw_scan(app, job_id, ids, user_id, uname, link):
+def _run_hw_scan(app, job_id, ids, user_id, uname, link, product=""):
+    """Fleet SSH inventory sweep — a BACKGROUND job: silent unless it breaks.
+
+    The page reloads its own cards, so a clean scan has nothing to announce. A
+    device that refused SSH is invisible there (the card simply keeps its old
+    numbers), so a partial or total failure — and only that — reaches the bell.
+    ``product`` is the ADOM stamped on the job; this worker thread has none.
+    """
     with app.app_context():
         # ids are resolved in the REQUEST (visible_appliances needs the session
         # product); this worker thread has no ADOM of its own, so an unscoped
@@ -172,7 +179,9 @@ def _run_hw_scan(app, job_id, ids, user_id, uname, link):
                                   result={"ok": done, "errors": errors,
                                           "reload": True,
                                           "reload_path": link})
-            kind = notify.Notification.KIND_SUCCESS
+            if not errors:
+                return                       # every device scanned → say nothing
+            kind = notify.Notification.KIND_WARNING
         else:
             jobsvc.finish_error(job_id, f"hardware scan failed on every device: "
                                         f"{'; '.join(f'{k}: {v}' for k, v in errors.items())[:300]}")
@@ -182,7 +191,7 @@ def _run_hw_scan(app, job_id, ids, user_id, uname, link):
                 notify.push(user_id, f"Hardware scan: {msg}", kind=kind,
                             body=("; ".join(f"{k}: {v}" for k, v in errors.items())[:400]
                                   or "All devices scanned."),
-                            link=link)
+                            link=link, product=product)
             except Exception:
                 pass
 
@@ -199,11 +208,13 @@ def hw_scan():
     uname = getattr(current_user, 'username', '') or ''
     uid = getattr(current_user, 'id', None)
     job = jobsvc.create_job("hardware_scan", "Hardware scan — fleet",
-                            by=uname, meta={"ids": ids})
+                            by=uname, meta={"ids": ids}, background=True)
     link = url_for('monitoring.index')
+    product = (job.get("meta") or {}).get("product") or ""
     app_obj = current_app._get_current_object()
     jobsvc.run_async(app_obj, job["id"],
-                     lambda app, jid: _run_hw_scan(app, jid, ids, uid, uname, link))
+                     lambda app, jid: _run_hw_scan(app, jid, ids, uid, uname,
+                                                   link, product))
     return jsonify({"job_id": job["id"]})
 
 

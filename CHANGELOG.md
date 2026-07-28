@@ -6,7 +6,33 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **A scheduled automation that breaks now raises its own alert.** Silencing
+  successful housekeeping runs is only safe if the failing run is loud, and it
+  was not: `scheduled_actions` held no notification path and the alert engine
+  had no check for it, so `device_sync` had failed **24 consecutive scheduled
+  runs** with nobody told, and the day the scheduler sidecar stopped firing
+  entirely it stayed silent for hours while systemd still showed the unit
+  `active`. `alerts._check_actions` grades two signals — a consecutive
+  scheduled-failure streak, and an enabled action whose due time is long past
+  (a dead scheduler produces no failed runs to count) — as **one finding per
+  action**, with the severity in the cooldown key so a warn → crit escalation
+  still gets through. Only `trigger='schedule'` runs count: a manual retry is
+  already on the operator's screen, and mixing the two hides the exact case
+  where the sidecar is running stale code. A streak that hits the history
+  window is reported as `N+`, not as a count. Two knobs in Settings → Alerts
+  (*Automation fail streak → critical*, *Automation overdue (hours)*).
+
 ### Fixed
+- **Maintenance mode suppressed alerts but not work.** An appliance parked with
+  `maintenance = true` was still swept by every automatic scheduled run and
+  still counted as a failure, which pinned the action permanently `failed` —
+  and, with the alert above, permanently critical about machines nobody expects
+  to answer. An automatic run now skips parked appliances, and a run whose whole
+  target set is parked reports `skipped`, which does not feed the failure
+  streak. A **manual** run still reaches them: you park a box precisely to work
+  on it.
+
 - **The probe toast came back, and the tests were making it.** The job ledger
   (`data/jobs/`) resolved from the source tree, so running the test suite wrote
   real, never-finished job files into the live app; the toast dock replayed them

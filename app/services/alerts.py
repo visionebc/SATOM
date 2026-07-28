@@ -44,6 +44,9 @@ K_CHK_GIT = "alerts.check.git"
 K_CHK_DEVICE = "alerts.check.device"
 K_CHK_BACKUP = "alerts.check.backup"
 K_CHK_DRIFT = "alerts.check.drift"
+K_CHK_ACTIONS = "alerts.check.actions"
+K_ACT_STREAK_CRIT = "alerts.action_fail_streak_crit"  # crit at N straight failures
+K_ACT_OVERDUE_H = "alerts.action_overdue_hours"       # enabled action this late to fire
 K_DRIFT_WINDOW_MIN = "alerts.drift_window_min"  # only alert on drift newer than this
 K_DEV_MIN = "alerts.device_min_status"    # "warn" (default) or "crit"
 
@@ -59,11 +62,18 @@ DEFAULTS = {
     K_CHK_DEVICE: "1",
     K_CHK_BACKUP: "1",
     K_CHK_DRIFT: "1",
+    K_CHK_ACTIONS: "1",
+    K_ACT_STREAK_CRIT: "3",
+    K_ACT_OVERDUE_H: "3",
     K_DRIFT_WINDOW_MIN: "90",
     K_DEV_MIN: "warn",
 }
 
 _REPO_ROOT = "/opt/satom"
+
+# How far back _check_actions reads a scheduled action history. A streak that
+# hits this cap is reported as "N+": a floor, not a count.
+_RUN_WINDOW = 50
 
 SEV_CRITICAL = "critical"
 SEV_WARNING = "warning"
@@ -129,6 +139,8 @@ def config() -> dict:
         "git_ahead_max_hours": _int(K_GIT_AHEAD_MAX_H, 6),
         "backup_max_hours": _int(K_BACKUP_MAX_H, 48),
         "drift_window_min": _int(K_DRIFT_WINDOW_MIN, 90),
+        "action_fail_streak_crit": _int(K_ACT_STREAK_CRIT, 3),
+        "action_overdue_hours": _int(K_ACT_OVERDUE_H, 3),
         "device_min_status": _get(K_DEV_MIN) or "warn",
         "checks": {
             "cert": _flag(K_CHK_CERT),
@@ -136,6 +148,7 @@ def config() -> dict:
             "device": _flag(K_CHK_DEVICE),
             "backup": _flag(K_CHK_BACKUP),
             "drift": _flag(K_CHK_DRIFT),
+            "actions": _flag(K_CHK_ACTIONS),
         },
     }
 
@@ -167,6 +180,8 @@ def save_config(form) -> None:
     AppSetting.set(K_GIT_AHEAD_MAX_H, clamp("git_ahead_max_hours", 1, 8760, 6))
     AppSetting.set(K_BACKUP_MAX_H, clamp("backup_max_hours", 1, 8760, 48))
     AppSetting.set(K_DRIFT_WINDOW_MIN, clamp("drift_window_min", 1, 43200, 90))
+    AppSetting.set(K_ACT_STREAK_CRIT, clamp("action_fail_streak_crit", 2, 100, 3))
+    AppSetting.set(K_ACT_OVERDUE_H, clamp("action_overdue_hours", 1, 8760, 3))
     # Only "warn" and "crit" are dispatchable floors: "ok"/"unknown" would mail
     # about every device on every run.
     _dev_min = g("device_min_status")
@@ -177,6 +192,7 @@ def save_config(form) -> None:
     AppSetting.set(K_CHK_DEVICE, cb("check_device"))
     AppSetting.set(K_CHK_BACKUP, cb("check_backup"))
     AppSetting.set(K_CHK_DRIFT, cb("check_drift"))
+    AppSetting.set(K_CHK_ACTIONS, cb("check_actions"))
     # AppSetting.set commits per call — no trailing commit needed.
 
 
@@ -415,6 +431,111 @@ def _check_devices() -> list[dict]:
     return findings
 
 
+
+def _check_actions() -> list[dict]:
+    """One finding per broken scheduled automation — silent unless it breaks.
+
+    This is the push half of the housekeeping contract. Background sweeps were
+    made silent on 2026-07-28 (a run that worked is not news), which is only
+    safe if the FAILING run is loud somewhere. It was not: ``scheduled_actions``
+    contains no ``notify`` call and this engine had no check for it, so on the
+    day this was written action 5 (device_sync) had failed **24 consecutive
+    scheduled runs** and nobody was told. The day before, ``scheduler_guard.sh``
+    broke on ``runuser`` and the sidecar fired *nothing at all* for hours while
+    systemd still showed the unit ``active`` — also silent.
+
+    Two failure modes, therefore, not one:
+
+    * **failing** — the action fires and errors. Graded on the consecutive
+      scheduled-failure streak.
+    * **overdue** — the action is enabled and its ``next_run`` is long past. A
+      scheduler that stops firing produces *no* failed runs at all, so a
+      streak-only check would call a dead scheduler healthy.
+
+    Only ``trigger='schedule'`` runs count. A manual run is user-initiated and
+    its result is already on the operator's screen; worse, mixing the two hides
+    exactly the case seen on 2026-07-28 where the scheduled path failed
+    (``Unknown action``: the sidecar held stale code) while the manual path
+    succeeded in the freshly restarted web worker.
+    """
+    from ..models import ScheduledAction, ScheduledActionRun
+
+    try:
+        actions = ScheduledAction.query.filter_by(enabled=True).all()
+    except Exception as exc:  # noqa: BLE001
+        return [{"key": "action.error", "severity": SEV_WARNING,
+                 "title": "Scheduled action list unreadable",
+                 "detail": f"ScheduledAction.query failed: {exc}"}]
+
+    streak_crit = max(2, _int(K_ACT_STREAK_CRIT, 3))
+    overdue_h = max(1, _int(K_ACT_OVERDUE_H, 3))
+    now = datetime.utcnow()
+    findings: list[dict] = []
+
+    for a in actions:
+        product = (a.product or "").strip().lower()
+        product = product if product in _PRODUCT_KINDS else ""
+        label = f"{a.name or a.action} (#{a.id})"
+        lines: list[str] = []
+        crit = False
+
+        try:
+            runs = (ScheduledActionRun.query
+                    .filter_by(action_id=a.id, trigger="schedule")
+                    .order_by(ScheduledActionRun.id.desc()).limit(_RUN_WINDOW).all())
+        except Exception as exc:  # noqa: BLE001 — one bad action never sinks the run
+            findings.append({"key": f"action.error.{a.id}", "severity": SEV_WARNING,
+                             "title": f"Run history unreadable for {label}",
+                             "product": product,
+                             "detail": f"ScheduledActionRun.query raised: {exc}"})
+            continue
+
+        # -- failing --------------------------------------------------------
+        streak, last_fail = 0, None
+        for r in runs:
+            if r.status == "failed":
+                streak += 1
+                last_fail = last_fail or r
+            elif r.status == "ok":
+                break
+            # 'skipped'/'running' are neither a success nor a failure: step over
+            # them rather than letting a skip mask an ongoing streak.
+        if streak:
+            crit = crit or streak >= streak_crit
+            when = last_fail.started_at.strftime("%Y-%m-%d %H:%M") if last_fail else "?"
+            why = ((last_fail.summary or "").strip() if last_fail else "") or "no summary recorded"
+            # The history window is bounded; at the cap the streak is a floor,
+            # not a count. Saying "50" when it may be 500 is a lie the operator
+            # would use to judge how long this has been broken.
+            shown = f"{streak}+" if streak >= _RUN_WINDOW else str(streak)
+            lines.append(f"- Failing: {shown} consecutive scheduled run(s) failed, "
+                         f"latest {when} UTC — {why[:200]}")
+
+        # -- overdue --------------------------------------------------------
+        if a.next_run:
+            late_h = (now - a.next_run).total_seconds() / 3600.0
+            if late_h >= overdue_h:
+                crit = crit or late_h >= overdue_h * 4
+                last = a.last_run.strftime("%Y-%m-%d %H:%M") if a.last_run else "never"
+                lines.append(f"- Overdue: due {a.next_run.strftime('%Y-%m-%d %H:%M')} UTC, "
+                             f"{late_h:.1f}h ago and still not fired (last run: {last}). "
+                             f"The scheduler sidecar may not be running on the primary.")
+
+        if not lines:
+            continue
+
+        findings.append({
+            # Severity is in the key ON PURPOSE (same reason as device health):
+            # an escalation from warn to crit inside the cooldown must get out.
+            "key": f"action.broken.{a.id}.{'crit' if crit else 'warn'}",
+            "severity": SEV_CRITICAL if crit else SEV_WARNING,
+            "title": f"Scheduled automation {'failing' if streak else 'not firing'}: {label}",
+            "product": product,
+            "detail": ("\n".join(lines) +
+                       f"\n\nAction '{a.action}', schedule {a.schedule_kind}, "
+                       f"evaluated on {_node()}. Details: /scheduled-actions/")})
+    return findings
+
 def _check_backup() -> list[dict]:
     from . import system_backup
     try:
@@ -579,6 +700,7 @@ _CHECKS = [
     (K_CHK_DEVICE, _check_devices),
     (K_CHK_BACKUP, _check_backup),
     (K_CHK_DRIFT, _check_drift),
+    (K_CHK_ACTIONS, _check_actions),
 ]
 
 

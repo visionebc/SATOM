@@ -616,6 +616,72 @@ that the dock lies, and then the toast that matters gets dismissed too.
 `tests/conftest.py`.
 **Tests:** `tests/test_job_ledger_isolation.py`.
 
+
+### 9l. Silence on success is only safe if failure is loud
+
+§9g made housekeeping silent — a sweep that ran is not news. That trade buys
+back the operator's attention only if the run that BROKE reaches them, and it
+did not. `scheduled_actions.py` contained no `notify` call and the alert engine
+had no check for it, so both of the real outages went unannounced:
+
+* **Failing** — on 2026-07-28 action 5 (`device_sync`) had failed **24
+  consecutive scheduled runs**. The Monitoring page showed stale numbers that
+  looked current. Nothing was sent.
+* **Not firing at all** — on 2026-07-26 `scheduler_guard.sh` broke on `runuser`
+  after the units dropped to the service account, and the sidecar fired
+  *nothing* for hours while systemd still reported the unit `active (running)`.
+  A streak-only check would have called that healthy: a dead scheduler produces
+  no failed runs to count.
+
+`alerts._check_actions` therefore grades two signals, not one, and follows the
+rules the other device checks already follow:
+
+* **One finding per action, never per run.** 24 failures are one broken
+  automation. A mailbox that gets 24 mails about one thing stops being read.
+* **Severity is in the cooldown key** (`action.broken.<id>.<warn|crit>`), so an
+  escalation inside the 6 h window still gets out — same reason as §9b.
+* **Only `trigger='schedule'` runs count.** A manual run is user-initiated and
+  its result is already on the operator's screen; mixing the two would have
+  hidden the 2026-07-28 case exactly, where the scheduled path failed on stale
+  sidecar code (`Unknown action`) while the manual path succeeded in the
+  freshly restarted web worker.
+* **A capped streak is reported as `N+`.** The history window is bounded
+  (`_RUN_WINDOW`); printing `50` when it may be 500 is a number the operator
+  would use to judge how long this has been broken.
+* **`skipped` is stepped over, not treated as recovery.** Only `ok` clears a
+  streak.
+
+**And the other half: maintenance had to start meaning something.**
+`Appliance.maintenance` suppressed *alerts* but not *work*. The hourly sweep
+kept reaching boxes the operator had explicitly parked and counted every one as
+a failure, which pinned the action permanently `failed` — so the new alert would
+have been permanently critical about machines nobody expects to answer. That is
+the "always red, therefore ignored" mode this document exists to prevent.
+`_resolve_targets` now drops parked appliances from an **automatic** run, and a
+run whose whole target set is parked reports **skipped**, which does not feed the
+streak. A **manual** run still reaches them: you park a box precisely to work
+on it, and the default value of the kwarg is the safe one.
+
+**Where:** `app/services/alerts.py` (`_check_actions`, `_RUN_WINDOW`,
+`K_CHK_ACTIONS`, `K_ACT_STREAK_CRIT`, `K_ACT_OVERDUE_H`),
+`app/services/scheduled_actions.py` (`_resolve_targets`, `_run_targets`,
+`_parked_targets`), Settings → Alerts.
+
+**Verify it is armed:**
+
+```bash
+# 1. the check is registered and fires on the live history
+cd /opt/satom && set -a && . ./.env && set +a && runuser -u fortinet -- \
+  venv/bin/python3 -c "
+from app import create_app; from app.services import alerts
+with create_app().app_context():
+    print([f['key'] for f in alerts._check_actions()])"
+
+# 2. an automatic run does not touch a parked appliance
+runuser -u fortinet -- venv/bin/python3 -m pytest \
+  tests/test_alerts_scheduled_actions.py tests/test_action_maintenance.py -q
+```
+
 ## 10. Fresh installs, and what an offline bundle can promise
 
 The guards travel with the code. A node installed from the online path or from an

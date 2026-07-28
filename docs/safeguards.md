@@ -583,6 +583,39 @@ Two supporting rules:
 `.dp-dev-toggle`, `.dp-dev-body`).
 **Tests:** `tests/test_probe_cadence.py`.
 
+### 9k. The job ledger is isolated, and a ghost does not haunt the dock
+
+§9g made housekeeping silent, and the floating window came back anyway. Two
+defects, neither of them in the background flag:
+
+* **The tests wrote into the production ledger.** `jobs._state_dir()` resolved
+  from `__file__` to the in-tree `data/jobs/`, and only one test module
+  monkeypatched it. Every other suite run created REAL job files owned by
+  `admin` that no worker would ever finish. Running the tests to verify a change
+  was itself the thing that produced the noise the change removed. The path is
+  now overridable with `SATOM_JOBS_DIR`, and `tests/conftest.py` points it at
+  the throwaway temp tree — the same isolation `FORTINET_DIAG_DIR` already had.
+* **`sweep_orphans` ran only at boot.** A job that went stale *afterwards* stayed
+  active until the next restart, and the dock re-opened a toast for it on every
+  single navigation — with a **Stop** button that could never work, because the
+  worker it would signal never existed. The read paths (`/jobs/?active=1` and
+  `/jobs/all`) now sweep before they answer, throttled to once every 120 s so
+  the poll stays cheap.
+
+And the threshold was wrong for the common case: a job with no pid was given an
+hour. `run_async` stamps the pid the instant the worker thread starts, so a job
+still missing one **ten minutes** later was never dispatched. A false positive
+self-heals — if the worker does start, it rewrites status and pid.
+
+The rule behind all of it: **a control the operator cannot act on is worse than
+no control.** A toast offering Stop for work that is not running teaches them
+that the dock lies, and then the toast that matters gets dismissed too.
+
+**Where:** `app/services/jobs.py` (`_state_dir`, `sweep_orphans`,
+`maybe_sweep_orphans`), `app/views/jobs.py` (both feeds),
+`tests/conftest.py`.
+**Tests:** `tests/test_job_ledger_isolation.py`.
+
 ## 10. Fresh installs, and what an offline bundle can promise
 
 The guards travel with the code. A node installed from the online path or from an
@@ -648,6 +681,26 @@ markup carries no inline handler:
 ```bash
 grep -c 'localStorage.setItem(COLL_KEY' app/templates/monitoring/_probe_page.html  # 1
 grep -c 'onclick="' app/templates/monitoring/_probe_page.html                      # 0
+```
+
+**9k — the ledger is isolated and ghosts get reaped.** Running the suite must
+not add a single file to the live ledger:
+
+```bash
+B=$(ls -1 data/jobs/*.json | wc -l)
+venv/bin/python3 -m pytest -q >/dev/null 2>&1
+[ "$B" = "$(ls -1 data/jobs/*.json | wc -l)" ] && echo "ledger clean"
+
+# no active job may sit without a pid for more than ~10 minutes
+python3 - <<'EOF'
+import json, glob, time, datetime
+A = {'pending', 'running', 'cancelling', 'pausing', 'paused'}
+for f in glob.glob('data/jobs/*.json'):
+    d = json.load(open(f))
+    if d.get('status') in A and not d.get('pid'):
+        age = time.time() - datetime.datetime.fromisoformat(d['updated']).timestamp()
+        print('GHOST', f, int(age // 60), 'min')   # expect: no output
+EOF
 ```
 
 ### The REST monitor probes (§9d, §9e)

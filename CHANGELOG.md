@@ -7,6 +7,22 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Fixed
+- **A product ADOM inherited the manager's own infrastructure.** Fleet health
+  rendered *Infrastructure health — HA nodes · Git · backup server*, the
+  Database / Services & redundancy cards and *Encryption in transit* inside the
+  FortiWeb, FortiADC and FortiAnalyzer ADOMs, putting node hostnames and
+  infrastructure addresses on a page scoped to a single product. Those sections
+  are now Global-only, and not just visually: `/monitoring/data` omits the
+  `system`/`services`/`db`/`redundancy` keys outside Global (the collection is
+  skipped, not filtered) and `/monitoring/infra` and `/monitoring/encryption`
+  answer **403**. The payload gained a `scope` field. See `docs/safeguards.md`
+  §9c.
+- **Two fleet-wide actions ignored the ADOM.** *Scan hardware (SSH)* on Fleet
+  health and *Probe now* on Deep monitors both default to "everything" when
+  nothing is selected, and both then open an SSH session per device — so from
+  the FortiWeb ADOM they logged into the FortiADC and FortiAnalyzer boxes. The
+  target list is now resolved in the request, where the ADOM exists, and passed
+  to the worker thread. Global still means the whole fleet.
 - **Fleet health badge could never go red.** Each appliance card was graded
   *only* by capacity headroom; with no `effective_cap` anywhere in the fleet
   every row scored `nocap` and the badge was structurally pinned to `healthy` —

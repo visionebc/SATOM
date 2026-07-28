@@ -17,6 +17,10 @@ os.environ["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{_TMPDIR}/test.db"
 # Isolate services that keep state on disk from the production tree (the logs
 # status endpoint reads a _progress.json that real runs leave behind).
 os.environ["FORTINET_DIAG_DIR"] = f"{_TMPDIR}/diagnostics"
+# The job ledger too: without this the suite writes REAL job files into
+# data/jobs/ that no worker ever finishes, and the toast dock replays them on
+# every page load of the live app. Running the tests must not create UI noise.
+os.environ["SATOM_JOBS_DIR"] = f"{_TMPDIR}/jobs"
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-prod")
 # A valid Fernet key so models.py encryption helpers import cleanly.
 from cryptography.fernet import Fernet  # noqa: E402

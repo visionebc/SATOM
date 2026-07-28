@@ -6,6 +6,17 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+- **The probe toast came back, and the tests were making it.** The job ledger
+  (`data/jobs/`) resolved from the source tree, so running the test suite wrote
+  real, never-finished job files into the live app; the toast dock replayed them
+  on every page load as a floating "Working…" window with a dead Stop button.
+  `SATOM_JOBS_DIR` now isolates the ledger and `tests/conftest.py` uses it.
+- **Orphaned jobs were only reaped at boot.** `sweep_orphans` now also runs on
+  the job feeds (throttled to once every 120 s), and a job that never received a
+  pid is considered dead after 10 minutes instead of an hour.
+
+
 ### Changed
 - **Service Monitor (and every other probe) now sweeps every 3 minutes** instead
   of 5. The scheduled sweep action was retimed and *all* probe intervals were

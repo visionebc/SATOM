@@ -477,7 +477,20 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
 
     # -- background execution ------------------------------------------------
 
-    def _run_sweep(app, job_id, ids, uid, link):
+    def _run_sweep(app, job_id, ids, uid, link, product=""):
+        """Run the sweep as a BACKGROUND job — silent unless it breaks.
+
+        A sweep that ran is not news: the table under the button reloads itself,
+        and a probe that turned crit is already carried by the device badge and
+        by the alert engine (which owns escalation and cooldown). Announcing
+        every successful run in the bell is how a notification area stops being
+        read. A sweep that FAILED is the one outcome the page cannot show — the
+        numbers just stay stale — so that, and only that, is pushed.
+
+        ``product`` is the ADOM stamped on the job at creation: this worker runs
+        in a thread with no request context, so an unstamped notification would
+        fall into the unscoped bucket and surface under FortiWeb.
+        """
         with app.app_context():
             try:
                 jobsvc.update_job(job_id, percent=5, message="Probing…")
@@ -488,15 +501,16 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
                 jobsvc.finish_success(job_id, message=msg,
                                       result={"reload": True,
                                               "reload_path": link, **res})
-                kind = (notify.Notification.KIND_SUCCESS if res["worst"] == "ok"
-                        else notify.Notification.KIND_WARNING)
+                return                       # ran fine → say nothing
             except Exception as exc:  # noqa: BLE001
                 db.session.rollback()
                 jobsvc.finish_error(job_id, f"{spec.title} sweep failed: {exc}")
-                msg, kind = str(exc)[:200], notify.Notification.KIND_ERROR
+                msg = str(exc)[:200]
             if uid:
                 try:
-                    notify.push(uid, f"{spec.title}: {msg}", kind=kind, link=link)
+                    notify.push(uid, f"{spec.title} sweep failed: {msg}",
+                                kind=notify.Notification.KIND_ERROR,
+                                link=link, product=product)
                 except Exception:  # noqa: BLE001
                     pass
 
@@ -526,15 +540,16 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
             return jsonify({"error": "nothing to run"}), 400
         job = jobsvc.create_job(spec.key, f"{spec.title} — probe",
                                 by=getattr(current_user, 'username', '') or '',
-                                meta={"ids": ids})
+                                meta={"ids": ids}, background=True)
         link = url_for(f'{bp.name}.index')
+        product = (job.get("meta") or {}).get("product") or ""
         jobsvc.run_async(current_app._get_current_object(), job["id"],
                          lambda app, jid: _run_sweep(
                              app, jid, ids,
-                             getattr(current_user, 'id', None), link))
+                             getattr(current_user, 'id', None), link, product))
         return jsonify({"job_id": job["id"]})
 
-    def _run_discover(app, job_id, aid, what, uid, link):
+    def _run_discover(app, job_id, aid, what, uid, link, product=""):
         with app.app_context():
             try:
                 appliance = Appliance.query.get(aid)
@@ -570,7 +585,8 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
                                               "created": total})
                 if uid:
                     notify.push(uid, f"{spec.title}: {msg}",
-                                kind=notify.Notification.KIND_SUCCESS, link=link)
+                                kind=notify.Notification.KIND_SUCCESS, link=link,
+                                product=product)
             except Exception as exc:  # noqa: BLE001
                 db.session.rollback()
                 jobsvc.finish_error(job_id, f"discovery failed: {exc}")
@@ -599,8 +615,9 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
                                 by=getattr(current_user, 'username', '') or '',
                                 meta={"appliance_id": aid, "what": what})
         link = url_for(f'{bp.name}.index')
+        product = (job.get("meta") or {}).get("product") or ""
         jobsvc.run_async(current_app._get_current_object(), job["id"],
                          lambda app, jid: _run_discover(
                              app, jid, aid, what,
-                             getattr(current_user, 'id', None), link))
+                             getattr(current_user, 'id', None), link, product))
         return jsonify({"job_id": job["id"]})

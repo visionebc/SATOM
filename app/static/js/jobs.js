@@ -318,6 +318,10 @@
         var list = (data && data.jobs) || data || [];
         list.forEach(function (j) {
           if (!j || !j.id) return;
+          // Housekeeping (a monitoring sweep) never gets a toast. The server
+          // already filters these out of this feed; this is the second lock so
+          // a stale cached jobs.js can't resurrect the dock noise.
+          if (j.background) return;
           // Track ANY active job of this user (bulk applies, finalize, …);
           // tracked{} dedupes so calling this on every navigation is safe.
           var label = j.type === 'firmware_finalize'

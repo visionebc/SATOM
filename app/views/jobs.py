@@ -78,10 +78,19 @@ def get(job_id):
 @bp.route("/", methods=["GET"])
 @login_required
 def index():
+    """The toast dock's feed — the ONE consumer of this endpoint.
+
+    ``background`` jobs are filtered out here, not hidden in the client: a
+    monitoring sweep is housekeeping nobody is waiting on, and a floating
+    window with a Stop button for work the operator never asked to watch is
+    noise that trains them to dismiss the dock. They remain in full on the Job
+    Manager (``/jobs/all``), and a failure still reaches the bell.
+    """
     active = (request.args.get("active") or "").lower() in ("1", "true", "yes")
     jobs = jobsvc.list_jobs(limit=30, by=_me(), active_only=active)
     jobs = [j for j in jobs
-            if visible_product((j.get("meta") or {}).get("product"))]
+            if not j.get("background")
+            and visible_product((j.get("meta") or {}).get("product"))]
     return jsonify({"jobs": jobs})
 
 

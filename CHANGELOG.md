@@ -6,6 +6,25 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed
+- **Background work no longer opens a floating window.** A monitoring sweep used
+  to raise the same toast — progress bar, **Stop** button — as a firmware flash
+  someone was waiting on, and pushed a bell notification on *every* successful
+  run. `jobs.create_job(..., background=True)` now marks work nobody is waiting
+  on: the toast dock's feed (`GET /jobs/?active=1`) filters it out server-side
+  (and `jobs.js` drops it too, so a cached script can't bring the noise back),
+  the Job Manager still shows it in full, and the only thing pushed to the bell
+  is a **failure** — the one outcome the page itself cannot show, because the
+  numbers just stay stale and look current. A clean run says nothing; a probe
+  that turned crit is already carried by the device badge and the alert engine.
+
+  Applied to both probe sweeps and the fleet hardware scan. `background`
+  defaults to `False`, so no new job type can go quiet by accident. *Discover
+  from device* stays foreground on purpose — it creates rows and the operator is
+  waiting to read the count. Notifications from these workers now also carry the
+  ADOM stamped on the job (a worker thread has no request context, so they were
+  landing unscoped, i.e. under FortiWeb). See `docs/safeguards.md` §9g.
+
 ### Added
 - **Service Monitor — runtime telemetry gets its own Monitoring page.** The four
   REST-telemetry probe kinds (`sessions`, `policy_sessions`, `throughput`,

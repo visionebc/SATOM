@@ -24,14 +24,23 @@
   .mon-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
   .mon-sec-title { font-size:.75rem; text-transform:uppercase; letter-spacing:.08em;
                    color:#64748b; margin:18px 0 8px; }
-  #monAlerts .alert { padding:.45rem .8rem; margin-bottom:6px; font-size:.85rem; }
+  #monAlerts .alert, #monHealthAlerts .alert { padding:.45rem .8rem; margin-bottom:6px; font-size:.85rem; }
   /* status pill for device cards — mirrors the infra section's .ih-badge look */
   .mon-badge { font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; padding:1px 8px;
                border-radius:9px; border:1px solid; white-space:nowrap; }
   .mon-b-ok   { color:#6ee7b7; background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.3); }
   .mon-b-warn { color:#fcd34d; background:rgba(245,158,11,.12); border-color:rgba(245,158,11,.3); }
   .mon-b-crit { color:#fca5a5; background:rgba(239,68,68,.12);  border-color:rgba(239,68,68,.3); }
+  .mon-b-unknown { color:#94a3b8; background:rgba(100,116,139,.12); border-color:rgba(100,116,139,.3); }
   .mon-note   { font-size:.7rem; color:#64748b; margin-top:8px; }
+  /* Why the badge says what it says — never leave a non-ok state unexplained. */
+  .mon-why { margin-top:8px; display:flex; flex-direction:column; gap:3px; }
+  .mon-why div { font-size:.72rem; display:flex; gap:6px; align-items:flex-start; }
+  .mon-why .sg { flex:none; width:88px; color:#64748b; text-transform:uppercase;
+                 letter-spacing:.04em; font-size:.63rem; padding-top:1px; }
+  .mon-why .tx { color:#cbd5e1; }
+  .mon-why .r-crit .tx { color:#fca5a5; } .mon-why .r-warn .tx { color:#fcd34d; }
+  .mon-why .r-unknown .tx { color:#94a3b8; }
 </style>
 
 <div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
@@ -53,6 +62,7 @@
 
 {% include "_encryption_health.html" %}
 
+<div id="monHealthAlerts"></div>
 <div id="monAlerts"></div>
 
 <div class="mon-sec-title"><i class="bi bi-hdd-rack me-1"></i>Device health &amp; capacity</div>
@@ -74,6 +84,18 @@
     var w = pct == null ? 0 : Math.min(100, pct);
     return '<div class="mon-bar"><i class="mon-' + (status || 'ok') + '" style="width:' + w + '%"></i></div>';
   }
+  function renderHealthAlerts(d) {
+    var box = document.getElementById('monHealthAlerts');
+    var rows = d.health_alerts || [];
+    if (!rows.length) { box.innerHTML = ''; return; }
+    box.innerHTML = rows.slice(0, 8).map(function (a) {
+      var cls = a.status === 'crit' ? 'alert-danger' : 'alert-warning';
+      return '<div class="alert ' + cls + ' mb-1"><i class="bi bi-exclamation-octagon me-2"></i>' +
+        '<b>' + esc(a.appliance) + '</b> — ' + esc(a.label) + ': ' + esc(a.text) + '</div>';
+    }).join('') + (rows.length > 8
+      ? '<div class="text-muted small mb-2">… and ' + (rows.length - 8) + ' more</div>' : '');
+  }
+
   function renderAlerts(d) {
     var box = document.getElementById('monAlerts');
     if (!d.alerts.length) { box.innerHTML = ''; return; }
@@ -95,13 +117,25 @@
     return t.join(' · ');
   }
   function devDot(worst) {
-    var c = worst === 'crit' ? '#ef4444' : worst === 'warn' ? '#fbbf24' : '#10b981';
+    var c = worst === 'crit' ? '#ef4444' : worst === 'warn' ? '#fbbf24'
+          : worst === 'unknown' ? '#64748b' : '#10b981';
     return '<span class="mon-dot" style="background:' + c + '"></span>';
   }
   function devBadge(worst) {
-    var m = { crit: 'mon-b-crit', warn: 'mon-b-warn' };
-    var label = worst === 'crit' ? 'critical' : worst === 'warn' ? 'warning' : 'healthy';
-    return '<span class="mon-badge ' + (m[worst] || 'mon-b-ok') + '">' + label + '</span>';
+    // 'unknown' is its own state on purpose: a device we have measured NOTHING
+    // about must not be printed as healthy (that was the 2026-07-28 bug).
+    var m = { crit: 'mon-b-crit', warn: 'mon-b-warn', unknown: 'mon-b-unknown' };
+    var l = { crit: 'critical', warn: 'warning', unknown: 'unknown' };
+    return '<span class="mon-badge ' + (m[worst] || 'mon-b-ok') + '">' +
+      (l[worst] || 'healthy') + '</span>';
+  }
+  function devWhy(health) {
+    var rs = (health && health.reasons) || [];
+    if (!rs.length) return '';
+    return '<div class="mon-why">' + rs.map(function (r) {
+      return '<div class="r-' + esc(r.status) + '"><span class="sg">' + esc(r.label) +
+        '</span><span class="tx">' + esc(r.text) + '</span></div>';
+    }).join('') + '</div>';
   }
 
   function renderDevices(d) {
@@ -132,7 +166,7 @@
         ? '<div class="mon-note"><i class="bi bi-clock-history me-1"></i>' + esc(dev.freshness) + '</div>'
         : '<div class="mon-note"><i class="bi bi-cpu me-1"></i>no hardware inventory — run an SSH scan · ' + esc(dev.freshness) + '</div>';
       return '<div class="fw-card"><div class="fw-card-body">' +
-        head + sub + caps + note +
+        head + sub + caps + devWhy(dev.health) + note +
         '</div></div>';
     }).join('');
     document.getElementById('monDevices').innerHTML =
@@ -190,7 +224,7 @@
     fetch('{{ url_for("monitoring.data") }}', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        renderAlerts(d); renderDevices(d); renderSystem(d);
+        renderHealthAlerts(d); renderAlerts(d); renderDevices(d); renderSystem(d);
         document.getElementById('monStamp').textContent =
           'updated ' + new Date().toLocaleTimeString() +
           ' · warn ≥ ' + d.thresholds.warn + '% · crit ≥ ' + d.thresholds.crit + '%';

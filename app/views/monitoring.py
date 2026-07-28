@@ -30,13 +30,22 @@ def _thresholds() -> tuple[float, float]:
     return warn, crit
 
 
-def _device_payload(warn: float, crit: float) -> tuple[list[dict], list[dict]]:
+def _device_payload(warn: float, crit: float) -> tuple[list[dict], list[dict], list[dict]]:
+    """Device cards, capacity alerts and health alerts.
+
+    The card badge is the roll-up from :mod:`services.device_health` -- harvest
+    status, cache age, deep monitors AND capacity -- not capacity alone. Before
+    2026-07-28 it was capacity-only, and since no appliance in this fleet has an
+    admin cap it could never leave 'healthy' even for a box that was powered off.
+    """
     from ..services import capacity as capsvc
+    from ..services import device_health as devhealth
     from ..services import read_layer
     from ..services.hardware import hardware_map
 
     hw = hardware_map()
-    devices, alerts = [], []
+    stale_h = devhealth.stale_hours()
+    devices, alerts, health_alerts = [], [], []
     for a in visible_appliances().order_by(Appliance.name).all():
         caps = []
         for h in capsvc.fleet_headroom(a):
@@ -69,13 +78,13 @@ def _device_payload(warn: float, crit: float) -> tuple[list[dict], list[dict]]:
             fresh = read_layer.freshness_label(meta) if meta else 'no local data'
         except Exception:
             fresh = 'unknown'
-        worst = 'ok'
-        for c in caps:
-            if c['status'] == 'crit':
-                worst = 'crit'
-                break
-            if c['status'] == 'warn':
-                worst = 'warn'
+        health = devhealth.collect(a, caps, meta, hours=stale_h)
+        worst = health['status']
+        for r in health['reasons']:
+            if r['status'] in ('warn', 'crit'):
+                health_alerts.append({'appliance_id': a.id, 'appliance': a.name,
+                                      'signal': r['signal'], 'label': r['label'],
+                                      'status': r['status'], 'text': r['text']})
         devices.append({
             'id': a.id, 'name': a.name, 'host': a.host,
             'model': a.model or '', 'firmware': a.firmware or '',
@@ -86,19 +95,21 @@ def _device_payload(warn: float, crit: float) -> tuple[list[dict], list[dict]]:
             'hw': hw.get(a.id),
             'capacity': caps,
             'worst': worst,
+            'health': health,
         })
-    return devices, alerts
+    return devices, alerts, health_alerts
 
 
 def _payload() -> dict:
     from ..services import system_health as shealth
 
     warn, crit = _thresholds()
-    devices, alerts = _device_payload(warn, crit)
+    devices, alerts, health_alerts = _device_payload(warn, crit)
     return {
         'thresholds': {'warn': warn, 'crit': crit},
         'devices': devices,
         'alerts': sorted(alerts, key=lambda x: (x['status'] != 'crit', -(x['pct'] or 0))),
+        'health_alerts': sorted(health_alerts, key=lambda x: x['status'] != 'crit'),
         'system': shealth.host_stats(),
         'services': shealth.service_status(),
         'db': shealth.db_stats(),

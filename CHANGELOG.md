@@ -6,6 +6,29 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+- **Fleet health badge could never go red.** Each appliance card was graded
+  *only* by capacity headroom; with no `effective_cap` anywhere in the fleet
+  every row scored `nocap` and the badge was structurally pinned to `healthy` —
+  a powered-off appliance with no cached data at all still rendered green. The
+  badge is now the roll-up of four signals (harvest history, cache age, enabled
+  deep monitors, capacity) in the new `app/services/device_health.py`, with a
+  distinct `unknown` state and the reasons printed under the badge. New
+  `health_alerts` block on `/monitoring/data`. See `docs/safeguards.md` §9b.
+
+### Changed
+- **Monitoring is now an ADOM-level submenu, not Global-only.** Fleet health,
+  Metrics and Deep monitors appear in the FortiWeb, FortiADC and FortiAnalyzer
+  ADOMs as well as Global, from a single shared partial
+  (`app/templates/partials/nav_monitoring.html`) so the group cannot drift
+  between ADOMs again. The `monitoring` and `deep_monitor` blueprints were
+  added to the ADC/FAZ product gates; all three pages already scope their rows
+  through `visible_appliances()`, so an ADOM sees only its own devices and
+  probes and anything created from Global against a device of that product
+  appears there automatically (scoping is by device **kind**, not by creator).
+
+## [Unreleased]
+
 ### Changed
 - **The `proxyd` probe reports memory CONSUMED and FREE, in megabytes**, instead
   of the daemon's `%VSZ`. `%VSZ` is *virtual* size: measured on fw6, the eight

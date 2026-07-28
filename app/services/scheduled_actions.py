@@ -320,9 +320,20 @@ def _do_deep_monitor(params: dict, dry_run: bool = False) -> dict:
     force = bool(params.get("force"))
     res = dm.sweep(force=force)
     counts = ", ".join("%s %s" % (v, k) for k, v in sorted(res["counts"].items()))
-    return {"ok": res["worst"] in ("ok", "unknown"),
-            "summary": "Deep monitors: %d probe(s) run%s"
-                       % (res["ran"], (" - " + counts) if counts else ""),
+    # ``ok`` means THE SWEEP RAN — not "everything it found is healthy".
+    #
+    # It used to be ``worst in ("ok", "unknown")``, which had two costs. A
+    # legitimately critical finding (a policy with every backend down) became
+    # indistinguishable from a sweep that could not execute at all; and because
+    # such a finding persists until someone fixes the backend, the scheduled
+    # action sat permanently red, which is how an operator learns to stop
+    # reading it. Findings travel through the probe statuses, the Deep monitors
+    # page and the alert engine — all of which can say WHICH probe and WHY.
+    # A sweep that genuinely fails still raises, and ``run_action`` catches it.
+    return {"ok": True,
+            "summary": "Deep monitors: %d probe(s) run - worst: %s%s"
+                       % (res["ran"], res["worst"],
+                          (" - " + counts) if counts else ""),
             "log": "\n".join("%s: %s - %s" % (r["status"], r["probe"], r["detail"])
                               for r in res["results"])[:4000]}
 

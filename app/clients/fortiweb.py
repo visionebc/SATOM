@@ -260,6 +260,87 @@ class FortiWebClient(BaseClient):
                 % quote(name, safe=''))
         return self.list_with_error(path)
 
+    # --- live monitor endpoints (runtime telemetry, NOT cmdb) ---------------
+    #
+    # FortiWeb 7.6 has no ``/api/v2.0/monitor/<resource>`` tree: that prefix
+    # answers ONLY ``monitor/permission-check``. Runtime telemetry lives at
+    # ``/api/v2.0/<family>/<object>.<view>``. Every path below was enumerated
+    # out of the appliance's own GUI bundle (``/ng/app/dashboard/*.js``) and
+    # then verified live against fortiweb08 7.6.8 build1128 (2026-07-28) —
+    # guessing at plausible URLs produced nothing but ``-20001 invalid URL``.
+    #
+    # All of these return (value, error) so a licence lock (HTTP 423
+    # ``-20010``) is surfaced as an error instead of being read as "no traffic".
+
+    def system_resource(self):
+        """Box gauges: cpu, mem, logDisk, dbStatus, diskUsage, sessionCount,
+        connCntPerSec. Source of the GUI's System Resources widget."""
+        return self._monitor_one('/api/v2.0/system/status.systemresource')
+
+    def system_operation(self):
+        """Per-interface live counters: ip_netmask, speedDuplex, link, tx/rx
+        packets and tx_bytes/rx_bytes (cumulative since boot).
+
+        This is the LIVE interface state — unlike the harvest cache, it can
+        tell "no data" apart from "no change".
+        """
+        return self._monitor_one('/api/v2.0/system/status.systemoperation')
+
+    def policy_status(self):
+        """One row per server policy with sessionCount, connCntPerSec,
+        client_rtt, server_rtt, app_response_time and the runtime ``policy``
+        handle. Source of the GUI's Policy Sessions widget."""
+        return self.list_with_error('/api/v2.0/policy/policystatus')
+
+    def policy_traffic(self, name: str):
+        """Throughput series for one policy, or for the aggregate pseudo-policy
+        ``Total HTTP Throughput`` (``Total FTP/ADFS Throughput`` also exist, and
+        in VDOM mode the names become ``Administrative Domain <X> Traffic``).
+
+        Returns 60 samples, one per second, oldest first. **Values are BYTES per
+        second as strings** — the GUI multiplies by 8 and divides by 1024 to
+        render Kb/s. A bare list means no web-cache; a dict carries
+        ``throughput`` plus ``cache_enabled``/``cache_tp``.
+        """
+        path = ('/api/v2.0/policy/policytraffic?policy_name=%s'
+                % quote(name, safe=''))
+        return self._monitor_one(path)
+
+    def http_transactions(self, name: str, hours: int = 1):
+        """Bucketed HTTP transaction counts for ONE policy over ``hours``.
+
+        ``time`` is a number of hours and drives the bucket width the appliance
+        picks (1h -> 5 min buckets, 24h -> 2h buckets). The aggregate
+        pseudo-policies are NOT accepted here: a bad name yields an empty
+        ``errcode 0`` envelope rather than an error, so callers must pass a real
+        policy name.
+        """
+        path = ('/api/v2.0/system/status.httptransactions?time=%d&policy=%s'
+                % (int(hours), quote(name, safe='')))
+        return self.list_with_error(path)
+
+    def _monitor_one(self, path: str):
+        """GET a monitor path returning (results, error).
+
+        ``results`` may legitimately be a dict OR a list depending on the
+        widget, so this does not force either shape the way ``_results_one``
+        does.
+        """
+        try:
+            resp = self.get(path)
+        except Exception as exc:  # noqa: BLE001 — an unreachable box is a result
+            return None, str(exc)
+        err = self._device_error(resp)
+        if err:
+            return None, err
+        try:
+            raw = resp.json()
+        except Exception as exc:  # noqa: BLE001
+            return None, 'unparseable response: %s' % exc
+        if isinstance(raw, dict) and 'results' in raw:
+            return raw['results'], None
+        return raw, None
+
     def api_call(self, method: str, path: str, data=None):
         return self._request(method, path, headers=self._headers(), json=data)
 

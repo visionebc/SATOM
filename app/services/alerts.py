@@ -496,10 +496,16 @@ def _check_actions() -> list[dict]:
             if r.status == "failed":
                 streak += 1
                 last_fail = last_fail or r
-            elif r.status == "ok":
+            elif r.status in ("ok", "skipped"):
+                # A skip terminates the streak as surely as a success does.
+                # Stepping over it looks safer and is not: an action whose whole
+                # target set is parked reports 'skipped' forever, so old
+                # failures would never clear and the alert would stay critical
+                # permanently — the always-red state this check exists to
+                # prevent. A skip is a legitimate outcome, not a fault; if the
+                # action really is broken its next real run restarts the streak.
                 break
-            # 'skipped'/'running' are neither a success nor a failure: step over
-            # them rather than letting a skip mask an ongoing streak.
+            # 'running' is the row this very sweep opened — neither outcome yet.
         if streak:
             crit = crit or streak >= streak_crit
             when = last_fail.started_at.strftime("%Y-%m-%d %H:%M") if last_fail else "?"

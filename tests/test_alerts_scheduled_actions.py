@@ -171,14 +171,46 @@ def test_manual_success_does_not_mask_a_scheduled_streak(app):
         assert len(out) == 1 and out[0]["severity"] == alerts.SEV_CRITICAL
 
 
-def test_skipped_run_does_not_mask_a_streak(app):
-    """'skipped' is neither a success nor a failure — step over it."""
+def test_skipped_run_clears_the_streak(app):
+    """A skip terminates the streak as surely as a success does.
+
+    Stepping over skips looks safer and is not: an action whose whole target set
+    is in maintenance reports `skipped` on every future run, so the old failures
+    would never clear and the alert would sit critical forever — the always-red
+    state this check exists to prevent. A skip is a legitimate outcome, not a
+    fault. If the action really is broken, its next real run restarts the
+    streak, which is what `test_failure_after_a_skip_restarts_the_streak`
+    pins down."""
     with app.app_context():
         a = _action()
         for i in range(3):
             _run(a.id, "failed", 60 * (i + 2))
         _run(a.id, "skipped", 1)
-        assert alerts._check_actions()[0]["severity"] == alerts.SEV_CRITICAL
+        assert alerts._check_actions() == []
+
+
+def test_failure_after_a_skip_restarts_the_streak(app):
+    with app.app_context():
+        a = _action()
+        for i in range(3):
+            _run(a.id, "failed", 60 * (i + 5))
+        _run(a.id, "skipped", 60 * 4)
+        _run(a.id, "failed", 3)
+        out = alerts._check_actions()
+        assert len(out) == 1 and out[0]["severity"] == alerts.SEV_WARNING, \
+            "only the failures NEWER than the skip count"
+
+
+def test_an_all_parked_action_goes_quiet_on_its_next_run(app):
+    """End-to-end of the interaction with maintenance: yesterday's failures plus
+    today's skip must not equal a permanent critical alert."""
+    with app.app_context():
+        a = _action()
+        for i in range(9):
+            _run(a.id, "failed", 60 * (i + 2))
+        _run(a.id, "skipped", 1,
+             summary="Sync device: all targets in maintenance (fw6, fw7).")
+        assert alerts._check_actions() == []
 
 
 # ------------------------------------------------------------------- plumbing

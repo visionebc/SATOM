@@ -1039,16 +1039,39 @@ def parse_transactions(rows: Any) -> dict:
             "peak": max((b["count"] for b in buckets), default=0)}
 
 
-def classify_transactions(tx: dict, *, warn_num: float,
-                          crit_num: float) -> tuple[str, str]:
+def classify_transactions(tx: dict, *, warn_num: float, crit_num: float,
+                          carrying: dict | None = None) -> tuple[str, str]:
     """Grade HTTP transaction volume over the window.
 
     An empty bucket list is ``error``, not ``ok``: the appliance answers
     ``errcode 0`` with no rows when the policy name is unknown, so "no buckets"
     means the probe is misconfigured rather than idle.
+
+    An all-zero bucket list is ``warn`` when ``policystatus`` says the policy is
+    carrying traffic. VERIFIED on fortiweb08, 2026-07-28: a policy handling
+    ~2 700 req/s over a measured six-minute load test reported **0**
+    transactions in every bucket, and the same policy reported **417 059** the
+    moment a ``web-protection-profile`` was attached to it — nothing else
+    changed, and enabling the global traffic log beforehand had made no
+    difference. [Probable] the per-policy counter is keyed off the protection
+    profile, so a policy without one is invisible to this endpoint.
+
+    Whatever the mechanism, the failure mode is the one this codebase refuses to
+    ship: a silent zero that grades ``ok`` on a saturated service. ``carrying``
+    is the policy's row from ``policystatus`` (sessions / conn-per-sec); it is
+    only ever fetched when the count is zero, so the normal path costs nothing.
     """
     if not tx or not tx["buckets"]:
         return "error", "no transaction buckets returned (unknown policy name?)"
+    if not tx["total"] and carrying:
+        live = max(_i(carrying.get("sessions")), _i(carrying.get("conn_per_sec")))
+        if live > 0:
+            return "warn", (
+                "0 transactions reported, but the policy is carrying traffic "
+                "right now (%d session(s), %d conn/s) — this endpoint reports "
+                "nothing for a policy with no web-protection-profile attached"
+                % (_i(carrying.get("sessions")),
+                   _i(carrying.get("conn_per_sec"))))
     bits = ["%d transactions" % tx["total"],
             "peak %d/bucket" % tx["peak"],
             "%d buckets" % len(tx["buckets"])]
@@ -1207,16 +1230,31 @@ def run_transactions(probe) -> dict:
                 "payload": {"endpoint": "system/status.httptransactions",
                             "target": name, "error": error}}
     tx = parse_transactions(rows)
+    # Only when the answer is zero do we pay for a second call, to tell "idle"
+    # apart from "cannot report" (see classify_transactions). A failure here is
+    # swallowed on purpose: the cross-check is a refinement of the grade, and
+    # losing it must not turn a working probe into an error.
+    carrying = None
+    if not tx["total"]:
+        try:
+            rows2, err2 = client.policy_status()
+            if not err2:
+                carrying = next((p for p in parse_policy_rows(rows2)
+                                 if p["name"] == name), None)
+        except Exception:  # noqa: BLE001
+            carrying = None
     status, detail = classify_transactions(
         tx, warn_num=float(probe.warn_num or 0),
-        crit_num=float(probe.crit_num or 0))
+        crit_num=float(probe.crit_num or 0), carrying=carrying)
     return {
         "status": status, "detail": "%s over %dh" % (detail, hours),
         "value_num": tx["total"], "value2_num": tx["last"],
         "fingerprint": "",
         "payload": {"endpoint": "system/status.httptransactions",
                     "target": name, "hours": hours, "total": tx["total"],
-                    "peak": tx["peak"], "buckets": tx["buckets"][-24:]},
+                    "peak": tx["peak"], "buckets": tx["buckets"][-24:],
+                    "live_sessions": (carrying or {}).get("sessions"),
+                    "live_conn_per_sec": (carrying or {}).get("conn_per_sec")},
     }
 
 # ---------------------------------------------------------------------------

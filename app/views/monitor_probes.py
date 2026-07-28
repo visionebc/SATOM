@@ -121,7 +121,7 @@ class PageSpec:
 
     def __init__(self, *, key: str, title: str, icon: str, kinds: tuple,
                  template: str, discover: tuple, blurb: str, footnote: str,
-                 job_label: str):
+                 job_label: str, rollup: bool = False):
         self.key = key
         self.title = title
         self.icon = icon
@@ -131,6 +131,11 @@ class PageSpec:
         self.blurb = blurb
         self.footnote = footnote
         self.job_label = job_label
+        # Per-device traffic cards + the per-policy drill-down. Off by default:
+        # they consolidate the REST-telemetry payloads, and a page whose kinds
+        # never produce a ``policy``/``stats`` payload would render a strip of
+        # empty cards that reads as "no traffic" rather than "not applicable".
+        self.rollup = bool(rollup)
 
     # Which form field GROUP each kind uses. cpu/memory share one ('box'):
     # identical thresholds, and a single element cannot carry two kind classes
@@ -158,6 +163,7 @@ class PageSpec:
             "group_of": {k: self._GROUP[k] for k in self.kinds
                          if k in self._GROUP},
             "units": {k: dm.NUM_UNIT[k] for k in self.kinds if k in dm.NUM_UNIT},
+            "rollup": self.rollup,
         }
 
 
@@ -218,7 +224,15 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
             by_kind.setdefault(p.kind, []).append(row["status"])
         summary = {k: {"count": len(v), "worst": dm.worst(v)}
                    for k, v in by_kind.items()}
-        return {
+        # The rollup is OMITTED, not emptied, on a page that does not own it —
+        # the collection never runs, so a page without the flag cannot leak a
+        # half-built card set through a template that forgot to check.
+        rollup = []
+        if spec.rollup:
+            from ..services import service_rollup
+            rollup = service_rollup.device_rollup(
+                visible_appliances().order_by(Appliance.name).all())
+        out_payload = {
             "page": spec.key,
             "probes": out,
             "summary": summary,
@@ -229,6 +243,9 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
                         for a in visible_appliances()
                         .order_by(Appliance.name).all()],
         }
+        if spec.rollup:
+            out_payload["device_rollup"] = rollup
+        return out_payload
 
     # -- reads --------------------------------------------------------------
 
@@ -329,6 +346,35 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
                for r in rows if str(r.get("name") or "").strip()]
         out.sort(key=lambda r: r["name"])
         return jsonify({"ports": out})
+
+    if spec.rollup:
+        @bp.route('/policy/<int:aid>')
+        @login_required
+        def policy_detail(aid: int):
+            """Everything stored about ONE server policy, in one object.
+
+            Reads only saved samples — no call to the appliance, so it opens
+            instantly and still answers with the box powered off or its cmdb
+            licence-locked. The policy name arrives as a query parameter rather
+            than a path segment: FortiWeb allows characters that would need
+            escaping in a URL path, and a name that fails to round-trip would
+            look like "policy not monitored".
+            """
+            from ..services import service_rollup
+
+            if aid not in _visible_ids():
+                return jsonify({"error": "not visible in this ADOM"}), 403
+            appliance = Appliance.query.get_or_404(aid)
+            name = (request.args.get('name') or '').strip()
+            if not name:
+                return jsonify({"error": "name is required"}), 400
+            out = service_rollup.policy_detail(appliance, name)
+            if out is None:
+                # No probe targets this policy. A 404 rather than an empty
+                # skeleton: "not monitored" and "idle" must not render alike.
+                return jsonify({"error": "no probe on this page targets %r"
+                                         % name}), 404
+            return jsonify(out)
 
     @bp.route('/policies/<int:aid>')
     @login_required

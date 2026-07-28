@@ -174,7 +174,8 @@ cooldown `alerts.cooldown_hours`):
 | `git.ahead_unpushed` | Unpushed commits older than `alerts.git_ahead_max_hours` (critical at 8×) |
 | `git.behind` / `git.diverged` / `git.error` | Behind past `alerts.git_behind_max`; both ahead and behind; repo unreadable |
 | `backup.none` / `backup.stale` / `backup.error` | No bundle at all; none within `alerts.backup_max_hours`; the check itself failed |
-| `device.error` | A registered appliance is unreachable or erroring |
+| `device.health.<name>.<status>` | A device is degraded or critical on the Fleet-health ladder — one finding per device, every failing signal listed |
+| `device.error` / `device.error.<name>` | The appliance list, or one device's health roll-up, could not be read |
 | `drift.error` | The drift comparison could not run |
 | `engine.error` | The alert engine itself failed — the guard on the guard |
 
@@ -208,14 +209,45 @@ Two design rules carry the guard:
 * **A disabled probe is not a passing probe.** Switching off a monitor that
   always fails removes coverage, and the card says so.
 
-This is complementary to the `device.unreachable.*` alert in the catalog above:
-that one opens a TCP connection on the nightly alert pass, this one is DB-first
-and renders on every page load without touching an appliance.
+**The badge and the mailbox share this ladder.** A guard that only paints a
+page is a guard nobody is watching at 03:00. `alerts._check_devices` grades
+every appliance with `device_health.collect_for()` — the same four signals,
+the same thresholds — and adds a fifth that the page structurally cannot have:
+a live TCP probe. Before 2026-07-28 that probe was the *whole* device check,
+which is why fw6 and fw7 could answer `:443` for a week with a dead harvest and
+never produce a single mail.
+
+Three rules keep the two surfaces honest:
+
+* **One device, one finding.** Every failing signal is a line in the message,
+  never a separate mail. Five signals about one dead box is noise that gets
+  filtered, and a filtered alert is a disabled alert.
+* **The severity is the badge.** `crit` on the page is `critical` in the mail.
+  If they can disagree, the operator learns to trust neither.
+* **The status is part of the cooldown key** (`device.health.<name>.<status>`).
+  A device that degrades from warn to crit inside `alerts.cooldown_hours` still
+  reaches the operator; a fixed key would suppress exactly the escalation the
+  alert exists for.
+
+The floor is operator-tunable (`alerts.device_min_status`: `warn` default,
+`crit` to mail only on critical) — a volume knob, not an off switch, because
+silencing warnings is a decision that should be visible in Settings rather than
+achieved by ignoring mail.
 
 **How to check it is armed.** `GET /monitoring/data` and confirm each device
 row carries a `health` block with `signals` and `reasons`, and that
-`worst == health.status`. `tests/test_device_health.py` asserts the specific
-regression (uncapped + unreachable + never cached must not be `ok`).
+`worst == health.status`. For the alert side, Settings → Alerts → *Preview now
+(no send)*, or:
+
+```bash
+flask shell -c "from app.services import alerts; print(alerts._check_devices())"
+```
+
+A device that renders red on the page and returns nothing here means the two
+ladders have diverged. `tests/test_device_health.py` asserts the badge
+regression (uncapped + unreachable + never cached must not be `ok`) and
+`tests/test_alerts_device_health.py` asserts the alert one (a device whose port
+answers but whose harvest is failing must still produce a finding).
 
 ## 10. Fresh installs, and what an offline bundle can promise
 

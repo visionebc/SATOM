@@ -15,6 +15,23 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
   deep monitors, capacity) in the new `app/services/device_health.py`, with a
   distinct `unknown` state and the reasons printed under the badge. New
   `health_alerts` block on `/monitoring/data`. See `docs/safeguards.md` §9b.
+- **The device alert was a TCP probe and nothing else, so a red badge never
+  sent mail.** `alerts._check_devices` opened a socket to `host:port` and
+  reported only a refused connection. Three of the four appliances in this
+  fleet accepted `:443` while their REST harvest had been failing for a week on
+  an invalid licence — the Monitoring page went red and the mailbox stayed
+  empty. The check now grades each device with `device_health.collect_for()`,
+  the same roll-up the page prints, and keeps the socket probe as one more
+  signal (it remains the only network-touching check; the page is DB-first by
+  contract). One device produces **one** finding listing every failing signal,
+  the severity tracks the badge, and the roll-up status is part of the cooldown
+  key so a device escalating from degraded to critical inside the suppression
+  window still reaches the operator. New floor setting
+  `alerts.device_min_status` (`warn` default, `crit` to mail only on critical)
+  under Settings → Alerts.
+- **`maintenance` flag on the Monitoring device card was always false.** The
+  payload read a `maintenance_mode` attribute that has never existed on
+  `Appliance`; the column is `maintenance`.
 
 ### Changed
 - **Monitoring is now an ADOM-level submenu, not Global-only.** Fleet health,
@@ -26,10 +43,6 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
   through `visible_appliances()`, so an ADOM sees only its own devices and
   probes and anything created from Global against a device of that product
   appears there automatically (scoping is by device **kind**, not by creator).
-
-## [Unreleased]
-
-### Changed
 - **The `proxyd` probe reports memory CONSUMED and FREE, in megabytes**, instead
   of the daemon's `%VSZ`. `%VSZ` is *virtual* size: measured on fw6, the eight
   largest processes sum to 240 % of installed RAM, because every shared mapping

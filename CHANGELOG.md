@@ -7,6 +7,47 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **Service Monitor — runtime telemetry gets its own Monitoring page.** The four
+  REST-telemetry probe kinds (`sessions`, `policy_sessions`, `throughput`,
+  `transactions`) moved out of Deep monitors to **Monitoring → Service Monitor**
+  (`/monitoring/services`), present in all four ADOMs. Deep monitors keeps the
+  five kinds that reach into the appliance (`https`, `interface`, `cpu`,
+  `memory`, `proxyd`).
+
+  Storage, runner and the `deep_monitor` scheduled action are deliberately
+  **not** split — two runners would double-schedule every device. What is split
+  is the set of kinds each page owns, and the partition is enforced on every
+  route: each `/data` filters on its own kinds, create/edit refuse the other
+  page's kinds, a foreign probe id answers 404, *Probe now* is pinned to the
+  page (and the ADOM), and *Discover from device* only offers the steps the page
+  owns. A kind can land on exactly one page — neither on both nor on neither,
+  or the partition test fails. See `docs/safeguards.md` §9f.
+
+  Both pages render from ONE template (`monitoring/_probe_page.html`) driven by
+  a `PageSpec`, so the drill-down chart, rollups, history drawer and port picker
+  cannot drift apart.
+- **Live server-policy picker** in the probe form: the policy name field is
+  backed by a datalist filled from the appliance's LIVE `policystatus` (not the
+  harvest cache, which is empty on a licence-locked box). A failure is printed
+  in the form instead of degrading to an empty dropdown — "no policies" and
+  "could not ask" look identical in a `<select>` and mean opposite things.
+
+### Fixed
+- **`transactions` could report a silent zero on a saturated policy.** Found by
+  a real load test against fortiweb08 (2026-07-28): a policy carrying
+  ~2 700 req/s reported **0** transactions in every bucket, and **417 059** the
+  moment a `web-protection-profile` was attached to it — nothing else changed,
+  and enabling the global traffic log beforehand made no difference. The probe
+  now cross-checks `policystatus` **only when the count is zero**; if the policy
+  is carrying sessions or connections it grades `warn` and names the likely
+  cause, instead of a green row on a busy service. Mutation-tested.
+
+### Changed
+- *Probe now* with no selection no longer sweeps every probe in the fleet: it
+  runs the current page's kinds for the current ADOM's devices. Coverage in the
+  Global ADOM is unchanged (the whole fleet); what changed is that the Deep
+  monitors button no longer also runs the Service Monitor probes.
+
 - **Per-appliance runtime telemetry over the REST API — sessions, HTTP
   throughput and throughput per server policy.** Four new Deep monitor probe
   kinds that open **no SSH session**: `sessions` (box-wide concurrent sessions

@@ -255,12 +255,26 @@ def test_probe_now_without_a_selection_stays_inside_the_adom(
     assert kinds == {adom}, f"{adom} would have probed {kinds}"
 
 
-def test_probe_now_in_global_still_means_every_due_probe(client, admin_id, fleet,
-                                                         monkeypatch):
-    """Global keeps ids=None so the scheduler's due/force semantics are intact."""
+def test_probe_now_in_global_covers_the_whole_fleet(client, admin_id, fleet,
+                                                    monkeypatch, app):
+    """Global spans every device — but still only THIS page's probe kinds.
+
+    Changed 2026-07-28 with the Service Monitor split: this used to send
+    ``ids=None`` (sweep everything). With two pages over one probe table that
+    would make "Probe now" on Deep monitors also run the Service Monitor probes,
+    i.e. a button whose scope is wider than the table under it. The ids are now
+    pinned to the page; in Global that is the whole fleet, so coverage is
+    unchanged.
+    """
     from app.views import deep_monitor as dmv
+    from app.models import MonitorProbe
     captured = _capture_job(monkeypatch, dmv)
     login(client, admin_id, product="global")
     r = client.post("/monitoring/deep/run", headers={"X-ADOM": "global"})
     assert r.status_code == 200
-    assert captured["meta"]["ids"] == "all"
+    ids = captured["meta"]["ids"]
+    with app.app_context():
+        probes = [MonitorProbe.query.get(i) for i in ids]
+        assert {p.appliance.kind for p in probes} == set(fleet)
+        assert all(p.kind not in ("sessions", "policy_sessions", "throughput",
+                                  "transactions") for p in probes)

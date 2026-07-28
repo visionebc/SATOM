@@ -256,7 +256,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        # automatically. Certificate Manager stays Global-only.
                        'architecture', 'metrics', 'search', 'analysis',
                        'fleet_objects', 'dns_tool',
-                       'monitoring', 'deep_monitor',
+                       'monitoring', 'deep_monitor', 'service_monitor',
                        # Backup vault (per-appliance; the ADC transport is the
                        # SSH config dump — services/backup.py kind branch).
                        'backups',
@@ -282,7 +282,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        'fleet_objects', 'dns_tool', 'backups',
                        # Mirrored per-ADOM monitoring (2026-07-28) — see the
                        # ADC note above; scoping is by device kind.
-                       'monitoring', 'deep_monitor',
+                       'monitoring', 'deep_monitor', 'service_monitor',
                        'release_notes', 'templates', 'naming', 'capacity',
                        'api_tokens', 'api_explorer', 'api_v1',
                        'plugins', 'lua_studio'}
@@ -1211,6 +1211,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.metrics", "bp"),
         ("app.views.monitoring", "bp"),
         ("app.views.deep_monitor", "bp"),
+        ("app.views.service_monitor", "bp"),
         ("app.views.capacity", "bp"),
         ("app.views.audit", "bp"),
         ("app.views.registry", "bp"),

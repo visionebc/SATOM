@@ -368,6 +368,19 @@ rules hold them honest:
   no rows when the policy name is unknown; and throughput is graded on the
   window **peak**, not the mean, so a four-second burst is not averaged away.
 
+* **A zero that cannot be a zero is not a zero.** VERIFIED on fortiweb08 under
+  a measured load test (2026-07-28): a policy carrying **~2 700 req/s** reported
+  **0** transactions in every bucket of `system/status.httptransactions`, and
+  reported **417 059** the instant a `web-protection-profile` was attached to
+  it. Nothing else changed, and enabling the global traffic log beforehand made
+  no difference. [Probable] the per-policy counter is keyed off the protection
+  profile. Whatever the mechanism, an all-zero result on a policy that
+  `policystatus` shows carrying sessions or connections now grades **warn** and
+  names the likely cause. The cross-check call is made **only when the count is
+  zero**, so the healthy path costs nothing, and a failure of the cross-check is
+  swallowed — a refinement of the grade must never turn a working probe into an
+  error.
+
 Known limit, stated rather than hidden: no endpoint in the appliance's entire
 non-cmdb API surface exposes daemon or process state. The runtime `policy`
 handle is carried in the policy fingerprint and *would* change if proxyd
@@ -379,7 +392,47 @@ check.
 `discover_api_probes`, the `classify_*` graders), `app/clients/fortiweb.py`
 (the monitor endpoint block).
 **Tests:** `tests/test_deep_monitor_api.py` — 48 cases over payloads captured
-verbatim from a live appliance.
+verbatim from a live appliance; `tests/test_service_monitor.py` for the
+silent-zero guard (mutation-tested: neutralising the check fails the suite).
+
+### 9f. Two probe pages, one subsystem — the partition is server-side
+
+**Service Monitor** (`/monitoring/services`) and **Deep monitors**
+(`/monitoring/deep`) are two *views* over one probe table, one runner and one
+scheduled action. Splitting the storage or the runner would double-schedule
+every device: two sweeps, two SSH sessions, two sets of samples for the same
+box. What is split is the set of `deep_monitor.KINDS` each page owns — the five
+that reach INTO the appliance versus the four REST-telemetry kinds.
+
+The partition is enforced on **every route**, not by hiding rows in a template:
+
+* each page's `/data` filters on its own kinds;
+* `apply_form` refuses a kind belonging to the other page, on create AND on
+  edit — otherwise the form's `<select>` would be the only thing between an
+  operator and a probe its owner page cannot display;
+* a probe id belonging to the other page answers **404** (not 403: from this
+  page's point of view it does not exist) on history, series, update, toggle and
+  delete;
+* *Probe now* with no selection is pinned to this page's kinds and this ADOM's
+  devices. A button whose scope is wider than the table under it is a button
+  that lies — and in a product ADOM the previous fleet-wide sweep would have
+  opened SSH sessions to appliances of other products;
+* *Discover from device* only accepts the steps the page owns, so asking the
+  Service Monitor page for `baseline` cannot create CPU/memory/proxyd probes it
+  will never show.
+
+A kind can therefore land on exactly one page. It cannot land on both, and it
+cannot land on neither without `test_the_two_pages_partition_every_probe_kind`
+failing — which matters because a kind owned by no page would still be run by
+the sweep while being invisible and uneditable in the UI.
+
+ADOM scoping (§9c) stacks on top and is unchanged: every query still runs
+through `visible_appliances()`.
+
+**Where:** `app/views/monitor_probes.py` (the shared route set + `PageSpec`),
+`app/views/deep_monitor.py` and `app/views/service_monitor.py` (the two specs),
+`app/templates/monitoring/_probe_page.html` (one page, two mount points).
+**Tests:** `tests/test_service_monitor.py`.
 
 ## 10. Fresh installs, and what an offline bundle can promise
 
@@ -434,6 +487,16 @@ which rule 3 exists to prevent.
     dm.sweep = lambda **k: {"ran":1,"counts":{"crit":1},"worst":"crit","results":[]}
     assert sa._do_deep_monitor({}, False)["ok"] is True
     PY
+
+    # the two pages partition every kind — none owned twice, none orphaned
+    python3 -c "from app.views.deep_monitor import KINDS as D; \
+      from app.views.service_monitor import KINDS as A; \
+      from app.services.deep_monitor import KINDS as ALL; \
+      assert not set(D)&set(A) and set(D)|set(A)==set(ALL); print('partition ok')"
+
+    # a probe of the other page does not exist here (404, not 403)
+    curl -sk -o /dev/null -w '%{http_code}\n' \
+      https://<node>/monitoring/services/probe/<a-deep-probe-id>/history
 
     # a non-FortiWeb device is refused by name, never measured as zero
     python3 -c "from app.services import deep_monitor as dm; \

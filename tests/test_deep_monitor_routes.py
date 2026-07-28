@@ -54,10 +54,14 @@ def test_data_feed_shape(client, admin_id):
     login(client, admin_id, product="global")
     d = client.get("/monitoring/deep/data").get_json()
     assert set(d) >= {"probes", "summary", "worst", "kinds", "devices"}
+    # Since the Service Monitor split (2026-07-28) this page advertises only the
+    # kinds it OWNS. The REST-telemetry four live at /monitoring/services; the
+    # partition itself is pinned in tests/test_service_monitor.py.
     assert [k["key"] for k in d["kinds"]] == ["https", "interface", "cpu",
-                                              "memory", "proxyd", "sessions",
-                                              "policy_sessions", "throughput",
-                                              "transactions"]
+                                              "memory", "proxyd"]
+    sm = client.get("/monitoring/services/data").get_json()
+    assert [k["key"] for k in sm["kinds"]] == ["sessions", "policy_sessions",
+                                               "throughput", "transactions"]
 
 
 def test_create_validates_kind_requirements(client, admin_id):

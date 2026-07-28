@@ -83,6 +83,41 @@
   .dp-hrow { display:flex; gap:10px; align-items:baseline; padding:4px 0;
              border-bottom:1px dashed rgba(148,163,184,.08); font-size:.78rem; }
   .dp-hrow .ts { color:#64748b; width:140px; flex:none; font-variant-numeric:tabular-nums; }
+
+  /* --- device traffic cards (rollup pages only) ------------------------- */
+  .dp-dev { display:grid; grid-template-columns:repeat(auto-fit, minmax(360px,1fr));
+            gap:14px; margin-bottom:18px; }
+  .dp-dev-card { border:1px solid rgba(148,163,184,.10); border-radius:16px;
+                 background:rgba(15,23,42,.55); padding:14px 16px; }
+  .dp-dev-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+  .dp-dev-name { font-weight:600; font-size:.98rem; }
+  .dp-tp { display:flex; align-items:baseline; gap:8px; margin-top:8px; flex-wrap:wrap; }
+  .dp-tp-val { font-size:1.8rem; font-weight:700; line-height:1;
+               background:linear-gradient(90deg,#3b82f6,#8b5cf6);
+               -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .dp-tp-sub { color:#64748b; font-size:.76rem; }
+  .dp-tp-none { color:#64748b; font-style:italic; font-size:.86rem; margin-top:8px; }
+  .dp-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
+  .dp-chip { font-size:.7rem; padding:2px 8px; border-radius:999px;
+             background:rgba(148,163,184,.10); color:#94a3b8; }
+  .dp-chip.bad { background:rgba(239,68,68,.14); color:#f87171; }
+  .dp-chip.warn { background:rgba(251,191,36,.14); color:#fbbf24; }
+  .dp-ptbl { width:100%; margin-top:11px; font-size:.79rem; border-collapse:collapse; }
+  .dp-ptbl th { color:#64748b; font-weight:600; text-transform:uppercase; font-size:.64rem;
+                letter-spacing:.05em; padding:4px 6px; text-align:left;
+                border-bottom:1px solid rgba(148,163,184,.10); }
+  .dp-ptbl td { padding:5px 6px; border-bottom:1px solid rgba(148,163,184,.06);
+                vertical-align:middle; }
+  .dp-ptbl tr.dp-prow { cursor:pointer; }
+  .dp-ptbl tr.dp-prow:hover { background:rgba(59,130,246,.08); }
+  .dp-mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.94em; }
+  .dp-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(118px,1fr)); gap:10px; }
+  .dp-kpi-t { border:1px solid rgba(148,163,184,.10); border-radius:11px; padding:9px 11px; }
+  .dp-kpi-t .v { font-size:1.15rem; font-weight:700; }
+  .dp-kpi-t .l { color:#64748b; font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; }
+  .dp-sect { margin-top:16px; }
+  .dp-sect h6 { font-size:.72rem; text-transform:uppercase; letter-spacing:.06em;
+                color:#64748b; margin-bottom:7px; }
 </style>
 
 <div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
@@ -104,6 +139,10 @@
       <i class="bi bi-arrow-clockwise"></i></button>
   </div>
 </div>
+
+{% if page.rollup %}
+<div class="dp-dev" id="dpDevices"></div>
+{% endif %}
 
 <div class="dp-sum" id="dpSummary"></div>
 
@@ -139,6 +178,20 @@
 </div>
 
 <!-- drill-down chart: click any sparkline -->
+{% if page.rollup %}
+<div class="modal fade" id="dpPolModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="dpPolTitle">Server policy</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="dpPolBody"><span class="text-muted">Loading…</span></div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <div class="modal fade" id="dpChartModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl">
     <div class="modal-content">
@@ -397,9 +450,11 @@
     data:     BASE + '/data',
     run:      BASE + '/run',
     create:   BASE + '/probe',
-    discover: BASE + '/discover'
+    discover: BASE + '/discover',
+    policy:   BASE + '/policy'
   };
   var UNITS = {{ page.units|tojson }};
+  var ROLLUP = {{ page.rollup|tojson }};
   var STATE = { probes: [], devices: [] };
 
   function esc(s) {
@@ -528,7 +583,7 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         STATE.probes = d.probes; STATE.devices = d.devices;
-        renderSummary(d); renderRows(d);
+        renderSummary(d); renderRows(d); renderDevices(d);
         document.getElementById('dpStamp').textContent =
           d.probes.length + ' probe(s) · updated ' + new Date().toLocaleTimeString();
         fillDevices();
@@ -746,6 +801,238 @@
                title: { display: !!unit, text: unit, color: '#64748b' } }
         }
       }
+    });
+  }
+
+
+  // --- device traffic cards ------------------------------------------------
+  // Everything here is read from stored samples. A card NEVER prints a number
+  // for a probe that is missing, disabled or has never run: those render as
+  // "not measured", because a zero that means "no probe" and a zero that means
+  // "idle" look identical on screen and only one of them is good news.
+
+  function mbps(v) {
+    if (typeof v !== 'number') return '\u2014';
+    if (v >= 1) return v.toFixed(2) + ' Mbps';
+    if (v > 0) return (v * 1000).toFixed(0) + ' Kbps';
+    return '0';
+  }
+  function num(v) { return (typeof v === 'number') ? v.toLocaleString() : '\u2014'; }
+
+  function gapChips(cov) {
+    if (!cov || !cov.gaps || !cov.gaps.length) return '';
+    var byWhy = {};
+    cov.gaps.forEach(function (g) { byWhy[g.why] = (byWhy[g.why] || 0) + 1; });
+    return Object.keys(byWhy).map(function (w) {
+      return '<span class="dp-chip warn">' + byWhy[w] + ' ' + esc(w) + '</span>';
+    }).join('');
+  }
+
+  function devCard(dev) {
+    var tp = dev.total_throughput || {};
+    var box = dev.box_metrics || {};
+    var head = '<div class="dp-dev-head"><div>' +
+      '<div class="dp-dev-name">' + esc(dev.name) +
+      (dev.maintenance ? ' <span class="dp-chip warn">maintenance</span>' : '') +
+      '</div><div class="dp-sub dp-mono">' + esc(dev.host || '') + '</div></div>' +
+      badge(tp.measured ? tp.status : 'unknown') + '</div>';
+
+    var body;
+    if (!tp.present) {
+      body = '<div class="dp-tp-none">No total-throughput probe on this device.' +
+             (CAN_EDIT ? ' Run <b>Discover from device</b> \u2192 REST telemetry.' : '') +
+             '</div>';
+    } else if (!tp.measured) {
+      body = '<div class="dp-tp-none">Total throughput not measured \u2014 ' +
+             esc(tp.detail || 'no sample') + '.</div>';
+    } else {
+      body = '<div class="dp-tp">' +
+        '<span class="dp-tp-val">' + esc(mbps(tp.avg_mbps)) + '</span>' +
+        '<span class="dp-tp-sub">avg \u00b7 peak ' + esc(mbps(tp.peak_mbps)) +
+        (tp.window_s ? ' \u00b7 ' + tp.window_s + 's window' : '') + '</span>' +
+        '<span class="ms-auto dp-chart-open" role="button" tabindex="0" data-id="' +
+          tp.probe_id + '" title="Open the throughput chart">' + spark(tp.series) + '</span>' +
+        '</div>';
+    }
+
+    var chips = '';
+    if (Object.keys(box).length) {
+      chips += '<span class="dp-chip">' + num(box.sessions) + ' sessions</span>' +
+               '<span class="dp-chip">' + num(box.conn_per_sec) + ' conn/s</span>' +
+               '<span class="dp-chip">CPU ' + num(box.cpu_pct) + '%</span>' +
+               '<span class="dp-chip">MEM ' + num(box.mem_pct) + '%</span>';
+    } else {
+      chips += '<span class="dp-chip warn">box counters not measured</span>';
+    }
+    if (tp.measured && tp.stale) {
+      chips += '<span class="dp-chip warn">stale \u00b7 ' + esc(ago(tp.ts)) + '</span>';
+    }
+    chips += gapChips(dev.coverage);
+
+    var pol = '';
+    if (!dev.policies.length) {
+      pol = '<div class="dp-sub mt-2">No server policy is monitored on this device.</div>';
+    } else {
+      pol = '<table class="dp-ptbl"><thead><tr>' +
+        '<th>Server policy</th><th>Sessions</th><th>Conn/s</th>' +
+        '<th>Throughput</th><th>Backends</th><th></th></tr></thead><tbody>' +
+        dev.policies.map(function (p) {
+          var be = p.backends_total
+            ? ((p.backends_total - p.backends_down) + '/' + p.backends_total)
+            : '\u2014';
+          var beCls = (p.backends_total && p.backends_down === p.backends_total) ? 'bad'
+                    : (p.backends_down ? 'warn' : '');
+          var tpc = p.throughput || {};
+          return '<tr class="dp-prow dp-pol-open" data-dev="' + dev.id +
+            '" data-name="' + esc(p.name) + '" title="Open the full policy view">' +
+            '<td><span class="dp-dot" style="background:' + color(p.status) + '"></span> ' +
+              esc(p.name) +
+              (p.policy_status && p.policy_status !== 'enable'
+                ? ' <span class="dp-chip warn">' + esc(p.policy_status) + '</span>' : '') +
+              '</td>' +
+            '<td class="dp-mono">' + (p.measured ? num(p.sessions) : '\u2014') + '</td>' +
+            '<td class="dp-mono">' + (p.measured ? num(p.conn_per_sec) : '\u2014') + '</td>' +
+            '<td class="dp-mono">' + (tpc.measured ? esc(mbps(tpc.avg_mbps))
+                                                   : '<span class="dp-sub">no probe</span>') + '</td>' +
+            '<td>' + (beCls ? '<span class="dp-chip ' + beCls + '">' + be + '</span>'
+                            : '<span class="dp-mono">' + be + '</span>') + '</td>' +
+            '<td class="text-end"><i class="bi bi-chevron-right dp-sub"></i></td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+
+    return '<div class="dp-dev-card">' + head + body +
+           '<div class="dp-chips">' + chips + '</div>' + pol + '</div>';
+  }
+
+  function renderDevices(d) {
+    var host = document.getElementById('dpDevices');
+    if (!host) return;
+    var rows = d.device_rollup || [];
+    if (!rows.length) {
+      host.innerHTML = '<div class="dp-dev-card"><div class="dp-sub">' +
+        'No device in this ADOM exposes the REST monitor API.</div></div>';
+      return;
+    }
+    host.innerHTML = rows.map(devCard).join('');
+  }
+
+  // --- per-policy drill-down ----------------------------------------------
+
+  function polRow(m) {
+    var down = !m.up || String(m.health || '').toLowerCase() === 'disable';
+    return '<tr><td class="dp-mono">' + esc(m.server) + ':' + esc(m.port) + '</td>' +
+      '<td class="dp-sub">' + esc(m.pool || '') + '</td>' +
+      '<td><span class="dp-chip ' + (down ? 'bad' : '') + '">' +
+        esc(m.health || 'n/a') + '</span></td>' +
+      '<td class="dp-mono">' + num(m.sessions) + '</td>' +
+      '<td class="dp-mono">' + num(m.server_rtt) + ' ms</td>' +
+      '<td class="dp-mono">' + num(m.app_response_time) + ' ms</td></tr>';
+  }
+
+  function kpi(label, value, sub) {
+    return '<div class="dp-kpi-t"><div class="l">' + esc(label) + '</div>' +
+           '<div class="v">' + value + '</div>' +
+           (sub ? '<div class="dp-sub">' + sub + '</div>' : '') + '</div>';
+  }
+
+  function renderPolicy(d) {
+    var p = d.policy || {}, s = d.sessions || {}, t = d.throughput || {},
+        x = d.transactions || {}, st = t.stats || {};
+    var measured = s.measured;
+    var head = '<div class="d-flex flex-wrap gap-2 align-items-center mb-3">' +
+      badge(s.measured ? s.status : 'unknown') +
+      '<span class="dp-chip">' + esc(d.appliance.name) + '</span>' +
+      (p.protocol ? '<span class="dp-chip">' + esc(p.protocol) + '</span>' : '') +
+      (p.vserver ? '<span class="dp-chip dp-mono">' + esc(p.vserver) +
+                   (p.port ? ':' + esc(p.port) : '') + '</span>' : '') +
+      (p.status && p.status !== 'enable'
+        ? '<span class="dp-chip warn">policy ' + esc(p.status) + '</span>' : '') +
+      '<span class="ms-auto dp-sub">' +
+        (s.ts ? 'sessions read ' + esc(ago(s.ts)) : 'never read') + '</span></div>';
+
+    var kpis = '<div class="dp-kpis">' +
+      kpi('Sessions', measured ? num(p.sessions) : '\u2014') +
+      kpi('Conn / s', measured ? num(p.conn_per_sec) : '\u2014') +
+      kpi('Client RTT', measured ? num(p.client_rtt) + ' <span class="dp-tp-sub">ms</span>' : '\u2014') +
+      kpi('Server RTT', measured ? num(p.server_rtt) + ' <span class="dp-tp-sub">ms</span>' : '\u2014') +
+      kpi('App response', measured ? num(p.app_response_time) + ' <span class="dp-tp-sub">ms</span>' : '\u2014') +
+      kpi('Throughput avg', t.measured ? esc(mbps(st.avg_mbps)) : '<span class="dp-sub">n/m</span>',
+          t.measured ? 'peak ' + esc(mbps(st.peak_mbps)) : (t.present ? esc(t.detail) : 'no probe')) +
+      kpi('Transactions', x.measured ? num(x.total != null ? x.total : x.value_num)
+                                     : '<span class="dp-sub">n/m</span>',
+          x.present ? '' : 'no probe') +
+      '</div>';
+
+    var charts = '<div class="dp-sect"><h6>Trend \u2014 click a sparkline for the full chart</h6>' +
+      ['sessions', 'throughput', 'transactions'].map(function (k) {
+        var b = d[k] || {};
+        if (!b.present) return '<div class="dp-sub mb-1">' + esc(k) + ': no probe configured</div>';
+        return '<div class="d-flex align-items-center gap-2 mb-1">' +
+          '<span class="dp-sub" style="width:110px">' + esc(k) + '</span>' +
+          '<span class="dp-chart-open" role="button" tabindex="0" data-id="' + b.probe_id +
+            '">' + spark(b.series) + '</span>' +
+          '<span class="dp-sub">' + esc(b.detail || '') + '</span></div>';
+      }).join('') + '</div>';
+
+    var members = '<div class="dp-sect"><h6>Backend pool members</h6>';
+    if (d.members_error) {
+      members += '<div class="dp-chip warn">backend health unavailable: ' +
+                 esc(d.members_error) + '</div>';
+    }
+    if (!d.members.length) {
+      members += '<div class="dp-sub">No pool member reported for this policy.</div>';
+    } else {
+      members += '<table class="dp-ptbl"><thead><tr><th>Server</th><th>Pool</th>' +
+        '<th>Health</th><th>Sessions</th><th>Server RTT</th><th>App resp.</th>' +
+        '</tr></thead><tbody>' + d.members.map(polRow).join('') + '</tbody></table>';
+    }
+    members += '</div>';
+
+    var cov = '';
+    if (d.coverage && d.coverage.gaps.length) {
+      cov = '<div class="dp-sect"><h6>Not measured</h6><div class="dp-chips">' +
+        d.coverage.gaps.map(function (g) {
+          return '<span class="dp-chip warn">' + esc(g.what) + ': ' + esc(g.why) + '</span>';
+        }).join('') + '</div></div>';
+    }
+
+    var note = '<div class="dp-note mt-3"><i class="bi bi-info-circle me-1"></i>' +
+      'Built entirely from stored samples \u2014 opening this view does not contact ' +
+      'the appliance, so it answers with the box powered off or its config API ' +
+      'licence-locked.</div>';
+
+    document.getElementById('dpPolBody').innerHTML =
+      head + kpis + charts + members + cov + note;
+  }
+
+  function openPolicy(aid, name) {
+    document.getElementById('dpPolTitle').textContent = name;
+    document.getElementById('dpPolBody').innerHTML =
+      '<span class="text-muted">Loading\u2026</span>';
+    new bootstrap.Modal(document.getElementById('dpPolModal')).show();
+    fetch(URLS.policy + '/' + aid + '?name=' + encodeURIComponent(name),
+          { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          document.getElementById('dpPolBody').innerHTML =
+            '<div class="dp-chip bad">' + esc(res.j.error || 'failed') + '</div>';
+          return;
+        }
+        renderPolicy(res.j);
+      })
+      .catch(function () {
+        document.getElementById('dpPolBody').innerHTML =
+          '<div class="dp-chip bad">request failed</div>';
+      });
+  }
+
+  if (ROLLUP) {
+    document.addEventListener('click', function (ev) {
+      var row = ev.target.closest('.dp-pol-open');
+      // A click on the sparkline inside a card opens the chart, not the policy.
+      if (!row || ev.target.closest('.dp-chart-open')) return;
+      openPolicy(row.getAttribute('data-dev'), row.getAttribute('data-name'));
     });
   }
 

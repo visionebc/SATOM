@@ -26,6 +26,27 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
   landing unscoped, i.e. under FortiWeb). See `docs/safeguards.md` §9g.
 
 ### Added
+- **Traffic per appliance, and a real drill-down per server policy.** Service
+  Monitor was a flat table of probes: the box-wide `Total HTTP Throughput`
+  reading was one row among twenty, and answering *"what is going on inside this
+  policy"* meant reading four rows and joining them by eye. The page now opens
+  with **one traffic card per FortiWeb** — total throughput (average, window
+  peak and a sparkline), box sessions / connection rate / CPU / memory, and a
+  table of that device's server policies with sessions, conn/s, throughput and
+  backends-up. Clicking a policy opens the full view: sessions, conn/s, client
+  RTT, server RTT and application response time as KPIs, every backend pool
+  member with its health, and the sessions / throughput / transactions trends
+  side by side.
+
+  Both views are built **entirely from stored samples** — opening them never
+  contacts an appliance, so they answer with the box powered off or its cmdb API
+  licence-locked, which is the case on fw6 and fw7 today. And they refuse to
+  invent numbers: a probe that is missing, disabled or has never run reports
+  *not measured* rather than `0`, stale samples are flagged with their age, and
+  there is deliberately no single rolled-up per-device badge, because `unknown`
+  sorts as *less* severe than `ok` and one healthy probe would paint over three
+  missing ones. See `docs/safeguards.md` §9h.
+
 - **Service Monitor — runtime telemetry gets its own Monitoring page.** The four
   REST-telemetry probe kinds (`sessions`, `policy_sessions`, `throughput`,
   `transactions`) moved out of Deep monitors to **Monitoring → Service Monitor**

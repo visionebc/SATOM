@@ -472,6 +472,58 @@ operator is waiting to read "created 12 probes".
 `app/views/monitoring.py::_run_hw_scan`.
 **Tests:** `tests/test_background_jobs.py`.
 
+### 9h. A consolidated view never invents a number it did not measure
+
+The Service Monitor table shows one row per probe. Two consolidated views sit
+on top of it — a traffic card per appliance, and a drill-down per server policy
+— and consolidation is exactly where a monitoring page learns to lie: the
+moment several probes are merged into one headline figure, the ones that are
+missing, disabled or hours old vanish into the ones that answered.
+
+Three rules, enforced in `app/services/service_rollup.py`:
+
+* **Absence is never a zero.** A probe that is missing, disabled or has never
+  run reports `measured: False` and `status: unknown`, and its numeric fields
+  are set to `None` — not carried over from the last sample, not defaulted to
+  `0`. On screen, `0 Mbps` from an idle service and `0 Mbps` from a probe
+  nobody enabled are the same pixels, and only one of them is good news. The
+  card prints *"not measured"* instead. This one was caught by its own test
+  during development: a disabled probe was still serving its last reading.
+* **A disabled probe is not a passing probe.** It counts as a coverage gap and
+  is named in the card's `coverage.gaps`, so a device cannot look monitored
+  because someone paused the one check that mattered.
+* **Stale is stated, not hidden.** A sample older than
+  `service_rollup.STALE_AFTER` (16 min — two missed five-minute sweeps, so
+  jitter does not trip it) keeps its values and gains a `stale` flag plus its
+  age. An old reading is still a reading; an old reading that renders like a
+  fresh one is not.
+
+**Deliberately not built: a single rolled-up status badge per device.**
+`deep_monitor.worst` ranks `unknown` at the *tail* of `STATUS_ORDER`, i.e. less
+severe than `ok`, so one healthy probe beside three missing ones would roll up
+green — the same failure the Fleet health badge had before §9b. Rather than
+fork the fleet-wide severity ordering for one card, the module returns each
+block's own status plus an explicit coverage summary and the template renders
+both.
+
+**And the views never touch an appliance.** Both are built entirely from stored
+samples, so they open instantly, they answer with the box powered off, and they
+keep answering on a device whose cmdb API is licence-locked. The test proves it
+by replacing `FortiWebClient` with a function that raises.
+
+**One page owns the rollup.** `PageSpec.rollup` is off by default; the
+collection does not run and the key is *omitted* from `/data` on a page that
+does not own it, and the policy endpoint is not registered there at all (404,
+not 403 — from that page it does not exist). A page whose kinds never produce a
+`policy`/`stats` payload would otherwise render a strip of empty cards reading
+as "no traffic" rather than "not applicable".
+
+**Where:** `app/services/service_rollup.py`,
+`app/views/monitor_probes.py` (`PageSpec.rollup`, `payload()`, `policy_detail`),
+`app/views/service_monitor.py` (`rollup=True`),
+`app/templates/monitoring/_probe_page.html`.
+**Tests:** `tests/test_service_rollup.py`.
+
 ## 10. Fresh installs, and what an offline bundle can promise
 
 The guards travel with the code. A node installed from the online path or from an
@@ -543,6 +595,21 @@ which rule 3 exists to prevent.
     # telemetry answers on a licence-locked box while its cmdb does not
     curl -sk -H "Authorization: $TOKEN" https://<fw>/api/v2.0/cmdb/system/interface   # 423 -20010
     curl -sk -H "Authorization: $TOKEN" https://<fw>/api/v2.0/policy/policystatus     # 200
+
+### Consolidated views never invent a number (§9h)
+
+    # a device with no throughput probe reports unknown, NOT 0 Mbps
+    curl -sk -b <session> https://<node>/monitoring/services/data | python3 -c \
+      'import json,sys; [print(d["name"], d["total_throughput"]["measured"], \
+        d["total_throughput"]["avg_mbps"]) for d in json.load(sys.stdin)["device_rollup"]]'
+    #   -> measured False must always come with avg_mbps None
+
+    # the rollup belongs to ONE page
+    curl -sk -b <session> https://<node>/monitoring/deep/data | grep -c device_rollup   # 0
+    curl -sk -b <session> "https://<node>/monitoring/deep/policy/1?name=x"              # 404
+
+    # an unmonitored policy is a 404, not an empty shell
+    curl -sk -b <session> "https://<node>/monitoring/services/policy/<id>?name=ghost"   # 404
 
 ### Background jobs stay out of the dock (§9g)
 

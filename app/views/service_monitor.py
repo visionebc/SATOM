@@ -68,6 +68,10 @@ SPEC = mp.PageSpec(
         "the API — that check lives in <b>Deep monitors</b> and reads the PID set "
         "over the read-only CLI."),
     job_label="service_monitor",
+    # Traffic cards per appliance + the per-policy drill-down. Only this page
+    # owns kinds whose payloads carry the policy row, the pool members and the
+    # throughput stats those views consolidate.
+    rollup=True,
 )
 
 mp.attach(bp, SPEC)

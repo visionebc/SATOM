@@ -7,14 +7,14 @@
    entry added here now appears in EVERY ADOM in the same commit — it cannot be
    added to Global and forgotten elsewhere.
 
-   Scoping is NOT done here. All three pages filter their rows through
+   Scoping is NOT done here. All four pages filter their rows through
    ``visible_appliances()`` (ADOM -> device kind), so the FortiWeb ADOM sees
    FortiWeb devices and their probes, the ADC ADOM its own, and anything created
    from the Global ADOM against a device of this product shows up here with no
    extra bookkeeping. ``_adom`` pins the ADOM on hard (non-Turbo) navigations,
    which cannot carry the X-ADOM header.
    ========================================================================= #}
-<div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['monitoring','metrics','deep_monitor'] }}" data-nav-subgroup="Monitoring">
+<div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['monitoring','metrics','deep_monitor','service_monitor'] }}" data-nav-subgroup="Monitoring">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-activity fw-nav-icon"></i><span>Monitoring</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'monitoring' else '' }}" href="{{ url_for('monitoring.index', _adom=product.key) }}">
@@ -23,5 +23,7 @@
       <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>Metrics</span></a>
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'deep_monitor' else '' }}" href="{{ url_for('deep_monitor.index', _adom=product.key) }}">
       <i class="bi bi-broadcast-pin fw-nav-icon"></i><span>Deep monitors</span></a>
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'service_monitor' else '' }}" href="{{ url_for('service_monitor.index', _adom=product.key) }}">
+      <i class="bi bi-speedometer2 fw-nav-icon"></i><span>Service Monitor</span></a>
   </div>
 </div>

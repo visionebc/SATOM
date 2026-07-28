@@ -281,7 +281,7 @@
 
       <!-- FLEET — the Global-ADOM menu, mirrored here but scoped to this
            product's devices/policies (visible_appliances + product_scope). -->
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['search','dns_tool','architecture','analysis','fleet_objects','metrics','monitoring','deep_monitor','jobs'] }}" data-nav-group="Fleet">
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['search','dns_tool','architecture','analysis','fleet_objects','metrics','monitoring','deep_monitor','service_monitor','jobs'] }}" data-nav-group="Fleet">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>Fleet</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
@@ -443,7 +443,7 @@
       {% include 'partials/nav_device_context.html' %}
 
       <!-- FLEET — Architecture / Analysis / Metrics (shared, product-scoped) -->
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['architecture','analysis','metrics','monitoring','deep_monitor','search','dns_tool','fleet_objects','jobs'] }}" data-nav-group="Fleet">
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['architecture','analysis','metrics','monitoring','deep_monitor','service_monitor','search','dns_tool','fleet_objects','jobs'] }}" data-nav-group="Fleet">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>Fleet</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
@@ -531,7 +531,7 @@
 
       <!-- FLEET — the Global-ADOM menu, mirrored here but scoped to this
            product's devices/policies (visible_appliances + product_scope). -->
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['search','dns_tool','architecture','analysis','fleet_objects','metrics','monitoring','deep_monitor','jobs'] }}" data-nav-group="Fleet">
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['search','dns_tool','architecture','analysis','fleet_objects','metrics','monitoring','deep_monitor','service_monitor','jobs'] }}" data-nav-group="Fleet">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>Fleet</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">

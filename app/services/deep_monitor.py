@@ -84,6 +84,18 @@ KIND_LABEL = {
 #    have produced silent zeroes on those products rather than an error, so
 #    discovery refuses to create them and the runner reports ``error``.
 API_KINDS = ("sessions", "policy_sessions", "throughput", "transactions")
+
+#: Default cadence for a newly discovered probe, in minutes.
+#:
+#: MUST stay a multiple of the sweep action's interval. ``due_probes`` only
+#: fires a probe when the whole interval has elapsed *and* a sweep tick
+#: happens, so a probe whose interval is not a multiple of the tick runs
+#: slower than its own configuration claims -- a 5-minute probe under a
+#: 3-minute sweep is really a 6-minute probe, and nothing in the UI says so.
+DEFAULT_PROBE_INTERVAL_MIN = 3
+
+#: Endpoints that aggregate over hours are sampled coarsely on purpose.
+SLOW_PROBE_INTERVAL_MIN = 15
 API_PRODUCTS = ("fortiweb",)
 
 # The aggregate pseudo-policies ``policytraffic`` accepts in place of a real
@@ -1487,9 +1499,9 @@ def discover_api_probes(appliance, *, session=None) -> dict:
     probes on exactly the devices that most need them.
 
     ``transactions`` probes are NOT created here. That endpoint aggregates over
-    hours, so a 5-minute probe would resample the same window twenty times; add
-    those by hand at a 15-minute interval when a policy needs request-volume
-    history. Idempotent by (device, kind, target).
+    hours, so a fast probe would resample the same window over and over; add
+    those by hand at ``SLOW_PROBE_INTERVAL_MIN`` when a policy needs
+    request-volume history. Idempotent by (device, kind, target).
     """
     from ..models import MonitorProbe, db
 
@@ -1514,7 +1526,8 @@ def discover_api_probes(appliance, *, session=None) -> dict:
             .filter(MonitorProbe.appliance_id == appliance.id).all()}
     created, skipped = 0, 0
 
-    def add(kind: str, target: str, label: str, note: str, interval: int = 5,
+    def add(kind: str, target: str, label: str, note: str,
+            interval: int = DEFAULT_PROBE_INTERVAL_MIN,
             enabled: bool = True) -> None:
         nonlocal created, skipped
         key = (kind, target.strip().lower())
@@ -1631,11 +1644,13 @@ def ensure_baseline(appliance, *, session=None) -> dict:
 
     session = session or db.session
     made = []
-    wanted = [("interface", f"{appliance.name} · interfaces", 15),
-              ("cpu", f"{appliance.name} · CPU", 5),
-              ("memory", f"{appliance.name} · memory", 5)]
+    wanted = [("interface", f"{appliance.name} · interfaces",
+               SLOW_PROBE_INTERVAL_MIN),
+              ("cpu", f"{appliance.name} · CPU", DEFAULT_PROBE_INTERVAL_MIN),
+              ("memory", f"{appliance.name} · memory", DEFAULT_PROBE_INTERVAL_MIN)]
     if (appliance.kind or "fortiweb") == "fortiweb":
-        wanted.append(("proxyd", f"{appliance.name} · proxyd", 5))
+        wanted.append(("proxyd", f"{appliance.name} · proxyd",
+                       DEFAULT_PROBE_INTERVAL_MIN))
     for kind, name, interval in wanted:
         exists = (session.query(MonitorProbe)
                   .filter(MonitorProbe.appliance_id == appliance.id,

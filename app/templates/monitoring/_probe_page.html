@@ -18,132 +18,145 @@
 {% set K = page.kinds %}
 {% block content %}
 <style nonce="{{ csp_nonce }}">
+  /* --------------------------------------------------------------------
+     SATOM renders on a LIGHT chrome: static/css/fortiweb.css sets
+     --fw-content-bg #F4F5F7, .fw-card #FFFFFF and the accent #EF5424, and
+     there is no dark mode anywhere in the app. Every colour below is
+     therefore chosen against WHITE.
+
+     The fleet's dark glassmorphism palette does NOT apply to this product.
+     Dropped on this page a card reads as a grey slab and the light-on-light
+     status pills disappear -- which is exactly what happened on 2026-07-28.
+     -------------------------------------------------------------------- */
   .dp-sum { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:14px; margin-bottom:18px; }
   .dp-sum .fw-card-body { padding:14px 16px; }
-  .dp-kpi { font-size:1.6rem; font-weight:600; line-height:1.1; }
+  .dp-kpi { font-size:1.6rem; font-weight:600; line-height:1.1; color:var(--fw-text-primary); }
   .dp-badge { font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; padding:1px 8px;
-              border-radius:9px; border:1px solid; white-space:nowrap; }
-  .dp-b-ok      { color:#6ee7b7; background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.3); }
-  .dp-b-warn    { color:#fcd34d; background:rgba(245,158,11,.12); border-color:rgba(245,158,11,.3); }
-  .dp-b-crit    { color:#fca5a5; background:rgba(239,68,68,.12);  border-color:rgba(239,68,68,.3); }
-  .dp-b-error   { color:#c4b5fd; background:rgba(139,92,246,.12); border-color:rgba(139,92,246,.3); }
-  .dp-b-unknown { color:#94a3b8; background:rgba(100,116,139,.12);border-color:rgba(100,116,139,.3); }
+              border-radius:9px; border:1px solid; white-space:nowrap; font-weight:600; }
+  .dp-b-ok      { color:#15692A; background:rgba(40,167,69,.16);   border-color:rgba(40,167,69,.30); }
+  .dp-b-warn    { color:#7A5700; background:rgba(255,193,7,.22);   border-color:rgba(255,193,7,.45); }
+  .dp-b-crit    { color:#8B1C2A; background:rgba(220,53,69,.16);   border-color:rgba(220,53,69,.30); }
+  .dp-b-error   { color:#4C2A85; background:rgba(139,92,246,.16);  border-color:rgba(139,92,246,.32); }
+  .dp-b-unknown { color:#3D4550; background:rgba(108,117,125,.16); border-color:rgba(108,117,125,.30); }
   .dp-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
   .dp-tbl { width:100%; font-size:.85rem; }
-  .dp-tbl th { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:#64748b;
-               font-weight:600; padding:6px 8px; border-bottom:1px solid rgba(148,163,184,.12); }
-  .dp-tbl td { padding:8px; border-bottom:1px dashed rgba(148,163,184,.08); vertical-align:middle; }
-  .dp-tbl tr:hover td { background:rgba(59,130,246,.04); }
-  .dp-name { font-weight:600; }
-  .dp-sub  { font-size:.74rem; color:#64748b; }
-  .dp-detail { font-size:.78rem; color:#cbd5e1; }
+  .dp-tbl th { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em;
+               color:var(--fw-text-secondary); font-weight:600; padding:6px 8px;
+               border-bottom:1px solid var(--fw-border); }
+  .dp-tbl td { padding:8px; border-bottom:1px solid var(--fw-border-light); vertical-align:middle; }
+  .dp-tbl tr:hover td { background:rgba(239,84,36,.06); }
+  .dp-name { font-weight:600; color:var(--fw-text-primary); }
+  .dp-sub  { font-size:.74rem; color:var(--fw-text-secondary); }
+  .dp-detail { font-size:.78rem; color:var(--fw-text-primary); }
   .dp-spark { display:block; }
   .dp-chart-open { display:block; cursor:pointer; border-radius:6px; padding:2px;
                    transition:background .12s ease; }
-  .dp-chart-open:hover { background:rgba(59,130,246,.12); }
+  .dp-chart-open:hover { background:rgba(239,84,36,.10); }
   .dp-ch-bar { display:flex; flex-wrap:wrap; gap:12px; align-items:center;
                justify-content:space-between; margin-bottom:14px; }
   .dp-ch-dates { display:flex; gap:7px; align-items:center; }
   .dp-ch-dates input { width:150px; }
   .dp-ch-kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));
                 gap:10px; margin-bottom:12px; }
-  .dp-ch-kpi { border:1px solid rgba(148,163,184,.12); border-radius:10px; padding:8px 11px; }
+  .dp-ch-kpi { border:1px solid var(--fw-border); border-radius:10px; padding:8px 11px; }
   .dp-ch-kpi .k { font-size:.66rem; text-transform:uppercase; letter-spacing:.06em;
-                  color:#64748b; }
-  .dp-ch-kpi .v { font-size:1.05rem; font-weight:600; font-variant-numeric:tabular-nums; }
+                  color:var(--fw-text-secondary); }
+  .dp-ch-kpi .v { font-size:1.05rem; font-weight:600; font-variant-numeric:tabular-nums;
+                  color:var(--fw-text-primary); }
   .dp-ch-wrap { position:relative; height:300px; }
   .dp-strip { display:flex; gap:1px; height:10px; margin-top:10px; border-radius:3px;
               overflow:hidden; }
   .dp-strip span { flex:1 1 0; min-width:1px; }
-  .dp-ch-empty { text-align:center; color:#64748b; font-size:.85rem; padding:60px 0; }
+  .dp-ch-empty { text-align:center; color:var(--fw-text-secondary); font-size:.85rem; padding:60px 0; }
   .dp-kind { font-size:.66rem; padding:1px 7px; border-radius:8px; white-space:nowrap;
-             background:rgba(59,130,246,.12); border:1px solid rgba(59,130,246,.25); color:#93c5fd; }
-  .dp-kind.interface { background:rgba(16,185,129,.10); border-color:rgba(16,185,129,.28); color:#6ee7b7; }
-  .dp-kind.proxyd    { background:rgba(245,158,11,.10); border-color:rgba(245,158,11,.28); color:#fcd34d; }
-  .dp-kind.cpu       { background:rgba(139,92,246,.10); border-color:rgba(139,92,246,.28); color:#c4b5fd; }
-  .dp-kind.memory    { background:rgba(236,72,153,.10); border-color:rgba(236,72,153,.28); color:#f9a8d4; }
-  .dp-kind.sessions        { background:rgba(56,189,248,.10); border-color:rgba(56,189,248,.28); color:#7dd3fc; }
-  .dp-kind.policy_sessions { background:rgba(56,189,248,.10); border-color:rgba(56,189,248,.28); color:#7dd3fc; }
-  .dp-kind.throughput      { background:rgba(59,130,246,.12); border-color:rgba(59,130,246,.30); color:#93c5fd; }
-  .dp-kind.transactions    { background:rgba(168,85,247,.10); border-color:rgba(168,85,247,.28); color:#d8b4fe; }
-  .dp-ports { max-height:190px; overflow:auto; border:1px solid rgba(148,163,184,.14);
+             background:rgba(23,110,190,.10); border:1px solid rgba(23,110,190,.26); color:#12558F; }
+  .dp-kind.interface { background:rgba(40,167,69,.10);  border-color:rgba(40,167,69,.28);  color:#15692A; }
+  .dp-kind.proxyd    { background:rgba(255,193,7,.18);  border-color:rgba(255,193,7,.44);  color:#7A5700; }
+  .dp-kind.cpu       { background:rgba(139,92,246,.10); border-color:rgba(139,92,246,.30); color:#4C2A85; }
+  .dp-kind.memory    { background:rgba(214,51,132,.10); border-color:rgba(214,51,132,.28); color:#8A1F55; }
+  .dp-kind.sessions        { background:rgba(13,148,178,.10); border-color:rgba(13,148,178,.28); color:#0A5F6C; }
+  .dp-kind.policy_sessions { background:rgba(13,148,178,.10); border-color:rgba(13,148,178,.28); color:#0A5F6C; }
+  .dp-kind.throughput      { background:rgba(23,110,190,.10); border-color:rgba(23,110,190,.28); color:#12558F; }
+  .dp-kind.transactions    { background:rgba(139,92,246,.10); border-color:rgba(139,92,246,.30); color:#4C2A85; }
+  .dp-ports { max-height:190px; overflow:auto; border:1px solid var(--fw-border);
               border-radius:8px; padding:8px 10px; }
   .dp-ports label { display:flex; gap:8px; align-items:center; font-size:.8rem; padding:2px 0;
                     cursor:pointer; }
-  .dp-ports .ip { color:#64748b; font-size:.72rem; margin-left:auto;
+  .dp-ports .ip { color:var(--fw-text-secondary); font-size:.72rem; margin-left:auto;
                   font-variant-numeric:tabular-nums; }
   .dp-disc label { display:flex; gap:9px; align-items:flex-start; font-size:.82rem;
-                   padding:7px 9px; border:1px solid rgba(148,163,184,.12);
+                   padding:7px 9px; border:1px solid var(--fw-border);
                    border-radius:9px; margin-bottom:7px; cursor:pointer; }
-  .dp-disc label:hover { background:rgba(59,130,246,.05); }
+  .dp-disc label:hover { background:rgba(239,84,36,.05); }
   .dp-off td { opacity:.45; }
-  .dp-note { font-size:.72rem; color:#64748b; margin-top:10px; }
-  .dp-hist pre { font-size:.72rem; max-height:260px; overflow:auto; background:rgba(2,6,23,.5);
-                 border:1px solid rgba(148,163,184,.1); border-radius:8px; padding:10px; }
+  .dp-note { font-size:.72rem; color:var(--fw-text-secondary); margin-top:10px; }
+  .dp-hist pre { font-size:.72rem; max-height:260px; overflow:auto; background:#F8F9FA;
+                 border:1px solid var(--fw-border); border-radius:8px; padding:10px;
+                 color:var(--fw-text-primary); }
   .dp-hrow { display:flex; gap:10px; align-items:baseline; padding:4px 0;
-             border-bottom:1px dashed rgba(148,163,184,.08); font-size:.78rem; }
-  .dp-hrow .ts { color:#64748b; width:140px; flex:none; font-variant-numeric:tabular-nums; }
+             border-bottom:1px dashed var(--fw-border); font-size:.78rem; }
+  .dp-hrow .ts { color:var(--fw-text-secondary); width:140px; flex:none; font-variant-numeric:tabular-nums; }
 
-  /* --- device traffic cards (rollup pages only) ------------------------- */
-  .dp-dev { display:grid; grid-template-columns:repeat(auto-fit, minmax(360px,1fr));
-            gap:14px; margin-bottom:18px; }
-  .dp-dev-card { position:relative; overflow:hidden;
-                 border:1px solid rgba(148,163,184,.12); border-radius:16px;
-                 background:
-                   radial-gradient(130% 150% at 0% 0%,
-                                   rgba(59,130,246,.11) 0%, rgba(59,130,246,0) 58%),
-                   linear-gradient(160deg, rgba(30,41,59,.80) 0%,
-                                   rgba(15,23,42,.64) 58%, rgba(9,14,28,.58) 100%);
-                 backdrop-filter:blur(10px) saturate(120%);
-                 -webkit-backdrop-filter:blur(10px) saturate(120%);
-                 box-shadow:inset 0 1px 0 rgba(255,255,255,.04),
-                            0 10px 26px rgba(2,6,18,.34);
-                 padding:14px 16px;
-                 transition:box-shadow .18s ease, border-color .18s ease; }
-  .dp-dev-card::before { content:''; position:absolute; inset:0 0 auto 0; height:2px;
-                 background:linear-gradient(90deg,#3b82f6,#8b5cf6); opacity:.55; }
-  .dp-dev-card:hover { border-color:rgba(99,102,241,.30);
-                 box-shadow:inset 0 1px 0 rgba(255,255,255,.05),
-                            0 14px 32px rgba(2,6,18,.44); }
-  .dp-dev-card.is-collapsed { padding-bottom:12px; }
-  .dp-dev-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
-  .dp-dev-toggle { cursor:pointer; user-select:none; border-radius:10px; }
-  .dp-dev-toggle:focus-visible { outline:2px solid rgba(59,130,246,.65); outline-offset:3px; }
-  .dp-dev-ttl { display:flex; align-items:flex-start; gap:9px; min-width:0; }
-  .dp-caret { color:#64748b; font-size:.78rem; margin-top:4px; flex:0 0 auto;
+  /* --- device traffic cards (rollup pages only) -------------------------
+     Sized for a FLEET, not a demo. Cards start collapsed (see OPEN_KEY in
+     the JS) and tile in a dense grid, so ~100 appliances stay inside one
+     screenful instead of becoming a kilometre of scroll. An EXPANDED card
+     takes the whole row: the policy table needs the width, and a tall item
+     inside a narrow grid column would stretch every tile beside it.
+     -------------------------------------------------------------------- */
+  .dp-dev { display:grid; grid-template-columns:repeat(auto-fill, minmax(258px,1fr));
+            grid-auto-flow:row dense; align-items:start; gap:8px; margin-bottom:16px; }
+  .dp-dev-card { background:#fff; border:1px solid var(--fw-border);
+                 border-radius:var(--fw-radius-lg); box-shadow:var(--fw-card-shadow);
+                 padding:7px 10px; min-width:0;
+                 transition:box-shadow var(--fw-transition), border-color var(--fw-transition); }
+  .dp-dev-card:hover { box-shadow:var(--fw-card-shadow-hover); }
+  .dp-dev-card:not(.is-collapsed) { grid-column:1 / -1; padding:12px 16px 14px;
+                 border-color:rgba(239,84,36,.38); }
+  .dp-dev-head { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .dp-dev-toggle { cursor:pointer; user-select:none; border-radius:6px; }
+  .dp-dev-toggle:focus-visible { outline:2px solid var(--fw-accent); outline-offset:3px; }
+  .dp-dev-ttl { display:flex; align-items:center; gap:7px; min-width:0; }
+  .dp-caret { color:var(--fw-text-secondary); font-size:.7rem; flex:0 0 auto;
               transition:transform .18s ease; }
   .dp-dev-card.is-collapsed .dp-caret { transform:rotate(-90deg); }
-  .dp-dev-hr { display:flex; align-items:center; gap:7px; flex:0 0 auto; }
+  .dp-dev-hr { display:flex; align-items:center; gap:6px; flex:0 0 auto; }
   .dp-dev-card:not(.is-collapsed) .dp-hchip { display:none; }
   .dp-dev-card.is-collapsed .dp-dev-body { display:none; }
-  .dp-dev-name { font-weight:600; font-size:.98rem; }
+  /* One line per folded card: the host reappears only when expanded. */
+  .dp-dev-card.is-collapsed .dp-dev-sub { display:none; }
+  .dp-dev-name { font-weight:600; font-size:.84rem; color:var(--fw-text-primary);
+                 white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .dp-dev-card:not(.is-collapsed) .dp-dev-name { font-size:.98rem; }
   .dp-tp { display:flex; align-items:baseline; gap:8px; margin-top:8px; flex-wrap:wrap; }
-  .dp-tp-val { font-size:1.8rem; font-weight:700; line-height:1;
-               background:linear-gradient(90deg,#3b82f6,#8b5cf6);
-               -webkit-background-clip:text; background-clip:text; color:transparent; }
-  .dp-tp-sub { color:#64748b; font-size:.76rem; }
-  .dp-tp-none { color:#64748b; font-style:italic; font-size:.86rem; margin-top:8px; }
+  .dp-tp-val { font-size:1.7rem; font-weight:700; line-height:1; color:var(--fw-text-primary);
+               font-variant-numeric:tabular-nums; }
+  .dp-tp-sub { color:var(--fw-text-secondary); font-size:.76rem; }
+  .dp-tp-none { color:var(--fw-text-secondary); font-style:italic; font-size:.86rem; margin-top:8px; }
   .dp-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
-  .dp-chip { font-size:.7rem; padding:2px 8px; border-radius:999px;
-             background:rgba(148,163,184,.10); color:#94a3b8; }
-  .dp-chip.bad { background:rgba(239,68,68,.14); color:#f87171; }
-  .dp-chip.warn { background:rgba(251,191,36,.14); color:#fbbf24; }
+  .dp-chip { font-size:.68rem; padding:1px 7px; border-radius:999px;
+             background:#EEF1F4; color:var(--fw-text-secondary);
+             border:1px solid var(--fw-border-light); white-space:nowrap; }
+  .dp-chip.bad  { background:rgba(220,53,69,.14); color:#8B1C2A; border-color:rgba(220,53,69,.26); }
+  .dp-chip.warn { background:rgba(255,193,7,.22); color:#7A5700; border-color:rgba(255,193,7,.42); }
+  .dp-hchip { font-variant-numeric:tabular-nums; }
   .dp-ptbl { width:100%; margin-top:11px; font-size:.79rem; border-collapse:collapse; }
-  .dp-ptbl th { color:#64748b; font-weight:600; text-transform:uppercase; font-size:.64rem;
-                letter-spacing:.05em; padding:4px 6px; text-align:left;
-                border-bottom:1px solid rgba(148,163,184,.10); }
-  .dp-ptbl td { padding:5px 6px; border-bottom:1px solid rgba(148,163,184,.06);
+  .dp-ptbl th { color:var(--fw-text-secondary); font-weight:600; text-transform:uppercase;
+                font-size:.64rem; letter-spacing:.05em; padding:4px 6px; text-align:left;
+                border-bottom:1px solid var(--fw-border); }
+  .dp-ptbl td { padding:5px 6px; border-bottom:1px solid var(--fw-border-light);
                 vertical-align:middle; }
   .dp-ptbl tr.dp-prow { cursor:pointer; }
-  .dp-ptbl tr.dp-prow:hover { background:rgba(59,130,246,.08); }
+  .dp-ptbl tr.dp-prow:hover { background:rgba(239,84,36,.07); }
   .dp-mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.94em; }
   .dp-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(118px,1fr)); gap:10px; }
-  .dp-kpi-t { border:1px solid rgba(148,163,184,.10); border-radius:11px; padding:9px 11px; }
-  .dp-kpi-t .v { font-size:1.15rem; font-weight:700; }
-  .dp-kpi-t .l { color:#64748b; font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; }
+  .dp-kpi-t { border:1px solid var(--fw-border); border-radius:11px; padding:9px 11px; }
+  .dp-kpi-t .v { font-size:1.15rem; font-weight:700; color:var(--fw-text-primary); }
+  .dp-kpi-t .l { color:var(--fw-text-secondary); font-size:.66rem; text-transform:uppercase;
+                 letter-spacing:.05em; }
   .dp-sect { margin-top:16px; }
   .dp-sect h6 { font-size:.72rem; text-transform:uppercase; letter-spacing:.06em;
-                color:#64748b; margin-bottom:7px; }
+                color:var(--fw-text-secondary); margin-bottom:7px; }
 </style>
 
 <div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
@@ -193,7 +206,7 @@
       A page load never contacts an appliance — every row is read from the stored samples.
       Probing runs as a background job (<b>Probe now</b>) or on a schedule via the
       <code>deep_monitor</code> scheduled action, which sweeps this page and
-      <b>Deep monitors</b>/<b>Service Monitor</b> alike every five minutes.
+      <b>Deep monitors</b>/<b>Service Monitor</b> alike every three minutes.
       {{ page.footnote|safe }}
       <b>Click any sparkline</b> for 1&nbsp;h / 24&nbsp;h / 7&nbsp;d / 30&nbsp;d or a date
       range. Raw samples are capped per probe; beyond that the chart is served from
@@ -489,8 +502,10 @@
     });
   }
   function color(st) {
-    return st === 'crit' ? '#ef4444' : st === 'warn' ? '#fbbf24'
-         : st === 'error' ? '#8b5cf6' : st === 'ok' ? '#10b981' : '#64748b';
+    // Light chrome: these are drawn on #fff, so they use the fw palette,
+    // not the dark-theme pastels (which wash out completely on white).
+    return st === 'crit' ? '#DC3545' : st === 'warn' ? '#E0A800'
+         : st === 'error' ? '#7C4DEF' : st === 'ok' ? '#28A745' : '#6C757D';
   }
   function badge(st) {
     return '<span class="dp-badge dp-b-' + (st || 'unknown') + '">' + esc(st || 'unknown') + '</span>';
@@ -784,7 +799,7 @@
                   hidden: true });
     }
     var th = d.thresholds || {};
-    [['warn', '#fbbf24'], ['crit', '#ef4444']].forEach(function (pair) {
+    [['warn', '#E0A800'], ['crit', '#DC3545']].forEach(function (pair) {
       var v = th[pair[0]];
       if (!v) return;
       sets.push({ label: pair[0] + ' ' + v + (unit ? ' ' + unit : ''),
@@ -801,7 +816,7 @@
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: { labels: { filter: function (i) { return i.text !== 'min' && i.text !== 'max'; },
-                              color: '#94a3b8', boxWidth: 12 } },
+                              color: '#495057', boxWidth: 12 } },
           tooltip: {
             callbacks: {
               afterBody: function (items) {
@@ -820,11 +835,11 @@
           }
         },
         scales: {
-          x: { ticks: { color: '#64748b', maxTicksLimit: 12, autoSkip: true,
+          x: { ticks: { color: '#6C757D', maxTicksLimit: 12, autoSkip: true,
                         maxRotation: 0 },
-               grid: { color: 'rgba(148,163,184,.07)' } },
-          y: { ticks: { color: '#64748b' }, grid: { color: 'rgba(148,163,184,.07)' },
-               title: { display: !!unit, text: unit, color: '#64748b' } }
+               grid: { color: 'rgba(16,32,52,.09)' } },
+          y: { ticks: { color: '#6C757D' }, grid: { color: 'rgba(16,32,52,.09)' },
+               title: { display: !!unit, text: unit, color: '#6C757D' } }
         }
       }
     });
@@ -857,7 +872,7 @@
   function devCard(dev) {
     var tp = dev.total_throughput || {};
     var box = dev.box_metrics || {};
-    var collapsed = COLL.has(String(dev.id));
+    var collapsed = !OPEN.has(String(dev.id));   // folded unless opened
     // A collapsed card still has to say something useful, otherwise collapsing
     // is the same as hiding the device. The head keeps the headline number.
     var hchip = '<span class="dp-chip dp-hchip">' +
@@ -869,7 +884,8 @@
       '<div class="dp-dev-ttl"><i class="bi bi-chevron-down dp-caret"></i><div>' +
       '<div class="dp-dev-name">' + esc(dev.name) +
       (dev.maintenance ? ' <span class="dp-chip warn">maintenance</span>' : '') +
-      '</div><div class="dp-sub dp-mono">' + esc(dev.host || '') + '</div></div></div>' +
+      '</div><div class="dp-sub dp-mono dp-dev-sub">' + esc(dev.host || '') +
+      '</div></div></div>' +
       '<div class="dp-dev-hr">' + hchip +
       badge(tp.measured ? tp.status : 'unknown') + '</div></div>';
 
@@ -941,26 +957,33 @@
            '<div class="dp-chips">' + chips + '</div>' + pol + '</div></div>';
   }
 
-  // Collapse state lives in localStorage, never in the DOM: renderDevices()
+  // Card state lives in localStorage, never in the DOM: renderDevices()
   // replaces innerHTML on every poll, so DOM state would reset every 20s.
-  var COLL_KEY = 'satom.probecards.collapsed.' + BASE;
-  var COLL = (function () {
-    try { return new Set(JSON.parse(localStorage.getItem(COLL_KEY) || '[]')); }
+  //
+  // We persist the set of OPEN cards, not the closed ones. With a fleet of
+  // ~100 appliances the only usable default is "everything folded", and an
+  // empty-set-by-default gives exactly that with no first-run flag to keep
+  // in sync. The key is deliberately NOT the old '...collapsed.' one: reusing
+  // it would silently reinterpret a stored closed-set as an open-set, so
+  // every card an operator had folded would come back expanded.
+  var OPEN_KEY = 'satom.probecards.open.' + BASE;
+  var OPEN = (function () {
+    try { return new Set(JSON.parse(localStorage.getItem(OPEN_KEY) || '[]')); }
     catch (e) { return new Set(); }
   })();
-  function saveColl() {
-    try { localStorage.setItem(COLL_KEY, JSON.stringify(Array.from(COLL))); }
-    catch (e) { /* private mode / quota: collapsing still works for this view */ }
+  function saveOpen() {
+    try { localStorage.setItem(OPEN_KEY, JSON.stringify(Array.from(OPEN))); }
+    catch (e) { /* private mode / quota: expanding still works for this view */ }
   }
   function toggleDev(head) {
     var id = String(head.getAttribute('data-dev') || '');
     if (!id) return;
     var card = head.closest('.dp-dev-card');
-    var next = !COLL.has(id);            // true => becoming collapsed
-    if (next) { COLL.add(id); } else { COLL.delete(id); }
-    saveColl();
-    if (card) card.classList.toggle('is-collapsed', next);
-    head.setAttribute('aria-expanded', next ? 'false' : 'true');
+    var opening = !OPEN.has(id);
+    if (opening) { OPEN.add(id); } else { OPEN.delete(id); }
+    saveOpen();
+    if (card) card.classList.toggle('is-collapsed', !opening);
+    head.setAttribute('aria-expanded', opening ? 'true' : 'false');
   }
   document.addEventListener('click', function (ev) {
     var h = ev.target.closest ? ev.target.closest('.dp-dev-toggle') : null;

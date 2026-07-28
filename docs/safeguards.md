@@ -569,8 +569,19 @@ a card, looks away, and it is open again with no explanation. The state is
 persisted in `localStorage`, keyed by `PageSpec.base` so Deep monitors and
 Service Monitor do not share it, and re-applied while the card markup is built.
 
-Two supporting rules:
+Three supporting rules:
 
+* **The store holds the OPEN set, not the closed one.** The default has to be
+  *everything folded*: a fleet page that opens with ~100 expanded cards shows
+  nothing at all. Persisting the open set gives that default from an empty set,
+  with no first-run flag to keep in sync. The key is `…probecards.open.…`
+  and must never go back to the old `…probecards.collapsed.…` — reusing the
+  name would read a saved closed-set as an open-set and expand exactly the
+  cards the operator had folded.
+* **Folded cards tile, an open one takes the row.** The container is a dense
+  grid of ~258 px tiles so a hundred folded devices stay inside one screenful;
+  an expanded card gets `grid-column:1 / -1`, because a tall item inside a
+  narrow column would stretch every tile beside it.
 * **Collapsing is not hiding.** A collapsed card keeps its status badge and a
   headline chip (`avg throughput · N policies`) in the header, so a folded
   device still reports. Hiding the detail must not hide the finding.
@@ -579,9 +590,39 @@ Two supporting rules:
   keyboard-reachable (`role="button"`, `tabindex`, `aria-expanded`,
   Enter/Space).
 
-**Where:** `app/templates/monitoring/_probe_page.html` (`COLL_KEY`, `toggleDev`,
+**Where:** `app/templates/monitoring/_probe_page.html` (`OPEN_KEY`, `toggleDev`,
 `.dp-dev-toggle`, `.dp-dev-body`).
 **Tests:** `tests/test_probe_cadence.py`.
+
+### 9m. This product is a light chrome — a borrowed dark palette is a bug
+
+`static/css/fortiweb.css` is the whole theme: content background `#F4F5F7`,
+`.fw-card` on `#FFFFFF`, accent `#EF5424`. There is **no dark mode**, no
+`prefers-color-scheme` block and no `data-theme` hook anywhere in the app.
+
+A page-local `<style>` block therefore has to pick its colours against **white**.
+Dropping the wider fleet's dark-glassmorphism convention on this product does
+not merely look different, it fails two ways at once:
+
+* a card painted `rgba(30,41,59,.80)` over a light page renders as an opaque
+  **grey slab** — reported by the operator on 2026-07-28;
+* pastel status text (`#6ee7b7`, `#fcd34d`, `#93c5fd`, `#cbd5e1`) sits on a 12 %
+  tint of its own hue and drops to roughly **1.4:1** contrast. The pill is still
+  in the DOM, still says `crit`, and is unreadable. That is worse than the slab:
+  the slab is obvious, an invisible badge is a silent loss of signal.
+
+The rule: **new page CSS reuses `.fw-card` and the `--fw-*` custom properties**
+rather than restating a palette. Where a page-local class is genuinely needed,
+its colours come from the same variables, and status colours come from the
+`.fw-badge-*` set (`#15692A`, `#7A5700`, `#8B1C2A`, …) which is already tuned
+for this background. This applies to canvas drawing too — Chart.js grid lines at
+7 % slate are invisible on a white modal.
+
+**Where:** `app/templates/monitoring/_probe_page.html` (the whole `<style>`
+block and the Chart.js `options`), against `app/static/css/fortiweb.css`.
+**Tests:** `tests/test_probe_cadence.py::test_probe_page_uses_the_light_chrome`
+asserts the card is built from `--fw-*` and that a list of dark-theme literals
+is absent from the template.
 
 ### 9k. The job ledger is isolated, and a ghost does not haunt the dock
 
@@ -749,8 +790,23 @@ still folded; reload the page and confirm it is still folded. Then check the
 markup carries no inline handler:
 
 ```bash
-grep -c 'localStorage.setItem(COLL_KEY' app/templates/monitoring/_probe_page.html  # 1
+grep -c 'localStorage.setItem(OPEN_KEY' app/templates/monitoring/_probe_page.html  # 1
 grep -c 'onclick="' app/templates/monitoring/_probe_page.html                      # 0
+```
+
+Open the page in a fresh profile (or clear the key) and confirm **every** card
+is folded, and that a hundred of them would tile rather than stack:
+
+```bash
+grep -c 'var collapsed = !OPEN.has' app/templates/monitoring/_probe_page.html   # 1
+grep -c 'probecards.collapsed'      app/templates/monitoring/_probe_page.html   # 0
+```
+
+**9m — no dark palette leaks into a light page.** Nothing below may match:
+
+```bash
+grep -nE 'rgba\(30,41,59|rgba\(15,23,42|backdrop-filter|#cbd5e1|#93c5fd|#6ee7b7' \
+  app/templates/monitoring/_probe_page.html
 ```
 
 **9k — the ledger is isolated and ghosts get reaped.** Running the suite must

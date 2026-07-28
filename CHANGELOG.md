@@ -20,7 +20,9 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
   still gets through. Only `trigger='schedule'` runs count: a manual retry is
   already on the operator's screen, and mixing the two hides the exact case
   where the sidecar is running stale code. A streak that hits the history
-  window is reported as `N+`, not as a count. Two knobs in Settings → Alerts
+  window is reported as `N+`, not as a count; a `skipped` run clears a streak
+  just as `ok` does, so an action whose targets are all parked goes quiet
+  instead of sitting critical forever. Two knobs in Settings → Alerts
   (*Automation fail streak → critical*, *Automation overdue (hours)*).
 
 ### Fixed

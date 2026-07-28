@@ -648,8 +648,12 @@ rules the other device checks already follow:
 * **A capped streak is reported as `N+`.** The history window is bounded
   (`_RUN_WINDOW`); printing `50` when it may be 500 is a number the operator
   would use to judge how long this has been broken.
-* **`skipped` is stepped over, not treated as recovery.** Only `ok` clears a
-  streak.
+* **`skipped` clears the streak, same as `ok`.** The opposite rule looks safer
+  and is not: an action whose whole target set is parked reports `skipped` on
+  every future run, so old failures would never clear and the alert would sit
+  critical forever — the always-red state this check exists to prevent. A skip
+  is a legitimate outcome, not a fault; a genuinely broken action restarts the
+  streak on its next real run.
 
 **And the other half: maintenance had to start meaning something.**
 `Appliance.maintenance` suppressed *alerts* but not *work*. The hourly sweep

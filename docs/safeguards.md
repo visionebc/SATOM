@@ -434,6 +434,44 @@ through `visible_appliances()`.
 `app/templates/monitoring/_probe_page.html` (one page, two mount points).
 **Tests:** `tests/test_service_monitor.py`.
 
+### 9g. Housekeeping is silent unless it breaks
+
+A background job used to look exactly like a job someone was waiting on: the
+toast dock opened a floating window with a progress bar and a **Stop** button
+for a monitoring sweep nobody asked to watch, and the sweep pushed a bell
+notification on **every** successful run. Two different channels both spending
+the operator's attention on "the thing you told me to do is happening".
+
+`jobs.create_job(..., background=True)` marks work no human is waiting on. Three
+rules follow from it:
+
+* **The dock never sees it.** `GET /jobs/?active=1` — the toast dock's only
+  feed — filters background jobs out *server-side*. Hiding them in the client
+  would leave the noise one cached script away from coming back, so
+  `jobs.js` drops them too: two locks, not one.
+* **The Jobs page still sees all of it.** Silent is not invisible. Progress,
+  message, log, Stop and the full history stay on `/jobs/manager`, which is
+  where someone goes when they actually want to watch.
+* **Only a failure is pushed.** A sweep that ran is not news — the table under
+  the button reloads itself, and a probe that turned crit is already carried by
+  the device badge (§9b) and the alert engine, which owns escalation and
+  cooldown. A sweep that **failed** is the one outcome the page cannot show:
+  the numbers simply stay stale and look current. That, and only that, reaches
+  the bell — carrying the ADOM stamped on the job, because the worker thread
+  has no request context of its own (§9c-bis).
+
+**Default is foreground.** `background` defaults to `False`, so a new job type
+cannot go quiet by accident; going quiet has to be a decision someone wrote
+down. Today the flag is on the two probe sweeps and the fleet hardware scan.
+*Discover from device* deliberately stays foreground: it creates rows and the
+operator is waiting to read "created 12 probes".
+
+**Where:** `app/services/jobs.py` (`create_job(background=…)`),
+`app/views/jobs.py::index` (the feed filter), `app/static/js/jobs.js`
+(`reconnectJobs`), `app/views/monitor_probes.py::_run_sweep`,
+`app/views/monitoring.py::_run_hw_scan`.
+**Tests:** `tests/test_background_jobs.py`.
+
 ## 10. Fresh installs, and what an offline bundle can promise
 
 The guards travel with the code. A node installed from the online path or from an
@@ -505,6 +543,17 @@ which rule 3 exists to prevent.
     # telemetry answers on a licence-locked box while its cmdb does not
     curl -sk -H "Authorization: $TOKEN" https://<fw>/api/v2.0/cmdb/system/interface   # 423 -20010
     curl -sk -H "Authorization: $TOKEN" https://<fw>/api/v2.0/policy/policystatus     # 200
+
+### Background jobs stay out of the dock (§9g)
+
+    # the toast feed must not contain a background job; the Jobs page must
+    curl -sk -b <session> https://<node>/jobs/?active=1 | python3 -c \
+      'import json,sys; print([j["background"] for j in json.load(sys.stdin)["jobs"]])'   # all False
+    curl -sk -b <session> https://<node>/jobs/all | python3 -c \
+      'import json,sys; print(sum(1 for j in json.load(sys.stdin)["jobs"] if j.get("background")))'
+
+    # a new job type is foreground unless it opts out
+    python3 -c "from app.services import jobs; print(jobs.create_job('t','x')['background'])"   # False
 
 
 ```bash

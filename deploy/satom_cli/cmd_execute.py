@@ -249,6 +249,27 @@ def reinstall_venv(ctx, args):
     if not req.exists():
         return Result("bad", "requirements.txt missing at %s" % req)
     venv = ctx.app_dir / "venv"
+    if "--yes" not in args:
+        r = Result("warn", "reinstall venv requires explicit confirmation",
+                   exit_code=2)
+        r.rows("would rebuild", [
+            ("venv", str(venv)),
+            ("from", str(req)),
+            ("node", "%s (%s)" % (ctx.host, ctx.role)),
+        ])
+        r.lines("what happens", [
+            "1. save a pip freeze of the current venv under /root",
+            "2. move the current venv aside (venv.old-<timestamp>)",
+            "3. python3 -m venv + pip install -r requirements.txt",
+            "",
+            "This needs to reach the package index. On an isolated management",
+            "network it will fail AFTER the old venv has been moved aside, and",
+            "the node is then worse off than before — the offline bundle is",
+            "the supported path there.",
+            "",
+            "Re-run:  sudo satom execute reinstall venv --yes",
+        ])
+        return r
     r = Result("ok", "reinstall venv")
     backup = None
     if venv.exists():
@@ -418,27 +439,36 @@ def postflight(ctx, args):
 
 
 def backup_db(ctx, args):
-    """pg_dump of the app database into the bundle directory."""
-    parts = ctx.db_parts()
-    if not parts:
-        return Result("bad", "database credentials unavailable", exit_code=4)
-    user, pw, host, port, dbname = parts
-    out_dir = ctx.app_dir / "data" / "system_backups"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    dest = out_dir / ("cli-%s-%s.dump" % (dbname, time.strftime("%Y%m%d-%H%M%S")))
-    env = dict(os.environ, PGPASSWORD=pw)
-    rc, out, err = run(["pg_dump", "-h", host, "-p", port, "-U", user,
-                        "-d", dbname, "-Fc", "-f", str(dest)], timeout=1800, env=env)
-    r = Result("ok" if rc == 0 else "bad", "database backup")
+    """Create a system backup bundle, in the format the rest of the product
+    understands.
+
+    DELEGATED on purpose: the bundle is a tar.gz of db.dump + reports/ +
+    manifest, and the System Backup page, the retention policy, the push to the
+    external server and `restore_backup` all read exactly that. A bare pg_dump
+    written here would be invisible to every one of them — a backup nothing can
+    restore is not a backup.
+
+    Pass --push to also upload it to the external backup server.
+    """
+    push = "--push" in args
+    code = ("from app import create_app\n"
+            "from app.services import system_backup as sb\n"
+            "a=create_app()\n"
+            "with a.app_context():\n"
+            "    print(sb.create_backup(label='cli', publish_git=False, "
+            "push_server=%s))\n" % bool(push))
+    rc, out, err = _app_call(ctx, code, timeout=3600)
+    r = Result("ok" if rc == 0 else "bad", "system backup bundle")
+    r.lines("", (out or err).splitlines()[-10:])
     if rc != 0:
-        r.lines("error", (err or out).splitlines())
         return r
-    try:
-        shutil.chown(str(dest), ctx.app_user, ctx.app_user)
-    except Exception:  # noqa: BLE001
-        pass
-    r.rows("", [("file", str(dest)), ("size", "%.1f MB" % (dest.stat().st_size / 1e6))])
+    if "'ok': False" in out:
+        r.status = "bad"
+        return r
+    if not push:
+        r.note("Local copy only. Add --push to send it to the external backup "
+               "server as well — one rack holding both copies is one copy.")
     if ctx.role == "standby":
-        r.note("You dumped the STANDBY. Deleting bundles here is pointless too: "
-               "the primary's rsync --delete would resurrect them.")
+        r.note("You bundled the STANDBY. Deleting bundles here is pointless "
+               "too: the primary's rsync --delete would resurrect them.")
     return r

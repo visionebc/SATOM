@@ -478,6 +478,28 @@ satom diagnose all           # todo el nodo, un solo código de salida
    sudo -u satom ssh -i /opt/satom/.ssh/id_ha_rsync satom@<ip-primary> id
    ```
 
+### Comprobación de día uno, con una sola orden
+
+```bash
+satom diagnose install      # ¿está ARMADO, o sólo instalado?
+satom diagnose all          # los 24 chequeos, un único código de salida
+```
+
+`diagnose install` separa dos cosas que se confunden siempre: la
+**infraestructura** (units, runner privilegiado, drop-ins de `User=`, sudoers,
+certificado, venv, CLI) y las **protecciones**, que son datos y que el
+instalador no crea. Lo segundo se arma con:
+
+```bash
+sudo satom execute seed actions          # imprime el plan, no cambia nada
+sudo satom execute seed actions --yes    # lo aplica
+```
+
+Es idempotente y **nunca toca una fila existente**: la edición del operador
+manda, esto sólo rellena huecos. Si algo falla más adelante, cada procedimiento
+de recuperación está dentro del propio binario — `satom show runbook` los lista,
+y funcionan sin interfaz web y sin salida a internet.
+
 ### Protecciones que hay que ARMAR (no vienen encendidas)
 
 El código de las guardias viaja en el instalador y queda activo por el simple

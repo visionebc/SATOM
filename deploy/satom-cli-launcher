@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+"""SATOM operator CLI launcher — installed as /usr/local/sbin/satom.
+
+Deliberately tiny and deliberately NOT in the app tree. It loads the CLI from
+/usr/local/lib/satom-cli, which is root-owned. If this instead exec'd
+/opt/satom/deploy/..., then a compromised web worker (which owns the app tree)
+could rewrite the code an operator is about to run under sudo. That is instant
+root and it would undo the whole deprivilege model.
+
+sudo's default env_reset strips PYTHONPATH, so the sys.path entry below is the
+first place Python looks for the package. 'satom diagnose privilege' verifies
+the ownership and mode of both this file and the library directory.
+"""
+import sys
+
+sys.path.insert(0, "/usr/local/lib/satom-cli")
+
+try:
+    from satom_cli.main import main
+except ImportError as exc:  # noqa: BLE001
+    sys.stderr.write(
+        "satom: CLI library missing or unreadable (%s).\n"
+        "Reinstall it from the app tree:\n"
+        "  sudo bash /opt/satom/deploy/install-cli.sh\n" % exc)
+    sys.exit(4)
+
+if __name__ == "__main__":
+    sys.exit(main())

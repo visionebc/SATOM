@@ -76,6 +76,16 @@ protects you:
   self-update that replaces unit files cannot silently hand the app root again.
 * The root runner is reached through a **request directory watched by a `.path`
   unit** — a queue, not a callable. The web process has no way to pass a command.
+* The **operator CLI** (`/usr/local/sbin/satom`) is a root tool for a human,
+  and it is installed as a `root:root` **copy** at `/usr/local/lib/satom-cli/`.
+  It never executes from `/opt/satom`, because that tree is writable by the
+  service account: a launcher reading code from there would let a compromised
+  web worker rewrite what an operator is about to run under `sudo`. The
+  installer verifies owner, mode and "not a symlink", and refuses otherwise.
+  See [`cli.md`](cli.md).
+* The CLI is **never** granted to the service account. `NOPASSWD` on that binary
+  for the app user would equal `NOPASSWD: ALL`; `satom diagnose privilege`
+  fails loudly if it finds such a line in `/etc/sudoers.d/satom`.
 * `deploy/satom-node-role.sh` exists because the obvious role probe
   (`runuser -u postgres -- psql`) needs root: unprivileged, it returns empty and
   every HA guard quietly takes the "not primary" branch while systemd reports
@@ -772,6 +782,25 @@ which rule 3 exists to prevent.
   because of that, but it mitigates rather than fixes it.
 
 ## Verifying the guards are armed
+
+**3 — the operator CLI cannot be turned into a privilege escalation.** The sudo
+target must be a real, root-owned path outside the app tree, and the service
+account must not have been granted it:
+
+```bash
+satom diagnose privilege          # expect [ ok ]; it checks all of the below
+stat -c '%U %a %n' /usr/local/sbin/satom /usr/local/lib/satom-cli   # root 755
+test -L /usr/local/sbin/satom && echo 'FAIL: symlinked sudo target'
+grep -c '/usr/local/sbin/satom' /etc/sudoers.d/satom                # expect 0
+```
+
+And the CLI must still run when the venv does not — that is its whole purpose:
+
+```bash
+# no venv, no PYTHONPATH, from / : must print the command tree
+cd / && env -u PYTHONPATH /usr/bin/python3 /usr/local/sbin/satom '?' >/dev/null \
+  && echo 'ok: CLI runs on stdlib alone'
+```
 
 **9i — every probe interval is a multiple of the sweep tick.** A non-multiple
 row runs slower than it claims:

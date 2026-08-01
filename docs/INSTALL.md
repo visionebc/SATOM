@@ -375,6 +375,63 @@ standby primero**:
 sudo bash /opt/satom/deploy/migrate-deprivilege.sh
 ```
 
+### Cuenta de OPERADOR — el CLI de consola (`satom`)
+
+SATOM instala `/usr/local/sbin/satom`, un CLI de consola para diagnosticar,
+controlar y **reconstruir** el nodo cuando la interfaz web no arranca (referencia
+completa en [`cli.md`](cli.md)). Esta es la tercera cuenta del sistema y hay que
+pedirla explícitamente, porque es distinta de las dos anteriores:
+
+| cuenta | vive | privilegio |
+|---|---|---|
+| instaladora (`satominstall`) | sólo durante la instalación | `sudo` a **un** binario, temporal |
+| servicio (`satom`) | permanente, es la que corre la app | `sudo` a **dos** comandos de nginx |
+| **operador (persona)** | permanente, humano en consola | `sudo` a **`/usr/local/sbin/satom`** |
+
+**Regla a solicitar** (`/etc/sudoers.d/satom-operator`, `0440`, validado con
+`visudo -cf`). El propio CLI la imprime sin necesitar privilegio, para que se
+pueda generar desde la cuenta que todavía no lo tiene:
+
+```bash
+satom show sudoers <cuenta>
+```
+
+```
+<cuenta> ALL=(root) /usr/local/sbin/satom
+```
+
+**Qué concede:** control de servicios, reinstalación del venv y de las unidades,
+actualizaciones de código y de paquetes encoladas, `promote`, operaciones de
+certificado. **Qué NO concede:** una shell — el CLI no tiene ningún verbo de
+"ejecuta un comando arbitrario", y los cambios de paquetes van por la allowlist
+curada, nunca por un `pip install` libre.
+
+**Sin esa regla el CLI sigue siendo útil:** `get`, `show` y `diagnose` funcionan
+con **cualquier** usuario y son la mitad que rescata a un operador delante de un
+nodo caído. Sólo `execute` exige root, y lo rechaza con una explicación y el
+comando completo a repetir con `sudo` — nunca con un traceback.
+
+#### Dos cosas que NO se deben hacer
+
+1. **No conceder el CLI a la cuenta de servicio.** Un
+   `NOPASSWD: /usr/local/sbin/satom` para `satom`/`fortinet` equivale a
+   `NOPASSWD: ALL` y convertiría un worker web comprometido en root, deshaciendo
+   todo el modelo de privilegio. `satom diagnose privilege` falla en rojo si
+   encuentra esa línea.
+2. **No mover el binario ni relajar sus permisos.** La ruta tiene que ser fija y
+   el objetivo `root:root 0755`; el código vive en `/usr/local/lib/satom-cli/`
+   (también `root:root`) y **nunca** se ejecuta desde `/opt/satom`, porque ese
+   árbol es escribible por la cuenta de servicio. Es la misma trampa que la
+   regla de la cuenta instaladora (arriba, en esta misma sección): si el objetivo de `sudo` es
+   escribible por quien lo invoca, la regla es `NOPASSWD: ALL`.
+
+Comprobación después de instalar:
+
+```bash
+satom diagnose privilege     # integridad del binario y de la frontera sudo
+satom diagnose all           # todo el nodo, un solo código de salida
+```
+
 ---
 
 ## 6. Después de instalar

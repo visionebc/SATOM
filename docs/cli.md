@@ -107,6 +107,19 @@ as the installer sudoers rule documented in `INSTALL.md` §5.
 — and in the prompt, where Tab completes as well. A `*` marks commands that
 need root.
 
+Two rules run through the whole table and are enforced by
+`tests/test_cli_ops.py`:
+
+* **A read never writes.** `get`, `show` and `diagnose` must leave the node
+  byte-identical. This is not theoretical: `git status` run as root rewrites
+  `.git/index` and takes it from the service account, and `compileall` leaves
+  root-owned `__pycache__` behind — so two *diagnostics* were creating the
+  ownership drift a third diagnostic then reported. Fixed with
+  `--no-optional-locks`, an in-memory `compile()` and
+  `PYTHONDONTWRITEBYTECODE=1`.
+* **Absence of data is never health.** A check that cannot read reports
+  *unknown* and exits 4. It never reports OK.
+
 ### `get` — read state (any user)
 
 | Command | What it answers |
@@ -114,14 +127,32 @@ need root.
 | `get system status` | Identity, version, git head, HA role, and *your* privilege level |
 | `get system health` | **Start here.** Units + `/healthz` + disk, folded into one status |
 | `get system performance` | Load, memory, filesystems |
+| `get system disk` | Space, **inodes**, and the directories that actually grow here |
 | `get system interface` | Addresses and the ports SATOM cares about |
+| `get system time` | Clock and NTP. Skew breaks TLS, ACME and every "age" below |
 | `get service status [<svc>]` | One unit (with journal tail) or all of them |
+| `get timer status` | Every timer and `.path`: enabled, last fire, next fire, last result |
 | `get node status` | Role, peer list, peer reachability over `:8443` |
 | `get database status` | Connection, size, replication stream |
 | `get certificate status` | Served cert, expiry, renewal journal |
+| `get certificate list` | **Every** certificate this node holds: served, node leaf, internal CA |
+| `get backup status` | The four copies side by side, with their real ages |
+| `get backup list` | The bundles `execute restore db` accepts |
+| `get scheduler status` | Scheduled actions: what exists, last run, failure streak, overdue |
+| `get device status` | Appliances: sync state, maintenance flag, last contact |
+| `get monitor status` | Probe states; parked devices are shown but do not raise the roll-up |
+| `get job list` | The background-job ledger, including ghosts |
+| `get update history` | Recent updates, and whether the runner ever picked them up |
+| `get git status` | Branch, drift, oldest unpushed commit, parked safety refs |
+| `get user list` | Who can log in — and whether anyone still can |
+| `get alerts status` | Whether anyone is actually **told** when something breaks |
 | `get log <svc> [lines]` | Journal tail |
 
-### `show` — configuration and policy (any user)
+Most of this half has no console of its own in the product: the scheduler, the
+timers, the four backup copies and the alert delivery path are things you
+otherwise only see indirectly, through their consequences.
+
+### `show` — configuration and reference (any user)
 
 | Command | What it answers |
 |---|---|
@@ -129,7 +160,21 @@ need root.
 | `show sudoers [<account>]` | The rule to request for an operator account |
 | `show config` | `.env` with secrets redacted by pattern |
 | `show units` | Alias → unit map with install state |
+| `show services` | What each unit is *for*, and which are off limits |
+| `show paths` | Canonical layout: what is replicated, what is node-local, what is secret |
+| `show ports` | Which port belongs to which listener, and why |
+| `show schedule` | What *should* run and how often |
+| `show runbook [<topic>]` | **Offline recovery procedures** — see below |
+| `show changelog` | The most recent release notes from the tree |
 | `show version` | App, CLI, Python, node |
+
+`show runbook` carries twelve procedures inside the binary: `web-down`,
+`db-down`, `scheduler-idle`, `update-stuck`, `cert-expired`, `disk-full`,
+`peer`, `promote`, `restore`, `fresh-install`, `locked-out`,
+`device-unreachable`. They live in `deploy/satom_cli/runbooks.py` rather than in
+this file because the operator who needs them is on a node with no web UI, no
+browser and usually no route to the internet. Keep the commands in them
+copy-pasteable.
 
 The CLI never prints a secret and no command accepts one as an argument — it
 would land in shell history and in the process table.
@@ -138,48 +183,104 @@ would land in shell history and in the process table.
 
 | Command | What it finds |
 |---|---|
-| `diagnose all` | Every check below, folded into one exit code. The one to paste into a ticket |
-| `diagnose service <svc>` | State, resolved `User=`, drop-ins, journal — and warns if a unit reverted to `User=root` |
+| `diagnose all` | All 24 checks, folded into one exit code. The one to paste into a ticket |
+| `diagnose install` | **Is this node ARMED, or merely installed?** Run it on day one |
+| `diagnose code` | Is each long-running process running the code that is on disk? |
+| `diagnose scheduler` | Is anything automated actually firing here? |
+| `diagnose units` | Unit inventory, `User=` drop-ins, and who each process really runs as |
+| `diagnose config` | `.env`: present, correctly owned, internally consistent |
+| `diagnose service <svc>` | State, resolved `User=`, drop-ins, journal |
 | `diagnose database` | Connect, recovery state, TLS in use, lock waits |
-| `diagnose python` | venv, `pip check`, `compileall`, **and the lazy-import smoke test** (see below) |
+| `diagnose python` | venv, `pip check`, in-memory compile, **and the lazy-import smoke test** |
 | `diagnose network` | Listening ports, `nginx -t`, local HTTPS probe |
+| `diagnose nginx` | Syntax, which vhost owns `default_server` on `:443`, and the ACME redirect trap |
 | `diagnose certificate` | Expiry, live handshake, the renewal timer's last result |
+| `diagnose acme` | Client, account key, webroot, provider credentials |
 | `diagnose peer` | Peer reachability, datasync key mode, datasync timer |
+| `diagnose git` | Repository integrity, including the root-owned-files trap |
 | `diagnose privilege` | Integrity of the CLI install and the sudo boundary |
+
+**`diagnose install` is the one to run on a new node.** The installer delivers
+code, units, TLS and a database. It does *not* deliver the automated
+protections, because those are DATA and operator edits win over code defaults
+in this product — no `ScheduledAction` row is ever seeded. A fresh node
+therefore has every capability, zero coverage, and looks perfectly healthy.
+`diagnose install` prints that difference; `execute seed actions` closes it.
+
+**`diagnose code` exists because the scheduler carries its own copy of the
+application.** Touching an action spec or the probe registry and restarting only
+`web` leaves the sidecar on the old code, and the symptom is pathognomonic: the
+manual run succeeds while the scheduled run fails with `Unknown action`.
 
 **`diagnose python` exists because of a real incident.** In 1.2 and 1.2.1 a
 stray `import os` above `from __future__ import annotations` made
 `app/services/cert_service.py` a hard `SyntaxError`. Every caller imports that
 module *inside a function*, so the app booted, `/healthz` returned 200 and 757
-tests stayed green while the nightly certificate renewal died on both nodes. The
-check therefore does two things nothing else does: `compileall` over `app/` and
-`deploy/`, and an explicit import of the known lazily-imported modules
-(`LAZY_MODULES` in `cmd_diagnose.py`). **When you add a module that is only
-imported inside functions, add it to that list.**
+tests stayed green while the nightly certificate renewal died on both nodes.
+The check therefore does two things nothing else does: it compiles every module
+under `app/` and `deploy/`, and it explicitly imports the known lazily-imported
+modules (`LAZY_MODULES` in `cmd_diagnose.py`). **When you add a module that is
+only imported inside functions, add it to that list.**
+
+**`diagnose nginx`** watches the vhost trap: exactly one config must own
+`default_server` on `:443`. With none, the alphabetically first config wins and
+the application becomes unreachable by hostname while the static site keeps
+serving — which reads like a DNS fault. It also flags a `return 301` at *server*
+level in a config with no ACME challenge location: that redirect runs in the
+rewrite phase, before a location is chosen, so it swallows the HTTP-01
+challenge.
 
 ### `execute` — change state (root)
 
 | Command | Notes |
 |---|---|
-| `execute restart\|start\|stop <svc>` | Restart **verifies** `/healthz` afterwards; `systemctl` returning 0 has lied before (gunicorn active, workers crash-looping) |
+| `execute restart\|start\|stop <svc>` | Restart **verifies** `/healthz` afterwards; `systemctl` returning 0 has lied before |
+| `execute restart-all` | The stack in dependency order, then `nginx -t` + reload, then verify |
+| `execute enable\|disable <unit>` | Timers and `.path` units. `disable updater` is refused — see below |
 | `execute reload nginx` | Runs `nginx -t` first and refuses on invalid config |
-| `execute update code [<target>]` | **Queues** a git update for the privileged runner; warns if `satom-updater.path` is disabled (the queue would sit forever) |
+| `execute seed actions [--yes]` | **Creates the protections a fresh install does not.** Prints the plan; `--yes` applies |
+| `execute update code [<target>]` | **Queues** a git update (or a rollback, by commit) for the privileged runner |
 | `execute update pip <pkg> <ver>` | Curated allowlist only. Node-local: the venv is not replicated |
 | `execute update status [<id>]` | The runner's `steps[]` log (any user) |
-| `execute reinstall venv` | Recreates `venv/` from `requirements.txt`, saving a `pip freeze` to `/root/` first and moving the old venv aside rather than deleting it |
+| `execute reinstall venv --yes` | Rebuilds `venv/`, saving a `pip freeze` and moving the old one aside |
 | `execute reinstall units` | Re-copies the units **and re-pins `User=` via drop-in** |
 | `execute reinstall cli` | Refreshes the root-owned copy of this CLI |
 | `execute repair permissions` | Gives root-owned files in the app tree back to the service account |
+| `execute repair jobs [--older-than N] --yes` | Sweeps ghost jobs and prunes the terminated ledger |
+| `execute repair tmp [--older-than N] --yes` | Deletes aged scratch under `data/tmp`. Nothing else prunes it |
 | `execute cert renew` | Runs the renewal pass now instead of waiting for 03:30 |
 | `execute alerts run [--dry-run]` | Evaluates the health checks now |
-| `execute backup db` | `pg_dump -Fc` into `data/system_backups/` |
+| `execute backup db [--push]` | A **bundle** in the product's own format; `--push` also sends it off-node |
+| `execute backup git` | `git bundle --all`, including the parked safety refs |
+| `execute restore db <bundle> --yes` | Stops the writers, restores, restarts, verifies `/healthz` |
+| `execute admin reset-password <user>` | Asked interactively; never in `argv` |
+| `execute admin unlock <user>` | Clears a lockout without touching the password |
+| `execute scheduler run\|enable\|disable <id>` | One action, now |
+| `execute maintenance <device> <on\|off>` | Park or un-park an appliance |
+| `execute support bundle` | Every diagnostic, journal and unit file in one `0600` archive |
 | `execute preflight` / `postflight` | The existing risky-change harness |
 | `execute promote --yes` | Standby only; requires the explicit flag |
+
+Anything destructive prints its plan and **exits 2** unless given `--yes`.
+`tests/test_cli_ops.py` fails the suite if a command flagged destructive does
+not document that confirmation.
 
 Two units are deliberately **not** operator-controllable:
 `satom-updater.{path,service}` (it *is* the privileged root runner — a verb that
 restarts it re-enters the privilege boundary sideways) and `postgresql`
-(shared state; use `systemctl` and know why).
+(shared state; use `systemctl` and know why). `execute disable updater` is
+refused outright for the opposite reason: disabled, every enqueued update sits
+at `queued` forever and *nothing* reports an error. `execute enable updater` is
+allowed, because that is the fix.
+
+`execute backup db` and `execute restore db` **delegate to
+`app/services/system_backup.py`**. The bundle is a `.tar.gz` of `db.dump` +
+`reports/` + a manifest, and the System Backup page, the retention policy, the
+push to the external server and `restore_backup` all read exactly that format.
+An earlier version of this CLI wrote a bare `pg_dump` instead: invisible to
+every one of them. A backup nothing can restore is not a backup. What the CLI
+adds on top is the part a web request cannot do — stopping the writers around
+the restore and verifying the node afterwards.
 
 `execute reinstall units` writes a **drop-in**, never an edit to the unit file,
 because `self_update_runner.py` re-copies `deploy/<unit>` on every code update.
@@ -236,6 +337,32 @@ state-changing verb does not, or if a node both runs and has children (the
 parser cannot resolve that). Those are not style checks: an undeclared node
 fails with a traceback for the unprivileged operator, at the one moment a
 traceback is least useful.
+
+### Where the code lives
+
+| Module | Holds |
+|---|---|
+| `tree.py` | the grammar — **the extension point** |
+| `context.py` | `Ctx`: process, env, role, units, HTTP, psql. Everything degrades |
+| `render.py` | `Result`, the exit-code contract, the refusal message |
+| `dbq.py` | every SQL read, in one place, so `get` and `diagnose` cannot disagree |
+| `cmd_get.py` / `cmd_ops.py` | reads: the node itself / the automated layer |
+| `cmd_show.py` / `cmd_docs.py` | configuration / reference and runbooks |
+| `cmd_diagnose.py` / `cmd_checks.py` | probes: core / install-completeness and drift |
+| `cmd_execute.py` / `cmd_fix.py` | state changes: core / repair, seed, restore, accounts |
+| `runbooks.py` | the twelve offline procedures, as data |
+
+Split by *when you reach for it*, not by size. A new read about scheduled work
+belongs in `cmd_ops.py`; a new SQL read belongs in `dbq.py` next to the others,
+never inline in a handler.
+
+`tests/test_cli_ops.py` adds the operational guards: reads that cannot write,
+the checker/fixer key sets staying identical, seeded action keys existing in the
+real catalogue, destructive verbs refusing without `--yes`, and every runbook
+being listed and containing at least one command. When you add a lazily-imported
+module, add it to `LAZY_MODULES`; when you add a protection to
+`MIN_ACTIONS`, add it to `SEED_PLAN` in the same commit — the suite fails
+otherwise, on purpose.
 
 ### Deliberately not built yet
 

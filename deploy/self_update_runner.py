@@ -387,6 +387,21 @@ def process(req_path):
         # privilegio en cada update si no fuera por el drop-in.
         enforce_unit_user(APP_USER)
         subprocess.run(["systemctl", "daemon-reload"])
+        # Refresh the ROOT-OWNED copy of the operator CLI. It lives outside the
+        # app tree on purpose (a sudo target writable by the service account is
+        # a root escalation), which means a code update does NOT reach it -- so
+        # it must be re-installed here or the console tool silently ages behind
+        # the app it is meant to repair.
+        try:
+            cli_installer = APP / "deploy" / "install-cli.sh"
+            if cli_installer.exists():
+                cr = subprocess.run(["bash", str(cli_installer)],
+                                    capture_output=True, text=True, timeout=120)
+                st.step("refresh operator CLI", cr.returncode == 0,
+                        (cr.stdout or cr.stderr or "").strip()[:200])
+        except Exception as exc:  # noqa: BLE001
+            # Never fail an update because the console tool did not refresh.
+            st.step("refresh operator CLI", False, str(exc)[:200])
 
         if is_standby:
             # Do NOT start the app (gunicorn crashes on a read-only replica).

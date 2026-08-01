@@ -1133,6 +1133,19 @@ systemctl enable --now satom-reconciler.service >>"$INSTALL_LOG" 2>&1 || true
 # self-update, que recopia las plantillas de deploy/ (User=root).   [PFDROPCALL]
 satom_enforce_unit_user
 
+# CLI de operador: copia ROOT-OWNED fuera del arbol de la app.
+# Vive en /usr/local/lib/satom-cli + /usr/local/sbin/satom a proposito: si el
+# objetivo de sudo fuera escribible por la cuenta de servicio, un worker web
+# comprometido podria reescribir lo que el operador ejecuta con sudo.
+# Ver docs/cli.md y 'satom diagnose privilege'.
+if [ -f "$APP_DIR/deploy/install-cli.sh" ]; then
+    if bash "$APP_DIR/deploy/install-cli.sh" >>"$INSTALL_LOG" 2>&1; then
+        ok "CLI de operador instalado: satom (prueba: satom get system health)"
+    else
+        warn "No se pudo instalar el CLI de operador — revisa $INSTALL_LOG"
+    fi
+fi
+
 # nginx: TLS en el puerto elegido con el cert del nodo.
 # Debian/Ubuntu usan sites-available/enabled; el resto de familias conf.d.
 if [ -d /etc/nginx/sites-enabled ]; then

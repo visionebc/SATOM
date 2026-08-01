@@ -6,6 +6,46 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+- **An operator CLI (`satom`) for a node whose web UI is down.** Modelled on the
+  appliance CLIs this product manages: `get` / `show` / `diagnose` / `execute`,
+  `?` completion at any depth, one-shot for scripts and an interactive prompt on
+  top of the *same* dispatcher. It wraps what already existed (the `flask`
+  commands, the deploy scripts, the privileged update queue) behind one
+  discoverable door rather than reimplementing any of it.
+
+  Three properties are load-bearing and are enforced by `tests/test_cli.py`:
+
+  * **Standard library only** at module level — no Flask, no SQLAlchemy, not even
+    the app package. A tool that needs a healthy venv to report that the venv is
+    broken is not a recovery tool. An AST check fails the suite on a stray
+    module-level import; commands that genuinely need the app import it lazily
+    and degrade with a stated reason.
+  * **Degrades by privilege instead of failing.** `get`, `show` and `diagnose`
+    work as any user; `execute` requires root and refuses with the full command
+    echoed back and an exit code of `3` — never a traceback, at the one moment a
+    traceback is least useful.
+  * **Installed as a `root:root` copy outside the app tree**
+    (`/usr/local/sbin/satom` + `/usr/local/lib/satom-cli/`). The app tree is
+    writable by the service account, so a launcher executing from there would let
+    a compromised web worker rewrite what an operator runs under `sudo`. The
+    installer verifies owner, mode and "not a symlink"; `satom diagnose
+    privilege` re-verifies on demand and also fails if the CLI has been granted
+    to the service account (that grant would equal `NOPASSWD: ALL`).
+
+  `deploy/install-cli.sh` is called from the installer, from
+  `self_update_runner.py` after every code update (the CLI lives outside the app
+  tree, so `git pull` does not reach it) and from `satom execute reinstall cli`.
+
+  New command of note: **`diagnose python`** runs `compileall` over `app/` and
+  `deploy/` *and* explicitly imports the modules the app only imports inside
+  functions. That is the class of failure that shipped a hard `SyntaxError` in
+  `cert_service.py` inside the 1.2 and 1.2.1 bundles while the app booted,
+  `/healthz` returned 200 and the whole test suite stayed green.
+
+  Reference: [`docs/cli.md`](docs/cli.md). Permissions to request:
+  `docs/INSTALL.md` §5, *Cuenta de OPERADOR*.
+
 ### Fixed
 - **The device cards on the probe pages were painted for a dark theme.** SATOM
   has no dark mode — `static/css/fortiweb.css` is a light chrome (`#F4F5F7`

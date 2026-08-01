@@ -113,13 +113,31 @@ def python(ctx, args):
         r.worst("warn")
 
     # Compile the whole tree: catches SyntaxError anywhere, imports nothing.
-    rc, out, err = run([str(venv), "-m", "compileall", "-q",
+    # In MEMORY, not with compileall: compileall writes __pycache__, and this
+    # command frequently runs as root in a tree owned by the service account —
+    # a diagnostic that leaves root-owned files behind is a diagnostic that
+    # causes the drift the next check reports.
+    checker = (
+        "import pathlib, sys\n"
+        "bad = []\n"
+        "roots = [pathlib.Path(p) for p in sys.argv[1:]]\n"
+        "for root in roots:\n"
+        "    for f in root.rglob('*.py'):\n"
+        "        if '__pycache__' in f.parts:\n"
+        "            continue\n"
+        "        try:\n"
+        "            compile(f.read_bytes(), str(f), 'exec')\n"
+        "        except Exception as exc:\n"
+        "            bad.append('%s: %s: %s' % (f, type(exc).__name__, exc))\n"
+        "print('COMPILE_OK' if not bad else 'COMPILE_BAD')\n"
+        "[print(' ', b) for b in bad]\n")
+    rc, out, err = run([str(venv), "-c", checker,
                         str(ctx.app_dir / "app"), str(ctx.app_dir / "deploy")],
                        timeout=180)
-    if rc != 0:
+    if rc != 0 or "COMPILE_BAD" in out:
         _fail(r, "A module does not COMPILE. This is the class of failure that "
                  "hides behind a healthy /healthz — fix before anything else.")
-        r.lines("compileall", (out + "\n" + err).splitlines()[:25])
+        r.lines("compile", (out + "\n" + err).splitlines()[:25])
         return r
     r.rows("compile", [("app/ + deploy/", "all modules compile")])
 
@@ -136,6 +154,8 @@ def python(ctx, args):
     env = dict(os.environ)
     for k, v in ctx.env.items():
         env.setdefault(k, v)
+    # Importing writes bytecode too. Same reason as above.
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     rc, out, err = run([str(venv), "-c", code], timeout=180,
                        cwd=str(ctx.app_dir), env=env)
     if "LAZY_OK" in out:
@@ -274,15 +294,36 @@ def all_checks(ctx, args):
     """Everything, folded into one exit code. The command to run before saying
     a node is healthy — and the one to paste into a ticket."""
     r = Result("ok", "diagnose all — %s (%s)" % (ctx.host, ctx.role))
+    from . import cmd_checks as k
     from . import cmd_get
+    from . import cmd_ops as o
+    # Ordered cheapest-and-most-decisive first: an operator who reads only the
+    # top of the output should already know whether the node is armed.
     checks = (
         ("health", cmd_get.system_health),
+        ("install", k.install),
+        ("config", k.config),
+        ("units", k.units),
+        ("code", k.code),
         ("network", network),
+        ("nginx", k.nginx),
         ("database", database),
         ("certificate", certificate),
+        ("acme", k.acme),
         ("peer", peer),
         ("privilege", privilege),
         ("python", python),
+        ("scheduler", k.scheduler),
+        ("backups", o.backup_status),
+        ("alerting", o.alerts_status),
+        ("disk", o.system_disk),
+        ("time", o.system_time),
+        ("timers", o.timer_status),
+        ("git", k.git),
+        ("jobs", o.job_list),
+        ("devices", o.device_status),
+        ("monitors", o.monitor_status),
+        ("users", o.user_list),
     )
     rows = []
     for name, fn in checks:
@@ -291,8 +332,12 @@ def all_checks(ctx, args):
             rows.append((name, {"ok": "pass", "info": "pass", "warn": "WARN",
                                 "bad": "FAIL"}.get(sub.status, sub.status)))
             r.worst(sub.status)
-            for n in sub.notes:
-                r.note("[%s] %s" % (name, n))
+            # Only from checks that are NOT clean: a note under a passing check
+            # is context, and context repeated 24 times is noise that buries
+            # the two lines that were findings.
+            if sub.status in ("warn", "bad"):
+                for n in sub.notes:
+                    r.note("[%s] %s" % (name, n))
         except Exception as exc:  # noqa: BLE001
             rows.append((name, "ERROR: %s" % exc))
             r.worst("bad")

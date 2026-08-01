@@ -92,6 +92,38 @@ protects you:
   success. The probe now uses the app's own credentials over TCP, so it answers
   correctly at any privilege level.
 
+## 3b. The operator console (`satom`)
+
+The CLI is a root tool aimed at a broken node, which makes it the one place
+where a careless guard does real damage. Four rules hold it.
+
+| Guard | What it prevents | Where it lives |
+|---|---|---|
+| The installed CLI is a root-owned **copy** outside the app tree | A compromised web worker rewriting what the operator later runs under `sudo` — instant root, undoing the deprivilege | `deploy/install-cli.sh`, `diagnose privilege`, `test_cli.py` |
+| **A read never writes** | Diagnostics creating the drift another diagnostic reports | `--no-optional-locks` on every git call; in-memory `compile()`; `PYTHONDONTWRITEBYTECODE=1` — `test_cli_ops.py` |
+| **The checker and the fixer share one key set** | `diagnose install` demanding a protection `execute seed actions` never creates: a permanent red nobody can clear | `cmd_checks.MIN_ACTIONS` ≡ `cmd_fix.SEED_PLAN`, both ⊆ the real action catalogue — `test_cli_ops.py` |
+| **Destructive verbs exit 2 without `--yes`** | A recovery tool becoming a footgun on a node that is already having a bad day | every `danger=True` node; enforced by `test_cli_ops.py` |
+
+Two consequences worth stating plainly, because both were live defects found by
+running the tool against a real node rather than by reading it:
+
+* `git status` **rewrites** `.git/index`. Run as root in a tree owned by the
+  service account it hands the index to root, so a *read-only* command broke
+  the app's later writes. Same for `compileall`, which leaves root-owned
+  `__pycache__`. Both are now side-effect free, and the guard is a count of
+  `["git"` invocations against `["git", "--no-optional-locks"` — a plain
+  substring test passed even after the flag was removed, because the comment
+  explaining the rule contains the flag too. Mutation-tested.
+* A probe against an appliance the operator **parked on purpose** must not
+  raise the roll-up. Maintenance already suppresses automatic runs and their
+  alerts; a console that stays red anyway teaches people to stop reading it.
+  `dbq.PROBES` joins the maintenance flag and `get monitor status` reports
+  those separately, under their own heading.
+
+Nothing in the CLI is ever added to the service account's sudoers. A
+`NOPASSWD: /usr/local/sbin/satom` for that account is equivalent to
+`NOPASSWD: ALL`; `diagnose privilege` fails loudly if it finds one.
+
 ## 4. Two-node correctness
 
 | Guard | Prevents |
@@ -782,6 +814,31 @@ which rule 3 exists to prevent.
   because of that, but it mitigates rather than fixes it.
 
 ## Verifying the guards are armed
+
+### The operator console
+
+```bash
+# 1. Everything, one exit code. 0 = clean, 1 = a real finding.
+satom diagnose all
+
+# 2. Is this node ARMED, not just installed? (fresh installs seed no actions)
+satom diagnose install
+
+# 3. A read must leave the tree byte-identical. Run the two that used to write,
+#    as root, and prove nothing changed hands:
+sudo satom get git status >/dev/null
+sudo satom diagnose python >/dev/null
+find /opt/satom -user root -not -name .env -not -path '*/venv*' \
+     -not -path '*/.git*' -not -path '*/dist*' \
+     -not -path '*/data/lib-versions*' | wc -l      # expect 0
+stat -c %U /opt/satom/.git/index                     # expect the service account
+
+# 4. Diagnostics must work WITHOUT privilege, and state must refuse WITH an
+#    explanation rather than a traceback:
+runuser -u nobody -- satom get scheduler status; echo $?   # expect 4 (degraded)
+runuser -u <service-account> -- satom execute restart web; echo $?  # expect 3
+```
+
 
 **3 — the operator CLI cannot be turned into a privilege escalation.** The sudo
 target must be a real, root-owned path outside the app tree, and the service

@@ -7,6 +7,62 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **Operator CLI, second pass: the automated half now has a console.** 39 more
+  commands, organised around the failure modes this product has actually had
+  rather than around the code layout. Reads for the layer that has no UI of its
+  own — `get backup status` (the four copies side by side), `get scheduler
+  status`, `get timer status`, `get device status`, `get monitor status`,
+  `get alerts status` (*is anyone actually told?*), `get job list`,
+  `get git status`, `get user list`, `get update history`,
+  `get system disk|time`, `get certificate list`. New probes: `diagnose
+  install` (is the node ARMED, or merely installed?), `diagnose code` (is each
+  process running the code on disk?), `diagnose scheduler`, `diagnose units`,
+  `diagnose config`, `diagnose nginx`, `diagnose git`, `diagnose acme` —
+  `diagnose all` now folds 24 checks into one exit code in ~3.5 s. New verbs:
+  `execute seed actions`, `execute restore db`, `execute backup git`,
+  `execute repair jobs|tmp`, `execute admin reset-password|unlock`,
+  `execute scheduler run|enable|disable`, `execute maintenance`,
+  `execute enable|disable`, `execute restart-all`, `execute support bundle`.
+- **Twelve offline runbooks** in `satom show runbook` — web-down, db-down,
+  scheduler-idle, update-stuck, cert-expired, disk-full, peer, promote,
+  restore, fresh-install, locked-out, device-unreachable. They live in the
+  binary, not in the wiki or on the public site, because the operator who needs
+  them has no web UI, no browser and usually no route to the internet.
+- **`execute seed actions`** closes the gap documented in `safeguards.md` §10:
+  no `ScheduledAction` row is ever seeded, so a fresh node has every
+  capability, zero coverage, and looks perfectly healthy while it takes no
+  backups at all. It prints the plan and only applies with `--yes`, and it
+  never touches an existing row — operator edits still win.
+
+### Fixed
+- **Two diagnostics were modifying the tree they diagnose.** `git status` run as
+  root rewrites `.git/index` and takes it from the service account;
+  `compileall` leaves root-owned `__pycache__`. So `get git status` and
+  `diagnose python` were *creating* the ownership drift that `diagnose git`
+  then correctly reported. Now `--no-optional-locks`, an in-memory `compile()`
+  and `PYTHONDONTWRITEBYTECODE=1`, guarded by `tests/test_cli_ops.py` — with a
+  guard that counts git invocations rather than grepping for the flag, because
+  the first version of that test passed even after the flag was removed (the
+  comment explaining the rule contains it too).
+- **`execute backup db` wrote a format nothing could restore.** It hand-rolled a
+  bare `pg_dump`, while the product's bundle is a `.tar.gz` of `db.dump` +
+  `reports/` + manifest — the only thing the System Backup page, the retention
+  policy, the external push and `restore_backup` understand. It now delegates
+  to `app/services/system_backup.py`. The same wrong assumption made
+  `get backup status` report "no bundles" with twenty of them on disk.
+- **`execute reinstall venv` was flagged destructive but asked for nothing.** It
+  moves the live venv aside and rebuilds over the network; on an isolated
+  management network that fails *after* the old venv is gone, leaving the node
+  worse off than before. Now gated behind `--yes`, and the suite fails if any
+  command flagged destructive does not document its confirmation.
+- Probes against an appliance in **maintenance** no longer raise the monitor
+  roll-up. Maintenance already suppresses automatic runs and their alerts; a
+  console that stays red on a box parked on purpose is a console people learn
+  to skip. They are still listed, under their own heading.
+- `diagnose all` no longer repeats design notes from checks that passed — eight
+  lines of explanation attached to nothing buried the two that were findings.
+
+### Added
 - **An operator CLI (`satom`) for a node whose web UI is down.** Modelled on the
   appliance CLIs this product manages: `get` / `show` / `diagnose` / `execute`,
   `?` completion at any depth, one-shot for scripts and an interactive prompt on

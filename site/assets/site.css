@@ -309,3 +309,42 @@ header.hero > *:nth-child(4){ animation-delay:.15s } header.hero > *:nth-child(5
   .flow .step::after { content: '↓'; right: 50%; top: auto; bottom: -14px; transform: translateX(50%); }
   .flow.back .step::after { content: '↑'; }
 }
+
+/* ---------- generated manual pages (.doc-body.mdx) ----------
+   Markdown rendered by deploy/gen_site_docs.py lands here as plain
+   h2/h3/p/ul/table/pre. Scoped to .mdx so the hand-written pages above are
+   untouched. Light chrome only — this product has no dark theme. */
+.mdx { font-size: .95rem; color: var(--text-2); line-height: 1.72; }
+.mdx > *:first-child { margin-top: 0; }
+.mdx h1 { display: none; }               /* the page header already carries it */
+.mdx h2 { scroll-margin-top: 78px; font-size: 1.32rem; font-weight: 800; letter-spacing: -.02em;
+  color: var(--text); margin: 40px 0 12px; padding-bottom: 9px; border-bottom: 1px solid var(--border); }
+.mdx h3 { scroll-margin-top: 78px; font-size: 1.06rem; font-weight: 700; color: var(--text); margin: 26px 0 9px; }
+.mdx h4, .mdx h5, .mdx h6 { scroll-margin-top: 78px; font-size: .94rem; font-weight: 700; color: var(--text); margin: 20px 0 7px; }
+.mdx p { margin: 0 0 14px; }
+.mdx a { color: var(--accent); text-decoration: none; }
+.mdx a:hover { text-decoration: underline; }
+.mdx strong, .mdx b { color: var(--text); font-weight: 700; }
+.mdx ul, .mdx ol { margin: 0 0 14px; padding-left: 24px; }
+.mdx li { margin-bottom: 6px; }
+.mdx li > ul, .mdx li > ol { margin-top: 6px; }
+.mdx hr { border: 0; border-top: 1px solid var(--border); margin: 32px 0; }
+.mdx blockquote { margin: 16px 0; padding: 12px 18px; border-left: 3px solid var(--accent);
+  background: var(--surface); border-radius: 0 var(--radius) var(--radius) 0; }
+.mdx blockquote p:last-child { margin-bottom: 0; }
+.mdx code { background: var(--accent-light); border: 1px solid rgba(239,84,36,.18);
+  border-radius: 5px; padding: 1px 5px; color: var(--accent-hover); word-break: break-word; }
+.mdx pre { background: #0E1116; border: 1px solid #1E242D; border-radius: var(--radius-lg);
+  padding: 16px 18px; overflow-x: auto; margin: 0 0 16px; box-shadow: var(--shadow); }
+.mdx pre code { background: none; border: 0; padding: 0; color: #D6DEE8;
+  font-size: .82rem; line-height: 1.62; white-space: pre; word-break: normal; }
+.mdx table { width: 100%; border-collapse: collapse; font-size: .87rem; margin: 0 0 18px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  overflow: hidden; box-shadow: var(--shadow); display: block; overflow-x: auto; }
+.mdx table th, .mdx table td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border-2); vertical-align: top; }
+.mdx table th { font-size: .73rem; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); background: #F8F9FA; white-space: nowrap; }
+.mdx table tr:last-child td { border-bottom: none; }
+.mdx table td:first-child { color: var(--text); }
+.mdx img { max-width: 100%; border-radius: var(--radius); }
+@media (max-width: 900px) { .mdx h2 { font-size: 1.18rem; } }

@@ -17,6 +17,17 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `--width N`, plus `NO_COLOR` and `SATOM_CLI_COLOR`. The contract is
   *decoration is for a TTY, content is identical either way* — through a pipe
   there are no escape sequences and nothing is truncated.
+- **The manual is now published, generated and redacted.** `docs/README.md`
+  is the documentation index — every document, which of the four surfaces to
+  read it on, and a reading path per role. The complete command table inside
+  `docs/cli.md` is generated from the live registry, and the whole manual is
+  rendered to the public site under `/docs/` from the same Markdown, so neither
+  copy can drift from the source the team edits.
+- **Publication redacts and then refuses.** Internal addresses, management
+  hostnames, hypervisor and node names, the backup server and personal e-mail
+  addresses are rewritten to `{placeholders}`; the generator then re-scans its
+  own output and **aborts** on any survivor, naming pattern, file and line.
+  Publication is opt-in: a document not listed is not published.
 
 ### Fixed
 - **The CLI could crash while printing.** An em dash in a title raised

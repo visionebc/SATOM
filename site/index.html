@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script>(function(){try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SATOM — System Automation & Task Orchestration Manager</title>
 <meta name="description" content="A multi-user web platform that manages fleets of Fortinet appliances — FortiWeb, FortiADC and FortiAnalyzer — over REST and SSH, with high availability, a git-versioned configuration source of truth, and full lifecycle automation.">
@@ -27,6 +28,11 @@
         <a href="safeguards.html">Safeguards</a>
         <a href="docs.html">Docs</a>
         <a href="install.html">Install</a>
+      </div>
+      <div class="theme-pick" role="group" aria-label="Colour theme">
+        <button type="button" class="sw sw-aurora" data-theme-set="aurora" aria-pressed="true" title="Aurora — default" aria-label="Aurora theme"></button>
+        <button type="button" class="sw sw-abyss" data-theme-set="abyss" aria-pressed="false" title="Abyss — dark" aria-label="Abyss dark theme"></button>
+        <button type="button" class="sw sw-classic" data-theme-set="classic" aria-pressed="false" title="Classic" aria-label="Classic theme"></button>
       </div>
       <a class="nav-cta" href="https://github.com/visionebc/SATOM">Source ↗</a>
     </div>

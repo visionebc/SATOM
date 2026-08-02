@@ -185,6 +185,7 @@ def head(title: str, description: str, up: str, active: str) -> str:
 {GENERATED_NOTE}
 <head>
 <meta charset="UTF-8">
+<script>(function(){{try{{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){{document.documentElement.setAttribute("data-theme",t);}}}}catch(e){{}}}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{html.escape(title)} — SATOM</title>
 <meta name="description" content="{html.escape(description)}">
@@ -200,11 +201,16 @@ def head(title: str, description: str, up: str, active: str) -> str:
 
 <nav>
   <div class="wrap nav-inner">
-    <a class="brand" href="{up}index.html"><img class="mark" src="{up}assets/visionebc-shield.png" alt="Vision EBC"> <span class="wordmark">SA<b>TOM</b></span></a>
+    <a class="brand" href="{up}index.html"><img class="mark" src="{up}assets/satom-mark.png" alt="SATOM"> <span class="wordmark">SA<b>TOM</b></span></a>
     <button class="nav-toggle" id="nav-toggle" aria-label="Menu">☰</button>
     <div class="nav-right">
       <div class="nav-links">
 {links}
+      </div>
+      <div class="theme-pick" role="group" aria-label="Colour theme">
+        <button type="button" class="sw sw-aurora" data-theme-set="aurora" aria-pressed="true" title="Aurora — default" aria-label="Aurora theme"></button>
+        <button type="button" class="sw sw-abyss" data-theme-set="abyss" aria-pressed="false" title="Abyss — dark" aria-label="Abyss dark theme"></button>
+        <button type="button" class="sw sw-classic" data-theme-set="classic" aria-pressed="false" title="Classic" aria-label="Classic theme"></button>
       </div>
       <a class="nav-cta" href="{SOURCE_URL}">Source ↗</a>
     </div>

@@ -84,6 +84,31 @@
     }, { passive: true });
   }
 
+  // --- theme picker ---
+  // The <head> bootstrap already applied the stored theme; this only wires the
+  // buttons and keeps their pressed state in sync.
+  var THEMES = ['aurora', 'abyss', 'classic'];
+  var KEY = 'satom.site.theme';
+  function currentTheme() {
+    var t = document.documentElement.getAttribute('data-theme');
+    return THEMES.indexOf(t) >= 0 ? t : 'aurora';
+  }
+  function applyTheme(name) {
+    if (THEMES.indexOf(name) < 0) { name = 'aurora'; }
+    document.documentElement.setAttribute('data-theme', name);
+    try { localStorage.setItem(KEY, name); } catch (e) { /* private mode */ }
+    document.querySelectorAll('[data-theme-set]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-theme-set') === name));
+    });
+  }
+  var picks = document.querySelectorAll('[data-theme-set]');
+  if (picks.length) {
+    applyTheme(currentTheme());
+    picks.forEach(function (b) {
+      b.addEventListener('click', function () { applyTheme(b.getAttribute('data-theme-set')); });
+    });
+  }
+
   // --- current year ---
   var y = document.querySelectorAll('.year');
   y.forEach(function (el) { el.textContent = new Date().getFullYear(); });

@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script>(function(){try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Install — SATOM</title>
 <meta name="description" content="Install SATOM on Linux: one interactive installer with an online mode for any major distro family and air-gapped offline bundles for Debian 12 and RHEL 9, standalone or two-node cluster.">
@@ -27,6 +28,11 @@
         <a href="safeguards.html">Safeguards</a>
         <a href="docs.html">Docs</a>
         <a href="install.html" class="active">Install</a>
+      </div>
+      <div class="theme-pick" role="group" aria-label="Colour theme">
+        <button type="button" class="sw sw-aurora" data-theme-set="aurora" aria-pressed="true" title="Aurora — default" aria-label="Aurora theme"></button>
+        <button type="button" class="sw sw-abyss" data-theme-set="abyss" aria-pressed="false" title="Abyss — dark" aria-label="Abyss dark theme"></button>
+        <button type="button" class="sw sw-classic" data-theme-set="classic" aria-pressed="false" title="Classic" aria-label="Classic theme"></button>
       </div>
       <a class="nav-cta" href="https://github.com/visionebc/SATOM">Source ↗</a>
     </div>

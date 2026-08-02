@@ -7,6 +7,38 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **The public site ships switchable colour themes.** Three palettes —
+  **Aurora** (default, light canvas over navy chrome), **Abyss** (dark canvas
+  with the blue/gold glow) and **Classic** (the palette SATOM originally
+  shipped) — selectable from a swatch control in the nav and remembered per
+  browser. The whole palette lives in custom properties; `:root` carries the
+  default, so the site still renders correctly with scripting disabled, and a
+  blocking read in `<head>` applies a stored choice before first paint instead
+  of flashing the default and flipping.
+- **Brand gradients and glows are first-class tokens** (`--grad-blue`,
+  `--grad-gold`, `--glow-blue`, `--glow-gold`, `--glow-strength`), used by the
+  hero headline, the primary button, the nav hairline and the brand mark. Glow
+  intensity is per-theme, so the dark palette can lean on it without the light
+  one looking neon.
+
+### Fixed
+- **The site wordmark was effectively invisible.** A single `--accent` served
+  both the light canvas and the navy chrome, putting the bold half of the
+  wordmark, the active-link underline and the nav button at **1.65:1** against
+  the bar. Split into `--accent` (canvas) and `--accent-on-chrome`; the same
+  pair now measures 8.92:1, and every text pair in all three themes passes
+  WCAG AA. A test fails the suite if a canvas colour is painted on the chrome
+  again.
+- **The brand mark had gained a plate and a frame.** The source PNG is
+  transparent; an earlier crop flattened it against its own vignette. Rebuilt
+  from the original with the alpha channel intact, with a CSS halo so the
+  emblem's deep-blue ring still separates from the navy chrome. A test asserts
+  the corners stay transparent.
+- **The documentation generator's nav had drifted** from the hand-written
+  pages, still emitting the company shield rather than the product mark. Both
+  surfaces are now asserted against the same expectations.
+
+### Added
 - **Operator CLI: `show tree` (alias `tree`) prints the whole command surface**
   — every command as a tree, with `*` for root-required and `!` for
   destructive, plus `--commands` (flat, fixed-column, `awk`-friendly),

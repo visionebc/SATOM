@@ -1573,3 +1573,12 @@ body.fw-entering-page {
   border-color: var(--fw-border-light);
   opacity: .55;
 }
+
+
+/* Transparent brand mark on the dark topbar: the emblem's ring is deep blue and
+   would otherwise merge into --fw-topbar-bg. A halo separates it without
+   reintroducing the opaque plate the logo deliberately does not have. */
+.fw-topbar-brand img {
+  filter: drop-shadow(0 0 6px rgba(18, 184, 255, .55))
+          drop-shadow(0 0 2px rgba(255, 212, 90, .35));
+}

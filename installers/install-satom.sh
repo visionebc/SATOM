@@ -156,6 +156,50 @@ if [ "${1:-}" = "--authorize-peer" ]; then
             "$PEER_IP" "$SHELL_WRAPPER" "$PEER_PUBKEY" >> "$AK"
         ok "Standby ${PEER_IP} autorizado (sólo rsync de lectura sobre data/)"
     fi
+    # ---- SATOM-HANODES-MERGE --------------------------------------------
+    # data/ se replica primary -> standby con `rsync --delete`, asi que
+    # ha_nodes.json del PRIMARY es la copia autoritativa: la de dos entradas
+    # que el instalador escribe en el secondary se borra en el primer sync.
+    # Este es el punto donde el primary conoce la IP de su pareja.
+    PEER_NAME="${4:-}"
+    if [ -z "$PEER_NAME" ]; then
+        PEER_NAME="$(getent hosts "$PEER_IP" 2>/dev/null | awk '{print $2}' | head -1)"
+        PEER_NAME="${PEER_NAME%%.*}"
+    fi
+    [ -n "$PEER_NAME" ] || PEER_NAME="$PEER_IP"
+    if [ -x "$APP_DIR/venv/bin/python" ]; then
+        SATOM_PEER_IP="$PEER_IP" SATOM_PEER_NAME="$PEER_NAME" \
+        SATOM_APP_DIR="$APP_DIR" "$APP_DIR/venv/bin/python" - <<'PYNODES' && \
+            chown "$APP_USER:$APP_USER" "$APP_DIR/data/ha_nodes.json" 2>/dev/null || true
+import json, os, socket
+
+app = os.environ["SATOM_APP_DIR"]
+ip = os.environ["SATOM_PEER_IP"]
+name = os.environ["SATOM_PEER_NAME"]
+path = os.path.join(app, "data", "ha_nodes.json")
+
+try:
+    nodes = json.load(open(path))
+    if not isinstance(nodes, list):
+        raise ValueError
+except Exception:
+    nodes = []
+
+# Nunca se pisa una entrada que el operador haya editado en la UI: si la IP ya
+# esta, se deja como esta.
+if not any((n.get("host") or "").strip() == ip for n in nodes):
+    if not any((n.get("role") or "") == "primary" for n in nodes):
+        nodes.insert(0, {"name": socket.gethostname(), "host": "", "role": "primary"})
+    nodes.append({"name": name, "host": ip, "role": "standby"})
+    json.dump(nodes, open(path, "w"), indent=2)
+    print("  ha_nodes.json: anadido %s (%s) como standby" % (name, ip))
+else:
+    print("  ha_nodes.json: %s ya estaba registrado" % ip)
+PYNODES
+    else:
+        warn "No encuentro ${APP_DIR}/venv/bin/python — registra el standby a mano en Software Update → HA nodes"
+    fi
+
     echo ""
     echo "Compruébalo desde el standby:"
     echo "  sudo -u ${APP_USER} ssh -i ${APP_DIR}/.ssh/id_ha_rsync ${APP_USER}@<ip-primary> true"

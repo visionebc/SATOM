@@ -112,7 +112,10 @@ GROUPS: list[tuple[str, str, list[str]]] = [
 REDACTIONS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\bsatom-node-1\b|\bsatom-node-1\b"), "{primary-node}"),
     (re.compile(r"\bsatom-node-2\b|\bsatom-node-2\b"), "{standby-node}"),
-    (re.compile(r"\bsatom-(?:mag|web)-[a-z0-9]+\b"), "{node}"),
+    # Trailing [a-z0-9]* not + : a bare prefix ("satom-node") is still an
+    # identifier, and requiring a suffix is the same anchoring mistake the
+    # hostname rule made with wildcards. Caught on a LIVE served page.
+    (re.compile(r"\bsatom-(?:mag|web)-[a-z0-9]*"), "{node}"),
     (re.compile(r"\bbackup-server(?:-[a-z0-9]+)?\b"), "{backup-server}"),
     (re.compile(r"\bfortiweb08\b|\bfaz01\b|\bfw[67]\b"), "{device}"),
     (re.compile(r"\bprt0\d\b"), "{hypervisor}"),
@@ -136,7 +139,7 @@ FORBIDDEN: list[tuple[str, re.Pattern]] = [
     ("rfc1918 address", re.compile(r"\b(?:10\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b")),
     ("internal hostname", re.compile(r"\.visionebc\.mx\b")),
     ("hypervisor name", re.compile(r"\bprt0\d\b")),
-    ("node name", re.compile(r"\bsatom-(?:mag|web)-[a-z0-9]+\b")),
+    ("node name", re.compile(r"\bsatom-(?:mag|web)-[a-z0-9]*")),
     ("backup server name", re.compile(r"\bbackup-server\b")),
     ("device instance name", re.compile(r"\bfortiweb08\b|\bfaz01\b")),
     ("personal e-mail", re.compile(r"[A-Za-z0-9._%+-]+@(?:gmail|hotmail|outlook|yahoo)\.")),

@@ -126,7 +126,8 @@ class Ctx:
 
         Derived, never hardcoded: a fresh install uses role `satom` and whatever
         database name the URI says, while 248/249 adopted the pre-existing
-        `fortinet` / `fortinet_mgr`. A hardcoded name is how
+        `satom` (and `fortinet` / `fortinet_mgr` on installs predating the
+        2026-08 rename). A hardcoded name is how
         `scheduler_guard.sh` silently broke.
         """
         uri = self.db_uri()

@@ -17,8 +17,8 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/satom}"
-DB_NAME="${DB_NAME:-fortinet_mgr}"
-DB_USER="${DB_USER:-fortinet}"
+DB_NAME="${DB_NAME:-satom}"
+DB_USER="${DB_USER:-satom}"
 DB_HOST="${DB_HOST:-127.0.0.1}"
 DB_PORT="${DB_PORT:-5432}"
 SERVICE="${SERVICE:-satom}"

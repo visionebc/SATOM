@@ -67,7 +67,7 @@ listas `REQUIRED_PKGS` del script:
 | Concepto | Debian / Ubuntu (`apt`) | RHEL / Rocky / Alma 9 (`dnf`,`yum`) | openSUSE (`zypper`) | Arch (`pacman`) | Para qué |
 |---|---|---|---|---|---|
 | Python >= 3.10 | `python3` `python3-venv` `python3-pip` | `python3.11` `python3.11-pip` | `python311` `python311-pip` | `python` `python-pip` | ejecutar la app en su propio venv |
-| Base de datos | `postgresql` | `postgresql-server` `postgresql` | `postgresql-server` `postgresql` | `postgresql` | fuente de verdad (BD `fortinet_mgr`) |
+| Base de datos | `postgresql` | `postgresql-server` `postgresql` | `postgresql-server` `postgresql` | `postgresql` | fuente de verdad (BD `satom`) |
 | Servidor web | `nginx` | `nginx` | `nginx` | `nginx` | TLS y proxy inverso hacia gunicorn |
 | Sincronización | `rsync` | `rsync` | `rsync` | `rsync` | copia de `data/` entre nodos |
 | Criptografía | `openssl` `ca-certificates` | `openssl` `ca-certificates` | `openssl` `ca-certificates` | `openssl` `ca-certificates` | PKI interna, CSR, validación TLS |
@@ -348,7 +348,7 @@ Detalle completo y justificación en [`privilege-model.md`](privilege-model.md).
 Resumen:
 
 * Cuenta de servicio sin shell interactivo (`satom` por defecto; una
-  instalación heredada puede conservar `fortinet` con `SATOM_APP_USER`). Posee
+  instalación heredada puede conservar `satom` con `SATOM_APP_USER`). Posee
   `/opt/satom` y `/var/log/satom`.
 * `sudo` acotado a **exactamente dos comandos**, en `/etc/sudoers.d/satom`:
 
@@ -414,7 +414,7 @@ comando completo a repetir con `sudo` — nunca con un traceback.
 #### Dos cosas que NO se deben hacer
 
 1. **No conceder el CLI a la cuenta de servicio.** Un
-   `NOPASSWD: /usr/local/sbin/satom` para `satom`/`fortinet` equivale a
+   `NOPASSWD: /usr/local/sbin/satom` para `satom`/`satom` equivale a
    `NOPASSWD: ALL` y convertiría un worker web comprometido en root, deshaciendo
    todo el modelo de privilegio. `satom diagnose privilege` falla en rojo si
    encuentra esa línea.
@@ -546,7 +546,7 @@ systemctl disable --now satom satom-scheduler \
 rm -f /etc/systemd/system/satom* /etc/systemd/system/fm-*
 rm -f /etc/nginx/sites-enabled/satom.conf /etc/nginx/sites-available/satom.conf
 systemctl daemon-reload && systemctl reload nginx
-runuser -u postgres -- dropdb fortinet_mgr; runuser -u postgres -- dropuser fortinet
+runuser -u postgres -- dropdb satom; runuser -u postgres -- dropuser satom
 rm -rf /opt/satom /var/log/satom
 ```
 Los paquetes de sistema (postgres, nginx…) se dejan instalados a propósito;

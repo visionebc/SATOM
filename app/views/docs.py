@@ -25,9 +25,19 @@ from markupsafe import Markup
 # docs/ lives at the project root — two levels above this file (app/views/).
 DOCS_DIR = (pathlib.Path(__file__).resolve().parents[2] / "docs")
 
+# Documents that live OUTSIDE docs/ but belong in the catalog. The changelog
+# sits at the repo root because that is where every tool looks for it (Keep a
+# Changelog, GitHub, the release pipeline); copying it into docs/ would create
+# a second copy that rots. An explicit map keeps the slug allowlist -- and the
+# traversal guard -- exact rather than opening docs/ to symlinks.
+_EXTRA_SOURCES: dict[str, pathlib.Path] = {
+    "CHANGELOG.md": DOCS_DIR.parent / "CHANGELOG.md",
+}
+
 # Friendly titles + curated display order. Files present in docs/ but not listed
 # here still appear (auto-titled from the filename) after the curated ones.
 _TITLES: dict[str, str] = {
+    "CHANGELOG.md": "Changelog — Every Release, Every Change",
     "README.md": "Documentation Index & Reading Paths",
     "overview.md": "Project Overview & Operational Rules",
     "management-overview.md": "Management Overview (non-technical)",
@@ -53,6 +63,7 @@ _TITLES: dict[str, str] = {
 
 # One-line descriptions for the catalog cards.
 _BLURBS: dict[str, str] = {
+    "CHANGELOG.md": "What changed in each release and what is still unreleased — the same file published in the repository and on the public site.",
     "README.md": "Start here: every document, which surface to read it on, and the reading path for your role.",
     "overview.md": "What this app is, architecture, deployment, security posture and the operational rules.",
     "management-overview.md": "The same system explained without jargon: what it solves, how mature it is, risks and cost.",
@@ -87,6 +98,7 @@ def _catalog() -> list[dict]:
         present = {p.name for p in DOCS_DIR.glob("*.md") if p.is_file()}
     except OSError:
         present = set()
+    present |= {n for n, src in _EXTRA_SOURCES.items() if src.is_file()}
     ordered = [n for n in _TITLES if n in present]
     extras = sorted(present - set(_TITLES))
     out: list[dict] = []
@@ -113,10 +125,17 @@ def view(slug: str):
     catalog = {d["slug"]: d for d in _catalog()}
     if slug not in catalog:  # allowlist — no traversal possible
         abort(404)
-    path = (DOCS_DIR / slug).resolve()
-    # Defence in depth: the resolved path must stay inside DOCS_DIR.
-    if DOCS_DIR.resolve() not in path.parents or not path.is_file():
-        abort(404)
+    extra = _EXTRA_SOURCES.get(slug)
+    if extra is not None:
+        # Not a path built from the slug: a constant chosen at import time.
+        path = extra.resolve()
+        if not path.is_file():
+            abort(404)
+    else:
+        path = (DOCS_DIR / slug).resolve()
+        # Defence in depth: the resolved path must stay inside DOCS_DIR.
+        if DOCS_DIR.resolve() not in path.parents or not path.is_file():
+            abort(404)
     text = path.read_text(encoding="utf-8")
     html = Markup(md_lib.markdown(text, extensions=_MD_EXTENSIONS, output_format="html5"))
     return render_template(

@@ -122,6 +122,6 @@ git log refs/recovered/backup/pre-reset-<stamp>
 
 ## Related
 
-* `docs/privilege-model.md` — the app runs as `fortinet`; the bundle is written by
+* `docs/privilege-model.md` — the app runs as `satom`; the bundle is written by
   the web worker, not by the privileged runner.
 * `docs/encryption-and-node-tls.md` — the `origin` remote rides HTTPS.

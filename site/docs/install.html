@@ -204,7 +204,7 @@ listas <code>REQUIRED_PKGS</code> del script:</p>
 <td><code>postgresql-server</code> <code>postgresql</code></td>
 <td><code>postgresql-server</code> <code>postgresql</code></td>
 <td><code>postgresql</code></td>
-<td>fuente de verdad (BD <code>fortinet_mgr</code>)</td>
+<td>fuente de verdad (BD <code>satom</code>)</td>
 </tr>
 <tr>
 <td>Servidor web</td>
@@ -544,7 +544,7 @@ no hay ningún camino por el que el proceso web acabe siendo root.</p>
 Resumen:</p>
 <ul>
 <li>Cuenta de servicio sin shell interactivo (<code>satom</code> por defecto; una
-  instalación heredada puede conservar <code>fortinet</code> con <code>SATOM_APP_USER</code>). Posee
+  instalación heredada puede conservar <code>satom</code> con <code>SATOM_APP_USER</code>). Posee
   <code>/opt/satom</code> y <code>/var/log/satom</code>.</li>
 <li><code>sudo</code> acotado a <strong>exactamente dos comandos</strong>, en <code>/etc/sudoers.d/satom</code>:</li>
 </ul>
@@ -614,7 +614,7 @@ comando completo a repetir con <code>sudo</code> — nunca con un traceback.</p>
 <h4 id="dos-cosas-que-no-se-deben-hacer">Dos cosas que NO se deben hacer</h4>
 <ol>
 <li><strong>No conceder el CLI a la cuenta de servicio.</strong> Un
-   <code>NOPASSWD: /usr/local/sbin/satom</code> para <code>satom</code>/<code>fortinet</code> equivale a
+   <code>NOPASSWD: /usr/local/sbin/satom</code> para <code>satom</code>/<code>satom</code> equivale a
    <code>NOPASSWD: ALL</code> y convertiría un worker web comprometido en root, deshaciendo
    todo el modelo de privilegio. <code>satom diagnose privilege</code> falla en rojo si
    encuentra esa línea.</li>
@@ -750,7 +750,7 @@ funciona, calcula sus señales y no avisa a nadie. Hay que armarlo a mano:</p>
 rm -f /etc/systemd/system/satom* /etc/systemd/system/fm-*
 rm -f /etc/nginx/sites-enabled/satom.conf /etc/nginx/sites-available/satom.conf
 systemctl daemon-reload &amp;&amp; systemctl reload nginx
-runuser -u postgres -- dropdb fortinet_mgr; runuser -u postgres -- dropuser fortinet
+runuser -u postgres -- dropdb satom; runuser -u postgres -- dropuser satom
 rm -rf /opt/satom /var/log/satom
 </code></pre>
 <p>Los paquetes de sistema (postgres, nginx…) se dejan instalados a propósito;

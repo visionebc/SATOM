@@ -276,15 +276,15 @@ adapted to emit JSONB payloads.
 ## 9. SQLite → PostgreSQL consolidation (decision 4)
 
 1. **Install Postgres** on LXC 248; create role + db
-   (`fortinet` / `fortinet_mgr`). Store the URL in `.env`
+   (`satom` / `satom`). Store the URL in `.env`
    (`SQLALCHEMY_DATABASE_URI=postgresql+psycopg://…`). Add `psycopg[binary]` to
    `requirements.txt`.
 2. **Adopt Flask-Migrate/Alembic.** Generate the baseline migration from the
    current models, then a migration per new table set (§4). Replace the
    `db.create_all()` bootstrap with `flask db upgrade` at deploy.
 3. **One-shot data migration** SQLite→Postgres: a script that opens the old
-   `fortinet.db`, reads every management table, and bulk-inserts into Postgres
-   (order respects FKs). Verify row counts per table. Keep `fortinet.db` as the
+   `satom.db`, reads every management table, and bulk-inserts into Postgres
+   (order respects FKs). Verify row counts per table. Keep `satom.db` as the
    rollback until the user signs off (per fleet migration policy).
 4. **Verify**: app boots against Postgres, login works, appliances/templates/
    audit all present, JWKS/SSO unaffected (local users here, no SSO).
@@ -354,7 +354,7 @@ earlier output, so detailing them now would be guesswork).
 
 | Risk | Mitigation |
 |---|---|
-| Postgres cutover breaks management data | One-shot migration verifies row counts; keep `fortinet.db` as rollback until sign-off (fleet migration policy). |
+| Postgres cutover breaks management data | One-shot migration verifies row counts; keep `satom.db` as rollback until sign-off (fleet migration policy). |
 | Lease lock confuses users | Clear banner with owner + countdown; short 2-min lease + 30-s heartbeat; explicit steal-on-expiry. |
 | DB drifts stale vs box | Freshness badge per section + ⟳ + write-through after every approved write + scheduled sync. |
 | JSONB queries slow at fleet scale | GIN index on `payload` + typed projections for hot list views. |
@@ -371,9 +371,9 @@ earlier output, so detailing them now would be guesswork).
 
 ### Task 0.1 — Install PostgreSQL + role/db
 - [ ] `apt-get install -y postgresql postgresql-contrib`
-- [ ] `sudo -u postgres psql -c "CREATE ROLE fortinet LOGIN PASSWORD '<gen>';"`
-- [ ] `sudo -u postgres psql -c "CREATE DATABASE fortinet_mgr OWNER fortinet;"`
-- [ ] Verify: `psql "postgresql://fortinet:<pw>@127.0.0.1/fortinet_mgr" -c '\l'`
+- [ ] `sudo -u postgres psql -c "CREATE ROLE satom LOGIN PASSWORD '<gen>';"`
+- [ ] `sudo -u postgres psql -c "CREATE DATABASE satom OWNER satom;"`
+- [ ] Verify: `psql "postgresql://satom:<pw>@127.0.0.1/satom" -c '\l'`
 
 ### Task 0.2 — Add driver + Flask-Migrate to deps
 - [ ] Add `psycopg[binary]==3.2.*` and `Flask-Migrate==4.*` to `requirements.txt`
@@ -392,7 +392,7 @@ earlier output, so detailing them now would be guesswork).
 - [ ] Commit.
 
 ### Task 0.4 — Point config at Postgres
-- [ ] Set `SQLALCHEMY_DATABASE_URI=postgresql+psycopg://fortinet:<pw>@127.0.0.1/fortinet_mgr`
+- [ ] Set `SQLALCHEMY_DATABASE_URI=postgresql+psycopg://satom:<pw>@127.0.0.1/satom`
       in `/opt/satom/.env`.
 - [ ] `flask db upgrade` → schema created in Postgres.
 - [ ] Verify app boots: `systemctl restart satom.service` + curl `/`.
@@ -405,8 +405,8 @@ earlier output, so detailing them now would be guesswork).
       insert FK-ordered: profiles→users→appliances→templates→audit_logs→
       app_settings→user_settings→…).
 - [ ] Run → PASS.
-- [ ] Execute against the live `fortinet.db`; verify row counts per table; login.
-- [ ] Commit. Keep `fortinet.db` as rollback.
+- [ ] Execute against the live `satom.db`; verify row counts per table; login.
+- [ ] Commit. Keep `satom.db` as rollback.
 
 ---
 

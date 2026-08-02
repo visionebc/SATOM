@@ -28,13 +28,13 @@ open a shell on the peer node.
 |---|---|---|---|
 | `satom` (default; `SATOM_APP_USER` overrides) | web, scheduler, reconciler, alerts, cert-renew, git-publish, ha-datasync | `nologin` | Owns `/opt/satom` and `/var/log/satom` |
 | `root` | `satom-updater.service` only | — | The single privileged runner |
-| `fortinet` | Postgres role **only** | n/a | Legacy name, deliberately not renamed |
+| `satom` | Postgres role **only** | n/a | Legacy name, deliberately not renamed |
 | `satominstall` (any name) | running the installer | `bash` | **Temporary.** `sudo` to one binary at one fixed path; removed after the install window |
 
-`fortinet` as a *Linux* user is a legacy artifact on nodes installed before
+`satom` as a *Linux* user is a legacy artifact on nodes installed before
 v1.2. It is unrelated to the Postgres role of the same name — the app connects
 over TCP with a password, not peer auth. Migrated nodes may keep the name by
-setting `SATOM_APP_USER=fortinet`; fresh installs get `satom`.
+setting `SATOM_APP_USER=satom`; fresh installs get `satom`.
 
 ### Filesystem ownership
 
@@ -281,7 +281,7 @@ there is no environment variable to forget:
 *is* the privileged runner and must stay root.
 
 `self_update_runner.APP_USER` is derived from the **owner of the app tree**
-(`_app_user_from_tree()`), not from `FM_APP_USER`'s old `fortinet` default: a
+(`_app_user_from_tree()`), not from `FM_APP_USER`'s old `satom` default: a
 fresh install creates `satom` and nobody sets that variable, so the runner would
 otherwise run `pip` and `flask` as the wrong account. If the tree is root-owned
 (an un-migrated node) it returns `root` and no drop-in is written — self-healing
@@ -305,7 +305,7 @@ scheduled for deletion. Put it in a drop-in, a `conf.d/`, or the generator.
 ## 6. Migrating an existing node
 
 `deploy/migrate-deprivilege.sh`, one node at a time, **standby first**. It
-creates the account (or adopts `fortinet`), fixes ownership of `state/` and
+creates the account (or adopts `satom`), fixes ownership of `state/` and
 `/var/log/satom` (root-owned on legacy nodes because the app used to run as
 root), installs the sudoers file, rewrites `User=` in the units, and restarts.
 
@@ -329,13 +329,13 @@ app account on legacy nodes.
 - **Does it call `runuser` or `su`?** Those only work as root. Any helper script
   that a v1.1 node ran as root and a v1.2 node runs as the service account must
   branch on `id -u` (see `deploy/satom-git-publish.sh::as_app`). This is not
-  theoretical: `satom-git-publish.sh` kept `runuser -u fortinet -- git`, so
+  theoretical: `satom-git-publish.sh` kept `runuser -u satom -- git`, so
   after the de-privileging it failed every hour — and because the failure was
   swallowed by `|| exit 0`, systemd reported SUCCESS while copy 3 of the backup
   architecture silently stopped being published.
 - **Does it hardcode the service account or the database name?** Derive the
   account from the tree owner (`stat -c %U /opt/satom`) and the database from
   `SQLALCHEMY_DATABASE_URI` in `.env`. A fresh install uses `satom` and a
-  migrated one may keep `fortinet`; both must work from the same script.
+  migrated one may keep `satom`; both must work from the same script.
 - **Does a failure exit 0?** Then nobody will ever find out. Prefer a non-zero
   exit so the unit shows `failed` and the alerting picks it up.

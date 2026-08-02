@@ -1,0 +1,158 @@
+"""Guards for the version single-source and the changelog's three surfaces.
+
+Why these exist
+---------------
+The footer and Settings -> System Information each carried a literal ``v1.0``
+and stayed wrong through 1.1, 1.2, 1.2.1 and 1.2.2 while the release pipeline
+published the correct number to the package registry, the forge release and the
+public site. Nothing failed; the number was simply never read from anywhere.
+
+The changelog had the mirror-image problem: it was maintained carefully in the
+repository and published nowhere, so the only people who could read it were the
+people who already had a checkout.
+"""
+from __future__ import annotations
+
+import pathlib
+import re
+
+import pytest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+VERSION_FILE = ROOT / "VERSION"
+CHANGELOG = ROOT / "CHANGELOG.md"
+TEMPLATES = ROOT / "app" / "templates"
+SITE = ROOT / "site"
+
+# "v1.0", "v1.2.2" — a version literal. Matched only where a version is being
+# *displayed*, not in prose about a specific historical release.
+VERSION_LITERAL = re.compile(r"\bv\d+\.\d+(?:\.\d+)?\b")
+
+
+# --------------------------------------------------------------------------
+# The version has exactly one source
+# --------------------------------------------------------------------------
+
+def test_version_file_exists_and_is_a_version():
+    assert VERSION_FILE.is_file(), "VERSION is the single source and must ship"
+    value = VERSION_FILE.read_text(encoding="utf-8").strip()
+    assert re.fullmatch(r"\d+\.\d+(\.\d+)?", value), f"unexpected VERSION: {value!r}"
+
+
+def test_app_version_module_reads_the_file():
+    from app.version import app_version
+
+    assert app_version() == VERSION_FILE.read_text(encoding="utf-8").strip()
+
+
+@pytest.mark.parametrize("rel", ["base.html", "settings/index.html"])
+def test_no_version_literal_in_the_templates_that_display_one(rel):
+    """The footer and the System Information table must interpolate, not hardcode.
+
+    A literal here is invisible: the page renders, the number is simply a lie.
+    """
+    text = (TEMPLATES / rel).read_text(encoding="utf-8")
+    found = VERSION_LITERAL.findall(text)
+    assert not found, (
+        f"{rel} carries a version literal {found!r}; use "
+        "{{ app_version }} (see app/version.py)"
+    )
+
+
+def test_the_rendered_settings_page_shows_the_shipped_version(app, client):
+    """Rendered, against the real VERSION -- not just the template source."""
+    from conftest import admin_user_id, login
+
+    version = VERSION_FILE.read_text(encoding="utf-8").strip()
+    login(client, admin_user_id(app))
+    body = client.get("/settings/", follow_redirects=True).get_data(as_text=True)
+    assert f"v{version}" in body, "Settings -> System Information does not show the shipped version"
+
+
+def test_the_site_hero_badge_matches_the_version_file():
+    """The public site's badge is stamped from VERSION, not typed by hand."""
+    version = VERSION_FILE.read_text(encoding="utf-8").strip()
+    index = (SITE / "index.html").read_text(encoding="utf-8")
+    badges = re.findall(r'<div class="pill"><span class="dot"></span>\s*(v[0-9][^\s<·]*)', index)
+    assert badges, "the hero badge disappeared — the stamper has nothing to keep current"
+    for badge in badges:
+        assert badge == f"v{version}", (
+            f"site/index.html shows {badge} but VERSION says {version}; "
+            "run: python3 deploy/stamp_site_assets.py"
+        )
+
+
+def test_the_asset_stamper_also_checks_the_version():
+    """--check must fail on a stale badge, not only on a stale asset hash."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "stamp_site_assets", ROOT / "deploy" / "stamp_site_assets.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    stale = '<div class="pill"><span class="dot"></span> v0.1 · Production</div>'
+    assert mod.stamp_version(stale, "9.9.9") != stale, \
+        "stamp_version left a stale badge alone"
+    assert "v9.9.9" in mod.stamp_version(stale, "9.9.9")
+
+
+# --------------------------------------------------------------------------
+# The changelog reaches all three surfaces
+# --------------------------------------------------------------------------
+
+def test_changelog_lives_at_the_repository_root():
+    assert CHANGELOG.is_file()
+    assert "## [" in CHANGELOG.read_text(encoding="utf-8")
+
+
+def test_changelog_is_in_the_in_app_documentation_catalog():
+    from app.views import docs as docs_view
+
+    assert "CHANGELOG.md" in docs_view._EXTRA_SOURCES, \
+        "the changelog lives outside docs/ and needs an explicit source entry"
+    assert docs_view._EXTRA_SOURCES["CHANGELOG.md"].is_file()
+    slugs = {d["slug"] for d in docs_view._catalog()}
+    assert "CHANGELOG.md" in slugs, "the changelog vanished from the in-app catalog"
+    assert docs_view._TITLES.get("CHANGELOG.md"), "curated title missing"
+    assert docs_view._BLURBS.get("CHANGELOG.md"), "catalog blurb missing"
+
+
+def test_the_in_app_changelog_page_renders(app, client):
+    from conftest import admin_user_id, login
+
+    login(client, admin_user_id(app))
+    r = client.get("/docs/CHANGELOG.md", follow_redirects=True)
+    assert r.status_code == 200
+    assert "Changelog" in r.get_data(as_text=True)
+
+
+def test_changelog_is_published_on_the_public_site():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "gen_site_docs", ROOT / "deploy" / "gen_site_docs.py")
+    gen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gen)
+
+    names = {md for md, *_ in gen.PAGES}
+    assert "CHANGELOG.md" in names, "the changelog is not in the site's page list"
+    assert gen.source_for("CHANGELOG.md").is_file(), \
+        "source_for() cannot find the changelog outside docs/"
+    slugs = [slug for md, slug, *_ in gen.PAGES if md == "CHANGELOG.md"]
+    grouped = {s for _, _, members in gen.GROUPS for s in members}
+    assert set(slugs) <= grouped, "a published page that no hub group links to is unreachable"
+    assert (SITE / "docs" / "changelog.html").is_file(), \
+        "run: venv/bin/python3 deploy/gen_site_docs.py"
+
+
+def test_the_published_changelog_carries_no_internal_identifiers():
+    """It names hosts and backup servers freely; publication must redact them."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "gen_site_docs", ROOT / "deploy" / "gen_site_docs.py")
+    gen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gen)
+
+    published = (SITE / "docs" / "changelog.html").read_text(encoding="utf-8")
+    assert not gen.scan(published, "site/docs/changelog.html")

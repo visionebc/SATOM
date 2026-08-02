@@ -6,6 +6,41 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed
+- **The last `fortinet` identifiers are gone from the platform itself.** The
+  database, the PostgreSQL role, the Linux service account and the PostgreSQL
+  TLS directory were the four names the 2026-07 rename deliberately left alone,
+  because they are live state rather than files. They are now `satom`,
+  `satom`, `satom` and `satomssl`. New installations are born with those names;
+  existing ones migrate with `deploy/migrate-rename-satom-db.sh`, which takes a
+  dump before the rename, keeps the account's numeric id (so no ownership sweep
+  is needed) and verifies health before it reports success.
+
+  Three names are kept on purpose and are **not** a leftover:
+  the *vendor* product names (FortiWeb, FortiADC, FortiAnalyzer and their API
+  fields) — the platform manages those appliances and has to be able to name
+  them; the streaming replication slot, because PostgreSQL has no rename for
+  one and dropping it under a live standby risks a full re-sync for an
+  invisible internal string; and the external backup server, because the
+  appliances push to it by name in their own configuration and renaming it
+  from here would break the nightly push silently.
+
+### Added
+- **The changelog is published on all three surfaces.** The same file is now
+  readable in the repository, inside the application under **Documentation**,
+  and on the public documentation site. One source, three renderings — no copy
+  to fall out of date. A test fails the suite if any surface stops carrying it.
+
+### Fixed
+- **The application reported version 1.0 through four releases.** The footer
+  and Settings -> System Information each carried a hand-written literal that
+  was correct exactly once, while the release pipeline published the real
+  number everywhere else. Both now read the repo-root `VERSION` file, which is
+  the same file the offline-bundle builders and the operator console already
+  read. The public site's hero badge is derived from it too, by the same
+  stamping pass that versions the stylesheet, so it cannot drift either. A
+  test fails the suite if a version literal reappears in a template or a page.
+
 ### Added
 - **The public site ships switchable colour themes.** Three palettes —
   **Aurora** (default, light canvas over navy chrome), **Abyss** (dark canvas

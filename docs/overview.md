@@ -56,12 +56,12 @@ Browser ──▶ edge nginx (LXC 241 @ 192.0.2.40)
 - **Service:** `systemctl restart satom.service` after any code or
   template change. A scheduler sidecar (`satom-scheduler.service`)
   fires scheduled actions.
-- **Runs as** the unprivileged `fortinet` user; hardened systemd unit
+- **Runs as** the unprivileged `satom` user; hardened systemd unit
   (`NoNewPrivileges`, `ProtectSystem=strict`, `PrivateTmp`).
 - **Config/secrets:** `EnvironmentFile=/opt/satom/.env` holds
   `SECRET_KEY`, `FERNET_KEY`, the DB URL, `RATELIMIT_STORAGE_URI`,
-  `TRUSTED_PROXIES`. `.env` is git-ignored and `root:fortinet 640`.
-- **Backups:** nightly `pg_dump` → `/var/backups/fortinet-db` (14-day retention).
+  `TRUSTED_PROXIES`. `.env` is git-ignored and `root:satom 640`.
+- **Backups:** nightly `pg_dump` → `/var/backups/satom-db` (14-day retention).
 - **CI:** `pytest -q` + an offscreen smoke run on push/PR.
 
 ## 4. Security posture

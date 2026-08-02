@@ -112,7 +112,10 @@ def test_published_site_documentation_is_current():
 def test_every_published_page_has_a_source_document():
     gen = _load("gen_site_docs")
     for md_name, slug, *_rest in gen.PAGES:
-        assert (DOCS / md_name).is_file(), f"{md_name} is published but missing from docs/"
+        # source_for(), not DOCS/: the changelog is published from the repo
+        # root. One resolver so the test and the generator agree on what exists.
+        assert gen.source_for(md_name).is_file(), \
+            f"{md_name} is published but its source document is missing"
         assert (SITE / "docs" / f"{slug}.html").is_file(), f"site/docs/{slug}.html not generated"
 
 

@@ -5,7 +5,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Features — SATOM</title>
-<meta name="description" content="The complete SATOM feature catalog, section by section: manager↔device sync, the database source of truth, signatures, templates, Web Protection, the generic object editor, multi-product workspaces, supported devices, backups, HA, security, automation, certificates, observability, reporting and developer tools.">
+<meta name="description" content="The complete SATOM feature catalog, section by section: manager↔device sync, the database source of truth, signatures, templates, Web Protection, the generic object editor, multi-product workspaces, supported devices, backups, HA, security, the privilege model, automation, the operator console, certificates, monitoring probes, observability, alerting, reporting, theming, documentation and deployment.">
 <link rel="icon" href="favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/favicon.png">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
@@ -63,10 +63,16 @@
       <a href="#backups">Source of truth &amp; backups</a>
       <a href="#ha">High availability</a>
       <a href="#security">Security &amp; access</a>
+      <a href="#privilege">Privilege model</a>
       <a href="#automation">Automation &amp; self-update</a>
+      <a href="#cli">Operator console</a>
       <a href="#certs">Certificates</a>
+      <a href="#monitoring">Monitoring &amp; probes</a>
       <a href="#observability">Observability</a>
+      <a href="#alerts">Alerting</a>
       <a href="#reporting">Reporting &amp; schema</a>
+      <a href="#theming">Appearance</a>
+      <a href="#docs">Documentation</a>
       <a href="#devtools">Developer tools</a>
       <a href="#deploy">Deployment</a>
     </aside>
@@ -230,27 +236,115 @@
           <li><b>Secrets encrypted at rest</b>; nonce-based CSP; rate limiting; object locks.</li>
           <li><b>Node TLS manager</b> — import or issue from the internal CA, nightly auto-renew, auto-rollback on bad imports.</li>
           <li><b>Encryption-in-transit monitoring</b> — every badge backed by a live probe.</li>
+          <li><b>Per-workspace scoping is enforced server-side</b> — a product workspace never renders the manager's own infrastructure, and the endpoints behind those cards answer <code>403</code> rather than merely being hidden.</li>
         </ul>
+      </div>
+
+      <div class="dsec reveal" id="privilege">
+        <h2><span class="hico">🧱</span> Privilege model</h2>
+        <p class="lead">The web application does not run as root, and the boundary is written down rather than assumed.</p>
+        <ul class="feat">
+          <li><b>A dedicated service account</b> owns the application tree and runs the web worker, the scheduler, the reconciler and every timer. Its login shell is disabled.</li>
+          <li><b>Exactly two sudo commands</b> — validate the web-server configuration and reload it. That is everything the worker needs to activate a certificate. Package installation and unrestricted <code>systemctl</code> are refused on purpose: granting a package manager <i>is</i> granting root, because packages run their own maintainer scripts.</li>
+          <li><b>One privileged runner</b>, and only one. Updates, dependency changes and unit installation are queued as a request file and executed by a separate root service — the web worker never escalates.</li>
+          <li><b>Drop-in enforcement.</b> The service account is pinned through a systemd drop-in, not by editing the unit, because every update re-copies the shipped unit template. A hand-edited unit silently reverts; a drop-in does not.</li>
+          <li><b>Read-only trust between nodes.</b> The standby generates its own key and pulls; the key is pinned to the peer address and to a forced command that can only <i>read</i> the data directory.</li>
+          <li><b>Three separate accounts</b> — installer, service and operator — each with its own narrowly-scoped rule, printable from the tool itself so it can be handed to a systems team without shipping the repository.</li>
+        </ul>
+        <div class="callout"><span class="cico">🔎</span><p>The full model, including what was deliberately <i>refused</i> and why, is published in the privilege-model manual.</p></div>
       </div>
 
       <div class="dsec reveal" id="automation">
         <h2><span class="hico">⏱️</span> Automation &amp; self-update</h2>
         <p class="lead">The platform runs and maintains itself.</p>
         <ul class="feat">
-          <li><b>Scheduled actions catalog</b> — config syncs, backups, certificate scans, nightly inspections — per-product targeting.</li>
-          <li><b>Background jobs</b> with pause / resume / stop.</li>
-          <li><b>Self-update from the UI</b> via a privileged runner with per-step logs and health verification.</li>
-          <li><b>Library manager</b> — PyPI update checks plus per-package pip upgrade / rollback with automatic failure rollback.</li>
+          <li><b>Scheduled actions catalog</b> — config syncs, deep inspections, database bundles, repository bundles, certificate scans and monitor sweeps, each with per-product targeting.</li>
+          <li><b>Background jobs</b> with pause / resume / stop, and a job manager that keeps the full history.</li>
+          <li><b>Work nobody is waiting for stays quiet.</b> Recurring sweeps do not raise a progress window; only a sweep that <i>fails</i> reaches the notification area. A control the operator cannot act on is worse than no control at all.</li>
+          <li><b>Maintenance means maintenance.</b> An appliance parked for maintenance is skipped by automatic runs — and a run whose entire target set was parked reports <i>skipped</i>, not <i>failed</i>, so it never accumulates a fake failure streak. A manual run still reaches it, because parking a device is usually the prelude to working on it.</li>
+          <li><b>Self-update from the UI</b> via the privileged runner, with per-step logs, health verification and a code-rollback path.</li>
+          <li><b>Library manager</b> — PyPI update checks plus per-package upgrade / rollback from a curated allowlist, with an import smoke test, a health check and automatic rollback on failure. There is no free-form package installation from the web interface.</li>
+          <li><b>Local commits are never destroyed by an update.</b> Anything not yet on the remote is parked on a backup ref before the checkout is reset — and if it cannot be parked, the update aborts.</li>
+        </ul>
+      </div>
+
+      <div class="dsec reveal" id="cli">
+        <h2><span class="hico">⌨️</span> Operator console</h2>
+        <p class="lead">A local command-line tool for the node whose web interface is the thing that is broken — <b>96 commands</b> across four verbs.</p>
+        <div class="flow">
+          <div class="step"><div class="n">get</div><h4>State</h4><p>Health, version, paths, units, roles</p></div>
+          <div class="step"><div class="n">show</div><h4>Reference</h4><p>Command tree, runbooks, manuals, sudoers</p></div>
+          <div class="step"><div class="n">diagnose</div><h4>Check</h4><p>24 checks, one exit code</p></div>
+          <div class="step"><div class="n">execute</div><h4>Act</h4><p>Repair, seed, back up, reinstall</p></div>
+        </div>
+        <ul class="feat">
+          <li><b>It works when the application does not.</b> Nothing in the console imports the web framework or the ORM at module level — a tool that needs a healthy virtualenv to tell you the virtualenv is broken is not a diagnostic tool.</li>
+          <li><b>It degrades by privilege instead of failing.</b> Read verbs run as any user; state-changing verbs require root and refuse with the full command line, an explanation and a distinct exit code — never a traceback.</li>
+          <li><b>It runs from a root-owned copy outside the application tree</b>, so a compromised web worker cannot rewrite what an administrator runs under <code>sudo</code>.</li>
+          <li><b><code>diagnose install</code></b> separates <i>infrastructure</i> from <i>protections</i> — the check that catches a fresh node with every capability and no coverage.</li>
+          <li><b><code>diagnose code</code></b> compares the newest source file against each running process, catching the sidecar that is still executing yesterday's code — a failure whose only symptom is that manual runs pass and scheduled ones fail.</li>
+          <li><b><code>diagnose python</code></b> compiles every module and explicitly imports the ones the application only imports lazily, because a module nobody imports at collection time can be syntactically broken while the health check still answers 200.</li>
+          <li><b>Manuals without a network</b> — <code>show docs</code> prints any manual straight to the terminal, which is what makes the published copy safe to be the only rendered one.</li>
+          <li><b>The command tree is data.</b> A new command is one entry; the parser, the <code>?</code> help, completion, the privilege gate and the JSON renderer all read that same structure — and the test suite fails if an entry omits its help text or its privilege class.</li>
+          <li><b>Decoration is for a terminal, content is not.</b> Piped output carries no escape sequences and is never truncated; <code>--json</code> is never decorated; the output path cannot crash on an encoding it cannot represent.</li>
         </ul>
       </div>
 
       <div class="dsec reveal" id="certs">
         <h2><span class="hico">📜</span> Certificates</h2>
-        <p class="lead">A central certificate manager for the whole fleet.</p>
+        <p class="lead">A central certificate manager for the whole fleet — and for the platform's own service certificate.</p>
         <ul class="feat">
-          <li><b>Issuance</b> via ADCS or ACME.</li>
-          <li><b>Lifecycle policy</b> — revoke-on-supersede, expiry sweeps, SNI policies.</li>
-          <li><b>Private-key upload</b> over SSH and REST deploy to FortiADC; fleet-wide inventory and live probes.</li>
+          <li><b>Issuance via ACME or an internal enterprise CA.</b> The ACME path ships a curated catalog of <b>30 DNS providers</b> plus generic escape hatches, and the catalog is <i>data</i>: a new provider is a row, not a release.</li>
+          <li><b>Credentials reach the signer through the environment, never the command line.</b> The signing process gets a minimal, hand-built environment — the application's own database URI and encryption key are not inherited — and every secret is redacted from the logs.</li>
+          <li><b>The account key persists.</b> Registering a fresh account on every issuance burns the authority's rate limit and loses the ability to revoke what came before, so the account directory lives inside the replicated, backed-up data tree.</li>
+          <li><b>Lifecycle policy</b> — revoke-on-supersede, expiry sweeps, SNI policies, and a fleet-wide inventory backed by live probes.</li>
+          <li><b>Service certificate management</b> — import a PEM (key/certificate match validated, configuration tested, automatic rollback on a bad import) or issue from the internal CA with nightly auto-renewal.</li>
+          <li><b>A renewal journal, and a page for it.</b> Every attempt is recorded as renewed / skipped / error with the error text, per node, and a failed renewal is its own alert — critical from three in a row. A nightly timer that only writes to the system journal is a failure nobody reads.</li>
+          <li><b>Private-key upload</b> over SSH and REST deploy to the appliances.</li>
+        </ul>
+      </div>
+
+      <div class="dsec reveal" id="monitoring">
+        <h2><span class="hico">📡</span> Monitoring &amp; probes</h2>
+        <p class="lead">Fleet health answers <i>is the box alive?</i> Metrics answers <i>how much does it hold?</i> Probes answer the question neither can: <b>is the service still serving?</b></p>
+        <div class="grid g3">
+          <div class="card">
+            <h3>Deep monitors</h3>
+            <p>The checks that reach into the appliance.</p>
+            <ul>
+              <li><b>Service policy</b> — a synthetic request to a published front end. One 200 proves interface, policy, proxy daemon and backend at once, and records latency and days of certificate left.</li>
+              <li><b>Interface</b> — a name → address/state fingerprint per port. The <i>drift</i> against the previous sample is the event; an address change grades critical, and a watched port that disappears is named, never silently dropped from a shorter list.</li>
+              <li><b>Processor</b> and <b>memory</b> — read from the appliance's own performance summary, understood in two different vendor wordings.</li>
+              <li><b>Proxy daemon</b> — worker count, memory consumed and free, and the <b>set of process IDs</b>: a different PID is a silent restart, which no ordinary health check shows.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Service monitor</h3>
+            <p>Telemetry read purely over the management API — no shell access.</p>
+            <ul>
+              <li><b>Box sessions</b> and connections per second.</li>
+              <li><b>Server-policy sessions</b>, round-trip and application response time, plus per-member backend health.</li>
+              <li><b>HTTP throughput</b>, graded on the <i>peak</i> of the window rather than the average.</li>
+              <li><b>HTTP transactions</b> per bucket — and a zero here is cross-checked against live sessions before it is allowed to grade healthy.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>History that outlives the samples</h3>
+            <p>Raw samples are capped per probe; charts are not.</p>
+            <ul>
+              <li><b>Hourly</b> roll-ups kept <b>90 days</b>, <b>daily</b> roll-ups kept <b>two years</b> — under 400&nbsp;KB per probe.</li>
+              <li><b>min / average / max</b>, not just the mean: a four-minute spike is invisible in an average and is exactly what the chart is opened for.</li>
+              <li><b>Transition counts</b> per bucket survive the pruning of the raw samples — restarts and address changes stay visible long after the detail is gone.</li>
+              <li>The server picks the resolution and <b>says which one it drew</b>, because an hourly mean and a three-minute reading are not the same claim about the appliance.</li>
+            </ul>
+          </div>
+        </div>
+        <ul class="feat">
+          <li><b>Loading a page never touches an appliance.</b> Every view is served from the database; probing happens in a background sweep or on an explicit button, so a monitoring page opens instantly and still opens when the device is powered off.</li>
+          <li><b>A health badge that can go red.</b> Each appliance is graded on the worst of four signals — harvest, cache age, probes and capacity — and every non-healthy signal is printed on the card, so a state is never unexplained. <b><code>unknown</code> ranks below <code>ok</code></b>: a device nothing has been measured about is never rendered healthy, and <b>a disabled probe is not a passing probe</b>.</li>
+          <li><b>Discovery from the device</b> — policies, a baseline set, one probe per interface, or the API telemetry set; ports are picked from a cached list, so the dialog opens with the appliance switched off.</li>
+          <li><b>Absence of data is never health</b> — a disabled policy warns, an empty bucket list is an error, and a probe pointed at a port that no longer exists grades critical <i>by name</i>.</li>
+          <li><b>Every appliance workspace has its own monitoring</b>, scoped by device kind, and never shows the manager's own infrastructure.</li>
         </ul>
       </div>
 
@@ -258,11 +352,28 @@
         <h2><span class="hico">📈</span> Observability &amp; analysis</h2>
         <p class="lead">See the fleet and the platform at once.</p>
         <ul class="feat">
-          <li><b>Monitoring dashboard</b>, metrics, infrastructure health and system health pages.</li>
-          <li><b>FortiView</b> traffic analysis and packet capture.</li>
-          <li><b>DNS &amp; LB lookup</b>, log collection, flash reports, capacity planning.</li>
-          <li><b>E-mail notifications</b>, release-notes tracker, in-app documentation viewer.</li>
+          <li><b>Fleet health</b> — one card per appliance, graded on four independent signals, with every failing signal spelled out.</li>
+          <li><b>Metrics</b> — inventory counts, audit activity and change history, scoped to the active workspace.</li>
+          <li><b>Infrastructure health</b> (manager workspace only) — cluster peers, repository state, external backup server, database, systemd units and redundancy.</li>
+          <li><b>Encryption in transit</b> — a card per channel: encrypted? which protocol and cipher? enforced? authenticated? — <b>every badge backed by a live probe</b>, never by configuration.</li>
+          <li><b>Traffic analysis</b> and packet capture, straight from the appliance.</li>
+          <li><b>DNS &amp; load-balancer lookup</b>, log collection, flash reports and capacity planning.</li>
+          <li><b>Hardware inventory sweep</b> over SSH, scoped to the appliances the current workspace can see.</li>
         </ul>
+      </div>
+
+      <div class="dsec reveal" id="alerts">
+        <h2><span class="hico">🔔</span> Alerting</h2>
+        <p class="lead">All of the above is only worth anything if <b>silence means healthy</b>. Thirteen signals, one engine, delivered by e-mail on a timer.</p>
+        <ul class="feat">
+          <li><b>Certificates</b> — inside the expiry window, unreadable, or a failed renewal attempt (critical from three consecutive).</li>
+          <li><b>Repository</b> — unpushed commits older than the limit, a checkout too far behind, a diverged history, or a repository that cannot be read at all.</li>
+          <li><b>Backups</b> — no bundle at all, none recent enough, or a check that itself failed.</li>
+          <li><b>Device health</b> — the same four-signal ladder the page uses, plus a live network probe the page deliberately does not have. <b>One device, one finding</b>, with every failing signal as a line in the message: five mails about one dead appliance is noise, and filtered noise is a disabled alert.</li>
+          <li><b>Scheduled actions</b> — a run failing repeatedly, <i>and</i> an enabled action that is simply overdue. Without the second signal a dead scheduler looks perfectly healthy, because it produces no failed runs to count.</li>
+          <li><b>The engine itself</b> — the guard on the guard.</li>
+        </ul>
+        <div class="callout"><span class="cico">⚖️</span><p><b>Severity is part of the cooldown key.</b> A device or an action that degrades from warning to critical inside the quiet period still reaches the operator — a fixed key would suppress precisely the escalation the alert exists for. And the severity in the mailbox is the same severity as on the page: if the two can disagree, the operator learns to trust neither.</p></div>
       </div>
 
       <div class="dsec reveal" id="reporting">
@@ -271,6 +382,34 @@
         <ul class="feat">
           <li><b>Report Builder</b> — a no-SQL wizard plus 7 built-in reports.</li>
           <li><b>Live ER diagram</b> of the schema and database introspection views.</li>
+        </ul>
+      </div>
+
+      <div class="dsec reveal" id="theming">
+        <h2><span class="hico">🎨</span> Appearance</h2>
+        <p class="lead">Logo, favicon and colours are operator-editable, without ever handing the operator a stylesheet.</p>
+        <ul class="feat">
+          <li><b>34 design tokens</b> in ten groups — sidebar, top bar, surfaces, accent, brand ramps and glow, text, status, elevation, layout and typography.</li>
+          <li><b>The editable surface is the token list, not the stylesheet.</b> Free-form CSS in a themed page is stored injection — one closing brace ends the rule and starts another — so every value is validated by kind, and gradients are parsed structurally rather than waved through by a character allowlist.</li>
+          <li><b>The token registry is generated from the stylesheet.</b> A hand-written list is a copy, and the first release that adds a variable would silently leave the editor without that control; the test suite fails if the two drift.</li>
+          <li><b>A theme stores only what it changes</b>, so a later improvement to the shipped look still reaches every theme that did not override it.</li>
+          <li><b>Contrast is audited, not assumed.</b> Every text/background pair is scored against the accessibility ratio with alpha composition; below the legibility floor the save requires an explicit acknowledgement.</li>
+          <li><b>Three ways back from a bad choice</b> — revert to the shipped look, activate a built-in, or run one command on the console. The built-ins cannot be edited or deleted, and deleting the active theme falls back rather than leaving the console unthemed.</li>
+          <li><b>Four built-in palettes</b> ship (Aurora, Slate, Graphite and the original Classic), and the logo and favicon live in the replicated data tree so they survive a rebuild and reach the standby.</li>
+          <li><b>No dark console, and the page says why</b> — around a hundred and forty status tints are still literal, so a dark canvas would leave islands of light. Published as a limit instead of insinuated.</li>
+        </ul>
+      </div>
+
+      <div class="dsec reveal" id="docs">
+        <h2><span class="hico">📚</span> Documentation</h2>
+        <p class="lead">Twenty-two manuals, one source, three surfaces — and a publication path that redacts and then refuses.</p>
+        <ul class="feat">
+          <li><b>The repository is the only place a manual is edited.</b> The published site and the console renderer both derive from those files; a test fails if they drift.</li>
+          <li><b>One rendered copy on the internet</b>, not one per node. A second rendered copy running on a management server is how internal addresses got published once already.</li>
+          <li><b>Publishing redacts, then scans its own output and aborts</b> — naming pattern, file and line. A warning inside a publication pipeline is a leak with a receipt.</li>
+          <li><b>Publication is opt-in</b>: a document absent from the register is not published at all.</li>
+          <li><b>Manuals without a network.</b> The operator console prints any manual to the terminal, which is what makes a single published copy safe for an isolated management network.</li>
+          <li><b>Content is never hidden by presentation.</b> Section animation is progressive enhancement with three independent guards — because a scroll animation once left the longest manuals rendering at zero opacity while the HTML, the status code and the leak scan were all perfectly correct.</li>
         </ul>
       </div>
 
@@ -288,10 +427,12 @@
         <h2><span class="hico">🚀</span> Deployment</h2>
         <p class="lead">From a blank host to a running HA pair, guided.</p>
         <ul class="feat">
-          <li><b>Interactive Linux installer</b> — online (any major distro family) or fully air-gapped offline bundles for Debian 12 and RHEL 9.</li>
-          <li><b>Standalone or 2-node cluster</b> — the secondary joins with a single pasted key and mints its own certificate.</li>
-          <li><b>systemd units</b>, nginx TLS front, gunicorn, PKI bootstrap and a sysadmin manual with sudoers policy.</li>
-          <li><b>700+ unit and integration tests.</b></li>
+          <li><b>Interactive Linux installer</b> — online on any major distribution family, or fully air-gapped offline bundles for <b>Debian 12, RHEL 9 and openSUSE Leap 15</b>. The two RPM bundles are deliberately not interchangeable and the wrong one is refused up front.</li>
+          <li><b>A preflight that runs before anything is touched</b> — and reports <i>every</i> blocker at once instead of stopping at the first. It checks effective write access rather than just the user id, the init system, the package manager, base-image utilities, the interpreter version, disk, memory, ports, clock and outbound reachability, plus the cluster prerequisites when a cluster is chosen.</li>
+          <li><b>Standalone or 2-node cluster</b> — the secondary joins with a single pasted key, generates its own trust material and mints its own certificate. Private keys never travel between nodes.</li>
+          <li><b>systemd units</b>, a TLS front end, PKI bootstrap, the operator console and a sysadmin manual with three separate sudo policies.</li>
+          <li><b>Protections have to be armed.</b> Schedules are database rows and operator edits outrank seeds, so a brand-new install has every capability and no coverage — one console command creates the recommended minimum set, and the install manual says so in its own section.</li>
+          <li><b>Over 1,800 automated unit and integration tests</b>, including guard tests that are verified by mutation — the guard is reintroduced deliberately to confirm the test actually fails.</li>
         </ul>
         <div class="cta" style="justify-content:flex-start;"><a class="btn btn-primary" href="install.html">Read the install guide →</a></div>
       </div>
@@ -313,7 +454,7 @@
       <a href="install.html">Install</a>
       <a href="https://github.com/visionebc/SATOM">Source</a>
     </div>
-    <p class="addr">http://satom.visionebc.com</p>
+    <p class="addr">https://satom.visionebc.com</p>
     <p style="margin-top:8px;"><b>SATOM</b> · System Automation & Task Orchestration Manager</p>
     <p style="margin-top:6px;">© <span class="year">2026</span> Vision EBC · Licensed under the <a href="https://github.com/visionebc/SATOM/blob/main/LICENSE">Elastic License 2.0</a> · source-available, not OSI open source · provided AS IS, no warranty</p>
     <p class="disclaimer" style="margin-top:8px;font-size:12px;opacity:.6;line-height:1.5;">SATOM is an independent source-available project, <b>not affiliated with or endorsed by Fortinet, Inc.</b> Fortinet, FortiWeb, FortiADC and FortiAnalyzer are trademarks of Fortinet, Inc., used here nominatively to describe interoperability. SATOM is <b>not</b> a FortiManager or FortiGate product.</p>

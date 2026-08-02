@@ -888,6 +888,14 @@ cooldown <code>alerts.cooldown_hours</code>):</p>
 <td>The appliance list, or one device's health roll-up, could not be read</td>
 </tr>
 <tr>
+<td><code>action.broken.&lt;id&gt;.&lt;status&gt;</code></td>
+<td>A scheduled action is failing repeatedly (<code>alerts.action_fail_streak_crit</code>, default 3) or is overdue past <code>alerts.action_overdue_hours</code> — see §9l</td>
+</tr>
+<tr>
+<td><code>action.error</code> / <code>action.error.&lt;id&gt;</code></td>
+<td>The scheduled-action check itself, or one action's run history, could not be read</td>
+</tr>
+<tr>
 <td><code>drift.error</code></td>
 <td>The drift comparison could not run</td>
 </tr>
@@ -1745,7 +1753,7 @@ manual.</p>
       <a href="../install.html">Install</a>
       <a href="https://github.com/visionebc/SATOM">Source</a>
     </div>
-    <p class="addr">http://satom.visionebc.com</p>
+    <p class="addr">https://satom.visionebc.com</p>
     <p style="margin-top:8px;"><b>SATOM</b> · System Automation &amp; Task Orchestration Manager</p>
     <p style="margin-top:6px;">© <span class="year">2026</span> Vision EBC · Licensed under the <a href="https://github.com/visionebc/SATOM/blob/main/LICENSE">Elastic License 2.0</a> · source-available, not OSI open source · provided AS IS, no warranty</p>
     <p class="disclaimer" style="margin-top:8px;font-size:12px;opacity:.6;line-height:1.5;">SATOM is an independent source-available project, <b>not affiliated with or endorsed by Fortinet, Inc.</b> Fortinet, FortiWeb, FortiADC and FortiAnalyzer are trademarks of Fortinet, Inc., used here nominatively to describe interoperability. SATOM is <b>not</b> a FortiManager or FortiGate product.</p>

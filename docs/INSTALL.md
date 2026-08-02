@@ -226,8 +226,10 @@ familia equivocada con un mensaje claro:
   sin red, sin tocar los repos del sistema, y sin dejar un repo dado de alta.
 
 **Qué trae el bundle**, además del cierre de dependencias: el árbol completo de la
-aplicación, los manuales de `docs/` — legibles sin red desde la propia consola, en
-**Documentación** — y el cliente ACME `lego` en `bundle/lego/`. Desde **1.2** los
+aplicación, los manuales de `docs/` — legibles sin red desde la consola con
+`satom show docs`, porque la aplicación **ya no sirve documentación**: la copia
+publicada vive en el sitio público, al que una red de gestión aislada no llega
+a propósito — y el cliente ACME `lego` en `bundle/lego/`. Desde **1.2** los
 bundles incluyen además `sudo` y `openssh-*`: sin ellos una imagen mínima sin red
 fallaba a mitad de instalación, ya con la cuenta de servicio creada. Los bundles
 1.1 y anteriores no llevaban ni eso ni `lego` en la variante RHEL.

@@ -105,25 +105,27 @@ def test_changelog_lives_at_the_repository_root():
     assert "## [" in CHANGELOG.read_text(encoding="utf-8")
 
 
-def test_changelog_is_in_the_in_app_documentation_catalog():
-    from app.views import docs as docs_view
+def test_changelog_is_printable_from_the_console():
+    """The in-app catalog is gone; the console is the offline surface now."""
+    import sys
 
-    assert "CHANGELOG.md" in docs_view._EXTRA_SOURCES, \
-        "the changelog lives outside docs/ and needs an explicit source entry"
-    assert docs_view._EXTRA_SOURCES["CHANGELOG.md"].is_file()
-    slugs = {d["slug"] for d in docs_view._catalog()}
-    assert "CHANGELOG.md" in slugs, "the changelog vanished from the in-app catalog"
-    assert docs_view._TITLES.get("CHANGELOG.md"), "curated title missing"
-    assert docs_view._BLURBS.get("CHANGELOG.md"), "catalog blurb missing"
+    sys.path.insert(0, str(ROOT / "deploy"))
+    try:
+        from satom_cli import cmd_docs as mod
+    finally:
+        sys.path.pop(0)
+
+    class _Ctx:
+        app_dir = ROOT
+
+    catalog = mod._doc_catalog(_Ctx())
+    assert "changelog" in catalog, "the changelog vanished from the console"
+    assert catalog["changelog"].is_file()
+    assert mod._doc_title(catalog["changelog"])
 
 
-def test_the_in_app_changelog_page_renders(app, client):
-    from conftest import admin_user_id, login
-
-    login(client, admin_user_id(app))
-    r = client.get("/docs/CHANGELOG.md", follow_redirects=True)
-    assert r.status_code == 200
-    assert "Changelog" in r.get_data(as_text=True)
+def test_the_application_does_not_serve_the_changelog(client):
+    assert client.get("/docs/CHANGELOG.md").status_code == 404
 
 
 def test_changelog_is_published_on_the_public_site():

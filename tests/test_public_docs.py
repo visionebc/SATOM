@@ -39,6 +39,21 @@ CURATED_SITE_PAGES = ("index.html", "features.html", "architecture.html",
 SLUGS = [entry[1] for entry in pubdoc.PUBLIC_DOCS]
 
 
+def _cli_docs_module():
+    """Load the console's doc reader.
+
+    By package, not by file path: ``cmd_docs`` uses relative imports, and a
+    ``spec_from_file_location`` load of a package member raises ImportError.
+    """
+    import sys
+    sys.path.insert(0, str(ROOT / "deploy"))
+    try:
+        from satom_cli import cmd_docs
+    finally:
+        sys.path.pop(0)
+    return cmd_docs
+
+
 def _generator():
     spec = importlib.util.spec_from_file_location(
         "gsd_under_test", ROOT / "deploy" / "gen_site_docs.py")
@@ -101,31 +116,67 @@ def test_the_shared_module_imports_nothing_from_the_application():
 
 
 # ---------------------------------------------------------------------------
-# The public surface renders, and cannot leak
+# The application serves NO manual (2026-08-02)
+#
+# It used to serve three: /docs (session), /docs/public and /docs/api. That was
+# a second rendered copy of the same Markdown living on every management node,
+# and the reason the API route once leaked -- the redaction pipeline lived in
+# the site generator, so the application grew its own unguarded route instead
+# of reusing it. There is now ONE published copy, on the public site, and the
+# sign-in page links straight to it.
+#
+# The leak guards did not disappear with the routes; they moved onto the
+# generated HTML, which is the artefact that actually gets published.
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("slug", SLUGS)
-def test_every_published_document_renders_without_a_session(client, slug):
-    r = client.get(f"/docs/public/{slug}")
-    assert r.status_code == 200, slug
-    assert len(r.get_data()) > 500
+REMOVED_ROUTES = ("/docs/", "/docs", "/docs/public", "/docs/api",
+                  "/docs/public/api", "/docs/overview.md")
+
+
+@pytest.mark.parametrize("path", REMOVED_ROUTES)
+def test_the_application_serves_no_manual(client, path):
+    """404, not a redirect to the sign-in page.
+
+    A 302 would mean the route still exists behind ``@login_required`` -- i.e.
+    the second copy is still there, one decorator away from being public again.
+    """
+    assert client.get(path).status_code == 404, path
+
+
+def test_no_template_links_to_an_in_app_manual():
+    """The blueprint is gone, so a surviving url_for('docs.*') is a 500."""
+    offenders = []
+    for tpl in (ROOT / "app" / "templates").rglob("*.html"):
+        body = tpl.read_text(encoding="utf-8", errors="replace")
+        if re.search(r"""url_for\(\s*['"]docs\.""", body):
+            offenders.append(str(tpl.relative_to(ROOT)))
+    assert not offenders, f"link to a removed blueprint: {offenders}"
+
+
+def test_the_view_module_and_its_templates_are_gone():
+    assert not (ROOT / "app" / "views" / "docs.py").exists()
+    assert not (ROOT / "app" / "templates" / "docs").exists()
 
 
 @pytest.mark.parametrize("slug", SLUGS)
-def test_no_published_document_carries_an_internal_identifier(client, slug):
-    body = client.get(f"/docs/public/{slug}").get_data(as_text=True)
+def test_every_published_document_is_generated(slug):
+    page = ROOT / "site" / "docs" / f"{slug}.html"
+    assert page.is_file(), f"{slug}: run deploy/gen_site_docs.py"
+    assert len(page.read_bytes()) > 500, slug
+
+
+@pytest.mark.parametrize("slug", SLUGS)
+def test_no_published_document_carries_an_internal_identifier(slug):
+    body = (ROOT / "site" / "docs" / f"{slug}.html").read_text(encoding="utf-8")
     for name, pattern in pubdoc.FORBIDDEN:
         m = pattern.search(body)
         assert m is None, f"{slug}: {name}: {m.group(0)!r}"
 
 
-def test_the_hub_and_the_legacy_api_url_are_public_and_clean(client):
-    for path in ("/docs/public", "/docs/api"):
-        r = client.get(path)
-        assert r.status_code == 200, path
-        body = r.get_data(as_text=True)
-        for name, pattern in pubdoc.FORBIDDEN:
-            assert pattern.search(body) is None, f"{path}: {name}"
+def test_the_hub_is_generated_and_clean():
+    body = (ROOT / "site" / "docs.html").read_text(encoding="utf-8")
+    for name, pattern in pubdoc.FORBIDDEN:
+        assert pattern.search(body) is None, name
 
 
 def test_the_raw_source_really_does_carry_an_identifier():
@@ -176,19 +227,52 @@ def test_unknown_slugs_are_refused(client, slug):
     assert client.get(f"/docs/public/{slug}").status_code == 404
 
 
-def test_the_authenticated_manual_still_requires_a_session(client):
-    for path in ("/docs/", "/docs/overview.md"):
-        assert client.get(path).status_code in (302, 401), path
-
-
 # ---------------------------------------------------------------------------
 # The links themselves
 # ---------------------------------------------------------------------------
 
 def test_the_sign_in_page_links_to_both_manuals(client):
     body = client.get("/auth/login").get_data(as_text=True)
-    assert "/docs/public" in body, "no link to the documentation"
-    assert "/docs/api" in body, "no link to the API manual"
+    assert pubdoc.site_url() in body, "no link to the published manual"
+    assert pubdoc.site_url("api") in body, "no link to the published API manual"
+    assert "/docs/public" not in body, "still linking at a route that is gone"
+
+
+def test_the_published_address_has_exactly_one_definition():
+    """A literal in two templates is two chances to move the site and leave
+    one of them on a 404."""
+    offenders = []
+    for tpl in (ROOT / "app" / "templates").rglob("*.html"):
+        if pubdoc.SITE_BASE in tpl.read_text(encoding="utf-8", errors="replace"):
+            offenders.append(str(tpl.relative_to(ROOT)))
+    assert not offenders, f"hardcoded site address, use docs_url(): {offenders}"
+
+
+def test_the_sidebar_documentation_entry_leaves_the_application():
+    body = (ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
+    assert "docs_url()" in body, "the sidebar lost its Documentation entry"
+    assert 'url_for(\'docs.index\')' not in body
+
+
+def test_the_console_can_print_every_document():
+    """The offline half of the trade.
+
+    Removing the in-app manual is only safe because the console keeps one. A
+    management network has no route to the public site, so if this catalogue
+    ever stops covering docs/, the isolated node has no manual at all.
+    """
+    mod = _cli_docs_module()
+
+    class _Ctx:
+        app_dir = ROOT
+
+    catalog = mod._doc_catalog(_Ctx())
+    expected = {p.stem.lower().replace("_", "-") for p in (ROOT / "docs").glob("*.md")}
+    assert expected <= set(catalog), \
+        f"the console cannot print: {sorted(expected - set(catalog))}"
+    assert "changelog" in catalog
+    for name in catalog:
+        assert mod._doc_title(catalog[name])
 
 
 @pytest.mark.parametrize("name", AUTH_TEMPLATES)
@@ -198,13 +282,12 @@ def test_auth_pages_do_not_need_public_internet_to_lay_themselves_out(name):
     assert "vendor/bootstrap/bootstrap.min.css" in src, name
 
 
-def test_the_public_docs_shell_is_local_and_theme_aware():
-    src = (ROOT / "app" / "templates" / "docs" / "_public_base.html").read_text(encoding="utf-8")
-    assert "cdn.jsdelivr.net/npm/bootstrap@" not in src
-    assert "vendor/bootstrap/bootstrap.min.css" in src
-    assert "theme_css" in src and "theme_logo_url" in src
-    # The pre-rename "FM" placeholder box lived here long after the rename.
-    assert '<span class="logo">FM</span>' not in src
+def test_the_generated_site_shell_carries_no_dead_placeholder():
+    """The pre-rename "FM" box and the CDN dependency lived in the deleted
+    in-app shell. The generated shell inherits the same rules."""
+    body = (ROOT / "site" / "docs.html").read_text(encoding="utf-8")
+    assert '<span class="logo">FM</span>' not in body
+    assert "cdn.jsdelivr.net/npm/bootstrap@" not in body
 
 
 # ---------------------------------------------------------------------------

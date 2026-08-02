@@ -63,7 +63,26 @@ DOCS_DIR = ROOT_DIR / "docs"
 # not published anywhere public — that absence IS the opt-in.
 # Tuple: (markdown file, output slug, title, icon, blurb)
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Where the manual actually lives.
+#
+# The application does not serve documentation. Every in-product link points
+# here, so the address exists once: a literal in two templates is two chances
+# to move the site and leave one of them pointing at a 404.
+# ---------------------------------------------------------------------------
+SITE_BASE = "https://satom.visionebc.com"
+
+
+def site_url(slug: str | None = None) -> str:
+    """Public URL for the hub, or for one published document."""
+    if not slug:
+        return f"{SITE_BASE}/docs.html"
+    return f"{SITE_BASE}/docs/{slug}.html"
+
+
 PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
+    ("README.md", "readme", "How to read this manual", "\U0001f5fa️",
+     "The map: every document, which one to read for which job, and the rules that keep the manual honest."),
     ("CHANGELOG.md", "changelog", "Changelog", "\U0001f5d2️",
      "Every release and every change, newest first — the same file that ships in the repository and is readable inside the application."),
     ("management-overview.md", "management-overview", "Management overview", "\U0001f9ed",
@@ -111,7 +130,7 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
 
 GROUPS: list[tuple[str, str, list[str]]] = [
     ("Start here", "New to the platform — read these in order.",
-     ["management-overview", "overview", "user-guide", "theming"]),
+     ["readme", "management-overview", "overview", "user-guide", "theming"]),
     ("Deploy & operate", "Getting it running, keeping it running, getting it back.",
      ["install", "cli", "privilege-model", "safeguards", "git-backup"]),
     ("Security", "Certificates, transport encryption and trust between nodes.",

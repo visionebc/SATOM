@@ -214,16 +214,26 @@ def test_public_domains_survive_redaction():
 # 4. The in-app catalog stays curated
 # ---------------------------------------------------------------------------
 
-def test_every_markdown_doc_is_curated_in_the_app_index():
-    """docs/*.md not listed in app/views/docs.py still renders, but with an
-    auto-generated title and no blurb — which is how nine documents once spent
-    months looking like debris in the catalog."""
-    from app.views import docs as docs_view
-    present = {p.name for p in DOCS.glob("*.md")}
-    uncurated = sorted(present - set(docs_view._TITLES))
-    assert not uncurated, f"add a title+blurb in app/views/docs.py for: {uncurated}"
-    missing_blurb = sorted(n for n in present if not docs_view._BLURBS.get(n))
-    assert not missing_blurb, f"missing one-line blurb in app/views/docs.py for: {missing_blurb}"
+def test_every_markdown_doc_is_either_published_or_deliberately_not():
+    """The in-app curated index is gone (2026-08-02).
+
+    Publication is opt-in, so this cannot demand that everything is published.
+    What it CAN demand is that every published entry has a title and a blurb —
+    the absence of which is how nine documents once spent months looking like
+    debris in the old catalog — and that nothing is listed twice.
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "pubdoc_curation", ROOT / "app" / "services" / "doc_publication.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    slugs = [e[1] for e in mod.PUBLIC_DOCS]
+    assert len(slugs) == len(set(slugs)), "duplicate slug in PUBLIC_DOCS"
+    for md, slug, title, icon, blurb in mod.PUBLIC_DOCS:
+        assert title.strip(), md
+        assert blurb.strip(), md
+        assert mod.source_for(md).is_file(), md
 
 
 # ---------------------------------------------------------------------------

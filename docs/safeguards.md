@@ -472,6 +472,44 @@ derived from content, never from a version constant a change can forget to bump.
 No server configuration is involved, so it also holds on GitHub Pages, where the
 headers are not ours.
 
+## 8f. Content is never hidden by an animation
+
+The public site fades sections in on scroll: `.reveal` starts transparent and an
+`IntersectionObserver` adds `.in` when the section enters the viewport. Applied
+to a documentation page this **blanked the manual**. The observer reports
+`intersecting area / ELEMENT area`, so a section taller than the viewport can
+never reach a fractional threshold — at `threshold: 0.12` a 35 000 px page in an
+813 px viewport tops out at **2.3 %** and stays invisible however far you
+scroll. The longer and more important the manual, the more certain the failure.
+Nothing errored: the HTML was complete, the server returned 200, and every
+published-content test passed, because the defect lived entirely in presentation.
+
+Three independent guards, any one of which keeps the page readable:
+
+- **Content is visible by default.** `.reveal` is `opacity: 1`. Only
+  `html.js .reveal` hides, and that class is set by a blocking inline script in
+  the head. A blocked, stale, or CSP-stripped `site.js` therefore cannot blank a
+  page.
+- **The flag is withdrawn if the un-hiding code never runs.** `site.js` sets
+  `window.__satomReveal`; the head bootstrap removes `html.js` after 2.5 s if
+  that flag is absent. This closes the inverse hole — the head arms the hiding,
+  so a 404 on `site.js` would otherwise re-blank everything.
+- **`threshold: 0`.** Any pixel on screen reveals the section, whatever its
+  height.
+
+Rule: an animation may change *how* content arrives, never *whether* it does.
+
+### Verifying the guards are armed
+
+    pytest tests/test_site_reveal.py -q
+
+and, against a served page, assert the section is actually opaque rather than
+merely present in the markup — the original bug is invisible to any check that
+only greps the HTML:
+
+    chromium --headless=new --dump-dom <page-url>   # plus a probe reading
+                                                    # getComputedStyle(...).opacity
+
 ## 9. The alert catalog
 
 Everything above is only useful if silence means healthy. The signals that exist

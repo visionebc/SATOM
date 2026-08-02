@@ -128,6 +128,8 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
            run=s.privilege),
         _n("sudoers", "Print the sudoers rule to request for an operator account.",
            run=s.sudoers, usage="show sudoers [<account>]"),
+        _n("docs", "The manual, from the tree. 'show docs' lists it. Works with no network.",
+           run=b.docs, usage="show docs [<name>] [<section>]"),
         _n("changelog", "The most recent release notes from the tree.", run=b.changelog),
         _n("version", "Versions of the app, the CLI and Python.", run=s.version),
         _n("tree", "The WHOLE command tree in one view. Filters: --commands/--depth/--root.",

@@ -261,41 +261,52 @@ publishes a paragraph describing the topology in prose. The opt-in `PAGES` list
 is the real control; the scanner is what makes forgetting expensive instead of
 silent.
 
-## 7c. The manual that is readable without a session
+## 7c. One published manual, and one that works with no network
 
-`/docs/public` publishes the whole manual to anyone who can load the sign-in
-page, and `/docs/api` has done so for the API manual since long before that.
-This is deliberate: the operator who cannot get in is exactly the one who needs
-the installation guide, the operator-console reference and the recovery
-runbooks, and on an isolated management network there is no second copy to
-reach. The same decision means the login screen is a **publication surface**,
-and has to be guarded like one.
+**The application serves no documentation.** It used to serve three routes —
+`/docs` behind a session, `/docs/public`, and `/docs/api` — and that was a
+second rendered copy of the same Markdown standing on every management node.
+It was also how the leak happened: the redact-then-scan pipeline lived inside
+`deploy/gen_site_docs.py`, where the application could not reuse it, so the
+application grew its own route and served `docs/api_v1.md` **verbatim** —
+a management hostname and an RFC1918 address — to anyone who could load the
+sign-in page.
+
+Removed 2026-08-02. There is now exactly one published copy, on the public
+site, and the sign-in page and the sidebar link straight to it.
+
+**The trade, and what pays for it.** A management network is deliberately built
+with no route to the public internet, so on the node that most needs the manual
+the published copy is unreachable. That is what `satom show docs` is for: it
+prints `docs/*.md` from the tree, unredacted, because whoever runs it is already
+on the machine. Without that command this removal would be a regression against
+the promise in `INSTALL.md` §2.2, and the offline bundle would ship a manual
+nobody can open.
 
 **What it prevents.**
 
 | Guard | Prevents | Where |
 |---|---|---|
-| Shared registry | The two published surfaces disagreeing about what may be published — and one of them growing its own unguarded route | `app/services/doc_publication.py`; `deploy/gen_site_docs.py` imports it |
-| Redact before render | Serving an internal address, hostname, hypervisor, node, backup server or personal e-mail to an unauthenticated visitor | `docs._public_render()` |
-| Fail-closed scan | A document whose *rendered* output still carries an identifier being served anyway | same function: findings are logged and the page 404s |
-| Slug allowlist | The slug ever reaching the filesystem | `pubdoc.by_slug()` lookup; an unknown slug 404s before any path is built |
+| No in-app manual | A second rendered copy of the manual on every node, one decorator away from being public | routes removed; a test asserts `/docs*` is **404**, not a redirect |
+| Shared registry | Publication rules living somewhere the rest of the code cannot reuse — which is how the unguarded route appeared | `app/services/doc_publication.py`; `deploy/gen_site_docs.py` imports it |
+| Redact before render | Publishing an internal address, hostname, hypervisor, node, backup server or personal e-mail | `redact()`, applied by the generator |
+| Fail-closed scan | A document whose *rendered* output still carries an identifier being published anyway | `scan()` over the OUTPUT; a finding aborts the whole build |
 | Opt-in list | A document nobody reviewed becoming public by being added to `docs/` | absence from `PUBLIC_DOCS` |
+| One address | The site moving and a template being left on a 404 | `pubdoc.SITE_BASE` + the `docs_url()` context processor; a test fails on a hardcoded URL in any template |
+| Console catalogue derived from the tree | An isolated node having no manual because someone added a document and forgot a second list | `cmd_docs._doc_catalog()` lists `docs/`; a test compares it against the directory |
 
-**Three rules.**
+**Four rules.**
 
-1. **The registry may exist once.** It used to live inside the site generator,
-   so the application could not reuse it — and the application grew `/docs/api`,
-   which served `docs/api_v1.md` **verbatim**, disclosing a management hostname
-   and an RFC1918 address to anyone who could load the login page. A second copy
-   is the copy that rots. A structural test fails the suite if the generator
-   re-declares the list, the redaction table or the scanner.
-2. **Fail closed, never fail open.** The site generator aborts the whole build
-   on a finding; the application refuses to serve that one page. Neither warns
-   and continues. Refusing to answer is recoverable; an inventory disclosure is
-   not.
-3. **The authenticated manual stays unredacted.** `/docs` still serves the real
-   text to signed-in operators — they are the people who need the actual
-   addresses. Only the public surfaces rewrite.
+1. **The registry may exist once.** A second copy is the copy that rots. A
+   structural test fails the suite if the generator re-declares the list, the
+   redaction table or the scanner.
+2. **Fail closed, never fail open.** A finding aborts the build. It does not
+   warn and continue: a warning in a publication pipeline is a leak with a
+   paper trail.
+3. **Removing a web surface is only allowed with an offline replacement.** The
+   console reader landed in the same commit that deleted the routes.
+4. **`404`, not `302`.** A test asserts the removed paths are absent, not
+   merely protected. A redirect would mean the second copy is still there.
 
 **The test that carries the weight** is
 `test_the_raw_source_really_does_carry_an_identifier`. Narrowing `redact()` and
@@ -305,11 +316,10 @@ reported as "does not bite" by an earlier mutation run in this repository. The
 assertion is therefore about the **input**: `docs/api_v1.md` must still contain
 something the scanner recognises, or the leak tests above have gone vacuous.
 
-**Second-order property, easy to lose.** The public shell loads its stylesheet
-from `static/vendor/`, not from a CDN. This product ships offline installers for
-isolated networks; documentation that only renders with public internet does not
-render where it matters most. The same swap was applied to the four sign-in
-pages, which had been on the CDN since they were written.
+**Second-order property, easy to lose.** The four sign-in pages load their
+stylesheet from `static/vendor/`, not from a CDN. This product ships offline
+installers for isolated networks; a login screen that only lays itself out with
+public internet does not lay itself out where it matters most.
 
 ## 8. Sessions and the web surface
 
@@ -1379,16 +1389,24 @@ venv/bin/python3 -c "from PIL import Image; i=Image.open('site/favicon.ico'); \
   print(sorted(i.info['sizes']))"
 ```
 
-### The public manual cannot leak (§7c)
+### One published manual, none in the app (§7c)
 
 ```bash
-# every published document, unauthenticated, scanned for internal identifiers
-cd /opt/satom && venv/bin/python3 -m pytest tests/test_public_docs.py -q; echo "rc=$?"
+cd /opt/satom
+venv/bin/python3 -m pytest tests/test_public_docs.py -q; echo "rc=$?"
 
-# and against a running node, without a session:
-curl -sk https://<node>/docs/public | grep -c 'doc-tile'      # the hub renders
-for s in api install cli safeguards changelog; do
-  curl -sk "https://<node>/docs/public/$s" | grep -oE "$SATOM_PRIVATE_RE" && echo "LEAK: $s"
+# the application must not serve a manual at all -- 404, never 302
+for p in /docs/ /docs/public /docs/api; do
+  printf "%-14s " "$p"; curl -sk -o /dev/null -w "%{http_code}\n" "https://<node>$p"
+done
+
+# the console must be able to print every document that ships
+satom show docs | tail -n +3 | wc -l
+ls docs/*.md | wc -l
+
+# and the published pages must be clean
+for s in api install cli safeguards changelog readme; do
+  curl -s "https://<site>/docs/$s.html" | grep -oE "$SATOM_PRIVATE_RE" && echo "LEAK: $s"
 done
 ```
 

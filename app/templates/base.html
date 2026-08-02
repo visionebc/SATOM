@@ -833,9 +833,10 @@
 
       <!-- PROJECT SETTINGS — pinned to the bottom of the sidebar -->
       <div class="fw-nav-bottom">
-        <a class="fw-nav-item {{ 'active' if request.blueprint == 'docs' else '' }}"
-           href="{{ url_for('docs.index') }}">
-          <i class="bi bi-book fw-nav-icon"></i><span>Documentation</span></a>
+        <a class="fw-nav-item" href="{{ docs_url() }}"
+           target="_blank" rel="noopener noreferrer">
+          <i class="bi bi-book fw-nav-icon"></i><span>Documentation</span>
+          <i class="bi bi-box-arrow-up-right fw-nav-icon" style="margin-left:auto; opacity:.5; font-size:11px;"></i></a>
         {# API is product-scoped by agreement: FortiWeb gets the registry hub,
            FortiADC its own API console — both pinned here below Documentation.
            The Global ADOM gets none (clicking it would silently jump the ADOM). #}

@@ -644,6 +644,12 @@ def create_app(config_override: object | None = None) -> Flask:
         return {"app_version": app_version()}
 
     @app.context_processor
+    def _inject_docs_url():
+        """The manual is published, not served. One address, one definition."""
+        from app.services.doc_publication import site_url
+        return {"docs_url": site_url}
+
+    @app.context_processor
     def _inject_csp_nonce():
         return {"csp_nonce": getattr(g, "csp_nonce", "")}
 
@@ -1309,7 +1315,6 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.ha", "bp"),
         ("app.views.plugins", "bp"),
         ("app.views.lua_studio", "bp"),
-        ("app.views.docs", "bp"),
         ("app.api", "bp"),
         ("app.api_v1", "bp"),
         ("app.views.api_tokens", "bp"),

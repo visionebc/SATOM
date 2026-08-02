@@ -775,6 +775,30 @@ else
     ok "Toda la paquetería requerida ya está presente"
 fi
 
+# --- SATOM-SSHD-ENABLE -----------------------------------------------------
+# Instalar openssh NO es tener sshd corriendo. En Debian el .deb lo habilita
+# por politica y el canal de datasync funciona por casualidad; en openSUSE el
+# servicio queda disabled/inactive y nada escucha en el :22, asi que el standby
+# no puede hacer pull de data/ jamas. Se habilita en LOS DOS nodos del cluster:
+# tras un promote es el viejo standby quien tiene que servir el pull.
+if [ "$MODE" = "cluster" ]; then
+    SSHD_UNIT=""
+    for u in sshd.service ssh.service; do
+        systemctl list-unit-files "$u" >/dev/null 2>&1 \
+            && systemctl cat "$u" >/dev/null 2>&1 && { SSHD_UNIT="$u"; break; }
+    done
+    if [ -z "$SSHD_UNIT" ]; then
+        warn "No encuentro una unidad sshd/ssh — el datasync de data/ NO funcionará hasta que haya un servidor SSH activo"
+    else
+        systemctl enable --now "$SSHD_UNIT" >>"$INSTALL_LOG" 2>&1 || true
+        if systemctl is-active --quiet "$SSHD_UNIT"; then
+            ok "Servidor SSH activo (${SSHD_UNIT}) — canal de replicación de data/ disponible"
+        else
+            die "No se pudo arrancar ${SSHD_UNIT}. En modo cluster el pull de data/ va por SSH: sin él la réplica de ficheros no existe. Revisa ${INSTALL_LOG}."
+        fi
+    fi
+fi
+
 # Re-resuelve el intérprete tras instalar paquetes (puede haber llegado ahora)
 pick_python || die "No hay un Python >= 3.10 disponible tras la instalación de paquetes"
 # El módulo venv puede venir en paquete aparte (Debian) o integrado (resto)
@@ -1146,6 +1170,20 @@ PGC
     ssh-keyscan -T 10 -t ed25519,rsa "$PRIMARY_IP" 2>/dev/null >> "$KNOWN" || true
     sort -u "$KNOWN" -o "$KNOWN" 2>/dev/null || true
     chown "$APP_USER:$APP_USER" "$KNOWN" 2>/dev/null || true
+    # SATOM-KNOWNHOSTS-VERIFY — un keyscan vacio es indistinguible de uno bueno
+    # si nadie mira. Con StrictHostKeyChecking=yes (el TOFU se quito a
+    # proposito) un known_hosts sin la clave del primary rompe el datasync PARA
+    # SIEMPRE, y la instalacion terminaria diciendo "COMPLETA". Causa habitual:
+    # el sshd del primary no esta arrancado, o hay un firewall entre nodos.
+    if grep -q "^${PRIMARY_IP} " "$KNOWN" 2>/dev/null; then
+        ok "Host key del primary ${PRIMARY_IP} sembrada (sin TOFU)"
+    else
+        warn "NO se pudo obtener la host key SSH de ${PRIMARY_IP}."
+        warn "  La réplica de FICHEROS (data/) no funcionará: rsync usa StrictHostKeyChecking=yes."
+        warn "  La réplica de Postgres SÍ funciona — va por su propio canal TLS."
+        warn "  Comprueba que el primary tiene sshd activo y el :22 alcanzable, y repite:"
+        warn "    ssh-keyscan -t ed25519,rsa ${PRIMARY_IP} >> ${KNOWN}"
+    fi
 
     PEER_PUB="$(cat "$HA_KEY.pub")"
     "$PYBIN" - <<PYNODES

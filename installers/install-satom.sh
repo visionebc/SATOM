@@ -607,7 +607,43 @@ if [ "$ROLE" = "secondary" ]; then
         *) die "La clave de unión no es válida (debe empezar por SATOMJOIN1.)" ;;
     esac
     JOIN_JSON=$(echo "$JOIN_B64" | base64 -d 2>/dev/null) || die "La clave de unión no se pudo decodificar"
-    jget() { echo "$JOIN_JSON" | ${PYBIN:-python3} -c "import json,sys; print(json.load(sys.stdin).get('$1',''))"; }
+    # Extractor de JSON en shell. NO se puede usar Python aqui: estamos en el
+    # paso 1 y el interprete se instala en el paso 2 — en una distro sin
+    # symlink python3 esto moria con exit 127 nada mas pegar la clave. La
+    # clave la genera este mismo instalador (json.dump de un diccionario plano
+    # de cadenas: una linea, sin anidamiento, \n escapados dentro de los PEM).
+    # Se usa SIEMPRE, no como rama de reserva: una segunda ruta que solo se
+    # ejecuta en una familia de distros es codigo sin probar.
+    _SATOM_JSON_AWK=$(cat <<'AWKJSON'
+{ all = all $0 }
+END {
+    pat = "\"" k "\"[ ]*:[ ]*\""
+    if (match(all, pat) == 0) exit 1
+    i = RSTART + RLENGTH
+    out = ""
+    n = length(all)
+    while (i <= n) {
+        c = substr(all, i, 1)
+        if (c == "\\") {
+            e = substr(all, i + 1, 1)
+            if (e == "n")      out = out "\n"
+            else if (e == "t") out = out "\t"
+            else if (e == "r") out = out "\r"
+            else               out = out e
+            i += 2
+        } else if (c == "\"") {
+            break
+        } else {
+            out = out c
+            i++
+        }
+    }
+    printf "%s", out
+}
+AWKJSON
+)
+    json_str_field() { awk -v k="$1" "$_SATOM_JSON_AWK"; }
+    jget() { printf '%s' "$JOIN_JSON" | json_str_field "$1"; }
     PRIMARY_IP=$(jget primary_ip);   [ -n "$PRIMARY_IP" ]  || die "Join key sin primary_ip"
     PRIMARY_PORT=$(jget primary_port)
     FERNET_KEY=$(jget fernet_key);   [ -n "$FERNET_KEY" ]  || die "Join key sin fernet_key"
@@ -616,6 +652,21 @@ if [ "$ROLE" = "secondary" ]; then
     REPL_PASS=$(jget repl_password); [ -n "$REPL_PASS" ]   || die "Join key sin repl_password"
     CA_CRT=$(jget ca_crt);           [ -n "$CA_CRT" ]      || die "Join key sin ca_crt"
     CA_KEY=$(jget ca_key);           [ -n "$CA_KEY" ]      || die "Join key sin ca_key"
+    # El extractor es propio: se comprueba la FORMA de lo extraido. Un parser
+    # silenciosamente malo corromperia la CA interna y eso no se notaria hasta
+    # la primera emision de certificado, semanas despues.
+    case "$CA_CRT" in
+        "-----BEGIN CERTIFICATE-----"*) : ;;
+        *) die "El ca_crt de la clave de unión no es un PEM válido — clave corrupta o truncada" ;;
+    esac
+    case "$CA_KEY" in
+        "-----BEGIN "*"PRIVATE KEY-----"*) : ;;
+        *) die "El ca_key de la clave de unión no es un PEM válido — clave corrupta o truncada" ;;
+    esac
+    printf '%s' "$CA_CRT" | grep -q -- "-----END CERTIFICATE-----" \
+        || die "El ca_crt de la clave de unión está truncado (falta la línea END)"
+    printf '%s' "$CA_KEY" | grep -q -- "PRIVATE KEY-----" \
+        || die "El ca_key de la clave de unión está truncado"
     PRIMARY_NAME=$(jget primary_name)
     ok "Join key válida — primary en ${PRIMARY_IP}:${PRIMARY_PORT:-$WEB_PORT}"
     # Comprobar alcanzabilidad del primary ANTES de instalar nada

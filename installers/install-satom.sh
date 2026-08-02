@@ -747,7 +747,12 @@ py_runtime_broken() {
 }
 BROKEN_MOD="$(py_runtime_broken || true)"
 if [ -n "$BROKEN_MOD" ]; then
-    BROKEN_ERR="$("$PYBIN" -c "import $BROKEN_MOD" 2>&1 | tail -1)"
+    # `|| true` NO es decorativo: con `set -o pipefail` el pipeline devuelve
+    # el codigo de python, que falla A PROPOSITO (es justo lo que estamos
+    # midiendo), y `set -e` mataria el script en esta asignacion — el
+    # diagnostico matando el caso que existe para diagnosticar. Encontrado
+    # ejecutando: `bash -n` no puede verlo.
+    BROKEN_ERR="$("$PYBIN" -c "import $BROKEN_MOD" 2>&1 | tail -1 || true)"
     warn "El intérprete $PYBIN no puede importar '$BROKEN_MOD': $BROKEN_ERR"
     if [ "$OFFLINE" = "1" ]; then
         die "Desajuste de ABI en el Python de la distro y estamos OFFLINE. Actualiza las librerías del sistema (p.ej. libexpat) desde el mismo medio y vuelve a lanzar."

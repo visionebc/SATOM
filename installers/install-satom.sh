@@ -590,7 +590,7 @@ if [ "$ROLE" = "secondary" ]; then
         *) die "La clave de unión no es válida (debe empezar por SATOMJOIN1.)" ;;
     esac
     JOIN_JSON=$(echo "$JOIN_B64" | base64 -d 2>/dev/null) || die "La clave de unión no se pudo decodificar"
-    jget() { echo "$JOIN_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('$1',''))"; }
+    jget() { echo "$JOIN_JSON" | ${PYBIN:-python3} -c "import json,sys; print(json.load(sys.stdin).get('$1',''))"; }
     PRIMARY_IP=$(jget primary_ip);   [ -n "$PRIMARY_IP" ]  || die "Join key sin primary_ip"
     PRIMARY_PORT=$(jget primary_port)
     FERNET_KEY=$(jget fernet_key);   [ -n "$FERNET_KEY" ]  || die "Join key sin fernet_key"
@@ -753,7 +753,7 @@ say "Creando cuenta de servicio '${APP_USER}' y aplicando privilegios mínimos"
 NOLOGIN="$(command -v nologin || echo /usr/sbin/nologin)"
 [ -x "$NOLOGIN" ] || NOLOGIN=/bin/false
 if ! id -u "$APP_USER" >/dev/null 2>&1; then
-    useradd --system --home-dir "$APP_DIR" --shell "$NOLOGIN" \
+    useradd --system --user-group --home-dir "$APP_DIR" --shell "$NOLOGIN" \
             --comment "SATOM service account" "$APP_USER" \
         || die "No se pudo crear el usuario de servicio ${APP_USER}"
     ok "Usuario de servicio ${APP_USER} creado (sin shell, sin login)"
@@ -907,7 +907,7 @@ chown -R postgres:postgres "$PGSSL"; chmod 600 "$PGSSL/server.key"
 say "Paso 6/7 — Configuración, base de datos y servicios"
 
 if [ "$ROLE" != "secondary" ]; then
-    SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+    SECRET_KEY=$("$PYBIN" -c "import secrets; print(secrets.token_hex(32))")
     FERNET_KEY=$(venv/bin/python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
 fi
 
@@ -920,8 +920,34 @@ FLASK_ENV=production
 NODE_IP=${NODE_IP}
 WEB_PORT=${WEB_PORT}
 ENV
-chmod 600 "$APP_DIR/.env"
-ok ".env escrito (secretos con permisos 600)"
+# 640 root:<cuenta>, NO 600. satom-alerts, satom-cert-renew,
+# satom-git-publish, satom-ha-datasync y satom-node-role.sh hacen
+# `source .env` COMO LA CUENTA DE SERVICIO: con 600 root:root nacen rotos
+# y el motor de alertas nunca envia nada. root sigue siendo el DUENO (la
+# app solo LEE el fichero, asi que un write primitive en el worker no
+# puede reescribir sus propios secretos).
+chown root:"$APP_USER" "$APP_DIR/.env"
+chmod 640 "$APP_DIR/.env"
+ok ".env escrito (640 root:${APP_USER} — legible por los timers)"
+
+# ---- pg_hba: la conexion TCP local de la app ----------------------------
+# NO se puede confiar en el default de la distro: Debian trae scram-sha-256
+# para 127.0.0.1 pero openSUSE/SLES trae *ident*, que rechaza al usuario de
+# la app con FATAL antes de mirar la contrasena. La regla va INSERTADA AL
+# PRINCIPIO porque pg_hba es first-match: anadida al final quedaria detras
+# de la generica de la distro y no se evaluaria nunca.
+if ! grep -q "SATOM-LOCAL" "$PGHBA"; then
+    TMPHBA=$(mktemp)
+    {
+        echo "# SATOM-LOCAL (install-satom.sh) — first-match: va arriba"
+        echo "host    ${DB_NAME}   ${DB_USER}   127.0.0.1/32   scram-sha-256"
+        echo "host    ${DB_NAME}   ${DB_USER}   ::1/128        scram-sha-256"
+        cat "$PGHBA"
+    } > "$TMPHBA"
+    cat "$TMPHBA" > "$PGHBA"
+    rm -f "$TMPHBA"
+    ok "pg_hba: regla local scram para ${DB_USER}@${DB_NAME}"
+fi
 
 if [ "$ROLE" = "primary" ]; then
     REPL_PASS=$(openssl rand -hex 24)
@@ -1008,7 +1034,7 @@ PGC
     chown "$APP_USER:$APP_USER" "$KNOWN" 2>/dev/null || true
 
     PEER_PUB="$(cat "$HA_KEY.pub")"
-    python3 - <<PYNODES
+    "$PYBIN" - <<PYNODES
 import json
 nodes = [
     {"name": "${PRIMARY_NAME}", "host": "${PRIMARY_IP}", "role": "primary"},
@@ -1120,6 +1146,13 @@ fi
 
 systemctl daemon-reload
 systemctl enable --now satom.service satom-scheduler.service >>"$INSTALL_LOG" 2>&1
+# `enable --now` es enable+start, y `start` sobre algo YA VIVO es no-op. En
+# una reinstalacion el .env se acaba de regenerar (contrasena de BD,
+# SECRET_KEY y FERNET_KEY nuevos) y systemd lee EnvironmentFile UNA sola
+# vez, al arrancar: sin este restart el proceso viejo se queda con los
+# secretos anteriores y el login falla con "password authentication
+# failed" mientras /healthz sigue dando 200 (no toca la BD).
+systemctl restart satom.service satom-scheduler.service >>"$INSTALL_LOG" 2>&1 || true
 systemctl enable --now satom-updater.path >>"$INSTALL_LOG" 2>&1 || true
 systemctl enable --now satom-cert-renew.timer >>"$INSTALL_LOG" 2>&1 || true
 # Ambos timers llevan guarda de rol interna (primary-only), así que se
@@ -1150,6 +1183,10 @@ fi
 # Debian/Ubuntu usan sites-available/enabled; el resto de familias conf.d.
 if [ -d /etc/nginx/sites-enabled ]; then
     NGXCONF=/etc/nginx/sites-available/satom.conf
+elif [ -d /etc/nginx/vhosts.d ]; then
+    # openSUSE/SLES: vhosts.d se incluye UNA vez; conf.d aparece dos veces en el
+    # nginx.conf de fabrica, asi que un fichero ahi se parsea duplicado.
+    NGXCONF=/etc/nginx/vhosts.d/satom.conf
 else
     mkdir -p /etc/nginx/conf.d
     NGXCONF=/etc/nginx/conf.d/satom.conf
@@ -1243,12 +1280,12 @@ echo "  Logs        : ${LOG_DIR}/  ·  instalación: ${INSTALL_LOG}"
 
 if [ "$ROLE" = "primary" ]; then
     # Registro de nodos del propio primary
-    python3 - <<PYNODES
+    "$PYBIN" - <<PYNODES
 import json
 json.dump([{"name": "$(hostname)", "host": "${NODE_IP}", "role": "primary"}],
           open("${APP_DIR}/data/ha_nodes.json", "w"), indent=2)
 PYNODES
-    JOIN_JSON=$(python3 - <<PYJOIN
+    JOIN_JSON=$("$PYBIN" - <<PYJOIN
 import base64, json
 blob = {
     "primary_ip": "${NODE_IP}",

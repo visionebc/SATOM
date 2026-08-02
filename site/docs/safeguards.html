@@ -13,8 +13,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/site.css">
-<script src="../assets/site.js" defer></script>
+<link rel="stylesheet" href="../assets/site.css?v=6311595435">
+<script src="../assets/site.js?v=b2606c6bfe" defer></script>
 </head>
 <body>
 
@@ -72,6 +72,7 @@
       <a href="#8b-operator-supplied-theming">8b. Operator-supplied theming</a>
       <a href="#8c-the-public-sites-theme-layer">8c. The public site&#x27;s theme layer</a>
       <a href="#8d-the-product-icon-on-every-surface">8d. The product icon, on every surface</a>
+      <a href="#8e-brand-gradients-and-assets-a-browser-cannot-keep-stale">8e. Brand gradients, and assets a browser cannot keep stale</a>
       <a href="#9-the-alert-catalog">9. The alert catalog</a>
       <a href="#10-fresh-installs-and-what-an-offline-bundle-can-promise">10. Fresh installs, and what an offline bundle can promise</a>
       <a href="#11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</a>
@@ -683,6 +684,43 @@ this needs guards rather than a sweep:</p>
 <p>Guards: <code>tests/test_favicon.py</code>. Verified by mutation -- reverting the chooser,
 deleting the route, flattening the <code>.ico</code> to one size, dropping the link from a
 page, or reverting the generator each fails a test.</p>
+<h2 id="8e-brand-gradients-and-assets-a-browser-cannot-keep-stale">8e. Brand gradients, and assets a browser cannot keep stale</h2>
+<p>Two guards added together, because they failed together: the console could not
+express a gradient at all, and the public site could serve a stale script that
+made a working control look broken.</p>
+<p><strong>Gradients are a token kind of their own</strong> (<code>gradient</code>), validated by a
+structural pattern — <code>linear-</code>/<code>radial-gradient</code> with an optional direction and
+two to eight colour stops — not by a character allowlist. A character allowlist
+would admit any CSS function name; the shared reject list only stops <code>url(</code>
+because it happens to be listed. A companion test asserts the <em>pattern alone</em>
+refuses every escape, so the guard cannot silently start depending on the list.</p>
+<p>Three structural rules are enforced by tests rather than by review:</p>
+<ul>
+<li>a gradient is never fed to <code>border-color</code> / <code>outline-color</code> /
+  <code>text-decoration-color</code> / <code>column-rule-color</code>, which discard it <strong>silently</strong> —
+  the border disappears rather than changing colour;</li>
+<li>a gradient token never gets a contrast partner, because the auditor
+  composites two flat colours and a ramp has neither;</li>
+<li>every non-default built-in states its own gradients and glows, since a theme
+  stores only what it changes and would otherwise inherit the shipped ramp.</li>
+</ul>
+<p><strong>Built-in themes are reconciled on boot</strong>, while operator rows stay
+insert-only. Built-ins are code — the UI refuses to edit or delete them — so a
+drifted row has no intent worth preserving. Without this, an install created
+before a palette change keeps the old built-in with <code>tokens = {}</code>, and "no
+overrides" means "whatever the stylesheet is": the recovery theme would render
+the very palette it exists to escape.</p>
+<p><strong>Site assets carry a content hash.</strong> The static site is served by nginx with no
+<code>Cache-Control</code> and no <code>Expires</code>, so browsers fall back to heuristic freshness.
+That is survivable for a stylesheet and fatal for behaviour: the theme picker is
+markup in the HTML and handlers in <code>assets/site.js</code>, so a visitor with fresh
+HTML and a cached script sees three swatches that do nothing — which reads as a
+broken feature, not an old cache. <code>deploy/stamp_site_assets.py</code> rewrites every
+reference to <code>site.css?v=&lt;sha256[:10]&gt;</code>; the generator emits the same hash, and
+<code>tests/test_site_assets.py</code> fails on any bare or stale reference. The hash is
+derived from content, never from a version constant a change can forget to bump.
+No server configuration is involved, so it also holds on GitHub Pages, where the
+headers are not ours.</p>
 <h2 id="9-the-alert-catalog">9. The alert catalog</h2>
 <p>Everything above is only useful if silence means healthy. The signals that exist
 today (<code>app/services/alerts.py</code>, thresholds under Settings → Alerts, per-signal
@@ -1279,6 +1317,19 @@ which rule 3 exists to prevent.</p>
   because of that, but it mitigates rather than fixes it.</li>
 </ul>
 <h2 id="verifying-the-guards-are-armed">Verifying the guards are armed</h2>
+<h3 id="8e-brand-gradients-and-asset-stamps">8e — brand gradients and asset stamps</h3>
+<pre><code class="language-bash"># the gradient pattern refuses a declaration escape on its own
+python3 - &lt;&lt;'EOF'
+from app.services.theme_service import VALIDATORS
+bad = &quot;linear-gradient(135deg, #000 0%, #fff 100%); } body { display:none&quot;
+assert VALIDATORS[&quot;gradient&quot;].match(bad) is None
+print(&quot;gradient pattern: refuses&quot;)
+EOF
+
+# no page links a bare (uncacheable) site asset, and every stamp is current
+python3 deploy/stamp_site_assets.py --check
+grep -rl 'src=&quot;[^&quot;]*site\.js&quot;' site/ || echo &quot;no bare asset references&quot;
+</code></pre>
 <p><strong>Theming (§8b).</strong> The registry must still match the stylesheet, and a hostile
 value must be refused on the way in <em>and</em> on the way out:</p>
 <pre><code class="language-bash">cd /opt/satom

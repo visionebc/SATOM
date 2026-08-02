@@ -13,8 +13,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/site.css">
-<script src="../assets/site.js" defer></script>
+<link rel="stylesheet" href="../assets/site.css?v=6311595435">
+<script src="../assets/site.js?v=b2606c6bfe" defer></script>
 </head>
 <body>
 
@@ -65,14 +65,19 @@
       <a href="#6-logo-and-favicon">6. Logo and favicon</a>
       <a href="#7-sharing-a-theme">7. Sharing a theme</a>
       <a href="#8-what-a-theme-cannot-repaint">8. What a theme cannot repaint</a>
+      <a href="#9-brand-gradients-and-glows">9. Brand gradients and glows</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="theming-the-console">Theming the console</h1>
 <p>Settings → <strong>Appearance</strong> repaints SATOM: the design tokens the stylesheet
 exposes, plus an optional brand logo and favicon, saved as named <strong>themes</strong>.</p>
-<p>The shipped look is a theme called <strong>SATOM Classic</strong>. It is a built-in and
-carries <em>no</em> token overrides at all — it <em>is</em> the stylesheet, so it can never
-drift from it.</p>
+<p>The shipped look is a theme called <strong>SATOM Aurora</strong> — the blue/gold brand
+palette, including the brand gradients and glows. It is a built-in and carries
+<em>no</em> token overrides at all: it <em>is</em> the stylesheet, so it can never drift from
+it, and a fresh install renders it with no database rows at all.</p>
+<p>The palette that shipped before it is still available as the built-in <strong>SATOM
+Classic</strong>; unlike Aurora it carries explicit overrides, because it is no longer
+what the stylesheet says.</p>
 <hr>
 <h2 id="1-what-a-theme-is">1. What a theme is</h2>
 <p>A theme stores only the tokens it actually <strong>changes</strong>. Everything else falls
@@ -80,7 +85,7 @@ through to the stylesheet.</p>
 <p>That is the whole design decision, and it has a consequence worth stating: when
 a future release improves a default — a better border colour, a tighter radius —
 that improvement reaches every theme that never opted out of it. A theme that
-stored all 29 values would instead freeze a snapshot of an old palette and
+stored all 34 values would instead freeze a snapshot of an old palette and
 quietly diverge from the product.</p>
 <p>The token registry is <strong>generated from the stylesheet</strong> by
 <code>deploy/gen_theme_tokens.py</code>. A hand-maintained list would be a copy, and copies
@@ -227,6 +232,71 @@ those elements light. Light-canvas palettes are fully supported.</p>
 the stylesheet, tracked separately. The card, input, table and modal surfaces
 were already tokenised (<code>--fw-surface</code>, <code>--fw-surface-alt</code>) as part of this
 work; what remains is the status tints.</p>
+<hr>
+<h2 id="9-brand-gradients-and-glows">9. Brand gradients and glows</h2>
+<p>Five tokens sit in the <strong>Brand</strong> group and behave unlike the rest.</p>
+<table>
+<thead>
+<tr>
+<th>Token</th>
+<th>Kind</th>
+<th>What it paints</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>gradient-brand</code></td>
+<td><code>gradient</code></td>
+<td>Primary buttons, the top-bar hairline, the sign-in page</td>
+</tr>
+<tr>
+<td><code>gradient-accent</code></td>
+<td><code>gradient</code></td>
+<td>Secondary ramp for call-to-action fills</td>
+</tr>
+<tr>
+<td><code>glow</code></td>
+<td><code>color</code></td>
+<td>Halo behind the brand mark, hover shadows</td>
+</tr>
+<tr>
+<td><code>glow-accent</code></td>
+<td><code>color</code></td>
+<td>Warm half of the halo</td>
+</tr>
+<tr>
+<td><code>glow-strength</code></td>
+<td><code>ratio</code></td>
+<td><code>0</code> disables every glow, <code>1</code> is full strength</td>
+</tr>
+</tbody>
+</table>
+<p>Three rules hold, and each has a concrete failure behind it.</p>
+<p><strong>A gradient is paint, not a colour.</strong> <code>border-color</code>, <code>outline-color</code>,
+<code>text-decoration-color</code> and <code>column-rule-color</code> accept only a colour and
+<strong>silently discard</strong> a gradient — the border does not turn the wrong colour, it
+disappears. A gradient belongs in <code>background-image</code> or <code>border-image</code>.
+<code>tests/test_theme.py</code> greps the stylesheet and fails if one is ever fed to a
+property that drops it.</p>
+<p><strong>The contrast auditor cannot judge a ramp.</strong> It composites two flat colours; a
+gradient has neither a single foreground nor a single background. Gradient
+tokens therefore have no contrast partner, and a test asserts none is ever
+added — a report that appeared authoritative about a number it cannot compute
+would be worse than no report.</p>
+<p><strong>Every non-default theme must state its own gradients.</strong> A theme stores only
+what it changes, so a palette that leaves the gradients alone inherits the
+<em>shipped</em> blue ramp: an amber console would paint blue-ramped buttons and an
+ember one would glow electric blue. The stylesheet default belongs only to the
+theme that <em>is</em> the stylesheet. A test enforces this for every built-in.</p>
+<h3 id="built-ins-are-reconciled-not-just-seeded">Built-ins are reconciled, not just seeded</h3>
+<p>Operator themes are never touched by the seeder. Built-in rows <strong>are</strong>, on every
+boot, because they are code: the UI refuses to edit or delete them, so there is
+no operator intent to preserve, and a stale one is a live hazard.</p>
+<p>The concrete case: an install created before the palette change holds
+<code>satom-classic</code> with <code>tokens = {}</code>. "No overrides" means "whatever the
+stylesheet is" — so after the change that row would have rendered the <em>new</em>
+palette under the <em>old</em> name, i.e. the recovery theme handing back the look you
+were trying to escape.</p>
     </div>
   </div>
 </section>

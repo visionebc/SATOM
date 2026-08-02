@@ -99,7 +99,7 @@ def head(title: str, description: str, up: str, active: str) -> str:
 {GENERATED_NOTE}
 <head>
 <meta charset="UTF-8">
-<script>(function(){{try{{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){{document.documentElement.setAttribute("data-theme",t);}}}}catch(e){{}}}})();</script>
+<script>(function(){{var d=document.documentElement;d.className+=" js";setTimeout(function(){{if(!window.__satomReveal){{d.className=d.className.replace(" js","");}}}},2500);try{{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){{document.documentElement.setAttribute("data-theme",t);}}}}catch(e){{}}}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{html.escape(title)} — SATOM</title>
 <meta name="description" content="{html.escape(description)}">
@@ -198,7 +198,8 @@ def render_doc(md_name: str, slug: str, title: str, icon: str, blurb: str) -> st
     <span class="cico">🕶️</span>
     <p><b>Published copy.</b> Internal addresses, hostnames and device names are replaced
     with <code>{{placeholders}}</code>. The unredacted original is <code>{html.escape(source.relative_to(ROOT_DIR).as_posix())}</code>
-    in the repository and is rendered inside the application at <code>/docs</code>.</p>
+    in the repository, and is readable on the appliance itself with
+    <code>satom show docs</code>.</p>
   </div>
 </header>
 

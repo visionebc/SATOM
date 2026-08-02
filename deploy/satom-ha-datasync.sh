@@ -80,7 +80,10 @@ MODE="${PROBE##*|}"
 [ "$MODE" = "standalone" ] && exit 0
 
 # --- peer discovery --------------------------------------------------------
-PEER=$(python3 - <<'PYEOF'
+# El interprete es el del venv de la app, igual que la sonda de rol de arriba:
+# existe siempre en un nodo instalado y no depende de que la distro tenga un
+# symlink /usr/bin/python3 (openSUSE no lo tiene).
+PEER=$("$APP/venv/bin/python" - <<'PYEOF'
 import json, socket, subprocess
 # Peer discovery keys off THIS NODE'S OWN IP ADDRESSES, never its hostname.
 # Hostname matching silently broke when the LXCs were renamed: ha_nodes.json
@@ -109,7 +112,17 @@ for n in nodes:
     break
 PYEOF
 )
-[ -z "${PEER}" ] && exit 0
+PEER_RC=$?
+# "no pude evaluar" y "no hay peer configurado" NO son lo mismo, y tratarlos
+# igual es como esta unidad reportaba SUCCESS mientras no sincronizaba nada.
+if [ "$PEER_RC" -ne 0 ]; then
+    echo "datasync: no se pudo determinar el peer desde data/ha_nodes.json (rc=$PEER_RC)" >&2
+    exit 1
+fi
+if [ -z "${PEER}" ]; then
+    echo "datasync: ha_nodes.json no lista ningún peer distinto de este nodo — nada que sincronizar" >&2
+    exit 0
+fi
 
 [ -r "$SSH_KEY" ] || { echo "datasync: falta la llave $SSH_KEY" >&2; exit 1; }
 

@@ -703,6 +703,28 @@ div.fw-nav-section.fw-nav-context-label {
 .fw-modal .btn-close { filter: invert(1); }
 .fw-modal .modal-footer { border-top: 1px solid var(--fw-border-light); background: var(--fw-surface-alt); }
 
+/* Bootstrap chrome that themes must reach too — .modal-content and
+   .dropdown-menu ship a hardcoded white background from bootstrap.min.css;
+   without this override a custom theme's --fw-surface never reaches them. */
+.modal-content {
+  background: var(--fw-surface);
+  color: var(--fw-text-primary);
+  border: 1px solid var(--fw-border-light);
+  border-radius: var(--fw-radius-lg);
+}
+.modal-backdrop.show { opacity: .55; background: var(--fw-topbar-bg); }
+.dropdown-menu {
+  background: var(--fw-surface);
+  border: 1px solid var(--fw-border);
+  color: var(--fw-text-primary);
+  box-shadow: var(--fw-card-shadow-hover);
+}
+.dropdown-item { color: var(--fw-text-primary); }
+.dropdown-item:hover, .dropdown-item:focus {
+  background: var(--fw-content-bg); color: var(--fw-text-primary);
+}
+.dropdown-divider { border-color: var(--fw-border-light); }
+
 /* ============================================================
    Alerts & Flash Messages
    ============================================================ */

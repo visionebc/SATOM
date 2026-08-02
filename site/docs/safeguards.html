@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Safeguards — full catalog — SATOM</title>
 <meta name="description" content="Every protection: what it prevents, where it lives, and the command that proves it is armed.">
+<link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -70,6 +71,7 @@
       <a href="#8-sessions-and-the-web-surface">8. Sessions and the web surface</a>
       <a href="#8b-operator-supplied-theming">8b. Operator-supplied theming</a>
       <a href="#8c-the-public-sites-theme-layer">8c. The public site&#x27;s theme layer</a>
+      <a href="#8d-the-product-icon-on-every-surface">8d. The product icon, on every surface</a>
       <a href="#9-the-alert-catalog">9. The alert catalog</a>
       <a href="#10-fresh-installs-and-what-an-offline-bundle-can-promise">10. Fresh installs, and what an offline bundle can promise</a>
       <a href="#11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</a>
@@ -648,6 +650,39 @@ correctly rather than unstyled.</p>
 <p><strong>Not guarded, on purpose.</strong> The stored preference is per browser; there is no
 server to hold it. A visitor's choice does not follow them across devices, and
 the console's theme (section 8b) is a separate setting with a separate store.</p>
+<h2 id="8d-the-product-icon-on-every-surface">8d. The product icon, on every surface</h2>
+<p>A rebrand is only finished when the icon in the tab has changed. Three defects
+found on 2026-08-02, after the palette and the logo were already live, show why
+this needs guards rather than a sweep:</p>
+<ul>
+<li>The ADOM chooser -- the FIRST page after login -- still served the <em>vendor</em>
+  mark as both its favicon and its header logo. No text sweep for the old
+  project names could ever find it: the filename says neither.</li>
+<li><code>/favicon.ico</code> returned 404 on all three hosts. Browsers request that path on
+  their own, regardless of any <code>&lt;link rel="icon"&gt;</code> tag, and they cache the
+  ANSWER -- a 404 included. A missing route is exactly why a stale icon
+  outlives a rebrand.</li>
+<li>The shipped fallback itself was the vendor logo, so any install with no theme
+  asset served someone else's brand.</li>
+</ul>
+<p>The rules:</p>
+<ul>
+<li><strong>No live template may reference the vendor mark.</strong> Editor backups
+  (<code>*.bak*</code>, <code>*.pre-*</code>) are excluded -- they are not surfaces.</li>
+<li><strong>The bare-root <code>/favicon.ico</code> must answer.</strong> The active theme's favicon
+  wins; the shipped product mark is the fallback, so a fresh install with no
+  theme asset still gets the product icon.</li>
+<li><strong>The <code>.ico</code> carries 16/32/48 and keeps its alpha.</strong> One opaque bitmap is why
+  rebrands look half-done: the browser upscales it and the square plate fights
+  every tab strip. The mark reads on light and dark tabs because 47% of its
+  opaque pixels are bright (mean luminance 109 at 16px) -- measured, not
+  assumed.</li>
+<li><strong>Every site page declares it, generated pages included.</strong> The docs generator
+  is a separate surface and has drifted from the curated pages before.</li>
+</ul>
+<p>Guards: <code>tests/test_favicon.py</code>. Verified by mutation -- reverting the chooser,
+deleting the route, flattening the <code>.ico</code> to one size, dropping the link from a
+page, or reverting the generator each fails a test.</p>
 <h2 id="9-the-alert-catalog">9. The alert catalog</h2>
 <p>Everything above is only useful if silence means healthy. The signals that exist
 today (<code>app/services/alerts.py</code>, thresholds under Settings → Alerts, per-signal
@@ -1471,6 +1506,18 @@ curl -sk -H &quot;Host: &lt;site-host&gt;&quot; https://127.0.0.1/index.html \
 
 # the generated pages did not drift from the curated ones
 venv/bin/python3 deploy/gen_site_docs.py --check
+</code></pre>
+<h3 id="the-product-icon-is-on-every-surface-8d">The product icon is on every surface (8d)</h3>
+<pre><code class="language-bash"># the bare-root path the browser asks for on its own -- must not be 404
+curl -sk -o /dev/null -w '%{http_code}\n' https://&lt;node&gt;/favicon.ico
+
+# no live template serves the vendor mark
+cd /opt/satom &amp;&amp; grep -rln 'img/favicon.svg' app/templates/ \
+  | grep -v '\.bak\|\.pre-' || echo 'clean'
+
+# the .ico carries several resolutions and stays transparent
+venv/bin/python3 -c &quot;from PIL import Image; i=Image.open('site/favicon.ico'); \
+  print(sorted(i.info['sizes']))&quot;
 </code></pre>
 <h2 id="related">Related</h2>
 <ul>

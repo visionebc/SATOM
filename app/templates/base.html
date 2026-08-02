@@ -15,7 +15,7 @@
   <title>{% block title %}{{ product.title if product else 'SATOM' }}{% endblock %}</title>
 
   <!-- Favicon (Fortinet) -->
-  <link rel="icon" href="{{ theme_favicon_url or url_for('static', filename='img/favicon.svg') }}">
+  <link rel="icon" href="{{ theme_favicon_url or url_for('static', filename='img/favicon.png') }}">
 
   <!-- Bootstrap 5.3 (vendored locally) -->
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}">

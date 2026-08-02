@@ -1208,6 +1208,21 @@ UNIT
 fi
 
 systemctl daemon-reload
+# --- SATOM-OWNERSHIP-SWEEP -------------------------------------------------
+# El chown -R del paso 5 ocurre ANTES de que el instalador escriba data/logs,
+# data/acme, data/jobs y data/ha_nodes.json, que crea corriendo como root. Un
+# directorio 0700 root-owned bajo data/ hace fallar el rsync del standby con
+# Permission denied aunque la autenticacion sea correcta (paso en produccion
+# con data/acme), y un arbol de propiedad mixta erosiona el modelo de
+# privilegio: self_update_runner deriva la cuenta del DUENO DEL ARBOL para
+# escribir el drop-in User=. .env se excluye a proposito: es root:<cuenta> 640
+# porque la app solo lo LEE.
+find "$APP_DIR" -path "$APP_DIR/venv" -prune -o -path "$APP_DIR/.env" -prune \
+     -o ! -user "$APP_USER" -exec chown "$APP_USER:$APP_USER" {} + 2>/dev/null || true
+chown -R "$APP_USER:$APP_USER" "$LOG_DIR" 2>/dev/null || true
+chown root:"$APP_USER" "$APP_DIR/.env"; chmod 640 "$APP_DIR/.env"
+ok "Propiedad del arbol consolidada en ${APP_USER} (.env sigue root:${APP_USER} 640)"
+
 systemctl enable --now satom.service satom-scheduler.service >>"$INSTALL_LOG" 2>&1
 # `enable --now` es enable+start, y `start` sobre algo YA VIVO es no-op. En
 # una reinstalacion el .env se acaba de regenerar (contrasena de BD,

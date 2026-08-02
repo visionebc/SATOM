@@ -293,6 +293,139 @@ in `.git/`, `data/jobs/` and `reports/`. The symptoms are indirect: git publish
 keeps working, because git renames refs and only needs the directory, while some
 other write fails quietly.
 
+### The complete table
+
+Everything above is a curated tour — grouped, with the reasoning. The table
+below is the *exhaustive* list, and it is **generated from the live registry**
+(`deploy/satom_cli/tree.py`) by `deploy/gen_cli_reference.py`. A hand-typed
+enumeration of this many commands goes stale at the fifth addition, and the
+person who most needs it is the one whose web interface is down and who cannot
+check. `tests/test_docs_publication.py` fails the suite when this block no
+longer matches the console you are running.
+
+<!-- BEGIN GENERATED COMMAND REFERENCE -->
+
+*84 commands in 31 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+
+### `get`
+
+Read state. Every command below works as **any user** — this is the half of the console that has to keep working when everything else does not.
+
+| Command | Root | ! | What it does |
+|---|:--:|:--:|---|
+| `satom get system status` | — | — | Identity, version, HA role and your privilege level. |
+| `satom get system health` | — | — | One-shot roll-up: units, /healthz, disk. Start here. |
+| `satom get system performance` | — | — | CPU, memory and filesystem usage. |
+| `satom get system interface` | — | — | IP addresses and the ports SATOM cares about. |
+| `satom get system disk` | — | — | Space, inodes, and the directories that actually grow. |
+| `satom get system time` | — | — | Clock and NTP. Skew breaks TLS, ACME and every 'age' here. |
+| `satom get service status [<service>]` | — | — | State of one unit, or all of them. |
+| `satom get timer status` | — | — | Enabled, last fire, next fire, last result. |
+| `satom get node status` | — | — | Role, peer list and peer reachability over :8443. |
+| `satom get database status` | — | — | Connection, size, replication. |
+| `satom get certificate status` | — | — | Served certificate, expiry and the renewal journal. |
+| `satom get certificate list` | — | — | Every certificate this node holds, not just the served one. |
+| `satom get backup status` | — | — | All four, side by side, with their real ages. |
+| `satom get backup list` | — | — | Database bundles you can hand to 'execute restore db'. |
+| `satom get scheduler status` | — | — | What exists, when it last ran, what is overdue. |
+| `satom get device status` | — | — | Sync state, maintenance flag, last contact. |
+| `satom get monitor status` | — | — | Probe states, and how much coverage is disabled. |
+| `satom get job list` | — | — | The ledger, including ghosts that keep the dock's toast open. |
+| `satom get update history` | — | — | Recent updates and whether the runner ever picked them up. |
+| `satom get git status` | — | — | Branch, drift, unpushed age, parked safety refs. |
+| `satom get user list` | — | — | Who can log in — and whether anyone still can. |
+| `satom get alerts status` | — | — | Whether anyone is actually told when something breaks. |
+| `satom get log <service> [lines]` | — | — | Tail a unit's journal. |
+
+### `show`
+
+Configuration, reference material and the console's own map. Also unprivileged: `show sudoers` prints the rule you need *before* you have it.
+
+| Command | Root | ! | What it does |
+|---|:--:|:--:|---|
+| `satom show config` | — | — | The .env, with secrets redacted. |
+| `satom show units` | — | — | Alias -> systemd unit map, with install state. |
+| `satom show services` | — | — | What each unit is FOR, and which ones are off limits. |
+| `satom show paths` | — | — | Canonical filesystem layout: what is replicated, what is not. |
+| `satom show ports` | — | — | Which port belongs to which listener, and why. |
+| `satom show schedule` | — | — | What SHOULD run and how often. |
+| `satom show runbook [<topic>]` | — | — | Offline recovery procedures. 'show runbook' lists them. |
+| `satom show privilege` | — | — | How privilege is split here, and why. Read this first. |
+| `satom show sudoers [<account>]` | — | — | Print the sudoers rule to request for an operator account. |
+| `satom show changelog` | — | — | The most recent release notes from the tree. |
+| `satom show version` | — | — | Versions of the app, the CLI and Python. |
+| `satom show tree [<prefix>...] [--commands] [--depth N] [--root] [--danger]` | — | — | The WHOLE command tree in one view. Filters: --commands/--depth/--root. |
+
+### `diagnose`
+
+Active probes that reach out — sockets, database handshakes, compilers, peers. Unprivileged, but they take longer than `get`.
+
+| Command | Root | ! | What it does |
+|---|:--:|:--:|---|
+| `satom diagnose all` | — | — | Every check, folded into one exit code. |
+| `satom diagnose service <service>` | — | — | One unit: state, definition, drop-ins, journal. |
+| `satom diagnose install` | — | — | Is this node ARMED, or merely installed? Run on day one. |
+| `satom diagnose code` | — | — | Is each process running the code that is on disk? |
+| `satom diagnose scheduler` | — | — | Is anything automated actually firing here? |
+| `satom diagnose units` | — | — | Unit inventory and whether the privilege model survived. |
+| `satom diagnose config` | — | — | The .env: present, correctly owned, internally consistent. |
+| `satom diagnose database` | — | — | Connect, replication role, TLS, lock waits. |
+| `satom diagnose python` | — | — | venv integrity, compileall, and the LAZY-import smoke test. |
+| `satom diagnose network` | — | — | Listening ports, nginx -t, local HTTPS probe. |
+| `satom diagnose nginx` | — | — | Syntax, which vhost wins :443, and the ACME redirect trap. |
+| `satom diagnose certificate` | — | — | Expiry, live handshake, renewal timer result. |
+| `satom diagnose acme` | — | — | Client, account key, webroot, provider credentials. |
+| `satom diagnose peer` | — | — | Peer reachability, datasync key and timer. |
+| `satom diagnose git` | — | — | Repository integrity, including the root-owned-files trap. |
+| `satom diagnose privilege` | — | — | Integrity of the CLI install and the sudo boundary. |
+
+### `execute`
+
+Everything that changes state. **Root required.** Without it each command refuses with the full command line you tried and exit code 3, never a traceback.
+
+| Command | Root | ! | What it does |
+|---|:--:|:--:|---|
+| `satom execute restart <service>` | yes | — | Restart a service and VERIFY it actually came back. |
+| `satom execute restart-all` | yes | — | Restart the whole stack in order, then verify /healthz. |
+| `satom execute start <service>` | yes | — | Start a service. |
+| `satom execute stop <service>` | yes | — | Stop a service. |
+| `satom execute enable <unit>` | yes | — | Enable a timer or .path unit (--now). |
+| `satom execute disable <unit>` | yes | — | Disable a timer. Refuses the privileged runner. |
+| `satom execute reload nginx` | yes | — | Validate the config, then reload nginx. |
+| `satom execute seed actions [--yes]` | yes | — | The minimum scheduled actions. Shows the plan; --yes applies. |
+| `satom execute update code [<target>]` | yes | — | Queue a git update — or a rollback, by passing a commit. |
+| `satom execute update pip <package> <version>` | yes | — | Queue a curated-allowlist package change. Node-local. |
+| `satom execute update status [<id>]` | — | — | Show the latest (or a specific) update record. |
+| `satom execute reinstall venv` | yes | ! | Recreate venv/ from requirements.txt. Needs --yes; keeps a freeze to roll back to. |
+| `satom execute reinstall units` | yes | — | Re-copy the systemd units AND re-pin User= via drop-in. |
+| `satom execute reinstall cli` | yes | — | Refresh the root-owned copy of this CLI from the repo. |
+| `satom execute repair permissions` | yes | — | Give root-owned files in the app tree back to the service account. |
+| `satom execute repair jobs [--older-than N] [--yes]` | yes | ! | Sweep ghost jobs and prune the terminated ledger. |
+| `satom execute repair tmp [--older-than N] [--yes]` | yes | ! | Delete aged scratch under data/tmp. Nothing else prunes it. |
+| `satom execute cert renew` | yes | — | Run the renewal pass now instead of waiting for 03:30. |
+| `satom execute alerts run [--dry-run]` | yes | — | Evaluate the health checks now. |
+| `satom execute backup db` | yes | — | pg_dump the application database into data/system_backups/. |
+| `satom execute backup git` | yes | — | git bundle --all, including the parked safety refs. |
+| `satom execute restore db <file> --yes` | yes | ! | Replace the database from a bundle. Dumps the current one first. |
+| `satom execute admin reset-password <username>` | yes | — | Set a password (asked interactively, never in argv). |
+| `satom execute admin unlock <username>` | yes | — | Clear a lockout without touching the password. |
+| `satom execute scheduler run <action-id>` | yes | — | Fire one action NOW as a manual run. |
+| `satom execute scheduler enable <action-id>` | yes | — | Enable one action. |
+| `satom execute scheduler disable <action-id>` | yes | — | Disable one action. |
+| `satom execute support bundle` | yes | — | Collect every diagnostic and journal into one 0600 file. |
+| `satom execute maintenance <device> <on\|off>` | yes | — | Park or un-park an appliance. |
+| `satom execute preflight [<label>]` | yes | — | Capture a health baseline BEFORE a risky change. |
+| `satom execute postflight` | yes | — | Diff the current health against the last preflight. |
+| `satom execute promote` | yes | ! | Promote this standby to primary. Requires --yes. |
+
+### `tree`
+
+| Command | Root | ! | What it does |
+|---|:--:|:--:|---|
+| `satom tree [<prefix>...] [--commands] [--depth N] [--root] [--danger]` | — | — | The whole command tree. Alias for 'show tree'. |
+
+<!-- END GENERATED COMMAND REFERENCE -->
+
 ---
 
 ## 4. Exit codes

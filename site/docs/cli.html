@@ -578,7 +578,7 @@ check. <code>tests/test_docs_publication.py</code> fails the suite when this blo
 longer matches the console you are running.</p>
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-<p><em>84 commands in 31 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
+<p><em>85 commands in 32 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
 <h3 id="get"><code>get</code></h3>
 <p>Read state. Every command below works as <strong>any user</strong> — this is the half of the console that has to keep working when everything else does not.</p>
 <table>
@@ -980,6 +980,12 @@ longer matches the console you are running.</p>
 <td style="text-align: center;">yes</td>
 <td style="text-align: center;">—</td>
 <td>Validate the config, then reload nginx.</td>
+</tr>
+<tr>
+<td><code>satom execute reset theme</code></td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: center;">—</td>
+<td>Activate the built-in theme — the way back from a palette that made the console unreadable.</td>
 </tr>
 <tr>
 <td><code>satom execute seed actions [--yes]</code></td>

@@ -276,6 +276,33 @@ silent.
 | Docs / plugin routes | Slugs validated against an allowlist and the resolved path re-checked inside its directory |
 | TOTP + backup codes | Second factor for local accounts; directory accounts do MFA at the directory |
 
+## 8b. Operator-supplied theming
+
+Settings → Appearance lets an admin repaint the console. That means operator
+input reaches a `<style>` element carrying the app's own CSP nonce, and it means
+an operator can make the console unreadable. Both are guarded.
+
+| Guard | What it prevents | Where |
+|---|---|---|
+| Per-**kind** value allowlist (`color`/`length`/`shadow`/`transition`/`font`) | A token value escaping its declaration — `}` would close the rule and open a new one, nonce included | `theme_service.VALIDATORS` |
+| Shared reject list (`;{}<>`, `url(`, `expression(`, `@import`, `javascript:`, newlines) | The wider kinds. A colour pattern stops everything alone, but `shadow`/`font` legitimately allow letters and parentheses, so `url(evil)` matches the shadow character class | `theme_service._FORBIDDEN` |
+| `css_for()` re-validates on **emission** | A hostile row that never went through the form — restored backup, replica, hand-edited `psql` | `theme_service.css_for` |
+| Only overrides are stored | A theme freezing a snapshot of an old palette and silently diverging from stylesheet improvements | `validate_tokens` drops values equal to the default |
+| Registry generated from the stylesheet, `--check` in the suite | A new `--fw-*` variable leaving the editor silently missing a control | `deploy/gen_theme_tokens.py`, `tests/test_theme.py` |
+| Contrast audit; below 3.0:1 needs explicit confirmation | Applying an unreadable palette **without being told**. It warns rather than blocks — an operator may accept a low-contrast accent | `theme_service.audit_contrast` |
+| Built-ins immutable; deleting the active theme falls back | Locking yourself out of the page that would fix it | `settings.update_theme` / `delete_theme` |
+| Brand assets: bare filename only, SVG sanitised, rasters re-encoded | A stored path escaping `data/branding/`, and script-carrying SVG in the DOM | `settings.theme_asset` / `_save_theme_asset` |
+
+**Recovery, in order of how broken things are:** Settings → Appearance → *Revert
+to the shipped look* · activate any built-in · `satom execute reset theme` from
+a shell when the UI is unusable.
+
+**Limits, stated on purpose.** Status badges and some decorative tints still
+carry literal colours in the stylesheet, so a dark canvas is not offered — it
+would leave those elements light. And the path-separator check on brand assets
+is a *second* layer: werkzeug's `safe_join` refuses traversal on its own, so the
+test asserts the 404 outcome rather than which layer fired.
+
 ## 9. The alert catalog
 
 Everything above is only useful if silence means healthy. The signals that exist
@@ -887,6 +914,24 @@ which rule 3 exists to prevent.
   because of that, but it mitigates rather than fixes it.
 
 ## Verifying the guards are armed
+
+**Theming (§8b).** The registry must still match the stylesheet, and a hostile
+value must be refused on the way in *and* on the way out:
+
+```bash
+cd /opt/satom
+python3 deploy/gen_theme_tokens.py --check          # exits 1 on drift
+set -a && . ./.env && set +a
+venv/bin/python3 -c "
+from app import create_app
+from app.services import theme_service as t
+with create_app().app_context():
+    print('rejected on save :', bool(t.validate_tokens({'accent': '#fff; } html{}'})[1]))
+    print('rejected on emit :', t.css_for({'accent': '#fff; } html{}'}) == '')
+    print('unreadable caught:', t.has_unreadable({'text-primary': '#EDEDED'}))
+    print('active theme     :', t.active_theme()['name'])
+"
+```
 
 ### The operator console
 

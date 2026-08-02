@@ -15,7 +15,7 @@
   <title>{% block title %}{{ product.title if product else 'SATOM' }}{% endblock %}</title>
 
   <!-- Favicon (Fortinet) -->
-  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
+  <link rel="icon" href="{{ theme_favicon_url or url_for('static', filename='img/favicon.svg') }}">
 
   <!-- Bootstrap 5.3 (vendored locally) -->
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}">
@@ -23,6 +23,12 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
   <!-- FortiWeb CSS -->
   <link rel="stylesheet" href="{{ asset('css/fortiweb.css') }}" data-turbo-track="reload">
+
+  {# Active UI theme (Settings -> Appearance). Overrides only — a theme stores
+     just the design tokens it changes, so stylesheet updates keep reaching it.
+     Nonced because style-src-elem is nonce-gated; values are allowlisted per
+     token kind in theme_service before they ever get here. #}
+  {% if theme_css %}<style nonce="{{ csp_nonce }}">{{ theme_css }}</style>{% endif %}
 
   <!-- ============================================================
        Turbo Drive — client-side navigation so background jobs (firmware
@@ -63,7 +69,7 @@
 
   <a href="{{ url_for('product.fortiadc_home') if product.key == 'fortiadc' else (url_for('index') if product.key == 'global' else (url_for('product.placeholder_home') if product.placeholder else url_for('workspace.index'))) }}"
      class="fw-topbar-brand">
-    <img src="{{ url_for('static', filename=product.mark) }}" alt="{{ product.name }}"
+    <img src="{{ theme_logo_url or url_for('static', filename=product.mark) }}" alt="{{ product.name }}"
          style="width:28px;height:28px;flex-shrink:0;">
     <span>{{ product.title }}</span>
   </a>

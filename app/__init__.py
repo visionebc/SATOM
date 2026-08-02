@@ -637,6 +637,39 @@ def create_app(config_override: object | None = None) -> Flask:
     def _inject_csp_nonce():
         return {"csp_nonce": getattr(g, "csp_nonce", "")}
 
+    @app.context_processor
+    def _inject_theme():
+        """Active UI theme (Settings -> Appearance): the ``:root`` override
+        block plus optional brand overrides.
+
+        Emitted as a nonced <style> in base.html rather than a stylesheet file
+        because it is per-install DB state, not an asset: a file would have to
+        be regenerated on every node after every edit and would drift on the
+        standby, whose Postgres is a read-only replica.
+
+        Failure here degrades to the shipped stylesheet; theming must never be
+        able to take a page down.
+        """
+        try:
+            from .services import theme_service as _theme
+            t = _theme.active_theme()
+        except Exception:
+            return {"theme_css": "", "theme_logo_url": "",
+                    "theme_favicon_url": "", "theme_name": ""}
+        from flask import url_for as _url_for
+        logo = favicon = ""
+        try:
+            if t.get("logo"):
+                logo = _url_for("settings.theme_asset", theme_id=t["id"],
+                                kind="logo")
+            if t.get("favicon"):
+                favicon = _url_for("settings.theme_asset", theme_id=t["id"],
+                                   kind="favicon")
+        except Exception:
+            logo = favicon = ""
+        return {"theme_css": t.get("css", ""), "theme_logo_url": logo,
+                "theme_favicon_url": favicon, "theme_name": t.get("name", "")}
+
     @app.after_request
     def set_security_headers(response):
         # Plugin frame route (views/plugins.py) sets SAMEORIGIN so it can be
@@ -1119,6 +1152,9 @@ def create_app(config_override: object | None = None) -> Flask:
     # schema) can import the app without create_all racing the migration.
     if not os.environ.get("FORTINET_SKIP_DB_BOOTSTRAP"):
         with app.app_context():
+            # Imported for its side effect: db.create_all() only creates tables
+            # whose model class has been imported.
+            from . import models_theme  # noqa: F401
             db.create_all()
             _ensure_columns()
             _ensure_indexes()
@@ -1128,6 +1164,7 @@ def create_app(config_override: object | None = None) -> Flask:
             _seed_registry()
             _seed_acme_providers()
             _seed_adoms()
+            _seed_themes()
             _seed_capacity()
             if not app.config.get("TESTING"):
                 _seed_reports()
@@ -1411,6 +1448,24 @@ def _seed_adoms() -> None:
         if added:
             logging.getLogger(__name__).info(
                 "ADOM seed: %d ADOMs imported into the registry", added)
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()
+
+
+def _seed_themes() -> None:
+    """Insert-only seed of the built-in UI themes (``ui_themes`` table).
+
+    Operator-created themes are never touched (seed is keyed by ``slug``), and
+    the built-ins cannot be edited or deleted — they are the recovery path when
+    a custom palette makes the console unreadable.
+    """
+    import logging
+    try:
+        from .services.theme_service import seed_defaults
+        added = seed_defaults()
+        if added:
+            logging.getLogger(__name__).info(
+                "Theme seed: %d built-in themes imported", added)
     except Exception:  # noqa: BLE001 — never block boot on seeding
         db.session.rollback()
 

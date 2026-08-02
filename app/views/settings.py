@@ -1346,11 +1346,13 @@ def _theme_redirect():
 
 
 @bp.route('/appearance/asset/<int:theme_id>/<kind>')
-@login_required
 def theme_asset(theme_id, kind):
-    """Serve a theme's brand asset. Any authenticated user — it renders on every
-    page — but the filename comes from the DB row, never from the URL, so the
-    path cannot be traversed."""
+    """Serve a theme's brand asset. No auth gate on purpose: the logo/favicon
+    now render on the login, forgot-password, reset-password and 2FA pages too
+    (theme_service._inject_theme is a global context processor), so a session
+    requirement here would 404 the icon on every page a signed-out visitor can
+    reach. Not sensitive data — a PNG/SVG brand mark — and the filename comes
+    from the DB row, never from the URL, so the path cannot be traversed."""
     if kind not in _THEME_ASSET_KINDS:
         abort(404)
     row = UiTheme.query.get_or_404(theme_id)

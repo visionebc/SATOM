@@ -4,7 +4,67 @@ All notable changes to SATOM are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/). This is a public, open-source
 project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
-## [Unreleased]
+## [1.3] - 2026-08-02
+
+### Added
+- **The manual is reachable from the sign-in screen.** The login page offered a
+  link to the API manual and nothing else. The person who cannot get in is
+  exactly the person who needs the installation guide, the operator-console
+  reference and the recovery runbooks — and on an isolated management network
+  there is no other copy to reach. `/docs/public` now publishes the whole
+  manual without a session, grouped in reading order, and the sign-in page
+  links to it beside the API manual.
+- **The API manual is a destination on the public site, not a buried card.**
+  It was reachable only by opening the documentation hub and scrolling to the
+  fourth group. `API` is now a top-level entry in the navigation and the footer
+  of all 27 site pages.
+- **An offline bundle for openSUSE / SLES 15.** The distribution was validated
+  online — a whole HA pair was installed on it — while the only way to install
+  it stayed *fetch everything from the internet*, which is precisely what an
+  isolated management network cannot do. `installers/build-offline-bundle-suse.sh`
+  produces one, and the installer accepts it from `bundle/rpms-suse/`.
+  A directory of its own, not `rpms/`: both bundles are RPM and they are **not**
+  interchangeable (`python311` vs `python3.11`, different base library versions,
+  and zypper and dnf do not read repositories the same way). Separating them
+  turns "wrong bundle" into an explicit refusal before anything is touched,
+  instead of a dependency resolution that fails halfway through an install.
+  On the target, zypper is handed a repository directory of its own
+  (`--reposd-dir`) containing only the bundle — no network, no change to the
+  system's repositories, and no repository left registered afterwards.
+
+- **One publication registry, shared by both published surfaces.**
+  `app/services/doc_publication.py` owns the list of publishable documents, the
+  redaction table and the scanner; `deploy/gen_site_docs.py` imports them
+  instead of declaring them. It loads the module by path rather than importing
+  the `app` package, because the site build has to keep working on a tree whose
+  application code does not compile — that has happened. A structural test
+  fails the suite if the generator ever re-declares any of it.
+
+### Fixed
+- **`/docs/api` was public and served the document unredacted.** The route
+  needed no session and rendered `docs/api_v1.md` verbatim, so a management
+  hostname and an RFC1918 address were readable by anyone who could load the
+  login page. The redact-then-scan pipeline that guards the public web site
+  existed only inside the site generator, where the application could not reuse
+  it. Every publicly served document now goes through it, and the scan is
+  fail-closed: a page whose rendered output still carries an internal
+  identifier is not served at all. Refusing to answer is recoverable; an
+  inventory disclosure is not.
+- **The four sign-in pages and the public documentation needed public internet
+  to lay themselves out.** They pulled Bootstrap from a CDN while the same
+  files sat vendored in `static/vendor/`. This product ships offline installers
+  for isolated management networks — an unstyled sign-in page is the first
+  thing an operator sees there.
+- **The five hand-written site pages had drifted from the generated chrome.**
+  `index.html` had lost its `Docs` footer link entirely. Their navigation and
+  footer are now rebuilt from the same single definition the generated pages
+  use, so an added destination lands on every page at once.
+- **The public documentation shell still showed the pre-rename `FM` placeholder
+  box** in place of a logo and hard-coded the old chrome colours, so it ignored
+  the theme engine — the same defect the sign-in pages carried until 2026-08-02.
+- **The in-app manual inserted a line break at every source wrap.** `docs/*.md`
+  is hard-wrapped at about 90 columns and the renderer had `nl2br` enabled, so
+  every wrap became a visible break. The published renderer never had it.
 
 ### Fixed
 - **A cluster on openSUSE never replicated files at all, and five more defects

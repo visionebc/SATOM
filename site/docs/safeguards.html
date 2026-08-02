@@ -29,6 +29,7 @@
         <a href="../architecture.html">Architecture</a>
         <a href="../safeguards.html">Safeguards</a>
         <a href="../docs.html" class="active">Docs</a>
+        <a href="../docs/api.html">API</a>
         <a href="../install.html">Install</a>
       </div>
       <div class="theme-pick" role="group" aria-label="Colour theme">
@@ -68,6 +69,7 @@
       <a href="#6-certificates">6. Certificates</a>
       <a href="#7-files-coming-from-outside">7. Files coming from outside</a>
       <a href="#7b-documentation-leaving-the-building">7b. Documentation leaving the building</a>
+      <a href="#7c-the-manual-that-is-readable-without-a-session">7c. The manual that is readable without a session</a>
       <a href="#8-sessions-and-the-web-surface">8. Sessions and the web surface</a>
       <a href="#8b-operator-supplied-theming">8b. Operator-supplied theming</a>
       <a href="#8c-the-public-sites-theme-layer">8c. The public site&#x27;s theme layer</a>
@@ -426,7 +428,7 @@ whether or not it is deleted afterwards.</p>
 <tr>
 <td>Redact-then-abort</td>
 <td>Publishing internal addresses, management hostnames, hypervisor and node names, the backup server, an administrator's e-mail</td>
-<td><code>redact()</code> + <code>scan()</code> in the same generator</td>
+<td><code>redact()</code> + <code>scan()</code> in <code>app/services/doc_publication.py</code>, shared by both published surfaces</td>
 </tr>
 <tr>
 <td>Registry drift, reverse</td>
@@ -470,6 +472,79 @@ uses. It is a backstop against accident, not against someone who deliberately
 publishes a paragraph describing the topology in prose. The opt-in <code>PAGES</code> list
 is the real control; the scanner is what makes forgetting expensive instead of
 silent.</p>
+<h2 id="7c-the-manual-that-is-readable-without-a-session">7c. The manual that is readable without a session</h2>
+<p><code>/docs/public</code> publishes the whole manual to anyone who can load the sign-in
+page, and <code>/docs/api</code> has done so for the API manual since long before that.
+This is deliberate: the operator who cannot get in is exactly the one who needs
+the installation guide, the operator-console reference and the recovery
+runbooks, and on an isolated management network there is no second copy to
+reach. The same decision means the login screen is a <strong>publication surface</strong>,
+and has to be guarded like one.</p>
+<p><strong>What it prevents.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Guard</th>
+<th>Prevents</th>
+<th>Where</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Shared registry</td>
+<td>The two published surfaces disagreeing about what may be published — and one of them growing its own unguarded route</td>
+<td><code>app/services/doc_publication.py</code>; <code>deploy/gen_site_docs.py</code> imports it</td>
+</tr>
+<tr>
+<td>Redact before render</td>
+<td>Serving an internal address, hostname, hypervisor, node, backup server or personal e-mail to an unauthenticated visitor</td>
+<td><code>docs._public_render()</code></td>
+</tr>
+<tr>
+<td>Fail-closed scan</td>
+<td>A document whose <em>rendered</em> output still carries an identifier being served anyway</td>
+<td>same function: findings are logged and the page 404s</td>
+</tr>
+<tr>
+<td>Slug allowlist</td>
+<td>The slug ever reaching the filesystem</td>
+<td><code>pubdoc.by_slug()</code> lookup; an unknown slug 404s before any path is built</td>
+</tr>
+<tr>
+<td>Opt-in list</td>
+<td>A document nobody reviewed becoming public by being added to <code>docs/</code></td>
+<td>absence from <code>PUBLIC_DOCS</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Three rules.</strong></p>
+<ol>
+<li><strong>The registry may exist once.</strong> It used to live inside the site generator,
+   so the application could not reuse it — and the application grew <code>/docs/api</code>,
+   which served <code>docs/api_v1.md</code> <strong>verbatim</strong>, disclosing a management hostname
+   and an RFC1918 address to anyone who could load the login page. A second copy
+   is the copy that rots. A structural test fails the suite if the generator
+   re-declares the list, the redaction table or the scanner.</li>
+<li><strong>Fail closed, never fail open.</strong> The site generator aborts the whole build
+   on a finding; the application refuses to serve that one page. Neither warns
+   and continues. Refusing to answer is recoverable; an inventory disclosure is
+   not.</li>
+<li><strong>The authenticated manual stays unredacted.</strong> <code>/docs</code> still serves the real
+   text to signed-in operators — they are the people who need the actual
+   addresses. Only the public surfaces rewrite.</li>
+</ol>
+<p><strong>The test that carries the weight</strong> is
+<code>test_the_raw_source_really_does_carry_an_identifier</code>. Narrowing <code>redact()</code> and
+<code>scan()</code> at the same time leaves a redact-then-scan round trip self-consistent
+and green while publishing the identifier; that exact false negative was
+reported as "does not bite" by an earlier mutation run in this repository. The
+assertion is therefore about the <strong>input</strong>: <code>docs/api_v1.md</code> must still contain
+something the scanner recognises, or the leak tests above have gone vacuous.</p>
+<p><strong>Second-order property, easy to lose.</strong> The public shell loads its stylesheet
+from <code>static/vendor/</code>, not from a CDN. This product ships offline installers for
+isolated networks; documentation that only renders with public internet does not
+render where it matters most. The same swap was applied to the four sign-in
+pages, which had been on the CDN since they were written.</p>
 <h2 id="8-sessions-and-the-web-surface">8. Sessions and the web surface</h2>
 <table>
 <thead>
@@ -1570,6 +1645,22 @@ cd /opt/satom &amp;&amp; grep -rln 'img/favicon.svg' app/templates/ \
 venv/bin/python3 -c &quot;from PIL import Image; i=Image.open('site/favicon.ico'); \
   print(sorted(i.info['sizes']))&quot;
 </code></pre>
+<h3 id="the-public-manual-cannot-leak-7c">The public manual cannot leak (§7c)</h3>
+<pre><code class="language-bash"># every published document, unauthenticated, scanned for internal identifiers
+cd /opt/satom &amp;&amp; venv/bin/python3 -m pytest tests/test_public_docs.py -q; echo &quot;rc=$?&quot;
+
+# and against a running node, without a session:
+curl -sk https://&lt;node&gt;/docs/public | grep -c 'doc-tile'      # the hub renders
+for s in api install cli safeguards changelog; do
+  curl -sk &quot;https://&lt;node&gt;/docs/public/$s&quot; | grep -oE &quot;$SATOM_PRIVATE_RE&quot; &amp;&amp; echo &quot;LEAK: $s&quot;
+done
+</code></pre>
+<p>Set <code>SATOM_PRIVATE_RE</code> to the identifier shapes your fleet uses (addresses,
+management domain, hypervisor and node prefixes). It is deliberately not
+written out here: this file is itself published, and a grep pattern listing
+every private form would be both the disclosure and its own victim — an earlier
+revision had exactly that, and the redactor rewrote the command inside the
+manual.</p>
 <h2 id="related">Related</h2>
 <ul>
 <li><a href="privilege-model.md"><code>privilege-model.md</code></a> — accounts, sudo, the runner boundary, HA trust</li>
@@ -1591,6 +1682,7 @@ venv/bin/python3 -c &quot;from PIL import Image; i=Image.open('site/favicon.ico'
       <a href="../architecture.html">Architecture</a>
       <a href="../safeguards.html">Safeguards</a>
       <a href="../docs.html">Docs</a>
+      <a href="../docs/api.html">API</a>
       <a href="../install.html">Install</a>
       <a href="https://github.com/visionebc/SATOM">Source</a>
     </div>

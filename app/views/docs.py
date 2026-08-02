@@ -18,9 +18,11 @@ from __future__ import annotations
 
 import pathlib
 
-from flask import Blueprint, abort, render_template
+from flask import Blueprint, abort, current_app, render_template
 from flask_login import login_required
 from markupsafe import Markup
+
+from app.services import doc_publication as pubdoc
 
 # docs/ lives at the project root — two levels above this file (app/views/).
 DOCS_DIR = (pathlib.Path(__file__).resolve().parents[2] / "docs")
@@ -87,7 +89,9 @@ _BLURBS: dict[str, str] = {
     "api_v1.md": "How third parties authenticate and drive /api/v1 with a token.",
 }
 
-_MD_EXTENSIONS = ["toc", "fenced_code", "tables", "sane_lists", "nl2br"]
+# No nl2br: docs/*.md is hard-wrapped at ~90 columns, so nl2br turned every
+# wrap into a visible line break in the rendered page.
+_MD_EXTENSIONS = ["toc", "fenced_code", "tables", "sane_lists"]
 
 bp = Blueprint("docs", __name__, url_prefix="/docs")
 
@@ -148,25 +152,71 @@ def view(slug: str):
 
 
 # ---------------------------------------------------------------------------
-# PUBLIC API manual — readable WITHOUT login (documentation only, no secrets).
-# Linked from the sign-in page so integrators can learn how to use /api/v1
-# before they have an account. Rendered in a standalone (no-sidebar) template
-# so it needs no authenticated session context.
+# PUBLIC manual — readable WITHOUT a session.
+#
+# The sign-in page links here. An operator who cannot get in is exactly the
+# person who needs the installation guide, the operator-console reference and
+# the recovery runbooks, and on an isolated management network there is no
+# other copy to reach.
+#
+# The text served here is NOT the repository text: it goes through the same
+# redact-then-scan pipeline that guards the public web site
+# (app/services/doc_publication.py). Before this existed, ``/docs/api`` served
+# docs/api_v1.md verbatim to anyone who could load the login page — including a
+# management hostname and an RFC1918 address.
+#
+# The scan is fail-CLOSED: a document whose rendered output still carries an
+# internal identifier is not served at all. Refusing to answer is recoverable;
+# an inventory disclosure is not.
 # ---------------------------------------------------------------------------
-_API_DOC = "api_v1.md"
 
 
-@bp.route("/api")
-def api_public():
+def _public_render(slug: str, active: str, back_to_index: bool):
     import markdown as md_lib
 
-    path = (DOCS_DIR / _API_DOC).resolve()
-    if DOCS_DIR.resolve() not in path.parents or not path.is_file():
+    entry = pubdoc.by_slug().get(slug)
+    if entry is None:  # allowlist — the slug never touches the filesystem
         abort(404)
-    text = path.read_text(encoding="utf-8")
-    html = Markup(md_lib.markdown(text, extensions=_MD_EXTENSIONS, output_format="html5"))
+    md_name, _slug, title, _icon, _blurb = entry
+    source = pubdoc.source_for(md_name)
+    if not source.is_file():
+        abort(404)
+
+    text = pubdoc.redact(source.read_text(encoding="utf-8"))
+    body = md_lib.markdown(text, extensions=pubdoc.MD_EXTENSIONS, output_format="html5")
+
+    findings = pubdoc.scan(body, md_name)
+    if findings:
+        current_app.logger.error(
+            "refusing to publish %s: internal identifiers survived redaction: %s",
+            md_name, "; ".join(findings[:5]))
+        abort(404)
+
     return render_template(
         "docs/public.html",
-        title="API v1 — Integration Manual",
-        content=html,
+        title=title,
+        content=Markup(body),
+        active=active,
+        back_to_index=back_to_index,
     )
+
+
+@bp.route("/public")
+def public_index():
+    return render_template("docs/public_index.html",
+                           title="Documentation",
+                           groups=pubdoc.grouped(),
+                           active="index")
+
+
+@bp.route("/public/<slug>")
+def public_view(slug: str):
+    return _public_render(slug, active="api" if slug == "api" else "index",
+                          back_to_index=True)
+
+
+# Kept as its own URL: integrators bookmark it and the sign-in page has linked
+# to it since before the rest of the manual was public. Same redacted render.
+@bp.route("/api")
+def api_public():
+    return _public_render("api", active="api", back_to_index=True)

@@ -28,6 +28,7 @@
         <a href="architecture.html">Architecture</a>
         <a href="safeguards.html">Safeguards</a>
         <a href="docs.html">Docs</a>
+        <a href="docs/api.html">API</a>
         <a href="install.html" class="active">Install</a>
       </div>
       <div class="theme-pick" role="group" aria-label="Colour theme">
@@ -61,7 +62,7 @@
       </ul>
     </div>
     <div class="card">
-      <span class="tag tag-vio">Offline</span><span class="tag tag-blue">Debian 12</span><span class="tag tag-vio">RHEL 9</span>
+      <span class="tag tag-vio">Offline</span><span class="tag tag-blue">Debian 12</span><span class="tag tag-vio">RHEL 9</span><span class="tag tag-blue">openSUSE 15</span>
       <h3>Air-gapped install</h3>
       <p>Self-contained bundles per family — OS packages, Python wheels and the application — for hosts with no internet access. The installer auto-detects <code>bundle/</code> and refuses a bundle built for the wrong family with a clear message.</p>
       <div class="code">
@@ -69,12 +70,15 @@
         tar xzf satom-offline-&lt;ver&gt;-debian12-amd64.tar.gz<br>
         <span class="c"># RHEL / Rocky / AlmaLinux 9</span><br>
         tar xzf satom-offline-&lt;ver&gt;-rhel9-x86_64.tar.gz<br>
+        <span class="c"># openSUSE Leap 15 / SLES 15</span><br>
+        tar xzf satom-offline-&lt;ver&gt;-suse15-x86_64.tar.gz<br>
         cd satom-installer &amp;&amp; ./install-satom.sh
       </div>
       <ul class="checks">
         <li>Debian bundle: full .deb dependency closure + wheels</li>
         <li>RHEL bundle: a local dnf repository (with metadata) + wheels for Python 3.11 — dnf resolves only what the host actually needs</li>
-        <li>Both bundles carry the ACME client and the privilege-escalation and SSH packages — a host with no network cannot fetch them mid-install</li>
+        <li>openSUSE bundle: a local zypper repository in a directory of its own. Both RPM bundles exist and are deliberately not interchangeable — different package names and base libraries — so the wrong one is refused up front instead of failing halfway through</li>
+        <li>Every bundle carries the ACME client and the privilege-escalation and SSH packages — a host with no network cannot fetch them mid-install</li>
         <li>A bundle is a snapshot of the product at build time and records its own version — <a href="safeguards.html#install">what it ships armed</a> is the version it contains</li>
       </ul>
     </div>
@@ -123,8 +127,9 @@
       <a href="index.html">Home</a>
       <a href="features.html">Features</a>
       <a href="architecture.html">Architecture</a>
-        <a href="safeguards.html">Safeguards</a>
+      <a href="safeguards.html">Safeguards</a>
       <a href="docs.html">Docs</a>
+      <a href="docs/api.html">API</a>
       <a href="install.html">Install</a>
       <a href="https://github.com/visionebc/SATOM">Source</a>
     </div>

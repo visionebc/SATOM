@@ -222,7 +222,7 @@ whether or not it is deleted afterwards.
 |---|---|---|
 | Generated command reference | A manual that lists commands the build no longer has — read by the one person who cannot check, because their web interface is down | `deploy/gen_cli_reference.py`, markers in `docs/cli.md` |
 | Generated site manual | A second, public copy of the documentation drifting from the Markdown the team actually edits | `deploy/gen_site_docs.py` → `site/docs/*.html`, `site/docs.html` |
-| Redact-then-abort | Publishing internal addresses, management hostnames, hypervisor and node names, the backup server, an administrator's e-mail | `redact()` + `scan()` in the same generator |
+| Redact-then-abort | Publishing internal addresses, management hostnames, hypervisor and node names, the backup server, an administrator's e-mail | `redact()` + `scan()` in `app/services/doc_publication.py`, shared by both published surfaces |
 | Registry drift, reverse | Hand-written prose naming a command that does not exist | `tests/test_docs_publication.py` |
 
 **Three rules hold it together.**
@@ -260,6 +260,56 @@ uses. It is a backstop against accident, not against someone who deliberately
 publishes a paragraph describing the topology in prose. The opt-in `PAGES` list
 is the real control; the scanner is what makes forgetting expensive instead of
 silent.
+
+## 7c. The manual that is readable without a session
+
+`/docs/public` publishes the whole manual to anyone who can load the sign-in
+page, and `/docs/api` has done so for the API manual since long before that.
+This is deliberate: the operator who cannot get in is exactly the one who needs
+the installation guide, the operator-console reference and the recovery
+runbooks, and on an isolated management network there is no second copy to
+reach. The same decision means the login screen is a **publication surface**,
+and has to be guarded like one.
+
+**What it prevents.**
+
+| Guard | Prevents | Where |
+|---|---|---|
+| Shared registry | The two published surfaces disagreeing about what may be published — and one of them growing its own unguarded route | `app/services/doc_publication.py`; `deploy/gen_site_docs.py` imports it |
+| Redact before render | Serving an internal address, hostname, hypervisor, node, backup server or personal e-mail to an unauthenticated visitor | `docs._public_render()` |
+| Fail-closed scan | A document whose *rendered* output still carries an identifier being served anyway | same function: findings are logged and the page 404s |
+| Slug allowlist | The slug ever reaching the filesystem | `pubdoc.by_slug()` lookup; an unknown slug 404s before any path is built |
+| Opt-in list | A document nobody reviewed becoming public by being added to `docs/` | absence from `PUBLIC_DOCS` |
+
+**Three rules.**
+
+1. **The registry may exist once.** It used to live inside the site generator,
+   so the application could not reuse it — and the application grew `/docs/api`,
+   which served `docs/api_v1.md` **verbatim**, disclosing a management hostname
+   and an RFC1918 address to anyone who could load the login page. A second copy
+   is the copy that rots. A structural test fails the suite if the generator
+   re-declares the list, the redaction table or the scanner.
+2. **Fail closed, never fail open.** The site generator aborts the whole build
+   on a finding; the application refuses to serve that one page. Neither warns
+   and continues. Refusing to answer is recoverable; an inventory disclosure is
+   not.
+3. **The authenticated manual stays unredacted.** `/docs` still serves the real
+   text to signed-in operators — they are the people who need the actual
+   addresses. Only the public surfaces rewrite.
+
+**The test that carries the weight** is
+`test_the_raw_source_really_does_carry_an_identifier`. Narrowing `redact()` and
+`scan()` at the same time leaves a redact-then-scan round trip self-consistent
+and green while publishing the identifier; that exact false negative was
+reported as "does not bite" by an earlier mutation run in this repository. The
+assertion is therefore about the **input**: `docs/api_v1.md` must still contain
+something the scanner recognises, or the leak tests above have gone vacuous.
+
+**Second-order property, easy to lose.** The public shell loads its stylesheet
+from `static/vendor/`, not from a CDN. This product ships offline installers for
+isolated networks; documentation that only renders with public internet does not
+render where it matters most. The same swap was applied to the four sign-in
+pages, which had been on the CDN since they were written.
 
 ## 8. Sessions and the web surface
 
@@ -1328,6 +1378,26 @@ cd /opt/satom && grep -rln 'img/favicon.svg' app/templates/ \
 venv/bin/python3 -c "from PIL import Image; i=Image.open('site/favicon.ico'); \
   print(sorted(i.info['sizes']))"
 ```
+
+### The public manual cannot leak (§7c)
+
+```bash
+# every published document, unauthenticated, scanned for internal identifiers
+cd /opt/satom && venv/bin/python3 -m pytest tests/test_public_docs.py -q; echo "rc=$?"
+
+# and against a running node, without a session:
+curl -sk https://<node>/docs/public | grep -c 'doc-tile'      # the hub renders
+for s in api install cli safeguards changelog; do
+  curl -sk "https://<node>/docs/public/$s" | grep -oE "$SATOM_PRIVATE_RE" && echo "LEAK: $s"
+done
+```
+
+Set `SATOM_PRIVATE_RE` to the identifier shapes your fleet uses (addresses,
+management domain, hypervisor and node prefixes). It is deliberately not
+written out here: this file is itself published, and a grep pattern listing
+every private form would be both the disclosure and its own victim — an earlier
+revision had exactly that, and the redactor rewrote the command inside the
+manual.
 
 ## Related
 

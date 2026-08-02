@@ -29,6 +29,7 @@
         <a href="../architecture.html">Architecture</a>
         <a href="../safeguards.html">Safeguards</a>
         <a href="../docs.html" class="active">Docs</a>
+        <a href="../docs/api.html">API</a>
         <a href="../install.html">Install</a>
       </div>
       <div class="theme-pick" role="group" aria-label="Colour theme">
@@ -57,7 +58,7 @@
   <div class="doc">
     <aside class="toc">
       <div class="toc-title">On this page</div>
-      <a href="#unreleased">[Unreleased]</a>
+      <a href="#13-2026-08-02">[1.3] - 2026-08-02</a>
       <a href="#122-2026-07-27">[1.2.2] - 2026-07-27</a>
       <a href="#121-2026-07-27">[1.2.1] - 2026-07-27</a>
       <a href="#12-2026-07-27">[1.2] - 2026-07-27</a>
@@ -71,8 +72,73 @@
 <p>All notable changes to SATOM are documented here. Format loosely follows
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public, open-source
 project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
-<h2 id="unreleased">[Unreleased]</h2>
+<h2 id="13-2026-08-02">[1.3] - 2026-08-02</h2>
+<h3 id="added">Added</h3>
+<ul>
+<li><strong>The manual is reachable from the sign-in screen.</strong> The login page offered a
+  link to the API manual and nothing else. The person who cannot get in is
+  exactly the person who needs the installation guide, the operator-console
+  reference and the recovery runbooks — and on an isolated management network
+  there is no other copy to reach. <code>/docs/public</code> now publishes the whole
+  manual without a session, grouped in reading order, and the sign-in page
+  links to it beside the API manual.</li>
+<li><strong>The API manual is a destination on the public site, not a buried card.</strong>
+  It was reachable only by opening the documentation hub and scrolling to the
+  fourth group. <code>API</code> is now a top-level entry in the navigation and the footer
+  of all 27 site pages.</li>
+<li>
+<p><strong>An offline bundle for openSUSE / SLES 15.</strong> The distribution was validated
+  online — a whole HA pair was installed on it — while the only way to install
+  it stayed <em>fetch everything from the internet</em>, which is precisely what an
+  isolated management network cannot do. <code>installers/build-offline-bundle-suse.sh</code>
+  produces one, and the installer accepts it from <code>bundle/rpms-suse/</code>.
+  A directory of its own, not <code>rpms/</code>: both bundles are RPM and they are <strong>not</strong>
+  interchangeable (<code>python311</code> vs <code>python3.11</code>, different base library versions,
+  and zypper and dnf do not read repositories the same way). Separating them
+  turns "wrong bundle" into an explicit refusal before anything is touched,
+  instead of a dependency resolution that fails halfway through an install.
+  On the target, zypper is handed a repository directory of its own
+  (<code>--reposd-dir</code>) containing only the bundle — no network, no change to the
+  system's repositories, and no repository left registered afterwards.</p>
+</li>
+<li>
+<p><strong>One publication registry, shared by both published surfaces.</strong>
+  <code>app/services/doc_publication.py</code> owns the list of publishable documents, the
+  redaction table and the scanner; <code>deploy/gen_site_docs.py</code> imports them
+  instead of declaring them. It loads the module by path rather than importing
+  the <code>app</code> package, because the site build has to keep working on a tree whose
+  application code does not compile — that has happened. A structural test
+  fails the suite if the generator ever re-declares any of it.</p>
+</li>
+</ul>
 <h3 id="fixed">Fixed</h3>
+<ul>
+<li><strong><code>/docs/api</code> was public and served the document unredacted.</strong> The route
+  needed no session and rendered <code>docs/api_v1.md</code> verbatim, so a management
+  hostname and an RFC1918 address were readable by anyone who could load the
+  login page. The redact-then-scan pipeline that guards the public web site
+  existed only inside the site generator, where the application could not reuse
+  it. Every publicly served document now goes through it, and the scan is
+  fail-closed: a page whose rendered output still carries an internal
+  identifier is not served at all. Refusing to answer is recoverable; an
+  inventory disclosure is not.</li>
+<li><strong>The four sign-in pages and the public documentation needed public internet
+  to lay themselves out.</strong> They pulled Bootstrap from a CDN while the same
+  files sat vendored in <code>static/vendor/</code>. This product ships offline installers
+  for isolated management networks — an unstyled sign-in page is the first
+  thing an operator sees there.</li>
+<li><strong>The five hand-written site pages had drifted from the generated chrome.</strong>
+  <code>index.html</code> had lost its <code>Docs</code> footer link entirely. Their navigation and
+  footer are now rebuilt from the same single definition the generated pages
+  use, so an added destination lands on every page at once.</li>
+<li><strong>The public documentation shell still showed the pre-rename <code>FM</code> placeholder
+  box</strong> in place of a logo and hard-coded the old chrome colours, so it ignored
+  the theme engine — the same defect the sign-in pages carried until 2026-08-02.</li>
+<li><strong>The in-app manual inserted a line break at every source wrap.</strong> <code>docs/*.md</code>
+  is hard-wrapped at about 90 columns and the renderer had <code>nl2br</code> enabled, so
+  every wrap became a visible break. The published renderer never had it.</li>
+</ul>
+<h3 id="fixed_1">Fixed</h3>
 <ul>
 <li>
 <p><strong>A cluster on openSUSE never replicated files at all, and five more defects
@@ -193,14 +259,14 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   invisible internal string; and the external backup server, because the
   appliances push to it by name in their own configuration and renaming it
   from here would break the nightly push silently.</p>
-<h3 id="added">Added</h3>
+<h3 id="added_1">Added</h3>
 <ul>
 <li><strong>The changelog is published on all three surfaces.</strong> The same file is now
   readable in the repository, inside the application under <strong>Documentation</strong>,
   and on the public documentation site. One source, three renderings — no copy
   to fall out of date. A test fails the suite if any surface stops carrying it.</li>
 </ul>
-<h3 id="fixed_1">Fixed</h3>
+<h3 id="fixed_2">Fixed</h3>
 <ul>
 <li><strong>The application reported version 1.0 through four releases.</strong> The footer
   and Settings -&gt; System Information each carried a hand-written literal that
@@ -211,7 +277,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   stamping pass that versions the stylesheet, so it cannot drift either. A
   test fails the suite if a version literal reappears in a template or a page.</li>
 </ul>
-<h3 id="added_1">Added</h3>
+<h3 id="added_2">Added</h3>
 <ul>
 <li><strong>The public site ships switchable colour themes.</strong> Three palettes —
   <strong>Aurora</strong> (default, light canvas over navy chrome), <strong>Abyss</strong> (dark canvas
@@ -227,7 +293,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   intensity is per-theme, so the dark palette can lean on it without the light
   one looking neon.</li>
 </ul>
-<h3 id="fixed_2">Fixed</h3>
+<h3 id="fixed_3">Fixed</h3>
 <ul>
 <li><strong>The site wordmark was effectively invisible.</strong> A single <code>--accent</code> served
   both the light canvas and the navy chrome, putting the bold half of the
@@ -245,7 +311,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   pages, still emitting the company shield rather than the product mark. Both
   surfaces are now asserted against the same expectations.</li>
 </ul>
-<h3 id="added_2">Added</h3>
+<h3 id="added_3">Added</h3>
 <ul>
 <li><strong>Operator CLI: <code>show tree</code> (alias <code>tree</code>) prints the whole command surface</strong>
   — every command as a tree, with <code>*</code> for root-required and <code>!</code> for
@@ -269,7 +335,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   own output and <strong>aborts</strong> on any survivor, naming pattern, file and line.
   Publication is opt-in: a document not listed is not published.</li>
 </ul>
-<h3 id="fixed_3">Fixed</h3>
+<h3 id="fixed_4">Fixed</h3>
 <ul>
 <li><strong>The CLI could crash while printing.</strong> An em dash in a title raised
   <code>UnicodeEncodeError</code> on a stream with an ASCII encoding (a serial console,
@@ -289,7 +355,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <li><code>Ctrl-C</code> at the interactive prompt now abandons the line, like a shell,
   instead of leaving the console.</li>
 </ul>
-<h3 id="added_3">Added</h3>
+<h3 id="added_4">Added</h3>
 <ul>
 <li><strong>Operator CLI, second pass: the automated half now has a console.</strong> 39 more
   commands, organised around the failure modes this product has actually had
@@ -318,7 +384,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   backups at all. It prints the plan and only applies with <code>--yes</code>, and it
   never touches an existing row — operator edits still win.</li>
 </ul>
-<h3 id="fixed_4">Fixed</h3>
+<h3 id="fixed_5">Fixed</h3>
 <ul>
 <li><strong>Two diagnostics were modifying the tree they diagnose.</strong> <code>git status</code> run as
   root rewrites <code>.git/index</code> and takes it from the service account;
@@ -347,7 +413,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <li><code>diagnose all</code> no longer repeats design notes from checks that passed — eight
   lines of explanation attached to nothing buried the two that were findings.</li>
 </ul>
-<h3 id="added_4">Added</h3>
+<h3 id="added_5">Added</h3>
 <ul>
 <li><strong>An operator CLI (<code>satom</code>) for a node whose web UI is down.</strong> Modelled on the
   appliance CLIs this product manages: <code>get</code> / <code>show</code> / <code>diagnose</code> / <code>execute</code>,
@@ -385,7 +451,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   <code>/healthz</code> returned 200 and the whole test suite stayed green.</p>
 <p>Reference: <a href="docs/cli.md"><code>docs/cli.md</code></a>. Permissions to request:
   <code>docs/INSTALL.md</code> §5, <em>Cuenta de OPERADOR</em>.</p>
-<h3 id="fixed_5">Fixed</h3>
+<h3 id="fixed_6">Fixed</h3>
 <ul>
 <li><strong>The device cards on the probe pages were painted for a dark theme.</strong> SATOM
   has no dark mode — <code>static/css/fortiweb.css</code> is a light chrome (<code>#F4F5F7</code>
@@ -410,7 +476,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   inverse set, and reusing the name would have expanded exactly the cards an
   operator had folded.</li>
 </ul>
-<h3 id="added_5">Added</h3>
+<h3 id="added_6">Added</h3>
 <ul>
 <li><strong>A scheduled automation that breaks now raises its own alert.</strong> Silencing
   successful housekeeping runs is only safe if the failing run is loud, and it
@@ -430,7 +496,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   instead of sitting critical forever. Two knobs in Settings → Alerts
   (<em>Automation fail streak → critical</em>, <em>Automation overdue (hours)</em>).</li>
 </ul>
-<h3 id="fixed_6">Fixed</h3>
+<h3 id="fixed_7">Fixed</h3>
 <ul>
 <li>
 <p><strong>Maintenance mode suppressed alerts but not work.</strong> An appliance parked with
@@ -483,7 +549,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   waiting to read the count. Notifications from these workers now also carry the
   ADOM stamped on the job (a worker thread has no request context, so they were
   landing unscoped, i.e. under FortiWeb). See <code>docs/safeguards.md</code> §9g.</p>
-<h3 id="added_6">Added</h3>
+<h3 id="added_7">Added</h3>
 <ul>
 <li><strong>Device traffic cards are collapsible</strong> on Deep monitors and Service Monitor,
   with the state persisted in <code>localStorage</code> keyed per page — <code>renderDevices()</code>
@@ -538,7 +604,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   harvest cache, which is empty on a licence-locked box). A failure is printed
   in the form instead of degrading to an empty dropdown — "no policies" and
   "could not ask" look identical in a <code>&lt;select&gt;</code> and mean opposite things.</p>
-<h3 id="fixed_7">Fixed</h3>
+<h3 id="fixed_8">Fixed</h3>
 <ul>
 <li><strong><code>transactions</code> could report a silent zero on a saturated policy.</strong> Found by
   a real load test against {device} (2026-07-28): a policy carrying
@@ -589,7 +655,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   permanently red. The worst status and per-status counts moved into the
   summary. See <code>docs/safeguards.md</code> §9d.</li>
 </ul>
-<h3 id="fixed_8">Fixed</h3>
+<h3 id="fixed_9">Fixed</h3>
 <ul>
 <li><strong>A product ADOM inherited the manager's own infrastructure.</strong> Fleet health
   rendered <em>Infrastructure health — HA nodes · Git · backup server</em>, the
@@ -663,7 +729,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   does not render where it matters. The vendored copy was already in the tree
   and unused.</li>
 </ul>
-<h3 id="added_7">Added</h3>
+<h3 id="added_8">Added</h3>
 <ul>
 <li><strong>Drill-down charts on the deep monitors.</strong> Clicking any sparkline opens
   1 h / 24 h / 7 d / 30 d or an explicit date range, with min/average/max, the
@@ -685,7 +751,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   average and a five-minute reading are not the same claim about the device.</li>
 </ul>
 <h2 id="122-2026-07-27">[1.2.2] - 2026-07-27</h2>
-<h3 id="fixed_9">Fixed</h3>
+<h3 id="fixed_10">Fixed</h3>
 <ul>
 <li><strong><code>app/services/cert_service.py</code> did not parse.</strong> An <code>import os</code> had been
   placed above <code>from __future__ import annotations</code>, which is a hard
@@ -696,7 +762,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   Certificate Manager endpoints raised on import, and the cert alert degraded
   to reporting the import error instead of the certificate's real state.</li>
 </ul>
-<h3 id="added_8">Added</h3>
+<h3 id="added_9">Added</h3>
 <ul>
 <li><strong><code>tests/test_every_module_imports.py</code></strong> — every shipped module under <code>app/</code>
   and <code>deploy/</code> must compile, and the modules that callers import <em>lazily</em>
@@ -708,7 +774,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="121-2026-07-27">[1.2.1] - 2026-07-27</h2>
 <p>Documentation release. No application code changed; the offline bundles were
 rebuilt so that the shipped tree matches the documentation set.</p>
-<h3 id="added_9">Added</h3>
+<h3 id="added_10">Added</h3>
 <ul>
 <li><strong><code>docs/safeguards.md</code></strong> — single catalog of every protection in the product:
   what it prevents, where it lives, and <strong>how to verify it is armed</strong>. Covers
@@ -736,7 +802,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li><strong>Rule recorded in <code>docs/overview.md</code></strong>: a new safeguard lands in
   <code>docs/safeguards.md</code> in the same commit that introduces it.</li>
 </ul>
-<h3 id="fixed_10">Fixed</h3>
+<h3 id="fixed_11">Fixed</h3>
 <ul>
 <li>Offline bundle checksums used an absolute path, so <code>sha256sum -c</code> failed in
   the directory the file was downloaded to. Now basename-only, as the RHEL
@@ -774,7 +840,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   with <code>from=</code>, <code>restrict</code> and a forced command that can only serve
   <code>rsync --sender</code> over the data directory.</li>
 </ul>
-<h3 id="added_10">Added</h3>
+<h3 id="added_11">Added</h3>
 <ul>
 <li><strong>ACME / Let's Encrypt certificate issuance</strong> with a DNS-provider catalog
   (30 providers seeded as data, editable by the operator) and per-provider
@@ -800,7 +866,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   Manager</strong>. Vendor names (FortiWeb, FortiADC, FortiAnalyzer) are untouched:
   the product manages those appliances and has to name them.</li>
 </ul>
-<h3 id="fixed_11">Fixed</h3>
+<h3 id="fixed_12">Fixed</h3>
 <ul>
 <li><strong>Scheduler and git-publish were silently dead</strong> after the privilege drop:
   both guard scripts used <code>runuser</code>, which only works as root. The scheduler
@@ -842,7 +908,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   server (appliance-side push config points at it), and <code>FM_*</code> env var names.</li>
 </ul>
 <h2 id="10-2026-07-14">[1.0] - 2026-07-14</h2>
-<h3 id="added_11">Added</h3>
+<h3 id="added_12">Added</h3>
 <ul>
 <li><strong>DNS Records management (IPAM/DDI)</strong>: "+DNS Records" CRUD in the DNS &amp; LB
   lookup tool, backed by pluggable providers (EfficientIP SOLIDserver,
@@ -860,20 +926,20 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   bundles), generic package-manager support, public site (GitHub Pages),
   package registry artifacts.</li>
 </ul>
-<h3 id="fixed_12">Fixed</h3>
+<h3 id="fixed_13">Fixed</h3>
 <ul>
 <li>Upgrade-event timestamps now render in local time (<code>| localtime</code>) instead
   of raw UTC.</li>
 </ul>
 <h2 id="09-2026-07-13">[0.9] - 2026-07-13</h2>
-<h3 id="added_12">Added</h3>
+<h3 id="added_13">Added</h3>
 <ul>
 <li><strong>Node TLS + node-to-node encryption</strong>: internal CA, per-node leaf certs,
   mutually-authenticated Postgres replication, HTTPS peer probes, and
   "encryption in transit" monitoring cards (every badge backed by a live probe).</li>
 </ul>
 <h2 id="08-2026-07-12">[0.8] - 2026-07-12</h2>
-<h3 id="added_13">Added</h3>
+<h3 id="added_14">Added</h3>
 <ul>
 <li><strong>FortiAnalyzer</strong> integration (JSON-RPC, dual dialect) as a full ADOM, with
   its endpoints in the DB registry and a git source-of-truth harvest.</li>
@@ -895,6 +961,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
       <a href="../architecture.html">Architecture</a>
       <a href="../safeguards.html">Safeguards</a>
       <a href="../docs.html">Docs</a>
+      <a href="../docs/api.html">API</a>
       <a href="../install.html">Install</a>
       <a href="https://github.com/visionebc/SATOM">Source</a>
     </div>

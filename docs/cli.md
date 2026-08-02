@@ -398,6 +398,76 @@ writable, is a symlink, is loaded from inside the app tree, or if
 
 ---
 
+## 7. Output: what is decoration and what is contract
+
+The rule the renderer exists to keep:
+
+> **Decoration is for a TTY. Content is identical either way.**
+
+An operator redirects this tool into a ticket, greps it, and pastes it into a
+chat window. So colour, the rules under headings and the box-drawing in
+`show tree` appear only when a human is looking at a terminal. Through a pipe
+the bytes are plain — and, because there is no width to fit, nothing is
+truncated either: help text you would lose is text you cannot get back.
+
+| control | effect |
+|---|---|
+| `--color` / `--no-color` | force colour on or off, whatever the stream is |
+| `NO_COLOR=1` | the cross-tool convention; honoured. An explicit flag still wins |
+| `SATOM_CLI_COLOR=1` | force colour from the environment (for a wrapper script) |
+| `--ascii` / `SATOM_CLI_ASCII=1` | plain `|-` branches instead of box-drawing |
+| `--width N` | pretend the terminal is N columns (used by the tests) |
+| `--json` | machine contract: never coloured, never wrapped |
+
+`TERM=dumb` and an unset `TERM` disable colour on their own. The glyph set is
+chosen from the stream's **encoding**, not from a guess: on a serial console
+with an ASCII stdout the box characters would be unprintable, so the CLI falls
+back to `|-` / `` `- `` automatically.
+
+**Two layers keep the output path from raising.** Typographic characters this
+code emits (em dashes in titles, middots in the banner, the truncation
+ellipsis) are folded to ASCII when the stream cannot carry them; anything
+outside that table — a device name, a certificate subject, a journal line —
+is caught by reconfiguring the stream with `errors="replace"`. This is not
+theoretical: an em dash in a title once crashed the whole command under an
+ASCII stdout. *A diagnostic tool that dies while printing its diagnosis, on a
+node that is already broken, is worse than no tool.*
+
+**Colour has a narrow vocabulary, on purpose.** Only words this CLI emits as a
+*verdict* are painted: `pass`/`ok` green, `warn` amber, `FAIL`/`error` red.
+State words — `active`, `inactive`, `enabled`, `disabled` — are deliberately
+never painted. `satom-ha-datasync` is `inactive` on the primary **by design**;
+painting it red is the same false positive that had to be removed from
+`get system health`. A check that always complains is a check that gets
+ignored, and so is a colour that always complains.
+
+### `show tree` — the whole command surface
+
+```
+satom show tree                      every command, as a tree
+satom tree                           same thing (alias, for muscle memory)
+satom show tree execute              just that branch
+satom show tree --commands           flat list, one runnable command per line
+satom show tree --depth 2            stop two levels down
+satom show tree --root               only branches that require root
+satom show tree --danger             only destructive commands
+satom show tree --json               the registry as nested JSON
+```
+
+Marks: `*` requires root, `!` destructive (needs `--yes`). Both propagate up,
+so a group shows `*!` when anything under it does.
+
+This renders the **live registry** (`deploy/satom_cli/tree.py`), so it cannot
+describe commands this build does not have, and it cannot omit ones it does. A
+hand-written command list in a document is a copy, and copies go stale the
+first time somebody adds a node — `tests/test_cli_render.py` fails the suite if
+any runnable command is missing from `--commands`.
+
+`--commands` is fixed-column and always separated by two spaces, so it can be
+`cut`/`awk`'d. That mattered: on the widest row the padding is zero, and a
+single separator space fused the path, the mark and the help into one
+unsplittable field for exactly the longest command.
+
 ## Related
 
 * [`privilege-model.md`](privilege-model.md) — accounts, sudoers, HA trust

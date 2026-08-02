@@ -12,15 +12,22 @@ import os
 import sys
 
 from .context import Ctx
-from .render import EXIT_DENIED, EXIT_OK, EXIT_USAGE, Result, denied, render
+from .render import (_PALETTE, EXIT_DENIED, EXIT_OK, EXIT_USAGE, Result, Style,
+                     denied, harden_stream, render, style_of)
 from .tree import ROOT, Node
 
-BANNER = "SATOM operator CLI — type '?' for commands, 'exit' to leave."
+BANNER = "SATOM operator CLI"
+HINT = ("'?' lists commands here  ·  'show tree' is the whole map  ·  "
+        "'exit' leaves")
+HINT_ASCII = ("'?' lists commands here | 'show tree' is the whole map | "
+              "'exit' leaves")
 
 
 def help_for(node, path, ctx):
+    st = style_of(ctx)
     title = " ".join(("satom",) + tuple(path)) if path else "satom"
     r = Result("info", title)
+
     if node.run and not node.children:
         r.rows("", [("usage", "satom " + (node.usage or " ".join(path))),
                     ("privilege", "root" if node.needs_root else "any user"),
@@ -29,19 +36,31 @@ def help_for(node, path, ctx):
         if node.danger:
             r.note("Destructive. Read the on-screen confirmation before typing --yes.")
         return r
+
     rows = []
     for name in sorted(node.children):
         child = node.children[name]
-        mark = " *" if child.needs_root or _subtree_needs_root(child) else "  "
-        rows.append((name + mark, child.help))
-    r.rows("", rows)
-    r.lines("", ["'*' marks commands that require root.",
-                 "Type a prefix followed by '?' for more, e.g.  satom diagnose ?"])
+        mark = "*" if (child.needs_root or _subtree_needs_root(child)) else " "
+        if child.danger or _subtree_danger(child):
+            mark += "!"
+        rows.append(("%s %s" % (name, mark.strip()) if mark.strip() else name,
+                     st.c("dim", child.help)))
+    r.rows("", rows, keys="plain")
+
+    foot = ["'*' needs root   '!' destructive",
+            "'%s <name> ?' for that branch" % title]
+    if not path:
+        foot.append("'satom show tree' prints the whole command tree at once")
+    r.lines("", foot)
     return r
 
 
 def _subtree_needs_root(node):
     return any(n.needs_root for _, n in _walk(node))
+
+
+def _subtree_danger(node):
+    return any(n.danger for _, n in _walk(node))
 
 
 def _walk(node, path=()):
@@ -121,7 +140,21 @@ def _completer(ctx):
     return complete
 
 
+def _prompt_color(st, key, text):
+    """Colour a PROMPT fragment.
+
+    readline counts every byte between the start of the prompt and the cursor
+    as visible width unless the non-printing run is bracketed by \\001 / \\002.
+    Without those markers the cursor lands in the wrong column the moment the
+    operator edits or recalls a line — the classic 'my shell is haunted' bug.
+    """
+    if not st.color:
+        return text
+    return "\001%s\002%s\001%s\002" % (_PALETTE[key], text, _PALETTE["off"])
+
+
 def repl(ctx):
+    st = style_of(ctx)
     try:
         import readline
     except ImportError:
@@ -135,18 +168,37 @@ def repl(ctx):
         readline.set_completer(_completer(ctx))
         readline.set_completer_delims(" \t")
         readline.parse_and_bind("tab: complete")
-    print(BANNER)
-    print("node: %s  version: %s  role: %s  you: %s%s"
-          % (ctx.host, ctx.version(), ctx.role, ctx.user,
-             "" if ctx.is_root else "  (unprivileged — 'execute' is unavailable)"))
-    prompt = "satom (%s) %s " % (ctx.host, "#" if ctx.is_root else ">")
+
+    role = ctx.role
+    head = "%s %s" % (BANNER, ctx.version())
+    facts = "%s · %s · %s" % (ctx.host, role, ctx.user)
+    if st.ascii:
+        facts = facts.replace(" · ", " | ")
+    print("")
+    print("  %s" % st.c("b", head))
+    print("  %s" % st.c("dim", facts))
+    if not ctx.is_root:
+        print("  %s" % st.c("warn", "unprivileged — 'execute' is unavailable; "
+                                    "diagnostics all work"))
+    print("  %s" % st.c("dim", st.rule(min(st.width or 72, 64))))
+    print("  %s" % st.c("dim", HINT_ASCII if st.ascii else HINT))
+    print("")
+
+    sigil = "#" if ctx.is_root else ">"
+    prompt = "%s %s " % (_prompt_color(st, "accent", "satom(%s)" % ctx.host),
+                         _prompt_color(st, "b", sigil))
     last = EXIT_OK
     while True:
         try:
             line = input(prompt)
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print("")
             break
+        except KeyboardInterrupt:
+            # Ctrl-C abandons the LINE, like a shell — it does not throw the
+            # operator out of the console they opened to fix a broken node.
+            print("^C")
+            continue
         line = line.strip()
         if not line:
             continue
@@ -161,13 +213,49 @@ def repl(ctx):
     return last
 
 
+def _take(argv, *names):
+    hit = False
+    for n in names:
+        while n in argv:
+            argv.remove(n)
+            hit = True
+    return hit
+
+
+def _take_value(argv, name):
+    for i, a in enumerate(argv):
+        if a == name and i + 1 < len(argv):
+            v = argv[i + 1]
+            del argv[i:i + 2]
+            return v
+        if a.startswith(name + "="):
+            del argv[i]
+            return a.split("=", 1)[1]
+    return None
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    json_mode = False
-    if "--json" in argv:
-        argv.remove("--json")
-        json_mode = True
+    json_mode = _take(argv, "--json")
+    no_color = _take(argv, "--no-color", "--nocolor")
+    force_color = _take(argv, "--color")
+    ascii_only = _take(argv, "--ascii")
+    width = _take_value(argv, "--width")
+
+    color = None
+    if no_color:
+        color = False
+    elif force_color:
+        color = True
+    # --json is a machine contract: never decorate it.
+    if json_mode:
+        color = False
+
+    harden_stream()
     ctx = Ctx(json_mode=json_mode)
+    ctx.style = Style(color=color, ascii_only=(True if ascii_only else None),
+                      width=int(width) if width and width.isdigit() else None)
+
     if not argv:
         if json_mode or not sys.stdin.isatty():
             return render(help_for(ROOT, [], ctx), ctx)

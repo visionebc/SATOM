@@ -49,17 +49,22 @@
 <section class="wrap reveal">
   <div class="arch">
 <pre>
-Browser <b>(Turbo Drive · nonce-based CSP · per-tab product header)</b>
-   │ HTTPS
-<span class="hl">nginx edge</span> — TLS · gzip · static cache
+Browser <b>(Turbo Drive · nonce-based CSP · per-tab product header)</b>          Terminal
+   │ HTTPS                                                              │ local
+<span class="hl">nginx edge</span> — TLS · gzip · static cache                              <span class="hl">satom console</span>
+   │                                                                    <i>root-owned copy,</i>
+<span class="hl">Gunicorn</span> (4 × 8) ─── <b>Flask app factory</b>      <i>runs as the service account</i>   <i>outside the app tree</i>
+   │              │                    │
+<b>PostgreSQL</b>     <b>Redis</b>          <b>Scheduler sidecar</b> (systemd, primary only)
+source of truth  rate-limit +    cron catalog: syncs, backups, cert scans,
++ device cache   shared cache    repository bundles, monitor sweeps
+   │                                   │
+   │                            <b>Monitor probes</b> ─▶ samples ─▶ hourly / daily roll-ups
    │
-<span class="hl">Gunicorn</span> (4 workers × 8 threads) ─── <b>Flask app factory</b>
-   │              │                        │
-<b>PostgreSQL</b>     <b>Redis</b>              <b>Scheduler sidecar</b> (systemd)
-source of truth  rate-limit +        cron catalog: syncs, backups,
-+ device cache   shared cache        cert scans, upgrade runbooks
+   │            <b>request file</b> ──▶ <span class="hl">privileged runner</span> (the only root service)
+   │                                 updates · dependencies · units · restarts
    │
-<span class="hl">Streaming replica</span> (TLS, mutual-CA) ──▶ standby node
+<span class="hl">Streaming replica</span> (TLS, mutual-CA) ──▶ standby node ──▶ 5-min pull of the data tree
 </pre>
   </div>
 </section>
@@ -78,6 +83,51 @@ source of truth  rate-limit +        cron catalog: syncs, backups,
     <div class="step"><div class="n">5</div><h4>Git</h4><p>reports/&lt;device&gt;/_config.json</p></div>
   </div>
   <div class="callout"><span class="cico">🔧</span><p>The REST/JSON-RPC endpoint map lives in a database <b>registry</b>, so a firmware upgrade that moves a URI is fixed from the UI — no redeploy.</p></div>
+</section>
+
+<section class="wrap reveal">
+  <div class="sec-head">
+    <span class="eyebrow">Data flow</span>
+    <h2>How a probe becomes a two-year chart</h2>
+    <p>Monitoring is a time series, because the signal is a value <i>changing</i> — not its current reading.</p>
+  </div>
+  <div class="flow">
+    <div class="step"><div class="n">1</div><h4>Sweep</h4><p>One scheduled action, every 3 minutes</p></div>
+    <div class="step"><div class="n">2</div><h4>Probe</h4><p>Synthetic request, management API or read-only CLI</p></div>
+    <div class="step"><div class="n">3</div><h4>Grade</h4><p>Thresholds, or drift against the previous fingerprint</p></div>
+    <div class="step"><div class="n">4</div><h4>Sample</h4><p>Value, payload and status stored per probe</p></div>
+    <div class="step"><div class="n">5</div><h4>Roll up</h4><p>min/avg/max per hour and per day, before pruning</p></div>
+  </div>
+  <div class="grid">
+    <div class="card"><div class="ico">⏱️</div><h3>A probe interval is a multiple of the sweep</h3>
+      <p>A probe only fires when its own interval has elapsed <i>and</i> a sweep tick happens, so a 5-minute probe under a 3-minute sweep is really a 6-minute probe. Intervals are constrained to multiples so the configured cadence is the real one.</p></div>
+    <div class="card"><div class="ico">🧮</div><h3>Roll-ups run before pruning</h3>
+      <p>The hourly bucket has to see the samples the retention cap is about to delete. Daily buckets are aggregated from hourly ones with a sample-weighted mean, so an hour with one reading does not weigh the same as an hour with twelve.</p></div>
+    <div class="card"><div class="ico">🔌</div><h3>The sweep is not a scheduled extra</h3>
+      <p>Roll-up happens inside the probe run rather than as its own scheduled action, because nothing in this product seeds schedules — a feature that depends on the operator creating a row does not exist on a fresh install.</p></div>
+  </div>
+</section>
+
+<section class="wrap reveal">
+  <div class="sec-head">
+    <span class="eyebrow">Privilege</span>
+    <h2>Who runs what</h2>
+    <p>Three accounts, one root service, and a boundary that survives an update.</p>
+  </div>
+  <div class="grid">
+    <div class="card"><div class="ico">👤</div><h3>Service account</h3>
+      <p>Owns the application tree and runs the web worker, the scheduler, the reconciler and every timer. Login shell disabled. Its entire sudo grant is two commands: test the web-server configuration, and reload it.</p></div>
+    <div class="card"><div class="ico">🔑</div><h3>Privileged runner</h3>
+      <p>The only root service. The web worker <i>queues</i> a request file; the runner performs updates, curated dependency changes, unit installation and restarts — then verifies health and rolls back on failure. If a second root unit ever appears, the boundary has been reintroduced.</p></div>
+    <div class="card"><div class="ico">🧑‍🔧</div><h3>Installer &amp; operator accounts</h3>
+      <p>Separate from the service account and from each other, each with a narrowly-scoped sudo rule the tool itself prints — so a systems team can approve the rule without receiving the repository. The installer's grant is temporary; what keeps running afterwards is not root.</p></div>
+    <div class="card"><div class="ico">📌</div><h3>Drop-in, never a hand-edited unit</h3>
+      <p>Every update re-copies the shipped unit templates, so an edited unit silently reverts to running as root. The service account is pinned through a drop-in written by all three places that touch units — installer, migrator and update runner.</p></div>
+    <div class="card"><div class="ico">🔁</div><h3>Read-only peer trust</h3>
+      <p>The standby generates its own key pair and pulls; the private key never travels. Its public key is authorized on the primary pinned to the peer address and to a forced command that can only read the data directory — structurally incapable of writing.</p></div>
+    <div class="card"><div class="ico">🗃️</div><h3>Node-local vs replicated state</h3>
+      <p>The data tree replicates and is backed up; certificates, the virtualenv and the certificate-renewal journal are deliberately node-local — the node that fails to renew is exactly the node that could not record its own failure if the journal lived on the replica.</p></div>
+  </div>
 </section>
 
 <section class="wrap reveal">
@@ -129,7 +179,7 @@ source of truth  rate-limit +        cron catalog: syncs, backups,
       <a href="install.html">Install</a>
       <a href="https://github.com/visionebc/SATOM">Source</a>
     </div>
-    <p class="addr">http://satom.visionebc.com</p>
+    <p class="addr">https://satom.visionebc.com</p>
     <p style="margin-top:8px;"><b>SATOM</b> · System Automation & Task Orchestration Manager</p>
     <p style="margin-top:6px;">© <span class="year">2026</span> Vision EBC · Licensed under the <a href="https://github.com/visionebc/SATOM/blob/main/LICENSE">Elastic License 2.0</a> · source-available, not OSI open source · provided AS IS, no warranty</p>
     <p class="disclaimer" style="margin-top:8px;font-size:12px;opacity:.6;line-height:1.5;">SATOM is an independent source-available project, <b>not affiliated with or endorsed by Fortinet, Inc.</b> Fortinet, FortiWeb, FortiADC and FortiAnalyzer are trademarks of Fortinet, Inc., used here nominatively to describe interoperability. SATOM is <b>not</b> a FortiManager or FortiGate product.</p>

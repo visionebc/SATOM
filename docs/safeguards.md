@@ -525,6 +525,8 @@ cooldown `alerts.cooldown_hours`):
 | `backup.none` / `backup.stale` / `backup.error` | No bundle at all; none within `alerts.backup_max_hours`; the check itself failed |
 | `device.health.<name>.<status>` | A device is degraded or critical on the Fleet-health ladder — one finding per device, every failing signal listed |
 | `device.error` / `device.error.<name>` | The appliance list, or one device's health roll-up, could not be read |
+| `action.broken.<id>.<status>` | A scheduled action is failing repeatedly (`alerts.action_fail_streak_crit`, default 3) or is overdue past `alerts.action_overdue_hours` — see §9l |
+| `action.error` / `action.error.<id>` | The scheduled-action check itself, or one action's run history, could not be read |
 | `drift.error` | The drift comparison could not run |
 | `engine.error` | The alert engine itself failed — the guard on the guard |
 

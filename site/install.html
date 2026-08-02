@@ -53,7 +53,9 @@
       <h3>Connected install</h3>
       <p>Fetches OS packages and Python wheels as it goes. Detects <b>apt, dnf/yum, zypper or pacman</b> and maps package names per family; PostgreSQL paths are interrogated from the engine itself, so Debian, RHEL, SUSE and Arch layouts all work.</p>
       <div class="code">
-        <span class="c"># as root on a fresh host</span><br>
+        <span class="c"># step 0 — reports, changes nothing</span><br>
+        ./install-satom.sh --preflight<br>
+        <span class="c"># then, as root on a fresh host</span><br>
         ./install-satom.sh
       </div>
       <ul class="checks">
@@ -110,14 +112,54 @@
     <tr><td>Application</td><td>Code deployed with a dedicated virtualenv; pinned dependencies from wheels (offline) or PyPI (online)</td></tr>
     <tr><td>Database</td><td>PostgreSQL cluster initialized if needed; app database, roles and schema created; replication on clusters</td></tr>
     <tr><td>PKI</td><td>Internal CA on the primary; per-node leaf certificates; nginx TLS on your chosen port</td></tr>
-    <tr><td>Services</td><td>systemd units for the web app and the scheduler sidecar, enabled and health-checked (<code>/healthz</code>)</td></tr>
-    <tr><td>Hardening</td><td>SELinux and firewalld handled best-effort on RHEL/SUSE; a manual covers sudoers policy, hardening and uninstall</td></tr>
+    <tr><td>Services</td><td>systemd units for the web app, the scheduler sidecar, the reconciler, the alert, certificate-renewal and publication timers — enabled and health-checked (<code>/healthz</code>)</td></tr>
+    <tr><td>Accounts</td><td>A dedicated, shell-less service account owns the tree and runs every unit; a single root runner handles updates. The web application does not run as root.</td></tr>
+    <tr><td>Console</td><td>The <code>satom</code> operator console, installed as a root-owned copy outside the application tree and re-installed after every update</td></tr>
+    <tr><td>Hardening</td><td>SELinux and firewalld handled best-effort on RHEL/SUSE; a manual covers three separate sudo policies, hardening and uninstall</td></tr>
   </table>
   <ul class="checks" style="max-width:640px;margin:28px auto 0;">
-    <li>A sysadmin manual (<code>INSTALL.md</code>) ships inside every bundle — requirements, permissions to request, sudo/sudoers options, hardening checklist</li>
+    <li>A sysadmin manual (<code>INSTALL.md</code>) ships inside every bundle — requirements, package lists per distribution family, permissions to request, sudo/sudoers options, hardening checklist</li>
     <li>Idempotent re-runs: an existing installation is preserved and only dependencies are refreshed</li>
   </ul>
-  <div class="cta"><a class="btn btn-primary" href="features.html">Explore the feature catalog →</a></div>
+</section>
+
+<section class="wrap reveal">
+  <div class="sec-head">
+    <h2>Finishing the install: arm the protections</h2>
+    <p>The guards travel with the code. The <b>coverage</b> does not — and this is the most common way an installation ends up unprotected.</p>
+  </div>
+  <div class="grid g2">
+    <div class="card">
+      <span class="tag tag-vio">Required</span>
+      <h3>Nothing is scheduled on your behalf</h3>
+      <p>Schedules are database rows, seeds are insert-only and operator edits outrank them, so the product never invents recurring work against live appliances. A brand-new node therefore has <b>no scheduled actions and no alert recipient</b>: its signals are computed and delivered nowhere, its source of truth is never refreshed, and no backup is ever produced.</p>
+      <div class="code">
+        <span class="c"># show the gap, then close it</span><br>
+        satom diagnose install<br>
+        satom execute seed actions --yes
+      </div>
+      <ul class="checks">
+        <li>Prints the plan first; never touches a schedule that already exists</li>
+        <li>Set an alert recipient under Settings → Alerts — a computed signal with nowhere to go is not an alert</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="tag tag-blue">Recommended</span>
+      <h3>Grant the operator account, not root</h3>
+      <p>Day-to-day diagnosis and repair run through the console, which needs one entry in the sudo policy — a single binary at a fixed path, owned by root. The tool prints the rule itself, with no privilege required, so it can be handed to a systems team without shipping the repository.</p>
+      <div class="code">
+        <span class="c"># prints the rule; changes nothing</span><br>
+        satom show sudoers &lt;account&gt;<br>
+        <span class="c"># then verify the boundary is intact</span><br>
+        satom diagnose privilege
+      </div>
+      <ul class="checks">
+        <li>The path must be fixed and the file root-owned — a writable path makes the rule equivalent to unrestricted root</li>
+        <li>The check fails if the console was granted to the <i>service</i> account, which would be the same mistake</li>
+      </ul>
+    </div>
+  </div>
+  <div class="cta"><a class="btn btn-primary" href="features.html">Explore the feature catalog →</a> <a class="btn btn-ghost" href="safeguards.html">Read the safeguards →</a></div>
 </section>
 
 <footer>
@@ -133,7 +175,7 @@
       <a href="install.html">Install</a>
       <a href="https://github.com/visionebc/SATOM">Source</a>
     </div>
-    <p class="addr">http://satom.visionebc.com</p>
+    <p class="addr">https://satom.visionebc.com</p>
     <p style="margin-top:8px;"><b>SATOM</b> · System Automation & Task Orchestration Manager</p>
     <p style="margin-top:6px;">© <span class="year">2026</span> Vision EBC · Licensed under the <a href="https://github.com/visionebc/SATOM/blob/main/LICENSE">Elastic License 2.0</a> · source-available, not OSI open source · provided AS IS, no warranty</p>
     <p class="disclaimer" style="margin-top:8px;font-size:12px;opacity:.6;line-height:1.5;">SATOM is an independent source-available project, <b>not affiliated with or endorsed by Fortinet, Inc.</b> Fortinet, FortiWeb, FortiADC and FortiAnalyzer are trademarks of Fortinet, Inc., used here nominatively to describe interoperability. SATOM is <b>not</b> a FortiManager or FortiGate product.</p>

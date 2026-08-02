@@ -287,6 +287,16 @@ OFFLINE=0
 if [ -d "$BUNDLE_DIR" ] && [ -d "$BUNDLE_DIR/debs" ]; then
     [ "$PKG_MGR" = "apt" ] || die "El bundle offline contiene paquetes .deb (familia Debian/Ubuntu) y esta máquina usa ${PKG_MGR}. Usa el instalador en modo ONLINE (borra o renombra bundle/) o genera el bundle para esta familia."
     OFFLINE=1
+elif [ -d "$BUNDLE_DIR" ] && [ -d "$BUNDLE_DIR/rpms-suse" ]; then
+    # Directorio propio a proposito: los dos bundles son .rpm y NO son
+    # intercambiables (python311 vs python3.11, librerias base distintas, y
+    # zypper y dnf no leen los repos igual). Separarlos convierte "bundle
+    # equivocado" en un error explicito aqui, en vez de una resolucion de
+    # dependencias que revienta a mitad de la instalacion.
+    case "$PKG_MGR" in
+        zypper) OFFLINE=1 ;;
+        *) die "El bundle offline contiene paquetes .rpm de openSUSE/SLES y esta máquina usa ${PKG_MGR}. Usa el instalador en modo ONLINE (borra o renombra bundle/) o genera el bundle para esta familia." ;;
+    esac
 elif [ -d "$BUNDLE_DIR" ] && [ -d "$BUNDLE_DIR/rpms" ]; then
     case "$PKG_MGR" in
         dnf|yum) OFFLINE=1 ;;
@@ -322,6 +332,7 @@ pf_bundle_has() {
     [ $OFFLINE -eq 1 ] || return 1
     ls "$BUNDLE_DIR"/debs/"$1"_*.deb  >/dev/null 2>&1 && return 0
     ls "$BUNDLE_DIR"/rpms/"$1"-[0-9]*.rpm >/dev/null 2>&1 && return 0
+    ls "$BUNDLE_DIR"/rpms-suse/"$1"-[0-9]*.rpm >/dev/null 2>&1 && return 0
     return 1
 }
 
@@ -792,6 +803,35 @@ if [ ${#MISSING[@]} -gt 0 ]; then
             dpkg -i --skip-same-version "$BUNDLE_DIR"/debs/*.deb >>"$INSTALL_LOG" 2>&1 \
                 || apt-get -y -f --no-download install >>"$INSTALL_LOG" 2>&1 \
                 || die "Fallo instalando debs del bundle (revisa $INSTALL_LOG)"
+        elif [ -d "$BUNDLE_DIR/rpms-suse" ]; then
+            # zypper: se le da un directorio de repos PROPIO (--reposd-dir) que
+            # contiene UNICAMENTE el bundle. Equivalente al --repofrompath de
+            # dnf: resuelve sin red y sin tocar los repos del sistema, y no deja
+            # un repo dado de alta al terminar (que seria estado que nadie pidio).
+            _zr="$(mktemp -d)"
+            mkdir -p "$_zr/repos.d" "$_zr/cache"
+            cat > "$_zr/repos.d/satom-bundle.repo" <<ZREPO
+[satom-bundle]
+name=SATOM offline bundle
+baseurl=dir://$BUNDLE_DIR/rpms-suse
+enabled=1
+autorefresh=0
+gpgcheck=0
+keeppackages=0
+ZREPO
+            zypper --non-interactive --no-gpg-checks \
+                   --reposd-dir "$_zr/repos.d" --cache-dir "$_zr/cache" \
+                   install --no-recommends --auto-agree-with-licenses \
+                   "${REQUIRED_PKGS[@]}" >>"$INSTALL_LOG" 2>&1 \
+                || { rm -rf "$_zr"; die "Fallo instalando rpms del bundle SUSE (revisa $INSTALL_LOG)"; }
+            # openssh sólo se necesita en cluster; si viaja en el bundle, se instala.
+            if [ "${MODE:-}" = "cluster" ]; then
+                zypper --non-interactive --no-gpg-checks \
+                       --reposd-dir "$_zr/repos.d" --cache-dir "$_zr/cache" \
+                       install --no-recommends --auto-agree-with-licenses \
+                       "${SSH_PKGS[@]}" >>"$INSTALL_LOG" 2>&1 || true
+            fi
+            rm -rf "$_zr"
         else
             # RPM: bundle/rpms es un repo dnf local (repodata generado en el
             # build) — dnf resuelve SOLO lo necesario, sin tocar el resto

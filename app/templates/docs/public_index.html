@@ -1,0 +1,30 @@
+{# The published manual's hub — the documentation link on the sign-in page. #}
+{% extends "docs/_public_base.html" %}
+{% block shell %}
+  <article class="doc-card">
+    <h1 style="margin-bottom:6px;">Documentation</h1>
+    <p style="color:var(--fw-text-muted); font-size:14.5px; margin-bottom:22px;">
+      Every document that ships with SATOM, in reading order. Signed-in operators
+      read the same manual unredacted at <code>/docs</code>; the recovery
+      procedures are also readable from the console itself with
+      <code>satom show runbook</code>, on a node with no browser and no internet.
+    </p>
+    <div class="doc-groups">
+      {% for group in groups %}
+        <section class="doc-group">
+          <h2>{{ group.name }}</h2>
+          <p class="lead">{{ group.lead }}</p>
+          <div class="doc-grid">
+            {% for d in group.docs %}
+              <a class="doc-tile" href="{{ url_for('docs.public_view', slug=d.slug) }}">
+                <div class="ico">{{ d.icon }}</div>
+                <h3>{{ d.title }}</h3>
+                <p>{{ d.blurb }}</p>
+              </a>
+            {% endfor %}
+          </div>
+        </section>
+      {% endfor %}
+    </div>
+  </article>
+{% endblock %}

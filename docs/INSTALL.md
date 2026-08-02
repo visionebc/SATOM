@@ -198,12 +198,14 @@ Descarga paquetes de los mirrors y clona el repo de producción
 tar xzf satom-offline-<ver>-debian12-amd64.tar.gz
 # RHEL / Rocky / AlmaLinux 9
 tar xzf satom-offline-<ver>-rhel9-x86_64.tar.gz
+# openSUSE Leap 15 / SLES 15
+tar xzf satom-offline-<ver>-suse15-x86_64.tar.gz
 
 cd satom-installer
 sudo bash install-satom.sh        # detecta bundle/ y no toca la red
 ```
-Hay bundle para **Debian 12** y **RHEL/Rocky/Alma 9** únicamente.
-**openSUSE/SLES y Arch sólo tienen camino ONLINE** — en esas familias el
+Hay bundle para **Debian 12**, **RHEL/Rocky/Alma 9** y, desde **1.3**,
+**openSUSE Leap 15 / SLES 15**. **Arch sólo tiene camino ONLINE** — ahí el
 instalador necesita salida a los mirrors de la distro y a PyPI.
 
 Hay un bundle POR FAMILIA de distro — el instalador rechaza un bundle de la
@@ -213,6 +215,15 @@ familia equivocada con un mensaje claro:
   resuelve solo lo que la máquina necesita; incluye `python3.11` (los pines de
   la app exigen Python >= 3.10 y el python3 del sistema en EL9 es 3.9) y las
   `wheels/` correspondientes (cp311).
+- **openSUSE / SLES 15**: `bundle/rpms-suse/` — también `.rpm`, también con
+  metadatos, pero **directorio distinto a propósito**. Los dos bundles RPM no
+  son intercambiables: los nombres de paquete difieren (`python311` frente a
+  `python3.11`), las versiones de las librerías base difieren, y zypper y dnf
+  no leen los repos igual. Separarlos convierte «bundle equivocado» en un error
+  explícito antes de tocar nada, en lugar de una resolución de dependencias que
+  revienta a mitad de instalación. En el destino, zypper recibe un directorio
+  de repos propio (`--reposd-dir`) que contiene únicamente el bundle: resuelve
+  sin red, sin tocar los repos del sistema, y sin dejar un repo dado de alta.
 
 **Qué trae el bundle**, además del cierre de dependencias: el árbol completo de la
 aplicación, los manuales de `docs/` — legibles sin red desde la propia consola, en
@@ -231,8 +242,20 @@ tar xzOf satom-offline-<ver>-*.tar.gz --wildcards '*/bundle/app.tar.gz' | tar xz
 
 Verifica la integridad con el `.sha256` que acompaña a cada tarball.
 Los bundles se generan con `installers/build-offline-bundle.sh` (en un Debian 12
-con red) y `installers/build-offline-bundle-rhel.sh` (en una máquina o contenedor
-rockylinux:9 con red).
+con red), `installers/build-offline-bundle-rhel.sh` (en una máquina o contenedor
+`rockylinux:9` con red) y `installers/build-offline-bundle-suse.sh` (en
+`opensuse/leap:15.6` con red).
+
+El builder de SUSE descarga contra una **raíz vacía** (`zypper --root`). zypper
+sólo baja lo que le falta a la máquina donde corre, así que un `--download-only`
+normal produciría un bundle que sólo sirve en un destino idéntico al build host.
+Con una raíz vacía zypper cree que no hay nada instalado y resuelve el cierre
+completo — el equivalente de `dnf download --resolve --alldeps`. Esa raíz
+necesita una copia de `/etc/os-release`: los `.repo` usan `$releasever` y zypper
+lo deriva del `os-release` **de la raíz**. Sin él las URLs quedan mal formadas,
+el refresh parece funcionar, y todos los paquetes se reportan como *not found in
+package names* — un fallo que se lee como «esta distribución no tiene
+python311».
 
 ---
 

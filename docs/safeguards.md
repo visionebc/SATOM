@@ -303,6 +303,38 @@ would leave those elements light. And the path-separator check on brand assets
 is a *second* layer: werkzeug's `safe_join` refuses traversal on its own, so the
 test asserts the 404 outcome rather than which layer fired.
 
+## 8c. The public site's theme layer
+
+The marketing site is static: no server, no database, no session. Its themes are
+CSS custom properties plus one key in `localStorage`. That simplicity removes the
+injection surface of section 8b entirely -- and introduces three different ways to
+ship something broken, each of which has happened at least once.
+
+| Guard | What it prevents | Where |
+|---|---|---|
+| Two accent slots: `--accent` (canvas) and `--accent-on-chrome` (nav/footer) | One "brand colour" painted on both a light and a dark background. The wordmark shipped at 1.65:1 -- rendered, and legible to nobody | `site/assets/site.css`; `test_canvas_accent_is_never_painted_on_the_chrome` |
+| Every theme block must define the identical token set | A theme that omits a token silently inherits the previously applied theme's value, so "switch to dark" leaves light-canvas colours behind with no error | `test_every_theme_defines_the_same_tokens` |
+| WCAG AA asserted per theme, per text pair | A palette that looks right in one theme and fails in another. Contrast is not a property of a colour, it is a property of a pair | `test_theme_passes_wcag_aa_on_every_text_pair` |
+| Blocking theme read in `<head>`, before first paint | The stored theme applied after paint: the page flashes the default and flips. A deferred script cannot avoid this | `test_page_bootstraps_the_theme_before_paint` |
+| `applyTheme` rejects unknown names | A value left in `localStorage` by an older release written straight into the DOM | `test_js_only_accepts_known_themes` |
+| Gradient-valued tokens barred from `border-color`/`outline-color` | CSS drops the declaration silently; the border simply disappears. Hence `--cta-bg` (paint) and `--cta-edge` (solid) | `test_no_gradient_is_used_where_css_needs_a_solid` |
+| Generator and hand-written pages asserted against the **same** expectations | The generator drifting: it kept emitting the company shield in its nav long after the product mark landed on the six curated pages | `test_generator_matches_the_hand_written_pages`, `test_page_uses_the_product_mark_not_the_company_shield` |
+| Brand mark must keep an alpha channel with transparent corners | Flattening the mark re-adds the plate and frame it deliberately does not have | `test_brand_mark_keeps_its_transparency` |
+
+**The generator is an f-string.** Its HTML template is interpolated, so a literal
+`{` in emitted JavaScript must be doubled or the module will not even import. A
+test asserts the escaping, because the failure is a hard `SyntaxError` in a file
+nothing imports at collection time -- the exact shape of the defect that put a
+broken `cert_service.py` into two published bundles.
+
+**Default without JavaScript.** `:root` carries the default theme's values, not
+just `html[data-theme="aurora"]`. With scripting disabled the site renders
+correctly rather than unstyled.
+
+**Not guarded, on purpose.** The stored preference is per browser; there is no
+server to hold it. A visitor's choice does not follow them across devices, and
+the console's theme (section 8b) is a separate setting with a separate store.
+
 ## 9. The alert catalog
 
 Everything above is only useful if silence means healthy. The signals that exist
@@ -1171,6 +1203,22 @@ The third step matters more than it looks: the assertion behind step 1 was once
 a plain substring check, and the **comment explaining the rule contained the
 substring**, so the test passed with the rule removed. Capture pytest's exit
 code *before* any pipe - a pipeline ending in `tail` always exits 0.
+
+
+### The public site's themes (section 8c)
+
+```bash
+cd /opt/satom
+# every theme complete, AA on every pair, both surfaces switchable
+venv/bin/python3 -m pytest tests/test_site_theme.py -q
+
+# the served page really bootstraps before paint (not just the repo copy)
+curl -sk -H "Host: <site-host>" https://127.0.0.1/index.html \
+  | sed -n '1,/<\/head>/p' | grep -c 'satom.site.theme'      # expect 1
+
+# the generated pages did not drift from the curated ones
+venv/bin/python3 deploy/gen_site_docs.py --check
+```
 
 ## Related
 

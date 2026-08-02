@@ -189,6 +189,7 @@ def head(title: str, description: str, up: str, active: str) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{html.escape(title)} — SATOM</title>
 <meta name="description" content="{html.escape(description)}">
+<link rel="icon" href="{up}favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="{up}assets/favicon.png">
 <link rel="apple-touch-icon" href="{up}assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">

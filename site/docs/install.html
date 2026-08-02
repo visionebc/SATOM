@@ -321,6 +321,37 @@ nombre en lugar de morir a mitad de instalación:</p>
 </tr>
 </tbody>
 </table>
+<h3 id="15b-notas-por-distribucion-validadas-en-instalacion-real">1.5b Notas por distribución (validadas en instalación real)</h3>
+<p><strong>openSUSE Leap 15.6 / SLES 15</strong> — la familia <code>zypper</code> funciona, con dos
+salvedades que NO son de SATOM sino de la imagen base:</p>
+<ul>
+<li><strong><code>libexpat</code> desactualizado rompe la creación del venv.</strong> El <code>python311</code> de
+  los mirrors actuales está compilado contra <code>libexpat</code> 2.7.x; una imagen del
+  template trae 2.4.4 y <code>zypper install python311</code> <strong>no actualiza una
+  dependencia que ya está instalada</strong>. Síntoma:
+  <code>pyexpat.cpython-311.so: undefined symbol: XML_SetAllocTrackerActivationThreshold</code>
+  y <code>python3.11 -m venv</code> aborta en <code>ensurepip</code>. Remedio previo a instalar:
+  <code>bash
+  sudo zypper --non-interactive update libexpat1</code></li>
+<li><strong>No existe <code>/usr/bin/python3</code>.</strong> El binario es <code>python3.11</code>. El instalador
+  lo resuelve con <code>pick_python()</code> y usa <code>$PYBIN</code> en todas partes; sólo importa
+  si se ejecutan a mano fragmentos del manual.</li>
+<li><strong>El vhost va a <code>/etc/nginx/vhosts.d/</code></strong>, no a <code>conf.d/</code>: el <code>nginx.conf</code> de
+  fábrica de openSUSE incluye <code>conf.d/*.conf</code> <strong>dos veces</strong> (todo lo que se
+  deje ahí se parsea duplicado) y trae un <code>server</code> propio en el puerto 80 que
+  choca con el <code>default_server</code> de SATOM. El instalador elige <code>vhosts.d</code>
+  automáticamente y neutraliza el bloque de fábrica.</li>
+<li><strong><code>sshd</code> no viene activo</strong> en el template LXC de openSUSE. Si la máquina se
+  administra por SSH hay que habilitarlo antes.</li>
+</ul>
+<p><strong>Cuenta de servicio:</strong> openSUSE trae <code>USERGROUPS_ENAB no</code> en <code>login.defs</code>, así
+que un <code>useradd --system</code> sin más dejaría la cuenta en el grupo compartido
+<code>users</code> (gid 100) junto a los usuarios interactivos. El instalador pasa
+<code>--user-group</code> para forzar grupo privado en todas las familias.</p>
+<p><strong>PostgreSQL:</strong> el <code>pg_hba.conf</code> por defecto de openSUSE usa <strong><code>ident</code></strong> para
+<code>127.0.0.1/32</code> (Debian usa <code>scram-sha-256</code>). El instalador inserta su propia
+regla <strong>al principio</strong> del fichero — <code>pg_hba</code> es <em>first-match</em>, así que añadirla
+al final no serviría de nada.</p>
 <h3 id="16-comprobacion-previa-sin-instalar-nada-preflight">1.6 Comprobación previa sin instalar nada (<code>--preflight</code>)</h3>
 <pre><code class="language-bash">sudo bash install-satom.sh --preflight     # alias: --check
 </code></pre>
@@ -358,6 +389,14 @@ servidor SSH está instalado y activo — obligatorio en el <strong>primary</str
 </code></pre>
 <p>Descarga paquetes de los mirrors y clona el repo de producción
 (<code>https://{host}.example.net/satom-prod/SATOM.git</code>, configurable en el prompt).</p>
+<blockquote>
+<p><strong>El repositorio es privado.</strong> <code>git clone</code> pedirá credenciales; si se ejecuta
+de forma desatendida hay que dar la URL con token
+(<code>https://&lt;usuario&gt;:&lt;token&gt;@{host}.example.net/...</code>) o apuntar a un espejo
+accesible. Un <code>401</code> en este punto detiene la instalación antes de tocar nada.
+<strong>Borrar la credencial del checkout al terminar:</strong>
+<code>git -C /opt/satom remote set-url origin https://{host}.example.net/satom-prod/SATOM.git</code></p>
+</blockquote>
 <h3 id="22-offline-sin-red">2.2 Offline (sin red)</h3>
 <pre><code class="language-bash"># Debian 12
 tar xzf satom-offline-&lt;ver&gt;-debian12-amd64.tar.gz
@@ -367,6 +406,9 @@ tar xzf satom-offline-&lt;ver&gt;-rhel9-x86_64.tar.gz
 cd satom-installer
 sudo bash install-satom.sh        # detecta bundle/ y no toca la red
 </code></pre>
+<p>Hay bundle para <strong>Debian 12</strong> y <strong>RHEL/Rocky/Alma 9</strong> únicamente.
+<strong>openSUSE/SLES y Arch sólo tienen camino ONLINE</strong> — en esas familias el
+instalador necesita salida a los mirrors de la distro y a PyPI.</p>
 <p>Hay un bundle POR FAMILIA de distro — el instalador rechaza un bundle de la
 familia equivocada con un mensaje claro:
 - <strong>Debian 12</strong>: cierre completo de dependencias <code>.deb</code> + <code>wheels/</code> + <code>app.tar.gz</code>.

@@ -6,6 +6,55 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+- **Seven installer defects found by installing on a distribution nobody had
+  tried.** The `zypper` code path had been written but never executed against a
+  real openSUSE machine. Three of the seven were not SUSE-specific at all and
+  affected **every** fresh installation:
+
+  1. **`.env` was left `600 root:root`.** Everything that runs as the service
+     account and sources it — the alert engine, certificate renewal, the git
+     publisher, the HA datasync and the shared node-role probe — was born dead
+     on a new installation. The two existing nodes only worked because the mode
+     had been corrected by hand months earlier. It is now `640 root:<account>`:
+     root still owns the file, so a write primitive in the web worker cannot
+     rewrite its own secrets, but the timers can read it.
+  2. **`satom-git-publish` reported FAILURE on every new installation.** It ran
+     `git add reports` before any device sync had created that directory, and
+     the `|| exit 1` turned a not-yet-existing path into a unit failure — so
+     *copy three* of the backup architecture (the source-of-truth tree versioned
+     in git) looked broken from day one. It now exits cleanly when there is
+     nothing to publish yet.
+  3. **A re-run left the running process holding stale secrets.**
+     `systemctl enable --now` is enable+start, and start on an already-running
+     unit is a no-op. A second run regenerates `.env` with a new database
+     password, `SECRET_KEY` and `FERNET_KEY`, but systemd reads
+     `EnvironmentFile` only at start — so the old process kept the old
+     credentials and every login failed with *password authentication failed*
+     while `/healthz` happily returned 200, because it does not touch the
+     database. The units are now restarted explicitly.
+
+  And four that only fire outside Debian:
+
+  4. **The service account could land in a shared group.** `useradd --system`
+     relies on `USERGROUPS_ENAB`, which openSUSE disables — the account would
+     join `users` (gid 100) alongside every interactive user instead of getting
+     a private group. Now forced with `--user-group`.
+  5. **Bare `python3` calls** in five places that already had `$PYBIN` resolved.
+     openSUSE ships `python3.11` with no `python3` symlink.
+  6. **PostgreSQL rejected the application before checking its password.** The
+     installer trusted the distribution default for the local TCP connection;
+     openSUSE defaults to `ident`, which fails hard. It now writes its own
+     `scram-sha-256` rule **at the top** of `pg_hba.conf` — the file is
+     first-match, so appending would have been inert. This also closes a gap in
+     *standalone* mode on every distribution, where the PostgreSQL block was
+     skipped entirely because it lived inside the primary-only branch.
+  7. **The nginx vhost went to a directory that is included twice.** openSUSE's
+     stock `nginx.conf` includes `conf.d/*.conf` on two separate lines and ships
+     its own port-80 server that collides with the `default_server` SATOM needs.
+     The vhost now goes to `vhosts.d/` and the stock block is neutralised, the
+     same way `sites-enabled/default` is removed on Debian.
+
 ### Changed
 - **The last `fortinet` identifiers are gone from the platform itself.** The
   database, the PostgreSQL role, the Linux service account and the PostgreSQL

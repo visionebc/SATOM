@@ -103,6 +103,41 @@ nombre en lugar de morir a mitad de instalación:
 | `ss` *(opcional)* | `iproute2` | comprobar puertos ocupados; sin él sólo se avisa |
 | systemd como **PID 1** | — | todo el ciclo de vida de servicios |
 
+### 1.5b Notas por distribución (validadas en instalación real)
+
+**openSUSE Leap 15.6 / SLES 15** — la familia `zypper` funciona, con dos
+salvedades que NO son de SATOM sino de la imagen base:
+
+- **`libexpat` desactualizado rompe la creación del venv.** El `python311` de
+  los mirrors actuales está compilado contra `libexpat` 2.7.x; una imagen del
+  template trae 2.4.4 y `zypper install python311` **no actualiza una
+  dependencia que ya está instalada**. Síntoma:
+  `pyexpat.cpython-311.so: undefined symbol: XML_SetAllocTrackerActivationThreshold`
+  y `python3.11 -m venv` aborta en `ensurepip`. Remedio previo a instalar:
+  ```bash
+  sudo zypper --non-interactive update libexpat1
+  ```
+- **No existe `/usr/bin/python3`.** El binario es `python3.11`. El instalador
+  lo resuelve con `pick_python()` y usa `$PYBIN` en todas partes; sólo importa
+  si se ejecutan a mano fragmentos del manual.
+- **El vhost va a `/etc/nginx/vhosts.d/`**, no a `conf.d/`: el `nginx.conf` de
+  fábrica de openSUSE incluye `conf.d/*.conf` **dos veces** (todo lo que se
+  deje ahí se parsea duplicado) y trae un `server` propio en el puerto 80 que
+  choca con el `default_server` de SATOM. El instalador elige `vhosts.d`
+  automáticamente y neutraliza el bloque de fábrica.
+- **`sshd` no viene activo** en el template LXC de openSUSE. Si la máquina se
+  administra por SSH hay que habilitarlo antes.
+
+**Cuenta de servicio:** openSUSE trae `USERGROUPS_ENAB no` en `login.defs`, así
+que un `useradd --system` sin más dejaría la cuenta en el grupo compartido
+`users` (gid 100) junto a los usuarios interactivos. El instalador pasa
+`--user-group` para forzar grupo privado en todas las familias.
+
+**PostgreSQL:** el `pg_hba.conf` por defecto de openSUSE usa **`ident`** para
+`127.0.0.1/32` (Debian usa `scram-sha-256`). El instalador inserta su propia
+regla **al principio** del fichero — `pg_hba` es *first-match*, así que añadirla
+al final no serviría de nada.
+
 ### 1.6 Comprobación previa sin instalar nada (`--preflight`)
 
 ```bash
@@ -148,6 +183,13 @@ sudo bash install-satom.sh
 Descarga paquetes de los mirrors y clona el repo de producción
 (`https://git.example.net/satom-prod/SATOM.git`, configurable en el prompt).
 
+> **El repositorio es privado.** `git clone` pedirá credenciales; si se ejecuta
+> de forma desatendida hay que dar la URL con token
+> (`https://<usuario>:<token>@git.example.net/...`) o apuntar a un espejo
+> accesible. Un `401` en este punto detiene la instalación antes de tocar nada.
+> **Borrar la credencial del checkout al terminar:**
+> `git -C /opt/satom remote set-url origin https://git.example.net/satom-prod/SATOM.git`
+
 ### 2.2 Offline (sin red)
 ```bash
 # Debian 12
@@ -158,6 +200,10 @@ tar xzf satom-offline-<ver>-rhel9-x86_64.tar.gz
 cd satom-installer
 sudo bash install-satom.sh        # detecta bundle/ y no toca la red
 ```
+Hay bundle para **Debian 12** y **RHEL/Rocky/Alma 9** únicamente.
+**openSUSE/SLES y Arch sólo tienen camino ONLINE** — en esas familias el
+instalador necesita salida a los mirrors de la distro y a PyPI.
+
 Hay un bundle POR FAMILIA de distro — el instalador rechaza un bundle de la
 familia equivocada con un mensaje claro:
 - **Debian 12**: cierre completo de dependencias `.deb` + `wheels/` + `app.tar.gz`.

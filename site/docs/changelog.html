@@ -72,6 +72,57 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public, open-source
 project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li><strong>Seven installer defects found by installing on a distribution nobody had
+  tried.</strong> The <code>zypper</code> code path had been written but never executed against a
+  real openSUSE machine. Three of the seven were not SUSE-specific at all and
+  affected <strong>every</strong> fresh installation:</li>
+</ul>
+<ol>
+<li><strong><code>.env</code> was left <code>600 root:root</code>.</strong> Everything that runs as the service
+     account and sources it — the alert engine, certificate renewal, the git
+     publisher, the HA datasync and the shared node-role probe — was born dead
+     on a new installation. The two existing nodes only worked because the mode
+     had been corrected by hand months earlier. It is now <code>640 root:&lt;account&gt;</code>:
+     root still owns the file, so a write primitive in the web worker cannot
+     rewrite its own secrets, but the timers can read it.</li>
+<li><strong><code>satom-git-publish</code> reported FAILURE on every new installation.</strong> It ran
+     <code>git add reports</code> before any device sync had created that directory, and
+     the <code>|| exit 1</code> turned a not-yet-existing path into a unit failure — so
+     <em>copy three</em> of the backup architecture (the source-of-truth tree versioned
+     in git) looked broken from day one. It now exits cleanly when there is
+     nothing to publish yet.</li>
+<li><strong>A re-run left the running process holding stale secrets.</strong>
+     <code>systemctl enable --now</code> is enable+start, and start on an already-running
+     unit is a no-op. A second run regenerates <code>.env</code> with a new database
+     password, <code>SECRET_KEY</code> and <code>FERNET_KEY</code>, but systemd reads
+     <code>EnvironmentFile</code> only at start — so the old process kept the old
+     credentials and every login failed with <em>password authentication failed</em>
+     while <code>/healthz</code> happily returned 200, because it does not touch the
+     database. The units are now restarted explicitly.</li>
+</ol>
+<p>And four that only fire outside Debian:</p>
+<ol start="4">
+<li><strong>The service account could land in a shared group.</strong> <code>useradd --system</code>
+     relies on <code>USERGROUPS_ENAB</code>, which openSUSE disables — the account would
+     join <code>users</code> (gid 100) alongside every interactive user instead of getting
+     a private group. Now forced with <code>--user-group</code>.</li>
+<li><strong>Bare <code>python3</code> calls</strong> in five places that already had <code>$PYBIN</code> resolved.
+     openSUSE ships <code>python3.11</code> with no <code>python3</code> symlink.</li>
+<li><strong>PostgreSQL rejected the application before checking its password.</strong> The
+     installer trusted the distribution default for the local TCP connection;
+     openSUSE defaults to <code>ident</code>, which fails hard. It now writes its own
+     <code>scram-sha-256</code> rule <strong>at the top</strong> of <code>pg_hba.conf</code> — the file is
+     first-match, so appending would have been inert. This also closes a gap in
+     <em>standalone</em> mode on every distribution, where the PostgreSQL block was
+     skipped entirely because it lived inside the primary-only branch.</li>
+<li><strong>The nginx vhost went to a directory that is included twice.</strong> openSUSE's
+     stock <code>nginx.conf</code> includes <code>conf.d/*.conf</code> on two separate lines and ships
+     its own port-80 server that collides with the <code>default_server</code> SATOM needs.
+     The vhost now goes to <code>vhosts.d/</code> and the stock block is neutralised, the
+     same way <code>sites-enabled/default</code> is removed on Debian.</li>
+</ol>
 <h3 id="changed">Changed</h3>
 <ul>
 <li><strong>The last <code>fortinet</code> identifiers are gone from the platform itself.</strong> The
@@ -98,7 +149,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   and on the public documentation site. One source, three renderings — no copy
   to fall out of date. A test fails the suite if any surface stops carrying it.</li>
 </ul>
-<h3 id="fixed">Fixed</h3>
+<h3 id="fixed_1">Fixed</h3>
 <ul>
 <li><strong>The application reported version 1.0 through four releases.</strong> The footer
   and Settings -&gt; System Information each carried a hand-written literal that
@@ -125,7 +176,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   intensity is per-theme, so the dark palette can lean on it without the light
   one looking neon.</li>
 </ul>
-<h3 id="fixed_1">Fixed</h3>
+<h3 id="fixed_2">Fixed</h3>
 <ul>
 <li><strong>The site wordmark was effectively invisible.</strong> A single <code>--accent</code> served
   both the light canvas and the navy chrome, putting the bold half of the
@@ -167,7 +218,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   own output and <strong>aborts</strong> on any survivor, naming pattern, file and line.
   Publication is opt-in: a document not listed is not published.</li>
 </ul>
-<h3 id="fixed_2">Fixed</h3>
+<h3 id="fixed_3">Fixed</h3>
 <ul>
 <li><strong>The CLI could crash while printing.</strong> An em dash in a title raised
   <code>UnicodeEncodeError</code> on a stream with an ASCII encoding (a serial console,
@@ -216,7 +267,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   backups at all. It prints the plan and only applies with <code>--yes</code>, and it
   never touches an existing row — operator edits still win.</li>
 </ul>
-<h3 id="fixed_3">Fixed</h3>
+<h3 id="fixed_4">Fixed</h3>
 <ul>
 <li><strong>Two diagnostics were modifying the tree they diagnose.</strong> <code>git status</code> run as
   root rewrites <code>.git/index</code> and takes it from the service account;
@@ -283,7 +334,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   <code>/healthz</code> returned 200 and the whole test suite stayed green.</p>
 <p>Reference: <a href="docs/cli.md"><code>docs/cli.md</code></a>. Permissions to request:
   <code>docs/INSTALL.md</code> §5, <em>Cuenta de OPERADOR</em>.</p>
-<h3 id="fixed_4">Fixed</h3>
+<h3 id="fixed_5">Fixed</h3>
 <ul>
 <li><strong>The device cards on the probe pages were painted for a dark theme.</strong> SATOM
   has no dark mode — <code>static/css/fortiweb.css</code> is a light chrome (<code>#F4F5F7</code>
@@ -328,7 +379,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   instead of sitting critical forever. Two knobs in Settings → Alerts
   (<em>Automation fail streak → critical</em>, <em>Automation overdue (hours)</em>).</li>
 </ul>
-<h3 id="fixed_5">Fixed</h3>
+<h3 id="fixed_6">Fixed</h3>
 <ul>
 <li>
 <p><strong>Maintenance mode suppressed alerts but not work.</strong> An appliance parked with
@@ -436,7 +487,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   harvest cache, which is empty on a licence-locked box). A failure is printed
   in the form instead of degrading to an empty dropdown — "no policies" and
   "could not ask" look identical in a <code>&lt;select&gt;</code> and mean opposite things.</p>
-<h3 id="fixed_6">Fixed</h3>
+<h3 id="fixed_7">Fixed</h3>
 <ul>
 <li><strong><code>transactions</code> could report a silent zero on a saturated policy.</strong> Found by
   a real load test against {device} (2026-07-28): a policy carrying
@@ -487,7 +538,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   permanently red. The worst status and per-status counts moved into the
   summary. See <code>docs/safeguards.md</code> §9d.</li>
 </ul>
-<h3 id="fixed_7">Fixed</h3>
+<h3 id="fixed_8">Fixed</h3>
 <ul>
 <li><strong>A product ADOM inherited the manager's own infrastructure.</strong> Fleet health
   rendered <em>Infrastructure health — HA nodes · Git · backup server</em>, the
@@ -583,7 +634,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   average and a five-minute reading are not the same claim about the device.</li>
 </ul>
 <h2 id="122-2026-07-27">[1.2.2] - 2026-07-27</h2>
-<h3 id="fixed_8">Fixed</h3>
+<h3 id="fixed_9">Fixed</h3>
 <ul>
 <li><strong><code>app/services/cert_service.py</code> did not parse.</strong> An <code>import os</code> had been
   placed above <code>from __future__ import annotations</code>, which is a hard
@@ -634,7 +685,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li><strong>Rule recorded in <code>docs/overview.md</code></strong>: a new safeguard lands in
   <code>docs/safeguards.md</code> in the same commit that introduces it.</li>
 </ul>
-<h3 id="fixed_9">Fixed</h3>
+<h3 id="fixed_10">Fixed</h3>
 <ul>
 <li>Offline bundle checksums used an absolute path, so <code>sha256sum -c</code> failed in
   the directory the file was downloaded to. Now basename-only, as the RHEL
@@ -698,7 +749,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   Manager</strong>. Vendor names (FortiWeb, FortiADC, FortiAnalyzer) are untouched:
   the product manages those appliances and has to name them.</li>
 </ul>
-<h3 id="fixed_10">Fixed</h3>
+<h3 id="fixed_11">Fixed</h3>
 <ul>
 <li><strong>Scheduler and git-publish were silently dead</strong> after the privilege drop:
   both guard scripts used <code>runuser</code>, which only works as root. The scheduler
@@ -758,7 +809,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   bundles), generic package-manager support, public site (GitHub Pages),
   package registry artifacts.</li>
 </ul>
-<h3 id="fixed_11">Fixed</h3>
+<h3 id="fixed_12">Fixed</h3>
 <ul>
 <li>Upgrade-event timestamps now render in local time (<code>| localtime</code>) instead
   of raw UTC.</li>

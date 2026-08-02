@@ -52,6 +52,12 @@ ROLE="$("$ROLE_PROBE" 2>/dev/null)"
 # pathspec (never other staged work), push. No-op when nothing changed.
 # origin already embeds the Gitea token (same as the in-app publish button),
 # so a plain push authenticates.
+# SATOM-REPORTS-GUARD: en una instalacion NUEVA reports/ aun no existe
+# (lo crea el primer device_sync). `git add` sobre una ruta inexistente
+# falla, y el `|| exit 1` convertia eso en FAILURE de la unidad: la
+# COPIA 3 del respaldo (SoT versionado en git) nace reportando error en
+# toda instalacion nueva. Sin devices todavia no hay nada que publicar.
+[ -d "$APP/reports" ] || exit 0
 as_app git -C "$APP" add -A reports || exit 1
 if as_app git -C "$APP" diff --cached --quiet -- reports; then
   exit 0

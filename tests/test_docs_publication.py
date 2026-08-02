@@ -154,13 +154,24 @@ def test_the_leak_scanner_actually_matches_something():
         "internal hostname": "browse https://node-a.example.net/",
         "hypervisor name": "the container lives on hypervisor06",
         "node name": "hostname is satom-node-1",
+        # A BARE prefix is still an identifier. Requiring a trailing
+        # character was the same anchoring mistake the hostname rule made
+        # with wildcards, and it survived a clean repo scan only to turn up
+        # on a LIVE served page.
+        #
+        # This sample is the ONLY guard that catches it: narrowing redact()
+        # and scan() together leaves the round-trip test self-consistent and
+        # still green. A round trip proves the two agree, not that either is
+        # right.
+        "node name (bare prefix)": "the satom-node prefix",
         "backup server name": "pushes to backup-server nightly",
         "device instance name": "the appliance faz01 was down",
         "personal e-mail": "alerts go to opensource@visionebc.com",
     }
     for expected, text in samples.items():
+        klass = expected.split(" (")[0]   # keys may carry a variant suffix
         found = gen.scan(text, "sample")
-        assert any(expected in f for f in found), f"scanner missed {expected!r}: {text!r}"
+        assert any(klass in f for f in found), f"scanner missed {expected!r}: {text!r}"
 
 
 def test_redaction_leaves_no_finding():
@@ -172,7 +183,9 @@ def test_redaction_leaves_no_finding():
              "satom-1.example.net, alerts opensource@visionebc.com, device faz01. "
              # the two forms that a label-anchored pattern missed on real text
              "Wildcard *.example.net, brace form satom{,-2}.example.net, "
-             "and the shorthand pair 192.0.2.248/.249.")
+             "and the shorthand pair 192.0.2.248/.249. "
+             # bare prefix, found on a live page after the repo scan said clean
+             "Bare prefix satom-node and satom-node too.")
     assert not gen.scan(gen.redact(dirty), "sample")
 
 

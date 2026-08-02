@@ -1288,7 +1288,15 @@ venv/bin/python3 deploy/gen_site_docs.py --check
 
 # 2. Would anything internal be published? Independent of the generator's own
 #    scanner - grep the tree directly. Expect zero.
-grep -rnE '\b(10\.[0-9]{1,3}|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}\b|\.visionebc\.mx|prt0[0-9]|satom-node|{backup-server}' site/ | wc -l
+#
+#    SATOM_PRIVATE_RE holds YOUR site's private shapes: the management domain,
+#    the hypervisor and node prefixes, the backup host. It is a variable rather
+#    than an inline list on purpose - this page is itself published, and a
+#    recipe that spells out the identifiers is both a disclosure and something
+#    the redactor will rewrite, leaving a broken command in the manual. (That
+#    is not hypothetical: it happened to this very block.)
+export SATOM_PRIVATE_RE='\.corp\.example\.net|hv[0-9]+|node-prefix-'
+grep -rnE &quot;\b(10\.[0-9]{1,3}|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}\b|$SATOM_PRIVATE_RE&quot; site/ | wc -l
 
 # 3. Do the guards still bite? Break one on purpose and expect a failure.
 printf '\nSee `satom show doc`.\n' &gt;&gt; docs/cli.md

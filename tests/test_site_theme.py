@@ -199,13 +199,32 @@ def test_page_uses_the_product_mark_not_the_company_shield(page):
 
 def test_generator_matches_the_hand_written_pages():
     """The 20 generated pages must not drift from the 6 curated ones."""
+    import ast
+
     src = GENERATOR.read_text(encoding="utf-8")
-    # the generator body is an f-string: its braces are doubled
     assert STORAGE_KEY in src, "generator emits no theme bootstrap"
-    assert "{{try{{" in src, (
-        "the bootstrap's braces are not escaped for the f-string template -- "
-        "the generator will not even import"
-    )
+    # The template is an f-string, so every literal brace must be doubled. Assert
+    # on the OUTPUT rather than on a byte sequence of the source: pinning the
+    # exact source text made this test fail for any edit to the bootstrap, which
+    # tells you nothing about whether the escaping is right.
+    ast.parse(src)  # a mis-escaped f-string cannot even be parsed
+
+    def bootstrap(path):
+        text = path.read_text(encoding="utf-8").split("</head>")[0]
+        for line in text.splitlines():
+            if STORAGE_KEY in line:
+                return line.strip()
+        return ""
+
+    generated = sorted((SITE / "docs").glob("*.html"))
+    assert generated, "no generated pages to check"
+    emitted = bootstrap(generated[0])
+    curated = bootstrap(SITE / "index.html")
+    assert emitted and curated, "a page carries no theme bootstrap"
+    assert emitted == curated, (
+        "the generated bootstrap has drifted from the curated one -- either the "
+        "f-string escaping is wrong or one surface was edited alone:\n"
+        f"  generated: {emitted}\n  curated:   {curated}")
     for name in THEMES:
         assert f'data-theme-set="{name}"' in src, f"generator omits the {name} switch"
     assert "visionebc-shield" not in src, "generator nav still uses the company shield"

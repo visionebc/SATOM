@@ -6,6 +6,27 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### The published manual rendered blank (2026-08-03)
+
+- **Every documentation page loaded at `opacity: 0`.** The generator wraps the
+  document body in the site's `.reveal` scroll animation, whose
+  `IntersectionObserver` used `threshold: 0.12`. That ratio is measured against
+  the *element*, not the viewport, so a page taller than ~8 viewports could
+  never reach it: the safeguards manual (34 957 px) topped out at 2.3 % and
+  stayed invisible no matter how far you scrolled. Short pages appeared, long
+  ones did not — which read as "most of the documentation is empty".
+- **Fixed structurally, not by tuning the number.** Content is now visible by
+  default and the animation arms itself only behind `html.js`, set by the head
+  bootstrap; `site.js` announces that it ran, and the bootstrap withdraws the
+  flag after 2.5 s if it did not, so a missing or stale script cannot blank a
+  page either. `threshold` is 0. `docs/safeguards.md` 8f, guarded by
+  `tests/test_site_reveal.py`.
+- `tests/test_faz_adom.py` still required `/docs/` to answer 200 after the route
+  was removed, and `tests/test_site_theme.py` pinned an exact byte sequence of
+  the generator source. Both replaced with structural checks.
+- The published callout no longer advertises the removed in-app `/docs`; it
+  points at `satom show docs`.
+
 ### Documentation is published once (2026-08-02)
 
 - **The application no longer serves documentation.** `/docs`, `/docs/public`

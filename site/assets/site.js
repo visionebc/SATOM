@@ -2,15 +2,37 @@
 (function () {
   'use strict';
 
+  // Tells the head bootstrap that the code able to UN-hide .reveal actually
+  // ran. If this file 404s or is served stale, the bootstrap drops html.js
+  // after 2.5 s and the CSS falls back to showing everything.
+  window.__satomReveal = true;
+
   // --- scroll reveal ---
   var reveals = document.querySelectorAll('.reveal');
   if ('IntersectionObserver' in window && reveals.length) {
+    // threshold MUST stay 0. The ratio is intersecting-area / ELEMENT-area, so a
+    // section taller than the viewport can never reach a fractional threshold and
+    // would stay invisible for ever however far you scroll. A documentation page
+    // is many viewports tall: 0.12 blanked every long manual on the site.
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (e) {
         if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
       });
-    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+    }, { threshold: 0, rootMargin: '0px 0px -40px 0px' });
     reveals.forEach(function (el) { io.observe(el); });
+    // Safety net: anything already on screen that the observer never reported is
+    // shown anyway. Scoped to the viewport so below-the-fold sections keep their
+    // scroll animation instead of all firing at once.
+    window.addEventListener('load', function () {
+      setTimeout(function () {
+        reveals.forEach(function (el) {
+          if (!el.classList.contains('in') &&
+              el.getBoundingClientRect().top < window.innerHeight) {
+            el.classList.add('in');
+          }
+        });
+      }, 400);
+    });
   } else {
     reveals.forEach(function (el) { el.classList.add('in'); });
   }

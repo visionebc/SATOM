@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script>(function(){try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
+<script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Architecture — SATOM</title>
 <meta name="description" content="SATOM architecture: nginx edge, gunicorn + Flask app factory, PostgreSQL source of truth, scheduler sidecar, the manager↔device sync data flow, two-node HA with TLS-enforced streaming replication, and layered backups across failure domains.">
@@ -12,8 +12,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/site.css?v=6311595435">
-<script src="assets/site.js?v=b2606c6bfe" defer></script>
+<link rel="stylesheet" href="assets/site.css?v=809f8743b5">
+<script src="assets/site.js?v=0f03aeb694" defer></script>
 </head>
 <body>
 

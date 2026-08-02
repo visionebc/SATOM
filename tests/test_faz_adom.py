@@ -67,8 +67,10 @@ def test_faz_gate_allows_shared_admin_pages(app, client):
     """Fleet + Administration reuse shared blueprints; a FAZ session reaches
     them (200), it is not bounced to the dashboard."""
     login(client, admin_user_id(app), product='fortianalyzer')
+    # '/docs/' is deliberately absent: the in-app manual was removed in favour
+    # of the published site plus `satom show docs`. See docs/safeguards.md 7c.
     for url in ('/appliances/', '/audit/', '/architecture/', '/metrics/',
-                '/web/firmware/', '/web/segments/', '/settings/', '/docs/'):
+                '/web/firmware/', '/web/segments/', '/settings/'):
         assert client.get(url).status_code == 200, f'{url} should be reachable'
 
 

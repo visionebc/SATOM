@@ -21,7 +21,7 @@ concrete failure mode:
 
 3. **Built-ins are immutable and one is always present.**
    The realistic accident here is an operator picking two dark colours and
-   locking themselves out of the very page that would fix it. ``SATOM Classic``
+   locking themselves out of the very page that would fix it. ``SATOM Aurora``
    can never be edited or deleted, ``reset_to_builtin()`` is one call, and the
    operator CLI can run it on a node whose UI is unusable.
 
@@ -42,7 +42,7 @@ __all__ = [
     "invalidate", "BUILTIN_SLUG", "contrast_ratio",
 ]
 
-BUILTIN_SLUG = "satom-classic"
+BUILTIN_SLUG = "satom-aurora"
 
 # ── validation ──────────────────────────────────────────────────────────────
 # Anything on this list is refused regardless of kind. These are the characters
@@ -54,6 +54,15 @@ _MAX_LEN = 240
 
 _HEX = r"#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})"
 _NUM = r"-?\d+(?:\.\d+)?"
+
+_ANGLE = r"%s(?:deg|grad|rad|turn)" % _NUM
+_COLORF = (r"(?:%s|rgba?\(\s*%s%%?\s*(?:[, ]\s*%s%%?\s*){2,3}"
+           r"(?:/\s*%s%%?\s*)?\))" % (_HEX, _NUM, _NUM, _NUM))
+#: one colour stop: a colour plus up to two optional positions
+_STOP = r"%s(?:\s+%s%%){0,2}" % (_COLORF, _NUM)
+#: gradient direction / shape
+_DIR = (r"(?:%s|to\s+(?:top|bottom|left|right)(?:\s+(?:top|bottom|left|right))?"
+        r"|circle|ellipse)" % _ANGLE)
 
 VALIDATORS: "dict[str, re.Pattern]" = {
     # #rgb / #rgba / #rrggbb / #rrggbbaa, rgb()/rgba() with numeric args only.
@@ -72,6 +81,14 @@ VALIDATORS: "dict[str, re.Pattern]" = {
         % (_NUM, _NUM, _NUM, _NUM, _NUM)),
     # A font stack: family names (quoted or bare) separated by commas.
     "font": re.compile(r"^[A-Za-z0-9 ,'\"_-]+$"),
+    # linear-/radial-gradient with an optional direction and 2..8 colour stops.
+    # Structural on purpose: a character allowlist would admit any function
+    # name, and `url(` is only blocked because _FORBIDDEN happens to list it.
+    "gradient": re.compile(
+        r"^(?:linear|radial)-gradient\(\s*(?:%s\s*,\s*)?%s(?:\s*,\s*%s){1,7}\s*\)$"
+        % (_DIR, _STOP, _STOP)),
+    # 0, 1, or a fraction — used for glow strength.
+    "ratio": re.compile(r"^(?:0|1|0?\.\d{1,3})$"),
 }
 
 
@@ -242,7 +259,7 @@ def _load_active() -> dict:
     if row is None:
         row = UiTheme.query.filter_by(slug=BUILTIN_SLUG).first()
     if row is None:
-        return {"id": None, "name": "SATOM Classic", "slug": BUILTIN_SLUG,
+        return {"id": None, "name": "SATOM Aurora", "slug": BUILTIN_SLUG,
                 "css": "", "logo": "", "favicon": ""}
     return {"id": row.id, "name": row.name, "slug": row.slug,
             "css": css_for(row.tokens), "logo": row.logo or "",
@@ -260,7 +277,7 @@ def active_theme() -> dict:
         try:
             _cache = _load_active()
         except Exception:
-            _cache = {"id": None, "name": "SATOM Classic", "slug": BUILTIN_SLUG,
+            _cache = {"id": None, "name": "SATOM Aurora", "slug": BUILTIN_SLUG,
                       "css": "", "logo": "", "favicon": ""}
         _cache_ts = time.monotonic()
     return _cache
@@ -302,10 +319,36 @@ def reset_to_builtin() -> str:
 BUILTINS: "list[dict]" = [
     {
         "slug": BUILTIN_SLUG,
-        "name": "SATOM Classic",
-        "description": "The shipped look — deep navy chrome, Fortinet ember "
-                       "accent, light content canvas.",
+        "name": "SATOM Aurora",
+        "description": "The shipped look — blue/gold brand palette with the "
+                       "brand gradients and glows. Carries no overrides: it IS "
+                       "the stylesheet, so a fresh install renders it with no "
+                       "database rows at all.",
         "tokens": {},
+    },
+    {
+        "slug": "satom-classic",
+        "name": "SATOM Classic",
+        "description": "The palette SATOM shipped before 1.2.3 — navy chrome, "
+                       "Fortinet ember accent.",
+        "tokens": {
+            "sidebar-bg": "#1D3452", "sidebar-active": "#EF5424",
+            "sidebar-text": "#B8C8D8", "sidebar-section": "#8FA6BC",
+            "topbar-bg": "#162940",
+            "content-bg": "#F4F5F7", "surface-alt": "#FAFBFC",
+            "border": "#DEE2E6", "border-light": "#E9ECEF",
+            # #EF5424 is 3.5:1 on white — below AA for link text. The shipped
+            # ember is kept as the *gradient* end-stop and darkened for text.
+            "accent": "#C4401A", "accent-hover": "#A03415",
+            "accent-light": "rgba(239, 84, 36, 0.10)",
+            "text-primary": "#212529", "text-secondary": "#6C757D",
+            "warning": "#FFC107",
+            "gradient-brand":
+                "linear-gradient(135deg, #162940 0%, #C4401A 55%, #EF5424 100%)",
+            "gradient-accent":
+                "linear-gradient(135deg, #A03415 0%, #EF5424 55%, #F59E5B 100%)",
+            "glow": "#EF5424", "glow-accent": "#F59E5B", "glow-strength": "0.18",
+        },
     },
     {
         "slug": "satom-slate",
@@ -320,6 +363,15 @@ BUILTINS: "list[dict]" = [
             "accent": "#4F46E5", "accent-hover": "#4338CA",
             "accent-light": "rgba(79, 70, 229, 0.10)",
             "text-primary": "#0F172A", "text-secondary": "#64748B",
+            "warning": "#FFC107",
+            # A theme that leaves the gradients alone inherits the SHIPPED blue
+            # ramp, which would clash with its own accent. Every non-default
+            # palette therefore states its own.
+            "gradient-brand":
+                "linear-gradient(135deg, #0F172A 0%, #4F46E5 55%, #818CF8 100%)",
+            "gradient-accent":
+                "linear-gradient(135deg, #4338CA 0%, #6366F1 55%, #A5B4FC 100%)",
+            "glow": "#818CF8", "glow-accent": "#A5B4FC", "glow-strength": "0.22",
         },
     },
     {
@@ -335,30 +387,54 @@ BUILTINS: "list[dict]" = [
             "accent": "#B45309", "accent-hover": "#92400E",
             "accent-light": "rgba(180, 83, 9, 0.10)",
             "text-primary": "#1C1917", "text-secondary": "#57534E",
+            "warning": "#FFC107",
+            "gradient-brand":
+                "linear-gradient(135deg, #16191D 0%, #B45309 55%, #F59E0B 100%)",
+            "gradient-accent":
+                "linear-gradient(135deg, #92400E 0%, #D97706 55%, #FBBF24 100%)",
+            "glow": "#F59E0B", "glow-accent": "#FBBF24", "glow-strength": "0.20",
         },
     },
 ]
 
 
 def seed_defaults() -> int:
-    """Insert-only seed of the built-in themes; operator rows are never touched.
+    """Seed the built-in themes: inserted when missing, reconciled when present.
+
+    Operator-created rows are never touched. Built-in rows ARE, on purpose: they
+    are code, not data — the UI refuses to edit or delete them, so there is no
+    operator intent to preserve, and leaving them stale is a live hazard. When
+    the shipped stylesheet changed palette, every existing install held
+    ``satom-classic`` with ``tokens = {}``; since "no overrides" means "whatever
+    the stylesheet is", that row would have rendered the NEW look while calling
+    itself Classic — the recovery theme handing back the palette you are trying
+    to escape.
 
     Also guarantees the invariant "exactly one active theme" on a fresh install.
     """
     from ..extensions import db
     from ..models_theme import UiTheme
-    existing = {t.slug for t in UiTheme.query.all()}
+    rows = {t.slug: t for t in UiTheme.query.all()}
     added = 0
+    touched = False
     for spec in BUILTINS:
-        if spec["slug"] in existing:
+        row = rows.get(spec["slug"])
+        if row is None:
+            row = UiTheme(slug=spec["slug"], name=spec["name"],
+                          description=spec["description"], builtin=True,
+                          created_by="system")
+            row.tokens = spec["tokens"]
+            db.session.add(row)
+            added += 1
             continue
-        row = UiTheme(slug=spec["slug"], name=spec["name"],
-                      description=spec["description"], builtin=True,
-                      created_by="system")
-        row.tokens = spec["tokens"]
-        db.session.add(row)
-        added += 1
-    if added:
+        if (row.tokens or {}) != spec["tokens"] or not row.builtin \
+                or row.name != spec["name"] or row.description != spec["description"]:
+            row.tokens = spec["tokens"]
+            row.builtin = True
+            row.name = spec["name"]
+            row.description = spec["description"]
+            touched = True
+    if added or touched:
         db.session.commit()
     if UiTheme.query.filter_by(is_active=True).count() != 1:
         UiTheme.query.filter(UiTheme.is_active.is_(True)).update(
@@ -367,6 +443,6 @@ def seed_defaults() -> int:
         if base is not None:
             base.is_active = True
         db.session.commit()
-    if added:
+    if added or touched:
         invalidate()
     return added

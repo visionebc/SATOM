@@ -2174,8 +2174,12 @@
             <div class="fw-section-title" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--fw-text-secondary);border-bottom:1px solid var(--fw-border-light);padding-bottom:4px;margin-bottom:10px;">{{ group }}</div>
             <div class="row g-3">
               {% for name, meta in rows %}
-              <div class="col-md-4 col-lg-3">
+              <div class="{{ 'col-12' if meta.kind == 'gradient' else 'col-md-4 col-lg-3' }}">
                 <label class="form-label" style="font-size:12.5px;margin-bottom:2px;">{{ meta.label }}</label>
+                {% if meta.kind == 'gradient' %}
+                <div data-theme-gradient="{{ name }}" aria-hidden="true"
+                     style="height:14px;border-radius:var(--fw-radius);border:1px solid var(--fw-border);margin-bottom:4px;background-image:{{ theme_defaults[name] }};"></div>
+                {% endif %}
                 <div class="input-group input-group-sm">
                   {% if meta.kind == 'color' %}
                   <input type="color" class="form-control form-control-color" data-theme-swatch="{{ name }}"
@@ -2430,7 +2434,15 @@
     // Saving must send what the server will store, not a half-previewed page.
     form.addEventListener('submit', function () { clearPreview(); });
   })();
-  </script>
+  
+  // gradient preview strips follow their text field
+  document.addEventListener('input', function (ev) {
+    var el = ev.target;
+    if (!el || !el.matches || !el.matches('[data-theme-token]')) return;
+    var strip = document.querySelector('[data-theme-gradient="' + el.getAttribute('data-theme-token') + '"]');
+    if (strip) { strip.style.backgroundImage = el.value; }
+  });
+</script>
   {% endif %}
 
   <!-- FAZ MENU VISIBILITY TAB -->

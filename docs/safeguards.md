@@ -370,6 +370,48 @@ Guards: `tests/test_favicon.py`. Verified by mutation -- reverting the chooser,
 deleting the route, flattening the `.ico` to one size, dropping the link from a
 page, or reverting the generator each fails a test.
 
+## 8e. Brand gradients, and assets a browser cannot keep stale
+
+Two guards added together, because they failed together: the console could not
+express a gradient at all, and the public site could serve a stale script that
+made a working control look broken.
+
+**Gradients are a token kind of their own** (`gradient`), validated by a
+structural pattern — `linear-`/`radial-gradient` with an optional direction and
+two to eight colour stops — not by a character allowlist. A character allowlist
+would admit any CSS function name; the shared reject list only stops `url(`
+because it happens to be listed. A companion test asserts the *pattern alone*
+refuses every escape, so the guard cannot silently start depending on the list.
+
+Three structural rules are enforced by tests rather than by review:
+
+- a gradient is never fed to `border-color` / `outline-color` /
+  `text-decoration-color` / `column-rule-color`, which discard it **silently** —
+  the border disappears rather than changing colour;
+- a gradient token never gets a contrast partner, because the auditor
+  composites two flat colours and a ramp has neither;
+- every non-default built-in states its own gradients and glows, since a theme
+  stores only what it changes and would otherwise inherit the shipped ramp.
+
+**Built-in themes are reconciled on boot**, while operator rows stay
+insert-only. Built-ins are code — the UI refuses to edit or delete them — so a
+drifted row has no intent worth preserving. Without this, an install created
+before a palette change keeps the old built-in with `tokens = {}`, and "no
+overrides" means "whatever the stylesheet is": the recovery theme would render
+the very palette it exists to escape.
+
+**Site assets carry a content hash.** The static site is served by nginx with no
+`Cache-Control` and no `Expires`, so browsers fall back to heuristic freshness.
+That is survivable for a stylesheet and fatal for behaviour: the theme picker is
+markup in the HTML and handlers in `assets/site.js`, so a visitor with fresh
+HTML and a cached script sees three swatches that do nothing — which reads as a
+broken feature, not an old cache. `deploy/stamp_site_assets.py` rewrites every
+reference to `site.css?v=<sha256[:10]>`; the generator emits the same hash, and
+`tests/test_site_assets.py` fails on any bare or stale reference. The hash is
+derived from content, never from a version constant a change can forget to bump.
+No server configuration is involved, so it also holds on GitHub Pages, where the
+headers are not ours.
+
 ## 9. The alert catalog
 
 Everything above is only useful if silence means healthy. The signals that exist
@@ -981,6 +1023,23 @@ which rule 3 exists to prevent.
   because of that, but it mitigates rather than fixes it.
 
 ## Verifying the guards are armed
+
+### 8e — brand gradients and asset stamps
+
+```bash
+# the gradient pattern refuses a declaration escape on its own
+python3 - <<'EOF'
+from app.services.theme_service import VALIDATORS
+bad = "linear-gradient(135deg, #000 0%, #fff 100%); } body { display:none"
+assert VALIDATORS["gradient"].match(bad) is None
+print("gradient pattern: refuses")
+EOF
+
+# no page links a bare (uncacheable) site asset, and every stamp is current
+python3 deploy/stamp_site_assets.py --check
+grep -rl 'src="[^"]*site\.js"' site/ || echo "no bare asset references"
+```
+
 
 **Theming (§8b).** The registry must still match the stylesheet, and a hostile
 value must be refused on the way in *and* on the way out:

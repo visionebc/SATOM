@@ -154,19 +154,28 @@ The registry decouples the app from firmware-specific REST paths.
 
 - **Storage:** Postgres table `registry_endpoints (product, api_version,
   name, urn, enabled, updated_by, updated_at)` — unique per
-  (product, api_version, name). ~500 FortiWeb rows (`v2.0`) + ~250 FortiADC
-  rows (`v1`), seeded **insert-only** from `endpoints.yaml` /
-  `endpoints_fortiadc.yaml` at boot: an operator's edit or disable is never
-  clobbered by a deploy. YAML remains the fallback when the DB is
+  (product, api_version, name). Three catalogs: 507 FortiWeb rows (`v2.0`),
+  255 FortiADC rows (`v1`) and 64 FortiAnalyzer rows (`jsonrpc`), seeded
+  **insert-only** from `endpoints.yaml` / `endpoints_fortiadc.yaml` /
+  `endpoints_fortianalyzer.yaml` at boot: an operator's edit or disable is
+  never clobbered by a deploy. YAML remains the fallback when the DB is
   unavailable (scripts without app context).
 - **Loader:** `app/registry/loader.py` — DB-first with a 60s per-process TTL
-  cache; `resolve(name)` / `resolve_adc(name)` by logical name. After an
-  edit the serving worker invalidates immediately; others converge ≤60s.
-- **Editor:** `/web/registry` (permission `registry_edit`) — create/edit by
-  modal, **soft-delete** (disable) with a restore panel; hard delete would
-  just resurrect the row from the YAML seed on next boot. Fully audited.
-- **Hub tabs:** Registry (catalog) · API Explorer (live console over the same
-  catalog) · Structure (the Server Policy / WPP dependency subgraph).
+  cache; `resolve(name)` / `resolve_adc(name)` / `resolve_faz(name)` by
+  logical name. After an edit the serving worker invalidates immediately;
+  others converge ≤60s.
+- **Editor:** the standalone Registry page was FUSED into the API console
+  (2026-07-05); `/web/registry` and its section links redirect there. The
+  write path (`registry.save` / `registry.toggle`, permission
+  `registry_edit`) still lives on the registry blueprint and is reused by the
+  console — one write path, no duplicate. Create/edit by modal,
+  **soft-delete** (disable) with a restore panel; hard delete would just
+  resurrect the row from the YAML seed on next boot. Fully audited.
+- **One console per product:** `/web/api-explorer/` (FortiWeb, REST v2.0)
+  · `/adc/api/` (FortiADC, REST, no version segment) · `/faz/api/`
+  (FortiAnalyzer, JSON-RPC verbs over a single `POST /jsonrpc`). Each fuses
+  its own catalog + a live console; `registry.execute_write` gates every
+  mutating verb. Operator-facing reference: `docs/device-api.md`.
 - **Drift guard:** a test fails the build if any URN in the dependency tree
   stops resolving against the registry.
 - **WAF spec catalog:** `app/registry/data/waf_specs.json` (166 kinds —
@@ -339,8 +348,8 @@ safe:
 
 ## 12. Extending the app
 
-- **New REST endpoint:** add a row in `/web/registry` (or the YAML seed for
-  new installs). Code resolves it by logical name — no path constants.
+- **New REST endpoint:** add a row from the product's API console (or the
+  YAML seed for new installs). Code resolves it by logical name — no path constants.
 - **New blueprint:** create `app/views/x.py`, register it in
   `app/__init__.py` (choose global vs `/web`-scoped vs `adc_bps` gate set),
   add the nav entry in `templates/base.html`, gate with a permission

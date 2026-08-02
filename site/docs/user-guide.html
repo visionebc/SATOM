@@ -88,8 +88,8 @@
 <p><strong>Audience:</strong> operators and network/security engineers who use the web UI to
 manage FortiWeb and FortiADC appliances day to day. No knowledge of the
 codebase is assumed. For architecture and internals see the
-<a href="engineering.md">Engineering Manual</a>; for a non-technical summary see the
-<a href="management-overview.md">Management Overview</a>.</p>
+<a href="engineering.html">Engineering Manual</a>; for a non-technical summary see the
+<a href="management-overview.html">Management Overview</a>.</p>
 </blockquote>
 <hr>
 <h2 id="table-of-contents">Table of contents</h2>
@@ -624,7 +624,7 @@ integration surface. Scope model: <code>read ⊂ write ⊂ admin</code>, capped 
 owner's own role, bound to one product (ADOM). The plaintext token is shown
 <strong>once</strong> at creation. The API is read-biased: mutations happen only by
 triggering pre-created scheduled actions; nothing destructive is reachable by
-any token. Full reference: <a href="api_v1.md">docs/api_v1.md</a>.</p>
+any token. Full reference: <a href="api.html">docs/api_v1.md</a>.</p>
 <h2 id="19-appearance-logo-colours-themes">19. Appearance: logo, colours &amp; themes</h2>
 <p><code>Settings → Appearance</code> (administrators). Four palettes ship — <strong>SATOM Aurora</strong>
 (the default), <strong>Slate</strong>, <strong>Graphite</strong> and the original <strong>Classic</strong> — and you
@@ -652,7 +652,7 @@ are parsed structurally.</p>
   still literal values in the stylesheet, so a dark canvas would leave islands
   of light. The public documentation site does offer one.</li>
 </ul>
-<p>Full reference: <a href="theming.md">docs/theming.md</a>.</p>
+<p>Full reference: <a href="theming.html">docs/theming.md</a>.</p>
 <h2 id="20-the-operator-console">20. The operator console</h2>
 <p>Some failures cannot be fixed from the web interface, because the web interface
 is the thing that failed. Every node ships a local command-line tool, <code>satom</code>,
@@ -669,7 +669,7 @@ rule the tool prints itself:</p>
 <pre><code class="language-bash">satom show sudoers &lt;account&gt;   # prints the sudoers line; changes nothing
 </code></pre>
 <p>Full reference, including the complete command tree and the runbooks:
-<a href="cli.md">docs/cli.md</a>.</p>
+<a href="cli.html">docs/cli.md</a>.</p>
 <h2 id="21-troubleshooting">21. Troubleshooting</h2>
 <table>
 <thead>

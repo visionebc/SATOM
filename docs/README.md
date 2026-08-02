@@ -83,10 +83,12 @@ python3 deploy/stamp_site_assets.py    # cache-busting hashes + version pill
 ### I am extending it
 1. [`engineering.md`](engineering.md) — layers, the endpoint registry, device
    clients, jobs, testing.
-2. [`source-of-truth-spec.md`](source-of-truth-spec.md) — the authoritative
+2. [`device-api.md`](device-api.md) — the endpoint registry: why no code
+   hardcodes a device path, and how a new endpoint is added.
+3. [`source-of-truth-spec.md`](source-of-truth-spec.md) — the authoritative
    behavioural spec for harvesting and versioning.
-3. [`overview.md`](overview.md) — the operating rules the codebase is held to.
-4. [`cli.md`](cli.md) §5 — adding a console command is **one entry** in
+4. [`overview.md`](overview.md) — the operating rules the codebase is held to.
+5. [`cli.md`](cli.md) §5 — adding a console command is **one entry** in
    `deploy/satom_cli/tree.py`; the parser, help, completion and privilege gate
    all read that structure.
 
@@ -95,6 +97,9 @@ python3 deploy/stamp_site_assets.py    # cache-busting hashes + version pill
    published on the public site and linked from the sign-in page, so an
    integrator can read it before they have an account. The rest of the manual
    is beside it.
+2. [`device-api.md`](device-api.md) — the OTHER API. `api_v1.md` is how someone
+   drives this platform; this is how the platform drives an appliance, plus the
+   endpoint registry that turns a firmware URI change into a row edit.
 
 ---
 
@@ -130,6 +135,7 @@ python3 deploy/stamp_site_assets.py    # cache-busting hashes + version pill
 | [`engineering.md`](engineering.md) | Internal architecture: layers, registry, device clients, jobs, testing. |
 | [`source-of-truth-spec.md`](source-of-truth-spec.md) | The authoritative behavioural specification. |
 | [`api_v1.md`](api_v1.md) | Token authentication and the public API surface. |
+| [`device-api.md`](device-api.md) | The device API consoles and the endpoint registry behind them. |
 
 ### Managed-device reference
 | Document | What it is for |

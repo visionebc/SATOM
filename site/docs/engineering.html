@@ -79,11 +79,11 @@
 <blockquote>
 <p><strong>Audience:</strong> developers extending the codebase and platform engineers
 operating a deployment. Companion documents: field-level object references
-(<a href="server_policy.md">server_policy.md</a>,
-<a href="web_protection_profile.md">web_protection_profile.md</a>,
-<a href="wpp_exceptions.md">wpp_exceptions.md</a>), the device-cache contract
-(<a href="source-of-truth-spec.md">source-of-truth-spec.md</a>), the install runbook
-(<a href="INSTALL.md">INSTALL.md</a>) and the API reference (<a href="api_v1.md">api_v1.md</a>).</p>
+(<a href="server-policy.html">server_policy.md</a>,
+<a href="web-protection-profile.html">web_protection_profile.md</a>,
+<a href="wpp-exceptions.html">wpp_exceptions.md</a>), the device-cache contract
+(<a href="source-of-truth.html">source-of-truth-spec.md</a>), the install runbook
+(<a href="install.html">INSTALL.md</a>) and the API reference (<a href="api.html">api_v1.md</a>).</p>
 </blockquote>
 <hr>
 <h2 id="table-of-contents">Table of contents</h2>
@@ -199,7 +199,7 @@ config-backup vault (<code>ConfigBackup</code>), managed certificates + device
 certificate inventory, API tokens (hashed), scheduled actions + runs, change
 requests + events, bug reports, capacity limits, DB reports.</p>
 <p><strong>Device cache</strong> (the source-of-truth projection, see
-<a href="source-of-truth-spec.md">source-of-truth-spec.md</a>):</p>
+<a href="source-of-truth.html">source-of-truth-spec.md</a>):</p>
 <ul>
 <li><code>device_objects</code> — every object and sub-object of every device, flattened
   pre-order with parent self-FK, <code>layer ∈ {config, inventory, deep}</code>, plus an
@@ -221,19 +221,28 @@ requests + events, bug reports, capacity limits, DB reports.</p>
 <ul>
 <li><strong>Storage:</strong> Postgres table <code>registry_endpoints (product, api_version,
   name, urn, enabled, updated_by, updated_at)</code> — unique per
-  (product, api_version, name). ~500 FortiWeb rows (<code>v2.0</code>) + ~250 FortiADC
-  rows (<code>v1</code>), seeded <strong>insert-only</strong> from <code>endpoints.yaml</code> /
-  <code>endpoints_fortiadc.yaml</code> at boot: an operator's edit or disable is never
-  clobbered by a deploy. YAML remains the fallback when the DB is
+  (product, api_version, name). Three catalogs: 507 FortiWeb rows (<code>v2.0</code>),
+  255 FortiADC rows (<code>v1</code>) and 64 FortiAnalyzer rows (<code>jsonrpc</code>), seeded
+  <strong>insert-only</strong> from <code>endpoints.yaml</code> / <code>endpoints_fortiadc.yaml</code> /
+  <code>endpoints_fortianalyzer.yaml</code> at boot: an operator's edit or disable is
+  never clobbered by a deploy. YAML remains the fallback when the DB is
   unavailable (scripts without app context).</li>
 <li><strong>Loader:</strong> <code>app/registry/loader.py</code> — DB-first with a 60s per-process TTL
-  cache; <code>resolve(name)</code> / <code>resolve_adc(name)</code> by logical name. After an
-  edit the serving worker invalidates immediately; others converge ≤60s.</li>
-<li><strong>Editor:</strong> <code>/web/registry</code> (permission <code>registry_edit</code>) — create/edit by
-  modal, <strong>soft-delete</strong> (disable) with a restore panel; hard delete would
-  just resurrect the row from the YAML seed on next boot. Fully audited.</li>
-<li><strong>Hub tabs:</strong> Registry (catalog) · API Explorer (live console over the same
-  catalog) · Structure (the Server Policy / WPP dependency subgraph).</li>
+  cache; <code>resolve(name)</code> / <code>resolve_adc(name)</code> / <code>resolve_faz(name)</code> by
+  logical name. After an edit the serving worker invalidates immediately;
+  others converge ≤60s.</li>
+<li><strong>Editor:</strong> the standalone Registry page was FUSED into the API console
+  (2026-07-05); <code>/web/registry</code> and its section links redirect there. The
+  write path (<code>registry.save</code> / <code>registry.toggle</code>, permission
+  <code>registry_edit</code>) still lives on the registry blueprint and is reused by the
+  console — one write path, no duplicate. Create/edit by modal,
+  <strong>soft-delete</strong> (disable) with a restore panel; hard delete would just
+  resurrect the row from the YAML seed on next boot. Fully audited.</li>
+<li><strong>One console per product:</strong> <code>/web/api-explorer/</code> (FortiWeb, REST v2.0)
+  · <code>/adc/api/</code> (FortiADC, REST, no version segment) · <code>/faz/api/</code>
+  (FortiAnalyzer, JSON-RPC verbs over a single <code>POST /jsonrpc</code>). Each fuses
+  its own catalog + a live console; <code>registry.execute_write</code> gates every
+  mutating verb. Operator-facing reference: <code>docs/device-api.md</code>.</li>
 <li><strong>Drift guard:</strong> a test fails the build if any URN in the dependency tree
   stops resolving against the registry.</li>
 <li><strong>WAF spec catalog:</strong> <code>app/registry/data/waf_specs.json</code> (166 kinds —
@@ -401,8 +410,8 @@ safe:</p>
 </ul>
 <h2 id="12-extending-the-app">12. Extending the app</h2>
 <ul>
-<li><strong>New REST endpoint:</strong> add a row in <code>/web/registry</code> (or the YAML seed for
-  new installs). Code resolves it by logical name — no path constants.</li>
+<li><strong>New REST endpoint:</strong> add a row from the product's API console (or the
+  YAML seed for new installs). Code resolves it by logical name — no path constants.</li>
 <li><strong>New blueprint:</strong> create <code>app/views/x.py</code>, register it in
   <code>app/__init__.py</code> (choose global vs <code>/web</code>-scoped vs <code>adc_bps</code> gate set),
   add the nav entry in <code>templates/base.html</code>, gate with a permission

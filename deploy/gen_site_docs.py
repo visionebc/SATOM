@@ -68,6 +68,7 @@ redact = _dp.redact
 scan = _dp.scan
 source_for = _dp.source_for
 MD_EXTENSIONS = _dp.MD_EXTENSIONS
+relink = _dp.relink
 
 SITE_DIR = ROOT_DIR / "site"
 OUT_DIR = SITE_DIR / "docs"
@@ -169,6 +170,9 @@ def render_doc(md_name: str, slug: str, title: str, icon: str, blurb: str) -> st
     # ~90 columns, and nl2br would turn every wrap into a visible line break.
     md = md_lib.Markdown(extensions=MD_EXTENSIONS, output_format="html5")
     body = md.convert(raw)
+    # Inter-document links are written as Markdown-to-Markdown in the repo and
+    # would 404 on the published site; rewrite them to the published slugs.
+    body = relink(body)
 
     # toc_tokens is a TREE, not a list: the only top-level token is the H1, so
     # filtering it directly produced a one-entry table of contents. Flatten,

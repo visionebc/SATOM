@@ -86,6 +86,8 @@ class Ctx:
         self.host = socket.gethostname()
         self.app_dir = APP_DIR
         self.app_user = _app_user()
+        # Output policy, set by main() once flags are parsed.
+        self.style = None
         self._env = None
         self._role = None
 

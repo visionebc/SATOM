@@ -124,6 +124,27 @@ Nothing in the CLI is ever added to the service account's sudoers. A
 `NOPASSWD: /usr/local/sbin/satom` for that account is equivalent to
 `NOPASSWD: ALL`; `diagnose privilege` fails loudly if it finds one.
 
+## 3c. The operator console's output path
+
+The console is read on a broken node, and its output is then pasted into a
+ticket. Both of those impose guards that are invisible while they hold.
+
+| guard | what it prevents | where it lives |
+|---|---|---|
+| Decoration only on a TTY | escape sequences in a redirected file the operator cannot clean up | `render.Style`, gated on `isatty` + `NO_COLOR` + `TERM` |
+| No truncation through a pipe | silently losing help text that has no width to be fitted to | `cmd_tree._fit` returns early when `style.width` is 0 |
+| ASCII glyph fallback by stream ENCODING | unprintable box-drawing on a serial console | `render.Style.__init__` |
+| ASCII fold table | a decorative em dash raising `UnicodeEncodeError` | `render._FOLD`, applied at the render boundary |
+| `errors="replace"` on stdout | the same, for characters the table cannot know about (device names, cert subjects, journal lines) | `render.harden_stream`, called from `main()` |
+| Verdict colours only | painting a by-design state (`inactive` datasync on the primary) as a failure | `render._V_OK/_V_WARN/_V_BAD` |
+| `\001`/`\002` around prompt colour | readline miscounting the prompt width and putting the cursor in the wrong column | `main._prompt_color` |
+| `show tree` renders the live registry | a documented command list drifting from the build | `cmd_tree`, plus a test that compares it to `tree.walk()` |
+
+The second and fifth rows are two layers of the same defence on purpose: the
+fold table handles what this code emits, the stream reconfigure handles what it
+cannot predict. Removing either one alone still leaves the CLI standing, and
+`tests/test_cli_render.py` has a mutation-verified test for each.
+
 ## 4. Two-node correctness
 
 | Guard | Prevents |
@@ -997,6 +1018,31 @@ curl -sk -H 'X-ADOM: fortiweb' https://<node>/monitoring/infra -o /dev/null -w '
 
 # 8. The security headers are actually being sent
 curl -sI https://<node>/ | grep -iE 'content-security-policy|x-frame|x-content-type'
+```
+
+### The operator console's output contract
+
+```bash
+# 1. Through a pipe there must be ZERO escape sequences.
+satom show tree | grep -c $'\x1b\['            # expect 0
+satom diagnose all | grep -c $'\x1b\['         # expect 0
+
+# 2. And nothing may be truncated (no width to fit to).
+satom show tree execute reinstall | grep -c 'roll back to\.'   # expect 1
+
+# 3. An ASCII stdout must not kill the command (serial console).
+PYTHONIOENCODING=ascii satom show tree >/dev/null; echo $?   # expect 0
+LC_ALL=C satom diagnose all >/dev/null; echo $?              # 0 or 1, never 2+
+
+# 4. NO_COLOR is honoured; --json is never decorated.
+NO_COLOR=1 satom get system status | grep -c $'\x1b\['      # expect 0
+satom show tree --json --color | python3 -m json.tool >/dev/null && echo ok
+
+# 5. The tree cannot omit a command the build actually has.
+diff <(satom show tree --commands | sed -n 's/^ *satom \([a-z-]* [a-z-]*\).*/\1/p' | sort) \
+     <(satom show tree --commands | sed -n 's/^ *satom \([a-z-]* [a-z-]*\).*/\1/p' | sort)
+# the authoritative version of this check is
+# tests/test_cli_render.py::test_tree_lists_every_runnable_command_in_the_registry
 ```
 
 ## Related

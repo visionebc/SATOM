@@ -19,6 +19,7 @@ from . import cmd_fix as f
 from . import cmd_get as g
 from . import cmd_ops as o
 from . import cmd_show as s
+from . import cmd_tree as t
 
 
 class Node:
@@ -129,6 +130,9 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
            run=s.sudoers, usage="show sudoers [<account>]"),
         _n("changelog", "The most recent release notes from the tree.", run=b.changelog),
         _n("version", "Versions of the app, the CLI and Python.", run=s.version),
+        _n("tree", "The WHOLE command tree in one view. Filters: --commands/--depth/--root.",
+           run=t.tree,
+           usage="show tree [<prefix>...] [--commands] [--depth N] [--root] [--danger]"),
     ),
 
     _group("diagnose", "Active probes that answer 'why is it broken'. Any user.",
@@ -254,6 +258,9 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
         _n("promote", "Promote this standby to primary. Requires --yes.",
            run=e.promote, needs_root=True, danger=True),
     ),
+    _n("tree", "The whole command tree. Alias for 'show tree'.",
+       run=t.tree,
+       usage="tree [<prefix>...] [--commands] [--depth N] [--root] [--danger]"),
 ]))
 
 

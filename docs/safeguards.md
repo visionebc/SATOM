@@ -335,6 +335,41 @@ correctly rather than unstyled.
 server to hold it. A visitor's choice does not follow them across devices, and
 the console's theme (section 8b) is a separate setting with a separate store.
 
+## 8d. The product icon, on every surface
+
+A rebrand is only finished when the icon in the tab has changed. Three defects
+found on 2026-08-02, after the palette and the logo were already live, show why
+this needs guards rather than a sweep:
+
+- The ADOM chooser -- the FIRST page after login -- still served the *vendor*
+  mark as both its favicon and its header logo. No text sweep for the old
+  project names could ever find it: the filename says neither.
+- `/favicon.ico` returned 404 on all three hosts. Browsers request that path on
+  their own, regardless of any `<link rel="icon">` tag, and they cache the
+  ANSWER -- a 404 included. A missing route is exactly why a stale icon
+  outlives a rebrand.
+- The shipped fallback itself was the vendor logo, so any install with no theme
+  asset served someone else's brand.
+
+The rules:
+
+- **No live template may reference the vendor mark.** Editor backups
+  (`*.bak*`, `*.pre-*`) are excluded -- they are not surfaces.
+- **The bare-root `/favicon.ico` must answer.** The active theme's favicon
+  wins; the shipped product mark is the fallback, so a fresh install with no
+  theme asset still gets the product icon.
+- **The `.ico` carries 16/32/48 and keeps its alpha.** One opaque bitmap is why
+  rebrands look half-done: the browser upscales it and the square plate fights
+  every tab strip. The mark reads on light and dark tabs because 47% of its
+  opaque pixels are bright (mean luminance 109 at 16px) -- measured, not
+  assumed.
+- **Every site page declares it, generated pages included.** The docs generator
+  is a separate surface and has drifted from the curated pages before.
+
+Guards: `tests/test_favicon.py`. Verified by mutation -- reverting the chooser,
+deleting the route, flattening the `.ico` to one size, dropping the link from a
+page, or reverting the generator each fails a test.
+
 ## 9. The alert catalog
 
 Everything above is only useful if silence means healthy. The signals that exist
@@ -1218,6 +1253,21 @@ curl -sk -H "Host: <site-host>" https://127.0.0.1/index.html \
 
 # the generated pages did not drift from the curated ones
 venv/bin/python3 deploy/gen_site_docs.py --check
+```
+
+### The product icon is on every surface (8d)
+
+```bash
+# the bare-root path the browser asks for on its own -- must not be 404
+curl -sk -o /dev/null -w '%{http_code}\n' https://<node>/favicon.ico
+
+# no live template serves the vendor mark
+cd /opt/satom && grep -rln 'img/favicon.svg' app/templates/ \
+  | grep -v '\.bak\|\.pre-' || echo 'clean'
+
+# the .ico carries several resolutions and stays transparent
+venv/bin/python3 -c "from PIL import Image; i=Image.open('site/favicon.ico'); \
+  print(sorted(i.info['sizes']))"
 ```
 
 ## Related

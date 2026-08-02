@@ -670,6 +670,29 @@ def create_app(config_override: object | None = None) -> Flask:
         return {"theme_css": t.get("css", ""), "theme_logo_url": logo,
                 "theme_favicon_url": favicon, "theme_name": t.get("name", "")}
 
+    @app.route('/favicon.ico')
+    def favicon_ico():
+        """Serve the bare-root favicon the browser requests implicitly.
+
+        Browsers ask for /favicon.ico regardless of any <link rel="icon"> tag
+        and cache the ANSWER — a 404 included — so a missing route is exactly
+        why a stale icon survives a rebrand. The active theme's favicon wins;
+        the shipped product mark is the fallback, so a fresh install with no
+        theme asset still gets the product icon and never a vendor logo.
+        """
+        from flask import redirect as _redirect, url_for as _url_for
+        from flask import send_from_directory as _send
+        try:
+            from .services import theme_service as _theme
+            t = _theme.active_theme()
+            if t.get("favicon"):
+                return _redirect(_url_for("settings.theme_asset",
+                                          theme_id=t["id"], kind="favicon"))
+        except Exception:
+            pass
+        return _send(os.path.join(app.root_path, "static", "img"),
+                     "favicon.ico", max_age=300)
+
     @app.after_request
     def set_security_headers(response):
         # Plugin frame route (views/plugins.py) sets SAMEORIGIN so it can be

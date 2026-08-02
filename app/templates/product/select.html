@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>Choose a product &middot; SATOM</title>
-  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
+  <link rel="icon" href="{{ theme_favicon_url or url_for('static', filename='img/favicon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/fortiweb.css') }}">
   <style nonce="{{ csp_nonce }}">
     :root { --ps-ease: cubic-bezier(0.16, 1, 0.3, 1); }
@@ -111,7 +111,7 @@
   <div class="ps-backdrop">
     <div class="ps-modal" role="dialog" aria-modal="true" aria-label="Select a product">
       <div class="ps-head">
-        <img src="{{ url_for('static', filename='img/favicon.svg') }}" alt="SATOM">
+        <img src="{{ theme_logo_url or url_for('static', filename='img/satom-mark.png') }}" alt="SATOM">
         <div class="ps-head-text">
         {% set _is_prod = env_mode == 'production' %}
         <span class="ps-env {{ 'prod' if _is_prod else 'dev' }}">

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+import re
 import sys
 
 import pytest
@@ -237,3 +238,64 @@ def test_repair_permissions_covers_docs_and_tests():
     body = src.split("def repair_permissions", 1)[1].split("\ndef ", 1)[0]
     for sub in ('"docs"', '"tests"', '".git"', '"data"', '"reports"', '"site"'):
         assert sub in body, f"repair_permissions no longer scans {sub}"
+# ---------------------------------------------------------------------------
+# 4. Nav integrity of the hand-written pages
+# ---------------------------------------------------------------------------
+#
+# The five hand-written pages carry the nav as a literal copy each. Every time a
+# section is added, five files get patched — and a guard that matches loosely
+# ("is the word already there?") reports "already applied" while inserting a
+# second copy at a different indent. That happened with the Docs link: four of
+# the five pages ended up rendering it twice.
+#
+# The invariant is cheap and exact: inside <div class="nav-links"> every href
+# appears at most once. Same for the footer link list. A duplicate is never
+# intentional there.
+
+NAV_OPEN = '<div class="nav-links">'
+FOOTER_OPEN = '<div class="flinks">'
+_HREF = re.compile(r'href="([^"]+)"')
+
+
+def _hand_written_pages():
+    return sorted(p for p in SITE.glob("*.html") if p.is_file())
+
+
+def _links_in(text: str, opener: str):
+    """Anchors between `opener` and its closing </div>, or None if absent."""
+    if opener not in text:
+        return None
+    return _HREF.findall(text.split(opener, 1)[1].split("</div>", 1)[0])
+
+
+@pytest.mark.parametrize("page", _hand_written_pages(), ids=lambda p: p.name)
+def test_nav_block_has_no_duplicate_link(page):
+    links = _links_in(page.read_text(encoding="utf-8"), NAV_OPEN)
+    assert links, f"{page.name}: no nav-links block found"
+    dupes = sorted({h for h in links if links.count(h) > 1})
+    assert not dupes, f"{page.name}: nav renders these links twice: {dupes}"
+
+
+@pytest.mark.parametrize("page", _hand_written_pages(), ids=lambda p: p.name)
+def test_footer_block_has_no_duplicate_link(page):
+    links = _links_in(page.read_text(encoding="utf-8"), FOOTER_OPEN)
+    if links is None:
+        pytest.skip("page has no footer link list")
+    dupes = sorted({h for h in links if links.count(h) > 1})
+    assert not dupes, f"{page.name}: footer renders these links twice: {dupes}"
+
+
+def test_every_hand_written_page_offers_the_same_nav():
+    """A page missing an entry is the other half of the same defect: the manual
+    patch reached four files and skipped the fifth. Compare sets, not order."""
+    seen = {}
+    for page in _hand_written_pages():
+        links = _links_in(page.read_text(encoding="utf-8"), NAV_OPEN)
+        if links:
+            seen[page.name] = frozenset(links)
+    assert seen, "no hand-written page carries a nav block"
+    variants = set(seen.values())
+    assert len(variants) == 1, (
+        "hand-written pages disagree on the nav: "
+        + "; ".join(f"{n}={sorted(v)}" for n, v in sorted(seen.items()))
+    )

@@ -634,6 +634,16 @@ def create_app(config_override: object | None = None) -> Flask:
         g.csp_nonce = nonce
 
     @app.context_processor
+    def _inject_version():
+        """The running version, from the repo-root VERSION file.
+
+        Templates must never carry a version literal -- see app/version.py
+        for why (the footer said v1.0 through four releases).
+        """
+        from .version import app_version
+        return {"app_version": app_version()}
+
+    @app.context_processor
     def _inject_csp_nonce():
         return {"csp_nonce": getattr(g, "csp_nonce", "")}
 

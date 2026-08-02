@@ -139,7 +139,7 @@ the background-job workers and the scheduler sidecar run them headless.</p>
 <li><strong>Process model:</strong> gunicorn <code>4 workers × 8 gthread threads</code> binding
   <code>0.0.0.0:8000</code>, fronted by an edge nginx (TLS, gzip, <code>/static/</code> proxy
   cache). No app-side HTTP cache.</li>
-<li><strong>Systemd:</strong> the main unit runs as the unprivileged <code>fortinet</code> user with
+<li><strong>Systemd:</strong> the main unit runs as the unprivileged <code>satom</code> user with
   <code>NoNewPrivileges</code>, <code>ProtectSystem=strict</code> (+ explicit <code>ReadWritePaths</code>),
   <code>PrivateTmp</code>. A <strong>scheduler sidecar</strong> unit fires due scheduled actions.</li>
 <li><strong>PostgreSQL</strong> is the source of truth (<code>SQLALCHEMY_DATABASE_URI</code> in <code>.env</code>);

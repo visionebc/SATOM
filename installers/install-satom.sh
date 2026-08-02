@@ -55,8 +55,8 @@ APP_USER="${SATOM_APP_USER:-satom}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUNDLE_DIR="${SCRIPT_DIR}/bundle"
 GIT_URL_DEFAULT="https://git.example.net/satom-prod/SATOM.git"
-DB_NAME="fortinet_mgr"
-DB_USER="fortinet"
+DB_NAME="satom"
+DB_USER="satom"
 REPL_USER="fm_repl"
 INSTALL_LOG="/var/log/satom-install.log"
 
@@ -896,7 +896,7 @@ META
 ok "Certificado del nodo emitido localmente (CN=${HOSTN}, SAN=IP:${NODE_IP})"
 
 # Copia para Postgres (réplica TLS en clúster)
-PGSSL="$PGCONF/fmssl"; mkdir -p "$PGSSL"
+PGSSL="$PGCONF/satomssl"; mkdir -p "$PGSSL"
 cp "$PKI/node/leaf.crt" "$PGSSL/server.crt"; cp "$PKI/node/leaf.key" "$PGSSL/server.key"
 cp "$PKI/internal-ca/ca.crt" "$PGSSL/ca.crt"
 chown -R postgres:postgres "$PGSSL"; chmod 600 "$PGSSL/server.key"

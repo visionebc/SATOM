@@ -11,7 +11,7 @@
 #
 #   So the probe uses the application's OWN credentials from .env over TCP.
 #   That works at any privilege level, and it derives the database name instead
-#   of hardcoding `fortinet_mgr` (which is only correct on installs that
+#   of hardcoding a database name (installs migrated before 2026-08 are
 #   predate the rename).
 set -u
 APP=/opt/satom

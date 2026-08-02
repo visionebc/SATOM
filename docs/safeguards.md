@@ -967,14 +967,14 @@ on it, and the default value of the kwarg is the safe one.
 
 ```bash
 # 1. the check is registered and fires on the live history
-cd /opt/satom && set -a && . ./.env && set +a && runuser -u fortinet -- \
+cd /opt/satom && set -a && . ./.env && set +a && runuser -u satom -- \
   venv/bin/python3 -c "
 from app import create_app; from app.services import alerts
 with create_app().app_context():
     print([f['key'] for f in alerts._check_actions()])"
 
 # 2. an automatic run does not touch a parked appliance
-runuser -u fortinet -- venv/bin/python3 -m pytest \
+runuser -u satom -- venv/bin/python3 -m pytest \
   tests/test_alerts_scheduled_actions.py tests/test_action_maintenance.py -q
 ```
 

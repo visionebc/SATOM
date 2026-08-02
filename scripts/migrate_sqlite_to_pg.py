@@ -1,4 +1,4 @@
-"""One-shot data migration: SQLite (fortinet.db) -> PostgreSQL.
+"""One-shot data migration: SQLite -> PostgreSQL.
 
 Uses the app's own SQLAlchemy metadata so column types (Boolean, DateTime, …)
 are adapted correctly for each dialect, and copies tables in FK-dependency
@@ -6,8 +6,8 @@ order (metadata.sorted_tables). Resets Postgres sequences afterwards.
 
 Usage:
     FORTINET_SKIP_DB_BOOTSTRAP=1 python scripts/migrate_sqlite_to_pg.py \
-        --sqlite sqlite:////opt/satom/data/fortinet.db \
-        --pg "postgresql+psycopg://fortinet:***@127.0.0.1/fortinet_mgr" [--truncate]
+        --sqlite sqlite:////opt/satom/data/satom.db \
+        --pg "postgresql+psycopg://satom:***@127.0.0.1/satom" [--truncate]
 
 Exit code 0 only if every table's source and destination row counts match.
 """

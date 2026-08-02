@@ -70,7 +70,7 @@ the background-job workers and the scheduler sidecar run them headless.
 - **Process model:** gunicorn `4 workers × 8 gthread threads` binding
   `0.0.0.0:8000`, fronted by an edge nginx (TLS, gzip, `/static/` proxy
   cache). No app-side HTTP cache.
-- **Systemd:** the main unit runs as the unprivileged `fortinet` user with
+- **Systemd:** the main unit runs as the unprivileged `satom` user with
   `NoNewPrivileges`, `ProtectSystem=strict` (+ explicit `ReadWritePaths`),
   `PrivateTmp`. A **scheduler sidecar** unit fires due scheduled actions.
 - **PostgreSQL** is the source of truth (`SQLALCHEMY_DATABASE_URI` in `.env`);

@@ -20,7 +20,12 @@ def real_client_ip() -> str:
     """
     import os
     from flask import request
-    raw = os.environ.get("TRUSTED_PROXIES", "192.0.2.40,127.0.0.1,::1")
+    # Loopback only by default. A deployment-specific proxy address must be
+    # configured (TRUSTED_PROXIES env, set by the installer); shipping one
+    # hard-codes somebody else's network into the trust boundary, and on any
+    # site whose LAN overlaps that range it hands an unrelated host the right
+    # to forge the client IP this function feeds to rate limiting and audit.
+    raw = os.environ.get("TRUSTED_PROXIES", "127.0.0.1,::1")
     trusted = {p.strip() for p in raw.split(",") if p.strip()}
     peer = request.remote_addr or ""
     xff = request.headers.get("X-Forwarded-For", "")

@@ -54,7 +54,10 @@ LOG_DIR="/var/log/satom"
 APP_USER="${SATOM_APP_USER:-satom}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUNDLE_DIR="${SCRIPT_DIR}/bundle"
-GIT_URL_DEFAULT="https://git.example.net/satom-prod/SATOM.git"
+# Public source of record. The previous default pointed at a private Gitea
+# that only resolves inside one company's network, so an unattended install
+# anywhere else hung on a clone it could never complete.
+GIT_URL_DEFAULT="https://github.com/visionebc/SATOM.git"
 DB_NAME="satom"
 DB_USER="satom"
 REPL_USER="fm_repl"

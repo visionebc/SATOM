@@ -26,8 +26,9 @@ from app.services import provisioning as prov
 # (line, appliance-name) reference sources. Add rows for new lines/products.
 SOURCES = {"fortiweb": [("8.0", "fw1"), ("7.6", "fw2")]}
 
-# Firecrawl (LAN, no auth). Enrichment is opt-in (gated) to keep the harvest fast.
-FIRECRAWL = os.environ.get("FIRECRAWL_URL", "http://192.0.2.66:3002")
+# Firecrawl (optional, no auth). Enrichment is opt-in (gated) to keep the
+# harvest fast, and the endpoint has no default: set FIRECRAWL_URL to use it.
+FIRECRAWL = os.environ.get("FIRECRAWL_URL", "")
 
 # Fields known to be mandatory that a bare GET can't tell us are required.
 REQUIRED_HINTS = {"dns": {"primary"}, "ntp": {"mode"}}

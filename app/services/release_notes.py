@@ -45,9 +45,12 @@ DB_NAME = "_release_notes.json"          # git-shared reference (under reports/)
 _DOC_HOST = "https://docs.fortinet.com"
 _UA = "Mozilla/5.0 (satom release-notes harvester)"
 
-# Self-hosted Firecrawl on the LAN (no auth) — see the project memory. Used as a
-# fallback transport for pages a plain GET can't retrieve.
-FIRECRAWL_LAN_DEFAULT = "http://192.0.2.66:3002"
+# Optional self-hosted Firecrawl, used as a fallback transport for pages a
+# plain GET cannot retrieve. Empty by default and surfaced as a blank field in
+# the UI: this endpoint is unauthenticated, so a shipped default would make
+# the app POST fetch requests at whatever answers that address on the
+# operator's network.
+FIRECRAWL_LAN_DEFAULT = ""
 
 # section key -> (numeric doc id, url slug), PER PRODUCT. The ids are stable
 # WITHIN a product's docset (across its 7.x/8.x lines) but DIFFER across products:

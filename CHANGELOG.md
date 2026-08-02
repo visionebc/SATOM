@@ -6,6 +6,59 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### The mirror published the network map and the team's names (2026-08-03)
+
+- **The public mirror carried the internal network map and 25 commit
+  identities.** The publication pipeline filtered **paths** (`CLAUDE.md`,
+  `.env`, `reports/`) and **commit messages**, and a path filter cannot see
+  inside a file it keeps: 107 files shipped internal addresses, management
+  hostnames, hypervisor and node names, while the history shipped 25 author
+  identities — two named after an AI assistant, three carrying a personal
+  e-mail. The publisher now collapses **every** identity, redacts internal
+  identifiers in **every blob across the whole history**, and **re-scans its
+  own output, aborting the push on a finding**. Redaction without verification
+  is a hope, not a guard. See `docs/safeguards.md` §7e.
+- Ordering trap recorded: the shorthand pair `192.0.2.248/.249` has to be
+  rewritten *before* the generic address rule, or the generic rule takes the
+  first address and leaves `/.249` — still an octet, and invisible to the scan
+  because what remains is not a complete address.
+
+- **Seven runtime defaults named one company's infrastructure.** These are
+  functional bugs, not disclosures: redacting them at publication time would
+  have produced a mirror that leaked nothing and still shipped somebody else's
+  network as its factory settings.
+  - `TRUSTED_PROXIES` defaulted to an internal proxy address. Everywhere else
+    that meant every user collapsed into a single rate-limit bucket; on any
+    site whose LAN overlaps that range it meant an unrelated host inherited the
+    right to forge the client IP feeding rate limiting and audit keys. Loopback
+    only now.
+  - The DNS Lookup tool defaulted to two internal resolvers while its own
+    docstring promised the list is "never hardcoded". Empty now.
+  - Node certificates appended a hard-coded domain the installation does not
+    own. Only the *suffix* is configurable, and it is resolved per node: a
+    stored FQDN is wrong on an HA pair, because the standby replicates the
+    primary's settings row and would issue a certificate naming the primary.
+  - Two Firecrawl endpoints (unauthenticated) and the installer's clone URL
+    pointed at internal hosts. The installer now defaults to the public
+    repository, so an unattended install no longer hangs on a clone it can
+    never complete.
+  - The About panel linked to an internal Git server on every profile view.
+  - `deploy/nginx-vhost.conf` was one deployment's real vhost, upstream address
+    included. It is now a generic sample proxying loopback — which is what the
+    installer actually configures.
+
+- **Tests.** Fixtures that sat in a routable range for no reason moved to the
+  RFC 5737 documentation range; inert test data has no business naming a real
+  network, and those literals were what made a redacted mirror ship a red
+  suite. The adversarial corpus — the one fixture that must contain real
+  identifiers to prove the scanner bites — moved to `tests/fixtures/`, is
+  dropped by the publisher, and its tests now skip **with a reason** instead of
+  failing on a mirror that correctly has nothing left to detect.
+- Two lab seeder scripts are excluded from the mirror rather than redacted:
+  wired to one appliance by database id and to absolute local paths, with a
+  shared secret in clear text. Rewriting their literals yields a script that
+  still cannot run anywhere else.
+
 ### The device API was never documented, and the manual's own links were dead (2026-08-03)
 
 - **New manual: `docs/device-api.md`** (published as *Device APIs & the endpoint

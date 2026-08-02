@@ -15,8 +15,14 @@
   {% if theme_css %}<style nonce="{{ csp_nonce }}">{{ theme_css }}</style>{% endif %}
 
   <style nonce="{{ csp_nonce }}">
-    body {
+    html {
       background: var(--fw-sidebar-bg);
+      background-image: var(--fw-gradient-brand);
+      background-repeat: no-repeat;
+      min-height: 100%;
+    }
+    body {
+      background: transparent;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -40,6 +46,7 @@
 
     .login-header {
       background: var(--fw-topbar-bg);
+      background-image: var(--fw-gradient-brand);
       padding: 32px 32px 28px;
       text-align: center;
     }
@@ -101,6 +108,7 @@
 
     .btn-login {
       background: var(--fw-accent);
+      background-image: var(--fw-gradient-brand);
       border-color: var(--fw-accent);
       color: #FFFFFF;
       font-weight: 600;
@@ -250,7 +258,7 @@
 
     <!-- Footer -->
     <div class="login-footer">
-      <p>SATOM v1.0 &nbsp;&bull;&nbsp; Authorized users only</p>
+      <p>SATOM &nbsp;&bull;&nbsp; Authorized users only</p>
       <p style="margin-top:6px;">
         <a href="{{ url_for('docs.api_public') }}"
            style="font-size:12.5px; color:var(--fw-accent); text-decoration:none;">

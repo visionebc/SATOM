@@ -6,33 +6,38 @@
 :root {
   /* enable height:0 -> auto transition for the sub-menu accordion (2026-07-06) */
   interpolate-size: allow-keywords;
-  --fw-sidebar-bg: #1D3452;
-  --fw-sidebar-active: #EF5424;
-  --fw-sidebar-text: #B8C8D8;
+  --fw-sidebar-bg: #0A3F9F;
+  --fw-sidebar-active: #F3B52F;
+  --fw-sidebar-text: #C7D6F5;
   --fw-sidebar-text-hover: #FFFFFF;
-  --fw-sidebar-section: #7A94AD;
-  --fw-topbar-bg: #162940;
+  --fw-sidebar-section: #9FB6E0;
+  --fw-topbar-bg: #041F5A;
   --fw-topbar-text: #FFFFFF;
-  --fw-content-bg: #F4F5F7;
+  --fw-content-bg: #F3F6FC;
   --fw-surface: #FFFFFF;
-  --fw-surface-alt: #FAFBFC;
-  --fw-accent: #EF5424;
-  --fw-accent-hover: #D44A1E;
-  --fw-accent-light: rgba(239, 84, 36, 0.1);
-  --fw-border: #DEE2E6;
-  --fw-border-light: #E9ECEF;
+  --fw-surface-alt: #F8FAFE;
+  --fw-accent: #0A3F9F;
+  --fw-accent-hover: #041F5A;
+  --fw-accent-light: rgba(10, 63, 159, 0.10);
+  --fw-border: #DCE4F3;
+  --fw-border-light: #EAEFF9;
   --fw-card-shadow: 0 1px 2px rgba(16,32,52,0.06), 0 3px 12px rgba(16,32,52,0.06);
   --fw-card-shadow-hover: 0 4px 10px rgba(16,32,52,0.10), 0 12px 30px rgba(16,32,52,0.10);
-  --fw-text-primary: #212529;
-  --fw-text-secondary: #6C757D;
+  --fw-text-primary: #0C1B33;
+  --fw-text-secondary: #51607F;
   --fw-success: #28A745;
   --fw-danger: #DC3545;
-  --fw-warning: #FFC107;
+  --fw-warning: #F3B52F;
   --fw-info: #17A2B8;
   --fw-sidebar-width: 264px;
   --fw-topbar-height: 50px;
   --fw-radius: 4px;
   --fw-radius-lg: 8px;
+  --fw-gradient-brand: linear-gradient(135deg, #041F5A 0%, #0A3F9F 35%, #12B8FF 75%, #39D4FF 100%);
+  --fw-gradient-accent: linear-gradient(135deg, #C98A11 0%, #F3B52F 45%, #FFD45A 100%);
+  --fw-glow: #12B8FF;
+  --fw-glow-accent: #FFD45A;
+  --fw-glow-strength: 0.3;
   --fw-transition: 0.2s ease;
   --fw-font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
@@ -94,6 +99,8 @@ a:hover { color: var(--fw-accent-hover); text-decoration: underline; }
   display: flex;
   align-items: center;
   padding: 0 16px;
+  border-bottom: 2px solid transparent;
+  border-image: var(--fw-gradient-brand) 1;
   z-index: 1000;
   box-shadow: 0 2px 6px rgba(0,0,0,0.3);
 }
@@ -194,7 +201,9 @@ a:hover { color: var(--fw-accent-hover); text-decoration: underline; }
 .fw-sidebar {
   width: var(--fw-sidebar-width);
   min-height: calc(100vh - var(--fw-topbar-height));
-  background: var(--fw-sidebar-bg);
+  background-color: var(--fw-sidebar-bg);
+  background-image: linear-gradient(180deg, transparent 40%,
+                    color-mix(in srgb, var(--fw-glow) 16%, transparent) 100%);
   color: var(--fw-sidebar-text);
   position: fixed;
   top: var(--fw-topbar-height);
@@ -262,11 +271,11 @@ div.fw-nav-section.fw-nav-context-label {
   background: rgba(255,255,255,0.06);
   color: var(--fw-sidebar-text-hover);
   text-decoration: none;
-  border-left-color: rgba(239,84,36,0.4);
+  border-left-color: color-mix(in srgb, var(--fw-sidebar-active) 40%, transparent);
 }
 
 .fw-nav-item.active {
-  background: rgba(239,84,36,0.15);
+  background: color-mix(in srgb, var(--fw-accent) 15%, transparent);
   color: #FFFFFF;
   border-left-color: var(--fw-sidebar-active);
   font-weight: 500;
@@ -570,7 +579,7 @@ div.fw-nav-section.fw-nav-context-label {
 }
 
 .fw-table tbody tr:nth-child(even) { background: var(--fw-surface-alt); }
-.fw-table tbody tr:hover { background: rgba(239,84,36,0.04); }
+.fw-table tbody tr:hover { background: color-mix(in srgb, var(--fw-accent) 5%, transparent); }
 
 .fw-table td {
   padding: 10px 14px;
@@ -666,7 +675,7 @@ div.fw-nav-section.fw-nav-context-label {
 
 .fw-form-control:focus {
   border-color: var(--fw-accent);
-  box-shadow: 0 0 0 3px rgba(239,84,36,0.12);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fw-accent) 14%, transparent);
   outline: none;
 }
 
@@ -940,7 +949,7 @@ div.fw-nav-section.fw-nav-context-label {
 .fw-api-method-post { background: rgba(23,162,184,0.12); color: #0A6978; }
 .fw-api-method-put { background: rgba(255,193,7,0.15); color: #856404; }
 .fw-api-method-delete { background: rgba(220,53,69,0.12); color: #9B1C2A; }
-.fw-api-method-patch { background: rgba(239,84,36,0.12); color: var(--fw-accent); }
+.fw-api-method-patch { background: color-mix(in srgb, var(--fw-accent) 12%, transparent); color: var(--fw-accent); }
 
 .fw-api-path { font-family: monospace; font-size: 13px; }
 
@@ -986,7 +995,7 @@ div.fw-nav-section.fw-nav-context-label {
   display: inline-block;
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(239,84,36,0.2);
+  border: 2px solid color-mix(in srgb, var(--fw-accent) 20%, transparent);
   border-top-color: var(--fw-accent);
   border-radius: 50%;
   animation: fw-spin 0.7s linear infinite;
@@ -1443,7 +1452,7 @@ body.fw-entering-page {
 
 /* Tables: readable zebra striping + a slightly stronger hover. */
 .fw-table tbody tr:nth-child(even) > td { background: #F5F7FA; }
-.fw-table tbody tr:hover > td { background: rgba(239,84,36,0.06); }
+.fw-table tbody tr:hover > td { background: color-mix(in srgb, var(--fw-accent) 7%, transparent); }
 
 /* Card header: a touch more separation from the body. */
 .fw-card-header { background: #F6F8FA; border-bottom: 1px solid #E3E8EF; }
@@ -1456,7 +1465,7 @@ body.fw-entering-page {
 .fw-badge-danger    { background: rgba(220,53,69,0.16);  color: #8B1C2A; }
 .fw-badge-warning   { background: rgba(255,193,7,0.20);  color: #7A5700; }
 .fw-badge-info      { background: rgba(23,162,184,0.16); color: #0A5F6C; }
-.fw-badge-primary   { background: rgba(239,84,36,0.16);  color: #C44220; }
+.fw-badge-primary   { background: color-mix(in srgb, var(--fw-accent) 16%, transparent);  color: var(--fw-accent-hover); }
 .fw-badge-secondary { background: rgba(108,117,125,0.16);color: #3D4550; }
 
 /* Empty state: intentional tinted icon medallion instead of a faded glyph. */
@@ -1471,13 +1480,15 @@ body.fw-entering-page {
 .fw-page-header { padding-bottom: 14px; border-bottom: 1px solid var(--fw-border-light); }
 
 /* Primary button micro-interaction. */
-.btn-fw-primary { box-shadow: 0 1px 2px rgba(239,84,36,0.28); transition: box-shadow var(--fw-transition), transform var(--fw-transition); }
-.btn-fw-primary:hover { box-shadow: 0 3px 8px rgba(239,84,36,0.38); transform: translateY(-1px); }
-.btn-fw-primary:active { transform: none; box-shadow: 0 1px 2px rgba(239,84,36,0.28); }
+.btn-fw-primary { background-image: var(--fw-gradient-brand); border-color: transparent;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--fw-accent) 32%, transparent);
+  transition: box-shadow var(--fw-transition), transform var(--fw-transition); }
+.btn-fw-primary:hover { box-shadow: 0 3px 10px color-mix(in srgb, var(--fw-glow) 45%, transparent); transform: translateY(-1px); }
+.btn-fw-primary:active { transform: none; box-shadow: 0 1px 2px color-mix(in srgb, var(--fw-accent) 32%, transparent); }
 
 /* ── Documentation section ─────────────────────────────────────────────── */
 .fw-doc-tile { transition: box-shadow var(--fw-transition), transform var(--fw-transition), border-color var(--fw-transition); }
-.fw-doc-tile:hover { box-shadow: var(--fw-card-shadow-hover); transform: translateY(-2px); border-color: rgba(239,84,36,0.35); }
+.fw-doc-tile:hover { box-shadow: var(--fw-card-shadow-hover); transform: translateY(-2px); border-color: color-mix(in srgb, var(--fw-accent) 38%, transparent); }
 .fw-doc-tile-icon {
   flex-shrink: 0; width: 42px; height: 42px; border-radius: var(--fw-radius-lg);
   display: inline-flex; align-items: center; justify-content: center;
@@ -1579,6 +1590,6 @@ body.fw-entering-page {
    would otherwise merge into --fw-topbar-bg. A halo separates it without
    reintroducing the opaque plate the logo deliberately does not have. */
 .fw-topbar-brand img {
-  filter: drop-shadow(0 0 6px rgba(18, 184, 255, .55))
-          drop-shadow(0 0 2px rgba(255, 212, 90, .35));
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--fw-glow) 60%, transparent))
+          drop-shadow(0 0 2px color-mix(in srgb, var(--fw-glow-accent) 40%, transparent));
 }

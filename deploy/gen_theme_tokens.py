@@ -74,6 +74,21 @@ META: "dict[str, dict]" = {
                                help="Hover/pressed state of accent elements."),
     "accent-light":       dict(group="Accent", label="Accent tint", kind="color",
                                help="Translucent accent wash behind selected rows."),
+    # -- Brand -------------------------------------------------------------
+    # Paint, not colour: these may hold a gradient, so they can never be fed to
+    # `border-color`/`outline-color` (both silently discard a gradient) and they
+    # are skipped by the contrast auditor, which can only reason about one flat
+    # colour at a time.
+    "gradient-brand":     dict(group="Brand", label="Brand gradient", kind="gradient",
+                               help="Primary buttons, top-bar hairline and the sign-in page."),
+    "gradient-accent":    dict(group="Brand", label="Accent gradient", kind="gradient",
+                               help="Secondary brand ramp; call-to-action fills."),
+    "glow":               dict(group="Brand", label="Glow", kind="color",
+                               help="Halo behind the brand mark and hover shadows."),
+    "glow-accent":        dict(group="Brand", label="Glow (accent)", kind="color",
+                               help="Second halo tone, warm side of the palette."),
+    "glow-strength":      dict(group="Brand", label="Glow strength", kind="ratio",
+                               help="0 disables every glow; 1 is full strength."),
     # -- Text --------------------------------------------------------------
     "text-primary":       dict(group="Text", label="Primary text", kind="color",
                                help="Body copy and headings.", on="surface"),
@@ -109,7 +124,7 @@ META: "dict[str, dict]" = {
                                help="Interface font stack, first available wins."),
 }
 
-GROUP_ORDER = ["Sidebar", "Top bar", "Surfaces", "Accent", "Text", "Status",
+GROUP_ORDER = ["Sidebar", "Top bar", "Surfaces", "Accent", "Brand", "Text", "Status",
                "Elevation", "Layout", "Typography"]
 
 _VAR_RE = re.compile(r"^\s*--fw-([a-z0-9-]+)\s*:\s*(.+?)\s*;\s*$")

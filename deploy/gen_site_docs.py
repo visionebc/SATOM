@@ -40,6 +40,12 @@ import re
 import sys
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parents[1]
+
+# Asset URLs carry a content hash (deploy/stamp_site_assets.py). The generator
+# emits the same hash the curated pages carry — if it emitted the bare URL, the
+# next regeneration would silently undo the stamping on 21 of the 27 pages.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from stamp_site_assets import digest as _asset_digest  # noqa: E402
 DOCS_DIR = ROOT_DIR / "docs"
 SITE_DIR = ROOT_DIR / "site"
 OUT_DIR = SITE_DIR / "docs"
@@ -176,6 +182,8 @@ SOURCE_URL = "https://github.com/visionebc/SATOM"
 
 
 def head(title: str, description: str, up: str, active: str) -> str:
+    css_v = _asset_digest("site.css")
+    js_v = _asset_digest("site.js")
     links = "\n".join(
         '        <a href="{}{}"{}>{}</a>'.format(
             up, href, ' class="active"' if href == active else "", label)
@@ -195,8 +203,8 @@ def head(title: str, description: str, up: str, active: str) -> str:
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{up}assets/site.css">
-<script src="{up}assets/site.js" defer></script>
+<link rel="stylesheet" href="{up}assets/site.css?v={css_v}">
+<script src="{up}assets/site.js?v={js_v}" defer></script>
 </head>
 <body>
 

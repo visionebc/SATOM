@@ -75,6 +75,29 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public, open-source
 project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="the-device-api-was-never-documented-and-the-manuals-own-links-were-dead-2026-08-03">The device API was never documented, and the manual's own links were dead (2026-08-03)</h3>
+<ul>
+<li><strong>New manual: <code>docs/device-api.md</code></strong> (published as <em>Device APIs &amp; the endpoint
+  registry</em>). <code>api_v1.md</code> documents the five endpoints a third party uses to
+  drive <strong>this platform</strong>; nothing documented the other direction — the three
+  API consoles the platform uses to drive an <strong>appliance</strong>, or the
+  <code>registry_endpoints</code> catalog behind them (826 seeded entries: 507 FortiWeb
+  REST <code>v2.0</code>, 255 FortiADC REST <code>v1</code>, 64 FortiAnalyzer JSON-RPC). Covers the
+  three transports, the insert-only seed and soft-delete rules that make an
+  operator's correction survive every deployment, the four permissions, ADOM
+  scoping, and the recipe the whole design exists for: a firmware upgrade that
+  moves a URI is a row edit from the browser, not a release.</li>
+<li><strong>71 cross-references in the published manual were dead links.</strong> The manual
+  links Markdown to Markdown, which is right in the repository and 404s
+  everywhere it is published. <code>doc_publication.relink()</code> now rewrites them to
+  the published slugs (preserving <code>#fragments</code>) and unwraps any link to an
+  unpublished document into plain text. <code>docs/safeguards.md</code> 7d, guarded by
+  <code>tests/test_public_docs.py</code>.</li>
+<li><code>docs/engineering.md</code> 5 was stale: it omitted the FortiAnalyzer catalog
+  entirely, gave approximate row counts, listed <code>resolve_adc</code> without
+  <code>resolve_faz</code>, and still described <code>/web/registry</code> as the editor — that page
+  was folded into the API console in 2026-07 and only redirects.</li>
+</ul>
 <h3 id="the-published-manual-rendered-blank-2026-08-03">The published manual rendered blank (2026-08-03)</h3>
 <ul>
 <li><strong>Every documentation page loaded at <code>opacity: 0</code>.</strong> The generator wraps the
@@ -493,7 +516,7 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   functions. That is the class of failure that shipped a hard <code>SyntaxError</code> in
   <code>cert_service.py</code> inside the 1.2 and 1.2.1 bundles while the app booted,
   <code>/healthz</code> returned 200 and the whole test suite stayed green.</p>
-<p>Reference: <a href="docs/cli.md"><code>docs/cli.md</code></a>. Permissions to request:
+<p>Reference: <a href="cli.html"><code>docs/cli.md</code></a>. Permissions to request:
   <code>docs/INSTALL.md</code> §5, <em>Cuenta de OPERADOR</em>.</p>
 <h3 id="fixed_6">Fixed</h3>
 <ul>

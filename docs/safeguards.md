@@ -321,6 +321,35 @@ stylesheet from `static/vendor/`, not from a CDN. This product ships offline
 installers for isolated networks; a login screen that only lays itself out with
 public internet does not lay itself out where it matters most.
 
+## 7d. A cross-reference that renders is not a cross-reference that works
+
+**What it prevents.** The manual is written as Markdown linking to Markdown —
+`[the operator console](cli.md)`. That is correct in the repository and **dead
+on every published surface**, because the published artefact is `cli.html` and
+nothing serves the `.md`. Seventy-one such links across ten pages rendered
+perfectly, sat on pages that returned `200`, and every one of them returned
+`404` when followed. Consolidating the manual onto one published copy made this
+worse, not better: that copy is now the only copy, so its internal navigation
+being broken breaks navigation outright.
+
+**Where it lives.** `doc_publication.relink()` — beside the registry that
+decides what may be published, because the same filename → slug map answers both
+questions. The site generator applies it immediately after the Markdown
+conversion.
+
+**The rule.** A link to a **published** document is rewritten to its slug, with
+any `#fragment` preserved. A link to a document that is **not** published cannot
+be made to work, so it is **unwrapped to its own text** rather than shipped as a
+link that lies. `test_every_markdown_file_that_can_be_linked_is_published` keeps
+that branch a backstop rather than the normal path.
+
+**Both halves are required.** `test_no_published_page_offers_a_markdown_link` is
+satisfied by a `relink()` that deletes every link, which would be silent
+vandalism; `test_the_published_manual_actually_cross_references_itself` pins that
+real cross-references survive **and** that each rewritten target exists on disk.
+Rendering proves nothing here — this class of defect is only found by requesting
+the target.
+
 ## 8. Sessions and the web surface
 
 | Guard | Detail |
@@ -1123,6 +1152,26 @@ which rule 3 exists to prevent.
   because of that, but it mitigates rather than fixes it.
 
 ## Verifying the guards are armed
+
+### Published cross-references (§7d)
+
+Rendering is not evidence — request the target. From a checkout:
+
+```bash
+# 1. nothing published may still point at Markdown
+grep -o 'href="[^"]*\.md"' site/docs/*.html site/docs.html | wc -l     # expect 0
+
+# 2. and the links that ARE there must resolve on the live site
+for slug in $(grep -o 'href="[a-z0-9-]*\.html"' site/docs/readme.html \
+              | cut -d'"' -f2); do
+  printf '%s %s\n' "$(curl -s -o /dev/null -w '%{http_code}' \
+    "https://satom.visionebc.com/docs/$slug")" "$slug"
+done | grep -v '^200' || echo 'every cross-reference resolves'
+```
+
+A generator change that neuters the rewrite shows up as a non-zero count in
+step 1; one that strips links instead of rewriting them shows up as an empty
+list in step 2.
 
 ### 8e — brand gradients and asset stamps
 

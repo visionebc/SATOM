@@ -110,6 +110,8 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
      "Automated issuance, the DNS-provider catalog, and how credentials reach the signer without leaking."),
     ("api_v1.md", "api", "API v1 — integration manual", "\U0001f50c",
      "How a third party authenticates and drives the platform with a token."),
+    ("device-api.md", "device-api", "Device APIs & the endpoint registry", "\U0001f52d",
+     "The API consoles that drive the appliances, and the registry that makes a moved firmware URI a row edit instead of a release."),
     ("engineering.md", "engineering", "Engineering manual", "\U0001f3d7️",
      "Internal architecture for developers: layers, the endpoint registry, device clients, jobs and testing."),
     ("source-of-truth-spec.md", "source-of-truth", "Source-of-truth specification", "\U0001f5c2️",
@@ -136,7 +138,8 @@ GROUPS: list[tuple[str, str, list[str]]] = [
     ("Security", "Certificates, transport encryption and trust between nodes.",
      ["encryption", "acme"]),
     ("Build & integrate", "For developers extending the platform or driving it from outside.",
-     ["api", "engineering", "source-of-truth", "release-pipeline", "release-notes"]),
+     ["api", "device-api", "engineering", "source-of-truth", "release-pipeline",
+      "release-notes"]),
     ("What changed", "Release history for the platform itself.",
      ["changelog"]),
     ("Device reference", "Field-level reference for the managed appliances.",
@@ -186,6 +189,46 @@ FORBIDDEN: list[tuple[str, re.Pattern]] = [
 # The published renderer does NOT use nl2br: these files are hard-wrapped at
 # ~90 columns and nl2br turns every wrap into a visible line break.
 MD_EXTENSIONS = ["toc", "fenced_code", "tables", "sane_lists", "attr_list"]
+
+
+# ---------------------------------------------------------------------------
+# Cross-references between documents.
+#
+# The manual is written as Markdown that links to Markdown: `[the CLI](cli.md)`.
+# That is correct in the repository and DEAD everywhere it is published, because
+# the published artefact is `cli.html` and nothing serves the `.md`. The links
+# rendered fine, returned 200 on the page that contained them, and every one of
+# them 404ed when followed — 71 of them across 10 pages, found only by
+# requesting a target.
+#
+# So the filename -> slug map that decides what gets published also decides
+# what a cross-reference is rewritten to. A link to a document that is NOT
+# published cannot be made to work, so it is unwrapped to plain text rather
+# than shipped as a link that lies.
+# ---------------------------------------------------------------------------
+SLUG_BY_FILE: dict[str, str] = {md_name: slug for md_name, slug, *_ in PUBLIC_DOCS}
+
+# href="cli.md" / href="./cli.md" / href="docs/cli.md" / href="cli.md#section"
+_MD_HREF = re.compile(
+    r'href="(?:\./)?(?:[^"#]*/)?([A-Za-z0-9_.\-]+\.md)(#[^"]*)?"')
+# Whatever survives the rewrite is a link to something unpublished.
+_DEAD_ANCHOR = re.compile(
+    r'<a\b[^>]*href="[^"]*\.md(?:#[^"]*)?"[^>]*>(.*?)</a>', re.DOTALL)
+
+
+def relink(body_html: str) -> str:
+    """Rewrite inter-document Markdown links to their published slugs."""
+    def _to_slug(m: re.Match) -> str:
+        filename, fragment = m.group(1), m.group(2) or ""
+        slug = SLUG_BY_FILE.get(filename)
+        if slug is None:
+            return m.group(0)  # unpublished — unwrapped below
+        return f'href="{slug}.html{fragment}"'
+
+    body_html = _MD_HREF.sub(_to_slug, body_html)
+    # A link that cannot resolve is downgraded to its own text: the sentence
+    # still reads, and nothing invites a click that 404s.
+    return _DEAD_ANCHOR.sub(lambda m: m.group(1), body_html)
 
 
 def redact(text: str) -> str:

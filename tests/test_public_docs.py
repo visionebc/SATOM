@@ -310,3 +310,68 @@ def test_curated_pages_carry_the_same_nav_as_the_generated_ones(page):
     for href, label in _generator().NAV:
         assert f'href="{href}"' in nav_block.group(1), f"{page} nav missing {href}"
         assert f'href="{href}"' in foot_block.group(1), f"{page} footer missing {href}"
+
+
+# ---------------------------------------------------------------------------
+# Cross-references (2026-08-03)
+#
+# The manual links Markdown to Markdown -- correct in the repository, dead
+# everywhere it is published: the artefact is `cli.html` and nothing serves the
+# `.md`. Seventy-one such links across ten pages rendered perfectly, sat on
+# pages that returned 200, and every one of them 404ed when FOLLOWED. Only
+# requesting a target finds this class of defect.
+#
+# Two halves, both required. test_no_published_page_offers_a_markdown_link
+# alone is satisfied by a relink() that deletes every link; the positive test
+# pins that real cross-references survive and point somewhere that exists.
+# ---------------------------------------------------------------------------
+SITE_DOC_PAGES = sorted((ROOT / "site" / "docs").glob("*.html"))
+
+
+@pytest.mark.parametrize("page", SITE_DOC_PAGES, ids=lambda p: p.name)
+def test_no_published_page_offers_a_markdown_link(page):
+    dead = re.findall(r'href="[^"]*\.md(?:#[^"]*)?"', page.read_text(encoding="utf-8"))
+    assert not dead, f"{page.name} links to unpublishable Markdown: {dead[:5]}"
+
+
+def test_the_published_manual_actually_cross_references_itself():
+    """A relink() that stripped every link would pass the negative test."""
+    readme = (ROOT / "site" / "docs" / "readme.html").read_text(encoding="utf-8")
+    assert 'href="management-overview.html"' in readme
+    assert 'href="cli.html"' in readme
+    # ...and the target of a rewritten link must actually be published.
+    for slug in re.findall(r'href="([a-z0-9-]+)\.html"', readme):
+        if slug in ("docs", "index"):
+            continue
+        assert (ROOT / "site" / "docs" / f"{slug}.html").exists(), slug
+
+
+def test_relink_maps_a_published_document_and_keeps_the_anchor():
+    out = pubdoc.relink('<a href="./api_v1.md#3-endpoints">API</a>')
+    assert out == '<a href="api.html#3-endpoints">API</a>'
+
+
+def test_relink_unwraps_a_link_to_an_unpublished_document():
+    """A link that cannot resolve becomes its own text, not a lie."""
+    out = pubdoc.relink('<a href="../nowhere.md">gone</a>')
+    assert out == "gone"
+    assert ".md" not in out
+
+
+def test_every_markdown_file_that_can_be_linked_is_published():
+    """Guarantees the unwrap branch is a backstop, not the normal path."""
+    unpublished = [f.name for f in (ROOT / "docs").glob("*.md")
+                   if f.name not in pubdoc.SLUG_BY_FILE]
+    assert not unpublished, f"docs/ carries unpublished manuals: {unpublished}"
+
+
+def test_the_device_api_manual_is_published_and_grouped():
+    assert "device-api.md" in pubdoc.SLUG_BY_FILE
+    assert pubdoc.SLUG_BY_FILE["device-api.md"] == "device-api"
+    grouped = {slug for _n, _l, slugs in pubdoc.GROUPS for slug in slugs}
+    assert "device-api" in grouped
+    page = (ROOT / "site" / "docs" / "device-api.html").read_text(encoding="utf-8")
+    # The whole point of the document: the two APIs are told apart.
+    assert "endpoint registry" in page.lower()
+    for console in ("/web/api-explorer/", "/adc/api/", "/faz/api/"):
+        assert console in page, f"the manual omits the {console} console"

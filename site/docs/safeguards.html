@@ -71,6 +71,7 @@
       <a href="#7-files-coming-from-outside">7. Files coming from outside</a>
       <a href="#7b-documentation-leaving-the-building">7b. Documentation leaving the building</a>
       <a href="#7c-one-published-manual-and-one-that-works-with-no-network">7c. One published manual, and one that works with no network</a>
+      <a href="#7d-a-cross-reference-that-renders-is-not-a-cross-reference-that-works">7d. A cross-reference that renders is not a cross-reference that works</a>
       <a href="#8-sessions-and-the-web-surface">8. Sessions and the web surface</a>
       <a href="#8b-operator-supplied-theming">8b. Operator-supplied theming</a>
       <a href="#8c-the-public-sites-theme-layer">8c. The public site&#x27;s theme layer</a>
@@ -114,7 +115,7 @@ guard — it is a guard that silently took the wrong branch.</p>
 </ol>
 <hr>
 <h2 id="1-git-history-and-the-source-of-truth">1. Git history and the source of truth</h2>
-<p>Full treatment in <a href="git-backup-and-outage.md"><code>git-backup-and-outage.md</code></a>. The guards:</p>
+<p>Full treatment in <a href="git-backup.html"><code>git-backup-and-outage.md</code></a>. The guards:</p>
 <table>
 <thead>
 <tr>
@@ -154,7 +155,7 @@ guard — it is a guard that silently took the wrong branch.</p>
 <h2 id="2-updating-code-and-dependencies">2. Updating code and dependencies</h2>
 <p>The web worker <strong>never</strong> mutates the installation. It writes a request file; the
 root runner (<code>satom-updater.path</code> → <code>.service</code>) does the work. See
-<a href="privilege-model.md"><code>privilege-model.md</code></a>.</p>
+<a href="privilege-model.html"><code>privilege-model.md</code></a>.</p>
 <ul>
 <li><strong>Code update</strong> — records the current revision, applies, runs an <strong>import
   smoke</strong> on the new tree, restarts, health-checks. On any failure it rolls back
@@ -173,7 +174,7 @@ root runner (<code>satom-updater.path</code> → <code>.service</code>) does the
   git writer), so the next code update does not revert the library.</li>
 </ul>
 <h2 id="3-the-privilege-boundary">3. The privilege boundary</h2>
-<p>Detail in <a href="privilege-model.md"><code>privilege-model.md</code></a>; the short version of what
+<p>Detail in <a href="privilege-model.html"><code>privilege-model.md</code></a>; the short version of what
 protects you:</p>
 <ul>
 <li>The app runs as an unprivileged service account. Its <code>sudo</code> grants are an
@@ -188,7 +189,7 @@ protects you:</p>
   service account: a launcher reading code from there would let a compromised
   web worker rewrite what an operator is about to run under <code>sudo</code>. The
   installer verifies owner, mode and "not a symlink", and refuses otherwise.
-  See <a href="cli.md"><code>cli.md</code></a>.</li>
+  See <a href="cli.html"><code>cli.md</code></a>.</li>
 <li>The CLI is <strong>never</strong> granted to the service account. <code>NOPASSWD</code> on that binary
   for the app user would equal <code>NOPASSWD: ALL</code>; <code>satom diagnose privilege</code>
   fails loudly if it finds such a line in <code>/etc/sudoers.d/satom</code>.</li>
@@ -344,7 +345,7 @@ cannot predict. Removing either one alone still leaves the CLI standing, and
 </tr>
 <tr>
 <td>Peer probes over HTTPS <code>:8443</code> + shared identity key</td>
-<td>Cleartext and unauthenticated node-to-node calls (see <a href="encryption-and-node-tls.md"><code>encryption-and-node-tls.md</code></a>)</td>
+<td>Cleartext and unauthenticated node-to-node calls (see <a href="encryption.html"><code>encryption-and-node-tls.md</code></a>)</td>
 </tr>
 <tr>
 <td>Postgres replication <code>hostssl … clientcert=verify-ca</code></td>
@@ -360,7 +361,7 @@ cannot predict. Removing either one alone still leaves the CLI standing, and
   sneak a write past a legitimate first line. Allowed verbs: <code>get</code>, <code>show</code>,
   <code>diagnose</code>/<code>diag</code>.</li>
 <li><strong>Dry-run → approval → apply.</strong> Writes are computed as a minimal diff and shown
-  before anything is sent; see <a href="source-of-truth-spec.md"><code>source-of-truth-spec.md</code></a>.</li>
+  before anything is sent; see <a href="source-of-truth.html"><code>source-of-truth-spec.md</code></a>.</li>
 <li><strong>Lease locks.</strong> <code>lock_service</code> gives one operator a lease per (appliance,
   resource), refreshed by heartbeat, re-entrant for the same user and expiring on
   its own (default 120 s) if a tab is abandoned — so an abandoned browser never
@@ -563,6 +564,30 @@ something the scanner recognises, or the leak tests above have gone vacuous.</p>
 stylesheet from <code>static/vendor/</code>, not from a CDN. This product ships offline
 installers for isolated networks; a login screen that only lays itself out with
 public internet does not lay itself out where it matters most.</p>
+<h2 id="7d-a-cross-reference-that-renders-is-not-a-cross-reference-that-works">7d. A cross-reference that renders is not a cross-reference that works</h2>
+<p><strong>What it prevents.</strong> The manual is written as Markdown linking to Markdown —
+<code>[the operator console](cli.md)</code>. That is correct in the repository and <strong>dead
+on every published surface</strong>, because the published artefact is <code>cli.html</code> and
+nothing serves the <code>.md</code>. Seventy-one such links across ten pages rendered
+perfectly, sat on pages that returned <code>200</code>, and every one of them returned
+<code>404</code> when followed. Consolidating the manual onto one published copy made this
+worse, not better: that copy is now the only copy, so its internal navigation
+being broken breaks navigation outright.</p>
+<p><strong>Where it lives.</strong> <code>doc_publication.relink()</code> — beside the registry that
+decides what may be published, because the same filename → slug map answers both
+questions. The site generator applies it immediately after the Markdown
+conversion.</p>
+<p><strong>The rule.</strong> A link to a <strong>published</strong> document is rewritten to its slug, with
+any <code>#fragment</code> preserved. A link to a document that is <strong>not</strong> published cannot
+be made to work, so it is <strong>unwrapped to its own text</strong> rather than shipped as a
+link that lies. <code>test_every_markdown_file_that_can_be_linked_is_published</code> keeps
+that branch a backstop rather than the normal path.</p>
+<p><strong>Both halves are required.</strong> <code>test_no_published_page_offers_a_markdown_link</code> is
+satisfied by a <code>relink()</code> that deletes every link, which would be silent
+vandalism; <code>test_the_published_manual_actually_cross_references_itself</code> pins that
+real cross-references survive <strong>and</strong> that each rewritten target exists on disk.
+Rendering proves nothing here — this class of defect is only found by requesting
+the target.</p>
 <h2 id="8-sessions-and-the-web-surface">8. Sessions and the web surface</h2>
 <table>
 <thead>
@@ -1451,6 +1476,21 @@ which rule 3 exists to prevent.</p>
   because of that, but it mitigates rather than fixes it.</li>
 </ul>
 <h2 id="verifying-the-guards-are-armed_1">Verifying the guards are armed</h2>
+<h3 id="published-cross-references-7d">Published cross-references (§7d)</h3>
+<p>Rendering is not evidence — request the target. From a checkout:</p>
+<pre><code class="language-bash"># 1. nothing published may still point at Markdown
+grep -o 'href=&quot;[^&quot;]*\.md&quot;' site/docs/*.html site/docs.html | wc -l     # expect 0
+
+# 2. and the links that ARE there must resolve on the live site
+for slug in $(grep -o 'href=&quot;[a-z0-9-]*\.html&quot;' site/docs/readme.html \
+              | cut -d'&quot;' -f2); do
+  printf '%s %s\n' &quot;$(curl -s -o /dev/null -w '%{http_code}' \
+    &quot;https://satom.visionebc.com/docs/$slug&quot;)&quot; &quot;$slug&quot;
+done | grep -v '^200' || echo 'every cross-reference resolves'
+</code></pre>
+<p>A generator change that neuters the rewrite shows up as a non-zero count in
+step 1; one that strips links instead of rewriting them shows up as an empty
+list in step 2.</p>
 <h3 id="8e-brand-gradients-and-asset-stamps">8e — brand gradients and asset stamps</h3>
 <pre><code class="language-bash"># the gradient pattern refuses a declaration escape on its own
 python3 - &lt;&lt;'EOF'
@@ -1730,11 +1770,11 @@ revision had exactly that, and the redactor rewrote the command inside the
 manual.</p>
 <h2 id="related">Related</h2>
 <ul>
-<li><a href="privilege-model.md"><code>privilege-model.md</code></a> — accounts, sudo, the runner boundary, HA trust</li>
-<li><a href="git-backup-and-outage.md"><code>git-backup-and-outage.md</code></a> — the Gitea-outage scenario end to end</li>
-<li><a href="encryption-and-node-tls.md"><code>encryption-and-node-tls.md</code></a> — TLS, node identity, Postgres SSL</li>
-<li><a href="source-of-truth-spec.md"><code>source-of-truth-spec.md</code></a> — the write path and the local persistence layer</li>
-<li><a href="INSTALL.md"><code>INSTALL.md</code></a> — what to request from systems, and the hardening checklist</li>
+<li><a href="privilege-model.html"><code>privilege-model.md</code></a> — accounts, sudo, the runner boundary, HA trust</li>
+<li><a href="git-backup.html"><code>git-backup-and-outage.md</code></a> — the Gitea-outage scenario end to end</li>
+<li><a href="encryption.html"><code>encryption-and-node-tls.md</code></a> — TLS, node identity, Postgres SSL</li>
+<li><a href="source-of-truth.html"><code>source-of-truth-spec.md</code></a> — the write path and the local persistence layer</li>
+<li><a href="install.html"><code>INSTALL.md</code></a> — what to request from systems, and the hardening checklist</li>
 </ul>
     </div>
   </div>

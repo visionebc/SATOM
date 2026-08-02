@@ -1,50 +1,54 @@
 # SATOM documentation
 
-Twenty reference documents with no front door is not a manual — it is a
+Twenty-two reference documents with no front door is not a manual — it is a
 directory listing. This page is the front door: what exists, in what order to
 read it, and **which surface to read it on**.
 
 ---
 
-## 1. The five surfaces, and why there are five
+## 1. The three surfaces, and why there are three
 
-The same Markdown files in this directory are published five ways. They are not
-redundant — each one survives a different failure.
+The same Markdown files in this directory are published three ways. They are
+not redundant — each one survives a different failure.
 
 | Surface | Where | Audience | Survives |
 |---|---|---|---|
 | **Repository** | `docs/*.md` | whoever edits it | everything; this is the source |
-| **In-app** | `/docs` (sign-in required) | operators with a working web UI | — |
-| **In-app, public** | `/docs/public` and `/docs/api` (no session) | someone locked out, or an integrator with no account | having no credentials, and having no internet |
-| **Public site** | `site/docs/*.html` → GitHub Pages | evaluators, integrators, auditors | the whole installation being down |
-| **Console** | `satom show runbook`, `satom show privilege`, `satom show paths` | an operator on a broken node | no browser, no network, no database |
+| **Public site** | `site/docs/*.html` → GitHub Pages | operators, evaluators, integrators, auditors | the whole installation being down |
+| **Console** | `satom show docs`, `show runbook`, `show privilege`, `show paths` | an operator on a broken or isolated node | no browser, no network, no database |
 
-Two rules follow from that table and both are enforced by
-`tests/test_docs_publication.py`:
+**The application does not serve documentation.** It used to, at `/docs`, and
+that was a fourth place for the same words to live and a fourth place to forget.
+The manual now has exactly one published home; the sign-in page links straight
+to it.
+
+That trade has a cost, and it is paid by the console. A management network is
+deliberately built with no route to the public internet, so on the node that
+most needs the manual the published copy is unreachable. `satom show docs`
+prints these files from the tree — the same files, unredacted, because whoever
+runs it is already on the machine. It derives its catalogue by listing this
+directory, so a document added here appears there with no second edit.
+
+Two rules follow and both are enforced by `tests/test_docs_publication.py`:
 
 - **The repository is the only place anyone edits.** The site pages are
   generated (`deploy/gen_site_docs.py`) and the command reference inside
   `cli.md` is generated (`deploy/gen_cli_reference.py`). Editing the generated
   HTML by hand creates a second copy, and the second copy is the one that goes
   stale in public.
-- **Both public copies are redacted, from one registry.** `site/` is pushed to
-  GitHub Pages by the release sync, and `/docs/public` is served to anyone who
-  can load the sign-in page. Eleven of these files carry real internal
-  addresses, management hostnames, hypervisor names and an administrator's
-  e-mail. `app/services/doc_publication.py` owns the publishable list, the
-  redaction table and the scanner; the site generator and the application both
-  import them. The output is **re-scanned** and a survivor aborts the site build
-  or makes the application refuse that page. Neither warns and continues: a
-  warning in a publication pipeline is a leak with a paper trail.
-  That module exists because the registry used to live in the generator alone —
-  so the application could not reuse it, and grew a public route that served a
-  document unredacted.
+- **The published copy is redacted, from one registry.** Eleven of these files
+  carry real internal addresses, management hostnames, hypervisor names and an
+  administrator's e-mail. `app/services/doc_publication.py` owns the
+  publishable list, the redaction table and the scanner. The output is
+  **re-scanned** and a survivor aborts the site build. It does not warn and
+  continue: a warning in a publication pipeline is a leak with a paper trail.
 
-Regenerating both is two commands, and the test tells you when you owe them:
+Regenerating is three commands, and the test tells you when you owe them:
 
 ```bash
 python3 deploy/gen_cli_reference.py    # docs/cli.md command table
 python3 deploy/gen_site_docs.py        # site/docs/*.html + site/docs.html
+python3 deploy/stamp_site_assets.py    # cache-busting hashes + version pill
 ```
 
 ---
@@ -88,9 +92,9 @@ python3 deploy/gen_site_docs.py        # site/docs/*.html + site/docs.html
 
 ### I am integrating with it
 1. [`api_v1.md`](api_v1.md) — token authentication and the endpoints. Also
-   published unauthenticated at `/docs/api`, and linked from the sign-in page,
-   so an integrator can read it before they have an account. The rest of the
-   manual is beside it at `/docs/public`.
+   published on the public site and linked from the sign-in page, so an
+   integrator can read it before they have an account. The rest of the manual
+   is beside it.
 
 ---
 
@@ -145,16 +149,15 @@ something.
 1. **A new guard is documented in [`safeguards.md`](safeguards.md) in the same
    commit that introduces it.** A protection nobody can find is a protection
    nobody verifies. (Rule recorded in [`overview.md`](overview.md).)
-2. **A new document is added to the curated index in `app/views/docs.py`** —
-   title, order and one-line blurb. Files not listed there still render, but
-   with an auto-generated title and no description, which is how nine of these
-   documents spent months looking like debris.
+2. **A new document appears on the console for free.** `satom show docs`
+   lists this directory; there is no second list to update and therefore no way
+   to add a document the console cannot print.
 3. **A document meant for the public is added to `PUBLIC_DOCS` in
    `app/services/doc_publication.py`** — plus its group in `GROUPS` — and the
-   site generator is re-run. That single list drives *both* public surfaces, so
-   there is no way to publish to one and forget the other. Publication is
-   opt-in: a document absent from it is simply not published, which is the
-   correct default for anything describing internal topology.
+   site generator is re-run. Publication is **opt-in**: a document absent from
+   that list is simply not published, which is the correct default for anything
+   describing internal topology. It still ships in the tree and still prints
+   from the console.
 4. **Never hand-edit generated output** — `site/docs/*.html`, `site/docs.html`,
    or the block between the `GENERATED COMMAND REFERENCE` markers in
    `cli.md`. The test will revert your work by failing.

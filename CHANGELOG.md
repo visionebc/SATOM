@@ -4,6 +4,28 @@ All notable changes to SATOM are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/). This is a public, open-source
 project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
+## [Unreleased]
+
+### Documentation is published once (2026-08-02)
+
+- **The application no longer serves documentation.** `/docs`, `/docs/public`
+  and `/docs/api` are removed; the sign-in page and the sidebar link to the
+  public site instead. One rendered copy, one place to update. The routes now
+  return **404**, not a redirect — a redirect would mean the second copy still
+  existed behind a decorator.
+- **`satom show docs [<name>] [<section>]`** — the manual, from the tree, with
+  no network. A management network has no route to the public site, so removing
+  the in-app manual without this would break the offline bundle's promise. The
+  catalogue is derived by listing `docs/`, so a new document appears there with
+  no second edit.
+- **`docs/README.md` is now published** — the reading map was the one document
+  that existed in the application and not on the site.
+- The published address has a single definition (`doc_publication.SITE_BASE`
+  plus a `docs_url()` context processor); a test fails on a hardcoded URL in any
+  template.
+- The staging documentation node was retired: the public site is the only
+  published copy.
+
 ## [1.3] - 2026-08-02
 
 ### Added

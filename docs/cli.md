@@ -305,7 +305,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*85 commands in 32 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*86 commands in 32 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -352,6 +352,7 @@ Configuration, reference material and the console's own map. Also unprivileged: 
 | `satom show runbook [<topic>]` | — | — | Offline recovery procedures. 'show runbook' lists them. |
 | `satom show privilege` | — | — | How privilege is split here, and why. Read this first. |
 | `satom show sudoers [<account>]` | — | — | Print the sudoers rule to request for an operator account. |
+| `satom show docs [<name>] [<section>]` | — | — | The manual, from the tree. 'show docs' lists it. Works with no network. |
 | `satom show changelog` | — | — | The most recent release notes from the tree. |
 | `satom show version` | — | — | Versions of the app, the CLI and Python. |
 | `satom show tree [<prefix>...] [--commands] [--depth N] [--root] [--danger]` | — | — | The WHOLE command tree in one view. Filters: --commands/--depth/--root. |

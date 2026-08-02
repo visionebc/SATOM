@@ -157,3 +157,106 @@ def services(ctx, args):
            "purpose: the first IS the privilege boundary, the second is shared "
            "state the peer streams from.")
     return r
+
+
+# ---------------------------------------------------------------------------
+# The manual.
+#
+# The application no longer serves it: the public site owns the rendered copy.
+# A management network deliberately has no route to that site, and the offline
+# bundle exists precisely for that network — so the markdown that ships in the
+# tree has to be reachable from the console, or the bundle's promise in
+# INSTALL.md 2.2 is not kept. Same files the site is generated from; nothing
+# here can go stale relative to what is published.
+# ---------------------------------------------------------------------------
+
+def _doc_catalog(ctx):
+    """slug -> path. Derived from the tree, never from a hand-written list."""
+    out = {}
+    d = ctx.app_dir / "docs"
+    if d.is_dir():
+        for p in sorted(d.glob("*.md")):
+            out[p.stem.lower().replace("_", "-")] = p
+    cl = ctx.app_dir / "CHANGELOG.md"
+    if cl.is_file():
+        out["changelog"] = cl
+    return out
+
+
+def _doc_title(path):
+    """First heading, or the filename. Cheap on purpose: a 400 KB read to
+    print a listing is a listing nobody waits for."""
+    try:
+        with path.open("r", errors="replace") as fh:
+            for _ in range(40):
+                line = fh.readline()
+                if not line:
+                    break
+                if line.startswith("# "):
+                    return line[2:].strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return path.name
+
+
+def docs(ctx, args):
+    """Print a document from docs/, or list what is there."""
+    catalog = _doc_catalog(ctx)
+    if not catalog:
+        return Result("warn", "no docs/ under %s" % ctx.app_dir, exit_code=4)
+
+    if not args:
+        r = Result("info", "manual - satom show docs <name> [<section>]")
+        r.rows("", [(n, _doc_title(p)) for n, p in sorted(catalog.items())],
+               keys="plain")
+        r.note("Printed from the tree, unredacted, because you are already on "
+               "the node. The same documents are published - with internal "
+               "addresses removed - at https://satom.visionebc.com/docs.html, "
+               "which an isolated management network cannot reach. That is why "
+               "this command exists.")
+        return r
+
+    want = args[0].lower().replace("_", "-")
+    if want.endswith(".md"):
+        want = want[:-3]
+    if want not in catalog:
+        import difflib
+        r = Result("bad", "no document '%s'" % args[0], exit_code=2)
+        near = difflib.get_close_matches(want, list(catalog), n=3, cutoff=0.4)
+        if near:
+            r.lines("did you mean", near)
+        r.lines("documents", sorted(catalog))
+        return r
+
+    path = catalog[want]
+    try:
+        body = path.read_text(errors="replace").splitlines()
+    except Exception as exc:  # noqa: BLE001
+        return Result("bad", "unreadable %s: %s" % (path, exc), exit_code=4)
+
+    if len(args) > 1:
+        needle = " ".join(args[1:]).lower()
+        picked, taking, level = [], False, 0
+        for line in body:
+            if line.startswith("#"):
+                here = len(line) - len(line.lstrip("#"))
+                if taking and here <= level:
+                    break
+                if not taking and needle in line.lower():
+                    taking, level = True, here
+            if taking:
+                picked.append(line)
+        if not picked:
+            r = Result("bad", "no section matching '%s' in %s"
+                       % (needle, path.name), exit_code=2)
+            r.lines("sections", [l for l in body if l.startswith("#")][:60])
+            return r
+        r = Result("info", "%s - %s" % (want, needle))
+        r.lines("", picked)
+        return r
+
+    r = Result("info", "%s - %s" % (want, _doc_title(path)))
+    r.lines("", body)
+    r.note("%d lines. 'satom show docs %s \"<heading>\"' prints one section; "
+           "pipe to a pager for the rest." % (len(body), want))
+    return r

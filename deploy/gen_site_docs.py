@@ -63,6 +63,9 @@ PAGES: list[tuple[str, str, str, str, str]] = [
      "Requirements, package lists per distribution, the preflight, clustering, hardening and uninstall."),
     ("cli.md", "cli", "Operator console (satom CLI)", "⌨️",
      "The command-line tool for a node whose web interface is down: diagnose, control, rebuild — and the sudo rule to request."),
+    ("theming.md", "theming", "Theming the console", "🎨",
+     "Design tokens, named themes, the value allowlist that keeps operator input out of the "
+     "stylesheet's structure, the contrast audit and how to get back."),
     ("privilege-model.md", "privilege-model", "Privilege model & node trust", "🔐",
      "Which account runs what, the two-command sudo allowlist, the privileged-runner boundary and node-to-node trust."),
     ("safeguards.md", "safeguards", "Safeguards — full catalog", "🛡️",
@@ -95,7 +98,7 @@ PAGES: list[tuple[str, str, str, str, str]] = [
 
 GROUPS: list[tuple[str, str, list[str]]] = [
     ("Start here", "New to the platform — read these in order.",
-     ["management-overview", "overview", "user-guide"]),
+     ["management-overview", "overview", "user-guide", "theming"]),
     ("Deploy & operate", "Getting it running, keeping it running, getting it back.",
      ["install", "cli", "privilege-model", "safeguards", "git-backup"]),
     ("Security", "Certificates, transport encryption and trust between nodes.",

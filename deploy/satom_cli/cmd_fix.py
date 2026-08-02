@@ -747,3 +747,50 @@ def support_bundle(ctx, args):
            "'show config' redacts secrets, but read before you send it out.")
     r.lines("retrieve", ["  scp root@%s:%s ." % (ctx.host, dest)])
     return r
+
+
+_THEME_RESET_CODE = """
+import json
+from app import create_app
+from app.services import theme_service as ts
+app = create_app()
+with app.app_context():
+    before = ts.active_theme()["name"]
+    after = ts.reset_to_builtin()
+print(json.dumps({"before": before, "after": after}))
+"""
+
+
+def reset_theme(ctx, args):
+    """Activate the built-in theme.
+
+    Exists for one situation: an operator saved a palette that made the console
+    hard or impossible to read, and the page that would fix it is inside that
+    console. Everything else about theming is a web concern; this is the way
+    back when the web is the thing that broke.
+
+    Built-in themes cannot be edited or deleted, so the target of this command
+    is always a known-good palette.
+    """
+    if ctx.role == "standby":
+        r = Result("bad", "refusing: this node is the standby", exit_code=1)
+        r.note("Its Postgres is a read-only replica. Run this on the primary; "
+               "streaming replication carries the change here within seconds.")
+        return r
+    rc, out, err = _app_stdin(ctx, _THEME_RESET_CODE, "", timeout=120)
+    if rc != 0:
+        r = Result("bad", "could not reach the theme registry", exit_code=4)
+        r.lines("error", (err or out).splitlines()[-12:])
+        return r
+    try:
+        res = json.loads(out.strip().splitlines()[-1])
+    except Exception:  # noqa: BLE001
+        r = Result("bad", "unexpected output from the app", exit_code=4)
+        r.lines("output", (out or err).splitlines()[-12:])
+        return r
+    if res["before"] == res["after"]:
+        return Result("ok", "already on the built-in theme (%s)" % res["after"])
+    r = Result("ok", "theme reset to %s" % res["after"])
+    r.rows([("was", res["before"]), ("now", res["after"])], keys="dim")
+    r.note("Workers pick this up within 15 seconds; no restart needed.")
+    return r

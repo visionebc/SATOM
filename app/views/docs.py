@@ -28,6 +28,7 @@ DOCS_DIR = (pathlib.Path(__file__).resolve().parents[2] / "docs")
 # Friendly titles + curated display order. Files present in docs/ but not listed
 # here still appear (auto-titled from the filename) after the curated ones.
 _TITLES: dict[str, str] = {
+    "README.md": "Documentation Index & Reading Paths",
     "overview.md": "Project Overview & Operational Rules",
     "management-overview.md": "Management Overview (non-technical)",
     "user-guide.md": "User Guide",
@@ -51,6 +52,7 @@ _TITLES: dict[str, str] = {
 
 # One-line descriptions for the catalog cards.
 _BLURBS: dict[str, str] = {
+    "README.md": "Start here: every document, which surface to read it on, and the reading path for your role.",
     "overview.md": "What this app is, architecture, deployment, security posture and the operational rules.",
     "management-overview.md": "The same system explained without jargon: what it solves, how mature it is, risks and cost.",
     "user-guide.md": "Day-to-day operation, screen by screen.",

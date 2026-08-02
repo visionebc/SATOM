@@ -209,6 +209,58 @@ This is the part that can take a customer offline, so it has the most gates.
   both live on hypervisor03; the primary on hypervisor06; the external backup server on hypervisor04.
   A single host loss can never take out every copy.
 
+## 7b. Documentation leaving the building
+
+Section 7 covers files arriving from outside. This one covers text going the
+other way, which is the direction that cannot be undone: `site/` is pushed to
+GitHub Pages by the release sync, and a published page is cached and indexed
+whether or not it is deleted afterwards.
+
+**What it prevents.** Two different rots, and one disclosure.
+
+| Guard | Prevents | Where |
+|---|---|---|
+| Generated command reference | A manual that lists commands the build no longer has — read by the one person who cannot check, because their web interface is down | `deploy/gen_cli_reference.py`, markers in `docs/cli.md` |
+| Generated site manual | A second, public copy of the documentation drifting from the Markdown the team actually edits | `deploy/gen_site_docs.py` → `site/docs/*.html`, `site/docs.html` |
+| Redact-then-abort | Publishing internal addresses, management hostnames, hypervisor and node names, the backup server, an administrator's e-mail | `redact()` + `scan()` in the same generator |
+| Registry drift, reverse | Hand-written prose naming a command that does not exist | `tests/test_docs_publication.py` |
+
+**Three rules hold it together.**
+
+1. **Redact, then re-scan the OUTPUT, then abort.** Not warn — abort, naming
+   pattern, file and line. A warning in a publication pipeline is a leak with a
+   paper trail. This is the same posture as the release pipeline's secret scan,
+   applied to inventory rather than credentials.
+2. **Publication is opt-in.** A document absent from `PAGES` is simply not
+   published. The safe default for anything describing internal topology is
+   *not published*, not *published and hopefully redacted*.
+3. **Product identifiers are deliberately NOT redacted.** `fadc`, `faz` and
+   `fortiweb` are ADOM keys and URL segments of the product itself
+   (`/fadc/api/`). Rewriting them would mangle route documentation while
+   disclosing nothing — a label with no address is not an inventory. What is
+   redacted is anything that helps someone *reach* a machine.
+
+**Two failures this caught while being built**, both on real text rather than in
+review:
+
+- The hostname pattern was anchored on the leading label, so it matched
+  `node-a.example.net` but not the **wildcard** `*.example.net` nor the
+  **brace expansion** `satom{,-2}.example.net` — neither starts with an
+  alphanumeric. The scanner refused to publish and named all four lines. It is
+  now anchored on the domain.
+- Placeholders written as `<ip>` were emitted as **raw HTML tags**: the browser
+  silently swallows an unknown element, so 27 redactions rendered as *nothing*
+  and the sentences simply lost a word. The redaction was invisible, which is
+  worse than an obvious one. Placeholders are now `{braces}`, which have no
+  meaning in Markdown or HTML — and match the `{helper}` / `{acme_path}`
+  convention this project already uses.
+
+**Limit, stated on purpose.** The scanner knows the identifier shapes this fleet
+uses. It is a backstop against accident, not against someone who deliberately
+publishes a paragraph describing the topology in prose. The opt-in `PAGES` list
+is the real control; the scanner is what makes forgetting expensive instead of
+silent.
+
 ## 8. Sessions and the web surface
 
 | Guard | Detail |
@@ -1044,6 +1096,28 @@ diff <(satom show tree --commands | sed -n 's/^ *satom \([a-z-]* [a-z-]*\).*/\1/
 # the authoritative version of this check is
 # tests/test_cli_render.py::test_tree_lists_every_runnable_command_in_the_registry
 ```
+
+### Documentation publication (§7b)
+
+```bash
+# 1. Is the published manual current? (0 = yes)
+python3 deploy/gen_cli_reference.py --check
+venv/bin/python3 deploy/gen_site_docs.py --check
+
+# 2. Would anything internal be published? Independent of the generator's own
+#    scanner - grep the tree directly. Expect zero.
+grep -rnE '\b(10\.[0-9]{1,3}|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}\b|\.visionebc\.mx|prt0[0-9]|satom-node|backup-server' site/ | wc -l
+
+# 3. Do the guards still bite? Break one on purpose and expect a failure.
+printf '\nSee `satom show doc`.\n' >> docs/cli.md
+venv/bin/python3 -m pytest tests/test_docs_publication.py -q ; echo "rc=$?"   # expect rc=1
+git checkout -- docs/cli.md
+```
+
+The third step matters more than it looks: the assertion behind step 1 was once
+a plain substring check, and the **comment explaining the rule contained the
+substring**, so the test passed with the rule removed. Capture pytest's exit
+code *before* any pipe - a pipeline ending in `tail` always exits 0.
 
 ## Related
 

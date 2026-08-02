@@ -378,7 +378,13 @@ def repair_permissions(ctx, args):
     r = Result("ok", "repair permissions")
     fixed = 0
     scanned = 0
-    for sub in (".git", "data", "reports", "state", "app", "deploy", "pki", "site"):
+    # docs/ and tests/ were missing from this list until 2026-08-02, and they are
+    # exactly where running as root leaves debris: pytest writes tests/__pycache__,
+    # and any doc edited or copied in as root stays root-owned. The command
+    # reported "46 fixed" while leaving files behind in the two directories the
+    # next `git commit` as the service account would touch.
+    for sub in (".git", "data", "reports", "state", "app", "deploy", "pki", "site",
+                "docs", "tests", "installers"):
         base = ctx.app_dir / sub
         if not base.exists():
             continue
@@ -392,12 +398,18 @@ def repair_permissions(ctx, args):
                 pass
     pyc = 0
     for p in ctx.app_dir.rglob("__pycache__"):
+        # Checking only the DIRECTORY's owner missed the common case: the cache
+        # directory already existed (service-owned) and root merely dropped a
+        # new .pyc inside it. Sweep when the directory OR anything in it is
+        # root-owned - a stale byte-cache is free to rebuild.
         try:
-            if p.stat().st_uid == 0:
-                shutil.rmtree(p, ignore_errors=True)
-                pyc += 1
+            rooted = p.stat().st_uid == 0 or any(
+                c.stat().st_uid == 0 for c in p.iterdir())
         except Exception:  # noqa: BLE001
-            pass
+            continue
+        if rooted:
+            shutil.rmtree(p, ignore_errors=True)
+            pyc += 1
     r.rows("", [("paths scanned", scanned),
                 ("root-owned -> %s" % ctx.app_user, fixed),
                 ("root-owned __pycache__ removed", pyc)])

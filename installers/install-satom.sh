@@ -312,6 +312,14 @@ except Exception:
 PFPY
 }
 
+pf_git_probe() {  # pf_git_probe <url-repo> → imprime el codigo HTTP, o vacio
+    # Sondea el endpoint REAL de git, no la raiz del host: un repositorio
+    # privado devuelve 401/403 aqui mientras la raiz del servidor responde 200.
+    local u="${1%.git}.git/info/refs?service=git-upload-pack"
+    pf_have curl || return 2
+    curl -sSk -m 8 -o /dev/null -w "%{http_code}" "$u" 2>/dev/null
+}
+
 pf_port_owner() {  # pf_port_owner <puerto> → nombre del proceso que escucha, o vacío
     local line="" name=""                                              # [PFOWNER]
     if pf_have ss; then
@@ -442,7 +450,16 @@ preflight() {
             *) pf_warn "Sin curl ni python3: no se puede comprobar la salida a Internet" ;;
         esac
         pf_https_ok "https://${githost}/"; case $? in
-            0) ok "Repositorio de código alcanzable (${githost})" ;;
+            0) ok "Repositorio de código alcanzable (${githost})"
+               # Alcanzable != clonable. Un repo privado responde 401 aqui.
+               local _gitcode; _gitcode="$(pf_git_probe "$GIT_URL_DEFAULT")"
+               case "$_gitcode" in
+                   200|304) ok "Repositorio clonable sin credenciales" ;;
+                   401|403) pf_warn "El repositorio ${GIT_URL_DEFAULT} es PRIVADO (HTTP ${_gitcode}). El paso 3 pedira usuario/contrasena; para instalar de forma desatendida da la URL con token: https://<usuario>:<token>@${githost}/..." ;;
+                   404)     pf_warn "El repositorio ${GIT_URL_DEFAULT} devuelve 404 — ruta equivocada o sin permiso de lectura. Podras corregir la URL en el paso 3." ;;
+                   "")      : ;;
+                   *)       pf_warn "El repositorio respondio HTTP ${_gitcode} — el clon del paso 3 puede fallar" ;;
+               esac ;;
             1) pf_warn "Sin acceso a https://${githost} — el clonado fallará (podrás indicar otra URL en el paso 3)" ;;
         esac
     fi
@@ -711,6 +728,47 @@ fi
 pick_python || die "No hay un Python >= 3.10 disponible tras la instalación de paquetes"
 # El módulo venv puede venir en paquete aparte (Debian) o integrado (resto)
 "$PYBIN" -m venv --help >/dev/null 2>&1 || die "$PYBIN no trae el módulo venv — instala el paquete venv de tu distro"
+
+# --- el intérprete tiene que FUNCIONAR, no sólo existir --------------------
+# `--version` y `-m venv --help` no importan ninguna extensión C, así que no
+# ven un desajuste de ABI entre el binario de Python y las librerías del
+# sistema. Caso real (openSUSE Leap 15.6): el python311 de los mirrors está
+# compilado contra libexpat 2.7.x, la imagen base trae 2.4.4 y `zypper install`
+# NO actualiza una dependencia ya instalada -> `import pyexpat` falla con
+# "undefined symbol" y la instalación muere en `ensurepip`, DESPUÉS de haber
+# clonado el repo y creado la cuenta de servicio. Se comprueba aquí, se intenta
+# remediar una vez, y si no se puede se muere nombrando el módulo y el comando.
+PY_C_EXTENSIONS="pyexpat ssl sqlite3 ctypes zlib _hashlib"
+py_runtime_broken() {
+    for m in $PY_C_EXTENSIONS; do
+        "$PYBIN" -c "import $m" >/dev/null 2>&1 || { echo "$m"; return 0; }
+    done
+    return 1
+}
+BROKEN_MOD="$(py_runtime_broken || true)"
+if [ -n "$BROKEN_MOD" ]; then
+    BROKEN_ERR="$("$PYBIN" -c "import $BROKEN_MOD" 2>&1 | tail -1)"
+    warn "El intérprete $PYBIN no puede importar '$BROKEN_MOD': $BROKEN_ERR"
+    if [ "$OFFLINE" = "1" ]; then
+        die "Desajuste de ABI en el Python de la distro y estamos OFFLINE. Actualiza las librerías del sistema (p.ej. libexpat) desde el mismo medio y vuelve a lanzar."
+    fi
+    # Las librerías que con más frecuencia quedan atrás respecto al intérprete.
+    say "Intentando actualizar las librerías del sistema que usa el intérprete…"
+    case "$PKG_MGR" in
+        zypper) zypper --non-interactive update libexpat1 libopenssl3 libsqlite3-0 libz1 >>"$INSTALL_LOG" 2>&1 || true ;;
+        dnf)    dnf -y upgrade expat openssl-libs sqlite-libs zlib          >>"$INSTALL_LOG" 2>&1 || true ;;
+        yum)    yum -y update expat openssl-libs sqlite zlib               >>"$INSTALL_LOG" 2>&1 || true ;;
+        apt)    apt-get install -y --only-upgrade libexpat1 libssl3 libsqlite3-0 zlib1g >>"$INSTALL_LOG" 2>&1 || true ;;
+        pacman) pacman -S --noconfirm expat openssl sqlite zlib            >>"$INSTALL_LOG" 2>&1 || true ;;
+    esac
+    STILL="$(py_runtime_broken || true)"
+    if [ -n "$STILL" ]; then
+        die "El Python de la distro sigue roto: 'import $STILL' falla. Actualiza el sistema completo (p.ej. 'zypper update' / 'dnf upgrade') y vuelve a lanzar el instalador. No se ha modificado nada más."
+    fi
+    ok "Librerías del sistema actualizadas — el intérprete importa sus extensiones C"
+else
+    ok "Intérprete verificado: importa sus extensiones C ($PY_C_EXTENSIONS)"
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PASO 3 — CÓDIGO DE LA APLICACIÓN + VENV

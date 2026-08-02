@@ -6,6 +6,30 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### The device API was never documented, and the manual's own links were dead (2026-08-03)
+
+- **New manual: `docs/device-api.md`** (published as *Device APIs & the endpoint
+  registry*). `api_v1.md` documents the five endpoints a third party uses to
+  drive **this platform**; nothing documented the other direction — the three
+  API consoles the platform uses to drive an **appliance**, or the
+  `registry_endpoints` catalog behind them (826 seeded entries: 507 FortiWeb
+  REST `v2.0`, 255 FortiADC REST `v1`, 64 FortiAnalyzer JSON-RPC). Covers the
+  three transports, the insert-only seed and soft-delete rules that make an
+  operator's correction survive every deployment, the four permissions, ADOM
+  scoping, and the recipe the whole design exists for: a firmware upgrade that
+  moves a URI is a row edit from the browser, not a release.
+- **71 cross-references in the published manual were dead links.** The manual
+  links Markdown to Markdown, which is right in the repository and 404s
+  everywhere it is published. `doc_publication.relink()` now rewrites them to
+  the published slugs (preserving `#fragments`) and unwraps any link to an
+  unpublished document into plain text. `docs/safeguards.md` 7d, guarded by
+  `tests/test_public_docs.py`.
+- `docs/engineering.md` 5 was stale: it omitted the FortiAnalyzer catalog
+  entirely, gave approximate row counts, listed `resolve_adc` without
+  `resolve_faz`, and still described `/web/registry` as the editor — that page
+  was folded into the API console in 2026-07 and only redirects.
+
+
 ### The published manual rendered blank (2026-08-03)
 
 - **Every documentation page loaded at `opacity: 0`.** The generator wraps the

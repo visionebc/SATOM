@@ -121,7 +121,7 @@ revertirlo.</p>
   lectura, ser uid 0 no basta.</li>
 <li><strong>La aplicación instalada NO corre como root</strong>: usa una cuenta de servicio
   sin shell y una allowlist de dos comandos <code>sudo</code> (§5 y
-  <a href="privilege-model.md"><code>privilege-model.md</code></a>).</li>
+  <a href="privilege-model.html"><code>privilege-model.md</code></a>).</li>
 <li>Python <strong>&gt;= 3.10</strong> (lo exigen las dependencias pinneadas). Si no está, el
   instalador instala el de la distribución.</li>
 <li><strong>Online:</strong> salida HTTPS a los mirrors de la distro + PyPI + el repositorio
@@ -610,7 +610,7 @@ invocación con el usuario nominal, y el instalador escribe siempre
 <p><strong>La aplicación NO corre como root.</strong> El instalador crea la cuenta de servicio,
 le da la propiedad del árbol y fija <code>User=</code> en un <strong>drop-in</strong> de systemd, así que
 no hay ningún camino por el que el proceso web acabe siendo root.</p>
-<p>Detalle completo y justificación en <a href="privilege-model.md"><code>privilege-model.md</code></a>.
+<p>Detalle completo y justificación en <a href="privilege-model.html"><code>privilege-model.md</code></a>.
 Resumen:</p>
 <ul>
 <li>Cuenta de servicio sin shell interactivo (<code>satom</code> por defecto; una
@@ -637,7 +637,7 @@ standby primero</strong>:</p>
 <h3 id="cuenta-de-operador-el-cli-de-consola-satom">Cuenta de OPERADOR — el CLI de consola (<code>satom</code>)</h3>
 <p>SATOM instala <code>/usr/local/sbin/satom</code>, un CLI de consola para diagnosticar,
 controlar y <strong>reconstruir</strong> el nodo cuando la interfaz web no arranca (referencia
-completa en <a href="cli.md"><code>cli.md</code></a>). Esta es la tercera cuenta del sistema y hay que
+completa en <a href="cli.html"><code>cli.md</code></a>). Esta es la tercera cuenta del sistema y hay que
 pedirla explícitamente, porque es distinta de las dos anteriores:</p>
 <table>
 <thead>
@@ -813,7 +813,7 @@ funciona, calcula sus señales y no avisa a nadie. Hay que armarlo a mano:</p>
    <code>.path</code> está parado, las actualizaciones encoladas se quedan en <code>queued</code> para
    siempre.</p>
 <p>Cómo verificar que quedaron armadas, comando a comando:
-<a href="safeguards.md"><code>safeguards.md</code></a> § <em>Verifying the guards are armed</em>.</p>
+<a href="safeguards.html"><code>safeguards.md</code></a> § <em>Verifying the guards are armed</em>.</p>
 <h3 id="desinstalar-revertir">Desinstalar / revertir</h3>
 <pre><code class="language-bash">systemctl disable --now satom satom-scheduler \
   satom-updater.path satom-cert-renew.timer satom-ha-datasync.timer 2&gt;/dev/null

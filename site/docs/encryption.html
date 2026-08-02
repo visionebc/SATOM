@@ -29,6 +29,7 @@
         <a href="../architecture.html">Architecture</a>
         <a href="../safeguards.html">Safeguards</a>
         <a href="../docs.html" class="active">Docs</a>
+        <a href="../docs/api.html">API</a>
         <a href="../install.html">Install</a>
       </div>
       <div class="theme-pick" role="group" aria-label="Colour theme">
@@ -191,7 +192,7 @@ tile (subject/issuer/expiry/source).</p>
   valid to 2026-09-02 — zero browser warning). <code>:8443</code> (peer probes) and <code>:80</code>→301
   are also served from the same vhost (<code>satom-tls.conf</code>). nftables on 248 opens <code>:443</code>+<code>:80</code>
   from <code>{ip}/24</code>; 249's input chain is <code>policy accept</code>. DNS
-  <code>{host}.example.net</code> resolves to <code>&lt;ip&gt;/&lt;ip&gt;</code>; Power Panel DNS
+  <code>{host}.example.net</code> resolves to <code>{ip}/{ip}</code>; Power Panel DNS
   entries 269/275 reconciled to match (were stale at <code>.40</code>). Pre-change backups per node:
   <code>/root/fm-pub-server.{crt,key}.pre-b-cutover</code>, <code>/root/satom-tls.conf.pre-b-cutover</code>,
   <code>/root/fm-pub-meta.json.pre-b-cutover</code>.
@@ -215,6 +216,7 @@ tile (subject/issuer/expiry/source).</p>
       <a href="../architecture.html">Architecture</a>
       <a href="../safeguards.html">Safeguards</a>
       <a href="../docs.html">Docs</a>
+      <a href="../docs/api.html">API</a>
       <a href="../install.html">Install</a>
       <a href="https://github.com/visionebc/SATOM">Source</a>
     </div>

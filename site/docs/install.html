@@ -29,6 +29,7 @@
         <a href="../architecture.html">Architecture</a>
         <a href="../safeguards.html">Safeguards</a>
         <a href="../docs.html" class="active">Docs</a>
+        <a href="../docs/api.html">API</a>
         <a href="../install.html">Install</a>
       </div>
       <div class="theme-pick" role="group" aria-label="Colour theme">
@@ -404,12 +405,14 @@ accesible. Un <code>401</code> en este punto detiene la instalación antes de to
 tar xzf satom-offline-&lt;ver&gt;-debian12-amd64.tar.gz
 # RHEL / Rocky / AlmaLinux 9
 tar xzf satom-offline-&lt;ver&gt;-rhel9-x86_64.tar.gz
+# openSUSE Leap 15 / SLES 15
+tar xzf satom-offline-&lt;ver&gt;-suse15-x86_64.tar.gz
 
 cd satom-installer
 sudo bash install-satom.sh        # detecta bundle/ y no toca la red
 </code></pre>
-<p>Hay bundle para <strong>Debian 12</strong> y <strong>RHEL/Rocky/Alma 9</strong> únicamente.
-<strong>openSUSE/SLES y Arch sólo tienen camino ONLINE</strong> — en esas familias el
+<p>Hay bundle para <strong>Debian 12</strong>, <strong>RHEL/Rocky/Alma 9</strong> y, desde <strong>1.3</strong>,
+<strong>openSUSE Leap 15 / SLES 15</strong>. <strong>Arch sólo tiene camino ONLINE</strong> — ahí el
 instalador necesita salida a los mirrors de la distro y a PyPI.</p>
 <p>Hay un bundle POR FAMILIA de distro — el instalador rechaza un bundle de la
 familia equivocada con un mensaje claro:
@@ -417,7 +420,16 @@ familia equivocada con un mensaje claro:
 - <strong>RHEL 9</strong>: <code>bundle/rpms/</code> es un repositorio dnf local (con metadatos) — dnf
   resuelve solo lo que la máquina necesita; incluye <code>python3.11</code> (los pines de
   la app exigen Python &gt;= 3.10 y el python3 del sistema en EL9 es 3.9) y las
-  <code>wheels/</code> correspondientes (cp311).</p>
+  <code>wheels/</code> correspondientes (cp311).
+- <strong>openSUSE / SLES 15</strong>: <code>bundle/rpms-suse/</code> — también <code>.rpm</code>, también con
+  metadatos, pero <strong>directorio distinto a propósito</strong>. Los dos bundles RPM no
+  son intercambiables: los nombres de paquete difieren (<code>python311</code> frente a
+  <code>python3.11</code>), las versiones de las librerías base difieren, y zypper y dnf
+  no leen los repos igual. Separarlos convierte «bundle equivocado» en un error
+  explícito antes de tocar nada, en lugar de una resolución de dependencias que
+  revienta a mitad de instalación. En el destino, zypper recibe un directorio
+  de repos propio (<code>--reposd-dir</code>) que contiene únicamente el bundle: resuelve
+  sin red, sin tocar los repos del sistema, y sin dejar un repo dado de alta.</p>
 <p><strong>Qué trae el bundle</strong>, además del cierre de dependencias: el árbol completo de la
 aplicación, los manuales de <code>docs/</code> — legibles sin red desde la propia consola, en
 <strong>Documentación</strong> — y el cliente ACME <code>lego</code> en <code>bundle/lego/</code>. Desde <strong>1.2</strong> los
@@ -431,8 +443,19 @@ versión llevas antes de instalar:</p>
 </code></pre>
 <p>Verifica la integridad con el <code>.sha256</code> que acompaña a cada tarball.
 Los bundles se generan con <code>installers/build-offline-bundle.sh</code> (en un Debian 12
-con red) y <code>installers/build-offline-bundle-rhel.sh</code> (en una máquina o contenedor
-rockylinux:9 con red).</p>
+con red), <code>installers/build-offline-bundle-rhel.sh</code> (en una máquina o contenedor
+<code>rockylinux:9</code> con red) y <code>installers/build-offline-bundle-suse.sh</code> (en
+<code>opensuse/leap:15.6</code> con red).</p>
+<p>El builder de SUSE descarga contra una <strong>raíz vacía</strong> (<code>zypper --root</code>). zypper
+sólo baja lo que le falta a la máquina donde corre, así que un <code>--download-only</code>
+normal produciría un bundle que sólo sirve en un destino idéntico al build host.
+Con una raíz vacía zypper cree que no hay nada instalado y resuelve el cierre
+completo — el equivalente de <code>dnf download --resolve --alldeps</code>. Esa raíz
+necesita una copia de <code>/etc/os-release</code>: los <code>.repo</code> usan <code>$releasever</code> y zypper
+lo deriva del <code>os-release</code> <strong>de la raíz</strong>. Sin él las URLs quedan mal formadas,
+el refresh parece funcionar, y todos los paquetes se reportan como <em>not found in
+package names</em> — un fallo que se lee como «esta distribución no tiene
+python311».</p>
 <hr>
 <h2 id="3-que-pregunta-el-instalador-en-este-orden">3. Qué pregunta el instalador (en este orden)</h2>
 <p><strong>Paso 0 — preflight.</strong> Antes de la primera pregunta se verifica que la máquina
@@ -821,6 +844,7 @@ si hay que retirarlos lo decide sistemas (<code>apt-get remove</code>).</p>
       <a href="../architecture.html">Architecture</a>
       <a href="../safeguards.html">Safeguards</a>
       <a href="../docs.html">Docs</a>
+      <a href="../docs/api.html">API</a>
       <a href="../install.html">Install</a>
       <a href="https://github.com/visionebc/SATOM">Source</a>
     </div>

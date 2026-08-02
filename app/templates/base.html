@@ -69,7 +69,12 @@
 
   <a href="{{ url_for('product.fortiadc_home') if product.key == 'fortiadc' else (url_for('index') if product.key == 'global' else (url_for('product.placeholder_home') if product.placeholder else url_for('workspace.index'))) }}"
      class="fw-topbar-brand">
-    <img src="{{ theme_logo_url or url_for('static', filename=product.mark) }}" alt="{{ product.name }}"
+    {# Brand slot = the PRODUCT's identity, never the ADOM's. Falling back to
+       product.mark put the ADOM icon here on any theme without an uploaded
+       logo asset - the same globe the "ADOM:" pill draws 12px to the right,
+       with the SATOM emblem nowhere on the page. The ADOM keeps its pill, its
+       sidebar caption, its switcher entries and the chooser page. #}
+    <img src="{{ theme_logo_url or url_for('static', filename='img/satom-mark.png') }}" alt="SATOM"
          style="width:28px;height:28px;flex-shrink:0;">
     <span>{{ product.title }}</span>
   </a>

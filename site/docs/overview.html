@@ -119,12 +119,12 @@ the explicit "refresh" escape hatch.</p>
 <li><strong>Service:</strong> <code>systemctl restart satom.service</code> after any code or
   template change. A scheduler sidecar (<code>satom-scheduler.service</code>)
   fires scheduled actions.</li>
-<li><strong>Runs as</strong> the unprivileged <code>fortinet</code> user; hardened systemd unit
+<li><strong>Runs as</strong> the unprivileged <code>satom</code> user; hardened systemd unit
   (<code>NoNewPrivileges</code>, <code>ProtectSystem=strict</code>, <code>PrivateTmp</code>).</li>
 <li><strong>Config/secrets:</strong> <code>EnvironmentFile=/opt/satom/.env</code> holds
   <code>SECRET_KEY</code>, <code>FERNET_KEY</code>, the DB URL, <code>RATELIMIT_STORAGE_URI</code>,
-  <code>TRUSTED_PROXIES</code>. <code>.env</code> is git-ignored and <code>root:fortinet 640</code>.</li>
-<li><strong>Backups:</strong> nightly <code>pg_dump</code> → <code>/var/backups/fortinet-db</code> (14-day retention).</li>
+  <code>TRUSTED_PROXIES</code>. <code>.env</code> is git-ignored and <code>root:satom 640</code>.</li>
+<li><strong>Backups:</strong> nightly <code>pg_dump</code> → <code>/var/backups/satom-db</code> (14-day retention).</li>
 <li><strong>CI:</strong> <code>pytest -q</code> + an offscreen smoke run on push/PR.</li>
 </ul>
 <h2 id="4-security-posture">4. Security posture</h2>

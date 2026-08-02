@@ -349,15 +349,15 @@ adapted to emit JSONB payloads.</p>
 <h2 id="9-sqlite-postgresql-consolidation-decision-4">9. SQLite → PostgreSQL consolidation (decision 4)</h2>
 <ol>
 <li><strong>Install Postgres</strong> on LXC 248; create role + db
-   (<code>fortinet</code> / <code>fortinet_mgr</code>). Store the URL in <code>.env</code>
+   (<code>satom</code> / <code>satom</code>). Store the URL in <code>.env</code>
    (<code>SQLALCHEMY_DATABASE_URI=postgresql+psycopg://…</code>). Add <code>psycopg[binary]</code> to
    <code>requirements.txt</code>.</li>
 <li><strong>Adopt Flask-Migrate/Alembic.</strong> Generate the baseline migration from the
    current models, then a migration per new table set (§4). Replace the
    <code>db.create_all()</code> bootstrap with <code>flask db upgrade</code> at deploy.</li>
 <li><strong>One-shot data migration</strong> SQLite→Postgres: a script that opens the old
-   <code>fortinet.db</code>, reads every management table, and bulk-inserts into Postgres
-   (order respects FKs). Verify row counts per table. Keep <code>fortinet.db</code> as the
+   <code>satom.db</code>, reads every management table, and bulk-inserts into Postgres
+   (order respects FKs). Verify row counts per table. Keep <code>satom.db</code> as the
    rollback until the user signs off (per fleet migration policy).</li>
 <li><strong>Verify</strong>: app boots against Postgres, login works, appliances/templates/
    audit all present, JWKS/SSO unaffected (local users here, no SSO).</li>
@@ -425,7 +425,7 @@ earlier output, so detailing them now would be guesswork).</p>
 <tbody>
 <tr>
 <td>Postgres cutover breaks management data</td>
-<td>One-shot migration verifies row counts; keep <code>fortinet.db</code> as rollback until sign-off (fleet migration policy).</td>
+<td>One-shot migration verifies row counts; keep <code>satom.db</code> as rollback until sign-off (fleet migration policy).</td>
 </tr>
 <tr>
 <td>Lease lock confuses users</td>
@@ -456,9 +456,9 @@ Restart after deploy: <code>systemctl restart satom.service</code>.</p>
 <h3 id="task-01-install-postgresql-roledb">Task 0.1 — Install PostgreSQL + role/db</h3>
 <ul>
 <li>[ ] <code>apt-get install -y postgresql postgresql-contrib</code></li>
-<li>[ ] <code>sudo -u postgres psql -c "CREATE ROLE fortinet LOGIN PASSWORD '&lt;gen&gt;';"</code></li>
-<li>[ ] <code>sudo -u postgres psql -c "CREATE DATABASE fortinet_mgr OWNER fortinet;"</code></li>
-<li>[ ] Verify: <code>psql "postgresql://fortinet:&lt;pw&gt;@127.0.0.1/fortinet_mgr" -c '\l'</code></li>
+<li>[ ] <code>sudo -u postgres psql -c "CREATE ROLE satom LOGIN PASSWORD '&lt;gen&gt;';"</code></li>
+<li>[ ] <code>sudo -u postgres psql -c "CREATE DATABASE satom OWNER satom;"</code></li>
+<li>[ ] Verify: <code>psql "postgresql://satom:&lt;pw&gt;@127.0.0.1/satom" -c '\l'</code></li>
 </ul>
 <h3 id="task-02-add-driver-flask-migrate-to-deps">Task 0.2 — Add driver + Flask-Migrate to deps</h3>
 <ul>
@@ -480,7 +480,7 @@ Restart after deploy: <code>systemctl restart satom.service</code>.</p>
 </ul>
 <h3 id="task-04-point-config-at-postgres">Task 0.4 — Point config at Postgres</h3>
 <ul>
-<li>[ ] Set <code>SQLALCHEMY_DATABASE_URI=postgresql+psycopg://fortinet:&lt;pw&gt;@127.0.0.1/fortinet_mgr</code>
+<li>[ ] Set <code>SQLALCHEMY_DATABASE_URI=postgresql+psycopg://satom:&lt;pw&gt;@127.0.0.1/satom</code>
       in <code>/opt/satom/.env</code>.</li>
 <li>[ ] <code>flask db upgrade</code> → schema created in Postgres.</li>
 <li>[ ] Verify app boots: <code>systemctl restart satom.service</code> + curl <code>/</code>.</li>
@@ -494,8 +494,8 @@ Restart after deploy: <code>systemctl restart satom.service</code>.</p>
       insert FK-ordered: profiles→users→appliances→templates→audit_logs→
       app_settings→user_settings→…).</li>
 <li>[ ] Run → PASS.</li>
-<li>[ ] Execute against the live <code>fortinet.db</code>; verify row counts per table; login.</li>
-<li>[ ] Commit. Keep <code>fortinet.db</code> as rollback.</li>
+<li>[ ] Execute against the live <code>satom.db</code>; verify row counts per table; login.</li>
+<li>[ ] Commit. Keep <code>satom.db</code> as rollback.</li>
 </ul>
 <hr>
 <h2 id="addendum-2026-06-29-extra-deliverables-requested">Addendum (2026-06-29) — extra deliverables requested</h2>

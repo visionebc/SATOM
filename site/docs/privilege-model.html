@@ -109,7 +109,7 @@ open a shell on the peer node.</p>
 <td>The single privileged runner</td>
 </tr>
 <tr>
-<td><code>fortinet</code></td>
+<td><code>satom</code></td>
 <td>Postgres role <strong>only</strong></td>
 <td>n/a</td>
 <td>Legacy name, deliberately not renamed</td>
@@ -122,10 +122,10 @@ open a shell on the peer node.</p>
 </tr>
 </tbody>
 </table>
-<p><code>fortinet</code> as a <em>Linux</em> user is a legacy artifact on nodes installed before
+<p><code>satom</code> as a <em>Linux</em> user is a legacy artifact on nodes installed before
 v1.2. It is unrelated to the Postgres role of the same name — the app connects
 over TCP with a password, not peer auth. Migrated nodes may keep the name by
-setting <code>SATOM_APP_USER=fortinet</code>; fresh installs get <code>satom</code>.</p>
+setting <code>SATOM_APP_USER=satom</code>; fresh installs get <code>satom</code>.</p>
 <h3 id="filesystem-ownership">Filesystem ownership</h3>
 <pre><code>/opt/satom              satom:satom  0750
 /opt/satom/.env         root:satom   0640   # app READS it, never writes it
@@ -399,7 +399,7 @@ there is no environment variable to forget:</p>
 <p><code>satom-updater.{service,path}</code> is deliberately <strong>excluded</strong> from that list: it
 <em>is</em> the privileged runner and must stay root.</p>
 <p><code>self_update_runner.APP_USER</code> is derived from the <strong>owner of the app tree</strong>
-(<code>_app_user_from_tree()</code>), not from <code>FM_APP_USER</code>'s old <code>fortinet</code> default: a
+(<code>_app_user_from_tree()</code>), not from <code>FM_APP_USER</code>'s old <code>satom</code> default: a
 fresh install creates <code>satom</code> and nobody sets that variable, so the runner would
 otherwise run <code>pip</code> and <code>flask</code> as the wrong account. If the tree is root-owned
 (an un-migrated node) it returns <code>root</code> and no drop-in is written — self-healing
@@ -416,7 +416,7 @@ scheduled for deletion. Put it in a drop-in, a <code>conf.d/</code>, or the gene
 <hr>
 <h2 id="6-migrating-an-existing-node">6. Migrating an existing node</h2>
 <p><code>deploy/migrate-deprivilege.sh</code>, one node at a time, <strong>standby first</strong>. It
-creates the account (or adopts <code>fortinet</code>), fixes ownership of <code>state/</code> and
+creates the account (or adopts <code>satom</code>), fixes ownership of <code>state/</code> and
 <code>/var/log/satom</code> (root-owned on legacy nodes because the app used to run as
 root), installs the sudoers file, rewrites <code>User=</code> in the units, and restarts.</p>
 <p>Roll back by restoring <code>/root/satom-units.pre-deprivilege-&lt;ts&gt;/</code> and removing
@@ -436,14 +436,14 @@ app account on legacy nodes.</p>
 <li><strong>Does it call <code>runuser</code> or <code>su</code>?</strong> Those only work as root. Any helper script
   that a v1.1 node ran as root and a v1.2 node runs as the service account must
   branch on <code>id -u</code> (see <code>deploy/satom-git-publish.sh::as_app</code>). This is not
-  theoretical: <code>satom-git-publish.sh</code> kept <code>runuser -u fortinet -- git</code>, so
+  theoretical: <code>satom-git-publish.sh</code> kept <code>runuser -u satom -- git</code>, so
   after the de-privileging it failed every hour — and because the failure was
   swallowed by <code>|| exit 0</code>, systemd reported SUCCESS while copy 3 of the backup
   architecture silently stopped being published.</li>
 <li><strong>Does it hardcode the service account or the database name?</strong> Derive the
   account from the tree owner (<code>stat -c %U /opt/satom</code>) and the database from
   <code>SQLALCHEMY_DATABASE_URI</code> in <code>.env</code>. A fresh install uses <code>satom</code> and a
-  migrated one may keep <code>fortinet</code>; both must work from the same script.</li>
+  migrated one may keep <code>satom</code>; both must work from the same script.</li>
 <li><strong>Does a failure exit 0?</strong> Then nobody will ever find out. Prefer a non-zero
   exit so the unit shows <code>failed</code> and the alerting picks it up.</li>
 </ul>

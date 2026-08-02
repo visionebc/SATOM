@@ -71,13 +71,13 @@ echoes `peer_authenticated`. nftables on 248 opens `:8443` from `192.0.2.249`.
 
 ### Postgres replication → enforced + mutual CA
 - Primary serves the **internal-CA leaf** as its Postgres server cert
-  (`ssl_cert_file`/`ssl_key_file` → `/etc/postgresql/15/main/fmssl/server.*`,
+  (`ssl_cert_file`/`ssl_key_file` → `/etc/postgresql/15/main/satomssl/server.*`,
   `ssl_ca_file` → the internal CA).
 - `pg_hba`: `hostssl replication replicator 192.0.2.249/32 ... clientcert=verify-ca`
   (mutual — the standby must present a CA-signed client cert), and
-  `hostssl fortinet_mgr fortinet 192.0.2.249/32` (encryption enforced).
+  `hostssl satom satom 192.0.2.249/32` (encryption enforced).
 - Standby `primary_conninfo`: `sslmode=verify-ca` + `sslrootcert`/`sslcert`/`sslkey`
-  (its own leaf, `/etc/postgresql/15/main/fmssl/client.*`).
+  (its own leaf, `/etc/postgresql/15/main/satomssl/client.*`).
 - Verified: `sslmode=disable` → refused (`no encryption`); SSL-without-client-cert
   → refused. Live: TLS 1.3 / `TLS_AES_256_GCM_SHA384`.
 - Operator tunes the floor from the UI (min TLS protocol + cipher list):

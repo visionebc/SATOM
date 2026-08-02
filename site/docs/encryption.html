@@ -153,13 +153,13 @@ echoes <code>peer_authenticated</code>. nftables on 248 opens <code>:8443</code>
 <h3 id="postgres-replication-enforced-mutual-ca">Postgres replication → enforced + mutual CA</h3>
 <ul>
 <li>Primary serves the <strong>internal-CA leaf</strong> as its Postgres server cert
-  (<code>ssl_cert_file</code>/<code>ssl_key_file</code> → <code>/etc/postgresql/15/main/fmssl/server.*</code>,
+  (<code>ssl_cert_file</code>/<code>ssl_key_file</code> → <code>/etc/postgresql/15/main/satomssl/server.*</code>,
   <code>ssl_ca_file</code> → the internal CA).</li>
 <li><code>pg_hba</code>: <code>hostssl replication replicator {ip}/32 ... clientcert=verify-ca</code>
   (mutual — the standby must present a CA-signed client cert), and
-  <code>hostssl fortinet_mgr fortinet {ip}/32</code> (encryption enforced).</li>
+  <code>hostssl satom satom {ip}/32</code> (encryption enforced).</li>
 <li>Standby <code>primary_conninfo</code>: <code>sslmode=verify-ca</code> + <code>sslrootcert</code>/<code>sslcert</code>/<code>sslkey</code>
-  (its own leaf, <code>/etc/postgresql/15/main/fmssl/client.*</code>).</li>
+  (its own leaf, <code>/etc/postgresql/15/main/satomssl/client.*</code>).</li>
 <li>Verified: <code>sslmode=disable</code> → refused (<code>no encryption</code>); SSL-without-client-cert
   → refused. Live: TLS 1.3 / <code>TLS_AES_256_GCM_SHA384</code>.</li>
 <li>Operator tunes the floor from the UI (min TLS protocol + cipher list):

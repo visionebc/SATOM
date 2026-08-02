@@ -38,6 +38,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SITE = os.path.join(ROOT, "site")
 ASSETS = ("site.css", "site.js")
 
+# The hero pill carries the shipped version. It was a literal, which is how
+# the application footer sat at "v1.0" through four releases: a number only a
+# human can update is a number that will be wrong. Derived from the repo-root
+# VERSION file -- the same file the bundle builders and the CLI read.
+VERSION_FILE = os.path.join(ROOT, "VERSION")
+VERSION_RE = re.compile(r'(<div class="pill"><span class="dot"></span>\s*)v[0-9][0-9A-Za-z.\-]*')
+
+
 #: href="…/site.css"  or  src="…/site.js", with or without an existing ?v=
 _REF = re.compile(
     r'((?:href|src)=")([^"]*?)(%s)(\?v=[0-9a-f]+)?(")'
@@ -66,15 +74,26 @@ def stamp(text: str, hashes: "dict[str, str]") -> str:
     return _REF.sub(repl, text)
 
 
+def shipped_version() -> str:
+    with open(VERSION_FILE, encoding="utf-8") as fh:
+        return fh.read().strip()
+
+
+def stamp_version(text: str, version: str) -> str:
+    """Rewrite the hero pill to the shipped version."""
+    return VERSION_RE.sub(lambda m: m.group(1) + "v" + version, text)
+
+
 def main(argv: "list[str]") -> int:
     check = "--check" in argv
     hashes = {a: digest(a) for a in ASSETS}
+    version = shipped_version()
     stale: "list[str]" = []
     written = 0
     for page in pages():
         with io.open(page, encoding="utf-8") as fh:
             src = fh.read()
-        out = stamp(src, hashes)
+        out = stamp_version(stamp(src, hashes), version)
         if out == src:
             continue
         rel = os.path.relpath(page, ROOT)
@@ -87,15 +106,15 @@ def main(argv: "list[str]") -> int:
     if check:
         if stale:
             sys.stderr.write(
-                "asset references are unstamped or stale in %d page(s):\n  %s\n"
+                "asset references or the version pill are stale in %d page(s):\n  %s\n"
                 "run: python3 deploy/stamp_site_assets.py\n"
                 % (len(stale), "\n  ".join(stale)))
             return 1
-        print("site asset stamps are current (%s)" %
-              ", ".join("%s=%s" % kv for kv in sorted(hashes.items())))
+        print("site asset stamps are current (v%s; %s)" %
+              (version, ", ".join("%s=%s" % kv for kv in sorted(hashes.items()))))
         return 0
-    print("stamped %d page(s) (%s)" %
-          (written, ", ".join("%s=%s" % kv for kv in sorted(hashes.items()))))
+    print("stamped %d page(s) (v%s; %s)" %
+          (written, version, ", ".join("%s=%s" % kv for kv in sorted(hashes.items()))))
     return 0
 
 

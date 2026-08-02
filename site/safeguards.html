@@ -75,11 +75,16 @@
       <a href="#git">Git history</a>
       <a href="#updates">Updates &amp; dependencies</a>
       <a href="#privilege">Privilege boundary</a>
+      <a href="#console">The operator console</a>
       <a href="#ha">Two-node correctness</a>
       <a href="#devices">Writing to appliances</a>
       <a href="#certs">Certificates</a>
       <a href="#files">Files from outside</a>
       <a href="#web">Sessions &amp; web surface</a>
+      <a href="#appearance">Operator-supplied appearance</a>
+      <a href="#docs">Documentation leaving the building</a>
+      <a href="#content">Content &amp; presentation</a>
+      <a href="#monitoring">Monitoring that can say no</a>
       <a href="#alerts">The alert catalog</a>
       <a href="#install">Fresh installs</a>
       <a href="#limits">Known limits</a>
@@ -128,6 +133,23 @@
           <li>The privileged runner is triggered by a <b>watched request directory</b> — the web process submits a typed request and can never pass a command</li>
           <li>Every HA guard probes the node's role through a path that works <b>unprivileged</b>. The obvious probe needs root, and unprivileged it returns empty — which made guards take the "not primary" branch while the service reported success. That class of silent failure is now impossible by construction</li>
         </ul>
+      </div>
+
+      <div class="dsec reveal" id="console">
+        <h2><span class="hico">⌨️</span> The operator console</h2>
+        <p class="lead">A tool for the node whose web interface is the thing that broke. Everything about it is shaped by that one requirement — and by the fact that it is invoked with elevated privilege.</p>
+        <table class="cmp">
+          <tr><th>Guard</th><th>What it prevents</th></tr>
+          <tr><td>No framework imports at module level</td><td>A diagnostic that cannot run when the installation is broken. Commands that genuinely need the application import it <b>inside the function</b> and degrade with a stated reason. The test suite checks this by parsing the source, because a stray import would not be noticed until the day it matters</td></tr>
+          <tr><td>A root-owned copy outside the application tree</td><td>Privilege escalation through the tool itself. The application tree is owned by the service account; a launcher that executed code from it would let a compromised web worker rewrite what an administrator runs under <code>sudo</code>. The installer verifies owner and mode, and refuses a symlink</td></tr>
+          <tr><td>Re-installed after every update</td><td>A stale console. It lives outside the tree, so a code update does not reach it — the installer, the update runner and a repair verb all refresh the copy</td></tr>
+          <tr><td>Refusal instead of a traceback</td><td>An operator guessing. A state-changing verb run without privilege prints the <b>full command line including arguments</b> and a distinct exit code — retyping remembered arguments is how the wrong ones get typed</td></tr>
+          <tr><td>Read commands never write</td><td>A diagnostic that creates the drift it reports. Repository status runs without optional locks and byte-code writing is disabled during a compile check, because both were silently taking ownership of files away from the service account</td></tr>
+          <tr><td>Destructive verbs must be declared</td><td>An irreversible action with no confirmation. A command marked destructive that does not require explicit confirmation fails the test suite</td></tr>
+          <tr><td>The tree is data, not code paths</td><td>A command with no help text or no declared privilege class. The parser, the help, completion, the privilege gate and the JSON renderer all read one structure, and an incomplete entry breaks the build</td></tr>
+          <tr><td>The output path cannot crash</td><td>Dying while printing. Decoration is stripped for pipes, the character table folds to ASCII at the render boundary, and the stream is hardened for content the table cannot know about — a hostname, a certificate subject, a log line. A serial console once killed a command over a dash in a title</td></tr>
+          <tr><td>Refuses to control its own runner</td><td>Re-entering the privilege boundary sideways. The privileged runner and the database engine are deliberately not controllable from the console; disabling the runner is refused outright, because it would leave every queued update pending with nothing reporting it</td></tr>
+        </table>
       </div>
 
       <div class="dsec reveal" id="ha">
@@ -193,6 +215,77 @@
         </table>
       </div>
 
+      <div class="dsec reveal" id="appearance">
+        <h2><span class="hico">🎨</span> Operator-supplied appearance</h2>
+        <p class="lead">Letting an operator recolour the console means accepting operator input into a stylesheet that carries the page's own security nonce. The entire design of the theme engine follows from refusing to do that naively.</p>
+        <table class="cmp">
+          <tr><th>Guard</th><th>What it prevents</th></tr>
+          <tr><td>Tokens, never raw CSS</td><td><b>Stored CSS injection.</b> One closing brace ends the intended rule and starts an attacker's. The editable surface is a closed list of design tokens the stylesheet already exposes — not a text area</td></tr>
+          <tr><td>Validated by kind, plus a forbidden-character list</td><td>A value that is syntactically a colour but semantically a payload. The two layers are not redundant: the colour pattern is narrow enough to stand alone, but the shadow and font classes accept letters, digits and parentheses — enough to smuggle an external reference past a per-type check</td></tr>
+          <tr><td>Gradients parsed structurally</td><td>The same, for a value type that legitimately contains commas, percentages and nested functions</td></tr>
+          <tr><td>Re-validated when emitted</td><td>Trusting the database as a boundary. A restore, a replica or a direct SQL session can put a value in the table that never passed the form</td></tr>
+          <tr><td>Contrast audited with alpha composition</td><td>An unreadable console. Every text/background pair is scored; below the legibility floor the save requires an explicit acknowledgement. The shipped palettes are asserted in the test suite, so a change that degrades them fails</td></tr>
+          <tr><td>Three independent ways back</td><td><b>Lock-out.</b> Revert to the shipped look, activate a built-in, or run one console command. Built-ins cannot be edited or deleted, and deleting the active theme falls back instead of leaving the console unthemed</td></tr>
+          <tr><td>The token registry is generated from the stylesheet</td><td>An editor that silently loses a control. A hand-maintained list is a copy; the build fails if the two drift</td></tr>
+          <tr><td>Every theme declares its own brand ramps</td><td>An amber console painting blue buttons. A theme stores only its overrides, so a theme that omits a gradient inherits the stylesheet's — which is correct for the default and wrong for every other palette</td></tr>
+          <tr><td>Gradients are refused where a browser would drop them</td><td>A border that <i>disappears</i> instead of changing colour. Paint properties accept a ramp; <code>border-color</code> and friends discard it silently</td></tr>
+        </table>
+        <div class="callout warn"><span class="cico">🌓</span>
+          <p><b>There is no dark console, and that is stated rather than implied.</b> Around a hundred and forty status tints are still literal values in the stylesheet, so a dark canvas would leave islands of light. The <i>public site</i> does offer a dark theme — its palette was fully tokenised first, which is exactly the work the console still owes.</p></div>
+      </div>
+
+      <div class="dsec reveal" id="docs">
+        <h2><span class="hico">📚</span> Documentation leaving the building</h2>
+        <p class="lead">The manuals are written with real addresses, hostnames and node names, because that is what makes them useful to the operator. Publishing them is therefore a data-loss risk in the opposite direction.</p>
+        <table class="cmp">
+          <tr><th>Guard</th><th>What it prevents</th></tr>
+          <tr><td>Redact, then scan the <b>output</b>, then abort</td><td>A leak with a receipt. The publication step rewrites known identifiers and then re-scans what it produced; a hit <b>stops the build</b> naming pattern, file and line. A warning inside a publishing pipeline is a leak that was announced and shipped anyway</td></tr>
+          <tr><td>Publication is opt-in</td><td>A new manual being published by the mere act of existing. A document absent from the register is not published</td></tr>
+          <tr><td>One rendered copy on the internet</td><td>A second rendered copy running on a management server — which is exactly how an unauthenticated route once served internal addresses to anyone who could load the sign-in page</td></tr>
+          <tr><td>A single shared registry</td><td>The generator and the application drifting into two different ideas of what is public. Both read one module, and the test suite fails if either re-declares the list, the redaction table or the scanner</td></tr>
+          <tr><td>The scanner is asserted against real input</td><td><b>A round-trip that proves nothing.</b> Narrowing the redactor and the scanner together leaves the pair self-consistent and green while publishing the identifier. The test asserts the raw source still contains something the scanner must catch</td></tr>
+          <tr><td>Placeholders that cannot vanish</td><td>An invisible redaction. Angle-bracket placeholders were being parsed as unknown HTML elements and rendered as nothing, silently deleting a word from the sentence</td></tr>
+          <tr><td>Product identifiers are deliberately not redacted</td><td>Mutilating documentation without hiding anything — workspace keys and URL segments are part of the product, not the estate</td></tr>
+          <tr><td>Manuals readable with no network</td><td>A published-only manual on an isolated management network. The operator console prints any document straight to the terminal, which is what makes a single published copy safe</td></tr>
+        </table>
+      </div>
+
+      <div class="dsec reveal" id="content">
+        <h2><span class="hico">👁️</span> Content &amp; presentation</h2>
+        <p class="lead">A whole class of failure produces a perfect HTTP response, a complete document, a clean security scan — and a blank page. These guards exist because that happened.</p>
+        <table class="cmp">
+          <tr><th>Guard</th><th>What it prevents</th></tr>
+          <tr><td>Content is visible by default</td><td>A page that renders nothing when its script is blocked, stale or filtered. Hiding is applied by a blocking snippet in the document head and only for the duration of the animation</td></tr>
+          <tr><td>The hiding flag is withdrawn if the revealer never runs</td><td>The inverse failure — the head arms the concealment and the script that would undo it fails to load. A timeout removes the flag</td></tr>
+          <tr><td>Any visible pixel reveals a section</td><td>A threshold expressed as a fraction of the <b>element</b> rather than the viewport: a document taller than eight screens can never reach it, so the longest and most important manuals were the ones rendering at zero opacity</td></tr>
+          <tr><td>Assets carry a content hash</td><td>A visitor with fresh markup and a cached script — which reads as "this feature is broken", not "your cache is old". The hash is derived from the file, never from a version constant somebody can forget to raise</td></tr>
+          <tr><td>The product icon is served on every surface</td><td>A rebrand that never reaches the browser tab. The bare icon path is answered explicitly, because a browser requests it on its own and <b>caches the 404</b> — a missing route is precisely why an old icon outlives a rename</td></tr>
+          <tr><td>No live template serves the previous brand</td><td>Assets whose <i>filename</i> mentions neither the old nor the new name, and which therefore survive every text search. One had outlived three renames on the first page shown after sign-in</td></tr>
+        </table>
+        <div class="callout"><span class="cico">🔬</span>
+          <p>This class cannot be caught by reading the HTML — the HTML was correct every time. It is verified by measuring the computed style in a real browser, on the real published pages.</p></div>
+      </div>
+
+      <div class="dsec reveal" id="monitoring">
+        <h2><span class="hico">📡</span> Monitoring that can say no</h2>
+        <p class="lead">A monitoring page earns its place by being able to deliver bad news. Several of these guards exist because a screen was structurally incapable of it.</p>
+        <table class="cmp">
+          <tr><th>Guard</th><th>What it prevents</th></tr>
+          <tr><td>The health badge grades four signals</td><td><b>A badge that can never turn red.</b> Scoring only on capacity headroom meant an appliance that was powered off, whose harvest had failed for days and which had nothing cached, still rendered <i>healthy</i>. Harvest, cache age, probes and capacity are now graded together and every failing signal is printed</td></tr>
+          <tr><td><code>unknown</code> ranks below <code>ok</code></td><td>Absence of measurement reading as health</td></tr>
+          <tr><td>A disabled probe is not a passing probe</td><td>Silencing a monitor to clear a board. Switching one off removes coverage, and the card says so</td></tr>
+          <tr><td>The page and the mailbox share one ladder</td><td>Two surfaces disagreeing. Before this, the alert side was a bare network probe — appliances answered their port for a week with a dead harvest and never produced a single mail</td></tr>
+          <tr><td>A page load never opens a connection to an appliance</td><td>A monitoring screen that hangs when the thing it monitors is down. Every view is served from the database; probing is a background sweep or an explicit action</td></tr>
+          <tr><td>A workspace never shows the manager's infrastructure</td><td>Node names and infrastructure addresses appearing inside a product view. The data endpoints <b>omit</b> those sections outside the manager workspace and the infrastructure routes answer <code>403</code> — a hidden card whose endpoint still answers is hidden, not scoped</td></tr>
+          <tr><td>Fleet-wide actions resolve their targets in the request</td><td>A sweep launched from one product workspace opening connections to appliances of another. Worker threads have no workspace of their own, so the target list is resolved where it exists and passed in</td></tr>
+          <tr><td>Absence of data is never health</td><td>A zero transaction count on a saturated service. A zero is cross-checked against live sessions before it may grade healthy; an empty bucket list is an error; a watched port that disappears is named, not dropped from a shorter list</td></tr>
+          <tr><td>Recurring work is silent unless it fails</td><td>Alert fatigue from the system announcing that it is doing what it was told to do. A sweep raises nothing on success — and the failure is the one thing the page itself cannot show, because stale numbers look current</td></tr>
+          <tr><td>Stale work is swept out of the progress feed</td><td><b>A control the operator cannot use.</b> An abandoned task offering a Stop button that can never work teaches people that the progress area lies — and then the one that matters is dismissed too</td></tr>
+          <tr><td>The test suite cannot write to the live ledger</td><td>Running the tests on a node inventing phantom background tasks in production — which is what was reappearing every time the product was worked on</td></tr>
+          <tr><td>Parked appliances are skipped, not failed</td><td>A permanent critical alert about machines nobody expects to answer. A run whose entire target set is parked reports <i>skipped</i>, which does not feed a failure streak; a manual run still reaches them</td></tr>
+        </table>
+      </div>
+
       <div class="dsec reveal" id="alerts">
         <h2><span class="hico">🔔</span> The alert catalog</h2>
         <p class="lead">All of the above is only useful if silence means healthy. Thresholds and recipients live in settings; each signal has its own cooldown.</p>
@@ -203,10 +296,15 @@
           <tr><td>Unpushed commits</td><td>Local history has been waiting to reach the remote for too long</td></tr>
           <tr><td>Behind / diverged</td><td>The checkout trails the remote past the limit, or both sides moved</td></tr>
           <tr><td>Backup missing / stale / error</td><td>No backup at all, none recent enough, or the check itself failed</td></tr>
-          <tr><td>Device error</td><td>A registered appliance is unreachable or erroring</td></tr>
+          <tr><td>Device health</td><td>An appliance is degraded or critical on the same four-signal ladder the page uses — <b>one finding per device</b>, with every failing signal as a line in the message, plus a live network probe the page deliberately does not have</td></tr>
+          <tr><td>Device error</td><td>The appliance list, or one device's health roll-up, could not be read at all</td></tr>
+          <tr><td>Scheduled action failing</td><td>A scheduled run has failed repeatedly. Only <b>scheduled</b> runs count — a manual run is already on someone's screen, and mixing them hides the case where the scheduled path is broken while manual runs pass</td></tr>
+          <tr><td>Scheduled action overdue</td><td>An enabled action whose next run came and went. <b>Without this, a dead scheduler looks perfectly healthy</b> — it produces no failed runs to count</td></tr>
           <tr><td>Drift error</td><td>The configuration drift comparison could not run</td></tr>
           <tr><td>Engine error</td><td>The alert engine itself failed — the guard on the guard</td></tr>
         </table>
+        <div class="callout"><span class="cico">⚖️</span>
+          <p><b>Severity is part of the quiet-period key.</b> A device or an action that degrades from warning to critical inside the cooldown still reaches the operator — a fixed key would suppress precisely the escalation the alert exists for. And a finding is filed under the workspace of the <i>appliance</i>, never the session that happened to compute it, so a load-balancer alarm never rings in the firewall workspace.</p></div>
       </div>
 
       <div class="dsec reveal" id="install">
@@ -248,7 +346,7 @@
       <a href="install.html">Install</a>
       <a href="https://github.com/visionebc/SATOM">Source</a>
     </div>
-    <p class="addr">http://satom.visionebc.com</p>
+    <p class="addr">https://satom.visionebc.com</p>
     <p style="margin-top:8px;"><b>SATOM</b> · System Automation &amp; Task Orchestration Manager</p>
     <p style="margin-top:6px;">© <span class="year">2026</span> Vision EBC · Licensed under the <a href="https://github.com/visionebc/SATOM/blob/main/LICENSE">Elastic License 2.0</a> · source-available, not OSI open source · provided AS IS, no warranty</p>
     <p class="disclaimer" style="margin-top:8px;font-size:12px;opacity:.6;line-height:1.5;">SATOM is an independent source-available project, <b>not affiliated with or endorsed by Fortinet, Inc.</b> Fortinet, FortiWeb, FortiADC and FortiAnalyzer are trademarks of Fortinet, Inc., used here nominatively to describe interoperability. SATOM is <b>not</b> a FortiManager or FortiGate product.</p>

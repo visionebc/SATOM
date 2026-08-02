@@ -73,11 +73,14 @@
       <a href="#11-backups-restore">11. Backups &amp;amp; restore</a>
       <a href="#12-firmware-upgrades">12. Firmware upgrades</a>
       <a href="#13-fleet-tools">13. Fleet tools</a>
-      <a href="#14-automation">14. Automation</a>
-      <a href="#15-reports-database-tools">15. Reports &amp;amp; database tools</a>
-      <a href="#16-the-fortiadc-workspace">16. The FortiADC workspace</a>
-      <a href="#17-api-tokens">17. API tokens</a>
-      <a href="#18-troubleshooting">18. Troubleshooting</a>
+      <a href="#14-monitoring-fleet-health-metrics-probes">14. Monitoring: fleet health, metrics &amp;amp; probes</a>
+      <a href="#15-automation">15. Automation</a>
+      <a href="#16-reports-database-tools">16. Reports &amp;amp; database tools</a>
+      <a href="#17-the-fortiadc-workspace">17. The FortiADC workspace</a>
+      <a href="#18-api-tokens">18. API tokens</a>
+      <a href="#19-appearance-logo-colours-themes">19. Appearance: logo, colours &amp;amp; themes</a>
+      <a href="#20-the-operator-console">20. The operator console</a>
+      <a href="#21-troubleshooting">21. Troubleshooting</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="satom-user-guide">SATOM — User Guide</h1>
@@ -104,11 +107,14 @@ codebase is assumed. For architecture and internals see the
 <li><a href="#11-backups--restore">Backups &amp; restore</a></li>
 <li><a href="#12-firmware-upgrades">Firmware upgrades</a></li>
 <li><a href="#13-fleet-tools">Fleet tools</a></li>
-<li><a href="#14-automation">Automation: scheduled actions, change requests, jobs</a></li>
-<li><a href="#15-reports--database-tools">Reports &amp; database tools</a></li>
-<li><a href="#16-the-fortiadc-workspace">The FortiADC workspace</a></li>
-<li><a href="#17-api-tokens">API tokens</a></li>
-<li><a href="#18-troubleshooting">Troubleshooting</a></li>
+<li><a href="#14-monitoring-fleet-health-metrics--probes">Monitoring: fleet health, metrics &amp; probes</a></li>
+<li><a href="#15-automation">Automation: scheduled actions, change requests, jobs</a></li>
+<li><a href="#16-reports--database-tools">Reports &amp; database tools</a></li>
+<li><a href="#17-the-fortiadc-workspace">The FortiADC workspace</a></li>
+<li><a href="#18-api-tokens">API tokens</a></li>
+<li><a href="#19-appearance-logo-colours--themes">Appearance: logo, colours &amp; themes</a></li>
+<li><a href="#20-the-operator-console">The operator console</a></li>
+<li><a href="#21-troubleshooting">Troubleshooting</a></li>
 </ol>
 <hr>
 <h2 id="1-signing-in-accounts">1. Signing in &amp; accounts</h2>
@@ -231,7 +237,7 @@ objects.</p>
 <li><strong>Delete</strong> runs a safe cascade: the policy plus only the objects <em>nothing
   else uses</em>; shared building blocks are kept and reported.</li>
 <li><strong>⏰ Schedule</strong> lets an operator schedule a policy enable/disable, a backend
-  enable/disable, or a certificate swap for a specific date/time (see §14).</li>
+  enable/disable, or a certificate swap for a specific date/time (see §15).</li>
 </ul>
 <h2 id="6-cloning-migrating-policies">6. Cloning &amp; migrating policies</h2>
 <p>From the Server Policy list, <strong>Clone / Migrate</strong> recreates a whole policy tree
@@ -367,7 +373,7 @@ you see FortiWeb material, in ADC the ADC material).</p>
    known/resolved issues; the advisor diffs <em>current → target</em> so you see what
    the upgrade fixes and what it inherits.</li>
 <li>Unattended (scheduled) upgrades only ever run inside an <strong>approved Change
-   Request window</strong> (§14) — there is no way to schedule a flash without an
+   Request window</strong> (§15) — there is no way to schedule a flash without an
    approval.</li>
 <li><strong>Boot partition</strong> management (view/boot the alternate partition) is a
    separate, gated page.</li>
@@ -394,10 +400,164 @@ you see FortiWeb material, in ADC the ADC material).</p>
   (AdGuard/OPNsense/etc., admin-configurable list) and simultaneously match it
   against the fleet's load-balancing config: which policy/virtual server
   publishes it, with a mini policy→pool→backend graph and config deep links.</li>
-<li><strong>Monitoring / Metrics</strong> — inventory counts, per-product metrics, daily
-  series (FortiWeb), and monitoring hooks.</li>
+<li><strong>Monitoring / Metrics</strong> — see §14.</li>
 </ul>
-<h2 id="14-automation">14. Automation</h2>
+<h2 id="14-monitoring-fleet-health-metrics-probes">14. Monitoring: fleet health, metrics &amp; probes</h2>
+<p>Monitoring lives in <strong>every</strong> workspace, not only Global. It is scoped by
+device kind, so the FortiWeb workspace shows FortiWeb appliances and nothing
+about the manager itself. Three submenus, and they answer three different
+questions.</p>
+<h3 id="141-fleet-health-is-the-box-alive">14.1 Fleet health — <em>is the box alive?</em></h3>
+<p>One card per appliance. The badge is the <strong>worst of four independent signals</strong>,
+and every signal that is not healthy is printed underneath, so a state is never
+unexplained:</p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>Warns</th>
+<th>Critical</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Harvest</strong> — the last scheduled config syncs</td>
+<td>one failed run</td>
+<td>three failed runs in a row</td>
+</tr>
+<tr>
+<td><strong>Cache</strong> — the newest stored snapshot</td>
+<td>nothing cached, or older than <code>monitoring.stale_hours</code> (6 h)</td>
+<td>older than 4× that</td>
+</tr>
+<tr>
+<td><strong>Probes</strong> — the enabled monitors for that device</td>
+<td>a probe alerting, or <em>all</em> probes disabled</td>
+<td>a probe critical</td>
+</tr>
+<tr>
+<td><strong>Capacity</strong> — object-count headroom against the admin cap</td>
+<td>over <code>capacity.warn_pct</code></td>
+<td>over <code>capacity.crit_pct</code></td>
+</tr>
+</tbody>
+</table>
+<p>Two rules matter when reading it:</p>
+<ul>
+<li><strong><code>unknown</code> is not <code>ok</code>.</strong> A device nothing has been measured about renders
+  <em>unknown</em>, never <em>healthy</em>.</li>
+<li><strong>A disabled probe is not a passing probe.</strong> Switching off a monitor that
+  always fails removes coverage, and the card says so rather than turning green.</li>
+</ul>
+<p>Appliances in <strong>maintenance</strong> are marked as such and are skipped by automatic
+runs and by their alerts. That is the correct way to silence a box you know is
+down — not lowering the alert floor.</p>
+<p>In the Global workspace the same page also carries <strong>Infrastructure health</strong>
+(cluster peers, repository, external backup server, database, systemd units,
+redundancy) and <strong>Encryption in transit</strong>, where every badge is backed by a
+live probe rather than by configuration. Those sections are absent from a
+product workspace by design.</p>
+<h3 id="142-metrics-how-much-does-it-hold">14.2 Metrics — <em>how much does it hold?</em></h3>
+<p>Inventory counts, audit activity and change history for the active workspace,
+plus daily series where the product supports them. Nothing here touches an
+appliance.</p>
+<h3 id="143-deep-monitors-is-the-service-still-serving">14.3 Deep monitors — <em>is the service still serving?</em></h3>
+<p><code>Monitoring → Deep monitors</code>. These reach into the appliance (synthetic request
+or read-only CLI over SSH):</p>
+<table>
+<thead>
+<tr>
+<th>Kind</th>
+<th>What it records</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Service policy (HTTPS)</strong></td>
+<td>A synthetic request to a published front end: status, latency and days of certificate left. One 200 proves interface, policy, proxy daemon and backend at once</td>
+</tr>
+<tr>
+<td><strong>Interface IP / link</strong></td>
+<td>A name → address/state fingerprint per port. The <strong>drift</strong> against the previous sample is the event; an address change grades critical</td>
+</tr>
+<tr>
+<td><strong>Processor load</strong> / <strong>Memory usage</strong></td>
+<td>Read from the appliance's own performance summary</td>
+</tr>
+<tr>
+<td><strong>proxyd process</strong></td>
+<td>Worker count, memory used and free, and the <strong>set of process IDs</strong> — a different PID is a silent restart, which no ordinary health check shows</td>
+</tr>
+</tbody>
+</table>
+<h3 id="144-service-monitor-telemetry-over-the-api">14.4 Service monitor — telemetry over the API</h3>
+<p><code>Monitoring → Service monitor</code>. Same engine, no shell access — these read the
+appliance's monitoring API only, which means they keep working on a device
+whose configuration API is refusing calls (an expired licence, typically):</p>
+<table>
+<thead>
+<tr>
+<th>Kind</th>
+<th>Unit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Concurrent sessions (box)</strong></td>
+<td>sessions, plus connections per second</td>
+</tr>
+<tr>
+<td><strong>Server-policy sessions &amp; latency</strong></td>
+<td>sessions, round-trip and application response time, per-member backend health</td>
+</tr>
+<tr>
+<td><strong>HTTP throughput</strong></td>
+<td>Mbps, graded on the <strong>peak</strong> of the window, not the average</td>
+</tr>
+<tr>
+<td><strong>HTTP transactions</strong></td>
+<td>transactions per bucket</td>
+</tr>
+</tbody>
+</table>
+<p>The page also groups results per device: a traffic card per appliance and a
+per-policy detail view, both served from stored samples.</p>
+<blockquote>
+<p><strong>Reading <code>sessions</code> on short-lived HTTP.</strong> Connections per second is the
+number that moves; concurrent sessions can sit near zero under heavy load
+because each request lives microseconds. A threshold on <code>policy_sessions</code>
+grades <em>sessions</em> — for HTTP front ends, watch the throughput probe instead.</p>
+</blockquote>
+<h3 id="145-creating-probes">14.5 Creating probes</h3>
+<ul>
+<li><strong>Discover from device</strong> offers four sets: published policies, a baseline,
+  one probe per interface, or the API telemetry set. Ports are picked from the
+  cached configuration, so the dialog opens with the appliance switched off.</li>
+<li><strong>Interval must be a multiple of the sweep</strong> (3 minutes). A probe only fires
+  when its own interval has elapsed <em>and</em> a sweep tick happens, so a 5-minute
+  probe under a 3-minute sweep would really run every 6 minutes.</li>
+<li><strong>Probe now</strong> runs the current page's probes for the visible devices. It runs
+  in the background and stays out of the progress dock — only a sweep that
+  <em>fails</em> raises a notification.</li>
+<li>Editing a probe is the pencil icon in the table.</li>
+</ul>
+<h3 id="146-history-and-charts">14.6 History and charts</h3>
+<p>Click any sparkline for the drill-down: 1 h / 24 h / 7 d / 30 d or a custom
+range, with minimum / average / maximum, a healthy percentage, sample and
+transition counts, threshold lines and a per-bucket status strip.</p>
+<p>Raw samples are capped per probe (<code>retention</code>, ~2 days at the default). Charts
+go further because every run also writes roll-ups: <strong>hourly kept 90 days,
+daily kept two years</strong>, storing min/avg/max rather than a mean — a four-minute
+spike is invisible in an average and is usually the reason the chart is open.
+The footer states which table was drawn, because an hourly mean and a
+three-minute reading are not the same claim about the appliance.</p>
+<blockquote>
+<p><strong>Changing a probe's unit resets its series.</strong> If a probe starts reporting a
+different quantity, its old samples are cleared rather than plotted on the
+same axis. That is a deliberate, manual operation — never a side effect of a
+restart.</p>
+</blockquote>
+<h2 id="15-automation">15. Automation</h2>
 <p><strong>Scheduled Actions</strong> (FortiWeb ADOM → Administrator, plus the ⏰ button on
 Server Policy for operators):</p>
 <ul>
@@ -425,7 +585,7 @@ Server Policy for operators):</p>
 and duration; Pause / Resume / Stop (cooperative — jobs park at safe
 checkpoints); orphaned jobs from a service restart are swept and marked on
 boot.</p>
-<h2 id="15-reports-database-tools">15. Reports &amp; database tools</h2>
+<h2 id="16-reports-database-tools">16. Reports &amp; database tools</h2>
 <p>Global → Administrator → <strong>Database</strong> (admin only):</p>
 <ul>
 <li><strong>Reports</strong> — 7 built-in reports (policies by device, expiring
@@ -440,7 +600,7 @@ boot.</p>
 <li><strong>Tables browser + SQL console</strong> — read-only introspection with sensitive
   columns masked.</li>
 </ul>
-<h2 id="16-the-fortiadc-workspace">16. The FortiADC workspace</h2>
+<h2 id="17-the-fortiadc-workspace">17. The FortiADC workspace</h2>
 <p>The <code>/adc/</code> ADOM mirrors the FortiADC 8.0 GUI menu: Server Load Balance, Link
 Load Balance, Global Load Balance, Web Application Firewall, Network Security,
 Network, Shared Resources, User Authentication, System, Log &amp; Report.</p>
@@ -458,14 +618,59 @@ Network, Shared Resources, User Authentication, System, Log &amp; Report.</p>
   battery, SSH config backups. (Firmware flash / restore-apply have <strong>no REST
   transport on FortiADC</strong> — the UI states this rather than pretending.)</li>
 </ul>
-<h2 id="17-api-tokens">17. API tokens</h2>
+<h2 id="18-api-tokens">18. API tokens</h2>
 <p>Administrators issue bearer tokens (API Tokens section) for the <code>/api/v1</code>
 integration surface. Scope model: <code>read ⊂ write ⊂ admin</code>, capped by the
 owner's own role, bound to one product (ADOM). The plaintext token is shown
 <strong>once</strong> at creation. The API is read-biased: mutations happen only by
 triggering pre-created scheduled actions; nothing destructive is reachable by
 any token. Full reference: <a href="api_v1.md">docs/api_v1.md</a>.</p>
-<h2 id="18-troubleshooting">18. Troubleshooting</h2>
+<h2 id="19-appearance-logo-colours-themes">19. Appearance: logo, colours &amp; themes</h2>
+<p><code>Settings → Appearance</code> (administrators). Four palettes ship — <strong>SATOM Aurora</strong>
+(the default), <strong>Slate</strong>, <strong>Graphite</strong> and the original <strong>Classic</strong> — and you
+can create your own.</p>
+<p><strong>What you edit is a list of 34 design tokens</strong>, grouped by sidebar, top bar,
+surfaces, accent, brand ramps and glow, text, status, elevation, layout and
+typography. You never edit CSS: free-form style text in a themed page is a
+stored-injection hole, so every value is validated by kind and the gradients
+are parsed structurally.</p>
+<p>Practical notes:</p>
+<ul>
+<li><strong>A theme stores only what it changes.</strong> Anything you leave alone keeps
+  following the shipped stylesheet, so a later improvement still reaches you.</li>
+<li><strong>Contrast is audited as you save.</strong> Each text/background pair is scored;
+  below the legibility floor the save asks for an explicit <em>apply anyway</em>.</li>
+<li><strong>Logo and favicon</strong> uploaded here live in the replicated data directory, so
+  they survive a rebuild and reach the standby node. (The per-workspace product
+  marks are a different, node-local setting.)</li>
+<li><strong>Built-ins cannot be edited or deleted</strong>, and deleting the active theme
+  falls back to the built-in rather than leaving the console unthemed.</li>
+<li><strong>If you lock yourself out</strong> with two dark colours: <em>Revert to the shipped
+  look</em> on this page, activate any built-in, or from a shell on the node run
+  <code>satom execute reset theme</code>.</li>
+<li><strong>There is no dark console.</strong> Roughly a hundred and forty status tints are
+  still literal values in the stylesheet, so a dark canvas would leave islands
+  of light. The public documentation site does offer one.</li>
+</ul>
+<p>Full reference: <a href="theming.md">docs/theming.md</a>.</p>
+<h2 id="20-the-operator-console">20. The operator console</h2>
+<p>Some failures cannot be fixed from the web interface, because the web interface
+is the thing that failed. Every node ships a local command-line tool, <code>satom</code>,
+with <strong>96 commands</strong> across four verbs — <code>get</code> (state), <code>show</code> (reference),
+<code>diagnose</code> (checks) and <code>execute</code> (actions).</p>
+<p>The three you will use most:</p>
+<pre><code class="language-bash">satom diagnose all        # 24 checks, one exit code
+satom diagnose install    # infrastructure vs. protections — what is not armed
+satom show docs           # print any manual, no network needed
+</code></pre>
+<p>Read verbs work as any user; state-changing verbs require root and refuse with
+an explanation rather than a traceback. Ask your systems team for the operator
+rule the tool prints itself:</p>
+<pre><code class="language-bash">satom show sudoers &lt;account&gt;   # prints the sudoers line; changes nothing
+</code></pre>
+<p>Full reference, including the complete command tree and the runbooks:
+<a href="cli.md">docs/cli.md</a>.</p>
+<h2 id="21-troubleshooting">21. Troubleshooting</h2>
 <table>
 <thead>
 <tr>
@@ -510,6 +715,34 @@ any token. Full reference: <a href="api_v1.md">docs/api_v1.md</a>.</p>
 <td>A clone plan reports 🔒 certificates</td>
 <td>Expected: private-key material can't travel over REST. Upload the cert on the destination (Certificate Manager / SSH) and re-run.</td>
 </tr>
+<tr>
+<td>A newly added appliance never syncs and stays <em>unknown</em></td>
+<td>Almost always <code>verify_ssl</code> left on for a device with a self-signed certificate: the TLS check fails <strong>before</strong> authentication, so nothing else is reached. Turn it off on the appliance row.</td>
+</tr>
+<tr>
+<td>A device card is red but no mail arrived</td>
+<td>Check the appliance is not in <strong>maintenance</strong> (which suppresses its alerts by design), that <code>alerts.enabled</code> is on, and that a recipient is set. <code>Settings → Alerts → Preview now</code> evaluates without sending.</td>
+</tr>
+<tr>
+<td>Fleet health shows every device healthy on a fleet you know is broken</td>
+<td>You are on a build older than the four-signal badge. Upgrade — the old badge graded only capacity headroom and could not turn red on an uncapped fleet.</td>
+</tr>
+<tr>
+<td>A probe grades critical naming a port that "doesn't exist"</td>
+<td>Correct behaviour: a watched interface that disappeared from the harvest is reported by name, never dropped from a shorter list.</td>
+</tr>
+<tr>
+<td>Scheduled actions all show <em>skipped (maintenance)</em></td>
+<td>Every target of that action is parked. Skipped does not count as a failure; unpark a device or retarget the action.</td>
+</tr>
+<tr>
+<td>A chart shows fewer points than expected over a long range</td>
+<td>The server dropped to hourly or daily roll-ups; the footer states which table it drew. Raw samples are capped per probe by design.</td>
+</tr>
+<tr>
+<td>The console reports <code>nothing to repair</code> while files are clearly root-owned</td>
+<td>The whole tree is root-owned, so the repair verb concludes the installation runs as root. Fix ownership manually, then re-run <code>satom diagnose privilege</code>.</td>
+</tr>
 </tbody>
 </table>
     </div>
@@ -529,7 +762,7 @@ any token. Full reference: <a href="api_v1.md">docs/api_v1.md</a>.</p>
       <a href="../install.html">Install</a>
       <a href="https://github.com/visionebc/SATOM">Source</a>
     </div>
-    <p class="addr">http://satom.visionebc.com</p>
+    <p class="addr">https://satom.visionebc.com</p>
     <p style="margin-top:8px;"><b>SATOM</b> · System Automation &amp; Task Orchestration Manager</p>
     <p style="margin-top:6px;">© <span class="year">2026</span> Vision EBC · Licensed under the <a href="https://github.com/visionebc/SATOM/blob/main/LICENSE">Elastic License 2.0</a> · source-available, not OSI open source · provided AS IS, no warranty</p>
     <p class="disclaimer" style="margin-top:8px;font-size:12px;opacity:.6;line-height:1.5;">SATOM is an independent source-available project, <b>not affiliated with or endorsed by Fortinet, Inc.</b> Fortinet, FortiWeb, FortiADC and FortiAnalyzer are trademarks of Fortinet, Inc., used here nominatively to describe interoperability. SATOM is <b>not</b> a FortiManager or FortiGate product.</p>

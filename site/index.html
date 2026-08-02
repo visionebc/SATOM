@@ -42,7 +42,7 @@
 </nav>
 
 <header class="hero wrap">
-  <div class="pill"><span class="dot"></span> v1.3 · Production · 750+ automated tests</div>
+  <div class="pill"><span class="dot"></span> v1.3 · Production · 1,800+ automated tests</div>
   <h1>Fleet management for<br><span class="grad">Fortinet appliances</span>, automated.</h1>
   <p class="sub">
     SATOM — the <b>System Automation & Task Orchestration Manager</b> — is a multi-user web
@@ -59,9 +59,10 @@
     <span class="devchip faz"><img src="assets/fortianalyzer-mark.svg" alt=""> FortiAnalyzer</span>
   </div>
   <div class="stats">
-    <div class="stat"><b>~500</b><span>registry endpoints editable</span></div>
-    <div class="stat"><b>60+</b><span>Flask blueprints</span></div>
-    <div class="stat"><b>700+</b><span>unit &amp; integration tests</span></div>
+    <div class="stat"><b>800+</b><span>registry endpoints editable</span></div>
+    <div class="stat"><b>500+</b><span>application routes</span></div>
+    <div class="stat"><b>1,800+</b><span>unit &amp; integration tests</span></div>
+    <div class="stat"><b>96</b><span>operator console commands</span></div>
     <div class="stat"><b>3</b><span>Fortinet product lines</span></div>
   </div>
 </header>
@@ -77,7 +78,7 @@
       <p>Every device's configuration is harvested on schedule and versioned in git — drift detection, A→B diff viewer and point-in-time restore included.</p></div>
     <div class="card"><div class="ico">🔁</div><h3>HA by design</h3>
       <p>Two-node active/standby clustering with TLS-enforced PostgreSQL streaming replication is built into the installer — the secondary joins with one pasted key.</p></div>
-    <div class="card"><div class="ico">🧩</div><h3>One editor, ~500 endpoints</h3>
+    <div class="card"><div class="ico">🧩</div><h3>One editor, 800+ endpoints</h3>
       <p>A spec-driven form engine edits any registry endpoint with stacked slide-over panels, create-references-in-place and dry-run previews on every write.</p></div>
     <div class="card"><div class="ico">🧯</div><h3>Defense-in-depth backups</h3>
       <p>Live database, portable bundles, git-versioned device configs and an external SFTP server — four independent copies across failure domains.</p></div>
@@ -85,6 +86,12 @@
       <p>Scheduled actions, Change Requests with maintenance-window approval gates, and background jobs with pause / resume / stop.</p></div>
     <div class="card"><div class="ico">🔐</div><h3>Security first</h3>
       <p>Two-factor login, role-based access, per-channel encryption monitoring and a hardened deployment profile out of the box.</p></div>
+    <div class="card"><div class="ico">📡</div><h3>Probes, not just pings</h3>
+      <p>Nine probe kinds — synthetic requests, interface drift, load, memory, the proxy daemon's process set, sessions, throughput and transactions — stored as time series with two years of roll-ups.</p></div>
+    <div class="card"><div class="ico">⌨️</div><h3>A console for the broken node</h3>
+      <p>96 commands that work when the web interface does not: 24 diagnostics behind one exit code, repair verbs, and every manual printable without a network.</p></div>
+    <div class="card"><div class="ico">🔔</div><h3>Silence means healthy</h3>
+      <p>Thirteen alert signals, including the two most commonly missing: a device whose port answers while its harvest has been failing for days, and a scheduler that is simply not running.</p></div>
   </div>
 </section>
 
@@ -188,19 +195,19 @@
   <div class="sec-head">
     <span class="eyebrow">Deploy</span>
     <h2>Run it anywhere Linux runs</h2>
-    <p>One interactive installer with online and air-gapped modes, for Debian and RHEL families.</p>
+    <p>One interactive installer with online and air-gapped modes — and a preflight that reports every blocker before it touches the host.</p>
   </div>
   <div class="grid g2">
     <div class="card">
       <span class="tag tag-blue">Online</span><span class="tag tag-grn">Any distro family</span>
       <h3>Connected install</h3>
       <p>Detects apt, dnf/yum, zypper or pacman and maps package names per family. Prompts for IP, port, admin password and standalone / cluster mode.</p>
-      <div class="code"><span class="c"># as root on a fresh host</span><br>./install-satom.sh</div>
+      <div class="code"><span class="c"># check first — touches nothing</span><br>./install-satom.sh --preflight<br>./install-satom.sh</div>
     </div>
     <div class="card">
-      <span class="tag tag-vio">Offline</span><span class="tag tag-blue">Debian 12</span><span class="tag tag-vio">RHEL 9</span>
+      <span class="tag tag-vio">Offline</span><span class="tag tag-blue">Debian 12</span><span class="tag tag-vio">RHEL 9</span><span class="tag tag-grn">openSUSE 15</span>
       <h3>Air-gapped install</h3>
-      <p>Self-contained bundles — OS packages, Python wheels and the application — for hosts with no internet access. Auto-detected when <code>bundle/</code> is present.</p>
+      <p>Self-contained bundles — OS packages, Python wheels and the application — for hosts with no internet access. Auto-detected when <code>bundle/</code> is present, and a bundle built for the wrong family is refused up front.</p>
       <div class="code">tar xzf satom-offline-&lt;ver&gt;-&lt;family&gt;.tar.gz<br>cd satom-installer &amp;&amp; ./install-satom.sh</div>
     </div>
   </div>
@@ -219,7 +226,7 @@
       <a href="install.html">Install</a>
       <a href="https://github.com/visionebc/SATOM">Source</a>
     </div>
-    <p class="addr">http://satom.visionebc.com</p>
+    <p class="addr">https://satom.visionebc.com</p>
     <p style="margin-top:8px;"><b>SATOM</b> · System Automation & Task Orchestration Manager</p>
     <p style="margin-top:6px;">© <span class="year">2026</span> Vision EBC · Licensed under the <a href="https://github.com/visionebc/SATOM/blob/main/LICENSE">Elastic License 2.0</a> · source-available, not OSI open source · provided AS IS, no warranty</p>
     <p class="disclaimer" style="margin-top:8px;font-size:12px;opacity:.6;line-height:1.5;">SATOM is an independent source-available project, <b>not affiliated with or endorsed by Fortinet, Inc.</b> Fortinet, FortiWeb, FortiADC and FortiAnalyzer are trademarks of Fortinet, Inc., used here nominatively to describe interoperability. SATOM is <b>not</b> a FortiManager or FortiGate product.</p>

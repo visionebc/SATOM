@@ -1,6 +1,8 @@
 """DNS & LB Lookup tool — parsing, server-list settings, matching, routes."""
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from app.services import dns_tool
@@ -93,6 +95,16 @@ def test_page_renders_in_every_adom(app, client):
 def test_lookup_post_uses_configured_servers(app, client, monkeypatch):
     uid = admin_user_id(app)
     login(client, uid, product="global")
+    # Configure a server explicitly. The test used to lean on a shipped
+    # default -- which made it assert the opposite of its own name, and made
+    # it fail the moment that default was removed for naming somebody else's
+    # resolver. A test for CONFIGURED servers has to configure one.
+    with app.app_context():
+        from app.models import AppSetting
+        from app.extensions import db
+        AppSetting.set(dns_tool.SERVERS_KEY, json.dumps(
+            [{"name": "Test", "server": "192.0.2.53", "enabled": True}]))
+        db.session.commit()
     monkeypatch.setattr(dns_tool, "dig_lookup",
                         lambda entry, server, show_ttl=False: ["192.0.2.7"])
     r = client.post("/dns-lookup/", data={"entries": "apps.example.net"})

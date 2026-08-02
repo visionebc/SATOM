@@ -18,16 +18,20 @@ from app.registry.dependencies import DepNode
 # --------------------------------------------------------------------------- #
 #  Rule engine (pure)                                                           #
 # --------------------------------------------------------------------------- #
+# Fixture addresses come from the RFC 5737 documentation range, not from a
+# real network: these literals are inert test data, and picking them out of a
+# range somebody actually routes makes the suite fail the moment a publication
+# pipeline rewrites internal addresses out of the mirror.
 _CFG = {
-    "ip_rules": [{"match": "10", "replace": "240"},
+    "ip_rules": [{"match": "198", "replace": "240"},
                  {"match": "162", "replace": "241"}],
     "fallback_ip": "203.0.113.9",
     "copy_wpp_default": True,
 }
 
 
-def test_dummy_ip_10_becomes_240():
-    assert clone_rules.dummy_ip("192.0.2.1", _CFG) == "240.1.10.1"
+def test_dummy_ip_198_becomes_240():
+    assert clone_rules.dummy_ip("198.1.10.1", _CFG) == "240.1.10.1"
 
 
 def test_dummy_ip_162_becomes_241():
@@ -39,15 +43,15 @@ def test_dummy_ip_no_match_uses_fallback():
 
 
 def test_dummy_ip_accepts_cidr_and_garbage():
-    assert clone_rules.dummy_ip("192.0.2.226/32", _CFG) == "240.0.0.226"
+    assert clone_rules.dummy_ip("198.0.0.226/32", _CFG) == "240.0.0.226"
     assert clone_rules.dummy_ip("", _CFG) == "203.0.113.9"
     assert clone_rules.dummy_ip("not-an-ip", _CFG) == "203.0.113.9"
 
 
 def test_dummy_ip_multi_octet_rule():
-    cfg = {**_CFG, "ip_rules": [{"match": "10.1", "replace": "240.9"}]}
-    assert clone_rules.dummy_ip("192.0.2.1", cfg) == "240.9.10.1"
-    assert clone_rules.dummy_ip("192.0.2.1", cfg) == "203.0.113.9"  # no match
+    cfg = {**_CFG, "ip_rules": [{"match": "198.1", "replace": "240.9"}]}
+    assert clone_rules.dummy_ip("198.1.10.1", cfg) == "240.9.10.1"
+    assert clone_rules.dummy_ip("198.2.10.1", cfg) == "203.0.113.9"  # no match
 
 
 def test_dummy_ip_first_match_wins():
@@ -67,7 +71,7 @@ def test_validate_rule():
 
 def test_rules_summary_mentions_every_rule():
     s = clone_rules.rules_summary(_CFG)
-    assert "10.x → 240.x" in s and "162.x → 241.x" in s and "203.0.113.9" in s
+    assert "198.x → 240.x" in s and "162.x → 241.x" in s and "203.0.113.9" in s
 
 
 # --------------------------------------------------------------------------- #
@@ -81,14 +85,14 @@ def _vip_item(mkey, ip, status="create"):
 
 
 def test_set_vip_ip_explicit_keeps_mask():
-    items = [_vip_item("vip-a", "192.0.2.226/32")]
+    items = [_vip_item("vip-a", "198.0.0.226/32")]
     changed = clone.set_vip_ip(items, ip="240.0.0.226")
     assert items[0].payload["vip"] == "240.0.0.226/32"
-    assert changed == ["vip-a: 192.0.2.226 → 240.0.0.226"]
+    assert changed == ["vip-a: 198.0.0.226 → 240.0.0.226"]
 
 
 def test_set_vip_ip_transform_per_vip():
-    items = [_vip_item("vip-a", "192.0.2.1/32"), _vip_item("vip-b", "162.5.0.9/24")]
+    items = [_vip_item("vip-a", "198.1.1.1/32"), _vip_item("vip-b", "162.5.0.9/24")]
     clone.set_vip_ip(items, transform=lambda ip: clone_rules.dummy_ip(ip, _CFG))
     assert items[0].payload["vip"] == "240.1.1.1/32"
     assert items[1].payload["vip"] == "241.5.0.9/24"

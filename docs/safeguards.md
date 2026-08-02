@@ -350,6 +350,83 @@ real cross-references survive **and** that each rewritten target exists on disk.
 Rendering proves nothing here — this class of defect is only found by requesting
 the target.
 
+## 7e. What leaves the building is the MIRROR, not just the manual
+
+Section 7b makes the published *manual* safe. It says nothing about the rest of
+the repository, and for a long time nothing else did either: the public mirror
+carried the internal network map in 107 files — RFC1918 addresses, management
+hostnames, hypervisor and node names, the backup server — plus 25 commit
+identities, two of them named after an AI assistant and three carrying a
+personal e-mail address. Every one of those had passed the existing pipeline,
+because that pipeline filtered **paths** (`CLAUDE.md`, `.env`, `reports/`) and
+**commit messages**, and a path filter cannot see inside a file it keeps.
+
+The redaction engine that already existed (`app/services/doc_publication.py`)
+was the right mechanism applied at the wrong layer: it ran on documents on
+their way to the site, not on the repository on its way to the world.
+
+### Where the rules live, and why not here
+
+The org-wide rules live in the **publisher** — `sync_prod.py`, on the internal
+host that drives every mirror — and deliberately not in this repository.
+
+Two reasons. They apply to every application in the catalogue, not just this
+one; and a rule file inside a published repository is itself the disclosure it
+exists to prevent, naming every hostname and every range it protects.
+
+### Three layers, and the third is the one that counts
+
+1. `--name-callback` / `--email-callback` collapse **every** author and
+   committer in the whole history to one public identity. Not a hand-written
+   map of known aliases: a list of identities goes stale the first time
+   somebody commits under a new one.
+2. `--replace-text` rewrites the **content** of every blob, across the whole
+   history — not just the tip. The replacements are valid values from the RFC
+   5737 documentation ranges and `example.net`, never `{placeholder}` tokens,
+   so the mirror stays a repository that compiles, whose config files still
+   parse and whose tests still run. A brace token inside a `.conf` produces a
+   broken artefact instead of a redacted one.
+3. `_scan_blobs()` re-checks the **output** and **aborts the push**.
+
+The third layer is the point. Redacting without verifying is a hope, not a
+guard: when a rule comes up short — and one did, on a live page, over a bare
+`satom-node` prefix — the scan is the only thing that turns a silent
+disclosure into a visible failure. A rewrite rule that is missing a case and a
+rewrite rule that is working look identical until something checks.
+
+Ordering matters inside layer 2. The shorthand pair `192.0.2.248/.249` must be
+rewritten before the generic address rule, or the generic rule takes the first
+address and leaves `/.249` — still an octet, and **invisible to the scan**,
+because what remains is not a complete address.
+
+### Two things the pipeline will not fix for you
+
+**A shipped default is not a disclosure, it is a bug.** Seven values in this
+repository were internal infrastructure the application actually *used* when
+unconfigured: the trusted-proxy allowlist, two DNS resolvers, the certificate
+domain suffix, two Firecrawl endpoints and the installer's clone URL. Redacting
+those at publication time would have produced a mirror that leaked nothing and
+still shipped somebody else's network as its factory settings — and in the
+trusted-proxy case, granted an unrelated host on any overlapping `10/8` the
+right to forge the client address used for rate limiting and audit. These are
+fixed at the source. **A default that names infrastructure belongs to
+configuration, and the deployment that relied on it gets a settings row.**
+
+**A test that proves the scanner bites must contain what it detects.** The
+adversarial corpus is the one thing here that cannot survive redaction and stay
+meaningful, so it lives in `tests/fixtures/internal_identifier_samples.json`,
+the publisher drops it by path, and the tests that read it **skip with a
+reason** rather than failing on a mirror that correctly has nothing left to
+find. Everything else in `tests/` is rewritten in place; where a fixture
+happened to sit in a real range for no reason, it moved to the documentation
+range instead — inert test data has no business naming a routable network.
+
+Two scripts are excluded outright rather than rewritten. They are wired to one
+appliance by database id, to absolute paths on one host and to a local `.env`,
+they take no arguments, and one carries a shared secret in clear text.
+Rewriting their literals yields a script that still cannot run anywhere else —
+so the honest treatment is removal, not redaction.
+
 ## 8. Sessions and the web surface
 
 | Guard | Detail |
@@ -1505,6 +1582,36 @@ written out here: this file is itself published, and a grep pattern listing
 every private form would be both the disclosure and its own victim — an earlier
 revision had exactly that, and the redactor rewrote the command inside the
 manual.
+
+### The published mirror (7e)
+
+The publisher runs on the internal catalogue host; these checks are run against
+a clone of the PUBLIC repository, which is the artefact the guard is about.
+
+```bash
+git clone --bare https://github.com/visionebc/SATOM.git /tmp/pub.git
+cd /tmp/pub.git
+
+# 1. No identity may survive. Expect exactly one line.
+git log --format='%an <%ae>' --all | sort -u
+
+# 2. No internal identifier in any blob of any branch. Expect no output.
+#    $SATOM_PRIVATE_RE is supplied by the reader -- the forms are deliberately
+#    not written down in a published document (same reason as 7b).
+git rev-list --objects --all | awk '{print $1}' | \
+  git cat-file --batch-check='%(objectname) %(objecttype)' | awk '$2=="blob"{print $1}' | \
+  while read -r sha; do git cat-file blob "$sha" 2>/dev/null | grep -lE "$SATOM_PRIVATE_RE" \
+    && echo "LEAK in $sha"; done
+
+# 3. The excluded paths are absent from the WHOLE history, not just the tip.
+git log --all --name-only --format= | sort -u | \
+  grep -E 'CLAUDE\.md|\.env|^reports/|seed_fw6|internal_identifier_samples'
+```
+
+A finding in check 2 means a rule is missing from `INTERNAL_REDACTIONS` in the
+publisher. It should never be reachable: the same patterns abort the push, so
+anything visible here means the scan was bypassed or a pattern disagrees with
+its own redaction rule.
 
 ## Related
 

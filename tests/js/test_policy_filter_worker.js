@@ -24,11 +24,11 @@ test('computeHideIds hides rows that fail a regex field', () => {
 
 test('computeHideIds ANDs fields — a row hidden if it fails ANY field', () => {
   const rows = [
-    { id: 'a', name: 'pol-shop', backends: '192.0.2.5' },
+    { id: 'a', name: 'pol-shop', backends: '198.51.100.5' },
     { id: 'b', name: 'pol-pay',  backends: '192.168.1.1' },
   ];
   const hide = computeHideIds(
-    [{ field: 'name', source: '^pol' }, { field: 'backends', source: '^10\\.' }], rows);
+    [{ field: 'name', source: '^pol' }, { field: 'backends', source: '^198\\.' }], rows);
   assert.deepStrictEqual(hide.sort(), ['b']);
 });
 

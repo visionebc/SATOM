@@ -29,6 +29,8 @@ import re
 
 import pytest
 
+import leak_samples
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 from app.services import doc_publication as pubdoc  # noqa: E402
@@ -179,6 +181,7 @@ def test_the_hub_is_generated_and_clean():
         assert pattern.search(body) is None, name
 
 
+@leak_samples.requires_corpus
 def test_the_raw_source_really_does_carry_an_identifier():
     """Redaction is load-bearing, not decorative.
 
@@ -186,22 +189,16 @@ def test_the_raw_source_really_does_carry_an_identifier():
     If this ever stops finding an identifier, the leak tests above have become
     vacuous and someone must re-check them against a document that does.
     """
-    raw = pubdoc.source_for("api_v1.md").read_text(encoding="utf-8")
+    doc = leak_samples.SAMPLES["source_doc_with_identifier"]
+    raw = pubdoc.source_for(doc).read_text(encoding="utf-8")
     hits = [n for n, p in pubdoc.FORBIDDEN if p.search(raw)]
-    assert hits, "api_v1.md no longer carries an internal identifier"
-    assert not pubdoc.scan(pubdoc.redact(raw), "api_v1.md")
+    assert hits, f"{doc} no longer carries an internal identifier"
+    assert not pubdoc.scan(pubdoc.redact(raw), doc)
 
 
+@leak_samples.requires_corpus
 def test_the_scanner_matches_each_forbidden_class():
-    samples = {
-        "rfc1918 address": "reach it at 192.0.2.248 over TLS",
-        "internal hostname": "browse https://node-a.example.net/healthz",
-        "hypervisor name": "the container lives on hypervisor06 today",
-        "node name": "hostnames are satom-node prefixed",
-        "backup server name": "pushes land on backup-server nightly",
-        "device instance name": "harvested from fortiweb08 hourly",
-        "personal e-mail": "alerts go to opensource@visionebc.com daily",
-    }
+    samples = leak_samples.SAMPLES["by_class"]
     for name, _pattern in pubdoc.FORBIDDEN:
         assert name in samples, f"no sample for {name}"
     for name, line in samples.items():

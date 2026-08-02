@@ -23,10 +23,12 @@ from concurrent.futures import ThreadPoolExecutor
 RECORD_TYPES = {"A", "AAAA", "CNAME", "MX", "NS", "TXT", "SOA", "CAA", "SRV", "PTR"}
 
 SERVERS_KEY = "dnstool.servers"
-DEFAULT_SERVERS = [
-    {"name": "AdGuard", "server": "192.0.2.3", "enabled": True},
-    {"name": "OPNsense", "server": "192.0.2.2", "enabled": True},
-]
+# Empty by design. The docstring above promises the list is never hardcoded,
+# and it has to stay true on someone else's network: a shipped resolver is
+# either unreachable there (the tool looks broken) or reachable and wrong (the
+# tool silently answers from a foreign cache). The Settings page seeds the
+# list on first use; until then the panel says so.
+DEFAULT_SERVERS: list[dict] = []
 
 MAX_ENTRIES = 50
 DIG_TIMEOUT = 6  # subprocess hard kill; dig itself gets +time/+tries below

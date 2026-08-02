@@ -75,6 +75,65 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public, open-source
 project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="the-mirror-published-the-network-map-and-the-teams-names-2026-08-03">The mirror published the network map and the team's names (2026-08-03)</h3>
+<ul>
+<li><strong>The public mirror carried the internal network map and 25 commit
+  identities.</strong> The publication pipeline filtered <strong>paths</strong> (<code>CLAUDE.md</code>,
+  <code>.env</code>, <code>reports/</code>) and <strong>commit messages</strong>, and a path filter cannot see
+  inside a file it keeps: 107 files shipped internal addresses, management
+  hostnames, hypervisor and node names, while the history shipped 25 author
+  identities — two named after an AI assistant, three carrying a personal
+  e-mail. The publisher now collapses <strong>every</strong> identity, redacts internal
+  identifiers in <strong>every blob across the whole history</strong>, and <strong>re-scans its
+  own output, aborting the push on a finding</strong>. Redaction without verification
+  is a hope, not a guard. See <code>docs/safeguards.md</code> §7e.</li>
+<li>
+<p>Ordering trap recorded: the shorthand pair <code>{ip}/{ip}</code> has to be
+  rewritten <em>before</em> the generic address rule, or the generic rule takes the
+  first address and leaves <code>/.249</code> — still an octet, and invisible to the scan
+  because what remains is not a complete address.</p>
+</li>
+<li>
+<p><strong>Seven runtime defaults named one company's infrastructure.</strong> These are
+  functional bugs, not disclosures: redacting them at publication time would
+  have produced a mirror that leaked nothing and still shipped somebody else's
+  network as its factory settings.</p>
+</li>
+<li><code>TRUSTED_PROXIES</code> defaulted to an internal proxy address. Everywhere else
+    that meant every user collapsed into a single rate-limit bucket; on any
+    site whose LAN overlaps that range it meant an unrelated host inherited the
+    right to forge the client IP feeding rate limiting and audit keys. Loopback
+    only now.</li>
+<li>The DNS Lookup tool defaulted to two internal resolvers while its own
+    docstring promised the list is "never hardcoded". Empty now.</li>
+<li>Node certificates appended a hard-coded domain the installation does not
+    own. Only the <em>suffix</em> is configurable, and it is resolved per node: a
+    stored FQDN is wrong on an HA pair, because the standby replicates the
+    primary's settings row and would issue a certificate naming the primary.</li>
+<li>Two Firecrawl endpoints (unauthenticated) and the installer's clone URL
+    pointed at internal hosts. The installer now defaults to the public
+    repository, so an unattended install no longer hangs on a clone it can
+    never complete.</li>
+<li>The About panel linked to an internal Git server on every profile view.</li>
+<li>
+<p><code>deploy/nginx-vhost.conf</code> was one deployment's real vhost, upstream address
+    included. It is now a generic sample proxying loopback — which is what the
+    installer actually configures.</p>
+</li>
+<li>
+<p><strong>Tests.</strong> Fixtures that sat in a routable range for no reason moved to the
+  RFC 5737 documentation range; inert test data has no business naming a real
+  network, and those literals were what made a redacted mirror ship a red
+  suite. The adversarial corpus — the one fixture that must contain real
+  identifiers to prove the scanner bites — moved to <code>tests/fixtures/</code>, is
+  dropped by the publisher, and its tests now skip <strong>with a reason</strong> instead of
+  failing on a mirror that correctly has nothing left to detect.</p>
+</li>
+<li>Two lab seeder scripts are excluded from the mirror rather than redacted:
+  wired to one appliance by database id and to absolute local paths, with a
+  shared secret in clear text. Rewriting their literals yields a script that
+  still cannot run anywhere else.</li>
+</ul>
 <h3 id="the-device-api-was-never-documented-and-the-manuals-own-links-were-dead-2026-08-03">The device API was never documented, and the manual's own links were dead (2026-08-03)</h3>
 <ul>
 <li><strong>New manual: <code>docs/device-api.md</code></strong> (published as <em>Device APIs &amp; the endpoint

@@ -22,6 +22,8 @@ import sys
 
 import pytest
 
+import leak_samples
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEPLOY = ROOT / "deploy"
 SITE = ROOT / "site"
@@ -149,47 +151,30 @@ def test_no_internal_identifier_is_published(page):
     assert not findings, "internal identifiers would be published:\n  " + "\n  ".join(findings)
 
 
+@leak_samples.requires_corpus
 def test_the_leak_scanner_actually_matches_something():
     """A scanner whose patterns never fire is indistinguishable from no scanner.
-    Feed it one sample per forbidden class and require every class to bite."""
+    Feed it one sample per forbidden class and require every class to bite.
+
+    The samples live in tests/fixtures/ and not inline: they have to BE real
+    internal identifiers to prove anything, which makes them the one thing the
+    publication pipeline must strip. Inline, they turned the published mirror's
+    own suite red."""
     gen = _load("gen_site_docs")
-    samples = {
-        "rfc1918 address": "connect to 192.0.2.248 now",
-        "internal hostname": "browse https://node-a.example.net/",
-        "hypervisor name": "the container lives on hypervisor06",
-        "node name": "hostname is satom-node-1",
-        # A BARE prefix is still an identifier. Requiring a trailing
-        # character was the same anchoring mistake the hostname rule made
-        # with wildcards, and it survived a clean repo scan only to turn up
-        # on a LIVE served page.
-        #
-        # This sample is the ONLY guard that catches it: narrowing redact()
-        # and scan() together leaves the round-trip test self-consistent and
-        # still green. A round trip proves the two agree, not that either is
-        # right.
-        "node name (bare prefix)": "the satom-node prefix",
-        "backup server name": "pushes to backup-server nightly",
-        "device instance name": "the appliance faz01 was down",
-        "personal e-mail": "alerts go to opensource@visionebc.com",
-    }
+    samples = dict(leak_samples.SAMPLES["by_class"])
+    samples.update(leak_samples.SAMPLES["extra_variants"])
     for expected, text in samples.items():
         klass = expected.split(" (")[0]   # keys may carry a variant suffix
         found = gen.scan(text, "sample")
         assert any(klass in f for f in found), f"scanner missed {expected!r}: {text!r}"
 
 
+@leak_samples.requires_corpus
 def test_redaction_leaves_no_finding():
     """Round trip: redact() output must survive scan(). If they ever disagree the
     generator aborts on its own input and nobody can publish at all."""
     gen = _load("gen_site_docs")
-    dirty = ("Node satom-node-1 at 192.0.2.248 on hypervisor06 replicates to "
-             "satom-node-2 (192.0.2.249), pushes to backup-server, serves "
-             "satom-1.example.net, alerts opensource@visionebc.com, device faz01. "
-             # the two forms that a label-anchored pattern missed on real text
-             "Wildcard *.example.net, brace form satom{,-2}.example.net, "
-             "and the shorthand pair 192.0.2.248/.249. "
-             # bare prefix, found on a live page after the repo scan said clean
-             "Bare prefix satom-node and satom-node too.")
+    dirty = leak_samples.SAMPLES["round_trip_corpus"]
     assert not gen.scan(gen.redact(dirty), "sample")
 
 

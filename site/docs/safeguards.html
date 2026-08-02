@@ -72,6 +72,7 @@
       <a href="#7b-documentation-leaving-the-building">7b. Documentation leaving the building</a>
       <a href="#7c-one-published-manual-and-one-that-works-with-no-network">7c. One published manual, and one that works with no network</a>
       <a href="#7d-a-cross-reference-that-renders-is-not-a-cross-reference-that-works">7d. A cross-reference that renders is not a cross-reference that works</a>
+      <a href="#7e-what-leaves-the-building-is-the-mirror-not-just-the-manual">7e. What leaves the building is the MIRROR, not just the manual</a>
       <a href="#8-sessions-and-the-web-surface">8. Sessions and the web surface</a>
       <a href="#8b-operator-supplied-theming">8b. Operator-supplied theming</a>
       <a href="#8c-the-public-sites-theme-layer">8c. The public site&#x27;s theme layer</a>
@@ -588,6 +589,71 @@ vandalism; <code>test_the_published_manual_actually_cross_references_itself</cod
 real cross-references survive <strong>and</strong> that each rewritten target exists on disk.
 Rendering proves nothing here — this class of defect is only found by requesting
 the target.</p>
+<h2 id="7e-what-leaves-the-building-is-the-mirror-not-just-the-manual">7e. What leaves the building is the MIRROR, not just the manual</h2>
+<p>Section 7b makes the published <em>manual</em> safe. It says nothing about the rest of
+the repository, and for a long time nothing else did either: the public mirror
+carried the internal network map in 107 files — RFC1918 addresses, management
+hostnames, hypervisor and node names, the backup server — plus 25 commit
+identities, two of them named after an AI assistant and three carrying a
+personal e-mail address. Every one of those had passed the existing pipeline,
+because that pipeline filtered <strong>paths</strong> (<code>CLAUDE.md</code>, <code>.env</code>, <code>reports/</code>) and
+<strong>commit messages</strong>, and a path filter cannot see inside a file it keeps.</p>
+<p>The redaction engine that already existed (<code>app/services/doc_publication.py</code>)
+was the right mechanism applied at the wrong layer: it ran on documents on
+their way to the site, not on the repository on its way to the world.</p>
+<h3 id="where-the-rules-live-and-why-not-here">Where the rules live, and why not here</h3>
+<p>The org-wide rules live in the <strong>publisher</strong> — <code>sync_prod.py</code>, on the internal
+host that drives every mirror — and deliberately not in this repository.</p>
+<p>Two reasons. They apply to every application in the catalogue, not just this
+one; and a rule file inside a published repository is itself the disclosure it
+exists to prevent, naming every hostname and every range it protects.</p>
+<h3 id="three-layers-and-the-third-is-the-one-that-counts">Three layers, and the third is the one that counts</h3>
+<ol>
+<li><code>--name-callback</code> / <code>--email-callback</code> collapse <strong>every</strong> author and
+   committer in the whole history to one public identity. Not a hand-written
+   map of known aliases: a list of identities goes stale the first time
+   somebody commits under a new one.</li>
+<li><code>--replace-text</code> rewrites the <strong>content</strong> of every blob, across the whole
+   history — not just the tip. The replacements are valid values from the RFC
+   5737 documentation ranges and <code>example.net</code>, never <code>{placeholder}</code> tokens,
+   so the mirror stays a repository that compiles, whose config files still
+   parse and whose tests still run. A brace token inside a <code>.conf</code> produces a
+   broken artefact instead of a redacted one.</li>
+<li><code>_scan_blobs()</code> re-checks the <strong>output</strong> and <strong>aborts the push</strong>.</li>
+</ol>
+<p>The third layer is the point. Redacting without verifying is a hope, not a
+guard: when a rule comes up short — and one did, on a live page, over a bare
+<code>{node}</code> prefix — the scan is the only thing that turns a silent
+disclosure into a visible failure. A rewrite rule that is missing a case and a
+rewrite rule that is working look identical until something checks.</p>
+<p>Ordering matters inside layer 2. The shorthand pair <code>{ip}/{ip}</code> must be
+rewritten before the generic address rule, or the generic rule takes the first
+address and leaves <code>/.249</code> — still an octet, and <strong>invisible to the scan</strong>,
+because what remains is not a complete address.</p>
+<h3 id="two-things-the-pipeline-will-not-fix-for-you">Two things the pipeline will not fix for you</h3>
+<p><strong>A shipped default is not a disclosure, it is a bug.</strong> Seven values in this
+repository were internal infrastructure the application actually <em>used</em> when
+unconfigured: the trusted-proxy allowlist, two DNS resolvers, the certificate
+domain suffix, two Firecrawl endpoints and the installer's clone URL. Redacting
+those at publication time would have produced a mirror that leaked nothing and
+still shipped somebody else's network as its factory settings — and in the
+trusted-proxy case, granted an unrelated host on any overlapping <code>10/8</code> the
+right to forge the client address used for rate limiting and audit. These are
+fixed at the source. <strong>A default that names infrastructure belongs to
+configuration, and the deployment that relied on it gets a settings row.</strong></p>
+<p><strong>A test that proves the scanner bites must contain what it detects.</strong> The
+adversarial corpus is the one thing here that cannot survive redaction and stay
+meaningful, so it lives in <code>tests/fixtures/internal_identifier_samples.json</code>,
+the publisher drops it by path, and the tests that read it <strong>skip with a
+reason</strong> rather than failing on a mirror that correctly has nothing left to
+find. Everything else in <code>tests/</code> is rewritten in place; where a fixture
+happened to sit in a real range for no reason, it moved to the documentation
+range instead — inert test data has no business naming a routable network.</p>
+<p>Two scripts are excluded outright rather than rewritten. They are wired to one
+appliance by database id, to absolute paths on one host and to a local <code>.env</code>,
+they take no arguments, and one carries a shared secret in clear text.
+Rewriting their literals yields a script that still cannot run anywhere else —
+so the honest treatment is removal, not redaction.</p>
 <h2 id="8-sessions-and-the-web-surface">8. Sessions and the web surface</h2>
 <table>
 <thead>
@@ -1768,6 +1834,31 @@ written out here: this file is itself published, and a grep pattern listing
 every private form would be both the disclosure and its own victim — an earlier
 revision had exactly that, and the redactor rewrote the command inside the
 manual.</p>
+<h3 id="the-published-mirror-7e">The published mirror (7e)</h3>
+<p>The publisher runs on the internal catalogue host; these checks are run against
+a clone of the PUBLIC repository, which is the artefact the guard is about.</p>
+<pre><code class="language-bash">git clone --bare https://github.com/visionebc/SATOM.git /tmp/pub.git
+cd /tmp/pub.git
+
+# 1. No identity may survive. Expect exactly one line.
+git log --format='%an &lt;%ae&gt;' --all | sort -u
+
+# 2. No internal identifier in any blob of any branch. Expect no output.
+#    $SATOM_PRIVATE_RE is supplied by the reader -- the forms are deliberately
+#    not written down in a published document (same reason as 7b).
+git rev-list --objects --all | awk '{print $1}' | \
+  git cat-file --batch-check='%(objectname) %(objecttype)' | awk '$2==&quot;blob&quot;{print $1}' | \
+  while read -r sha; do git cat-file blob &quot;$sha&quot; 2&gt;/dev/null | grep -lE &quot;$SATOM_PRIVATE_RE&quot; \
+    &amp;&amp; echo &quot;LEAK in $sha&quot;; done
+
+# 3. The excluded paths are absent from the WHOLE history, not just the tip.
+git log --all --name-only --format= | sort -u | \
+  grep -E 'CLAUDE\.md|\.env|^reports/|seed_fw6|internal_identifier_samples'
+</code></pre>
+<p>A finding in check 2 means a rule is missing from <code>INTERNAL_REDACTIONS</code> in the
+publisher. It should never be reachable: the same patterns abort the push, so
+anything visible here means the scan was bypassed or a pattern disagrees with
+its own redaction rule.</p>
 <h2 id="related">Related</h2>
 <ul>
 <li><a href="privilege-model.html"><code>privilege-model.md</code></a> — accounts, sudo, the runner boundary, HA trust</li>

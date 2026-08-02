@@ -49,7 +49,16 @@ def node_hostname() -> str:
     if h:
         return h
     name = su.this_node_name() or "satom"
-    return name if "." in name else name + ".example.net"
+    if "." in name:
+        return name
+    # Only the SUFFIX is deployment-specific, and it is read per node rather
+    # than stored as a full name: on an HA pair the standby replicates the
+    # primary's settings row, so a stored FQDN would make the standby issue a
+    # certificate naming the primary. Empty by default — appending a domain
+    # the installation does not own produces a certificate for somebody
+    # else's namespace, and an internal CA is content with a short name.
+    domain = (ss.get_str("security.node_cert.domain", None) or "").strip(". ")
+    return "%s.%s" % (name, domain) if domain else name
 
 
 def _meta() -> dict:

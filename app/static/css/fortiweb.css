@@ -14,6 +14,8 @@
   --fw-topbar-bg: #162940;
   --fw-topbar-text: #FFFFFF;
   --fw-content-bg: #F4F5F7;
+  --fw-surface: #FFFFFF;
+  --fw-surface-alt: #FAFBFC;
   --fw-accent: #EF5424;
   --fw-accent-hover: #D44A1E;
   --fw-accent-light: rgba(239, 84, 36, 0.1);
@@ -420,7 +422,7 @@ div.fw-nav-section.fw-nav-context-label {
    Cards
    ============================================================ */
 .fw-card {
-  background: #FFFFFF;
+  background: var(--fw-surface);
   border: 1px solid var(--fw-border);
   border-radius: var(--fw-radius-lg);
   box-shadow: var(--fw-card-shadow);
@@ -434,7 +436,7 @@ div.fw-nav-section.fw-nav-context-label {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #FAFBFC;
+  background: var(--fw-surface-alt);
 }
 
 .fw-card-title {
@@ -448,7 +450,7 @@ div.fw-nav-section.fw-nav-context-label {
 .fw-card-footer {
   padding: 12px 20px;
   border-top: 1px solid var(--fw-border-light);
-  background: #FAFBFC;
+  background: var(--fw-surface-alt);
 }
 
 .fw-card-link {
@@ -505,7 +507,7 @@ div.fw-nav-section.fw-nav-context-label {
    was used by 5 templates (cert_manager, provisioning, docs) + plugin/lua
    studio but never defined, so it fell back to an unstyled .btn. */
 .btn-fw-secondary {
-  background: #FFFFFF;
+  background: var(--fw-surface);
   border: 1px solid var(--fw-border);
   color: var(--fw-text-secondary);
   font-weight: 500;
@@ -533,7 +535,7 @@ div.fw-nav-section.fw-nav-context-label {
   overflow-x: auto;
   border-radius: var(--fw-radius-lg);
   border: 1px solid var(--fw-border);
-  background: #FFFFFF;
+  background: var(--fw-surface);
   box-shadow: var(--fw-card-shadow);
 }
 
@@ -551,7 +553,7 @@ div.fw-nav-section.fw-nav-context-label {
 }
 
 .fw-table thead th {
-  background: #F0F2F5;
+  background: var(--fw-surface-alt);
   color: var(--fw-text-secondary);
   font-weight: 600;
   font-size: 12px;
@@ -567,7 +569,7 @@ div.fw-nav-section.fw-nav-context-label {
   transition: background var(--fw-transition);
 }
 
-.fw-table tbody tr:nth-child(even) { background: #FAFBFC; }
+.fw-table tbody tr:nth-child(even) { background: var(--fw-surface-alt); }
 .fw-table tbody tr:hover { background: rgba(239,84,36,0.04); }
 
 .fw-table td {
@@ -699,7 +701,7 @@ div.fw-nav-section.fw-nav-context-label {
 
 .fw-modal .modal-title { font-size: 15px; font-weight: 600; }
 .fw-modal .btn-close { filter: invert(1); }
-.fw-modal .modal-footer { border-top: 1px solid var(--fw-border-light); background: #FAFBFC; }
+.fw-modal .modal-footer { border-top: 1px solid var(--fw-border-light); background: var(--fw-surface-alt); }
 
 /* ============================================================
    Alerts & Flash Messages
@@ -722,7 +724,7 @@ div.fw-nav-section.fw-nav-context-label {
    Stat Cards (Dashboard)
    ============================================================ */
 .fw-stat-card {
-  background: #FFFFFF;
+  background: var(--fw-surface);
   border: 1px solid var(--fw-border);
   border-radius: var(--fw-radius-lg);
   padding: 20px;
@@ -758,7 +760,7 @@ div.fw-nav-section.fw-nav-context-label {
    Appliance / Workspace Cards
    ============================================================ */
 .fw-appliance-card {
-  background: #FFFFFF;
+  background: var(--fw-surface);
   border: 1px solid var(--fw-border);
   border-radius: var(--fw-radius-lg);
   box-shadow: var(--fw-card-shadow);
@@ -845,7 +847,7 @@ div.fw-nav-section.fw-nav-context-label {
   padding-left: 34px;
   border-radius: 20px;
   border: 1px solid var(--fw-border);
-  background: #FFFFFF;
+  background: var(--fw-surface);
   font-size: 13.5px;
   height: 36px;
   width: 100%;
@@ -885,7 +887,7 @@ div.fw-nav-section.fw-nav-context-label {
   color: var(--fw-text-secondary);
   border-top: 1px solid var(--fw-border);
   margin-left: var(--fw-sidebar-width);
-  background: #FFFFFF;
+  background: var(--fw-surface);
   transition: margin-left var(--fw-transition);
 }
 
@@ -1247,7 +1249,7 @@ details[open] > .fw-group-head::before { transform: rotate(90deg); }
   background: var(--fw-content-bg);
 }
 .fw-notif-dd-clear {
-  border: 1px solid var(--fw-border); background: #fff;
+  border: 1px solid var(--fw-border); background: var(--fw-surface);
   color: var(--fw-text-secondary); border-radius: var(--fw-radius);
   font-size: 12px; font-weight: 600; padding: 3px 10px; cursor: pointer;
   line-height: 1.4;
@@ -1467,7 +1469,7 @@ body.fw-entering-page {
 
 .fw-doc-layout { display: grid; grid-template-columns: 232px minmax(0,1fr); gap: 20px; align-items: start; }
 @media (max-width: 900px){ .fw-doc-layout { grid-template-columns: 1fr; } .fw-doc-nav { display: none; } }
-.fw-doc-nav { position: sticky; top: calc(var(--fw-topbar-height) + 16px); background: #fff; border: 1px solid var(--fw-border-light); border-radius: var(--fw-radius-lg); padding: 8px; box-shadow: var(--fw-card-shadow); }
+.fw-doc-nav { position: sticky; top: calc(var(--fw-topbar-height) + 16px); background: var(--fw-surface); border: 1px solid var(--fw-border-light); border-radius: var(--fw-radius-lg); padding: 8px; box-shadow: var(--fw-card-shadow); }
 .fw-doc-nav-title { font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--fw-text-secondary); padding: 6px 10px 4px; }
 .fw-doc-nav-item { display: block; padding: 7px 10px; border-radius: var(--fw-radius); font-size: 12.5px; color: var(--fw-text-primary); text-decoration: none; }
 .fw-doc-nav-item:hover { background: var(--fw-accent-light); color: var(--fw-accent); text-decoration: none; }
@@ -1486,7 +1488,7 @@ body.fw-entering-page {
 .fw-doc-content pre { background: #1B2A3A; color: #C9D7E6; border-radius: var(--fw-radius-lg); padding: 14px 16px; font-size: 12.5px; overflow-x: auto; border: 1px solid #2A3B4D; margin: 1em 0; }
 .fw-doc-content pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
 .fw-doc-content table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 13px; }
-.fw-doc-content table th { background: #F0F2F5; font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; padding: 8px 12px; border-bottom: 2px solid var(--fw-border); text-align: left; }
+.fw-doc-content table th { background: var(--fw-surface-alt); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; padding: 8px 12px; border-bottom: 2px solid var(--fw-border); text-align: left; }
 .fw-doc-content table td { padding: 8px 12px; border-bottom: 1px solid var(--fw-border-light); vertical-align: top; }
 .fw-doc-content table tr:nth-child(even) td { background: #F7F8FA; }
 .fw-doc-content blockquote { border-left: 4px solid var(--fw-accent); background: var(--fw-accent-light); padding: 10px 16px; margin: 1em 0; border-radius: 0 var(--fw-radius) var(--fw-radius) 0; color: var(--fw-text-secondary); }
@@ -1532,7 +1534,7 @@ body.fw-entering-page {
 .btn-outline-light {
   color: var(--fw-text-secondary);
   border-color: var(--fw-border);
-  background-color: #fff;
+  background-color: var(--fw-surface);
 }
 .btn-outline-light:hover,
 .btn-outline-light:focus-visible,

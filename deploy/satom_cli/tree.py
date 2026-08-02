@@ -179,6 +179,11 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
             _n("nginx", "Validate the config, then reload nginx.",
                run=e.reload_nginx, needs_root=True),
         ),
+        _group("reset", "Put a subsystem back to its shipped state.",
+            _n("theme", "Activate the built-in theme — the way back from a palette "
+                        "that made the console unreadable.",
+               run=f.reset_theme, needs_root=True),
+        ),
         _group("seed", "Create state a fresh install does NOT create for you.",
             _n("actions", "The minimum scheduled actions. Shows the plan; --yes applies.",
                run=f.seed_actions, needs_root=True, usage="execute seed actions [--yes]"),

@@ -305,7 +305,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*84 commands in 31 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*85 commands in 32 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -392,6 +392,7 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute enable <unit>` | yes | — | Enable a timer or .path unit (--now). |
 | `satom execute disable <unit>` | yes | — | Disable a timer. Refuses the privileged runner. |
 | `satom execute reload nginx` | yes | — | Validate the config, then reload nginx. |
+| `satom execute reset theme` | yes | — | Activate the built-in theme — the way back from a palette that made the console unreadable. |
 | `satom execute seed actions [--yes]` | yes | — | The minimum scheduled actions. Shows the plan; --yes applies. |
 | `satom execute update code [<target>]` | yes | — | Queue a git update — or a rollback, by passing a commit. |
 | `satom execute update pip <package> <version>` | yes | — | Queue a curated-allowlist package change. Node-local. |

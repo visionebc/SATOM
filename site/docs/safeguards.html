@@ -62,6 +62,7 @@
       <a href="#7-files-coming-from-outside">7. Files coming from outside</a>
       <a href="#7b-documentation-leaving-the-building">7b. Documentation leaving the building</a>
       <a href="#8-sessions-and-the-web-surface">8. Sessions and the web surface</a>
+      <a href="#8b-operator-supplied-theming">8b. Operator-supplied theming</a>
       <a href="#9-the-alert-catalog">9. The alert catalog</a>
       <a href="#10-fresh-installs-and-what-an-offline-bundle-can-promise">10. Fresh installs, and what an offline bundle can promise</a>
       <a href="#11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</a>
@@ -510,6 +511,69 @@ silent.</p>
 </tr>
 </tbody>
 </table>
+<h2 id="8b-operator-supplied-theming">8b. Operator-supplied theming</h2>
+<p>Settings → Appearance lets an admin repaint the console. That means operator
+input reaches a <code>&lt;style&gt;</code> element carrying the app's own CSP nonce, and it means
+an operator can make the console unreadable. Both are guarded.</p>
+<table>
+<thead>
+<tr>
+<th>Guard</th>
+<th>What it prevents</th>
+<th>Where</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Per-<strong>kind</strong> value allowlist (<code>color</code>/<code>length</code>/<code>shadow</code>/<code>transition</code>/<code>font</code>)</td>
+<td>A token value escaping its declaration — <code>}</code> would close the rule and open a new one, nonce included</td>
+<td><code>theme_service.VALIDATORS</code></td>
+</tr>
+<tr>
+<td>Shared reject list (<code>;{}&lt;&gt;</code>, <code>url(</code>, <code>expression(</code>, <code>@import</code>, <code>javascript:</code>, newlines)</td>
+<td>The wider kinds. A colour pattern stops everything alone, but <code>shadow</code>/<code>font</code> legitimately allow letters and parentheses, so <code>url(evil)</code> matches the shadow character class</td>
+<td><code>theme_service._FORBIDDEN</code></td>
+</tr>
+<tr>
+<td><code>css_for()</code> re-validates on <strong>emission</strong></td>
+<td>A hostile row that never went through the form — restored backup, replica, hand-edited <code>psql</code></td>
+<td><code>theme_service.css_for</code></td>
+</tr>
+<tr>
+<td>Only overrides are stored</td>
+<td>A theme freezing a snapshot of an old palette and silently diverging from stylesheet improvements</td>
+<td><code>validate_tokens</code> drops values equal to the default</td>
+</tr>
+<tr>
+<td>Registry generated from the stylesheet, <code>--check</code> in the suite</td>
+<td>A new <code>--fw-*</code> variable leaving the editor silently missing a control</td>
+<td><code>deploy/gen_theme_tokens.py</code>, <code>tests/test_theme.py</code></td>
+</tr>
+<tr>
+<td>Contrast audit; below 3.0:1 needs explicit confirmation</td>
+<td>Applying an unreadable palette <strong>without being told</strong>. It warns rather than blocks — an operator may accept a low-contrast accent</td>
+<td><code>theme_service.audit_contrast</code></td>
+</tr>
+<tr>
+<td>Built-ins immutable; deleting the active theme falls back</td>
+<td>Locking yourself out of the page that would fix it</td>
+<td><code>settings.update_theme</code> / <code>delete_theme</code></td>
+</tr>
+<tr>
+<td>Brand assets: bare filename only, SVG sanitised, rasters re-encoded</td>
+<td>A stored path escaping <code>data/branding/</code>, and script-carrying SVG in the DOM</td>
+<td><code>settings.theme_asset</code> / <code>_save_theme_asset</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Recovery, in order of how broken things are:</strong> Settings → Appearance → <em>Revert
+to the shipped look</em> · activate any built-in · <code>satom execute reset theme</code> from
+a shell when the UI is unusable.</p>
+<p><strong>Limits, stated on purpose.</strong> Status badges and some decorative tints still
+carry literal colours in the stylesheet, so a dark canvas is not offered — it
+would leave those elements light. And the path-separator check on brand assets
+is a <em>second</em> layer: werkzeug's <code>safe_join</code> refuses traversal on its own, so the
+test asserts the 404 outcome rather than which layer fired.</p>
 <h2 id="9-the-alert-catalog">9. The alert catalog</h2>
 <p>Everything above is only useful if silence means healthy. The signals that exist
 today (<code>app/services/alerts.py</code>, thresholds under Settings → Alerts, per-signal
@@ -1106,6 +1170,21 @@ which rule 3 exists to prevent.</p>
   because of that, but it mitigates rather than fixes it.</li>
 </ul>
 <h2 id="verifying-the-guards-are-armed">Verifying the guards are armed</h2>
+<p><strong>Theming (§8b).</strong> The registry must still match the stylesheet, and a hostile
+value must be refused on the way in <em>and</em> on the way out:</p>
+<pre><code class="language-bash">cd /opt/satom
+python3 deploy/gen_theme_tokens.py --check          # exits 1 on drift
+set -a &amp;&amp; . ./.env &amp;&amp; set +a
+venv/bin/python3 -c &quot;
+from app import create_app
+from app.services import theme_service as t
+with create_app().app_context():
+    print('rejected on save :', bool(t.validate_tokens({'accent': '#fff; } html{}'})[1]))
+    print('rejected on emit :', t.css_for({'accent': '#fff; } html{}'}) == '')
+    print('unreadable caught:', t.has_unreadable({'text-primary': '#EDEDED'}))
+    print('active theme     :', t.active_theme()['name'])
+&quot;
+</code></pre>
 <h3 id="the-operator-console">The operator console</h3>
 <pre><code class="language-bash"># 1. Everything, one exit code. 0 = clean, 1 = a real finding.
 satom diagnose all

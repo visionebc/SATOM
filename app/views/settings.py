@@ -46,6 +46,32 @@ from ..services.audit import log_action
 bp = Blueprint('settings', __name__, url_prefix='/settings')
 
 
+def _theme_rows():
+    """Every theme, built-ins first then alphabetical — for the Appearance tab."""
+    try:
+        from ..models_theme import UiTheme
+        rows = UiTheme.query.order_by(UiTheme.builtin.desc(), UiTheme.name).all()
+        return [t.to_dict() for t in rows]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _theme_groups():
+    try:
+        from ..services.theme_tokens import by_group
+        return by_group()
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _theme_defaults():
+    try:
+        from ..services.theme_tokens import DEFAULTS
+        return DEFAULTS
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def _is_admin() -> bool:
     return bool(current_user and current_user.can(Permission.USER_MANAGE))
 
@@ -99,6 +125,9 @@ def index():
         banner_templates=store.BANNER_TEMPLATES,
         banners=store.all_banners(),
         adoms=(branding.all_adoms() if _is_admin() else []),
+        themes=(_theme_rows() if _is_admin() else []),
+        theme_groups=_theme_groups(),
+        theme_defaults=_theme_defaults(),
         adom_caps=Adom.CAPS,
         email_config=email.config(),
         alerts_config=alerts_svc.config(),
@@ -1205,3 +1234,364 @@ def save_pg_ssl():
         return jsonify({'ok': True, 'result': res})
     except Exception as e:  # noqa: BLE001
         return jsonify({'ok': False, 'error': str(e)[:300]}), 400
+
+
+# --------------------------------------------------------------------------- #
+#  Appearance — UI themes                                                      #
+#                                                                              #
+#  The console's look is a set of ``--fw-*`` design tokens (registry generated  #
+#  from the stylesheet itself, see deploy/gen_theme_tokens.py). These routes    #
+#  are the CRUD around named sets of them plus the brand logo/favicon.         #
+#                                                                              #
+#  Two things are load-bearing:                                                #
+#   * every token value is allowlisted per KIND in theme_service before it can  #
+#     reach the nonced <style> block — the DB is not a trust boundary;          #
+#   * the built-in themes are immutable, so an operator who paints the console  #
+#     unreadable always has a way back (Reset, or `satom execute reset theme`   #
+#     on a node whose UI is unusable).                                          #
+# --------------------------------------------------------------------------- #
+from pathlib import Path as _Path
+
+from flask import send_from_directory as _send_from_directory
+
+from ..models_theme import UiTheme
+from ..services import theme_service as theme_svc
+
+_THEME_ASSET_KINDS = ('logo', 'favicon')
+_THEME_RASTER_EXT = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.ico'}
+_THEME_LOGO_MAX_PX = 256
+
+
+def _theme_dir() -> _Path:
+    """``data/branding`` — under ``data/`` on purpose.
+
+    ``satom-ha-datasync`` replicates ``data/`` to the standby and the system
+    backup bundles include it, so a custom logo survives a failover and a
+    restore. ``static/img`` (where the per-ADOM marks live) is node-local and
+    outside both.
+    """
+    d = _Path(__file__).resolve().parents[2] / 'data' / 'branding'
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _theme_slug(name: str, exclude_id: int | None = None) -> str:
+    base = _re.sub(r'[^a-z0-9]+', '-', (name or '').lower()).strip('-')[:56] or 'theme'
+    slug, n = base, 2
+    while True:
+        q = UiTheme.query.filter_by(slug=slug)
+        if exclude_id:
+            q = q.filter(UiTheme.id != exclude_id)
+        if not q.first():
+            return slug
+        slug = '%s-%d' % (base, n)
+        n += 1
+
+
+def _form_tokens() -> dict:
+    """Token overrides off the current request form (fields named ``tok_<name>``)."""
+    out = {}
+    for name in theme_svc.TOKEN_NAMES:
+        val = request.form.get('tok_' + name)
+        if val is not None and val.strip():
+            out[name] = val.strip()
+    return out
+
+
+def _save_theme_asset(theme: UiTheme, file, kind: str) -> str | None:
+    """Store an uploaded brand asset. Returns an error string, or ``None``.
+
+    SVG is sanitised rather than resized (it goes into the DOM); rasters are
+    re-encoded through Pillow, which is also what rejects a file that merely
+    claims to be an image.
+    """
+    if not file or not file.filename:
+        return None
+    ext = _os.path.splitext(file.filename)[1].lower()
+    dest = _theme_dir()
+    if ext == '.svg':
+        raw = file.read()
+        if len(raw) > 512 * 1024:
+            return 'SVG too large (max 512 KB).'
+        text = raw.decode('utf-8', 'replace')
+        text = _re.sub(r'(?is)<script.*?>.*?</script>', '', text)
+        text = _re.sub(r'(?is)<foreignObject.*?>.*?</foreignObject>', '', text)
+        text = _re.sub(r'(?i)\son\w+\s*=\s*"[^"]*"', '', text)
+        text = _re.sub(r"(?i)\son\w+\s*=\s*'[^']*'", '', text)
+        text = _re.sub(r'(?i)javascript:', '', text)
+        if '<svg' not in text.lower():
+            return 'Not a valid SVG file.'
+        rel = 'theme-%d-%s.svg' % (theme.id, kind)
+        (dest / rel).write_text(text, encoding='utf-8')
+    elif ext in _THEME_RASTER_EXT:
+        try:
+            from PIL import Image
+            img = Image.open(file.stream)
+            img.load()
+            if img.mode not in ('RGBA', 'RGB'):
+                img = img.convert('RGBA')
+            img.thumbnail((_THEME_LOGO_MAX_PX, _THEME_LOGO_MAX_PX), Image.LANCZOS)
+            rel = 'theme-%d-%s.png' % (theme.id, kind)
+            img.save(str(dest / rel), 'PNG')
+        except Exception as exc:  # noqa: BLE001
+            return 'Image could not be processed: %s' % exc
+    else:
+        return 'Unsupported %s type (use PNG, JPG, WEBP, GIF, ICO or SVG).' % kind
+    setattr(theme, kind, rel)
+    return None
+
+
+def _theme_redirect():
+    return redirect(url_for('settings.index') + '#tab-appearance')
+
+
+@bp.route('/appearance/asset/<int:theme_id>/<kind>')
+@login_required
+def theme_asset(theme_id, kind):
+    """Serve a theme's brand asset. Any authenticated user — it renders on every
+    page — but the filename comes from the DB row, never from the URL, so the
+    path cannot be traversed."""
+    if kind not in _THEME_ASSET_KINDS:
+        abort(404)
+    row = UiTheme.query.get_or_404(theme_id)
+    rel = getattr(row, kind, '') or ''
+    if not rel or '/' in rel or '\\' in rel:
+        abort(404)
+    return _send_from_directory(str(_theme_dir()), rel, max_age=300)
+
+
+@bp.route('/appearance/preview', methods=['POST'])
+@login_required
+def theme_preview():
+    """Validate a candidate palette without saving it.
+
+    Powers the live preview and the contrast report. Returning the SAME css the
+    server would emit (not something the browser assembled) means what the
+    operator previews is what gets stored — a preview built client-side could
+    show a value the validator would later reject.
+    """
+    if not _is_admin():
+        abort(403)
+    payload = request.get_json(silent=True) or {}
+    tokens = payload.get('tokens') or {}
+    clean, errors = theme_svc.validate_tokens(tokens)
+    return jsonify(ok=not errors, errors=errors, css=theme_svc.css_for(clean),
+                   overrides=clean, contrast=theme_svc.audit_contrast(clean))
+
+
+def _apply_theme_form(theme: UiTheme) -> list[str]:
+    """Name/description/tokens/assets from the request form. Returns errors."""
+    errors: list[str] = []
+    name = (request.form.get('name') or '').strip()[:128]
+    if not name:
+        errors.append('A theme name is required.')
+    else:
+        clash = UiTheme.query.filter(UiTheme.name == name,
+                                     UiTheme.id != (theme.id or -1)).first()
+        if clash:
+            errors.append('A theme named %r already exists.' % name)
+        else:
+            theme.name = name
+    theme.description = (request.form.get('description') or '').strip()[:300]
+    clean, terrors = theme_svc.validate_tokens(_form_tokens())
+    errors.extend(terrors)
+    if not terrors:
+        theme.tokens = clean
+        if theme_svc.has_unreadable(clean) and \
+                request.form.get('confirm_unreadable') not in ('1', 'on', 'true'):
+            errors.append(
+                'This palette drops text contrast below %.1f:1 in places — tick '
+                '"apply anyway" to confirm.' % theme_svc.CONTRAST_FAIL)
+    return errors
+
+
+@bp.route('/appearance/themes', methods=['POST'])
+@login_required
+def create_theme():
+    if not _is_admin():
+        abort(403)
+    theme = UiTheme(slug='pending', name='', builtin=False,
+                    created_by=getattr(current_user, 'username', '') or '')
+    errors = _apply_theme_form(theme)
+    if errors:
+        for e in errors:
+            flash(e, 'danger')
+        return _theme_redirect()
+    theme.slug = _theme_slug(theme.name)
+    db.session.add(theme)
+    db.session.flush()          # need the id for the asset filenames
+    for kind in _THEME_ASSET_KINDS:
+        err = _save_theme_asset(theme, request.files.get(kind), kind)
+        if err:
+            db.session.rollback()
+            flash(err, 'danger')
+            return _theme_redirect()
+    db.session.commit()
+    theme_svc.invalidate()
+    log_action('settings.theme.create', detail='name=%s' % theme.name)
+    flash('Theme %r created.' % theme.name, 'success')
+    return _theme_redirect()
+
+
+@bp.route('/appearance/themes/<int:tid>', methods=['POST'])
+@login_required
+def update_theme(tid):
+    if not _is_admin():
+        abort(403)
+    theme = UiTheme.query.get_or_404(tid)
+    if theme.builtin:
+        flash('Built-in themes cannot be edited — duplicate it first.', 'warning')
+        return _theme_redirect()
+    errors = _apply_theme_form(theme)
+    if errors:
+        db.session.rollback()
+        for e in errors:
+            flash(e, 'danger')
+        return _theme_redirect()
+    for kind in _THEME_ASSET_KINDS:
+        if request.form.get('clear_' + kind) in ('1', 'on', 'true'):
+            setattr(theme, kind, '')
+        err = _save_theme_asset(theme, request.files.get(kind), kind)
+        if err:
+            db.session.rollback()
+            flash(err, 'danger')
+            return _theme_redirect()
+    db.session.commit()
+    theme_svc.invalidate()
+    log_action('settings.theme.update', detail='name=%s' % theme.name)
+    flash('Theme %r saved.' % theme.name, 'success')
+    return _theme_redirect()
+
+
+@bp.route('/appearance/themes/<int:tid>/duplicate', methods=['POST'])
+@login_required
+def duplicate_theme(tid):
+    if not _is_admin():
+        abort(403)
+    src = UiTheme.query.get_or_404(tid)
+    name = (request.form.get('name') or '').strip()[:128] or ('%s copy' % src.name)
+    if UiTheme.query.filter_by(name=name).first():
+        flash('A theme named %r already exists.' % name, 'danger')
+        return _theme_redirect()
+    dup = UiTheme(slug=_theme_slug(name), name=name,
+                  description=src.description, builtin=False,
+                  created_by=getattr(current_user, 'username', '') or '')
+    dup.tokens = src.tokens
+    db.session.add(dup)
+    db.session.commit()
+    theme_svc.invalidate()
+    log_action('settings.theme.duplicate', detail='from=%s to=%s' % (src.name, name))
+    flash('Theme %r created from %r — edit it below.' % (name, src.name), 'success')
+    return _theme_redirect()
+
+
+@bp.route('/appearance/themes/<int:tid>/activate', methods=['POST'])
+@login_required
+def activate_theme(tid):
+    if not _is_admin():
+        abort(403)
+    err = theme_svc.set_active(tid)
+    if err:
+        flash(err, 'danger')
+    else:
+        row = UiTheme.query.get(tid)
+        log_action('settings.theme.activate', detail='name=%s' % row.name)
+        flash('Theme %r applied.' % row.name, 'success')
+    return _theme_redirect()
+
+
+@bp.route('/appearance/themes/<int:tid>/delete', methods=['POST'])
+@login_required
+def delete_theme(tid):
+    if not _is_admin():
+        abort(403)
+    theme = UiTheme.query.get_or_404(tid)
+    if theme.builtin:
+        flash('Built-in themes cannot be deleted.', 'warning')
+        return _theme_redirect()
+    name, was_active = theme.name, theme.is_active
+    for kind in _THEME_ASSET_KINDS:
+        rel = getattr(theme, kind, '')
+        if rel and '/' not in rel:
+            try:
+                (_theme_dir() / rel).unlink()
+            except OSError:
+                pass
+    db.session.delete(theme)
+    db.session.commit()
+    if was_active:
+        # Deleting the active theme must not leave the console with no theme
+        # at all — fall back to the immutable built-in.
+        theme_svc.reset_to_builtin()
+    theme_svc.invalidate()
+    log_action('settings.theme.delete', detail='name=%s' % name)
+    flash('Theme %r deleted.' % name, 'success')
+    return _theme_redirect()
+
+
+@bp.route('/appearance/themes/<int:tid>/export')
+@login_required
+def export_theme(tid):
+    """Portable JSON — token overrides only, no ids or node state, so it can be
+    imported on any install regardless of its own theme list."""
+    if not _is_admin():
+        abort(403)
+    row = UiTheme.query.get_or_404(tid)
+    resp = jsonify({'schema': 'satom.ui-theme/1', 'name': row.name,
+                    'description': row.description, 'tokens': row.tokens})
+    resp.headers['Content-Disposition'] = \
+        'attachment; filename="satom-theme-%s.json"' % row.slug
+    return resp
+
+
+@bp.route('/appearance/import', methods=['POST'])
+@login_required
+def import_theme():
+    if not _is_admin():
+        abort(403)
+    import json as _json
+    file = request.files.get('themefile')
+    if not file or not file.filename:
+        flash('Choose a theme JSON file to import.', 'warning')
+        return _theme_redirect()
+    try:
+        payload = _json.loads(file.read().decode('utf-8', 'replace'))
+    except Exception:
+        flash('That file is not valid JSON.', 'danger')
+        return _theme_redirect()
+    if not isinstance(payload, dict) or payload.get('schema') != 'satom.ui-theme/1':
+        flash('Not a SATOM theme file (expected schema satom.ui-theme/1).', 'danger')
+        return _theme_redirect()
+    clean, errors = theme_svc.validate_tokens(payload.get('tokens') or {})
+    if errors:
+        for e in errors[:8]:
+            flash('Import rejected — %s' % e, 'danger')
+        return _theme_redirect()
+    name = (str(payload.get('name') or 'Imported theme')).strip()[:128]
+    if UiTheme.query.filter_by(name=name).first():
+        name = '%s (imported)' % name
+    row = UiTheme(slug=_theme_slug(name), name=name,
+                  description=str(payload.get('description') or '')[:300],
+                  builtin=False,
+                  created_by=getattr(current_user, 'username', '') or '')
+    row.tokens = clean
+    db.session.add(row)
+    db.session.commit()
+    theme_svc.invalidate()
+    log_action('settings.theme.import', detail='name=%s' % name)
+    flash('Theme %r imported.' % name, 'success')
+    return _theme_redirect()
+
+
+@bp.route('/appearance/reset', methods=['POST'])
+@login_required
+def reset_theme():
+    """Back to the shipped look. Deliberately reachable with a single POST and
+    no arguments — this is what an operator uses when a palette made the console
+    hard to read, and it must not itself require reading fine print."""
+    if not _is_admin():
+        abort(403)
+    name = theme_svc.reset_to_builtin()
+    log_action('settings.theme.reset', detail='name=%s' % name)
+    flash('Reverted to %r.' % name, 'success')
+    return _theme_redirect()

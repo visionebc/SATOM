@@ -97,6 +97,11 @@
     </button>
   </li>
   <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-appearance" type="button">
+      <i class="bi bi-palette me-1"></i>Appearance
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-fazmenu" type="button">
       <i class="bi bi-list-check me-1"></i>FAZ Menu
     </button>
@@ -2035,6 +2040,398 @@
       </div>
     </div>
   </div>
+
+  <!-- APPEARANCE (UI THEMES) TAB -->
+  {# Admin-only: the editor writes theme rows and its routes are USER_MANAGE
+     gated, so a non-admin should not be handed a form they cannot submit. #}
+  {% if is_admin %}
+  <div class="tab-pane fade" id="tab-appearance">
+
+    <!-- ── theme list ─────────────────────────────────────────────────── -->
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-palette me-2 text-accent"></i>Themes</span>
+        <span class="text-muted" style="font-size:12px;">Active: <strong>{{ theme_name }}</strong></span>
+      </div>
+      <div class="fw-card-body p-0">
+        <div class="fw-table-wrapper">
+          <table class="fw-table mb-0">
+            <thead>
+              <tr>
+                <th style="width:24%;">Theme</th>
+                <th>Description</th>
+                <th style="width:12%;">Overrides</th>
+                <th style="width:14%;">Author</th>
+                <th style="width:26%;" class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for t in themes %}
+              <tr>
+                <td>
+                  <strong>{{ t.name }}</strong>
+                  {% if t.builtin %}<span class="fw-badge fw-badge-secondary ms-1" title="Shipped with the product; cannot be edited or deleted">built-in</span>{% endif %}
+                  {% if t.active %}<span class="fw-badge fw-badge-success ms-1">active</span>{% endif %}
+                </td>
+                <td class="text-muted" style="font-size:12.5px;">{{ t.description }}</td>
+                <td>{{ t.tokens|length }} / {{ theme_defaults|length }}</td>
+                <td class="text-muted" style="font-size:12px;">{{ t.created_by or '—' }}</td>
+                <td class="text-end">
+                  {% if not t.active %}
+                  <form method="post" action="{{ url_for('settings.activate_theme', tid=t.id) }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm btn-fw-primary" type="submit" title="Make this the console theme">Apply</button>
+                  </form>
+                  {% endif %}
+                  {% if t.editable %}
+                  <button class="btn btn-sm btn-fw-secondary" type="button" data-theme-edit="{{ t.id }}">Edit</button>
+                  {% endif %}
+                  <form method="post" action="{{ url_for('settings.duplicate_theme', tid=t.id) }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm btn-fw-secondary" type="submit" title="Copy into an editable theme">Duplicate</button>
+                  </form>
+                  <a class="btn btn-sm btn-fw-secondary" href="{{ url_for('settings.export_theme', tid=t.id) }}">Export</a>
+                  {% if not t.builtin %}
+                  <form method="post" action="{{ url_for('settings.delete_theme', tid=t.id) }}" class="d-inline" data-theme-delete="{{ t.name }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm btn-fw-danger" type="submit">Delete</button>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="fw-card-footer d-flex flex-wrap gap-3 align-items-center">
+        <form method="post" action="{{ url_for('settings.reset_theme') }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-fw-secondary" type="submit">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>Revert to the shipped look
+          </button>
+        </form>
+        <form method="post" action="{{ url_for('settings.import_theme') }}" enctype="multipart/form-data"
+              class="d-flex gap-2 align-items-center">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="file" name="themefile" accept="application/json,.json" class="form-control form-control-sm" style="max-width:260px;">
+          <button class="btn btn-sm btn-fw-secondary" type="submit">Import theme</button>
+        </form>
+        <span class="text-muted ms-auto" style="font-size:11.5px;">
+          Built-in themes are the recovery path if a palette turns the console unreadable.
+        </span>
+      </div>
+    </div>
+
+    <!-- ── editor ─────────────────────────────────────────────────────── -->
+    <div class="fw-card mt-3">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-sliders me-2 text-accent"></i>Theme editor</span>
+        <span class="text-muted" id="theme-editing-label" style="font-size:12px;">New theme</span>
+      </div>
+      <form method="post" id="theme-form" enctype="multipart/form-data"
+            action="{{ url_for('settings.create_theme') }}"
+            data-create-url="{{ url_for('settings.create_theme') }}"
+            data-preview-url="{{ url_for('settings.theme_preview') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="fw-card-body">
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-4">
+              <label class="form-label">Theme name</label>
+              <input type="text" name="name" id="theme-name" class="form-control" maxlength="128" required>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label">Description</label>
+              <input type="text" name="description" id="theme-desc" class="form-control" maxlength="300">
+            </div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Brand logo <span class="text-muted">(optional)</span></label>
+              <input type="file" name="logo" class="form-control" accept=".png,.jpg,.jpeg,.webp,.gif,.svg">
+              <div class="form-text">
+                Replaces the top-bar mark in every ADOM while this theme is active. Leave empty to keep
+                the per-ADOM marks from <a href="#tab-adoms" data-theme-jump="#tab-adoms">Settings&nbsp;&rarr;&nbsp;ADOMs</a>.
+                <label class="ms-2"><input type="checkbox" name="clear_logo" value="1"> remove current</label>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Favicon <span class="text-muted">(optional)</span></label>
+              <input type="file" name="favicon" class="form-control" accept=".png,.ico,.svg">
+              <div class="form-text">
+                <label><input type="checkbox" name="clear_favicon" value="1"> remove current</label>
+              </div>
+            </div>
+          </div>
+
+          <div id="theme-errors" class="alert alert-danger py-2 px-3" style="display:none;font-size:12.5px;"></div>
+          <div id="theme-contrast" style="display:none;"></div>
+
+          {% for group, rows in theme_groups %}
+          <div class="mb-3">
+            <div class="fw-section-title" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--fw-text-secondary);border-bottom:1px solid var(--fw-border-light);padding-bottom:4px;margin-bottom:10px;">{{ group }}</div>
+            <div class="row g-3">
+              {% for name, meta in rows %}
+              <div class="col-md-4 col-lg-3">
+                <label class="form-label" style="font-size:12.5px;margin-bottom:2px;">{{ meta.label }}</label>
+                <div class="input-group input-group-sm">
+                  {% if meta.kind == 'color' %}
+                  <input type="color" class="form-control form-control-color" data-theme-swatch="{{ name }}"
+                         title="{{ meta.label }}" style="max-width:42px;">
+                  {% endif %}
+                  <input type="text" class="form-control" name="tok_{{ name }}" data-theme-token="{{ name }}"
+                         data-theme-default="{{ theme_defaults[name] }}" value="{{ theme_defaults[name] }}"
+                         spellcheck="false">
+                  <button class="btn btn-fw-secondary" type="button" data-theme-revert="{{ name }}"
+                          title="Back to the stylesheet default">&#8635;</button>
+                </div>
+                <div class="form-text" style="font-size:11px;margin-top:2px;">{{ meta.help }}</div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+
+        </div>
+        <div class="fw-card-footer d-flex flex-wrap gap-2 align-items-center">
+          <button class="btn btn-fw-primary" type="submit"><i class="bi bi-save me-1"></i>Save theme</button>
+          <button class="btn btn-fw-secondary" type="button" id="theme-new">New theme</button>
+          <button class="btn btn-fw-secondary" type="button" id="theme-preview-stop" style="display:none;">
+            Stop preview
+          </button>
+          <label class="ms-2" style="font-size:12px;">
+            <input type="checkbox" name="confirm_unreadable" value="1" id="theme-confirm"> apply anyway (low contrast)
+          </label>
+          <span class="text-muted ms-auto" id="theme-preview-note" style="font-size:11.5px;">
+            Edits preview live on this page only; nothing is stored until you save.
+          </span>
+        </div>
+      </form>
+    </div>
+
+    <div class="fw-card mt-3">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>What a theme can and cannot repaint</span>
+      </div>
+      <div class="fw-card-body" style="font-size:12.5px;">
+        <p class="mb-2">
+          A theme sets the {{ theme_defaults|length }} design tokens the stylesheet exposes — the chrome, surfaces,
+          accent, text, status colours, spacing and font stack. The token list is generated from the stylesheet
+          itself, so it cannot fall out of step with it.
+        </p>
+        <p class="mb-0 text-muted">
+          <strong>Known gap:</strong> status badges and a handful of decorative tints still carry literal colours
+          in the stylesheet, so a full dark theme is not offered yet — a dark canvas would leave those elements
+          light. Light-canvas palettes are fully supported.
+        </p>
+      </div>
+    </div>
+
+  </div>
+
+  <script type="application/json" id="theme-data">{{ themes|tojson }}</script>
+  <script nonce="{{ csp_nonce }}">
+  (function () {
+    var form = document.getElementById('theme-form');
+    if (!form) { return; }
+    var dataEl = document.getElementById('theme-data');
+    var THEMES = [];
+    try { THEMES = JSON.parse(dataEl.textContent || '[]'); } catch (e) { THEMES = []; }
+
+    var inputs = Array.prototype.slice.call(form.querySelectorAll('[data-theme-token]'));
+    var errBox = document.getElementById('theme-errors');
+    var contrastBox = document.getElementById('theme-contrast');
+    var label = document.getElementById('theme-editing-label');
+    var stopBtn = document.getElementById('theme-preview-stop');
+    var root = document.documentElement;
+    var previewing = false;
+
+    function tokenValues() {
+      var out = {};
+      inputs.forEach(function (el) {
+        var v = (el.value || '').trim();
+        if (v) { out[el.getAttribute('data-theme-token')] = v; }
+      });
+      return out;
+    }
+
+    // Live preview writes the custom properties straight onto <html>. It is
+    // deliberately page-local and reverted on navigation: a preview that
+    // followed the operator around would be indistinguishable from a theme
+    // that had actually been saved.
+    function applyPreview() {
+      inputs.forEach(function (el) {
+        var name = el.getAttribute('data-theme-token');
+        var v = (el.value || '').trim();
+        if (v && v !== el.getAttribute('data-theme-default')) {
+          root.style.setProperty('--fw-' + name, v);
+        } else {
+          root.style.removeProperty('--fw-' + name);
+        }
+      });
+      previewing = true;
+      stopBtn.style.display = '';
+    }
+
+    function clearPreview() {
+      inputs.forEach(function (el) {
+        root.style.removeProperty('--fw-' + el.getAttribute('data-theme-token'));
+      });
+      previewing = false;
+      stopBtn.style.display = 'none';
+    }
+
+    stopBtn.addEventListener('click', clearPreview);
+    document.addEventListener('turbo:before-visit', function () {
+      if (previewing) { clearPreview(); }
+    });
+
+    function syncSwatch(el) {
+      var name = el.getAttribute('data-theme-token');
+      var sw = form.querySelector('[data-theme-swatch="' + name + '"]');
+      if (!sw) { return; }
+      var v = (el.value || '').trim();
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) { sw.value = v; }
+    }
+
+    // Server-side validation, on a debounce. The preview the operator sees is
+    // the CSS the server would emit — a browser-assembled preview could show a
+    // value the validator later refuses.
+    var timer = null;
+    function validate() {
+      clearTimeout(timer);
+      timer = setTimeout(function () {
+        fetch(form.getAttribute('data-preview-url'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': form.querySelector('[name=csrf_token]').value
+          },
+          body: JSON.stringify({ tokens: tokenValues() })
+        }).then(function (r) { return r.json(); }).then(function (d) {
+          if (d.errors && d.errors.length) {
+            errBox.style.display = '';
+            errBox.textContent = d.errors.join(' · ');
+          } else {
+            errBox.style.display = 'none';
+          }
+          renderContrast(d.contrast || []);
+        }).catch(function () { /* validation is advisory; saving re-checks */ });
+      }, 350);
+    }
+
+    function renderContrast(rows) {
+      var confirmBox = document.getElementById('theme-confirm');
+      if (!rows.length) {
+        contrastBox.style.display = 'none';
+        contrastBox.innerHTML = '';
+        return;
+      }
+      var worst = rows[0];
+      var isFail = rows.some(function (r) { return r.level === 'fail'; });
+      var html = '<div class="alert py-2 px-3 ' + (isFail ? 'alert-danger' : 'alert-warning') +
+                 '" style="font-size:12.5px;"><strong>Contrast</strong>';
+      rows.forEach(function (r) {
+        html += '<div>' + r.group + ' &middot; ' + r.label + ' on ' + r.against +
+                ' &mdash; <strong>' + r.ratio + ':1</strong>' +
+                (r.level === 'fail' ? ' (unreadable)' : ' (below AA 4.5:1)') + '</div>';
+      });
+      html += '</div>';
+      contrastBox.innerHTML = html;
+      contrastBox.style.display = '';
+      if (confirmBox) { confirmBox.parentElement.style.display = isFail ? '' : 'none'; }
+      void worst;
+    }
+
+    inputs.forEach(function (el) {
+      el.addEventListener('input', function () {
+        syncSwatch(el);
+        applyPreview();
+        validate();
+      });
+    });
+
+    form.querySelectorAll('[data-theme-swatch]').forEach(function (sw) {
+      sw.addEventListener('input', function () {
+        var name = sw.getAttribute('data-theme-swatch');
+        var target = form.querySelector('[data-theme-token="' + name + '"]');
+        if (target) {
+          target.value = sw.value;
+          applyPreview();
+          validate();
+        }
+      });
+    });
+
+    form.querySelectorAll('[data-theme-revert]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var name = btn.getAttribute('data-theme-revert');
+        var target = form.querySelector('[data-theme-token="' + name + '"]');
+        if (target) {
+          target.value = target.getAttribute('data-theme-default');
+          syncSwatch(target);
+          applyPreview();
+          validate();
+        }
+      });
+    });
+
+    function loadTheme(t) {
+      document.getElementById('theme-name').value = t ? t.name : '';
+      document.getElementById('theme-desc').value = t ? t.description : '';
+      inputs.forEach(function (el) {
+        var name = el.getAttribute('data-theme-token');
+        var over = t && t.tokens ? t.tokens[name] : null;
+        el.value = over || el.getAttribute('data-theme-default');
+        syncSwatch(el);
+      });
+      form.action = t
+        ? form.getAttribute('data-create-url') + '/' + t.id
+        : form.getAttribute('data-create-url');
+      label.textContent = t ? ('Editing: ' + t.name) : 'New theme';
+      applyPreview();
+      validate();
+    }
+
+    document.querySelectorAll('[data-theme-edit]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var id = parseInt(btn.getAttribute('data-theme-edit'), 10);
+        var t = THEMES.filter(function (x) { return x.id === id; })[0];
+        if (t) {
+          loadTheme(t);
+          form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+
+    document.getElementById('theme-new').addEventListener('click', function () {
+      loadTheme(null);
+      clearPreview();
+    });
+
+    document.querySelectorAll('[data-theme-delete]').forEach(function (f) {
+      f.addEventListener('submit', function (ev) {
+        if (!window.confirm('Delete the theme "' + f.getAttribute('data-theme-delete') + '"?')) {
+          ev.preventDefault();
+        }
+      });
+    });
+
+    document.querySelectorAll('[data-theme-jump]').forEach(function (a) {
+      a.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        var btn = document.querySelector('[data-bs-target="' + a.getAttribute('data-theme-jump') + '"]');
+        if (btn && window.bootstrap) { new bootstrap.Tab(btn).show(); }
+      });
+    });
+
+    // Saving must send what the server will store, not a half-previewed page.
+    form.addEventListener('submit', function () { clearPreview(); });
+  })();
+  </script>
+  {% endif %}
 
   <!-- FAZ MENU VISIBILITY TAB -->
   <div class="tab-pane fade" id="tab-fazmenu">

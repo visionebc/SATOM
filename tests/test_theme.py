@@ -550,3 +550,62 @@ def test_the_gradient_pattern_alone_rejects_every_escape():
     for bad in HOSTILE_GRADIENTS:
         assert pat.match(bad) is None, "gradient pattern accepted %r" % bad
     assert pat.match(ts.DEFAULTS["gradient-brand"]) is not None
+
+
+# -- the topbar brand is the PRODUCT's mark, never the ADOM's ---------------
+# 2026-08-03: switching away from the one theme that carried an uploaded logo
+# made the SATOM emblem vanish from the header and put the ADOM globe in its
+# place - the same globe already drawn 12px to the right inside the "ADOM:
+# Global" pill. base.html fell back to `product.mark` (the ADOM's icon) while
+# the login page and the ADOM chooser fell back to the shipped product mark, so
+# the header meant one thing under a theme with a logo asset and another thing
+# without one. The brand slot is the PRODUCT's identity; the ADOM has its own
+# pill, its own sidebar caption and its own switcher entries.
+BRAND_FALLBACK = "img/satom-mark.png"
+
+
+def _brand_templates():
+    """Templates Flask can actually render - editor backups are not surfaces."""
+    import pathlib
+    root = pathlib.Path(REPO) / "app" / "templates"
+    return [p for p in root.rglob("*.html")
+            if ".bak" not in p.name and ".pre-" not in p.name]
+
+
+def test_every_brand_surface_falls_back_to_the_same_product_mark():
+    """One theme logo, one fallback, three surfaces.
+
+    If the fallbacks differ, the mark the operator sees depends on whether the
+    active theme happens to carry an uploaded asset - which is a rebrand that
+    fires on a colour change.
+    """
+    offenders = []
+    for p in _brand_templates():
+        for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+            if "theme_logo_url" not in line or "favicon" in line:
+                continue
+            if BRAND_FALLBACK not in line:
+                offenders.append("%s:%d %s" % (p.name, n, line.strip()))
+    assert offenders == [], (
+        "these brand surfaces fall back to something other than %s: %s"
+        % (BRAND_FALLBACK, offenders))
+
+
+@pytest.mark.parametrize("adom", ["global", "fortiweb", "fortiadc",
+                                  "fortianalyzer"])
+def test_topbar_brand_is_never_an_adom_mark(app, client, adom):
+    """Rendered guard, per ADOM.
+
+    A fresh install seeds four built-in themes and NONE of them carries a logo
+    asset, so this is the path every install takes until someone uploads one -
+    the path that was serving the wrong mark.
+    """
+    login(client, admin_user_id(app), product=adom)
+    html = client.get("/", follow_redirects=True).get_data(as_text=True)
+    m = re.search(r'class="fw-topbar-brand".*?<img[^>]*src="([^"]+)"',
+                  html, re.S)
+    assert m, "topbar brand image not rendered in the %s ADOM" % adom
+    src = m.group(1)
+    assert "-mark.svg" not in src, (
+        "the %s ADOM icon is standing in for the product logo: %s" % (adom, src))
+    assert src.endswith(BRAND_FALLBACK) or "/appearance/asset/" in src, src

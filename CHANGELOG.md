@@ -7,6 +7,37 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **Operator CLI: `show tree` (alias `tree`) prints the whole command surface**
+  — every command as a tree, with `*` for root-required and `!` for
+  destructive, plus `--commands` (flat, fixed-column, `awk`-friendly),
+  `--depth N`, `--root`, `--danger` and `--json`. It renders the LIVE registry,
+  so it cannot drift from what the build supports; a test fails the suite if
+  any runnable command is missing from it.
+- **Output policy made explicit**: `--color` / `--no-color` / `--ascii` /
+  `--width N`, plus `NO_COLOR` and `SATOM_CLI_COLOR`. The contract is
+  *decoration is for a TTY, content is identical either way* — through a pipe
+  there are no escape sequences and nothing is truncated.
+
+### Fixed
+- **The CLI could crash while printing.** An em dash in a title raised
+  `UnicodeEncodeError` on a stream with an ASCII encoding (a serial console,
+  `PYTHONIOENCODING=ascii`), taking the whole command down. Fixed in two
+  layers: a fold table for the typography this code emits, and
+  `errors="replace"` on stdout for characters it cannot predict — a device
+  name, a certificate subject, a journal line.
+- Glyphs now follow the stream's **encoding**, so box-drawing degrades to
+  `|-` instead of becoming unprintable.
+- `show tree --commands` used a single separator space, which fused the path,
+  the mark and the help into one unsplittable field on the widest row.
+- Command listings dimmed both the command and its help, so nothing stood out;
+  the key column's emphasis is now declared per section by the caller.
+- Body lines that were meant to be blank carried two spaces of trailing
+  whitespace into every ticket they were pasted into.
+- The `?` listing ran its footer straight into the command table.
+- `Ctrl-C` at the interactive prompt now abandons the line, like a shell,
+  instead of leaving the console.
+
+### Added
 - **Operator CLI, second pass: the automated half now has a console.** 39 more
   commands, organised around the failure modes this product has actually had
   rather than around the code layout. Reads for the layer that has no UI of its

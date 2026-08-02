@@ -7,6 +7,51 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Fixed
+- **A cluster on openSUSE never replicated files at all, and five more defects
+  found by installing a real HA pair.** The first round fixed what stopped a
+  single node from coming up; installing a *second* node exposed the rest.
+
+  - **The cluster path needed Python before Python was installed.** Pasting a
+    join key ran a `python3` one-liner in step 1; the interpreter arrives in
+    step 2. On Debian this works by accident because the base image ships a
+    `python3` symlink. On openSUSE a secondary install died with exit 127 the
+    moment the operator pasted the key. The key is now parsed with an `awk`
+    extractor and no Python at all — used on every distribution rather than as
+    a fallback, because a second path that only runs on one family is untested
+    code. Since the parser is ours, the shape of both PEMs is now verified: a
+    silently wrong parse would corrupt the internal CA and stay invisible until
+    the first certificate issuance weeks later.
+  - **Installing a package is not running a service.** In cluster mode the
+    installer added `openssh` and stopped. Debian's package enables and starts
+    `sshd` by policy; openSUSE leaves it disabled, nothing listens on 22, and
+    the standby can never pull `data/`. It is now enabled on *both* cluster
+    nodes — after a promote it is the old standby that has to serve the pull.
+  - **A failed host-key scan was swallowed.** `ssh-keyscan` ended in `|| true`,
+    so an empty result looked exactly like a good one. With
+    `StrictHostKeyChecking=yes` — TOFU was removed on purpose — that breaks
+    file replication permanently while the installer still reports success.
+    The result is now checked, and warns with the remedy rather than dying:
+    PostgreSQL streaming replication rides its own TLS channel and is fine.
+  - **The standby's datasync unit failed and systemd reported success.** Peer
+    discovery ran a bare `python3`; with no such binary `PEER` came back empty
+    and the next line treated that as "no peer configured" and exited zero. The
+    role probe twenty lines above already used the application's own venv
+    interpreter *and* already failed loudly; peer discovery did neither. It now
+    does both, and distinguishes "could not evaluate" from "nothing to sync".
+    `tests/test_deploy_scripts.py` is the structural guard: no deploy script may
+    call a distribution Python, none may call `runuser` without branching on
+    `id -u`, and the peer probe must keep both exits.
+  - **The installer left root-owned files in a tree owned by the service
+    account** — `data/logs/`, `data/ha_nodes.json`, `data/acme/`, `data/jobs/`
+    and the whole of `pki/`, including the internal CA key. The only recursive
+    ownership pass runs before those are written. This is not cosmetic: the
+    standby rsyncs `data/` as the service account and a root-owned directory
+    fails with permission denied even when authentication is fine (this already
+    happened in production with `data/acme`), the application has not run as
+    root since the deprivilege so it cannot write `pki/`, and the self-update
+    runner derives the `User=` drop-in from the owner of the tree. A final
+    sweep now runs just before services start.
+
 - **Seven installer defects found by installing on a distribution nobody had
   tried.** The `zypper` code path had been written but never executed against a
   real openSUSE machine. Three of the seven were not SUSE-specific at all and

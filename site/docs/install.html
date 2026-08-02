@@ -341,8 +341,10 @@ salvedades que NO son de SATOM sino de la imagen base:</p>
   deje ahí se parsea duplicado) y trae un <code>server</code> propio en el puerto 80 que
   choca con el <code>default_server</code> de SATOM. El instalador elige <code>vhosts.d</code>
   automáticamente y neutraliza el bloque de fábrica.</li>
-<li><strong><code>sshd</code> no viene activo</strong> en el template LXC de openSUSE. Si la máquina se
-  administra por SSH hay que habilitarlo antes.</li>
+<li><strong><code>sshd</code> no viene activo</strong> en el template LXC de openSUSE. El instalador lo
+  habilita él mismo en modo <strong>cluster</strong> (el standby hace <em>pull</em> de <code>data/</code> por
+  SSH y sin eso la réplica de ficheros no existe); en <strong>standalone</strong> no lo
+  toca, así que si la máquina se administra por SSH hay que habilitarlo a mano.</li>
 </ul>
 <p><strong>Cuenta de servicio:</strong> openSUSE trae <code>USERGROUPS_ENAB no</code> en <code>login.defs</code>, así
 que un <code>useradd --system</code> sin más dejaría la cuenta en el grupo compartido

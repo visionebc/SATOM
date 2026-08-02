@@ -74,10 +74,61 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="fixed">Fixed</h3>
 <ul>
-<li><strong>Seven installer defects found by installing on a distribution nobody had
+<li>
+<p><strong>A cluster on openSUSE never replicated files at all, and five more defects
+  found by installing a real HA pair.</strong> The first round fixed what stopped a
+  single node from coming up; installing a <em>second</em> node exposed the rest.</p>
+</li>
+<li>
+<p><strong>The cluster path needed Python before Python was installed.</strong> Pasting a
+    join key ran a <code>python3</code> one-liner in step 1; the interpreter arrives in
+    step 2. On Debian this works by accident because the base image ships a
+    <code>python3</code> symlink. On openSUSE a secondary install died with exit 127 the
+    moment the operator pasted the key. The key is now parsed with an <code>awk</code>
+    extractor and no Python at all — used on every distribution rather than as
+    a fallback, because a second path that only runs on one family is untested
+    code. Since the parser is ours, the shape of both PEMs is now verified: a
+    silently wrong parse would corrupt the internal CA and stay invisible until
+    the first certificate issuance weeks later.</p>
+</li>
+<li><strong>Installing a package is not running a service.</strong> In cluster mode the
+    installer added <code>openssh</code> and stopped. Debian's package enables and starts
+    <code>sshd</code> by policy; openSUSE leaves it disabled, nothing listens on 22, and
+    the standby can never pull <code>data/</code>. It is now enabled on <em>both</em> cluster
+    nodes — after a promote it is the old standby that has to serve the pull.</li>
+<li><strong>A failed host-key scan was swallowed.</strong> <code>ssh-keyscan</code> ended in <code>|| true</code>,
+    so an empty result looked exactly like a good one. With
+    <code>StrictHostKeyChecking=yes</code> — TOFU was removed on purpose — that breaks
+    file replication permanently while the installer still reports success.
+    The result is now checked, and warns with the remedy rather than dying:
+    PostgreSQL streaming replication rides its own TLS channel and is fine.</li>
+<li><strong>The standby's datasync unit failed and systemd reported success.</strong> Peer
+    discovery ran a bare <code>python3</code>; with no such binary <code>PEER</code> came back empty
+    and the next line treated that as "no peer configured" and exited zero. The
+    role probe twenty lines above already used the application's own venv
+    interpreter <em>and</em> already failed loudly; peer discovery did neither. It now
+    does both, and distinguishes "could not evaluate" from "nothing to sync".
+    <code>tests/test_deploy_scripts.py</code> is the structural guard: no deploy script may
+    call a distribution Python, none may call <code>runuser</code> without branching on
+    <code>id -u</code>, and the peer probe must keep both exits.</li>
+<li>
+<p><strong>The installer left root-owned files in a tree owned by the service
+    account</strong> — <code>data/logs/</code>, <code>data/ha_nodes.json</code>, <code>data/acme/</code>, <code>data/jobs/</code>
+    and the whole of <code>pki/</code>, including the internal CA key. The only recursive
+    ownership pass runs before those are written. This is not cosmetic: the
+    standby rsyncs <code>data/</code> as the service account and a root-owned directory
+    fails with permission denied even when authentication is fine (this already
+    happened in production with <code>data/acme</code>), the application has not run as
+    root since the deprivilege so it cannot write <code>pki/</code>, and the self-update
+    runner derives the <code>User=</code> drop-in from the owner of the tree. A final
+    sweep now runs just before services start.</p>
+</li>
+<li>
+<p><strong>Seven installer defects found by installing on a distribution nobody had
   tried.</strong> The <code>zypper</code> code path had been written but never executed against a
   real openSUSE machine. Three of the seven were not SUSE-specific at all and
-  affected <strong>every</strong> fresh installation:</li>
+  affected <strong>every</strong> fresh installation:</p>
+</li>
 </ul>
 <ol>
 <li><strong><code>.env</code> was left <code>600 root:root</code>.</strong> Everything that runs as the service

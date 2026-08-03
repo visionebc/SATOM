@@ -6,6 +6,15 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-08-03
+
+Bundle rebuild release. The v1.3 offline bundles were built **before** the
+fixes below landed, so they ship the previous `install-satom.sh` whose default
+clone URL pointed at a private Git server — an unattended install hangs on an
+impossible clone. 1.3.1 rebuilds all three bundles (Debian 12, RHEL 9,
+openSUSE 15) from this tree and publishes them alongside the changes below.
+
+
 ### The mirror published the network map and the team's names (2026-08-03)
 
 - **The public mirror carried the internal network map and 25 commit

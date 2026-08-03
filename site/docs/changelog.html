@@ -76,6 +76,43 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public, open-source
 project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="the-installer-had-never-completed-on-opensuse-or-rhel-2026-08-03">The installer had never completed on openSUSE or RHEL (2026-08-03)</h3>
+<p>Found by running the published v1.3.1 installer on a blank openSUSE Leap 15.6
+machine, as an operator would. Details and the rules they encode:
+<a href="safeguards.html">safeguards</a> section 10b.</p>
+<ul>
+<li><strong><code>pg_hba</code> was written and never reloaded on standalone installs.</strong> The only
+  <code>systemctl restart postgresql</code> sat inside the <code>primary</code> branch. PostgreSQL
+  evaluates <code>pg_hba</code> from memory, so the server kept applying the distribution
+  default. Debian's default for <code>host 127.0.0.1</code> is <code>scram-sha-256</code> and hides
+  this; openSUSE and RHEL default to <code>ident</code>, which rejects the application
+  account before it ever looks at the password. <code>flask create-db</code> died with
+  <code>FATAL: Ident authentication failed for user "satom"</code>. The reload now runs
+  for every mode, and the credential is verified immediately afterwards.</li>
+<li><strong>The installer exited 1 and printed nothing.</strong> <code>flask create-db</code>, the block
+  that sets the admin password, and <code>systemctl enable --now satom.service</code> had
+  no <code>|| die</code>, so under <code>set -e</code> they aborted silently. The operator's last
+  line was <code>pg_hba: regla local scram</code>; the cause was a traceback in a
+  different file. All three now fail loudly and name the next place to look.</li>
+<li><strong>The operator CLI installed dead outside Debian.</strong> The launcher's
+  <code>#!/usr/bin/env python3</code> does not resolve on openSUSE Leap, which installs
+  <code>python311</code> and creates no <code>python3</code> link. <code>install-cli.sh</code> now stamps the
+  shebang with a verified system interpreter (never the venv, never anything
+  inside the application tree) and refuses to install a CLI that cannot run.</li>
+<li><strong>A fresh node failed its own nginx check.</strong> The generated TLS vhost did not
+  claim <code>default_server</code> — the production configuration does, because someone
+  added it after the console became unreachable by hostname once a second vhost
+  appeared. The installer now emits it and backs it out only if nginx reports a
+  genuine duplicate.</li>
+<li><strong><code>satom diagnose nginx</code> was blind on openSUSE.</strong> It scanned
+  <code>sites-enabled</code> and <code>conf.d</code>, but the installer writes to <code>vhosts.d</code> on that
+  family, so it read no files and reported <code>default_server holder NONE</code> for a
+  correct configuration. It now scans every directory the installer may use.</li>
+<li><strong>Nothing told the operator to arm the protections.</strong> No <code>ScheduledAction</code> is
+  seeded, by design. The closing banner now says so and names
+  <code>satom execute seed actions</code>, instead of leaving a node with no database
+  bundle, no source-of-truth refresh and no repository bundle.</li>
+</ul>
 <h2 id="131-2026-08-03">[1.3.1] - 2026-08-03</h2>
 <p>Bundle rebuild release. The v1.3 offline bundles were built <strong>before</strong> the
 fixes below landed, so they ship the previous <code>install-satom.sh</code> whose default

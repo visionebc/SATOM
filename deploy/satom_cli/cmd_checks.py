@@ -347,10 +347,23 @@ def nginx(ctx, args):
                "validates first and refuses, which is the behaviour you want.")
         return r
 
-    site_dir = Path("/etc/nginx/sites-enabled")
-    confs = sorted(site_dir.glob("*")) if site_dir.is_dir() else []
-    if not confs:
-        confs = sorted(Path("/etc/nginx/conf.d").glob("*.conf"))
+    # [SATOM-NGINX-DIRS] install-satom.sh picks the vhost directory by family:
+    # sites-enabled (Debian/Ubuntu), vhosts.d (openSUSE/SLES) or conf.d
+    # (RHEL/Arch). This check only knew the first and third, so on openSUSE it
+    # read ZERO files and reported "listeners (none found)" plus
+    # "default_server holder NONE" for a node whose vhost was correct — a FAIL
+    # that no configuration change could ever clear, on the check whose entire
+    # job is telling you the console is about to become unreachable. Scan every
+    # directory the installer may have used; a vhost in any of them is real.
+    confs = []
+    for _d, _pat in (
+        ("/etc/nginx/sites-enabled", "*"),
+        ("/etc/nginx/vhosts.d", "*.conf"),
+        ("/etc/nginx/conf.d", "*.conf"),
+    ):
+        _p = Path(_d)
+        if _p.is_dir():
+            confs.extend(sorted(x for x in _p.glob(_pat) if x.is_file()))
     default_443, listens, findings = [], [], []
     for c in confs:
         try:

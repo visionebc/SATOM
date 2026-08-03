@@ -42,7 +42,54 @@ rm -rf "${LIB_DIR}.old"
 mv "$STAGE" "$LIB_DIR"
 rm -rf "${LIB_DIR}.old"
 
-install -o root -g root -m 0755 "$LAUNCHER" "$BIN"
+# ---- Interprete del lanzador --------------------------------------------
+# [SATOM-CLI-SHEBANG] El lanzador declara '#!/usr/bin/env python3'. Eso NO es
+# portable y dejaba el CLI instalado y MUERTO fuera de Debian:
+#   * openSUSE Leap 15.6 instala 'python311' y NO crea el enlace 'python3'
+#     -> /usr/bin/env: 'python3': No such file or directory  (exit 127)
+#   * RHEL 9 trae un 'python3' que es 3.9, por debajo del minimo del CLI.
+# El instalador degradaba el fallo a una advertencia y aun asi imprimia
+# "instalacion COMPLETA". El CLI de operador existe precisamente para
+# diagnosticar un nodo sin ruta a la documentacion: no puede depender de un
+# enlace que la distro no garantiza.
+#
+# NO se usa el python del venv A PROPOSITO: 'satom diagnose python' tiene que
+# poder ejecutarse cuando el venv esta roto, que es justo el caso que lo
+# justifica. Y nunca un interprete dentro del arbol de la app: el objetivo de
+# sudo debe ser codigo que la cuenta de servicio no pueda reescribir.
+pick_cli_python() {
+  local c v
+  for c in /usr/bin/python3 /usr/bin/python3.13 /usr/bin/python3.12 \
+           /usr/bin/python3.11 /usr/bin/python3.10 \
+           /usr/local/bin/python3.13 /usr/local/bin/python3.12 \
+           /usr/local/bin/python3.11 /usr/local/bin/python3.10; do
+    [ -x "$c" ] || continue
+    case "$c" in "${APP_DIR}"/*) continue ;; esac
+    v="$("$c" -c 'import sys;print("%d.%d" % sys.version_info[:2])' 2>/dev/null)" || continue
+    case "$v" in
+      3.1[0-9]|3.[2-9][0-9]) echo "$c"; return 0 ;;
+    esac
+  done
+  return 1
+}
+
+CLI_PY="$(pick_cli_python)" || {
+  echo "install-cli.sh: no hay un Python >= 3.10 del sistema para el lanzador." >&2
+  echo "  El CLI de operador NO queda instalado. Instala python3.11 (o superior)" >&2
+  echo "  y repite con: bash ${APP_DIR}/deploy/install-cli.sh" >&2
+  exit 1
+}
+
+head -n1 "$LAUNCHER" | grep -q '^#!' || {
+  echo "install-cli.sh: ${LAUNCHER} no empieza por shebang — no lo sello a ciegas" >&2
+  exit 1
+}
+
+# Sellar SOLO la primera linea. El resto del lanzador viaja intacto.
+STAGEBIN="$(mktemp)"
+{ echo "#!${CLI_PY}"; tail -n +2 "$LAUNCHER"; } > "$STAGEBIN"
+install -o root -g root -m 0755 "$STAGEBIN" "$BIN"
+rm -f "$STAGEBIN"
 
 # Verify rather than assume: a wrong owner or mode here is the whole threat.
 fail=0

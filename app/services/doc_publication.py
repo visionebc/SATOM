@@ -52,6 +52,7 @@ app is broken is worth nothing.
 """
 from __future__ import annotations
 
+import json
 import pathlib
 import re
 
@@ -149,21 +150,65 @@ GROUPS: list[tuple[str, str, list[str]]] = [
 # ---------------------------------------------------------------------------
 # Redaction — ORDER MATTERS: specific identifiers before the generic patterns.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Site-specific names live OUTSIDE the source tree.
+#
+# A rule table that names the estate it protects is itself the disclosure. And
+# it hid behind its own escaping. A rule written `\bNAME\b` contains, as
+# TEXT, the letter b immediately before NAME -- so a \b-anchored redaction
+# rule cannot match its own escaped form, and a \b-anchored scanner cannot
+# flag it either. Both agreed, both were wrong, and the names rode out to the
+# public mirror inside the very module that exists to stop them.
+#
+# What stays in code is generic and always fires: address ranges and personal
+# e-mail. What identifies THIS deployment -- node names, hypervisors, the
+# backup host, the management domain -- is read from an untracked overlay next
+# to the application. Absent (a published mirror, a fresh install), the generic
+# rules still apply, and there is nothing site-specific left to redact anyway.
+#
+# The internal suite asserts the overlay is present, so a node that loses it
+# fails loudly instead of quietly redacting less.
+OVERLAY_PATH = ROOT_DIR / "publication-rules.local.json"
+
+
+def _load_overlay() -> dict:
+    try:
+        return json.loads(OVERLAY_PATH.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+_OVERLAY = _load_overlay()
+
+
+def _overlay_rules(key: str) -> list[tuple[re.Pattern, str]]:
+    out = []
+    for entry in _OVERLAY.get(key, []):
+        try:
+            out.append((re.compile(entry["pattern"]), entry["replacement"]))
+        except (KeyError, re.error):
+            continue
+    return out
+
+
+def _overlay_forbidden() -> list[tuple[str, re.Pattern]]:
+    out = []
+    for entry in _OVERLAY.get("forbidden", []):
+        try:
+            out.append((entry["name"], re.compile(entry["pattern"])))
+        except (KeyError, re.error):
+            continue
+    return out
+
+
 REDACTIONS: list[tuple[re.Pattern, str]] = [
-    (re.compile(r"\bsatom-node-1\b|\bsatom-node-1\b"), "{primary-node}"),
-    (re.compile(r"\bsatom-node-2\b|\bsatom-node-2\b"), "{standby-node}"),
     # Trailing [a-z0-9]* not + : a bare prefix ("satom-node") is still an
     # identifier, and requiring a suffix is the same anchoring mistake the
     # hostname rule made with wildcards. Caught on a LIVE served page.
-    (re.compile(r"\bsatom-(?:mag|web|suse)-[a-z0-9]*"), "{node}"),
-    (re.compile(r"\bbackup-server(?:-[a-z0-9]+)?\b"), "{backup-server}"),
-    (re.compile(r"\bfortiweb08\b|\bfaz01\b|\bfw[67]\b"), "{device}"),
-    (re.compile(r"\bprt0\d\b"), "{hypervisor}"),
     # Anchored on the DOMAIN, not the leading label: real documentation writes
     # wildcard certs (*.example.net) and brace expansions (satom{,-2}.example.net),
     # neither of which starts with an alphanumeric. A label-anchored pattern
     # matched neither and the scanner caught all four occurrences.
-    (re.compile(r"[A-Za-z0-9*{},._-]*\.visionebc\.mx\b"), "{host}.example.net"),
     # "192.0.2.248/.249" — a shorthand pair. The generic IP rule below rewrites
     # the first and leaves "/.249", which still discloses an octet.
     (re.compile(r"\b10\.\d{1,3}\.\d{1,3}\.\d{1,3}/\.\d{1,3}\b"), "{ip}/{ip}"),
@@ -172,19 +217,14 @@ REDACTIONS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\b10\.\d{1,3}\.\d{1,3}\.\d{1,3}\b"), "{ip}"),
     (re.compile(r"\b192\.168\.\d{1,3}\.\d{1,3}\b"), "{ip}"),
     (re.compile(r"\b172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}\b"), "{ip}"),
-]
+] + _overlay_rules("redactions")
 
 # Re-checked against the OUTPUT. A hit aborts the site build and makes the
 # application refuse to serve the page.
 FORBIDDEN: list[tuple[str, re.Pattern]] = [
     ("rfc1918 address", re.compile(r"\b(?:10\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b")),
-    ("internal hostname", re.compile(r"\.visionebc\.mx\b")),
-    ("hypervisor name", re.compile(r"\bprt0\d\b")),
-    ("node name", re.compile(r"\bsatom-(?:mag|web|suse)-[a-z0-9]*")),
-    ("backup server name", re.compile(r"\bbackup-server\b")),
-    ("device instance name", re.compile(r"\bfortiweb08\b|\bfaz01\b")),
     ("personal e-mail", re.compile(r"[A-Za-z0-9._%+-]+@(?:gmail|hotmail|outlook|yahoo)\.")),
-]
+] + _overlay_forbidden()
 
 # The published renderer does NOT use nl2br: these files are hard-wrapped at
 # ~90 columns and nl2br turns every wrap into a visible line break.

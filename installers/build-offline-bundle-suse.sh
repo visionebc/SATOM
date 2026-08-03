@@ -46,8 +46,17 @@ STAGE="$OUT/satom-installer"
 FAKEROOT="${FAKEROOT:-/tmp/satom-node}"
 
 # Debe coincidir con REQUIRED_PKGS (zypper) del instalador + SSH_PKGS (cluster).
+# [SATOM-ABI-OFFLINE] Las librerias del sistema contra las que se compila
+# el interprete van EXPLICITAS. Hasta ahora llegaban al bundle solo porque
+# la resolucion contra una raiz vacia las arrastraba como dependencia de
+# python3.11 — es decir, por suerte. Sin ellas, una imagen base con
+# libexpat viejo no puede completar la instalacion offline: el interprete
+# falla al importar pyexpat con 'undefined symbol' y no hay red para
+# repararlo. install-satom.sh las instala desde aqui cuando detecta el
+# desajuste; este listado garantiza que estan.
 PKGS=(python311 python311-pip postgresql-server postgresql nginx rsync
-      openssl curl ca-certificates sudo openssh)
+      openssl curl ca-certificates sudo openssh
+      libexpat1 libopenssl3 libsqlite3-0 libz1)
 
 echo "==> Bundle offline SATOM v${VERSION} — familia SUSE (leap 15, x86_64)"
 command -v zypper >/dev/null || { echo "Necesita familia SUSE/zypper (usa opensuse/leap:15.6)"; exit 1; }

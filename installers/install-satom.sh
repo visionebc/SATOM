@@ -900,6 +900,51 @@ pick_python || die "No hay un Python >= 3.10 disponible tras la instalación de 
 # "undefined symbol" y la instalación muere en `ensurepip`, DESPUÉS de haber
 # clonado el repo y creado la cuenta de servicio. Se comprueba aquí, se intenta
 # remediar una vez, y si no se puede se muere nombrando el módulo y el comando.
+# [SATOM-ABI-OFFLINE] Fuerza la actualizacion de las librerias del sistema
+# contra las que se compilo el interprete, USANDO EL BUNDLE como unico origen.
+# Se llama solo cuando ya sabemos que el interprete esta roto: no se toca
+# libexpat/libssl de una maquina cuyo Python funciona.
+bundle_upgrade_abi_libs() {
+    local rc=0
+    if [ -d "$BUNDLE_DIR/rpms-suse" ]; then
+        local _zr; _zr="$(mktemp -d)"
+        mkdir -p "$_zr/repos.d" "$_zr/cache"
+        cat > "$_zr/repos.d/satom-bundle.repo" <<ZREPO
+[satom-bundle]
+name=SATOM offline bundle
+baseurl=dir://$BUNDLE_DIR/rpms-suse
+enabled=1
+autorefresh=0
+gpgcheck=0
+keeppackages=0
+ZREPO
+        # `install` y no `update`: update solo mira los repos dados de alta en
+        # el sistema. Con --force-resolution zypper acepta subir el paquete
+        # aunque la dependencia por soname ya estuviera satisfecha.
+        zypper --non-interactive --no-gpg-checks \
+               --reposd-dir "$_zr/repos.d" --cache-dir "$_zr/cache" \
+               install --no-recommends --auto-agree-with-licenses \
+               --force-resolution \
+               libexpat1 libopenssl3 libsqlite3-0 libz1 \
+               >>"$INSTALL_LOG" 2>&1 || rc=1
+        rm -rf "$_zr"
+    elif [ -d "$BUNDLE_DIR/rpms" ]; then
+        "$PKG_MGR" -y --disablerepo='*' \
+            --repofrompath="satom-bundle,file://$BUNDLE_DIR/rpms" \
+            --setopt=satom-bundle.gpgcheck=0 \
+            --setopt=install_weak_deps=False \
+            --allowerasing \
+            upgrade expat openssl-libs sqlite-libs zlib \
+            >>"$INSTALL_LOG" 2>&1 || rc=1
+    elif [ -d "$BUNDLE_DIR/debs" ]; then
+        # dpkg sobre el conjunto completo ya sube lo que este mas nuevo; se
+        # repite acotado por si la pasada general se salto algo.
+        dpkg -i --skip-same-version "$BUNDLE_DIR"/debs/*.deb \
+            >>"$INSTALL_LOG" 2>&1 || rc=1
+    fi
+    return $rc
+}
+
 PY_C_EXTENSIONS="pyexpat ssl sqlite3 ctypes zlib _hashlib"
 py_runtime_broken() {
     for m in $PY_C_EXTENSIONS; do
@@ -916,20 +961,41 @@ if [ -n "$BROKEN_MOD" ]; then
     # ejecutando: `bash -n` no puede verlo.
     BROKEN_ERR="$("$PYBIN" -c "import $BROKEN_MOD" 2>&1 | tail -1 || true)"
     warn "El intérprete $PYBIN no puede importar '$BROKEN_MOD': $BROKEN_ERR"
-    if [ "$OFFLINE" = "1" ]; then
-        die "Desajuste de ABI en el Python de la distro y estamos OFFLINE. Actualiza las librerías del sistema (p.ej. libexpat) desde el mismo medio y vuelve a lanzar."
-    fi
     # Las librerías que con más frecuencia quedan atrás respecto al intérprete.
-    say "Intentando actualizar las librerías del sistema que usa el intérprete…"
-    case "$PKG_MGR" in
-        zypper) zypper --non-interactive update libexpat1 libopenssl3 libsqlite3-0 libz1 >>"$INSTALL_LOG" 2>&1 || true ;;
-        dnf)    dnf -y upgrade expat openssl-libs sqlite-libs zlib          >>"$INSTALL_LOG" 2>&1 || true ;;
-        yum)    yum -y update expat openssl-libs sqlite zlib               >>"$INSTALL_LOG" 2>&1 || true ;;
-        apt)    apt-get install -y --only-upgrade libexpat1 libssl3 libsqlite3-0 zlib1g >>"$INSTALL_LOG" 2>&1 || true ;;
-        pacman) pacman -S --noconfirm expat openssl sqlite zlib            >>"$INSTALL_LOG" 2>&1 || true ;;
-    esac
+    if [ "$OFFLINE" = "1" ]; then
+        # [SATOM-ABI-OFFLINE] Antes esto era un `die` seco: "actualiza las
+        # librerías desde el mismo medio". Pero el medio ES el bundle, y el
+        # bundle YA TRAE la version buena — llega arrastrada como dependencia
+        # de python311 al resolver contra una raiz vacia. Lo que no ocurria era
+        # INSTALARLA: zypper ve la dependencia satisfecha por soname
+        # (libexpat.so.1 la provee tambien la 2.4.4 del template) y no
+        # actualiza un paquete que ya esta. Resultado: instalacion offline
+        # imposible en una imagen base con libexpat viejo, con el remedio
+        # tumbado dentro del propio tarball.
+        # Encontrado instalando de verdad en la plantilla LXC openSUSE 15.6
+        # (libexpat1 2.4.4, de 2024-09); el contenedor docker opensuse/leap
+        # con el que se valido el bundle traia 2.7.1 y por eso paso limpio:
+        # EL ENTORNO DE VALIDACION ERA MAS NUEVO QUE EL DE DESPLIEGUE.
+        say "Actualizando desde el bundle las librerías del sistema que usa el intérprete…"
+        bundle_upgrade_abi_libs || true
+    else
+        say "Intentando actualizar las librerías del sistema que usa el intérprete…"
+        case "$PKG_MGR" in
+            zypper) zypper --non-interactive update libexpat1 libopenssl3 libsqlite3-0 libz1 >>"$INSTALL_LOG" 2>&1 || true ;;
+            dnf)    dnf -y upgrade expat openssl-libs sqlite-libs zlib          >>"$INSTALL_LOG" 2>&1 || true ;;
+            yum)    yum -y update expat openssl-libs sqlite zlib               >>"$INSTALL_LOG" 2>&1 || true ;;
+            apt)    apt-get install -y --only-upgrade libexpat1 libssl3 libsqlite3-0 zlib1g >>"$INSTALL_LOG" 2>&1 || true ;;
+            pacman) pacman -S --noconfirm expat openssl sqlite zlib            >>"$INSTALL_LOG" 2>&1 || true ;;
+        esac
+    fi
     STILL="$(py_runtime_broken || true)"
     if [ -n "$STILL" ]; then
+        if [ "$OFFLINE" = "1" ]; then
+            die "El Python de la distro sigue roto tras actualizar desde el bundle: 'import $STILL' falla.
+       El bundle no trae una versión suficiente de las librerías del sistema para
+       esta imagen base. Actualiza el sistema desde tu propio medio y vuelve a
+       lanzar. No se ha modificado nada más. Detalle en $INSTALL_LOG"
+        fi
         die "El Python de la distro sigue roto: 'import $STILL' falla. Actualiza el sistema completo (p.ej. 'zypper update' / 'dnf upgrade') y vuelve a lanzar el instalador. No se ha modificado nada más."
     fi
     ok "Librerías del sistema actualizadas — el intérprete importa sus extensiones C"

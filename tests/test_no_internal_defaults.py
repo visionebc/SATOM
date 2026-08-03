@@ -137,3 +137,41 @@ def test_absent_corpus_skips_instead_of_failing(monkeypatch):
     monkeypatch.setattr(leak_samples.pathlib.Path, "read_text",
                         lambda self, **kw: (_ for _ in ()).throw(FileNotFoundError()))
     assert leak_samples.load() is None
+
+
+# --------------------------------------------------------------------------- #
+#  The redaction overlay                                                       #
+# --------------------------------------------------------------------------- #
+
+def test_the_rule_table_names_nothing_it_protects():
+    """The sanitiser was the last file naming the estate.
+
+    And it hid behind its own escaping: a rule written with a \\b anchor
+    contains, as TEXT, the letter b immediately before the name -- so neither a
+    \\b-anchored rewrite nor a \\b-anchored scanner could see it. Redaction and
+    detection were self-consistent and both wrong, which is why a round-trip
+    test alone never proved anything, and why the check below is on the source
+    text rather than on redact()/scan() agreeing with each other.
+
+    The invariant: every site-specific rule now lives in the untracked overlay,
+    so none of its pattern strings may appear in the module.
+    """
+    text = (ROOT / "app/services/doc_publication.py").read_text(encoding="utf-8")
+    overlay = pubdoc._load_overlay()
+    patterns = [e["pattern"] for e in overlay.get("redactions", [])] + \
+               [e["pattern"] for e in overlay.get("forbidden", [])]
+    assert patterns, "overlay carries no site rules -- is it present?"
+    for pattern in patterns:
+        assert pattern not in text, (
+            "doc_publication.py still carries the site rule %r -- it belongs "
+            "in publication-rules.local.json" % pattern)
+
+
+def test_overlay_is_present_on_a_real_deployment():
+    """Absent, redaction silently weakens AND the scanner stops flagging the
+    same class -- a fail-open pair. A node that loses this file has to say so.
+    """
+    assert pubdoc.OVERLAY_PATH.exists(), (
+        "publication-rules.local.json is missing: documentation redaction is "
+        "running with generic rules only. Restore it before publishing.")
+    assert pubdoc._load_overlay().get("redactions"), "overlay is empty"

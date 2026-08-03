@@ -42,3 +42,8 @@ dist/
 
 # node-local renewal journal (per-node truth; NEVER replicated)
 /state/
+
+# Names of THIS deployment for the documentation redactor. Untracked on
+# purpose: a rule table that names the estate it protects is itself the
+# disclosure it exists to prevent. See docs/safeguards.md 7e.
+publication-rules.local.json

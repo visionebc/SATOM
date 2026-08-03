@@ -421,6 +421,33 @@ find. Everything else in `tests/` is rewritten in place; where a fixture
 happened to sit in a real range for no reason, it moved to the documentation
 range instead — inert test data has no business naming a routable network.
 
+### The rule table was the last file naming the estate
+
+Everything above assumed the sanitiser itself was safe to publish. It was not,
+and it hid behind its own escaping.
+
+A rule written with a `\b` anchor contains, as TEXT, the letter `b`
+immediately before the name it matches. So a `\b`-anchored rewrite rule cannot
+match its own escaped form, and a `\b`-anchored scanner cannot flag it either.
+Both agreed; both were wrong; and the node names rode out to the public mirror
+inside the very module that exists to stop them. This is the same failure the
+round-trip test was already known not to catch: narrowing `redact()` and
+`scan()` together leaves them self-consistent and green.
+
+So the site-specific names left the source. What stays in code is generic and
+always fires -- address ranges and personal e-mail. What identifies THIS
+deployment (node names, hypervisors, the backup host, the management domain)
+is read from `publication-rules.local.json`, an untracked file beside the
+application. On a published mirror it is simply absent, and there is nothing
+site-specific left there to redact anyway.
+
+The obvious risk is fail-open: absent the overlay, redaction weakens AND the
+scanner stops flagging the same class, which is a matched pair that hides
+itself. Two things bound it. The generic rules -- the addresses, the strongest
+signal -- are still in code and unconditional. And the internal suite asserts
+the overlay is present, so a node that loses it fails loudly instead of quietly
+redacting less.
+
 Two scripts are excluded outright rather than rewritten. They are wired to one
 appliance by database id, to absolute paths on one host and to a local `.env`,
 they take no arguments, and one carries a shared secret in clear text.

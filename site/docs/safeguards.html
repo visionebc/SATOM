@@ -81,8 +81,9 @@
       <a href="#8f-content-is-never-hidden-by-an-animation">8f. Content is never hidden by an animation</a>
       <a href="#9-the-alert-catalog">9. The alert catalog</a>
       <a href="#10-fresh-installs-and-what-an-offline-bundle-can-promise">10. Fresh installs, and what an offline bundle can promise</a>
+      <a href="#10b-the-installer-is-only-proven-by-installing-it">10b. The installer is only proven by installing it</a>
       <a href="#11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</a>
-      <a href="#verifying-the-guards-are-armed_1">Verifying the guards are armed</a>
+      <a href="#verifying-the-guards-are-armed_2">Verifying the guards are armed</a>
       <a href="#related">Related</a>
     </aside>
     <div class="doc-body mdx">
@@ -1554,6 +1555,135 @@ version it contains before assuming a fix is present —</p>
 an air-gapped host has no way to fetch them and a missing <code>sudo</code> used to abort the
 install after the service account had already been created — a half-applied state,
 which rule 3 exists to prevent.</p>
+<h2 id="10b-the-installer-is-only-proven-by-installing-it">10b. The installer is only proven by installing it</h2>
+<p>Every defect in this section was found by running the published installer on a
+blank machine and reading the result — not by reading the script. All four had
+survived review, a test suite and an offline-bundle validation, because none of
+those exercise a real install on a real distribution.</p>
+<p><strong>A bundle that builds is not an installer that works.</strong> The v1.2/v1.3 offline
+bundles for RHEL and openSUSE were validated by checking that the packages
+installed, the venv built and the pinned imports resolved. That is the
+<em>packaging</em> proving itself. It says nothing about whether the install
+<em>completes</em>, and on both families it did not.</p>
+<h3 id="the-guards">The guards</h3>
+<table>
+<thead>
+<tr>
+<th>Guard</th>
+<th>Where</th>
+<th>What it prevents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SATOM-HBA-RELOAD</code></td>
+<td><code>installers/install-satom.sh</code></td>
+<td>pg_hba written but never applied</td>
+</tr>
+<tr>
+<td><code>SATOM-HBA-VERIFY</code></td>
+<td><code>installers/install-satom.sh</code></td>
+<td>the failure surfacing 60 lines into a SQLAlchemy traceback</td>
+</tr>
+<tr>
+<td><code>SATOM-LOUD-DB</code></td>
+<td><code>installers/install-satom.sh</code></td>
+<td>the installer exiting non-zero and printing nothing</td>
+</tr>
+<tr>
+<td><code>SATOM-NGINX-DEFAULT</code></td>
+<td><code>installers/install-satom.sh</code></td>
+<td>a fresh node that goes unreachable when a second vhost appears</td>
+</tr>
+<tr>
+<td><code>SATOM-NGINX-DIRS</code></td>
+<td><code>deploy/satom_cli/cmd_checks.py</code></td>
+<td>the nginx check being blind on openSUSE</td>
+</tr>
+<tr>
+<td><code>SATOM-CLI-SHEBANG</code></td>
+<td><code>deploy/install-cli.sh</code></td>
+<td>the operator CLI installing dead</td>
+</tr>
+<tr>
+<td><code>SATOM-ARM-BANNER</code></td>
+<td><code>installers/install-satom.sh</code></td>
+<td>a node whose protections nobody was told to arm</td>
+</tr>
+</tbody>
+</table>
+<h3 id="rules-these-encode">Rules these encode</h3>
+<ol>
+<li>
+<p><strong>Writing a config file is not applying it.</strong> PostgreSQL evaluates <code>pg_hba</code>
+   from memory. The rule was correct on disk and irrelevant in practice,
+   because the only <code>systemctl restart postgresql</code> lived inside the <code>primary</code>
+   branch — so <em>standalone</em> installs never reloaded. Any step that edits a
+   running service's configuration reloads it <strong>in the same step</strong>, outside
+   every conditional.</p>
+</li>
+<li>
+<p><strong>Verify the credential where the error is actionable.</strong> The failure
+   presented as a SQLAlchemy traceback about connection pools. The named cause
+   — <code>Ident authentication failed for user "satom"</code> — was one line at the very
+   bottom of a separate log file. The check now runs immediately after the
+   reload and names <code>pg_hba</code> and first-match ordering.</p>
+</li>
+<li>
+<p><strong>A step with no <code>|| die</code> under <code>set -e</code> is a silent exit.</strong> The installer
+   died with <code>rc=1</code> after printing <code>pg_hba: regla local scram</code>. Nothing else.
+   Three steps had this shape. The recurring lesson in this repo — <em>a failure
+   that exits quietly is a failure nobody finds</em> — applies to the installer
+   exactly as it applied to <code>scheduler_guard.sh</code> and <code>satom-git-publish.sh</code>.</p>
+</li>
+<li>
+<p><strong>A distribution default is not a portable assumption.</strong> Debian ships
+   <code>scram-sha-256</code> for <code>host 127.0.0.1</code>; openSUSE and RHEL ship <code>ident</code>. Debian
+   provides <code>/usr/bin/python3</code>; openSUSE Leap installs <code>python311</code> and creates
+   <strong>no</strong> <code>python3</code> link, so <code>#!/usr/bin/env python3</code> resolves to nothing. The
+   installer's own code comment already documented the first difference — it
+   just never acted on it.</p>
+</li>
+<li>
+<p><strong>A fix applied by hand in production must travel back into the installer.</strong>
+   The production vhost claims <code>default_server</code> on the TLS port because someone
+   hit the outage it prevents and added it. The installer template was never
+   updated, so every new install shipped the pre-fix configuration and
+   <code>satom diagnose nginx</code> failed it on day zero.</p>
+</li>
+<li>
+<p><strong>A check and the code it checks must agree on where things live.</strong> The
+   installer selects the vhost directory by family (<code>sites-enabled</code>,
+   <code>vhosts.d</code>, <code>conf.d</code>). The nginx check knew two of the three, so on openSUSE
+   it read zero files and reported <code>default_server holder NONE</code> for a correct
+   config — an unclearable FAIL on the check whose job is warning you the
+   console is about to disappear.</p>
+</li>
+<li>
+<p><strong>A deliberate gap still has to be spoken aloud.</strong> No <code>ScheduledAction</code> is
+   seeded, on purpose. The final banner never said so, so a fresh node had no
+   database bundle, no source-of-truth refresh and no repository bundle, and
+   the operator only learned this by independently running <code>satom diagnose</code>.</p>
+</li>
+</ol>
+<h3 id="verifying-the-guards-are-armed_1">Verifying the guards are armed</h3>
+<pre><code class="language-bash"># 1. pg_hba is applied, not merely written — the app's own credential works
+sudo -u postgres psql -tAc &quot;select 1&quot; &gt;/dev/null      # server is up
+PGPASSWORD=&quot;$(sed -n 's|.*://satom:\([^@]*\)@.*|\1|p' /opt/satom/.env)&quot; \
+  psql -h 127.0.0.1 -U satom -d satom -tAc 'select 1' # must print 1
+
+# 2. the TLS listener owns default_server, and the check can see it
+grep -rh 'listen.*443' /etc/nginx/sites-enabled /etc/nginx/vhosts.d \
+     /etc/nginx/conf.d 2&gt;/dev/null | grep default_server
+satom diagnose nginx        # must not say &quot;holder NONE&quot; on a healthy node
+
+# 3. the operator CLI is alive, with a shebang that resolves on this distro
+head -1 /usr/local/sbin/satom     # an interpreter that exists, not env python3
+satom show version
+
+# 4. the installer refuses to die quietly
+grep -c 'SATOM-LOUD-DB' /opt/satom/installers/install-satom.sh   # 1
+</code></pre>
 <h2 id="11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</h2>
 <ul>
 <li>Per-device configuration restore is dry-run gated — no live canary round-trip yet.</li>
@@ -1563,7 +1693,7 @@ which rule 3 exists to prevent.</p>
 <li>Gitea and the standby share a host ({hypervisor}). The bundle to {backup-server} exists
   because of that, but it mitigates rather than fixes it.</li>
 </ul>
-<h2 id="verifying-the-guards-are-armed_1">Verifying the guards are armed</h2>
+<h2 id="verifying-the-guards-are-armed_2">Verifying the guards are armed</h2>
 <h3 id="published-cross-references-7d">Published cross-references (§7d)</h3>
 <p>Rendering is not evidence — request the target. From a checkout:</p>
 <pre><code class="language-bash"># 1. nothing published may still point at Markdown

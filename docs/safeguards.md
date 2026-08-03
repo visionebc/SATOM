@@ -1246,6 +1246,98 @@ an air-gapped host has no way to fetch them and a missing `sudo` used to abort t
 install after the service account had already been created — a half-applied state,
 which rule 3 exists to prevent.
 
+## 10b. The installer is only proven by installing it
+
+Every defect in this section was found by running the published installer on a
+blank machine and reading the result — not by reading the script. All four had
+survived review, a test suite and an offline-bundle validation, because none of
+those exercise a real install on a real distribution.
+
+**A bundle that builds is not an installer that works.** The v1.2/v1.3 offline
+bundles for RHEL and openSUSE were validated by checking that the packages
+installed, the venv built and the pinned imports resolved. That is the
+*packaging* proving itself. It says nothing about whether the install
+*completes*, and on both families it did not.
+
+### The guards
+
+| Guard | Where | What it prevents |
+|---|---|---|
+| `SATOM-HBA-RELOAD` | `installers/install-satom.sh` | pg_hba written but never applied |
+| `SATOM-HBA-VERIFY` | `installers/install-satom.sh` | the failure surfacing 60 lines into a SQLAlchemy traceback |
+| `SATOM-LOUD-DB` | `installers/install-satom.sh` | the installer exiting non-zero and printing nothing |
+| `SATOM-NGINX-DEFAULT` | `installers/install-satom.sh` | a fresh node that goes unreachable when a second vhost appears |
+| `SATOM-NGINX-DIRS` | `deploy/satom_cli/cmd_checks.py` | the nginx check being blind on openSUSE |
+| `SATOM-CLI-SHEBANG` | `deploy/install-cli.sh` | the operator CLI installing dead |
+| `SATOM-ARM-BANNER` | `installers/install-satom.sh` | a node whose protections nobody was told to arm |
+
+### Rules these encode
+
+1. **Writing a config file is not applying it.** PostgreSQL evaluates `pg_hba`
+   from memory. The rule was correct on disk and irrelevant in practice,
+   because the only `systemctl restart postgresql` lived inside the `primary`
+   branch — so *standalone* installs never reloaded. Any step that edits a
+   running service's configuration reloads it **in the same step**, outside
+   every conditional.
+
+2. **Verify the credential where the error is actionable.** The failure
+   presented as a SQLAlchemy traceback about connection pools. The named cause
+   — `Ident authentication failed for user "satom"` — was one line at the very
+   bottom of a separate log file. The check now runs immediately after the
+   reload and names `pg_hba` and first-match ordering.
+
+3. **A step with no `|| die` under `set -e` is a silent exit.** The installer
+   died with `rc=1` after printing `pg_hba: regla local scram`. Nothing else.
+   Three steps had this shape. The recurring lesson in this repo — *a failure
+   that exits quietly is a failure nobody finds* — applies to the installer
+   exactly as it applied to `scheduler_guard.sh` and `satom-git-publish.sh`.
+
+4. **A distribution default is not a portable assumption.** Debian ships
+   `scram-sha-256` for `host 127.0.0.1`; openSUSE and RHEL ship `ident`. Debian
+   provides `/usr/bin/python3`; openSUSE Leap installs `python311` and creates
+   **no** `python3` link, so `#!/usr/bin/env python3` resolves to nothing. The
+   installer's own code comment already documented the first difference — it
+   just never acted on it.
+
+5. **A fix applied by hand in production must travel back into the installer.**
+   The production vhost claims `default_server` on the TLS port because someone
+   hit the outage it prevents and added it. The installer template was never
+   updated, so every new install shipped the pre-fix configuration and
+   `satom diagnose nginx` failed it on day zero.
+
+6. **A check and the code it checks must agree on where things live.** The
+   installer selects the vhost directory by family (`sites-enabled`,
+   `vhosts.d`, `conf.d`). The nginx check knew two of the three, so on openSUSE
+   it read zero files and reported `default_server holder NONE` for a correct
+   config — an unclearable FAIL on the check whose job is warning you the
+   console is about to disappear.
+
+7. **A deliberate gap still has to be spoken aloud.** No `ScheduledAction` is
+   seeded, on purpose. The final banner never said so, so a fresh node had no
+   database bundle, no source-of-truth refresh and no repository bundle, and
+   the operator only learned this by independently running `satom diagnose`.
+
+### Verifying the guards are armed
+
+```bash
+# 1. pg_hba is applied, not merely written — the app's own credential works
+sudo -u postgres psql -tAc "select 1" >/dev/null      # server is up
+PGPASSWORD="$(sed -n 's|.*://satom:\([^@]*\)@.*|\1|p' /opt/satom/.env)" \
+  psql -h 127.0.0.1 -U satom -d satom -tAc 'select 1' # must print 1
+
+# 2. the TLS listener owns default_server, and the check can see it
+grep -rh 'listen.*443' /etc/nginx/sites-enabled /etc/nginx/vhosts.d \
+     /etc/nginx/conf.d 2>/dev/null | grep default_server
+satom diagnose nginx        # must not say "holder NONE" on a healthy node
+
+# 3. the operator CLI is alive, with a shebang that resolves on this distro
+head -1 /usr/local/sbin/satom     # an interpreter that exists, not env python3
+satom show version
+
+# 4. the installer refuses to die quietly
+grep -c 'SATOM-LOUD-DB' /opt/satom/installers/install-satom.sh   # 1
+```
+
 ## 11. Known gaps (kept honest, on purpose)
 
 * Per-device configuration restore is dry-run gated — no live canary round-trip yet.

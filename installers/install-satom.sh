@@ -1174,6 +1174,37 @@ if ! grep -q "SATOM-LOCAL" "$PGHBA"; then
     ok "pg_hba: regla local scram para ${DB_USER}@${DB_NAME}"
 fi
 
+# ---- RECARGA: escribir pg_hba no basta -----------------------------------
+# [SATOM-HBA-RELOAD] Postgres evalua pg_hba desde MEMORIA. Sin recarga, la
+# regla que acabamos de escribir no existe para el servidor en marcha.
+# El unico `systemctl restart postgresql` vivia dentro de la rama `primary`,
+# asi que una instalacion STANDALONE escribia la regla correcta y el servidor
+# seguia aplicando la generica de la distro. En Debian eso no se nota (su
+# default para 127.0.0.1 ya es scram-sha-256); en openSUSE y RHEL el default
+# es *ident* -> `flask create-db` moria con
+#   FATAL: Ident authentication failed for user "satom"
+# Va aqui, fuera de cualquier rama, para TODOS los modos.
+systemctl reload postgresql >>"$INSTALL_LOG" 2>&1 \
+    || systemctl restart postgresql >>"$INSTALL_LOG" 2>&1 \
+    || die "No se pudo recargar PostgreSQL tras escribir pg_hba (revisa $INSTALL_LOG)"
+
+# [SATOM-HBA-VERIFY] Comprobar la credencial AQUI, no 100 lineas mas abajo
+# dentro de un traceback de SQLAlchemy. Este es el punto donde el error es
+# accionable y el mensaje puede nombrar la causa.
+if [ "$ROLE" != "secondary" ]; then
+    if PGPASSWORD="$DB_PASS" psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" \
+            -tAc 'SELECT 1' >>"$INSTALL_LOG" 2>&1; then
+        ok "PostgreSQL recargado — la app puede autenticarse por TCP"
+    else
+        die "La cuenta '${DB_USER}' no puede conectar a 127.0.0.1/${DB_NAME}.
+       Causa habitual: pg_hba no recargado o una regla previa mas generica
+       (p.ej. 'host all all 127.0.0.1/32 ident') gana el first-match.
+       Revisa: ${PGHBA} y ${INSTALL_LOG}"
+    fi
+else
+    ok "PostgreSQL recargado — pg_hba en vigor"
+fi
+
 if [ "$ROLE" = "primary" ]; then
     REPL_PASS=$(openssl rand -hex 24)
     runuser -u postgres -- psql -qc "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='${REPL_USER}') THEN CREATE ROLE ${REPL_USER} REPLICATION LOGIN PASSWORD '${REPL_PASS}'; ELSE ALTER ROLE ${REPL_USER} REPLICATION LOGIN PASSWORD '${REPL_PASS}'; END IF; END \$\$;"
@@ -1287,15 +1318,26 @@ fi
 # Inicialización de BD + clave admin (solo donde la BD es escribible)
 if [ "$ROLE" != "secondary" ]; then
     set -a; . "$APP_DIR/.env"; set +a
-    FLASK_APP=wsgi.py venv/bin/flask create-db >>"$INSTALL_LOG" 2>&1
+    # [SATOM-LOUD-DB] Estos dos pasos NO llevaban `|| die`. Con `set -e` el
+    # instalador terminaba con rc=1 y SIN IMPRIMIR NADA: la ultima linea que
+    # veia el operador era "pg_hba: regla local scram" y la causa real vivia
+    # 60 lineas de traceback dentro de $INSTALL_LOG. Un fallo mudo es un
+    # fallo que nadie encuentra.
+    FLASK_APP=wsgi.py venv/bin/flask create-db >>"$INSTALL_LOG" 2>&1 \
+        || die "flask create-db fallo — no se pudo inicializar el esquema.
+       Revisa el final de $INSTALL_LOG (causa habitual: la app no puede
+       autenticarse contra PostgreSQL)"
     export SATOM_ADMIN_PASS="$ADMIN_PASS"
-    venv/bin/python - <<PYADM >>"$INSTALL_LOG" 2>&1
+    venv/bin/python - <<PYADM >>"$INSTALL_LOG" 2>&1 \
+        || die "No se pudo fijar la clave de 'admin' (revisa $INSTALL_LOG)"
 from wsgi import app
 from app.extensions import db
 from app.models import User
 import os
 with app.app_context():
     u = User.query.filter_by(username="admin").first()
+    if u is None:
+        raise SystemExit("no existe el usuario 'admin' tras create-db")
     u.set_password(os.environ["SATOM_ADMIN_PASS"])
     db.session.commit()
     print("admin password set")
@@ -1399,7 +1441,9 @@ chown -R "$APP_USER:$APP_USER" "$LOG_DIR" 2>/dev/null || true
 chown root:"$APP_USER" "$APP_DIR/.env"; chmod 640 "$APP_DIR/.env"
 ok "Propiedad del arbol consolidada en ${APP_USER} (.env sigue root:${APP_USER} 640)"
 
-systemctl enable --now satom.service satom-scheduler.service >>"$INSTALL_LOG" 2>&1
+systemctl enable --now satom.service satom-scheduler.service >>"$INSTALL_LOG" 2>&1 \
+    || die "satom.service / satom-scheduler.service no arrancaron.
+       Revisa: systemctl status satom.service  y  $INSTALL_LOG"
 # `enable --now` es enable+start, y `start` sobre algo YA VIVO es no-op. En
 # una reinstalacion el .env se acaba de regenerar (contrasena de BD,
 # SECRET_KEY y FERNET_KEY nuevos) y systemd lee EnvironmentFile UNA sola
@@ -1450,9 +1494,21 @@ else
 fi
 mkdir -p "$ACME_WEBROOT/.well-known/acme-challenge"
 chmod 755 "$ACME_WEBROOT"
+# [SATOM-NGINX-DEFAULT] El listener TLS tiene que reclamar default_server.
+# Sin dueno explicito, nginx se lo concede al PRIMER server de :${WEB_PORT} en
+# orden de parseo, que entre ficheros es el ALFABETICO. En cuanto convive un
+# segundo vhost — p.ej. el del sitio estatico que documenta el manual — la
+# consola deja de responder por hostname mientras el otro sitio sigue
+# sirviendo, y eso se lee como fallo de DNS, no de nginx. Los nodos de
+# produccion llevan `default_server` porque alguien lo sufrio y lo anadio a
+# mano; el instalador seguia emitiendo la version PREVIA a esa correccion, asi
+# que cada instalacion nueva nacia con el fallo latente y `satom diagnose
+# nginx` la marcaba FAIL el dia cero.
+write_satom_vhost() {
+    local dflt="$1"
 cat > "$NGXCONF" <<NGX
 server {
-    listen ${WEB_PORT} ssl http2;
+    listen ${WEB_PORT} ssl http2${dflt};
     server_name ${HOSTN} ${NODE_IP};
     ssl_certificate     ${PKI}/public/server.crt;
     ssl_certificate_key ${PKI}/public/server.key;
@@ -1484,9 +1540,23 @@ server {
     location / { return 301 https://\$host:${WEB_PORT}\$request_uri; }
 }
 NGX
-if [ -d /etc/nginx/sites-enabled ]; then
-    ln -sf /etc/nginx/sites-available/satom.conf /etc/nginx/sites-enabled/satom.conf
-    rm -f /etc/nginx/sites-enabled/default
+    if [ -d /etc/nginx/sites-enabled ]; then
+        ln -sf /etc/nginx/sites-available/satom.conf /etc/nginx/sites-enabled/satom.conf
+        rm -f /etc/nginx/sites-enabled/default
+    fi
+}
+
+# Se escribe CON default_server. Si otro vhost ya lo reclamaba, nginx lo dice
+# con "duplicate default server" y sólo ENTONCES se reescribe sin él. Es
+# autocorrectivo y no depende de adivinar la config ajena con un regex. Un
+# `nginx -t` que falle por CUALQUIER otro motivo NO retira default_server: se
+# deja pasar al `nginx -t || die` de mas abajo, que reporta la causa real.
+write_satom_vhost " default_server"
+if ! nginx -t >>"$INSTALL_LOG" 2>&1; then
+    if nginx -t 2>&1 | grep -qi "duplicate default server"; then
+        warn "Otro vhost ya reclama default_server en :${WEB_PORT} — reescribo sin él"
+        write_satom_vhost ""
+    fi
 fi
 # SELinux (RHEL/Fedora): permitir que nginx haga proxy al gunicorn local y
 # escuche en un puerto no estándar — best-effort, nunca rompe la instalación
@@ -1586,6 +1656,30 @@ if [ "$ROLE" = "secondary" ]; then
     echo "   • data/ se sincroniza cada 5 min (satom-ha-datasync.timer)"
     echo "   • Certificado TLS propio emitido por la CA del clúster"
     echo "   • El scheduler queda en espera (solo se activa si promueves este nodo)"
+fi
+
+# [SATOM-ARM-BANNER] Ninguna ScheduledAction se siembra: son datos y gana la
+# edicion del operador (docs/safeguards.md §10). Esa decision es deliberada,
+# pero hasta ahora NADIE se lo decia al que acaba de instalar: el banner final
+# hablaba solo del hardening de SSH. Resultado: un nodo recien instalado se
+# queda sin respaldo de BD, sin refresco del SoT, sin bundle del repo y con las
+# senales de alerta calculandose para nadie — y el operador solo se entera si
+# por su cuenta ejecuta `satom diagnose`. El instalador no las crea; ahora al
+# menos nombra el comando que las crea.
+if [ "$ROLE" != "secondary" ]; then
+    echo ""
+    echo "IMPORTANTE — las protecciones NO quedan armadas por si solas:"
+    echo "  Las tareas programadas (respaldo de BD, refresco del source-of-truth,"
+    echo "  bundle del repositorio, barrido de sondas) son DATOS, no codigo, y no"
+    echo "  se siembran para que tu configuracion mande. Sin ellas no hay copias."
+    echo ""
+    echo "    sudo satom execute seed actions          # muestra el plan"
+    echo "    sudo satom execute seed actions --yes    # lo aplica"
+    echo ""
+    echo "  Y en Settings -> Alerts define un destinatario y un transporte, o cada"
+    echo "  senal se calcula puntualmente y se entrega a nadie."
+    echo ""
+    echo "  Comprueba el estado completo en cualquier momento con:  satom diagnose all"
 fi
 
 echo ""

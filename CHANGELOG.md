@@ -6,6 +6,45 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### The installer had never completed on openSUSE or RHEL (2026-08-03)
+
+Found by running the published v1.3.1 installer on a blank openSUSE Leap 15.6
+machine, as an operator would. Details and the rules they encode:
+[safeguards](docs/safeguards.md) section 10b.
+
+- **`pg_hba` was written and never reloaded on standalone installs.** The only
+  `systemctl restart postgresql` sat inside the `primary` branch. PostgreSQL
+  evaluates `pg_hba` from memory, so the server kept applying the distribution
+  default. Debian's default for `host 127.0.0.1` is `scram-sha-256` and hides
+  this; openSUSE and RHEL default to `ident`, which rejects the application
+  account before it ever looks at the password. `flask create-db` died with
+  `FATAL: Ident authentication failed for user "satom"`. The reload now runs
+  for every mode, and the credential is verified immediately afterwards.
+- **The installer exited 1 and printed nothing.** `flask create-db`, the block
+  that sets the admin password, and `systemctl enable --now satom.service` had
+  no `|| die`, so under `set -e` they aborted silently. The operator's last
+  line was `pg_hba: regla local scram`; the cause was a traceback in a
+  different file. All three now fail loudly and name the next place to look.
+- **The operator CLI installed dead outside Debian.** The launcher's
+  `#!/usr/bin/env python3` does not resolve on openSUSE Leap, which installs
+  `python311` and creates no `python3` link. `install-cli.sh` now stamps the
+  shebang with a verified system interpreter (never the venv, never anything
+  inside the application tree) and refuses to install a CLI that cannot run.
+- **A fresh node failed its own nginx check.** The generated TLS vhost did not
+  claim `default_server` — the production configuration does, because someone
+  added it after the console became unreachable by hostname once a second vhost
+  appeared. The installer now emits it and backs it out only if nginx reports a
+  genuine duplicate.
+- **`satom diagnose nginx` was blind on openSUSE.** It scanned
+  `sites-enabled` and `conf.d`, but the installer writes to `vhosts.d` on that
+  family, so it read no files and reported `default_server holder NONE` for a
+  correct configuration. It now scans every directory the installer may use.
+- **Nothing told the operator to arm the protections.** No `ScheduledAction` is
+  seeded, by design. The closing banner now says so and names
+  `satom execute seed actions`, instead of leaving a node with no database
+  bundle, no source-of-truth refresh and no repository bundle.
+
+
 ## [1.3.1] - 2026-08-03
 
 Bundle rebuild release. The v1.3 offline bundles were built **before** the

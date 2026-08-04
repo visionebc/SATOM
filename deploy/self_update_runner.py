@@ -888,9 +888,30 @@ def package_change(req_path):
         app_tar = pkg_dir / "app.tar.gz"
         if not app_tar.is_file():
             raise RuntimeError("package has no app.tar.gz")
-        count = up.extract_app_tree(app_tar, APP)
+        # [SATOM-PKG-DELETIONS]
+        tracked_now = {ln.strip() for ln in
+                          (git("ls-files", timeout=120).stdout or "").splitlines()
+                          if ln.strip()}
+        written = up.extract_app_tree(app_tar, APP)
         st.step("install application tree", True, "%d file(s) from %s"
-                % (count, name))
+                % (len(written), name))
+
+        # Laying a tarball over a checkout adds and overwrites; it never
+        # deletes. Without this, a module removed in the new revision stays on
+        # disk and keeps importing -- an update that silently half-applies.
+        # app.tar.gz comes from `git archive`, so its member list IS the
+        # complete tracked set of the target revision; anything tracked here
+        # and absent there was deleted upstream. Only TRACKED paths are
+        # considered, so data/, pki/ and .env cannot be caught by this.
+        stale = sorted(tracked_now - set(written))
+        for rel in stale:
+            try:
+                (APP / rel).unlink()
+            except OSError:
+                pass
+        if stale:
+            st.step("remove %d file(s) the new revision dropped" % len(stale),
+                    True, ", ".join(stale[:8]))
         cok, cdetail = _chown_tree()
         st.step("restore tree ownership", cok, cdetail)
 
@@ -952,7 +973,14 @@ def package_change(req_path):
         # git` reports drift for ever, and the reconciler in AUTO mode would
         # reset the package away on its next pass. Committing as the service
         # account (never root: root-owned objects in .git break git-publish).
-        git("add", "-A")
+        # Stage exactly what this package touched. `git add -A` would also
+        # commit whatever else happened to be uncommitted in the tree --
+        # another session's work in progress, attributed to this apply. That
+        # is not hypothetical: the first live apply swept 4553 lines of an
+        # unrelated feature branch into its own commit.
+        paths = sorted(set(written) | set(stale))
+        for _i in range(0, len(paths), 200):
+            git("add", "--", *paths[_i:_i + 200], timeout=120)
         c = git("commit", "-m",
                 "apply update package %s (%s) by %s"
                 % (new, (manifest.get("commit") or "")[:12],

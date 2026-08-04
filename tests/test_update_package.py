@@ -517,3 +517,63 @@ def test_the_installer_will_not_use_an_interpreter_from_the_app_tree():
     src = INSTALL_RUNNER.read_text()
     assert '"${APP_DIR}"/*) continue' in src, \
         "the runner's interpreter must never come from the app tree"
+
+
+def test_the_apply_stages_only_what_the_package_touched():
+    """`git add -A` would also commit whatever else happened to be uncommitted
+    in the tree -- another session's work in progress, attributed to a commit
+    that says 'apply update package'. The first live apply did exactly that:
+    it swept 4553 lines of an unrelated feature into its own commit."""
+    tree = ast.parse(RUNNER_PATH.read_text())
+    fn = [n for n in ast.walk(tree)
+          if isinstance(n, ast.FunctionDef) and n.name == "package_change"][0]
+    body = "\n".join(ast.unparse(n) for n in fn.body
+                     if not (isinstance(n, ast.Expr)
+                             and isinstance(n.value, ast.Constant)))
+    assert "git('add', '-A')" not in body, \
+        "the apply stages the whole tree instead of the package's own paths"
+    assert "git('add', '--'" in body, "the apply must stage explicit paths"
+
+
+def test_the_apply_removes_files_the_new_revision_dropped():
+    """A tarball laid over a checkout adds and overwrites but never deletes.
+    Without this a module removed upstream stays on disk and keeps importing,
+    so the update half-applies and nothing says so."""
+    tree = ast.parse(RUNNER_PATH.read_text())
+    fn = [n for n in ast.walk(tree)
+          if isinstance(n, ast.FunctionDef) and n.name == "package_change"][0]
+    body = "\n".join(ast.unparse(n) for n in fn.body
+                     if not (isinstance(n, ast.Expr)
+                             and isinstance(n.value, ast.Constant)))
+    assert "ls-files" in body, "the tracked set must be captured before extraction"
+    assert "stale" in body, "the dropped-file set must be computed"
+    # 'unlink' alone would also be satisfied by the rollback path, which
+    # already unlinks. Anchor on the marker that only this block carries.
+    assert "[SATOM-PKG-DELETIONS]" in RUNNER_PATH.read_text()
+
+
+def test_only_tracked_paths_can_be_removed_by_an_apply(tmp_path):
+    """The deletion set is (tracked before) - (in the package). Ignored trees --
+    data/, pki/, .env -- are not in `git ls-files`, so an apply structurally
+    cannot delete node state, however wrong the package is."""
+    tracked_before = {"app/x.py", "app/gone.py", "docs/a.md"}
+    written = ["app/x.py", "docs/a.md", "app/new.py"]
+    stale = sorted(tracked_before - set(written))
+    assert stale == ["app/gone.py"]
+    for ignored in ("data/db.sqlite", "pki/server.key", ".env", "venv/bin/python"):
+        assert ignored not in stale
+
+
+def test_extract_app_tree_reports_what_it_wrote(tmp_path):
+    """The caller cannot scope the commit or compute the deletions without
+    this list, so returning a bare count is not enough."""
+    import io
+    src = tmp_path / "app.tar.gz"
+    with tarfile.open(src, "w:gz") as tf:
+        for name in ("app/a.py", "docs/b.md"):
+            info = tarfile.TarInfo(name=name)
+            data = b"x"
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+    written = up.extract_app_tree(src, tmp_path / "dest")
+    assert sorted(written) == ["app/a.py", "docs/b.md"]

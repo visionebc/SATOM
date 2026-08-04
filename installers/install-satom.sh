@@ -1641,7 +1641,30 @@ if systemctl is-active --quiet firewalld 2>/dev/null; then
     ok "firewalld: puerto ${WEB_PORT}/tcp abierto"
 fi
 nginx -t >>"$INSTALL_LOG" 2>&1 || die "nginx -t falló (revisa $INSTALL_LOG)"
-systemctl enable --now nginx >>"$INSTALL_LOG" 2>&1; systemctl reload nginx
+# SATOM-NGINX-START: arrancar y ESPERAR a que nginx sirva de verdad. NO recargar aqui.
+# openSUSE trae el unit como Type=simple con ExecStart='nginx -g "daemon off;"' y
+# ExecReload='/bin/kill -s HUP $MAINPID'. systemd da el servicio por iniciado en cuanto
+# exec(), ANTES de que nginx haya escrito /run/nginx.pid, asi que un 'systemctl reload'
+# inmediato encuentra $MAINPID vacio: el kill sale con status 2, systemd tumba el
+# servicio ENTERO y el instalador muere con la instalacion ya completa y correcta.
+# Debian y RHEL no lo ven porque sus units son forking con PIDFile y systemd espera al
+# pid antes de dar el arranque por bueno -> ahi la carrera es invisible. Y el reload era
+# ademas redundante: nginx acaba de arrancar con esta misma config, validada por el
+# 'nginx -t' de la linea anterior.
+# Esperar al pid file no vacio no es cosmetico: es lo que hace seguro el
+# 'systemctl reload nginx' que cert_service ejecuta en caliente via sudoers.
+systemctl enable --now nginx >>"$INSTALL_LOG" 2>&1 \
+    || die "nginx no arranco (diagnostico: systemctl status nginx)"
+_nginx_ready=0
+for _i in $(seq 1 30); do
+    if systemctl is-active --quiet nginx && [ -s /run/nginx.pid ] \
+       && (exec 3<>"/dev/tcp/127.0.0.1/${WEB_PORT}") 2>/dev/null; then
+        _nginx_ready=1; break
+    fi
+    sleep 1
+done
+[ "$_nginx_ready" = 1 ] \
+    || die "nginx arranco pero no acepta conexiones en ${WEB_PORT} tras 30s"
 ok "nginx sirviendo HTTPS en ${NODE_IP}:${WEB_PORT}"
 
 # ─────────────────────────────────────────────────────────────────────────────

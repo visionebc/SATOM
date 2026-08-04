@@ -634,6 +634,17 @@ Rule: an animation may change *how* content arrives, never *whether* it does.
 
 ### Verifying the guards are armed
 
+### The installer does not reload nginx it just started
+
+    grep -nE '^[[:space:]]*systemctl[[:space:]]+reload[[:space:]]+nginx' \
+        installers/install-satom.sh     # must print nothing
+    grep -c 'SATOM-NGINX-START' installers/install-satom.sh   # must be >= 1
+
+On a freshly installed standalone node, `satom diagnose nginx` must report
+`peer channel :8443  state  n/a - standalone, no peer` and the check must be
+`[ok]`, not `[warn]`.
+
+
     pytest tests/test_site_reveal.py -q
 
 and, against a served page, assert the section is actually opaque rather than
@@ -1337,6 +1348,66 @@ satom show version
 # 4. the installer refuses to die quietly
 grep -c 'SATOM-LOUD-DB' /opt/satom/installers/install-satom.sh   # 1
 ```
+
+### A run that passes does not prove a race is absent
+
+Installing v1.3.2 on two identical blank openSUSE Leap 15.6 machines, the
+online node exited **1** and the offline node exited **0** -- same release,
+same distribution, same answers. The difference was 38 milliseconds.
+
+The installer started nginx and reloaded it on the same line:
+
+    systemctl enable --now nginx >>"$INSTALL_LOG" 2>&1; systemctl reload nginx
+
+openSUSE ships `nginx.service` as `Type=simple` with
+`ExecStart=/usr/sbin/nginx -g "daemon off;"` and
+`ExecReload=/bin/kill -s HUP $MAINPID`. systemd calls a `Type=simple` unit
+started the instant it `exec()`s -- **before** nginx has written
+`/run/nginx.pid`. The immediate reload therefore resolved `$MAINPID` to
+nothing, `kill` exited 2, and systemd tore down the entire service. The
+installation itself was complete and correct: a plain `systemctl restart
+nginx` afterwards served `/healthz` 200 immediately.
+
+Debian and RHEL never see it: their units are forking with `PIDFile=`, so
+systemd waits for the pid before declaring the start successful.
+
+Three rules came out of it:
+
+- **Do not reload a service you just started.** The reload was redundant --
+  nginx had come up seconds earlier on the very config `nginx -t` had just
+  validated.
+- **Wait on a condition, never on luck.** The start is now followed by a
+  bounded poll on `systemctl is-active` **and** a non-empty `/run/nginx.pid`
+  **and** an accepted TCP connection on the web port. The pid file is not
+  cosmetic: it is what makes the `systemctl reload nginx` that `cert_service`
+  runs at renewal time -- through the two-command sudoers rule -- safe.
+- **An unguarded final command hides everything behind it.** With `set -e`,
+  the failing reload killed the script before step 7, so the installer never
+  ran its health check and never printed the banner telling the operator that
+  the scheduled actions are not seeded. A working system reported failure and
+  withheld the one instruction that mattered.
+
+Guard: `tests/test_installer_nginx_start.py`, marker `SATOM-NGINX-START`.
+
+### A standalone install has no peer channel
+
+`satom diagnose nginx` probed `https://127.0.0.1:8443/healthz` unconditionally
+and graded a non-answer as a finding. :8443 is the authenticated node-to-node
+channel; a standalone install does not have one. So **every** fresh single-node
+install opened with `[warn] nginx` forever, over a feature it deliberately does
+not have -- the same chronic false positive already removed from `get system
+health` for the datasync timer that is inert by design on a primary, and from
+the CLI colouring for status words like `inactive`.
+
+The row is still printed (`n/a - standalone, no peer`), so the channel is never
+silently unreported; it just stops counting against the node. On any other role
+it is graded exactly as before -- on a real pair, a dead :8443 means the peers
+cannot probe each other, which is a genuine finding.
+
+Selection lives in a pure helper, `cmd_checks.nginx_probes(role)`, so the guard
+is a behavioural test and not a grep over code that documents itself.
+
+Guard: `tests/test_installer_nginx_start.py`, marker `SATOM-NGINX-PEER`.
 
 ## 11. Known gaps (kept honest, on purpose)
 

@@ -400,13 +400,36 @@ def nginx(ctx, args):
                "serving — which looks like a DNS fault, not an nginx one.")
     if findings:
         r.rows("findings", findings)
-    for probe, url in (("app :443", "https://127.0.0.1/healthz"),
-                       ("peer channel :8443", "https://127.0.0.1:8443/healthz")):
+    # SATOM-NGINX-PEER: :8443 is the authenticated node-to-node channel. A
+    # standalone install has no peer, so grading it there makes EVERY fresh
+    # single-node install open with "[warn] nginx" forever, over a feature it
+    # deliberately does not have. Same chronic false positive already removed
+    # from `get system health` for the datasync timer that is inert by design
+    # on a primary (see cmd_ops.py "excused"). A check that always complains is
+    # a check the operator learns to skip.
+    # The row is still PRINTED, so the channel is never silently unreported --
+    # what changes is that it stops counting as a finding.
+    probes = nginx_probes(ctx.role)
+    if len(probes) == 1:
+        r.rows("peer channel :8443", [("state", "n/a - standalone, no peer")])
+    for probe, url in probes:
         code_, _ = ctx.http(url, timeout=5)
         r.rows(probe, [("GET /healthz", code_ or "no answer")])
         if code_ != 200:
             r.worst("warn")
     return r
+
+
+def nginx_probes(role):
+    """Which HTTP probes the nginx check is allowed to GRADE, given the role.
+
+    SATOM-NGINX-PEER. Pure on purpose: the whole point is that a test can pin
+    the standalone case without standing up nginx, a peer, or a database.
+    """
+    probes = [("app :443", "https://127.0.0.1/healthz")]
+    if role != "standalone":
+        probes.append(("peer channel :8443", "https://127.0.0.1:8443/healthz"))
+    return probes
 
 
 def git(ctx, args):

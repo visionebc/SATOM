@@ -1435,6 +1435,34 @@ cluster primary still probes its peer and still grades the answer.
 
 Guard: `tests/test_installer_nginx_start.py`, marker `SATOM-NGINX-PEER`.
 
+## 10c. A success message may not contain an error
+
+The installer runs with the PATH inherited from container boot --
+`/sbin:/bin:/usr/sbin:/usr/bin`. It does **not** include `/usr/local/bin`,
+where the ACME client is installed. Any command substitution inside the *text*
+of a status message that invokes such a binary by bare name expands to the
+shell's own error, and that error is printed inside a line marked as success.
+
+Verified live on two blank openSUSE Leap 15.6 nodes: the binary was installed
+and working (`lego 5.2.2`, sha256 verified) while the installer had printed
+`lego: command not found` in its success line.
+
+**The rule.** A message that reports success may not contain the text of a
+failure. Status messages resolve helper binaries through an absolute-path
+variable (`$LEGO_BIN`), never by bare name -- except in a branch that has
+already proven the binary is on the PATH via `command -v`.
+
+**Why it is not merely cosmetic.** An operator who reads `command not found` on
+a green-tick line learns that the installer's messages are unreliable. The next
+message they skip is the one that matters -- and on a fresh install that is the
+banner naming `satom execute seed actions`, without which no backup, no source
+-of-truth refresh and no alert delivery is ever armed (section 10).
+
+**Guards.** `tests/test_installer_nginx_start.py`, section C: the absolute-path
+variable must be defined; no command substitution in a message may call the
+binary by bare name; and `install(1)` must write to the same variable, so a
+future path edit cannot separate the message from the file it describes.
+
 ## 11. Known gaps (kept honest, on purpose)
 
 * Per-device configuration restore is dry-run gated — no live canary round-trip yet.

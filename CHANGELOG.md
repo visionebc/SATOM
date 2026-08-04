@@ -6,6 +6,8 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-08-04
+
 ### The installer had never completed on openSUSE or RHEL (2026-08-03)
 
 Found by running the published v1.3.1 installer on a blank openSUSE Leap 15.6

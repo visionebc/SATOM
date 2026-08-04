@@ -672,6 +672,80 @@ def test_prune_keeps_the_newest_reports(app):
 
 
 # --------------------------------------------------------------------------- #
+# 12b. Every rendered control is actually wired                                #
+# --------------------------------------------------------------------------- #
+def _asset(rel: str) -> str:
+    import pathlib
+    return (pathlib.Path(__file__).resolve().parent.parent / rel
+            ).read_text(encoding="utf-8")
+
+
+def test_every_data_act_control_on_the_page_is_inside_the_delegated_scope(app, client):
+    """A button that renders, looks enabled and does nothing is worse than none.
+
+    The click handler is delegated from ``document`` and deliberately scoped, so
+    this page cannot hijack a ``data-act`` click elsewhere in the console. But
+    the page header and the cadence modal are SIBLINGS of ``#an-root``, not
+    descendants — their controls were dead until they opted in with
+    ``data-an-scope``. This walks the real DOM and fails on any control that is
+    in neither container.
+    """
+    from html.parser import HTMLParser
+
+    _board(app)
+    login(client, admin_user_id(app), product=None)
+    html = client.get("/monitoring/analytics/").get_data(as_text=True)
+
+    class Walk(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.depth_root = None      # depth at which #an-root opened
+            self.depth_scope = []       # stack of depths of open data-an-scope
+            self.depth = 0
+            self.orphans = []
+
+        def handle_starttag(self, tag, attrs):
+            a = dict(attrs)
+            self.depth += 1
+            if a.get("id") == "an-root":
+                self.depth_root = self.depth
+            if "data-an-scope" in a:
+                self.depth_scope.append(self.depth)
+            if "data-act" in a:
+                inside_root = (self.depth_root is not None
+                               and self.depth >= self.depth_root)
+                if not inside_root and not self.depth_scope:
+                    self.orphans.append(a["data-act"])
+
+        def handle_endtag(self, tag):
+            if self.depth_root == self.depth:
+                self.depth_root = None
+            if self.depth_scope and self.depth_scope[-1] == self.depth:
+                self.depth_scope.pop()
+            self.depth -= 1
+
+    w = Walk()
+    w.feed(html)
+    assert not w.orphans, (
+        "these controls render but no handler can ever fire for them: %s"
+        % sorted(set(w.orphans)))
+    # And the page really does offer the two header controls, so the walk above
+    # is not passing merely because it found nothing to check.
+    assert 'data-act="cadence"' in html
+    assert 'data-act="refresh"' in html
+
+
+def test_the_delegated_handlers_honour_the_opt_in_marker():
+    """Both handlers must use the shared scope test, not a bare containment."""
+    js = _asset("app/static/js/analytics.js")
+    assert "function inScope(node)" in js
+    assert "data-an-scope" in js
+    # A bare `root.contains(t)` gate in either handler is the regression.
+    assert "if (!t || !root.contains(t)) { return; }" not in js
+    assert js.count("inScope(") >= 3   # definition + click + change
+
+
+# --------------------------------------------------------------------------- #
 # 13. The CLI seed plan                                                        #
 # --------------------------------------------------------------------------- #
 def _cmd_fix():

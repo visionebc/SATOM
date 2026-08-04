@@ -257,6 +257,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        'architecture', 'metrics', 'search', 'analysis',
                        'fleet_objects', 'dns_tool',
                        'monitoring', 'deep_monitor', 'service_monitor',
+                       'monitor_analytics', 'monitor_reports',
                        # Backup vault (per-appliance; the ADC transport is the
                        # SSH config dump — services/backup.py kind branch).
                        'backups',
@@ -283,6 +284,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        # Mirrored per-ADOM monitoring (2026-07-28) — see the
                        # ADC note above; scoping is by device kind.
                        'monitoring', 'deep_monitor', 'service_monitor',
+                       'monitor_analytics', 'monitor_reports',
                        'release_notes', 'templates', 'naming', 'capacity',
                        'api_tokens', 'api_explorer', 'api_v1',
                        'plugins', 'lua_studio'}
@@ -1194,6 +1196,7 @@ def create_app(config_override: object | None = None) -> Flask:
             # Imported for its side effect: db.create_all() only creates tables
             # whose model class has been imported.
             from . import models_theme  # noqa: F401
+            from . import models_analytics  # noqa: F401
             db.create_all()
             _ensure_columns()
             _ensure_indexes()
@@ -1204,6 +1207,7 @@ def create_app(config_override: object | None = None) -> Flask:
             _seed_acme_providers()
             _seed_adoms()
             _seed_themes()
+            _seed_analytics_boards()
             _seed_capacity()
             if not app.config.get("TESTING"):
                 _seed_reports()
@@ -1288,6 +1292,8 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.monitoring", "bp"),
         ("app.views.deep_monitor", "bp"),
         ("app.views.service_monitor", "bp"),
+        ("app.views.monitor_analytics", "bp"),
+        ("app.views.monitor_reports", "bp"),
         ("app.views.capacity", "bp"),
         ("app.views.audit", "bp"),
         ("app.views.registry", "bp"),
@@ -1488,6 +1494,135 @@ def _seed_adoms() -> None:
                 "ADOM seed: %d ADOMs imported into the registry", added)
     except Exception:  # noqa: BLE001 — never block boot on seeding
         db.session.rollback()
+
+
+def _seed_analytics_boards() -> None:
+    """Reconcile the built-in analytics boards from code.
+
+    RECONCILED, not insert-only — the opposite of the theme seed, and for a
+    reason worth stating. A built-in board carries no operator intent to
+    preserve: the UI refuses to edit or delete one, so any difference between
+    the row and the code is drift, not a decision. Reconciling means a board
+    improved in a release reaches installations that already have it, instead
+    of freezing at whatever shipped first. Operator-authored boards (``builtin``
+    false) are never touched.
+
+    The panels use RULE selection rather than probe ids so a fresh install with
+    no probes yet still gets working boards: the rules resolve to nothing today
+    and to every matching probe the moment Discover creates them.
+    """
+    from .models import db
+    from .models_analytics import MonitorDashboard, MonitorPanel
+
+    boards = [
+        {
+            "slug": "fleet-overview", "title": "Fleet overview", "position": 10,
+            "description": "Processor, memory and availability across every "
+                           "monitored appliance.",
+            "default_range": "24h",
+            "panels": [
+                {"title": "CPU used", "viz": "line", "rule_kind": "cpu",
+                 "width": 6, "show_band": True},
+                {"title": "Memory used", "viz": "line", "rule_kind": "memory",
+                 "width": 6, "show_band": True},
+                {"title": "Availability by probe", "viz": "heatmap",
+                 "rule_kind": "cpu", "width": 12, "height": 240},
+                {"title": "Peak CPU", "viz": "stat", "rule_kind": "cpu",
+                 "stat_func": "max", "width": 4, "height": 190,
+                 "compare_prev": True},
+                {"title": "Peak memory", "viz": "stat", "rule_kind": "memory",
+                 "stat_func": "max", "width": 4, "height": 190,
+                 "compare_prev": True},
+                {"title": "Healthy %", "viz": "stat", "rule_kind": "cpu",
+                 "stat_func": "healthy_pct", "width": 4, "height": 190,
+                 "compare_prev": True},
+            ],
+        },
+        {
+            "slug": "traffic", "title": "Traffic & sessions", "position": 20,
+            "description": "Throughput, concurrent sessions and HTTP "
+                           "transactions read from the appliance monitor API.",
+            "default_range": "24h",
+            "panels": [
+                {"title": "Throughput", "viz": "area", "rule_kind": "throughput",
+                 "width": 12, "show_band": True, "show_v2": True},
+                {"title": "Sessions per policy", "viz": "line",
+                 "rule_kind": "policy_sessions", "width": 6},
+                {"title": "Box sessions", "viz": "line", "rule_kind": "sessions",
+                 "width": 6},
+                {"title": "HTTP transactions", "viz": "bar",
+                 "rule_kind": "transactions", "width": 12, "height": 240},
+            ],
+        },
+        {
+            "slug": "service-health", "title": "Service health", "position": 30,
+            "description": "Synthetic response time, the proxyd daemon and "
+                           "interface drift.",
+            "default_range": "7d",
+            "panels": [
+                {"title": "Response time", "viz": "line", "rule_kind": "https",
+                 "width": 8, "show_band": True},
+                {"title": "Slowest response", "viz": "stat", "rule_kind": "https",
+                 "stat_func": "max", "width": 4, "height": 190},
+                {"title": "proxyd memory", "viz": "line", "rule_kind": "proxyd",
+                 "width": 6, "show_v2": True},
+                {"title": "Interface drift", "viz": "status",
+                 "rule_kind": "interface", "width": 6, "height": 220},
+                {"title": "Probe summary", "viz": "table", "rule_kind": "https",
+                 "width": 12, "height": 260},
+            ],
+        },
+    ]
+
+    changed = False
+    for spec in boards:
+        panels = spec.pop("panels")
+        board = MonitorDashboard.query.filter_by(slug=spec["slug"]).first()
+        if board is None:
+            board = MonitorDashboard(slug=spec["slug"], builtin=True, product="")
+            db.session.add(board)
+            changed = True
+        elif not board.builtin:
+            # An operator board took this slug. Theirs wins; the built-in is
+            # simply not reconciled rather than silently overwritten.
+            continue
+        for key, val in spec.items():
+            if getattr(board, key, None) != val:
+                setattr(board, key, val)
+                changed = True
+        board.builtin = True
+        db.session.flush()
+
+        # Panels are replaced wholesale. Diffing them would need a stable
+        # identity a built-in panel does not have (its title is the only
+        # candidate and titles change between releases), and the board is
+        # read-only anyway, so there is nothing an operator could lose.
+        existing = list(board.panels)
+        want = [dict(pos=i * 10, **p) for i, p in enumerate(panels)]
+        if len(existing) != len(want) or _panels_differ(existing, want):
+            for old in existing:
+                db.session.delete(old)
+            db.session.flush()
+            for item in want:
+                item = dict(item)
+                pos = item.pop("pos")
+                db.session.add(MonitorPanel(
+                    dashboard_id=board.id, position=pos,
+                    select_mode="rule", **item))
+            changed = True
+    if changed:
+        db.session.commit()
+
+
+def _panels_differ(existing, want) -> bool:
+    """True when a built-in board's panels no longer match the code."""
+    for old, new in zip(existing, want):
+        for key, val in new.items():
+            if key == "pos":
+                continue
+            if getattr(old, key, None) != val:
+                return True
+    return False
 
 
 def _seed_themes() -> None:

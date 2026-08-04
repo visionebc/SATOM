@@ -1965,8 +1965,17 @@ def _worst_of_counts(row: dict) -> str:
     return "unknown"
 
 
-def series(probe_id: int, start: datetime, end: datetime, *, session=None) -> dict:
-    """Points for the drill-down chart, at whatever resolution the window needs."""
+def source_for(probe_id: int, start: datetime, end: datetime, *,
+               session=None) -> str:
+    """Which table WOULD answer this window for this probe.
+
+    Split out of :func:`series` so a caller drawing several probes on ONE chart
+    can ask each of them first and then pin the coarsest answer for all of them
+    (``monitor_analytics.panel_source``). Two lines on one axis at two
+    resolutions is a lie no label repairs: the raw line shows spikes the hourly
+    line averaged away, and the operator reads that as a difference between the
+    two devices rather than between the two queries.
+    """
     from ..models import MonitorRollup, MonitorSample, db
     from sqlalchemy import func
 
@@ -1976,7 +1985,28 @@ def series(probe_id: int, start: datetime, end: datetime, *, session=None) -> di
     earliest_hour = (session.query(func.min(MonitorRollup.bucket))
                      .filter(MonitorRollup.probe_id == probe_id,
                              MonitorRollup.span == "hour").scalar())
-    source = pick_source(start, end, earliest_raw, earliest_hour)
+    return pick_source(start, end, earliest_raw, earliest_hour)
+
+
+def series(probe_id: int, start: datetime, end: datetime, *, session=None,
+           force_source: str | None = None) -> dict:
+    """Points for the drill-down chart, at whatever resolution the window needs.
+
+    ``force_source`` pins the table instead of choosing one. Only the multi-
+    series panel builder passes it; the single-probe drill-down keeps choosing
+    per probe, which is correct when there is nothing to compare against.
+    """
+    from ..models import MonitorRollup, MonitorSample, db
+    from sqlalchemy import func
+
+    session = session or db.session
+    earliest_raw = (session.query(func.min(MonitorSample.ts))
+                    .filter(MonitorSample.probe_id == probe_id).scalar())
+    earliest_hour = (session.query(func.min(MonitorRollup.bucket))
+                     .filter(MonitorRollup.probe_id == probe_id,
+                             MonitorRollup.span == "hour").scalar())
+    source = (force_source if force_source in ("raw", "hour", "day")
+              else pick_source(start, end, earliest_raw, earliest_hour))
 
     points: list[dict] = []
     if source == "raw":

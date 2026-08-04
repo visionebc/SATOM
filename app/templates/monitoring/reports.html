@@ -1,0 +1,266 @@
+{# ============================================================================
+   Reports — persisted daily / weekly / monthly summaries.
+
+   Stored rather than recomputed on view: raw samples age out at
+   probe.retention, so a summary rebuilt six months later would answer from
+   coarser data than the one the operator read at the time, while looking
+   identical to it.
+
+   The schedule strip at the top is not decoration. This product deliberately
+   seeds no ScheduledAction (safeguards §10), so a fresh install has the whole
+   capability and zero coverage. Without the strip, an empty list reads as
+   "nothing happened" when it actually means "nothing is scheduled".
+   ========================================================================= #}
+{% extends "base.html" %}
+{% block title %}Monitoring reports{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/analytics.css') }}" data-turbo-track="reload">
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h1 class="fw-page-title mb-0">
+      <i class="bi bi-file-earmark-bar-graph me-2 text-accent"></i>Monitoring reports</h1>
+    <p class="text-muted small mb-0">
+      Period summaries built from the rollup tables: availability, minimum /
+      average / peak per metric, threshold breaches, drift events and the change
+      against the preceding period. Stored so they stay comparable, and
+      mailable.</p>
+  </div>
+</div>
+
+<div id="mr-toast" style="display:none"></div>
+
+{# ----------------------------------------------------------- schedules -- #}
+<div class="fw-card p-3 mb-3">
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <b class="small">Recurring reports</b>
+    <span class="text-muted" style="font-size:.74rem">
+      Scheduled through Automation, action <code>monitor_report</code></span>
+  </div>
+  <div class="an-sched">
+    {% for s in schedules %}
+      <span class="an-sched-chip" title="{{ 'Next run ' ~ s.next_run if s.next_run else 'Not scheduled' }}">
+        <span class="an-dot {{ 'st-ok' if s.armed else 'st-unknown' }}"></span>
+        {{ s.label }}:
+        {% if s.armed %}armed{% if s.next_run %} · next {{ s.next_run|replace('T',' ') }}{% endif %}
+        {% elif s.exists %}disabled
+        {% else %}not scheduled{% endif %}
+      </span>
+    {% endfor %}
+  </div>
+  {% if schedules | rejectattr('armed') | list %}
+    <p class="an-nodata small mb-0 mt-2">
+      Nothing is scheduled for
+      {{ schedules | rejectattr('armed') | map(attribute='label') | join(', ') }}.
+      No <code>ScheduledAction</code> is seeded on a fresh install by design, so
+      these have to be armed once &mdash; in Automation, or with
+      <code>satom execute seed actions</code>.</p>
+  {% endif %}
+</div>
+
+{# ------------------------------------------------------------ generate -- #}
+{% if can_edit %}
+<div class="fw-card p-3 mb-3">
+  <form id="mr-gen" class="row g-2 align-items-end">
+    <div class="col-md-3">
+      <label class="form-label small mb-1">Generate a report now</label>
+      <select name="period" class="form-select form-select-sm">
+        {% for p in periods %}
+          <option value="{{ p }}">{{ period_label[p] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small mb-1">Which period</label>
+      <select name="offset" class="form-select form-select-sm">
+        <option value="1">The last complete one</option>
+        <option value="2">The one before that</option>
+        <option value="3">Three back</option>
+        <option value="0">The current, incomplete one</option>
+      </select>
+      <div class="form-text" style="font-size:.72rem">
+        The current period is still in progress, so its totals are partial.</div>
+    </div>
+    <div class="col-md-3">
+      <button type="submit" class="btn btn-sm btn-primary">
+        <i class="bi bi-play-fill me-1"></i>Build and store</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary"
+              id="mr-preview-btn">Preview</button>
+    </div>
+  </form>
+  <div id="mr-preview" class="mt-3" style="display:none"></div>
+</div>
+{% endif %}
+
+{# --------------------------------------------------------------- list --- #}
+<div class="fw-card p-0">
+  <div class="an-table-wrap">
+    <table class="an-table mb-0">
+      <thead>
+        <tr>
+          <th>Report</th><th>Period</th>
+          <th class="an-num">Devices</th><th class="an-num">Probes</th>
+          <th class="an-num">Samples</th><th class="an-num">Health</th>
+          <th>Worst</th><th class="an-num">Incidents</th>
+          <th>Mailed</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="mr-rows">
+        {% for r in reports %}
+        <tr data-report="{{ r.id }}">
+          <td><a href="{{ url_for('monitor_reports.detail', rid=r.id) }}">{{ r.title }}</a></td>
+          <td>{{ period_label.get(r.period, r.period) }}</td>
+          <td class="an-num">{{ r.devices_n }}</td>
+          <td class="an-num">{{ r.probes_n }}</td>
+          <td class="an-num">{{ '{:,}'.format(r.samples_n) }}</td>
+          <td class="an-num">
+            {% if r.healthy_pct is none %}
+              <span class="an-nodata">no data</span>
+            {% else %}{{ '%.1f'|format(r.healthy_pct) }} %{% endif %}
+          </td>
+          <td><span class="fw-badge fw-badge-{{
+              'success' if r.worst_status == 'ok' else
+              'warning' if r.worst_status == 'warn' else
+              'danger' if r.worst_status in ('crit','error') else
+              'secondary' }}">{{ r.worst_status }}</span></td>
+          <td class="an-num">{{ r.incidents_n }}</td>
+          <td class="text-muted" style="font-size:.72rem">
+            {{ r.emailed_at|replace('T',' ') if r.emailed_at else '—' }}</td>
+          <td class="text-end" style="white-space:nowrap">
+            <a class="btn btn-sm btn-outline-secondary py-0 px-1"
+               href="{{ url_for('monitor_reports.as_csv', rid=r.id) }}"
+               title="Download CSV"><i class="bi bi-filetype-csv"></i></a>
+            <a class="btn btn-sm btn-outline-secondary py-0 px-1"
+               href="{{ url_for('monitor_reports.as_json', rid=r.id) }}"
+               title="Download JSON"><i class="bi bi-filetype-json"></i></a>
+            {% if can_edit %}
+            <button class="btn btn-sm btn-outline-secondary py-0 px-1"
+                    data-mr="email" data-report="{{ r.id }}" title="Email this report">
+              <i class="bi bi-envelope"></i></button>
+            <button class="btn btn-sm btn-outline-danger py-0 px-1"
+                    data-mr="delete" data-report="{{ r.id }}" title="Delete">
+              <i class="bi bi-trash"></i></button>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="10" class="an-empty">
+          No reports stored yet.
+          {% if can_edit %}Build one above, or arm a recurring schedule.{% endif %}
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  'use strict';
+  var CSRF = (document.querySelector('meta[name=csrf-token]') || {}).content || '';
+  var BASE = '{{ url_for('monitor_reports.index') }}';
+
+  function toast(msg, bad) {
+    var box = document.getElementById('mr-toast');
+    box.textContent = msg;
+    box.className = 'alert ' + (bad ? 'alert-danger' : 'alert-success') + ' py-2 px-3 mb-2';
+    box.style.display = 'block';
+    if (!bad) { window.setTimeout(function () { box.style.display = 'none'; }, 4000); }
+  }
+
+  function post(url, data) {
+    var body = new URLSearchParams();
+    Object.keys(data || {}).forEach(function (k) { body.set(k, data[k]); });
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': CSRF,
+                 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString()
+    }).then(function (r) { return r.json(); });
+  }
+
+  var form = document.getElementById('mr-gen');
+  if (form) {
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var btn = form.querySelector('button[type=submit]');
+      btn.disabled = true;
+      post(BASE + 'generate', {
+        period: form.period.value, offset: form.offset.value
+      }).then(function (d) {
+        btn.disabled = false;
+        if (!d.ok) { toast(d.error || 'Could not build the report', true); return; }
+        window.location.reload();
+      }).catch(function (e) {
+        btn.disabled = false; toast('Failed: ' + e.message, true);
+      });
+    });
+
+    document.getElementById('mr-preview-btn').addEventListener('click', function () {
+      var host = document.getElementById('mr-preview');
+      host.style.display = 'block';
+      host.innerHTML = '<span class="text-muted small">Building…</span>';
+      fetch(BASE + 'preview?period=' + form.period.value +
+            '&offset=' + form.offset.value)
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) { host.innerHTML = '<span class="an-nodata">' +
+            (d.error || 'Preview failed') + '</span>'; return; }
+          var t = d.body.totals;
+          var health = t.healthy_pct === null
+            ? '<span class="an-nodata">no data</span>'
+            : t.healthy_pct.toFixed(1) + ' %';
+          host.innerHTML =
+            '<b class="small">' + d.title + '</b>' +
+            '<div class="text-muted small">' + d.body.from.replace('T', ' ') +
+            ' → ' + d.body.to.replace('T', ' ') + ' UTC</div>' +
+            '<div class="an-rep-grid mt-2">' +
+            kpi('Health', health, t.measured_probes + ' probe(s) measured') +
+            kpi('Samples', t.samples.toLocaleString(), t.probes + ' probe(s)') +
+            kpi('Incidents', t.incidents, t.breaches + ' threshold breach(es)') +
+            kpi('Silent probes', t.silent, 'reported nothing') +
+            '</div>';
+        })
+        .catch(function (e) {
+          host.innerHTML = '<span class="an-nodata">Preview failed: ' +
+                           e.message + '</span>';
+        });
+    });
+  }
+
+  function kpi(label, value, note) {
+    return '<div class="an-kpi"><div class="an-kpi-label">' + label +
+           '</div><div class="an-kpi-value">' + value +
+           '</div><div class="an-kpi-note">' + note + '</div></div>';
+  }
+
+  document.addEventListener('click', function (ev) {
+    var t = ev.target.closest('[data-mr]');
+    if (!t) { return; }
+    var id = t.dataset.report;
+    if (t.dataset.mr === 'delete') {
+      if (!window.confirm('Delete this stored report?')) { return; }
+      post(BASE + id + '/delete', {}).then(function (d) {
+        if (d.ok) {
+          var row = document.querySelector('tr[data-report="' + id + '"]');
+          if (row) { row.remove(); }
+        } else { toast(d.error || 'Delete failed', true); }
+      });
+    }
+    if (t.dataset.mr === 'email') {
+      t.disabled = true;
+      post(BASE + id + '/email', {}).then(function (d) {
+        t.disabled = false;
+        toast(d.ok ? ('Sent to ' + (d.to || []).join(', '))
+                   : ('Not sent: ' + d.detail), !d.ok);
+      });
+    }
+  });
+})();
+</script>
+{% endblock %}

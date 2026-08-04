@@ -152,6 +152,17 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "read-only (HTTP GET + `diagnose system top`).",
     ),
     ActionSpec(
+        "monitor_report", "Monitoring report — period summary", "admin",
+        needs_targets=False,
+        summary="Build and store the daily/weekly/monthly monitoring summary "
+                "from the rollup tables and optionally mail it "
+                "(services.monitor_reports). Set params.period to daily, "
+                "weekly or monthly; params.email=1 to send it. Schedule it "
+                "AFTER the period closes — daily at ~02:00, weekly Monday, "
+                "monthly on the 1st. Reads stored samples only: no device "
+                "call, so it works with every appliance off.",
+    ),
+    ActionSpec(
         "stats", "Build statistics summary", "admin", needs_targets=False,
         summary="Aggregate a fleet statistics summary. No device call.",
     ),
@@ -338,6 +349,67 @@ def _do_deep_monitor(params: dict, dry_run: bool = False) -> dict:
                               for r in res["results"])[:4000]}
 
 
+def _do_monitor_report(params: dict, dry_run: bool = False) -> dict:
+    """Build (and optionally mail) one period summary. Reads stored rows only."""
+    from . import monitor_reports as mrep
+
+    period = str(params.get("period") or "daily").strip()
+    if period not in mrep.PERIODS:
+        return {"ok": False,
+                "summary": "Unknown period %r — use daily, weekly or monthly."
+                           % period,
+                "log": ""}
+    try:
+        offset = max(0, min(60, int(params.get("offset") or 1)))
+    except (TypeError, ValueError):
+        offset = 1
+    product = str(params.get("product") or "")
+    start, end = mrep.period_bounds(period, offset=offset)
+
+    if dry_run:
+        body = mrep.build(period, start=start, end=end, product=product)
+        t = body["totals"]
+        return {"ok": True,
+                "summary": "[dry-run] %s: %d probe(s), %d sample(s), health %s"
+                           % (mrep.period_title(period, start, end),
+                              t["probes"], t["samples"],
+                              "no data" if t["healthy_pct"] is None
+                              else "%.1f%%" % t["healthy_pct"]),
+                "log": mrep.render_text(body)[:4000]}
+
+    row = mrep.generate(period, product=product, start=start, end=end,
+                        by="scheduler")
+    t = row.to_dict()
+    parts = ["%s stored" % row.title,
+             "%d probe(s)" % row.probes_n,
+             "%d sample(s)" % row.samples_n,
+             ("health no data" if row.healthy_pct is None
+              else "health %.1f%%" % row.healthy_pct),
+             "worst %s" % row.worst_status,
+             "%d incident(s)" % row.incidents_n]
+
+    # A mail failure does NOT fail the action: the report is already stored and
+    # readable in the console. Reporting the whole run as failed would put the
+    # scheduled action into a permanent red state over an SMTP outage — and a
+    # check that is always red is a check the operator learns to skip.
+    if str(params.get("email") or "").lower() in ("1", "true", "yes", "on"):
+        res = mrep.email_report(row)
+        parts.append("email %s (%s)"
+                     % ("sent" if res["ok"] else "FAILED", res["detail"]))
+
+    keep = params.get("keep")
+    if keep:
+        try:
+            n = mrep.prune(period, int(keep), product=product)
+            if n:
+                parts.append("pruned %d old" % n)
+        except (TypeError, ValueError):
+            pass
+
+    return {"ok": True, "summary": " - ".join(parts),
+            "log": mrep.render_text(row.body())[:4000]}
+
+
 def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> dict:
     """Run ONE catalog action against ONE appliance (or ``None`` for a no-device
     action such as ``stats``). Returns ``{"ok": bool, "summary": str, "log": str}``
@@ -372,6 +444,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_inventory_snapshot(dry_run)
         if key == "deep_monitor":
             return _do_deep_monitor(params, dry_run)
+        if key == "monitor_report":
+            return _do_monitor_report(params, dry_run)
         if key == "upgrade_prep":
             return _do_upgrade_prep(appliance, dry_run)
         if key == "upgrade":

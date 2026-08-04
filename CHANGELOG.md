@@ -35,6 +35,17 @@ race, so v1.3.2 passing its own validation proved nothing. Rules in
   and a node that does have a peer is graded exactly as before. Same chronic
   false positive already removed from `get system health` and from the CLI
   status colouring.
+- **A success line printed `command not found`.** The installer runs with the
+  PATH it inherits from container boot -- `/sbin:/bin:/usr/sbin:/usr/bin`, with
+  no `/usr/local/bin`, which is where `lego` lands. `$(lego --version)` inside
+  the text of the success message expanded to
+  `install-satom.sh: line 1107: lego: command not found`, printed *inside* the
+  green-tick line, on an install where the binary was in fact present and its
+  sha256 verified. `command -v lego` failed for the same reason, so a reinstall
+  would not detect the existing binary and would download it again. The block
+  now resolves `$LEGO_BIN` as an absolute path. Cosmetic in effect, not in
+  consequence: a success message containing `command not found` teaches the
+  operator to ignore the messages, and then the one that matters is ignored too.
 - **`Context.role` could never return `standalone`, though its docstring said
   it could.** It comes from `pg_is_in_recovery()`, so a standalone node reports
   `primary`. The first version of the fix above gated on that value and

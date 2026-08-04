@@ -1092,10 +1092,11 @@ ok "sudoers: ${APP_USER} sólo puede 'nginx -t' y 'systemctl reload nginx'"
 # VERIFICA el sha256 del release. Nunca aborta la instalación: sin lego el
 # resto del producto (ADCS, PKI interna) sigue siendo plenamente funcional.
 say "Instalando el cliente ACME (lego ${LEGO_VERSION})"
-if command -v lego >/dev/null 2>&1; then
-    ok "lego ya presente: $(lego --version 2>&1 | head -1)"
+LEGO_BIN="/usr/local/bin/lego"
+if command -v lego >/dev/null 2>&1 || [ -x "$LEGO_BIN" ]; then
+    ok "lego ya presente: $(command -v lego >/dev/null 2>&1 && lego --version 2>&1 | head -1 || "$LEGO_BIN" --version 2>&1 | head -1)"
 elif [ -f "${BUNDLE_DIR}/lego/lego" ]; then
-    install -m 0755 "${BUNDLE_DIR}/lego/lego" /usr/local/bin/lego && ok "lego instalado desde el bundle offline"
+    install -m 0755 "${BUNDLE_DIR}/lego/lego" "$LEGO_BIN" && ok "lego $("$LEGO_BIN" --version 2>&1 | head -1) instalado desde el bundle offline"
 elif [ $OFFLINE -eq 0 ] && command -v curl >/dev/null 2>&1; then
     _lt="$(mktemp -d)"
     if curl -fsSLo "$_lt/lego.tgz" "https://github.com/go-acme/lego/releases/download/v${LEGO_VERSION}/lego_v${LEGO_VERSION}_linux_amd64.tar.gz" \
@@ -1103,8 +1104,8 @@ elif [ $OFFLINE -eq 0 ] && command -v curl >/dev/null 2>&1; then
         _exp="$(grep "lego_v${LEGO_VERSION}_linux_amd64.tar.gz$" "$_lt/sums" | awk '{print $1}')"
         _got="$(sha256sum "$_lt/lego.tgz" | awk '{print $1}')"
         if [ -n "$_exp" ] && [ "$_exp" = "$_got" ]; then
-            tar xzf "$_lt/lego.tgz" -C "$_lt" lego && install -m 0755 "$_lt/lego" /usr/local/bin/lego \
-                && ok "lego $(lego --version 2>&1 | head -1) instalado (sha256 verificado)"
+            tar xzf "$_lt/lego.tgz" -C "$_lt" lego && install -m 0755 "$_lt/lego" "$LEGO_BIN" \
+                && ok "lego $("$LEGO_BIN" --version 2>&1 | head -1) instalado (sha256 verificado)"
         else
             warn "lego: sha256 no coincide — NO instalado. Instálalo a mano si vas a usar ACME."
         fi

@@ -59,7 +59,7 @@
   <div class="doc">
     <aside class="toc">
       <div class="toc-title">On this page</div>
-      <a href="#unreleased">[Unreleased]</a>
+      <a href="#135-2026-08-04">[1.3.5] - 2026-08-04</a>
       <a href="#134-2026-08-04">[1.3.4] - 2026-08-04</a>
       <a href="#133-2026-08-04">[1.3.3] - 2026-08-04</a>
       <a href="#132-2026-08-04">[1.3.2] - 2026-08-04</a>
@@ -78,7 +78,7 @@
 <p>All notable changes to SATOM are documented here. Format loosely follows
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public, open-source
 project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
-<h2 id="unreleased">[Unreleased]</h2>
+<h2 id="135-2026-08-04">[1.3.5] - 2026-08-04</h2>
 <h3 id="the-node-was-never-told-which-names-it-answers-to">The node was never told which names it answers to</h3>
 <p>Two defects, one root cause -- the installer guessed the served names from
 <code>hostname</code> (the short name) and minted two artefacts from that guess.</p>
@@ -102,6 +102,9 @@ project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
   vhost is not in git, so a code update alone could never carry the fix.</li>
 <li>The HTTPS redirect no longer pins an explicit <code>:443</code>.</li>
 </ul>
+<p>The vhost is not in git, so an update alone cannot carry this fix to an
+installed node: run <code>satom execute repair nginx --yes</code>, or reinstall from
+this release. Releases 1.3 through 1.3.4 all emit the defective vhost.</p>
 <h2 id="134-2026-08-04">[1.3.4] - 2026-08-04</h2>
 <h3 id="the-offline-bundles-never-carried-git">The offline bundles never carried git</h3>
 <p>Found the only way it could be found -- by looking at a node installed from a

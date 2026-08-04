@@ -4,7 +4,7 @@ All notable changes to SATOM are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/). This is a public, open-source
 project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
-## [Unreleased]
+## [1.3.5] - 2026-08-04
 
 ### The node was never told which names it answers to
 
@@ -29,6 +29,10 @@ Two defects, one root cause -- the installer guessed the served names from
   the corrected shape, with backups, `nginx -t` and automatic rollback. The
   vhost is not in git, so a code update alone could never carry the fix.
 - The HTTPS redirect no longer pins an explicit `:443`.
+
+The vhost is not in git, so an update alone cannot carry this fix to an
+installed node: run `satom execute repair nginx --yes`, or reinstall from
+this release. Releases 1.3 through 1.3.4 all emit the defective vhost.
 
 ## [1.3.4] - 2026-08-04
 

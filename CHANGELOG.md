@@ -6,6 +6,64 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **Offline update packages — update a node with no route to the git remote.**
+  Download a signed package, upload it from Settings → Software Update, apply
+  it with no internet, no repository and no package mirror. The package carries
+  the application code and every pinned Python wheel, so it is about a quarter
+  the size of the offline *install* bundle. Preflight verifies the signature and
+  reports what applying it would do — version change, dependency changes,
+  interpreter match, disk, upgrade path — before anything is applied. The
+  privileged runner then re-verifies everything as root, takes a database
+  backup, installs the tree, installs the wheels with `--no-index`, restarts,
+  and **rolls back automatically** if the health check fails. Also available
+  from the console for a node with no browser: `satom execute update package`.
+  New: `installers/build-update-package.sh`, `deploy/sign_update_package.py`,
+  `deploy/update_package.py`, `app/services/update_package_service.py`,
+  `docs/offline-update-packages.md`. [SATOM-UPDATE-PACKAGE]
+
+- **A trust store, so the product contains no secret.** A node accepts a package
+  only if it is signed by a key `root` placed in `/etc/satom/update-keys`. The
+  Vision EBC release public key ships in the repository — a public key can only
+  *verify*, so publishing it is safe, exactly like an SSH `authorized_keys`
+  entry. Operators and forks add their own keys and sign their own packages;
+  nothing here depends on the vendor. The private half never touches a managed
+  node: signing is a separate step from building, run wherever the key lives.
+  New commands: `satom show trust`, `satom show package`,
+  `satom execute trust add-key`, `satom execute trust remove-key`,
+  `satom diagnose updates` (also folded into `diagnose all`).
+
+### Fixed
+
+- **SECURITY: the privileged update runner ran root-owned code out of a tree the
+  service account owns.** `satom-updater.service` runs as **root** and its
+  shipped unit points at `/opt/satom/deploy/self_update_runner.py`, inside the
+  application tree — which belongs to the unprivileged service account after the
+  de-privilege. The web worker could therefore rewrite the script root was about
+  to execute and then enqueue a request, which it is *designed* to be able to
+  do, and the next trigger would run its code as root. That is a complete
+  escalation across the boundary `docs/privilege-model.md` exists to defend, and
+  it is present in every release from 1.2 onward. A second path in the same
+  process: `_pip_allowlist()` imported `app.services.system_info`, executing the
+  entire Flask package as root out of the same writable tree.
+  `deploy/install-runner.sh` now installs a `root:root` copy of the runner and
+  its verifier in `/usr/local/lib/satom-runner`, run by a **system** interpreter,
+  and redirects the unit with a drop-in — not an edit, because the update runner
+  re-copies `deploy/<unit>` on every update. It runs from the installer, the
+  de-privilege migrator, every code update and
+  `satom execute reinstall runner`. The curated pip allowlist is now local to
+  the runner, with a test asserting it still equals `system_info._LIBRARIES`.
+  **Existing nodes are not fixed by updating alone** — run
+  `satom execute reinstall runner` (or re-run the installer), then confirm with
+  `satom diagnose updates`. Found while building the package feature: signature
+  verification performed by a script the attacker can edit verifies nothing.
+  [SATOM-RUNNER-ROOT-COPY]
+
+- `client_max_body_size` raised to 400M in the generated vhost, matching the
+  application's own upload limit. Below it, a valid package dies with an opaque
+  nginx 413 that the application never sees and therefore cannot explain.
+
 ### Changed
 
 - **License changed from Apache-2.0 to the [Elastic License 2.0](LICENSE).**
@@ -39,6 +97,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   [SATOM-LICENSE-TAGS]
 
 ### Fixed
+
+- **The unread badge on the topbar bell floated off the bell.** It was
+  positioned with Bootstrap's `.top-0 .start-100 .translate-middle`, which
+  anchor to the offset parent's border box — the button's padded hit area, not
+  the icon in it. `.fw-topbar-btn` declared no `display`, so the bell (nested in
+  a `.dropdown`, unlike the search button, which the flex container blockifies)
+  stayed `display: inline` with a 34x28 box around a 14x16 glyph. Measured on a
+  rendered page, the bubble sat at y 2–18 while the bell sat at y 16–32: ~14 px
+  above the thing it annotates and 1 px inside the user menu, which reads as the
+  bell moving and losing its formatting. The button now declares its own box and
+  the bubble has a dedicated themed class, defined once and consumed by both the
+  server-rendered markup and the live poller; it also picks up `--fw-danger` and
+  `--fw-topbar-bg`, so a custom theme retints it. All four topbar buttons now
+  report the same height. Guarded by `tests/test_topbar_bell.py`; see
+  `docs/safeguards.md` 8g. [SATOM-BELL-BADGE]
 
 - **A prompt could kill the installer without printing anything.** `read`
   returns non-zero on EOF and, under `set -euo pipefail`, that aborted the run

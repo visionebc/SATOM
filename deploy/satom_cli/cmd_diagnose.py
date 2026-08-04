@@ -312,6 +312,7 @@ def all_checks(ctx, args):
         ("acme", k.acme),
         ("peer", peer),
         ("privilege", privilege),
+        ("updates", _updates),
         ("python", python),
         ("scheduler", k.scheduler),
         ("backups", o.backup_status),
@@ -345,3 +346,9 @@ def all_checks(ctx, args):
     r.lines("next", ["Re-run any failing check on its own for the full detail,",
                      "e.g.  satom diagnose python"])
     return r
+
+
+def _updates(ctx, args):
+    """The offline-update path, folded into 'diagnose all'."""
+    from . import cmd_trust
+    return cmd_trust.diagnose_updates(ctx, args)

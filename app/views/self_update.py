@@ -15,6 +15,8 @@ from ..auth.decorators import require_permission
 from ..services import self_update as su
 from ..services import cluster
 from ..services import reconciler
+from ..services import update_package_service as upkg
+from ..services.audit import log_action
 
 bp = Blueprint("self_update", __name__, url_prefix="/self-update")
 
@@ -39,6 +41,8 @@ def index():
         reconcile=reconciler.last_status_orm(),
         watch_promote=request.args.get("watch_promote", ""),
         watch=request.args.get("watch", ""),
+        uploads=upkg.list_uploads(),
+        trust=upkg.trust_state(),
     )
 
 
@@ -195,3 +199,107 @@ def delete_node():
         su.remove_node(name)
         flash("HA node '%s' removed from the registry." % name, "info")
     return redirect(url_for("ha.index"))
+
+# ---------------------------------------------------------------------------
+# offline update packages
+# ---------------------------------------------------------------------------
+@bp.route("/package/upload", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def package_upload():
+    """Stage a signed update package. Staging is NOT applying: nothing is
+    trusted until the operator has read the preflight and pressed Apply, and
+    even then the privileged runner re-verifies everything from scratch."""
+    f = request.files.get("package")
+    if not f or not f.filename:
+        flash("Choose a package file to upload.", "danger")
+        return redirect(url_for("self_update.index"))
+    try:
+        info = upkg.save_upload(f.stream, f.filename)
+    except upkg.PackageError as exc:
+        flash("Upload rejected: %s" % exc, "danger")
+        return redirect(url_for("self_update.index"))
+    except OSError as exc:
+        flash("Upload failed: %s" % exc, "danger")
+        return redirect(url_for("self_update.index"))
+    log_action("update_package.upload", target=info["name"],
+               extra={"size": info["size"]})
+    flash("Staged %s. Review the preflight below before applying."
+          % info["name"], "success")
+    return redirect(url_for("self_update.index", pkg=info["name"]))
+
+
+@bp.route("/package/preflight/<name>")
+@login_required
+@require_permission("user_manage")
+def package_preflight(name):
+    try:
+        return jsonify(upkg.preflight(name))
+    except upkg.PackageError as exc:
+        return jsonify({"name": name, "checks": [
+            {"id": "package", "label": "Package", "status": "fail",
+             "detail": str(exc)}], "can_apply": False,
+            "blocking": ["package"]}), 400
+
+
+@bp.route("/package/delete", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def package_delete():
+    name = request.form.get("name") or ""
+    try:
+        upkg.delete_upload(name)
+        log_action("update_package.delete", target=name)
+        flash("Removed %s from the staging area." % name, "info")
+    except upkg.PackageError as exc:
+        flash(str(exc), "danger")
+    return redirect(url_for("self_update.index"))
+
+
+@bp.route("/package/apply", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def package_apply():
+    """Queue an offline package apply.
+
+    Re-runs preflight server-side. The page the operator saw could be minutes
+    old, and 'the button was enabled' is not a safety property — the decision
+    has to be made against the state that exists now.
+    """
+    name = request.form.get("name") or ""
+    allow_downgrade = "allow_downgrade" in request.form
+    try:
+        pre = upkg.preflight(name)
+    except upkg.PackageError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("self_update.index"))
+
+    if not pre.get("can_apply"):
+        flash("Refused: this package still fails preflight (%s). Nothing was "
+              "applied." % ", ".join(pre.get("blocking") or ["unknown"]),
+              "danger")
+        return redirect(url_for("self_update.index", pkg=name))
+    if pre.get("is_downgrade") and not allow_downgrade:
+        flash("This package is OLDER than the running version. Tick the "
+              "downgrade confirmation to proceed — migrations are not "
+              "reversed, so keep the database backup.", "warning")
+        return redirect(url_for("self_update.index", pkg=name))
+
+    try:
+        uid = upkg.request_package_apply(
+            name, by=getattr(current_user, "username", "?"),
+            allow_downgrade=allow_downgrade,
+            do_backup="skip_backup" not in request.form)
+    except upkg.PackageError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("self_update.index"))
+
+    log_action("update_package.apply", target=name,
+               extra={"from": pre.get("current_version"),
+                      "to": (pre.get("manifest") or {}).get("version"),
+                      "downgrade": bool(pre.get("is_downgrade")),
+                      "queued": uid})
+    flash("Package apply queued (%s). The privileged runner is verifying the "
+          "signature again and applying it — watch the live status below. The "
+          "service restarts mid-update." % uid, "success")
+    return redirect(url_for("self_update.index", watch=uid))

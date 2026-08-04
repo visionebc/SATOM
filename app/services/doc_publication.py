@@ -103,6 +103,11 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
      "Which account runs what, the two-command sudo allowlist, the privileged-runner boundary and node-to-node trust."),
     ("safeguards.md", "safeguards", "Safeguards — full catalog", "\U0001f6e1️",
      "Every protection: what it prevents, where it lives, and the command that proves it is armed."),
+    ("offline-update-packages.md", "offline-update-packages",
+     "Offline update packages", "\U0001f4e5",
+     "Update a node with no route to the git remote: signed packages, the trust "
+     "store that decides which signatures count, preflight, and the privileged "
+     "apply with automatic rollback."),
     ("git-backup-and-outage.md", "git-backup", "Git backup & surviving an outage", "\U0001f9ef",
      "The anti-reset guard, the unpushed-commit alert, repository bundles and the four-copy recovery runbook."),
     ("encryption-and-node-tls.md", "encryption", "Encryption in transit & node TLS", "\U0001f512",
@@ -135,7 +140,8 @@ GROUPS: list[tuple[str, str, list[str]]] = [
     ("Start here", "New to the platform — read these in order.",
      ["readme", "management-overview", "overview", "user-guide", "theming"]),
     ("Deploy & operate", "Getting it running, keeping it running, getting it back.",
-     ["install", "cli", "privilege-model", "safeguards", "git-backup"]),
+     ["install", "cli", "privilege-model", "safeguards", "git-backup",
+      "offline-update-packages"]),
     ("Security", "Certificates, transport encryption and trust between nodes.",
      ["encryption", "acme"]),
     ("Build & integrate", "For developers extending the platform or driving it from outside.",

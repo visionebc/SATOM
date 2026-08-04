@@ -25,6 +25,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `tests/test_license_consistency.py` so no surface can drift back; see
   `docs/safeguards.md` 7f. [SATOM-LICENSE]
 
+- **The published tags were restamped to match.** Changing `main` was not
+  enough: a tag is itself a public offer of terms, so every release tag
+  published before the change kept handing out the Apache-2.0 grant on the exact
+  refs a reader is most likely to pin — and re-pointing a tag at the sanitised
+  history moves the ref, not the bytes. The publisher now rewrites `LICENSE` and
+  the five declaring files across the whole published history and refuses to
+  push while any reachable commit still carries the Apache body. `CHANGELOG.md`,
+  `docs/` and `tests/` are deliberately left untouched: they record the change
+  rather than declare the current terms. This changes what the repository shows,
+  not what anyone already holds — a copy fetched earlier stays under the terms
+  it was received under, as `LICENSE` states. See `docs/safeguards.md` 7f.
+  [SATOM-LICENSE-TAGS]
+
 ### Fixed
 
 - **A prompt could kill the installer without printing anything.** `read`

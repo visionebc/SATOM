@@ -59,6 +59,7 @@
   <div class="doc">
     <aside class="toc">
       <div class="toc-title">On this page</div>
+      <a href="#unreleased">[Unreleased]</a>
       <a href="#135-2026-08-04">[1.3.5] - 2026-08-04</a>
       <a href="#134-2026-08-04">[1.3.4] - 2026-08-04</a>
       <a href="#133-2026-08-04">[1.3.3] - 2026-08-04</a>
@@ -78,6 +79,21 @@
 <p>All notable changes to SATOM are documented here. Format loosely follows
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public, open-source
 project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
+<h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li><strong>A prompt could kill the installer without printing anything.</strong> <code>read</code>
+  returns non-zero on EOF and, under <code>set -euo pipefail</code>, that aborted the run
+  silently -- the last visible line was the previous step. It bites when the
+  installer is driven by a pipe or here-doc whose answer sequence is shorter
+  than the prompt sequence; the ONLINE path asks one question more than the
+  OFFLINE one (the repository URL), so a driver written against one path dies
+  mid-install on the other. All twelve prompts now go through <code>ask</code> /
+  <code>ask_secret</code>, which abort with a message naming the unanswered prompt.
+  EOF <em>with</em> partial data (a last line without a newline) remains a valid
+  answer. Guarded structurally, so a prompt added later cannot bypass them.
+  See <code>docs/safeguards.md</code> 10f. [SATOM-LOUD-READ]</li>
+</ul>
 <h2 id="135-2026-08-04">[1.3.5] - 2026-08-04</h2>
 <h3 id="the-node-was-never-told-which-names-it-answers-to">The node was never told which names it answers to</h3>
 <p>Two defects, one root cause -- the installer guessed the served names from
@@ -380,7 +396,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   fails the suite if the generator ever re-declares any of it.</p>
 </li>
 </ul>
-<h3 id="fixed">Fixed</h3>
+<h3 id="fixed_1">Fixed</h3>
 <ul>
 <li><strong><code>/docs/api</code> was public and served the document unredacted.</strong> The route
   needed no session and rendered <code>docs/api_v1.md</code> verbatim, so a management
@@ -407,7 +423,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   is hard-wrapped at about 90 columns and the renderer had <code>nl2br</code> enabled, so
   every wrap became a visible break. The published renderer never had it.</li>
 </ul>
-<h3 id="fixed_1">Fixed</h3>
+<h3 id="fixed_2">Fixed</h3>
 <ul>
 <li>
 <p><strong>A cluster on openSUSE never replicated files at all, and five more defects
@@ -535,7 +551,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   and on the public documentation site. One source, three renderings — no copy
   to fall out of date. A test fails the suite if any surface stops carrying it.</li>
 </ul>
-<h3 id="fixed_2">Fixed</h3>
+<h3 id="fixed_3">Fixed</h3>
 <ul>
 <li><strong>The application reported version 1.0 through four releases.</strong> The footer
   and Settings -&gt; System Information each carried a hand-written literal that
@@ -562,7 +578,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   intensity is per-theme, so the dark palette can lean on it without the light
   one looking neon.</li>
 </ul>
-<h3 id="fixed_3">Fixed</h3>
+<h3 id="fixed_4">Fixed</h3>
 <ul>
 <li><strong>The site wordmark was effectively invisible.</strong> A single <code>--accent</code> served
   both the light canvas and the navy chrome, putting the bold half of the
@@ -604,7 +620,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   own output and <strong>aborts</strong> on any survivor, naming pattern, file and line.
   Publication is opt-in: a document not listed is not published.</li>
 </ul>
-<h3 id="fixed_4">Fixed</h3>
+<h3 id="fixed_5">Fixed</h3>
 <ul>
 <li><strong>The CLI could crash while printing.</strong> An em dash in a title raised
   <code>UnicodeEncodeError</code> on a stream with an ASCII encoding (a serial console,
@@ -653,7 +669,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   backups at all. It prints the plan and only applies with <code>--yes</code>, and it
   never touches an existing row — operator edits still win.</li>
 </ul>
-<h3 id="fixed_5">Fixed</h3>
+<h3 id="fixed_6">Fixed</h3>
 <ul>
 <li><strong>Two diagnostics were modifying the tree they diagnose.</strong> <code>git status</code> run as
   root rewrites <code>.git/index</code> and takes it from the service account;
@@ -720,7 +736,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   <code>/healthz</code> returned 200 and the whole test suite stayed green.</p>
 <p>Reference: <a href="cli.html"><code>docs/cli.md</code></a>. Permissions to request:
   <code>docs/INSTALL.md</code> §5, <em>Cuenta de OPERADOR</em>.</p>
-<h3 id="fixed_6">Fixed</h3>
+<h3 id="fixed_7">Fixed</h3>
 <ul>
 <li><strong>The device cards on the probe pages were painted for a dark theme.</strong> SATOM
   has no dark mode — <code>static/css/fortiweb.css</code> is a light chrome (<code>#F4F5F7</code>
@@ -765,7 +781,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   instead of sitting critical forever. Two knobs in Settings → Alerts
   (<em>Automation fail streak → critical</em>, <em>Automation overdue (hours)</em>).</li>
 </ul>
-<h3 id="fixed_7">Fixed</h3>
+<h3 id="fixed_8">Fixed</h3>
 <ul>
 <li>
 <p><strong>Maintenance mode suppressed alerts but not work.</strong> An appliance parked with
@@ -873,7 +889,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   harvest cache, which is empty on a licence-locked box). A failure is printed
   in the form instead of degrading to an empty dropdown — "no policies" and
   "could not ask" look identical in a <code>&lt;select&gt;</code> and mean opposite things.</p>
-<h3 id="fixed_8">Fixed</h3>
+<h3 id="fixed_9">Fixed</h3>
 <ul>
 <li><strong><code>transactions</code> could report a silent zero on a saturated policy.</strong> Found by
   a real load test against {device} (2026-07-28): a policy carrying
@@ -924,7 +940,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   permanently red. The worst status and per-status counts moved into the
   summary. See <code>docs/safeguards.md</code> §9d.</li>
 </ul>
-<h3 id="fixed_9">Fixed</h3>
+<h3 id="fixed_10">Fixed</h3>
 <ul>
 <li><strong>A product ADOM inherited the manager's own infrastructure.</strong> Fleet health
   rendered <em>Infrastructure health — HA nodes · Git · backup server</em>, the
@@ -1020,7 +1036,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   average and a five-minute reading are not the same claim about the device.</li>
 </ul>
 <h2 id="122-2026-07-27">[1.2.2] - 2026-07-27</h2>
-<h3 id="fixed_10">Fixed</h3>
+<h3 id="fixed_11">Fixed</h3>
 <ul>
 <li><strong><code>app/services/cert_service.py</code> did not parse.</strong> An <code>import os</code> had been
   placed above <code>from __future__ import annotations</code>, which is a hard
@@ -1071,7 +1087,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li><strong>Rule recorded in <code>docs/overview.md</code></strong>: a new safeguard lands in
   <code>docs/safeguards.md</code> in the same commit that introduces it.</li>
 </ul>
-<h3 id="fixed_11">Fixed</h3>
+<h3 id="fixed_12">Fixed</h3>
 <ul>
 <li>Offline bundle checksums used an absolute path, so <code>sha256sum -c</code> failed in
   the directory the file was downloaded to. Now basename-only, as the RHEL
@@ -1135,7 +1151,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   Manager</strong>. Vendor names (FortiWeb, FortiADC, FortiAnalyzer) are untouched:
   the product manages those appliances and has to name them.</li>
 </ul>
-<h3 id="fixed_12">Fixed</h3>
+<h3 id="fixed_13">Fixed</h3>
 <ul>
 <li><strong>Scheduler and git-publish were silently dead</strong> after the privilege drop:
   both guard scripts used <code>runuser</code>, which only works as root. The scheduler
@@ -1195,7 +1211,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   bundles), generic package-manager support, public site (GitHub Pages),
   package registry artifacts.</li>
 </ul>
-<h3 id="fixed_13">Fixed</h3>
+<h3 id="fixed_14">Fixed</h3>
 <ul>
 <li>Upgrade-event timestamps now render in local time (<code>| localtime</code>) instead
   of raw UTC.</li>

@@ -1496,6 +1496,50 @@ builders carry it.
 **Why the diagnosis matters as much as the package.** The node that cannot
 publish its source of truth is the node whose evidence you will want later.
 
+## 10f. A prompt may not die in silence
+
+`read` returns non-zero on EOF. Under `set -euo pipefail` that killed the
+installer **without printing anything**: the last line the operator saw was the
+previous step, and `rc=1` said nothing about where it stopped. It happens
+whenever the installer is driven by a pipe or here-doc and the answer sequence
+is shorter than the prompt sequence -- and the ONLINE and OFFLINE paths do
+**not** have the same number of prompts (online also asks for the repository
+URL). Interactively it cannot happen; in automation it can.
+
+Same class as 10c: a failure nobody can see is a failure nobody will find.
+
+**What is armed**
+
+- Every prompt goes through `ask` / `ask_secret`, which check `read`'s exit
+  status and abort through `_ask_die`, naming the prompt that went unanswered
+  and explaining the pipe/here-doc mismatch.
+- EOF **with** partial data (a final line without a newline) is a valid answer
+  and is accepted -- the same as Ctrl-D after typing in a terminal. Only EOF
+  that produced nothing aborts.
+- A structural guard rejects any raw prompt `read` outside those two helpers, so
+  a prompt added later cannot reintroduce the silent death. It is evaluated over
+  *executed* lines: the helper's own comment discusses `read`, and a naive
+  substring check would match the prose.
+- The guards anchor the opposite behaviour too
+  (`test_raw_read_is_the_silent_failure_we_are_preventing`): narrowing the helper
+  and the test together would otherwise leave them self-consistent and green.
+
+**Verifying the guard is armed**
+
+```bash
+# 1. no prompt bypasses the helpers, and the helpers really abort
+python3 -m pytest tests/test_installer_loud_read.py -q
+
+# 2. the behaviour itself, against the real installer source
+printf '' | bash -c 'set -euo pipefail
+                     source <(sed -n "/^_ask_die() {/,/^}$/p;/^ask() {/,/^}$/p" \
+                              installers/install-satom.sh)
+                     die() { echo "ERROR: $*" >&2; exit 1; }
+                     ask V "Question: "'
+#    expected: non-zero exit AND a message naming "Question: "
+#    the pre-fix behaviour was: exit 1, no output at all
+```
+
 ## 10e. The node has to be told which names it answers to
 
 Two defects with one root cause: the installer never learned which names the

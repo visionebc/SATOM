@@ -86,13 +86,24 @@ def load_private_seed(path: Path, passphrase: str | None) -> bytes:
     if serialization is None:
         raise SystemExit("%s looks like a PEM key but cryptography is not "
                          "installed to read it." % path)
+    key = None
     if passphrase is None:
-        passphrase = getpass.getpass("Passphrase for %s: " % path.name)
-    try:
-        key = serialization.load_pem_private_key(
-            data, password=passphrase.encode() if passphrase else None)
-    except Exception as exc:
-        raise SystemExit("could not read %s: %s" % (path, exc))
+        # Try WITHOUT a passphrase first. An unencrypted key needs no prompt,
+        # and prompting for one anyway makes the signer unusable from a script
+        # or a CI job -- getpass raises EOFError with no terminal, so the
+        # command dies instead of signing.
+        try:
+            key = serialization.load_pem_private_key(data, password=None)
+        except TypeError:
+            passphrase = getpass.getpass("Passphrase for %s: " % path.name)
+        except Exception as exc:
+            raise SystemExit("could not read %s: %s" % (path, exc))
+    if key is None:
+        try:
+            key = serialization.load_pem_private_key(
+                data, password=passphrase.encode() if passphrase else None)
+        except Exception as exc:
+            raise SystemExit("could not read %s: %s" % (path, exc))
     return key.private_bytes(
         encoding=serialization.Encoding.Raw,
         format=serialization.PrivateFormat.Raw,

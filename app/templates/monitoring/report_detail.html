@@ -1,0 +1,193 @@
+{# ============================================================================
+   One stored report.
+
+   Rendered from the persisted JSON body, never rebuilt: this is the record of
+   what the fleet looked like in that window, and it must keep saying so after
+   the probes that produced it are gone.
+
+   "No data" is rendered as a finding with the same visual weight as a reading.
+   A report that prints 100 % for a week in which the scheduler was dead is
+   worse than no report — it is a signed statement that everything was fine.
+   ========================================================================= #}
+{% extends "base.html" %}
+{% block title %}{{ report.title }}{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/analytics.css') }}" data-turbo-track="reload">
+{% endblock %}
+
+{% set b = report.body %}
+{% set t = b.totals %}
+
+{% block content %}
+<div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h1 class="fw-page-title mb-0">
+      <i class="bi bi-file-earmark-bar-graph me-2 text-accent"></i>{{ report.title }}</h1>
+    <p class="text-muted small mb-0">
+      {{ b['from']|replace('T',' ') }} → {{ b['to']|replace('T',' ') }} UTC ·
+      generated {{ report.generated_at|replace('T',' ') }}
+      {% if report.generated_by %} by {{ report.generated_by }}{% endif %}
+      {% if report.emailed_at %} · mailed {{ report.emailed_at|replace('T',' ') }}{% endif %}
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('monitor_reports.as_text', rid=report.id) }}">
+      <i class="bi bi-file-text me-1"></i>Text</a>
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('monitor_reports.as_csv', rid=report.id) }}">
+      <i class="bi bi-filetype-csv me-1"></i>CSV</a>
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('monitor_reports.index') }}">
+      <i class="bi bi-arrow-left me-1"></i>All reports</a>
+  </div>
+</div>
+
+{% if b.no_data %}
+<div class="fw-card p-3 mb-3">
+  <b class="an-nodata"><i class="bi bi-exclamation-triangle me-1"></i>
+    Nothing was measured in this window.</b>
+  <p class="text-muted small mb-0 mt-1">
+    No samples were recorded for any probe between
+    {{ b['from']|replace('T',' ') }} and {{ b['to']|replace('T',' ') }}. That is a
+    finding about the collection layer, not about the fleet: check that the
+    <code>deep_monitor</code> scheduled action is enabled and that the scheduler
+    is running on the primary node.</p>
+</div>
+{% endif %}
+
+<div class="an-rep-grid mb-3">
+  <div class="an-kpi">
+    <div class="an-kpi-label">Health</div>
+    <div class="an-kpi-value {{ 'an-nodata' if t.healthy_pct is none }}">
+      {% if t.healthy_pct is none %}no data{% else %}{{ '%.1f'|format(t.healthy_pct) }} %{% endif %}
+    </div>
+    <div class="an-kpi-note">{{ t.measured_probes }} of {{ t.probes }} probe(s) measured</div>
+  </div>
+  <div class="an-kpi">
+    <div class="an-kpi-label">Worst status</div>
+    <div class="an-kpi-value">{{ t.worst }}</div>
+    <div class="an-kpi-note">across {{ t.devices }} device(s)</div>
+  </div>
+  <div class="an-kpi">
+    <div class="an-kpi-label">Samples</div>
+    <div class="an-kpi-value">{{ '{:,}'.format(t.samples) }}</div>
+    <div class="an-kpi-note">{{ t.probes }} probe(s) in scope</div>
+  </div>
+  <div class="an-kpi">
+    <div class="an-kpi-label">Incidents</div>
+    <div class="an-kpi-value">{{ t.incidents }}</div>
+    <div class="an-kpi-note">{{ t.breaches }} threshold breach(es)</div>
+  </div>
+  <div class="an-kpi">
+    <div class="an-kpi-label">Drift events</div>
+    <div class="an-kpi-value">{{ t.changes }}</div>
+    <div class="an-kpi-note">daemon restarts, interface changes</div>
+  </div>
+  <div class="an-kpi">
+    <div class="an-kpi-label">Silent probes</div>
+    <div class="an-kpi-value {{ 'an-nodata' if t.silent }}">{{ t.silent }}</div>
+    <div class="an-kpi-note">reported nothing in the window</div>
+  </div>
+</div>
+
+<div class="an-report-body">
+{% for d in b.devices %}
+  <div class="fw-card p-0 mb-3">
+    <div class="an-card-head">
+      <div class="an-card-title">{{ d.device }}</div>
+      <div class="an-card-sub">
+        {% if d.healthy_pct is none %}
+          <span class="an-nodata">no data</span>
+        {% else %}{{ '%.1f'|format(d.healthy_pct) }} % healthy{% endif %}
+        · {{ d.changes }} drift · {{ d.breaches }} breach(es)
+      </div>
+      <div class="an-card-tools">
+        <span class="fw-badge fw-badge-{{
+          'success' if d.worst == 'ok' else
+          'warning' if d.worst == 'warn' else
+          'danger' if d.worst in ('crit','error') else 'secondary' }}">{{ d.worst }}</span>
+      </div>
+    </div>
+    <div class="an-table-wrap">
+      <table class="an-table mb-0">
+        <thead>
+          <tr>
+            <th>Probe</th><th>Metric</th>
+            <th class="an-num">Min</th><th class="an-num">Avg</th>
+            <th class="an-num">p95</th><th class="an-num">Peak</th>
+            <th class="an-num">vs prev</th>
+            <th class="an-num">Health</th><th class="an-num">Samples</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in d.probes %}
+          <tr>
+            <td>{{ r.name }}{% if not r.enabled %}
+              <span class="text-muted" style="font-size:.7rem">(paused)</span>{% endif %}</td>
+            <td class="text-muted" style="font-size:.74rem">
+              {{ r.metric or r.kind_label }}{% if r.unit %} ({{ r.unit }}){% endif %}</td>
+            <td class="an-num">{{ '%g'|format(r.min) if r.min is not none else '—' }}</td>
+            <td class="an-num">{{ '%g'|format(r.avg) if r.avg is not none else '—' }}</td>
+            <td class="an-num">{{ '%g'|format(r.p95) if r.p95 is not none else '—' }}</td>
+            <td class="an-num">{{ '%g'|format(r.max) if r.max is not none else '—' }}</td>
+            <td class="an-num">
+              {% if r.delta_avg_pct is none %}—
+              {% else %}{{ '%+.1f'|format(r.delta_avg_pct) }} %{% endif %}</td>
+            <td class="an-num">
+              {% if r.healthy_pct is none %}<span class="an-nodata">no data</span>
+              {% else %}{{ '%.1f'|format(r.healthy_pct) }} %{% endif %}</td>
+            <td class="an-num">{{ r.samples }}</td>
+            <td class="text-muted" style="font-size:.72rem">{{ r.source }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endfor %}
+</div>
+
+{% if b.silent %}
+<div class="fw-card p-3 mb-3">
+  <h3 class="an-nodata mb-2" style="font-size:.9rem">
+    <i class="bi bi-slash-circle me-1"></i>Probes that reported nothing</h3>
+  <p class="text-muted small">
+    Named explicitly rather than simply omitted from the averages above: a
+    report whose figures quietly skip them looks complete while covering less
+    than it claims.</p>
+  <ul class="small mb-0">
+    {% for s in b.silent %}
+      <li>{{ s.device or '—' }} · <b>{{ s.probe }}</b> [{{ s.kind }}]
+        {% if not s.enabled %}<span class="text-muted">— paused</span>{% endif %}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if b.incidents %}
+<div class="fw-card p-0">
+  <div class="an-card-head"><div class="an-card-title">
+    Incidents ({{ b.incidents|length }})</div></div>
+  <div class="an-table-wrap" style="max-height:420px">
+    <table class="an-table an-inc-list mb-0">
+      <thead><tr><th>When (UTC)</th><th>Status</th><th>Device</th><th>Probe</th><th>Metric</th></tr></thead>
+      <tbody>
+      {% for i in b.incidents %}
+        <tr>
+          <td>{{ i.t|replace('T',' ') }}</td>
+          <td><span class="fw-badge fw-badge-{{
+            'warning' if i.status == 'warn' else 'danger' }}">{{ i.status }}</span></td>
+          <td>{{ i.device or '—' }}</td>
+          <td>{{ i.probe }}</td>
+          <td class="text-muted" style="font-size:.74rem">{{ i.kind }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

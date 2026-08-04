@@ -143,6 +143,15 @@ a:hover { color: var(--fw-accent-hover); text-decoration: underline; }
 }
 
 .fw-topbar-btn {
+  /* Explicit box. The search button is a direct flex child of
+     .fw-topbar-actions (so it gets blockified) while the bell lives inside
+     .dropdown and would otherwise stay display:inline -- two buttons in the
+     same toolbar with different hit areas, and an absolutely positioned
+     child anchored to a box that does not match the glyph. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
   background: transparent;
   border: none;
   color: var(--fw-topbar-text);
@@ -154,6 +163,33 @@ a:hover { color: var(--fw-accent-hover); text-decoration: underline; }
 }
 
 .fw-topbar-btn:hover { background: rgba(255,255,255,0.1); }
+
+/* Unread-count bubble on the topbar bell.
+   Pinned to the bell GLYPH, not to the button's padded hit area: the button
+   is 34x28 while the icon is 14x16, so Bootstrap's .top-0/.start-100/
+   .translate-middle put the bubble against the topbar's top edge, clear of
+   the bell and overlapping the user menu. Defined here once and consumed by
+   both the server-rendered markup and the poller in base.html -- two
+   definitions would drift. */
+.fw-notif-badge {
+  position: absolute;
+  top: 2px;
+  right: 1px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--fw-danger);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+  white-space: nowrap;
+  /* Ring in the bar colour so the bubble reads as separate from the bell. */
+  box-shadow: 0 0 0 2px var(--fw-topbar-bg);
+  pointer-events: none;
+}
 
 .fw-user-menu .dropdown-toggle {
   color: var(--fw-topbar-text);

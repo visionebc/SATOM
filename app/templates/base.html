@@ -175,8 +175,7 @@
          title="{{ (_notif_count ~ ' unread notification(s)') if _notif_count else 'Notifications' }}">
         <i class="bi bi-bell{% if _notif_count %}-fill{% endif %}"></i>
         {% if _notif_count %}
-        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
-              style="font-size:9px;">{{ _notif_count }}</span>
+        <span class="fw-notif-badge">{{ _notif_count }}</span>
         {% endif %}
       </a>
       <div class="dropdown-menu dropdown-menu-end shadow-sm fw-notif-dd p-0">
@@ -980,12 +979,11 @@
     if (!bell) return;
     var icon = bell.querySelector('i.bi');
     if (icon) icon.className = 'bi bi-bell' + (count > 0 ? '-fill' : '');
-    var badge = bell.querySelector('.badge');
+    var badge = bell.querySelector('.fw-notif-badge');
     if (count > 0) {
       if (!badge) {
         badge = document.createElement('span');
-        badge.className = 'position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger';
-        badge.style.fontSize = '9px';
+        badge.className = 'fw-notif-badge';
         bell.appendChild(badge);
       }
       badge.textContent = count;

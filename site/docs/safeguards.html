@@ -953,6 +953,14 @@ published-content test passed, because the defect lived entirely in presentation
 </ul>
 <p>Rule: an animation may change <em>how</em> content arrives, never <em>whether</em> it does.</p>
 <h3 id="verifying-the-guards-are-armed">Verifying the guards are armed</h3>
+<h3 id="the-installer-does-not-reload-nginx-it-just-started">The installer does not reload nginx it just started</h3>
+<pre><code>grep -nE '^[[:space:]]*systemctl[[:space:]]+reload[[:space:]]+nginx' \
+    installers/install-satom.sh     # must print nothing
+grep -c 'SATOM-NGINX-START' installers/install-satom.sh   # must be &gt;= 1
+</code></pre>
+<p>On a freshly installed standalone node, <code>satom diagnose nginx</code> must report
+<code>peer channel :8443  state  n/a - standalone, no peer</code> and the check must be
+<code>[ok]</code>, not <code>[warn]</code>.</p>
 <pre><code>pytest tests/test_site_reveal.py -q
 </code></pre>
 <p>and, against a served page, assert the section is actually opaque rather than
@@ -1684,6 +1692,55 @@ satom show version
 # 4. the installer refuses to die quietly
 grep -c 'SATOM-LOUD-DB' /opt/satom/installers/install-satom.sh   # 1
 </code></pre>
+<h3 id="a-run-that-passes-does-not-prove-a-race-is-absent">A run that passes does not prove a race is absent</h3>
+<p>Installing v1.3.2 on two identical blank openSUSE Leap 15.6 machines, the
+online node exited <strong>1</strong> and the offline node exited <strong>0</strong> -- same release,
+same distribution, same answers. The difference was 38 milliseconds.</p>
+<p>The installer started nginx and reloaded it on the same line:</p>
+<pre><code>systemctl enable --now nginx &gt;&gt;"$INSTALL_LOG" 2&gt;&amp;1; systemctl reload nginx
+</code></pre>
+<p>openSUSE ships <code>nginx.service</code> as <code>Type=simple</code> with
+<code>ExecStart=/usr/sbin/nginx -g "daemon off;"</code> and
+<code>ExecReload=/bin/kill -s HUP $MAINPID</code>. systemd calls a <code>Type=simple</code> unit
+started the instant it <code>exec()</code>s -- <strong>before</strong> nginx has written
+<code>/run/nginx.pid</code>. The immediate reload therefore resolved <code>$MAINPID</code> to
+nothing, <code>kill</code> exited 2, and systemd tore down the entire service. The
+installation itself was complete and correct: a plain <code>systemctl restart
+nginx</code> afterwards served <code>/healthz</code> 200 immediately.</p>
+<p>Debian and RHEL never see it: their units are forking with <code>PIDFile=</code>, so
+systemd waits for the pid before declaring the start successful.</p>
+<p>Three rules came out of it:</p>
+<ul>
+<li><strong>Do not reload a service you just started.</strong> The reload was redundant --
+  nginx had come up seconds earlier on the very config <code>nginx -t</code> had just
+  validated.</li>
+<li><strong>Wait on a condition, never on luck.</strong> The start is now followed by a
+  bounded poll on <code>systemctl is-active</code> <strong>and</strong> a non-empty <code>/run/nginx.pid</code>
+  <strong>and</strong> an accepted TCP connection on the web port. The pid file is not
+  cosmetic: it is what makes the <code>systemctl reload nginx</code> that <code>cert_service</code>
+  runs at renewal time -- through the two-command sudoers rule -- safe.</li>
+<li><strong>An unguarded final command hides everything behind it.</strong> With <code>set -e</code>,
+  the failing reload killed the script before step 7, so the installer never
+  ran its health check and never printed the banner telling the operator that
+  the scheduled actions are not seeded. A working system reported failure and
+  withheld the one instruction that mattered.</li>
+</ul>
+<p>Guard: <code>tests/test_installer_nginx_start.py</code>, marker <code>SATOM-NGINX-START</code>.</p>
+<h3 id="a-standalone-install-has-no-peer-channel">A standalone install has no peer channel</h3>
+<p><code>satom diagnose nginx</code> probed <code>https://127.0.0.1:8443/healthz</code> unconditionally
+and graded a non-answer as a finding. :8443 is the authenticated node-to-node
+channel; a standalone install does not have one. So <strong>every</strong> fresh single-node
+install opened with <code>[warn] nginx</code> forever, over a feature it deliberately does
+not have -- the same chronic false positive already removed from <code>get system
+health</code> for the datasync timer that is inert by design on a primary, and from
+the CLI colouring for status words like <code>inactive</code>.</p>
+<p>The row is still printed (<code>n/a - standalone, no peer</code>), so the channel is never
+silently unreported; it just stops counting against the node. On any other role
+it is graded exactly as before -- on a real pair, a dead :8443 means the peers
+cannot probe each other, which is a genuine finding.</p>
+<p>Selection lives in a pure helper, <code>cmd_checks.nginx_probes(role)</code>, so the guard
+is a behavioural test and not a grep over code that documents itself.</p>
+<p>Guard: <code>tests/test_installer_nginx_start.py</code>, marker <code>SATOM-NGINX-PEER</code>.</p>
 <h2 id="11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</h2>
 <ul>
 <li>Per-device configuration restore is dry-run gated — no live canary round-trip yet.</li>

@@ -79,6 +79,29 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public, open-source
 project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="the-node-was-never-told-which-names-it-answers-to">The node was never told which names it answers to</h3>
+<p>Two defects, one root cause -- the installer guessed the served names from
+<code>hostname</code> (the short name) and minted two artefacts from that guess.</p>
+<ul>
+<li><strong><code>proxy_set_header Host $host</code> dropped the port.</strong> Flask-WTF compares the
+  browser's <code>Referer</code> -- port included -- against the origin the app believes it
+  is on, so behind a NAT or a proxy on a non-standard port <strong>every POST,
+  including the login, failed CSRF</strong> and reported an expired session. Invisible
+  on <code>:443</code>, where browsers omit the default port. Now <code>$http_host</code>, in the
+  installer and in <code>deploy/nginx-vhost.conf</code>.</li>
+<li><strong><code>server_name</code> and the node certificate's SAN were both the short hostname.</strong>
+  A node reached by FQDN answered only because the vhost also claimed
+  <code>default_server</code>, and its freshly issued certificate had no SAN for the name
+  the browser used. The installer now asks for the served DNS names in step 1
+  (default <code>hostname -f</code>, override <code>SATOM_SERVED_NAMES</code>) and feeds them to both.</li>
+<li><code>satom diagnose nginx</code> gains two verifications: any proxying vhost passing
+  <code>$host</code> is a failure, and the served certificate must cover every FQDN in
+  <code>server_name</code> (RFC 6125 wildcard matching -- one label, no bare apex).</li>
+<li>New <code>satom execute repair nginx [--yes]</code> brings an already-installed node to
+  the corrected shape, with backups, <code>nginx -t</code> and automatic rollback. The
+  vhost is not in git, so a code update alone could never carry the fix.</li>
+<li>The HTTPS redirect no longer pins an explicit <code>:443</code>.</li>
+</ul>
 <h2 id="134-2026-08-04">[1.3.4] - 2026-08-04</h2>
 <h3 id="the-offline-bundles-never-carried-git">The offline bundles never carried git</h3>
 <p>Found the only way it could be found -- by looking at a node installed from a

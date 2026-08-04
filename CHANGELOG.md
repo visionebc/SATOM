@@ -6,6 +6,30 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### The node was never told which names it answers to
+
+Two defects, one root cause -- the installer guessed the served names from
+`hostname` (the short name) and minted two artefacts from that guess.
+
+- **`proxy_set_header Host $host` dropped the port.** Flask-WTF compares the
+  browser's `Referer` -- port included -- against the origin the app believes it
+  is on, so behind a NAT or a proxy on a non-standard port **every POST,
+  including the login, failed CSRF** and reported an expired session. Invisible
+  on `:443`, where browsers omit the default port. Now `$http_host`, in the
+  installer and in `deploy/nginx-vhost.conf`.
+- **`server_name` and the node certificate's SAN were both the short hostname.**
+  A node reached by FQDN answered only because the vhost also claimed
+  `default_server`, and its freshly issued certificate had no SAN for the name
+  the browser used. The installer now asks for the served DNS names in step 1
+  (default `hostname -f`, override `SATOM_SERVED_NAMES`) and feeds them to both.
+- `satom diagnose nginx` gains two verifications: any proxying vhost passing
+  `$host` is a failure, and the served certificate must cover every FQDN in
+  `server_name` (RFC 6125 wildcard matching -- one label, no bare apex).
+- New `satom execute repair nginx [--yes]` brings an already-installed node to
+  the corrected shape, with backups, `nginx -t` and automatic rollback. The
+  vhost is not in git, so a code update alone could never carry the fix.
+- The HTTPS redirect no longer pins an explicit `:443`.
+
 ## [1.3.4] - 2026-08-04
 
 ### The offline bundles never carried git

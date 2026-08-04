@@ -305,7 +305,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*86 commands in 32 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*87 commands in 32 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -404,6 +404,7 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute repair permissions` | yes | — | Give root-owned files in the app tree back to the service account. |
 | `satom execute repair jobs [--older-than N] [--yes]` | yes | ! | Sweep ghost jobs and prune the terminated ledger. |
 | `satom execute repair tmp [--older-than N] [--yes]` | yes | ! | Delete aged scratch under data/tmp. Nothing else prunes it. |
+| `satom execute repair nginx [--yes]` | yes | ! | Re-pin the proxied Host header and the served names in the vhost. |
 | `satom execute cert renew` | yes | — | Run the renewal pass now instead of waiting for 03:30. |
 | `satom execute alerts run [--dry-run]` | yes | — | Evaluate the health checks now. |
 | `satom execute backup db` | yes | — | pg_dump the application database into data/system_backups/. |

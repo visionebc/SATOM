@@ -625,6 +625,42 @@ while [ -z "$WEB_PORT" ]; do                                            # [PFPOR
     fi
 done
 
+# 1b2. Nombres DNS servidos                                   [SATOM-SERVED-NAMES]
+# Los nombres por los que se ALCANZA este nodo tienen que conocerse AQUI, porque
+# de ellos se acunan DOS cosas que despues no se arreglan sin volver a emitir:
+# el server_name del vhost y la lista SAN del certificado del nodo.
+# `hostname` a secas es el nombre CORTO. Un nodo alcanzado en consola.ejemplo.tld
+# nacia con `server_name consola` -- que solo respondia porque el vhost ademas
+# reclamaba default_server, o sea por accidente -- y con un certificado cuyo SAN
+# decia DNS:consola, asi que TODO navegador que entraba por el FQDN recibia un
+# aviso de nombre no coincidente sobre un certificado que el instalador acababa
+# de reportar como bueno. El dato estaba disponible (`hostname -f`) y no se usaba.
+DEFAULT_NAMES="$(hostname -f 2>/dev/null || true)"
+if [ -z "$DEFAULT_NAMES" ]; then DEFAULT_NAMES="$(hostname)"; fi
+if [ -n "${SATOM_SERVED_NAMES:-}" ]; then
+    SERVED_NAMES="$SATOM_SERVED_NAMES"
+else
+    read -rp "Nombre(s) DNS por los que se accede a esta consola [${DEFAULT_NAMES}]: " SERVED_NAMES
+fi
+SERVED_NAMES="${SERVED_NAMES:-$DEFAULT_NAMES}"
+# Normalizar: coma/punto-y-coma -> espacio, minusculas, sin duplicados.
+_sn_norm=""
+for _sn in $(printf '%s' "$SERVED_NAMES" | tr ',;' '  ' | tr 'A-Z' 'a-z'); do
+    case " $_sn_norm " in *" $_sn "*) continue ;; esac
+    _sn_norm="$_sn_norm $_sn"
+done
+SERVED_NAMES="${_sn_norm# }"
+[ -n "$SERVED_NAMES" ] || die "Hace falta al menos un nombre DNS: de el salen el vhost y el certificado"
+for _sn in $SERVED_NAMES; do
+    [[ "$_sn" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] || die "Nombre DNS invalido: $_sn"
+done
+# El nombre corto se sigue usando desde la propia maquina; entra tambien.
+_sn_short="$(hostname | tr 'A-Z' 'a-z')"
+case " $SERVED_NAMES " in
+    *" $_sn_short "*) : ;;
+    *) SERVED_NAMES="$SERVED_NAMES $_sn_short" ;;
+esac
+
 # 1c. Modo
 MODE=""; ROLE="standalone"
 while [ -z "$MODE" ]; do
@@ -755,7 +791,7 @@ if [ "$ROLE" = "primary" ]; then
 fi
 
 echo ""
-say "Resumen: IP=${NODE_IP}  puerto=${WEB_PORT}  modo=${MODE}${ROLE:+/${ROLE}}  origen=$( [ $OFFLINE -eq 1 ] && echo offline || echo online )"
+say "Resumen: IP=${NODE_IP}  puerto=${WEB_PORT}  nombres=${SERVED_NAMES}  modo=${MODE}${ROLE:+/${ROLE}}  origen=$( [ $OFFLINE -eq 1 ] && echo offline || echo online )"
 read -rp "¿Continuar con la instalación? [S/n]: " GO
 [[ "${GO,,}" =~ ^(s|si|sí|y|yes|)$ ]] || die "Cancelado por el usuario"
 
@@ -1168,11 +1204,18 @@ chmod 600 "$PKI/internal-ca/ca.key"
 
 # Certificado propio del nodo (server+client), firmado por la CA — SIEMPRE
 # se genera localmente en ESTE nodo (la llave privada nunca viaja).
+# [SATOM-SERVED-NAMES] El SAN lleva TODOS los nombres servidos, no el corto.
+# Un SAN que no cubre el nombre por el que se entra produce un aviso del
+# navegador sobre un certificado recien emitido y reportado como bueno, y no hay
+# forma de arreglarlo sin volver a emitir -- por eso se pregunta en el paso 1.
+SAN_LIST="IP:${NODE_IP}"
+for _sn in $SERVED_NAMES; do SAN_LIST="${SAN_LIST},DNS:${_sn}"; done
+CERT_CN="${SERVED_NAMES%% *}"
 openssl req -newkey rsa:2048 -sha256 -nodes \
     -keyout "$PKI/node/leaf.key" -out "$PKI/node/leaf.csr" \
-    -subj "/CN=${HOSTN}" >>"$INSTALL_LOG" 2>&1
+    -subj "/CN=${CERT_CN}" >>"$INSTALL_LOG" 2>&1
 cat > /tmp/satom-ext.cnf <<EXT
-subjectAltName=IP:${NODE_IP},DNS:${HOSTN}
+subjectAltName=${SAN_LIST}
 extendedKeyUsage=serverAuth,clientAuth
 EXT
 openssl x509 -req -in "$PKI/node/leaf.csr" -CA "$PKI/internal-ca/ca.crt" \
@@ -1183,9 +1226,9 @@ chmod 600 "$PKI/node/leaf.key"
 cp "$PKI/node/leaf.crt" "$PKI/public/server.crt"
 cp "$PKI/node/leaf.key" "$PKI/public/server.key"
 cat > "$PKI/public/meta.json" <<META
-{"source": "issued", "issued_by": "internal-ca", "cn": "${HOSTN}", "installed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+{"source": "issued", "issued_by": "internal-ca", "cn": "${CERT_CN}", "installed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
 META
-ok "Certificado del nodo emitido localmente (CN=${HOSTN}, SAN=IP:${NODE_IP})"
+ok "Certificado del nodo emitido localmente (CN=${CERT_CN}, SAN=${SAN_LIST})"
 
 # Copia para Postgres (réplica TLS en clúster)
 PGSSL="$PGCONF/satomssl"; mkdir -p "$PGSSL"
@@ -1571,19 +1614,31 @@ chmod 755 "$ACME_WEBROOT"
 # mano; el instalador seguia emitiendo la version PREVIA a esa correccion, asi
 # que cada instalacion nueva nacia con el fallo latente y `satom diagnose
 # nginx` la marcaba FAIL el dia cero.
+# El :443 explicito en un redirect es valido pero se propaga a la barra de
+# direcciones y a cualquier proxy de delante; se omite cuando es el puerto
+# por defecto, igual que hace el navegador.
+REDIR_PORT=""
+if [ "$WEB_PORT" != "443" ]; then REDIR_PORT=":${WEB_PORT}"; fi
 write_satom_vhost() {
     local dflt="$1"
 cat > "$NGXCONF" <<NGX
 server {
     listen ${WEB_PORT} ssl http2${dflt};
-    server_name ${HOSTN} ${NODE_IP};
+    server_name ${SERVED_NAMES} ${NODE_IP};
     ssl_certificate     ${PKI}/public/server.crt;
     ssl_certificate_key ${PKI}/public/server.key;
     ssl_protocols TLSv1.2 TLSv1.3;
     client_max_body_size 200M;
     location / {
         proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host \$host;
+        # [SATOM-VHOST-HOST] \$host DESCARTA el puerto; \$http_host pasa la
+        # cabecera tal cual. Flask-WTF construye el origen esperado del token CSRF
+        # con el host que la app cree tener y lo compara con el Referer del
+        # navegador INCLUYENDO el puerto: detras de un NAT o un proxy en puerto no
+        # estandar, TODO POST -- el login incluido -- moria con un error que
+        # hablaba de la sesion caducada y no de la cabecera. En :443 son
+        # identicos, porque el navegador omite el puerto por defecto.
+        proxy_set_header Host \$http_host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto https;
@@ -1604,7 +1659,7 @@ server {
         default_type "text/plain";
         try_files \$uri =404;
     }
-    location / { return 301 https://\$host:${WEB_PORT}\$request_uri; }
+    location / { return 301 https://\$host${REDIR_PORT}\$request_uri; }
 }
 NGX
     if [ -d /etc/nginx/sites-enabled ]; then

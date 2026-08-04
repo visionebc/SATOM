@@ -1,10 +1,29 @@
 # Changelog
 
 All notable changes to SATOM are documented here. Format loosely follows
-[Keep a Changelog](https://keepachangelog.com/). This is a public, open-source
-project — see [NOTICE](NOTICE) for the trademark disclaimer.
+[Keep a Changelog](https://keepachangelog.com/). This is a public,
+source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
+
+### Changed
+
+- **License changed from Apache-2.0 to the [Elastic License 2.0](LICENSE).**
+  The change applies to the SATOM project as a whole, including the versions
+  previously published in the public repository (v1.0 through v1.3.5). What it
+  means in practice: you may still use, modify and run SATOM inside your own
+  organisation — in production, for commercial purposes, on as many nodes as
+  you like — at no cost. What is no longer permitted is providing SATOM to
+  third parties as a hosted or managed service; that requires a commercial
+  license (`licensing@visionebc.com`). ELv2 also forbids circumventing license
+  key functionality and removing licensing notices. Note that copies obtained
+  before this change carry the Apache-2.0 terms under which they were received;
+  the new terms govern this repository and everything distributed from it going
+  forward. SATOM is therefore **source-available**, not OSI open source — the
+  wording in `README.md`, `NOTICE`, `CONTRIBUTING.md`, `DISCLAIMER`,
+  `SECURITY.md` and the public site was corrected accordingly. Guarded by
+  `tests/test_license_consistency.py` so no surface can drift back; see
+  `docs/safeguards.md` 7f. [SATOM-LICENSE]
 
 ### Fixed
 

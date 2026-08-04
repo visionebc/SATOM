@@ -454,6 +454,50 @@ they take no arguments, and one carries a shared secret in clear text.
 Rewriting their literals yields a script that still cannot run anywhere else —
 so the honest treatment is removal, not redaction.
 
+## 7f. The licence has to say the same thing on every surface
+
+**What it prevents.** SATOM declares its licence in eight places: `LICENSE`,
+`NOTICE`, `README.md`, `CONTRIBUTING.md`, `DISCLAIMER`, `SECURITY.md`, the six
+hand-written pages under `site/`, and the footer template inside
+`deploy/gen_site_docs.py` that stamps the generated documentation pages. Nothing
+*fails* when one of them goes stale — the statement simply becomes false. That
+is exactly how `Version: 1.0` survived four releases in the README while the
+console, the pipeline and the public site all said something else. A licence
+that disagrees with itself is worse than a stale version string: a reader who
+acts on the wrong surface is relying on a grant that was never made.
+
+**Where it lives.** `tests/test_license_consistency.py`, twenty-seven guards.
+
+**The rules.**
+
+- `LICENSE` must carry the **operative sentence** of the current licence, not
+  merely its name — a header that says "Elastic License 2.0" over an Apache body
+  passes a name check and fails a reader. The assertion runs against
+  whitespace-collapsed text, because the licence body is hard-wrapped at ~80
+  columns and any sentence spanning a line break silently fails against text
+  that is perfectly correct.
+- The markers unique to the **old** licence body must be gone. The scope header
+  is still allowed to *reference* Apache-2.0 — it has to, to say which terms
+  earlier copies were received under — so the guard pins the body markers, not
+  the word.
+- The five declaring files may not name the old licence at all, and may not
+  **claim** SATOM is open source. ELv2 is source-available, not OSI open source.
+  The guard matches affirmative claims (`open-source project`,
+  `is free, open-source`, …) and deliberately **not** the bare phrase: matching
+  that would ban the very sentence that sets the record straight ("not an OSI
+  open-source license").
+- Site pages are checked **through their footer**, never whole-page. The body of
+  a generated page is rendered from Markdown that may legitimately discuss the
+  old licence — the changelog entry announcing the change does exactly that.
+- The generator's footer template and the hand-written pages must produce the
+  **same string**. Two authors of one sentence is how `index.html` silently lost
+  its Docs link once already.
+
+**Known limit, on purpose.** These guards pin what the project *says*. They
+cannot pin what a recipient already holds: a copy distributed under an earlier
+licence stays under the terms it was received under, and no test changes that.
+`LICENSE` states it in the scope header rather than leaving it implied.
+
 ## 8. Sessions and the web surface
 
 | Guard | Detail |
@@ -1644,6 +1688,33 @@ done | grep -v '^200' || echo 'every cross-reference resolves'
 A generator change that neuters the rewrite shows up as a non-zero count in
 step 1; one that strips links instead of rewriting them shows up as an empty
 list in step 2.
+
+### Licence consistency (7f)
+
+Every surface, one answer — from a checkout:
+
+```bash
+# 1. no declaring file may name the old licence
+grep -l 'Apache' NOTICE README.md CONTRIBUTING.md DISCLAIMER SECURITY.md \
+  2>/dev/null || echo 'declaring files are clean'
+
+# 2. the LICENSE body must be the current grant, not just its name
+grep -q 'hosted or managed' LICENSE && grep -q '## No Liability' LICENSE \
+  && echo 'LICENSE carries the operative text'
+
+# 3. every published footer agrees (curated + generated)
+grep -ho 'Licensed under[^<]*<a[^>]*>[^<]*</a>' site/*.html site/docs/*.html \
+  | sort -u        # expect exactly ONE distinct line
+
+# 4. and the live site says the same thing
+curl -s --resolve satom.visionebc.com:443:185.199.108.153 \
+  https://satom.visionebc.com/ | grep -o 'Licensed under[^<]*<a[^>]*>[^<]*</a>'
+```
+
+Step 3 is the one that catches drift: a second distinct line means the
+generator and the hand-written pages have diverged. Step 4 is the only one that
+proves the *published* mirror was refreshed — a force-push to `gh-pages` does
+not always trigger a build (see 7e).
 
 ### 8e — brand gradients and asset stamps
 

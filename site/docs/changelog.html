@@ -100,10 +100,18 @@ race, so v1.3.2 passing its own validation proved nothing. Rules in
   7 -- so a correctly installed system reported failure and never printed the
   banner telling the operator to run <code>satom execute seed actions</code>.</li>
 <li><strong><code>satom diagnose nginx</code> warned forever on every standalone install.</strong> It
-  probed the :8443 node-to-node channel unconditionally; a standalone has no
-  peer. The row is still printed as <code>n/a - standalone, no peer</code>, and every
-  other role is graded exactly as before. Same chronic false positive already
-  removed from <code>get system health</code> and from the CLI status colouring.</li>
+  probed the :8443 node-to-node channel unconditionally; a lone node has no
+  peer. The row is still printed as <code>n/a - no peer configured (standalone)</code>,
+  and a node that does have a peer is graded exactly as before. Same chronic
+  false positive already removed from <code>get system health</code> and from the CLI
+  status colouring.</li>
+<li><strong><code>Context.role</code> could never return <code>standalone</code>, though its docstring said
+  it could.</strong> It comes from <code>pg_is_in_recovery()</code>, so a standalone node reports
+  <code>primary</code>. The first version of the fix above gated on that value and
+  therefore did nothing -- caught by installing, not by testing, because the
+  tests encoded the same wrong assumption. Probe selection now asks the
+  question it means (is a peer configured in <code>data/ha_nodes.json</code>?), and the
+  docstring no longer promises a value the property cannot produce.</li>
 </ul>
 <h2 id="132-2026-08-04">[1.3.2] - 2026-08-04</h2>
 <h3 id="the-installer-had-never-completed-on-opensuse-or-rhel-2026-08-03">The installer had never completed on openSUSE or RHEL (2026-08-03)</h3>

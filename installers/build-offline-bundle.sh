@@ -27,7 +27,7 @@ STAGE="$OUT/satom-installer"
 # la instalación OFFLINE aborta DESPUÉS de crear el usuario (ver install-satom.sh [PFSUDO]).
 # openssh-*: canal de replicación de data/ en modo cluster; sin red no hay dónde bajarlo.
 PKGS=(python3 python3-venv python3-pip postgresql nginx rsync openssl curl ca-certificates
-      sudo openssh-client openssh-server)
+      sudo openssh-client openssh-server git)
 
 echo "==> Bundle offline SATOM v${VERSION} (ref ${REF})"
 command -v apt-get >/dev/null || { echo "Necesita Debian/apt"; exit 1; }

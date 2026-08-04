@@ -83,6 +83,7 @@
       <a href="#10-fresh-installs-and-what-an-offline-bundle-can-promise">10. Fresh installs, and what an offline bundle can promise</a>
       <a href="#10b-the-installer-is-only-proven-by-installing-it">10b. The installer is only proven by installing it</a>
       <a href="#10c-a-success-message-may-not-contain-an-error">10c. A success message may not contain an error</a>
+      <a href="#10d-only-the-offline-path-can-prove-the-offline-path">10d. Only the offline path can prove the offline path</a>
       <a href="#11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</a>
       <a href="#verifying-the-guards-are-armed_2">Verifying the guards are armed</a>
       <a href="#related">Related</a>
@@ -1788,6 +1789,34 @@ banner naming <code>satom execute seed actions</code>, without which no backup, 
 variable must be defined; no command substitution in a message may call the
 binary by bare name; and <code>install(1)</code> must write to the same variable, so a
 future path edit cannot separate the message from the file it describes.</p>
+<h2 id="10d-only-the-offline-path-can-prove-the-offline-path">10d. Only the offline path can prove the offline path</h2>
+<p><code>git</code> was never in the installer's required-package list and never in any
+offline builder's package list. Nothing broke online: the online path clones
+the repository, so the package manager pulled git in as a dependency of the
+clone and every online install had it. Only an air-gapped install was affected,
+and the symptom was quiet -- <code>satom-git-publish.service</code> failed once an hour
+and backup <strong>copy 3</strong> (the <code>reports/</code> source of truth versioned in git) simply
+did not exist. The web console, <code>/healthz</code>, the login and every other check
+stayed green.</p>
+<p>This is the same shape as <code>sudo</code> and <code>openssh-*</code> missing from the 1.1 bundles:
+two lists that must agree, kept in two files, compared by nobody -- except that
+this one could not be caught by installing online, no matter how many times.</p>
+<p><strong>The rule.</strong> A dependency that the online path satisfies <em>incidentally</em> is
+still a dependency. Every runtime binary the product shells out to belongs in
+the required-package list for every family, which is what makes the offline
+builders carry it.</p>
+<p><strong>Guards.</strong> <code>tests/test_offline_bundles.py</code>:</p>
+<ul>
+<li>the generic pair test (builder package list must cover the installer's
+  required list) -- and, because dropping the entry from <strong>both</strong> lists would
+  keep that test green, two tests that name <code>git</code> directly: it must be required
+  on all four families, and every builder must package it;</li>
+<li><code>satom diagnose git</code> must detect an absent binary. It previously reported
+  "repository unusable", which is true and sends the operator to look at the
+  repository instead of at the one missing package.</li>
+</ul>
+<p><strong>Why the diagnosis matters as much as the package.</strong> The node that cannot
+publish its source of truth is the node whose evidence you will want later.</p>
 <h2 id="11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</h2>
 <ul>
 <li>Per-device configuration restore is dry-run gated — no live canary round-trip yet.</li>

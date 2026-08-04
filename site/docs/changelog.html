@@ -60,6 +60,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#134-2026-08-04">[1.3.4] - 2026-08-04</a>
       <a href="#133-2026-08-04">[1.3.3] - 2026-08-04</a>
       <a href="#132-2026-08-04">[1.3.2] - 2026-08-04</a>
       <a href="#131-2026-08-03">[1.3.1] - 2026-08-03</a>
@@ -78,6 +79,29 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public, open-source
 project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="134-2026-08-04">[1.3.4] - 2026-08-04</h2>
+<h3 id="the-offline-bundles-never-carried-git">The offline bundles never carried git</h3>
+<p>Found the only way it could be found -- by looking at a node installed from a
+bundle, with no network, days after it was built. <code>satom-git-publish.service</code>
+had been failing every hour with <code>git: command not found</code>.</p>
+<ul>
+<li><strong><code>git</code> is now a required package on every family</strong>, and therefore in all
+  three offline bundles. It was in none of them. The online path installs it as
+  a side effect of cloning the repository, so every online install had it and
+  every air-gapped install did not. Nothing else showed the fault: the console,
+  <code>/healthz</code>, login and the rest of the diagnostics were green while backup
+  <strong>copy 3</strong> -- the <code>reports/</code> source of truth versioned in git -- did not exist
+  on the node at all.</li>
+<li><strong><code>satom diagnose git</code> names the missing binary.</strong> It reported
+  "repository unusable", which is true and points the operator at the
+  repository rather than at the one package that is absent.</li>
+<li>Rules and guards in <a href="safeguards.html">safeguards</a> section 10d. Three
+  mutation-tested guards: <code>git</code> must be required on all four families, every
+  builder must package it, and the diagnosis must detect its absence.</li>
+</ul>
+<p>Rebuild-only for existing installations: <code>git</code> is a package, not application
+code. An installed node is fixed by installing git from the distribution media
+or from the bundle; nothing needs to be redeployed.</p>
 <h2 id="133-2026-08-04">[1.3.3] - 2026-08-04</h2>
 <h3 id="nginx-came-up-then-the-installer-killed-it-opensuse">nginx came up, then the installer killed it (openSUSE)</h3>
 <p>Found the way the last three installer defects were found: by installing on a

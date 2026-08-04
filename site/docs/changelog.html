@@ -82,7 +82,8 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="changed">Changed</h3>
 <ul>
-<li><strong>License changed from Apache-2.0 to the <a href="LICENSE">Elastic License 2.0</a>.</strong>
+<li>
+<p><strong>License changed from Apache-2.0 to the <a href="LICENSE">Elastic License 2.0</a>.</strong>
   The change applies to the SATOM project as a whole, including the versions
   previously published in the public repository (v1.0 through v1.3.5). What it
   means in practice: you may still use, modify and run SATOM inside your own
@@ -97,7 +98,22 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   wording in <code>README.md</code>, <code>NOTICE</code>, <code>CONTRIBUTING.md</code>, <code>DISCLAIMER</code>,
   <code>SECURITY.md</code> and the public site was corrected accordingly. Guarded by
   <code>tests/test_license_consistency.py</code> so no surface can drift back; see
-  <code>docs/safeguards.md</code> 7f. [SATOM-LICENSE]</li>
+  <code>docs/safeguards.md</code> 7f. [SATOM-LICENSE]</p>
+</li>
+<li>
+<p><strong>The published tags were restamped to match.</strong> Changing <code>main</code> was not
+  enough: a tag is itself a public offer of terms, so every release tag
+  published before the change kept handing out the Apache-2.0 grant on the exact
+  refs a reader is most likely to pin — and re-pointing a tag at the sanitised
+  history moves the ref, not the bytes. The publisher now rewrites <code>LICENSE</code> and
+  the five declaring files across the whole published history and refuses to
+  push while any reachable commit still carries the Apache body. <code>CHANGELOG.md</code>,
+  <code>docs/</code> and <code>tests/</code> are deliberately left untouched: they record the change
+  rather than declare the current terms. This changes what the repository shows,
+  not what anyone already holds — a copy fetched earlier stays under the terms
+  it was received under, as <code>LICENSE</code> states. See <code>docs/safeguards.md</code> 7f.
+  [SATOM-LICENSE-TAGS]</p>
+</li>
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>

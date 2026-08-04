@@ -493,6 +493,48 @@ acts on the wrong surface is relying on a grant that was never made.
   **same string**. Two authors of one sentence is how `index.html` silently lost
   its Docs link once already.
 
+**The published history is a surface too.** `main` saying ELv2 does not stop a
+tag from offering Apache-2.0: a tag is itself a public offer of terms, and every
+release tag kept handing out the old grant on the exact refs a downstream reader
+is most likely to pin. Re-pointing a tag at the sanitised history is not enough —
+that moves the ref, not the bytes. The publisher (`sync_prod.py`,
+`_sanitized_mirror`) therefore rewrites the `LICENSE` blob and the five declaring
+files across the **whole** published history, and `_scan_license` **aborts the
+push** if any reachable `LICENSE` blob still carries the old body — once against
+the mirror before pushing, and once against a fresh clone of the remote after.
+
+Four things about that rewrite are deliberate:
+
+- It is **not** a blanket substitution of the string `Apache-2.0`. `CHANGELOG.md`,
+  `docs/` and `tests/` *record* the change rather than declare the current terms;
+  a blind pass turns "changed from Apache-2.0 to the Elastic License 2.0" into a
+  tautology and breaks the guards that pin the old markers on purpose. The
+  boundary is the one this section already draws.
+- The replacement text is lifted **verbatim from the relicensing commit**, so a
+  rewritten tag says exactly what `main` says rather than a wording invented by
+  the publisher. Variants for the project's earlier names are *derived* from that
+  same table — a second hand-written copy goes stale the moment a sentence moves.
+- The scan enumerates **blobs, not ref tips**. The mirror carries no tags at all
+  (they are minted on the remote by the release API), so a ref-based scan would
+  look at two branches, come back green, and leave the whole history in the old
+  licence. It also reaches intermediate commits, which are just as checkoutable
+  as a tag.
+- The whole-file swap only fires on a `LICENSE` that really **is** the old body,
+  so a repository that never left it — or that moves to a third licence later —
+  is left alone instead of silently mis-stamped.
+
+A caveat worth stating plainly: rewriting a tag changes what the repository
+*shows*, not what a recipient already received. Anyone who fetched a release
+before the change holds a copy under the terms they received, and keeps it.
+`LICENSE` says so in its scope header.
+
+**A trap this rewrite walks past.** `git-filter-repo` stops applying
+`--replace-text` by itself once a `--file-info-callback` is present — it exports
+with `--no-data`, so the callback owns the redaction. Dropping that one call
+would silently switch off the entire internal-identifier filter while every log
+line still read "OK". The blob scanner catches it, and the mutation harness
+proves it does.
+
 **Known limit, on purpose.** These guards pin what the project *says*. They
 cannot pin what a recipient already holds: a copy distributed under an earlier
 licence stays under the terms it was received under, and no test changes that.
@@ -1709,6 +1751,14 @@ grep -ho 'Licensed under[^<]*<a[^>]*>[^<]*</a>' site/*.html site/docs/*.html \
 # 4. and the live site says the same thing
 curl -s --resolve satom.visionebc.com:443:185.199.108.153 \
   https://satom.visionebc.com/ | grep -o 'Licensed under[^<]*<a[^>]*>[^<]*</a>'
+
+# 5. no reachable commit still offers the old grant -- blobs, not ref tips,
+#    because the published tags are not refs of the mirror that produced them
+git rev-list --objects --all | awk '$2=="LICENSE"{print $1}' | sort -u \
+  | while read -r s; do
+      git cat-file blob "$s" | grep -q 'TERMS AND CONDITIONS FOR USE' \
+        && echo "STILL OLD: $s"
+    done; echo 'history scanned'
 ```
 
 Step 3 is the one that catches drift: a second distinct line means the

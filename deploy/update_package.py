@@ -365,15 +365,22 @@ def extract_package(path, dest) -> Path:
     return dest / root
 
 
-def extract_app_tree(app_tar, dest) -> int:
-    """Extract ``app.tar.gz`` over the application tree. Returns the file count.
+def extract_app_tree(app_tar, dest) -> list:
+    """Extract ``app.tar.gz`` over the application tree.
+
+    Returns the list of FILE paths it wrote, relative to ``dest``. The caller
+    needs that list for two things it cannot do without it: staging exactly
+    what this package changed (rather than sweeping up whatever else happened
+    to be uncommitted in the tree) and removing files the new revision no
+    longer has -- laying a tarball over a checkout adds and overwrites, but it
+    never deletes.
 
     The application tarball is flat (no wrapper directory) because it is laid
     directly over an existing checkout, so it gets its own guard rather than
     reusing ``_safe_members``.
     """
     dest = Path(dest)
-    count = 0
+    written = []
     with tarfile.open(app_tar, "r:gz") as tf:
         members = []
         for m in tf.getmembers():
@@ -388,9 +395,9 @@ def extract_app_tree(app_tar, dest) -> int:
                 raise PackageError("app tree member %s has unsupported type" % name)
             members.append(m)
             if m.isfile():
-                count += 1
+                written.append(name)
         tf.extractall(dest, members=members)
-    return count
+    return written
 
 
 def read_manifest(pkg_dir) -> dict:

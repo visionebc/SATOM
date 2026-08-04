@@ -1496,6 +1496,80 @@ builders carry it.
 **Why the diagnosis matters as much as the package.** The node that cannot
 publish its source of truth is the node whose evidence you will want later.
 
+## 10e. The node has to be told which names it answers to
+
+Two defects with one root cause: the installer never learned which names the
+node is actually reached by, so it guessed with `hostname` -- the SHORT name --
+and two different things were minted from that guess.
+
+**The proxied `Host` header dropped the port.** The generated vhost passed
+`proxy_set_header Host $host`, and `$host` discards the port. Flask-WTF builds
+the origin it expects a CSRF token to have come from out of the host the
+application believes it is on, then compares it to the browser's `Referer`
+*including the port*. Behind a NAT or a proxy on a non-standard port the two can
+never agree, so **every POST -- the login included -- was rejected**, and the
+error the operator saw said the session had expired. It pointed at the wrong
+layer entirely: the credentials were right, the session was fine, and the header
+was the fault. On `:443` the defect is invisible, because browsers omit the
+default port from `Host`; it is latent on every standard-port install and arms
+itself the moment the node is published anywhere else.
+
+**`server_name` and the certificate SAN both came from the short name.** A node
+reached at `node.example.tld` got `server_name node`, which answered only
+because the same vhost also claimed `default_server` -- i.e. by accident, and it
+would stop the day a second vhost appeared. Worse, the node certificate was
+issued with `subjectAltName=DNS:node`, so a browser arriving by the FQDN got a
+name-mismatch warning **on a certificate the installer had just reported as
+good**. `hostname -f` had the right answer the whole time and was never asked.
+
+### The rules
+
+- **The served names are collected in step 1, before anything is written.** They
+  are the input to two artefacts that cannot be corrected later without
+  re-issuing: the vhost `server_name` and the certificate's SAN list. A prompt
+  that runs after the certificate exists is a prompt that arrives too late.
+- **`SATOM_SERVED_NAMES` overrides the prompt**, so an unattended install can
+  set them. The default is `hostname -f`, and the short name is always appended
+  -- it is still how the node is reached from its own shell.
+- **`$http_host`, never `$host`, on anything that proxies.** Deleting the header
+  is not a fix either; gunicorn would then see nginx's own `Host`.
+- **A wildcard covers exactly ONE leftmost label** (RFC 6125). `*.example.tld`
+  covers `node.example.tld` but not `a.b.example.tld` and not the bare apex.
+  Treating it as "anything under the domain" turns the coverage check into a
+  rubber stamp, so the matcher is written out and tested against all four cases.
+- **Only FQDNs are graded against the certificate.** No public CA issues for a
+  single-label name, so grading one would leave every node that imports a
+  wildcard in a permanent warn -- the chronic false positive this codebase keeps
+  having to delete. The name is still printed: not grading is not hiding.
+- **A static vhost is never a finding.** `Host` is meaningless without
+  `proxy_pass`, and flagging the site vhost trains the operator to skip the
+  check.
+- **The vhost is not in git.** A node updates its code and keeps serving
+  whatever configuration its installer wrote, so fixing the installer alone
+  reaches new installs only. `satom execute repair nginx` exists so an existing
+  node can be brought forward through a supported path -- a hand edit is erased
+  by the next reinstall, which is precisely how this defect survived being
+  diagnosed twice.
+
+### Verifying the guards are armed
+
+```bash
+# The live check names the offending vhost and fails.
+satom diagnose nginx            # exit 1 while any proxying vhost passes $host
+
+# Nothing shipped may emit the port-stripping form.
+grep -rnE 'proxy_set_header[[:space:]]+Host[[:space:]]+\\?[$]host' \
+     installers/ deploy/        # expect: no matches
+
+# The certificate really covers what the vhost answers for.
+satom diagnose nginx | sed -n '/certificate covers/,/^$/p'
+
+# Discriminant probe: use a WRONG password, so a CSRF rejection ("stale form")
+# separates from a credentials rejection. Same node, only the port varies.
+#   Host: <fqdn>          -> CSRF-OK
+#   Host: <fqdn>:<port>   -> CSRF-OK too, once repaired
+```
+
 ## 11. Known gaps (kept honest, on purpose)
 
 * Per-device configuration restore is dry-run gated — no live canary round-trip yet.

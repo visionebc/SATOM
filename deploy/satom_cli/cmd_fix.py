@@ -25,6 +25,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from . import cmd_checks, cmd_ops, dbq
+from .cmd_checks import NGINX_VHOST_DIRS, satom_vhosts
 from .context import UNITS, run
 from .cmd_execute import _app_call
 from .render import Result
@@ -359,6 +360,93 @@ def restore_db(ctx, args):
 
 
 # -- reclaiming space ------------------------------------------------------
+def repair_nginx(ctx, args):
+    """Bring an installed vhost to the shape the installer now emits.
+
+    Exists because the vhost is NOT in git: a node updates its code and keeps
+    serving whatever configuration its installer built. Without this verb the
+    only fix is a hand edit, and a hand edit is erased by the next reinstall --
+    which is exactly how this defect survived being diagnosed twice.
+    """
+    r = Result("ok", "execute repair nginx")
+    targets = satom_vhosts()
+    if not targets:
+        r.worst("warn")
+        r.rows("", [("vhost", "none found under " + ", ".join(NGINX_VHOST_DIRS))])
+        return r
+
+    rc, fqdn, _ = run(["hostname", "-f"])
+    fqdn = (fqdn or "").strip().lower().rstrip(".")
+    if rc != 0 or "." not in fqdn:
+        fqdn = ""
+
+    plan, staged = [], []
+    for path, txt in targets:
+        new = re.sub(r"(proxy_set_header\s+Host\s+)\$host\s*;",
+                     r"\1$http_host;", txt)
+        if new != txt:
+            plan.append((str(path), "Host $host -> $http_host"))
+        if fqdn:
+            def _add(m, _path=path):
+                indent, names = m.group(1), m.group(2)
+                toks = [x.lower().rstrip(".") for x in names.split()]
+                # `server_name _;` is the ACME catch-all. Adding a name there
+                # would turn a deliberate catch-all into a named vhost and
+                # change which server wins the port -- left alone on purpose.
+                if toks == ["_"] or fqdn in toks:
+                    return m.group(0)
+                plan.append((str(_path), "server_name += " + fqdn))
+                return "%sserver_name %s %s;" % (indent, names.strip(), fqdn)
+            new = re.sub(r"^([ \t]*)server_name\s+([^;]+);", _add, new, flags=re.M)
+        if new != txt:
+            staged.append((path, txt, new))
+
+    # Un mismo fichero puede tener varios bloques server; el operador quiere
+    # saber QUE cambia, no cuantas veces.
+    seen, uniq = set(), []
+    for row in plan:
+        if row not in seen:
+            seen.add(row)
+            uniq.append(row)
+    plan = uniq
+
+    if not plan:
+        r.rows("", [("state", "already correct - nothing to repair")])
+        return r
+    if "--yes" not in args:
+        out = Result("warn", "execute repair nginx", exit_code=2)
+        out.rows("plan", plan)
+        out.lines("apply", ["  sudo satom execute repair nginx --yes"])
+        out.note("Nothing written.")
+        return out
+    r.rows("plan", plan)
+
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    backups = []
+    for path, old, new in staged:
+        bak = Path("/root") / ("%s.pre-repair-nginx-%s" % (path.name, stamp))
+        bak.write_text(old)
+        backups.append((path, old, bak))
+        path.write_text(new)
+    rc, out_, err = run(["nginx", "-t"])
+    if rc != 0:
+        # Restaurar SIEMPRE antes de reportar: dejar una config invalida en
+        # disco convierte el siguiente reload ajeno en una caida.
+        for path, old, _bak in backups:
+            path.write_text(old)
+        r.status = "bad"
+        r.lines("nginx -t FAILED - every file restored",
+                (err or out_).splitlines()[:10])
+        return r
+    r.rows("backups", [(str(b), "saved") for _p, _o, b in backups])
+    rc, out_, err = run(["systemctl", "reload", "nginx"])
+    r.rows("reload", [("systemctl reload nginx",
+                       "ok" if rc == 0 else (err or "failed").strip())])
+    if rc != 0:
+        r.worst("warn")
+    return r
+
+
 def repair_tmp(ctx, args):
     """Delete aged scratch under data/tmp. Nothing else prunes it."""
     days = _opt_int(args, "--older-than", 7)

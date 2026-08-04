@@ -801,9 +801,18 @@
   }
 
   // ------------------------------------------------------------ delegation --
+  // Delegation is scoped so this page cannot hijack a `data-act` click
+  // elsewhere in the console. #an-root is not enough on its own: the page
+  // header and the cadence modal are siblings of it, not descendants, so their
+  // controls opt in with `data-an-scope`. Without that they render, look
+  // enabled, and silently do nothing — which is worse than not offering them.
+  function inScope(node) {
+    return root.contains(node) || !!node.closest('[data-an-scope]');
+  }
+
   document.addEventListener('click', function (ev) {
     var t = ev.target.closest('[data-act]');
-    if (!t || !root.contains(t)) { return; }
+    if (!t || !inScope(t)) { return; }
     var act = t.dataset.act;
 
     if (act === 'range') {
@@ -881,7 +890,7 @@
 
   document.addEventListener('change', function (ev) {
     var t = ev.target;
-    if (!root.contains(t)) { return; }
+    if (!inScope(t)) { return; }
     if (t.name === 'select_mode' || t.name === 'viz') {
       var form = t.closest('form');
       if (form) { syncFormVisibility(form); }

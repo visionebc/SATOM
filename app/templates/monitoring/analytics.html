@@ -32,7 +32,10 @@
       from the samples and hourly&nbsp;/&nbsp;daily rollups the monitor sweep
       already stores &mdash; opening a board contacts no appliance.</p>
   </div>
-  <div class="d-flex align-items-center gap-2">
+  {# data-an-scope: these controls sit in the page header, OUTSIDE #an-root, and
+     the delegated click handler only acts on its own subtree. Without the
+     marker both buttons render, look enabled and do nothing. #}
+  <div class="d-flex align-items-center gap-2" data-an-scope>
     <span id="an-window" class="text-muted small"></span>
     <button class="btn btn-sm btn-outline-secondary" data-act="cadence"
             data-bs-toggle="modal" data-bs-target="#an-cadence-modal">
@@ -306,7 +309,7 @@
 {% endif %}
 
 {# -------------------------------------------------------------- cadence -- #}
-<div class="modal fade" id="an-cadence-modal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="an-cadence-modal" tabindex="-1" aria-hidden="true" data-an-scope>
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">

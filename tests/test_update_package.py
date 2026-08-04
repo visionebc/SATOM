@@ -577,3 +577,28 @@ def test_extract_app_tree_reports_what_it_wrote(tmp_path):
             tf.addfile(info, io.BytesIO(data))
     written = up.extract_app_tree(src, tmp_path / "dest")
     assert sorted(written) == ["app/a.py", "docs/b.md"]
+
+
+def test_parking_local_state_ignores_untracked_files():
+    """`git reset --hard` does not touch untracked files, so they never needed
+    parking -- and `git stash create` does not include them either, so it
+    returned empty and the step reported FAIL on every run whose only local
+    state was untracked. A guard that always complains is one operators learn
+    to scroll past."""
+    tree = ast.parse(RUNNER_PATH.read_text())
+    fn = [n for n in ast.walk(tree)
+          if isinstance(n, ast.FunctionDef) and n.name == "preserve_local_commits"]
+    assert fn, "preserve_local_commits is missing"
+    # Assert on the CALL ARGUMENTS, not on the source text: the comment that
+    # explains this flag necessarily contains it, so a substring check would
+    # match its own documentation.
+    found = False
+    for node in ast.walk(fn[0]):
+        if (isinstance(node, ast.Call) and getattr(node.func, "id", "") == "git"
+                and any(isinstance(a, ast.Constant) and a.value == "status"
+                        for a in node.args)):
+            values = [a.value for a in node.args if isinstance(a, ast.Constant)]
+            assert "--untracked-files=no" in values, \
+                "git status here must exclude untracked files: %s" % values
+            found = True
+    assert found, "no git status call found in preserve_local_commits"

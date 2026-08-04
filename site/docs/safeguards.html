@@ -84,6 +84,7 @@
       <a href="#10b-the-installer-is-only-proven-by-installing-it">10b. The installer is only proven by installing it</a>
       <a href="#10c-a-success-message-may-not-contain-an-error">10c. A success message may not contain an error</a>
       <a href="#10d-only-the-offline-path-can-prove-the-offline-path">10d. Only the offline path can prove the offline path</a>
+      <a href="#10f-a-prompt-may-not-die-in-silence">10f. A prompt may not die in silence</a>
       <a href="#10e-the-node-has-to-be-told-which-names-it-answers-to">10e. The node has to be told which names it answers to</a>
       <a href="#11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</a>
       <a href="#verifying-the-guards-are-armed_3">Verifying the guards are armed</a>
@@ -1818,6 +1819,44 @@ builders carry it.</p>
 </ul>
 <p><strong>Why the diagnosis matters as much as the package.</strong> The node that cannot
 publish its source of truth is the node whose evidence you will want later.</p>
+<h2 id="10f-a-prompt-may-not-die-in-silence">10f. A prompt may not die in silence</h2>
+<p><code>read</code> returns non-zero on EOF. Under <code>set -euo pipefail</code> that killed the
+installer <strong>without printing anything</strong>: the last line the operator saw was the
+previous step, and <code>rc=1</code> said nothing about where it stopped. It happens
+whenever the installer is driven by a pipe or here-doc and the answer sequence
+is shorter than the prompt sequence -- and the ONLINE and OFFLINE paths do
+<strong>not</strong> have the same number of prompts (online also asks for the repository
+URL). Interactively it cannot happen; in automation it can.</p>
+<p>Same class as 10c: a failure nobody can see is a failure nobody will find.</p>
+<p><strong>What is armed</strong></p>
+<ul>
+<li>Every prompt goes through <code>ask</code> / <code>ask_secret</code>, which check <code>read</code>'s exit
+  status and abort through <code>_ask_die</code>, naming the prompt that went unanswered
+  and explaining the pipe/here-doc mismatch.</li>
+<li>EOF <strong>with</strong> partial data (a final line without a newline) is a valid answer
+  and is accepted -- the same as Ctrl-D after typing in a terminal. Only EOF
+  that produced nothing aborts.</li>
+<li>A structural guard rejects any raw prompt <code>read</code> outside those two helpers, so
+  a prompt added later cannot reintroduce the silent death. It is evaluated over
+  <em>executed</em> lines: the helper's own comment discusses <code>read</code>, and a naive
+  substring check would match the prose.</li>
+<li>The guards anchor the opposite behaviour too
+  (<code>test_raw_read_is_the_silent_failure_we_are_preventing</code>): narrowing the helper
+  and the test together would otherwise leave them self-consistent and green.</li>
+</ul>
+<p><strong>Verifying the guard is armed</strong></p>
+<pre><code class="language-bash"># 1. no prompt bypasses the helpers, and the helpers really abort
+python3 -m pytest tests/test_installer_loud_read.py -q
+
+# 2. the behaviour itself, against the real installer source
+printf '' | bash -c 'set -euo pipefail
+                     source &lt;(sed -n &quot;/^_ask_die() {/,/^}$/p;/^ask() {/,/^}$/p&quot; \
+                              installers/install-satom.sh)
+                     die() { echo &quot;ERROR: $*&quot; &gt;&amp;2; exit 1; }
+                     ask V &quot;Question: &quot;'
+#    expected: non-zero exit AND a message naming &quot;Question: &quot;
+#    the pre-fix behaviour was: exit 1, no output at all
+</code></pre>
 <h2 id="10e-the-node-has-to-be-told-which-names-it-answers-to">10e. The node has to be told which names it answers to</h2>
 <p>Two defects with one root cause: the installer never learned which names the
 node is actually reached by, so it guessed with <code>hostname</code> -- the SHORT name --

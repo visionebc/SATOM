@@ -69,6 +69,36 @@ ok()   { echo "    ${c_grn}✓${c_off} $*" | tee -a "$INSTALL_LOG"; }
 warn() { echo "    ${c_ylw}!${c_off} $*" | tee -a "$INSTALL_LOG"; }
 die()  { echo "${c_red}ERROR:${c_off} $*" | tee -a "$INSTALL_LOG" >&2; exit 1; }
 
+# ── Lectura de prompts ─────────────────────────────────── [SATOM-LOUD-READ]
+# `read` devuelve !=0 al recibir EOF. Con `set -euo pipefail` eso mata el
+# instalador SIN IMPRIMIR NADA: la ultima linea que ve el operador es la del
+# paso anterior y el rc=1 no dice donde murio. Ocurre siempre que se conduce
+# por tuberia o here-doc y la secuencia de respuestas es mas corta que la de
+# prompts — y los caminos ONLINE y OFFLINE NO tienen el mismo numero (el
+# online pregunta ademas la URL del repo). Es la misma clase de fallo que
+# [SATOM-LOUD-DB]: un fallo mudo es un fallo que nadie encuentra.
+# TODO prompt del instalador pasa por aqui.
+#   EOF con datos parciales (ultima linea sin salto) SI es respuesta valida y
+#   se acepta — igual que un Ctrl-D despues de teclear en una terminal.
+_ask_die() {
+    die "No hay respuesta para el prompt: \"$1\"
+    La entrada se agoto (EOF). Si conduces el instalador por tuberia o here-doc,
+    la secuencia de respuestas es mas corta que la de prompts: el camino ONLINE
+    pregunta la URL del repo y el OFFLINE no. Ejecutalo de forma interactiva, o
+    anade la respuesta que falta."
+}
+ask() {                                  # ask VAR "prompt"  -> lee en $VAR
+    local __v="$1" __p="$2" __rc=0
+    read -rp "$__p" "$__v" || __rc=$?
+    [ "$__rc" -eq 0 ] || [ -n "${!__v:-}" ] || _ask_die "$__p"
+}
+ask_secret() {                           # ask_secret VAR "prompt"  -> sin eco
+    local __v="$1" __p="$2" __rc=0
+    read -rsp "$__p" "$__v" || __rc=$?
+    echo
+    [ "$__rc" -eq 0 ] || [ -n "${!__v:-}" ] || _ask_die "$__p"
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SUBCOMANDO: --print-sudoers  (NO requiere root — va antes del chequeo)
 # Emite la regla sudoers de la CUENTA INSTALADORA, para entregarla a sistemas
@@ -601,14 +631,14 @@ preflight
 
 # 1a. IP de esta máquina
 DETECTED_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-read -rp "IP de esta máquina [${DETECTED_IP}]: " NODE_IP
+ask NODE_IP "IP de esta máquina [${DETECTED_IP}]: "
 NODE_IP="${NODE_IP:-$DETECTED_IP}"
 [[ "$NODE_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "IP inválida: $NODE_IP"
 
 # 1b. Puerto HTTPS
 WEB_PORT=""
 while [ -z "$WEB_PORT" ]; do                                            # [PFPORT]
-    read -rp "Puerto HTTPS de la consola web [443]: " WEB_PORT
+    ask WEB_PORT "Puerto HTTPS de la consola web [443]: "
     WEB_PORT="${WEB_PORT:-443}"
     if ! [[ "$WEB_PORT" =~ ^[0-9]+$ ]] || [ "$WEB_PORT" -lt 1 ] || [ "$WEB_PORT" -gt 65535 ]; then
         warn "Puerto inválido: $WEB_PORT"; WEB_PORT=""; continue
@@ -619,7 +649,7 @@ while [ -z "$WEB_PORT" ]; do                                            # [PFPOR
         case "$PORT_OWNER" in
             *nginx*) warn "El puerto ${WEB_PORT} lo escucha nginx — se reutilizará su configuración" ;;
             *) warn "El puerto ${WEB_PORT} YA ESTÁ OCUPADO por: ${PORT_OWNER}"
-               read -rp "  ¿Usarlo igualmente? nginx no podrá arrancar si el otro proceso sigue ahí [s/N]: " _pf_yes
+               ask _pf_yes "  ¿Usarlo igualmente? nginx no podrá arrancar si el otro proceso sigue ahí [s/N]: "
                case "${_pf_yes,,}" in s|si|sí|y|yes) : ;; *) WEB_PORT=""; continue ;; esac ;;
         esac
     fi
@@ -640,7 +670,7 @@ if [ -z "$DEFAULT_NAMES" ]; then DEFAULT_NAMES="$(hostname)"; fi
 if [ -n "${SATOM_SERVED_NAMES:-}" ]; then
     SERVED_NAMES="$SATOM_SERVED_NAMES"
 else
-    read -rp "Nombre(s) DNS por los que se accede a esta consola [${DEFAULT_NAMES}]: " SERVED_NAMES
+    ask SERVED_NAMES "Nombre(s) DNS por los que se accede a esta consola [${DEFAULT_NAMES}]: "
 fi
 SERVED_NAMES="${SERVED_NAMES:-$DEFAULT_NAMES}"
 # Normalizar: coma/punto-y-coma -> espacio, minusculas, sin duplicados.
@@ -664,7 +694,7 @@ esac
 # 1c. Modo
 MODE=""; ROLE="standalone"
 while [ -z "$MODE" ]; do
-    read -rp "¿Instalación standalone o cluster? [standalone/cluster]: " MODE
+    ask MODE "¿Instalación standalone o cluster? [standalone/cluster]: "
     case "${MODE,,}" in
         standalone|s) MODE="standalone" ;;
         cluster|c)    MODE="cluster" ;;
@@ -678,7 +708,7 @@ JOIN_KEY_RAW=""
 if [ "$MODE" = "cluster" ]; then
     ROLE=""
     while [ -z "$ROLE" ]; do
-        read -rp "¿Este nodo es primary o secondary? [primary/secondary]: " ROLE
+        ask ROLE "¿Este nodo es primary o secondary? [primary/secondary]: "
         case "${ROLE,,}" in
             primary|p)   ROLE="primary" ;;
             secondary|s) ROLE="secondary" ;;
@@ -691,7 +721,7 @@ if [ "$ROLE" = "secondary" ]; then
     echo ""
     echo "Pega la CLAVE DE UNIÓN generada por el instalador del nodo primary"
     echo "(una sola línea, empieza por SATOMJOIN1.):"
-    read -rp "> " JOIN_KEY_RAW
+    ask JOIN_KEY_RAW "> "
     JOIN_KEY_RAW="${JOIN_KEY_RAW// /}"
     # Se acepta el prefijo heredado OFMJOIN1. para no invalidar claves ya
     # emitidas; las nuevas se emiten siempre como SATOMJOIN1.
@@ -773,8 +803,8 @@ else
     # 1d. Clave del administrador (solo standalone/primary; el secondary la hereda vía réplica)
     ADMIN_PASS=""
     while [ -z "$ADMIN_PASS" ]; do
-        read -rsp "Clave para el usuario 'admin' de la consola: " ADMIN_PASS; echo
-        read -rsp "Repite la clave: " ADMIN_PASS2; echo
+        ask_secret ADMIN_PASS "Clave para el usuario 'admin' de la consola: "
+        ask_secret ADMIN_PASS2 "Repite la clave: "
         if [ "$ADMIN_PASS" != "$ADMIN_PASS2" ]; then warn "No coinciden"; ADMIN_PASS=""; continue; fi
         if [ "${#ADMIN_PASS}" -lt 8 ]; then warn "Mínimo 8 caracteres"; ADMIN_PASS=""; fi
     done
@@ -782,7 +812,7 @@ fi
 
 SECONDARY_CIDR=""
 if [ "$ROLE" = "primary" ]; then
-    read -rp "IP prevista del nodo secondary (Enter = permitir toda la subred de ${NODE_IP}): " SECONDARY_IP_ANS
+    ask SECONDARY_IP_ANS "IP prevista del nodo secondary (Enter = permitir toda la subred de ${NODE_IP}): "
     if [ -n "$SECONDARY_IP_ANS" ]; then
         SECONDARY_CIDR="${SECONDARY_IP_ANS}/32"
     else
@@ -792,7 +822,7 @@ fi
 
 echo ""
 say "Resumen: IP=${NODE_IP}  puerto=${WEB_PORT}  nombres=${SERVED_NAMES}  modo=${MODE}${ROLE:+/${ROLE}}  origen=$( [ $OFFLINE -eq 1 ] && echo offline || echo online )"
-read -rp "¿Continuar con la instalación? [S/n]: " GO
+ask GO "¿Continuar con la instalación? [S/n]: "
 [[ "${GO,,}" =~ ^(s|si|sí|y|yes|)$ ]] || die "Cancelado por el usuario"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1052,7 +1082,7 @@ else
         tar -xzf "$BUNDLE_DIR/app.tar.gz" -C "$APP_DIR"
         ok "Código extraído del bundle"
     else
-        read -rp "URL del repo de producción [${GIT_URL_DEFAULT}]: " GIT_URL
+        ask GIT_URL "URL del repo de producción [${GIT_URL_DEFAULT}]: "
         GIT_URL="${GIT_URL:-$GIT_URL_DEFAULT}"
         git clone --depth 1 --branch main "$GIT_URL" "$APP_DIR" >>"$INSTALL_LOG" 2>&1 || die "git clone falló"
         ok "Código clonado de $GIT_URL"

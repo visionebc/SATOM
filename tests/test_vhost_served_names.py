@@ -71,7 +71,11 @@ def test_installer_asks_for_the_served_dns_names():
         "unattended install cannot set them.")
     assert 'SERVED_NAMES="$SATOM_SERVED_NAMES"' in txt, (
         "The override is tested for but never assigned.")
-    assert re.search(r"read -rp .*SERVED_NAMES", txt), (
+    # Lo que este guardia promete es que PREGUNTA, no con que primitiva. Desde
+    # [SATOM-LOUD-READ] todo prompt pasa por ask/ask_secret para no morir mudo
+    # al agotarse la entrada, asi que se aceptan ambas formas -- atarlo a
+    # `read -rp` convertia una mejora del mecanismo en un fallo de la suite.
+    assert re.search(r"(read -rp .*SERVED_NAMES|^\s*ask SERVED_NAMES )", txt, re.M), (
         "The installer never prompts for the names it is about to mint into "
         "the vhost and the certificate.")
     assert "hostname -f" in txt, (

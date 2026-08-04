@@ -8,6 +8,59 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Analytics boards — many series on one chart, over windows up to 90 days.**
+  New page under Monitoring → Analytics. Every existing chart in the product is
+  bound to a single probe, which cannot answer the comparative question ("how do
+  the FortiWebs differ", "did throughput move this month"). Boards compose
+  panels across devices and metrics: line, area, bar, stat, gauge, heatmap,
+  table and availability strip, with a min/max band, threshold lines, a
+  secondary metric, compare-with-previous-period, drag to reorder, per-panel
+  range override and optional auto-refresh. Three boards — Fleet overview,
+  Traffic & sessions, Service health — ship built in and are reconciled from
+  code on every boot; duplicate one to get an editable copy.
+
+  Panels select probes by **rule** (metric + devices + name match) rather than a
+  frozen id list, so a probe recreated by Discover, or a newly registered
+  appliance, joins the panel with no edit.
+
+  Nothing new is collected and no new scheduler is introduced: this reads the
+  hourly and daily rollups the monitor sweep already stores, so a board opens
+  instantly and keeps opening with every appliance powered off.
+
+- **Monitoring reports — persisted daily / weekly / monthly summaries.** New
+  page under Monitoring → Reports. Each report records availability,
+  min / avg / p95 / peak per metric, threshold breaches, drift events (daemon
+  restarts, interface changes), an incident timeline and the change against the
+  preceding period. Reports are stored rather than recomputed on view: raw
+  samples age out at each probe's retention, so a summary rebuilt six months
+  later would answer from coarser data than the one read at the time while
+  looking identical to it. Viewable in the console, exportable as JSON / CSV /
+  text, and mailable through the existing SMTP configuration.
+
+  Recurring runs use a new `monitor_report` scheduled action (`params.period` =
+  daily / weekly / monthly, `params.email=1` to send, `params.keep=N` to prune)
+  rather than a second scheduler. As with every other automation in this
+  product, **no schedule is seeded** — the Reports page states which periods are
+  armed and which are not, so an empty list cannot be misread as "nothing
+  happened" when it means "nothing is scheduled".
+
+- **Collection cadence is now visible, and honest.** A probe fires only once its
+  own interval has elapsed *and* the sweep ticks, so its real cadence is
+  `tick × ceil(interval ÷ tick)`: a 5-minute probe under a 3-minute sweep is a
+  6-minute probe, and its row still says 5. That silent rounding is what
+  degraded `proxyd` — the check that exists to catch a mute daemon restart — when
+  the sweep moved to 3 minutes. Analytics → Collection cadence lists every
+  probe's declared and effective interval and flags each mismatch. With no sweep
+  scheduled it reports no cadence at all rather than a plausible default.
+
+### Changed
+
+- `deep_monitor.series()` accepts an optional `force_source`, and the resolution
+  choice is split out as `source_for()`. This lets a multi-series panel ask each
+  probe which table it needs and then pin the coarsest answer for all of them —
+  two series drawn from two tables on one axis is a lie no legend repairs. The
+  single-probe drill-down is unchanged and still chooses per probe.
+
 - **Offline update packages — update a node with no route to the git remote.**
   Download a signed package, upload it from Settings → Software Update, apply
   it with no internet, no repository and no package mirror. The package carries

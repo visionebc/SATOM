@@ -46,6 +46,19 @@ SEED_PLAN = [
      {"time": "03:15"}, {"push_server": True}, "fortiweb"),
     ("deep_monitor", "Deep monitors + Service Monitor — probe sweep", "interval",
      {"every": 3, "unit": "minutes"}, {}, "global"),
+    # Period summaries. Each fires AFTER its period has closed, so it describes
+    # a COMPLETE window: a daily report fired at 23:00 would summarise a day
+    # still an hour from finishing, and "throughput fell 80 %" would mean
+    # nothing. `keep` bounds the stored history — without it a daily schedule
+    # accumulates one row a day forever.
+    ("monitor_report", "Daily monitoring report", "daily",
+     {"time": "02:00"}, {"period": "daily", "email": True, "keep": 90}, "global"),
+    ("monitor_report", "Weekly monitoring report", "weekly",
+     {"weekday": 0, "time": "02:10"},
+     {"period": "weekly", "email": True, "keep": 53}, "global"),
+    ("monitor_report", "Monthly monitoring report", "monthly",
+     {"day": 1, "time": "02:20"},
+     {"period": "monthly", "email": True, "keep": 36}, "global"),
 ]
 
 
@@ -159,12 +172,17 @@ apply_ = plan.pop("apply")
 out = {"created": [], "existing": []}
 app = create_app()
 with app.app_context():
-    have = {row.action for row in ScheduledAction.query.all()}
+    # Identity is (action, schedule_kind), not the action alone: `monitor_report`
+    # is seeded three times and its rows differ only by their schedule. Keying on
+    # the action would arm one period and report the other two as already
+    # present. A rename by the operator still matches, which the name would not.
+    have = {(row.action, row.schedule_kind) for row in ScheduledAction.query.all()}
     for key, name, kind, sched, params, product in plan["rows"]:
-        if key in have:
-            out["existing"].append(key)
+        if (key, kind) in have:
+            out["existing"].append(name)
             continue
-        out["created"].append(key)
+        have.add((key, kind))
+        out["created"].append(name)
         if not apply_:
             continue
         row = ScheduledAction(
@@ -214,8 +232,8 @@ def seed_actions(ctx, args):
         return r
     if not apply_:
         r = Result("warn", "%d action(s) would be created" % len(created), exit_code=2)
-        r.rows("plan", [(k, dict((p[0], p[1]) for p in SEED_PLAN).get(k, ""))
-                        for k in created])
+        r.rows("plan", [(n, dict((p[1], "%s %s" % (p[2], p[3])) for p in SEED_PLAN)
+                         .get(n, "")) for n in created])
         if existing:
             r.lines("already present", existing)
         r.lines("apply", ["  sudo satom execute seed actions --yes"])

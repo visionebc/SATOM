@@ -82,6 +82,59 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>Analytics boards — many series on one chart, over windows up to 90 days.</strong>
+  New page under Monitoring → Analytics. Every existing chart in the product is
+  bound to a single probe, which cannot answer the comparative question ("how do
+  the FortiWebs differ", "did throughput move this month"). Boards compose
+  panels across devices and metrics: line, area, bar, stat, gauge, heatmap,
+  table and availability strip, with a min/max band, threshold lines, a
+  secondary metric, compare-with-previous-period, drag to reorder, per-panel
+  range override and optional auto-refresh. Three boards — Fleet overview,
+  Traffic &amp; sessions, Service health — ship built in and are reconciled from
+  code on every boot; duplicate one to get an editable copy.</li>
+</ul>
+<p>Panels select probes by <strong>rule</strong> (metric + devices + name match) rather than a
+  frozen id list, so a probe recreated by Discover, or a newly registered
+  appliance, joins the panel with no edit.</p>
+<p>Nothing new is collected and no new scheduler is introduced: this reads the
+  hourly and daily rollups the monitor sweep already stores, so a board opens
+  instantly and keeps opening with every appliance powered off.</p>
+<ul>
+<li><strong>Monitoring reports — persisted daily / weekly / monthly summaries.</strong> New
+  page under Monitoring → Reports. Each report records availability,
+  min / avg / p95 / peak per metric, threshold breaches, drift events (daemon
+  restarts, interface changes), an incident timeline and the change against the
+  preceding period. Reports are stored rather than recomputed on view: raw
+  samples age out at each probe's retention, so a summary rebuilt six months
+  later would answer from coarser data than the one read at the time while
+  looking identical to it. Viewable in the console, exportable as JSON / CSV /
+  text, and mailable through the existing SMTP configuration.</li>
+</ul>
+<p>Recurring runs use a new <code>monitor_report</code> scheduled action (<code>params.period</code> =
+  daily / weekly / monthly, <code>params.email=1</code> to send, <code>params.keep=N</code> to prune)
+  rather than a second scheduler. As with every other automation in this
+  product, <strong>no schedule is seeded</strong> — the Reports page states which periods are
+  armed and which are not, so an empty list cannot be misread as "nothing
+  happened" when it means "nothing is scheduled".</p>
+<ul>
+<li><strong>Collection cadence is now visible, and honest.</strong> A probe fires only once its
+  own interval has elapsed <em>and</em> the sweep ticks, so its real cadence is
+  <code>tick × ceil(interval ÷ tick)</code>: a 5-minute probe under a 3-minute sweep is a
+  6-minute probe, and its row still says 5. That silent rounding is what
+  degraded <code>proxyd</code> — the check that exists to catch a mute daemon restart — when
+  the sweep moved to 3 minutes. Analytics → Collection cadence lists every
+  probe's declared and effective interval and flags each mismatch. With no sweep
+  scheduled it reports no cadence at all rather than a plausible default.</li>
+</ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li>
+<p><code>deep_monitor.series()</code> accepts an optional <code>force_source</code>, and the resolution
+  choice is split out as <code>source_for()</code>. This lets a multi-series panel ask each
+  probe which table it needs and then pin the coarsest answer for all of them —
+  two series drawn from two tables on one axis is a lie no legend repairs. The
+  single-probe drill-down is unchanged and still chooses per probe.</p>
+</li>
 <li>
 <p><strong>Offline update packages — update a node with no route to the git remote.</strong>
   Download a signed package, upload it from Settings → Software Update, apply
@@ -144,7 +197,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   nginx 413 that the application never sees and therefore cannot explain.</p>
 </li>
 </ul>
-<h3 id="changed">Changed</h3>
+<h3 id="changed_1">Changed</h3>
 <ul>
 <li>
 <p><strong>License changed from Apache-2.0 to the <a href="LICENSE">Elastic License 2.0</a>.</strong>
@@ -642,7 +695,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
      The vhost now goes to <code>vhosts.d/</code> and the stock block is neutralised, the
      same way <code>sites-enabled/default</code> is removed on Debian.</li>
 </ol>
-<h3 id="changed_1">Changed</h3>
+<h3 id="changed_2">Changed</h3>
 <ul>
 <li><strong>The last <code>fortinet</code> identifiers are gone from the platform itself.</strong> The
   database, the PostgreSQL role, the Linux service account and the PostgreSQL
@@ -866,7 +919,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   colours in the drill-down modal, now build from <code>.fw-card</code> and the <code>--fw-*</code>
   custom properties.</li>
 </ul>
-<h3 id="changed_2">Changed</h3>
+<h3 id="changed_3">Changed</h3>
 <ul>
 <li><strong>Device cards start folded and tile densely.</strong> Expanded-by-default is
   unusable past a handful of appliances: a hundred of them was a kilometre of
@@ -921,7 +974,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   the job feeds (throttled to once every 120 s), and a job that never received a
   pid is considered dead after 10 minutes instead of an hour.</li>
 </ul>
-<h3 id="changed_3">Changed</h3>
+<h3 id="changed_4">Changed</h3>
 <ul>
 <li><strong>Service Monitor (and every other probe) now sweeps every 3 minutes</strong> instead
   of 5. The scheduled sweep action was retimed and <em>all</em> probe intervals were
@@ -1017,7 +1070,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   is carrying sessions or connections it grades <code>warn</code> and names the likely
   cause, instead of a green row on a busy service. Mutation-tested.</li>
 </ul>
-<h3 id="changed_4">Changed</h3>
+<h3 id="changed_5">Changed</h3>
 <ul>
 <li>
 <p><em>Probe now</em> with no selection no longer sweeps every probe in the fleet: it
@@ -1047,7 +1100,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   the devices whose hourly <code>device_sync</code> has been failing. FortiWeb only —
   FortiADC and FortiAnalyzer are refused by name rather than measured as zero.
   See <code>docs/safeguards.md</code> §9e.</p>
-<h3 id="changed_5">Changed</h3>
+<h3 id="changed_6">Changed</h3>
 <ul>
 <li><strong>A scheduled deep-monitor sweep now reports whether it RAN, not whether it
   liked what it found.</strong> <code>ok</code> was <code>worst in ("ok","unknown")</code>, so a single
@@ -1101,7 +1154,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   payload read a <code>maintenance_mode</code> attribute that has never existed on
   <code>Appliance</code>; the column is <code>maintenance</code>.</li>
 </ul>
-<h3 id="changed_6">Changed</h3>
+<h3 id="changed_7">Changed</h3>
 <ul>
 <li><strong>Monitoring is now an ADOM-level submenu, not Global-only.</strong> Fleet health,
   Metrics and Deep monitors appear in the FortiWeb, FortiADC and FortiAnalyzer
@@ -1196,7 +1249,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li>Public site: <code>site/safeguards.html</code> (linked from the nav and footer of every
   page) and the matching notes on <code>site/install.html</code>.</li>
 </ul>
-<h3 id="changed_7">Changed</h3>
+<h3 id="changed_8">Changed</h3>
 <ul>
 <li>In-app <strong>Documentation</strong> index now curates a title, order and description for
   all 18 manuals; half of them previously fell through to an auto-generated

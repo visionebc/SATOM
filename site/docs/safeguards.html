@@ -88,6 +88,7 @@
       <a href="#10d-only-the-offline-path-can-prove-the-offline-path">10d. Only the offline path can prove the offline path</a>
       <a href="#10f-a-prompt-may-not-die-in-silence">10f. A prompt may not die in silence</a>
       <a href="#10e-the-node-has-to-be-told-which-names-it-answers-to">10e. The node has to be told which names it answers to</a>
+      <a href="#13-a-chart-may-not-invent-a-reading">13. A chart may not invent a reading</a>
       <a href="#12-uploaded-code-is-code-someone-else-chose-to-run">12. Uploaded code is code someone else chose to run</a>
       <a href="#11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</a>
       <a href="#verifying-the-guards-are-armed_5">Verifying the guards are armed</a>
@@ -2056,6 +2057,76 @@ satom diagnose nginx | sed -n '/certificate covers/,/^$/p'
 # separates from a credentials rejection. Same node, only the port varies.
 #   Host: &lt;fqdn&gt;          -&gt; CSRF-OK
 #   Host: &lt;fqdn&gt;:&lt;port&gt;   -&gt; CSRF-OK too, once repaired
+</code></pre>
+<h2 id="13-a-chart-may-not-invent-a-reading">13. A chart may not invent a reading</h2>
+<p><strong>[SATOM-ANALYTICS]</strong></p>
+<p>Analytics boards and period reports summarise stored samples. Nothing in this
+layer raises when it is wrong: the page still renders, the report is still
+produced, and the number it shows is simply false. Every guard below exists
+because the failure is silent by construction.</p>
+<p><strong>One resolution per panel.</strong> <code>deep_monitor.pick_source()</code> picks raw / hourly /
+daily <em>per probe</em>, from how much history that probe has. Two series on one axis
+read from two tables is a lie no legend repairs — the raw line shows spikes the
+hourly line averaged away, and an operator reads that as a difference between
+the two <strong>devices</strong>. <code>monitor_analytics.panel_source()</code> therefore asks every
+member and pins the COARSEST answer for all of them; the panel footer names the
+table it drew from. <code>deep_monitor.series()</code> grew <code>force_source</code> for this, and
+<code>source_for()</code> was split out so the question can be asked without fetching. The
+single-probe drill-down still chooses per probe, which is correct when there is
+nothing to compare against.</p>
+<p><strong>A gap stays a gap.</strong> Missing buckets are <code>None</code> and the front end draws with
+<code>spanGaps: false</code>. Carrying the last value forward — the obvious "tidier"
+rendering — draws a confident straight line through the exact interval the chart
+was opened to examine.</p>
+<p><strong>Nothing measured is never a healthy zero.</strong> <code>healthy_pct()</code> returns <code>None</code>,
+not <code>0</code> and not <code>100</code>, when no bucket in the window was graded; stat panels
+print <em>no data</em> and reports render a banner. Zero tells the operator the service
+is down and a hundred tells them it is fine; both are inventions. The same rule
+runs up the chain: <code>monitor_reports.worst_status()</code> ranks <code>unknown</code> <strong>below</strong>
+<code>ok</code>, so a device that reported nothing cannot roll up green beside one that
+reported healthy. This is §9b applied to summaries.</p>
+<p><strong>A percentage needs something to divide by.</strong> <code>_pct_delta()</code> returns <code>None</code>
+when the previous period is zero or absent. Growth from nothing is not +100 %.</p>
+<p><strong>Report periods are half-open</strong>, <code>[start, end)</code>. Adjacent reports must not both
+claim the boundary, or every total across it is quietly inflated. Reports are
+also generated for the last COMPLETE period — "throughput fell 80 %" means
+nothing about a day that is two hours old.</p>
+<p><strong>Effective cadence is published.</strong> A probe fires only once its interval has
+elapsed <em>and</em> a sweep ticks, so its real cadence is <code>tick × ceil(interval ÷
+tick)</code>. A 5-minute probe under a 3-minute sweep is a 6-minute probe and its own
+row still says 5 — that silent rounding degraded <code>proxyd</code>, the check that exists
+to catch a mute daemon restart. The cadence view shows declared vs effective and
+flags every mismatch. With no sweep scheduled it reports <code>0</code>, never a plausible
+default, because a fresh install seeds no <code>ScheduledAction</code> (§10) and inventing
+a tick would describe collection that is not happening.</p>
+<p><strong>Built-in boards refuse writes at the route</strong>, not in the template. A board
+whose Save button is hidden but whose endpoint still writes is hidden, not
+read-only. Duplicate gives an editable copy, so read-only is not merely
+frustrating.</p>
+<p><strong>Panels select by rule, not by a frozen id list.</strong> A rule (<code>kind</code> + devices +
+name match) resolves at render time, so a probe recreated by Discover or a newly
+registered appliance joins the panel. An id list is how a board silently narrows
+while still looking complete.</p>
+<p><strong>Charting is vendored.</strong> Chart.js is served from <code>/static/vendor/chart/</code>. A
+chart that only draws with public internet does not draw in an isolated
+management network, which is where this product installs.</p>
+<h3 id="verifying-these-are-armed">Verifying these are armed</h3>
+<pre><code class="language-bash"># every guard, and the mutation harness that proves each one bites
+runuser -u satom -- venv/bin/python3 -m pytest tests/test_monitor_analytics.py -q
+
+# a panel must name ONE source for all its series
+curl -sk -b &quot;$COOKIE&quot; 'https://&lt;node&gt;/monitoring/analytics/data?range=30d' |
+  python3 -c 'import json,sys; d=json.load(sys.stdin);
+print([(p[&quot;panel&quot;][&quot;title&quot;], p[&quot;source&quot;]) for p in d[&quot;panels&quot;]])'
+
+# declared vs effective cadence; &quot;drift&quot; is a probe the sweep cannot honour
+curl -sk -b &quot;$COOKIE&quot; https://&lt;node&gt;/monitoring/analytics/cadence |
+  python3 -c 'import json,sys; d=json.load(sys.stdin);
+print(&quot;tick&quot;, d[&quot;tick_min&quot;], &quot;drifted&quot;, d[&quot;drifted&quot;], &quot;of&quot;, d[&quot;total&quot;])'
+
+# no charting from a CDN, anywhere in the feature
+grep -rn &quot;jsdelivr\|unpkg\|cdnjs&quot; app/static/js/analytics.js \
+  app/static/css/analytics.css app/templates/monitoring/analytics.html   # → no hits
 </code></pre>
 <h2 id="12-uploaded-code-is-code-someone-else-chose-to-run">12. Uploaded code is code someone else chose to run</h2>
 <p><strong>[SATOM-UPDATE-PACKAGE] / [SATOM-RUNNER-ROOT-COPY]</strong></p>

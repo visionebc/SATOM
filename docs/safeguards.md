@@ -1758,6 +1758,91 @@ satom diagnose nginx | sed -n '/certificate covers/,/^$/p'
 #   Host: <fqdn>:<port>   -> CSRF-OK too, once repaired
 ```
 
+## 13. A chart may not invent a reading
+
+**[SATOM-ANALYTICS]**
+
+Analytics boards and period reports summarise stored samples. Nothing in this
+layer raises when it is wrong: the page still renders, the report is still
+produced, and the number it shows is simply false. Every guard below exists
+because the failure is silent by construction.
+
+**One resolution per panel.** `deep_monitor.pick_source()` picks raw / hourly /
+daily *per probe*, from how much history that probe has. Two series on one axis
+read from two tables is a lie no legend repairs — the raw line shows spikes the
+hourly line averaged away, and an operator reads that as a difference between
+the two **devices**. `monitor_analytics.panel_source()` therefore asks every
+member and pins the COARSEST answer for all of them; the panel footer names the
+table it drew from. `deep_monitor.series()` grew `force_source` for this, and
+`source_for()` was split out so the question can be asked without fetching. The
+single-probe drill-down still chooses per probe, which is correct when there is
+nothing to compare against.
+
+**A gap stays a gap.** Missing buckets are `None` and the front end draws with
+`spanGaps: false`. Carrying the last value forward — the obvious "tidier"
+rendering — draws a confident straight line through the exact interval the chart
+was opened to examine.
+
+**Nothing measured is never a healthy zero.** `healthy_pct()` returns `None`,
+not `0` and not `100`, when no bucket in the window was graded; stat panels
+print *no data* and reports render a banner. Zero tells the operator the service
+is down and a hundred tells them it is fine; both are inventions. The same rule
+runs up the chain: `monitor_reports.worst_status()` ranks `unknown` **below**
+`ok`, so a device that reported nothing cannot roll up green beside one that
+reported healthy. This is §9b applied to summaries.
+
+**A percentage needs something to divide by.** `_pct_delta()` returns `None`
+when the previous period is zero or absent. Growth from nothing is not +100 %.
+
+**Report periods are half-open**, `[start, end)`. Adjacent reports must not both
+claim the boundary, or every total across it is quietly inflated. Reports are
+also generated for the last COMPLETE period — "throughput fell 80 %" means
+nothing about a day that is two hours old.
+
+**Effective cadence is published.** A probe fires only once its interval has
+elapsed *and* a sweep ticks, so its real cadence is `tick × ceil(interval ÷
+tick)`. A 5-minute probe under a 3-minute sweep is a 6-minute probe and its own
+row still says 5 — that silent rounding degraded `proxyd`, the check that exists
+to catch a mute daemon restart. The cadence view shows declared vs effective and
+flags every mismatch. With no sweep scheduled it reports `0`, never a plausible
+default, because a fresh install seeds no `ScheduledAction` (§10) and inventing
+a tick would describe collection that is not happening.
+
+**Built-in boards refuse writes at the route**, not in the template. A board
+whose Save button is hidden but whose endpoint still writes is hidden, not
+read-only. Duplicate gives an editable copy, so read-only is not merely
+frustrating.
+
+**Panels select by rule, not by a frozen id list.** A rule (`kind` + devices +
+name match) resolves at render time, so a probe recreated by Discover or a newly
+registered appliance joins the panel. An id list is how a board silently narrows
+while still looking complete.
+
+**Charting is vendored.** Chart.js is served from `/static/vendor/chart/`. A
+chart that only draws with public internet does not draw in an isolated
+management network, which is where this product installs.
+
+### Verifying these are armed
+
+```bash
+# every guard, and the mutation harness that proves each one bites
+runuser -u satom -- venv/bin/python3 -m pytest tests/test_monitor_analytics.py -q
+
+# a panel must name ONE source for all its series
+curl -sk -b "$COOKIE" 'https://<node>/monitoring/analytics/data?range=30d' |
+  python3 -c 'import json,sys; d=json.load(sys.stdin);
+print([(p["panel"]["title"], p["source"]) for p in d["panels"]])'
+
+# declared vs effective cadence; "drift" is a probe the sweep cannot honour
+curl -sk -b "$COOKIE" https://<node>/monitoring/analytics/cadence |
+  python3 -c 'import json,sys; d=json.load(sys.stdin);
+print("tick", d["tick_min"], "drifted", d["drifted"], "of", d["total"])'
+
+# no charting from a CDN, anywhere in the feature
+grep -rn "jsdelivr\|unpkg\|cdnjs" app/static/js/analytics.js \
+  app/static/css/analytics.css app/templates/monitoring/analytics.html   # → no hits
+```
+
 ## 12. Uploaded code is code someone else chose to run
 
 **[SATOM-UPDATE-PACKAGE] / [SATOM-RUNNER-ROOT-COPY]**

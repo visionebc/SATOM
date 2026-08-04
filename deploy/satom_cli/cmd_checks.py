@@ -35,6 +35,11 @@ MIN_ACTIONS = {
     "system_backup": "nightly database bundle",
     "git_bundle": "nightly git repository bundle",
     "deep_monitor": "probe sweep",
+    # The sweep records; this is what carries the record to a human. Without it
+    # the rollups accumulate for ninety days and nobody is told anything unless
+    # they open the console, which is the same shape of gap as an unarmed
+    # backup: full capability, zero delivery.
+    "monitor_report": "period summary (daily / weekly / monthly)",
 }
 
 

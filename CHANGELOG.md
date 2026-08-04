@@ -4,6 +4,22 @@ All notable changes to SATOM are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/). This is a public, open-source
 project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
+## [Unreleased]
+
+### Fixed
+
+- **A prompt could kill the installer without printing anything.** `read`
+  returns non-zero on EOF and, under `set -euo pipefail`, that aborted the run
+  silently -- the last visible line was the previous step. It bites when the
+  installer is driven by a pipe or here-doc whose answer sequence is shorter
+  than the prompt sequence; the ONLINE path asks one question more than the
+  OFFLINE one (the repository URL), so a driver written against one path dies
+  mid-install on the other. All twelve prompts now go through `ask` /
+  `ask_secret`, which abort with a message naming the unanswered prompt.
+  EOF *with* partial data (a last line without a newline) remains a valid
+  answer. Guarded structurally, so a prompt added later cannot bypass them.
+  See `docs/safeguards.md` 10f. [SATOM-LOUD-READ]
+
 ## [1.3.5] - 2026-08-04
 
 ### The node was never told which names it answers to

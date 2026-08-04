@@ -79,6 +79,17 @@ def shipped_version() -> str:
         return fh.read().strip()
 
 
+INSTALLER = os.path.join(ROOT, "installers", "install-satom.sh")
+# The installer prints its own version in the banner. Anchored at line start so
+# it cannot match a VERSION= assignment nested inside a function or heredoc.
+INSTALLER_VERSION_RE = re.compile(r'(?m)^VERSION="[^"]*"')
+
+
+def stamp_installer(text: str, version: str) -> str:
+    """Rewrite the installer's own VERSION literal."""
+    return INSTALLER_VERSION_RE.sub('VERSION="%s"' % version, text, count=1)
+
+
 def stamp_version(text: str, version: str) -> str:
     """Rewrite the hero pill to the shipped version."""
     return VERSION_RE.sub(lambda m: m.group(1) + "v" + version, text)
@@ -103,6 +114,17 @@ def main(argv: "list[str]") -> int:
         with io.open(page, "w", encoding="utf-8") as fh:
             fh.write(out)
         written += 1
+    if os.path.exists(INSTALLER):
+        with io.open(INSTALLER, encoding="utf-8") as fh:
+            isrc = fh.read()
+        iout = stamp_installer(isrc, version)
+        if iout != isrc:
+            if check:
+                stale.append(os.path.relpath(INSTALLER, ROOT))
+            else:
+                with io.open(INSTALLER, "w", encoding="utf-8") as fh:
+                    fh.write(iout)
+                written += 1
     if check:
         if stale:
             sys.stderr.write(

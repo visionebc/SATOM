@@ -77,9 +77,28 @@
     <div class="doc-body mdx">
 <h1 id="changelog">Changelog</h1>
 <p>All notable changes to SATOM are documented here. Format loosely follows
-<a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public, open-source
-project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
+<a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
+source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="changed">Changed</h3>
+<ul>
+<li><strong>License changed from Apache-2.0 to the <a href="LICENSE">Elastic License 2.0</a>.</strong>
+  The change applies to the SATOM project as a whole, including the versions
+  previously published in the public repository (v1.0 through v1.3.5). What it
+  means in practice: you may still use, modify and run SATOM inside your own
+  organisation — in production, for commercial purposes, on as many nodes as
+  you like — at no cost. What is no longer permitted is providing SATOM to
+  third parties as a hosted or managed service; that requires a commercial
+  license (<code>licensing@visionebc.com</code>). ELv2 also forbids circumventing license
+  key functionality and removing licensing notices. Note that copies obtained
+  before this change carry the Apache-2.0 terms under which they were received;
+  the new terms govern this repository and everything distributed from it going
+  forward. SATOM is therefore <strong>source-available</strong>, not OSI open source — the
+  wording in <code>README.md</code>, <code>NOTICE</code>, <code>CONTRIBUTING.md</code>, <code>DISCLAIMER</code>,
+  <code>SECURITY.md</code> and the public site was corrected accordingly. Guarded by
+  <code>tests/test_license_consistency.py</code> so no surface can drift back; see
+  <code>docs/safeguards.md</code> 7f. [SATOM-LICENSE]</li>
+</ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
 <li><strong>A prompt could kill the installer without printing anything.</strong> <code>read</code>
@@ -525,7 +544,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
      The vhost now goes to <code>vhosts.d/</code> and the stock block is neutralised, the
      same way <code>sites-enabled/default</code> is removed on Debian.</li>
 </ol>
-<h3 id="changed">Changed</h3>
+<h3 id="changed_1">Changed</h3>
 <ul>
 <li><strong>The last <code>fortinet</code> identifiers are gone from the platform itself.</strong> The
   database, the PostgreSQL role, the Linux service account and the PostgreSQL
@@ -749,7 +768,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   colours in the drill-down modal, now build from <code>.fw-card</code> and the <code>--fw-*</code>
   custom properties.</li>
 </ul>
-<h3 id="changed_1">Changed</h3>
+<h3 id="changed_2">Changed</h3>
 <ul>
 <li><strong>Device cards start folded and tile densely.</strong> Expanded-by-default is
   unusable past a handful of appliances: a hundred of them was a kilometre of
@@ -804,7 +823,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   the job feeds (throttled to once every 120 s), and a job that never received a
   pid is considered dead after 10 minutes instead of an hour.</li>
 </ul>
-<h3 id="changed_2">Changed</h3>
+<h3 id="changed_3">Changed</h3>
 <ul>
 <li><strong>Service Monitor (and every other probe) now sweeps every 3 minutes</strong> instead
   of 5. The scheduled sweep action was retimed and <em>all</em> probe intervals were
@@ -900,7 +919,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   is carrying sessions or connections it grades <code>warn</code> and names the likely
   cause, instead of a green row on a busy service. Mutation-tested.</li>
 </ul>
-<h3 id="changed_3">Changed</h3>
+<h3 id="changed_4">Changed</h3>
 <ul>
 <li>
 <p><em>Probe now</em> with no selection no longer sweeps every probe in the fleet: it
@@ -930,7 +949,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   the devices whose hourly <code>device_sync</code> has been failing. FortiWeb only —
   FortiADC and FortiAnalyzer are refused by name rather than measured as zero.
   See <code>docs/safeguards.md</code> §9e.</p>
-<h3 id="changed_4">Changed</h3>
+<h3 id="changed_5">Changed</h3>
 <ul>
 <li><strong>A scheduled deep-monitor sweep now reports whether it RAN, not whether it
   liked what it found.</strong> <code>ok</code> was <code>worst in ("ok","unknown")</code>, so a single
@@ -984,7 +1003,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   payload read a <code>maintenance_mode</code> attribute that has never existed on
   <code>Appliance</code>; the column is <code>maintenance</code>.</li>
 </ul>
-<h3 id="changed_5">Changed</h3>
+<h3 id="changed_6">Changed</h3>
 <ul>
 <li><strong>Monitoring is now an ADOM-level submenu, not Global-only.</strong> Fleet health,
   Metrics and Deep monitors appear in the FortiWeb, FortiADC and FortiAnalyzer
@@ -1079,7 +1098,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li>Public site: <code>site/safeguards.html</code> (linked from the nav and footer of every
   page) and the matching notes on <code>site/install.html</code>.</li>
 </ul>
-<h3 id="changed_6">Changed</h3>
+<h3 id="changed_7">Changed</h3>
 <ul>
 <li>In-app <strong>Documentation</strong> index now curates a title, order and description for
   all 18 manuals; half of them previously fell through to an auto-generated

@@ -73,6 +73,7 @@
       <a href="#7c-one-published-manual-and-one-that-works-with-no-network">7c. One published manual, and one that works with no network</a>
       <a href="#7d-a-cross-reference-that-renders-is-not-a-cross-reference-that-works">7d. A cross-reference that renders is not a cross-reference that works</a>
       <a href="#7e-what-leaves-the-building-is-the-mirror-not-just-the-manual">7e. What leaves the building is the MIRROR, not just the manual</a>
+      <a href="#7f-the-licence-has-to-say-the-same-thing-on-every-surface">7f. The licence has to say the same thing on every surface</a>
       <a href="#8-sessions-and-the-web-surface">8. Sessions and the web surface</a>
       <a href="#8b-operator-supplied-theming">8b. Operator-supplied theming</a>
       <a href="#8c-the-public-sites-theme-layer">8c. The public site&#x27;s theme layer</a>
@@ -681,6 +682,46 @@ appliance by database id, to absolute paths on one host and to a local <code>.en
 they take no arguments, and one carries a shared secret in clear text.
 Rewriting their literals yields a script that still cannot run anywhere else —
 so the honest treatment is removal, not redaction.</p>
+<h2 id="7f-the-licence-has-to-say-the-same-thing-on-every-surface">7f. The licence has to say the same thing on every surface</h2>
+<p><strong>What it prevents.</strong> SATOM declares its licence in eight places: <code>LICENSE</code>,
+<code>NOTICE</code>, <code>README.md</code>, <code>CONTRIBUTING.md</code>, <code>DISCLAIMER</code>, <code>SECURITY.md</code>, the six
+hand-written pages under <code>site/</code>, and the footer template inside
+<code>deploy/gen_site_docs.py</code> that stamps the generated documentation pages. Nothing
+<em>fails</em> when one of them goes stale — the statement simply becomes false. That
+is exactly how <code>Version: 1.0</code> survived four releases in the README while the
+console, the pipeline and the public site all said something else. A licence
+that disagrees with itself is worse than a stale version string: a reader who
+acts on the wrong surface is relying on a grant that was never made.</p>
+<p><strong>Where it lives.</strong> <code>tests/test_license_consistency.py</code>, twenty-seven guards.</p>
+<p><strong>The rules.</strong></p>
+<ul>
+<li><code>LICENSE</code> must carry the <strong>operative sentence</strong> of the current licence, not
+  merely its name — a header that says "Elastic License 2.0" over an Apache body
+  passes a name check and fails a reader. The assertion runs against
+  whitespace-collapsed text, because the licence body is hard-wrapped at ~80
+  columns and any sentence spanning a line break silently fails against text
+  that is perfectly correct.</li>
+<li>The markers unique to the <strong>old</strong> licence body must be gone. The scope header
+  is still allowed to <em>reference</em> Apache-2.0 — it has to, to say which terms
+  earlier copies were received under — so the guard pins the body markers, not
+  the word.</li>
+<li>The five declaring files may not name the old licence at all, and may not
+  <strong>claim</strong> SATOM is open source. ELv2 is source-available, not OSI open source.
+  The guard matches affirmative claims (<code>open-source project</code>,
+  <code>is free, open-source</code>, …) and deliberately <strong>not</strong> the bare phrase: matching
+  that would ban the very sentence that sets the record straight ("not an OSI
+  open-source license").</li>
+<li>Site pages are checked <strong>through their footer</strong>, never whole-page. The body of
+  a generated page is rendered from Markdown that may legitimately discuss the
+  old licence — the changelog entry announcing the change does exactly that.</li>
+<li>The generator's footer template and the hand-written pages must produce the
+  <strong>same string</strong>. Two authors of one sentence is how <code>index.html</code> silently lost
+  its Docs link once already.</li>
+</ul>
+<p><strong>Known limit, on purpose.</strong> These guards pin what the project <em>says</em>. They
+cannot pin what a recipient already holds: a copy distributed under an earlier
+licence stays under the terms it was received under, and no test changes that.
+<code>LICENSE</code> states it in the scope header rather than leaving it implied.</p>
 <h2 id="8-sessions-and-the-web-surface">8. Sessions and the web surface</h2>
 <table>
 <thead>
@@ -1949,6 +1990,28 @@ done | grep -v '^200' || echo 'every cross-reference resolves'
 <p>A generator change that neuters the rewrite shows up as a non-zero count in
 step 1; one that strips links instead of rewriting them shows up as an empty
 list in step 2.</p>
+<h3 id="licence-consistency-7f">Licence consistency (7f)</h3>
+<p>Every surface, one answer — from a checkout:</p>
+<pre><code class="language-bash"># 1. no declaring file may name the old licence
+grep -l 'Apache' NOTICE README.md CONTRIBUTING.md DISCLAIMER SECURITY.md \
+  2&gt;/dev/null || echo 'declaring files are clean'
+
+# 2. the LICENSE body must be the current grant, not just its name
+grep -q 'hosted or managed' LICENSE &amp;&amp; grep -q '## No Liability' LICENSE \
+  &amp;&amp; echo 'LICENSE carries the operative text'
+
+# 3. every published footer agrees (curated + generated)
+grep -ho 'Licensed under[^&lt;]*&lt;a[^&gt;]*&gt;[^&lt;]*&lt;/a&gt;' site/*.html site/docs/*.html \
+  | sort -u        # expect exactly ONE distinct line
+
+# 4. and the live site says the same thing
+curl -s --resolve satom.visionebc.com:443:185.199.108.153 \
+  https://satom.visionebc.com/ | grep -o 'Licensed under[^&lt;]*&lt;a[^&gt;]*&gt;[^&lt;]*&lt;/a&gt;'
+</code></pre>
+<p>Step 3 is the one that catches drift: a second distinct line means the
+generator and the hand-written pages have diverged. Step 4 is the only one that
+proves the <em>published</em> mirror was refreshed — a force-push to <code>gh-pages</code> does
+not always trigger a build (see 7e).</p>
 <h3 id="8e-brand-gradients-and-asset-stamps">8e — brand gradients and asset stamps</h3>
 <pre><code class="language-bash"># the gradient pattern refuses a declaration escape on its own
 python3 - &lt;&lt;'EOF'

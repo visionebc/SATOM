@@ -9,6 +9,7 @@ here and reported success while it did.
 """
 import json
 import os
+import shutil
 import re
 import stat
 from pathlib import Path
@@ -476,6 +477,17 @@ def git(ctx, args):
     g = ["git", "--no-optional-locks", "-c", "safe.directory=%s" % ctx.app_dir,
          "-C", str(ctx.app_dir)]
     r = Result("ok", "git integrity")
+    # SATOM-GIT-PKG: until 1.3.3 no offline bundle carried git, so an air-gapped
+    # node reported "repository unusable" — true, and it sends the operator to
+    # look at the repository instead of at the one missing package.
+    if shutil.which("git") is None:
+        r.status = "bad"
+        r.rows("", [("git binary", "not installed")])
+        r.note("satom-git-publish and the nightly git bundle both shell out to "
+               "git, so backup copy 3 (the reports/ SoT versioned in git) does "
+               "not exist on this node. Install it from the distribution media "
+               "or the offline bundle.")
+        return r
     rc, out, _ = run(g + ["rev-parse", "--is-inside-work-tree"])
     if rc != 0:
         r.status = "bad"

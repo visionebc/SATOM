@@ -55,7 +55,7 @@ FAKEROOT="${FAKEROOT:-/tmp/satom-node}"
 # repararlo. install-satom.sh las instala desde aqui cuando detecta el
 # desajuste; este listado garantiza que estan.
 PKGS=(python311 python311-pip postgresql-server postgresql nginx rsync
-      openssl curl ca-certificates sudo openssh
+      openssl curl ca-certificates sudo openssh git
       libexpat1 libopenssl3 libsqlite3-0 libz1)
 
 echo "==> Bundle offline SATOM v${VERSION} — familia SUSE (leap 15, x86_64)"

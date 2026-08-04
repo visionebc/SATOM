@@ -6,6 +6,33 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.3.4] - 2026-08-04
+
+### The offline bundles never carried git
+
+Found the only way it could be found -- by looking at a node installed from a
+bundle, with no network, days after it was built. `satom-git-publish.service`
+had been failing every hour with `git: command not found`.
+
+- **`git` is now a required package on every family**, and therefore in all
+  three offline bundles. It was in none of them. The online path installs it as
+  a side effect of cloning the repository, so every online install had it and
+  every air-gapped install did not. Nothing else showed the fault: the console,
+  `/healthz`, login and the rest of the diagnostics were green while backup
+  **copy 3** -- the `reports/` source of truth versioned in git -- did not exist
+  on the node at all.
+- **`satom diagnose git` names the missing binary.** It reported
+  "repository unusable", which is true and points the operator at the
+  repository rather than at the one package that is absent.
+- Rules and guards in [safeguards](docs/safeguards.md) section 10d. Three
+  mutation-tested guards: `git` must be required on all four families, every
+  builder must package it, and the diagnosis must detect its absence.
+
+Rebuild-only for existing installations: `git` is a package, not application
+code. An installed node is fixed by installing git from the distribution media
+or from the bundle; nothing needs to be redeployed.
+
+
 ## [1.3.3] - 2026-08-04
 
 ### nginx came up, then the installer killed it (openSUSE)

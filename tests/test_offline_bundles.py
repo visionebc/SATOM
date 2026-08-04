@@ -150,3 +150,39 @@ def test_the_suse_path_never_registers_a_repository_on_the_target():
     assert "--reposd-dir" in branch
     assert "addrepo" not in branch, "the SUSE branch registers a repository on the target"
     assert "--no-gpg-checks" in branch, "a local bundle has no signing key to check against"
+
+
+# --- SATOM-GIT-PKG -----------------------------------------------------------
+# 1.3.3 and earlier: `git` was never in REQUIRED_PKGS and never in a builder's
+# PKGS. The ONLINE path installed it as a side effect of cloning the repo, so
+# only air-gapped installs were affected: satom-git-publish.service failed every
+# hour and backup copy 3 (the reports/ SoT versioned in git) silently did not
+# exist. The generic test above only proves the builders agree with
+# REQUIRED_PKGS — dropping git from BOTH would keep it green. This one names it.
+
+_FAMILIES = ("apt", "dnf|yum", "zypper", "pacman")
+
+
+@pytest.mark.parametrize("mgr", _FAMILIES)
+def test_git_is_required_on_every_family(mgr):
+    assert "git" in _installer_case_array("REQUIRED_PKGS", mgr), (
+        f"{mgr}: git is not a required package. satom-git-publish, the nightly "
+        "git bundle and the self-update runner all shell out to it."
+    )
+
+
+@pytest.mark.parametrize("builder", sorted(BUILDERS))
+def test_every_offline_bundle_carries_git(builder):
+    shipped = _array((INSTALLERS / builder).read_text(encoding="utf-8"), "PKGS")
+    assert "git" in shipped, (
+        f"{builder} does not package git — an air-gapped install would lose "
+        "backup copy 3 and fail satom-git-publish hourly, with no other symptom"
+    )
+
+
+def test_the_cli_names_a_missing_git_binary():
+    """Reporting "repository unusable" points the operator at the wrong thing."""
+    src = (ROOT / "deploy/satom_cli/cmd_checks.py").read_text(encoding="utf-8")
+    assert 'shutil.which("git")' in src, \
+        "diagnose git no longer detects an absent git binary"
+    assert "not installed" in src

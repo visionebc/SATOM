@@ -41,7 +41,7 @@ STAGE="$OUT/satom-installer"
 # desajuste; este listado garantiza que estan.
 PKGS=(python3.11 python3.11-pip postgresql-server postgresql nginx rsync
       openssl curl ca-certificates policycoreutils-python-utils
-      sudo openssh-clients openssh-server
+      sudo openssh-clients openssh-server git
       expat openssl-libs sqlite-libs zlib)
 
 echo "==> Bundle offline SATOM v${VERSION} — familia RHEL (el9, x86_64)"

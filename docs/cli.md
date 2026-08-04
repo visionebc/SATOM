@@ -305,7 +305,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*87 commands in 32 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*94 commands in 33 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -343,6 +343,8 @@ Configuration, reference material and the console's own map. Also unprivileged: 
 
 | Command | Root | ! | What it does |
 |---|:--:|:--:|---|
+| `satom show trust` | — | — | Public keys this node accepts update packages from. |
+| `satom show package <file.tar.gz>` | — | — | Inspect an update package without applying it. |
 | `satom show config` | — | — | The .env, with secrets redacted. |
 | `satom show units` | — | — | Alias -> systemd unit map, with install state. |
 | `satom show services` | — | — | What each unit is FOR, and which ones are off limits. |
@@ -378,6 +380,7 @@ Active probes that reach out — sockets, database handshakes, compilers, peers.
 | `satom diagnose acme` | — | — | Client, account key, webroot, provider credentials. |
 | `satom diagnose peer` | — | — | Peer reachability, datasync key and timer. |
 | `satom diagnose git` | — | — | Repository integrity, including the root-owned-files trap. |
+| `satom diagnose updates` | — | — | Can this node accept a signed offline package, and is that safe? |
 | `satom diagnose privilege` | — | — | Integrity of the CLI install and the sudo boundary. |
 
 ### `execute`
@@ -397,10 +400,14 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute seed actions [--yes]` | yes | — | The minimum scheduled actions. Shows the plan; --yes applies. |
 | `satom execute update code [<target>]` | yes | — | Queue a git update — or a rollback, by passing a commit. |
 | `satom execute update pip <package> <version>` | yes | — | Queue a curated-allowlist package change. Node-local. |
+| `satom execute update package <file.tar.gz> [--yes] [--allow-downgrade] [--no-backup]` | yes | ! | Apply a SIGNED offline update package. Works with no network. |
 | `satom execute update status [<id>]` | — | — | Show the latest (or a specific) update record. |
 | `satom execute reinstall venv` | yes | ! | Recreate venv/ from requirements.txt. Needs --yes; keeps a freeze to roll back to. |
 | `satom execute reinstall units` | yes | — | Re-copy the systemd units AND re-pin User= via drop-in. |
 | `satom execute reinstall cli` | yes | — | Refresh the root-owned copy of this CLI from the repo. |
+| `satom execute reinstall runner` | yes | — | Refresh the root-owned copy of the privileged update runner. |
+| `satom execute trust add-key <file.pub> [--name <slug>]` | yes | — | Install a signing public key into the trust store. |
+| `satom execute trust remove-key <name\|fingerprint> --yes` | yes | ! | Stop accepting packages signed by a key. Needs --yes. |
 | `satom execute repair permissions` | yes | — | Give root-owned files in the app tree back to the service account. |
 | `satom execute repair jobs [--older-than N] [--yes]` | yes | ! | Sweep ghost jobs and prune the terminated ledger. |
 | `satom execute repair tmp [--older-than N] [--yes]` | yes | ! | Delete aged scratch under data/tmp. Nothing else prunes it. |

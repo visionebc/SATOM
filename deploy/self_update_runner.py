@@ -393,12 +393,14 @@ def process(req_path):
         # it must be re-installed here or the console tool silently ages behind
         # the app it is meant to repair.
         try:
-            cli_installer = APP / "deploy" / "install-cli.sh"
-            if cli_installer.exists():
-                cr = subprocess.run(["bash", str(cli_installer)],
-                                    capture_output=True, text=True, timeout=120)
-                st.step("refresh operator CLI", cr.returncode == 0,
-                        (cr.stdout or cr.stderr or "").strip()[:200])
+            for _script, _label in (("install-cli.sh", "operator CLI"),
+                                    ("install-runner.sh", "update runner")):
+                _p = APP / "deploy" / _script
+                if _p.exists():
+                    cr = subprocess.run(["bash", str(_p)], capture_output=True,
+                                        text=True, timeout=180)
+                    st.step("refresh %s" % _label, cr.returncode == 0,
+                            (cr.stdout or cr.stderr or "").strip()[:200])
         except Exception as exc:  # noqa: BLE001
             # Never fail an update because the console tool did not refresh.
             st.step("refresh operator CLI", False, str(exc)[:200])
@@ -477,14 +479,13 @@ def _pip_allowlist():
         "Flask-Login", "Flask-WTF", "Flask-Limiter", "psycopg", "gunicorn",
         "paramiko", "httpx", "cryptography", "requests", "PyYAML",
     }
-    try:
-        import sys
-        if str(APP) not in sys.path:
-            sys.path.insert(0, str(APP))
-        from app.services.system_info import _LIBRARIES  # type: ignore
-        return {n for n in _LIBRARIES} or fallback
-    except Exception:
-        return fallback
+    # [SATOM-RUNNER-NO-APP-IMPORT] Deliberately NOT imported from
+    # app.services.system_info. That import executes the application package
+    # -- as root, from a tree the service account owns -- which is the same
+    # escalation install-runner.sh exists to close. The list below is asserted
+    # equal to system_info._LIBRARIES by tests/test_update_package.py, so the
+    # two cannot drift.
+    return fallback
 
 
 def _installed_version(pkg):
@@ -657,6 +658,352 @@ def pip_change(req_path):
                       error="%s ; rollback error: %s" % (e, e2))
 
 
+
+# ---------------------------------------------------------------------------
+# offline update packages (kind: "package")
+# ---------------------------------------------------------------------------
+UPLOADS = APP / "data" / "update-uploads"
+TRUST_DIR = os.environ.get("SATOM_TRUST_DIR", "/etc/satom/update-keys")
+RUNNER_LIB = "/usr/local/lib/satom-runner"
+
+
+def _load_update_package():
+    """Load the signature verifier that sits NEXT TO THIS FILE.
+
+    Deliberately a sibling and not ``APP/deploy``: when this runner is properly
+    installed both live in the root-owned copy, so the verifier is exactly as
+    trustworthy as the code that calls it. Loading the verifier from the app
+    tree while running hardened would reintroduce the escalation the hardening
+    removes.
+    """
+    import importlib.util
+    path = Path(__file__).resolve().parent / "update_package.py"
+    spec = importlib.util.spec_from_file_location("satom_update_package", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def runner_integrity_problem():
+    """Why this runner must not be trusted to verify a package, or None.
+
+    [SATOM-RUNNER-ROOT-COPY] Running as root out of a directory the service
+    account can write means the account can choose the code root executes.
+    Signature verification performed by that code proves nothing. The git
+    update path keeps working (it is gated by the remote, not by us), but an
+    uploaded package is refused until ``install-runner.sh`` has been run.
+    """
+    here = Path(__file__).resolve().parent
+    try:
+        up = _load_update_package()
+    except Exception as exc:  # noqa: BLE001
+        return "cannot load the signature verifier: %s" % exc
+    problem = up.root_owned_problem(here, "*.py")
+    if problem:
+        return ("%s — run 'bash %s/deploy/install-runner.sh' as root to install "
+                "the hardened copy" % (problem, APP))
+    return None
+
+
+def _new_untracked(before):
+    """Untracked, non-ignored paths that appeared since ``before``.
+
+    Rollback removes only these. A blanket ``git clean -fd`` would also delete
+    untracked files that predate the update and have nothing to do with it —
+    destroying an operator's work to undo ours.
+    """
+    out = git("ls-files", "--others", "--exclude-standard", timeout=120).stdout or ""
+    now = {ln.strip() for ln in out.splitlines() if ln.strip()}
+    return sorted(now - before)
+
+
+def _untracked_set():
+    out = git("ls-files", "--others", "--exclude-standard", timeout=120).stdout or ""
+    return {ln.strip() for ln in out.splitlines() if ln.strip()}
+
+
+def _chown_tree():
+    """Give the extracted tree back to the service account.
+
+    Root wrote these files, and a root-owned app tree is the exact state in
+    which enforce_unit_user() stops writing the User= drop-in — the next update
+    would silently put the web app back to running as root.
+    """
+    if not APP_USER or APP_USER == "root":
+        return True, "running un-deprivileged; nothing to hand back"
+    r = subprocess.run(["chown", "-R", "%s:%s" % (APP_USER, APP_USER), str(APP)],
+                       capture_output=True, text=True, timeout=300)
+    env = APP / ".env"
+    if env.exists():
+        subprocess.run(["chown", "root:%s" % APP_USER, str(env)],
+                       capture_output=True, text=True, timeout=30)
+        subprocess.run(["chmod", "640", str(env)],
+                       capture_output=True, text=True, timeout=30)
+    return r.returncode == 0, (r.stderr or "tree owned by %s" % APP_USER)[:200]
+
+
+def _current_version():
+    try:
+        return (APP / "VERSION").read_text().strip()
+    except OSError:
+        return ""
+
+
+def _venv_tag():
+    r = run([str(VENV / "python"), "-c",
+             "import sys;print('cp%d%d' % sys.version_info[:2])"],
+            timeout=30, user=APP_USER)
+    return (r.stdout or "").strip()
+
+
+def package_change(req_path):
+    """Apply a SIGNED OFFLINE UPDATE PACKAGE uploaded through the web console.
+
+    The web worker only staged a file and wrote this request. Everything that
+    decides whether the package is trustworthy happens HERE, as root, against a
+    trust store the worker cannot write:
+
+        hardened?  ->  signature  ->  every hash  ->  version rules  ->  apply
+
+    and the order is not cosmetic. A writable runner makes the signature
+    meaningless; an unverified manifest makes the hashes meaningless; unchecked
+    version rules let a valid-but-wrong package through. Each stage only makes
+    sense once the previous one passed.
+    """
+    req = json.loads(Path(req_path).read_text())
+    uid = req.get("id") or Path(req_path).stem
+    st = Status(uid, req)
+    try:
+        os.remove(req_path)
+    except OSError:
+        pass
+
+    st.d["kind"] = "package"
+    st.d["package"] = req.get("package")
+    st.flush()
+
+    import shutil
+    import tempfile
+
+    up = None
+    stage = None
+    snapshot = git("rev-parse", "HEAD").stdout.strip()
+    untracked_before = _untracked_set()
+    freeze = None
+    role = req.get("role") or ("standby" if pg_in_recovery() else "primary")
+    is_standby = (role == "standby")
+
+    try:
+        # -- 0. is this runner allowed to make a trust decision at all? ------
+        problem = runner_integrity_problem()
+        if problem:
+            st.step("runner integrity", False, problem)
+            raise RuntimeError("refusing to verify a package from a runner the "
+                               "service account can rewrite")
+        st.step("runner integrity", True,
+                "running root-owned from %s" % Path(__file__).resolve().parent)
+        up = _load_update_package()
+
+        # -- 1. resolve the package from a NAME, never a path ---------------
+        name = (req.get("package") or "").strip()
+        if not up.PKG_NAME_RE.match(name):
+            raise RuntimeError("%r is not an acceptable package name" % name)
+        pkg_file = UPLOADS / name
+        if not pkg_file.is_file():
+            raise RuntimeError("%s is not staged on this node" % name)
+        st.step("locate package", True, "%s (%d bytes)"
+                % (name, pkg_file.stat().st_size))
+
+        # -- 2. extract ONCE into root-only space ---------------------------
+        # The staging directory is writable by the service account, so anything
+        # verified in place could be swapped afterwards. Copying into a
+        # root-only temp collapses read-verify-use into a single read.
+        stage = Path(tempfile.mkdtemp(prefix="satom-pkg-", dir="/var/tmp"))
+        os.chmod(stage, 0o700)
+        pkg_dir = up.extract_package(pkg_file, stage)
+        st.step("extract to root-only staging", True, str(stage))
+
+        # -- 3. signature + integrity ---------------------------------------
+        verified = up.verify_package(pkg_dir, TRUST_DIR)
+        manifest = verified["manifest"]
+        key = verified["key"]
+        st.step("verify signature", True, "signed by %s (%s)"
+                % (key["fingerprint"], key["comment"] or key["name"]))
+        st.step("verify %d file hash(es)" % len(manifest.get("files") or {}),
+                True, "every file matches the signed manifest")
+
+        # -- 4. version rules ------------------------------------------------
+        cur = _current_version()
+        new = str(manifest.get("version") or "")
+        st.d["target"] = new
+        cmp_ = up.compare_versions(new, cur)
+        if cmp_ < 0 and not req.get("allow_downgrade"):
+            raise RuntimeError("package %s is OLDER than the installed %s and "
+                               "the request did not allow a downgrade" % (new, cur))
+        min_from = str(manifest.get("min_from_version") or "")
+        if min_from and up.compare_versions(cur, min_from) < 0:
+            raise RuntimeError("package requires %s or newer; this node runs %s"
+                               % (min_from, cur))
+        tags = list(manifest.get("python_tags") or [])
+        mine = _venv_tag()
+        if tags and "*" not in tags and mine and mine not in tags:
+            raise RuntimeError("package carries wheels for %s; this venv is %s"
+                               % (", ".join(tags), mine))
+        st.step("version rules", True, "%s -> %s%s"
+                % (cur, new, " (DOWNGRADE, explicitly allowed)" if cmp_ < 0 else ""))
+
+        # -- 5. backup BEFORE anything is replaced ---------------------------
+        # A downgrade does not reverse migrations, so the database dump is the
+        # only honest way back. If it cannot be taken, do not proceed.
+        if req.get("do_backup", True) and not is_standby:
+            b = subprocess.run(["/usr/local/sbin/satom", "execute", "backup", "db"],
+                               capture_output=True, text=True, timeout=1200)
+            ok = b.returncode == 0
+            st.step("database backup", ok,
+                    (b.stdout or b.stderr or "").strip()[-300:])
+            if not ok:
+                raise RuntimeError("database backup failed; refusing to replace "
+                                   "code without a way back")
+        elif is_standby:
+            st.step("database backup", True,
+                    "skipped (standby; its database is a replica of the primary)")
+
+        freeze = Path("/root/satom-venv-freeze-pre-package-%s.txt"
+                      % datetime.utcnow().strftime("%Y%m%d-%H%M%S"))
+        fr = run([str(VENV / "pip"), "freeze"], timeout=180, user=APP_USER)
+        if fr.returncode == 0:
+            freeze.write_text(fr.stdout)
+            st.step("freeze current dependencies", True, str(freeze))
+        else:
+            freeze = None
+            st.step("freeze current dependencies", False,
+                    "pip freeze failed; a dependency rollback will not be possible")
+
+        # -- 6. park anything local, then lay the tree down ------------------
+        preserved = preserve_local_commits(snapshot, snapshot, st)
+        if preserved is False:
+            raise RuntimeError("refusing to replace the tree: local commits "
+                               "could not be preserved")
+
+        app_tar = pkg_dir / "app.tar.gz"
+        if not app_tar.is_file():
+            raise RuntimeError("package has no app.tar.gz")
+        count = up.extract_app_tree(app_tar, APP)
+        st.step("install application tree", True, "%d file(s) from %s"
+                % (count, name))
+        cok, cdetail = _chown_tree()
+        st.step("restore tree ownership", cok, cdetail)
+
+        # -- 7. dependencies, strictly offline -------------------------------
+        wheels = pkg_dir / "wheels"
+        p = run([str(VENV / "pip"), "install", "-q", "--no-index",
+                 "--find-links", str(wheels), "-r", str(APP / "requirements.txt")],
+                timeout=1800, user=APP_USER)
+        st.step("pip install (offline, from the package)", p.returncode == 0,
+                (p.stderr or p.stdout or "")[-400:])
+        if p.returncode != 0:
+            raise RuntimeError("offline pip install failed")
+
+        # -- 8. migrations (primary only) ------------------------------------
+        if not is_standby:
+            env = dict(os.environ, FLASK_APP="wsgi.py")
+            m = run([str(VENV / "flask"), "db", "upgrade"], timeout=600,
+                    user=APP_USER, cwd=str(APP), env=env)
+            st.step("flask db upgrade (best-effort)", m.returncode == 0,
+                    (m.stderr or m.stdout or "")[-300:])
+        else:
+            st.step("flask db upgrade", True,
+                    "skipped (standby; schema arrives by replication)")
+
+        # -- 9. units, CLI and the runner itself -----------------------------
+        for unit in UNIT_FILES:
+            src = APP / "deploy" / unit
+            if src.exists():
+                subprocess.run(["cp", str(src), "/etc/systemd/system/" + unit])
+        enforce_unit_user(APP_USER)
+        subprocess.run(["systemctl", "daemon-reload"])
+        for script, label in (("install-cli.sh", "operator CLI"),
+                              ("install-runner.sh", "update runner")):
+            sp = APP / "deploy" / script
+            if sp.exists():
+                cr = subprocess.run(["bash", str(sp)], capture_output=True,
+                                    text=True, timeout=180)
+                st.step("refresh %s" % label, cr.returncode == 0,
+                        (cr.stdout or cr.stderr or "").strip()[-200:])
+
+        # -- 10. restart and prove it works ----------------------------------
+        if is_standby:
+            subprocess.run(["systemctl", "restart", SCHED], timeout=60)
+            ok, detail = import_smoke_ok()
+            if not ok:
+                raise RuntimeError("import smoke failed: %s" % detail[:300])
+            st.step("import smoke", True, "new code imports on version %s" % new)
+        else:
+            subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
+            subprocess.run(["systemctl", "restart", SCHED], timeout=60)
+            st.step("restart services", True, "%s + scheduler" % SERVICE)
+            if not health_ok():
+                raise RuntimeError("health check did not return 200 within %ds"
+                                   % HEALTH_TIMEOUT)
+            st.step("health check", True, "200 OK on version %s" % new)
+
+        # -- 11. record what is deployed -------------------------------------
+        # Without a commit the tree stays permanently dirty, `satom diagnose
+        # git` reports drift for ever, and the reconciler in AUTO mode would
+        # reset the package away on its next pass. Committing as the service
+        # account (never root: root-owned objects in .git break git-publish).
+        git("add", "-A")
+        c = git("commit", "-m",
+                "apply update package %s (%s) by %s"
+                % (new, (manifest.get("commit") or "")[:12],
+                   req.get("requested_by") or "?"))
+        st.step("record deployed revision", True,
+                (c.stdout or c.stderr or "nothing to commit").strip()[-200:])
+
+        st.finish("success", package=name, applied_version=new,
+                  previous_version=cur, rolled_back=False,
+                  signed_by=key["fingerprint"],
+                  downgrade=bool(cmp_ < 0))
+        return
+
+    except Exception as e:  # noqa: BLE001
+        st.step("ERROR", False, str(e)[:400])
+        try:
+            git("reset", "--hard", snapshot)
+            stray = _new_untracked(untracked_before)
+            for rel in stray:
+                target = APP / rel
+                try:
+                    if target.is_file() or target.is_symlink():
+                        target.unlink()
+                except OSError:
+                    pass
+            if stray:
+                st.step("remove %d file(s) the package added" % len(stray), True,
+                        ", ".join(stray[:8]))
+            if freeze and freeze.exists():
+                run([str(VENV / "pip"), "install", "-q", "-r", str(freeze)],
+                    timeout=1800, user=APP_USER)
+            _chown_tree()
+            subprocess.run(["systemctl", "restart", SCHED], timeout=60)
+            if is_standby:
+                ok, _ = import_smoke_ok()
+            else:
+                subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
+                ok = health_ok()
+            st.step("rollback to %s" % snapshot[:12], ok,
+                    "recovered" if ok else "STILL UNHEALTHY after rollback")
+            st.finish("failed", result_sha=snapshot, rolled_back=True,
+                      recovered=ok, error=str(e)[:400])
+        except Exception as e2:  # noqa: BLE001
+            st.finish("failed", rolled_back=True, recovered=False,
+                      error="%s ; rollback error: %s" % (e, e2))
+    finally:
+        if stage:
+            import shutil as _sh
+            _sh.rmtree(stage, ignore_errors=True)
+
+
 def promote(req_path):
     """Guarded failover handler (root): promote this node's Postgres standby and
     bring the app up via deploy/satom-promote.sh. Enqueued by the web UI after a
@@ -706,6 +1053,8 @@ def main():
                 promote(rp)
             elif kind == "pip":
                 pip_change(rp)
+            elif kind == "package":
+                package_change(rp)
             else:
                 process(rp)
         except Exception:

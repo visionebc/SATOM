@@ -20,6 +20,7 @@ from . import cmd_get as g
 from . import cmd_ops as o
 from . import cmd_show as s
 from . import cmd_tree as t
+from . import cmd_trust as u
 
 
 class Node:
@@ -114,6 +115,10 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
     ),
 
     _group("show", "Configuration and reference. Any user, no probing.",
+        _n("trust", "Public keys this node accepts update packages from.",
+           run=u.show_trust),
+        _n("package", "Inspect an update package without applying it.",
+           run=u.show_package, usage="show package <file.tar.gz>"),
         _n("config", "The .env, with secrets redacted.", run=s.config),
         _n("units", "Alias -> systemd unit map, with install state.", run=s.units),
         _n("services", "What each unit is FOR, and which ones are off limits.",
@@ -160,6 +165,8 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
         _n("peer", "Peer reachability, datasync key and timer.", run=d.peer),
         _n("git", "Repository integrity, including the root-owned-files trap.",
            run=k.git),
+        _n("updates", "Can this node accept a signed offline package, and is that safe?",
+           run=u.diagnose_updates),
         _n("privilege", "Integrity of the CLI install and the sudo boundary.",
            run=d.privilege),
     ),
@@ -196,6 +203,9 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
             _n("pip", "Queue a curated-allowlist package change. Node-local.",
                run=e.update_pip, needs_root=True,
                usage="execute update pip <package> <version>"),
+            _n("package", "Apply a SIGNED offline update package. Works with no network.",
+               run=u.update_package, needs_root=True, danger=True,
+               usage="execute update package <file.tar.gz> [--yes] [--allow-downgrade] [--no-backup]"),
             _n("status", "Show the latest (or a specific) update record.",
                run=e.update_status, usage="execute update status [<id>]"),
         ),
@@ -206,6 +216,16 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
                run=e.reinstall_units, needs_root=True),
             _n("cli", "Refresh the root-owned copy of this CLI from the repo.",
                run=e.reinstall_cli, needs_root=True),
+            _n("runner", "Refresh the root-owned copy of the privileged update runner.",
+               run=u.reinstall_runner, needs_root=True),
+        ),
+        _group("trust", "Public keys this node accepts update packages from.",
+            _n("add-key", "Install a signing public key into the trust store.",
+               run=u.trust_add_key, needs_root=True,
+               usage="execute trust add-key <file.pub> [--name <slug>]"),
+            _n("remove-key", "Stop accepting packages signed by a key. Needs --yes.",
+               run=u.trust_remove_key, needs_root=True, danger=True,
+               usage="execute trust remove-key <name|fingerprint> --yes"),
         ),
         _group("repair", "Fix state that drifted.",
             _n("permissions", "Give root-owned files in the app tree back to the service account.",

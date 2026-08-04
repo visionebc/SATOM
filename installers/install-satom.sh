@@ -1617,6 +1617,33 @@ if [ -f "$APP_DIR/deploy/install-cli.sh" ]; then
     fi
 fi
 
+# [SATOM-RUNNER-ROOT-COPY] El runner privilegiado (satom-updater.service) corre
+# como ROOT y su unidad apunta al arbol de la app, que pertenece a la cuenta de
+# servicio: root ejecutando codigo que el worker web puede reescribir es una
+# escalada completa. install-runner.sh instala una copia root-owned fuera del
+# arbol, con interprete del sistema, y redirige la unidad por drop-in.
+# Tambien crea el almacen de confianza de paquetes de actualizacion.
+if [ -f "$APP_DIR/deploy/install-runner.sh" ]; then
+    if bash "$APP_DIR/deploy/install-runner.sh" >>"$INSTALL_LOG" 2>&1; then
+        ok "Runner de actualizacion endurecido (root-owned, fuera del arbol)"
+    else
+        warn "No se pudo endurecer el runner de actualizacion — revisa $INSTALL_LOG"
+    fi
+fi
+
+# Claves publicas de firma que vienen con el release. Una clave PUBLICA solo
+# puede VERIFICAR: publicarla es seguro, es la mitad privada la que nunca debe
+# llegar a un nodo. Sin ninguna clave el nodo rechaza todo paquete subido, que
+# es un default seguro pero no operativo.
+if [ -d "$APP_DIR/deploy/update-keys" ]; then
+    SEEDED=0
+    for k in "$APP_DIR"/deploy/update-keys/*.pub; do
+        [ -f "$k" ] || continue
+        install -o root -g root -m 0644 "$k" /etc/satom/update-keys/ && SEEDED=$((SEEDED+1))
+    done
+    [ "$SEEDED" -gt 0 ] && ok "Almacen de confianza: $SEEDED clave(s) de release instalada(s)"
+fi
+
 # nginx: TLS en el puerto elegido con el cert del nodo.
 # Debian/Ubuntu usan sites-available/enabled; el resto de familias conf.d.
 if [ -d /etc/nginx/sites-enabled ]; then
@@ -1658,7 +1685,10 @@ server {
     ssl_certificate     ${PKI}/public/server.crt;
     ssl_certificate_key ${PKI}/public/server.key;
     ssl_protocols TLSv1.2 TLSv1.3;
-    client_max_body_size 200M;
+    # Debe ser >= MAX_UPLOAD_BYTES de update_package_service.py, o un
+    # paquete de actualizacion valido muere con un 413 de nginx que la
+    # app nunca ve y por tanto no puede explicar.
+    client_max_body_size 400M;
     location / {
         proxy_pass http://127.0.0.1:8000;
         # [SATOM-VHOST-HOST] \$host DESCARTA el puerto; \$http_host pasa la

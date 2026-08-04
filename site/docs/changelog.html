@@ -80,6 +80,70 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added">Added</h3>
+<ul>
+<li>
+<p><strong>Offline update packages — update a node with no route to the git remote.</strong>
+  Download a signed package, upload it from Settings → Software Update, apply
+  it with no internet, no repository and no package mirror. The package carries
+  the application code and every pinned Python wheel, so it is about a quarter
+  the size of the offline <em>install</em> bundle. Preflight verifies the signature and
+  reports what applying it would do — version change, dependency changes,
+  interpreter match, disk, upgrade path — before anything is applied. The
+  privileged runner then re-verifies everything as root, takes a database
+  backup, installs the tree, installs the wheels with <code>--no-index</code>, restarts,
+  and <strong>rolls back automatically</strong> if the health check fails. Also available
+  from the console for a node with no browser: <code>satom execute update package</code>.
+  New: <code>installers/build-update-package.sh</code>, <code>deploy/sign_update_package.py</code>,
+  <code>deploy/update_package.py</code>, <code>app/services/update_package_service.py</code>,
+  <code>docs/offline-update-packages.md</code>. [SATOM-UPDATE-PACKAGE]</p>
+</li>
+<li>
+<p><strong>A trust store, so the product contains no secret.</strong> A node accepts a package
+  only if it is signed by a key <code>root</code> placed in <code>/etc/satom/update-keys</code>. The
+  Vision EBC release public key ships in the repository — a public key can only
+  <em>verify</em>, so publishing it is safe, exactly like an SSH <code>authorized_keys</code>
+  entry. Operators and forks add their own keys and sign their own packages;
+  nothing here depends on the vendor. The private half never touches a managed
+  node: signing is a separate step from building, run wherever the key lives.
+  New commands: <code>satom show trust</code>, <code>satom show package</code>,
+  <code>satom execute trust add-key</code>, <code>satom execute trust remove-key</code>,
+  <code>satom diagnose updates</code> (also folded into <code>diagnose all</code>).</p>
+</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li>
+<p><strong>SECURITY: the privileged update runner ran root-owned code out of a tree the
+  service account owns.</strong> <code>satom-updater.service</code> runs as <strong>root</strong> and its
+  shipped unit points at <code>/opt/satom/deploy/self_update_runner.py</code>, inside the
+  application tree — which belongs to the unprivileged service account after the
+  de-privilege. The web worker could therefore rewrite the script root was about
+  to execute and then enqueue a request, which it is <em>designed</em> to be able to
+  do, and the next trigger would run its code as root. That is a complete
+  escalation across the boundary <code>docs/privilege-model.md</code> exists to defend, and
+  it is present in every release from 1.2 onward. A second path in the same
+  process: <code>_pip_allowlist()</code> imported <code>app.services.system_info</code>, executing the
+  entire Flask package as root out of the same writable tree.
+  <code>deploy/install-runner.sh</code> now installs a <code>root:root</code> copy of the runner and
+  its verifier in <code>/usr/local/lib/satom-runner</code>, run by a <strong>system</strong> interpreter,
+  and redirects the unit with a drop-in — not an edit, because the update runner
+  re-copies <code>deploy/&lt;unit&gt;</code> on every update. It runs from the installer, the
+  de-privilege migrator, every code update and
+  <code>satom execute reinstall runner</code>. The curated pip allowlist is now local to
+  the runner, with a test asserting it still equals <code>system_info._LIBRARIES</code>.
+  <strong>Existing nodes are not fixed by updating alone</strong> — run
+  <code>satom execute reinstall runner</code> (or re-run the installer), then confirm with
+  <code>satom diagnose updates</code>. Found while building the package feature: signature
+  verification performed by a script the attacker can edit verifies nothing.
+  [SATOM-RUNNER-ROOT-COPY]</p>
+</li>
+<li>
+<p><code>client_max_body_size</code> raised to 400M in the generated vhost, matching the
+  application's own upload limit. Below it, a valid package dies with an opaque
+  nginx 413 that the application never sees and therefore cannot explain.</p>
+</li>
+</ul>
 <h3 id="changed">Changed</h3>
 <ul>
 <li>
@@ -115,9 +179,26 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   [SATOM-LICENSE-TAGS]</p>
 </li>
 </ul>
-<h3 id="fixed">Fixed</h3>
+<h3 id="fixed_1">Fixed</h3>
 <ul>
-<li><strong>A prompt could kill the installer without printing anything.</strong> <code>read</code>
+<li>
+<p><strong>The unread badge on the topbar bell floated off the bell.</strong> It was
+  positioned with Bootstrap's <code>.top-0 .start-100 .translate-middle</code>, which
+  anchor to the offset parent's border box — the button's padded hit area, not
+  the icon in it. <code>.fw-topbar-btn</code> declared no <code>display</code>, so the bell (nested in
+  a <code>.dropdown</code>, unlike the search button, which the flex container blockifies)
+  stayed <code>display: inline</code> with a 34x28 box around a 14x16 glyph. Measured on a
+  rendered page, the bubble sat at y 2–18 while the bell sat at y 16–32: ~14 px
+  above the thing it annotates and 1 px inside the user menu, which reads as the
+  bell moving and losing its formatting. The button now declares its own box and
+  the bubble has a dedicated themed class, defined once and consumed by both the
+  server-rendered markup and the live poller; it also picks up <code>--fw-danger</code> and
+  <code>--fw-topbar-bg</code>, so a custom theme retints it. All four topbar buttons now
+  report the same height. Guarded by <code>tests/test_topbar_bell.py</code>; see
+  <code>docs/safeguards.md</code> 8g. [SATOM-BELL-BADGE]</p>
+</li>
+<li>
+<p><strong>A prompt could kill the installer without printing anything.</strong> <code>read</code>
   returns non-zero on EOF and, under <code>set -euo pipefail</code>, that aborted the run
   silently -- the last visible line was the previous step. It bites when the
   installer is driven by a pipe or here-doc whose answer sequence is shorter
@@ -127,7 +208,8 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   <code>ask_secret</code>, which abort with a message naming the unanswered prompt.
   EOF <em>with</em> partial data (a last line without a newline) remains a valid
   answer. Guarded structurally, so a prompt added later cannot bypass them.
-  See <code>docs/safeguards.md</code> 10f. [SATOM-LOUD-READ]</li>
+  See <code>docs/safeguards.md</code> 10f. [SATOM-LOUD-READ]</p>
+</li>
 </ul>
 <h2 id="135-2026-08-04">[1.3.5] - 2026-08-04</h2>
 <h3 id="the-node-was-never-told-which-names-it-answers-to">The node was never told which names it answers to</h3>
@@ -393,7 +475,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   published copy.</li>
 </ul>
 <h2 id="13-2026-08-02">[1.3] - 2026-08-02</h2>
-<h3 id="added">Added</h3>
+<h3 id="added_1">Added</h3>
 <ul>
 <li><strong>The manual is reachable from the sign-in screen.</strong> The login page offered a
   link to the API manual and nothing else. The person who cannot get in is
@@ -431,7 +513,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   fails the suite if the generator ever re-declares any of it.</p>
 </li>
 </ul>
-<h3 id="fixed_1">Fixed</h3>
+<h3 id="fixed_2">Fixed</h3>
 <ul>
 <li><strong><code>/docs/api</code> was public and served the document unredacted.</strong> The route
   needed no session and rendered <code>docs/api_v1.md</code> verbatim, so a management
@@ -458,7 +540,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   is hard-wrapped at about 90 columns and the renderer had <code>nl2br</code> enabled, so
   every wrap became a visible break. The published renderer never had it.</li>
 </ul>
-<h3 id="fixed_2">Fixed</h3>
+<h3 id="fixed_3">Fixed</h3>
 <ul>
 <li>
 <p><strong>A cluster on openSUSE never replicated files at all, and five more defects
@@ -579,14 +661,14 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   invisible internal string; and the external backup server, because the
   appliances push to it by name in their own configuration and renaming it
   from here would break the nightly push silently.</p>
-<h3 id="added_1">Added</h3>
+<h3 id="added_2">Added</h3>
 <ul>
 <li><strong>The changelog is published on all three surfaces.</strong> The same file is now
   readable in the repository, inside the application under <strong>Documentation</strong>,
   and on the public documentation site. One source, three renderings — no copy
   to fall out of date. A test fails the suite if any surface stops carrying it.</li>
 </ul>
-<h3 id="fixed_3">Fixed</h3>
+<h3 id="fixed_4">Fixed</h3>
 <ul>
 <li><strong>The application reported version 1.0 through four releases.</strong> The footer
   and Settings -&gt; System Information each carried a hand-written literal that
@@ -597,7 +679,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   stamping pass that versions the stylesheet, so it cannot drift either. A
   test fails the suite if a version literal reappears in a template or a page.</li>
 </ul>
-<h3 id="added_2">Added</h3>
+<h3 id="added_3">Added</h3>
 <ul>
 <li><strong>The public site ships switchable colour themes.</strong> Three palettes —
   <strong>Aurora</strong> (default, light canvas over navy chrome), <strong>Abyss</strong> (dark canvas
@@ -613,7 +695,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   intensity is per-theme, so the dark palette can lean on it without the light
   one looking neon.</li>
 </ul>
-<h3 id="fixed_4">Fixed</h3>
+<h3 id="fixed_5">Fixed</h3>
 <ul>
 <li><strong>The site wordmark was effectively invisible.</strong> A single <code>--accent</code> served
   both the light canvas and the navy chrome, putting the bold half of the
@@ -631,7 +713,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   pages, still emitting the company shield rather than the product mark. Both
   surfaces are now asserted against the same expectations.</li>
 </ul>
-<h3 id="added_3">Added</h3>
+<h3 id="added_4">Added</h3>
 <ul>
 <li><strong>Operator CLI: <code>show tree</code> (alias <code>tree</code>) prints the whole command surface</strong>
   — every command as a tree, with <code>*</code> for root-required and <code>!</code> for
@@ -655,7 +737,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   own output and <strong>aborts</strong> on any survivor, naming pattern, file and line.
   Publication is opt-in: a document not listed is not published.</li>
 </ul>
-<h3 id="fixed_5">Fixed</h3>
+<h3 id="fixed_6">Fixed</h3>
 <ul>
 <li><strong>The CLI could crash while printing.</strong> An em dash in a title raised
   <code>UnicodeEncodeError</code> on a stream with an ASCII encoding (a serial console,
@@ -675,7 +757,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
 <li><code>Ctrl-C</code> at the interactive prompt now abandons the line, like a shell,
   instead of leaving the console.</li>
 </ul>
-<h3 id="added_4">Added</h3>
+<h3 id="added_5">Added</h3>
 <ul>
 <li><strong>Operator CLI, second pass: the automated half now has a console.</strong> 39 more
   commands, organised around the failure modes this product has actually had
@@ -704,7 +786,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   backups at all. It prints the plan and only applies with <code>--yes</code>, and it
   never touches an existing row — operator edits still win.</li>
 </ul>
-<h3 id="fixed_6">Fixed</h3>
+<h3 id="fixed_7">Fixed</h3>
 <ul>
 <li><strong>Two diagnostics were modifying the tree they diagnose.</strong> <code>git status</code> run as
   root rewrites <code>.git/index</code> and takes it from the service account;
@@ -733,7 +815,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
 <li><code>diagnose all</code> no longer repeats design notes from checks that passed — eight
   lines of explanation attached to nothing buried the two that were findings.</li>
 </ul>
-<h3 id="added_5">Added</h3>
+<h3 id="added_6">Added</h3>
 <ul>
 <li><strong>An operator CLI (<code>satom</code>) for a node whose web UI is down.</strong> Modelled on the
   appliance CLIs this product manages: <code>get</code> / <code>show</code> / <code>diagnose</code> / <code>execute</code>,
@@ -771,7 +853,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   <code>/healthz</code> returned 200 and the whole test suite stayed green.</p>
 <p>Reference: <a href="cli.html"><code>docs/cli.md</code></a>. Permissions to request:
   <code>docs/INSTALL.md</code> §5, <em>Cuenta de OPERADOR</em>.</p>
-<h3 id="fixed_7">Fixed</h3>
+<h3 id="fixed_8">Fixed</h3>
 <ul>
 <li><strong>The device cards on the probe pages were painted for a dark theme.</strong> SATOM
   has no dark mode — <code>static/css/fortiweb.css</code> is a light chrome (<code>#F4F5F7</code>
@@ -796,7 +878,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   inverse set, and reusing the name would have expanded exactly the cards an
   operator had folded.</li>
 </ul>
-<h3 id="added_6">Added</h3>
+<h3 id="added_7">Added</h3>
 <ul>
 <li><strong>A scheduled automation that breaks now raises its own alert.</strong> Silencing
   successful housekeeping runs is only safe if the failing run is loud, and it
@@ -816,7 +898,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   instead of sitting critical forever. Two knobs in Settings → Alerts
   (<em>Automation fail streak → critical</em>, <em>Automation overdue (hours)</em>).</li>
 </ul>
-<h3 id="fixed_8">Fixed</h3>
+<h3 id="fixed_9">Fixed</h3>
 <ul>
 <li>
 <p><strong>Maintenance mode suppressed alerts but not work.</strong> An appliance parked with
@@ -869,7 +951,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   waiting to read the count. Notifications from these workers now also carry the
   ADOM stamped on the job (a worker thread has no request context, so they were
   landing unscoped, i.e. under FortiWeb). See <code>docs/safeguards.md</code> §9g.</p>
-<h3 id="added_7">Added</h3>
+<h3 id="added_8">Added</h3>
 <ul>
 <li><strong>Device traffic cards are collapsible</strong> on Deep monitors and Service Monitor,
   with the state persisted in <code>localStorage</code> keyed per page — <code>renderDevices()</code>
@@ -924,7 +1006,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   harvest cache, which is empty on a licence-locked box). A failure is printed
   in the form instead of degrading to an empty dropdown — "no policies" and
   "could not ask" look identical in a <code>&lt;select&gt;</code> and mean opposite things.</p>
-<h3 id="fixed_9">Fixed</h3>
+<h3 id="fixed_10">Fixed</h3>
 <ul>
 <li><strong><code>transactions</code> could report a silent zero on a saturated policy.</strong> Found by
   a real load test against {device} (2026-07-28): a policy carrying
@@ -975,7 +1057,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   permanently red. The worst status and per-status counts moved into the
   summary. See <code>docs/safeguards.md</code> §9d.</li>
 </ul>
-<h3 id="fixed_10">Fixed</h3>
+<h3 id="fixed_11">Fixed</h3>
 <ul>
 <li><strong>A product ADOM inherited the manager's own infrastructure.</strong> Fleet health
   rendered <em>Infrastructure health — HA nodes · Git · backup server</em>, the
@@ -1049,7 +1131,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   does not render where it matters. The vendored copy was already in the tree
   and unused.</li>
 </ul>
-<h3 id="added_8">Added</h3>
+<h3 id="added_9">Added</h3>
 <ul>
 <li><strong>Drill-down charts on the deep monitors.</strong> Clicking any sparkline opens
   1 h / 24 h / 7 d / 30 d or an explicit date range, with min/average/max, the
@@ -1071,7 +1153,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   average and a five-minute reading are not the same claim about the device.</li>
 </ul>
 <h2 id="122-2026-07-27">[1.2.2] - 2026-07-27</h2>
-<h3 id="fixed_11">Fixed</h3>
+<h3 id="fixed_12">Fixed</h3>
 <ul>
 <li><strong><code>app/services/cert_service.py</code> did not parse.</strong> An <code>import os</code> had been
   placed above <code>from __future__ import annotations</code>, which is a hard
@@ -1082,7 +1164,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   Certificate Manager endpoints raised on import, and the cert alert degraded
   to reporting the import error instead of the certificate's real state.</li>
 </ul>
-<h3 id="added_9">Added</h3>
+<h3 id="added_10">Added</h3>
 <ul>
 <li><strong><code>tests/test_every_module_imports.py</code></strong> — every shipped module under <code>app/</code>
   and <code>deploy/</code> must compile, and the modules that callers import <em>lazily</em>
@@ -1094,7 +1176,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
 <h2 id="121-2026-07-27">[1.2.1] - 2026-07-27</h2>
 <p>Documentation release. No application code changed; the offline bundles were
 rebuilt so that the shipped tree matches the documentation set.</p>
-<h3 id="added_10">Added</h3>
+<h3 id="added_11">Added</h3>
 <ul>
 <li><strong><code>docs/safeguards.md</code></strong> — single catalog of every protection in the product:
   what it prevents, where it lives, and <strong>how to verify it is armed</strong>. Covers
@@ -1122,7 +1204,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li><strong>Rule recorded in <code>docs/overview.md</code></strong>: a new safeguard lands in
   <code>docs/safeguards.md</code> in the same commit that introduces it.</li>
 </ul>
-<h3 id="fixed_12">Fixed</h3>
+<h3 id="fixed_13">Fixed</h3>
 <ul>
 <li>Offline bundle checksums used an absolute path, so <code>sha256sum -c</code> failed in
   the directory the file was downloaded to. Now basename-only, as the RHEL
@@ -1160,7 +1242,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   with <code>from=</code>, <code>restrict</code> and a forced command that can only serve
   <code>rsync --sender</code> over the data directory.</li>
 </ul>
-<h3 id="added_11">Added</h3>
+<h3 id="added_12">Added</h3>
 <ul>
 <li><strong>ACME / Let's Encrypt certificate issuance</strong> with a DNS-provider catalog
   (30 providers seeded as data, editable by the operator) and per-provider
@@ -1186,7 +1268,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   Manager</strong>. Vendor names (FortiWeb, FortiADC, FortiAnalyzer) are untouched:
   the product manages those appliances and has to name them.</li>
 </ul>
-<h3 id="fixed_13">Fixed</h3>
+<h3 id="fixed_14">Fixed</h3>
 <ul>
 <li><strong>Scheduler and git-publish were silently dead</strong> after the privilege drop:
   both guard scripts used <code>runuser</code>, which only works as root. The scheduler
@@ -1228,7 +1310,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   server (appliance-side push config points at it), and <code>FM_*</code> env var names.</li>
 </ul>
 <h2 id="10-2026-07-14">[1.0] - 2026-07-14</h2>
-<h3 id="added_12">Added</h3>
+<h3 id="added_13">Added</h3>
 <ul>
 <li><strong>DNS Records management (IPAM/DDI)</strong>: "+DNS Records" CRUD in the DNS &amp; LB
   lookup tool, backed by pluggable providers (EfficientIP SOLIDserver,
@@ -1246,20 +1328,20 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   bundles), generic package-manager support, public site (GitHub Pages),
   package registry artifacts.</li>
 </ul>
-<h3 id="fixed_14">Fixed</h3>
+<h3 id="fixed_15">Fixed</h3>
 <ul>
 <li>Upgrade-event timestamps now render in local time (<code>| localtime</code>) instead
   of raw UTC.</li>
 </ul>
 <h2 id="09-2026-07-13">[0.9] - 2026-07-13</h2>
-<h3 id="added_13">Added</h3>
+<h3 id="added_14">Added</h3>
 <ul>
 <li><strong>Node TLS + node-to-node encryption</strong>: internal CA, per-node leaf certs,
   mutually-authenticated Postgres replication, HTTPS peer probes, and
   "encryption in transit" monitoring cards (every badge backed by a live probe).</li>
 </ul>
 <h2 id="08-2026-07-12">[0.8] - 2026-07-12</h2>
-<h3 id="added_14">Added</h3>
+<h3 id="added_15">Added</h3>
 <ul>
 <li><strong>FortiAnalyzer</strong> integration (JSON-RPC, dual dialect) as a full ADOM, with
   its endpoints in the DB registry and a git source-of-truth harvest.</li>

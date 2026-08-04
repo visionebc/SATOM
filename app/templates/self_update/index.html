@@ -175,6 +175,121 @@
     {% endif %}
   </div>
 </div>
+<div class="row g-3">
+  <!-- ==================== offline update package ==================== -->
+  <div class="col-12">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong><i class="bi bi-box-seam me-1"></i>Offline update package</strong>
+        <span class="text-muted small">for nodes with no route to the git remote</span>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small">
+          Download a signed update package, upload it here, and apply it without any
+          network access. The package carries the application code and every pinned
+          Python wheel. <strong>Only packages signed by a key in this node's trust
+          store are accepted</strong> — the check is repeated by the privileged
+          runner as root, not just by this page.
+        </p>
+
+        <!-- trust store -->
+        <div class="mb-3">
+          <div class="text-muted small mb-1">Trust store
+            <code>{{ trust.dir }}</code></div>
+          {% if trust.problem %}
+            <div class="alert alert-danger py-2 mb-0 small">
+              <i class="bi bi-shield-exclamation me-1"></i>{{ trust.problem }}<br>
+              No package can be applied until this is fixed. A trust store that is
+              not root-owned would let a compromised web worker install its own key.
+            </div>
+          {% elif not trust.entries %}
+            <div class="alert alert-warning py-2 mb-0 small">
+              <i class="bi bi-key me-1"></i>No trusted key installed, so every
+              package is refused. Install one as root:
+              <code>satom execute trust add-key /path/to/release.pub</code>
+            </div>
+          {% else %}
+            <ul class="list-unstyled mb-0 small">
+              {% for k in trust.entries %}
+                <li><i class="bi bi-shield-check text-success me-1"></i>
+                  <span class="font-monospace">{{ k.fingerprint }}</span>
+                  <span class="text-muted">{{ k.comment or k.name }}</span></li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </div>
+
+        <div class="row g-3">
+          <!-- upload -->
+          <div class="col-lg-5">
+            <form method="post" enctype="multipart/form-data"
+                  action="{{ url_for('self_update.package_upload') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <label class="form-label small mb-1" for="pkg-file">
+                Upload <code>satom-update-&lt;version&gt;.tar.gz</code></label>
+              <input class="form-control form-control-sm mb-2" type="file"
+                     id="pkg-file" name="package" accept=".gz,.tgz,application/gzip">
+              <button class="btn btn-fw-primary btn-sm" type="submit">
+                <i class="bi bi-upload me-1"></i>Upload &amp; check</button>
+            </form>
+
+            {% if uploads %}
+            <div class="mt-3">
+              <div class="text-muted small mb-1">Staged on this node</div>
+              <ul class="list-group list-group-flush" id="pkg-list">
+                {% for u in uploads %}
+                <li class="list-group-item px-0 py-1 d-flex justify-content-between align-items-center">
+                  <button type="button" class="btn btn-link btn-sm p-0 text-start"
+                          data-js="pkg-select" data-name="{{ u.name }}">
+                    <span class="font-monospace">{{ u.name }}</span></button>
+                  <span>
+                    <span class="text-muted small me-2">{{ (u.size / 1048576)|round(1) }} MB</span>
+                    <form method="post" class="d-inline"
+                          action="{{ url_for('self_update.package_delete') }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="name" value="{{ u.name }}">
+                      <button class="btn btn-outline-secondary btn-sm py-0" type="submit"
+                              title="Remove from staging"><i class="bi bi-trash"></i></button>
+                    </form>
+                  </span>
+                </li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+          </div>
+
+          <!-- preflight -->
+          <div class="col-lg-7">
+            <div class="text-muted small mb-1">Preflight</div>
+            <div id="pkg-preflight" class="small text-muted">
+              {% if uploads %}Select a staged package to check what applying it would do.
+              {% else %}Upload a package to see the preflight report.{% endif %}
+            </div>
+
+            <form id="pkg-apply-form" method="post" class="d-none mt-3"
+                  action="{{ url_for('self_update.package_apply') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="name" id="pkg-apply-name" value="">
+              <div class="form-check mb-1 d-none" id="pkg-downgrade-wrap">
+                <input class="form-check-input" type="checkbox"
+                       name="allow_downgrade" id="pkg-allow-downgrade">
+                <label class="form-check-label small text-danger" for="pkg-allow-downgrade">
+                  I understand this is a <strong>downgrade</strong>: database
+                  migrations are not reversed, and the backup taken below is the
+                  way back.</label>
+              </div>
+              <button type="submit" class="btn btn-danger btn-sm" id="pkg-apply-btn">
+                <i class="bi bi-box-arrow-in-down me-1"></i>Apply package to this node</button>
+              <div class="form-text">A database backup is taken first; the service
+                restarts; a failed health check rolls the node back automatically.</div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -281,6 +396,66 @@
     pollP();
   }
 
+
+  // --- offline update package: preflight ---------------------------------
+  var PKG_PREFLIGHT_URL = '{{ url_for("self_update.package_preflight", name="__N__") }}';
+  function pkgBadge(status) {
+    if (status === 'ok') return '<span class="badge bg-success">ok</span>';
+    if (status === 'warn') return '<span class="badge bg-warning text-dark">warn</span>';
+    return '<span class="badge bg-danger">fail</span>';
+  }
+  function pkgRender(d) {
+    var box = document.getElementById('pkg-preflight');
+    var form = document.getElementById('pkg-apply-form');
+    var rows = (d.checks || []).map(function (c) {
+      return '<tr><td class="text-nowrap pe-2">' + pkgBadge(c.status) + '</td>' +
+             '<td class="text-nowrap pe-2"><strong>' + escapeHtml(c.label) + '</strong></td>' +
+             '<td>' + escapeHtml(c.detail) + '</td></tr>';
+    }).join('');
+    var m = d.manifest || {};
+    var head = '';
+    if (m.version) {
+      head = '<div class="mb-2"><span class="font-monospace">' +
+             escapeHtml(String(m.version)) + '</span> ' +
+             '<span class="text-muted">commit ' +
+             escapeHtml(String(m.commit || '').slice(0, 12)) + '</span>' +
+             (d.signed_by ? ' <span class="text-muted">· signed by ' +
+               escapeHtml(d.signed_by.fingerprint) + '</span>' : '') + '</div>';
+    }
+    box.innerHTML = head + '<table class="table table-sm mb-0"><tbody>' + rows + '</tbody></table>';
+
+    document.getElementById('pkg-apply-name').value = d.name || '';
+    document.getElementById('pkg-downgrade-wrap')
+            .classList.toggle('d-none', !d.is_downgrade);
+    // The button is disabled, not hidden, when preflight blocks: an operator
+    // must see that applying is possible-in-principle and why it is refused
+    // now. The server re-runs preflight anyway, so this is guidance, not a gate.
+    var btn = document.getElementById('pkg-apply-btn');
+    if (d.can_apply) { btn.removeAttribute('disabled'); }
+    else { btn.setAttribute('disabled', 'disabled'); }
+    form.classList.remove('d-none');
+  }
+  function pkgLoad(name) {
+    var box = document.getElementById('pkg-preflight');
+    box.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>' +
+                    'Verifying ' + escapeHtml(name) + '…';
+    fetch(PKG_PREFLIGHT_URL.replace('__N__', encodeURIComponent(name)),
+          {credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}})
+      .then(function (r) { return r.json(); })
+      .then(pkgRender)
+      .catch(function (e) {
+        box.innerHTML = '<span class="text-danger">Preflight failed: ' +
+                        escapeHtml(String(e)) + '</span>';
+      });
+  }
+  document.addEventListener('click', function (ev) {
+    var t = ev.target.closest ? ev.target.closest('[data-js="pkg-select"]') : null;
+    if (t) { ev.preventDefault(); pkgLoad(t.getAttribute('data-name')); }
+  });
+  (function () {
+    var pre = {{ (request.args.get('pkg') or '')|tojson }};
+    if (pre) { pkgLoad(pre); }
+  })();
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {

@@ -162,3 +162,11 @@ RUNAS="$(ps -o user= -p "$(systemctl show satom.service -p MainPID --value)" 2>/
 echo ""
 echo "${c_grn}Migración completada.${c_off} Siguiente nodo: repite este script allí."
 echo "Recuerda re-autorizar el peer con --authorize-peer si cambias las llaves HA."
+
+# [SATOM-RUNNER-ROOT-COPY] Un nodo de-privilegiado cuyo runner sigue ejecutando
+# codigo del arbol de la app NO esta de-privilegiado: la cuenta de servicio
+# elige lo que root ejecuta. Ver docs/safeguards.md seccion 12.
+if [ -f "$(dirname "$0")/install-runner.sh" ]; then
+    bash "$(dirname "$0")/install-runner.sh" || \
+        echo "AVISO: no se pudo endurecer el runner privilegiado" >&2
+fi

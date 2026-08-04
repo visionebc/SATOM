@@ -236,7 +236,13 @@ def preserve_local_commits(target, snapshot, st):
             n = int((c.stdout or "0").strip() or 0)
         except ValueError:
             n = 0
-    dirty = bool((git("status", "--porcelain", timeout=60).stdout or "").strip())
+    # --untracked-files=no ON PURPOSE. `git reset --hard` does not touch
+    # untracked files, so they never needed parking -- and `git stash create`
+    # does not include them either, so it returns empty and this step reported
+    # FAIL on every run where the only local state was untracked. A guard that
+    # always complains is a guard operators learn to scroll past.
+    dirty = bool((git("status", "--porcelain", "--untracked-files=no",
+                     timeout=60).stdout or "").strip())
     if not n and not dirty:
         return None
 

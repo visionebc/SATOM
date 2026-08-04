@@ -64,9 +64,10 @@
 {# ------------------------------------------------------------ generate -- #}
 {% if can_edit %}
 <div class="fw-card p-3 mb-3">
+  <b class="small d-block mb-2">Generate a report now</b>
   <form id="mr-gen" class="row g-2 align-items-end">
     <div class="col-md-3">
-      <label class="form-label small mb-1">Generate a report now</label>
+      <label class="form-label small mb-1">Period</label>
       <select name="period" class="form-select form-select-sm">
         {% for p in periods %}
           <option value="{{ p }}">{{ period_label[p] }}</option>
@@ -74,21 +75,24 @@
       </select>
     </div>
     <div class="col-md-3">
-      <label class="form-label small mb-1">Which period</label>
+      <label class="form-label small mb-1">Which one</label>
       <select name="offset" class="form-select form-select-sm">
         <option value="1">The last complete one</option>
         <option value="2">The one before that</option>
         <option value="3">Three back</option>
         <option value="0">The current, incomplete one</option>
       </select>
-      <div class="form-text" style="font-size:.72rem">
-        The current period is still in progress, so its totals are partial.</div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-6 d-flex gap-2">
       <button type="submit" class="btn btn-sm btn-primary">
         <i class="bi bi-play-fill me-1"></i>Build and store</button>
       <button type="button" class="btn btn-sm btn-outline-secondary"
               id="mr-preview-btn">Preview</button>
+    </div>
+    <div class="col-12">
+      <div class="form-text mt-0" style="font-size:.72rem">
+        The current period is still in progress, so its totals are partial &mdash;
+        a scheduled run always takes the last <em>complete</em> one.</div>
     </div>
   </form>
   <div id="mr-preview" class="mt-3" style="display:none"></div>

@@ -740,6 +740,64 @@ only greps the HTML:
     chromium --headless=new --dump-dom <page-url>   # plus a probe reading
                                                     # getComputedStyle(...).opacity
 
+## 8g. A badge is pinned to the glyph, not to the padded hit area
+
+The unread-count bubble on the topbar bell was positioned with Bootstrap's
+`.top-0 .start-100 .translate-middle`. Those utilities anchor to the offset
+parent's **border box** — which is the button's padded hit area, not the icon
+inside it. The bell button measured 34x28 while the bell glyph measured 14x16,
+so the bubble sat against the top edge of the bar, ~14 px clear of the bell it
+was supposed to annotate, and 1 px inside the user menu next to it. Read as
+"the bell moves up and loses its formatting" — the bell never moved.
+
+The root cause was one line further down: `.fw-topbar-btn` declared no
+`display`. The search button is a direct flex child of `.fw-topbar-actions` and
+gets blockified by the flex container; the bell lives inside a `.dropdown`
+wrapper, stays `display: inline`, and inherits a different box. Two buttons in
+the same toolbar with different hit areas, and an absolutely positioned child
+anchored to a box that does not match its glyph.
+
+The guards (`tests/test_topbar_bell.py`):
+
+- **The button declares its own box.** `display`, `align-items`,
+  `justify-content` and `position` are asserted on `.fw-topbar-btn`, parametrized
+  one test per property. Without them the bell silently reverts to
+  `display: inline` and the bubble drifts again.
+- **No positioning utility may anchor the bubble.** The markup between the bell
+  anchor and its closing tag must not carry `translate-middle`, `top-0` or
+  `start-100`. This is the exact mechanism that failed; a test asserting only
+  "the bubble exists" would have passed throughout.
+- **One definition, two consumers.** The bubble is styled once in the stylesheet
+  and consumed by both the server-rendered markup and the live poller in
+  `base.html`. A test counts the rule and fails on a second one, because two
+  definitions drift.
+- **The poller queries the class it creates.** A selector/className mismatch does
+  not throw — it appends a *second* bubble on every poll, so the page degrades
+  the longer it is left open.
+- **Geometry stays in the stylesheet.** The poller may not inline `style` on the
+  bubble: the theme engine owns `--fw-danger` and `--fw-topbar-bg`, and an inline
+  literal is invisible to it.
+- **End to end**, a rendered page with an unread notification must carry the
+  dedicated class.
+
+Rule: an absolutely positioned annotation is anchored to the thing it annotates.
+If the offset parent is a padded hit area, the badge is describing the padding.
+
+### Verifying the guards are armed
+
+    pytest tests/test_topbar_bell.py -q
+
+Markup alone cannot show this defect — the bubble is present and correct in the
+HTML in both the broken and the fixed state. Measure it in a browser: mirror the
+rendered page, then compare the bubble's box against the glyph's.
+
+    chromium --headless=new --no-sandbox --ignore-certificate-errors \
+      --window-size=1280,900 --dump-dom file:///tmp/page_probe.html
+    # probe: getBoundingClientRect() of `.fw-notif-badge` and of the bell `i.bi`
+
+The bubble must overlap the glyph's top-right corner, sit clear of the adjacent
+menu, and every `.fw-topbar-btn` in the bar must report the same height.
+
 ## 9. The alert catalog
 
 Everything above is only useful if silence means healthy. The signals that exist
@@ -1699,6 +1757,136 @@ satom diagnose nginx | sed -n '/certificate covers/,/^$/p'
 #   Host: <fqdn>          -> CSRF-OK
 #   Host: <fqdn>:<port>   -> CSRF-OK too, once repaired
 ```
+
+## 12. Uploaded code is code someone else chose to run
+
+**[SATOM-UPDATE-PACKAGE] / [SATOM-RUNNER-ROOT-COPY]**
+
+A web form that accepts an archive which a root process then installs is, in
+plain terms, remote code execution as root. It is a legitimate feature — an
+offline node has no other way to be updated — but only because three things
+hold at once. Each is worthless without the other two.
+
+Full reference: `docs/offline-update-packages.md`.
+
+### The three rules
+
+**1. The privileged runner must not execute code the service account can write.**
+
+`satom-updater.service` runs as root and its shipped unit says
+
+```
+ExecStart=/opt/satom/venv/bin/python /opt/satom/deploy/self_update_runner.py
+```
+
+Both paths are inside the application tree, which the service account owns
+after the de-privilege. So the unprivileged web worker could rewrite the script
+root is about to execute, then enqueue a request — which it is *designed* to be
+able to do — and the next trigger runs its code as root. That was a complete
+escalation across the boundary section 5 exists to defend, and it was found
+while building the package feature: a signature verified by a script the
+attacker can edit verifies nothing.
+
+`deploy/install-runner.sh` installs a `root:root` copy of the runner **and its
+verifier** in `/usr/local/lib/satom-runner`, run by a **system** interpreter
+(never the venv — that lives in the tree and may be the thing being repaired),
+and redirects the unit with a **drop-in**. A drop-in and not an edit, because
+the update runner re-copies `deploy/<unit>` on every update: that is exactly
+how the standby silently reverted to `User=root` after the de-privilege.
+It runs from four places so the copy cannot drift, and `package_change()`
+refuses outright when the runner is not hardened.
+
+The same reasoning removed `_pip_allowlist()`'s import of
+`app.services.system_info`: that import executed the entire Flask package as
+root, out of the same writable tree. The curated list is now local to the
+runner, and a test asserts it still equals `system_info._LIBRARIES`.
+
+**2. The trust store is root-owned, outside the tree, and empty by default.**
+
+Whoever can add a key can mint packages the node accepts. `/etc/satom/update-keys`
+and every parent of it must be `root:root` and not group/world writable;
+`trust_store_problem()` walks the whole chain and any finding is fatal. It is
+checked **before** the signature, not after — verifying first would mean a
+package signed by a planted key had already been declared valid by the time the
+store was questioned.
+
+An empty store accepts nothing. Safe, not working: install the release key
+before you need it.
+
+**3. The verifier needs nothing but the standard library.**
+
+The feature exists to repair nodes whose venv is broken. A verifier that needs
+a pip-installed package cannot run in the situation it was built for, so
+Ed25519 verification is implemented in `deploy/update_package.py` on top of
+`hashlib` alone — checked against the RFC 8032 vectors *and* byte-for-byte
+against `cryptography`'s implementation.
+
+### Rules these encode
+
+- **Sign the exact bytes.** The signature covers `manifest.json` verbatim, with
+  no canonicalisation, so there is no re-serialisation ambiguity to exploit.
+  The manifest carries a sha256 for every other file, so one small signed
+  document covers the whole package.
+- **A name crosses the privilege boundary, never a path.** The request JSON is
+  written by the unprivileged worker; the runner pattern-checks the basename and
+  joins it to its *own* staging directory. If it took a path, the worker would
+  choose what root opens.
+- **Verify once, in root-only space.** The package is copied into a root-owned
+  temporary directory and verified there. Verifying it in the staging directory
+  — which the service account can write — would leave a window to swap the file
+  between the check and the use.
+- **A link in an archive is rejected, never resolved.** A link that points
+  inside the tree when it is checked can point outside it after a later member
+  lands, and the ordering is the attacker's to choose.
+- **The server re-runs preflight on apply.** The page an operator looked at
+  could be minutes old; "the button was enabled" is not a safety property.
+- **No backup, no apply.** A downgrade does not reverse migrations, so the
+  database dump is the only honest way back. If it cannot be taken, nothing is
+  replaced.
+- **Rollback removes only what the package added.** The untracked-file set is
+  captured before the tree is replaced and only the difference is deleted.
+  A blanket `git clean -fd` would destroy an operator's unrelated work in order
+  to undo ours.
+- **The published manifest names no host, path or person.** Packages are
+  published; a published artifact must not describe the estate that built it.
+
+### The honest limits
+
+- Signing prevents a *forged* package, not an operator installing a genuine
+  older release with known bugs. Downgrades are permitted by policy; the
+  mitigations are the confirmation, the audit entry and the backup.
+- A downgrade does not reverse database migrations.
+- This is not a rescue path for a node that will not boot: it needs systemd,
+  the runner, and a working database connection.
+
+### Verifying the guards are armed
+
+```bash
+# the runner is root-owned, on a system interpreter, and the unit agrees
+satom diagnose updates                       # [ ok ] on every line
+stat -c '%U %a %n' /usr/local/lib/satom-runner/*.py    # root 644
+systemctl show -p ExecStart --value satom-updater.service | grep satom-runner
+
+# the trust store is root-owned and its keys are known
+satom show trust                             # compare fingerprints by eye
+
+# the verifier needs no venv at all
+/usr/bin/python3 -c "import importlib.util as i; \
+  s=i.spec_from_file_location('u','/usr/local/lib/satom-runner/update_package.py'); \
+  m=i.module_from_spec(s); s.loader.exec_module(m); \
+  seed=bytes(range(32)); p=m.ed25519_public_from_seed(seed); \
+  print(m.ed25519_verify(p, b'x', m.ed25519_sign(seed, b'x')))"   # True
+
+# a package is refused for the right reason
+satom show package /path/to/tampered.tar.gz  # [FAIL] with the reason named
+```
+
+The guards themselves are in `tests/test_update_package.py` and
+`tests/test_update_package_service.py`: the stdlib-only rule and the
+no-app-import rule are checked by AST, the crypto against published vectors,
+and every refusal has a test that names the reason — because a package refused
+for the wrong reason is a package that will be accepted once that reason
+changes.
 
 ## 11. Known gaps (kept honest, on purpose)
 

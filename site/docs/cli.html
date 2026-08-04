@@ -587,7 +587,7 @@ check. <code>tests/test_docs_publication.py</code> fails the suite when this blo
 longer matches the console you are running.</p>
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-<p><em>87 commands in 32 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
+<p><em>94 commands in 33 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
 <h3 id="get"><code>get</code></h3>
 <p>Read state. Every command below works as <strong>any user</strong> — this is the half of the console that has to keep working when everything else does not.</p>
 <table>
@@ -752,6 +752,18 @@ longer matches the console you are running.</p>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><code>satom show trust</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td>Public keys this node accepts update packages from.</td>
+</tr>
+<tr>
+<td><code>satom show package &lt;file.tar.gz&gt;</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td>Inspect an update package without applying it.</td>
+</tr>
 <tr>
 <td><code>satom show config</code></td>
 <td style="text-align: center;">—</td>
@@ -935,6 +947,12 @@ longer matches the console you are running.</p>
 <td>Repository integrity, including the root-owned-files trap.</td>
 </tr>
 <tr>
+<td><code>satom diagnose updates</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td>Can this node accept a signed offline package, and is that safe?</td>
+</tr>
+<tr>
 <td><code>satom diagnose privilege</code></td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
@@ -1021,6 +1039,12 @@ longer matches the console you are running.</p>
 <td>Queue a curated-allowlist package change. Node-local.</td>
 </tr>
 <tr>
+<td><code>satom execute update package &lt;file.tar.gz&gt; [--yes] [--allow-downgrade] [--no-backup]</code></td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: center;">!</td>
+<td>Apply a SIGNED offline update package. Works with no network.</td>
+</tr>
+<tr>
 <td><code>satom execute update status [&lt;id&gt;]</code></td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
@@ -1043,6 +1067,24 @@ longer matches the console you are running.</p>
 <td style="text-align: center;">yes</td>
 <td style="text-align: center;">—</td>
 <td>Refresh the root-owned copy of this CLI from the repo.</td>
+</tr>
+<tr>
+<td><code>satom execute reinstall runner</code></td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: center;">—</td>
+<td>Refresh the root-owned copy of the privileged update runner.</td>
+</tr>
+<tr>
+<td><code>satom execute trust add-key &lt;file.pub&gt; [--name &lt;slug&gt;]</code></td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: center;">—</td>
+<td>Install a signing public key into the trust store.</td>
+</tr>
+<tr>
+<td><code>satom execute trust remove-key &lt;name\|fingerprint&gt; --yes</code></td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: center;">!</td>
+<td>Stop accepting packages signed by a key. Needs --yes.</td>
 </tr>
 <tr>
 <td><code>satom execute repair permissions</code></td>

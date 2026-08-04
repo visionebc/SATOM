@@ -30,10 +30,18 @@ race, so v1.3.2 passing its own validation proved nothing. Rules in
   7 -- so a correctly installed system reported failure and never printed the
   banner telling the operator to run `satom execute seed actions`.
 - **`satom diagnose nginx` warned forever on every standalone install.** It
-  probed the :8443 node-to-node channel unconditionally; a standalone has no
-  peer. The row is still printed as `n/a - standalone, no peer`, and every
-  other role is graded exactly as before. Same chronic false positive already
-  removed from `get system health` and from the CLI status colouring.
+  probed the :8443 node-to-node channel unconditionally; a lone node has no
+  peer. The row is still printed as `n/a - no peer configured (standalone)`,
+  and a node that does have a peer is graded exactly as before. Same chronic
+  false positive already removed from `get system health` and from the CLI
+  status colouring.
+- **`Context.role` could never return `standalone`, though its docstring said
+  it could.** It comes from `pg_is_in_recovery()`, so a standalone node reports
+  `primary`. The first version of the fix above gated on that value and
+  therefore did nothing -- caught by installing, not by testing, because the
+  tests encoded the same wrong assumption. Probe selection now asks the
+  question it means (is a peer configured in `data/ha_nodes.json`?), and the
+  docstring no longer promises a value the property cannot produce.
 
 
 ## [1.3.2] - 2026-08-04

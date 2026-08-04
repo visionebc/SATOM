@@ -1404,8 +1404,34 @@ silently unreported; it just stops counting against the node. On any other role
 it is graded exactly as before -- on a real pair, a dead :8443 means the peers
 cannot probe each other, which is a genuine finding.
 
-Selection lives in a pure helper, `cmd_checks.nginx_probes(role)`, so the guard
-is a behavioural test and not a grep over code that documents itself.
+Selection lives in a pure helper, `cmd_checks.nginx_probes(has_peer)`, so the
+guard is a behavioural test and not a grep over code that documents itself.
+
+**The first attempt at this fix did not work, and the reason is worth keeping.**
+It gated on `ctx.role == "standalone"` -- because that property's docstring
+said it returns `primary | standby | standalone | unknown`. It cannot. `role`
+is derived entirely from `pg_is_in_recovery()`: `t` is a standby, `f` is a
+primary, an error is unknown. A standalone node's database is not in recovery,
+so a standalone node reports **`primary`**, and the gate never fired. The tests
+passed, because they tested the helper against the same wrong assumption the
+helper encoded.
+
+Two rules:
+
+- **Read the implementation, not the docstring.** A property whose docstring
+  promised a value it could never return sent an otherwise careful fix
+  straight through review, a test suite and a bundle build. The docstring is
+  now corrected in place, and it names the callers still carrying the dead
+  `role in ("primary", "standalone")` branch -- they are correct only by
+  accident, because `"primary"` already covers the lone node.
+- **Ask the question you actually mean.** The check does not care about roles;
+  it cares whether *something should be answering on :8443*. That is the peer
+  registry, discovered exactly the way `get node status` does it: local IPs
+  compared against `data/ha_nodes.json`. A standalone has no such file.
+
+Verified against reality on both sides before shipping: a freshly installed
+standalone reports `[ ok ] nginx` with `n/a - no peer configured`, and a real
+cluster primary still probes its peer and still grades the answer.
 
 Guard: `tests/test_installer_nginx_start.py`, marker `SATOM-NGINX-PEER`.
 

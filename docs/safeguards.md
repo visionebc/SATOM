@@ -1463,6 +1463,39 @@ variable must be defined; no command substitution in a message may call the
 binary by bare name; and `install(1)` must write to the same variable, so a
 future path edit cannot separate the message from the file it describes.
 
+## 10d. Only the offline path can prove the offline path
+
+`git` was never in the installer's required-package list and never in any
+offline builder's package list. Nothing broke online: the online path clones
+the repository, so the package manager pulled git in as a dependency of the
+clone and every online install had it. Only an air-gapped install was affected,
+and the symptom was quiet -- `satom-git-publish.service` failed once an hour
+and backup **copy 3** (the `reports/` source of truth versioned in git) simply
+did not exist. The web console, `/healthz`, the login and every other check
+stayed green.
+
+This is the same shape as `sudo` and `openssh-*` missing from the 1.1 bundles:
+two lists that must agree, kept in two files, compared by nobody -- except that
+this one could not be caught by installing online, no matter how many times.
+
+**The rule.** A dependency that the online path satisfies *incidentally* is
+still a dependency. Every runtime binary the product shells out to belongs in
+the required-package list for every family, which is what makes the offline
+builders carry it.
+
+**Guards.** `tests/test_offline_bundles.py`:
+
+* the generic pair test (builder package list must cover the installer's
+  required list) -- and, because dropping the entry from **both** lists would
+  keep that test green, two tests that name `git` directly: it must be required
+  on all four families, and every builder must package it;
+* `satom diagnose git` must detect an absent binary. It previously reported
+  "repository unusable", which is true and sends the operator to look at the
+  repository instead of at the one missing package.
+
+**Why the diagnosis matters as much as the package.** The node that cannot
+publish its source of truth is the node whose evidence you will want later.
+
 ## 11. Known gaps (kept honest, on purpose)
 
 * Per-device configuration restore is dry-run gated — no live canary round-trip yet.

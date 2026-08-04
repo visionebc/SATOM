@@ -331,6 +331,108 @@ def config(ctx, args):
     return r
 
 
+# Directorios de vhost que el instalador puede haber usado, por familia.
+NGINX_VHOST_DIRS = ("/etc/nginx/sites-enabled", "/etc/nginx/vhosts.d",
+                    "/etc/nginx/conf.d")
+
+
+def bare_host_vhosts(bodies):
+    """Proxying vhosts that pass `Host $host`, which DROPS the port.
+
+    Takes [(name, text)] and returns the offending names. Pure on purpose: the
+    caller reads /etc/nginx, this decides, and a test can pin the decision
+    without standing up nginx.
+    """
+    return [n for n, t in bodies
+            if re.search(r"\bproxy_pass\s", t)
+            and re.search(r"proxy_set_header\s+Host\s+\$host\s*;", t)]
+
+
+def uncovered_names(served, san_names):
+    """Served FQDNs the certificate does not cover.
+
+    Single-label names are reported by the caller but NOT graded here: no public
+    CA issues a certificate for a bare hostname, so grading it would leave every
+    node that imports a wildcard in a permanent warn -- the chronic false
+    positive this codebase keeps having to delete.
+    """
+    return [n for n in served if "." in n and not cert_covers(n, san_names)]
+
+
+def vhost_server_names(txt):
+    """DNS names a vhost answers for. Drops the catch-all and bare IPs.
+
+    An IP is never gradeable against a certificate: a public CA will not put one
+    in a SAN, so counting it as a miss would make the check complain forever on
+    a node whose certificate is exactly right.
+    """
+    out = []
+    for m in re.finditer(r"^\s*server_name\s+([^;]+);", txt, re.M):
+        for tok in m.group(1).split():
+            tok = tok.strip().lower().rstrip(".")
+            if not tok or tok == "_":
+                continue
+            if re.match(r"^\d+\.\d+\.\d+\.\d+$", tok):
+                continue
+            out.append(tok)
+    return out
+
+
+def cert_covers(name, san_names):
+    """RFC 6125 matching. A '*' covers exactly ONE leftmost label.
+
+    Written out rather than assumed: `*.example.tld` covers `node.example.tld`
+    but NOT `a.b.example.tld` and NOT the bare `example.tld`. Treating the
+    wildcard as "matches anything under the domain" is the usual mistake and it
+    turns this check into a rubber stamp.
+    """
+    name = (name or "").lower().rstrip(".")
+    for pat in san_names:
+        pat = (pat or "").lower().rstrip(".")
+        if not pat:
+            continue
+        if pat == name:
+            return True
+        if pat.startswith("*."):
+            head, _, rest = name.partition(".")
+            if head and rest and rest == pat[2:]:
+                return True
+    return False
+
+
+def cert_san_names(path):
+    """DNS entries of a certificate's subjectAltName, [] if unreadable."""
+    rc, out, _ = run(["openssl", "x509", "-noout", "-ext", "subjectAltName",
+                      "-in", str(path)])
+    if rc != 0:
+        return []
+    names = []
+    for chunk in out.replace("\n", ",").split(","):
+        chunk = chunk.strip()
+        if chunk.upper().startswith("DNS:"):
+            names.append(chunk[4:].strip())
+    return names
+
+
+def satom_vhosts():
+    """(path, text) of every vhost that proxies to the local gunicorn."""
+    out = []
+    for d in NGINX_VHOST_DIRS:
+        p = Path(d)
+        if not p.is_dir():
+            continue
+        for f in sorted(p.iterdir()):
+            if not f.is_file():
+                continue
+            try:
+                t = f.read_text()
+            except Exception:  # noqa: BLE001
+                continue
+            if "proxy_pass" in t and "127.0.0.1:8000" in t:
+                out.append((f, t))
+    return out
+
+
 def nginx(ctx, args):
     """The front door: syntax, which vhost wins, and the ACME trap."""
     r = Result("ok", "nginx")
@@ -365,13 +467,14 @@ def nginx(ctx, args):
         _p = Path(_d)
         if _p.is_dir():
             confs.extend(sorted(x for x in _p.glob(_pat) if x.is_file()))
-    default_443, listens, findings = [], [], []
+    default_443, listens, findings, bodies = [], [], [], []
     for c in confs:
         try:
             txt = c.read_text()
         except Exception:  # noqa: BLE001
             findings.append((c.name, "unreadable as %s" % ctx.user))
             continue
+        bodies.append((c.name, txt))
         if re.search(r"listen\s+[^;]*443[^;]*default_server", txt):
             default_443.append(c.name)
         for m in re.finditer(r"listen\s+([^;]+);", txt):
@@ -401,6 +504,55 @@ def nginx(ctx, args):
                "serving — which looks like a DNS fault, not an nginx one.")
     if findings:
         r.rows("findings", findings)
+    # [SATOM-VHOST-HOST] `$host` DESCARTA el puerto. Flask-WTF construye el
+    # origen esperado del token CSRF con el host que la app cree tener y lo
+    # compara con el Referer del navegador INCLUYENDO el puerto, asi que detras
+    # de un NAT o un proxy en puerto no estandar TODO POST -- el login incluido
+    # -- se rechaza con un mensaje que habla de la sesion caducada. El sintoma
+    # apunta al sitio equivocado, que es justo por lo que esto tiene que ser un
+    # chequeo y no una nota.
+    proxied = [(n, t) for n, t in bodies if re.search(r"\bproxy_pass\s", t)]
+    if proxied:
+        bare = bare_host_vhosts(proxied)
+        r.rows("proxied Host header", [
+            (n, "$host - DROPS the port" if n in bare else "$http_host")
+            for n, _ in proxied])
+        if bare:
+            r.worst("bad")
+            r.note("A vhost passes `Host $host`, which strips the port. Every "
+                   "POST behind a non-standard port fails CSRF and reports a "
+                   "stale form. Fix: `satom execute repair nginx --yes`.")
+
+    # [SATOM-SERVED-NAMES] Lo que sirve el vhost y lo que cubre el certificado
+    # tienen que ser el MISMO conjunto. El instalador acunaba ambos desde
+    # `hostname` (el nombre CORTO), asi que un nodo alcanzado por su FQDN tenia
+    # un certificado sin ese SAN -- aviso del navegador sobre un certificado que
+    # el instalador acababa de reportar como bueno.
+    crt = ctx.app_dir / "pki" / "public" / "server.crt"
+    served = sorted({n for _, t in proxied for n in vhost_server_names(t)})
+    if served and crt.exists():
+        sans = cert_san_names(crt)
+        r.rows("certificate SAN", [("DNS names", ", ".join(sans) or "(none)")])
+        r.rows("certificate covers server_name",
+               [(n, "covered" if cert_covers(n, sans) else "NOT COVERED")
+                for n in served])
+        # Solo se GRADUAN los FQDN. Un nombre de una sola etiqueta no puede
+        # estar en un certificado publico -- ninguna CA lo emite -- y solo se
+        # alcanza desde el dominio de busqueda local, asi que contarlo como
+        # fallo dejaria en warn permanente a todo nodo que importe un wildcard.
+        # Se IMPRIME igual: no graduar no es ocultar.
+        missing = uncovered_names(served, sans)
+        if missing:
+            r.worst("warn")
+            r.note("The vhost answers for %s but the served certificate has no "
+                   "matching SAN, so a browser reaching the node by that name "
+                   "gets a name-mismatch warning. Re-issue with the name in the "
+                   "SAN, or import one that covers it." % ", ".join(missing))
+    elif served and not crt.exists():
+        r.rows("certificate covers server_name",
+               [("state", "%s missing - cannot verify" % crt)])
+        r.worst("warn")
+
     # SATOM-NGINX-PEER: :8443 is the authenticated node-to-node channel. A
     # standalone install has no peer, so grading it there makes EVERY fresh
     # single-node install open with "[warn] nginx" forever, over a feature it

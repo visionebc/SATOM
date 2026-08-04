@@ -84,8 +84,9 @@
       <a href="#10b-the-installer-is-only-proven-by-installing-it">10b. The installer is only proven by installing it</a>
       <a href="#10c-a-success-message-may-not-contain-an-error">10c. A success message may not contain an error</a>
       <a href="#10d-only-the-offline-path-can-prove-the-offline-path">10d. Only the offline path can prove the offline path</a>
+      <a href="#10e-the-node-has-to-be-told-which-names-it-answers-to">10e. The node has to be told which names it answers to</a>
       <a href="#11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</a>
-      <a href="#verifying-the-guards-are-armed_2">Verifying the guards are armed</a>
+      <a href="#verifying-the-guards-are-armed_3">Verifying the guards are armed</a>
       <a href="#related">Related</a>
     </aside>
     <div class="doc-body mdx">
@@ -1817,6 +1818,73 @@ builders carry it.</p>
 </ul>
 <p><strong>Why the diagnosis matters as much as the package.</strong> The node that cannot
 publish its source of truth is the node whose evidence you will want later.</p>
+<h2 id="10e-the-node-has-to-be-told-which-names-it-answers-to">10e. The node has to be told which names it answers to</h2>
+<p>Two defects with one root cause: the installer never learned which names the
+node is actually reached by, so it guessed with <code>hostname</code> -- the SHORT name --
+and two different things were minted from that guess.</p>
+<p><strong>The proxied <code>Host</code> header dropped the port.</strong> The generated vhost passed
+<code>proxy_set_header Host $host</code>, and <code>$host</code> discards the port. Flask-WTF builds
+the origin it expects a CSRF token to have come from out of the host the
+application believes it is on, then compares it to the browser's <code>Referer</code>
+<em>including the port</em>. Behind a NAT or a proxy on a non-standard port the two can
+never agree, so <strong>every POST -- the login included -- was rejected</strong>, and the
+error the operator saw said the session had expired. It pointed at the wrong
+layer entirely: the credentials were right, the session was fine, and the header
+was the fault. On <code>:443</code> the defect is invisible, because browsers omit the
+default port from <code>Host</code>; it is latent on every standard-port install and arms
+itself the moment the node is published anywhere else.</p>
+<p><strong><code>server_name</code> and the certificate SAN both came from the short name.</strong> A node
+reached at <code>node.example.tld</code> got <code>server_name node</code>, which answered only
+because the same vhost also claimed <code>default_server</code> -- i.e. by accident, and it
+would stop the day a second vhost appeared. Worse, the node certificate was
+issued with <code>subjectAltName=DNS:node</code>, so a browser arriving by the FQDN got a
+name-mismatch warning <strong>on a certificate the installer had just reported as
+good</strong>. <code>hostname -f</code> had the right answer the whole time and was never asked.</p>
+<h3 id="the-rules">The rules</h3>
+<ul>
+<li><strong>The served names are collected in step 1, before anything is written.</strong> They
+  are the input to two artefacts that cannot be corrected later without
+  re-issuing: the vhost <code>server_name</code> and the certificate's SAN list. A prompt
+  that runs after the certificate exists is a prompt that arrives too late.</li>
+<li><strong><code>SATOM_SERVED_NAMES</code> overrides the prompt</strong>, so an unattended install can
+  set them. The default is <code>hostname -f</code>, and the short name is always appended
+  -- it is still how the node is reached from its own shell.</li>
+<li><strong><code>$http_host</code>, never <code>$host</code>, on anything that proxies.</strong> Deleting the header
+  is not a fix either; gunicorn would then see nginx's own <code>Host</code>.</li>
+<li><strong>A wildcard covers exactly ONE leftmost label</strong> (RFC 6125). <code>*.example.tld</code>
+  covers <code>node.example.tld</code> but not <code>a.b.example.tld</code> and not the bare apex.
+  Treating it as "anything under the domain" turns the coverage check into a
+  rubber stamp, so the matcher is written out and tested against all four cases.</li>
+<li><strong>Only FQDNs are graded against the certificate.</strong> No public CA issues for a
+  single-label name, so grading one would leave every node that imports a
+  wildcard in a permanent warn -- the chronic false positive this codebase keeps
+  having to delete. The name is still printed: not grading is not hiding.</li>
+<li><strong>A static vhost is never a finding.</strong> <code>Host</code> is meaningless without
+  <code>proxy_pass</code>, and flagging the site vhost trains the operator to skip the
+  check.</li>
+<li><strong>The vhost is not in git.</strong> A node updates its code and keeps serving
+  whatever configuration its installer wrote, so fixing the installer alone
+  reaches new installs only. <code>satom execute repair nginx</code> exists so an existing
+  node can be brought forward through a supported path -- a hand edit is erased
+  by the next reinstall, which is precisely how this defect survived being
+  diagnosed twice.</li>
+</ul>
+<h3 id="verifying-the-guards-are-armed_2">Verifying the guards are armed</h3>
+<pre><code class="language-bash"># The live check names the offending vhost and fails.
+satom diagnose nginx            # exit 1 while any proxying vhost passes $host
+
+# Nothing shipped may emit the port-stripping form.
+grep -rnE 'proxy_set_header[[:space:]]+Host[[:space:]]+\\?[$]host' \
+     installers/ deploy/        # expect: no matches
+
+# The certificate really covers what the vhost answers for.
+satom diagnose nginx | sed -n '/certificate covers/,/^$/p'
+
+# Discriminant probe: use a WRONG password, so a CSRF rejection (&quot;stale form&quot;)
+# separates from a credentials rejection. Same node, only the port varies.
+#   Host: &lt;fqdn&gt;          -&gt; CSRF-OK
+#   Host: &lt;fqdn&gt;:&lt;port&gt;   -&gt; CSRF-OK too, once repaired
+</code></pre>
 <h2 id="11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</h2>
 <ul>
 <li>Per-device configuration restore is dry-run gated — no live canary round-trip yet.</li>
@@ -1826,7 +1894,7 @@ publish its source of truth is the node whose evidence you will want later.</p>
 <li>Gitea and the standby share a host ({hypervisor}). The bundle to {backup-server} exists
   because of that, but it mitigates rather than fixes it.</li>
 </ul>
-<h2 id="verifying-the-guards-are-armed_2">Verifying the guards are armed</h2>
+<h2 id="verifying-the-guards-are-armed_3">Verifying the guards are armed</h2>
 <h3 id="published-cross-references-7d">Published cross-references (§7d)</h3>
 <p>Rendering is not evidence — request the target. From a checkout:</p>
 <pre><code class="language-bash"># 1. nothing published may still point at Markdown

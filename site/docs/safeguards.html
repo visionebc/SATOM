@@ -1738,8 +1738,32 @@ the CLI colouring for status words like <code>inactive</code>.</p>
 silently unreported; it just stops counting against the node. On any other role
 it is graded exactly as before -- on a real pair, a dead :8443 means the peers
 cannot probe each other, which is a genuine finding.</p>
-<p>Selection lives in a pure helper, <code>cmd_checks.nginx_probes(role)</code>, so the guard
-is a behavioural test and not a grep over code that documents itself.</p>
+<p>Selection lives in a pure helper, <code>cmd_checks.nginx_probes(has_peer)</code>, so the
+guard is a behavioural test and not a grep over code that documents itself.</p>
+<p><strong>The first attempt at this fix did not work, and the reason is worth keeping.</strong>
+It gated on <code>ctx.role == "standalone"</code> -- because that property's docstring
+said it returns <code>primary | standby | standalone | unknown</code>. It cannot. <code>role</code>
+is derived entirely from <code>pg_is_in_recovery()</code>: <code>t</code> is a standby, <code>f</code> is a
+primary, an error is unknown. A standalone node's database is not in recovery,
+so a standalone node reports <strong><code>primary</code></strong>, and the gate never fired. The tests
+passed, because they tested the helper against the same wrong assumption the
+helper encoded.</p>
+<p>Two rules:</p>
+<ul>
+<li><strong>Read the implementation, not the docstring.</strong> A property whose docstring
+  promised a value it could never return sent an otherwise careful fix
+  straight through review, a test suite and a bundle build. The docstring is
+  now corrected in place, and it names the callers still carrying the dead
+  <code>role in ("primary", "standalone")</code> branch -- they are correct only by
+  accident, because <code>"primary"</code> already covers the lone node.</li>
+<li><strong>Ask the question you actually mean.</strong> The check does not care about roles;
+  it cares whether <em>something should be answering on :8443</em>. That is the peer
+  registry, discovered exactly the way <code>get node status</code> does it: local IPs
+  compared against <code>data/ha_nodes.json</code>. A standalone has no such file.</li>
+</ul>
+<p>Verified against reality on both sides before shipping: a freshly installed
+standalone reports <code>[ ok ] nginx</code> with <code>n/a - no peer configured</code>, and a real
+cluster primary still probes its peer and still grades the answer.</p>
 <p>Guard: <code>tests/test_installer_nginx_start.py</code>, marker <code>SATOM-NGINX-PEER</code>.</p>
 <h2 id="11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</h2>
 <ul>

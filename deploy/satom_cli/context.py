@@ -165,7 +165,16 @@ class Ctx:
     # -- HA role ----------------------------------------------------------
     @property
     def role(self):
-        """primary | standby | standalone | unknown."""
+        """primary | standby | unknown.
+
+        NOT "standalone": this is derived purely from pg_is_in_recovery(), and
+        a standalone node's database is not in recovery, so it reports
+        "primary". There is no signal here that distinguishes a lone node from
+        a cluster primary -- for that, ask whether a PEER is configured
+        (cmd_checks.configured_peers). Callers that write
+        `role in ("primary", "standalone")` are carrying a dead branch; they
+        happen to be correct because "primary" already covers the lone node.
+        """
         if self._role is None:
             rc, out, _ = self.psql("SELECT pg_is_in_recovery();")
             if rc != 0:

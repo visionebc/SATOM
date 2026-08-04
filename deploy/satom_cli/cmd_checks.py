@@ -409,9 +409,10 @@ def nginx(ctx, args):
     # a check the operator learns to skip.
     # The row is still PRINTED, so the channel is never silently unreported --
     # what changes is that it stops counting as a finding.
-    probes = nginx_probes(ctx.role)
+    probes = nginx_probes(bool(configured_peers(ctx)))
     if len(probes) == 1:
-        r.rows("peer channel :8443", [("state", "n/a - standalone, no peer")])
+        r.rows("peer channel :8443",
+               [("state", "n/a - no peer configured (standalone)")])
     for probe, url in probes:
         code_, _ = ctx.http(url, timeout=5)
         r.rows(probe, [("GET /healthz", code_ or "no answer")])
@@ -420,16 +421,51 @@ def nginx(ctx, args):
     return r
 
 
-def nginx_probes(role):
-    """Which HTTP probes the nginx check is allowed to GRADE, given the role.
+def nginx_probes(has_peer):
+    """Which HTTP probes the nginx check is allowed to GRADE.
 
-    SATOM-NGINX-PEER. Pure on purpose: the whole point is that a test can pin
-    the standalone case without standing up nginx, a peer, or a database.
+    SATOM-NGINX-PEER. Takes a boolean, not a role string, and stays pure: a
+    test can pin the standalone case without standing up nginx, a peer or a
+    database.
+
+    Deliberately NOT keyed on ctx.role. `role` is derived from
+    pg_is_in_recovery(), so it can only ever be primary/standby/unknown -- a
+    STANDALONE node reports "primary", and the "standalone" value promised by
+    that property's docstring is unreachable. Keying on it silently graded
+    every standalone install anyway, which is the bug this exists to fix.
     """
     probes = [("app :443", "https://127.0.0.1/healthz")]
-    if role != "standalone":
+    if has_peer:
         probes.append(("peer channel :8443", "https://127.0.0.1:8443/healthz"))
     return probes
+
+
+def configured_peers(ctx):
+    """Hosts in the peer registry that are not this node.
+
+    Same discovery the `get node status` command uses: local IPs compared
+    against data/ha_nodes.json. A standalone install has no such file, so it
+    has no peer and nothing should be answering on :8443.
+    """
+    import json as _json
+    try:
+        nodes = _json.loads((ctx.app_dir / "data" / "ha_nodes.json").read_text())
+    except Exception:  # noqa: BLE001 - absent file IS the standalone answer
+        return []
+    if isinstance(nodes, dict):
+        nodes = nodes.get("nodes", [])
+    if not isinstance(nodes, list):
+        return []
+    _rc, out, _e = run(["hostname", "-I"])
+    mine = set(out.split())
+    peers = []
+    for n in nodes:
+        if not isinstance(n, dict):
+            continue
+        host = n.get("host") or n.get("ip") or ""
+        if host and host not in mine and n.get("name") != ctx.host:
+            peers.append(host)
+    return peers
 
 
 def git(ctx, args):

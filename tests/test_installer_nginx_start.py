@@ -164,3 +164,64 @@ def test_configured_peers_finds_a_real_peer(tmp_path):
     # neither address is local, so both read as peers -- what matters is that
     # a populated registry is not mistaken for "no peer".
     assert cmd_checks.configured_peers(Ctx())
+
+
+# --------------------------------------------------------------------------
+# C. SATOM-LEGO-PATH: no imprimir "command not found" en una linea de exito.
+#
+# El instalador corre con el PATH heredado del arranque del contenedor o de un
+# shell no-login: /sbin:/bin:/usr/sbin:/usr/bin. NO lleva /usr/local/bin, que
+# es donde se instala lego. Un `$(lego --version)` dentro del TEXTO de un
+# mensaje de exito se expande a
+#     install-satom.sh: line NNN: lego: command not found
+# y queda impreso DENTRO de la linea con el tick verde, sobre una instalacion
+# que fue correcta y cuyo sha256 SI se verifico.
+#
+# Un mensaje de exito que contiene "command not found" ensena al operador a
+# ignorar los mensajes -- y entonces ignora tambien el que si importa. Ademas
+# `command -v lego` falla por la misma razon, asi que una reinstalacion no
+# detecta el binario ya presente y lo vuelve a descargar entero.
+#
+# Verificado en vivo 2026-08-04 en CT 345/346 (openSUSE Leap 15.6): lego 5.2.2
+# instalado y funcional mientras el instalador habia impreso el error.
+# --------------------------------------------------------------------------
+def _lego_lines():
+    """Lineas ejecutadas del bloque ACME (comentarios ya filtrados)."""
+    return [ln for ln in _executed_lines(INSTALLER.read_text(encoding="utf-8"))
+            if "lego" in ln]
+
+
+def test_installer_defines_an_absolute_lego_binary_path():
+    text = INSTALLER.read_text(encoding="utf-8")
+    assert 'LEGO_BIN="/usr/local/bin/lego"' in text, (
+        "El bloque ACME debe fijar LEGO_BIN a ruta absoluta: el PATH del "
+        "instalador no incluye /usr/local/bin."
+    )
+
+
+def test_lego_messages_never_shell_out_to_a_bare_lego():
+    """Ninguna sustitucion de comando puede invocar `lego` desnudo.
+
+    Unica excepcion: la rama que YA comprobo `command -v lego`, donde el
+    binario esta demostrablemente en el PATH.
+    """
+    offenders = [ln for ln in _lego_lines()
+                 if "$(" in ln and "command -v lego" not in ln and "$(lego " in ln]
+    assert not offenders, (
+        "Sustitucion de comando con `lego` desnudo en un mensaje del "
+        'instalador; usa "$LEGO_BIN":\n  ' + "\n  ".join(offenders)
+    )
+
+
+def test_lego_is_installed_to_the_absolute_path_variable():
+    """El install(1) debe escribir en $LEGO_BIN, no en un literal.
+
+    Si el mensaje usa $LEGO_BIN y el install usa el literal, una edicion futura
+    de la ruta los separa y el mensaje describe un fichero que no existe.
+    """
+    bad = [ln for ln in _lego_lines()
+           if "install -m 0755" in ln and "/usr/local/bin/lego" in ln]
+    assert not bad, (
+        'install(1) de lego con ruta literal en vez de "$LEGO_BIN":\n  '
+        + "\n  ".join(bad)
+    )

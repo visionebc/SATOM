@@ -1,0 +1,341 @@
+{# ============================================================================
+   Analytics — boards that compose MANY monitor series onto one chart.
+
+   Every other chart in Monitoring is bound to a single probe. This page exists
+   for the comparative question the per-probe drill-down structurally cannot
+   answer: how do the FortiWebs differ, did throughput move this month.
+
+   Same contract as the rest of Monitoring: rendering never touches an
+   appliance. Every number here comes from monitor_sample / monitor_rollup rows
+   the sweep already recorded.
+
+   Styling lives in static/css/analytics.css and behaviour in
+   static/js/analytics.js — separate files rather than an inline block, because
+   fortiweb.css and base.html are the two files every other feature edits.
+   ========================================================================= #}
+{% extends "base.html" %}
+{% block title %}Analytics{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/analytics.css') }}" data-turbo-track="reload">
+{% endblock %}
+
+{% set active = (boards | selectattr('slug', 'equalto', active_slug) | list | first) or (boards | first) %}
+
+{% block content %}
+<div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h1 class="fw-page-title mb-0">
+      <i class="bi bi-graph-up-arrow me-2 text-accent"></i>Analytics</h1>
+    <p class="text-muted small mb-0">
+      Many series on one chart, over windows up to ninety days. Built entirely
+      from the samples and hourly&nbsp;/&nbsp;daily rollups the monitor sweep
+      already stores &mdash; opening a board contacts no appliance.</p>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <span id="an-window" class="text-muted small"></span>
+    <button class="btn btn-sm btn-outline-secondary" data-act="cadence"
+            data-bs-toggle="modal" data-bs-target="#an-cadence-modal">
+      <i class="bi bi-stopwatch me-1"></i>Collection cadence</button>
+    <button class="btn btn-sm btn-outline-secondary" data-act="refresh"
+            title="Reload now"><i class="bi bi-arrow-clockwise"></i></button>
+  </div>
+</div>
+
+<div id="an-toast" style="display:none"></div>
+
+{% if not boards %}
+  <div class="fw-card p-4 text-center text-muted">
+    <i class="bi bi-graph-up d-block mb-2" style="font-size:1.6rem;opacity:.5"></i>
+    No boards are available in this ADOM yet.
+    {% if can_edit %}Create one below.{% endif %}
+  </div>
+{% endif %}
+
+<div id="an-root"
+     data-base="{{ url_for('monitor_analytics.index') }}"
+     data-board="{{ active.slug if active else '' }}"
+     data-board-id="{{ active.id if active else '' }}"
+     data-range="{{ active.default_range if active else default_range }}"
+     data-refresh="{{ active.refresh_s if active else 0 }}"
+     data-can-edit="{{ '1' if can_edit else '0' }}"
+     data-catalog='{{ catalog | tojson }}'>
+
+  <div class="an-bar">
+    <div class="an-boards">
+      {% for b in boards %}
+        <a href="{{ url_for('monitor_analytics.index', board=b.slug) }}"
+           class="{{ 'active' if active and b.slug == active.slug else '' }}"
+           title="{{ b.description }}">
+          {% if b.builtin %}<i class="bi bi-lock-fill me-1" style="font-size:.7rem"
+             title="Built in — duplicate it to edit"></i>{% endif %}{{ b.title }}</a>
+      {% endfor %}
+    </div>
+
+    <span class="an-spacer"></span>
+
+    <div class="an-ranges">
+      {% for r in ranges %}
+        <button type="button" data-act="range" data-range="{{ r }}"
+          class="{{ 'active' if active and r == active.default_range else '' }}">{{ r }}</button>
+      {% endfor %}
+    </div>
+
+    <div class="d-flex align-items-center gap-1">
+      <input type="datetime-local" id="an-from" class="form-control form-control-sm"
+             style="width:11.5rem" aria-label="Custom range start">
+      <span class="text-muted small">→</span>
+      <input type="datetime-local" id="an-to" class="form-control form-control-sm"
+             style="width:11.5rem" aria-label="Custom range end">
+      <button type="button" class="btn btn-sm btn-outline-secondary"
+              data-act="custom-range">Apply</button>
+    </div>
+
+    <select id="an-refresh" class="form-select form-select-sm" style="width:9rem"
+            aria-label="Auto refresh">
+      <option value="0">Manual refresh</option>
+      <option value="30">Every 30 s</option>
+      <option value="60">Every minute</option>
+      <option value="300">Every 5 min</option>
+    </select>
+
+    {% if can_edit and active %}
+      <button class="btn btn-sm btn-outline-secondary" data-act="dup-board"
+              data-board="{{ active.id }}" title="Duplicate this board">
+        <i class="bi bi-files"></i></button>
+      {% if not active.builtin %}
+        <button class="btn btn-sm btn-primary" data-act="add-panel">
+          <i class="bi bi-plus-lg me-1"></i>Add panel</button>
+        <button class="btn btn-sm btn-outline-danger" data-act="del-board"
+                data-board="{{ active.id }}" title="Delete this board">
+          <i class="bi bi-trash"></i></button>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  {% if active and active.builtin %}
+    <p class="text-muted small mb-2">
+      <i class="bi bi-lock-fill me-1"></i><b>{{ active.title }}</b> ships with the
+      product and is kept in step with each release, so it cannot be edited.
+      Duplicate it to get an editable copy of the same panels.</p>
+  {% elif active and active.description %}
+    <p class="text-muted small mb-2">{{ active.description }}</p>
+  {% endif %}
+
+  <div id="an-grid" class="an-grid"></div>
+</div>
+
+{% if can_edit %}
+{# ---------------------------------------------------------------- panel -- #}
+<div class="modal fade" id="an-panel-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <form id="an-panel-form" data-panel="">
+        <div class="modal-header">
+          <h5 class="modal-title">Add panel</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"
+                  aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label small">Title</label>
+              <input name="title" class="form-control form-control-sm"
+                     maxlength="120" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Visualisation</label>
+              <select name="viz" class="form-select form-select-sm">
+                {% for key, label in catalog.viz_meta.items() %}
+                  <option value="{{ key }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Subtitle <span class="text-muted">(optional)</span></label>
+              <input name="subtitle" class="form-control form-control-sm" maxlength="200">
+            </div>
+
+            <div class="col-12"><hr class="my-1"></div>
+
+            <div class="col-md-4">
+              <label class="form-label small">Series selection</label>
+              <select name="select_mode" class="form-select form-select-sm">
+                <option value="rule">Rule — everything matching</option>
+                <option value="probes">Explicit — these probes</option>
+              </select>
+              <div class="form-text" style="font-size:.72rem">
+                A rule keeps working when probes are recreated or a new appliance
+                is registered; an explicit list does not.
+              </div>
+            </div>
+
+            <div class="col-md-4" data-when-mode="rule">
+              <label class="form-label small">Metric</label>
+              <select name="rule_kind" class="form-select form-select-sm">
+                <option value="">— any —</option>
+                {% for k in catalog.kinds %}
+                  <option value="{{ k.kind }}">{{ k.label }}{% if k.unit %} ({{ k.unit }}){% endif %}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4" data-when-mode="rule">
+              <label class="form-label small">Name contains <span class="text-muted">(optional)</span></label>
+              <input name="rule_match" class="form-control form-control-sm" maxlength="120">
+            </div>
+            <div class="col-12" data-when-mode="rule">
+              <label class="form-label small">Devices <span class="text-muted">(none = all in this ADOM)</span></label>
+              <select name="rule_devices" class="form-select form-select-sm"
+                      multiple size="4">
+                {% for d in catalog.devices %}
+                  <option value="{{ d.id }}">{{ d.name }} — {{ d.device_kind }}{% if d.maintenance %} (maintenance){% endif %}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-12" data-when-mode="probes">
+              <label class="form-label small">Probes</label>
+              <select name="probe_ids" class="form-select form-select-sm"
+                      multiple size="9">
+                {% for p in catalog.probes %}
+                  <option value="{{ p.id }}">{{ p.appliance or '—' }} · {{ p.name }} [{{ p.kind }}]{% if not p.enabled %} (paused){% endif %}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-12"><hr class="my-1"></div>
+
+            <div class="col-md-4" data-when-viz="stat,gauge">
+              <label class="form-label small">Value shown</label>
+              <select name="stat_func" class="form-select form-select-sm">
+                {% for key, label in catalog.stat_meta.items() %}
+                  <option value="{{ key }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Width</label>
+              <select name="width" class="form-select form-select-sm">
+                <option value="3">Quarter</option>
+                <option value="4">Third</option>
+                <option value="6" selected>Half</option>
+                <option value="8">Two thirds</option>
+                <option value="12">Full width</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Height (px)</label>
+              <input name="height" type="number" min="160" max="900" step="10"
+                     value="260" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Range override</label>
+              <select name="range_key" class="form-select form-select-sm">
+                <option value="">Follow the board</option>
+                {% for r in ranges %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+              </select>
+            </div>
+
+            <div class="col-12 d-flex flex-wrap gap-3">
+              <div class="form-check" data-when-viz="line,area">
+                <input class="form-check-input" type="checkbox" name="show_band"
+                       id="an-band" checked>
+                <label class="form-check-label small" for="an-band">
+                  Min/max band</label>
+              </div>
+              <div class="form-check" data-when-viz="line,area,bar">
+                <input class="form-check-input" type="checkbox" name="show_v2"
+                       id="an-v2">
+                <label class="form-check-label small" for="an-v2">
+                  Secondary metric</label>
+              </div>
+              <div class="form-check" data-when-viz="line,area,bar,gauge">
+                <input class="form-check-input" type="checkbox"
+                       name="show_thresholds" id="an-th" checked>
+                <label class="form-check-label small" for="an-th">
+                  Threshold lines</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox"
+                       name="compare_prev" id="an-cmp">
+                <label class="form-check-label small" for="an-cmp">
+                  Compare with previous period</label>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary"
+                  data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-primary">Save panel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{# ---------------------------------------------------------------- board -- #}
+<div class="fw-card p-3 mt-3">
+  <form method="post" action="{{ url_for('monitor_analytics.create_board') }}"
+        class="row g-2 align-items-end"
+        data-turbo="false">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="col-md-4">
+      <label class="form-label small mb-1">New board</label>
+      <input name="title" class="form-control form-control-sm"
+             placeholder="e.g. Weekly capacity review" maxlength="120" required>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label small mb-1">Description</label>
+      <input name="description" class="form-control form-control-sm" maxlength="400">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small mb-1">Default range</label>
+      <select name="default_range" class="form-select form-select-sm">
+        {% for r in ranges %}
+          <option value="{{ r }}" {{ 'selected' if r == default_range }}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <button class="btn btn-sm btn-outline-primary w-100">
+        <i class="bi bi-plus-lg me-1"></i>Create board</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+{# -------------------------------------------------------------- cadence -- #}
+<div class="modal fade" id="an-cadence-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Collection cadence</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"
+                aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small">
+          A probe fires only when its own interval has elapsed <em>and</em> the
+          sweep happens to run, so its real cadence is
+          <code>tick × ceil(interval ÷ tick)</code>. A five-minute probe under a
+          three-minute sweep is a six-minute probe &mdash; and its own row still
+          says five. Any probe whose interval is not a multiple of the tick is
+          flagged below.</p>
+        <p id="an-cadence-note" class="text-muted small"></p>
+        <table class="an-table an-cadence">
+          <thead>
+            <tr><th>Device</th><th>Probe</th><th>Metric</th><th>State</th>
+                <th class="an-num">Declared</th><th class="an-num">Effective</th></tr>
+          </thead>
+          <tbody id="an-cadence-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/analytics.js') }}"></script>
+{% endblock %}

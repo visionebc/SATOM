@@ -6,6 +6,36 @@ project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-08-04
+
+### nginx came up, then the installer killed it (openSUSE)
+
+Found the way the last three installer defects were found: by installing on a
+blank machine. Two identical openSUSE Leap 15.6 nodes, same release, same
+answers -- the online one exited **1**, the offline one exited **0**. A 38 ms
+race, so v1.3.2 passing its own validation proved nothing. Rules in
+[safeguards](docs/safeguards.md) section 11.
+
+- **The installer reloaded nginx it had just started.**
+  `systemctl enable --now nginx; systemctl reload nginx` on one line. openSUSE
+  ships `nginx.service` as `Type=simple` (`daemon off;`) with
+  `ExecReload=/bin/kill -s HUP $MAINPID`, so systemd reports the unit started
+  before nginx has written `/run/nginx.pid`; the reload resolved `$MAINPID` to
+  nothing, `kill` exited 2 and systemd tore down the whole service. Debian and
+  RHEL use forking units with `PIDFile=` and never see it. The reload is gone;
+  the start is now guarded with `|| die` and followed by a bounded poll on
+  `is-active` + a non-empty pid file + an accepted TCP connection.
+- **The failure hid the one instruction that mattered.** Being the last command
+  on the line, its non-zero status killed the script under `set -e` before step
+  7 -- so a correctly installed system reported failure and never printed the
+  banner telling the operator to run `satom execute seed actions`.
+- **`satom diagnose nginx` warned forever on every standalone install.** It
+  probed the :8443 node-to-node channel unconditionally; a standalone has no
+  peer. The row is still printed as `n/a - standalone, no peer`, and every
+  other role is graded exactly as before. Same chronic false positive already
+  removed from `get system health` and from the CLI status colouring.
+
+
 ## [1.3.2] - 2026-08-04
 
 ### The installer had never completed on openSUSE or RHEL (2026-08-03)

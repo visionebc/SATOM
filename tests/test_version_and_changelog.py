@@ -100,6 +100,58 @@ def test_the_asset_stamper_also_checks_the_version():
 # The changelog reaches all three surfaces
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# SATOM-INSTALLER-VERSION
+#
+# The installer prints its own version in the banner. That literal sat at
+# 1.3.2 while 1.3.3 and 1.3.4 shipped -- the same failure as the ``v1.0`` in
+# the console footer above. A hardcoded string goes stale silently; nothing
+# fails, the number is simply wrong. It is now stamped from VERSION by
+# deploy/stamp_site_assets.py, so these two guards keep it that way.
+# --------------------------------------------------------------------------
+
+INSTALLER = ROOT / "installers" / "install-satom.sh"
+STAMPER = ROOT / "deploy" / "stamp_site_assets.py"
+
+
+def _installer_banner_version() -> str:
+    for line in INSTALLER.read_text(encoding="utf-8").splitlines():
+        if line.startswith('VERSION="'):
+            return line.split('"')[1]
+    raise AssertionError("installer has no top-level VERSION= assignment")
+
+
+def test_the_installer_banner_matches_the_version_file():
+    shipped = VERSION_FILE.read_text(encoding="utf-8").strip()
+    assert _installer_banner_version() == shipped, (
+        "installer banner says %s, VERSION says %s -- run "
+        "python3 deploy/stamp_site_assets.py"
+        % (_installer_banner_version(), shipped))
+
+
+def test_the_stamper_actually_rewrites_the_installer_literal():
+    """The guard above passes if someone hand-edits the literal once.
+
+    This one fails unless the stamper can still do it, which is what keeps the
+    number correct at the *next* release rather than at this one.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_stamper", STAMPER)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    stale = 'VERSION="0.0.1"\necho hi\n'
+    assert mod.stamp_installer(stale, "9.9.9") == 'VERSION="9.9.9"\necho hi\n'
+
+    # It must rewrite only the first, top-level assignment -- an indented
+    # VERSION= inside a function is a different variable.
+    nested = 'VERSION="0.0.1"\nf() {\n  VERSION="other"\n}\n'
+    out = mod.stamp_installer(nested, "9.9.9")
+    assert out.startswith('VERSION="9.9.9"')
+    assert 'VERSION="other"' in out
+
+
 def test_changelog_lives_at_the_repository_root():
     assert CHANGELOG.is_file()
     assert "## [" in CHANGELOG.read_text(encoding="utf-8")

@@ -38,6 +38,7 @@ MIN_ACTIONS = {
     "device_inspect": "nightly SoT off-box push",
     "system_backup": "nightly database bundle",
     "deep_monitor": "probe sweep",
+    "metrics_scrape": "fleet metrics collection (VictoriaMetrics)",
     # The sweep records; this is what carries the record to a human. Without it
     # the rollups accumulate for ninety days and nobody is told anything unless
     # they open the console, which is the same shape of gap as an unarmed

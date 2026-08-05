@@ -252,6 +252,7 @@ def duplicate_board(bid: int):
     for p in src.panels:
         clone = MonitorPanel(dashboard_id=board.id)
         for col in ('title', 'subtitle', 'viz', 'select_mode', 'probe_ids',
+                    'vm_expr', 'vm_legend', 'vm_unit',
                     'rule_kind', 'rule_devices', 'rule_match', 'range_key',
                     'stat_func', 'show_band', 'show_v2', 'show_thresholds',
                     'compare_prev', 'width', 'height', 'position', 'options'):
@@ -419,7 +420,22 @@ def _apply_panel(panel, form) -> str:
     panel.viz = viz
     panel.select_mode = mode
 
-    if mode == 'probes':
+    if mode == 'metricsql':
+        expr = (form.get('vm_expr') or '').strip()
+        if not expr:
+            return "A store panel needs a MetricsQL expression."
+        # Validated by EXECUTING it against the store, not by pattern-matching:
+        # the store is the only authority on its own query language, and a
+        # regex here would reject valid queries as the language grows.
+        from ..services import vm_store
+        probe = vm_store.query(expr)
+        if probe.get('status') != 'success':
+            return "The store rejected that expression: %s" % (
+                probe.get('error') or 'query failed')[:160]
+        panel.vm_expr = expr[:500]
+        panel.vm_legend = (form.get('vm_legend') or '')[:120]
+        panel.vm_unit = (form.get('vm_unit') or '')[:24]
+    elif mode == 'probes':
         panel.probe_ids = _csv_ids(form.get('probe_ids') or '')
         if not panel.probe_ids:
             return "Select at least one probe."

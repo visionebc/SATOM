@@ -82,7 +82,56 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>Analytics boards — many series on one chart, over windows up to 90 days.</strong>
+<li><strong>Fleet metrics collection and a local time-series store.</strong> Measured against
+  the live system on 2026-08-05: at the target fleet (60 FortiWeb + 30 FortiADC</li>
+<li>
+<p>10 FortiAnalyzer, ~750 policies each) the per-probe design needed ~180,000
+  configuration rows, ~56 minutes of device I/O per 3-minute window and ~450 GB
+  in PostgreSQL. Collection is now one scrape per (device, collector) — a single
+  <code>policy_status</code> call returns every policy's counters in 14 ms — and samples go
+  to a loopback-only VictoriaMetrics store (<code>satom-metrics.service</code>, Apache-2.0,
+  one static binary) that holds the same three months at full resolution in
+  ~8 GB instead of hourly averages in ~450 GB. New page <strong>Monitoring →
+  Collection</strong> shows every target with its own editable interval and last
+  outcome; expensive per-policy collectors run less often and against the top-N
+  policies by live connection rate. New scheduled action <code>metrics_scrape</code>.
+  Rationale and the full measurement: <code>docs/metrics-architecture.md</code>.</p>
+</li>
+<li>
+<p><strong>Selector-driven dashboards (MetricsQL).</strong> Analytics panels gain a third
+  selection mode that resolves against the store instead of enumerating probe
+  rows — the only mode that works when the series are counted in tens of
+  thousands. Expressions are validated by executing them against the store
+  before they are saved, a failed query renders as an error rather than an empty
+  chart, and gaps stay gaps. New built-in board <strong>Fleet metrics (store)</strong>.</p>
+</li>
+<li>
+<p><strong>Reports read the fleet, and can leave the node.</strong> Period summaries now carry
+  a section computed from the metrics store (min/avg/max per device per metric,
+  policies that were down, collectors that failed) instead of describing only
+  what someone wrote a probe for. <code>params.push_server=1</code> uploads the summary to
+  the external backup server as both JSON and text.</p>
+</li>
+</ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li>
+<p><strong>The device source of truth left git.</strong> <code>reports/&lt;device&gt;/_config.json</code> was
+  committed hourly; one FortiAnalyzer snapshot is ~8.4 MB and git keeps every
+  byte of every revision, so at fleet scale the repository outgrows the node in
+  weeks. Versioning moved to a content-addressed local store
+  (<code>data/sot/</code>, index in PostgreSQL): the hash is the identity, so an unchanged
+  config costs zero bytes, and retention is a policy instead of "forever".
+  History, structural diff and restore stay in System Backup &amp; Restore; blobs
+  ride the existing standby rsync and the backup bundles, and are pushed to the
+  external backup server. <code>satom-git-publish.timer</code> is retired and no longer
+  installed; the scheduled <code>git_bundle</code> action is retired (the handler remains
+  for manual code-repository bundles). <strong>Git still carries application code</strong>
+  and the update path is unchanged. The live JSON tree moved to <code>data/reports/</code>
+  with a compatibility symlink.</p>
+</li>
+<li>
+<p><strong>Analytics boards — many series on one chart, over windows up to 90 days.</strong>
   New page under Monitoring → Analytics. Every existing chart in the product is
   bound to a single probe, which cannot answer the comparative question ("how do
   the FortiWebs differ", "did throughput move this month"). Boards compose
@@ -91,7 +140,8 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   secondary metric, compare-with-previous-period, drag to reorder, per-panel
   range override and optional auto-refresh. Three boards — Fleet overview,
   Traffic &amp; sessions, Service health — ship built in and are reconciled from
-  code on every boot; duplicate one to get an editable copy.</li>
+  code on every boot; duplicate one to get an editable copy.</p>
+</li>
 </ul>
 <p>Panels select probes by <strong>rule</strong> (metric + devices + name match) rather than a
   frozen id list, so a probe recreated by Discover, or a newly registered
@@ -126,7 +176,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   probe's declared and effective interval and flags each mismatch. With no sweep
   scheduled it reports no cadence at all rather than a plausible default.</li>
 </ul>
-<h3 id="changed">Changed</h3>
+<h3 id="changed_1">Changed</h3>
 <ul>
 <li>
 <p><code>deep_monitor.series()</code> accepts an optional <code>force_source</code>, and the resolution
@@ -197,7 +247,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   nginx 413 that the application never sees and therefore cannot explain.</p>
 </li>
 </ul>
-<h3 id="changed_1">Changed</h3>
+<h3 id="changed_2">Changed</h3>
 <ul>
 <li>
 <p><strong>License changed from Apache-2.0 to the <a href="LICENSE">Elastic License 2.0</a>.</strong>
@@ -695,7 +745,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
      The vhost now goes to <code>vhosts.d/</code> and the stock block is neutralised, the
      same way <code>sites-enabled/default</code> is removed on Debian.</li>
 </ol>
-<h3 id="changed_2">Changed</h3>
+<h3 id="changed_3">Changed</h3>
 <ul>
 <li><strong>The last <code>fortinet</code> identifiers are gone from the platform itself.</strong> The
   database, the PostgreSQL role, the Linux service account and the PostgreSQL
@@ -919,7 +969,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   colours in the drill-down modal, now build from <code>.fw-card</code> and the <code>--fw-*</code>
   custom properties.</li>
 </ul>
-<h3 id="changed_3">Changed</h3>
+<h3 id="changed_4">Changed</h3>
 <ul>
 <li><strong>Device cards start folded and tile densely.</strong> Expanded-by-default is
   unusable past a handful of appliances: a hundred of them was a kilometre of
@@ -974,7 +1024,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   the job feeds (throttled to once every 120 s), and a job that never received a
   pid is considered dead after 10 minutes instead of an hour.</li>
 </ul>
-<h3 id="changed_4">Changed</h3>
+<h3 id="changed_5">Changed</h3>
 <ul>
 <li><strong>Service Monitor (and every other probe) now sweeps every 3 minutes</strong> instead
   of 5. The scheduled sweep action was retimed and <em>all</em> probe intervals were
@@ -1070,7 +1120,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   is carrying sessions or connections it grades <code>warn</code> and names the likely
   cause, instead of a green row on a busy service. Mutation-tested.</li>
 </ul>
-<h3 id="changed_5">Changed</h3>
+<h3 id="changed_6">Changed</h3>
 <ul>
 <li>
 <p><em>Probe now</em> with no selection no longer sweeps every probe in the fleet: it
@@ -1100,7 +1150,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   the devices whose hourly <code>device_sync</code> has been failing. FortiWeb only —
   FortiADC and FortiAnalyzer are refused by name rather than measured as zero.
   See <code>docs/safeguards.md</code> §9e.</p>
-<h3 id="changed_6">Changed</h3>
+<h3 id="changed_7">Changed</h3>
 <ul>
 <li><strong>A scheduled deep-monitor sweep now reports whether it RAN, not whether it
   liked what it found.</strong> <code>ok</code> was <code>worst in ("ok","unknown")</code>, so a single
@@ -1154,7 +1204,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   payload read a <code>maintenance_mode</code> attribute that has never existed on
   <code>Appliance</code>; the column is <code>maintenance</code>.</li>
 </ul>
-<h3 id="changed_7">Changed</h3>
+<h3 id="changed_8">Changed</h3>
 <ul>
 <li><strong>Monitoring is now an ADOM-level submenu, not Global-only.</strong> Fleet health,
   Metrics and Deep monitors appear in the FortiWeb, FortiADC and FortiAnalyzer
@@ -1249,7 +1299,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li>Public site: <code>site/safeguards.html</code> (linked from the nav and footer of every
   page) and the matching notes on <code>site/install.html</code>.</li>
 </ul>
-<h3 id="changed_8">Changed</h3>
+<h3 id="changed_9">Changed</h3>
 <ul>
 <li>In-app <strong>Documentation</strong> index now curates a title, order and description for
   all 18 manuals; half of them previously fell through to an auto-generated

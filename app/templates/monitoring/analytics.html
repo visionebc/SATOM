@@ -166,6 +166,7 @@
               <select name="select_mode" class="form-select form-select-sm">
                 <option value="rule">Rule — everything matching</option>
                 <option value="probes">Explicit — these probes</option>
+                <option value="metricsql">Store selector — MetricsQL</option>
               </select>
               <div class="form-text" style="font-size:.72rem">
                 A rule keeps working when probes are recreated or a new appliance
@@ -194,6 +195,29 @@
                   <option value="{{ d.id }}">{{ d.name }} — {{ d.device_kind }}{% if d.maintenance %} (maintenance){% endif %}</option>
                 {% endfor %}
               </select>
+            </div>
+
+            <div class="col-12" data-when-mode="metricsql">
+              <label class="form-label small">MetricsQL expression</label>
+              <input name="vm_expr" class="form-control form-control-sm font-monospace" maxlength="500"
+                     placeholder="topk(10, satom_policy_conn_per_sec)">
+              <div class="form-text" style="font-size:.72rem">
+                Evaluated by the metrics store, so ONE expression can draw the
+                whole fleet — the only selection mode that scales past a few
+                hundred series. Examples:
+                <code>satom_box_cpu_pct</code>,
+                <code>sum by (device) (satom_policy_up == 0)</code>,
+                <code>rate(satom_iface_rx_bytes_total[5m]) * 8</code>.
+                The expression is checked against the store before it is saved.
+              </div>
+            </div>
+            <div class="col-md-6" data-when-mode="metricsql">
+              <label class="form-label small">Legend label <span class="text-muted">(label key, optional)</span></label>
+              <input name="vm_legend" class="form-control form-control-sm" maxlength="120" placeholder="device">
+            </div>
+            <div class="col-md-6" data-when-mode="metricsql">
+              <label class="form-label small">Unit <span class="text-muted">(shown on the axis)</span></label>
+              <input name="vm_unit" class="form-control form-control-sm" maxlength="24" placeholder="%">
             </div>
 
             <div class="col-12" data-when-mode="probes">

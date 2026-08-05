@@ -1,0 +1,35 @@
+# SATOM metrics store — VictoriaMetrics single-node (OSS, Apache-2.0).
+#
+# Holds the high-cardinality device telemetry (per-policy sessions, traffic,
+# transactions, box resources) that Postgres structurally cannot hold at fleet
+# scale: measured 2026-08-05, 100 devices x 750 policies costs ~450 GB in
+# monitor_sample rows vs ~8 GB here (<1 B/sample compressed), with 90+ days of
+# full-resolution raw instead of hourly averages.
+#
+# Loopback only: queries go through the app (auth + ADOM scoping); nothing on
+# the network talks to this port directly. Data lives OUTSIDE data/ on purpose
+# — satom-ha-datasync rsyncs data/ with --delete and a time-series store must
+# never be rsynced under a running process; each node keeps its own store.
+[Unit]
+Description=SATOM metrics store (VictoriaMetrics single-node)
+After=network.target
+
+[Service]
+Type=simple
+User=satom
+Group=satom
+ExecStart=/usr/local/bin/victoria-metrics \
+  -storageDataPath=/var/lib/satom-metrics \
+  -httpListenAddr=127.0.0.1:8428 \
+  -retentionPeriod=396d \
+  -memory.allowedBytes=512MiB \
+  -search.maxQueryDuration=30s
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/satom-metrics
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target

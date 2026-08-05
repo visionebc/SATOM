@@ -14,7 +14,7 @@
    extra bookkeeping. ``_adom`` pins the ADOM on hard (non-Turbo) navigations,
    which cannot carry the X-ADOM header.
    ========================================================================= #}
-<div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['monitoring','metrics','deep_monitor','service_monitor','monitor_analytics','monitor_reports'] }}" data-nav-subgroup="Monitoring">
+<div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['monitoring','metrics','deep_monitor','service_monitor','monitor_analytics','monitor_reports','metrics_admin'] }}" data-nav-subgroup="Monitoring">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-activity fw-nav-icon"></i><span>Monitoring</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'monitoring' else '' }}" href="{{ url_for('monitoring.index', _adom=product.key) }}">
@@ -29,5 +29,7 @@
       <i class="bi bi-graph-up-arrow fw-nav-icon"></i><span>Analytics</span></a>
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'monitor_reports' else '' }}" href="{{ url_for('monitor_reports.index', _adom=product.key) }}">
       <i class="bi bi-file-earmark-bar-graph fw-nav-icon"></i><span>Reports</span></a>
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics_admin' else '' }}" href="{{ url_for('metrics_admin.index', _adom=product.key) }}">
+      <i class="bi bi-cloud-download fw-nav-icon"></i><span>Collection</span></a>
   </div>
 </div>

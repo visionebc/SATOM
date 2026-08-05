@@ -319,6 +319,116 @@ def _thresholds_of(probe) -> dict:
     return {}
 
 
+# -- MetricsQL panels (the fleet-scale selection mode) ------------------------
+
+# Step chosen so a panel never asks the store for more points than a chart can
+# honestly draw (~600). A 90-day range at 3-minute resolution is 43,200 points,
+# which is not more detail on a 900 px canvas -- it is a slower query and a
+# thicker line.
+_MAX_POINTS = 600
+_MIN_STEP_S = 60
+
+
+def vm_step(start, end) -> str:
+    span = max(60, int((end - start).total_seconds()))
+    return "%ds" % max(_MIN_STEP_S, span // _MAX_POINTS)
+
+
+def _vm_label(metric: dict, legend_key: str) -> str:
+    """Series label from the returned labels. An explicit legend key wins;
+    otherwise device[/policy|iface] -- the identity the operator reads."""
+    if legend_key and metric.get(legend_key):
+        return str(metric[legend_key])
+    dev = metric.get("device") or ""
+    sub = (metric.get("policy") or metric.get("iface")
+           or metric.get("collector") or "")
+    if dev and sub:
+        return "%s / %s" % (dev, sub)
+    return dev or sub or (metric.get("__name__") or "series")
+
+
+def _vm_stat(values: list, func: str):
+    if not values:
+        return None
+    if func == "min":
+        return min(values)
+    if func == "max":
+        return max(values)
+    if func == "sum":
+        return sum(values)
+    if func == "avg":
+        return sum(values) / len(values)
+    return values[-1]
+
+
+def vm_panel_payload(panel, start: datetime, end: datetime) -> dict:
+    """Draw a panel from a MetricsQL expression.
+
+    Unlike the probe path there is no rollup table to choose: the store keeps
+    full-resolution raw for the whole retention window, so the only decision is
+    the query step -- reported in ``source`` so the footer stays honest about
+    what was actually drawn.
+    """
+    from . import vm_store
+
+    expr = (panel.vm_expr or "").strip()
+    step = vm_step(start, end)
+    out = {
+        "panel": panel.to_dict(), "axis": [], "series": [],
+        "source": "store (step %s)" % step, "bucket_seconds": 0,
+        "from": start.isoformat(timespec="seconds"),
+        "to": end.isoformat(timespec="seconds"),
+        "units": [panel.vm_unit] if panel.vm_unit else [],
+        "mixed_units": False, "empty": True, "expr": expr,
+    }
+    if not expr:
+        out["error"] = "no expression"
+        return out
+    res = vm_store.query_range(expr, start.timestamp(), end.timestamp(), step)
+    if res.get("status") != "success":
+        # A store that cannot answer is an ERROR on the panel, never an empty
+        # chart: "no data" and "the query failed" look identical on a canvas
+        # and mean opposite things.
+        out["error"] = res.get("error") or "query failed"
+        return out
+    result = (res.get("data") or {}).get("result") or []
+    axis_ts = sorted({float(ts) for s in result
+                      for ts, _v in (s.get("values") or [])})
+    out["axis"] = [datetime.utcfromtimestamp(t).isoformat(timespec="seconds")
+                   for t in axis_ts]
+    index = {t: i for i, t in enumerate(axis_ts)}
+    for i, s in enumerate(result):
+        vals = [None] * len(axis_ts)
+        for ts, v in s.get("values") or []:
+            try:
+                vals[index[float(ts)]] = float(v)
+            except (KeyError, TypeError, ValueError):
+                continue
+        present = [v for v in vals if v is not None]
+        out["series"].append({
+            "probe_id": None,
+            "label": _vm_label(s.get("metric") or {}, panel.vm_legend or ""),
+            "device": (s.get("metric") or {}).get("device", ""),
+            "kind": "metricsql",
+            "unit": panel.vm_unit or "",
+            "metric": (s.get("metric") or {}).get("__name__", ""),
+            "color": SERIES_COLORS[i % len(SERIES_COLORS)],
+            "avg": vals, "status": [None] * len(axis_ts),
+            "enabled": True, "thresholds": {},
+            "stat": _vm_stat(present, panel.stat_func or "last"),
+            "healthy_pct": None,
+            "summary": {
+                "min": min(present) if present else None,
+                "max": max(present) if present else None,
+                "avg": (sum(present) / len(present)) if present else None,
+                "last": present[-1] if present else None,
+                "points": len(present), "changes": 0,
+            },
+        })
+    out["empty"] = not out["series"]
+    return out
+
+
 def panel_payload(panel, start: datetime, end: datetime, *, session=None) -> dict:
     """Everything the front end needs to draw ONE panel.
 
@@ -326,6 +436,8 @@ def panel_payload(panel, start: datetime, end: datetime, *, session=None) -> dic
     the browser never has to reconcile two different time bases — a place where
     an off-by-one silently shifts one device's line against another's.
     """
+    if (panel.select_mode or "") == "metricsql":
+        return vm_panel_payload(panel, start, end)
     probes = resolve_panel_probes(panel, session=session)
     ids = [p.id for p in probes]
     source = panel_source(ids, start, end, session=session)

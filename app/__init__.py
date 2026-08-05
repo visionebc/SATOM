@@ -258,6 +258,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        'fleet_objects', 'dns_tool',
                        'monitoring', 'deep_monitor', 'service_monitor',
                        'monitor_analytics', 'monitor_reports',
+                       'metrics_admin',
                        # Backup vault (per-appliance; the ADC transport is the
                        # SSH config dump — services/backup.py kind branch).
                        'backups',
@@ -285,6 +286,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        # ADC note above; scoping is by device kind.
                        'monitoring', 'deep_monitor', 'service_monitor',
                        'monitor_analytics', 'monitor_reports',
+                       'metrics_admin',
                        'release_notes', 'templates', 'naming', 'capacity',
                        'api_tokens', 'api_explorer', 'api_v1',
                        'plugins', 'lua_studio'}
@@ -1093,6 +1095,11 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('params', "TEXT DEFAULT '[]'"),
             ],
             # --- Deep monitors: box CPU / memory split out of the proxyd probe ---
+            'monitor_panel': [
+                ('vm_expr', 'VARCHAR(500)'),
+                ('vm_legend', 'VARCHAR(120)'),
+                ('vm_unit', 'VARCHAR(24)'),
+            ],
             'monitor_probe': [
                 ('warn_pct', 'INTEGER DEFAULT 80'),
                 ('crit_pct', 'INTEGER DEFAULT 95'),
@@ -1198,6 +1205,7 @@ def create_app(config_override: object | None = None) -> Flask:
             from . import models_theme  # noqa: F401
             from . import models_analytics  # noqa: F401
             from . import models_sot  # noqa: F401
+            from . import models_metrics  # noqa: F401
             db.create_all()
             _ensure_columns()
             _ensure_indexes()
@@ -1295,6 +1303,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.service_monitor", "bp"),
         ("app.views.monitor_analytics", "bp"),
         ("app.views.monitor_reports", "bp"),
+        ("app.views.metrics_admin", "bp"),
         ("app.views.capacity", "bp"),
         ("app.views.audit", "bp"),
         ("app.views.registry", "bp"),
@@ -1517,6 +1526,42 @@ def _seed_analytics_boards() -> None:
 
     boards = [
         {
+            # The ONLY board that works at fleet scale. Rule panels enumerate
+            # probe rows; at 100 devices x 750 policies there are no probe rows
+            # to enumerate — the metrics store holds those series and answers
+            # by SELECTOR. topk() bounds every panel to what a chart can show.
+            "slug": "fleet-metrics", "title": "Fleet metrics (store)",
+            "position": 5,
+            "description": "Selector-driven view of the local metrics store — "
+                           "scales to the whole fleet because nothing here "
+                           "enumerates series by hand.",
+            "default_range": "24h",
+            "mode": "metricsql",
+            "panels": [
+                {"title": "CPU used — all devices", "viz": "line", "width": 6,
+                 "vm_expr": "satom_box_cpu_pct", "vm_unit": "%",
+                 "vm_legend": "device", "show_band": False},
+                {"title": "Memory used — all devices", "viz": "line", "width": 6,
+                 "vm_expr": "satom_box_mem_pct", "vm_unit": "%",
+                 "vm_legend": "device", "show_band": False},
+                {"title": "Device throughput", "viz": "area", "width": 12,
+                 "vm_expr": "satom_total_throughput_bps", "vm_unit": "bit/s",
+                 "vm_legend": "device", "show_band": False},
+                {"title": "Busiest policies (top 10 by conn/s)", "viz": "line",
+                 "width": 12,
+                 "vm_expr": "topk(10, satom_policy_conn_per_sec)",
+                 "vm_unit": "conn/s", "show_band": False},
+                {"title": "Policies with every backend down", "viz": "line",
+                 "width": 6, "vm_expr": "sum by (device) (satom_policy_up == 0)",
+                 "vm_unit": "policies", "vm_legend": "device",
+                 "show_band": False},
+                {"title": "Collectors failing", "viz": "line", "width": 6,
+                 "vm_expr": "sum by (collector) (satom_scrape_up == 0)",
+                 "vm_unit": "targets", "vm_legend": "collector",
+                 "show_band": False},
+            ],
+        },
+        {
             "slug": "fleet-overview", "title": "Fleet overview", "position": 10,
             "description": "Processor, memory and availability across every "
                            "monitored appliance.",
@@ -1578,6 +1623,7 @@ def _seed_analytics_boards() -> None:
     changed = False
     for spec in boards:
         panels = spec.pop("panels")
+        mode = spec.pop("mode", "rule")
         board = MonitorDashboard.query.filter_by(slug=spec["slug"]).first()
         if board is None:
             board = MonitorDashboard(slug=spec["slug"], builtin=True, product="")
@@ -1609,7 +1655,7 @@ def _seed_analytics_boards() -> None:
                 pos = item.pop("pos")
                 db.session.add(MonitorPanel(
                     dashboard_id=board.id, position=pos,
-                    select_mode="rule", **item))
+                    select_mode=mode, **item))
             changed = True
     if changed:
         db.session.commit()

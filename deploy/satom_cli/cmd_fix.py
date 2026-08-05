@@ -44,19 +44,21 @@ SEED_PLAN = [
      {"time": "01:30"}, {"push_server": True}, "fortiweb"),
     ("deep_monitor", "Deep monitors + Service Monitor — probe sweep", "interval",
      {"every": 3, "unit": "minutes"}, {}, "global"),
+    ("metrics_scrape", "Fleet metrics — scrape to the local store", "interval",
+     {"every": 3, "unit": "minutes"}, {}, "global"),
     # Period summaries. Each fires AFTER its period has closed, so it describes
     # a COMPLETE window: a daily report fired at 23:00 would summarise a day
     # still an hour from finishing, and "throughput fell 80 %" would mean
     # nothing. `keep` bounds the stored history — without it a daily schedule
     # accumulates one row a day forever.
     ("monitor_report", "Daily monitoring report", "daily",
-     {"time": "02:00"}, {"period": "daily", "email": True, "keep": 90}, "global"),
+     {"time": "02:00"}, {"period": "daily", "email": True, "push_server": True, "keep": 90}, "global"),
     ("monitor_report", "Weekly monitoring report", "weekly",
      {"weekday": 0, "time": "02:10"},
-     {"period": "weekly", "email": True, "keep": 53}, "global"),
+     {"period": "weekly", "email": True, "push_server": True, "keep": 53}, "global"),
     ("monitor_report", "Monthly monitoring report", "monthly",
      {"day": 1, "time": "02:20"},
-     {"period": "monthly", "email": True, "keep": 36}, "global"),
+     {"period": "monthly", "email": True, "push_server": True, "keep": 36}, "global"),
 ]
 
 

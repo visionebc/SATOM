@@ -119,6 +119,7 @@ python3 deploy/stamp_site_assets.py    # cache-busting hashes + version pill
 | [`INSTALL.md`](INSTALL.md) | Requirements, per-distribution packages, preflight, clustering, hardening, uninstall. |
 | [`privilege-model.md`](privilege-model.md) | Which account runs what, the two-command sudo allowlist, the privileged-runner boundary, node trust. |
 | [`safeguards.md`](safeguards.md) | Every protection: what it prevents, where it lives, how to prove it is armed. |
+| [`metrics-architecture.md`](metrics-architecture.md) | Where operational data lives and why: the fleet-scale measurement, aggregated collection, the time-series store, selector dashboards, and the content-addressed source-of-truth store. |
 | [`git-backup-and-outage.md`](git-backup-and-outage.md) | Anti-reset guard, unpushed-commit alert, repository bundles, four-copy recovery. |
 | [`release-pipeline.md`](release-pipeline.md) | How a release is sanitized, secret-scanned, audited and published. |
 | [`release_notes.md`](release_notes.md) | The known/resolved issue corpus behind the upgrade advisor. |

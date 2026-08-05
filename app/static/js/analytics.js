@@ -156,10 +156,22 @@
     var body = el('div', 'an-card-body');
     card.appendChild(body);
 
-    if (data.empty) {
+    if (data.error) {
+      // A failed query is NOT an empty chart. The two look identical on a
+      // canvas and mean opposite things: "nothing is happening" versus "we
+      // cannot see whether anything is happening".
+      var er = el('div', 'an-empty');
+      er.appendChild(el('i', 'bi bi-exclamation-triangle text-danger'));
+      er.appendChild(el('div', null, 'Query failed: ' + data.error));
+      if (data.expr) { er.appendChild(el('code', null, data.expr)); }
+      body.appendChild(er);
+    } else if (data.empty) {
       var e = el('div', 'an-empty');
       e.appendChild(el('i', 'bi bi-slash-circle'));
-      e.appendChild(el('div', null, 'No probe matches this panel’s selection.'));
+      e.appendChild(el('div', null,
+        data.expr ? 'The store has no series matching this expression yet.'
+                  : 'No probe matches this panel’s selection.'));
+      if (data.expr) { e.appendChild(el('code', null, data.expr)); }
       body.appendChild(e);
     } else {
       drawPanel(body, data);
@@ -690,6 +702,9 @@
     setVal(form, 'viz', p.viz);
     setVal(form, 'select_mode', p.select_mode);
     setVal(form, 'rule_kind', p.rule_kind);
+    setVal(form, 'vm_expr', p.vm_expr);
+    setVal(form, 'vm_legend', p.vm_legend);
+    setVal(form, 'vm_unit', p.vm_unit);
     setVal(form, 'rule_match', p.rule_match);
     setVal(form, 'stat_func', p.stat_func);
     setVal(form, 'range_key', p.range_key);
@@ -732,6 +747,7 @@
   function collect(form) {
     var out = {};
     ['title', 'subtitle', 'viz', 'select_mode', 'rule_kind', 'rule_match',
+     'vm_expr', 'vm_legend', 'vm_unit',
      'stat_func', 'range_key', 'width', 'height'].forEach(function (k) {
       var f = form.querySelector('[name=' + k + ']');
       if (f) { out[k] = f.value; }

@@ -8,6 +8,50 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Fleet metrics collection and a local time-series store.** Measured against
+  the live system on 2026-08-05: at the target fleet (60 FortiWeb + 30 FortiADC
+  + 10 FortiAnalyzer, ~750 policies each) the per-probe design needed ~180,000
+  configuration rows, ~56 minutes of device I/O per 3-minute window and ~450 GB
+  in PostgreSQL. Collection is now one scrape per (device, collector) — a single
+  `policy_status` call returns every policy's counters in 14 ms — and samples go
+  to a loopback-only VictoriaMetrics store (`satom-metrics.service`, Apache-2.0,
+  one static binary) that holds the same three months at full resolution in
+  ~8 GB instead of hourly averages in ~450 GB. New page **Monitoring →
+  Collection** shows every target with its own editable interval and last
+  outcome; expensive per-policy collectors run less often and against the top-N
+  policies by live connection rate. New scheduled action `metrics_scrape`.
+  Rationale and the full measurement: `docs/metrics-architecture.md`.
+
+- **Selector-driven dashboards (MetricsQL).** Analytics panels gain a third
+  selection mode that resolves against the store instead of enumerating probe
+  rows — the only mode that works when the series are counted in tens of
+  thousands. Expressions are validated by executing them against the store
+  before they are saved, a failed query renders as an error rather than an empty
+  chart, and gaps stay gaps. New built-in board **Fleet metrics (store)**.
+
+- **Reports read the fleet, and can leave the node.** Period summaries now carry
+  a section computed from the metrics store (min/avg/max per device per metric,
+  policies that were down, collectors that failed) instead of describing only
+  what someone wrote a probe for. `params.push_server=1` uploads the summary to
+  the external backup server as both JSON and text.
+
+### Changed
+
+- **The device source of truth left git.** `reports/<device>/_config.json` was
+  committed hourly; one FortiAnalyzer snapshot is ~8.4 MB and git keeps every
+  byte of every revision, so at fleet scale the repository outgrows the node in
+  weeks. Versioning moved to a content-addressed local store
+  (`data/sot/`, index in PostgreSQL): the hash is the identity, so an unchanged
+  config costs zero bytes, and retention is a policy instead of "forever".
+  History, structural diff and restore stay in System Backup & Restore; blobs
+  ride the existing standby rsync and the backup bundles, and are pushed to the
+  external backup server. `satom-git-publish.timer` is retired and no longer
+  installed; the scheduled `git_bundle` action is retired (the handler remains
+  for manual code-repository bundles). **Git still carries application code**
+  and the update path is unchanged. The live JSON tree moved to `data/reports/`
+  with a compatibility symlink.
+
+
 - **Analytics boards — many series on one chart, over windows up to 90 days.**
   New page under Monitoring → Analytics. Every existing chart in the product is
   bound to a single probe, which cannot answer the comparative question ("how do

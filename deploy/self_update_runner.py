@@ -50,7 +50,7 @@ HEALTH_TIMEOUT = int(os.environ.get("FM_HEALTH_TIMEOUT", "90"))
 UNIT_FILES = (
     "satom.service", "satom-scheduler.service",
     "satom-updater.service", "satom-updater.path",
-    "satom-reconciler.service",
+    "satom-reconciler.service", "satom-metrics.service",
 )
 
 

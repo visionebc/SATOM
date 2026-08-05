@@ -40,7 +40,11 @@ VIZ_KINDS = (
 )
 
 # How a panel picks the probes it draws.
-SELECT_MODES = ("probes", "rule")
+SELECT_MODES = ("probes", "rule", "metricsql")
+# "metricsql" resolves at render time against the node's metrics store: one
+# expression can draw a hundred devices (`satom_box_cpu_pct` or
+# `topk(10, satom_policy_conn_per_sec)`), which is the only selection mode
+# that survives a fleet where enumerating series is not an option.
 
 # Which number a single-value panel (stat/gauge) reports.
 STAT_FUNCS = ("last", "avg", "min", "max", "sum", "healthy_pct")
@@ -139,6 +143,11 @@ class MonitorPanel(db.Model):
     rule_kind = db.Column(db.String(24), nullable=True, default="")
     rule_devices = db.Column(db.String(500), nullable=True, default="")  # csv ids
     rule_match = db.Column(db.String(120), nullable=True, default="")  # name substring
+    # MetricsQL selector for select_mode="metricsql". Stored verbatim and
+    # evaluated by the store, never interpolated into SQL or a shell.
+    vm_expr = db.Column(db.String(500), nullable=True, default="")
+    vm_legend = db.Column(db.String(120), nullable=True, default="")   # label key
+    vm_unit = db.Column(db.String(24), nullable=True, default="")
 
     # Presentation
     range_key = db.Column(db.String(16), nullable=False, default="")   # '' = board
@@ -177,6 +186,9 @@ class MonitorPanel(db.Model):
             "rule_kind": self.rule_kind or "",
             "rule_devices": self.device_list(),
             "rule_match": self.rule_match or "",
+            "vm_expr": self.vm_expr or "",
+            "vm_legend": self.vm_legend or "",
+            "vm_unit": self.vm_unit or "",
             "range_key": self.range_key or "",
             "stat_func": self.stat_func or "last",
             "show_band": bool(self.show_band), "show_v2": bool(self.show_v2),

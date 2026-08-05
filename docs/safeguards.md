@@ -2348,6 +2348,124 @@ that is reported rather than hidden: a row that is not cached carries
 `generated_at = None`, which newest-wins already refuses to prefer, so the
 `cached` test is defence in depth and the harness says so.
 
+## 19. An ADOM shows its own product and nothing else
+
+Adding a fourth product (FortiAuthenticator, 2026-08-05) fired two latent
+defects at once. Neither raised anything; both were visible only by looking at
+a page and counting rows.
+
+**The exclusion filter.** `product_scope.scope_appliance_query` expressed the
+FortiWeb ADOM as *"every device that is not a FortiADC and not a
+FortiAnalyzer"*. A filter written as a list of what to EXCLUDE cannot know
+about a product that did not exist when it was written, so the new appliance
+appeared in the FortiWeb ADOM the moment it was created. The same shape had
+already been written three more times — in the alert engine, in the Certificate
+Manager, and in the plugin sandbox's device selector — and each one leaked the
+same way.
+
+**The hardcoded key set.** The same module recognised products from a literal
+tuple. `'fortiauthenticator'` was not in it, so `session_product()` returned
+`''` inside that ADOM — the value that also means *"a background worker, show
+it everything"*. Every filter in the module became a no-op and the FAC ADOM
+listed all six appliances and all 322 notifications. An unrecognised key does
+not fail closed here; it disables scoping.
+
+The rules that replace them:
+
+* **The key set is DERIVED from the ADOM registry**, `branding.all_adoms()`,
+  and that includes INACTIVE rows. A product declared in the registry is scoped
+  the day it is declared, with no second edit anywhere. Deactivating an ADOM
+  must not make its key unrecognised, or the deactivated product's rows become
+  visible to every session still holding it.
+* **Every filter names what it KEEPS.** A concrete ADOM sees rows stamped with
+  its own key. Only FortiWeb additionally sees the NULL/`''` rows, because it is
+  the one product that predates stamping. A device whose kind matches no
+  registered ADOM is therefore visible in the Global ADOM only — deliberate, and
+  Global is where it stays discoverable.
+* **A caller must not re-declare the product list.** `alerts._product_of`,
+  `cert_manager._product_kind` and `plugin_sandbox._appliance_options` all call
+  `product_scope.concrete_products()`. A test asserts this over the AST, so a
+  comment mentioning the old tuple cannot satisfy it.
+* **An ADOM with no data pipeline reports NOTHING, never another product's
+  numbers.** Metrics used to fall through to the FortiWeb inventory totals for
+  any product it did not name, and printed them under that ADOM's own labels —
+  figures that read as its own.
+
+Guards: `tests/test_product_scope_isolation.py`, parametrised over
+`concrete_products()` rather than a list written in the test, so the next
+product is covered without an edit. An anti-vacuity test fails if that set ever
+comes back empty.
+
+## 20. Trusting a device means naming its CA, not disabling the check
+
+`Appliance.verify_ssl` had exactly two settings: validate against the PUBLIC
+root store, which no privately-signed appliance can ever satisfy, or validate
+nothing. There was nowhere to put the company's own CA. So the fix in this
+project's history is always the same one — `verify_ssl=false` for fadc
+(2026-07-12), for fortiweb08 (2026-07-28), for fac01 (2026-08-05). That is not
+a run of device quirks, it is a missing feature, and its cost is that TLS
+verification is off everywhere including where it would have worked.
+
+`services/trust_store.py` holds the CAs this installation accepts. Four rules
+make it safe rather than merely present:
+
+* **The bundle ADDS to the public roots, it does not replace them.** Handing
+  OpenSSL a CA file replaces certifi wholesale. A real fleet is mixed — some
+  appliances present the company CA, some present the public wildcard the edge
+  renews. A bundle of private CAs alone would break verification for exactly
+  the devices that were already verifiable, which reads as "the trust store
+  broke my fleet".
+* **A bundle that cannot be built falls back to the PUBLIC ROOTS, never to
+  `False`.** A transient database failure must not silently turn off TLS
+  verification fleet-wide. The failure has to stay visible; a downgrade to *no
+  verification* is the one outcome nobody would ever notice.
+* **`verify_ssl=False` is never overruled.** It is an operator decision, and
+  the client layer is not the place to second-guess it.
+* **Only CA certificates are accepted.** OpenSSL will not anchor a chain on a
+  `basicConstraints CA:FALSE` certificate, so importing a device's self-signed
+  *leaf* would appear to succeed and then fail every handshake with an
+  unhelpful error. It is rejected at import, with the reason.
+* **The form has two slots — Root CA and Intermediate CA — but the label is a
+  hint, not a classification.** The role is derived from the certificate
+  itself (`subject == issuer` makes it a root), so a root pasted into the
+  intermediate box is still recorded as a root. If a form field could relabel a
+  trust anchor, the incomplete-chain report below would either invent a gap or
+  hide a real one, and the operator would spend the afternoon debugging the
+  wrong end of the chain. The two slots exist because a single unlabelled
+  textarea does not tell anyone the intermediate belongs there at all; the
+  backend classified them correctly from the first commit, but nothing on the
+  page said so.
+* **Both slots are imported in ONE transaction.** They are concatenated into a
+  single blob before `import_pem` runs, so a chain cannot land half-applied.
+  Importing them one at a time allows the root to succeed and the intermediate
+  to fail — leaving precisely the chain gap this page exists to prevent, with
+  a success message on top of it.
+
+Two things are surfaced rather than left to be discovered at handshake time.
+An **incomplete chain** — an enabled intermediate whose issuer is in neither the
+store nor the public roots — is reported on the page; without that, the device
+fails with *"unable to get issuer certificate"*, a message that points at the
+device rather than at the missing root. And the **per-device probe** separates
+the three causes, because they need three different fixes: an untrusted issuer
+(import a CA), a hostname mismatch (change the appliance Host, or re-issue with
+that name in the SAN), and an expired leaf (re-issue — no CA can rescue it).
+"Verification failed" on its own is not an answer.
+
+Postgres is the source of truth, not a file: the PEM rides the streaming
+replica and the pg_dump bundles. `pki/` is node-local and gitignored, so a CA
+parked there would have to be installed twice by hand and could silently differ
+between the primary and the standby. The on-disk bundle is a derived cache each
+node rebuilds for itself.
+
+Guards: `tests/test_trust_store.py`, including a real TLS listener so the three
+diagnoses are proven against an actual handshake rather than a mocked one, and
+a test that the request path really hands the bundle to httpx — resolving it
+correctly is worthless if `_request` still passes the raw boolean. The label-is-a-hint rule is pinned by a
+test that swaps the two boxes and asserts the stored roles are unchanged, and
+the affordance itself by a test that renders the page and requires the
+intermediate slot to be present — a backend that classifies correctly is no
+use if the operator cannot see where to paste.
+
 ## 11. Known gaps (kept honest, on purpose)
 
 * Per-device configuration restore is dry-run gated — no live canary round-trip yet.
@@ -2375,6 +2493,39 @@ body of the check and confirm no git invocation survives inside it:
 
 And a parked box must be silent: drop the `maintenance` test from the loop and
 `tests/test_health_freshness_and_drift.py` fails.
+
+### An ADOM shows only its own product (19)
+
+Every concrete ADOM must see its own devices and nothing else. Count them per
+ADOM against the live database -- the numbers must partition, and only FortiWeb
+may claim an unscoped row:
+
+    for p in fortiweb fortiadc fortianalyzer fortiauthenticator; do
+      curl -sk -H "X-ADOM: $p" https://<node>/monitoring/data \
+        | python3 -c 'import json,sys; d=json.load(sys.stdin);
+            print(sorted({x["kind"] for x in d.get("devices",[])}))'
+    done
+    # expect exactly one kind per ADOM, each matching the ADOM
+
+The structural half: no caller may re-declare the product list. Reverting
+`alerts._product_of`, `cert_manager._product_kind` or
+`plugin_sandbox._appliance_options` to a literal tuple fails
+`tests/test_product_scope_isolation.py`, and so does hardcoding the key set in
+`product_scope.product_keys()`.
+
+### The trust store adds to the public roots (20)
+
+The bundle must be certifi PLUS the imported CAs -- never the imported CAs
+alone, or every publicly-signed appliance stops verifying:
+
+    python3 -c "import certifi; print(certifi.contents().count('BEGIN CERTIFICATE'))"
+    grep -c 'BEGIN CERTIFICATE' /opt/satom/pki/trust/ca-bundle.pem
+    # the second must exceed the first by exactly the number of enabled CAs
+
+And the failure direction, which is the one that matters: make the bundle
+unbuildable and confirm the answer is the public roots, not "no verification".
+`verify_param()` returning `False` there would disable TLS checking fleet-wide
+in silence -- `tests/test_trust_store.py` fails if it ever does.
 
 ### State that exists only here (4b)
 

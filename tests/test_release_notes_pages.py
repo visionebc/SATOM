@@ -29,6 +29,7 @@ import pathlib
 import re
 import sys
 
+import html as _html
 import pytest
 
 import leak_samples
@@ -138,9 +139,14 @@ def test_hub_teasers_come_from_the_changelog_bullets(grn):
     secs = grn.sections()
     rich = [s for s in secs if s["leads"]]
     assert rich, "no section has a bold lead-in -- the teaser would be empty"
-    html = HUB.read_text(encoding="utf-8")
+    # Unescape before comparing: the renderer turns an apostrophe into
+    # `&#x27;`, so a raw-Markdown substring can never match a correct page.
+    # Narrowing the lead-in instead would let the guard pass on a hub that
+    # dropped the teaser entirely.
+    html = _html.unescape(HUB.read_text(encoding="utf-8"))
     for lead in rich[0]["leads"]:
-        assert lead[:40] in html, f"teaser missing from the hub: {lead[:40]!r}"
+        needle = _html.unescape(lead)[:40]
+        assert needle in html, f"teaser missing from the hub: {needle!r}"
 
 
 def test_subheadings_are_deduplicated(grn):

@@ -25,6 +25,11 @@ os.environ["SATOM_JOBS_DIR"] = f"{_TMPDIR}/jobs"
 # device sync now records a version, so an un-isolated suite would grow REAL
 # blobs under data/sot/ on the production node (the jobs-ledger lesson).
 os.environ["SATOM_SOT_DIR"] = f"{_TMPDIR}/sot"
+# The TLS trust bundle is a FILE the client layer feeds to OpenSSL.
+# Without this redirect a test run rewrites the live installation's
+# pki/trust bundle — the same contamination pytest caused in the job
+# ledger on 2026-07-28.
+os.environ["SATOM_TRUST_DIR"] = f"{_TMPDIR}/trust"
 os.environ.setdefault("FORTINET_REPORTS_DIR", f"{_TMPDIR}/reports")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-prod")
 # A valid Fernet key so models.py encryption helpers import cleanly.

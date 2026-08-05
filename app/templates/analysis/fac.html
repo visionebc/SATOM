@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block title %}Analysis — FortiAuthenticator{% endblock %}
+
+{% block head %}
+<style nonce="{{ csp_nonce }}">
+  .ana-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.75rem;margin-bottom:1.4rem}
+  .ana-card{background:var(--fw-surface,#fff);border:1px solid var(--fw-border,#e3e8f0);border-radius:12px;padding:.85rem 1rem;box-shadow:0 1px 2px rgba(20,30,60,.04)}
+  .ana-card .v{font-size:1.6rem;font-weight:700;line-height:1.1;color:var(--fw-accent,#1f3a8a)}
+  .ana-card .k{font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;opacity:.65;font-weight:600;margin-top:.15rem}
+  .ana-card .s{font-size:.72rem;opacity:.6;margin-top:.2rem}
+  .ana-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:1rem;margin-bottom:1.4rem}
+  .ana-panel{background:var(--fw-surface,#fff);border:1px solid var(--fw-border,#e3e8f0);border-radius:12px;padding:1rem;box-shadow:0 1px 2px rgba(20,30,60,.04)}
+  .ana-panel h3{font-size:.82rem;text-transform:uppercase;letter-spacing:.05em;margin:0 0 .7rem;opacity:.75;font-weight:700}
+  .ana-panel.wide{grid-column:1/-1}
+  .ana-sec{font-size:1rem;font-weight:700;margin:1.6rem 0 .8rem;padding-bottom:.35rem;border-bottom:2px solid var(--fw-border,#e3e8f0);color:var(--fw-accent,#1f3a8a)}
+  table.ana-tbl{width:100%;border-collapse:collapse;font-size:.82rem}
+  table.ana-tbl th{text-align:left;text-transform:uppercase;font-size:.68rem;letter-spacing:.04em;opacity:.6;border-bottom:1px solid var(--fw-border,#e3e8f0);padding:.35rem .5rem}
+  table.ana-tbl td{padding:.35rem .5rem;border-bottom:1px solid var(--fw-border,#f1f4f9)}
+  table.ana-tbl tbody tr:hover{background:var(--fw-surface-alt,#f7f9fd)}
+  .ana-empty{opacity:.55;font-size:.85rem;padding:.6rem}
+  .ana-scroll{max-height:420px;overflow:auto}
+  .facbar{height:10px;border-radius:6px;background:var(--fw-surface-alt,#eef2ff);overflow:hidden;margin-top:.3rem;min-width:90px}
+  .facbar > span{display:block;height:100%;background:var(--fw-gradient-accent,linear-gradient(90deg,#2563eb,#7c3aed))}
+  .fac-none{opacity:.45;font-style:italic}
+  .fac-note{font-size:.8rem;opacity:.75;background:var(--fw-surface-alt,#f7f9fd);border:1px solid var(--fw-border,#e3e8f0);border-left:3px solid var(--fw-accent,#2563eb);border-radius:8px;padding:.6rem .8rem;margin-bottom:1.1rem}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<nav class="fw-breadcrumb"><span>Analysis</span></nav>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1>Analysis — identity</h1>
+    <p class="fw-page-sub">Entitlement headroom, identity inventory and
+      authentication posture across every FortiAuthenticator in this ADOM.
+      Read entirely from the local cache and the metrics store — opening this
+      page never contacts an appliance.</p>
+  </div>
+</div>
+
+{% if not data.devices %}
+  <div class="ana-empty">No FortiAuthenticator appliance is visible in this ADOM.</div>
+{% else %}
+
+{# ---------------------------------------------------------------- headline #}
+{% set ent = data.entitlement %}
+<div class="ana-cards">
+  <div class="ana-card">
+    <div class="v">{{ data.devices|length }}</div>
+    <div class="k">Appliances</div>
+  </div>
+  <div class="ana-card">
+    <div class="v">{{ data.inventory.endpoints_present }}<span style="font-size:.9rem;opacity:.5">/{{ data.inventory.endpoints_known }}</span></div>
+    <div class="k">Endpoints harvested</div>
+    <div class="s">registry-derived</div>
+  </div>
+  <div class="ana-card">
+    <div class="v">{{ data.posture.findings|selectattr('severity','equalto','warn')|list|length }}</div>
+    <div class="k">Posture warnings</div>
+  </div>
+  <div class="ana-card">
+    <div class="v">{{ ent.rows|length if ent.available else '—' }}</div>
+    <div class="k">Capacity series</div>
+    <div class="s">{{ 'metrics store' if ent.available else 'store unavailable' }}</div>
+  </div>
+</div>
+
+{# ------------------------------------------------------------- entitlement #}
+<div class="ana-sec">Entitlement — what this unit runs out of</div>
+<div class="fac-note">
+  An authenticator does not run out of bandwidth, it runs out of licence. These
+  numbers come from the metrics store, not the configuration cache:
+  <code>systeminfo</code> is excluded from the config harvest because it changes
+  between two reads of an idle unit. Grading belongs to the licence/token
+  probes — a row with no probe is <strong>unmonitored</strong>, which is lost
+  coverage, not health.
+</div>
+<div class="ana-panel wide" style="margin-bottom:1.4rem">
+{% if not ent.available %}
+  <div class="ana-empty">Not available — {{ ent.detail or 'unknown reason' }}.
+    No number is shown rather than a zero: “nothing in use” and “we could not
+    ask” are opposite facts.</div>
+{% elif not ent.rows %}
+  <div class="ana-empty">{{ ent.detail }}</div>
+{% else %}
+  <table class="ana-tbl">
+    <thead><tr>
+      <th>Device</th><th>Resource</th><th>Kind</th>
+      <th style="text-align:right">Used</th>
+      <th style="text-align:right">Ceiling</th>
+      <th style="text-align:right">Free</th>
+      <th style="width:160px">Consumed</th><th>Probe</th>
+    </tr></thead>
+    <tbody>
+    {% for r in ent.rows %}
+      <tr>
+        <td><strong>{{ r.device }}</strong></td>
+        <td>{{ r.label }}</td>
+        <td><span class="fw-badge fw-badge-secondary">{{ 'licence' if r.family == 'licence' else 'token' }}</span></td>
+        <td style="text-align:right">{{ r.used|int if r.used is not none else '—' }}</td>
+        <td style="text-align:right">
+          {% if r.capped and r.total %}{{ r.total|int }}{% else %}<span class="fac-none">uncapped</span>{% endif %}
+        </td>
+        <td style="text-align:right">{{ r.free|int if r.free is not none else '—' }}</td>
+        <td>
+          {% if r.capped %}
+            <div class="facbar"><span style="width:{{ r.pct|round(1) }}%"></span></div>
+            <span style="font-size:.72rem;opacity:.7">{{ r.pct|round(1) }} %</span>
+          {% else %}
+            <span class="fac-none">no ceiling — no percentage</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if r.probe_status == 'unmonitored' %}
+            <span class="fw-badge fw-badge-warning">unmonitored</span>
+          {% elif r.probe_status == 'disabled' %}
+            <span class="fw-badge fw-badge-warning">disabled</span>
+          {% elif r.probe_status in ('crit','error') %}
+            <span class="fw-badge fw-badge-danger">{{ r.probe_status }}</span>
+          {% elif r.probe_status == 'warn' %}
+            <span class="fw-badge fw-badge-warning">warn</span>
+          {% elif r.probe_status == 'ok' %}
+            <span class="fw-badge fw-badge-success">ok</span>
+          {% else %}
+            <span class="fw-badge fw-badge-secondary">{{ r.probe_status }}</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
+</div>
+
+{# ----------------------------------------------------------------- posture #}
+<div class="ana-sec">Authentication posture</div>
+<div class="ana-grid">
+  <div class="ana-panel wide">
+    <h3>Findings</h3>
+    {% if not data.posture.findings %}
+      <div class="ana-empty">Nothing to report — none of the settings this page
+        reads are present in the cache yet.</div>
+    {% else %}
+      <table class="ana-tbl">
+        <thead><tr><th style="width:90px">Severity</th><th>Device</th><th>Finding</th><th>Detail</th><th>Source</th></tr></thead>
+        <tbody>
+        {% for f in data.posture.findings %}
+          <tr>
+            <td>
+              {% if f.severity == 'warn' %}<span class="fw-badge fw-badge-warning">warn</span>
+              {% elif f.severity == 'ok' %}<span class="fw-badge fw-badge-success">ok</span>
+              {% else %}<span class="fw-badge fw-badge-secondary">info</span>{% endif %}
+            </td>
+            <td>{{ f.device }}</td>
+            <td><strong>{{ f.title }}</strong></td>
+            <td>{{ f.detail }}</td>
+            <td><code style="font-size:.72rem">{{ f.source }}</code></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+    {% if data.posture.unread %}
+      <div class="ana-empty" style="margin-top:.6rem">
+        Not evaluated ({{ data.posture.unread|length }}):
+        {% for u in data.posture.unread %}<code>{{ u.source }}</code>@{{ u.device }}{{ ', ' if not loop.last }}{% endfor %}
+        — absent from the cache, so no verdict is offered. A default assumed
+        for a setting nobody looked at reads as a fact.
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{# --------------------------------------------------------------- inventory #}
+<div class="ana-sec">Identity inventory</div>
+<div class="ana-panel wide" style="margin-bottom:1.4rem">
+  <div class="ana-scroll">
+  <table class="ana-tbl">
+    <thead><tr>
+      <th>Section</th><th>Object</th>
+      {% for d in data.devices %}<th style="text-align:right">{{ d.name }}</th>{% endfor %}
+      <th style="text-align:right">Total</th>
+    </tr></thead>
+    <tbody>
+    {% for row in data.inventory.rows %}
+      <tr>
+        <td style="opacity:.7">{{ row.section }}</td>
+        <td><strong>{{ row.label }}</strong>
+            <code style="font-size:.7rem;opacity:.5;margin-left:.3rem">{{ row.endpoint }}</code></td>
+        {% for p in row.devices %}
+          <td style="text-align:right">
+            {% if p.harvested %}{{ p.count }}{% else %}<span class="fac-none" title="the sweep stored no rows for this endpoint">not harvested</span>{% endif %}
+          </td>
+        {% endfor %}
+        <td style="text-align:right"><strong>{{ row.total }}</strong></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div class="ana-empty" style="margin-top:.5rem">
+    Rows are derived from the endpoint registry, so an endpoint added in a
+    later release appears here without a second edit. <em>not harvested</em> is
+    deliberately distinct from <em>0</em>: they demand opposite actions.
+  </div>
+</div>
+
+{# -------------------------------------------------------------- freshness #}
+<div class="ana-sec">Cache freshness</div>
+<div class="ana-panel wide">
+  <table class="ana-tbl">
+    <thead><tr><th>Device</th><th>Host</th><th>Config cache</th><th>Age</th><th>State</th></tr></thead>
+    <tbody>
+    {% for r in data.freshness.rows %}
+      <tr>
+        <td><strong>{{ r.device }}</strong></td>
+        <td><code style="font-size:.75rem">{{ r.host }}</code></td>
+        <td>{% if r.cached %}{{ r.generated_at }}{% else %}<span class="fw-badge fw-badge-warning">never</span>{% endif %}</td>
+        <td>{% if r.age_hours is not none %}{{ r.age_hours|round(1) }} h{% else %}—{% endif %}</td>
+        <td>{% if r.maintenance %}<span class="fw-badge fw-badge-secondary">maintenance</span>{% else %}<span class="fw-badge fw-badge-success">active</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endif %}
+{% endblock %}

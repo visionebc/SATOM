@@ -60,8 +60,13 @@ def test_data_feed_shape(client, admin_id):
     assert [k["key"] for k in d["kinds"]] == ["https", "interface", "cpu",
                                               "memory", "proxyd"]
     sm = client.get("/monitoring/services/data").get_json()
+    # The four FortiWeb traffic kinds plus the two FortiAuthenticator identity
+    # kinds (2026-08-06). Pinned as a literal on purpose: deriving it from
+    # dm.API_KINDS would make this assertion agree with any future edit,
+    # including one that drops a kind off both pages.
     assert [k["key"] for k in sm["kinds"]] == ["sessions", "policy_sessions",
-                                               "throughput", "transactions"]
+                                               "throughput", "transactions",
+                                               "licence", "tokens"]
 
 
 def test_create_validates_kind_requirements(client, admin_id):

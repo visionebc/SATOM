@@ -165,7 +165,11 @@
       // close, not a quiet fact.
       var cls = p.status === 'clustered' ? 'fw-badge-success'
               : p.status === 'standalone' ? 'fw-badge-secondary' : 'fw-badge-warning';
+      // A product that cannot be asked explains itself. Telling the operator to
+      // "run a device sync" on a FortiAuthenticator is advice that can never
+      // work — the sync already succeeds and there is no HA object to harvest.
       var why = (p.evidence && p.evidence.length) ? p.evidence.join(' · ')
+              : p.reason ? p.reason
               : (p.status === 'unknown'
                   ? 'no HA data harvested yet — run a device sync'
                   : ('reported by the device' + (p.raw_mode ? ' (mode ' + esc(p.raw_mode) + ')' : '')));

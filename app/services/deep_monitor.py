@@ -56,7 +56,8 @@ from typing import Any
 STATUS_ORDER = {"crit": 0, "error": 1, "warn": 2, "ok": 3, "unknown": 4}
 
 KINDS = ("https", "interface", "cpu", "memory", "proxyd",
-         "sessions", "policy_sessions", "throughput", "transactions")
+         "sessions", "policy_sessions", "throughput", "transactions",
+         "licence", "tokens")
 
 KIND_LABEL = {
     "https": "Service policy (HTTPS)",
@@ -68,7 +69,83 @@ KIND_LABEL = {
     "policy_sessions": "Server-policy sessions & latency",
     "throughput": "HTTP throughput",
     "transactions": "HTTP transactions",
+    "licence": "Licence headroom",
+    "tokens": "FortiToken pool",
 }
+
+#: Which products each kind can actually measure. ONE map, consulted by the
+#: runner, by discovery, by the baseline builder and by the form validator.
+#:
+#: This replaces four independent hardcodes (``API_PRODUCTS``, the "FortiWeb
+#: only" branch in ``ensure_baseline``, the implicit fortiweb+fortiadc reach of
+#: ``run_box``, and the absence of any check at all in ``apply_form``). Four
+#: copies of a product rule is four chances to add a fifth product and cover it
+#: in three places -- exactly how a probe ends up creatable from the form,
+#: refused by the runner, and permanently red on the page.
+#:
+#: An EMPTY tuple means product-agnostic: ``https`` fires a synthetic request at
+#: a URL and never speaks the appliance's API, so it works against anything that
+#: serves HTTP -- including a device SATOM cannot otherwise read.
+KIND_PRODUCTS = {
+    # URL-based; touches no device API.
+    "https":           (),
+    # Reads the harvest cache. FortiAuthenticator is absent on purpose: its
+    # REST surface (58 resources, censused 2026-08-05) exposes NO interface
+    # resource, so there is nothing to cache and nothing to diff.
+    "interface":       ("fortiweb", "fortiadc", "fortianalyzer"),
+    # CPU/memory. FortiWeb and FortiADC answer `get system performance` over
+    # the read-only CLI; FortiAuthenticator does NOT -- VERIFIED live on fac01
+    # (v8.0.3 build0099, 2026-08-05): the CLI replies with the literal string
+    # "No such command.", which parses to nothing and would have graded a
+    # missing reading rather than erroring. FAC therefore reads REST instead
+    # (see :func:`run_box`).
+    # FortiAnalyzer is listed because it was ALREADY in scope before this map
+    # existed: run_box had no product gate at all and ensure_baseline created
+    # cpu/memory rows on every product. Whether that firmware answers
+    # `get system performance` is UNVERIFIED (faz01 has been unreachable since
+    # July), and dropping it here would have removed working coverage on the
+    # strength of an assumption. Narrowing it is a separate decision, with a
+    # live device to test against.
+    "cpu":             ("fortiweb", "fortiadc", "fortianalyzer",
+                        "fortiauthenticator"),
+    "memory":          ("fortiweb", "fortiadc", "fortianalyzer",
+                        "fortiauthenticator"),
+    # `diagnose system top` -- FortiWeb only (also "No such command." on fac01).
+    "proxyd":          ("fortiweb",),
+    # FortiWeb runtime telemetry.
+    "sessions":        ("fortiweb",),
+    "policy_sessions": ("fortiweb",),
+    "throughput":      ("fortiweb",),
+    "transactions":    ("fortiweb",),
+    # FortiAuthenticator runtime telemetry. An identity appliance has no
+    # throughput to measure; what bounds it is how much of its LICENCE and its
+    # token pool are consumed. Both come from one `systeminfo` call.
+    "licence":         ("fortiauthenticator",),
+    "tokens":          ("fortiauthenticator",),
+}
+
+
+def supports(kind: str, product: str | None) -> bool:
+    """Can ``kind`` be measured on ``product``? Unknown kind -> False.
+
+    An empty product tuple means "any device"; an unknown *product* is refused
+    rather than assumed compatible, because a silently-attempted probe against
+    the wrong product reports zeroes and a refusal reports the truth.
+    """
+    prods = KIND_PRODUCTS.get(kind)
+    if prods is None:
+        return False
+    return (not prods) or ((product or "") in prods)
+
+
+def kinds_for(product: str | None) -> tuple:
+    """The kinds measurable on one product, in :data:`KINDS` order."""
+    return tuple(k for k in KINDS if supports(k, product))
+
+
+def products_for(kind: str) -> tuple:
+    """Products supporting ``kind`` (empty tuple == every product)."""
+    return tuple(KIND_PRODUCTS.get(kind) or ())
 
 # Kinds that read the appliance's REST monitor API and never open an SSH
 # session. Two consequences worth knowing:
@@ -83,7 +160,8 @@ KIND_LABEL = {
 #    telemetry under entirely different paths; a shared implementation would
 #    have produced silent zeroes on those products rather than an error, so
 #    discovery refuses to create them and the runner reports ``error``.
-API_KINDS = ("sessions", "policy_sessions", "throughput", "transactions")
+API_KINDS = ("sessions", "policy_sessions", "throughput", "transactions",
+             "licence", "tokens")
 
 #: Default cadence for a newly discovered probe, in minutes.
 #:
@@ -96,7 +174,13 @@ DEFAULT_PROBE_INTERVAL_MIN = 3
 
 #: Endpoints that aggregate over hours are sampled coarsely on purpose.
 SLOW_PROBE_INTERVAL_MIN = 15
-API_PRODUCTS = ("fortiweb",)
+
+#: Every product that owns at least one REST-telemetry kind. Derived, not
+#: listed: adding a kind to :data:`KIND_PRODUCTS` enrols its product here in the
+#: same edit, so the Service Monitor page cannot end up offering a product it
+#: has no kinds for (or hiding one it does).
+API_PRODUCTS = tuple(dict.fromkeys(
+    prod for kind in API_KINDS for prod in KIND_PRODUCTS.get(kind, ())))
 
 # The aggregate pseudo-policies ``policytraffic`` accepts in place of a real
 # policy name (read out of the GUI's throughput widget). In VDOM mode the
@@ -121,6 +205,14 @@ NUM_UNIT = {
     "policy_sessions": "sessions",
     "throughput": "Mbps",
     "transactions": "transactions",
+    # Both FortiAuthenticator kinds grade on PERCENT CONSUMED, not on units
+    # remaining, so the threshold direction matches every other probe in the
+    # product ("at or above is bad"). Grading tokens on "free remaining" would
+    # have inverted the comparison for exactly one row on one page -- a trap for
+    # whoever sets the next threshold. The absolute counts still appear in the
+    # detail line and in the payload.
+    "licence": "% consumed",
+    "tokens": "% consumed",
 }
 
 # Box-level metrics, each its OWN probe kind. They used to ride along inside the
@@ -773,6 +865,13 @@ def run_box(probe, kind: str) -> dict:
                 "payload": {}}
     if probe.appliance is None:
         return {"status": "error", "detail": "probe has no device", "payload": {}}
+    # FortiAuthenticator has no `get system performance` -- VERIFIED live on
+    # fac01 (v8.0.3 build0099): the CLI answers with the literal string
+    # "No such command.", which is a successful SSH round trip carrying no
+    # reading. Parsing it yields None and would have graded a device we simply
+    # asked in the wrong language. Its CPU and memory come over REST instead.
+    if (probe.appliance.kind or "") == "fortiauthenticator":
+        return _run_box_rest(probe, kind)
     try:
         raw = ssh_ops.run_command(probe.appliance, PERF_CMD,
                                   timeout=float(probe.timeout_s or 15))
@@ -1102,22 +1201,32 @@ def classify_transactions(tx: dict, *, warn_num: float, crit_num: float,
 # ---------------------------------------------------------------------------
 
 def _api_client(probe):
-    """Build a FortiWeb client for an API probe, or explain why we cannot.
+    """Build the monitor-API client this probe needs, or explain why we cannot.
 
-    Returns ``(client, error_dict)``. The product gate is explicit rather than
-    an ``AttributeError`` later: FortiADC/FortiAnalyzer answer completely
-    different monitor paths, and a shared client would have reported zeroes
-    instead of "unsupported".
+    Returns ``(client, error_dict)``. The gate is per KIND, not per page: a
+    FortiAuthenticator supports ``licence``/``tokens`` and nothing else, a
+    FortiWeb the four traffic kinds and nothing else, and the refusal names both
+    the kind and the product. Falling through to a shared client would have
+    reported zeroes on a device that merely answers different paths -- and a
+    zero on a monitoring page reads as "idle", not as "asked the wrong box".
     """
     ap = getattr(probe, "appliance", None)
     if ap is None:
         return None, {"status": "error", "detail": "probe has no device",
                       "payload": {}}
-    if (ap.kind or "") not in API_PRODUCTS:
+    kind = getattr(probe, "kind", "") or ""
+    product = ap.kind or ""
+    if not supports(kind, product):
+        allowed = products_for(kind) or ("any product",)
         return None, {"status": "error",
-                      "detail": "monitor API probes support %s only (device is %s)"
-                                % ("/".join(API_PRODUCTS), ap.kind or "unknown"),
-                      "payload": {"product": ap.kind}}
+                      "detail": "%s probes support %s only (device is %s)"
+                                % (KIND_LABEL.get(kind, kind or "monitor API"),
+                                   "/".join(allowed), product or "unknown"),
+                      "payload": {"product": product, "kind": kind}}
+    if product == "fortiauthenticator":
+        from ..clients.fortiauthenticator import FortiAuthenticatorClient
+        return (FortiAuthenticatorClient(ap, timeout=float(probe.timeout_s or 15)),
+                None)
     from ..clients.fortiweb import FortiWebClient
     return FortiWebClient(ap, timeout=float(probe.timeout_s or 15)), None
 
@@ -1270,6 +1379,316 @@ def run_transactions(probe) -> dict:
     }
 
 # ---------------------------------------------------------------------------
+# FortiAuthenticator monitor API — pure parsing / classification
+# ---------------------------------------------------------------------------
+#
+# Everything below reads ONE call: ``GET /api/v1/systeminfo/``. Measured on
+# fac01 at 15-50 ms, and it carries the whole picture -- cpu, memory, disk, the
+# per-feature licence counters, the FortiToken pools and the HA peer serial. A
+# probe per counter would have multiplied round trips for data that is free in
+# aggregate (the lesson already paid for in ``metrics_collect``).
+#
+# Live shape, VERIFIED 2026-08-05 (fac01, FACVMKVM v8.0.3 build0099):
+#
+#     {"cpu": "0%", "memory": "64%", "disk": "0%",
+#      "memory_usage_detail": {"available": "1427344.0 KB",
+#                              "total": "4032452.0 KB",
+#                              "used": "2605108.0 KB"},
+#      "disk_usage_detail":   {"total": "59768832.0 KB", "used": "0.0 KB"},
+#      "users_usage_detail":  {"max": 5, "used": 2},
+#      "groups_usage_detail": {"max": 3, "used": 0},
+#      "fsso_usage_detail":   {"max": 5, "used": 0},
+#      "ssoma_usage_detail":  {"max": 5, "used": 0},
+#      "ftk_usage_detail":    {"populated": 0, "used": 0},
+#      "ftm_usage_detail":    {"populated": 0, "used": 0},
+#      "ha_sn": "", "sn": "FAC-VM0000000000",
+#      "firmware": "FACVMKVM v8.0.3, build0099 (GA)"}
+#
+# Note the two spellings of "how much of it exists": the licence counters use
+# ``max``, the token pools use ``populated``. They are NOT interchangeable --
+# ``max`` is what the licence permits, ``populated`` is what has actually been
+# imported -- so they are read by name, never by position.
+
+#: Licence counters graded by the ``licence`` kind: target -> (field, label).
+FAC_CAPACITY = {
+    "users":  ("users_usage_detail",  "licensed users"),
+    "groups": ("groups_usage_detail", "user groups"),
+    "fsso":   ("fsso_usage_detail",   "FSSO users"),
+    "ssoma":  ("ssoma_usage_detail",  "SSO mobility agents"),
+}
+
+#: Token pools graded by the ``tokens`` kind: target -> (field, label).
+FAC_TOKENS = {
+    "ftm": ("ftm_usage_detail", "FortiToken Mobile"),
+    "ftk": ("ftk_usage_detail", "hardware FortiTokens"),
+}
+
+DEFAULT_FAC_RESOURCE = "users"
+DEFAULT_FAC_TOKEN = "ftm"
+
+_PCT_TEXT = re.compile(r"(?P<v>\d+(?:\.\d+)?)")
+_KB_TEXT = re.compile(r"(?P<v>\d+(?:\.\d+)?)\s*(?P<unit>[KMGT]?B)?", re.I)
+_KB_MULT = {"B": 1, "KB": 1024, "MB": 1024 ** 2,
+            "GB": 1024 ** 3, "TB": 1024 ** 4}
+
+
+def fac_pct(value: Any) -> float | None:
+    """``"64%"`` / ``64`` / ``"64"`` -> ``64.0``; anything else -> ``None``.
+
+    The device sends percentages as SUFFIXED STRINGS. ``float("64%")`` raises,
+    so a naive coercion would have turned every reading into an exception and
+    every exception into an ``error`` sample on a healthy box.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    m = _PCT_TEXT.search(str(value))
+    return float(m.group("v")) if m else None
+
+
+def fac_bytes(value: Any) -> int | None:
+    """``"4032452.0 KB"`` -> bytes. Unit-less numbers are assumed KB, which is
+    what every ``*_usage_detail`` field on this firmware uses."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(float(value) * 1024)
+    m = _KB_TEXT.search(str(value))
+    if not m:
+        return None
+    unit = (m.group("unit") or "KB").upper()
+    return int(float(m.group("v")) * _KB_MULT.get(unit, 1024))
+
+
+def _usage(block: Any, total_key: str) -> dict | None:
+    """Normalise one ``*_usage_detail`` block to ``{used, total, pct}``.
+
+    ``total`` may legitimately be 0 (an unlicensed feature, or a token pool
+    with nothing imported). ``pct`` is then ``None`` -- NOT 0 -- because "none
+    of an empty pool is consumed" and "this feature has no ceiling" are both
+    true and neither is a health reading.
+    """
+    if not isinstance(block, dict):
+        return None
+    used = _i(block.get("used"))
+    total = _i(block.get(total_key))
+    pct = round(used / total * 100.0, 1) if total > 0 else None
+    return {"used": used, "total": total, "pct": pct}
+
+
+def parse_fac_systeminfo(info: Any) -> dict:
+    """``GET /api/v1/systeminfo/`` -> one flat dict every FAC reader shares.
+
+    Single parser on purpose: the ``cpu``/``memory`` probes, the ``licence``
+    and ``tokens`` probes and the ``box``/``capacity`` scrape collectors all
+    consume this. Two parsers would be two places for the vendor's next field
+    rename to be half-fixed.
+
+    The client already unwraps the singleton, but a *collection* shape is
+    tolerated here (first row) so a firmware that starts wrapping this resource
+    degrades to correct rather than to empty.
+    """
+    if isinstance(info, list):
+        info = info[0] if info and isinstance(info[0], dict) else {}
+    if not isinstance(info, dict):
+        info = {}
+    out: dict = {
+        "cpu_busy": fac_pct(info.get("cpu")),
+        "mem_used_pct": fac_pct(info.get("memory")),
+        "disk_used_pct": fac_pct(info.get("disk")),
+        "firmware": str(info.get("firmware") or ""),
+        "sn": str(info.get("sn") or ""),
+        "ha_peer_sn": str(info.get("ha_sn") or ""),
+    }
+    mem = info.get("memory_usage_detail") or {}
+    disk = info.get("disk_usage_detail") or {}
+    out["mem_used_bytes"] = fac_bytes(mem.get("used"))
+    out["mem_total_bytes"] = fac_bytes(mem.get("total"))
+    out["mem_available_bytes"] = fac_bytes(mem.get("available"))
+    out["disk_used_bytes"] = fac_bytes(disk.get("used"))
+    out["disk_total_bytes"] = fac_bytes(disk.get("total"))
+    out["capacity"] = {key: _usage(info.get(field), "max")
+                       for key, (field, _lbl) in FAC_CAPACITY.items()}
+    out["tokens"] = {key: _usage(info.get(field), "populated")
+                     for key, (field, _lbl) in FAC_TOKENS.items()}
+    return out
+
+
+def _grade_pct(pct: float, *, warn_num: float, crit_num: float) -> tuple[str, str]:
+    """Shared threshold ladder for the two FAC kinds. Direction is the same as
+    every other probe in the product: at or above the line is bad. 0 disables."""
+    if crit_num and pct >= crit_num:
+        return "crit", "at or over the critical threshold (%g%%)" % crit_num
+    if warn_num and pct >= warn_num:
+        return "warn", "over the warning threshold (%g%%)" % warn_num
+    return "ok", ""
+
+
+def classify_licence(resource: str, cap: dict | None, *,
+                     warn_num: float, crit_num: float) -> tuple[str, str]:
+    """Grade one licence counter on PERCENT CONSUMED.
+
+    This is the FortiAuthenticator's throughput gauge. An identity appliance
+    does not run out of bandwidth, it runs out of *entitlement*: fac01 ships
+    ``users_usage_detail {max: 5}`` unlicensed, and the 6th user is simply
+    refused authentication.
+
+    A ceiling of 0 is ``unknown``, never ``ok``. It means the device declared
+    no limit for this feature, and reporting an unmeasured feature as healthy
+    is the exact failure the Fleet health badge was rebuilt to stop.
+    """
+    label = FAC_CAPACITY.get(resource, (None, resource))[1]
+    if cap is None:
+        return "error", "device did not report %s usage" % label
+    if cap["total"] <= 0:
+        return "unknown", ("%s: no ceiling reported (%d in use) -- feature "
+                           "unlicensed, or unlimited on this model"
+                           % (label, cap["used"]))
+    pct = cap["pct"] or 0.0
+    status, note = _grade_pct(pct, warn_num=warn_num, crit_num=crit_num)
+    bits = ["%d of %d %s (%.1f%%)" % (cap["used"], cap["total"], label, pct),
+            "%d free" % max(0, cap["total"] - cap["used"])]
+    if note:
+        bits.append(note)
+    return status, "; ".join(bits)
+
+
+def classify_tokens(ttype: str, tok: dict | None, *,
+                    warn_num: float, crit_num: float) -> tuple[str, str]:
+    """Grade one FortiToken pool on PERCENT ASSIGNED.
+
+    Graded in the same direction as everything else even though the operator's
+    worry is the opposite one ("am I running OUT of tokens"): a page where one
+    row's threshold means "at or below" is a page where the next threshold gets
+    set backwards. The free count is in the detail line and in ``value2_num``.
+
+    An empty pool is ``unknown``. Zero imported tokens is a legitimate state on
+    a device that does not use MFA, and 0 % of nothing is not health.
+    """
+    label = FAC_TOKENS.get(ttype, (None, ttype))[1]
+    if tok is None:
+        return "error", "device did not report %s inventory" % label
+    if tok["total"] <= 0:
+        return "unknown", ("no %s loaded on this device -- nothing to assign, "
+                           "so nothing to grade" % label)
+    pct = tok["pct"] or 0.0
+    status, note = _grade_pct(pct, warn_num=warn_num, crit_num=crit_num)
+    bits = ["%d of %d %s assigned (%.1f%%)"
+            % (tok["used"], tok["total"], label, pct),
+            "%d free" % max(0, tok["total"] - tok["used"])]
+    if note:
+        bits.append(note)
+    return status, "; ".join(bits)
+
+
+def _fac_systeminfo(probe):
+    """``(parsed, error_dict)`` -- one systeminfo read, shared by three kinds."""
+    client, err = _api_client(probe)
+    if err:
+        return None, err
+    try:
+        info = client.sys_status()
+    except Exception as exc:  # noqa: BLE001 -- an unreachable box is a result
+        return None, {"status": "crit",
+                      "detail": "monitor API unreachable: %s" % exc,
+                      "payload": {"endpoint": "/api/v1/systeminfo/",
+                                  "error": str(exc)}}
+    return parse_fac_systeminfo(info), None
+
+
+def _run_box_rest(probe, kind: str) -> dict:
+    """CPU / memory for a FortiAuthenticator, read over REST."""
+    meta = BOX_METRICS.get(kind)
+    if not meta:
+        return {"status": "error", "detail": "unknown box metric %r" % kind,
+                "payload": {}}
+    parsed, err = _fac_systeminfo(probe)
+    if err:
+        return err
+    val = parsed.get(meta["key"])
+    if val is None:
+        return {"status": "error",
+                "detail": ("/api/v1/systeminfo/ returned no %s reading -- "
+                           "parsed fields captured in the sample payload"
+                           % meta["label"]),
+                "payload": {"endpoint": "/api/v1/systeminfo/",
+                            "metric": kind, "parsed": parsed}}
+    status, note = _grade_pct(float(val), warn_num=float(probe.warn_pct or 0),
+                              crit_num=float(probe.crit_pct or 0))
+    bits = ["%s %g%%" % (meta["label"], val)]
+    if kind == "memory" and parsed.get("mem_used_bytes"):
+        bits.append("%d MB used of %d MB"
+                    % (parsed["mem_used_bytes"] // (1024 ** 2),
+                       (parsed.get("mem_total_bytes") or 0) // (1024 ** 2)))
+    if note:
+        bits.append(note)
+    return {
+        "status": status, "detail": "; ".join(bits),
+        "value_num": float(val),
+        "value2_num": (parsed.get("disk_used_pct") if kind == "memory" else None),
+        "fingerprint": "",
+        "payload": {"endpoint": "/api/v1/systeminfo/", "metric": kind,
+                    "transport": "rest", "parsed": parsed},
+    }
+
+
+def run_licence(probe) -> dict:
+    """Licence headroom for one counter (users / groups / fsso / ssoma)."""
+    resource = ((probe.target or "").strip().lower() or DEFAULT_FAC_RESOURCE)
+    if resource not in FAC_CAPACITY:
+        return {"status": "error",
+                "detail": "unknown licence counter %r -- pick one of %s"
+                          % (resource, ", ".join(sorted(FAC_CAPACITY))),
+                "payload": {"target": resource,
+                            "choices": sorted(FAC_CAPACITY)}}
+    parsed, err = _fac_systeminfo(probe)
+    if err:
+        return err
+    cap = (parsed.get("capacity") or {}).get(resource)
+    status, detail = classify_licence(
+        resource, cap, warn_num=float(probe.warn_num or 0),
+        crit_num=float(probe.crit_num or 0))
+    return {
+        "status": status, "detail": detail,
+        "value_num": (cap or {}).get("pct"),
+        "value2_num": (cap or {}).get("used"),
+        # The CEILING is in the fingerprint, not just the usage: a relicensing
+        # (5 -> 500 users) is an event worth surfacing in the change strip, and
+        # a percentage alone would show it as a sudden drop in consumption.
+        "fingerprint": sha8("%s:%s" % (resource, (cap or {}).get("total"))),
+        "payload": {"endpoint": "/api/v1/systeminfo/", "target": resource,
+                    "capacity": parsed.get("capacity"),
+                    "sn": parsed.get("sn"), "firmware": parsed.get("firmware")},
+    }
+
+
+def run_tokens(probe) -> dict:
+    """FortiToken pool consumption (ftm / ftk)."""
+    ttype = ((probe.target or "").strip().lower() or DEFAULT_FAC_TOKEN)
+    if ttype not in FAC_TOKENS:
+        return {"status": "error",
+                "detail": "unknown token pool %r -- pick one of %s"
+                          % (ttype, ", ".join(sorted(FAC_TOKENS))),
+                "payload": {"target": ttype, "choices": sorted(FAC_TOKENS)}}
+    parsed, err = _fac_systeminfo(probe)
+    if err:
+        return err
+    tok = (parsed.get("tokens") or {}).get(ttype)
+    status, detail = classify_tokens(
+        ttype, tok, warn_num=float(probe.warn_num or 0),
+        crit_num=float(probe.crit_num or 0))
+    free = (max(0, tok["total"] - tok["used"]) if tok else None)
+    return {
+        "status": status, "detail": detail,
+        "value_num": (tok or {}).get("pct"), "value2_num": free,
+        "fingerprint": sha8("%s:%s" % (ttype, (tok or {}).get("total"))),
+        "payload": {"endpoint": "/api/v1/systeminfo/", "target": ttype,
+                    "tokens": parsed.get("tokens"), "free": free},
+    }
+
+
+# ---------------------------------------------------------------------------
 # Orchestration + persistence
 # ---------------------------------------------------------------------------
 
@@ -1309,8 +1728,23 @@ def run_probe(probe, *, session=None) -> dict:
 
     session = session or db.session
     prev = latest_sample(probe, session=session)
+    product = getattr(getattr(probe, "appliance", None), "kind", "") or ""
     try:
-        if probe.kind == "https":
+        if probe.kind not in KINDS:
+            out = {"status": "error",
+                   "detail": f"unknown probe kind {probe.kind!r}", "payload": {}}
+        # One gate for every kind, before any transport is opened. Without it a
+        # probe the form let you create is a probe the runner answers with a
+        # transport-level exception -- "CLI unreachable", "API unreachable" --
+        # which reads as a broken device rather than an inapplicable check.
+        elif not supports(probe.kind, product):
+            out = {"status": "error",
+                   "detail": "%s is not measurable on %s (supported: %s)"
+                             % (KIND_LABEL.get(probe.kind, probe.kind),
+                                product or "an unknown product",
+                                "/".join(products_for(probe.kind) or ("any",))),
+                   "payload": {"kind": probe.kind, "product": product}}
+        elif probe.kind == "https":
             out = run_https(probe)
         elif probe.kind == "interface":
             out = run_interface(probe, prev)
@@ -1326,6 +1760,10 @@ def run_probe(probe, *, session=None) -> dict:
             out = run_throughput(probe)
         elif probe.kind == "transactions":
             out = run_transactions(probe)
+        elif probe.kind == "licence":
+            out = run_licence(probe)
+        elif probe.kind == "tokens":
+            out = run_tokens(probe)
         else:
             out = {"status": "error",
                    "detail": f"unknown probe kind {probe.kind!r}", "payload": {}}
@@ -1506,10 +1944,13 @@ def discover_api_probes(appliance, *, session=None) -> dict:
     from ..models import MonitorProbe, db
 
     session = session or db.session
-    if (appliance.kind or "fortiweb") not in API_PRODUCTS:
+    product = appliance.kind or "fortiweb"
+    if product not in API_PRODUCTS:
         return {"created": 0, "skipped": 0, "total_targets": 0,
-                "error": "monitor API discovery is %s-only"
-                         % "/".join(API_PRODUCTS)}
+                "error": "monitor API discovery is %s-only (device is %s)"
+                         % ("/".join(API_PRODUCTS), product)}
+    if product == "fortiauthenticator":
+        return _discover_fac_probes(appliance, session=session)
     from ..clients.fortiweb import FortiWebClient
     try:
         rows, error = FortiWebClient(appliance).policy_status()
@@ -1555,6 +1996,91 @@ def discover_api_probes(appliance, *, session=None) -> dict:
     session.commit()
     return {"created": created, "skipped": skipped,
             "total_targets": len(policies)}
+
+
+#: Thresholds stamped on a freshly discovered FAC probe, in percent consumed.
+#: A licence probe created with both levels at 0 is a row that can never say
+#: anything -- and "discovery created 6 probes" would then read as coverage.
+FAC_WARN_PCT = 80.0
+FAC_CRIT_PCT = 95.0
+
+
+def _discover_fac_probes(appliance, *, session=None) -> dict:
+    """Create the FortiAuthenticator monitor probes from ONE live read.
+
+    What gets a probe is decided by what the device actually declares, not by
+    the static list of counters:
+
+    * a licence counter with **no ceiling** (``max == 0``) gets none. It would
+      grade ``unknown`` on every single run, and a permanently non-ok row is
+      how a page teaches its reader to stop looking at it.
+    * a token pool with **nothing imported** gets none, for the same reason --
+      a device that does not use MFA is not a device with a token problem.
+
+    Both exclusions are counted and named in the result, because "we created no
+    probe for FSSO" and "FSSO is fine" are different statements.
+    """
+    from ..models import MonitorProbe, db
+
+    session = session or db.session
+
+    class _P:  # minimal probe-shaped object for the shared client factory
+        kind = "licence"
+        appliance = None
+        timeout_s = 15
+
+    shim = _P()
+    shim.appliance = appliance
+    parsed, err = _fac_systeminfo(shim)
+    if err:
+        return {"created": 0, "skipped": 0, "total_targets": 0,
+                "error": err.get("detail") or "systeminfo read failed"}
+
+    have = {(pr.kind, (pr.target or "").strip().lower()) for pr in
+            session.query(MonitorProbe)
+            .filter(MonitorProbe.appliance_id == appliance.id).all()}
+    created, skipped, absent = 0, 0, []
+
+    def add(kind: str, target: str, label: str, note: str) -> None:
+        nonlocal created, skipped
+        key = (kind, target.strip().lower())
+        if key in have:
+            skipped += 1
+            return
+        session.add(MonitorProbe(
+            appliance_id=appliance.id, kind=kind, target=target[:120],
+            name=("%s · %s" % (appliance.name, label))[:120],
+            enabled=True, interval_min=DEFAULT_PROBE_INTERVAL_MIN,
+            warn_num=FAC_WARN_PCT, crit_num=FAC_CRIT_PCT, note=note[:250]))
+        have.add(key)
+        created += 1
+
+    capacity = parsed.get("capacity") or {}
+    for key, (_field, label) in sorted(FAC_CAPACITY.items()):
+        cap = capacity.get(key)
+        if not cap or cap["total"] <= 0:
+            absent.append("%s (no ceiling reported)" % label)
+            continue
+        add("licence", key, "%s licence" % label,
+            "Percent of the %s entitlement consumed (%d licensed)"
+            % (label, cap["total"]))
+
+    tokens = parsed.get("tokens") or {}
+    for key, (_field, label) in sorted(FAC_TOKENS.items()):
+        tok = tokens.get(key)
+        if not tok or tok["total"] <= 0:
+            absent.append("%s (none imported)" % label)
+            continue
+        add("tokens", key, "%s pool" % label,
+            "Percent of the %s pool assigned (%d imported)"
+            % (label, tok["total"]))
+
+    session.commit()
+    return {"created": created, "skipped": skipped,
+            "total_targets": created + skipped + len(absent),
+            "not_applicable": absent,
+            "detail": ("no probe created for: %s" % "; ".join(absent))
+                      if absent else ""}
 
 
 def discover_https_probes(appliance, *, session=None) -> dict:
@@ -1603,6 +2129,15 @@ def discover_interface_probes(appliance, *, session=None) -> dict:
     from ..models import MonitorProbe, db
 
     session = session or db.session
+    # Refuse before reading the cache. An empty cache and "this product has no
+    # interface resource at all" both yield zero rows, and only one of them is
+    # worth an operator's time.
+    if not supports("interface", appliance.kind or "fortiweb"):
+        return {"created": 0, "skipped": 0, "total_targets": 0,
+                "error": ("interface probes support %s only (device is %s) -- "
+                          "this product exposes no interface resource to watch"
+                          % ("/".join(products_for("interface")),
+                             appliance.kind or "unknown"))}
     try:
         rows = (interface_inventory.merged(appliance, session=session)
                 .get("interfaces") or [])
@@ -1643,14 +2178,20 @@ def ensure_baseline(appliance, *, session=None) -> dict:
     from ..models import MonitorProbe, db
 
     session = session or db.session
+    product = appliance.kind or "fortiweb"
     made = []
-    wanted = [("interface", f"{appliance.name} · interfaces",
-               SLOW_PROBE_INTERVAL_MIN),
-              ("cpu", f"{appliance.name} · CPU", DEFAULT_PROBE_INTERVAL_MIN),
-              ("memory", f"{appliance.name} · memory", DEFAULT_PROBE_INTERVAL_MIN)]
-    if (appliance.kind or "fortiweb") == "fortiweb":
-        wanted.append(("proxyd", f"{appliance.name} · proxyd",
-                       DEFAULT_PROBE_INTERVAL_MIN))
+    # Derived from KIND_PRODUCTS, not from a second product list. The old code
+    # carried its own "fortiweb only" branch for proxyd and silently assumed
+    # every other product could answer interfaces, CPU and memory -- which put
+    # three permanently-erroring rows on a FortiAuthenticator the moment one
+    # was onboarded.
+    wanted = [(kind, f"{appliance.name} · {label}", interval)
+              for kind, label, interval in (
+                  ("interface", "interfaces", SLOW_PROBE_INTERVAL_MIN),
+                  ("cpu", "CPU", DEFAULT_PROBE_INTERVAL_MIN),
+                  ("memory", "memory", DEFAULT_PROBE_INTERVAL_MIN),
+                  ("proxyd", "proxyd", DEFAULT_PROBE_INTERVAL_MIN))
+              if supports(kind, product)]
     for kind, name, interval in wanted:
         exists = (session.query(MonitorProbe)
                   .filter(MonitorProbe.appliance_id == appliance.id,
@@ -1754,6 +2295,13 @@ METRIC_META = {
                    "v2_label": "Throughput (peak)", "v2_unit": "Mbps"},
     "transactions": {"label": "Transactions in window", "unit": "",
                      "v2_label": "Latest bucket", "v2_unit": ""},
+    # Percent on the primary axis, the ABSOLUTE count on the secondary: "80 %
+    # consumed" answers "should I worry", "4 of 5" answers "of what". They do
+    # not share a unit, so they do not share an axis.
+    "licence": {"label": "Licence consumed", "unit": "%",
+                "v2_label": "In use", "v2_unit": ""},
+    "tokens": {"label": "Pool assigned", "unit": "%",
+               "v2_label": "Tokens free", "v2_unit": ""},
 }
 
 

@@ -1,0 +1,26 @@
+# Hand-curated corrections layered ON TOP of what `lego dnshelp` reports.
+# The generator merges this file — it is the ONLY place a human edits.
+#
+# Why it exists: `dnshelp` splits a provider's variables into "Credentials"
+# and "Additional Configuration", and the split is not always about secrecy.
+# httpreq's basic-auth user/password sit under "Additional Configuration"
+# even though they ARE the credentials; `exec` documents EXEC_PATH only on
+# the website. Anything listed here is added to (or overrides) the generated
+# field list by `env`.
+version: 1
+
+# Providers that must never reach the catalog, with the reason.
+deny:
+  # Interactive: it prints the TXT record and waits on stdin. In a service the
+  # subprocess would block until the signing timeout with no way to answer.
+  manual: "interactive only — would hang the signing subprocess"
+
+# slug -> extra/overriding fields (matched by `env`)
+extend:
+  exec:
+    - {env: EXEC_PATH, label: "Path to the script that adds/removes the TXT record", required: true}
+    - {env: EXEC_MODE, label: "Set to RAW to pass the raw challenge values to the script"}
+    - {env: EXEC_PROPAGATION_TIMEOUT, label: "Max wait for DNS propagation, seconds"}
+  httpreq:
+    - {env: HTTPREQ_USERNAME, label: "Basic authentication username"}
+    - {env: HTTPREQ_PASSWORD, label: "Basic authentication password", secret: true}

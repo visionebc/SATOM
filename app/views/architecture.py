@@ -8,6 +8,7 @@ from flask_login import login_required, current_user
 from ..models import Appliance, visible_appliances, visible_appliance_or_404
 from ..services import device_context
 from ..services import user_settings_store as _ustore
+from ..services.product_scope import concrete_products
 
 bp = Blueprint('architecture', __name__, url_prefix='/architecture')
 
@@ -87,12 +88,18 @@ def select(id):
     # A device belongs to its own ADOM — never land it on a FortiWeb page
     # (the product gate would bounce it anyway). Same rule for every product.
     _home = {'fortiadc': ('/adc', 'adc.index'),
-             'fortianalyzer': ('/faz', 'faz.index')}.get(kind)
+             'fortianalyzer': ('/faz', 'faz.index'),
+             'fortiauthenticator': ('/fac', 'fac.index')}.get(kind)
     if _home:
         prefix, endpoint = _home
         if nxt and nxt.startswith(prefix):
             return redirect(nxt)
         return redirect(url_for(endpoint))
+    # A registered product with no console of its own yet: enter ITS ADOM
+    # rather than falling through to the FortiWeb workspace. Without this the
+    # fallthrough is silent and lands the operator on another product's page.
+    if kind != 'fortiweb' and kind in concrete_products():
+        return redirect(url_for('product.enter', key=kind))
     if nxt and nxt.startswith('/'):
         return redirect(nxt)
     return redirect(url_for('workspace.index'))

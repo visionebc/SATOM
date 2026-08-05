@@ -319,6 +319,25 @@ def test_report_push_targets_the_backup_server_reports_dir(app, monkeypatch):
     assert all(d.endswith("/reports") for _n, d in calls)
 
 
+def test_footer_no_data_note_keys_off_points_not_health():
+    """Store panels carry no health concept, so a healthy_pct test printed
+    "no data in this window" underneath seventeen plotted points — the footer
+    contradicting the chart above it. Caught by rendering, not by reading."""
+    js = (REPO / "app" / "static" / "js" / "analytics.js").read_text()
+    i = js.index("function footNode")
+    # Bound the window at the NEXT function, not by a character count: a fixed
+    # window ran past footNode into code that mentions healthy_pct for good
+    # reasons, and the guard failed on correct source.
+    j = js.index("\n  function ", i + 1)
+    # Strip comments before asserting: the comment that EXPLAINS this guard
+    # names healthy_pct, so a raw substring test matches its own rationale and
+    # fails on correct source. Assert against code, never against prose.
+    body = "\n".join(l for l in js[i:j].splitlines()
+                     if not l.strip().startswith("//"))
+    assert "summary && s.summary.points" in body
+    assert "healthy_pct" not in body
+
+
 # ── the store is never exposed ───────────────────────────────────────────────
 
 def test_metrics_unit_binds_loopback_only():

@@ -4,6 +4,43 @@ All notable changes to SATOM are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/). This is a public,
 source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
+## [Unreleased]
+
+_Nothing yet._
+
+## [1.4.1] - 2026-08-05
+
+### Fixed
+
+- **The installation page was answering a question about the appliances.**
+  1.4.0 split Fleet health into SATOM health and Device health but left the
+  *device* HA counter on SATOM health. Nothing about the number was wrong — one
+  appliance, standalone, confirmed against the box itself — and it was still a
+  false statement, because a page headed *"this installation"* reading
+  `0 clustered · 1 standalone` says the installation is a single node. It was a
+  two-node pair with live streaming replication, and the manager's own posture
+  was a grey one-line note underneath. The rows moved to Device health, where
+  they are built from `visible_appliances()` rather than the unscoped
+  `Appliance.query` they used before — on a page every ADOM can reach, the old
+  query would have listed the FortiADCs to the FortiWeb ADOM. The manager feed
+  now carries no device key at all.
+
+- **SATOM health states its own HA posture.** The installation is reported as
+  `clustered` / `standalone` / `unknown` with the same badge and the same
+  evidence rule the appliances get. The verdict comes from peer facts (nodes
+  registered, hot standby present, streaming replication live), not from the
+  `mode` switch: a node left on `standalone` while a replica streams is still a
+  pair, and reading the switch would report it as single. A probe that could not
+  count nodes is `unknown`, never `standalone`. Split-brain is its own badge.
+
+### Changed
+
+- The HA pill on both pages uses the product's own `fw-badge` set instead of a
+  local palette, so cluster state reads like every other status in the console.
+- Device cards show a derived HA chip when the harvest says the box is
+  clustered. The chip previously came from the appliance form's `ha_mode`
+  column, which nothing else writes and which was empty on the whole fleet.
+
 ## [1.4.0] - 2026-08-05
 
 ### Added

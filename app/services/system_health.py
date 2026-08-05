@@ -15,7 +15,7 @@ from pathlib import Path
 
 from sqlalchemy import text as sa_text
 
-from ..models import db, Appliance
+from ..models import db
 
 #: Units whose state the Monitoring page reports.
 #:
@@ -210,28 +210,33 @@ def _manager_summary() -> dict:
 
 
 def redundancy() -> dict:
-    """Device HA posture + the manager's own redundancy.
+    """The MANAGER's own redundancy. Appliance HA lives on Device health.
 
-    Until 2026-08-05 the device half read ``Appliance.members`` and nothing
-    else. That table is written ONLY by the appliance form, so on a fleet whose
-    harvest had ``system_ha`` cached for every box the panel rendered
-    *"No HA clusters registered"* and threw away the standalone count it had
-    just computed. ``ha_inventory`` derives the posture from the cache, which is
-    where the truth already was.
+    This function feeds ``/monitoring/satom`` — "this installation". It used to
+    carry the per-appliance HA posture too, and that was the defect: a counter
+    reading ``0 clustered · 1 standalone`` on a page about the installation says
+    SATOM is a single node, when SATOM was a two-node streaming pair and the
+    number described the *appliances*. Right number, wrong page.
+
+    Two reasons the device half moved to ``/monitoring/data`` rather than merely
+    being hidden here:
+
+    * **Scope.** It was built from an unscoped ``Appliance.query``. Rendered on a
+      page that every ADOM can reach, that leaks FortiADC boxes into the FortiWeb
+      ADOM — the exact contract §9c exists to hold.
+    * **Cost.** The device feed already walks every visible appliance; the
+      manager feed has no reason to walk any.
+
+    ``manager_posture`` states the installation's own HA in the same
+    clustered/standalone/unknown vocabulary the device rows use, so the two
+    pages can be read with one set of eyes.
     """
-    devices, clusters = [], []
-    counts = {"clustered": 0, "standalone": 0, "unknown": 0}
+    summary = _manager_summary()
+    posture = {"status": "unknown", "mode": "", "role": "", "evidence": [],
+               "note": summary.get("note", ""), "split_brain": False}
     try:
         from . import ha_inventory
-        roll = ha_inventory.fleet(Appliance.query.order_by(Appliance.name).all())
-        devices, clusters, counts = roll["devices"], roll["clusters"], roll["counts"]
+        posture = ha_inventory.manager_posture(summary)
     except Exception:
         pass
-    return {
-        "device_clusters": clusters,
-        "device_posture": devices,
-        "device_counts": counts,
-        # Kept for API compatibility with anything reading the old key.
-        "device_standalone": counts.get("standalone", 0),
-        "manager": _manager_summary(),
-    }
+    return {"manager": summary, "manager_posture": posture}

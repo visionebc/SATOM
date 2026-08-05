@@ -334,6 +334,7 @@
             <i class="bi bi-clipboard-check fw-nav-icon"></i><span>Audit Log</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'capacity' else '' }}" href="{{ url_for('capacity.index') }}">
             <i class="bi bi-speedometer2 fw-nav-icon"></i><span>Capacity Limits</span></a>
+          {% include "partials/nav_collection.html" %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' else '' }}" href="{{ url_for('database.index') }}">
             <i class="bi bi-hdd fw-nav-icon"></i><span>Database</span></a>
           <a class="fw-nav-item {{ 'active' if request.endpoint == 'database.py_console_page' else '' }}" href="{{ url_for('database.py_console_page') }}">
@@ -396,6 +397,7 @@
             <i class="bi bi-server fw-nav-icon"></i><span>Appliances</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'audit' else '' }}" href="{{ url_for('audit.index') }}">
             <i class="bi bi-clipboard-check fw-nav-icon"></i><span>Audit Log</span></a>
+          {% include "partials/nav_collection.html" %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'users' else '' }}" href="{{ url_for('users.index') }}">
             <i class="bi bi-people fw-nav-icon"></i><span>Users</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'appids' else '' }}" href="{{ url_for('appids.index') }}">
@@ -489,6 +491,7 @@
             <i class="bi bi-server fw-nav-icon"></i><span>Appliances</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'audit' else '' }}" href="{{ url_for('audit.index') }}">
             <i class="bi bi-clipboard-check fw-nav-icon"></i><span>Audit Log</span></a>
+          {% include "partials/nav_collection.html" %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'firmware' else '' }}" href="{{ url_for('firmware.index', _adom='fortianalyzer') }}">
             <i class="bi bi-cpu fw-nav-icon"></i><span>Firmware</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'segments' else '' }}" href="{{ url_for('segments.index') }}">
@@ -792,6 +795,7 @@
             <i class="bi bi-clipboard-check fw-nav-icon"></i><span>Audit Log</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'capacity' else '' }}" href="{{ url_for('capacity.index') }}">
             <i class="bi bi-speedometer2 fw-nav-icon"></i><span>Capacity Limits</span></a>
+          {% include "partials/nav_collection.html" %}
           <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('firmware.') else '' }}"
              href="{{ url_for('firmware.index') }}">
             <i class="bi bi-hdd-stack fw-nav-icon"></i><span>Firmware</span></a>

@@ -1,0 +1,20 @@
+{# ============================================================================
+   Metrics Collection — Administrator entry. ONE definition, four call sites
+   (Global, FortiWeb, FortiADC, FortiAnalyzer). Moved out of Monitoring on
+   2026-08-05 at the operator's request.
+
+   Why it belongs under Administrator: every other Monitoring entry *displays* a
+   measurement; this one *configures* how measurement happens (which device x
+   collector pairs run, how often, how many policies deep) and is gated on
+   CONFIG_WRITE to change anything. It sits next to Capacity Limits, which is
+   the same kind of knob.
+
+   Why a partial and not four inline copies: the four Administrator blocks in
+   base.html have already drifted once — one of them is even titled
+   "Administration". A shared partial is the only thing that keeps an entry from
+   being added to Global and forgotten in the other three, and
+   tests/test_nav_collection.py fails if any Administrator block stops
+   including it.
+   ========================================================================= #}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics_admin' else '' }}" href="{{ url_for('metrics_admin.index', _adom=product.key) }}">
+  <i class="bi bi-cloud-download fw-nav-icon"></i><span>Collection</span></a>

@@ -189,8 +189,11 @@ def test_fleet_health_page_hides_manager_sections_in_an_adom(client, admin_id, a
 
 
 def test_fleet_health_page_keeps_manager_sections_in_global(client, admin_id):
+    """2026-08-05: the manager sections moved to their OWN page (SATOM health).
+    The property under test is unchanged -- they exist in Global and nowhere
+    else -- but the page that carries them is /monitoring/satom now."""
     login(client, admin_id, product="global")
-    body = client.get("/monitoring/",
+    body = client.get("/monitoring/satom",
                       headers={"X-ADOM": "global"}).get_data(as_text=True)
     assert "Infrastructure health" in body
     assert "Encryption in transit" in body

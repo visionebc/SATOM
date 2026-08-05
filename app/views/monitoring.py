@@ -6,7 +6,8 @@ local /proc probes) — a page load never touches an appliance.
 """
 from __future__ import annotations
 
-from flask import Blueprint, render_template, request, jsonify, current_app, url_for
+from flask import (Blueprint, render_template, request, jsonify, current_app,
+                   redirect, url_for)
 from flask_login import login_required, current_user
 
 from ..auth.decorators import require_permission
@@ -127,6 +128,13 @@ def _payload() -> dict:
 @bp.route('/')
 @login_required
 def index():
+    """Device health — appliance cards, capacity guardrails, health alerts.
+
+    Split from manager self-health on 2026-08-05. The two answer different
+    questions ("are the appliances healthy?" vs "is this SATOM installation
+    healthy?") for different readers, and only the second is Global-only. One
+    page had to hide half of itself in every product ADOM.
+    """
     try:
         can_scan = current_user.can(Permission.CONFIG_WRITE)
     except Exception:
@@ -135,10 +143,47 @@ def index():
                            is_global=_global_adom())
 
 
+@bp.route('/satom')
+@login_required
+def satom():
+    """SATOM health — this installation: nodes, DB, units, redundancy, crypto.
+
+    Global ADOM only, enforced here and not merely hidden in the template: the
+    sections name node hostnames and infrastructure addresses, which is exactly
+    what a product ADOM must not leak (same contract as /infra and /encryption).
+    """
+    if not _global_adom():
+        from ..services.product_scope import session_product
+        return redirect(url_for('monitoring.index',
+                                _adom=session_product() or 'global'))
+    return render_template('monitoring/satom.html')
+
+
 @bp.route('/data')
 @login_required
 def data():
     return jsonify(_payload())
+
+
+@bp.route('/satom-data')
+@login_required
+def satom_data():
+    """Manager self-health only — no device cards.
+
+    A separate feed rather than a flag on /data: the SATOM health page has no
+    use for the per-device capacity roll-up, and computing it would make a
+    manager page pay for work it never renders.
+    """
+    if not _global_adom():
+        return jsonify({"error": "global ADOM only"}), 403
+    from ..services import system_health as shealth
+    return jsonify({
+        'scope': 'global',
+        'system': shealth.host_stats(),
+        'services': shealth.service_status(),
+        'db': shealth.db_stats(),
+        'redundancy': shealth.redundancy(),
+    })
 
 
 def _run_hw_scan(app, job_id, ids, user_id, uname, link, product=""):

@@ -46,6 +46,16 @@
   .mon-why .tx { color:#cbd5e1; }
   .mon-why .r-crit .tx { color:#fca5a5; } .mon-why .r-warn .tx { color:#fcd34d; }
   .mon-why .r-unknown .tx { color:#94a3b8; }
+  /* HA posture rows. Moved here from /monitoring/satom on 2026-08-05: a device
+     counter on the installation page is read as a claim about the installation.
+     The pill uses the product's own .fw-badge set rather than a local palette —
+     one badge vocabulary across the console.
+     NOTE: this block ships to the browser, so it must not contain a phrase the
+     ADOM leak guards forbid (that is how this comment failed its first run). */
+  .ha-row { display:flex; justify-content:space-between; align-items:flex-start; gap:10px;
+            font-size:.82rem; padding:6px 0; border-bottom:1px dashed rgba(148,163,184,.14); }
+  .ha-row:last-child { border-bottom:0; }
+  .ha-row .why { font-size:.72rem; color:var(--fw-text-muted, #6B7280); margin-top:2px; }
 </style>
 
 <div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
@@ -68,6 +78,9 @@
 
 <div class="mon-sec-title"><i class="bi bi-hdd-rack me-1"></i>Device health &amp; capacity</div>
 <div class="mon-grid" id="monDevices"></div>
+
+<div class="mon-sec-title"><i class="bi bi-diagram-2 me-1"></i>Device HA posture</div>
+<div class="fw-card"><div class="fw-card-body" id="monHaPosture"></div></div>
 
 
 <script nonce="{{ csp_nonce }}">
@@ -139,6 +152,40 @@
     }).join('') + '</div>';
   }
 
+  function renderHaPosture(d) {
+    // One row per appliance, derived from the harvest cache — never a bare
+    // "no clusters registered", which is what the old panel printed whenever
+    // the manual members table was empty (i.e. always: nothing writes it but
+    // the appliance form).
+    var box = document.getElementById('monHaPosture');
+    if (!box) return;
+    var ha = d.ha || {}, rows = ha.posture || [], cnt = ha.counts || {};
+    var body = rows.map(function (p) {
+      // 'unknown' is amber, not grey: not having measured a box is a gap to
+      // close, not a quiet fact.
+      var cls = p.status === 'clustered' ? 'fw-badge-success'
+              : p.status === 'standalone' ? 'fw-badge-secondary' : 'fw-badge-warning';
+      var why = (p.evidence && p.evidence.length) ? p.evidence.join(' · ')
+              : (p.status === 'unknown'
+                  ? 'no HA data harvested yet — run a device sync'
+                  : ('reported by the device' + (p.raw_mode ? ' (mode ' + esc(p.raw_mode) + ')' : '')));
+      var mem = (p.members || []).map(function (m) {
+        return esc(m.name) + (m.role ? ' [' + esc(m.role) + ']' : '');
+      }).join(', ');
+      return '<div class="ha-row"><span><i class="bi bi-hdd-rack me-1"></i><b>' + esc(p.name) + '</b> ' +
+        '<span class="text-muted">(' + esc(p.kind) + (p.maintenance ? ' · maintenance' : '') + ')</span>' +
+        '<div class="why">' + esc(why) + (mem ? ' — members: ' + mem : '') +
+        (p.vip ? ' — VIP ' + esc(p.vip) : '') + '</div></span>' +
+        '<span class="fw-badge ' + cls + '">' + esc(p.mode || p.status) + '</span></div>';
+    }).join('');
+    var summary = '<div class="text-muted small mb-2">' +
+      (cnt.clustered || 0) + ' clustered · ' + (cnt.standalone || 0) + ' standalone · ' +
+      (cnt.unknown || 0) + ' unknown</div>';
+    box.innerHTML = rows.length
+      ? summary + body
+      : '<div class="text-muted small">No appliances registered.</div>';
+  }
+
   function renderDevices(d) {
     var html = d.devices.map(function (dev) {
       // Same card chrome as the Infrastructure section: dot + icon + name + status badge,
@@ -150,7 +197,11 @@
       var meta = [esc((dev.kind || 'fortiweb').toUpperCase())];
       if (dev.model) meta.push(esc(dev.model));
       if (dev.firmware) meta.push(esc(dev.firmware));
+      // Manual entry wins when an operator typed it; otherwise fall back to the
+      // harvested posture, and only when it says something worth a chip —
+      // "HA standalone" on every card is noise, a cluster is news.
       if (dev.ha_mode) meta.push('HA ' + esc(dev.ha_mode) + (dev.ha_role ? ' · ' + esc(dev.ha_role) : ''));
+      else if (dev.ha && dev.ha.status === 'clustered') meta.push('HA ' + esc(dev.ha.mode || 'clustered'));
       var hw = hwText(dev.hw);
       if (hw) meta.push(hw);
       if (dev.maintenance) meta.push('maintenance');
@@ -178,7 +229,7 @@
     fetch('{{ url_for("monitoring.data") }}', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        renderHealthAlerts(d); renderAlerts(d); renderDevices(d);
+        renderHealthAlerts(d); renderAlerts(d); renderDevices(d); renderHaPosture(d);
         document.getElementById('monStamp').textContent =
           'updated ' + new Date().toLocaleTimeString() +
           ' · warn ≥ ' + d.thresholds.warn + '% · crit ≥ ' + d.thresholds.crit + '%';

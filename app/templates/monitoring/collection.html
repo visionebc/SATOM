@@ -30,7 +30,7 @@
   <div class="card-header"><strong><i class="bi bi-collection me-1"></i>Scrape targets</strong></div>
   <div class="card-body">
     {% if not targets %}
-      <div class="alert alert-secondary small mb-0">No targets yet — they are auto-provisioned for every live appliance on the next sweep (scheduled action <code>metrics_scrape</code>, or the button above).</div>
+      <div class="alert alert-secondary small mb-0">No targets yet — they are provisioned when an appliance is saved, and again on every sweep (scheduled action <code>metrics_scrape</code>, or the button above).</div>
     {% else %}
     <table class="table table-sm table-hover align-middle mb-2">
       <thead><tr>
@@ -86,6 +86,20 @@
       </tbody>
     </table>
     <p class="text-muted small mb-0">Cost tiers: <em>box / policies / interfaces</em> are one call per device (cheap — safe at 3 min for a whole fleet). <em>traffic / transactions</em> are one call <strong>per policy</strong>, so they run less often and only against the top-N policies by live connection rate. The device total is always collected.</p>
+    {% endif %}
+
+    {# Absence is not health: a device that yields no targets would otherwise
+       appear nowhere on this page and read as covered. #}
+    {% if gaps %}
+    <div class="alert alert-warning small mt-3 mb-0">
+      <strong><i class="bi bi-exclamation-triangle me-1"></i>{{ gaps|length }} device(s) with no collection</strong>
+      <ul class="mb-0 mt-1">
+        {% for g in gaps %}
+        <li><span class="font-monospace">{{ g.name }}</span>
+            <span class="text-muted">({{ g.kind }})</span> — {{ g.reason }}</li>
+        {% endfor %}
+      </ul>
+    </div>
     {% endif %}
   </div>
 </div>

@@ -52,6 +52,33 @@ from ..branding import live_products as _live_products  # noqa: E402
 
 _PRODUCTS = _live_products("firmware")
 
+#: The two artefact families Fortinet publishes. Ordered: the default first.
+IMAGE_KINDS = ("upgrade", "install")
+IMAGE_KIND_LABELS = {
+    "upgrade": "Upgrade — apply to a running appliance",
+    "install": "Install — build a new machine from nothing",
+}
+#: Install images are per-hypervisor; upgrade images are not.
+INSTALL_HYPERVISORS = ("kvm", "vmware")
+HYPERVISOR_LABELS = {"kvm": "KVM / Proxmox (.qcow2)",
+                     "vmware": "VMware ESXi (.ovf / .ova)"}
+#: Install media are NOT ``.out``. A FortiWeb VM install ships as a zip of an
+#: OVF plus VMDKs, or as a qcow2; a FortiADC install image is a qcow2 too.
+#: Rejecting them because the upgrade path only ever saw ``.out`` is what made
+#: this page structurally unable to hold install media at all.
+_INSTALL_EXT = {".out", ".zip", ".qcow2", ".ova", ".ovf", ".vmdk", ".img",
+                ".gz", ".tgz"}
+
+
+def allowed_ext(image_kind: str) -> set:
+    """Extensions accepted for a given artefact family.
+
+    Kept a function rather than a dict lookup at the call site so both upload
+    paths (multipart and resumable) cannot drift apart — they already had two
+    copies of the same hardcoded ``.out`` check.
+    """
+    return set(_INSTALL_EXT) if image_kind == "install" else set(_ALLOWED_EXT)
+
 
 def _firmware_root() -> str:
     """Directory holding firmware folders.
@@ -137,12 +164,25 @@ def _finalize_upload(app, job_id: str, image_id: int, dest_path: str,
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def index():
-    images = FirmwareImage.query.order_by(FirmwareImage.created_at.desc()).all()
+    # ADOM scoping. This is applied on the QUERY, not in the template: a
+    # hidden row is still a row the page fetched, and the JSON/partial callers
+    # would keep leaking it. Global sees everything; a concrete ADOM sees only
+    # its own product's images.
+    _q = FirmwareImage.query
+    _adom = getattr(g, "product", None)
+    if _adom and _adom != "global":
+        _q = _q.filter(FirmwareImage.product == _adom)
+    images = _q.order_by(FirmwareImage.created_at.desc()).all()
     # Product dropdown is driven LIVE from the ADOM registry (cap_firmware) so a
     # new firmware-capable product (e.g. FortiAnalyzer) shows up without edits.
     from ..branding import products_with, get_product
+    _all_fw = list(products_with("firmware"))
+    # In a concrete ADOM the product is not a choice — offering the dropdown
+    # would invite an upload the POST handler is going to overrule anyway.
+    _offer = [_adom] if (_adom and _adom != "global" and _adom in _all_fw) \
+        else _all_fw
     fw_products = [{"key": k, "name": get_product(k).get("name", k.title())}
-                   for k in products_with("firmware")]
+                   for k in _offer]
     # Device identity banner (host/line/zone/dept) for the ACTIVE ADOM so the
     # Firmware page carries the same header as the product home. Generic by
     # product scope (g.product): current selection, else the sole appliance of
@@ -156,7 +196,10 @@ def index():
     # Per-box downgrade deep-links moved to Appliances > (device) >
     # Appliance Actions > Downgrade; this page keeps the rollback guidance.
     return render_template("firmware/index.html", images=images,
-                           fw_products=fw_products, header_dev=header_dev)
+                           fw_products=fw_products, header_dev=header_dev,
+                           adom_scope=(_adom or "global"),
+                           image_kinds=IMAGE_KINDS,
+                           hypervisors=INSTALL_HYPERVISORS)
 
 
 @bp.route("/upload", methods=["POST"])
@@ -195,6 +238,20 @@ def upload():
 
     if product not in _PRODUCTS:
         product = "fortiweb"
+    # The ADOM overrules the form. The product select is not rendered in a
+    # concrete ADOM, but a hand-crafted POST would otherwise file a FortiWeb
+    # image under FortiADC. Scope comes from the request, never from a field
+    # the client controls — same rule as ProvisionRun.product.
+    _adom = getattr(g, "product", None)
+    if _adom and _adom != "global" and _adom in _PRODUCTS:
+        product = _adom
+
+    image_kind = (request.form.get("image_kind") or "upgrade").strip().lower()
+    if image_kind not in IMAGE_KINDS:
+        image_kind = "upgrade"
+    hypervisor = (request.form.get("hypervisor") or "").strip().lower()
+    if image_kind != "install" or hypervisor not in INSTALL_HYPERVISORS:
+        hypervisor = ""
     ext = os.path.splitext(file.filename)[1].lower() if file and file.filename else ""
 
     # Validate — return JSON to the AJAX path, flash+redirect to the classic one.
@@ -203,8 +260,9 @@ def upload():
         err = "Please choose a firmware .out file to upload."
     elif not version:
         err = "A firmware version is required (e.g. 7.6.4)."
-    elif ext not in _ALLOWED_EXT:
-        err = f'Unsupported file type "{ext}". Firmware images must be .out files.'
+    elif ext not in allowed_ext(image_kind):
+        err = (f'Unsupported file type "{ext}" for an {image_kind} image. '
+               f'Accepted: {", ".join(sorted(allowed_ext(image_kind)))}.')
     if err:
         if _wants_json():
             return jsonify({"error": err}), 400
@@ -215,6 +273,7 @@ def upload():
     safe_name = secure_filename(file.filename) or "firmware.out"
     fw = FirmwareImage(
         product=product, platform=platform, version=version,
+        image_kind=image_kind, hypervisor=hypervisor,
         build=build or None, filename=safe_name, stored_path="",
         notes=notes or None,
         uploaded_by=getattr(current_user, "username", "") or "",
@@ -402,6 +461,8 @@ def assemble_upload(upload_id: str, username: str = "") -> dict:
     fw = FirmwareImage(
         product=(meta.get("product") or "fortiweb"),
         platform=(meta.get("platform") or ""),
+        image_kind=(meta.get("image_kind") or "upgrade"),
+        hypervisor=(meta.get("hypervisor") or ""),
         version=(meta.get("version") or ""),
         build=(meta.get("build") or None),
         filename=safe_name, stored_path="",
@@ -463,6 +524,17 @@ def upload_begin():
         size = 0
     if product not in _PRODUCTS:
         product = "fortiweb"
+    # Same rule as the multipart path: the ADOM decides, not the payload.
+    # This endpoint is JSON, so it is the easier of the two to hand-craft.
+    _adom = getattr(g, "product", None)
+    if _adom and _adom != "global" and _adom in _PRODUCTS:
+        product = _adom
+    image_kind = (data.get("image_kind") or "upgrade").strip().lower()
+    if image_kind not in IMAGE_KINDS:
+        image_kind = "upgrade"
+    hypervisor = (data.get("hypervisor") or "").strip().lower()
+    if image_kind != "install" or hypervisor not in INSTALL_HYPERVISORS:
+        hypervisor = ""
     ext = os.path.splitext(filename)[1].lower() if filename else ""
 
     err = None
@@ -470,8 +542,9 @@ def upload_begin():
         err = "Please choose a firmware .out file to upload."
     elif not version:
         err = "A firmware version is required (e.g. 7.6.4)."
-    elif ext not in _ALLOWED_EXT:
-        err = f'Unsupported file type "{ext}". Firmware images must be .out files.'
+    elif ext not in allowed_ext(image_kind):
+        err = (f'Unsupported file type "{ext}" for an {image_kind} image. '
+               f'Accepted: {", ".join(sorted(allowed_ext(image_kind)))}.')
     elif size <= 0:
         err = "Could not read the file size."
     elif size > current_app.config.get("MAX_CONTENT_LENGTH", 600 * 1024 * 1024):
@@ -483,6 +556,7 @@ def upload_begin():
     res = begin_upload({
         "filename": filename, "version": version, "product": product,
         "platform": platform, "build": build, "notes": notes, "size": size,
+        "image_kind": image_kind, "hypervisor": hypervisor,
         "by": getattr(current_user, "username", "") or "",
     })
     return jsonify(res), 200

@@ -19,6 +19,17 @@ class FirmwareImage(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     product = db.Column(db.String(32), nullable=False, default="fortiweb")
+    # Fortinet publishes TWO different artefacts per release and they are not
+    # interchangeable: an *upgrade* image (``.out``, applied to a running
+    # appliance) and an *install* image (``.zip``/``.qcow2``/``.ova``, used to
+    # build a machine from nothing). Offering one where the other is required
+    # is not a validation nicety — an operator who picks the wrong file learns
+    # about it from a bricked box or a VM that will not boot. Default
+    # ``upgrade`` because every row that existed before this column is one.
+    image_kind = db.Column(db.String(16), nullable=False, default="upgrade")
+    #: Install images are hypervisor-specific; upgrade images are not.
+    #: "" = not applicable / any.
+    hypervisor = db.Column(db.String(16), default="")   # kvm | vmware | ""
     model = db.Column(db.String(64))
     # "" = universal / any | "hw" = hardware appliance | "vm" = virtual machine
     platform = db.Column(db.String(8), default="")

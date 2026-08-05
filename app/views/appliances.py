@@ -26,6 +26,26 @@ HW_TYPES = ("hardware", "vm", "unknown")
 HA_MODES = ("per_node", "vip")
 
 
+def _provision_metrics(appliance):
+    """Give a newly saved appliance its scrape targets immediately.
+
+    The sweep already auto-provisions, but only on its next tick and only
+    where a scheduler is armed — so a device added on a fresh install, or on
+    a standby, would sit uncollected with nothing saying so. Provisioning at
+    save time makes the Collection page true the moment the device exists.
+
+    Never fails the save: metrics collection is downstream of device
+    inventory, so a hiccup here must not cost the operator the device row.
+    """
+    try:
+        from ..services import metrics_collect as mc
+        return mc.ensure_targets(appliance)
+    except Exception as exc:            # noqa: BLE001 - inventory must survive
+        db.session.rollback()
+        log_exception(exc, context='metrics.ensure_targets')
+        return 0
+
+
 def _parse_ha(form):
     """Return (is_cluster, ha_mode, ha_vip) from a posted appliance form."""
     is_cluster = form.get("is_cluster") == "on"
@@ -185,7 +205,10 @@ def create():
         flash(f'Appliance name {name!r} already exists.', 'danger')
         return redirect(url_for('appliances.index'))
     log_action('appliance.create', target=name)
-    flash(f'Appliance {name} created.', 'success')
+    made = _provision_metrics(appliance)
+    flash(f'Appliance {name} created.'
+          + (f' {made} metrics collector(s) provisioned.' if made else ''),
+          'success')
     return redirect(url_for('appliances.detail', id=appliance.id))
 
 
@@ -251,6 +274,9 @@ def edit_save(id):
 
     db.session.commit()
     log_action('appliance.update', target=appliance.name)
+    # An edit can make a device collectable that was not: maintenance cleared,
+    # product changed, host filled in. Existing targets are never touched.
+    _provision_metrics(appliance)
     flash(f'Appliance {appliance.name} updated.', 'success')
     return redirect(url_for('appliances.detail', id=appliance.id))
 
@@ -355,6 +381,7 @@ def add_member(id):
         flash('A member with that name already exists.', 'danger')
         return redirect(url_for('appliances.detail', id=id))
     log_action('appliance.member_add', target=node0.name)
+    _provision_metrics(m)   # a member node is a real device with its own host
     flash('Cluster member added.', 'success')
     return redirect(url_for('appliances.detail', id=id))
 

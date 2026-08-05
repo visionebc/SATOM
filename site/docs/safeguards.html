@@ -91,6 +91,7 @@
       <a href="#13-a-chart-may-not-invent-a-reading">13. A chart may not invent a reading</a>
       <a href="#12-uploaded-code-is-code-someone-else-chose-to-run">12. Uploaded code is code someone else chose to run</a>
       <a href="#14-operational-data-grows-with-change-not-with-time">14. Operational data grows with change, not with time</a>
+      <a href="#15-a-device-that-is-not-collected-has-to-say-so">15. A device that is not collected has to say so</a>
       <a href="#11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</a>
       <a href="#verifying-the-guards-are-armed_5">Verifying the guards are armed</a>
       <a href="#related">Related</a>
@@ -2293,6 +2294,36 @@ ss -ltnp | grep 8428                          # 127.0.0.1:8428 ONLY
 psql -c &quot;SELECT device, count(*) FROM sot_version GROUP BY device&quot;
 # run a device sync twice; the count must not move the second time
 </code></pre>
+<h2 id="15-a-device-that-is-not-collected-has-to-say-so">15. A device that is not collected has to say so</h2>
+<p>Collection is provisioned, not configured by hand: a device gets one scrape
+target per collector its product supports, and the operator then tunes interval,
+top-N and enabled state on <strong>Monitoring → Collection</strong>. That only works if
+provisioning actually happens for every device, and if the devices it <em>skips</em>
+are visible.</p>
+<p><strong>Provisioning runs at save time, from one rule.</strong> <code>metrics_collect.ensure_targets</code>
+is called by all three appliance-creation paths (create, edit, cluster-member
+add) as well as by every sweep. It is INSERT-only, so operator edits always win,
+and it is self-guarding: the eligibility rule lives in <code>provisionable()</code>, not in
+each caller.</p>
+<ul>
+<li>A <strong>parked</strong> device (<code>maintenance</code>) and a <strong>retired</strong> row (host neutralised to
+  <code>*.invalid</code>) get no targets — the same guard the sweep applies before touching
+  a device. Four copies of that rule would have been four chances to drift.</li>
+<li>Provisioning <strong>may not cost the operator the device row</strong>. Metrics are
+  downstream of inventory, so <code>_provision_metrics</code> swallows and logs a failure
+  instead of aborting the save.</li>
+<li>Doing this only in the sweep was the original bug: a new device sat
+  uncollected until the next tick, and on an installation where no scheduled
+  action had been seeded (§10 — nothing seeds them), forever.</li>
+</ul>
+<p><strong>Absence is not coverage.</strong> The page lists <code>ScrapeTarget</code> rows, so a device that
+yields none appears nowhere and reads as healthy. <code>coverage_gaps()</code> names every
+such device <em>with the reason</em>, and the reasons are distinct on purpose —
+"no collectors exist for this product yet", "in maintenance", "retired",
+"no host", "not provisioned yet" are five different operator actions, and one
+shared string would hide four of them. FortiAnalyzer is the live case: no
+collector exists for that product today, so auto-provisioning is a legitimate
+no-op — and a silent no-op is indistinguishable from success.</p>
 <h2 id="11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</h2>
 <ul>
 <li>Per-device configuration restore is dry-run gated — no live canary round-trip yet.</li>
@@ -2303,6 +2334,26 @@ psql -c &quot;SELECT device, count(*) FROM sot_version GROUP BY device&quot;
   because of that, but it mitigates rather than fixes it.</li>
 </ul>
 <h2 id="verifying-the-guards-are-armed_5">Verifying the guards are armed</h2>
+<h3 id="metrics-auto-provisioning-15">Metrics auto-provisioning (§15)</h3>
+<pre><code class="language-bash"># 1. every creation path provisions — the call, not the comment
+python3 - &lt;&lt;'PY'
+import ast, pathlib
+t = ast.parse(pathlib.Path('app/views/appliances.py').read_text())
+for fn in ('create', 'edit_save'):
+    f = next(n for n in ast.walk(t)
+             if isinstance(n, ast.FunctionDef) and n.name == fn)
+    calls = [c.func.id for c in ast.walk(f)
+             if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)]
+    print(fn, '_provision_metrics' in calls)
+PY
+
+# 2. no live device may be silently uncollected: every eligible device
+#    owns targets, and the page names the ones that do not
+curl -sk -b &quot;$COOKIE&quot; https://&lt;node&gt;/monitoring/collection/data | python3 -c \
+  &quot;import json,sys; d=json.load(sys.stdin); \
+   print(len(d[\&quot;targets\&quot;]), \&quot;targets;\&quot;, \
+         [(g[\&quot;name\&quot;], g[\&quot;reason\&quot;]) for g in d[\&quot;gaps\&quot;]])&quot;
+</code></pre>
 <h3 id="published-cross-references-7d">Published cross-references (§7d)</h3>
 <p>Rendering is not evidence — request the target. From a checkout:</p>
 <pre><code class="language-bash"># 1. nothing published may still point at Markdown

@@ -82,8 +82,22 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>Fleet metrics collection and a local time-series store.</strong> Measured against
-  the live system on 2026-08-05: at the target fleet (60 FortiWeb + 30 FortiADC</li>
+<li>
+<p><strong>Scrape targets are provisioned when a device is saved.</strong> Adding an
+  appliance now creates its metrics collectors immediately, from every creation
+  path (create, edit, cluster-member add), instead of only on the next
+  <code>metrics_scrape</code> sweep — which on an installation with no seeded scheduled
+  action meant never. The eligibility rule (skip parked and retired devices)
+  moved into <code>metrics_collect.provisionable()</code> so the four call sites cannot
+  drift apart, and a provisioning failure can no longer abort the device save.
+  <strong>Monitoring → Collection</strong> now also names every device that produces no
+  targets, with the reason — a FortiAnalyzer has no collectors yet, and a silent
+  no-op is indistinguishable from coverage.</p>
+</li>
+<li>
+<p><strong>Fleet metrics collection and a local time-series store.</strong> Measured against
+  the live system on 2026-08-05: at the target fleet (60 FortiWeb + 30 FortiADC</p>
+</li>
 <li>
 <p>10 FortiAnalyzer, ~750 policies each) the per-probe design needed ~180,000
   configuration rows, ~56 minutes of device I/O per 3-minute window and ~450 GB

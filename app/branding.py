@@ -71,11 +71,18 @@ _FALLBACK: list[dict] = [
         "key": "fortiauthenticator", "name": "FortiAuthenticator",
         "title": "SATOM", "tagline": "Identity & Access Management",
         "mark": "img/fortiauthenticator-mark.svg",
-        "description": "Identity management, two-factor authentication, "
-                       "certificate authority and RADIUS/LDAP services — "
-                       "scaffold in place, modules coming soon.",
-        "active": True, "placeholder": True, "banner_default": "indigo",
-        "cap_banner": True, "cap_tokens": False, "cap_firmware": False,
+        "description": "Local, LDAP and RADIUS identities, user groups, "
+                       "FortiTokens, issued certificates and the RADIUS / "
+                       "TACACS+ clients that authenticate against the unit.",
+        # Promoted from placeholder to a real product ADOM on 2026-08-05: it
+        # now has a REST client, a registry seeded live from the device and
+        # section pages. cap_firmware stays False — FortiAuthenticator images
+        # are not carried in the firmware repository, and advertising an
+        # upgrade path this product cannot perform is worse than not offering
+        # one. cap_naming/cap_regex are FortiWeb-shaped tools with no meaning
+        # for an identity store.
+        "active": True, "placeholder": False, "banner_default": "indigo",
+        "cap_banner": True, "cap_tokens": True, "cap_firmware": False,
         "cap_naming": False, "cap_regex": False,
     },
     {

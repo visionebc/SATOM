@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}FortiAuthenticator — {{ item.label }}{% endblock %}
+
+{% block content %}
+<div class="fw-page-header d-flex align-items-center gap-3 mb-3">
+  <i class="bi {{ item.icon }} text-accent" style="font-size:28px;"></i>
+  <div>
+    <h1 class="h5 mb-0">{{ item.label }}</h1>
+    <div class="text-muted" style="font-size:12px;">
+      <a href="{{ url_for('fac.index') }}" class="text-decoration-none">FortiAuthenticator</a>
+      <i class="bi bi-chevron-right" style="font-size:9px;"></i> {{ group.label }}
+    </div>
+  </div>
+  <div class="ms-auto">
+    {% if appliance %}
+    <span class="fw-badge fw-badge-secondary">{{ appliance.name }} · {{ appliance.host }}</span>
+    {% endif %}
+  </div>
+</div>
+
+{% if item.desc %}
+<p class="text-muted mb-3" style="font-size:13px;max-width:64rem;">{{ item.desc }}</p>
+{% endif %}
+
+{# ---- No appliance selected -------------------------------------------- #}
+{% if not appliance %}
+<div class="fw-card" style="padding:20px;">
+  <div class="fw-empty-state py-4">
+    <i class="bi bi-person-badge"></i>
+    <p class="mb-1">No FortiAuthenticator is selected.</p>
+    <a class="btn btn-sm btn-fw-primary mt-2" href="{{ url_for('fac.index') }}">
+      <i class="bi bi-hdd-rack me-1"></i>Pick a device</a>
+  </div>
+</div>
+
+{# ---- Pane with no REST surface ---------------------------------------- #}
+{% elif not item.logicals %}
+<div class="fw-card" style="padding:20px;">
+  <div class="fw-empty-state py-4">
+    <i class="bi bi-plug"></i>
+    <p class="mb-1"><strong>No endpoint bound.</strong></p>
+    <p class="text-muted mb-0" style="font-size:12px;max-width:44rem;">
+      FortiAuthenticator 8.0.3 serves this pane in its GUI but exposes no
+      REST resource for it. Nothing is shown here rather than an empty table
+      that would read as &ldquo;nothing is configured&rdquo;. If a firmware
+      upgrade adds the resource, bind it on the Registry page and it appears
+      here — no code change.</p>
+  </div>
+</div>
+
+{% else %}
+{# ---- Tab bar ----------------------------------------------------------- #}
+<ul class="nav nav-tabs mb-0" style="border-bottom:1px solid var(--fw-border);">
+  {% for lg, lb in item.logicals %}
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if tab and tab.logical == lg }}"
+       href="{{ url_for('fac.menu_page', item_key=item.key, tab=lg) }}">{{ lb }}</a>
+  </li>
+  {% endfor %}
+</ul>
+
+<div class="fw-card" style="padding:18px 20px;border-top-left-radius:0;">
+  {% if tab %}
+  <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+    <strong style="font-size:14px;">{{ tab.label }}</strong>
+    <code class="text-muted" style="font-size:11px;">{{ tab.urn }}</code>
+    {% if not tab.error %}
+    <span class="fw-badge fw-badge-secondary ms-auto">{{ tab.total }} row{{ '' if tab.total == 1 else 's' }}</span>
+    {% endif %}
+  </div>
+
+  {% if tab.error %}
+  <div class="alert alert-danger" style="font-size:13px;">
+    <strong>The device refused this read{% if tab.total %} after {{ tab.total }} rows{% endif %}.</strong>
+    <div class="mt-1"><code>{{ tab.error }}</code></div>
+  </div>
+  {% endif %}
+
+  {% if tab.kv %}
+  {# ---- Singleton resource → key/value card --------------------------- #}
+  <div class="table-responsive">
+    <table class="table table-sm fw-table mb-0">
+      <tbody>
+        {% for k, v in tab.kv.items()|sort %}
+        <tr>
+          <th style="width:34%;font-weight:600;">{{ k }}</th>
+          <td style="font-family:var(--fw-font-mono,monospace);font-size:12px;">
+            {% if v is mapping or v is sequence and v is not string %}
+              <pre class="mb-0" style="font-size:11px;white-space:pre-wrap;">{{ v|tojson(indent=1) }}</pre>
+            {% else %}{{ v if v not in (None, '') else '—' }}{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% elif tab.rows %}
+  {# ---- Collection → table -------------------------------------------- #}
+  {% if tab.truncated %}
+  <div class="alert alert-warning py-2" style="font-size:12px;">
+    Showing the first {{ tab.rows|length }} of {{ tab.total }} rows.
+  </div>
+  {% endif %}
+  <div class="table-responsive">
+    <table class="table table-sm fw-table mb-0">
+      <thead><tr>
+        {% for c in tab.columns %}<th>{{ c }}</th>{% endfor %}
+        <th style="width:1%;"></th>
+      </tr></thead>
+      <tbody>
+        {% for r in tab.rows %}
+        <tr>
+          {% for c in tab.columns %}
+          <td style="font-size:12px;">
+            {% set v = r.get(c) %}
+            {% if v is mapping or (v is sequence and v is not string) %}
+              <span class="text-muted">{{ v|length }} item{{ '' if v|length == 1 else 's' }}</span>
+            {% elif v is sameas true %}<span class="fw-badge fw-badge-success">yes</span>
+            {% elif v is sameas false %}<span class="fw-badge fw-badge-secondary">no</span>
+            {% else %}{{ v if v not in (None, '') else '—' }}{% endif %}
+          </td>
+          {% endfor %}
+          <td>
+            <details>
+              <summary class="text-muted" style="cursor:pointer;font-size:11px;">raw</summary>
+              <pre class="mt-2 mb-0" style="font-size:11px;white-space:pre-wrap;
+                   max-width:52rem;">{{ r|tojson(indent=1) }}</pre>
+            </details>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% elif not tab.error %}
+  <div class="fw-empty-state py-4">
+    <i class="bi bi-inbox"></i>
+    <p class="mb-0">This resource is empty on {{ appliance.name }}.</p>
+    <p class="text-muted mb-0" style="font-size:12px;">The device answered
+      successfully with zero objects — this is not an error.</p>
+  </div>
+  {% endif %}
+
+  {% endif %}
+</div>
+
+<p class="text-muted mt-3 mb-0" style="font-size:12px;">
+  Read-only view. Writes go through the
+  <a href="{{ url_for('fac_api.index') }}">API console</a>, where every request
+  is explicit, dry-run by default and audited.
+</p>
+{% endif %}
+{% endblock %}

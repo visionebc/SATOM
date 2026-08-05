@@ -144,11 +144,18 @@ def _admin_group_bodies(text: str) -> list[str]:
 
 
 def test_every_administrator_group_offers_collection():
-    """Four Administrator blocks, already drifted once (one is even titled
+    """FIVE Administrator blocks, already drifted once (one is even titled
     "Administration"). A shared partial is the only thing that stops an entry
-    from being added to Global and forgotten in the other three."""
+    from being added to Global and forgotten in the others.
+
+    The real promise is the loop below — every block includes the partial. The
+    exact count is a NON-VACUITY guard: without it, an extractor that stopped
+    matching would make this test pass over zero blocks. Bump it (and only it)
+    when an ADOM gains its own Administrator group; it went 4 -> 5 on
+    2026-08-05 when FortiAuthenticator stopped being a placeholder.
+    """
     bodies = _admin_group_bodies(BASE_HTML.read_text())
-    assert len(bodies) == 4, "expected 4 Administrator groups, got %d" % len(bodies)
+    assert len(bodies) == 5, "expected 5 Administrator groups, got %d" % len(bodies)
     for i, b in enumerate(bodies):
         assert "partials/nav_collection.html" in b, \
             "Administrator group #%d does not include the Collection partial" % i

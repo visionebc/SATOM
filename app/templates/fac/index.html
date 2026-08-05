@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}FortiAuthenticator — Dashboard{% endblock %}
+
+{% block content %}
+<div class="fw-page-header d-flex align-items-center gap-3 mb-4">
+  <img src="{{ url_for('static', filename='img/fortiauthenticator-mark.svg') }}"
+       alt="FortiAuthenticator" style="width:42px;height:42px;"
+       onerror="this.style.display='none'">
+  <div>
+    <h1 class="h4 mb-0">SATOM</h1>
+    <div class="text-muted" style="font-size:13px;">Identity &amp; Access Management
+      · {{ n_bound }} of {{ n_items }} sections bound to live endpoints
+      across {{ groups|length }} areas</div>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <a href="{{ url_for('fac_api.index') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-braces me-1"></i>API console</a>
+    <a href="{{ url_for('product.switch') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left-right me-1"></i>Switch product</a>
+  </div>
+</div>
+
+{# ---- Device picker ---------------------------------------------------- #}
+<div class="fw-card mb-4" style="padding:18px 20px;">
+  <h2 class="h6 mb-3"><i class="bi bi-person-badge me-2 text-accent"></i>FortiAuthenticator devices</h2>
+  {% if fleet %}
+  <div class="row g-3">
+    {% for a in fleet %}
+    <div class="col-md-4 col-lg-3">
+      <div class="fw-card h-100 {{ 'border-primary' if current and current.id == a.id }}"
+           style="padding:14px;">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <i class="bi bi-person-badge text-accent"></i>
+          <strong>{{ a.name }}</strong>
+          {% if current and current.id == a.id %}
+          <span class="fw-badge fw-badge-success ms-auto">selected</span>
+          {% endif %}
+        </div>
+        <div class="text-muted mb-2" style="font-size:12px;">{{ a.host }}:{{ a.port }}</div>
+        <a class="btn btn-sm {{ 'btn-outline-secondary' if current and current.id == a.id else 'btn-fw-primary' }}"
+           href="{{ url_for('fac.use_device', id=a.id) }}">
+          <i class="bi bi-check2-circle me-1"></i>{{ 'Selected' if current and current.id == a.id else 'Select' }}</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="fw-empty-state py-4">
+    <i class="bi bi-person-badge"></i>
+    <p class="mb-1">No FortiAuthenticator appliance is registered yet.</p>
+    <p class="text-muted mb-0" style="font-size:12px;">
+      Add one under Administration → Appliances with kind
+      <code>fortiauthenticator</code>. Its password field must hold the
+      <strong>per-user API key</strong>, not the login password — the device
+      rejects the password with 401. Self-signed certificate: register it with
+      <code>verify_ssl</code> disabled or every call fails before it
+      authenticates.</p>
+  </div>
+  {% endif %}
+</div>
+
+{# ---- Live unit status -------------------------------------------------- #}
+{% if header_dev %}
+<div class="fw-card mb-4" style="padding:18px 20px;">
+  <h2 class="h6 mb-3"><i class="bi bi-speedometer2 me-2 text-accent"></i>Unit status
+    <span class="text-muted fw-normal" style="font-size:12px;">— {{ header_dev.name }}</span></h2>
+  {% if status_err %}
+  <div class="alert alert-danger mb-0" style="font-size:13px;">
+    <strong>The device refused the status read.</strong>
+    <div class="mt-1"><code>{{ status_err }}</code></div>
+  </div>
+  {% elif status %}
+  <div class="row g-3">
+    {% for label, key in [('Firmware','firmware'), ('Serial','sn'),
+                          ('CPU','cpu'), ('Memory','memory'), ('Disk','disk')] %}
+      {% if status.get(key) %}
+      <div class="col-6 col-md-4 col-lg-2">
+        <div class="text-muted" style="font-size:11px;text-transform:uppercase;
+             letter-spacing:.04em;">{{ label }}</div>
+        <div style="font-family:var(--fw-font-mono,monospace);font-size:13px;">{{ status[key] }}</div>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% set usage = [('Users','users_usage_detail'), ('Groups','groups_usage_detail'),
+                  ('FSSO','fsso_usage_detail'), ('SSO agents','ssoma_usage_detail')] %}
+  <div class="row g-3 mt-1">
+    {% for label, key in usage %}
+      {% set d = status.get(key) %}
+      {% if d and d.get('max') is not none %}
+      <div class="col-6 col-md-3">
+        <div class="text-muted" style="font-size:11px;text-transform:uppercase;
+             letter-spacing:.04em;">{{ label }} licence</div>
+        <div style="font-size:13px;">{{ d.get('used', 0) }} / {{ d.get('max') }}</div>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-muted" style="font-size:13px;">No status returned.</div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ---- Menu map ---------------------------------------------------------- #}
+{% for g in groups %}
+<div class="fw-card mb-3" style="padding:18px 20px;">
+  <h2 class="h6 mb-3"><i class="bi {{ g.icon }} me-2 text-accent"></i>{{ g.label }}</h2>
+  <div class="row g-3">
+    {% for it in g.items %}
+    <div class="col-md-6 col-lg-4">
+      <a class="fw-card d-block h-100 text-decoration-none" style="padding:14px;"
+         href="{{ url_for('fac.menu_page', item_key=it.key) }}">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <i class="bi {{ it.icon }} text-accent"></i>
+          <strong>{{ it.label }}</strong>
+          {% if it.logicals %}
+          <span class="fw-badge fw-badge-info ms-auto">{{ it.logicals|length }} tab{{ '' if it.logicals|length == 1 else 's' }}</span>
+          {% else %}
+          <span class="fw-badge fw-badge-secondary ms-auto">no endpoint</span>
+          {% endif %}
+        </div>
+        <div class="text-muted" style="font-size:12px;">{{ it.desc }}</div>
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

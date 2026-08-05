@@ -72,7 +72,7 @@ class MonitorDashboard(db.Model):
     slug = db.Column(db.String(64), nullable=False, unique=True, index=True)
     title = db.Column(db.String(120), nullable=False, default="")
     description = db.Column(db.String(400), nullable=True, default="")
-    product = db.Column(db.String(16), nullable=False, default="", index=True)
+    product = db.Column(db.String(32), nullable=False, default="", index=True)
     builtin = db.Column(db.Boolean, nullable=False, default=False)
     position = db.Column(db.Integer, nullable=False, default=100)
 
@@ -226,7 +226,7 @@ class MonitorReport(db.Model):
     period = db.Column(db.String(16), nullable=False, default="daily", index=True)
     period_start = db.Column(db.DateTime, nullable=False, index=True)
     period_end = db.Column(db.DateTime, nullable=False)
-    product = db.Column(db.String(16), nullable=False, default="", index=True)
+    product = db.Column(db.String(32), nullable=False, default="", index=True)
 
     title = db.Column(db.String(200), nullable=False, default="")
     generated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)

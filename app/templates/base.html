@@ -111,7 +111,7 @@
 
   <div class="fw-topbar-spacer"></div>
 
-  {% if product.key in ('fortiweb', 'fortiadc', 'fortianalyzer') %}
+  {% if product.key in ('fortiweb', 'fortiadc', 'fortianalyzer', 'fortiauthenticator') %}
   <!-- Device context (zone/line/dept/host) — centered in the header -->
   <button class="fw-topbar-btn fw-device-switch fw-device-center" type="button"
           title="{% if current_appliance %}{{ current_appliance.host }} — {% endif %}Architecture / switch device"
@@ -500,6 +500,76 @@
       </div>
       {% endif %}
 
+
+
+      {% elif product.key == 'fortiauthenticator' %}
+      <!-- ===== FortiAuthenticator — the FAC ADOM left menu (static fac_menu) ===== -->
+      {% set _fac_item = (request.view_args.get('item_key') if (request.endpoint == 'fac.menu_page' and request.view_args) else '') %}
+
+      {# ADOM back-link — ALWAYS first (same format as the other ADOMs) #}
+      <div class="fw-nav-context" data-nav-context="ADOM">
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item" href="{{ url_for('product.enter', key='global') }}" title="Back to the Global ADOM">
+            <i class="bi bi-globe2 fw-nav-icon" style="color:#3b82f6;"></i><span>&lsaquo; Global</span></a>
+        </div>
+      </div>
+
+      {% include 'partials/nav_device_context.html' %}
+
+      <!-- FLEET — Architecture / Analysis / Metrics (shared, product-scoped) -->
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['architecture','analysis','metrics','monitoring','deep_monitor','service_monitor','search','dns_tool','fleet_objects','jobs'] }}" data-nav-group="Fleet">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>Fleet</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'architecture' else '' }}" href="{{ url_for('architecture.index') }}">
+            <i class="bi bi-hdd-network fw-nav-icon"></i><span>Architecture</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'analysis' else '' }}" href="{{ url_for('analysis.index') }}">
+            <i class="bi bi-graph-up fw-nav-icon"></i><span>Analysis</span></a>
+          {% include 'partials/nav_monitoring.html' %}
+        </div>
+      </div>
+
+      {# System / Authentication / SSO / Monitor / Certificates / Logging —
+         the unit's OWN nav tree, mirrored from its nav_menu_definition. #}
+      {% set _fac_palette = ['#7c3aed','#2563eb','#0891b2','#059669','#d97706','#db2777','#64748b'] %}
+      {% for g in fac_nav %}
+      {% set _g_active = g.items|selectattr('key', 'equalto', _fac_item)|list %}
+      <div class="fw-nav-group {{ 'open' if _g_active }}" data-nav-group="{{ g.label }}">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi {{ g.icon }} fw-nav-section-icon" style="color:{{ _fac_palette[loop.index0 % _fac_palette|length] }};"></i><span>{{ g.label }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          {% for item in g.items %}
+          <a class="fw-nav-item {{ 'active' if _fac_item == item.key else '' }}"
+             href="{{ url_for('fac.menu_page', item_key=item.key) }}">
+            <i class="bi {{ item.icon }} fw-nav-icon"></i><span>{{ item.label }}</span>
+            {% if not item.logicals %}<i class="bi bi-plug ms-auto" style="opacity:.35;font-size:10px;" title="No REST endpoint on this firmware"></i>{% endif %}</a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+
+      {# API — registry catalog + live console #}
+      <div class="fw-nav-group {{ 'open' if request.blueprint == 'fac_api' }}" data-nav-group="API">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-braces fw-nav-section-icon" style="color:#0891b2;"></i><span>API</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'fac_api' else '' }}" href="{{ url_for('fac_api.index') }}">
+            <i class="bi bi-terminal fw-nav-icon"></i><span>Registry &amp; console</span></a>
+        </div>
+      </div>
+
+      {# Administration — Appliances / Audit log / Network segment #}
+      {% if current_user and current_user.can('user_manage') %}
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['appliances','audit','segments'] }}" data-nav-group="Administration">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>Administration</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+        <div class="fw-nav-group-body">
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'appliances' else '' }}" href="{{ url_for('appliances.index') }}">
+            <i class="bi bi-server fw-nav-icon"></i><span>Appliances</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'audit' else '' }}" href="{{ url_for('audit.index') }}">
+            <i class="bi bi-clipboard-check fw-nav-icon"></i><span>Audit Log</span></a>
+          {% include "partials/nav_collection.html" %}
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'segments' else '' }}" href="{{ url_for('segments.index') }}">
+            <i class="bi bi-diagram-3 fw-nav-icon"></i><span>Network Segment</span></a>
+        </div>
+      </div>
+      {% endif %}
 
 
       {% elif product.placeholder %}
@@ -898,7 +968,7 @@
   </main>
 </div>
 
-{% if current_user and current_user.is_authenticated and product and product.key in ('fortiweb', 'fortiadc', 'fortianalyzer') %}
+{% if current_user and current_user.is_authenticated and product and product.key in ('fortiweb', 'fortiadc', 'fortianalyzer', 'fortiauthenticator') %}
 {% if product.key in ('fortiweb', 'fortiadc') %}{% include 'partials/release_notes_modal.html' %}{% endif %}
 <div class="modal fade" id="deviceSwitchModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">

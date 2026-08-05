@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}FortiAuthenticator — API{% endblock %}
+
+{% block content %}
+<div class="fw-page-header d-flex align-items-center gap-3 mb-4">
+  <i class="bi bi-braces text-accent" style="font-size:28px;"></i>
+  <div>
+    <h1 class="h5 mb-0">FortiAuthenticator API</h1>
+    <div class="text-muted" style="font-size:12px;">
+      Registry catalog &amp; live console · {{ total }} endpoint{{ '' if total == 1 else 's' }}
+      · REST <code>/api/v1/</code> (Django/Tastypie)</div>
+  </div>
+  <div class="ms-auto">
+    <a href="{{ url_for('fac.index') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Back to dashboard</a>
+  </div>
+</div>
+
+<div class="row g-4">
+  {# ================= LEFT: registry catalog ============================ #}
+  <div class="col-lg-5">
+    <div class="fw-card" style="padding:18px 20px;">
+      <h2 class="h6 mb-3"><i class="bi bi-list-columns me-2 text-accent"></i>Endpoint registry</h2>
+      <p class="text-muted" style="font-size:12px;">
+        DB-first, seeded INSERT-ONLY from <code>endpoints_fortiauthenticator.yaml</code>.
+        Edits here always win over the seed — this is the knob to turn when a
+        firmware upgrade moves a resource.</p>
+
+      {% for g in groups %}
+        {% set bound = g.items|selectattr('logicals')|list %}
+        {% if bound %}
+        <div class="mb-3">
+          <div class="text-muted mb-1" style="font-size:11px;text-transform:uppercase;
+               letter-spacing:.05em;"><i class="bi {{ g.icon }} me-1"></i>{{ g.label }}</div>
+          {% for it in bound %}
+            {% for lg, lb in it.logicals %}
+            <div class="d-flex align-items-center gap-2 py-1"
+                 style="border-bottom:1px solid var(--fw-border);">
+              <button type="button" class="btn btn-sm btn-link p-0 text-start fac-pick"
+                      data-endpoint="{{ lg }}" style="font-size:12px;">{{ lg }}</button>
+              <code class="text-muted ms-auto" style="font-size:11px;">{{ reg.get(lg, '') }}</code>
+            </div>
+            {% endfor %}
+          {% endfor %}
+        </div>
+        {% endif %}
+      {% endfor %}
+
+      {% if extras %}
+      <div class="mb-3">
+        <div class="text-muted mb-1" style="font-size:11px;text-transform:uppercase;
+             letter-spacing:.05em;"><i class="bi bi-three-dots me-1"></i>Other
+          <span class="text-muted">(in the registry, not on a menu page)</span></div>
+        {% for e in extras %}
+        <div class="d-flex align-items-center gap-2 py-1"
+             style="border-bottom:1px solid var(--fw-border);">
+          <button type="button" class="btn btn-sm btn-link p-0 text-start fac-pick"
+                  data-endpoint="{{ e.name }}" style="font-size:12px;">{{ e.name }}</button>
+          <code class="text-muted ms-auto" style="font-size:11px;">{{ e.urn }}</code>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if can_edit %}
+      <hr>
+      <h3 class="h6 mb-2" style="font-size:13px;">Add or re-point an endpoint</h3>
+      <form method="post" action="{{ url_for('fac_api.save_endpoint') }}" class="row g-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-5"><input class="form-control form-control-sm" name="name"
+             placeholder="logical_name" required></div>
+        <div class="col-5"><input class="form-control form-control-sm" name="urn"
+             placeholder="/api/v1/resource/" required></div>
+        <div class="col-2"><button class="btn btn-sm btn-fw-primary w-100">Save</button></div>
+      </form>
+      {% if disabled_rows %}
+      <div class="mt-3">
+        <div class="text-muted mb-1" style="font-size:11px;">Disabled</div>
+        {% for r in disabled_rows %}
+        <form method="post" action="{{ url_for('fac_api.toggle_endpoint', id=r.id) }}"
+              class="d-flex align-items-center gap-2 py-1">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <span style="font-size:12px;">{{ r.name }}</span>
+          <button class="btn btn-sm btn-outline-secondary ms-auto py-0"
+                  style="font-size:11px;">Restore</button>
+        </form>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  {# ================= RIGHT: live console =============================== #}
+  <div class="col-lg-7">
+    <div class="fw-card" style="padding:18px 20px;">
+      <h2 class="h6 mb-3"><i class="bi bi-terminal me-2 text-accent"></i>Live console</h2>
+
+      {% if not fleet %}
+      <div class="fw-empty-state py-4">
+        <i class="bi bi-person-badge"></i>
+        <p class="mb-0">No FortiAuthenticator appliance is registered.</p>
+      </div>
+      {% else %}
+      <div class="row g-2 mb-2">
+        <div class="col-md-5">
+          <label class="form-label" style="font-size:11px;">Appliance</label>
+          <select class="form-select form-select-sm" id="fac-appliance">
+            {% for a in fleet %}
+            <option value="{{ a.id }}">{{ a.name }} — {{ a.host }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" style="font-size:11px;">Method</label>
+          <select class="form-select form-select-sm" id="fac-method">
+            {% for m in methods %}
+            <option value="{{ m }}">{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4 d-flex align-items-end">
+          <div class="form-check" id="fac-apply-wrap" style="display:none;">
+            <input class="form-check-input" type="checkbox" id="fac-apply"
+                   {{ '' if can_write else 'disabled' }}>
+            <label class="form-check-label" for="fac-apply" style="font-size:12px;">
+              Apply <span class="text-muted">(really write)</span></label>
+          </div>
+        </div>
+      </div>
+
+      <label class="form-label" style="font-size:11px;">Endpoint
+        <span class="text-muted">— a registry name, or a raw /api/v1/… path</span></label>
+      <input class="form-control form-control-sm mb-2" id="fac-endpoint"
+             placeholder="auth_local_users">
+
+      <label class="form-label" style="font-size:11px;">JSON body
+        <span class="text-muted">(ignored on GET)</span></label>
+      <textarea class="form-control form-control-sm mb-2" id="fac-body" rows="4"
+                style="font-family:var(--fw-font-mono,monospace);font-size:12px;"></textarea>
+
+      {% if not can_write %}
+      <div class="alert alert-secondary py-2" style="font-size:12px;">
+        You may run <strong>GET</strong> only. Non-GET methods need the
+        <em>Execute write API calls</em> permission.</div>
+      {% endif %}
+
+      <div class="alert alert-warning py-2" style="font-size:12px;">
+        <strong>Writes are dry-run by default.</strong> A mutating method shows
+        the exact request and sends nothing until <em>Apply</em> is ticked.
+        Note that <code>POST /api/v1/localusers/</code> is a bulk endpoint: it
+        answers <code>207</code> with a per-item list whose status key the
+        vendor spells <code>statue</code>, so a 2xx does not by itself mean
+        every item succeeded — read the body.</div>
+
+      <button class="btn btn-sm btn-fw-primary" id="fac-run">
+        <i class="bi bi-play-fill me-1"></i>Run</button>
+
+      <div class="mt-3" id="fac-out-wrap" style="display:none;">
+        <div class="text-muted mb-1" style="font-size:11px;">Response</div>
+        <pre id="fac-out" class="mb-0" style="font-size:11px;max-height:26rem;
+             overflow:auto;white-space:pre-wrap;padding:12px;
+             background:var(--fw-pre-bg,var(--fw-surface-alt));
+             border:1px solid var(--fw-border);border-radius:6px;"></pre>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var methodSel = document.getElementById('fac-method');
+  var applyWrap = document.getElementById('fac-apply-wrap');
+  var runBtn    = document.getElementById('fac-run');
+  if (!runBtn) return;
+
+  var WRITE = ['POST', 'PUT', 'PATCH', 'DELETE'];
+
+  function syncApply() {
+    applyWrap.style.display = WRITE.indexOf(methodSel.value) >= 0 ? '' : 'none';
+  }
+  methodSel.addEventListener('change', syncApply);
+  syncApply();
+
+  document.querySelectorAll('.fac-pick').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.getElementById('fac-endpoint').value = b.dataset.endpoint;
+    });
+  });
+
+  runBtn.addEventListener('click', function () {
+    var out = document.getElementById('fac-out');
+    document.getElementById('fac-out-wrap').style.display = '';
+    out.textContent = 'Running…';
+    var fd = new FormData();
+    fd.append('appliance_id', document.getElementById('fac-appliance').value);
+    fd.append('endpoint', document.getElementById('fac-endpoint').value);
+    fd.append('method', methodSel.value);
+    fd.append('body', document.getElementById('fac-body').value);
+    var ap = document.getElementById('fac-apply');
+    if (ap && ap.checked) fd.append('apply', '1');
+
+    fetch('{{ url_for("fac_api.execute") }}', {
+      method: 'POST', body: fd, credentials: 'same-origin',
+      headers: {'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''}
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (d) { out.textContent = JSON.stringify(d, null, 2); })
+    .catch(function (e) { out.textContent = 'Request failed: ' + e; });
+  });
+})();
+</script>
+{% endblock %}

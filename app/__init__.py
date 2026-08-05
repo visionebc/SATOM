@@ -220,6 +220,9 @@ def create_app(config_override: object | None = None) -> Flask:
         if bp_name in ('faz', 'faz_api'):
             # Entering the FortiAnalyzer area is always an explicit ADOM jump.
             eff = 'fortianalyzer'
+        if bp_name in ('fac', 'fac_api'):
+            # Same for FortiAuthenticator.
+            eff = 'fortiauthenticator'
         g.product = eff
         always = {
             'static', 'index', 'fortiweb_home', 'service_worker',
@@ -292,6 +295,25 @@ def create_app(config_override: object | None = None) -> Flask:
                        'plugins', 'lua_studio'}
             if bp_name not in faz_bps:
                 return redirect(url_for('faz.index'))
+        elif eff == 'fortiauthenticator':
+            # Shared pages + the product-scoped Fleet/Administration pages.
+            # The Authentication/Certificate/Logging sections are fac-blueprint
+            # pages. RBAC still gates each write.
+            fac_bps = {'fac', 'fac_api', 'appliances', 'settings', 'audit', 'jobs',
+                       'notifications', 'profiles', 'users', 'docs',
+                       'database', 'locks', 'segments',
+                       'architecture', 'metrics', 'search', 'analysis',
+                       'fleet_objects', 'dns_tool', 'backups',
+                       # Mirrored per-ADOM monitoring (2026-07-28) — scoping is
+                       # by device kind, so a FAC session sees only FAC boxes.
+                       'monitoring', 'deep_monitor', 'service_monitor',
+                       'monitor_analytics', 'monitor_reports',
+                       'metrics_admin',
+                       'templates', 'capacity',
+                       'api_tokens', 'api_v1',
+                       'plugins', 'lua_studio'}
+            if bp_name not in fac_bps:
+                return redirect(url_for('fac.index'))
         return None
 
     # -- access control gate (IP whitelist + allowed users) --------------
@@ -530,6 +552,17 @@ def create_app(config_override: object | None = None) -> Flask:
                 _faz_nav = ()
         except Exception:
             _faz_nav = ()
+        # FortiAuthenticator sidebar menu (only built for fortiauthenticator
+        # sessions; mirrors the unit's own nav_menu_definition, see
+        # services.fac_menu).
+        try:
+            if prod.get("key") == "fortiauthenticator":
+                from .services import fac_menu as _facm
+                _fac_nav = _facm.visible_menu()
+            else:
+                _fac_nav = ()
+        except Exception:
+            _fac_nav = ()
         try:
             _env_mode = _store.env_mode()
         except Exception:
@@ -550,6 +583,7 @@ def create_app(config_override: object | None = None) -> Flask:
             'node_name': _node_name,
             'adc_nav': _adc_nav,
             'faz_nav': _faz_nav,
+            'fac_nav': _fac_nav,
             'current_appliance': _cur_appl,
             'banner_bg': _bg,
             'now': datetime.utcnow(),
@@ -1278,6 +1312,8 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.adc_api", "bp"),
         ("app.views.faz", "bp"),
         ("app.views.faz_api", "bp"),
+        ("app.views.fac", "bp"),
+        ("app.views.fac_api", "bp"),
         ("app.views.appliances", "bp"),
         ("app.views.firmware", "bp"),
         ("app.views.jobs", "bp"),
@@ -1720,5 +1756,14 @@ def _seed_registry() -> None:
             logging.getLogger(__name__).info(
                 "Registry seed: %d FortiAnalyzer endpoints imported from "
                 "endpoints_fortianalyzer.yaml", added)
+    except Exception:  # noqa: BLE001 — never block boot on seeding
+        db.session.rollback()
+    try:
+        from .registry import loader
+        added = loader.seed_fac_from_yaml()
+        if added:
+            logging.getLogger(__name__).info(
+                "Registry seed: %d FortiAuthenticator endpoints imported from "
+                "endpoints_fortiauthenticator.yaml", added)
     except Exception:  # noqa: BLE001 — never block boot on seeding
         db.session.rollback()

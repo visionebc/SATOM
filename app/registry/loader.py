@@ -323,6 +323,110 @@ def seed_faz_from_yaml() -> int:
     return added
 
 
+
+# ---------------------------------------------------------------------------
+# FortiAuthenticator registry (product='fortiauthenticator', api_version='v1')
+# ---------------------------------------------------------------------------
+# Same DB-first + YAML-fallback contract as the other three products, kept as a
+# parallel, product-scoped set of helpers. URNs here are plain REST paths
+# (``/api/v1/<resource>/``) — FortiAuthenticator is a Django/Tastypie API, not
+# the Fortinet CMDB tree, and not JSON-RPC. Seed file: the repo-root
+# ``endpoints_fortiauthenticator.yaml``, every entry probed live against fac01
+# v8.0.3 build0099.
+
+_fac_yaml_cache: dict | None = None
+_fac_db_cache: dict = {"map": None, "ts": 0.0}
+
+
+def _fac_yaml_registry() -> dict:
+    global _fac_yaml_cache
+    if _fac_yaml_cache is None:
+        yaml_path = os.path.join(os.path.dirname(__file__), '..', '..',
+                                 'endpoints_fortiauthenticator.yaml')
+        try:
+            with open(yaml_path) as f:
+                _fac_yaml_cache = yaml.safe_load(f) or {}
+        except FileNotFoundError:
+            _fac_yaml_cache = {}
+    return _fac_yaml_cache
+
+
+def _fac_db_registry() -> dict | None:
+    now = time.monotonic()
+    if _fac_db_cache["map"] is not None and (now - _fac_db_cache["ts"]) < _CACHE_TTL:
+        return _fac_db_cache["map"]
+    try:
+        from ..models import RegistryEndpoint
+        rows = RegistryEndpoint.query.filter_by(
+            product="fortiauthenticator", enabled=True).all()
+        if not rows:
+            return None
+        reg = {r.name: r.urn for r in rows}
+    except Exception:  # noqa: BLE001 — any DB hiccup -> YAML fallback
+        return None
+    _fac_db_cache["map"] = reg
+    _fac_db_cache["ts"] = now
+    return reg
+
+
+def invalidate_fac_cache() -> None:
+    _fac_db_cache["map"] = None
+    _fac_db_cache["ts"] = 0.0
+
+
+def load_fac_registry() -> dict:
+    """The active FortiAuthenticator ``{friendly_key: urn}`` map (DB first,
+    YAML fallback)."""
+    reg = _fac_db_registry()
+    if reg is not None:
+        return reg
+    return _fac_yaml_registry()
+
+
+def resolve_fac(name: str) -> str:
+    """Resolve a FortiAuthenticator logical endpoint name to its REST path."""
+    reg = load_fac_registry()
+    try:
+        return reg[name]
+    except KeyError:
+        raise KeyError(
+            f"unknown FortiAuthenticator registry endpoint: {name!r}") from None
+
+
+def seed_fac_from_yaml() -> int:
+    """INSERT-ONLY sync endpoints_fortiauthenticator.yaml -> registry_endpoints
+    (product='fortiauthenticator'); returns rows added. Operator edits/disables
+    in the DB always win — same contract as the other three seeds."""
+    from sqlalchemy.exc import IntegrityError
+
+    from ..extensions import db
+    from ..models import RegistryEndpoint
+
+    yaml_map = _fac_yaml_registry()
+    if not yaml_map:
+        return 0
+    existing = {
+        name for (name,) in db.session.query(RegistryEndpoint.name)
+        .filter_by(product="fortiauthenticator", api_version="v1")
+    }
+    added = 0
+    for name, urn in yaml_map.items():
+        if not urn or name in existing:
+            continue
+        db.session.add(RegistryEndpoint(
+            product="fortiauthenticator", api_version="v1",
+            name=str(name), urn=str(urn), updated_by="seed",
+        ))
+        added += 1
+    if added:
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()  # another worker seeded first — fine
+            added = 0
+    invalidate_fac_cache()
+    return added
+
 # ---------------------------------------------------------------------------
 # display helpers (unchanged contract)
 # ---------------------------------------------------------------------------

@@ -79,6 +79,52 @@ Every interval and every top-N is editable per target in
   the target rows. An action that goes permanently red over a dead appliance is
   an action the operator learns to skip.
 
+### 2b. How this overlaps Deep monitors and Service Monitor
+
+It overlaps a lot, and it is worth being precise rather than reassuring. The
+four pages are not four subsystems -- Analytics is a *renderer*, and the two
+probe pages plus this collector are three *acquisition* paths, two of which now
+ask the appliance the same questions.
+
+| signal | Deep monitors | Service Monitor | Collection |
+|---|---|---|---|
+| CPU / memory | `cpu`, `memory` (SSH `get system performance`) | -- | `box` (REST `status.systemresource`) |
+| box sessions / conn rate | -- | `sessions` (REST `status.systemresource`) | `box` -- **the same call** |
+| interfaces | `interface` (harvest cache) | -- | `interfaces` (REST `status.systemoperation`) |
+| per-policy sessions / RTT | -- | `policy_sessions` -- **one probe per policy** | `policies` -- **one call, every policy** |
+| throughput | -- | `throughput` (per policy) | `traffic` (device total + top-N) |
+| HTTP transactions | -- | `transactions` (per policy) | `transactions` (top-N) |
+| synthetic HTTPS request | `https` | -- | -- |
+| `proxyd` restart (PID set) | `proxyd` (read-only CLI) | -- | -- |
+
+Read down the last two columns: **every kind Service Monitor owns is now also
+collected by a scrape target**, and for the per-policy signals the collector
+makes *one* call where the probe makes *N*. That N-per-policy shape is exactly
+what the 2026-08-05 sizing measured at ~56 minutes of device I/O per three
+minute window on the target fleet -- it is not a second opinion, it is the
+design the collector replaced.
+
+Only two probes have no equivalent here, and both are structural:
+
+* **`https`** issues a synthetic request through the published front end. That
+  is a different question from any counter: it proves interface, policy, proxy
+  and backend at once, and it is the only check that fails when the service is
+  unreachable *from outside*.
+* **`proxyd`** fingerprints the daemon's PID set over the read-only CLI. No
+  endpoint on FortiWeb exposes process state -- 100+ non-cmdb paths were
+  enumerated from the GUI bundle and none of them do -- so a silent restart is
+  invisible to every REST path in this table.
+
+The probe pages are also the only place a **threshold** lives. The store keeps
+raw series; alerting on them is a query, not a row.
+
+**Nothing was removed.** The probes carry ~15k samples of history and their own
+thresholds, and deleting a page whose sweep is still running is not a change to
+make quietly. What that costs today is duplicate load against every device that
+has both a probe and a target for the same signal, so the honest statement is:
+Collection is the path that scales, Service Monitor is the path that has
+history and thresholds, and consolidating them is a decision, not a cleanup.
+
 ---
 
 ## 3. Storage: VictoriaMetrics, single node, loopback

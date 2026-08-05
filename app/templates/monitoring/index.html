@@ -1,5 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Fleet health{% endblock %}
+{% block title %}Device health{% endblock %}
+
+{# Device health — the APPLIANCES. Manager self-health (nodes, DB, units,
+   redundancy, encryption) moved to monitoring/satom.html on 2026-08-05: the
+   two answer different questions for different readers, and only the second is
+   Global-only, so one page had to hide half of itself in every product ADOM. #}
 
 {% block content %}
 <style nonce="{{ csp_nonce }}">
@@ -45,8 +50,8 @@
 
 <div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
   <div>
-    <h1 class="fw-page-title mb-0"><i class="bi bi-heart-pulse me-2 text-accent"></i>Fleet health</h1>
-    <p class="text-muted small mb-0">{% if is_global %}Appliance health, capacity guardrails, and manager self-diagnostics — data from the local cache, no live device calls.{% else %}{{ product.name }} appliance health and capacity guardrails — data from the local cache, no live device calls.{% endif %}</p>
+    <h1 class="fw-page-title mb-0"><i class="bi bi-hdd-rack me-2 text-accent"></i>Device health</h1>
+    <p class="text-muted small mb-0">{% if is_global %}Appliance health and capacity guardrails — data from the local cache, no live device calls. For this installation's own health see <a href="{{ url_for('monitoring.satom', _adom='global') }}">SATOM health</a>.{% else %}{{ product.name }} appliance health and capacity guardrails — data from the local cache, no live device calls.{% endif %}</p>
   </div>
   <div class="d-flex align-items-center gap-2">
     <span id="monStamp" class="text-muted small"></span>
@@ -57,17 +62,6 @@
     <button id="monRefreshBtn" class="btn btn-sm btn-primary"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
   </div>
 </div>
-
-{# Manager self-health (HA peers · Git · backup server · DB · units · encryption)
-   describes the SATOM installation, not a product, so it is Global-only. A
-   product ADOM renders device cards ONLY. The server agrees: /monitoring/data
-   omits the system/db/redundancy keys outside Global and /monitoring/{infra,
-   encryption} answer 403 — the template is not the enforcement point. #}
-{% if is_global %}
-{% include "_infra_health.html" %}{# Database + Services cards render into #monSystem, which lives inside the infra grid #}
-
-{% include "_encryption_health.html" %}
-{% endif %}
 
 <div id="monHealthAlerts"></div>
 <div id="monAlerts"></div>
@@ -80,9 +74,6 @@
 (function () {
   'use strict';
   var CAN_SCAN = {{ 'true' if can_scan else 'false' }};
-  // Global-only sections are not rendered in a product ADOM; renderSystem would
-  // dereference a null #monSystem and kill the whole load() chain.
-  var IS_GLOBAL = {{ 'true' if is_global else 'false' }};
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -183,61 +174,11 @@
       html || '<div class="text-muted">No appliances registered.</div>';
   }
 
-  function renderSystem(d) {
-    var host = document.getElementById('monSystem');
-    if (!host) return;              // product ADOM — manager self-health hidden
-    var dbs = d.db || {}, red = d.redundancy || {};
-    var svc = (d.services || []).map(function (s) {
-      var color = s.ok ? '#10b981' : (s.state === 'inactive' ? '#64748b' : '#ef4444');
-      return '<div class="mon-svc"><span><span class="mon-dot" style="background:' + color + '"></span>' +
-        esc(s.unit.replace('.service', '')) + '</span><span class="' + (s.ok ? 't-ok' : 't-crit') + '">' +
-        esc(s.state) + '</span></div>';
-    }).join('');
-    var tables = Object.keys(dbs.tables || {}).map(function (t) {
-      return '<div class="mon-svc"><span>' + esc(t) + '</span><span>' +
-        Number(dbs.tables[t]).toLocaleString() + '</span></div>';
-    }).join('');
-    var bk = dbs.last_backup
-      ? esc(dbs.last_backup.file) + ' · ' + dbs.last_backup.age_h + ' h ago · ' + dbs.last_backup.size_mb + ' MB'
-      : 'no dump found';
-    var bkCls = dbs.last_backup && dbs.last_backup.age_h < 30 ? 't-ok' : 't-warn';
-    var clusters = (red.device_clusters || []).map(function (c) {
-      return '<div class="mon-svc"><span><i class="bi bi-diagram-2 me-1"></i>' + esc(c.name) +
-        ' <span class="text-muted">(' + esc(c.mode) + (c.vip ? ' · VIP ' + esc(c.vip) : '') + ')</span></span>' +
-        '<span>' + c.members.map(function (m) { return esc(m.name) + (m.role ? ' [' + esc(m.role) + ']' : ''); }).join(', ') + '</span></div>';
-    }).join('') || '<div class="text-muted small">No HA clusters registered.</div>';
-    var mgr = red.manager || {};
-
-    host.innerHTML =
-      '<div class="fw-card"><div class="fw-card-body">' +
-      '<b><i class="bi bi-database me-1"></i>Database</b>' +
-      '<div class="text-muted small mb-2">' + esc(dbs.dialect || '?') +
-      (dbs.version ? ' ' + esc(dbs.version) : '') +
-      (dbs.size ? ' · ' + esc(dbs.size) : '') +
-      (dbs.latency_ms != null ? ' · ' + dbs.latency_ms + ' ms' : '') + '</div>' +
-      tables +
-      '<div class="mon-svc"><span>nightly dump</span><span class="' + bkCls + '">' + bk + '</span></div>' +
-      '<div class="mon-svc"><span>streaming replicas</span><span>' +
-      (dbs.replicas == null ? 'n/a' : dbs.replicas || '<span class="t-warn">none (single node)</span>') +
-      '</span></div></div></div>' +
-
-      '<div class="fw-card"><div class="fw-card-body">' +
-      '<b><i class="bi bi-shield-check me-1"></i>Services &amp; redundancy</b>' +
-      '<div class="mt-2">' + svc + '</div>' +
-      '<div class="mon-sec-title mt-3 mb-1">Device HA clusters</div>' + clusters +
-      '<div class="mon-sec-title mt-3 mb-1">Manager redundancy</div>' +
-      '<div class="text-muted small">' + esc(mgr.note || '') + '</div>' +
-      '<div class="mon-svc"><span>scheduler sidecar</span><span class="' +
-      (mgr.scheduler_ok ? 't-ok">active' : 't-crit">down') + '</span></div>' +
-      '</div></div>';
-  }
-
   function load() {
     fetch('{{ url_for("monitoring.data") }}', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         renderHealthAlerts(d); renderAlerts(d); renderDevices(d);
-        if (IS_GLOBAL) renderSystem(d);
         document.getElementById('monStamp').textContent =
           'updated ' + new Date().toLocaleTimeString() +
           ' · warn ≥ ' + d.thresholds.warn + '% · crit ≥ ' + d.thresholds.crit + '%';

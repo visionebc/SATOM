@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 22 entries.">
+<title>Version 1.4.0 — SATOM</title>
+<meta name="description" content="Released on 2026-08-05 — Added · Changed · Fixed · 27 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 22 entries.</p>
+  <h1>Version 1.4.0 <span class="rel-badge rel-now">current release</span></h1>
+  <p class="sub">Released on 2026-08-05 — Added · Changed · Fixed · 27 entries.</p>
   <div class="callout" style="margin-top:18px;">
     <span class="cico">🗒️</span>
     <p><b>Generated from the changelog.</b> This page is one section of
@@ -67,6 +67,46 @@
     <div class="doc-body mdx">
 <h3 id="added">Added</h3>
 <ul>
+<li>
+<p><strong>SATOM health and Device health are two pages.</strong> Fleet health carried the
+  appliances and the manager's own installation, and only the second is
+  Global-only, so the page had to hide half of itself in every product ADOM.
+  <strong>SATOM health</strong> now answers <em>is this installation healthy</em> (HA nodes,
+  database, systemd units, redundancy, encryption in transit) and <strong>Device
+  health</strong> answers <em>are the appliances healthy</em> (cards, capacity guardrails,
+  health alerts). The nav carries them as a nested submenu under Fleet health.
+  The split is enforced on the routes and not by hiding sections:
+  <code>/monitoring/satom</code> redirects out of a product ADOM and
+  <code>/monitoring/satom-data</code> answers 403, because every card on that page names
+  node hostnames and infrastructure addresses. The manager feed also stopped
+  computing the per-device capacity roll-up it never rendered.</p>
+</li>
+<li>
+<p><strong><code>satom-metrics</code> is a monitored unit.</strong> The store is where Analytics boards
+  and the Collection page read every number they draw, and it was absent from
+  the Services &amp; redundancy list — it could be dead while every light on the
+  panel stayed green. Four more units that are unconditionally expected to run
+  joined it (<code>nginx</code>, <code>satom-reconciler</code>, <code>satom-updater.path</code>). Units that are
+  inactive <em>by design</em> were deliberately left off: <code>satom-ha-datasync</code> is
+  role-guarded and inert on the primary, <code>satom-git-publish</code> was retired with
+  the git SoT, and a check that always complains is a check the operator learns
+  to skip.</p>
+</li>
+<li>
+<p><strong>Device HA posture, derived from the harvest.</strong> <em>Device HA clusters</em> printed
+  <em>"No HA clusters registered"</em> on a fleet whose hourly sweep had <code>system_ha</code>
+  cached for every appliance: the panel read <code>Appliance.members</code>, a table
+  written only by the appliance form, and threw away the standalone count it
+  had just computed. The new <code>ha_inventory</code> service reads the cache and reports
+  one row per appliance — mode, group, VIP, and the evidence behind the
+  verdict. <em>Clustered</em> requires peer evidence (a heartbeat device, a group
+  name, a peer address, a node list longer than one), never the <code>mode</code> field
+  alone: FortiWeb and FortiADC report it as an unambiguous string, but
+  FortiAnalyzer reports an <strong>int</strong> whose enum could not be verified against a
+  live device, and guessing it would label a standalone box "primary". A device
+  with no cached HA is <code>unknown</code>, never <code>standalone</code>. Rows parked on the
+  reserved <code>.invalid</code> TLD are excluded outright — they name no real box.</p>
+</li>
 <li>
 <p><strong>A node reports the state that exists only here.</strong> <code>satom diagnose git</code>
   gains a <em>state that exists only here</em> section: modified tracked files (named,
@@ -155,6 +195,18 @@
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
+<li>
+<p><strong>Collection moved from Monitoring to Administrator.</strong> The other six
+  Monitoring entries display a measurement; this one configures how measurement
+  happens — which (device, collector) pairs run, how often, how many policies
+  deep — and needs <code>CONFIG_WRITE</code> to change anything. It sits next to Capacity
+  Limits, which is the same kind of knob. It ships as a shared partial included
+  by all four Administrator groups: those groups have drifted before (one of
+  them is still titled "Administration"), and a single definition is the only
+  thing that stops an entry being added to Global and forgotten in the other
+  three. The enable/disable toggle on that page became a real button — it POSTs
+  and changes state, and a bare link reads as navigation.</p>
+</li>
 <li>
 <p><strong>The device source of truth left git.</strong> <code>reports/&lt;device&gt;/_config.json</code> was
   committed hourly; one FortiAnalyzer snapshot is ~8.4 MB and git keeps every
@@ -287,6 +339,14 @@
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li>
+<p><strong>A missing systemd unit is no longer reported as a failed one.</strong>
+  <code>systemctl is-active</code> answers <code>inactive</code> for a unit that does not exist,
+  which is indistinguishable from a unit that exists and stopped. A standalone
+  install without an <code>nftables</code> package is fine; a node whose metrics store
+  died is not. <code>LoadState</code> separates them and an uninstalled unit renders
+  neutral.</p>
+</li>
 <li>
 <p><strong>SECURITY: the privileged update runner ran root-owned code out of a tree the
   service account owns.</strong> <code>satom-updater.service</code> runs as <strong>root</strong> and its

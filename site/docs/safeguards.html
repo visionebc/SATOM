@@ -96,6 +96,7 @@
       <a href="#14-operational-data-grows-with-change-not-with-time">14. Operational data grows with change, not with time</a>
       <a href="#15-a-device-that-is-not-collected-has-to-say-so">15. A device that is not collected has to say so</a>
       <a href="#16-a-dependency-the-product-needs-is-a-dependency-the-product-ships">16. A dependency the product needs is a dependency the product ships</a>
+      <a href="#17-a-panel-that-cannot-report-bad-news-is-not-a-panel">17. A panel that cannot report bad news is not a panel</a>
       <a href="#11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</a>
       <a href="#verifying-the-guards-are-armed_5">Verifying the guards are armed</a>
       <a href="#related">Related</a>
@@ -2526,6 +2527,70 @@ dependency the product may rely on.</strong></p>
 carries VictoriaMetrics (Apache-2.0) and lego (MIT), plus the vendored browser
 assets. SATOM is ELv2; those components are not, and their terms are not
 superseded by it.</p>
+<h2 id="17-a-panel-that-cannot-report-bad-news-is-not-a-panel">17. A panel that cannot report bad news is not a panel</h2>
+<p>Four defects in the same console shipped and survived review because none of
+them crashes. Each one makes the page state something false and keep a straight
+face.</p>
+<p><strong>A monitored-unit list is a claim about what can break.</strong> Until 2026-08-05
+<em>Services &amp; redundancy</em> watched five units and <code>satom-metrics</code> was not among
+them. The Analytics boards and the Collection page read every number they draw
+from that store, so it could be dead while every light on the panel stayed
+green. The rule: <strong>a unit whose death is visible to the operator elsewhere in
+this console belongs on that list.</strong> The converse matters just as much --
+<code>satom-ha-datasync.timer</code> is role-guarded and inert on the primary, and
+<code>satom-git-publish.timer</code> was retired with the git SoT. Listing either shows a
+permanent red for correct behaviour, and a check that always complains is a
+check the operator learns to skip. That false positive has had to be removed
+from <code>get system health</code> twice; the guard now fails the suite if either unit is
+added back.</p>
+<p><strong>Missing is not failed.</strong> <code>systemctl is-active</code> answers <code>inactive</code> for a unit
+that does not exist, which is indistinguishable from a unit that exists and
+stopped. A standalone install without an <code>nftables</code> package is fine; a node
+whose metrics store died is not. <code>LoadState</code> separates them, and a unit that is
+not installed is reported neutral (grey), never red.</p>
+<p><strong>A panel may not read the documentation table when the sweep has the truth.</strong>
+<em>Device HA clusters</em> printed <em>"No HA clusters registered"</em> on a fleet whose
+hourly harvest had <code>system_ha</code> cached for every appliance. It read
+<code>Appliance.members</code>, which is written by exactly one thing -- the appliance form
+-- so a box nobody had typed in by hand could not be reported at all. Worse, the
+function computed a standalone count and then never rendered it. <code>ha_inventory</code>
+derives the posture from the cache, which is where the answer already was. This
+is the same defect and the same fix as the interface inventory (2026-07-20):
+<strong>if the harvest already fetched it, the view must not read the hand-entry
+table instead.</strong></p>
+<p>Three rules hold that panel honest:</p>
+<ul>
+<li><strong>Clustered requires peer evidence</strong> -- a heartbeat device, a group name, a
+  peer address, a node list longer than one -- and the panel prints the evidence
+  next to the verdict. FortiWeb and FortiADC report <code>mode</code> as a string, which is
+  unambiguous; FortiAnalyzer reports it as an <strong>int</strong> whose enum could not be
+  verified against a live device. Guessing that mapping would label a standalone
+  box "primary", so the verdict comes from evidence and the raw value is carried
+  through verbatim for the operator to see. <strong>An unverified enum is reported as
+  unverified, never as a confident label.</strong></li>
+<li><strong>No harvest means <code>unknown</code>, never <code>standalone</code>.</strong> "We have measured nothing"
+  and "this box is standalone" are different statements; merging them is the
+  Fleet-health-badge bug of 2026-07-28.</li>
+<li><strong>Retired placeholders are excluded outright.</strong> A row whose host is parked on
+  the reserved <code>.invalid</code> TLD names no real box; counting it as unknown keeps
+  the panel permanently amber for rows kept only for their history.</li>
+</ul>
+<p><strong>One page, one question.</strong> Fleet health carried the appliances <em>and</em> the
+manager's own health, and only the second is Global-only -- so the page had to
+hide half of itself in every product ADOM. It is now <strong>SATOM health</strong> (this
+installation: nodes, database, units, redundancy, encryption) and <strong>Device
+health</strong> (the appliances). The split is enforced on the routes, not in the
+template: <code>/monitoring/satom</code> redirects out of a product ADOM and
+<code>/monitoring/satom-data</code> answers 403, because those sections name node
+hostnames and infrastructure addresses. The manager feed also stops computing
+the per-device capacity roll-up it never renders.</p>
+<p><strong>Configuration is not a measurement.</strong> Collection moved from Monitoring to
+Administrator: the other six Monitoring pages display what was measured, this
+one sets how measurement happens and needs <code>CONFIG_WRITE</code> to change anything.
+It ships as <code>partials/nav_collection.html</code> and is included by all four
+Administrator groups -- those groups have already drifted once (one of them is
+still titled "Administration"), and a shared partial is the only thing that
+stops an entry being added to Global and forgotten in the other three.</p>
 <h2 id="11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</h2>
 <ul>
 <li>Per-device configuration restore is dry-run gated — no live canary round-trip yet.</li>
@@ -2965,6 +3030,25 @@ in 16 was a case where the scripts were fine and the artefact was not.</p>
 <li><a href="metrics-architecture.html"><code>metrics-architecture.md</code></a> — where operational data lives, and the fleet-scale measurement behind it</li>
 <li><a href="install.html"><code>INSTALL.md</code></a> — what to request from systems, and the hardening checklist</li>
 </ul>
+<h3 id="the-monitoring-panels-report-bad-news-17">The monitoring panels report bad news (17)</h3>
+<pre><code class="language-bash"># 1. the store is watched, and units inactive BY DESIGN are not
+python3 -c &quot;from app.services.system_health import MONITORED_UNITS as U; \
+  print('store watched:', 'satom-metrics.service' in U); \
+  print('no role-guarded:', not any('datasync' in u or 'git-publish' in u for u in U))&quot;
+
+# 2. HA posture comes from the harvest, not the hand-entry table
+#    (expect one row per live appliance, each carrying its evidence)
+curl -sk -b &quot;$COOKIE&quot; https://$NODE/monitoring/satom-data | python3 -c \
+  &quot;import json,sys; r=json.load(sys.stdin)['redundancy']; print(r['device_counts']); \
+   [print(' ', d['name'], d['status'], d['source'], d['evidence']) for d in r['device_posture']]&quot;
+
+# 3. the split is enforced on the ROUTE, not the template
+curl -sk -o /dev/null -w '%{http_code}\n' -H 'X-ADOM: fortiweb' https://$NODE/monitoring/satom-data
+curl -sk -o /dev/null -w '%{http_code}\n' -H 'X-ADOM: fortiweb' https://$NODE/monitoring/satom
+
+# 4. every Administrator group offers Collection -- 4 means all of them
+grep -c 'partials/nav_collection.html' app/templates/base.html
+</code></pre>
     </div>
   </div>
 </section>

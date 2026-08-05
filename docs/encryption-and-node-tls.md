@@ -90,7 +90,7 @@ echoes `peer_authenticated`. nftables on 248 opens `:8443` from `192.0.2.249`.
 
 ## Monitoring cards
 `app/services/encryption_health.py` + `app/templates/_encryption_health.html`
-(included by `monitoring/index.html`), endpoint `/monitoring/encryption`. Every
+(included by `monitoring/satom.html`), endpoint `/monitoring/encryption`. Every
 "encrypted" badge is backed by a **live probe** (`pg_stat_ssl`, a real TLS
 handshake to `:8443`, git remote scheme) — never assumed. Shows, per channel:
 encrypted? · protocol+cipher · how · enforced/authenticated, plus a node-cert

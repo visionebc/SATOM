@@ -174,7 +174,7 @@ echoes <code>peer_authenticated</code>. nftables on 248 opens <code>:8443</code>
 <code>/root/postgresql.auto.conf.pre-ssl-*</code> on 249.</p>
 <h2 id="monitoring-cards">Monitoring cards</h2>
 <p><code>app/services/encryption_health.py</code> + <code>app/templates/_encryption_health.html</code>
-(included by <code>monitoring/index.html</code>), endpoint <code>/monitoring/encryption</code>. Every
+(included by <code>monitoring/satom.html</code>), endpoint <code>/monitoring/encryption</code>. Every
 "encrypted" badge is backed by a <strong>live probe</strong> (<code>pg_stat_ssl</code>, a real TLS
 handshake to <code>:8443</code>, git remote scheme) — never assumed. Shows, per channel:
 encrypted? · protocol+cipher · how · enforced/authenticated, plus a node-cert

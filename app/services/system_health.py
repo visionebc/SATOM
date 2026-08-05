@@ -17,9 +17,27 @@ from sqlalchemy import text as sa_text
 
 from ..models import db, Appliance
 
+#: Units whose state the Monitoring page reports.
+#:
+#: What belongs here: a unit whose being down breaks something the operator can
+#: see in this console. ``satom-metrics`` (the local time-series store) is the
+#: 2026-08-05 addition — Analytics boards and the Collection page read from it,
+#: so a stopped store turns those pages into errors while every other signal
+#: stays green.
+#:
+#: What deliberately does NOT belong here: units that are inactive **by design**
+#: on this node. ``satom-ha-datasync.timer`` is role-guarded and inert on the
+#: primary; ``satom-git-publish.timer`` was retired with the git SoT. Listing
+#: either would show a permanent red for correct behaviour, and a check that
+#: always complains is a check the operator learns to skip -- the same false
+#: positive that had to be removed from ``get system health`` twice.
 MONITORED_UNITS = (
     "satom.service",
     "satom-scheduler.service",
+    "satom-reconciler.service",
+    "satom-metrics.service",
+    "satom-updater.path",
+    "nginx.service",
     "postgresql.service",
     "redis-server.service",
     "nftables.service",
@@ -86,16 +104,37 @@ def host_stats() -> dict:
 
 
 def service_status(units: tuple[str, ...] = MONITORED_UNITS) -> list[dict]:
+    """State of each monitored unit, separating *broken* from *not installed*.
+
+    ``systemctl is-active`` answers ``inactive`` for a unit that does not exist
+    on this host, which is indistinguishable from a unit that exists and is
+    stopped. Those are different findings: a standalone install with no
+    ``nftables`` package is fine, a node whose ``satom-metrics`` died is not.
+    ``LoadState`` tells them apart, so a missing unit is reported with
+    ``ok=None`` (neutral, grey) instead of red.
+    """
     out = []
     for u in units:
-        state = "unknown"
+        state, installed = "unknown", True
+        try:
+            r = subprocess.run(["systemctl", "show", "-p", "LoadState",
+                                "--value", u],
+                               capture_output=True, text=True, timeout=5)
+            installed = (r.stdout or "").strip() != "not-found"
+        except Exception:
+            pass
+        if not installed:
+            out.append({"unit": u, "state": "not installed",
+                        "ok": None, "installed": False})
+            continue
         try:
             r = subprocess.run(["systemctl", "is-active", u],
                                capture_output=True, text=True, timeout=5)
             state = (r.stdout or "").strip() or "unknown"
         except Exception:
             pass
-        out.append({"unit": u, "state": state, "ok": state == "active"})
+        out.append({"unit": u, "state": state, "ok": state == "active",
+                    "installed": True})
     return out
 
 
@@ -171,29 +210,28 @@ def _manager_summary() -> dict:
 
 
 def redundancy() -> dict:
-    clusters = []
-    standalone = 0
+    """Device HA posture + the manager's own redundancy.
+
+    Until 2026-08-05 the device half read ``Appliance.members`` and nothing
+    else. That table is written ONLY by the appliance form, so on a fleet whose
+    harvest had ``system_ha`` cached for every box the panel rendered
+    *"No HA clusters registered"* and threw away the standalone count it had
+    just computed. ``ha_inventory`` derives the posture from the cache, which is
+    where the truth already was.
+    """
+    devices, clusters = [], []
+    counts = {"clustered": 0, "standalone": 0, "unknown": 0}
     try:
-        all_apps = Appliance.query.order_by(Appliance.name).all()
-        member_ids: set[int] = set()
-        node0_ids: set[int] = set()
-        for a in all_apps:
-            members = list(getattr(a, "members", None) or [])
-            if members:
-                node0_ids.add(a.id)
-                member_ids.update(m.id for m in members)
-                clusters.append({
-                    "name": a.name, "mode": a.ha_mode or "", "vip": a.ha_vip or "",
-                    "members": [{"name": m.name,
-                                 "role": m.ha_role_hint or ""} for m in members],
-                })
-        standalone = sum(1 for a in all_apps
-                         if a.id not in member_ids and a.id not in node0_ids)
+        from . import ha_inventory
+        roll = ha_inventory.fleet(Appliance.query.order_by(Appliance.name).all())
+        devices, clusters, counts = roll["devices"], roll["clusters"], roll["counts"]
     except Exception:
         pass
-    sched = next((s for s in service_status(("satom-scheduler.service",))), None)
     return {
         "device_clusters": clusters,
-        "device_standalone": standalone,
+        "device_posture": devices,
+        "device_counts": counts,
+        # Kept for API compatibility with anything reading the old key.
+        "device_standalone": counts.get("standalone", 0),
         "manager": _manager_summary(),
     }

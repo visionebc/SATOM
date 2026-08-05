@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/site.css?v=809f8743b5">
+<link rel="stylesheet" href="../assets/site.css?v=fe7bfd72c7">
 <script src="../assets/site.js?v=0f03aeb694" defer></script>
 </head>
 <body>
@@ -29,6 +29,7 @@
         <a href="../architecture.html">Architecture</a>
         <a href="../safeguards.html">Safeguards</a>
         <a href="../docs.html" class="active">Docs</a>
+        <a href="../releases.html">Releases</a>
         <a href="../docs/api.html">API</a>
         <a href="../install.html">Install</a>
       </div>
@@ -116,10 +117,11 @@ directory, so a document added here appears there with no second edit.</p>
 <p>Two rules follow and both are enforced by <code>tests/test_docs_publication.py</code>:</p>
 <ul>
 <li><strong>The repository is the only place anyone edits.</strong> The site pages are
-  generated (<code>deploy/gen_site_docs.py</code>) and the command reference inside
-  <code>cli.md</code> is generated (<code>deploy/gen_cli_reference.py</code>). Editing the generated
-  HTML by hand creates a second copy, and the second copy is the one that goes
-  stale in public.</li>
+  generated (<code>deploy/gen_site_docs.py</code>), the per-version <strong>Release notes</strong>
+  section is generated from <code>CHANGELOG.md</code> (<code>deploy/gen_release_notes.py</code>) and
+  the command reference inside <code>cli.md</code> is generated
+  (<code>deploy/gen_cli_reference.py</code>). Editing the generated HTML by hand creates a
+  second copy, and the second copy is the one that goes stale in public.</li>
 <li><strong>The published copy is redacted, from one registry.</strong> Eleven of these files
   carry real internal addresses, management hostnames, hypervisor names and an
   administrator's e-mail. <code>app/services/doc_publication.py</code> owns the
@@ -130,8 +132,12 @@ directory, so a document added here appears there with no second edit.</p>
 <p>Regenerating is three commands, and the test tells you when you owe them:</p>
 <pre><code class="language-bash">python3 deploy/gen_cli_reference.py    # docs/cli.md command table
 python3 deploy/gen_site_docs.py        # site/docs/*.html + site/docs.html
+python3 deploy/gen_release_notes.py    # site/releases/*.html + site/releases.html
 python3 deploy/stamp_site_assets.py    # cache-busting hashes + version pill
 </code></pre>
+<p>Order matters for the last two: the release notes reuse the manual's chrome and
+its redaction table, and the stamper has to run after anything that writes a
+page.</p>
 <hr>
 <h2 id="2-reading-paths">2. Reading paths</h2>
 <h3 id="i-have-to-run-this-thing">I have to run this thing</h3>
@@ -249,7 +255,7 @@ python3 deploy/stamp_site_assets.py    # cache-busting hashes + version pill
 </tr>
 <tr>
 <td><a href="release-notes.html"><code>release_notes.md</code></a></td>
-<td>The known/resolved issue corpus behind the upgrade advisor.</td>
+<td>The <strong>vendor's</strong> known/resolved issue corpus behind the upgrade advisor — Fortinet's, not SATOM's. SATOM's own history is <a href="changelog.html"><code>../CHANGELOG.md</code></a>, published per version as the site's Release notes.</td>
 </tr>
 </tbody>
 </table>
@@ -364,6 +370,7 @@ something.</p>
       <a href="../architecture.html">Architecture</a>
       <a href="../safeguards.html">Safeguards</a>
       <a href="../docs.html">Docs</a>
+      <a href="../releases.html">Releases</a>
       <a href="../docs/api.html">API</a>
       <a href="../install.html">Install</a>
       <a href="https://github.com/visionebc/SATOM">Source</a>

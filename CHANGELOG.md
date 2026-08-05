@@ -8,6 +8,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Release notes, one page per version, on the public site.** The changelog
+  was published whole — a thousand lines, so "what shipped in 1.3.3 and do I
+  need it?" could only be answered by scrolling. The site gains a **Releases**
+  section in the top navigation: a hub listing every version newest-first with
+  its date and the headlines of its own entries, and one page per version.
+  Every fact on those pages is derived from `CHANGELOG.md` (the version list is
+  its headings, the dates are its dates, the teasers are its bold lead-ins) and
+  the *current release* badge is read from the `VERSION` file, so no number on
+  the site can drift from the repository. A version added without regenerating,
+  a page left behind by a rename, or a page missing from the hub each fail the
+  suite. `docs/release_notes.md` — the *vendor's* known-issue corpus behind the
+  upgrade advisor — was also renamed on the site, because two documents called
+  "Release notes" is how an upgrade gets planned from the wrong one.
+
 - **Scrape targets are provisioned when a device is saved.** Adding an
   appliance now creates its metrics collectors immediately, from every creation
   path (create, edit, cluster-member add), instead of only on the next

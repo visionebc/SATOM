@@ -60,6 +60,7 @@ NONROOT_UNITS = (
     "satom.service", "satom-scheduler.service", "satom-reconciler.service",
     "satom-alerts.service", "satom-cert-renew.service",
     "satom-git-publish.service", "satom-ha-datasync.service",
+    "satom-metrics.service",
 )
 
 UNIT_DROPIN = """# Generado por SATOM (instalador / migrate-deprivilege.sh / self_update_runner).

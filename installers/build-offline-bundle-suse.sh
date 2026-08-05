@@ -70,7 +70,7 @@ zypper --non-interactive install -y createrepo_c python311 python311-pip tar gzi
        findutils curl >/dev/null
 
 rm -rf "$STAGE" "$FAKEROOT"
-mkdir -p "$STAGE/bundle/rpms-suse" "$STAGE/bundle/wheels" "$STAGE/bundle/lego" "$OUT" "$FAKEROOT"
+mkdir -p "$STAGE/bundle/rpms-suse" "$STAGE/bundle/wheels" "$STAGE/bundle/lego" "$STAGE/bundle/victoria-metrics" "$OUT" "$FAKEROOT"
 
 echo "==> 1/4 Descargando .rpms (cierre completo contra una raíz vacía)"
 # Los repos se COPIAN, no se parsean: `zypper lr` es salida para humanos y su
@@ -127,6 +127,26 @@ tar xzf "$_lt/lego.tgz" -C "$STAGE/bundle/lego" lego
 chmod 0755 "$STAGE/bundle/lego/lego"
 rm -rf "$_lt"
 echo "    lego ${LEGO_VERSION} anadido al bundle (sha256 verificado)"
+
+# --- Almacen de metricas: el binario de VictoriaMetrics viaja en el bundle para
+# que una instalacion sin salida a internet tenga /monitoring/analytics con
+# datos. El sha256 es el del binario EXTRAIDO (victoria-metrics-prod), anclado
+# aqui y re-verificado por el instalador.
+# OJO: el mismo tag publica -cluster y -enterprise; la enterprise NO es
+# Apache-2.0. El nombre del artefacto esta fijado a proposito.   [SATOM-METRICS-BUNDLE]
+VM_VERSION="${VM_VERSION:-1.148.0}"
+VM_SHA256="${VM_SHA256:-bde7ea38c7c9b341a0bb1f37294d6d619ff0318d70174008b57d83cd4f5698f3}"
+_vt="$(mktemp -d)"
+curl -fsSLo "$_vt/vm.tgz" "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/v${VM_VERSION}/victoria-metrics-linux-amd64-v${VM_VERSION}.tar.gz" \
+  || { echo "victoria-metrics: descarga fallida"; exit 1; }
+tar xzf "$_vt/vm.tgz" -C "$_vt" victoria-metrics-prod \
+  || { echo "victoria-metrics: el tarball no contiene victoria-metrics-prod"; exit 1; }
+_got="$(sha256sum "$_vt/victoria-metrics-prod" | awk '{print $1}')"
+[ "$_got" = "$VM_SHA256" ] || { echo "victoria-metrics sha256 mismatch: $_got"; exit 1; }
+install -m 0755 "$_vt/victoria-metrics-prod" "$STAGE/bundle/victoria-metrics/victoria-metrics"
+rm -rf "$_vt"
+echo "    victoria-metrics ${VM_VERSION} anadido al bundle (sha256 verificado)"
+
 
 echo "==> 4/4 Instalador + manual + tarball final"
 cp "$REPO_DIR/installers/install-satom.sh" "$STAGE/"

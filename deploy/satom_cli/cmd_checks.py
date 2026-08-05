@@ -18,9 +18,13 @@ from . import dbq
 from .context import UNITS, run
 from .render import Result
 
+# satom-git-publish.timer left this list 2026-08-05: the reports/ SoT moved
+# from git commits to the local versioned store (services.sot_store), so the
+# hourly publisher retired with it. A node that still has the timer is fine;
+# a node without it is no longer broken.
 REQUIRED_UNITS = ("satom.service", "satom-scheduler.service", "satom-reconciler.service",
                   "satom-updater.path", "satom-updater.service", "satom-alerts.timer",
-                  "satom-cert-renew.timer", "satom-git-publish.timer")
+                  "satom-cert-renew.timer")
 
 # Units whose file is a template in deploy/ and is therefore re-copied verbatim
 # by the update runner. Their User= only survives as a drop-in.
@@ -31,9 +35,8 @@ DROPIN_UNITS = ("satom.service", "satom-scheduler.service", "satom-reconciler.se
 # every capability and zero coverage.
 MIN_ACTIONS = {
     "device_sync": "hourly source-of-truth refresh",
-    "device_inspect": "nightly SoT snapshot -> git",
+    "device_inspect": "nightly SoT off-box push",
     "system_backup": "nightly database bundle",
-    "git_bundle": "nightly git repository bundle",
     "deep_monitor": "probe sweep",
     # The sweep records; this is what carries the record to a human. Without it
     # the rollups accumulate for ninety days and nobody is told anything unless
@@ -640,10 +643,10 @@ def git(ctx, args):
     if shutil.which("git") is None:
         r.status = "bad"
         r.rows("", [("git binary", "not installed")])
-        r.note("satom-git-publish and the nightly git bundle both shell out to "
-               "git, so backup copy 3 (the reports/ SoT versioned in git) does "
-               "not exist on this node. Install it from the distribution media "
-               "or the offline bundle.")
+        r.note("code updates (reconciler / self-update) and manual git bundles "
+               "shell out to git. The device SoT no longer depends on it "
+               "(services.sot_store), but code delivery does. Install it from "
+               "the distribution media or the offline bundle.")
         return r
     rc, out, _ = run(g + ["rev-parse", "--is-inside-work-tree"])
     if rc != 0:

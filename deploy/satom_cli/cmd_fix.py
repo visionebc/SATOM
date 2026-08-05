@@ -33,17 +33,15 @@ from .render import Result
 # Units an operator may enable/disable. Timers and paths only: these are the
 # switches that silently strand automation when they are off, which is exactly
 # the class of fault this CLI is for.
-TOGGLEABLE = ("updater", "alerts", "cert-renew", "git-publish", "datasync")
+TOGGLEABLE = ("updater", "alerts", "cert-renew", "datasync")
 
 SEED_PLAN = [
     ("device_sync", "Hourly fleet sync (source of truth)", "interval",
      {"every": 60, "unit": "minutes"}, {}, "fortiweb"),
-    ("device_inspect", "Nightly SoT snapshot -> git (all devices)", "daily",
+    ("device_inspect", "Nightly SoT snapshot + off-box push (all devices)", "daily",
      {"time": "02:45"}, {}, "fortiweb"),
-    ("system_backup", "Nightly system backup (Postgres + JSON -> git + server)", "daily",
-     {"time": "01:30"}, {"publish_git": True, "push_server": True}, "fortiweb"),
-    ("git_bundle", "Nightly git repository bundle", "daily",
-     {"time": "03:15"}, {"push_server": True}, "fortiweb"),
+    ("system_backup", "Nightly system backup (Postgres + JSON -> server)", "daily",
+     {"time": "01:30"}, {"push_server": True}, "fortiweb"),
     ("deep_monitor", "Deep monitors + Service Monitor — probe sweep", "interval",
      {"every": 3, "unit": "minutes"}, {}, "global"),
     # Period summaries. Each fires AFTER its period has closed, so it describes

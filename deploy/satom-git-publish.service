@@ -1,5 +1,0 @@
-[Unit]
-Description=SATOM: auto-publish reports/ JSON to git (primary only)
-[Service]
-Type=oneshot
-ExecStart=/usr/local/sbin/satom-git-publish.sh

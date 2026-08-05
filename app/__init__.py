@@ -1197,6 +1197,7 @@ def create_app(config_override: object | None = None) -> Flask:
             # whose model class has been imported.
             from . import models_theme  # noqa: F401
             from . import models_analytics  # noqa: F401
+            from . import models_sot  # noqa: F401
             db.create_all()
             _ensure_columns()
             _ensure_indexes()

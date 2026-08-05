@@ -567,6 +567,49 @@ def push_bundle(local_path: str, remote_name: str | None = None,
         return {"ok": False, "detail": str(exc)}
 
 
+def push_sot_blobs(paths: list) -> dict:
+    """Upload versioned SoT blobs the server does not hold yet, to
+    ``<system_path>/sot`` (flat — the two-level local sharding is a filesystem
+    concern, not a transfer one). Content-addressed names make the sync
+    trivially incremental: ONE listdir, then only the missing files travel.
+    Best-effort by the same contract as :func:`push_bundle`: never raises."""
+    try:
+        cfg = store.backup_server(reveal_secret=True)
+        if not cfg.get("configured"):
+            return {"ok": False, "detail": "backup server not configured "
+                                           "(Settings → SoT & Backup)"}
+        sys_path = cfg.get("system_path") or "/system"
+        dest = posixpath.join(sys_path, "sot")
+        t, sftp = _connect(cfg)
+        pushed = skipped = 0
+        try:
+            for d in (sys_path, dest):
+                try:
+                    sftp.stat(d)
+                except IOError:
+                    try:
+                        sftp.mkdir(d)
+                    except IOError as exc:
+                        return {"ok": False,
+                                "detail": f"{d} does not exist and could not "
+                                          f"be created ({exc})"}
+            have = set(sftp.listdir(dest))
+            for local in paths:
+                name = os.path.basename(local)
+                if name in have or not os.path.exists(local):
+                    skipped += 1
+                    continue
+                sftp.put(local, posixpath.join(dest, name))
+                pushed += 1
+        finally:
+            t.close()
+        return {"ok": True, "pushed": pushed, "skipped": skipped,
+                "detail": f"sot: {pushed} new blob(s) uploaded, "
+                          f"{skipped} already off-box"}
+    except Exception as exc:  # noqa: BLE001 — never raise into the sync flow
+        return {"ok": False, "detail": str(exc)}
+
+
 def dir_inventory(path: str) -> dict:
     """Generic listing of one folder on the backup server. Same shape as
     :func:`system_inventory` (which predates it and is kept for the DB-bundle

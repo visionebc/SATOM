@@ -101,12 +101,12 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "Read-only against the box.",
     ),
     ActionSpec(
-        "device_inspect", "Sync device + publish backup to git", "admin",
+        "device_inspect", "Sync device + push SoT off-box", "admin",
         needs_targets=True, products=("fortiweb", "fortiadc", "fortianalyzer"),
-        summary="Like Sync, plus PUBLISH each device's JSON backup to the git "
-                "repo (off-box versioned backup). Covers FortiWeb, FortiADC and "
-                "FortiAnalyzer. Use for the scheduled, git-backed "
-                "source-of-truth snapshot.",
+        summary="Like Sync, plus UPLOAD the versioned SoT store's new blobs to "
+                "the external backup server (off-box versioned backup). Covers "
+                "FortiWeb, FortiADC and FortiAnalyzer. Use for the scheduled "
+                "off-box source-of-truth copy.",
     ),
     ActionSpec(
         "deep_capture", "Deep capture (full policy/WPP tree)", "admin",
@@ -131,15 +131,13 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "server so the DB backup lives off-rack too. No device call.",
     ),
     ActionSpec(
-        "git_bundle", "Git repository backup (bundle)", "admin",
+        "git_bundle", "Git repository backup (bundle) — retired", "admin",
         needs_targets=False,
-        summary="Write a self-contained `git bundle` of the whole repo — code, "
-                "the reports/ source-of-truth history and every ref, including "
-                "the refs/backup/* commits the update runner parks — into "
-                "data/git-bundles, and (params.push_server, default on) upload "
-                "it to the external backup server. This is the copy that "
-                "survives a Gitea outage, when local commits have nowhere to "
-                "push. No device call.",
+        summary="RETIRED 2026-08-05: git no longer carries the device SoT "
+                "(services.sot_store does), so the scheduled bundle lost its "
+                "job. The handler still works for a manual run — a bundle of "
+                "the CODE repo remains a valid recovery artifact — but new "
+                "installs do not seed it and the checks do not require it.",
     ),
     ActionSpec(
         "deep_monitor", "Deep monitors — probe sweep", "admin",

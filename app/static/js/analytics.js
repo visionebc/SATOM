@@ -202,10 +202,14 @@
       foot.appendChild(el('span', 'an-mixed',
         '⚠ mixed units — series use a second axis'));
     }
-    var measured = (data.series || []).filter(function (s) {
-      return s.healthy_pct !== null && s.healthy_pct !== undefined;
-    });
-    if ((data.series || []).length && !measured.length) {
+    // "no data" must key off POINTS, not off healthy_pct. Store-backed panels
+    // have no health concept at all, so a healthy_pct test printed "no data in
+    // this window" underneath seventeen plotted points — the footer
+    // contradicting the chart above it.
+    var plotted = (data.series || []).reduce(function (n, s) {
+      return n + ((s.summary && s.summary.points) || 0);
+    }, 0);
+    if ((data.series || []).length && !plotted) {
       foot.appendChild(el('span', 'an-nodata', 'no data in this window'));
     }
     return foot;

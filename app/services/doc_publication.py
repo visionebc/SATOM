@@ -108,6 +108,11 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
      "Update a node with no route to the git remote: signed packages, the trust "
      "store that decides which signatures count, preflight, and the privileged "
      "apply with automatic rollback."),
+    ("provisioning-hypervisors.md", "provisioning-hypervisors",
+     "Hypervisor provisioning", "\U0001f5a5️",
+     "Building an appliance from nothing: the Proxmox and ESXi backends, what "
+     "each one can and cannot do, the install-vs-upgrade firmware split, and "
+     "the run state machine that can undo a half-finished build."),
     ("metrics-architecture.md", "metrics-architecture",
      "Metrics & the device source of truth", "\U0001f4c8",
      "Where operational data lives and why: the fleet-scale measurement, "
@@ -153,7 +158,7 @@ GROUPS: list[tuple[str, str, list[str]]] = [
      ["readme", "management-overview", "overview", "user-guide", "theming"]),
     ("Deploy & operate", "Getting it running, keeping it running, getting it back.",
      ["install", "cli", "privilege-model", "safeguards", "metrics-architecture",
-      "git-backup", "offline-update-packages"]),
+      "provisioning-hypervisors", "git-backup", "offline-update-packages"]),
     ("Security", "Certificates, transport encryption and trust between nodes.",
      ["encryption", "acme"]),
     ("Build & integrate", "For developers extending the platform or driving it from outside.",

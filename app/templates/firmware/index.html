@@ -36,13 +36,40 @@
         <label class="fw-form-label" style="font-size:12px;">
           Firmware file <span class="text-muted">(.out, up to 600&nbsp;MB)</span>
         </label>
-        <input type="file" name="image" class="form-control" accept=".out" required>
+        <input type="file" name="image" id="fwFile" class="form-control" accept=".out" required>
+      </div>
+      <div class="col-md-3">
+        <label class="fw-form-label" style="font-size:12px;">Image type</label>
+        {# Fortinet ships a separate artefact for a fresh install and for an
+           upgrade; they are not interchangeable. Picking here also decides
+           which file extensions the server will accept. #}
+        <select name="image_kind" id="fwKind" class="form-select">
+          {% for k in image_kinds %}
+          <option value="{{ k }}"{{ ' selected' if loop.first else '' }}>{{ {'upgrade':'Upgrade (.out)','install':'Install / new machine'}[k] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3 d-none" id="fwHypWrap">
+        <label class="fw-form-label" style="font-size:12px;">Hypervisor</label>
+        <select name="hypervisor" id="fwHyp" class="form-select">
+          <option value="">Any / hardware</option>
+          <option value="kvm">KVM / Proxmox (.qcow2)</option>
+          <option value="vmware">VMware ESXi (.ovf / .ova)</option>
+        </select>
       </div>
       <div class="col-md-2">
         <label class="fw-form-label" style="font-size:12px;">Product</label>
+        {% if adom_scope and adom_scope != 'global' %}
+        {# In a concrete ADOM the product is fixed. The POST handler overrules
+           the field anyway; showing a dropdown here would only invite an
+           upload that silently lands somewhere else. #}
+        <input type="hidden" name="product" value="{{ adom_scope }}">
+        <input type="text" class="form-control" value="{{ fw_products[0].name if fw_products else adom_scope }}" disabled>
+        {% else %}
         <select name="product" class="form-select">
           {% for p in fw_products %}<option value="{{ p.key }}"{{ ' selected' if loop.first else '' }}>{{ p.name }}</option>{% endfor %}
         </select>
+        {% endif %}
       </div>
       <div class="col-md-2">
         <label class="fw-form-label" style="font-size:12px;">Version</label>
@@ -90,6 +117,7 @@
       <thead>
         <tr>
           <th>Product</th>
+          <th style="width:130px;">Type</th>
           <th>Version</th>
           <th>Platform</th>
           <th>Build</th>
@@ -105,6 +133,14 @@
         {% for img in images %}
         <tr>
           <td><span class="fw-badge fw-badge-secondary">{{ img.product }}</span></td>
+          <td>
+            {% if img.image_kind == 'install' %}
+              <span class="fw-badge fw-badge-primary">Install</span>
+              {% if img.hypervisor %}<span class="text-muted" style="font-size:11px;">{{ img.hypervisor }}</span>{% endif %}
+            {% else %}
+              <span class="fw-badge fw-badge-info">Upgrade</span>
+            {% endif %}
+          </td>
           <td><strong>{{ img.version }}</strong></td>
           <td class="text-muted">{{ {'hw':'Hardware','vm':'Virtual Machine'}.get(img.platform, 'Any') }}</td>
           <td class="text-muted">{{ img.build or '—' }}</td>
@@ -167,6 +203,12 @@
     var name = fileInput.files[0].name;
     var fd = new FormData(form);
     fd.append('ajax', '1');
+    // Both upload paths must carry the artefact family, or a resumable
+    // upload of an install image would be recorded as an upgrade.
+    var _k = document.getElementById('fwKind');
+    var _h = document.getElementById('fwHyp');
+    if (_k) fd.append('image_kind', _k.value);
+    if (_h) fd.append('hypervisor', _h.value);
     JobsUI.uploadWithProgress(form.action, fd, {
       title: 'Uploading ' + name,
       serverTitle: 'Verifying ' + name
@@ -182,6 +224,32 @@
       if (!confirm('Delete firmware ' + this.dataset.version + ' (' + this.dataset.filename + ')? This removes the file from disk.')) event.preventDefault();
     });
   });
+})();
+</script>
+{% endblock %}
+
+{% block firmware_kind_js %}
+<script nonce="{{ csp_nonce() }}">
+// Install media are not .out files (a FortiWeb VM ships as a zip of an OVF
+// plus VMDKs, or as a qcow2), so the accept filter and the hypervisor picker
+// follow the image type. The server re-validates; this only stops the
+// operator from choosing a file that is going to be rejected.
+(function () {
+  var kind = document.getElementById('fwKind');
+  var wrap = document.getElementById('fwHypWrap');
+  var file = document.getElementById('fwFile');
+  if (!kind) { return; }
+  function sync() {
+    var install = kind.value === 'install';
+    if (wrap) { wrap.classList.toggle('d-none', !install); }
+    if (file) {
+      file.setAttribute('accept', install
+        ? '.out,.zip,.qcow2,.ova,.ovf,.vmdk,.img,.gz,.tgz'
+        : '.out');
+    }
+  }
+  kind.addEventListener('change', sync);
+  sync();
 })();
 </script>
 {% endblock %}

@@ -158,6 +158,40 @@ cannot predict. Removing either one alone still leaves the CLI standing, and
 | Peer probes over HTTPS `:8443` + shared identity key | Cleartext and unauthenticated node-to-node calls (see [`encryption-and-node-tls.md`](encryption-and-node-tls.md)) |
 | Postgres replication `hostssl … clientcert=verify-ca` | A downgraded or unauthenticated replication stream |
 
+## 4b. The standby is the last live copy — do not reconcile it as a side effect
+
+`satom-reconciler` runs in AUTO on both nodes and pulls on its own within about
+a minute of a push. So a manual `git fetch && git reset --hard origin/main` on
+the **standby** buys nothing that was not already going to happen, and it costs
+the one thing the standby is uniquely holding.
+
+The failure this encodes actually happened. An applied update package on the
+primary reverted another session's **uncommitted** work — CSS and a template
+that existed nowhere in git. It was recovered from the standby, which had not
+yet been reconciled and was therefore the only surviving copy. A `reset --hard`
+on the standby that day would have destroyed the recovery path, and it would
+have looked like routine tidying while doing it.
+
+The rule, in one line: **converging the standby is the reconciler's job, not an
+operator's, and never a side effect of unrelated work.** Read the standby
+freely — `/healthz`, `systemctl list-units --failed`, `git log`, `git status`.
+Writing to it, restarting it, or resetting it is its own decision, taken on
+purpose. If it has drifted, that drift *is* the finding: the reconciler should
+have closed it, and the fact that it did not is what needs reporting.
+
+| Guard | Prevents | Where |
+|---|---|---|
+| `diagnose git` reports **state that exists only here** — modified tracked files, commits absent from the upstream branch, parked `refs/backup/*`, untracked files | Discarding the only copy of work with an operation that looks routine. A node cannot be reset in ignorance of what it alone holds | `deploy/satom_cli/cmd_checks.py::git` |
+| Only dirty tracked files and unpushed commits **grade**; untracked files are listed but do not | A permanent warn on the primary, which legitimately carries an untracked `reports` symlink. `reset --hard` does not delete untracked files, so grading them would be false as well as noisy — and the first thing a permanent warn teaches is that the check can be ignored | same |
+| `preserve_local_commits()` parks local commits and the dirty tree before any update-driven reset, and **aborts** if it cannot | The automated path doing what this section forbids the manual one from doing | `deploy/self_update_runner.py` (§1) |
+
+Two limits stated on purpose. This is a **read-out, not an interlock** — nothing
+in the product refuses a `git reset --hard` typed by a root operator, and
+nothing should: the operator is the authority on their own node. And an
+unpushed-commit count needs an upstream branch to be meaningful, so a detached
+HEAD or a branch with no upstream is reported as *cannot tell* rather than as
+zero. Zero would be a comforting number the check has no basis for.
+
 ## 5. Writing to the appliances
 
 This is the part that can take a customer offline, so it has the most gates.
@@ -2121,6 +2155,42 @@ no-op — and a silent no-op is indistinguishable from success.
   because of that, but it mitigates rather than fixes it.
 
 ## Verifying the guards are armed
+
+### State that exists only here (4b)
+
+A node has to say what it alone holds, *before* anyone resets it.
+
+```bash
+# 1. on a clean node the section is present and does not grade
+satom diagnose git --json | python3 -c \
+  "import json,sys; d=json.load(sys.stdin); \
+   s=[x for x in d['sections'] if x['heading']=='state that exists only here']; \
+   print('section present:', bool(s)); print('status:', d['status'])"
+
+# 2. plant a real modification and confirm it is SEEN and NAMED
+echo '# probe' >> app/version.py
+satom diagnose git | grep -A3 'state that exists only here'
+satom diagnose git | grep -q 'app/version.py' \
+  && echo 'names the file' || echo 'GUARD BROKEN: modification not named'
+git checkout -- app/version.py
+
+# 3. an untracked file must NOT grade -- the primary carries one by design.
+#    Compare BEFORE and AFTER: an absolute "expect ok" would fail on any tree
+#    that is legitimately dirty, and blame the wrong half of the check.
+st() { satom diagnose git --json \
+       | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])'; }
+BEFORE=$(st); touch .probe-untracked; AFTER=$(st); rm -f .probe-untracked
+test "$BEFORE" = "$AFTER" \
+  && echo "untracked does not grade ($BEFORE unchanged)" \
+  || echo "GUARD TOO LOUD: $BEFORE -> $AFTER on an untracked file"
+```
+
+Step 3 is the half that is easy to lose. A check that flags every untracked file
+warns permanently on the primary, and a permanent warn is indistinguishable from
+no check at all. It is written as a before/after comparison on purpose: asserting
+a bare `ok` only holds on a spotless tree, so on a working node it would report a
+failure of the guard when what it actually found was uncommitted work — which is
+the very thing the guard exists to surface.
 
 ### Metrics auto-provisioning (§15)
 

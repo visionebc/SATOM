@@ -8,6 +8,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **A node reports the state that exists only here.** `satom diagnose git`
+  gains a *state that exists only here* section: modified tracked files (named,
+  not just counted), commits absent from the upstream branch, parked
+  `refs/backup/*` refs, and untracked files. It exists because the operation
+  that destroys unique work looks routine — an applied update package once
+  reverted another session's uncommitted changes, and the copy that survived
+  was on the standby, purely because nobody had reconciled it yet. Only dirty
+  tracked files and unpushed commits raise the grade; untracked files are
+  listed but never graded, because `reset --hard` does not delete them and the
+  primary legitimately carries an untracked `reports` symlink — a permanent
+  warn is indistinguishable from no check at all. With no upstream branch the
+  unpushed count reports *cannot tell* rather than zero. The accompanying rule
+  is written down in `docs/safeguards.md` 4b: converging the standby is
+  `satom-reconciler`'s job, not an operator's, and never a side effect of
+  unrelated work. Stated as a limit, this is a read-out and not an interlock —
+  nothing refuses a `git reset --hard` typed by root, and nothing should.
+
 - **Release notes, one page per version, on the public site.** The changelog
   was published whole — a thousand lines, so "what shipped in 1.3.3 and do I
   need it?" could only be answered by scrolling. The site gains a **Releases**

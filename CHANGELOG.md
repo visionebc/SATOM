@@ -19,6 +19,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **Two alert engines read the wrong source and complained permanently.**
+  Device freshness graded the `deep` cache layer -- refreshed once a night by
+  the FortiWeb-only `deep_capture` -- against the six-hour budget of the
+  *hourly* sync, so a healthy appliance reported a stale cache eighteen hours
+  out of twenty-four, and every non-FortiWeb product reported "no cached
+  configuration" while holding a snapshot minutes old. `cache_meta` now reports
+  the age of the newest layer that actually has a snapshot. Config drift diffed
+  git history for `reports/<slug>/_config.json`; the source of truth left git
+  in the same release, so the migration commit read as fifteen device-side
+  edits. Drift now reads the content-addressed `sot_version` store, where an
+  unchanged device mints no row, and it honours `maintenance` -- retired
+  appliances no longer alert. See `docs/safeguards.md` section 18.
+
 - **The product-scoping columns could not hold an 18-character ADOM key.**
   Every product key the app had ever written was at most 13 characters
   (`fortianalyzer`), so `appliances.kind` and the `product` column on twelve

@@ -124,6 +124,11 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
      "How a third party authenticates and drives the platform with a token."),
     ("device-api.md", "device-api", "Device APIs & the endpoint registry", "\U0001f52d",
      "The API consoles that drive the appliances, and the registry that makes a moved firmware URI a row edit instead of a release."),
+    ("fortiauthenticator.md", "fortiauthenticator",
+     "FortiAuthenticator — product integration", "\U0001f194",
+     "How the identity product is wired: its Tastypie REST dialect, the "
+     "per-user API key, the pagination trap and the 18-character ADOM ceiling "
+     "it exposed."),
     ("engineering.md", "engineering", "Engineering manual", "\U0001f3d7️",
      "Internal architecture for developers: layers, the endpoint registry, device clients, jobs and testing."),
     ("source-of-truth-spec.md", "source-of-truth", "Source-of-truth specification", "\U0001f5c2️",
@@ -152,7 +157,8 @@ GROUPS: list[tuple[str, str, list[str]]] = [
     ("Security", "Certificates, transport encryption and trust between nodes.",
      ["encryption", "acme"]),
     ("Build & integrate", "For developers extending the platform or driving it from outside.",
-     ["api", "device-api", "engineering", "source-of-truth", "release-pipeline",
+     ["api", "device-api", "fortiauthenticator", "engineering",
+      "source-of-truth", "release-pipeline",
       "release-notes"]),
     ("What changed", "Release history for the platform itself.",
      ["changelog"]),

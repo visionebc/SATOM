@@ -1,0 +1,116 @@
+# FortiAuthenticator REST endpoint registry SEED
+# (product=fortiauthenticator, api_version=v1).
+#
+# Same contract as endpoints.yaml (FortiWeb) / endpoints_fortiadc.yaml /
+# endpoints_fortianalyzer.yaml: a flat ``friendly_key: urn`` map, INSERT-ONLY
+# seeded into registry_endpoints at boot — DB edits/disables always win. This
+# is the knob to turn when a FAC upgrade moves a resource: fix the URN on the
+# Registry page, no code change and no deploy.
+#
+# The API is Django/Tastypie, NOT the Fortinet CMDB dialect the other three
+# products use:
+#   * one path per resource: ``/api/v1/<resource>/``
+#   * HTTP Basic auth with an API key issued PER USER (the login password is
+#     NOT accepted — verified: 401)
+#   * collections answer ``{"meta": {...}, "objects": [...]}``; several
+#     resources are SINGLETONS and answer a bare object. The client detects the
+#     shape at RUNTIME (app/clients/fortiauthenticator.py) instead of carrying a
+#     second hand-written list that could rot out of sync with this one.
+#
+# EVERY entry below was probed live against fac01 (FACVMKVM v8.0.3 build0099)
+# on 2026-08-05 and returned HTTP 200. Resources the device does NOT serve on
+# GET are deliberately ABSENT — see the tail of this file for the full census,
+# so a future reader knows they were considered and rejected, not overlooked.
+
+
+# ---- System & platform ---------------------------------------------------------
+system_info: /api/v1/systeminfo/  # singleton, methods: get
+system_snmp_general: /api/v1/snmpgeneral/  # singleton, methods: get
+system_snmp_hosts: /api/v1/snmp/  # collection n=0, 2 fields, methods: get,post
+system_log_settings: /api/v1/logsettings/  # singleton, methods: get
+system_scheduled_backup: /api/v1/scheduledbackupsettings/  # singleton, methods: get
+system_ftp_servers: /api/v1/ftpservers/  # collection n=0, 9 fields, methods: get,post
+system_smtp_servers: /api/v1/smtpservers/  # collection n=1, 11 fields, methods: get,post
+system_syslog_servers: /api/v1/syslogservers/  # collection n=0, 7 fields, methods: get,post
+
+# ---- Authentication — users & groups -------------------------------------------
+auth_local_users: /api/v1/localusers/  # collection n=0, 35 fields, methods: get,post,delete
+auth_ldap_users: /api/v1/ldapusers/  # collection n=0, 22 fields, methods: get
+auth_radius_users: /api/v1/radiususers/  # collection n=0, 17 fields, methods: get,post
+auth_user_groups: /api/v1/usergroups/  # collection n=0, 5 fields, methods: get,post,put,delete,patch
+auth_local_group_members: /api/v1/localgroup-memberships/  # collection n=0, 6 fields, methods: get,post
+auth_iam_accounts: /api/v1/iamaccounts/  # collection n=0, 3 fields, methods: get,post,patch
+auth_iam_users: /api/v1/iamusers/  # collection n=0, 6 fields, methods: get,post,patch
+auth_mac_devices: /api/v1/macdevices/  # collection n=0, 5 fields, methods: get,post
+auth_mac_groups: /api/v1/macgroups/  # collection n=0, 4 fields, methods: get,post
+auth_mac_group_members: /api/v1/macgroup-memberships/  # collection n=0, 7 fields, methods: get,post
+
+# ---- Policies ------------------------------------------------------------------
+policy_password: /api/v1/passwordpolicies/  # collection n=1, 2 fields, methods: get
+policy_user_lockout: /api/v1/userlockoutpolicy/  # singleton, methods: get
+
+# ---- RADIUS service ------------------------------------------------------------
+radius_clients: /api/v1/radiusclients/  # collection n=0, 9 fields, methods: get,post
+radius_client_groups: /api/v1/radiusclientgroups/  # collection n=0, 5 fields, methods: get,post
+radius_group_client: /api/v1/radiusgroupclient/  # collection n=0, 6 fields, methods: get,post
+radius_policies: /api/v1/radiuspolicies/  # collection n=0, 2 fields, methods: get
+radius_policy_client: /api/v1/radiuspolicyclient/  # collection n=0, 6 fields, methods: get,post
+radius_policy_client_group: /api/v1/radiuspolicyclientgroup/  # collection n=0, 6 fields, methods: get,post
+
+# ---- TACACS+ service -----------------------------------------------------------
+tacplus_clients: /api/v1/tacplusclients/  # collection n=0, 5 fields, methods: get,post
+tacplus_client_groups: /api/v1/tacplusclientsgroups/  # collection n=0, 5 fields, methods: get,post
+tacplus_group_client: /api/v1/tacplusgroupclient/  # collection n=0, 6 fields, methods: get,post
+tacplus_policies: /api/v1/tacpluspolicies/  # collection n=0, 2 fields, methods: get
+tacplus_policy_client: /api/v1/tacpluspolicyclient/  # collection n=0, 6 fields, methods: get,post
+tacplus_policy_group: /api/v1/tacpluspolicygroup/  # collection n=0, 6 fields, methods: get,post
+
+# ---- Tokens & two-factor -------------------------------------------------------
+token_fortitokens: /api/v1/fortitokens/  # collection n=0, 8 fields, methods: get
+token_ftm_provisioning: /api/v1/fortitokenmobileprovisioning/  # singleton, methods: get
+token_ftm_licenses: /api/v1/fortitokenmobilelicenses/  # singleton, methods: get
+token_fortiguard_messages: /api/v1/fortiguardmessages/  # singleton, methods: get
+
+# ---- Certificates --------------------------------------------------------------
+cert_user_certificates: /api/v1/usercerts/  # collection n=0, 8 fields, methods: get,post,patch
+cert_scep_requests: /api/v1/scepreqs/  # collection n=0, 5 fields, methods: get
+
+# ---- SSO & FortiGate integration -----------------------------------------------
+sso_groups: /api/v1/ssogroup/  # collection n=0, 3 fields, methods: get,post,delete
+sso_fgt_group_filter: /api/v1/fgtgroupfilter/  # collection n=1, 4 fields, methods: get
+
+# ---------------------------------------------------------------------------
+# NOT seeded — census of the remaining 18 of the 58 advertised resources.
+# Kept here as evidence: each was probed live and rejected for a stated reason.
+#
+# Action / POST-only (GET on the collection answers 405 — these DO things, they
+# are not config to read, so they must never enter the SoT harvest):
+#  auth, emergencytoken, idpsessiondata, licensing, localapiadmin,
+#  offlinehotpupdate, offlineotp, realmauth, ssoauth, system,
+#  upgrade
+#
+# Refused with 403 even holding a valid API key (privileged or internal):
+#  csv, oauth, pushpoll, transfertoken
+#
+# Other live failures:
+#  faccloudhost (HTTP 401), recovery (HTTP 500),
+#  userfortitokenpolicy (HTTP 400)
+#
+# CAUTION — ``schema=500`` is NOT a broken endpoint. Tastypie's introspection
+# crashes on the non-ORM singletons (8 of them, e.g. system_info,
+# system_log_settings), yet every one of them serves GET 200 with real data.
+# A registry seeded from "does /schema/ work?" would have silently dropped
+# them. That is why the census above is keyed on the LIST response, not the
+# schema response.
+#
+# VERIFIED WRITE-ONLY (canary round-trip, 2026-08-05): the device never returns
+# ``radiusclients.secret`` nor ``localusers.password`` on read — both fields are
+# absent from the GET payload entirely, so the SoT snapshot cannot leak them.
+# Re-verify after a firmware upgrade before trusting it again.
+#
+# GOTCHA — ``POST /api/v1/localusers/`` is a BULK endpoint: it answers HTTP 207
+# Multi-Status with a list body and NO Location header, and its per-item status
+# key is misspelled ``statue`` (the vendor's typo). Code that looks for
+# ``status`` or for a Location header will read a successful create as a
+# failure.
+

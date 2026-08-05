@@ -226,7 +226,7 @@ class Appliance(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(128), unique=True, nullable=False, index=True)
-    kind = db.Column(db.String(16), nullable=False, default="fortiweb")  # 'fortiweb'|'fortiadc'
+    kind = db.Column(db.String(32), nullable=False, default="fortiweb")  # 'fortiweb'|'fortiadc'
     host = db.Column(db.String(253), nullable=False)
     port = db.Column(db.Integer, nullable=False, default=443)
     username = db.Column(db.String(64), nullable=False)
@@ -579,7 +579,7 @@ class AuditLog(db.Model):
     extra = db.Column(db.Text, nullable=True, default="{}")   # JSON-serialised dict
     ip_address = db.Column(db.String(45), nullable=True)      # IPv4 or IPv6
     # ADOM/product the action was performed in ('' / NULL = unscoped legacy).
-    product = db.Column(db.String(16), nullable=True, default="")
+    product = db.Column(db.String(32), nullable=True, default="")
     timestamp = db.Column(
         db.DateTime, default=datetime.utcnow, nullable=False, index=True
     )
@@ -778,7 +778,7 @@ class Template(db.Model):
 
     # Owning product/ADOM. Everything authored so far is FortiWeb; ADC-side
     # templates will carry 'fortiadc' so lists scope by session product.
-    product = db.Column(db.String(16), nullable=False, default="fortiweb")
+    product = db.Column(db.String(32), nullable=False, default="fortiweb")
     # Approval lifecycle (separate from ``locked``: locked == curated/read-only,
     # status == approval state). A template is fleet-deployable only when APPROVED.
     STATUS_PENDING = "pending"
@@ -877,7 +877,7 @@ class Baseline(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(128), nullable=False, index=True)
     # Owning product/ADOM (baselines compose FortiWeb templates today).
-    product = db.Column(db.String(16), nullable=False, default="fortiweb")
+    product = db.Column(db.String(32), nullable=False, default="fortiweb")
     # Scope: plain strings matching Appliance.zone/line/department (catalogs live
     # in settings_store). "" / NULL means "any" for that facet.
     zone = db.Column(db.String(128), nullable=True, default="")
@@ -973,7 +973,7 @@ class ScheduledAction(db.Model):
     name = db.Column(db.String(128), nullable=False, default="")
     scope = db.Column(db.String(16), nullable=False, default="admin")  # admin|user
     # ADOM/product owning this automation (the catalog is FortiWeb today).
-    product = db.Column(db.String(16), nullable=False, default="fortiweb")
+    product = db.Column(db.String(32), nullable=False, default="fortiweb")
     action = db.Column(db.String(64), nullable=False)                  # catalog key
     targets = db.Column(db.Text, nullable=False, default="[]")         # JSON appliance ids ([]=fleet)
     params = db.Column(db.Text, nullable=False, default="{}")          # JSON params
@@ -1644,7 +1644,7 @@ class AppId(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     app_id = db.Column(db.String(128), nullable=False, index=True)
-    product = db.Column(db.String(16), nullable=False, default="global")
+    product = db.Column(db.String(32), nullable=False, default="global")
     customer = db.Column(db.String(200), nullable=False, default="")
     label = db.Column(db.String(200), nullable=False, default="")
     rate = db.Column(db.String(64), nullable=True, default="")
@@ -1767,7 +1767,7 @@ class Plugin(db.Model):
     # ``params.<name>``. Optional by design — an empty selection shows all.
     params = db.Column(db.Text, nullable=False, default="[]")
     created_by = db.Column(db.String(64), nullable=False, default="")
-    product = db.Column(db.String(16), nullable=False, default="")
+    product = db.Column(db.String(32), nullable=False, default="")
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,
                            onupdate=datetime.utcnow, nullable=False)
@@ -1830,7 +1830,7 @@ class LuaScript(db.Model):
     status = db.Column(db.String(16), nullable=False, default="draft")
     analysis = db.Column(db.Text, nullable=False, default="{}")
     created_by = db.Column(db.String(64), nullable=False, default="")
-    product = db.Column(db.String(16), nullable=False, default="")
+    product = db.Column(db.String(32), nullable=False, default="")
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,
                            onupdate=datetime.utcnow, nullable=False)

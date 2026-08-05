@@ -113,7 +113,7 @@ a:hover { color: var(--fw-accent-hover); text-decoration: underline; }
   font-size: 16px;
   font-weight: 600;
   text-decoration: none;
-  margin-right: 30px;
+  margin-right: 60px;
   flex-shrink: 0;
 }
 

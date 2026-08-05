@@ -150,6 +150,16 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "read-only (HTTP GET + `diagnose system top`).",
     ),
     ActionSpec(
+        "metrics_scrape", "Fleet metrics — scrape to the local store", "admin",
+        needs_targets=False,
+        summary="Run every due scrape target (Monitoring → Collection): one "
+                "aggregated call per (device, collector) into the node's "
+                "VictoriaMetrics store (services.metrics_collect). Auto-"
+                "provisions targets for new appliances; devices in maintenance "
+                "are skipped. Schedule EVERY 3 MINUTES — each target then runs "
+                "at its own operator-set interval. Read-only against the box.",
+    ),
+    ActionSpec(
         "monitor_report", "Monitoring report — period summary", "admin",
         needs_targets=False,
         summary="Build and store the daily/weekly/monthly monitoring summary "
@@ -157,7 +167,9 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "(services.monitor_reports). Set params.period to daily, "
                 "weekly or monthly; params.email=1 to send it. Schedule it "
                 "AFTER the period closes — daily at ~02:00, weekly Monday, "
-                "monthly on the 1st. Reads stored samples only: no device "
+                "monthly on the 1st. params.push_server=1 also uploads the "
+                "summary (JSON + text) to the external backup server. Reads "
+                "stored samples and the local metrics store only: no device "
                 "call, so it works with every appliance off.",
     ),
     ActionSpec(
@@ -318,6 +330,26 @@ def _do_inventory_snapshot(dry_run: bool = False) -> dict:
             "log": ""}
 
 
+def _do_metrics_scrape(params: dict, dry_run: bool = False) -> dict:
+    """Sweep the fleet scrape targets into VictoriaMetrics. Same ``ok``
+    contract as the deep-monitor sweep: ok = THE SWEEP RAN; per-device
+    failures live on the target rows and in ``satom_scrape_up``."""
+    from . import metrics_collect as mc
+    if dry_run:
+        due = mc.due_targets()
+        return {"ok": True,
+                "summary": "[dry-run] %d scrape target(s) are due." % len(due),
+                "log": "\n".join("%s/%s" % (t.appliance.name, t.collector)
+                                 for t in due)[:4000]}
+    res = mc.sweep()
+    return {"ok": True,
+            "summary": ("%(ok)d/%(targets)d target(s) ok, %(errors)d error(s), "
+                        "%(series)d series, %(ms)d ms"
+                        % res) + (", %d auto-provisioned" % res["created"]
+                                  if res.get("created") else ""),
+            "log": ""}
+
+
 def _do_deep_monitor(params: dict, dry_run: bool = False) -> dict:
     """Sweep the deep monitors (Monitoring -> Deep monitors). No writes."""
     from . import deep_monitor as dm
@@ -395,6 +427,13 @@ def _do_monitor_report(params: dict, dry_run: bool = False) -> dict:
         parts.append("email %s (%s)"
                      % ("sent" if res["ok"] else "FAILED", res["detail"]))
 
+    # Off-box copy of the summary. Same contract as the mail: a failure is
+    # recorded, never fatal — the report is already stored locally.
+    if str(params.get("push_server") or "").lower() in ("1", "true", "yes", "on"):
+        res = mrep.push_to_backup_server(row)
+        parts.append("off-box %s (%s)"
+                     % ("ok" if res["ok"] else "FAILED", res["detail"]))
+
     keep = params.get("keep")
     if keep:
         try:
@@ -442,6 +481,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_inventory_snapshot(dry_run)
         if key == "deep_monitor":
             return _do_deep_monitor(params, dry_run)
+        if key == "metrics_scrape":
+            return _do_metrics_scrape(params, dry_run)
         if key == "monitor_report":
             return _do_monitor_report(params, dry_run)
         if key == "upgrade_prep":

@@ -279,8 +279,76 @@ def build(period: str, *, start: datetime | None = None,
         "incidents": incidents[:200],
         "silent": silent,
         "no_data": total_samples == 0,
+        "fleet": fleet_section(start, end),
     }
     return body
+
+
+# -- fleet section, computed from the metrics store --------------------------
+#
+# The probe tables describe what an operator explicitly asked to watch. The
+# store holds the whole fleet, including everything nobody wrote a probe row
+# for -- which at 100 devices is nearly all of it. A report that only
+# summarised probes would shrink as the fleet grew.
+
+FLEET_QUERIES = (
+    ("cpu_pct", "Processor used", "%", "satom_box_cpu_pct"),
+    ("mem_pct", "Memory used", "%", "satom_box_mem_pct"),
+    ("throughput_bps", "Device throughput", "bit/s",
+     "satom_total_throughput_bps"),
+    ("policy_conn_per_sec", "Policy connection rate", "conn/s",
+     "satom_policy_conn_per_sec"),
+)
+
+
+def fleet_section(start: datetime, end: datetime) -> dict:
+    """min/avg/max per device per metric over the window, plus the two
+    fleet-wide facts a summary must not omit: policies that were down, and
+    collectors that failed. Absence is reported as ``available: False``, never
+    as zeros."""
+    from . import vm_store
+
+    span = "%ds" % max(60, int((end - start).total_seconds()))
+    out = {"available": False, "metrics": [], "down_policies": [],
+           "failed_collectors": [], "detail": ""}
+    h = vm_store.health()
+    if not h.get("up"):
+        out["detail"] = h.get("detail") or "metrics store unreachable"
+        return out
+    out["available"] = True
+    ts = end.timestamp()
+    for key, label, unit, base in FLEET_QUERIES:
+        rows = []
+        aggs = {}
+        for agg in ("min", "avg", "max"):
+            expr = "%s_over_time(%s[%s])" % (agg, base, span)
+            res = vm_store.query(expr, ts=ts)
+            for r in (res.get("data") or {}).get("result", []):
+                m = r.get("metric") or {}
+                name = m.get("device") or "?"
+                if m.get("policy"):
+                    name = "%s / %s" % (name, m["policy"])
+                try:
+                    aggs.setdefault(name, {})[agg] = float(r["value"][1])
+                except (KeyError, IndexError, TypeError, ValueError):
+                    continue
+        for name in sorted(aggs):
+            rows.append({"series": name, **aggs[name]})
+        out["metrics"].append({"key": key, "label": label, "unit": unit,
+                               "rows": rows})
+    res = vm_store.query("max_over_time((satom_policy_up == 0)[%s])" % span,
+                         ts=ts)
+    for r in (res.get("data") or {}).get("result", []):
+        m = r.get("metric") or {}
+        out["down_policies"].append({"device": m.get("device", ""),
+                                     "policy": m.get("policy", "")})
+    res = vm_store.query("max_over_time((satom_scrape_up == 0)[%s])" % span,
+                         ts=ts)
+    for r in (res.get("data") or {}).get("result", []):
+        m = r.get("metric") or {}
+        out["failed_collectors"].append({"device": m.get("device", ""),
+                                         "collector": m.get("collector", "")})
+    return out
 
 
 def generate(period: str, *, product: str = "", ref: datetime | None = None,
@@ -327,6 +395,55 @@ def generate(period: str, *, product: str = "", ref: datetime | None = None,
     row.payload = json.dumps(body, separators=(",", ":"))
     session.commit()
     return row
+
+
+def push_to_backup_server(row) -> dict:
+    """Upload one stored report to the external backup server as JSON + text.
+
+    Why off-box at all: a report exists to describe a window AFTER it closed,
+    which is exactly when the node that holds it may be the thing that failed.
+    Both formats travel — the JSON so a future console can re-render it, the
+    text so a human with nothing but an SFTP client can still read it.
+    Best-effort: the report is already stored, so a push failure is reported,
+    never raised.
+    """
+    import os
+    import tempfile
+    try:
+        from . import backup_server as _bk
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "detail": "backup_server unavailable: %s" % exc}
+    body = row.body()
+    stamp = row.period_start.strftime("%Y%m%d") if row.period_start else "unknown"
+    base = "satom-report-%s-%s" % (row.period, stamp)
+    if row.product:
+        base += "-" + row.product
+    pushed, errs = [], []
+    tmpdir = tempfile.mkdtemp(prefix="satom-report-")
+    try:
+        for name, data in ((base + ".json",
+                            json.dumps(body, indent=2, default=str)),
+                           (base + ".txt", render_text(body))):
+            path = os.path.join(tmpdir, name)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(data)
+            res = _bk.push_bundle(path, remote_name=name,
+                                  remote_dir=_reports_remote_dir())
+            (pushed if res.get("ok") else errs).append(
+                name if res.get("ok") else "%s: %s" % (name, res.get("detail")))
+    finally:
+        import shutil
+        shutil.rmtree(tmpdir, ignore_errors=True)
+    return {"ok": not errs,
+            "detail": ("uploaded %s" % ", ".join(pushed)) if pushed and not errs
+                      else "; ".join(errs) or "nothing uploaded"}
+
+
+def _reports_remote_dir() -> str:
+    import posixpath
+    from . import settings_store as _st
+    cfg = _st.backup_server()
+    return posixpath.join(cfg.get("system_path") or "/system", "reports")
 
 
 def prune(period: str, keep: int, *, product: str = "", session=None) -> int:

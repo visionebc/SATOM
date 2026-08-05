@@ -108,6 +108,12 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
      "Update a node with no route to the git remote: signed packages, the trust "
      "store that decides which signatures count, preflight, and the privileged "
      "apply with automatic rollback."),
+    ("metrics-architecture.md", "metrics-architecture",
+     "Metrics & the device source of truth", "\U0001f4c8",
+     "Where operational data lives and why: the fleet-scale measurement, "
+     "aggregated collection, the time-series store, selector dashboards, "
+     "reports, and the content-addressed source-of-truth store that replaced "
+     "the git-committed history."),
     ("git-backup-and-outage.md", "git-backup", "Git backup & surviving an outage", "\U0001f9ef",
      "The anti-reset guard, the unpushed-commit alert, repository bundles and the four-copy recovery runbook."),
     ("encryption-and-node-tls.md", "encryption", "Encryption in transit & node TLS", "\U0001f512",
@@ -140,8 +146,8 @@ GROUPS: list[tuple[str, str, list[str]]] = [
     ("Start here", "New to the platform — read these in order.",
      ["readme", "management-overview", "overview", "user-guide", "theming"]),
     ("Deploy & operate", "Getting it running, keeping it running, getting it back.",
-     ["install", "cli", "privilege-model", "safeguards", "git-backup",
-      "offline-update-packages"]),
+     ["install", "cli", "privilege-model", "safeguards", "metrics-architecture",
+      "git-backup", "offline-update-packages"]),
     ("Security", "Certificates, transport encryption and trust between nodes.",
      ["encryption", "acme"]),
     ("Build & integrate", "For developers extending the platform or driving it from outside.",

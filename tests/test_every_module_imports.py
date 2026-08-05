@@ -60,6 +60,8 @@ LAZY_MODULES = [
     "app.services.cert_service",
     "app.services.cert_renew_log",
     "app.services.sot_store",
+    "app.services.vm_store",
+    "app.services.metrics_collect",
     "app.services.git_backup",
     "app.services.backup_server",
     "app.services.library_updates",

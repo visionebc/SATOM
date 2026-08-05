@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Collection — Monitoring{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <h4 class="mb-1"><i class="bi bi-cloud-download me-2"></i>Metrics collection</h4>
+    <p class="text-muted mb-0" style="font-size:13px;">One row per (device, collector). Each collector turns ONE device call into many series in the local metrics store — the interval is yours to set, per target. Devices in maintenance are skipped automatically.</p>
+  </div>
+  <form method="post" action="{{ url_for('metrics_admin.run_now') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-fw-primary btn-sm"><i class="bi bi-play-fill me-1"></i>Run sweep now</button>
+  </form>
+</div>
+
+<div class="card mb-3"><div class="card-header"><strong><i class="bi bi-database-check me-1"></i>Metrics store (VictoriaMetrics, this node)</strong></div>
+  <div class="card-body py-2">
+    <div class="d-flex flex-wrap gap-4 align-items-center small">
+      <span>Status:
+        {% if vm.up %}<span class="badge bg-success">up</span>
+        {% else %}<span class="badge bg-danger">DOWN</span> <code>{{ vm.detail }}</code>{% endif %}
+      </span>
+      <span>Endpoint: <code>{{ vm.url }}</code> (loopback only — queries go through this console)</span>
+      {% if vm.series is not none %}<span>Series: <strong>{{ vm.series }}</strong></span>{% endif %}
+      <span class="text-muted">Raw retention 396 days at full resolution — no rollup averaging.</span>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><strong><i class="bi bi-collection me-1"></i>Scrape targets</strong></div>
+  <div class="card-body">
+    {% if not targets %}
+      <div class="alert alert-secondary small mb-0">No targets yet — they are auto-provisioned for every live appliance on the next sweep (scheduled action <code>metrics_scrape</code>, or the button above).</div>
+    {% else %}
+    <table class="table table-sm table-hover align-middle mb-2">
+      <thead><tr>
+        <th>Device</th><th>Collector</th><th style="width:170px;">Interval (min)</th>
+        <th>Enabled</th><th>Last run (UTC)</th><th>Status</th><th>Series</th><th>ms</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for t in targets %}
+        <tr>
+          <td class="small font-monospace">
+            {{ t.device }} <span class="text-muted">({{ t.kind }})</span>
+            {# The row's two forms live here, empty; the inputs and buttons in
+               the other cells attach via the form= attribute — a <form> tag
+               spanning <td>s is invalid HTML and browsers silently hoist it. #}
+            <form id="sv-{{ t.id }}" method="post" action="{{ url_for('metrics_admin.update_target', tid=t.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="_redirect" value="1">
+            </form>
+            <form id="tg-{{ t.id }}" method="post" action="{{ url_for('metrics_admin.update_target', tid=t.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="_redirect" value="1">
+              <input type="hidden" name="enabled" value="{{ '0' if t.enabled else '1' }}">
+            </form>
+          </td>
+          <td class="small">{{ collectors[t.collector].label if t.collector in collectors else t.collector }}</td>
+          <td>
+            <div class="input-group input-group-sm">
+              <input type="number" class="form-control" name="interval_min" form="sv-{{ t.id }}" value="{{ t.interval_min }}" min="1" max="1440" style="max-width:80px;">
+              {% if t.params.top_n %}
+              <span class="input-group-text">top</span>
+              <input type="number" class="form-control" name="top_n" form="sv-{{ t.id }}" value="{{ t.params.top_n }}" min="1" max="200" style="max-width:70px;">
+              {% endif %}
+            </div>
+          </td>
+          <td>
+            {% if t.enabled %}<span class="badge bg-success">on</span>{% else %}<span class="badge bg-secondary">off</span>{% endif %}
+            <button class="btn btn-link btn-sm py-0 small" form="tg-{{ t.id }}">{{ 'disable' if t.enabled else 'enable' }}</button>
+          </td>
+          <td class="small">{{ t.last_run_at|replace('T', ' ') or '—' }}</td>
+          <td class="small">
+            {% if t.last_status == 'ok' %}<span class="badge bg-success">ok</span>
+            {% elif t.last_status == 'error' %}<span class="badge bg-danger" title="{{ t.last_detail }}">error</span>
+            {% else %}<span class="badge bg-secondary">never</span>{% endif %}
+            {% if t.last_detail %}<div class="text-muted" style="max-width:260px;">{{ t.last_detail|truncate(80) }}</div>{% endif %}
+          </td>
+          <td class="small">{{ t.last_series }}</td>
+          <td class="small">{{ t.last_ms }}</td>
+          <td class="text-end">
+            <button class="btn btn-outline-light btn-sm py-0" form="sv-{{ t.id }}" title="save interval / top-N"><i class="bi bi-check2"></i></button>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="text-muted small mb-0">Cost tiers: <em>box / policies / interfaces</em> are one call per device (cheap — safe at 3 min for a whole fleet). <em>traffic / transactions</em> are one call <strong>per policy</strong>, so they run less often and only against the top-N policies by live connection rate. The device total is always collected.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

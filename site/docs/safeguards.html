@@ -90,6 +90,7 @@
       <a href="#10e-the-node-has-to-be-told-which-names-it-answers-to">10e. The node has to be told which names it answers to</a>
       <a href="#13-a-chart-may-not-invent-a-reading">13. A chart may not invent a reading</a>
       <a href="#12-uploaded-code-is-code-someone-else-chose-to-run">12. Uploaded code is code someone else chose to run</a>
+      <a href="#14-operational-data-grows-with-change-not-with-time">14. Operational data grows with change, not with time</a>
       <a href="#11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</a>
       <a href="#verifying-the-guards-are-armed_5">Verifying the guards are armed</a>
       <a href="#related">Related</a>
@@ -2237,6 +2238,61 @@ no-app-import rule are checked by AST, the crypto against published vectors,
 and every refusal has a test that names the reason — because a package refused
 for the wrong reason is a package that will be accepted once that reason
 changes.</p>
+<h2 id="14-operational-data-grows-with-change-not-with-time">14. Operational data grows with change, not with time</h2>
+<p>Two stores were replaced on 2026-08-05 because the originals were correct for a
+handful of appliances and structurally impossible for a hundred. The full
+reasoning and the measurement are in
+<a href="metrics-architecture.html"><code>metrics-architecture.md</code></a>; the guards are here.</p>
+<p><strong>The device source of truth (<code>services/sot_store.py</code>).</strong> The hourly git commit
+of <code>reports/</code> grew without bound — git keeps every byte of every revision, and
+one FortiAnalyzer snapshot is ~8.4 MB. The replacement is content-addressed:</p>
+<ul>
+<li>the hash IS the identity, so an unchanged config writes zero bytes and mints
+  no version row;</li>
+<li><code>generated_at</code> and the per-sweep <code>errors</code> list are excluded from that hash —
+  they differ every harvest even when the config is byte-identical, and hashing
+  them would defeat the dedup entirely and quietly restore the growth;</li>
+<li>retention is a policy (newest N per device, plus anything younger than D
+  days), and blobs no version references are deleted;</li>
+<li>blobs live under <code>data/</code>, so the existing standby rsync and the backup
+  bundles carry them — no new replication path was introduced.</li>
+</ul>
+<p><strong>Fleet metrics (<code>services/metrics_collect.py</code> + <code>services/vm_store.py</code>).</strong></p>
+<ul>
+<li>The unit of configuration is (device, collector), never (device, policy):
+  <code>policy_status</code> returns every policy's counters in ONE 14 ms call, so
+  per-policy probes multiply device round-trips by N for data that is free in
+  aggregate.</li>
+<li><code>maintenance</code> and a <code>*.invalid</code> host both suppress scheduled collection
+  entirely — the deep monitors once kept probing recycled addresses because
+  their sweep consulted neither.</li>
+<li>A failed collector writes <code>satom_scrape_up 0</code>. Absence of data is never
+  health.</li>
+<li>The sweep action reports <code>ok</code> when it RAN. Device failures live on the target
+  rows; an action permanently red over a dead appliance is an action the
+  operator learns to skip.</li>
+<li>The metrics store has NO authentication, so the unit binds <code>127.0.0.1</code> only
+  and every query goes through the console. Changing that bind address is a
+  fleet-wide data exposure.</li>
+<li>A MetricsQL panel expression is validated by EXECUTING it against the store,
+  not by pattern-matching: the store is the only authority on its own query
+  language.</li>
+<li>A failed query renders as an ERROR, never as an empty chart — the two look
+  identical on a canvas and mean opposite things — and gaps stay <code>null</code> rather
+  than carrying the last value forward.</li>
+</ul>
+<h3 id="verifying-14">Verifying (§14)</h3>
+<pre><code class="language-bash"># collection honours maintenance and retired hosts, and records its own health
+satom diagnose all | sed -n '/collection/,+6p'
+
+# the store answers, and only on loopback
+curl -s http://127.0.0.1:8428/health          # OK
+ss -ltnp | grep 8428                          # 127.0.0.1:8428 ONLY
+
+# an unchanged harvest must NOT mint a version
+psql -c &quot;SELECT device, count(*) FROM sot_version GROUP BY device&quot;
+# run a device sync twice; the count must not move the second time
+</code></pre>
 <h2 id="11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</h2>
 <ul>
 <li>Per-device configuration restore is dry-run gated — no live canary round-trip yet.</li>
@@ -2600,6 +2656,7 @@ its own redaction rule.</p>
 <li><a href="git-backup.html"><code>git-backup-and-outage.md</code></a> — the Gitea-outage scenario end to end</li>
 <li><a href="encryption.html"><code>encryption-and-node-tls.md</code></a> — TLS, node identity, Postgres SSL</li>
 <li><a href="source-of-truth.html"><code>source-of-truth-spec.md</code></a> — the write path and the local persistence layer</li>
+<li><a href="metrics-architecture.html"><code>metrics-architecture.md</code></a> — where operational data lives, and the fleet-scale measurement behind it</li>
 <li><a href="install.html"><code>INSTALL.md</code></a> — what to request from systems, and the hardening checklist</li>
 </ul>
     </div>

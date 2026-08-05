@@ -1973,6 +1973,66 @@ and every refusal has a test that names the reason — because a package refused
 for the wrong reason is a package that will be accepted once that reason
 changes.
 
+## 14. Operational data grows with change, not with time
+
+Two stores were replaced on 2026-08-05 because the originals were correct for a
+handful of appliances and structurally impossible for a hundred. The full
+reasoning and the measurement are in
+[`metrics-architecture.md`](metrics-architecture.md); the guards are here.
+
+**The device source of truth (`services/sot_store.py`).** The hourly git commit
+of `reports/` grew without bound — git keeps every byte of every revision, and
+one FortiAnalyzer snapshot is ~8.4 MB. The replacement is content-addressed:
+
+* the hash IS the identity, so an unchanged config writes zero bytes and mints
+  no version row;
+* `generated_at` and the per-sweep `errors` list are excluded from that hash —
+  they differ every harvest even when the config is byte-identical, and hashing
+  them would defeat the dedup entirely and quietly restore the growth;
+* retention is a policy (newest N per device, plus anything younger than D
+  days), and blobs no version references are deleted;
+* blobs live under `data/`, so the existing standby rsync and the backup
+  bundles carry them — no new replication path was introduced.
+
+**Fleet metrics (`services/metrics_collect.py` + `services/vm_store.py`).**
+
+* The unit of configuration is (device, collector), never (device, policy):
+  `policy_status` returns every policy's counters in ONE 14 ms call, so
+  per-policy probes multiply device round-trips by N for data that is free in
+  aggregate.
+* `maintenance` and a `*.invalid` host both suppress scheduled collection
+  entirely — the deep monitors once kept probing recycled addresses because
+  their sweep consulted neither.
+* A failed collector writes `satom_scrape_up 0`. Absence of data is never
+  health.
+* The sweep action reports `ok` when it RAN. Device failures live on the target
+  rows; an action permanently red over a dead appliance is an action the
+  operator learns to skip.
+* The metrics store has NO authentication, so the unit binds `127.0.0.1` only
+  and every query goes through the console. Changing that bind address is a
+  fleet-wide data exposure.
+* A MetricsQL panel expression is validated by EXECUTING it against the store,
+  not by pattern-matching: the store is the only authority on its own query
+  language.
+* A failed query renders as an ERROR, never as an empty chart — the two look
+  identical on a canvas and mean opposite things — and gaps stay `null` rather
+  than carrying the last value forward.
+
+### Verifying (§14)
+
+```bash
+# collection honours maintenance and retired hosts, and records its own health
+satom diagnose all | sed -n '/collection/,+6p'
+
+# the store answers, and only on loopback
+curl -s http://127.0.0.1:8428/health          # OK
+ss -ltnp | grep 8428                          # 127.0.0.1:8428 ONLY
+
+# an unchanged harvest must NOT mint a version
+psql -c "SELECT device, count(*) FROM sot_version GROUP BY device"
+# run a device sync twice; the count must not move the second time
+```
+
 ## 11. Known gaps (kept honest, on purpose)
 
 * Per-device configuration restore is dry-run gated — no live canary round-trip yet.
@@ -2408,4 +2468,5 @@ its own redaction rule.
 * [`git-backup-and-outage.md`](git-backup-and-outage.md) — the Gitea-outage scenario end to end
 * [`encryption-and-node-tls.md`](encryption-and-node-tls.md) — TLS, node identity, Postgres SSL
 * [`source-of-truth-spec.md`](source-of-truth-spec.md) — the write path and the local persistence layer
+* [`metrics-architecture.md`](metrics-architecture.md) — where operational data lives, and the fleet-scale measurement behind it
 * [`INSTALL.md`](INSTALL.md) — what to request from systems, and the hardening checklist

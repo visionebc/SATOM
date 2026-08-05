@@ -4,9 +4,46 @@ All notable changes to SATOM are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/). This is a public,
 source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
-## [Unreleased]
+## [1.4.0] - 2026-08-05
 
 ### Added
+
+- **SATOM health and Device health are two pages.** Fleet health carried the
+  appliances and the manager's own installation, and only the second is
+  Global-only, so the page had to hide half of itself in every product ADOM.
+  **SATOM health** now answers *is this installation healthy* (HA nodes,
+  database, systemd units, redundancy, encryption in transit) and **Device
+  health** answers *are the appliances healthy* (cards, capacity guardrails,
+  health alerts). The nav carries them as a nested submenu under Fleet health.
+  The split is enforced on the routes and not by hiding sections:
+  `/monitoring/satom` redirects out of a product ADOM and
+  `/monitoring/satom-data` answers 403, because every card on that page names
+  node hostnames and infrastructure addresses. The manager feed also stopped
+  computing the per-device capacity roll-up it never rendered.
+
+- **`satom-metrics` is a monitored unit.** The store is where Analytics boards
+  and the Collection page read every number they draw, and it was absent from
+  the Services & redundancy list — it could be dead while every light on the
+  panel stayed green. Four more units that are unconditionally expected to run
+  joined it (`nginx`, `satom-reconciler`, `satom-updater.path`). Units that are
+  inactive *by design* were deliberately left off: `satom-ha-datasync` is
+  role-guarded and inert on the primary, `satom-git-publish` was retired with
+  the git SoT, and a check that always complains is a check the operator learns
+  to skip.
+
+- **Device HA posture, derived from the harvest.** *Device HA clusters* printed
+  *"No HA clusters registered"* on a fleet whose hourly sweep had `system_ha`
+  cached for every appliance: the panel read `Appliance.members`, a table
+  written only by the appliance form, and threw away the standalone count it
+  had just computed. The new `ha_inventory` service reads the cache and reports
+  one row per appliance — mode, group, VIP, and the evidence behind the
+  verdict. *Clustered* requires peer evidence (a heartbeat device, a group
+  name, a peer address, a node list longer than one), never the `mode` field
+  alone: FortiWeb and FortiADC report it as an unambiguous string, but
+  FortiAnalyzer reports an **int** whose enum could not be verified against a
+  live device, and guessing it would label a standalone box "primary". A device
+  with no cached HA is `unknown`, never `standalone`. Rows parked on the
+  reserved `.invalid` TLD are excluded outright — they name no real box.
 
 - **A node reports the state that exists only here.** `satom diagnose git`
   gains a *state that exists only here* section: modified tracked files (named,
@@ -85,6 +122,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   states that their terms are not superseded.
 
 ### Changed
+
+- **Collection moved from Monitoring to Administrator.** The other six
+  Monitoring entries display a measurement; this one configures how measurement
+  happens — which (device, collector) pairs run, how often, how many policies
+  deep — and needs `CONFIG_WRITE` to change anything. It sits next to Capacity
+  Limits, which is the same kind of knob. It ships as a shared partial included
+  by all four Administrator groups: those groups have drifted before (one of
+  them is still titled "Administration"), and a single definition is the only
+  thing that stops an entry being added to Global and forgotten in the other
+  three. The enable/disable toggle on that page became a real button — it POSTs
+  and changes state, and a bare link reads as navigation.
 
 - **The device source of truth left git.** `reports/<device>/_config.json` was
   committed hourly; one FortiAnalyzer snapshot is ~8.4 MB and git keeps every
@@ -209,6 +257,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   [SATOM-LICENSE-TAGS]
 
 ### Fixed
+
+- **A missing systemd unit is no longer reported as a failed one.**
+  `systemctl is-active` answers `inactive` for a unit that does not exist,
+  which is indistinguishable from a unit that exists and stopped. A standalone
+  install without an `nftables` package is fine; a node whose metrics store
+  died is not. `LoadState` separates them and an uninstalled unit renders
+  neutral.
 
 - **SECURITY: the privileged update runner ran root-owned code out of a tree the
   service account owns.** `satom-updater.service` runs as **root** and its

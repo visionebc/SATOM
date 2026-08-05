@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Collection — Monitoring{% endblock %}
+{% block title %}Collection — Administrator{% endblock %}
 {% block content %}
 <div class="fw-page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
   <div>
@@ -65,9 +65,15 @@
               {% endif %}
             </div>
           </td>
-          <td>
+          {# The toggle is a BUTTON, not a link: it POSTs and changes state, and
+             a bare <button class="btn-link"> reads as navigation. Same
+             btn-outline-light chrome as the save button in the last column so a
+             row has one visual language. #}
+          <td class="text-nowrap">
             {% if t.enabled %}<span class="badge bg-success">on</span>{% else %}<span class="badge bg-secondary">off</span>{% endif %}
-            <button class="btn btn-link btn-sm py-0 small" form="tg-{{ t.id }}">{{ 'disable' if t.enabled else 'enable' }}</button>
+            <button class="btn btn-outline-light btn-sm py-0 ms-1" form="tg-{{ t.id }}"
+                    title="{{ 'Stop collecting this target' if t.enabled else 'Start collecting this target' }}">
+              <i class="bi {{ 'bi-pause-fill' if t.enabled else 'bi-play-fill' }} me-1"></i>{{ 'Disable' if t.enabled else 'Enable' }}</button>
           </td>
           <td class="small">{{ t.last_run_at|replace('T', ' ') or '—' }}</td>
           <td class="small">

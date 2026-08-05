@@ -217,6 +217,96 @@ bounded cost where it is not. The device-wide total is always collected, so
   the target rows. An action that goes permanently red over a dead appliance is
   an action the operator learns to skip.</li>
 </ul>
+<h3 id="2b-how-this-overlaps-deep-monitors-and-service-monitor">2b. How this overlaps Deep monitors and Service Monitor</h3>
+<p>It overlaps a lot, and it is worth being precise rather than reassuring. The
+four pages are not four subsystems -- Analytics is a <em>renderer</em>, and the two
+probe pages plus this collector are three <em>acquisition</em> paths, two of which now
+ask the appliance the same questions.</p>
+<table>
+<thead>
+<tr>
+<th>signal</th>
+<th>Deep monitors</th>
+<th>Service Monitor</th>
+<th>Collection</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU / memory</td>
+<td><code>cpu</code>, <code>memory</code> (SSH <code>get system performance</code>)</td>
+<td>--</td>
+<td><code>box</code> (REST <code>status.systemresource</code>)</td>
+</tr>
+<tr>
+<td>box sessions / conn rate</td>
+<td>--</td>
+<td><code>sessions</code> (REST <code>status.systemresource</code>)</td>
+<td><code>box</code> -- <strong>the same call</strong></td>
+</tr>
+<tr>
+<td>interfaces</td>
+<td><code>interface</code> (harvest cache)</td>
+<td>--</td>
+<td><code>interfaces</code> (REST <code>status.systemoperation</code>)</td>
+</tr>
+<tr>
+<td>per-policy sessions / RTT</td>
+<td>--</td>
+<td><code>policy_sessions</code> -- <strong>one probe per policy</strong></td>
+<td><code>policies</code> -- <strong>one call, every policy</strong></td>
+</tr>
+<tr>
+<td>throughput</td>
+<td>--</td>
+<td><code>throughput</code> (per policy)</td>
+<td><code>traffic</code> (device total + top-N)</td>
+</tr>
+<tr>
+<td>HTTP transactions</td>
+<td>--</td>
+<td><code>transactions</code> (per policy)</td>
+<td><code>transactions</code> (top-N)</td>
+</tr>
+<tr>
+<td>synthetic HTTPS request</td>
+<td><code>https</code></td>
+<td>--</td>
+<td>--</td>
+</tr>
+<tr>
+<td><code>proxyd</code> restart (PID set)</td>
+<td><code>proxyd</code> (read-only CLI)</td>
+<td>--</td>
+<td>--</td>
+</tr>
+</tbody>
+</table>
+<p>Read down the last two columns: <strong>every kind Service Monitor owns is now also
+collected by a scrape target</strong>, and for the per-policy signals the collector
+makes <em>one</em> call where the probe makes <em>N</em>. That N-per-policy shape is exactly
+what the 2026-08-05 sizing measured at ~56 minutes of device I/O per three
+minute window on the target fleet -- it is not a second opinion, it is the
+design the collector replaced.</p>
+<p>Only two probes have no equivalent here, and both are structural:</p>
+<ul>
+<li><strong><code>https</code></strong> issues a synthetic request through the published front end. That
+  is a different question from any counter: it proves interface, policy, proxy
+  and backend at once, and it is the only check that fails when the service is
+  unreachable <em>from outside</em>.</li>
+<li><strong><code>proxyd</code></strong> fingerprints the daemon's PID set over the read-only CLI. No
+  endpoint on FortiWeb exposes process state -- 100+ non-cmdb paths were
+  enumerated from the GUI bundle and none of them do -- so a silent restart is
+  invisible to every REST path in this table.</li>
+</ul>
+<p>The probe pages are also the only place a <strong>threshold</strong> lives. The store keeps
+raw series; alerting on them is a query, not a row.</p>
+<p><strong>Nothing was removed.</strong> The probes carry ~15k samples of history and their own
+thresholds, and deleting a page whose sweep is still running is not a change to
+make quietly. What that costs today is duplicate load against every device that
+has both a probe and a target for the same signal, so the honest statement is:
+Collection is the path that scales, Service Monitor is the path that has
+history and thresholds, and consolidating them is a decision, not a cleanup.</p>
 <hr>
 <h2 id="3-storage-victoriametrics-single-node-loopback">3. Storage: VictoriaMetrics, single node, loopback</h2>
 <p><code>deploy/satom-metrics.service</code> → <code>/usr/local/bin/victoria-metrics</code>,

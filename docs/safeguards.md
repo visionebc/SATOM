@@ -2203,6 +2203,77 @@ carries VictoriaMetrics (Apache-2.0) and lego (MIT), plus the vendored browser
 assets. SATOM is ELv2; those components are not, and their terms are not
 superseded by it.
 
+## 17. A panel that cannot report bad news is not a panel
+
+Four defects in the same console shipped and survived review because none of
+them crashes. Each one makes the page state something false and keep a straight
+face.
+
+**A monitored-unit list is a claim about what can break.** Until 2026-08-05
+*Services & redundancy* watched five units and `satom-metrics` was not among
+them. The Analytics boards and the Collection page read every number they draw
+from that store, so it could be dead while every light on the panel stayed
+green. The rule: **a unit whose death is visible to the operator elsewhere in
+this console belongs on that list.** The converse matters just as much --
+`satom-ha-datasync.timer` is role-guarded and inert on the primary, and
+`satom-git-publish.timer` was retired with the git SoT. Listing either shows a
+permanent red for correct behaviour, and a check that always complains is a
+check the operator learns to skip. That false positive has had to be removed
+from `get system health` twice; the guard now fails the suite if either unit is
+added back.
+
+**Missing is not failed.** `systemctl is-active` answers `inactive` for a unit
+that does not exist, which is indistinguishable from a unit that exists and
+stopped. A standalone install without an `nftables` package is fine; a node
+whose metrics store died is not. `LoadState` separates them, and a unit that is
+not installed is reported neutral (grey), never red.
+
+**A panel may not read the documentation table when the sweep has the truth.**
+*Device HA clusters* printed *"No HA clusters registered"* on a fleet whose
+hourly harvest had `system_ha` cached for every appliance. It read
+`Appliance.members`, which is written by exactly one thing -- the appliance form
+-- so a box nobody had typed in by hand could not be reported at all. Worse, the
+function computed a standalone count and then never rendered it. `ha_inventory`
+derives the posture from the cache, which is where the answer already was. This
+is the same defect and the same fix as the interface inventory (2026-07-20):
+**if the harvest already fetched it, the view must not read the hand-entry
+table instead.**
+
+Three rules hold that panel honest:
+
+* **Clustered requires peer evidence** -- a heartbeat device, a group name, a
+  peer address, a node list longer than one -- and the panel prints the evidence
+  next to the verdict. FortiWeb and FortiADC report `mode` as a string, which is
+  unambiguous; FortiAnalyzer reports it as an **int** whose enum could not be
+  verified against a live device. Guessing that mapping would label a standalone
+  box "primary", so the verdict comes from evidence and the raw value is carried
+  through verbatim for the operator to see. **An unverified enum is reported as
+  unverified, never as a confident label.**
+* **No harvest means `unknown`, never `standalone`.** "We have measured nothing"
+  and "this box is standalone" are different statements; merging them is the
+  Fleet-health-badge bug of 2026-07-28.
+* **Retired placeholders are excluded outright.** A row whose host is parked on
+  the reserved `.invalid` TLD names no real box; counting it as unknown keeps
+  the panel permanently amber for rows kept only for their history.
+
+**One page, one question.** Fleet health carried the appliances *and* the
+manager's own health, and only the second is Global-only -- so the page had to
+hide half of itself in every product ADOM. It is now **SATOM health** (this
+installation: nodes, database, units, redundancy, encryption) and **Device
+health** (the appliances). The split is enforced on the routes, not in the
+template: `/monitoring/satom` redirects out of a product ADOM and
+`/monitoring/satom-data` answers 403, because those sections name node
+hostnames and infrastructure addresses. The manager feed also stops computing
+the per-device capacity roll-up it never renders.
+
+**Configuration is not a measurement.** Collection moved from Monitoring to
+Administrator: the other six Monitoring pages display what was measured, this
+one sets how measurement happens and needs `CONFIG_WRITE` to change anything.
+It ships as `partials/nav_collection.html` and is included by all four
+Administrator groups -- those groups have already drifted once (one of them is
+still titled "Administration"), and a shared partial is the only thing that
+stops an entry being added to Global and forgotten in the other three.
+
 ## 11. Known gaps (kept honest, on purpose)
 
 * Per-device configuration restore is dry-run gated — no live canary round-trip yet.
@@ -2726,3 +2797,25 @@ in 16 was a case where the scripts were fine and the artefact was not.
 * [`source-of-truth-spec.md`](source-of-truth-spec.md) — the write path and the local persistence layer
 * [`metrics-architecture.md`](metrics-architecture.md) — where operational data lives, and the fleet-scale measurement behind it
 * [`INSTALL.md`](INSTALL.md) — what to request from systems, and the hardening checklist
+
+### The monitoring panels report bad news (17)
+
+```bash
+# 1. the store is watched, and units inactive BY DESIGN are not
+python3 -c "from app.services.system_health import MONITORED_UNITS as U; \
+  print('store watched:', 'satom-metrics.service' in U); \
+  print('no role-guarded:', not any('datasync' in u or 'git-publish' in u for u in U))"
+
+# 2. HA posture comes from the harvest, not the hand-entry table
+#    (expect one row per live appliance, each carrying its evidence)
+curl -sk -b "$COOKIE" https://$NODE/monitoring/satom-data | python3 -c \
+  "import json,sys; r=json.load(sys.stdin)['redundancy']; print(r['device_counts']); \
+   [print(' ', d['name'], d['status'], d['source'], d['evidence']) for d in r['device_posture']]"
+
+# 3. the split is enforced on the ROUTE, not the template
+curl -sk -o /dev/null -w '%{http_code}\n' -H 'X-ADOM: fortiweb' https://$NODE/monitoring/satom-data
+curl -sk -o /dev/null -w '%{http_code}\n' -H 'X-ADOM: fortiweb' https://$NODE/monitoring/satom
+
+# 4. every Administrator group offers Collection -- 4 means all of them
+grep -c 'partials/nav_collection.html' app/templates/base.html
+```

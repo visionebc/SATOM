@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 19 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 22 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 19 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 22 entries.</p>
   <div class="callout" style="margin-top:18px;">
     <span class="cico">🗒️</span>
     <p><b>Generated from the changelog.</b> This page is one section of
@@ -62,10 +62,7 @@
       <div class="toc-title">On this page</div>
       <a href="#added">Added</a>
       <a href="#changed">Changed</a>
-      <a href="#changed_1">Changed</a>
       <a href="#fixed">Fixed</a>
-      <a href="#changed_2">Changed</a>
-      <a href="#fixed_1">Fixed</a>
     </aside>
     <div class="doc-body mdx">
 <h3 id="added">Added</h3>
@@ -147,6 +144,14 @@
   what someone wrote a probe for. <code>params.push_server=1</code> uploads the summary to
   the external backup server as both JSON and text.</p>
 </li>
+<li>
+<p><strong><code>NOTICE</code> attributes what SATOM redistributes.</strong> The offline bundles ship
+  two third-party binaries (VictoriaMetrics, Apache-2.0; lego, MIT) and the
+  application serves vendored browser assets (Chart.js, Bootstrap -- both MIT,
+  vendored so an isolated management network renders correctly). None were
+  named. SATOM is ELv2 and those components are not; <code>NOTICE</code> now says so and
+  states that their terms are not superseded.</p>
+</li>
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
@@ -202,17 +207,16 @@
   armed and which are not, so an empty list cannot be misread as "nothing
   happened" when it means "nothing is scheduled".</p>
 <ul>
-<li><strong>Collection cadence is now visible, and honest.</strong> A probe fires only once its
+<li>
+<p><strong>Collection cadence is now visible, and honest.</strong> A probe fires only once its
   own interval has elapsed <em>and</em> the sweep ticks, so its real cadence is
   <code>tick × ceil(interval ÷ tick)</code>: a 5-minute probe under a 3-minute sweep is a
   6-minute probe, and its row still says 5. That silent rounding is what
   degraded <code>proxyd</code> — the check that exists to catch a mute daemon restart — when
   the sweep moved to 3 minutes. Analytics → Collection cadence lists every
   probe's declared and effective interval and flags each mismatch. With no sweep
-  scheduled it reports no cadence at all rather than a plausible default.</li>
-</ul>
-<h3 id="changed_1">Changed</h3>
-<ul>
+  scheduled it reports no cadence at all rather than a plausible default.</p>
+</li>
 <li>
 <p><code>deep_monitor.series()</code> accepts an optional <code>force_source</code>, and the resolution
   choice is split out as <code>source_for()</code>. This lets a multi-series panel ask each
@@ -248,42 +252,6 @@
   <code>satom execute trust add-key</code>, <code>satom execute trust remove-key</code>,
   <code>satom diagnose updates</code> (also folded into <code>diagnose all</code>).</p>
 </li>
-</ul>
-<h3 id="fixed">Fixed</h3>
-<ul>
-<li>
-<p><strong>SECURITY: the privileged update runner ran root-owned code out of a tree the
-  service account owns.</strong> <code>satom-updater.service</code> runs as <strong>root</strong> and its
-  shipped unit points at <code>/opt/satom/deploy/self_update_runner.py</code>, inside the
-  application tree — which belongs to the unprivileged service account after the
-  de-privilege. The web worker could therefore rewrite the script root was about
-  to execute and then enqueue a request, which it is <em>designed</em> to be able to
-  do, and the next trigger would run its code as root. That is a complete
-  escalation across the boundary <code>docs/privilege-model.md</code> exists to defend, and
-  it is present in every release from 1.2 onward. A second path in the same
-  process: <code>_pip_allowlist()</code> imported <code>app.services.system_info</code>, executing the
-  entire Flask package as root out of the same writable tree.
-  <code>deploy/install-runner.sh</code> now installs a <code>root:root</code> copy of the runner and
-  its verifier in <code>/usr/local/lib/satom-runner</code>, run by a <strong>system</strong> interpreter,
-  and redirects the unit with a drop-in — not an edit, because the update runner
-  re-copies <code>deploy/&lt;unit&gt;</code> on every update. It runs from the installer, the
-  de-privilege migrator, every code update and
-  <code>satom execute reinstall runner</code>. The curated pip allowlist is now local to
-  the runner, with a test asserting it still equals <code>system_info._LIBRARIES</code>.
-  <strong>Existing nodes are not fixed by updating alone</strong> — run
-  <code>satom execute reinstall runner</code> (or re-run the installer), then confirm with
-  <code>satom diagnose updates</code>. Found while building the package feature: signature
-  verification performed by a script the attacker can edit verifies nothing.
-  [SATOM-RUNNER-ROOT-COPY]</p>
-</li>
-<li>
-<p><code>client_max_body_size</code> raised to 400M in the generated vhost, matching the
-  application's own upload limit. Below it, a valid package dies with an opaque
-  nginx 413 that the application never sees and therefore cannot explain.</p>
-</li>
-</ul>
-<h3 id="changed_2">Changed</h3>
-<ul>
 <li>
 <p><strong>License changed from Apache-2.0 to the <a href="LICENSE">Elastic License 2.0</a>.</strong>
   The change applies to the SATOM project as a whole, including the versions
@@ -317,8 +285,38 @@
   [SATOM-LICENSE-TAGS]</p>
 </li>
 </ul>
-<h3 id="fixed_1">Fixed</h3>
+<h3 id="fixed">Fixed</h3>
 <ul>
+<li>
+<p><strong>SECURITY: the privileged update runner ran root-owned code out of a tree the
+  service account owns.</strong> <code>satom-updater.service</code> runs as <strong>root</strong> and its
+  shipped unit points at <code>/opt/satom/deploy/self_update_runner.py</code>, inside the
+  application tree — which belongs to the unprivileged service account after the
+  de-privilege. The web worker could therefore rewrite the script root was about
+  to execute and then enqueue a request, which it is <em>designed</em> to be able to
+  do, and the next trigger would run its code as root. That is a complete
+  escalation across the boundary <code>docs/privilege-model.md</code> exists to defend, and
+  it is present in every release from 1.2 onward. A second path in the same
+  process: <code>_pip_allowlist()</code> imported <code>app.services.system_info</code>, executing the
+  entire Flask package as root out of the same writable tree.
+  <code>deploy/install-runner.sh</code> now installs a <code>root:root</code> copy of the runner and
+  its verifier in <code>/usr/local/lib/satom-runner</code>, run by a <strong>system</strong> interpreter,
+  and redirects the unit with a drop-in — not an edit, because the update runner
+  re-copies <code>deploy/&lt;unit&gt;</code> on every update. It runs from the installer, the
+  de-privilege migrator, every code update and
+  <code>satom execute reinstall runner</code>. The curated pip allowlist is now local to
+  the runner, with a test asserting it still equals <code>system_info._LIBRARIES</code>.
+  <strong>Existing nodes are not fixed by updating alone</strong> — run
+  <code>satom execute reinstall runner</code> (or re-run the installer), then confirm with
+  <code>satom diagnose updates</code>. Found while building the package feature: signature
+  verification performed by a script the attacker can edit verifies nothing.
+  [SATOM-RUNNER-ROOT-COPY]</p>
+</li>
+<li>
+<p><code>client_max_body_size</code> raised to 400M in the generated vhost, matching the
+  application's own upload limit. Below it, a valid package dies with an opaque
+  nginx 413 that the application never sees and therefore cannot explain.</p>
+</li>
 <li>
 <p><strong>The unread badge on the topbar bell floated off the bell.</strong> It was
   positioned with Bootstrap's <code>.top-0 .start-100 .translate-middle</code>, which
@@ -347,6 +345,39 @@
   EOF <em>with</em> partial data (a last line without a newline) remains a valid
   answer. Guarded structurally, so a prompt added later cannot bypass them.
   See <code>docs/safeguards.md</code> 10f. [SATOM-LOUD-READ]</p>
+</li>
+<li>
+<p><strong>The metrics store was never installed by the installer.</strong> VictoriaMetrics
+  was placed by hand on the development pair, so a freshly installed node got
+  the analytics pages, the <code>metrics_scrape</code> scheduled action and the
+  <code>satom-metrics.service</code> entry that <code>diagnose all</code> checks -- with no store
+  behind any of them. An air-gapped install was worse than degraded: with no
+  route to the internet there was no way to obtain the binary at all.
+  <code>install-satom.sh</code> now installs it (bundle first, pinned download second,
+  sha256 verified, warn rather than abort), creates <code>/var/lib/satom-metrics</code>
+  and enables the unit <em>after</em> the service-account drop-in exists; all three
+  offline builders carry the binary and <strong>fail</strong> rather than ship a bundle
+  without it; and the digest is a single pinned value shared by installer and
+  builders, because drift means a bundle one of them would refuse -- a failure
+  that surfaces only on an air-gapped node. The artefact name is pinned and
+  the <code>-enterprise</code> / <code>-cluster</code> builds published under the same upstream tag
+  are refused: they are not Apache-2.0 and this product redistributes what it
+  fetches. Same failure class as <code>sudo</code> missing from the 1.1 bundles and
+  <code>lego</code> from the RHEL bundle; see <code>docs/safeguards.md</code> 16.
+  [SATOM-METRICS-STORE] [SATOM-METRICS-BUNDLE]</p>
+</li>
+<li>
+<p><strong>The changelog stacked duplicate sections, and the published release pages
+  showed them.</strong> Sessions appended their own <code>### Changed</code> / <code>### Fixed</code>
+  headings independently, so <code>[Unreleased]</code> carried three "Changed" and two
+  "Fixed", and the already-published <code>[1.3]</code> block carried 25 sections where
+  three were meant. Nothing errored -- the file parsed, the site built, and
+  each release page simply rendered the same heading several times, reading as
+  though one version contained several releases. Both blocks are merged (no
+  entry text changed; 168 bullets before and after) and a guard now fails on a
+  repeated kind inside a flat block. Blocks that group entries under
+  descriptive sub-headings are exempt: repeats across sub-sections are correct
+  there, and the release-notes generator renders them as written.</p>
 </li>
 </ul>
 <p class="rel-prevnext"><a href="v1.3.5.html">Version 1.3.5 →</a></p>

@@ -2145,6 +2145,64 @@ shared string would hide four of them. FortiAnalyzer is the live case: no
 collector exists for that product today, so auto-provisioning is a legitimate
 no-op — and a silent no-op is indistinguishable from success.
 
+## 16. A dependency the product needs is a dependency the product ships
+
+The metrics store (VictoriaMetrics, single node, loopback) was installed by
+hand on the development pair and, for a day, existed nowhere else. Nothing
+failed loudly. A freshly installed node got the analytics pages, the
+`metrics_scrape` scheduled action, and the `satom-metrics.service` entry that
+`diagnose all` checks -- and no store behind any of them. On an air-gapped
+install it was worse than a warning: there was no route to the internet, so
+the operator could not obtain the binary at all.
+
+This is a recurring shape here, not a one-off:
+
+| release | what shipped without it | how it surfaced |
+|---|---|---|
+| 1.1 | `sudo`, `openssh-*` | install died at step 6, after creating the service account |
+| 1.2, 1.2.1 | `docs/safeguards.md` | the guards travelled, the document explaining them did not |
+| 1.2, 1.3 (RHEL) | `lego` | ACME silently unusable |
+| 1.3 (SUSE, offline) | `git` | backup copy 3 stopped, timer red every hour |
+
+The rule: **anything the product needs at runtime is installed by
+`install-satom.sh` and carried in every offline bundle, or it is not a
+dependency the product may rely on.**
+
+Three properties hold it up, and each has a guard in
+`tests/test_metrics_store_install.py`:
+
+1. **The installer installs it, bundle before network.** Offline is the case
+   that cannot recover, so it is tried first; a network-first order spends its
+   timeout before finding the copy already on disk.
+2. **Every builder carries it, and aborts rather than ship without it.** The
+   installer *warns* (the rest of the product works without a store); the
+   builder *fails*. A bundle that is silently incomplete is exactly how the
+   four rows above happened.
+3. **One pinned digest, shared by installer and builders.** Drift means a
+   bundle built with one pin is refused by an installer holding the other --
+   and that failure only surfaces on an air-gapped node, which is the worst
+   place to discover it.
+
+Two details worth keeping:
+
+* **The artefact name is pinned, and `-enterprise` / `-cluster` are refused.**
+  The same upstream release tag publishes an enterprise build that is *not*
+  Apache-2.0. A loosened URL would pull a differently-licensed binary into a
+  product that redistributes it. The guard checks the string, in the installer
+  and in all three builders.
+* **The store is enabled *after* `satom_enforce_unit_user`.** The shipped unit
+  declares a `User=`; an installation that adopted a different service account
+  gets the right one only from the drop-in. Enabling first starts it as the
+  template's account and nothing later restarts it. `satom-metrics.service` is
+  also in the update runner's `NONROOT_UNITS`, so the drop-in survives updates
+  -- without that it loses its `User=` on the first self-update, which is
+  precisely how the standby reverted to `User=root` in 1.2.
+
+Redistributing a third-party binary also means attributing it: `NOTICE`
+carries VictoriaMetrics (Apache-2.0) and lego (MIT), plus the vendored browser
+assets. SATOM is ELv2; those components are not, and their terms are not
+superseded by it.
+
 ## 11. Known gaps (kept honest, on purpose)
 
 * Per-device configuration restore is dry-run gated — no live canary round-trip yet.
@@ -2632,6 +2690,33 @@ A finding in check 2 means a rule is missing from `INTERNAL_REDACTIONS` in the
 publisher. It should never be reachable: the same patterns abort the push, so
 anything visible here means the scan was bypassed or a pattern disagrees with
 its own redaction rule.
+
+### The metrics store really ships (16)
+
+```bash
+# 1. the pin is one value across installer and all three builders
+grep -h VM_SHA256 installers/install-satom.sh installers/build-offline-bundle*.sh \
+  | grep -oE '[0-9a-f]{64}' | sort -u | wc -l          # expect: 1
+
+# 2. no non-Apache artefact is referenced anywhere
+grep -n 'victoria-metrics-linux-amd64' installers/*.sh \
+  | grep -E 'enterprise|cluster'                        # expect: no output
+
+# 3. a built bundle actually contains the binary, and it is the pinned one
+tar tzf dist/satom-offline-*.tar.gz | grep victoria-metrics
+tar xzOf dist/satom-offline-*.tar.gz --wildcards '*/bundle/victoria-metrics/victoria-metrics' \
+  | sha256sum                                           # expect: the pin above
+
+# 4. on a node: the store is up, on loopback, and nothing else can reach it
+systemctl is-active satom-metrics                       # expect: active
+ss -lntp | grep 8428                                    # expect: 127.0.0.1 only
+satom diagnose all | grep -i metric
+```
+
+Step 3 is the one that matters. Steps 1 and 2 read the build scripts; only
+step 3 reads the artefact the customer downloads, and every entry in the table
+in 16 was a case where the scripts were fine and the artefact was not.
+
 
 ## Related
 

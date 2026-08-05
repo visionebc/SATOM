@@ -123,6 +123,34 @@ fleet-wide data exposure, and a test asserts it.
 
 ---
 
+## 3b. How the store gets onto a node
+
+The binary is not a manual step. `install-satom.sh` places
+`/usr/local/bin/victoria-metrics`, creates `/var/lib/satom-metrics` owned by
+the service account, installs `deploy/satom-metrics.service` and enables it --
+taking the binary from `bundle/victoria-metrics/` when one is present and
+downloading the pinned OSS artefact otherwise. The digest is pinned in the
+installer and in all three offline builders; a mismatch is not installed.
+
+Consequences worth knowing:
+
+* **An offline install is fully covered.** All three bundles (Debian, RHEL,
+  SUSE) carry the binary, and the builder fails rather than produce a bundle
+  without it.
+* **Failure to obtain it does not abort the installation.** Everything else in
+  SATOM works without a store; what breaks is the store-backed panels, which
+  report a query error rather than drawing an empty chart. `diagnose all`
+  reports the missing unit.
+* **The store is per node.** It lives outside `data/` because
+  `satom-ha-datasync` rsyncs `data/` with `--delete`, and a time-series store
+  must never be rsynced under a running process. A node added to an existing
+  pair builds its own history from the moment it starts scraping; it does not
+  inherit the primary's.
+* **Upgrading the pinned version** means changing `VM_VERSION` and `VM_SHA256`
+  in `installers/install-satom.sh` and in the three builders together -- a
+  guard fails if they drift, because a bundle built with one pin is refused by
+  an installer holding the other.
+
 ## 4. Dashboards: selectors, not enumerated series
 
 Analytics panels have three selection modes. The first two enumerate probe

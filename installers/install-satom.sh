@@ -47,6 +47,8 @@ VERSION="1.3.5"
 APP_DIR="/opt/satom"
 ACME_WEBROOT="/var/www/acme"
 LEGO_VERSION="5.2.2"
+VM_VERSION="1.148.0"
+VM_SHA256="bde7ea38c7c9b341a0bb1f37294d6d619ff0318d70174008b57d83cd4f5698f3"   # victoria-metrics-prod, release checksums
 LOG_DIR="/var/log/satom"
 # Cuenta de servicio sin privilegios. La app NO corre como root: ver
 # docs/privilege-model.md. Se puede sobreescribir para migrar una instalación
@@ -1187,6 +1189,60 @@ fi
 mkdir -p "$APP_DIR/data/acme" && chmod 700 "$APP_DIR/data/acme"
 chmod 0755 "$APP_DIR/deploy/acme-hooks"/*.sh 2>/dev/null || true
 
+# --- Almacen de metricas: VictoriaMetrics single-node (OSS, Apache-2.0) -----
+# [SATOM-METRICS-STORE]
+# Un binario Go estatico sin dependencias, asi que entra en los bundles offline
+# de las tres familias igual que lego. Es lo que sostiene /monitoring/analytics:
+# a escala de flota Postgres no puede guardar la telemetria por policy (medido
+# 2026-08-05, 100 equipos x 750 policies: ~450 GB en monitor_sample contra ~8 GB
+# aqui). Sin el, la app arranca y todo lo demas funciona, pero los paneles del
+# store devuelven error de consulta -> se AVISA, no se aborta.
+#
+# OJO: el mismo tag publica variantes -cluster y -enterprise. La enterprise NO
+# es Apache-2.0. El nombre del artefacto esta fijado y el sha256 del binario
+# esta anclado arriba: lo que no coincida NO se instala.
+say "Instalando el almacen de metricas (VictoriaMetrics ${VM_VERSION})"
+VM_BIN="/usr/local/bin/victoria-metrics"
+VM_DATA="/var/lib/satom-metrics"
+vm_sha_ok() { [ -f "$1" ] && [ "$(sha256sum "$1" | awk '{print $1}')" = "$VM_SHA256" ]; }
+
+if vm_sha_ok "$VM_BIN"; then
+    ok "victoria-metrics ${VM_VERSION} ya presente (sha256 verificado)"
+elif [ -f "${BUNDLE_DIR}/victoria-metrics/victoria-metrics" ]; then
+    if vm_sha_ok "${BUNDLE_DIR}/victoria-metrics/victoria-metrics"; then
+        install -m 0755 "${BUNDLE_DIR}/victoria-metrics/victoria-metrics" "$VM_BIN" \
+            && ok "victoria-metrics ${VM_VERSION} instalado desde el bundle offline (sha256 verificado)"
+    else
+        warn "victoria-metrics: el binario del bundle no coincide con el sha256 esperado - NO instalado."
+    fi
+elif [ "$OFFLINE" -eq 0 ]; then
+    _vt="$(mktemp -d)"
+    if curl -fsSLo "$_vt/vm.tgz" "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/v${VM_VERSION}/victoria-metrics-linux-amd64-v${VM_VERSION}.tar.gz"; then
+        if tar xzf "$_vt/vm.tgz" -C "$_vt" victoria-metrics-prod 2>/dev/null \
+           && vm_sha_ok "$_vt/victoria-metrics-prod"; then
+            install -m 0755 "$_vt/victoria-metrics-prod" "$VM_BIN" \
+                && ok "victoria-metrics ${VM_VERSION} instalado (sha256 verificado)"
+        else
+            warn "victoria-metrics: sha256 no coincide - NO instalado. Los paneles del store quedaran sin datos."
+        fi
+    else
+        warn "victoria-metrics: descarga fallida - los paneles del store quedaran sin datos."
+    fi
+    rm -rf "$_vt"
+else
+    warn "victoria-metrics no instalado (sin red y sin bundle). /monitoring/analytics quedara sin store."
+fi
+
+# El directorio de datos vive FUERA de data/ a proposito: satom-ha-datasync
+# sincroniza data/ con rsync --delete y un TSDB no se rsyncea bajo un proceso
+# vivo. Cada nodo mantiene el suyo.
+if [ -x "$VM_BIN" ]; then
+    install -d -m 0750 -o "$APP_USER" -g "$APP_USER" "$VM_DATA"
+    install -m 0644 "$APP_DIR/deploy/satom-metrics.service" \
+        /etc/systemd/system/satom-metrics.service
+    systemctl daemon-reload >>"$INSTALL_LOG" 2>&1 || true
+fi
+
 say "Paso 4/7 — Configurando PostgreSQL"
 
 pg_bootstrap
@@ -1494,7 +1550,7 @@ satom_enforce_unit_user() {                                          # [PFDROPIN
     local unit d
     for unit in satom.service satom-scheduler.service satom-reconciler.service \
                 satom-alerts.service satom-cert-renew.service \
-                satom-ha-datasync.service; do
+                satom-metrics.service satom-ha-datasync.service; do
         [ -f "/etc/systemd/system/$unit" ] || continue
         d="/etc/systemd/system/${unit}.d"
         install -d -m 0755 "$d"
@@ -1602,6 +1658,17 @@ systemctl enable --now satom-reconciler.service >>"$INSTALL_LOG" 2>&1 || true
 # Todas las unidades ya existen: blinda la cuenta de servicio contra el próximo
 # self-update, que recopia las plantillas de deploy/ (User=root).   [PFDROPCALL]
 satom_enforce_unit_user
+
+# El store se habilita DESPUES del drop-in: la plantilla declara User=satom y
+# una instalacion que adoptara otra cuenta arrancaria con el usuario erroneo.
+if [ -x /usr/local/bin/victoria-metrics ] && [ -f /etc/systemd/system/satom-metrics.service ]; then
+    systemctl daemon-reload >>"$INSTALL_LOG" 2>&1 || true
+    if systemctl enable --now satom-metrics.service >>"$INSTALL_LOG" 2>&1; then
+        ok "satom-metrics.service activo (store local en 127.0.0.1:8428)"
+    else
+        warn "satom-metrics.service no arranco - revisa: journalctl -u satom-metrics"
+    fi
+fi
 
 # CLI de operador: copia ROOT-OWNED fuera del arbol de la app.
 # Vive en /usr/local/lib/satom-cli + /usr/local/sbin/satom a proposito: si el

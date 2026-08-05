@@ -14,5 +14,14 @@ def client_for(appliance):
     if kind == "fortianalyzer":
         from .fortianalyzer import FortiAnalyzerClient
         return FortiAnalyzerClient(appliance)
+    if kind == "fortiauthenticator":
+        from .fortiauthenticator import FortiAuthenticatorClient
+        return FortiAuthenticatorClient(appliance)
+    # NOTE: an unrecognised kind falls through to FortiWeb rather than raising.
+    # That default is load-bearing history, but it is also how a newly added
+    # product silently gets the WRONG client: the Appliances "Test" button then
+    # runs a FortiWeb status check against it, fails, and pins the device to
+    # 'offline' forever. tests/test_fac.py asserts every non-placeholder ADOM
+    # has an explicit arm here, so the next product cannot inherit that bug.
     from .fortiweb import FortiWebClient
     return FortiWebClient(appliance)

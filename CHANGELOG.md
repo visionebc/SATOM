@@ -6,6 +6,34 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **FortiAuthenticator is now a managed product**, not a placeholder ADOM.
+  Verified against `FACVMKVM v8.0.3 build0099`: a REST client for its
+  Django/Tastypie API, a registry of **40 endpoints seeded from a live census
+  of all 58 the unit advertises**, 28 section pages mirroring the unit's own
+  `nav_menu_definition`, an API console (dry-run by default, audited,
+  permission-gated) and a configuration harvest wired into the existing
+  source-of-truth store and the fleet-wide scheduled sweeps.
+  See `docs/fortiauthenticator.md`.
+
+### Fixed
+
+- **The product-scoping columns could not hold an 18-character ADOM key.**
+  Every product key the app had ever written was at most 13 characters
+  (`fortianalyzer`), so `appliances.kind` and the `product` column on twelve
+  other tables were declared `varchar(16)`. `fortiauthenticator` is 18 — which
+  is why that ADOM could exist as a placeholder for months without anyone
+  noticing: a placeholder never writes a row. The first real insert failed, and
+  the columns that would have failed *later* are the ones that hurt (an audit
+  entry, a device alert, an API token — writes that happen long after the
+  operator believes the device is integrated). All thirteen were widened to
+  `varchar(32)`, chosen by inspecting their stored values rather than matching
+  their names: `monitor_probe.kind`, `notifications.kind` and `plugins.kind`
+  share a column name but a different domain and were left alone. A guard now
+  compares against the longest key declared in `branding._FALLBACK`, so a
+  longer fifth product is caught the day it is declared.
+
 _Nothing yet._
 
 ## [1.4.1] - 2026-08-05

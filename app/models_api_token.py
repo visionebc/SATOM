@@ -120,7 +120,7 @@ class ApiToken(db.Model):
     owner = db.relationship("User", lazy="joined", foreign_keys=[owner_user_id])
 
     scopes = db.Column(db.Text, nullable=False, default='["read"]')  # JSON list
-    product = db.Column(db.String(16), nullable=False, default="fortiweb")
+    product = db.Column(db.String(32), nullable=False, default="fortiweb")
 
     # Fine-grained authorization (Phase 2). Both JSON lists; empty = unrestricted.
     capabilities = db.Column(db.Text, nullable=False, default="[]")   # CAPABILITIES

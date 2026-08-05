@@ -38,6 +38,7 @@ def index():
         "monitoring/collection.html",
         targets=[t.to_dict() for t in targets],
         collectors=mc.COLLECTORS,
+        gaps=mc.coverage_gaps(visible_appliances().all()),
         vm=vm_store.health(),
     )
 
@@ -45,11 +46,13 @@ def index():
 @bp.route("/data")
 @login_required
 def data():
+    from ..services import metrics_collect as mc
     from ..services import vm_store
     targets = sorted(_visible_targets(),
                      key=lambda t: ((t.appliance.name if t.appliance else ""),
                                     t.collector))
     return jsonify({"targets": [t.to_dict() for t in targets],
+                    "gaps": mc.coverage_gaps(visible_appliances().all()),
                     "vm": vm_store.health()})
 
 

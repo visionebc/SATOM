@@ -2033,6 +2033,39 @@ psql -c "SELECT device, count(*) FROM sot_version GROUP BY device"
 # run a device sync twice; the count must not move the second time
 ```
 
+## 15. A device that is not collected has to say so
+
+Collection is provisioned, not configured by hand: a device gets one scrape
+target per collector its product supports, and the operator then tunes interval,
+top-N and enabled state on **Monitoring → Collection**. That only works if
+provisioning actually happens for every device, and if the devices it *skips*
+are visible.
+
+**Provisioning runs at save time, from one rule.** `metrics_collect.ensure_targets`
+is called by all three appliance-creation paths (create, edit, cluster-member
+add) as well as by every sweep. It is INSERT-only, so operator edits always win,
+and it is self-guarding: the eligibility rule lives in `provisionable()`, not in
+each caller.
+
+* A **parked** device (`maintenance`) and a **retired** row (host neutralised to
+  `*.invalid`) get no targets — the same guard the sweep applies before touching
+  a device. Four copies of that rule would have been four chances to drift.
+* Provisioning **may not cost the operator the device row**. Metrics are
+  downstream of inventory, so `_provision_metrics` swallows and logs a failure
+  instead of aborting the save.
+* Doing this only in the sweep was the original bug: a new device sat
+  uncollected until the next tick, and on an installation where no scheduled
+  action had been seeded (§10 — nothing seeds them), forever.
+
+**Absence is not coverage.** The page lists `ScrapeTarget` rows, so a device that
+yields none appears nowhere and reads as healthy. `coverage_gaps()` names every
+such device *with the reason*, and the reasons are distinct on purpose —
+"no collectors exist for this product yet", "in maintenance", "retired",
+"no host", "not provisioned yet" are five different operator actions, and one
+shared string would hide four of them. FortiAnalyzer is the live case: no
+collector exists for that product today, so auto-provisioning is a legitimate
+no-op — and a silent no-op is indistinguishable from success.
+
 ## 11. Known gaps (kept honest, on purpose)
 
 * Per-device configuration restore is dry-run gated — no live canary round-trip yet.
@@ -2043,6 +2076,29 @@ psql -c "SELECT device, count(*) FROM sot_version GROUP BY device"
   because of that, but it mitigates rather than fixes it.
 
 ## Verifying the guards are armed
+
+### Metrics auto-provisioning (§15)
+
+```bash
+# 1. every creation path provisions — the call, not the comment
+python3 - <<'PY'
+import ast, pathlib
+t = ast.parse(pathlib.Path('app/views/appliances.py').read_text())
+for fn in ('create', 'edit_save'):
+    f = next(n for n in ast.walk(t)
+             if isinstance(n, ast.FunctionDef) and n.name == fn)
+    calls = [c.func.id for c in ast.walk(f)
+             if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)]
+    print(fn, '_provision_metrics' in calls)
+PY
+
+# 2. no live device may be silently uncollected: every eligible device
+#    owns targets, and the page names the ones that do not
+curl -sk -b "$COOKIE" https://<node>/monitoring/collection/data | python3 -c \
+  "import json,sys; d=json.load(sys.stdin); \
+   print(len(d[\"targets\"]), \"targets;\", \
+         [(g[\"name\"], g[\"reason\"]) for g in d[\"gaps\"]])"
+```
 
 ### Published cross-references (§7d)
 

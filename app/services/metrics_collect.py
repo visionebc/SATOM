@@ -70,12 +70,39 @@ COLLECTORS: dict = {
 
 # ── provisioning ─────────────────────────────────────────────────────────────
 
+def collectors_for(kind: str) -> list:
+    """Collector keys this product supports (empty for a product with none)."""
+    return [k for k, spec in COLLECTORS.items() if kind in spec["products"]]
+
+
+def provisionable(appliance) -> bool:
+    """Whether this device should own scrape targets at all.
+
+    The rule lives HERE, not in each caller: targets are created from three
+    different appliance-creation paths plus the sweep, and a rule copied four
+    times is a rule that drifts. A parked device (``maintenance``) and a
+    retired row (host neutralised to ``*.invalid``) get none — same guard the
+    sweep applies before touching a device.
+    """
+    if appliance is None or appliance.maintenance:
+        return False
+    host = (appliance.host or "").strip()
+    return bool(host) and not host.endswith(".invalid")
+
+
 def ensure_targets(appliance) -> int:
     """Create missing scrape targets for one appliance (INSERT-only: operator
-    edits — intervals, enabled, params — always win). Returns rows created."""
+    edits — intervals, enabled, params — always win). Returns rows created.
+
+    Safe to call from any path that creates or edits an appliance: it is
+    idempotent and self-guarding, so a new device is collectable the moment
+    it is saved instead of on the next sweep.
+    """
     from ..models import db
     from ..models_metrics import ScrapeTarget
 
+    if not provisionable(appliance):
+        return 0
     existing = {t.collector for t in
                 ScrapeTarget.query.filter_by(appliance_id=appliance.id).all()}
     created = 0
@@ -90,6 +117,40 @@ def ensure_targets(appliance) -> int:
     if created:
         db.session.commit()
     return created
+
+
+def coverage_gaps(appliances) -> list:
+    """Devices that produce no scrape targets, each with the reason why.
+
+    Absence is not health. The collection page lists ``ScrapeTarget`` rows, so
+    a device that yields none — a FortiAnalyzer (no collectors exist for that
+    product yet), a parked device, a retired row — would appear nowhere and
+    read as covered. Naming them is the difference between "nothing to collect"
+    and "nothing is being collected".
+    """
+    from ..models_metrics import ScrapeTarget
+
+    counts: dict = {}
+    for t in ScrapeTarget.query.all():
+        counts[t.appliance_id] = counts.get(t.appliance_id, 0) + 1
+
+    gaps = []
+    for a in appliances:
+        if counts.get(a.id):
+            continue
+        if not collectors_for(a.kind):
+            reason = "no collectors exist for %s yet" % a.kind
+        elif a.maintenance:
+            reason = "device is in maintenance"
+        elif (a.host or "").strip().endswith(".invalid"):
+            reason = "retired — host neutralised"
+        elif not (a.host or "").strip():
+            reason = "no host configured"
+        else:
+            reason = "not provisioned yet — runs on the next sweep"
+        gaps.append({"id": a.id, "name": a.name, "kind": a.kind,
+                     "reason": reason})
+    return gaps
 
 
 def due_targets(now: datetime | None = None) -> list:
@@ -341,10 +402,8 @@ def sweep() -> dict:
     from ..models import Appliance
 
     created = 0
-    for a in Appliance.query.filter(Appliance.maintenance.is_(False)).all():
-        if (a.host or "").endswith(".invalid"):
-            continue
-        created += ensure_targets(a)
+    for a in Appliance.query.all():
+        created += ensure_targets(a)   # self-guarding: see provisionable()
     due = due_targets()
     results = []
     if due:

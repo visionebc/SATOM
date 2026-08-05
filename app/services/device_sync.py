@@ -4,9 +4,14 @@ and keep a git-backable per-device JSON backup.
 Three triggers converge here: manual ⟳, scheduled (Automation → Actions), and
 write-through after an approved edit. Live reads are read-only REST sweeps.
 
-The per-device JSON backup lives at ``reports/<slug>/_config.json`` (git-tracked,
-human-readable). Pushing it to git is opt-in (``publish=True``). Override the
-reports root with ``FORTINET_REPORTS_DIR`` (tests).
+The per-device JSON backup lives at ``data/reports/<slug>/_config.json``
+(human-readable "latest" view; ``satom-ha-datasync`` replicates it to the
+standby like the rest of ``data/``). Versioning/history moved from git to the
+local content-addressed store (``services.sot_store``) on 2026-08-05 — a git
+repo receiving the whole fleet's snapshots hourly grows without bound at
+scale. ``publish=True`` now pushes the store's blobs to the external backup
+server instead of committing to git. Override the reports root with
+``FORTINET_REPORTS_DIR`` (tests).
 """
 from __future__ import annotations
 
@@ -22,7 +27,12 @@ def _repo_root() -> Path:
 
 
 def _reports_dir() -> Path:
-    d = Path(os.environ.get("FORTINET_REPORTS_DIR") or (_repo_root() / "reports"))
+    # data/reports, NOT the repo-root reports/: data/ rides the existing
+    # standby rsync and the backup bundles; a repo-root path would need its
+    # own replication channel now that git no longer carries it. A compat
+    # symlink reports/ -> data/reports covers external readers.
+    d = Path(os.environ.get("FORTINET_REPORTS_DIR")
+             or (_repo_root() / "data" / "reports"))
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -236,14 +246,21 @@ def persist_snapshot(appliance, snapshot: dict, *, source: str = "live",
         run.changed = changed
         run.detail = (f"{snapshot.get('total_objects', 0)} objects, "
                       f"{len(res)} sections, json={p.name}")
+        try:
+            from . import sot_store
+            sr = sot_store.record(slugify(appliance.name), snapshot)
+            run.detail += (" | sot: new version" if sr.get("changed")
+                           else " | sot: unchanged")
+        except Exception as exc:  # noqa: BLE001 — the store never sinks the sync
+            run.detail += f" | sot error: {type(exc).__name__}"
         if publish:
-            from . import git_service
-            rel = os.path.relpath(str(p), str(_repo_root()))
+            from . import sot_store
             try:
-                git_service.git_publish(f"device sync: {appliance.name}", [rel])
-                run.detail += " | git: published"
-            except Exception as exc:  # noqa: BLE001 — git never sinks the sync
-                run.detail += f" | git error: {type(exc).__name__}"
+                pr = sot_store.push_to_backup_server()
+                run.detail += (" | off-box: pushed" if pr.get("ok")
+                               else f" | off-box: {pr.get('detail', '')[:80]}")
+            except Exception as exc:  # noqa: BLE001 — push never sinks the sync
+                run.detail += f" | off-box error: {type(exc).__name__}"
         run.status = "ok"
     except Exception as exc:  # noqa: BLE001
         run.status = "error"
@@ -282,15 +299,16 @@ def sync_device(appliance, *, publish: bool = False, user_label: str | None = No
 
 
 def sync_fleet(appliances, *, publish: bool = False, user_label: str | None = None):
-    """Sync several devices serially; one git publish at the end if requested."""
+    """Sync several devices serially; one off-box blob push at the end if
+    requested (the store dedups, so the push only carries what changed)."""
     runs = []
     for a in appliances:
         runs.append(sync_device(a, publish=False, user_label=user_label,
                                 trigger="scheduled"))
     if publish:
-        from . import git_service
+        from . import sot_store
         try:
-            git_service.git_publish("device sync: fleet", ["reports"])
+            sot_store.push_to_backup_server()
         except Exception:  # noqa: BLE001
             pass
     return runs

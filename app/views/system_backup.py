@@ -60,6 +60,30 @@ def _sot_devices() -> list[dict]:
     return rows
 
 
+def _sot_history_safe() -> list:
+    try:
+        from ..services import sot_store
+        return sot_store.history(limit=30)
+    except Exception:  # noqa: BLE001 — the SoT card must never sink the page
+        return []
+
+
+def _sot_summary_safe() -> list:
+    try:
+        from ..services import sot_store
+        return sot_store.devices_summary()
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _sot_stats_safe() -> dict:
+    try:
+        from ..services import sot_store
+        return sot_store.stats()
+    except Exception:  # noqa: BLE001
+        return {"versions": 0, "devices": 0, "blobs": 0, "bytes": 0}
+
+
 def _page_context(**extra) -> dict:
     from ..services import git_service, settings_store
     from ..services import backup_server as bksrv
@@ -76,9 +100,10 @@ def _page_context(**extra) -> dict:
         peer=peer,
         inv_rows=system_backup.compare_inventories(local, peer),
         git=git_service.git_info(),
-        git_history=git_service.reports_history(),
-        git_dirty=git_service.reports_dirty(),
         code_history=git_service.code_history(),
+        sot_hist=_sot_history_safe(),
+        sot_sum=_sot_summary_safe(),
+        sot_stats=_sot_stats_safe(),
         bk=bksrv.inventory(),
         bk_system=bksrv.system_inventory(),
         gitb=git_backup.list_bundles(),
@@ -107,14 +132,16 @@ def index():
 @login_required
 @require_permission("user_manage")
 def compare():
-    """Compare two git versions of the reports/ source of truth (rollback /
-    version inspection)."""
-    from ..services import git_service
-    ref_a = (request.args.get("ref_a") or "").strip()
-    ref_b = (request.args.get("ref_b") or "").strip() or "HEAD"
-    device = (request.args.get("device") or "").strip()
-    diff = git_service.reports_diff(ref_a, ref_b, device) if ref_a else \
-        {"ok": False, "error": "pick the base version (ref A)"}
+    """Compare two recorded versions of a device's source of truth (rollback /
+    version inspection) — served by the local store, no git involved."""
+    from ..services import sot_store
+    try:
+        id_a = int(request.args.get("ref_a") or 0)
+        id_b = int(request.args.get("ref_b") or 0)
+    except ValueError:
+        id_a = id_b = 0
+    diff = sot_store.diff(id_a, id_b) if (id_a and id_b) else \
+        {"ok": False, "error": "pick the two versions to compare"}
     return render_template("system_backup/index.html",
                            **_page_context(diff=diff))
 
@@ -389,13 +416,26 @@ def git_bundle_external_download():
 @login_required
 @require_permission("user_manage")
 def publish_json():
-    """Commit the per-device JSON tree (reports/) to git — the off-box
-    versioned source-of-truth backup (also runs hourly via
-    satom-git-publish.timer; this button is the on-demand path)."""
+    """Record the current per-device JSON tree into the versioned SoT store
+    and push the store's blobs to the external backup server — the on-demand
+    off-box copy (the hourly harvest records automatically)."""
+    import json as _json
+    from ..services import device_sync as ds
+    from ..services import sot_store
+    recorded = changed = 0
     try:
-        from ..services import git_service
-        git_service.git_publish("source-of-truth: publish device JSON", ["reports"])
-        flash("Per-device JSON published to git.", "success")
+        for cfg in sorted(ds._reports_dir().glob("*/_config.json")):
+            try:
+                snap = _json.loads(cfg.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001 — one bad file must not stop the rest
+                continue
+            res = sot_store.record(cfg.parent.name, snap, source="manual")
+            recorded += 1
+            changed += 1 if res.get("changed") else 0
+        push = sot_store.push_to_backup_server()
+        flash(f"SoT recorded: {recorded} device(s), {changed} new version(s). "
+              f"Off-box: {push.get('detail', '')}",
+              "success" if push.get("ok") else "warning")
     except Exception as exc:  # noqa: BLE001
-        flash(f"Git publish failed: {exc}", "danger")
+        flash(f"SoT publish failed: {exc}", "danger")
     return redirect(url_for("system_backup.index"))

@@ -340,9 +340,9 @@ def process(req_path):
         # ── SAFETY GUARD before the reset ────────────────────────────────
         # `reset --hard <target>` rewrites this checkout to the remote tip.
         # Anything committed here and NOT on the remote becomes unreachable
-        # and is eventually gc'd. That is not a theoretical case: while Gitea
-        # is unreachable the hourly `satom-git-publish` keeps committing the
-        # reports/ source of truth locally with nothing to push to, and the
+        # and is eventually gc'd. That is not a theoretical case: local code
+        # commits (hotfixes, another session's work) can exist with nothing
+        # to push to while Gitea is unreachable, and the
         # reconciler in AUTO mode can fire this path on its own the moment
         # Gitea comes back. Park those commits on a permanent ref first —
         # refs are never pruned, `git log <ref>` recovers them, and the git

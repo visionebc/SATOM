@@ -40,19 +40,77 @@ def _parse_filters(args) -> dict:
     }
 
 
+#: Which page each ADOM gets, and — just as important — the fact that there is
+#: NO fallthrough. The old code was ``if product == 'fortianalyzer': faz.html
+#: else: index.html``, so every ADOM added after FortiAnalyzer silently
+#: inherited the FortiWeb WAF dashboard. Scoped to a product with no server
+#: policies and no protection profiles, that page renders every chart empty
+#: while still promising WAF analytics: the reader concludes the fleet is
+#: clean, not that the page is wrong.
+#:
+#: FortiADC is mapped to the FortiWeb page ON PURPOSE and is KNOWN DEBT — it
+#: has virtual servers and real-server pools, not the FortiWeb projections this
+#: page reads, so most of its panels are empty too. Giving it a real page is a
+#: separate piece of work; leaving it in the map keeps the gap visible instead
+#: of hiding it behind an ``else``.
+ANALYSIS_PAGES = {
+    'fortiweb': 'analysis/index.html',
+    'fortiadc': 'analysis/index.html',   # known debt, see above
+    'fortianalyzer': 'analysis/faz.html',
+    'fortiauthenticator': 'analysis/fac.html',
+    # Global is the string 'global' (product_scope.GLOBAL), and '' is the
+    # no-context case — a background thread, or a session stamped before the
+    # ADOM split. Both must resolve, and both must resolve to the WIDEST page,
+    # never to the refusal: an unrecognised scope failing closed would hide the
+    # dashboard from the one view that is supposed to see everything (§9c).
+    'global': 'analysis/index.html',
+    '': 'analysis/index.html',
+}
+
+#: Products whose page is built by a module other than ``services.analysis``.
+ANALYSIS_SERVICE = {
+    'fortiauthenticator': 'analysis_fac',
+}
+
+
+def _analysis_service(product: str):
+    """The module that answers for this ADOM. Defaults to the FortiWeb-shaped
+    ``services.analysis``; a product listed in ``ANALYSIS_SERVICE`` gets its
+    own, so the two never have to share a schema they do not share."""
+    name = ANALYSIS_SERVICE.get(product or '')
+    if not name:
+        return ana
+    from importlib import import_module
+    return import_module('..services.' + name, __package__)
+
+
+def _product() -> str:
+    from flask import g
+    return str(getattr(g, 'product', '') or '')
+
+
 @bp.route('/')
 @login_required
 def index():
-    from flask import g
-    if getattr(g, 'product', None) == 'fortianalyzer':
-        return render_template('analysis/faz.html', options=ana.filter_options())
-    return render_template('analysis/index.html', options=ana.filter_options())
+    product = _product()
+    svc = _analysis_service(product)
+    tpl = ANALYSIS_PAGES.get(product)
+    if tpl is None:
+        # An ADOM nobody wrote a page for gets told so. Handing it the FortiWeb
+        # dashboard would be a page that cannot answer, dressed as one that can.
+        return render_template('analysis/unavailable.html', product=product)
+    ctx = {'options': svc.filter_options()}
+    if product in ANALYSIS_SERVICE:
+        # These pages render server-side: the numbers are DB-first and cheap,
+        # so there is no reason to make the browser ask twice.
+        ctx['data'] = svc.analyze(_parse_filters(request.args))
+    return render_template(tpl, **ctx)
 
 
 @bp.route('/data')
 @login_required
 def data():
-    return jsonify(ana.analyze(_parse_filters(request.args)))
+    return jsonify(_analysis_service(_product()).analyze(_parse_filters(request.args)))
 
 
 @bp.route('/faz-ops')

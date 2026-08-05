@@ -365,10 +365,11 @@
           {% endif %}
           {% if 'api' in page.groups %}
           <div class="mb-2 dp-f-api">
-            <label class="form-label small">Server policy</label>
+            <label class="form-label small" id="dpFpolLabel">Server policy</label>
             <input class="form-control form-control-sm" name="target" id="dpFpol"
                    list="dpPolList" placeholder="pol-shop-main" autocomplete="off">
             <datalist id="dpPolList"></datalist>
+            <datalist id="dpFtargetList"></datalist>
             <div class="form-text small" id="dpFpolHelp">
               The policy name exactly as the appliance reports it in
               <code>policy/policystatus</code> — pick the device above and the list fills
@@ -397,11 +398,14 @@
           </div>
           <div class="mb-2 dp-f-api">
             <div class="form-text small">
-              These four read the appliance's REST monitor API and never open an SSH
-              session, so they keep reporting on a device whose <em>cmdb</em> is
-              licence-locked — verified on fw7, where every config read fails with
+              Every kind here reads the appliance's REST monitor API and never opens
+              an SSH session, so they keep reporting on a device whose <em>cmdb</em>
+              is licence-locked — verified on fw7, where every config read fails with
               <code>-20010</code> while <code>policystatus</code> still answers 200.
-              FortiWeb only. 0 disables a threshold level.
+              Each kind is offered on the products that can actually answer it:
+              traffic and session kinds on <b>FortiWeb</b>, licence headroom and the
+              FortiToken pools on <b>FortiAuthenticator</b>. 0 disables a threshold
+              level.
             </div>
           </div>
           {% endif %}
@@ -1218,7 +1222,19 @@
     var GROUP_OF = {{ page.group_of|tojson }};
     var UNIT_HINT = { sessions: 'sessions', policy_sessions: 'sessions',
                       throughput: 'Mbps — graded on the window PEAK, not its average',
-                      transactions: 'transactions in the window' };
+                      transactions: 'transactions in the window',
+                      licence: 'percent of the entitlement CONSUMED — same direction as every other threshold here, so 95 means "95 % used"',
+                      tokens: 'percent of the token pool ASSIGNED — the free count is in the result line, but the threshold is on consumption so it reads like the rest' };
+    // Kinds whose target is a closed set, straight from the server-side
+    // allowlist the validator uses. One source, so the picker cannot offer a
+    // name the form will then reject.
+    var TARGETS = {{ page.targets|tojson }};
+    var TARGET_COPY = {
+      licence: ['Licence counter',
+                'Which entitlement to grade. An identity appliance has no throughput to measure — what bounds it is how much of its licence is consumed, and the counter with no ceiling is reported <b>unknown</b> rather than healthy.'],
+      tokens: ['FortiToken pool',
+               'Which token pool to grade. A pool with nothing imported is reported <b>unknown</b>: zero percent of an empty pool is not health.']
+    };
     function syncKind() {
       var k = document.getElementById('dpFkind').value;
       var group = GROUP_OF[k] || k;
@@ -1237,6 +1253,28 @@
         // `sessions` is box-wide: a policy name here would be silently ignored.
         var pol = document.getElementById('dpFpol');
         if (pol) pol.closest('.dp-f-api').style.display = (k === 'sessions') ? 'none' : '';
+        // Closed-set kinds swap the free-text policy picker for their own list,
+        // label and help. Leaving the FortiWeb copy in place would tell the
+        // operator to type a server-policy name into a licence probe.
+        var lbl = document.getElementById('dpFpolLabel');
+        var help = document.getElementById('dpFpolHelp');
+        var dl = document.getElementById('dpFtargetList');
+        if (pol && TARGETS[k]) {
+          dl.innerHTML = TARGETS[k].map(function (o) {
+            return '<option value="' + o.value + '">' + o.label + '</option>';
+          }).join('');
+          pol.setAttribute('list', 'dpFtargetList');
+          pol.placeholder = TARGETS[k][0] ? TARGETS[k][0].value : '';
+          if (lbl) lbl.textContent = TARGET_COPY[k][0];
+          if (help) help.innerHTML = TARGET_COPY[k][1] +
+            ' Accepted: <code>' +
+            TARGETS[k].map(function (o) { return o.value; }).join('</code>, <code>') +
+            '</code>.';
+        } else if (pol) {
+          pol.setAttribute('list', 'dpPolList');
+          pol.placeholder = 'pol-shop-main';
+          if (lbl) lbl.textContent = 'Server policy';
+        }
       }
     }
 
@@ -1247,6 +1285,13 @@
       var list = document.getElementById('dpPolList');
       var help = document.getElementById('dpFpolHelp');
       if (!list) return;
+      // A closed-set kind owns this field: its list, label and help all come
+      // from the server-side allowlist. Fetching the FortiWeb policy list here
+      // would both clobber that copy and interrogate a product that has no
+      // server policies — printing "could not read the policy list" on a
+      // licence probe, which reads as a broken device.
+      var kindEl = document.getElementById('dpFkind');
+      if (kindEl && TARGETS[kindEl.value]) return;
       list.innerHTML = '';
       if (!devId) return;
       fetch(BASE + '/policies/' + encodeURIComponent(devId),

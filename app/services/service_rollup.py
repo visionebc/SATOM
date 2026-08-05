@@ -172,7 +172,13 @@ def device_rollup(appliances) -> list[dict]:
     """
     out = []
     for ap in appliances:
-        if (ap.kind or "fortiweb") not in dm.API_PRODUCTS:
+        # Gate on the products whose kinds FEED this rollup, not on every
+        # product with REST telemetry. FortiAuthenticator joined API_PRODUCTS
+        # with licence/tokens, and those payloads carry no policy row and no
+        # throughput stats — the device would have rendered a strip of empty
+        # traffic cards reading "no traffic" instead of "not applicable", which
+        # is the exact reason PageSpec.rollup defaults to off.
+        if (ap.kind or "fortiweb") not in dm.products_for("policy_sessions"):
             continue
         probes = _probes_for(ap.id)
         box = _block(_pick(probes, "sessions", ""), spark=True, payload=True)

@@ -46,6 +46,22 @@ _HA_OBJECT = {
 #: Products whose ``mode`` field is a trustworthy string.
 _STRING_MODE = ("fortiweb", "fortiadc")
 
+#: Products that expose NO HA config object at all, and WHY.
+#:
+#: Without this the page tells the operator "no HA data harvested yet — run a
+#: device sync", which for these products is advice that can never work: the
+#: sync is already succeeding and there is nothing to harvest. A wrong remedy
+#: is worse than a blank, because the operator spends the run finding out.
+_NO_HA_OBJECT = {
+    "fortiauthenticator": (
+        "FortiAuthenticator exposes no HA resource in /api/v1/ (all 58 "
+        "resources censused 2026-08-05). Its only HA signal is "
+        "systeminfo.ha_sn, and the config harvest excludes systeminfo as "
+        "volatile — so HA presence is collected as the metric "
+        "satom_fac_ha_peer instead of cached as config. The CLI "
+        "`get system status` also carries a full HA block."),
+}
+
 STATUS_CLUSTERED = "clustered"
 STATUS_STANDALONE = "standalone"
 STATUS_UNKNOWN = "unknown"
@@ -131,7 +147,7 @@ def posture(appliance) -> dict:
     kind = (getattr(appliance, "kind", "") or "fortiweb").lower()
     out = {"status": STATUS_UNKNOWN, "mode": "", "raw_mode": "", "vip": "",
            "group": "", "priority": "", "evidence": [], "source": "none",
-           "members": []}
+           "members": [], "reason": ""}
 
     # Manually registered cluster members always count as evidence: an operator
     # typed them, and that is a stronger statement than any harvest.
@@ -149,6 +165,12 @@ def posture(appliance) -> dict:
         out["evidence"] = ["%d member(s) registered in SATOM" % len(members)]
 
     logical = _HA_OBJECT.get(kind)
+    if not logical and kind in _NO_HA_OBJECT:
+        # Still ``unknown`` — never ``standalone``. We have not measured this
+        # box's HA state, we have only established that this product cannot be
+        # asked the way the others are.
+        out["reason"] = _NO_HA_OBJECT[kind]
+        return out
     payloads = _payloads(getattr(appliance, "id", 0) or 0, logical) if logical else []
     if not payloads:
         # No harvest. If the operator registered members we still report

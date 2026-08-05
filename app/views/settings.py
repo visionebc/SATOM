@@ -26,7 +26,7 @@ from flask import (Blueprint, render_template, request, flash, redirect, url_for
 from flask_login import login_required, current_user
 
 from ..auth.decorators import require_permission
-from ..models import db, Permission, User, Role, Profile
+from ..models import db, Permission, User, Role, Profile, Appliance
 from ..services import naming, settings_store as store
 from ..services import email_service as email
 from ..services import auth_store
@@ -1217,6 +1217,144 @@ def node_cert_renew():
         res = cs.renew_if_needed(by=getattr(current_user, 'username', ''), force=True)
         log_action('node_cert.renew', 'security', detail=str(res))
         return jsonify({'ok': True, 'result': res, 'cert': cs.current()})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)[:300]}), 400
+
+
+# ---- TLS trust store: the CAs this node ACCEPTS from devices --------------
+# Mirror of the Node TLS block above. That one is the certificate SATOM
+# PRESENTS; this one is which issuers it BELIEVES when it dials an appliance.
+# Before it existed, Appliance.verify_ssl=True meant "validate against the
+# public root store", which no privately-signed device can satisfy — so every
+# appliance in this fleet had verification switched off instead.
+@bp.route('/trust-store/state')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def trust_store_state():
+    from ..services import trust_store as ts
+    from ..models_trust import TrustedCa
+    from ..models import visible_appliances
+    rows = TrustedCa.query.order_by(TrustedCa.role.desc(), TrustedCa.name).all()
+    target = ts.verify_param()
+    # The probe picker is built from visible_appliances(), so a concrete ADOM
+    # can only aim it at its own product's boxes.
+    appls = [{'id': a.id, 'name': a.name, 'host': a.host, 'port': a.port,
+              'kind': a.kind, 'verify_ssl': bool(a.verify_ssl)}
+             for a in visible_appliances().order_by(Appliance.name).all()]
+    return jsonify({
+        'cas': [r.to_dict() for r in rows],
+        'gaps': ts.chain_gaps(),
+        # A path means the private bundle is live; True means public roots only.
+        'bundle': (target if isinstance(target, str) else ''),
+        'public_roots_only': target is True,
+        'appliances': appls,
+    })
+
+
+@bp.route('/trust-store/import', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def trust_store_import():
+    """Accept a pasted PEM or an uploaded file. A whole chain in one blob is
+    the normal case (root + intermediate), so partial success is reported
+    rather than rejecting the lot."""
+    from ..services import trust_store as ts
+    # Two labelled slots (root / intermediate) plus the original unlabelled
+    # pair, concatenated into ONE blob. import_pem already splits a
+    # multi-certificate PEM, so a single call keeps the whole submission in one
+    # transaction, one dedupe pass and one bundle rebuild. Importing the slots
+    # separately would let the root land while the intermediate failed, leaving
+    # a chain gap the operator never asked for.
+    #
+    # THE SLOT LABEL IS A HINT, NEVER THE VERDICT. `role` is derived inside
+    # trust_store from subject == issuer, so a root pasted into the
+    # intermediate box is still recorded as a root. A form field must not be
+    # able to relabel a trust anchor -- chain_gaps() would then report a
+    # phantom gap, or worse, stay silent about a real one.
+    #
+    # Both the file and the text of a slot are taken (the old code let the file
+    # win). Filling both is a stated intent, and a duplicate is harmless: the
+    # fingerprint is the identity, so it lands as an update, not a second row.
+    parts = []
+    for f_field, t_field in (('pem_file', 'pem_text'),
+                             ('pem_file_root', 'pem_text_root'),
+                             ('pem_file_intermediate', 'pem_text_intermediate')):
+        up = request.files.get(f_field)
+        if up and up.filename:
+            data = (up.read() or b'').strip()
+            if data:
+                parts.append(data)
+        txt = (request.form.get(t_field) or '').strip()
+        if txt:
+            parts.append(txt.encode())
+    blob = b'\n'.join(parts)
+    try:
+        res = ts.import_pem(blob,
+                            actor=getattr(current_user, 'username', ''),
+                            note=(request.form.get('note') or '').strip()[:500],
+                            name_hint=(request.form.get('name') or '').strip()[:200])
+        log_action('trust_store.import', 'security',
+                   detail=f"imported={res['imported']} updated={res['updated']} "
+                          f"rejected={len(res['rejected'])}")
+        return jsonify({'ok': True, 'result': res})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)[:500]}), 400
+
+
+@bp.route('/trust-store/<int:ca_id>/toggle', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def trust_store_toggle(ca_id):
+    from ..services import trust_store as ts
+    from ..models_trust import TrustedCa
+    row = TrustedCa.query.get_or_404(ca_id)
+    row.enabled = not row.enabled
+    db.session.commit()
+    ts.invalidate()
+    log_action('trust_store.toggle', 'security',
+               detail=f"{row.name} enabled={row.enabled}")
+    return jsonify({'ok': True, 'ca': row.to_dict()})
+
+
+@bp.route('/trust-store/<int:ca_id>/delete', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def trust_store_delete(ca_id):
+    from ..services import trust_store as ts
+    from ..models_trust import TrustedCa
+    row = TrustedCa.query.get_or_404(ca_id)
+    name = row.name
+    db.session.delete(row)
+    db.session.commit()
+    ts.invalidate()
+    log_action('trust_store.delete', 'security', detail=name)
+    return jsonify({'ok': True, 'deleted': name})
+
+
+@bp.route('/trust-store/probe', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def trust_store_probe():
+    """Diagnose one appliance's TLS against the CURRENT store.
+
+    Answers the only question that matters after importing a CA: can this
+    device now be verified, and if not, WHICH of the three causes is it? The
+    appliance is resolved through visible_appliances(), so this cannot be used
+    from one ADOM to probe another product's box."""
+    from ..services import trust_store as ts
+    from ..models import visible_appliances
+    aid = request.form.get('appliance_id') or (request.get_json(silent=True) or {}).get('appliance_id')
+    try:
+        appl = visible_appliances().filter_by(id=int(aid)).first()
+    except (TypeError, ValueError):
+        appl = None
+    if appl is None:
+        return jsonify({'ok': False, 'error': 'unknown appliance'}), 404
+    try:
+        res = ts.probe(appl.host, appl.port or 443)
+        res['appliance'] = {'id': appl.id, 'name': appl.name,
+                            'kind': appl.kind, 'verify_ssl': bool(appl.verify_ssl)}
+        return jsonify({'ok': True, 'result': res})
     except Exception as e:  # noqa: BLE001
         return jsonify({'ok': False, 'error': str(e)[:300]}), 400
 

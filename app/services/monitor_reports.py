@@ -279,7 +279,7 @@ def build(period: str, *, start: datetime | None = None,
         "incidents": incidents[:200],
         "silent": silent,
         "no_data": total_samples == 0,
-        "fleet": fleet_section(start, end),
+        "fleet": fleet_section(start, end, product=product),
     }
     return body
 
@@ -291,43 +291,112 @@ def build(period: str, *, start: datetime | None = None,
 # for -- which at 100 devices is nearly all of it. A report that only
 # summarised probes would shrink as the fleet grew.
 
-FLEET_QUERIES = (
+# Metrics every product with a ``box`` collector reports.
+FLEET_QUERIES_COMMON = (
     ("cpu_pct", "Processor used", "%", "satom_box_cpu_pct"),
     ("mem_pct", "Memory used", "%", "satom_box_mem_pct"),
-    ("throughput_bps", "Device throughput", "bit/s",
-     "satom_total_throughput_bps"),
-    ("policy_conn_per_sec", "Policy connection rate", "conn/s",
-     "satom_policy_conn_per_sec"),
 )
 
+# Metrics only one product has. Until 2026-08-06 the throughput and per-policy
+# rows below were unconditional, so a report generated while scoped to the
+# FortiAuthenticator ADOM carried two sections that product cannot produce —
+# and, worse, filled them with the FortiWeb fleet's numbers, because the query
+# had no ``kind`` matcher. The report row was product-scoped; its fleet section
+# was not.
+FLEET_QUERIES_BY_PRODUCT = {
+    "fortiweb": (
+        ("throughput_bps", "Device throughput", "bit/s",
+         "satom_total_throughput_bps"),
+        ("policy_conn_per_sec", "Policy connection rate", "conn/s",
+         "satom_policy_conn_per_sec"),
+    ),
+    "fortiauthenticator": (
+        ("licence_pct", "Licence consumed", "%", "satom_fac_licence_pct"),
+        ("token_pct", "FortiToken pool consumed", "%", "satom_fac_token_pct"),
+    ),
+}
 
-def fleet_section(start: datetime, end: datetime) -> dict:
-    """min/avg/max per device per metric over the window, plus the two
-    fleet-wide facts a summary must not omit: policies that were down, and
-    collectors that failed. Absence is reported as ``available: False``, never
-    as zeros."""
+# Products whose fleet section carries the "policies with every backend down"
+# roll-up. An identity or log product has no such concept, and an empty
+# "0 policies down" line reads as a clean bill of health for a check that was
+# never applicable.
+POLICY_PRODUCTS = ("fortiweb",)
+
+
+def fleet_queries(product: str = "") -> tuple:
+    """The metric set for this ADOM.
+
+    Global gets the union: it is the manager-wide view and must not shrink to
+    the intersection just because one product lacks throughput.
+    """
+    extra: tuple = ()
+    if product:
+        extra = FLEET_QUERIES_BY_PRODUCT.get(product, ())
+    else:
+        seen = set()
+        for rows in FLEET_QUERIES_BY_PRODUCT.values():
+            for row in rows:
+                if row[0] not in seen:
+                    seen.add(row[0])
+                    extra += (row,)
+    return FLEET_QUERIES_COMMON + extra
+
+
+def _sel(base: str, product: str = "") -> str:
+    """Add the ``kind`` matcher for a product-scoped report.
+
+    Every series the collectors write carries ``kind=<appliance.kind>``, and the
+    ADOM key IS the appliance kind, so scoping is one label matcher rather than
+    a device list that would have to be rebuilt whenever the fleet changes.
+    """
+    if not product:
+        return base
+    return '%s{kind="%s"}' % (base, product)
+
+
+#: Retained name for callers that still import the flat tuple.
+FLEET_QUERIES = fleet_queries()
+
+
+def fleet_section(start: datetime, end: datetime,
+                  product: str = "") -> dict:
+    """min/avg/max per device per metric over the window, plus the fleet-wide
+    facts a summary must not omit: policies that were down, and collectors that
+    failed. Absence is reported as ``available: False``, never as zeros.
+
+    ``product`` scopes BOTH the metric set and every query. Without the second
+    half, a FortiAuthenticator report would still be computed over the FortiWeb
+    fleet's series — a document that names one ADOM and describes another.
+    """
     from . import vm_store
 
     span = "%ds" % max(60, int((end - start).total_seconds()))
     out = {"available": False, "metrics": [], "down_policies": [],
-           "failed_collectors": [], "detail": ""}
+           "failed_collectors": [], "detail": "", "product": product or "",
+           "policy_scope": bool(not product or product in POLICY_PRODUCTS)}
     h = vm_store.health()
     if not h.get("up"):
         out["detail"] = h.get("detail") or "metrics store unreachable"
         return out
     out["available"] = True
     ts = end.timestamp()
-    for key, label, unit, base in FLEET_QUERIES:
+    for key, label, unit, base in fleet_queries(product):
         rows = []
         aggs = {}
         for agg in ("min", "avg", "max"):
-            expr = "%s_over_time(%s[%s])" % (agg, base, span)
+            expr = "%s_over_time(%s[%s])" % (agg, _sel(base, product), span)
             res = vm_store.query(expr, ts=ts)
             for r in (res.get("data") or {}).get("result", []):
                 m = r.get("metric") or {}
                 name = m.get("device") or "?"
-                if m.get("policy"):
-                    name = "%s / %s" % (name, m["policy"])
+                # One series per device is the FortiWeb case; identity metrics
+                # are per resource/pool and traffic is per policy. Whichever
+                # sub-label the series carries becomes part of the row name, or
+                # every resource of a device collapses onto one line.
+                for sub in ("policy", "resource", "pool", "iface"):
+                    if m.get(sub):
+                        name = "%s / %s" % (name, m[sub])
+                        break
                 try:
                     aggs.setdefault(name, {})[agg] = float(r["value"][1])
                 except (KeyError, IndexError, TypeError, ValueError):
@@ -336,14 +405,17 @@ def fleet_section(start: datetime, end: datetime) -> dict:
             rows.append({"series": name, **aggs[name]})
         out["metrics"].append({"key": key, "label": label, "unit": unit,
                                "rows": rows})
-    res = vm_store.query("max_over_time((satom_policy_up == 0)[%s])" % span,
-                         ts=ts)
-    for r in (res.get("data") or {}).get("result", []):
-        m = r.get("metric") or {}
-        out["down_policies"].append({"device": m.get("device", ""),
-                                     "policy": m.get("policy", "")})
-    res = vm_store.query("max_over_time((satom_scrape_up == 0)[%s])" % span,
-                         ts=ts)
+    if out["policy_scope"]:
+        res = vm_store.query(
+            "max_over_time((%s == 0)[%s])" % (_sel("satom_policy_up", product),
+                                              span), ts=ts)
+        for r in (res.get("data") or {}).get("result", []):
+            m = r.get("metric") or {}
+            out["down_policies"].append({"device": m.get("device", ""),
+                                         "policy": m.get("policy", "")})
+    res = vm_store.query(
+        "max_over_time((%s == 0)[%s])" % (_sel("satom_scrape_up", product),
+                                          span), ts=ts)
     for r in (res.get("data") or {}).get("result", []):
         m = r.get("metric") or {}
         out["failed_collectors"].append({"device": m.get("device", ""),

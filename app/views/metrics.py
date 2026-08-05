@@ -36,7 +36,16 @@ INV_LABELS = {
                  'wpp': 'Server Pools', 'certificate': 'Certificates'},
     'fortianalyzer': {'server_policy': 'Devices', 'backend': 'Log Sources',
                       'wpp': 'Reports', 'certificate': 'Certificates'},
+    'fortiauthenticator': {'server_policy': 'Users', 'backend': 'User Groups',
+                           'wpp': 'RADIUS Clients',
+                           'certificate': 'Certificates'},
 }
+
+# Products whose config-object inventory is projected into snapshots. Anything
+# else reports NO totals rather than borrowing FortiWeb's: an ADOM printing
+# another product's object counts is worse than printing none, because the
+# numbers look like its own.
+_INVENTORY_SNAPSHOT_PRODUCTS = ('fortiweb', 'global', '')
 
 # ADC logical collection per inventory slot (registry-resolved by the client).
 _ADC_INV_LOGICALS = {
@@ -128,11 +137,14 @@ def index():
         _p = session_product()
         if _p == 'fortiadc':
             inv_totals = _adc_inventory_totals()
-        elif _p == 'fortianalyzer':
-            inv_totals = None
-        else:
+        elif _p in _INVENTORY_SNAPSHOT_PRODUCTS:
             from ..services import inventory_metrics
             inv_totals = inventory_metrics.current_totals()
+        else:
+            # FortiAnalyzer / FortiAuthenticator: no config-object inventory
+            # pipeline. Falling through to inventory_metrics here served the
+            # FORTIWEB totals under this ADOM's own labels.
+            inv_totals = None
     except Exception:
         inv_totals = None
     return render_template(
@@ -156,25 +168,30 @@ def api_data():
 
     # --- ADOM scoping (2026-07-07): AuditLog rows carry a product stamp;
     # ChangeHistory rows are scoped through their appliance's kind. ---
+    from ..services.product_scope import concrete_products, FORTIWEB
     _prod = session_product()
-    _adc_ids = db.session.query(Appliance.id).filter(
-        Appliance.kind == 'fortiadc')
+    _concrete = concrete_products()
 
     def _al(q):
         return scope_query(q, AuditLog.product)
 
-    _faz_ids = db.session.query(Appliance.id).filter(
-        Appliance.kind == 'fortianalyzer')
-
     def _ch(q):
-        if _prod == 'fortiadc':
-            return q.filter(ChangeHistory.appliance_id.in_(_adc_ids))
-        if _prod == 'fortianalyzer':
-            return q.filter(ChangeHistory.appliance_id.in_(_faz_ids))
-        if _prod == 'fortiweb':
+        """ChangeHistory carries no product column — scope it through the KIND
+        of the appliance the change was made on.
+
+        Inclusion, not exclusion. The old FortiWeb branch said "any device that
+        is not a FortiADC", so FortiAnalyzer and FortiAuthenticator history was
+        counted as FortiWeb's; and an ADOM none of the branches named fell to
+        ``return q`` and got the WHOLE table."""
+        if _prod not in _concrete:
+            return q  # global ADOM / worker thread — everything
+        _ids = db.session.query(Appliance.id).filter(Appliance.kind == _prod)
+        if _prod == FORTIWEB:
+            # A NULL appliance_id is a manager-level change: unscoped, and
+            # FortiWeb-era by construction (it predates the ADOM split).
             return q.filter(or_(ChangeHistory.appliance_id.is_(None),
-                                ~ChangeHistory.appliance_id.in_(_adc_ids)))
-        return q
+                                ChangeHistory.appliance_id.in_(_ids)))
+        return q.filter(ChangeHistory.appliance_id.in_(_ids))
 
     period = request.args.get('period', '7d')
     date_from_str = request.args.get('date_from', '')
@@ -373,15 +390,16 @@ def api_data():
             'totals': _adc_inventory_totals(),
             'series': {'labels': []},
         }
-    elif _prod == 'fortianalyzer':
-        # FAZ has no config-object inventory (logs/reports, not server policies).
-        inventory = {'totals': {}, 'series': {'labels': []}}
-    else:
+    elif _prod in _INVENTORY_SNAPSHOT_PRODUCTS:
         from ..services import inventory_metrics
         inventory = {
             'totals': inventory_metrics.current_totals(),
             'series': inventory_metrics.series(dt_from.date(), dt_to.date()),
         }
+    else:
+        # FAZ (logs/reports) and FAC (identities) have no config-object
+        # inventory. Empty, never another product's numbers.
+        inventory = {'totals': {}, 'series': {'labels': []}}
 
     # Overlay INVENTORY (how many exist per day) onto the daily table's
     # per-type columns so they match the cards + trend chart, instead of

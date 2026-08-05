@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 from ..models import AppSetting
 from . import email_service
 from . import notifications as notify
+from .product_scope import concrete_products
 
 # ---- config keys ----------------------------------------------------------
 K_ENABLED = "alerts.enabled"              # "1" / "0"
@@ -347,9 +348,6 @@ def _reachable(host: str, port: int) -> bool:
         return False
 
 
-_PRODUCT_KINDS = ("fortiweb", "fortiadc", "fortianalyzer")
-
-
 def _product_of(appliance) -> str:
     """ADOM a device-scoped finding belongs to, '' when the kind is unknown.
 
@@ -357,9 +355,14 @@ def _product_of(appliance) -> str:
     ``product_scope.stamp()`` returns '' for everything it raises — and an
     unscoped notification is visible in the FortiWeb ADOM by construction. That
     made the FortiWeb bell the catch-all for fadc and faz01 too. A device
-    finding's ADOM is not the session's, it is the DEVICE's kind."""
+    finding's ADOM is not the session's, it is the DEVICE's kind.
+
+    The accepted kinds are DERIVED from the ADOM registry, not listed here: a
+    hardcoded tuple silently sends the new product's alerts to the FortiWeb
+    catch-all, which is exactly what it did to fadc and faz01 before 2026-07-28
+    and would have done to fortiauthenticator after 2026-08-05."""
     kind = (getattr(appliance, "kind", "") or "").strip().lower()
-    return kind if kind in _PRODUCT_KINDS else ""
+    return kind if kind in concrete_products() else ""
 
 
 def _check_devices() -> list[dict]:
@@ -474,7 +477,7 @@ def _check_actions() -> list[dict]:
 
     for a in actions:
         product = (a.product or "").strip().lower()
-        product = product if product in _PRODUCT_KINDS else ""
+        product = product if product in concrete_products() else ""
         label = f"{a.name or a.action} (#{a.id})"
         lines: list[str] = []
         crit = False

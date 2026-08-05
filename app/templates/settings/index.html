@@ -72,6 +72,11 @@
     </button>
   </li>
   <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-catrust" type="button">
+      <i class="bi bi-patch-check-fill me-1"></i>Trust store
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-dnstool" type="button">
       <i class="bi bi-globe2 me-1"></i>DNS Lookup
     </button>
@@ -1590,6 +1595,260 @@
           document.getElementById('nt-pg-msg').innerHTML=d.ok?'<span class="text-success">Applied on '+esc((d.result||{}).node||'')+'.</span>':'<span class="text-danger">'+esc(d.error)+'</span>';
           loadState();});});
       loadState();
+    })();
+    </script>
+  </div>
+
+  <div class="tab-pane fade" id="tab-catrust">
+    <div class="fw-card" style="max-width:1040px;">
+      <div class="fw-card-header"><i class="bi bi-patch-check-fill me-1"></i>TLS trust store — certificate authorities SATOM accepts from devices</div>
+      <div class="fw-card-body">
+        <p class="text-muted small mb-3">
+          Node TLS holds the certificate this node <em>presents</em>. This holds the issuers it
+          <em>believes</em>. Import your company Root CA and any Intermediate here and an appliance
+          signed by it can run with <strong>Verify TLS</strong> switched on, instead of having
+          certificate checking disabled because the public root store cannot vouch for a private CA.
+          <br><span class="text-body-secondary">Public roots stay trusted — this bundle adds to them,
+          it does not replace them.</span>
+        </p>
+
+        <div id="ct-bundle" class="mb-3"></div>
+        <div id="ct-gaps" class="mb-3"></div>
+
+        <div class="table-responsive mb-4">
+          <table class="table table-sm align-middle">
+            <thead><tr>
+              <th>Name</th><th>Role</th><th>Subject</th><th>Issuer</th>
+              <th>Expires</th><th>Status</th><th class="text-end">Actions</th>
+            </tr></thead>
+            <tbody id="ct-rows"><tr><td colspan="7" class="text-muted">Loading…</td></tr></tbody>
+          </table>
+        </div>
+
+        <hr>
+        <h6 class="mb-2"><i class="bi bi-upload me-1"></i>Add certificate authorities</h6>
+        <p class="text-muted small">
+          Two slots so a complete path goes in at once: the <strong>Root CA</strong> is the trust
+          anchor, the <strong>Intermediate CA</strong> is usually what actually signed your
+          appliances. Fill either, or both — a chain that stops at an intermediate whose issuer is
+          missing imports cleanly and then fails every handshake with <em>unable to get issuer
+          certificate</em>, a message that points at the device instead of at the gap.
+          <br><span class="text-body-secondary">The label is only a hint. Every certificate is
+          classified from its own contents (<code>subject == issuer</code> means root), so one
+          dropped in the wrong box is still filed correctly, and each box also accepts several
+          certificates concatenated. Only CA certificates are accepted: OpenSSL cannot anchor a
+          chain on a device's own self-signed leaf, so importing one would look like it worked and
+          then fail every handshake.</span>
+        </p>
+        <form id="ct-form" class="row g-3">
+          <div class="col-md-5">
+            <label class="form-label small">Name <span class="text-muted">(optional)</span></label>
+            <input class="form-control form-control-sm" name="name" placeholder="taken from the certificate CN">
+            <div class="form-text small">With more than one certificate the role is appended —
+              <em>Acme CA (root)</em>, <em>Acme CA (intermediate)</em>.</div>
+          </div>
+          <div class="col-md-7">
+            <label class="form-label small">Note <span class="text-muted">(optional)</span></label>
+            <input class="form-control form-control-sm" name="note" placeholder="where this CA comes from, who owns it">
+          </div>
+
+          <div class="col-lg-6">
+            <div class="border rounded p-3 h-100">
+              <div class="mb-2">
+                <span class="fw-badge fw-badge-primary">root</span>
+                <strong class="ms-1">Root CA</strong>
+                <div class="text-muted small">The self-signed trust anchor.</div>
+              </div>
+              <label class="form-label small mb-1">PEM text</label>
+              <textarea class="form-control form-control-sm" name="pem_text_root" rows="5"
+                        spellcheck="false" style="font-family:var(--bs-font-monospace);"
+                        placeholder="-----BEGIN CERTIFICATE-----&#10;…&#10;-----END CERTIFICATE-----"></textarea>
+              <label class="form-label small mt-2 mb-1">…or upload a .pem / .crt / .cer file</label>
+              <input class="form-control form-control-sm" type="file" name="pem_file_root" accept=".pem,.crt,.cer,.der">
+            </div>
+          </div>
+
+          <div class="col-lg-6">
+            <div class="border rounded p-3 h-100">
+              <div class="mb-2">
+                <span class="fw-badge fw-badge-secondary">intermediate</span>
+                <strong class="ms-1">Intermediate CA</strong>
+                <div class="text-muted small">Optional — one, or several concatenated.</div>
+              </div>
+              <label class="form-label small mb-1">PEM text</label>
+              <textarea class="form-control form-control-sm" name="pem_text_intermediate" rows="5"
+                        spellcheck="false" style="font-family:var(--bs-font-monospace);"
+                        placeholder="-----BEGIN CERTIFICATE-----&#10;…&#10;-----END CERTIFICATE-----"></textarea>
+              <label class="form-label small mt-2 mb-1">…or upload a .pem / .crt / .cer file</label>
+              <input class="form-control form-control-sm" type="file" name="pem_file_intermediate" accept=".pem,.crt,.cer,.der">
+            </div>
+          </div>
+
+          <div class="col-12 d-flex align-items-center gap-2 flex-wrap">
+            <button class="fw-btn fw-btn-primary btn-sm" type="submit" id="ct-import-btn">
+              <i class="bi bi-plus-lg me-1"></i>Import</button>
+            <span class="text-muted small">Both slots are read in a single pass — one dedupe check,
+              one bundle rebuild. Re-importing a certificate already held updates it in place.</span>
+          </div>
+          <div class="col-12"><div id="ct-import-msg" class="small mt-1"></div></div>
+        </form>
+
+        <hr>
+        <h6 class="mb-2"><i class="bi bi-activity me-1"></i>Test a device against the store</h6>
+        <p class="text-muted small">
+          Opens a TLS connection and reports which of the three causes applies — untrusted issuer,
+          hostname mismatch, or an expired certificate. They need three different fixes, so
+          "verification failed" on its own is not an answer. Nothing is changed by this test.
+        </p>
+        <div class="row g-2">
+          <div class="col-md-6">
+            <select class="form-select form-select-sm" id="ct-appl"></select>
+          </div>
+          <div class="col-md-6">
+            <button class="fw-btn fw-btn-secondary btn-sm" type="button" id="ct-probe-btn">
+              <i class="bi bi-search me-1"></i>Test TLS</button>
+          </div>
+        </div>
+        <div id="ct-probe-out" class="mt-3"></div>
+      </div>
+    </div>
+
+    <script nonce="{{ csp_nonce }}">
+    (function(){
+      'use strict';
+      var m=document.querySelector('meta[name="csrf-token"]');
+      var CSRF=m?m.content:'';
+      function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+      function post(url, body, isForm){
+        var opts={method:'POST', headers:{'X-CSRFToken':CSRF}};
+        if(isForm){opts.body=body;}
+        else{opts.headers['Content-Type']='application/x-www-form-urlencoded';opts.body=body||'';}
+        return fetch(url,opts).then(function(r){return r.json();});
+      }
+      function roleBadge(r){
+        return r==='root'
+          ? '<span class="fw-badge fw-badge-primary">root</span>'
+          : '<span class="fw-badge fw-badge-secondary">intermediate</span>';
+      }
+      function statusCell(c){
+        if(c.expired) return '<span class="fw-badge fw-badge-danger">expired</span>';
+        if(!c.enabled) return '<span class="fw-badge fw-badge-secondary">disabled</span>';
+        if(c.days_left!=null && c.days_left<30)
+          return '<span class="fw-badge fw-badge-warning">'+c.days_left+'d left</span>';
+        return '<span class="fw-badge fw-badge-success">trusted</span>';
+      }
+      function render(d){
+        var tb=document.getElementById('ct-rows');
+        var cas=d.cas||[];
+        if(!cas.length){
+          tb.innerHTML='<tr><td colspan="7" class="text-muted">'
+            +'No certificate authority imported yet — every appliance must keep TLS verification '
+            +'off until one is.</td></tr>';
+        } else {
+          tb.innerHTML=cas.map(function(c){
+            return '<tr>'
+              +'<td><strong>'+esc(c.name)+'</strong>'
+                +(c.note?'<div class="text-muted small">'+esc(c.note)+'</div>':'')+'</td>'
+              +'<td>'+roleBadge(c.role)+'</td>'
+              +'<td class="small text-truncate" style="max-width:210px;" title="'+esc(c.subject)+'">'+esc(c.subject)+'</td>'
+              +'<td class="small text-truncate" style="max-width:210px;" title="'+esc(c.issuer)+'">'+esc(c.issuer)+'</td>'
+              +'<td class="small">'+esc((c.not_after||'').slice(0,10))+'</td>'
+              +'<td>'+statusCell(c)+'</td>'
+              +'<td class="text-end text-nowrap">'
+                +'<button class="fw-btn fw-btn-secondary btn-sm" data-ct-toggle="'+c.id+'">'
+                  +(c.enabled?'Disable':'Enable')+'</button> '
+                +'<button class="fw-btn fw-btn-danger btn-sm" data-ct-del="'+c.id+'" '
+                  +'data-ct-name="'+esc(c.name)+'">Delete</button>'
+              +'</td></tr>';
+          }).join('');
+        }
+        var b=document.getElementById('ct-bundle');
+        b.innerHTML = d.public_roots_only
+          ? '<div class="alert alert-secondary py-2 mb-0 small">Verifying against the <strong>public root store only</strong>. '
+            +'No private CA is enabled, so a privately-signed appliance cannot be verified.</div>'
+          : '<div class="alert alert-success py-2 mb-0 small">Active bundle: <code>'+esc(d.bundle)+'</code> '
+            +'— public roots <strong>plus</strong> the enabled CAs below.</div>';
+        var g=document.getElementById('ct-gaps');
+        if((d.gaps||[]).length){
+          g.innerHTML='<div class="alert alert-warning py-2 mb-0 small"><strong>Incomplete chain.</strong> '
+            +'These intermediates have no issuer in the store or the public roots, so a device '
+            +'relying on them will still fail to verify:<ul class="mb-0 mt-1">'
+            +d.gaps.map(function(x){return '<li>'+esc(x.name)+' — needs its issuer <code>'
+              +esc(x.issuer)+'</code></li>';}).join('')+'</ul></div>';
+        } else { g.innerHTML=''; }
+        var sel=document.getElementById('ct-appl');
+        sel.innerHTML=(d.appliances||[]).map(function(a){
+          return '<option value="'+a.id+'">'+esc(a.name)+' — '+esc(a.host)+':'+(a.port||443)
+            +' ('+esc(a.kind)+(a.verify_ssl?', verify ON':', verify OFF')+')</option>';
+        }).join('') || '<option value="">no appliance in this ADOM</option>';
+      }
+      function load(){
+        fetch('{{ url_for("settings.trust_store_state") }}')
+          .then(function(r){return r.json();}).then(render)
+          .catch(function(){document.getElementById('ct-rows').innerHTML=
+            '<tr><td colspan="7" class="text-danger">Could not load the trust store.</td></tr>';});
+      }
+      document.getElementById('ct-form').addEventListener('submit', function(ev){
+        ev.preventDefault();
+        var out=document.getElementById('ct-import-msg');
+        out.innerHTML='<span class="text-muted">Importing…</span>';
+        post('{{ url_for("settings.trust_store_import") }}', new FormData(ev.target), true)
+          .then(function(d){
+            if(!d.ok){out.innerHTML='<span class="text-danger">'+esc(d.error)+'</span>';return;}
+            var r=d.result, bits=[];
+            if(r.imported.length) bits.push('<span class="text-success">Imported: '+esc(r.imported.join(', '))+'</span>');
+            if(r.updated.length)  bits.push('<span class="text-primary">Updated: '+esc(r.updated.join(', '))+'</span>');
+            (r.rejected||[]).forEach(function(x){
+              bits.push('<span class="text-danger">Rejected '+esc(x.name)+' — '+esc(x.reason)+'</span>');});
+            if(!bits.length) bits.push('<span class="text-muted">Nothing to do.</span>');
+            out.innerHTML=bits.join('<br>');
+            ev.target.reset(); load();
+          });
+      });
+      document.addEventListener('click', function(ev){
+        var t=ev.target.closest('[data-ct-toggle],[data-ct-del]');
+        if(!t) return;
+        if(t.hasAttribute('data-ct-toggle')){
+          post('/settings/trust-store/'+t.getAttribute('data-ct-toggle')+'/toggle').then(load);
+          return;
+        }
+        var id=t.getAttribute('data-ct-del');
+        if(t.dataset.armed!=='1'){
+          t.dataset.armed='1'; t.textContent='Confirm delete';
+          setTimeout(function(){ if(t.dataset.armed==='1'){t.dataset.armed='0'; t.textContent='Delete';} }, 4000);
+          return;
+        }
+        post('/settings/trust-store/'+id+'/delete').then(load);
+      });
+      document.getElementById('ct-probe-btn').addEventListener('click', function(){
+        var sel=document.getElementById('ct-appl');
+        var out=document.getElementById('ct-probe-out');
+        if(!sel.value){out.innerHTML='<span class="text-muted">No appliance selected.</span>';return;}
+        out.innerHTML='<span class="text-muted">Opening a TLS connection…</span>';
+        post('{{ url_for("settings.trust_store_probe") }}', 'appliance_id='+encodeURIComponent(sel.value))
+          .then(function(d){
+            if(!d.ok){out.innerHTML='<span class="text-danger">'+esc(d.error)+'</span>';return;}
+            var r=d.result, leaf=r.leaf||{};
+            var cls=r.verified?'success':(r.reachable?'warning':'danger');
+            var h='<div class="alert alert-'+cls+' py-2 small mb-2">'
+              +'<strong>'+(r.verified?'Verified':'Not verified')+'</strong> — '+esc(r.reason)+'</div>';
+            if(r.reachable){
+              h+='<table class="table table-sm small mb-2">'
+                +'<tr><th style="width:150px;">Presented</th><td>'+esc(leaf.common_name)+'</td></tr>'
+                +'<tr><th>Issuer</th><td><code>'+esc(leaf.issuer)+'</code></td></tr>'
+                +'<tr><th>Names covered</th><td>'+(esc((leaf.sans||[]).join(', '))||'<em>none</em>')+'</td></tr>'
+                +'<tr><th>Expires</th><td>'+esc(String(leaf.not_after||'').slice(0,10))+'</td></tr>'
+                +'<tr><th>TLS</th><td>'+esc(leaf.protocol)+' · '+esc(leaf.cipher)+'</td></tr>'
+                +'<tr><th>Chain trusted</th><td>'+(r.chain_ok?'yes':'no')+'</td></tr>'
+                +'<tr><th>Hostname matches</th><td>'+(r.hostname_ok?'yes':'no')+'</td></tr>'
+                +'</table>';
+            }
+            h+='<div class="small text-body-secondary"><i class="bi bi-lightbulb me-1"></i>'+esc(r.advice)+'</div>';
+            out.innerHTML=h;
+          });
+      });
+      load();
     })();
     </script>
   </div>

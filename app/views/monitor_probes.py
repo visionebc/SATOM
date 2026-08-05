@@ -145,7 +145,13 @@ class PageSpec:
     _GROUP = {"https": "https", "interface": "interface", "proxyd": "proxyd",
               "cpu": "box", "memory": "box",
               "sessions": "api", "policy_sessions": "api",
-              "throughput": "api", "transactions": "api"}
+              "throughput": "api", "transactions": "api",
+              # The two FortiAuthenticator kinds take the SAME shape of input as
+              # the FortiWeb ones — a target name plus two absolute thresholds —
+              # so they reuse the group rather than growing a sixth. What
+              # differs (which names are valid, what the number means) is a
+              # label and a datalist, not a form.
+              "licence": "api", "tokens": "api"}
 
     def groups(self) -> list[str]:
         """Field groups this page has to render, in a stable order."""
@@ -163,6 +169,20 @@ class PageSpec:
             "group_of": {k: self._GROUP[k] for k in self.kinds
                          if k in self._GROUP},
             "units": {k: dm.NUM_UNIT[k] for k in self.kinds if k in dm.NUM_UNIT},
+            # Kinds whose target is a CLOSED set of names, shipped to the form so
+            # the picker offers exactly what the validator accepts. A free-text
+            # box next to a server-side allowlist is a typo that becomes an
+            # error sample instead of a form message.
+            "targets": {k: v for k, v in (
+                ("licence", [{"value": key, "label": lbl}
+                             for key, (_f, lbl) in sorted(dm.FAC_CAPACITY.items())]),
+                ("tokens", [{"value": key, "label": lbl}
+                            for key, (_f, lbl) in sorted(dm.FAC_TOKENS.items())]),
+            ) if k in self.kinds},
+            # Which products each of this page's kinds can measure — the form
+            # uses it to explain a greyed-out choice instead of letting the
+            # operator submit and read a rejection.
+            "kind_products": {k: list(dm.products_for(k)) for k in self.kinds},
             "rollup": self.rollup,
         }
 
@@ -389,10 +409,16 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
         if aid not in _visible_ids():
             return jsonify({"error": "not visible in this ADOM"}), 403
         appliance = Appliance.query.get_or_404(aid)
-        if (appliance.kind or "fortiweb") not in dm.API_PRODUCTS:
+        # Gate on the products that have POLICY-addressed kinds, not on every
+        # product with any REST telemetry. Since FortiAuthenticator gained
+        # licence/tokens it is in API_PRODUCTS — and the old gate would have let
+        # it through to a FortiWeb client asking for server policies it does not
+        # have. Derived, so a second product with policies needs no edit here.
+        picker_products = dm.products_for("policy_sessions")
+        if (appliance.kind or "fortiweb") not in picker_products:
             return jsonify({"policies": [],
-                            "error": "REST telemetry is %s-only"
-                                     % "/".join(dm.API_PRODUCTS)})
+                            "error": "the server-policy picker is %s-only"
+                                     % "/".join(picker_products)})
         from ..clients.fortiweb import FortiWebClient
         try:
             rows, error = FortiWebClient(appliance).policy_status()
@@ -424,6 +450,18 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
         probe.appliance_id = aid or None
         if probe.appliance_id and probe.appliance_id not in _visible_ids():
             return "that device is not visible in this ADOM"
+        # Refuse an inapplicable kind HERE, at creation, from the same map the
+        # runner and discovery consult. Accepting it would produce a row that
+        # renders fine and then reports a transport error forever — which reads
+        # as a broken appliance, not as a check that does not apply to it.
+        if probe.appliance_id:
+            dev = db.session.get(Appliance, probe.appliance_id)
+            prod = (getattr(dev, 'kind', '') or '') if dev else ''
+            if not dm.supports(kind, prod):
+                return ("%s cannot be measured on %s — supported: %s"
+                        % (dm.KIND_LABEL.get(kind, kind),
+                           prod or 'that device',
+                           "/".join(dm.products_for(kind) or ("any product",))))
         if kind == 'interface':
             # Multi-select: no tick at all means "every port", which is the
             # whole-device watch the discovery job creates.
@@ -461,6 +499,24 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
             if kind in ("policy_sessions", "transactions") \
                     and not (probe.target or "").strip():
                 return f"a {dm.KIND_LABEL[kind]} probe needs a server policy name"
+            # The FortiAuthenticator kinds address a NAMED counter, not a free
+            # string. An unrecognised name is rejected instead of silently
+            # falling back to the default, because a probe labelled "FSSO" that
+            # is actually grading licensed users is worse than no probe.
+            for k, choices in (("licence", dm.FAC_CAPACITY),
+                               ("tokens", dm.FAC_TOKENS)):
+                if kind != k:
+                    continue
+                want = (probe.target or "").strip().lower()
+                if not want:
+                    probe.target = (dm.DEFAULT_FAC_RESOURCE if k == "licence"
+                                    else dm.DEFAULT_FAC_TOKEN)
+                elif want not in choices:
+                    return ("%r is not a %s target — pick one of: %s"
+                            % (probe.target, dm.KIND_LABEL[k],
+                               ", ".join(sorted(choices))))
+                else:
+                    probe.target = want
         if not probe.name:
             probe.name = (probe.url or probe.kind)[:120]
         return ''

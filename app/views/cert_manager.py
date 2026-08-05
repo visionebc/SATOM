@@ -33,17 +33,16 @@ bp = Blueprint("cert_manager", __name__, url_prefix="/cert-manager")
 
 def _product_kind() -> str:
     """Appliance kind for the ACTIVE product (the request's effective ADOM —
-    per-tab, see services.product_scope). The Certificate Manager is
-    reachable from all three ADOMs; the concrete ones show only their OWN
-    devices/certs, the Global ADOM shows BOTH (returns '' = no kind
-    filter)."""
-    from ..services.product_scope import session_product
+    per-tab, see services.product_scope). A concrete ADOM shows only its OWN
+    devices/certs; the Global ADOM shows every product (returns '' = no kind
+    filter).
+
+    The product list is DERIVED, not enumerated here: a hardcoded pair meant
+    every ADOM added after this function was written fell through to '' and
+    got the unfiltered inventory."""
+    from ..services.product_scope import session_product, concrete_products
     prod = session_product()
-    if prod == "fortiadc":
-        return "fortiadc"
-    if prod == "fortiweb":
-        return "fortiweb"
-    return ""  # global / unset — no kind filter
+    return prod if prod in concrete_products() else ""  # '' = global/unset
 
 
 def _kind_scoped(query):

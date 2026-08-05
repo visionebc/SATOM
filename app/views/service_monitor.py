@@ -16,9 +16,20 @@ Why they earn their own page rather than five more rows under Deep monitors:
 * **Different question.** Deep monitors ask *is it up*. These ask *how much*.
   A page that mixes a binary health check with a traffic gauge makes the reader
   do the sorting.
-* **Different product surface.** FortiWeb only — FortiADC and FortiAnalyzer
-  expose runtime telemetry under entirely different paths, so discovery refuses
-  to create these there rather than reporting silent zeroes.
+* **Different product surface, per KIND.** The traffic kinds are FortiWeb-only;
+  the licence and FortiToken kinds are FortiAuthenticator-only. FortiADC and
+  FortiAnalyzer expose runtime telemetry under entirely different paths and get
+  neither set. ``deep_monitor.KIND_PRODUCTS`` is the single map the runner,
+  discovery and the form all consult, so an unsupported combination is refused
+  at creation rather than reported as silent zeroes.
+
+An identity appliance has no throughput to measure. What bounds a
+FortiAuthenticator is **entitlement**: fac01 ships ``users_usage_detail
+{max: 5}`` unlicensed, and the sixth user is simply refused authentication — a
+cliff that no CPU or memory series would ever show. Licence headroom and the
+FortiToken pools are therefore this product's answer to "how much is it
+carrying", and both come from ONE ``GET /api/v1/systeminfo/`` (measured at
+15-50 ms).
 
 What is deliberately NOT split: the storage (``monitor_probe`` /
 ``monitor_sample``), the runner (``services.deep_monitor.run_probe``) and the
@@ -50,11 +61,14 @@ SPEC = mp.PageSpec(
     template='monitoring/services.html',
     discover=('api',),
     blurb=(
-        "How much is each service actually carrying? Concurrent sessions, HTTP "
-        "throughput and transaction volume — box-wide and per server policy — "
-        "read over the appliance's REST monitor API. No SSH, and no dependency "
-        "on the config API, so these keep reporting on a device whose "
-        "<em>cmdb</em> is licence-locked."),
+        "How much is each service actually carrying? On FortiWeb: concurrent "
+        "sessions, HTTP throughput and transaction volume, box-wide and per "
+        "server policy. On FortiAuthenticator: how much of the <b>licence</b> "
+        "and of the <b>FortiToken pools</b> is consumed — an identity appliance "
+        "runs out of entitlement, not of bandwidth. All of it over the "
+        "appliance's REST monitor API: no SSH, and no dependency on the config "
+        "API, so these keep reporting on a device whose <em>cmdb</em> is "
+        "licence-locked."),
     footnote=(
         "Every kind here is a REST call: <code>system/status.systemresource</code> "
         "for box sessions and connection rate, <code>policy/policystatus</code> "
@@ -62,8 +76,13 @@ SPEC = mp.PageSpec(
         "<code>policy/policytraffic</code> for throughput (60 one-second samples "
         "per run — a sampling window, not full coverage, which is why throughput "
         "is graded on the window <b>peak</b>) and "
-        "<code>system/status.httptransactions</code> for request volume. FortiWeb "
-        "only. Thresholds are absolute, and 0 disables that level. Whether the "
+        "<code>system/status.httptransactions</code> for request volume — FortiWeb "
+        "only. On FortiAuthenticator, <b>licence headroom</b> and the "
+        "<b>FortiToken pools</b> both read one <code>/api/v1/systeminfo/</code> "
+        "call and are graded on <b>percent consumed</b>, the same direction as "
+        "every other threshold in the product; a counter with no ceiling and a "
+        "token pool with nothing imported are reported <b>unknown</b>, never "
+        "healthy. Thresholds are absolute, and 0 disables that level. Whether the "
         "<code>proxyd</code> daemon has restarted is <em>not</em> answerable over "
         "the API — that check lives in <b>Deep monitors</b> and reads the PID set "
         "over the read-only CLI."),

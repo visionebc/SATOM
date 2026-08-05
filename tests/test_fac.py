@@ -411,3 +411,49 @@ def test_the_product_gate_lets_the_fac_blueprints_through(bp):
     m = re.search(r"fac_bps = \{(.*?)\}", src, re.S)
     assert m, "fac_bps allow-list is missing from the product gate"
     assert f"'{bp}'" in m.group(1)
+
+def test_the_client_factory_gives_every_product_its_own_client():
+    """``client_for`` falls through to FortiWeb for an unknown kind. That
+    default is why a newly added product silently gets the WRONG client: the
+    Appliances "Test" button then runs a FortiWeb status check against it,
+    fails, and pins the device to 'offline' forever — a half-integration that
+    looks complete.
+
+    Asserted by CALLING the factory, not by grepping its source: FortiWeb is
+    legitimately served by the fallthrough and has no ``kind ==`` line, so a
+    source check either rejects the correct code or has to special-case it.
+    Behaviour is the property that matters — every real product must end up
+    with a client class of its own.
+    """
+    from app.clients import client_for
+    from app.branding import _FALLBACK
+
+    seen = {}
+    for p in _FALLBACK:
+        key = p["key"]
+        if key == "global" or p.get("placeholder"):
+            continue
+
+        class _A:
+            kind = key
+            host, port, verify_ssl = "192.0.2.1", 443, False
+            username, password = "u", "p"
+
+        cls = type(client_for(_A()))
+        assert cls not in seen, (
+            f"{key} and {seen[cls]} both receive {cls.__name__} — one of them "
+            "is talking to its appliance with the wrong protocol")
+        seen[cls] = key
+    assert len(seen) >= 4, "fewer clients than real products — guard is vacuous"
+
+
+def test_the_factory_returns_the_fac_client_for_a_fac_appliance():
+    from app.clients import client_for
+    from app.clients.fortiauthenticator import FortiAuthenticatorClient
+
+    class _A:
+        kind = "fortiauthenticator"
+        host, port, verify_ssl = "192.0.2.1", 443, False
+        username, password = "admin", "KEY"
+
+    assert isinstance(client_for(_A()), FortiAuthenticatorClient)

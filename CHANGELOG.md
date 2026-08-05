@@ -8,6 +8,76 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Hypervisor provisioning — build an appliance from nothing.** New
+  `app/services/hypervisors/` layer with two backends, both plain HTTPS and
+  neither adding a Python dependency (this product ships offline bundles;
+  `proxmoxer`/`pyVmomi` would each force a rebuild of three bundles).
+  - **Proxmox VE** over `/api2/json`, API-token or ticket auth. Verified end
+    to end against a live host: create, power on, power off, delete, and
+    delete again.
+  - **VMware ESXi** over vSphere SOAP `/sdk`, parsed with the standard
+    library. A standalone host serves no vSphere REST API (`/api` and `/rest`
+    answer HTTP 400), so REST-based code would look correct and fail on every
+    standalone host in the field. Read operations verified live against ESXi
+    8.0.3.
+  - `Capabilities` is resolved against the **live endpoint** and reports what
+    a backend cannot do rather than assuming it can, including the reason.
+    Unknown state is never treated as permission.
+  - `HypervisorTarget` (multi-target: a site may run several of each) with
+    Fernet-encrypted passwords and API-token secrets, same pattern as
+    `Appliance`; `public()` is the only shape the browser sees.
+  - `ProvisionRun` records the pipeline as an explicit state machine so a run
+    that dies mid-way can be undone. `ip_from_ipam` exists because a
+    user-typed address is not ours to release. Five modes (`full`, `semi`,
+    `dhcp`, `vm_only`, `config_only`) because the product cannot promise
+    unattended first boot on a hypervisor with no API serial console.
+- **Firmware repository distinguishes install images from upgrade images.**
+  Fortinet publishes two artefacts per release and they are not
+  interchangeable. `FirmwareImage.image_kind` (`upgrade` | `install`,
+  defaulting to `upgrade` because every pre-existing row is one) and
+  `hypervisor` (`kvm` | `vmware`). Accepted extensions follow the kind in
+  **both** upload paths — the page previously had a single `.out` allow-list
+  and was structurally unable to hold install media at all.
+- `docs/provisioning-hypervisors.md`, published to the manual.
+
+### Fixed
+
+- **The firmware page leaked images across ADOMs.** `index()` listed every
+  row regardless of the active product, and `upload()` validated the product
+  against every firmware-capable product rather than against the ADOM. The
+  list is now filtered in the **query** (a row hidden by a template is still
+  a row the page fetched, and the JSON callers kept leaking it) and both
+  upload endpoints re-derive the product from the request scope — a
+  hand-crafted POST could otherwise file a FortiWeb image under FortiADC.
+- **The firmware page was unreachable from two ADOMs.** It sat in the
+  FortiAnalyzer blueprint set only, so FortiADC and FortiAuthenticator
+  sessions bounced off it while a FortiAnalyzer session could see FortiWeb
+  images. It is now in every product ADOM, scoped by row.
+
+
+### Added
+
+- **TLS trust store — import your own Root and Intermediate CA.** Until now
+  `Appliance.verify_ssl` meant either "validate against the PUBLIC root store",
+  which no privately-signed appliance can satisfy, or "validate nothing" — so
+  every device in a private fleet ended up with certificate checking disabled.
+  Settings → **Trust store** has a labelled slot for the **root** and one for
+  the **intermediate**, each taking pasted PEM or an uploaded file, imported
+  together in a single transaction so a chain cannot land half-applied (a whole
+  chain in one blob is still fine; each certificate is stored separately). The
+  labels are a hint only — the role is read from the certificate, so a root
+  pasted in the intermediate box is still recorded as a root. The client
+  layer now verifies against the public roots **plus** those CAs. Non-CA
+  certificates are rejected at import with the reason, because OpenSSL cannot
+  anchor a chain on a self-signed leaf and accepting one would fail every
+  handshake instead of failing the import. An incomplete chain is surfaced on
+  the page rather than discovered at handshake time, and a per-device probe
+  separates the three causes of a failure — untrusted issuer, hostname
+  mismatch, expired leaf — because they need three different fixes. The CAs
+  live in Postgres, so they reach the standby and the backup bundles; the
+  on-disk bundle each node feeds to OpenSSL is a derived cache.
+  See `docs/safeguards.md` section 20.
+
 - **FortiAuthenticator is now a managed product**, not a placeholder ADOM.
   Verified against `FACVMKVM v8.0.3 build0099`: a REST client for its
   Django/Tastypie API, a registry of **40 endpoints seeded from a live census
@@ -18,6 +88,25 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   See `docs/fortiauthenticator.md`.
 
 ### Fixed
+
+- **An ADOM showed other products' data, and the new product showed up in
+  everyone else's.** Two defects with one cause, both fired by adding a fourth
+  product. `product_scope` recognised ADOM keys from a hardcoded tuple that did
+  not contain `fortiauthenticator`, so inside that ADOM the effective product
+  resolved to the empty string — the value that also means "a background
+  worker, show it everything" — and every scoping filter became a no-op: the
+  FortiAuthenticator ADOM listed all six appliances and all 322 notifications.
+  Separately, the FortiWeb branch was written as an *exclusion* ("not a
+  FortiADC and not a FortiAnalyzer"), a shape that cannot know about a product
+  added later, so the new appliance appeared under FortiWeb. The same exclusion
+  had been copied into the alert engine, the Certificate Manager, the plugin
+  sandbox's device selector and the Metrics change-history filter, and Metrics
+  additionally served the FortiWeb inventory totals under any unrecognised
+  ADOM's own labels. The key set is now derived from the ADOM registry
+  (inactive rows included, so deactivating an ADOM cannot silently disable its
+  filters) and every filter names what it keeps. A product declared in the
+  registry is scoped the day it is declared.
+  See `docs/safeguards.md` section 19.
 
 - **Two alert engines read the wrong source and complained permanently.**
   Device freshness graded the `deep` cache layer -- refreshed once a night by

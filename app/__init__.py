@@ -244,6 +244,11 @@ def create_app(config_override: object | None = None) -> Flask:
             adc_bps = {'adc', 'adc_api', 'appliances', 'settings', 'audit',
                        'jobs', 'notifications', 'profiles', 'users', 'docs',
                        'database', 'locks',
+                       # Firmware is product-scoped by row (2026-08-06): each
+                       # ADOM sees and uploads only its own images. It used to
+                       # be reachable from FortiAnalyzer only, which is why the
+                       # FAZ ADOM could see FortiWeb images.
+                       'firmware',
                        # Custom Views: Plugin Studio + Lua Studio are
                        # product-scoped (records stamped per ADOM), so the
                        # ADC ADOM reaches them and sees only its own.
@@ -301,7 +306,7 @@ def create_app(config_override: object | None = None) -> Flask:
             # pages. RBAC still gates each write.
             fac_bps = {'fac', 'fac_api', 'appliances', 'settings', 'audit', 'jobs',
                        'notifications', 'profiles', 'users', 'docs',
-                       'database', 'locks', 'segments',
+                       'database', 'locks', 'segments', 'firmware',
                        'architecture', 'metrics', 'search', 'analysis',
                        'fleet_objects', 'dns_tool', 'backups',
                        # Mirrored per-ADOM monitoring (2026-07-28) — scoping is
@@ -479,14 +484,20 @@ def create_app(config_override: object | None = None) -> Flask:
             from .services import device_context as _dc
             _cur_appl = _dc.current_appliance()
             if _cur_appl is None:
-                # Display-only fallback: single-device products (FortiADC,
-                # FortiAnalyzer) show their sole device in the topbar/menu
-                # without a manual pick. Views still resolve their own device
-                # context via device_context.current_appliance().
-                from .services.product_scope import session_product, FORTIADC, FORTIANALYZER
+                # Display-only fallback: a single-device product (FortiADC,
+                # FortiAnalyzer, FortiAuthenticator) shows its sole device in
+                # the topbar/menu without a manual pick. Views still resolve
+                # their own device context via device_context.
+                # The ADOM key IS the appliance kind, so this is derived from
+                # the registry — the old literal map left every ADOM added
+                # later without the fallback. FortiWeb is excluded on purpose:
+                # it is the multi-device product and owns an explicit picker.
+                from .services.product_scope import (session_product,
+                                                     concrete_products,
+                                                     FORTIWEB)
                 from .models import Appliance as _ApplFB
-                _kmap = {FORTIADC: 'fortiadc', FORTIANALYZER: 'fortianalyzer'}
-                _kfb = _kmap.get(session_product())
+                _p = session_product()
+                _kfb = _p if (_p != FORTIWEB and _p in concrete_products()) else None
                 if _kfb:
                     _cands = _ApplFB.query.filter_by(kind=_kfb).all()
                     if len(_cands) == 1:
@@ -1093,6 +1104,13 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('failed_logins', 'INTEGER DEFAULT 0'),
                 ('locked_until', 'TIMESTAMP'),
             ],
+            # Install-vs-upgrade split (see models_firmware.FirmwareImage).
+            # Additive with a default, so every pre-existing row keeps meaning
+            # exactly what it meant: an upgrade image.
+            'firmware_images': [
+                ('image_kind', "VARCHAR(16) DEFAULT 'upgrade'"),
+                ('hypervisor', "VARCHAR(16) DEFAULT ''"),
+            ],
             'appliances': [
                 ('hw_type', "VARCHAR(16) DEFAULT 'unknown'"),
                 ('model', 'VARCHAR(128)'),
@@ -1240,6 +1258,7 @@ def create_app(config_override: object | None = None) -> Flask:
             from . import models_analytics  # noqa: F401
             from . import models_sot  # noqa: F401
             from . import models_metrics  # noqa: F401
+            from . import models_trust  # noqa: F401
             db.create_all()
             _ensure_columns()
             _ensure_indexes()
@@ -1567,12 +1586,18 @@ def _seed_analytics_boards() -> None:
             # to enumerate — the metrics store holds those series and answers
             # by SELECTOR. topk() bounds every panel to what a chart can show.
             "slug": "fleet-metrics", "title": "Fleet metrics (store)",
-            "position": 5,
+            "position": 5, "product": "",
             "description": "Selector-driven view of the local metrics store — "
                            "scales to the whole fleet because nothing here "
                            "enumerates series by hand.",
             "default_range": "24h",
             "mode": "metricsql",
+            # Only metrics EVERY product with a box collector reports. The
+            # throughput and per-policy panels moved to the FortiWeb board on
+            # 2026-08-06: a built-in seeded with product "" is visible in every
+            # ADOM, so an identity ADOM was rendering four panels whose series
+            # its devices can never emit — empty charts that read as "quiet",
+            # not as "not applicable".
             "panels": [
                 {"title": "CPU used — all devices", "viz": "line", "width": 6,
                  "vm_expr": "satom_box_cpu_pct", "vm_unit": "%",
@@ -1580,25 +1605,73 @@ def _seed_analytics_boards() -> None:
                 {"title": "Memory used — all devices", "viz": "line", "width": 6,
                  "vm_expr": "satom_box_mem_pct", "vm_unit": "%",
                  "vm_legend": "device", "show_band": False},
-                {"title": "Device throughput", "viz": "area", "width": 12,
-                 "vm_expr": "satom_total_throughput_bps", "vm_unit": "bit/s",
-                 "vm_legend": "device", "show_band": False},
-                {"title": "Busiest policies (top 10 by conn/s)", "viz": "line",
-                 "width": 12,
-                 "vm_expr": "topk(10, satom_policy_conn_per_sec)",
-                 "vm_unit": "conn/s", "show_band": False},
-                {"title": "Policies with every backend down", "viz": "line",
-                 "width": 6, "vm_expr": "sum by (device) (satom_policy_up == 0)",
-                 "vm_unit": "policies", "vm_legend": "device",
-                 "show_band": False},
-                {"title": "Collectors failing", "viz": "line", "width": 6,
+                {"title": "Collectors failing", "viz": "line", "width": 12,
                  "vm_expr": "sum by (collector) (satom_scrape_up == 0)",
                  "vm_unit": "targets", "vm_legend": "collector",
                  "show_band": False},
             ],
         },
         {
-            "slug": "fleet-overview", "title": "Fleet overview", "position": 10,
+            # The panels that left fleet-metrics. Product-scoped, so they show
+            # up in the FortiWeb ADOM and nowhere else.
+            "slug": "fortiweb-traffic-store",
+            "title": "Traffic & policies (store)", "position": 6,
+            "product": "fortiweb",
+            "description": "Throughput and per-policy load read by SELECTOR "
+                           "from the metrics store — the only shape that "
+                           "survives a fleet with hundreds of policies.",
+            "default_range": "24h",
+            "mode": "metricsql",
+            "panels": [
+                {"title": "Device throughput", "viz": "area", "width": 12,
+                 "vm_expr": 'satom_total_throughput_bps{kind="fortiweb"}',
+                 "vm_unit": "bit/s", "vm_legend": "device", "show_band": False},
+                {"title": "Busiest policies (top 10 by conn/s)", "viz": "line",
+                 "width": 12,
+                 "vm_expr": 'topk(10, satom_policy_conn_per_sec{kind="fortiweb"})',
+                 "vm_unit": "conn/s", "show_band": False},
+                {"title": "Policies with every backend down", "viz": "line",
+                 "width": 12,
+                 "vm_expr": 'sum by (device) (satom_policy_up{kind="fortiweb"} == 0)',
+                 "vm_unit": "policies", "vm_legend": "device",
+                 "show_band": False},
+            ],
+        },
+        {
+            # FortiAuthenticator's equivalent of a traffic board. An identity
+            # unit has no throughput to plot; what it runs out of is
+            # ENTITLEMENT, and that cliff is invisible on a CPU chart.
+            "slug": "fac-entitlement", "title": "Entitlement & tokens",
+            "position": 7, "product": "fortiauthenticator",
+            "description": "Licence headroom and FortiToken pools — the "
+                           "ceilings this product actually hits.",
+            "default_range": "7d",
+            "mode": "metricsql",
+            "panels": [
+                {"title": "Licence consumed", "viz": "line", "width": 6,
+                 "vm_expr": "satom_fac_licence_pct", "vm_unit": "%",
+                 "vm_legend": "resource", "show_band": False},
+                {"title": "Licence seats free", "viz": "line", "width": 6,
+                 "vm_expr": "satom_fac_licence_total - satom_fac_licence_used",
+                 "vm_unit": "seats", "vm_legend": "resource",
+                 "show_band": False},
+                {"title": "FortiToken pool consumed", "viz": "line", "width": 6,
+                 "vm_expr": "satom_fac_token_pct", "vm_unit": "%",
+                 "vm_legend": "pool", "show_band": False},
+                {"title": "HA peer present", "viz": "line", "width": 6,
+                 "vm_expr": "satom_fac_ha_peer", "vm_unit": "peer",
+                 "vm_legend": "device", "show_band": False},
+                {"title": "Collectors failing", "viz": "line", "width": 12,
+                 "vm_expr": 'sum by (collector) (satom_scrape_up{kind="fortiauthenticator"} == 0)',
+                 "vm_unit": "targets", "vm_legend": "collector",
+                 "show_band": False},
+            ],
+        },
+        {
+            # Rule-driven and cross-product: CPU/memory probes exist
+            # on every product that has a box, and probe visibility is
+            # already ADOM-scoped, so this board is correct anywhere.
+            "slug": "fleet-overview", "title": "Fleet overview", "position": 10, "product": "",
             "description": "Processor, memory and availability across every "
                            "monitored appliance.",
             "default_range": "24h",
@@ -1621,7 +1694,9 @@ def _seed_analytics_boards() -> None:
             ],
         },
         {
-            "slug": "traffic", "title": "Traffic & sessions", "position": 20,
+            # FortiWeb-only: throughput, per-policy sessions and HTTP
+            # transactions all come from the FortiWeb monitor API.
+            "slug": "traffic", "title": "Traffic & sessions", "position": 20, "product": "fortiweb",
             "description": "Throughput, concurrent sessions and HTTP "
                            "transactions read from the appliance monitor API.",
             "default_range": "24h",
@@ -1637,7 +1712,10 @@ def _seed_analytics_boards() -> None:
             ],
         },
         {
-            "slug": "service-health", "title": "Service health", "position": 30,
+            # FortiWeb-only: proxyd has no counterpart on any other
+            # product (no REST endpoint anywhere exposes process
+            # state) and interface drift reads the FortiWeb harvest.
+            "slug": "service-health", "title": "Service health", "position": 30, "product": "fortiweb",
             "description": "Synthetic response time, the proxyd daemon and "
                            "interface drift.",
             "default_range": "7d",
@@ -1652,6 +1730,31 @@ def _seed_analytics_boards() -> None:
                  "rule_kind": "interface", "width": 6, "height": 220},
                 {"title": "Probe summary", "viz": "table", "rule_kind": "https",
                  "width": 12, "height": 260},
+            ],
+        },
+        {
+            # Rule-driven counterpart of fac-entitlement: reads the licence and
+            # token PROBES, so it carries their thresholds and their graded
+            # verdict rather than a raw series.
+            "slug": "fac-identity", "title": "Identity health", "position": 40,
+            "product": "fortiauthenticator",
+            "description": "Licence and FortiToken probes, with the thresholds "
+                           "the operator set on them.",
+            "default_range": "7d",
+            "panels": [
+                {"title": "Licence consumed", "viz": "line",
+                 "rule_kind": "licence", "width": 6, "show_band": True},
+                {"title": "FortiToken pools", "viz": "line",
+                 "rule_kind": "tokens", "width": 6, "show_band": True},
+                {"title": "Peak licence use", "viz": "stat",
+                 "rule_kind": "licence", "stat_func": "max", "width": 4,
+                 "height": 190, "compare_prev": True},
+                {"title": "Processor", "viz": "line", "rule_kind": "cpu",
+                 "width": 4, "height": 190},
+                {"title": "Memory", "viz": "line", "rule_kind": "memory",
+                 "width": 4, "height": 190},
+                {"title": "Probe summary", "viz": "table",
+                 "rule_kind": "licence", "width": 12, "height": 260},
             ],
         },
     ]

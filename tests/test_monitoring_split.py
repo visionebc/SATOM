@@ -274,17 +274,88 @@ def test_retired_placeholders_are_excluded_from_the_rollup(app):
         assert "retired-box" not in names
 
 
-def test_redundancy_exposes_per_device_posture(app):
-    """The old payload carried ``device_clusters`` (always empty) and computed
-    ``device_standalone`` without ever rendering it."""
+def test_the_device_feed_carries_the_posture_in_every_adom(app, client, admin_id):
+    """HA posture rides ``/monitoring/data`` -- the DEVICE feed -- not the
+    manager feed, and it is scoped by ``visible_appliances``.
+
+    It shipped on the manager feed and was rendered on SATOM health, where a
+    device counter reads as a claim about the installation: ``0 clustered ·
+    1 standalone`` on a two-node streaming pair. It also came from an unscoped
+    ``Appliance.query``, so a FortiWeb ADOM would have listed the FortiADCs.
+    """
+    with app.app_context():
+        w = _appliance(kind="fortiweb", name="fwb-d", host="192.0.2.75")
+        c = _appliance(kind="fortiadc", name="adc-d", host="192.0.2.76")
+        _cache_ha(w.id, {"mode": "standalone"})
+        _cache_ha(c.id, {"mode": "standalone"})
+        db.session.commit()
+
+    login(client, admin_id, product="global")
+    ha = client.get("/monitoring/data",
+                    headers={"X-ADOM": "global"}).get_json().get("ha") or {}
+    assert {p["name"] for p in ha["posture"]} == {"fwb-d", "adc-d"}
+    assert ha["counts"]["standalone"] == 2
+
+    login(client, admin_id, product="fortiweb")
+    ha = client.get("/monitoring/data",
+                    headers={"X-ADOM": "fortiweb"}).get_json().get("ha") or {}
+    assert [p["name"] for p in ha["posture"]] == ["fwb-d"], \
+        "a product ADOM must not see another product's boxes"
+
+
+def test_the_manager_feed_no_longer_carries_device_data(app):
+    """SATOM health answers "is this INSTALLATION healthy?". Appliance rows on
+    that feed are what produced the false reading."""
     from app.services import system_health
     with app.app_context():
         a = _appliance(name="fwb-r")
         _cache_ha(a.id, {"mode": "standalone"})
         red = system_health.redundancy()
-        assert "device_posture" in red and "device_counts" in red
-        assert red["device_counts"]["standalone"] == 1
-        assert [d["name"] for d in red["device_posture"]] == ["fwb-r"]
+        for leaked in ("device_posture", "device_counts", "device_clusters",
+                       "device_standalone"):
+            assert leaked not in red, "%s belongs to the device feed" % leaked
+        assert "manager_posture" in red
+
+
+def test_manager_posture_reports_a_streaming_pair_as_clustered():
+    """The headline the SATOM page owes its reader: two nodes with a live
+    replica is a cluster, and the evidence says why."""
+    from app.services import ha_inventory
+    p = ha_inventory.manager_posture(
+        {"instances": 2, "mode": "ha", "standby": True, "streaming": True,
+         "this_role": "primary", "split_brain": False})
+    assert p["status"] == "clustered"
+    assert p["role"] == "primary"
+    assert any("streaming" in e for e in p["evidence"])
+
+
+def test_manager_posture_prefers_evidence_over_the_admin_switch():
+    """``mode`` is an operator-set switch. A node left on 'standalone' while a
+    replica streams is still a pair -- reading the switch would report the
+    installation as single-node while its peer was serving."""
+    from app.services import ha_inventory
+    p = ha_inventory.manager_posture(
+        {"instances": 2, "mode": "standalone", "standby": True,
+         "streaming": True, "this_role": "primary"})
+    assert p["status"] == "clustered"
+
+
+def test_manager_posture_calls_a_single_node_standalone():
+    from app.services import ha_inventory
+    p = ha_inventory.manager_posture(
+        {"instances": 1, "mode": "standalone", "standby": False,
+         "streaming": False, "this_role": "primary"})
+    assert p["status"] == "standalone"
+    assert p["evidence"], "an unexplained status is one the operator ignores"
+
+
+def test_manager_posture_of_a_failed_probe_is_unknown_not_standalone():
+    """Same rule the device rows follow: "we could not measure this" and "this
+    is a single node" are different statements (the 2026-07-28 badge lesson)."""
+    from app.services import ha_inventory
+    assert ha_inventory.manager_posture({})["status"] == "unknown"
+    assert ha_inventory.manager_posture(
+        {"instances": 0, "standby": False})["status"] == "unknown"
 
 
 def _executable(text: str) -> str:
@@ -305,7 +376,37 @@ def test_the_panel_no_longer_claims_no_clusters_registered():
     index = _executable((ROOT / "app" / "templates" / "monitoring" / "index.html").read_text())
     assert "No HA clusters registered" not in satom
     assert "No HA clusters registered" not in index
-    assert "device_posture" in satom, "the panel must render the posture rows"
+    assert "ha.posture" in index, "Device health must render the posture rows"
+
+
+def test_the_device_posture_panel_is_not_on_the_installation_page():
+    """The whole defect in one assertion.
+
+    SATOM health is headed "this installation". A device HA counter there is
+    read as a statement about SATOM -- ``0 clustered · 1 standalone`` on a
+    two-node pair. The rows belong with the appliances; the manager states its
+    own posture instead.
+    """
+    satom = _executable((ROOT / "app" / "templates" / "monitoring" / "satom.html").read_text())
+    index = _executable((ROOT / "app" / "templates" / "monitoring" / "index.html").read_text())
+    assert "Device HA posture" not in satom
+    assert "device_posture" not in satom
+    assert "Device HA posture" in index
+    assert "Manager redundancy" in satom
+    assert "manager_posture" in satom, \
+        "the installation page must state ITS OWN posture, not only a note"
+
+
+def test_the_ha_pill_uses_the_products_own_badge_vocabulary():
+    """One badge set across the console. The pill was a local palette
+    (``.ha-clustered`` etc.) that no other status in the product used."""
+    satom = _executable((ROOT / "app" / "templates" / "monitoring" / "satom.html").read_text())
+    index = _executable((ROOT / "app" / "templates" / "monitoring" / "index.html").read_text())
+    for name, tpl in (("satom.html", satom), ("index.html", index)):
+        assert "fw-badge-success" in tpl, "%s: clustered pill" % name
+        assert "fw-badge-secondary" in tpl, "%s: standalone pill" % name
+        assert "ha-clustered" not in tpl, "%s: local palette is gone" % name
+        assert "ha-standalone" not in tpl, "%s: local palette is gone" % name
 
 
 def test_the_comment_stripper_would_still_catch_a_real_regression():

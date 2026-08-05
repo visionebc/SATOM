@@ -41,6 +41,16 @@ def svc(tmp_path, monkeypatch):
     (tmp_path / "keys" / "t.pub").write_text(
         up.format_public_key(up.ed25519_public_from_seed(seed), "test"))
     (tmp_path / "VERSION").write_text("1.3.5\n")
+    # preflight() compares against ``app.version.app_version()``, which reads the
+    # REPOSITORY's VERSION -- not the scratch file above. Without this patch the
+    # scratch file is dead weight and every "a newer package" case in this module
+    # is silently pinned to whatever the tree happens to ship: they passed while
+    # the repo was below 1.4.0 and turned red the moment it was bumped past it.
+    # Same class as a hardcoded version literal in a template, which this repo
+    # already guards against -- a test must not depend on the release it runs on.
+    import app.version as appver
+    monkeypatch.setattr(appver, "app_version",
+                        lambda: (tmp_path / "VERSION").read_text().strip())
     m._seed = seed
     yield m
     importlib.reload(m)

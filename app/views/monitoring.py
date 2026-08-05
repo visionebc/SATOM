@@ -45,22 +45,38 @@ def _thresholds() -> tuple[float, float]:
     return warn, crit
 
 
-def _device_payload(warn: float, crit: float) -> tuple[list[dict], list[dict], list[dict]]:
-    """Device cards, capacity alerts and health alerts.
+def _device_payload(warn: float, crit: float) -> tuple[list[dict], list[dict], list[dict], dict]:
+    """Device cards, capacity alerts, health alerts and the HA posture roll-up.
 
     The card badge is the roll-up from :mod:`services.device_health` -- harvest
     status, cache age, deep monitors AND capacity -- not capacity alone. Before
     2026-07-28 it was capacity-only, and since no appliance in this fleet has an
     admin cap it could never leave 'healthy' even for a box that was powered off.
+
+    HA posture arrived here on 2026-08-05. It was rendered on the SATOM health
+    page, where a device counter reads as a statement about the installation --
+    ``0 clustered · 1 standalone`` on a two-node manager pair. It belongs with
+    the appliances, and it must be built from ``visible_appliances()``: the old
+    call site used an unscoped ``Appliance.query``, which on a per-ADOM page
+    would show every product's boxes to every product.
     """
     from ..services import device_health as devhealth
+    from ..services import ha_inventory
     from ..services import read_layer
     from ..services.hardware import hardware_map
 
     hw = hardware_map()
     stale_h = devhealth.stale_hours()
+    visible = visible_appliances().order_by(Appliance.name).all()
+    # One pass, reused twice: fleet() also applies the retired-placeholder rule
+    # and the ordering, so the section and the cards cannot disagree.
+    try:
+        roll = ha_inventory.fleet(visible)
+    except Exception:
+        roll = {"devices": [], "clusters": [], "counts": {}}
+    ha_by_id = {r.get("id"): r for r in roll.get("devices", [])}
     devices, alerts, health_alerts = [], [], []
-    for a in visible_appliances().order_by(Appliance.name).all():
+    for a in visible:
         # Gathering lives in device_health so the alert engine grades identically.
         caps = devhealth.capacity_rows(a, warn, crit)
         for row in caps:
@@ -94,20 +110,29 @@ def _device_payload(warn: float, crit: float) -> tuple[list[dict], list[dict], l
             'capacity': caps,
             'worst': worst,
             'health': health,
+            # Derived from the harvest cache. ha_mode/ha_role above come from the
+            # appliance FORM, which nothing else writes and almost nobody fills.
+            'ha': ha_by_id.get(a.id),
         })
-    return devices, alerts, health_alerts
+    ha = {'posture': roll.get('devices', []),
+          'counts': roll.get('counts', {}),
+          'clusters': roll.get('clusters', [])}
+    return devices, alerts, health_alerts, ha
 
 
 def _payload() -> dict:
     from ..services.product_scope import session_product
 
     warn, crit = _thresholds()
-    devices, alerts, health_alerts = _device_payload(warn, crit)
+    devices, alerts, health_alerts, ha = _device_payload(warn, crit)
     is_global = _global_adom()
     out = {
         'scope': 'global' if is_global else (session_product() or 'global'),
         'thresholds': {'warn': warn, 'crit': crit},
         'devices': devices,
+        # Appliance HA — served to EVERY ADOM (it is device data, scoped by
+        # visible_appliances), unlike the manager blocks below.
+        'ha': ha,
         'alerts': sorted(alerts, key=lambda x: (x['status'] != 'crit', -(x['pct'] or 0))),
         'health_alerts': sorted(health_alerts, key=lambda x: x['status'] != 'crit'),
     }

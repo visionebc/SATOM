@@ -15,15 +15,10 @@
                    color:var(--fw-text-muted, #6B7280); margin:18px 0 8px; }
   .t-ok { color:#15692A; } .t-warn { color:#7A5700; } .t-crit { color:#8B1C2A; }
   .t-na { color:#3D4550; }
-  /* HA posture rows — one line per device, never a bare "none registered" */
-  .ha-row { display:flex; justify-content:space-between; gap:10px; font-size:.82rem;
-            padding:5px 0; border-bottom:1px dashed rgba(148,163,184,.14); }
+  /* Posture line: the page's headline answer about THIS installation. */
+  .ha-row { display:flex; justify-content:space-between; align-items:flex-start; gap:10px;
+            font-size:.82rem; padding:5px 0; border-bottom:1px dashed rgba(148,163,184,.14); }
   .ha-row .why { font-size:.72rem; color:var(--fw-text-muted, #6B7280); }
-  .ha-pill { font-size:.66rem; text-transform:uppercase; letter-spacing:.05em;
-             padding:1px 8px; border-radius:9px; border:1px solid; white-space:nowrap; }
-  .ha-clustered  { color:#15692A; background:rgba(21,105,42,.10); border-color:rgba(21,105,42,.30); }
-  .ha-standalone { color:#3D4550; background:rgba(61,69,80,.08);  border-color:rgba(61,69,80,.25); }
-  .ha-unknown    { color:#7A5700; background:rgba(122,87,0,.10);  border-color:rgba(122,87,0,.30); }
 </style>
 
 <div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
@@ -77,33 +72,29 @@
       : 'no dump found';
     var bkCls = dbs.last_backup && dbs.last_backup.age_h < 30 ? 't-ok' : 't-warn';
 
-    // Device HA posture — one row per appliance, derived from the harvest.
-    // The old panel printed "No HA clusters registered" whenever the manual
-    // members table was empty, which was always: nothing populates it except
-    // the appliance form.
-    var post = red.device_posture || [];
-    var cnt = red.device_counts || {};
-    var haRows = post.map(function (p) {
-      var cls = p.status === 'clustered' ? 'ha-clustered'
-              : p.status === 'standalone' ? 'ha-standalone' : 'ha-unknown';
-      var why = (p.evidence && p.evidence.length) ? p.evidence.join(' · ')
-              : (p.status === 'unknown'
-                  ? 'no HA data harvested yet — run a device sync'
-                  : ('reported by the device' + (p.raw_mode ? ' (mode ' + esc(p.raw_mode) + ')' : '')));
-      var mem = (p.members || []).map(function (m) {
-        return esc(m.name) + (m.role ? ' [' + esc(m.role) + ']' : '');
-      }).join(', ');
-      return '<div class="ha-row"><span><i class="bi bi-diagram-2 me-1"></i><b>' + esc(p.name) + '</b> ' +
-        '<span class="text-muted">(' + esc(p.kind) + (p.maintenance ? ' · maintenance' : '') + ')</span>' +
-        '<div class="why">' + esc(why) + (mem ? ' — members: ' + mem : '') +
-        (p.vip ? ' — VIP ' + esc(p.vip) : '') + '</div></span>' +
-        '<span class="ha-pill ' + cls + '">' + esc(p.mode || p.status) + '</span></div>';
-    }).join('') || '<div class="text-muted small">No appliances registered.</div>';
-    var haSummary = '<div class="text-muted small mb-1">' +
-      (cnt.clustered || 0) + ' clustered · ' + (cnt.standalone || 0) + ' standalone · ' +
-      (cnt.unknown || 0) + ' unknown</div>';
-
+    // Manager redundancy — THIS installation's own HA, stated in the same
+    // vocabulary the appliance rows use on Device health.
+    //
+    // Until 2026-08-05 this section was a grey one-liner under a loud *device*
+    // HA counter. On a page headed "this installation", `0 clustered ·
+    // 1 standalone` reads as a claim about SATOM — and it was a two-node
+    // streaming pair. The device rows moved to Device health; the manager now
+    // answers the question the page actually promises.
     var mgr = red.manager || {};
+    var mp = red.manager_posture || {};
+    var mCls = mp.status === 'clustered' ? 'fw-badge-success'
+             : mp.status === 'standalone' ? 'fw-badge-secondary' : 'fw-badge-warning';
+    if (mp.split_brain) mCls = 'fw-badge-danger';
+    var mWhy = (mp.evidence && mp.evidence.length)
+      ? mp.evidence.join(' · ')
+      : 'HA state could not be determined on this node';
+    var mgrRow =
+      '<div class="ha-row"><span><i class="bi bi-hdd-network me-1"></i><b>' +
+      esc(mgr.instances != null ? mgr.instances : '?') + ' node' +
+      (mgr.instances === 1 ? '' : 's') + '</b>' +
+      (mp.role ? ' <span class="text-muted">(this node: ' + esc(mp.role) + ')</span>' : '') +
+      '<div class="why">' + esc(mWhy) + '</div></span>' +
+      '<span class="fw-badge ' + mCls + '">' + esc(mp.mode || mp.status || 'unknown') + '</span></div>';
 
     host.innerHTML =
       '<div class="fw-card"><div class="fw-card-body">' +
@@ -121,11 +112,13 @@
       '<div class="fw-card"><div class="fw-card-body">' +
       '<b><i class="bi bi-shield-check me-1"></i>Services &amp; redundancy</b>' +
       '<div class="mt-2">' + svc + '</div>' +
-      '<div class="mon-sec-title mt-3 mb-1">Device HA posture</div>' + haSummary + haRows +
-      '<div class="mon-sec-title mt-3 mb-1">Manager redundancy</div>' +
-      '<div class="text-muted small">' + esc(mgr.note || '') + '</div>' +
+      '<div class="mon-sec-title mt-3 mb-1">Manager redundancy</div>' + mgrRow +
+      '<div class="text-muted small mt-2">' + esc(mgr.note || '') + '</div>' +
       '<div class="mon-svc"><span>scheduler sidecar</span><span class="' +
       (mgr.scheduler_ok ? 't-ok">active' : 't-crit">down') + '</span></div>' +
+      '<div class="text-muted small mt-3">' +
+      '<i class="bi bi-diagram-2 me-1"></i>Appliance HA posture lives on ' +
+      '<a href="{{ url_for("monitoring.index", _adom="global") }}">Device health</a>.</div>' +
       '</div></div>';
   }
 

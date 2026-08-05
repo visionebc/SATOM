@@ -188,6 +188,69 @@ def posture(appliance) -> dict:
     return out
 
 
+def manager_posture(summary: dict) -> dict:
+    """SATOM's OWN HA posture, in the SAME vocabulary as the devices.
+
+    Why this exists
+    ---------------
+    The v1.4.0 page split put a *device* HA counter on the SATOM health page —
+    the page whose header promises "this installation". A reader who takes the
+    page at its word sees ``0 clustered · 1 standalone`` and concludes SATOM is
+    a single node, which on a two-node streaming pair is exactly backwards. The
+    counter was right about the appliances and on the wrong page.
+
+    So the device rows moved to Device health, and the manager states its own
+    posture here with the same three statuses and the same evidence rule. A page
+    about the installation must answer *"is this installation clustered?"* more
+    loudly than it answers anything about the appliances.
+
+    Evidence, not the mode string: ``mode`` is an admin-set switch, so a node
+    left on ``standalone`` while a replica streams would otherwise be reported
+    as single. A peer that is actually there outranks the switch that says it
+    should not be.
+    """
+    out = {"status": STATUS_UNKNOWN, "mode": "", "role": "", "evidence": [],
+           "note": (summary or {}).get("note", ""), "split_brain": False}
+    if not isinstance(summary, dict) or not summary:
+        return out
+
+    try:
+        instances = int(summary.get("instances") or 0)
+    except (TypeError, ValueError):
+        instances = 0
+    admin_mode = str(summary.get("mode") or "").strip().lower()
+    standby = bool(summary.get("standby"))
+    streaming = bool(summary.get("streaming"))
+    split = bool(summary.get("split_brain"))
+    out["role"] = str(summary.get("this_role") or "").strip()
+    out["split_brain"] = split
+
+    evidence: list[str] = []
+    if instances > 1:
+        evidence.append("%d nodes registered" % instances)
+    if standby:
+        evidence.append("hot standby present")
+    if streaming:
+        evidence.append("streaming replication live")
+    if split:
+        evidence.append("SPLIT-BRAIN: more than one node reports primary")
+
+    if evidence and not (instances <= 1 and not standby):
+        out["status"] = STATUS_CLUSTERED
+        out["mode"] = "clustered"
+    elif instances >= 1:
+        out["status"] = STATUS_STANDALONE
+        out["mode"] = "standalone"
+        if admin_mode == "standalone":
+            evidence.append("standalone mode set by an administrator")
+        else:
+            evidence.append("no peer node registered")
+    # instances == 0 and no evidence -> the probe itself failed: stay unknown
+    # rather than claim a single node we never managed to count.
+    out["evidence"] = evidence
+    return out
+
+
 def fleet(appliances) -> dict:
     """Roll the per-device posture up for the Monitoring redundancy panel.
 

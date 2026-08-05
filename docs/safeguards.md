@@ -2266,6 +2266,30 @@ template: `/monitoring/satom` redirects out of a product ADOM and
 hostnames and infrastructure addresses. The manager feed also stops computing
 the per-device capacity roll-up it never renders.
 
+**A number is read as a claim about the page it sits on.** The split above left
+the *device* HA counter on SATOM health. Nothing about it was wrong — one
+appliance, standalone, verified against the box itself — and it was still a
+false statement, because a page headed *"this installation"* reading
+`0 clustered · 1 standalone` says the installation is a single node. It was a
+two-node pair with live streaming replication. Right number, wrong page; and
+the manager's own posture was a grey one-line note underneath it, so the page
+answered the question it did not promise more loudly than the one it did.
+
+Two rules came out of it:
+
+* **Device rows live on the device page.** The posture now rides
+  `/monitoring/data` and is built from `visible_appliances()`. That is not
+  cosmetic: the old call site used an unscoped `Appliance.query`, so on a page
+  every ADOM can reach it would have listed the FortiADCs to the FortiWeb ADOM
+  — the leak §9c exists to prevent. The manager feed carries no device key at
+  all, and the guard fails if one comes back.
+* **Every page states its own subject in the same vocabulary.** SATOM health
+  reports the installation as `clustered` / `standalone` / `unknown` with the
+  same badge and the same evidence rule the appliances get, derived from peer
+  facts rather than the `mode` switch — a node left on `standalone` while a
+  replica streams is still a pair, and reading the switch would report it as
+  single. A probe that could not count nodes is `unknown`, never `standalone`.
+
 **Configuration is not a measurement.** Collection moved from Monitoring to
 Administrator: the other six Monitoring pages display what was measured, this
 one sets how measurement happens and needs `CONFIG_WRITE` to change anything.
@@ -2806,11 +2830,17 @@ python3 -c "from app.services.system_health import MONITORED_UNITS as U; \
   print('store watched:', 'satom-metrics.service' in U); \
   print('no role-guarded:', not any('datasync' in u or 'git-publish' in u for u in U))"
 
-# 2. HA posture comes from the harvest, not the hand-entry table
-#    (expect one row per live appliance, each carrying its evidence)
+# 2. HA posture comes from the harvest, not the hand-entry table, and it rides
+#    the DEVICE feed (expect one row per live appliance, each with its evidence)
+curl -sk -b "$COOKIE" https://$NODE/monitoring/data | python3 -c \
+  "import json,sys; h=json.load(sys.stdin)['ha']; print(h['counts']); \
+   [print(' ', d['name'], d['status'], d['source'], d['evidence']) for d in h['posture']]"
+
+# 2b. the installation page states ITS OWN posture, and carries no device rows
 curl -sk -b "$COOKIE" https://$NODE/monitoring/satom-data | python3 -c \
-  "import json,sys; r=json.load(sys.stdin)['redundancy']; print(r['device_counts']); \
-   [print(' ', d['name'], d['status'], d['source'], d['evidence']) for d in r['device_posture']]"
+  "import json,sys; r=json.load(sys.stdin)['redundancy']; \
+   print(r['manager_posture']['status'], r['manager_posture']['evidence']); \
+   assert not [k for k in r if k.startswith('device')], 'device data on the manager feed'"
 
 # 3. the split is enforced on the ROUTE, not the template
 curl -sk -o /dev/null -w '%{http_code}\n' -H 'X-ADOM: fortiweb' https://$NODE/monitoring/satom-data

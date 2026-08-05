@@ -67,6 +67,7 @@
       <a href="#3b-the-operator-console-satom">3b. The operator console (satom)</a>
       <a href="#3c-the-operator-consoles-output-path">3c. The operator console&#x27;s output path</a>
       <a href="#4-two-node-correctness">4. Two-node correctness</a>
+      <a href="#4b-the-standby-is-the-last-live-copy-do-not-reconcile-it-as-a-side-effect">4b. The standby is the last live copy — do not reconcile it as a side effect</a>
       <a href="#5-writing-to-the-appliances">5. Writing to the appliances</a>
       <a href="#6-certificates">6. Certificates</a>
       <a href="#7-files-coming-from-outside">7. Files coming from outside</a>
@@ -367,6 +368,55 @@ cannot predict. Removing either one alone still leaves the CLI standing, and
 </tr>
 </tbody>
 </table>
+<h2 id="4b-the-standby-is-the-last-live-copy-do-not-reconcile-it-as-a-side-effect">4b. The standby is the last live copy — do not reconcile it as a side effect</h2>
+<p><code>satom-reconciler</code> runs in AUTO on both nodes and pulls on its own within about
+a minute of a push. So a manual <code>git fetch &amp;&amp; git reset --hard origin/main</code> on
+the <strong>standby</strong> buys nothing that was not already going to happen, and it costs
+the one thing the standby is uniquely holding.</p>
+<p>The failure this encodes actually happened. An applied update package on the
+primary reverted another session's <strong>uncommitted</strong> work — CSS and a template
+that existed nowhere in git. It was recovered from the standby, which had not
+yet been reconciled and was therefore the only surviving copy. A <code>reset --hard</code>
+on the standby that day would have destroyed the recovery path, and it would
+have looked like routine tidying while doing it.</p>
+<p>The rule, in one line: <strong>converging the standby is the reconciler's job, not an
+operator's, and never a side effect of unrelated work.</strong> Read the standby
+freely — <code>/healthz</code>, <code>systemctl list-units --failed</code>, <code>git log</code>, <code>git status</code>.
+Writing to it, restarting it, or resetting it is its own decision, taken on
+purpose. If it has drifted, that drift <em>is</em> the finding: the reconciler should
+have closed it, and the fact that it did not is what needs reporting.</p>
+<table>
+<thead>
+<tr>
+<th>Guard</th>
+<th>Prevents</th>
+<th>Where</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>diagnose git</code> reports <strong>state that exists only here</strong> — modified tracked files, commits absent from the upstream branch, parked <code>refs/backup/*</code>, untracked files</td>
+<td>Discarding the only copy of work with an operation that looks routine. A node cannot be reset in ignorance of what it alone holds</td>
+<td><code>deploy/satom_cli/cmd_checks.py::git</code></td>
+</tr>
+<tr>
+<td>Only dirty tracked files and unpushed commits <strong>grade</strong>; untracked files are listed but do not</td>
+<td>A permanent warn on the primary, which legitimately carries an untracked <code>reports</code> symlink. <code>reset --hard</code> does not delete untracked files, so grading them would be false as well as noisy — and the first thing a permanent warn teaches is that the check can be ignored</td>
+<td>same</td>
+</tr>
+<tr>
+<td><code>preserve_local_commits()</code> parks local commits and the dirty tree before any update-driven reset, and <strong>aborts</strong> if it cannot</td>
+<td>The automated path doing what this section forbids the manual one from doing</td>
+<td><code>deploy/self_update_runner.py</code> (§1)</td>
+</tr>
+</tbody>
+</table>
+<p>Two limits stated on purpose. This is a <strong>read-out, not an interlock</strong> — nothing
+in the product refuses a <code>git reset --hard</code> typed by a root operator, and
+nothing should: the operator is the authority on their own node. And an
+unpushed-commit count needs an upstream branch to be meaningful, so a detached
+HEAD or a branch with no upstream is reported as <em>cannot tell</em> rather than as
+zero. Zero would be a comforting number the check has no basis for.</p>
 <h2 id="5-writing-to-the-appliances">5. Writing to the appliances</h2>
 <p>This is the part that can take a customer offline, so it has the most gates.</p>
 <ul>
@@ -2408,6 +2458,37 @@ no-op — and a silent no-op is indistinguishable from success.</p>
   because of that, but it mitigates rather than fixes it.</li>
 </ul>
 <h2 id="verifying-the-guards-are-armed_5">Verifying the guards are armed</h2>
+<h3 id="state-that-exists-only-here-4b">State that exists only here (4b)</h3>
+<p>A node has to say what it alone holds, <em>before</em> anyone resets it.</p>
+<pre><code class="language-bash"># 1. on a clean node the section is present and does not grade
+satom diagnose git --json | python3 -c \
+  &quot;import json,sys; d=json.load(sys.stdin); \
+   s=[x for x in d['sections'] if x['heading']=='state that exists only here']; \
+   print('section present:', bool(s)); print('status:', d['status'])&quot;
+
+# 2. plant a real modification and confirm it is SEEN and NAMED
+echo '# probe' &gt;&gt; app/version.py
+satom diagnose git | grep -A3 'state that exists only here'
+satom diagnose git | grep -q 'app/version.py' \
+  &amp;&amp; echo 'names the file' || echo 'GUARD BROKEN: modification not named'
+git checkout -- app/version.py
+
+# 3. an untracked file must NOT grade -- the primary carries one by design.
+#    Compare BEFORE and AFTER: an absolute &quot;expect ok&quot; would fail on any tree
+#    that is legitimately dirty, and blame the wrong half of the check.
+st() { satom diagnose git --json \
+       | python3 -c 'import json,sys; print(json.load(sys.stdin)[&quot;status&quot;])'; }
+BEFORE=$(st); touch .probe-untracked; AFTER=$(st); rm -f .probe-untracked
+test &quot;$BEFORE&quot; = &quot;$AFTER&quot; \
+  &amp;&amp; echo &quot;untracked does not grade ($BEFORE unchanged)&quot; \
+  || echo &quot;GUARD TOO LOUD: $BEFORE -&gt; $AFTER on an untracked file&quot;
+</code></pre>
+<p>Step 3 is the half that is easy to lose. A check that flags every untracked file
+warns permanently on the primary, and a permanent warn is indistinguishable from
+no check at all. It is written as a before/after comparison on purpose: asserting
+a bare <code>ok</code> only holds on a spotless tree, so on a working node it would report a
+failure of the guard when what it actually found was uncommitted work — which is
+the very thing the guard exists to surface.</p>
 <h3 id="metrics-auto-provisioning-15">Metrics auto-provisioning (§15)</h3>
 <pre><code class="language-bash"># 1. every creation path provisions — the call, not the comment
 python3 - &lt;&lt;'PY'

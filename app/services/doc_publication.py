@@ -130,8 +130,9 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
      "The authoritative behavioural specification for configuration harvesting and versioning."),
     ("release-pipeline.md", "release-pipeline", "Release & publication pipeline", "\U0001f69a",
      "How a release is sanitized, secret-scanned, audited and published."),
-    ("release_notes.md", "release-notes", "Release notes & upgrade planning", "\U0001f5d2️",
-     "The known/resolved issue corpus behind the upgrade advisor."),
+    ("release_notes.md", "release-notes", "Appliance upgrade advisor \u2014 vendor notes", "\U0001f4cb",
+     "The FORTINET known/resolved issue corpus behind the upgrade advisor \u2014 "
+     "not SATOM's own release history, which is the Release notes section."),
     ("server_policy.md", "server-policy", "Server policy reference", "\U0001f9f1",
      "Field-level reference for the server policy object graph."),
     ("web_protection_profile.md", "web-protection-profile", "Web protection profile reference", "\U0001f9ec",

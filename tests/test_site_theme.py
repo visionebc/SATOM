@@ -59,8 +59,15 @@ def _tokens(block: str) -> dict[str, str]:
 
 
 def _pages() -> list[Path]:
-    """Hand-written pages plus every generated doc page."""
-    return sorted(SITE.glob("*.html")) + sorted((SITE / "docs").glob("*.html"))
+    """Every page the site serves.
+
+    rglob, not two hand-listed directories: the release-notes tree
+    (``site/releases/``) was invisible to a two-directory enumeration, so a new
+    subdirectory of pages would silently escape the theme and reveal guards.
+    An enumeration that quietly covers less than it claims is the failure mode
+    this suite exists to catch.
+    """
+    return sorted(p for p in SITE.rglob("*.html") if p.is_file())
 
 
 def _luminance(hex_colour: str) -> float:
@@ -216,7 +223,8 @@ def test_generator_matches_the_hand_written_pages():
                 return line.strip()
         return ""
 
-    generated = sorted((SITE / "docs").glob("*.html"))
+    generated = sorted((SITE / "docs").glob("*.html")) + sorted(
+        (SITE / "releases").glob("*.html"))
     assert generated, "no generated pages to check"
     emitted = bootstrap(generated[0])
     curated = bootstrap(SITE / "index.html")

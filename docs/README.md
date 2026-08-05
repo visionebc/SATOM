@@ -32,10 +32,11 @@ directory, so a document added here appears there with no second edit.
 Two rules follow and both are enforced by `tests/test_docs_publication.py`:
 
 - **The repository is the only place anyone edits.** The site pages are
-  generated (`deploy/gen_site_docs.py`) and the command reference inside
-  `cli.md` is generated (`deploy/gen_cli_reference.py`). Editing the generated
-  HTML by hand creates a second copy, and the second copy is the one that goes
-  stale in public.
+  generated (`deploy/gen_site_docs.py`), the per-version **Release notes**
+  section is generated from `CHANGELOG.md` (`deploy/gen_release_notes.py`) and
+  the command reference inside `cli.md` is generated
+  (`deploy/gen_cli_reference.py`). Editing the generated HTML by hand creates a
+  second copy, and the second copy is the one that goes stale in public.
 - **The published copy is redacted, from one registry.** Eleven of these files
   carry real internal addresses, management hostnames, hypervisor names and an
   administrator's e-mail. `app/services/doc_publication.py` owns the
@@ -48,8 +49,13 @@ Regenerating is three commands, and the test tells you when you owe them:
 ```bash
 python3 deploy/gen_cli_reference.py    # docs/cli.md command table
 python3 deploy/gen_site_docs.py        # site/docs/*.html + site/docs.html
+python3 deploy/gen_release_notes.py    # site/releases/*.html + site/releases.html
 python3 deploy/stamp_site_assets.py    # cache-busting hashes + version pill
 ```
+
+Order matters for the last two: the release notes reuse the manual's chrome and
+its redaction table, and the stamper has to run after anything that writes a
+page.
 
 ---
 
@@ -122,7 +128,7 @@ python3 deploy/stamp_site_assets.py    # cache-busting hashes + version pill
 | [`metrics-architecture.md`](metrics-architecture.md) | Where operational data lives and why: the fleet-scale measurement, aggregated collection, the time-series store, selector dashboards, and the content-addressed source-of-truth store. |
 | [`git-backup-and-outage.md`](git-backup-and-outage.md) | Anti-reset guard, unpushed-commit alert, repository bundles, four-copy recovery. |
 | [`release-pipeline.md`](release-pipeline.md) | How a release is sanitized, secret-scanned, audited and published. |
-| [`release_notes.md`](release_notes.md) | The known/resolved issue corpus behind the upgrade advisor. |
+| [`release_notes.md`](release_notes.md) | The **vendor's** known/resolved issue corpus behind the upgrade advisor — Fortinet's, not SATOM's. SATOM's own history is [`../CHANGELOG.md`](../CHANGELOG.md), published per version as the site's Release notes. |
 
 ### Security
 | Document | What it is for |

@@ -47,6 +47,24 @@ every finding is verified against the real source before it is fixed or
 dismissed — automated scanners over-report (stale snapshots, hallucinated
 files), so human/maintainer verification is mandatory.
 
+## Before any of it — regenerate the derived pages
+
+The public site carries two generated trees, and both are derived from files a
+release necessarily touches:
+
+```bash
+python3 deploy/gen_site_docs.py        # site/docs/*.html   <- docs/*.md
+python3 deploy/gen_release_notes.py    # site/releases/*.html <- CHANGELOG.md
+python3 deploy/stamp_site_assets.py    # asset hashes, hero pill, installer banner
+```
+
+Cutting a version means editing `VERSION` and `CHANGELOG.md`; both feed the
+site. The suite fails if they are stale, so this is a reminder rather than a
+rule you can forget — but running it after the tests and before the sync saves
+a round trip.
+
+---
+
 ## Stage 4 — Publish
 On a clean gate the sanitized history is force-pushed to the public Gitea
 prod repo and the GitHub mirror, the `gh-pages` site is regenerated from

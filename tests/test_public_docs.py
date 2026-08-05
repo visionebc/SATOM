@@ -322,7 +322,8 @@ def test_curated_pages_carry_the_same_nav_as_the_generated_ones(page):
 # alone is satisfied by a relink() that deletes every link; the positive test
 # pins that real cross-references survive and point somewhere that exists.
 # ---------------------------------------------------------------------------
-SITE_DOC_PAGES = sorted((ROOT / "site" / "docs").glob("*.html"))
+SITE_DOC_PAGES = sorted((ROOT / "site" / "docs").glob("*.html")) + sorted(
+    (ROOT / "site" / "releases").glob("*.html"))
 
 
 @pytest.mark.parametrize("page", SITE_DOC_PAGES, ids=lambda p: p.name)

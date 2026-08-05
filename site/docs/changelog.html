@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/site.css?v=809f8743b5">
+<link rel="stylesheet" href="../assets/site.css?v=fe7bfd72c7">
 <script src="../assets/site.js?v=0f03aeb694" defer></script>
 </head>
 <body>
@@ -29,6 +29,7 @@
         <a href="../architecture.html">Architecture</a>
         <a href="../safeguards.html">Safeguards</a>
         <a href="../docs.html" class="active">Docs</a>
+        <a href="../releases.html">Releases</a>
         <a href="../docs/api.html">API</a>
         <a href="../install.html">Install</a>
       </div>
@@ -82,6 +83,21 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
+<li>
+<p><strong>Release notes, one page per version, on the public site.</strong> The changelog
+  was published whole — a thousand lines, so "what shipped in 1.3.3 and do I
+  need it?" could only be answered by scrolling. The site gains a <strong>Releases</strong>
+  section in the top navigation: a hub listing every version newest-first with
+  its date and the headlines of its own entries, and one page per version.
+  Every fact on those pages is derived from <code>CHANGELOG.md</code> (the version list is
+  its headings, the dates are its dates, the teasers are its bold lead-ins) and
+  the <em>current release</em> badge is read from the <code>VERSION</code> file, so no number on
+  the site can drift from the repository. A version added without regenerating,
+  a page left behind by a rename, or a page missing from the hub each fail the
+  suite. <code>docs/release_notes.md</code> — the <em>vendor's</em> known-issue corpus behind the
+  upgrade advisor — was also renamed on the site, because two documents called
+  "Release notes" is how an upgrade gets planned from the wrong one.</p>
+</li>
 <li>
 <p><strong>Scrape targets are provisioned when a device is saved.</strong> Adding an
   appliance now creates its metrics collectors immediately, from every creation
@@ -1480,6 +1496,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
       <a href="../architecture.html">Architecture</a>
       <a href="../safeguards.html">Safeguards</a>
       <a href="../docs.html">Docs</a>
+      <a href="../releases.html">Releases</a>
       <a href="../docs/api.html">API</a>
       <a href="../install.html">Install</a>
       <a href="https://github.com/visionebc/SATOM">Source</a>

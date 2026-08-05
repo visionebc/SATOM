@@ -21,7 +21,8 @@ SITE = ROOT / "site"
 CSS = SITE / "assets" / "site.css"
 JS = SITE / "assets" / "site.js"
 
-PAGES = sorted(SITE.glob("*.html")) + sorted((SITE / "docs").glob("*.html"))
+# rglob, not two hand-listed directories -- see tests/test_site_theme.py::_pages.
+PAGES = sorted(p for p in SITE.rglob("*.html") if p.is_file())
 
 
 def _strip_comments(js: str) -> str:

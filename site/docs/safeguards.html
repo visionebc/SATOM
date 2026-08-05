@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/site.css?v=809f8743b5">
+<link rel="stylesheet" href="../assets/site.css?v=fe7bfd72c7">
 <script src="../assets/site.js?v=0f03aeb694" defer></script>
 </head>
 <body>
@@ -29,6 +29,7 @@
         <a href="../architecture.html">Architecture</a>
         <a href="../safeguards.html">Safeguards</a>
         <a href="../docs.html" class="active">Docs</a>
+        <a href="../releases.html">Releases</a>
         <a href="../docs/api.html">API</a>
         <a href="../install.html">Install</a>
       </div>
@@ -74,6 +75,7 @@
       <a href="#7d-a-cross-reference-that-renders-is-not-a-cross-reference-that-works">7d. A cross-reference that renders is not a cross-reference that works</a>
       <a href="#7e-what-leaves-the-building-is-the-mirror-not-just-the-manual">7e. What leaves the building is the MIRROR, not just the manual</a>
       <a href="#7f-the-licence-has-to-say-the-same-thing-on-every-surface">7f. The licence has to say the same thing on every surface</a>
+      <a href="#7g-the-release-notes-are-the-changelog-split-never-a-second-copy">7g. The release notes are the changelog, split — never a second copy</a>
       <a href="#8-sessions-and-the-web-surface">8. Sessions and the web surface</a>
       <a href="#8b-operator-supplied-theming">8b. Operator-supplied theming</a>
       <a href="#8c-the-public-sites-theme-layer">8c. The public site&#x27;s theme layer</a>
@@ -766,6 +768,78 @@ proves it does.</p>
 cannot pin what a recipient already holds: a copy distributed under an earlier
 licence stays under the terms it was received under, and no test changes that.
 <code>LICENSE</code> states it in the scope header rather than leaving it implied.</p>
+<h2 id="7g-the-release-notes-are-the-changelog-split-never-a-second-copy">7g. The release notes are the changelog, split — never a second copy</h2>
+<p><code>CHANGELOG.md</code> was published whole, as one page. It is a thousand lines, so the
+question an operator actually asks — <em>what shipped in 1.3.3, and do I need it?</em>
+— could only be answered by scrolling. The site now carries a <strong>Release notes</strong>
+section with one page per version.</p>
+<p>The obvious way to build that is to write the pages. That is also how a manual
+starts lying: a second copy of something the repository already knows goes stale
+silently, because nobody gets a stack trace from documentation. So every fact on
+those pages is derived from the Markdown — the version list is the changelog's
+own <code>## [x.y.z]</code> headings <strong>in file order</strong>, the dates are its own dates, the
+teaser lines are the bold lead-ins of its own bullets, and the <em>current release</em>
+badge is the repo-root <code>VERSION</code> file. Nothing is typed twice, so nothing can
+disagree.</p>
+<table>
+<thead>
+<tr>
+<th>Guard</th>
+<th>What it prevents</th>
+<th>Where</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--check</code> fails when a page differs from its section</td>
+<td>editing the changelog and forgetting the site</td>
+<td><code>deploy/gen_release_notes.py</code></td>
+</tr>
+<tr>
+<td>orphan pages are deleted, and their presence fails <code>--check</code></td>
+<td>a version renamed in the changelog leaving its old page serving forever</td>
+<td>same</td>
+</tr>
+<tr>
+<td>the hub's link list must equal the heading list, in order</td>
+<td>a version published but unreachable, or a link to a page that does not exist</td>
+<td><code>tests/test_release_notes_pages.py</code></td>
+</tr>
+<tr>
+<td>the <em>current release</em> badge is read from <code>VERSION</code></td>
+<td>the number that sat at <code>v1.0</code> for four releases</td>
+<td>same</td>
+</tr>
+<tr>
+<td>the unreleased section may not carry the <em>current</em> badge</td>
+<td>merged-but-not-cut work presented as shipped</td>
+<td>same</td>
+</tr>
+<tr>
+<td><code>redact()</code> then <code>scan()</code>, and a survivor <strong>aborts</strong></td>
+<td>publishing an internal identifier in a changelog entry</td>
+<td><code>gen_release_notes.main</code></td>
+</tr>
+</tbody>
+</table>
+<p>Two further notes, both learned the hard way while writing this:</p>
+<ul>
+<li><strong>The two halves of the leak guard are both required.</strong> A single test that
+  plants an identifier and expects an abort passes trivially — <code>redact()</code>
+  removes it first, which is the pipeline working. That test is satisfied by a
+  <code>redact()</code>/<code>scan()</code> pair narrowed together until neither sees anything, which
+  is exactly how identifiers have reached the public mirror before (§7e). So
+  there is one test that redaction really removes each forbidden class, and one
+  that neutralises redaction and requires the build to refuse.</li>
+<li><strong>A generator test must sandbox both ends.</strong> Redirecting only the input still
+  writes to the real destination: the first version of that test deleted the
+  fourteen pages it existed to guard.</li>
+</ul>
+<p><code>docs/release_notes.md</code> is a <strong>different document</strong> — the vendor's known-issue
+corpus behind the upgrade advisor. It no longer calls itself "Release notes" on
+the site, and a test enforces that: two things with one name is how an operator
+plans an upgrade from the wrong document.</p>
+<hr>
 <h2 id="8-sessions-and-the-web-surface">8. Sessions and the web surface</h2>
 <table>
 <thead>
@@ -2723,6 +2797,7 @@ its own redaction rule.</p>
       <a href="../architecture.html">Architecture</a>
       <a href="../safeguards.html">Safeguards</a>
       <a href="../docs.html">Docs</a>
+      <a href="../releases.html">Releases</a>
       <a href="../docs/api.html">API</a>
       <a href="../install.html">Install</a>
       <a href="https://github.com/visionebc/SATOM">Source</a>

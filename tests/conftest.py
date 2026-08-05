@@ -21,6 +21,11 @@ os.environ["FORTINET_DIAG_DIR"] = f"{_TMPDIR}/diagnostics"
 # data/jobs/ that no worker ever finishes, and the toast dock replays them on
 # every page load of the live app. Running the tests must not create UI noise.
 os.environ["SATOM_JOBS_DIR"] = f"{_TMPDIR}/jobs"
+# Same isolation for the versioned SoT store and the reports tree: every
+# device sync now records a version, so an un-isolated suite would grow REAL
+# blobs under data/sot/ on the production node (the jobs-ledger lesson).
+os.environ["SATOM_SOT_DIR"] = f"{_TMPDIR}/sot"
+os.environ.setdefault("FORTINET_REPORTS_DIR", f"{_TMPDIR}/reports")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-prod")
 # A valid Fernet key so models.py encryption helpers import cleanly.
 from cryptography.fernet import Fernet  # noqa: E402

@@ -1494,7 +1494,7 @@ satom_enforce_unit_user() {                                          # [PFDROPIN
     local unit d
     for unit in satom.service satom-scheduler.service satom-reconciler.service \
                 satom-alerts.service satom-cert-renew.service \
-                satom-git-publish.service satom-ha-datasync.service; do
+                satom-ha-datasync.service; do
         [ -f "/etc/systemd/system/$unit" ] || continue
         d="/etc/systemd/system/${unit}.d"
         install -d -m 0755 "$d"
@@ -1513,15 +1513,15 @@ DROPIN
 say "Instalando servicios systemd"
 # satom-updater.{path,service} corre como ROOT a propósito (instala
 # unidades y reinicia servicios). El resto baja a la cuenta de servicio.
-# git-publish / alerts / reconciler FALTABAN: sin ellos una instalación nueva
-# se queda sin la copia 3 del backup (SoT en git) y sin los correos de fallo
-# de certificado, aunque la UI los prometa.
+# alerts / reconciler FALTABAN en su día: sin ellos una instalación nueva se
+# queda sin correos de fallo de certificado, aunque la UI los prometa.
+# satom-git-publish se retiró el 2026-08-05: el SoT de dispositivos ya no vive
+# en git (services.sot_store lo versiona localmente).
 for unit in satom.service satom-scheduler.service \
             satom-updater.path satom-updater.service \
             satom-cert-renew.service satom-cert-renew.timer \
             satom-reconciler.service \
-            satom-alerts.service satom-alerts.timer \
-            satom-git-publish.service satom-git-publish.timer; do
+            satom-alerts.service satom-alerts.timer; do
     [ -f "$APP_DIR/deploy/$unit" ] && cp "$APP_DIR/deploy/$unit" /etc/systemd/system/
 done
 # gunicorn SOLO en loopback: nginx termina TLS en ${WEB_PORT}
@@ -1529,8 +1529,7 @@ sed -i 's#--bind 0\.0\.0\.0:8000#--bind 127.0.0.1:8000#' /etc/systemd/system/sat
 
 # Degradar a la cuenta de servicio todo lo que no necesite root.
 for unit in satom.service satom-scheduler.service satom-reconciler.service \
-            satom-alerts.service satom-cert-renew.service \
-            satom-git-publish.service; do
+            satom-alerts.service satom-cert-renew.service; do
     f="/etc/systemd/system/$unit"
     [ -f "$f" ] || continue
     if grep -qE '^User=' "$f"; then
@@ -1541,7 +1540,7 @@ for unit in satom.service satom-scheduler.service satom-reconciler.service \
     grep -qE '^Group=' "$f" || sed -i "/^User=/a Group=${APP_USER}" "$f"
 done
 # Los scripts auxiliares se ejecutan desde /usr/local/sbin en ambos nodos.
-for s in satom-git-publish.sh satom-ha-datasync.sh satom-promote.sh \
+for s in satom-ha-datasync.sh satom-promote.sh \
          satom-ha-rsync-shell; do
     [ -f "$APP_DIR/deploy/$s" ] && install -m 0755 "$APP_DIR/deploy/$s" /usr/local/sbin/
 done
@@ -1596,7 +1595,7 @@ systemctl enable --now satom-cert-renew.timer >>"$INSTALL_LOG" 2>&1 || true
 # Ambos timers llevan guarda de rol interna (primary-only), así que se
 # habilitan en los dos nodos: tras un promote el nodo nuevo ya está listo.
 systemctl enable --now satom-alerts.timer >>"$INSTALL_LOG" 2>&1 || true
-systemctl enable --now satom-git-publish.timer >>"$INSTALL_LOG" 2>&1 || true
+# satom-git-publish.timer retirado 2026-08-05 (SoT local, services.sot_store)
 systemctl enable --now satom-reconciler.service >>"$INSTALL_LOG" 2>&1 || true
 [ "$MODE" = "cluster" ] && systemctl enable --now satom-ha-datasync.timer >>"$INSTALL_LOG" 2>&1
 

@@ -4,7 +4,7 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-hdd-stack me-2 text-accent"></i>System Backup &amp; Restore</h1>
-    <p class="text-muted mb-0" style="font-size:13px;">Everything needed to roll this system back: application <strong>code</strong> (git → self-update queue), <strong>database</strong> (pg_dump bundles), <strong>device configs</strong> (reports/ in git + device-pushed backups on the external backup server) and <strong>firmware</strong> (binaries on the backup server, pullable into the console).</p>
+    <p class="text-muted mb-0" style="font-size:13px;">Everything needed to roll this system back: application <strong>code</strong> (git → self-update queue), <strong>database</strong> (pg_dump bundles), <strong>device configs</strong> (versioned local SoT store + device-pushed backups on the external backup server) and <strong>firmware</strong> (binaries on the backup server, pullable into the console).</p>
   </div>
 </div>
 
@@ -46,20 +46,20 @@
         </tr>
         <tr>
           <td><strong>Device config — source of truth</strong></td>
-          <td><code>_config.json</code> (text, diffable)</td>
-          <td>Gitea <code>reports/&lt;device&gt;/</code> (versioned) · cache in Postgres</td>
-          <td>Hourly sync (id5) + hourly <code>satom-git-publish.timer</code> + nightly publish 02:45 (id12) — FortiWeb <em>and</em> FortiADC</td>
+          <td><code>_config.json</code> (latest view) + content-addressed versions (<code>data/sot/</code>)</td>
+          <td>This node · standby (rsync) · backup-server <code>/system/sot/</code> · cache in Postgres</td>
+          <td>Hourly sync (id5) records a version on every config change; nightly publish 02:45 (id12) pushes new blobs off-box — FortiWeb, FortiADC <em>and</em> FortiAnalyzer</td>
           <td>
             {% set covered = sot|selectattr('has_json')|list|length %}
-            <span class="badge bg-{{ 'success' if covered == sot|length and sot else 'warning text-dark' }}">{{ covered }}/{{ sot|length }} devices in git</span>
-            {% if git_dirty %}<span class="badge bg-warning text-dark">{{ git_dirty|length }} unpublished</span>{% else %}<span class="badge bg-success">no drift</span>{% endif %}
+            <span class="badge bg-{{ 'success' if covered == sot|length and sot else 'warning text-dark' }}">{{ covered }}/{{ sot|length }} devices</span>
+            <span class="badge bg-{{ 'success' if sot_stats.versions else 'secondary' }}">{{ sot_stats.versions }} version(s) · {{ (sot_stats.bytes/1024)|round(0)|int }} KB</span>
           </td>
         </tr>
         <tr>
-          <td><strong>Git repository</strong></td>
+          <td><strong>Git repository (application code)</strong></td>
           <td><code>.bundle</code> (full history, all refs)</td>
           <td>This node <code>data/git-bundles/</code> · standby (rsync) · <strong>backup-server <code>{{ gitb_cfg.remote_dir }}</code></strong> · your laptop (download)</td>
-          <td>Manual + the <code>git_bundle</code> automation; captures commits that cannot reach Gitea</td>
+          <td>Manual (below); captures CODE commits that cannot reach Gitea. Device-config history moved to the SoT store</td>
           <td>
             <span class="badge bg-{{ 'success' if gitb else 'secondary' }}">{{ gitb|length }} local</span>
             {% if gitb_state.ahead %}<span class="badge bg-{{ 'danger' if gitb_state.oldest_age_h >= 24 else 'warning text-dark' }}">{{ gitb_state.ahead }} unpushed{% if gitb_state.oldest_age_h %} · {{ gitb_state.oldest_age_h }}h{% endif %}</span>
@@ -103,8 +103,8 @@
         <span><i class="bi bi-hdd-stack me-1"></i><strong>Per-device SoT:</strong></span>
         {% for d in sot %}
           <span class="font-monospace">{{ d.name }} <span class="text-muted">({{ d.kind }})</span>
-            {% if d.has_json %}<i class="bi bi-check-circle-fill text-success" title="in git — snapshot {{ d.mtime }} UTC"></i>
-            {% else %}<i class="bi bi-x-circle-fill text-danger" title="no reports/ snapshot yet"></i>{% endif %}
+            {% if d.has_json %}<i class="bi bi-check-circle-fill text-success" title="snapshot {{ d.mtime }} UTC"></i>
+            {% else %}<i class="bi bi-x-circle-fill text-danger" title="no snapshot yet"></i>{% endif %}
           </span>
         {% endfor %}
         {% if bk_system.configured and bk_system.files %}
@@ -125,44 +125,40 @@
             <input class="form-check-input" type="checkbox" name="include_reports" id="ir" checked>
             <label class="form-check-label small" for="ir">Include per-device JSON (<code>reports/</code>)</label>
           </div>
-          <div class="form-check mb-3">
-            <input class="form-check-input" type="checkbox" name="publish_git" id="pg" checked>
-            <label class="form-check-label small" for="pg">Also publish JSON to git (off-box versioned backup — default)</label>
-          </div>
           <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>Create backup now</button>
         </form>
         <hr>
         <form method="post" action="{{ url_for('system_backup.publish_json') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="btn btn-outline-light btn-sm"><i class="bi bi-git me-1"></i>Publish device JSON to git now</button>
-          <div class="form-text">Commits <code>reports/&lt;device&gt;/_config.json</code> to the repo. Also runs automatically every hour (<code>satom-git-publish.timer</code>).</div>
+          <button type="submit" class="btn btn-outline-light btn-sm"><i class="bi bi-clock-history me-1"></i>Record versions + push off-box now</button>
+          <div class="form-text">Records the current per-device JSON into the versioned SoT store and uploads new blobs to the backup server. The hourly harvest records automatically; unchanged configs cost nothing.</div>
         </form>
       </div>
     </div>
 
-    <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-git me-1"></i>Git source of truth</strong></div>
+    <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-hdd-stack me-1"></i>Versioned SoT store (local)</strong></div>
       <div class="card-body">
         <table class="table table-sm mb-2"><tbody>
-          <tr><td class="small text-muted" style="width:110px;">Remote</td><td class="small font-monospace">{{ git.remote }}</td></tr>
-          <tr><td class="small text-muted">Branch</td><td class="small font-monospace">{{ git.branch }}</td></tr>
-          <tr><td class="small text-muted">Last commit</td><td class="small font-monospace">{{ git.commit }}</td></tr>
-          <tr><td class="small text-muted">Sync state</td>
-            <td class="small">
-              {% if git.ahead %}<span class="badge bg-warning text-dark">{{ git.ahead }} ahead (not pushed)</span>{% endif %}
-              {% if git.behind %}<span class="badge bg-warning text-dark">{{ git.behind }} behind</span>{% endif %}
-              {% if not git.ahead and not git.behind %}<span class="badge bg-success">in sync with remote</span>{% endif %}
-            </td></tr>
+          <tr><td class="small text-muted" style="width:130px;">Location</td><td class="small font-monospace">data/sot/ (replicated to the standby; blobs pushed to backup-server)</td></tr>
+          <tr><td class="small text-muted">Devices</td><td class="small">{{ sot_stats.devices }}</td></tr>
+          <tr><td class="small text-muted">Versions</td><td class="small">{{ sot_stats.versions }} ({{ sot_stats.blobs }} distinct blob(s), {{ (sot_stats.bytes/1024)|round(0)|int }} KB)</td></tr>
         </tbody></table>
-        {% if git_dirty %}
-        <div class="alert alert-warning small py-2 mb-0">
-          <i class="bi bi-exclamation-triangle me-1"></i><strong>{{ git_dirty|length }} un-published change(s)</strong> under <code>reports/</code> — the git copy is behind this node:
-          <ul class="mb-0 mt-1">
-            {% for d in git_dirty[:8] %}<li class="font-monospace">{{ d.state }} {{ d.path }}</li>{% endfor %}
-            {% if git_dirty|length > 8 %}<li>… {{ git_dirty|length - 8 }} more</li>{% endif %}
-          </ul>
-        </div>
+        {% if sot_sum %}
+        <table class="table table-sm table-hover mb-0">
+          <thead><tr><th>Device</th><th>Versions</th><th>Last change</th><th>Last confirmed</th></tr></thead>
+          <tbody>
+          {% for s in sot_sum %}
+            <tr>
+              <td class="small font-monospace">{{ s.device }}</td>
+              <td class="small">{{ s.versions }}</td>
+              <td class="small">{{ s.last_change|replace('T', ' ') }}</td>
+              <td class="small text-muted">{{ s.last_seen|replace('T', ' ') }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
         {% else %}
-        <div class="alert alert-success small py-2 mb-0"><i class="bi bi-check-circle me-1"></i>No drift — <code>reports/</code> matches the last git commit.</div>
+        <div class="alert alert-secondary small py-2 mb-0">No versions recorded yet — the next device sync records the first one automatically.</div>
         {% endif %}
       </div>
     </div>
@@ -200,7 +196,7 @@
     <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-hdd-network me-1"></i>Backup server (standby{% if peer.host %} — {{ peer.host }}{% endif %})</strong></div>
       <div class="card-body">
         {% if not peer.host %}
-          <p class="text-muted small mb-0">No peer registered (standalone mode) — off-box copy is git only.</p>
+          <p class="text-muted small mb-0">No peer registered (standalone mode) — off-box copies are the backup-server pushes only.</p>
         {% elif not peer.reachable %}
           <div class="alert alert-danger small py-2 mb-0"><i class="bi bi-x-circle me-1"></i>Peer {{ peer.host }} unreachable — off-box bundle copy cannot be verified right now.</div>
         {% else %}
@@ -331,11 +327,11 @@
   <div class="card-body">
     <p class="small text-muted">
       A <code>git bundle</code> is the whole repository — every commit, branch and tag — in ONE file you can verify
-      (<code>git bundle verify</code>) and clone directly (<code>git clone &lt;file&gt;</code>). It is the copy that survives a
-      Gitea outage: while the remote is unreachable the hourly publisher keeps committing <code>reports/</code>
-      <em>locally</em>, and those commits exist nowhere else. Bundles are written to <code>data/git-bundles/</code> (so the
-      standby mirrors them within 5 min via <code>satom-ha-datasync</code>), pushed to the external backup server
-      (<code class="small">{{ gitb_cfg.remote_dir }}</code>), and downloadable below.
+      (<code>git bundle verify</code>) and clone directly (<code>git clone &lt;file&gt;</code>). Since the SoT retirement
+      (2026-08-05) the repo holds application CODE only — device-config history lives in the SoT store above — so a
+      bundle matters when local code commits cannot reach Gitea. Bundles are written to <code>data/git-bundles/</code>
+      (so the standby mirrors them within 5 min via <code>satom-ha-datasync</code>), pushed to the external backup
+      server (<code class="small">{{ gitb_cfg.remote_dir }}</code>), and downloadable below.
     </p>
 
     {% if gitb_state.ahead %}
@@ -417,8 +413,7 @@
             <input class="form-check-input" type="checkbox" name="push_server" id="gbpd" {% if gitb_cfg.push_server %}checked{% endif %}>
             <label class="form-check-label small" for="gbpd">Push to the backup server by default (scheduled runs too)</label>
           </div>
-          <div class="form-text">Schedule it with the <code>git_bundle</code> action in
-            <a href="{{ url_for('scheduled_actions.index') }}">Automation</a>. Deletes must be done on the primary —
+          <div class="form-text">Deletes must be done on the primary —
             the standby re-syncs <code>data/</code> with <code>rsync --delete</code>.</div>
         </form>
       </div>
@@ -426,30 +421,31 @@
   </div>
 </div>
 
-<div class="card mb-3"><div class="card-header"><strong><i class="bi bi-clock-history me-1"></i>Device configs in git (reports/) — compare / rollback</strong></div>
+<div class="card mb-3"><div class="card-header"><strong><i class="bi bi-clock-history me-1"></i>Device config versions (SoT store) — compare / rollback</strong></div>
   <div class="card-body">
-    {% if not git_history %}
-      <p class="text-muted small mb-0">No commits touching <code>reports/</code> yet — publish once to start the version history.</p>
+    {% if not sot_hist %}
+      <p class="text-muted small mb-0">No versions recorded yet — the next device sync (or the button above) records the first one.</p>
     {% else %}
     <form method="get" action="{{ url_for('system_backup.compare') }}">
       <table class="table table-sm table-hover align-middle">
-        <thead><tr><th style="width:34px;">A</th><th style="width:34px;">B</th><th>Commit</th><th>Date</th><th>Subject</th><th>Changes</th></tr></thead>
+        <thead><tr><th style="width:34px;">A</th><th style="width:34px;">B</th><th>Version</th><th>Device</th><th>Recorded (UTC)</th><th>Objects</th><th>Source</th></tr></thead>
         <tbody>
-        {% for c in git_history %}
+        {% for v in sot_hist %}
           <tr>
-            <td><input type="radio" name="ref_a" value="{{ c.hash }}" class="form-check-input" {% if loop.index == 2 %}checked{% endif %}></td>
-            <td><input type="radio" name="ref_b" value="{{ c.hash }}" class="form-check-input" {% if loop.first %}checked{% endif %}></td>
-            <td class="small font-monospace">{{ c.hash }}</td>
-            <td class="small">{{ c.date }}</td>
-            <td class="small">{{ c.subject }}</td>
-            <td class="small text-muted">{{ c.n_files }} file(s){% if c.summary %} — {{ c.summary }}{% endif %}</td>
+            <td><input type="radio" name="ref_a" value="{{ v.id }}" class="form-check-input" {% if loop.index == 2 %}checked{% endif %}></td>
+            <td><input type="radio" name="ref_b" value="{{ v.id }}" class="form-check-input" {% if loop.first %}checked{% endif %}></td>
+            <td class="small font-monospace">#{{ v.id }} <span class="text-muted">{{ v.sha256[:10] }}</span></td>
+            <td class="small font-monospace">{{ v.device }}</td>
+            <td class="small">{{ v.taken_at|replace('T', ' ') }}</td>
+            <td class="small text-muted">{{ v.total_objects }} obj / {{ v.section_count }} sections</td>
+            <td class="small text-muted">{{ v.source }}</td>
           </tr>
         {% endfor %}
         </tbody>
       </table>
       <div class="d-flex gap-2 align-items-center">
-        <input type="text" name="device" class="form-control form-control-sm" style="max-width:220px;" placeholder="device filter (optional, e.g. fw7)">
         <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-file-diff me-1"></i>Compare A → B</button>
+        <span class="form-text mb-0">Pick two versions of the SAME device to see what changed between them.</span>
       </div>
     </form>
 
@@ -458,11 +454,30 @@
       {% if not diff.ok %}
         <div class="alert alert-danger small py-2 mb-0">Compare failed: {{ diff.error }}</div>
       {% elif diff.identical %}
-        <div class="alert alert-success small py-2 mb-0"><i class="bi bi-check-circle me-1"></i>{{ diff.ref_a }} and {{ diff.ref_b }} are identical under <code>{{ diff.scope }}</code>.</div>
+        <div class="alert alert-success small py-2 mb-0"><i class="bi bi-check-circle me-1"></i>Versions #{{ diff.a.id }} and #{{ diff.b.id }} are identical.</div>
       {% else %}
-        <p class="small mb-1"><strong>{{ diff.ref_a }} → {{ diff.ref_b }}</strong> (scope <code>{{ diff.scope }}</code>){% if diff.truncated %} — <span class="badge bg-warning text-dark">diff truncated</span>{% endif %}</p>
-        <pre class="small p-2 rounded" style="background:rgba(0,0,0,.35); max-height:120px; overflow:auto;">{{ diff.stat }}</pre>
-        <pre class="small p-2 rounded" style="background:rgba(0,0,0,.35); max-height:420px; overflow:auto;">{{ diff.diff }}</pre>
+        <p class="small mb-1"><strong>#{{ diff.a.id }} ({{ diff.a.device }}, {{ diff.a.taken_at|replace('T', ' ') }}) → #{{ diff.b.id }} ({{ diff.b.device }}, {{ diff.b.taken_at|replace('T', ' ') }})</strong>{% if diff.truncated %} — <span class="badge bg-warning text-dark">diff truncated</span>{% endif %}</p>
+        <p class="small mb-1">
+          <span class="badge bg-success">{{ diff.n_added }} added</span>
+          <span class="badge bg-danger">{{ diff.n_removed }} removed</span>
+          <span class="badge bg-warning text-dark">{{ diff.n_changed }} changed</span>
+        </p>
+        {% if diff.added %}<pre class="small p-2 rounded" style="background:rgba(0,0,0,.08); max-height:120px; overflow:auto;">+ {{ diff.added|join('\n+ ') }}</pre>{% endif %}
+        {% if diff.removed %}<pre class="small p-2 rounded" style="background:rgba(0,0,0,.08); max-height:120px; overflow:auto;">- {{ diff.removed|join('\n- ') }}</pre>{% endif %}
+        {% if diff.changed_detail %}
+        <div style="max-height:420px; overflow:auto;">
+          {% for c in diff.changed_detail %}
+          <p class="small mb-1 font-monospace">~ {{ c.path }}</p>
+          <table class="table table-sm mb-2"><tbody>
+            {% for f in c.fields %}
+            <tr><td class="small text-muted" style="width:180px;">{{ f.field }}</td>
+                <td class="small font-monospace text-danger">{{ f.a }}</td>
+                <td class="small font-monospace text-success">{{ f.b }}</td></tr>
+            {% endfor %}
+          </tbody></table>
+          {% endfor %}
+        </div>
+        {% endif %}
       {% endif %}
     {% endif %}
     {% endif %}
@@ -480,15 +495,15 @@
       <thead><tr><th>Copy</th><th>What</th><th>How it gets there</th><th>RPO</th></tr></thead>
       <tbody>
         <tr><td><strong>1. This node (primary)</strong></td>
-            <td>Postgres (live) · bundles <code>data/system_backups/</code> · device vault <code>data/backups/</code> · JSON tree <code>reports/</code></td>
+            <td>Postgres (live) · bundles <code>data/system_backups/</code> · device vault <code>data/backups/</code> · JSON tree <code>data/reports/</code> · versioned SoT store <code>data/sot/</code></td>
             <td>Created here (manual bundles, device backups, device sync)</td><td>—</td></tr>
         <tr><td><strong>2. Standby / backup server</strong></td>
-            <td>Postgres (streaming replica) · full <code>data/</code> copy (bundles + vault)</td>
+            <td>Postgres (streaming replica) · full <code>data/</code> copy (bundles + vault + reports + SoT store)</td>
             <td>Postgres streaming replication (continuous) + <code>satom-ha-datasync.timer</code> rsync every 5 min (standby pulls; inert on the primary and in standalone mode)</td>
             <td>≈ seconds (DB) / ≤ 5 min (files)</td></tr>
-        <tr><td><strong>3. Git (Gitea)</strong></td>
-            <td>Per-device JSON <code>reports/&lt;device&gt;/_config.json</code> — versioned, human-diffable, for <strong>every</strong> appliance (FortiWeb <em>and</em> FortiADC). Application CODE lives in the same repo; the firmware SoT is a <em>separate</em> repo (manifest only)</td>
-            <td>Hourly sync (<code>device_sync</code>, id5) writes the JSON; <code>satom-git-publish.timer</code> commits hourly (primary only); nightly <code>device_inspect</code> (id12, 02:45) publishes all devices; plus on backup creation + the manual button</td>
+        <tr><td><strong>3. Versioned SoT store (local + off-box)</strong></td>
+            <td>Content-addressed snapshots of every device's config (<code>data/sot/objects/</code>, gzip, deduplicated — an unchanged config costs zero bytes per cycle) with the version index in Postgres. Replaced the git-committed <code>reports/</code> history on 2026-08-05: a repo receiving the whole fleet hourly grows without bound at scale, and this store keeps working with Gitea down</td>
+            <td>Hourly sync (<code>device_sync</code>, id5) records a version on every config CHANGE; nightly <code>device_inspect</code> (id12, 02:45) uploads new blobs to backup-server <code>/system/sot/</code>; plus the manual button</td>
             <td>≤ 1 h (or on demand)</td></tr>
         <tr><td><strong>4. External backup server (backup-server)</strong></td>
             <td><strong>App-pushed DB bundle</strong> (<code>/system/</code> — this app's pg_dump, off-rack) · device-pushed config backups (<code>/configs/&lt;device&gt;/</code>) · firmware <code>.out</code> binaries (<code>/firmware/</code>)</td>
@@ -496,15 +511,15 @@
             <td>DB: ≤ 24 h · per-device schedule (fw6: ≤ 24 h)</td></tr>
       </tbody>
     </table>
-    <p class="text-muted mb-2">Git holds only the JSON source of truth (text, diffable). Binary artifacts — pg_dump bundles and raw device-config exports — deliberately stay OUT of git: they travel via rsync to the standby, and the pg_dump bundle is additionally pushed to backup-server <code>/system/</code> so the database has a third, off-rack copy on a separate failure domain (hypervisor04). Git is the wrong tool for binary blobs.</p>
+    <p class="text-muted mb-2">Git now holds only the application CODE. Device-config history, pg_dump bundles and raw device-config exports all live under <code>data/</code>: they travel via rsync to the standby, and the pg_dump bundle + SoT blobs are additionally pushed to backup-server <code>/system/</code> so they have an off-rack copy on a separate failure domain. No backup copy depends on an external service being up.</p>
     <p class="text-muted mb-2">The device-pushed backups on the external server are browsable here: <em>External backup server</em> card → <strong>Browse</strong> — compare two pushes (A → B), search inside B, <strong>click a filename</strong> (or <em>View B</em>) to read the extracted config text inline, or download the raw archive. Firmware <code>.out</code> images listed there are pulled into Infrastructure → Firmware, sha256-verified.</p>
 
     <h6>Rollback / restore procedures</h6>
     <ol>
       <li><strong>Whole instance</strong> — pick a bundle above → <em>Restore</em> (type <code>RESTORE</code>). Takes a safety dump first, then <code>pg_restore --clean</code> + replaces <code>reports/</code>. If this node is dead, the same bundles exist on the backup server under <code>/opt/satom/data/system_backups/</code>.</li>
-      <li><strong>One device's JSON to an older version</strong> — find the commit in <em>Versions in git</em>, verify with <em>Compare</em>, then in Settings → Git run: <code>git checkout &lt;commit&gt; -- reports/&lt;device&gt;/</code> and publish. This rolls back the JSON snapshot only — it does NOT push config to the device (use Templates/Provisioning for that).</li>
+      <li><strong>One device's JSON to an older version</strong> — pick the two versions in <em>Device config versions</em>, verify with <em>Compare</em>. The store keeps every recorded version under <code>data/sot/objects/</code> (gzip JSON, named by sha256) — extract with <code>zcat</code> to inspect or re-import. This rolls back the JSON snapshot only — it does NOT push config to the device (use Templates/Provisioning for that).</li>
       <li><strong>Single appliance config</strong> — use the per-appliance Backups page (vault); device-level restore is currently dry-run gated pending a live canary round-trip.</li>
-      <li><strong>Total loss of both nodes</strong> — clone the repo from Gitea (reports tree = last published state), restore the newest bundle from any surviving copy (downloaded bundle, standby disk, or the device-pushed backups on the external backup server).</li>
+      <li><strong>Total loss of both nodes</strong> — reinstall from Gitea or an installer bundle (code), then restore the newest DB bundle from any surviving copy (downloaded bundle, backup-server <code>/system/</code>, or the device-pushed backups on the external backup server). The bundle carries <code>data/reports/</code> AND the SoT store, so version history survives too.</li>
       <li><strong>Application code to an older version</strong> — <em>Application code</em> card above → pick the commit → Queue rollback. Goes through the self-update runner (checkout + pip + migrate + restart). Roll the standby the same way afterwards. Note: newer DB schema is not auto-downgraded — pair a code rollback with a database bundle restore when a migration was involved.</li>
       <li><strong>Firmware</strong> — the <code>.out</code> images live on the external backup server (<code>/firmware/</code>), inventoried in the firmware SoT repo (manifest). <em>Pull</em> brings the image into Infrastructure → Firmware (sha256-verified) and the per-appliance <em>Upgrade / Downgrade</em> action flashes it from the console. A device factory-reset recovery = flash firmware + restore its own pushed config backup from <code>/configs/&lt;device&gt;/</code>.</li>
     </ol>

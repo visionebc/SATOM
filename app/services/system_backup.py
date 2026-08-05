@@ -33,7 +33,15 @@ def backups_dir() -> Path:
 
 
 def reports_dir() -> Path:
-    return _repo_root() / "reports"
+    # Same resolver as device_sync._reports_dir (data/reports since the git
+    # SoT retirement, 2026-08-05) — two resolvers already diverged once.
+    from . import device_sync as _ds
+    return _ds._reports_dir()
+
+
+def sot_dir() -> Path:
+    from . import sot_store as _ss
+    return _ss.store_dir()
 
 
 def parse_db_url(uri: str) -> dict:
@@ -102,6 +110,12 @@ def create_backup(*, include_reports: bool = True, publish_git: bool = False,
         if include_reports and reports_dir().exists():
             shutil.copytree(reports_dir(), stage / "reports")
             detail.append("reports/ included")
+        if include_reports and sot_dir().exists():
+            # The versioned SoT blobs travel with the bundle: the pg_dump only
+            # carries the sot_version INDEX — without the blobs a restored
+            # instance would have history rows pointing at nothing.
+            shutil.copytree(sot_dir(), stage / "sot")
+            detail.append("sot/ included")
 
         manifest = (f"label: {label}\ncreated: {ts}\ndb: {conn['dbname']}\n"
                     f"host: {conn['host']}\nreports: {include_reports}\n")
@@ -113,13 +127,11 @@ def create_backup(*, include_reports: bool = True, publish_git: bool = False,
             tar.add(stage, arcname=f"fmw-backup-{ts}")
         size = bundle.stat().st_size
 
-        if publish_git and reports_dir().exists():
-            try:
-                from . import git_service
-                git_service.git_publish(f"source-of-truth backup {ts}", ["reports"])
-                detail.append("git: reports published")
-            except Exception as exc:  # noqa: BLE001
-                detail.append(f"git error: {type(exc).__name__}")
+        if publish_git:
+            # Retired 2026-08-05: the reports/ history no longer lives in git
+            # (services.sot_store is the versioned SoT). Kept as an accepted
+            # no-op so old callers/action params do not crash.
+            detail.append("git publish retired (sot_store is the SoT)")
 
         if push_server:
             try:
@@ -199,6 +211,11 @@ def restore_backup(name: str, *, conn: dict | None = None,
             shutil.rmtree(dst, ignore_errors=True)
             shutil.copytree(root / "reports", dst)
             detail += "; reports restored"
+        if restore_reports and (root / "sot").exists():
+            dst = sot_dir()
+            shutil.rmtree(dst, ignore_errors=True)
+            shutil.copytree(root / "sot", dst)
+            detail += "; sot restored"
         return {"ok": ok, "detail": detail, "safety": safety.get("name"),
                 "stderr": (res.stderr or "")[:300]}
     finally:

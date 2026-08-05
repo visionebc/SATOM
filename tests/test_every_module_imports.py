@@ -59,6 +59,7 @@ def test_module_compiles(path, tmp_path):
 LAZY_MODULES = [
     "app.services.cert_service",
     "app.services.cert_renew_log",
+    "app.services.sot_store",
     "app.services.git_backup",
     "app.services.backup_server",
     "app.services.library_updates",

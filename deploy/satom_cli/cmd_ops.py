@@ -18,7 +18,7 @@ from .render import Result
 
 # Freshness budgets, in hours. Deliberately generous: the point is to catch
 # "this stopped days ago and nobody noticed", not to nag about jitter.
-FRESH = {"db_bundle": 48, "git_bundle": 48, "sot": 26, "datasync": 1}
+FRESH = {"db_bundle": 48, "sot": 26, "datasync": 1}
 
 
 def _age_h(path):
@@ -79,17 +79,21 @@ def backup_status(ctx, args):
         ("age", txt),
     ])
 
+    # Git bundles are a MANUAL code-recovery artifact since 2026-08-05 (the
+    # device SoT left git), so their age is informational, never graded — a
+    # freshness budget here would go permanently red on every healthy node.
     newest, count, total = _newest(d / "git-bundles", "*.bundle")
-    txt, st = _fresh_badge(_age_h(newest) if newest else None, FRESH["git_bundle"])
-    r.worst(st)
-    r.rows("2. git repository bundles", [
+    r.rows("2. git repository bundles (code, manual)", [
         ("directory", str(d / "git-bundles")),
         ("bundles", "%d (%s)" % (count, _mb(total))),
         ("newest", newest.name if newest else "(none)"),
-        ("age", txt),
     ])
 
-    reports = ctx.app_dir / "reports"
+    # data/reports since the git-SoT retirement; the repo-root path survives
+    # as a compat symlink, so resolve the real one first.
+    reports = ctx.app_dir / "data" / "reports"
+    if not reports.exists():
+        reports = ctx.app_dir / "reports"
     cfgs = []
     try:
         cfgs = sorted(reports.glob("*/_config.json"))
@@ -98,13 +102,18 @@ def backup_status(ctx, args):
     newest_cfg = max(cfgs, key=lambda p: p.stat().st_mtime) if cfgs else None
     txt, st = _fresh_badge(_age_h(newest_cfg) if newest_cfg else None, FRESH["sot"])
     r.worst(st)
-    r.rows("3. device source of truth (git)", [
+    sot_objects = ctx.app_dir / "data" / "sot" / "objects"
+    n_blobs = 0
+    try:
+        n_blobs = sum(1 for _ in sot_objects.glob("*/*.json.gz"))
+    except Exception:  # noqa: BLE001
+        pass
+    r.rows("3. device source of truth (local store)", [
         ("directory", str(reports)),
         ("devices", str(len(cfgs))),
         ("newest", newest_cfg.parent.name if newest_cfg else "(none)"),
         ("age", txt),
-        ("publisher", "%s (%s)" % (ctx.unit_state("git-publish")["active"],
-                                   ctx.unit_state("git-publish")["result"])),
+        ("versioned blobs", "%d in %s" % (n_blobs, sot_objects)),
     ])
 
     ds = ctx.unit_state("datasync")

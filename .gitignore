@@ -47,3 +47,7 @@ dist/
 # purpose: a rule table that names the estate it protects is itself the
 # disclosure it exists to prevent. See docs/safeguards.md 7e.
 publication-rules.local.json
+
+# Retired git SoT (2026-08-05): the live tree moved to data/reports; the
+# old repo-root path survives only as an untracked compat symlink.
+/reports/

@@ -42,7 +42,12 @@ MAX_WORKERS = 8
 COLLECTORS: dict = {
     "box": {
         "label": "Box resources (CPU, memory, sessions)",
-        "products": ("fortiweb", "fortiadc"),
+        "products": ("fortiweb", "fortiadc", "fortiauthenticator"),
+        "interval": 3, "params": {},
+    },
+    "capacity": {
+        "label": "Licence headroom & FortiToken pools (one call, all counters)",
+        "products": ("fortiauthenticator",),
         "interval": 3, "params": {},
     },
     "policies": {
@@ -210,6 +215,29 @@ def _collect_box(appliance, params, ts) -> list:
             vm_store.line("satom_box_sessions", L, _num(row.get("sessionCount")), ts),
             vm_store.line("satom_box_conn_per_sec", L, _num(row.get("connCntPerSec")), ts),
         ]
+    if appliance.kind == "fortiauthenticator":
+        # REST, not CLI. `get system performance` and `diagnose system top` are
+        # both "No such command." on this product (VERIFIED on fac01 v8.0.3) —
+        # a successful SSH round trip carrying no reading, which the FortiADC
+        # branch below would have parsed into two empty series.
+        from ..clients.fortiauthenticator import FortiAuthenticatorClient
+        from . import deep_monitor as dm
+        info = FortiAuthenticatorClient(appliance, timeout=10.0).sys_status()
+        f = dm.parse_fac_systeminfo(info)
+        L = _labels(appliance)
+        return [
+            vm_store.line("satom_box_cpu_pct", L, f.get("cpu_busy"), ts),
+            vm_store.line("satom_box_mem_pct", L, f.get("mem_used_pct"), ts),
+            vm_store.line("satom_box_disk_pct", L, f.get("disk_used_pct"), ts),
+            vm_store.line("satom_box_mem_used_bytes", L,
+                          f.get("mem_used_bytes"), ts),
+            vm_store.line("satom_box_mem_total_bytes", L,
+                          f.get("mem_total_bytes"), ts),
+            vm_store.line("satom_box_disk_used_bytes", L,
+                          f.get("disk_used_bytes"), ts),
+            vm_store.line("satom_box_disk_total_bytes", L,
+                          f.get("disk_total_bytes"), ts),
+        ]
     # FortiADC: `get system performance` over read-only SSH — same parser the
     # deep monitors trust (REST has no equivalent on this product).
     from . import deep_monitor as dm
@@ -221,6 +249,48 @@ def _collect_box(appliance, params, ts) -> list:
         vm_store.line("satom_box_cpu_pct", L, perf.get("cpu_used"), ts),
         vm_store.line("satom_box_mem_pct", L, perf.get("mem_used"), ts),
     ]
+
+
+def _collect_capacity(appliance, params, ts) -> list:
+    """FortiAuthenticator licence + FortiToken series, from ONE systeminfo call.
+
+    This is the identity product's equivalent of FortiWeb's per-policy traffic:
+    an authenticator does not run out of bandwidth, it runs out of ENTITLEMENT.
+    fac01 ships ``users_usage_detail {max: 5}`` unlicensed, and the 6th user is
+    simply refused — a cliff no CPU or memory series would ever show.
+
+    A counter with no ceiling emits ``used`` and ``total`` but **no percentage**
+    (``vm_store.line`` drops a ``None``), so a chart of "percent consumed" never
+    shows a fabricated 0 % for a feature that has no limit. The label carries
+    the counter name, so one expression covers the whole fleet.
+    """
+    from ..clients.fortiauthenticator import FortiAuthenticatorClient
+    from . import deep_monitor as dm
+
+    info = FortiAuthenticatorClient(appliance, timeout=10.0).sys_status()
+    f = dm.parse_fac_systeminfo(info)
+    out = []
+    for name, block in (f.get("capacity") or {}).items():
+        if not block:
+            continue
+        L = _labels(appliance, resource=name)
+        out.append(vm_store.line("satom_fac_licence_used", L, block["used"], ts))
+        out.append(vm_store.line("satom_fac_licence_total", L, block["total"], ts))
+        out.append(vm_store.line("satom_fac_licence_pct", L, block["pct"], ts))
+    for name, block in (f.get("tokens") or {}).items():
+        if not block:
+            continue
+        L = _labels(appliance, pool=name)
+        out.append(vm_store.line("satom_fac_token_used", L, block["used"], ts))
+        out.append(vm_store.line("satom_fac_token_total", L, block["total"], ts))
+        out.append(vm_store.line("satom_fac_token_pct", L, block["pct"], ts))
+    # HA peer presence as a 0/1 series. FortiAuthenticator exposes no HA
+    # resource at all (58 resources censused); ``systeminfo.ha_sn`` is the only
+    # signal it gives, and a config harvest cannot carry it because that object
+    # is excluded from the SoT for churn.
+    out.append(vm_store.line("satom_fac_ha_peer", _labels(appliance),
+                             1 if f.get("ha_peer_sn") else 0, ts))
+    return out
 
 
 def _collect_policies(appliance, params, ts) -> list:
@@ -354,11 +424,19 @@ def _collect_transactions(appliance, params, ts) -> list:
 
 _RUNNERS = {
     "box": _collect_box,
+    "capacity": _collect_capacity,
     "policies": _collect_policies,
     "interfaces": _collect_interfaces,
     "traffic": _collect_traffic,
     "transactions": _collect_transactions,
 }
+
+# A collector declared in COLLECTORS but missing here is provisioned onto every
+# device of its product and then fails with a KeyError on every sweep — a row
+# that looks configured and is permanently red. Fail at import instead, where
+# the author is still looking.
+assert set(_RUNNERS) == set(COLLECTORS), (
+    "collector/runner mismatch: %s" % sorted(set(_RUNNERS) ^ set(COLLECTORS)))
 
 
 # ── execution ────────────────────────────────────────────────────────────────

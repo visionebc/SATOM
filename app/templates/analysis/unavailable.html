@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Analysis{% endblock %}
+
+{% block breadcrumb %}
+<nav class="fw-breadcrumb"><span>Analysis</span></nav>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1>Analysis</h1>
+    <p class="fw-page-sub">No analysis page is built for this ADOM yet.</p>
+  </div>
+</div>
+
+<div class="fw-card" style="padding:1.2rem;max-width:760px">
+  <p style="margin:0 0 .7rem">
+    The Analysis area answers product-specific questions, so each ADOM needs a
+    page written against the objects that product actually has. There is none
+    for <code>{{ product or 'this ADOM' }}</code>.
+  </p>
+  <p style="margin:0;opacity:.75;font-size:.87rem">
+    You are seeing this instead of another product’s dashboard on purpose. A
+    page scoped to objects this product does not have renders every panel
+    empty, and an empty panel reads as “nothing is wrong” rather than
+    “nothing was measured”.
+  </p>
+</div>
+{% endblock %}

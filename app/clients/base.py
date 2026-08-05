@@ -35,9 +35,34 @@ class BaseClient:
         self._timeout = httpx.Timeout(timeout, connect=min(_MAX_CONNECT_S, timeout))
         self._sem = _host_semaphore(f"{host}:{port}")
 
+    def _verify_target(self):
+        """What to hand httpx as ``verify=`` for this appliance.
+
+        ``verify_ssl=False`` stays exactly that — the operator turned checking
+        off and this is not the place to overrule them. ``verify_ssl=True``
+        means "validate", and until 2026-08-05 that validated against the
+        PUBLIC root store only, which no privately-signed appliance can ever
+        satisfy. That is why every device in this fleet ended up with
+        verification disabled. It now validates against the fleet trust store:
+        the public roots PLUS the CAs the operator imported
+        (services/trust_store), so a company-signed device can be verified
+        without disabling TLS checking for the whole fleet.
+
+        A trust store that cannot be read falls back to the public roots —
+        never to ``False``. Silently dropping verification because a query
+        failed is the one outcome nobody would notice."""
+        if not self._verify:
+            return False
+        try:
+            from ..services import trust_store
+            return trust_store.verify_param()
+        except Exception:  # noqa: BLE001
+            return True
+
     def _request(self, method: str, path: str, **kwargs):
         url = self.base_url.rstrip('/') + '/' + path.lstrip('/')
+        verify = self._verify_target()
         with self._sem:
-            with httpx.Client(verify=self._verify, timeout=self._timeout) as client:
+            with httpx.Client(verify=verify, timeout=self._timeout) as client:
                 resp = client.request(method, url, **kwargs)
         return resp

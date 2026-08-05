@@ -290,9 +290,17 @@ def resolve_params(defs: list[dict[str, Any]], args: Any) -> dict[str, Any]:
 def _appliance_options(product: str | None = None) -> list[dict[str, str]]:
     """Live appliance list for a ``device`` selector, scoped by product.
 
-    Read through the same masked/read-only path as every dataset. A product of
-    ``fortiweb``/``fortiadc`` filters by device kind; ``global``/empty = all.
+    Read through the same masked/read-only path as every dataset. ANY concrete
+    product filters by device kind; ``global``/empty = all.
+
+    The concrete products are read from the ADOM registry rather than listed
+    here: the old ``product in ("fortiweb", "fortiadc")`` test skipped the
+    filter entirely for every later ADOM, so a plugin running in the FortiADC
+    or FortiAuthenticator ADOM was offered the WHOLE fleet in its device
+    selector.
     """
+    from .product_scope import concrete_products
+    _concrete = concrete_products()
     try:
         res = dbintrospect.run_query(
             "SELECT id, name, kind FROM appliances ORDER BY kind, name")
@@ -304,7 +312,7 @@ def _appliance_options(product: str | None = None) -> list[dict[str, str]]:
         out = []
         for r in rows:
             kind = r[idx["kind"]] if "kind" in idx else ""
-            if product in ("fortiweb", "fortiadc") and kind != product:
+            if product in _concrete and kind != product:
                 continue
             aid = r[idx["id"]]
             out.append({"value": str(aid),

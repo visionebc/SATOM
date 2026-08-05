@@ -97,6 +97,7 @@
       <a href="#15-a-device-that-is-not-collected-has-to-say-so">15. A device that is not collected has to say so</a>
       <a href="#16-a-dependency-the-product-needs-is-a-dependency-the-product-ships">16. A dependency the product needs is a dependency the product ships</a>
       <a href="#17-a-panel-that-cannot-report-bad-news-is-not-a-panel">17. A panel that cannot report bad news is not a panel</a>
+      <a href="#18-a-check-must-read-the-source-that-holds-the-answer">18. A check must read the source that holds the answer</a>
       <a href="#11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</a>
       <a href="#verifying-the-guards-are-armed_5">Verifying the guards are armed</a>
       <a href="#related">Related</a>
@@ -2614,6 +2615,49 @@ It ships as <code>partials/nav_collection.html</code> and is included by all fou
 Administrator groups -- those groups have already drifted once (one of them is
 still titled "Administration"), and a shared partial is the only thing that
 stops an entry being added to Global and forgotten in the other three.</p>
+<h2 id="18-a-check-must-read-the-source-that-holds-the-answer">18. A check must read the source that holds the answer</h2>
+<p>Two alert engines were reading the wrong source on 2026-08-05. Neither crashed.
+Both produced a permanent, confident, false complaint -- and this repo has now
+had to delete four of those (<code>satom-ha-datasync</code> inert on the primary, the
+status-word colouring, <code>diagnose nginx</code> on standalone, <code>get system health</code>
+listing a retired unit). <strong>A check that always complains is a check the
+operator learns to skip, and the one that matters is skipped with it.</strong></p>
+<p><strong>Freshness is measured against a clock, and the reading must name the same
+clock as the budget.</strong> <code>device_health.cache_meta</code> asked for the <code>deep</code> layer
+first and returned the first dict it got. <code>read_layer._layer_meta</code> returns a
+populated four-key dict even when there is no snapshot (<code>cached: False</code>), and a
+dict with keys is truthy -- so the <code>config</code> layer was unreachable. The <code>deep</code>
+layer is refreshed once a night by <code>deep_capture</code>; the budget it was graded
+against, <code>monitoring.stale_hours</code>, is six hours, the cadence of the <em>hourly</em>
+sync. That counter is red eighteen hours out of every twenty-four on a
+perfectly healthy appliance. Worse, <code>deep_capture</code> is FortiWeb-only by design,
+so FortiADC, FortiAnalyzer and FortiAuthenticator reported <em>"no cached
+configuration"</em> forever while holding a snapshot minutes old. The rule:
+<strong>freshness is the age of the newest thing we hold</strong>, and a layer that has no
+snapshot is not a layer.</p>
+<p><strong>A drift check must read the store that holds the baseline.</strong> <code>_check_drift</code>
+diffed the last two git commits of <code>reports/&lt;slug&gt;/_config.json</code>. The source of
+truth left git that morning (section 14), so git saw a <em>deletion</em> of every one
+of those files and the check reported one refactor commit as fifteen
+device-side edits. It now reads <code>sot_version</code>: that store is content-addressed
+with volatile fields excluded from the hash, so an unchanged device mints no
+row at all and <strong>a new row is, by the store's own definition, a real
+configuration change</strong>. There is no second normalisation pass to keep in sync
+-- the git-era <code>_normalize_snapshot</code> helpers were deleted rather than left to
+rot beside a rule they no longer enforce.</p>
+<p><strong><code>maintenance</code> means the box is parked, everywhere.</strong> It already suppressed
+scheduled runs, device-health alerts and appliance sweeps; drift ignored it, so
+the four retired appliances -- whose host is deliberately <code>*.invalid</code> and which
+therefore name no real hardware -- kept alerting. A lever that works in three
+places out of four is a lever nobody trusts.</p>
+<p><strong>The first version of a device is not drift.</strong> Onboarding an appliance is not
+somebody editing it behind our back, so a device with a single <code>sot_version</code>
+row is silent.</p>
+<p>Guards: <code>tests/test_health_freshness_and_drift.py</code>. Seven mutations bite. An
+eighth -- removing the <code>cached</code> test while keeping newest-wins -- survives, and
+that is reported rather than hidden: a row that is not cached carries
+<code>generated_at = None</code>, which newest-wins already refuses to prefer, so the
+<code>cached</code> test is defence in depth and the harness says so.</p>
 <h2 id="11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</h2>
 <ul>
 <li>Per-device configuration restore is dry-run gated — no live canary round-trip yet.</li>
@@ -2624,6 +2668,19 @@ stops an entry being added to Global and forgotten in the other three.</p>
   because of that, but it mitigates rather than fixes it.</li>
 </ul>
 <h2 id="verifying-the-guards-are-armed_5">Verifying the guards are armed</h2>
+<h3 id="freshness-and-drift-read-the-right-source-18">Freshness and drift read the right source (18)</h3>
+<p>Freshness must follow the <em>newest</em> layer, not the nightly one. On a FortiWeb
+(which has both layers) and on any non-FortiWeb device (which has only
+<code>config</code>), both must read the hourly sync -- the Device health page grades
+every non-parked appliance <code>ok</code> on the cache signal within the budget.</p>
+<p>Drift must not shell out to git; the baseline left git in section 14. Read the
+body of the check and confirm no git invocation survives inside it:</p>
+<pre><code>sed -n '/^def _check_drift/,/^_CHECKS/p' app/services/alerts.py \
+  | grep -c 'subprocess\|"git"'
+# expect 0 -- match on what EXECUTES, never on the prose that explains it
+</code></pre>
+<p>And a parked box must be silent: drop the <code>maintenance</code> test from the loop and
+<code>tests/test_health_freshness_and_drift.py</code> fails.</p>
 <h3 id="state-that-exists-only-here-4b">State that exists only here (4b)</h3>
 <p>A node has to say what it alone holds, <em>before</em> anyone resets it.</p>
 <pre><code class="language-bash"># 1. on a clean node the section is present and does not grade

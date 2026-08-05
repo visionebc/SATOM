@@ -590,20 +590,6 @@ def _check_backup() -> list[dict]:
 # via ``alerts.drift_volatile_keys`` (comma list, replaces the default). Matched
 # case-insensitively on the exact key name so a schedule field like
 # ``start-hour`` is NOT stripped (only a bare ``hour``).
-_DRIFT_VOLATILE_DEFAULT = {
-    "generated_at", "harvested_at", "captured_at", "timestamp",
-    "system_datetime", "system_time", "current_time", "datetime",
-    "uptime", "hour", "minute", "second",
-}
-
-
-def _drift_volatile_keys() -> set[str]:
-    raw = _get("alerts.drift_volatile_keys")
-    if raw:
-        return {s.strip().lower() for s in raw.replace(";", ",").split(",") if s.strip()}
-    return set(_DRIFT_VOLATILE_DEFAULT)
-
-
 def _drift_exclude_slugs() -> set[str]:
     # faz01 embeds rotating base64 session/crypto tokens that survive key-name
     # normalisation; excluded by default until its volatile fields are mapped.
@@ -612,38 +598,32 @@ def _drift_exclude_slugs() -> set[str]:
     return {s.strip() for s in raw.replace(";", ",").split(",") if s.strip()}
 
 
-def _strip_volatile(obj, vol: set[str]):
-    """Recursively drop volatile keys (by lowercased name) at any depth."""
-    if isinstance(obj, dict):
-        return {k: _strip_volatile(v, vol) for k, v in obj.items()
-                if k.lower() not in vol}
-    if isinstance(obj, list):
-        return [_strip_volatile(v, vol) for v in obj]
-    return obj
-
-
-def _normalize_snapshot(blob: str):
-    """Parse a snapshot and drop volatile keys at any depth so a pure clock /
-    token refresh doesn't read as config drift. Returns a canonical string, or
-    None if the blob isn't parseable JSON (fall back to raw compare then)."""
-    try:
-        doc = json.loads(blob)
-    except (ValueError, TypeError):
-        return None
-    return json.dumps(_strip_volatile(doc, _drift_volatile_keys()), sort_keys=True)
-
-
 def _check_drift() -> list[dict]:
-    """Config-drift: for each device, compare the two most recent git-committed
-    versions of its source-of-truth (``reports/<slug>/_config.json``) with
-    volatile fields normalised out. A surviving change means the live device
-    config diverged from the prior baseline — typically a device-side (CLI/GUI)
-    edit made outside SATOM. Only fresh drift (newer than the window) alerts,
-    keyed by commit sha so each distinct drift fires once. Near-zero cost: reads
-    git history, never touches the appliance. Noisy devices (rotating fields that
-    survive normalisation) can be listed in ``alerts.drift_exclude``."""
-    import subprocess
+    """Config-drift: a device whose harvested configuration CHANGED recently.
+
+    The signal is a new row in the local source-of-truth store. That store is
+    content-addressed and volatile fields are excluded from the hash
+    (``sot_store.canonical_bytes``), so an unchanged device mints no row at
+    all -- a new row therefore IS a real config change, with no second
+    normalisation pass to keep in sync. Only changes newer than
+    ``alerts.drift_window_min`` alert, keyed by content hash so each distinct
+    drift fires once. Near-zero cost: one indexed query per device, never
+    touches the appliance.
+
+    It read git history until 2026-08-05. The source of truth left git that
+    morning, so git saw the migration as a DELETION of every
+    ``reports/<slug>/_config.json`` and the check reported one refactor commit
+    as fifteen device-side edits. A drift check must read the store that
+    actually holds the baseline.
+
+    Devices in ``maintenance`` are skipped -- that is the documented lever for
+    parking a broken box, and it already suppresses scheduled runs and device
+    health. Noisy devices can still be listed in ``alerts.drift_exclude``.
+    """
+    from datetime import timedelta
+
     from ..models import Appliance
+    from ..models_sot import SotVersion
     findings: list[dict] = []
     try:
         appliances = Appliance.query.all()
@@ -652,51 +632,34 @@ def _check_drift() -> list[dict]:
                  "title": "Drift scan: appliance list unreadable", "detail": str(exc)}]
     window_min = _int(K_DRIFT_WINDOW_MIN, 90)
     excluded = _drift_exclude_slugs()
+    now = _now().replace(tzinfo=None)          # sot_version.taken_at is naive UTC
+    cutoff = now - timedelta(minutes=window_min)
     for a in appliances:
         slug = a.name
-        if slug in excluded:
-            continue
-        path = f"reports/{slug}/_config.json"
-        try:
-            log = subprocess.run(
-                ["git", "-C", _REPO_ROOT, "log", "-2", "--format=%H %ct", "--", path],
-                capture_output=True, text=True, timeout=15)
-        except Exception:  # noqa: BLE001
-            continue
-        lines = [ln for ln in log.stdout.splitlines() if ln.strip()]
-        if len(lines) < 2:
+        if slug in excluded or getattr(a, "maintenance", False):
             continue
         try:
-            new_sha, new_ct = lines[0].split()
-            old_sha = lines[1].split()[0]
-            age_min = (_now().timestamp() - int(new_ct)) / 60
-        except (ValueError, IndexError):
+            rows = (SotVersion.query.filter_by(device=slug)
+                    .order_by(SotVersion.taken_at.desc(), SotVersion.id.desc())
+                    .limit(2).all())
+        except Exception:  # noqa: BLE001 -- one unreadable device never sinks the scan
             continue
-        if age_min > window_min:
-            continue  # drift is old — already seen / not this run's concern
-        try:
-            blob_new = subprocess.run(["git", "-C", _REPO_ROOT, "show", f"{new_sha}:{path}"],
-                                      capture_output=True, text=True, timeout=20).stdout
-            blob_old = subprocess.run(["git", "-C", _REPO_ROOT, "show", f"{old_sha}:{path}"],
-                                      capture_output=True, text=True, timeout=20).stdout
-        except Exception:  # noqa: BLE001
-            continue
-        norm_new, norm_old = _normalize_snapshot(blob_new), _normalize_snapshot(blob_old)
-        # If either won't parse, fall back to raw text compare (conservative).
-        if norm_new is None or norm_old is None:
-            if blob_new == blob_old:
-                continue
-        elif norm_new == norm_old:
-            continue  # only volatile fields changed — not drift
+        if len(rows) < 2:
+            continue        # first-ever version is onboarding, not drift
+        new = rows[0]
+        if not new.taken_at or new.taken_at < cutoff:
+            continue        # old change -- already seen / not this run's concern
+        age_min = int((now - new.taken_at).total_seconds() / 60)
         findings.append({
-            "key": f"drift.{slug}.{new_sha[:12]}", "severity": SEV_WARNING,
+            "key": f"drift.{slug}.{new.sha256[:12]}", "severity": SEV_WARNING,
             "title": f"Config drift on {slug}",
             "product": _product_of(a),
             "detail": (f"{a.kind} '{slug}' changed in the source-of-truth "
-                       f"(commit {new_sha[:8]}, {int(age_min)}m ago) after volatile "
-                       f"fields were normalised out. If nobody edited it via "
+                       f"({age_min}m ago, content {new.sha256[:8]}, "
+                       f"previous {rows[1].sha256[:8]}). If nobody edited it via "
                        f"SATOM, a device-side (CLI/GUI) change has drifted from "
-                       f"the baseline — review the A→B diff under reports/{slug}.")})
+                       f"the baseline -- review the A/B diff on the System "
+                       f"Backup page.")})
     return findings
 
 

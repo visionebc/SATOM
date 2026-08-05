@@ -2298,6 +2298,56 @@ Administrator groups -- those groups have already drifted once (one of them is
 still titled "Administration"), and a shared partial is the only thing that
 stops an entry being added to Global and forgotten in the other three.
 
+## 18. A check must read the source that holds the answer
+
+Two alert engines were reading the wrong source on 2026-08-05. Neither crashed.
+Both produced a permanent, confident, false complaint -- and this repo has now
+had to delete four of those (`satom-ha-datasync` inert on the primary, the
+status-word colouring, `diagnose nginx` on standalone, `get system health`
+listing a retired unit). **A check that always complains is a check the
+operator learns to skip, and the one that matters is skipped with it.**
+
+**Freshness is measured against a clock, and the reading must name the same
+clock as the budget.** `device_health.cache_meta` asked for the `deep` layer
+first and returned the first dict it got. `read_layer._layer_meta` returns a
+populated four-key dict even when there is no snapshot (`cached: False`), and a
+dict with keys is truthy -- so the `config` layer was unreachable. The `deep`
+layer is refreshed once a night by `deep_capture`; the budget it was graded
+against, `monitoring.stale_hours`, is six hours, the cadence of the *hourly*
+sync. That counter is red eighteen hours out of every twenty-four on a
+perfectly healthy appliance. Worse, `deep_capture` is FortiWeb-only by design,
+so FortiADC, FortiAnalyzer and FortiAuthenticator reported *"no cached
+configuration"* forever while holding a snapshot minutes old. The rule:
+**freshness is the age of the newest thing we hold**, and a layer that has no
+snapshot is not a layer.
+
+**A drift check must read the store that holds the baseline.** `_check_drift`
+diffed the last two git commits of `reports/<slug>/_config.json`. The source of
+truth left git that morning (section 14), so git saw a *deletion* of every one
+of those files and the check reported one refactor commit as fifteen
+device-side edits. It now reads `sot_version`: that store is content-addressed
+with volatile fields excluded from the hash, so an unchanged device mints no
+row at all and **a new row is, by the store's own definition, a real
+configuration change**. There is no second normalisation pass to keep in sync
+-- the git-era `_normalize_snapshot` helpers were deleted rather than left to
+rot beside a rule they no longer enforce.
+
+**`maintenance` means the box is parked, everywhere.** It already suppressed
+scheduled runs, device-health alerts and appliance sweeps; drift ignored it, so
+the four retired appliances -- whose host is deliberately `*.invalid` and which
+therefore name no real hardware -- kept alerting. A lever that works in three
+places out of four is a lever nobody trusts.
+
+**The first version of a device is not drift.** Onboarding an appliance is not
+somebody editing it behind our back, so a device with a single `sot_version`
+row is silent.
+
+Guards: `tests/test_health_freshness_and_drift.py`. Seven mutations bite. An
+eighth -- removing the `cached` test while keeping newest-wins -- survives, and
+that is reported rather than hidden: a row that is not cached carries
+`generated_at = None`, which newest-wins already refuses to prefer, so the
+`cached` test is defence in depth and the harness says so.
+
 ## 11. Known gaps (kept honest, on purpose)
 
 * Per-device configuration restore is dry-run gated — no live canary round-trip yet.
@@ -2308,6 +2358,23 @@ stops an entry being added to Global and forgotten in the other three.
   because of that, but it mitigates rather than fixes it.
 
 ## Verifying the guards are armed
+
+### Freshness and drift read the right source (18)
+
+Freshness must follow the *newest* layer, not the nightly one. On a FortiWeb
+(which has both layers) and on any non-FortiWeb device (which has only
+`config`), both must read the hourly sync -- the Device health page grades
+every non-parked appliance `ok` on the cache signal within the budget.
+
+Drift must not shell out to git; the baseline left git in section 14. Read the
+body of the check and confirm no git invocation survives inside it:
+
+    sed -n '/^def _check_drift/,/^_CHECKS/p' app/services/alerts.py \
+      | grep -c 'subprocess\|"git"'
+    # expect 0 -- match on what EXECUTES, never on the prose that explains it
+
+And a parked box must be silent: drop the `maintenance` test from the loop and
+`tests/test_health_freshness_and_drift.py` fails.
 
 ### State that exists only here (4b)
 

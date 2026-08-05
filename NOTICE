@@ -4,6 +4,43 @@ Copyright 2026 Vision EBC and the SATOM contributors
 This product is licensed under the Elastic License 2.0 (see LICENSE).
 
 ------------------------------------------------------------------------
+THIRD-PARTY COMPONENTS
+------------------------------------------------------------------------
+SATOM redistributes the following third-party components. They are the
+property of their respective authors and are licensed under their own
+terms, which are NOT superseded by the Elastic License 2.0 that covers
+SATOM itself. Nothing here restricts your rights under those licenses.
+
+Shipped as binaries inside the offline installation bundles
+(installers/build-offline-bundle*.sh):
+
+  VictoriaMetrics (single-node, OSS build)
+    https://github.com/VictoriaMetrics/VictoriaMetrics
+    Apache License 2.0
+    Used as SATOM's local time-series store for fleet telemetry, bound to
+    loopback. Only the plain OSS artefact is fetched; the "enterprise"
+    variants published under the same release tag are NOT Apache-2.0 and
+    are deliberately excluded by pinned artefact name and sha256.
+
+  lego (ACME client)
+    https://github.com/go-acme/lego
+    MIT License
+    Used by the Certificate Manager to obtain certificates over ACME.
+
+Vendored browser assets (app/static/vendor/), served locally rather than
+from a CDN so that an installation on an isolated management network
+renders correctly:
+
+  Chart.js            https://www.chartjs.org/            MIT License
+  Bootstrap           https://getbootstrap.com/           MIT License
+
+Python dependencies are declared in requirements.txt and, for offline
+installs, staged as wheels inside the bundle. They are not modified; each
+retains the license published by its author. Operating-system packages
+staged in a bundle (.deb / .rpm) are unmodified copies of the
+distribution's own artefacts and remain under the distribution's terms.
+
+------------------------------------------------------------------------
 TRADEMARK NOTICE
 ------------------------------------------------------------------------
 SATOM is an independent, source-available project. It is NOT affiliated

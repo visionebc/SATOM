@@ -77,6 +77,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   what someone wrote a probe for. `params.push_server=1` uploads the summary to
   the external backup server as both JSON and text.
 
+- **`NOTICE` attributes what SATOM redistributes.** The offline bundles ship
+  two third-party binaries (VictoriaMetrics, Apache-2.0; lego, MIT) and the
+  application serves vendored browser assets (Chart.js, Bootstrap -- both MIT,
+  vendored so an isolated management network renders correctly). None were
+  named. SATOM is ELv2 and those components are not; `NOTICE` now says so and
+  states that their terms are not superseded.
+
 ### Changed
 
 - **The device source of truth left git.** `reports/<device>/_config.json` was
@@ -139,8 +146,6 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   probe's declared and effective interval and flags each mismatch. With no sweep
   scheduled it reports no cadence at all rather than a plausible default.
 
-### Changed
-
 - `deep_monitor.series()` accepts an optional `force_source`, and the resolution
   choice is split out as `source_for()`. This lets a multi-series panel ask each
   probe which table it needs and then pin the coarsest answer for all of them —
@@ -172,38 +177,6 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   New commands: `satom show trust`, `satom show package`,
   `satom execute trust add-key`, `satom execute trust remove-key`,
   `satom diagnose updates` (also folded into `diagnose all`).
-
-### Fixed
-
-- **SECURITY: the privileged update runner ran root-owned code out of a tree the
-  service account owns.** `satom-updater.service` runs as **root** and its
-  shipped unit points at `/opt/satom/deploy/self_update_runner.py`, inside the
-  application tree — which belongs to the unprivileged service account after the
-  de-privilege. The web worker could therefore rewrite the script root was about
-  to execute and then enqueue a request, which it is *designed* to be able to
-  do, and the next trigger would run its code as root. That is a complete
-  escalation across the boundary `docs/privilege-model.md` exists to defend, and
-  it is present in every release from 1.2 onward. A second path in the same
-  process: `_pip_allowlist()` imported `app.services.system_info`, executing the
-  entire Flask package as root out of the same writable tree.
-  `deploy/install-runner.sh` now installs a `root:root` copy of the runner and
-  its verifier in `/usr/local/lib/satom-runner`, run by a **system** interpreter,
-  and redirects the unit with a drop-in — not an edit, because the update runner
-  re-copies `deploy/<unit>` on every update. It runs from the installer, the
-  de-privilege migrator, every code update and
-  `satom execute reinstall runner`. The curated pip allowlist is now local to
-  the runner, with a test asserting it still equals `system_info._LIBRARIES`.
-  **Existing nodes are not fixed by updating alone** — run
-  `satom execute reinstall runner` (or re-run the installer), then confirm with
-  `satom diagnose updates`. Found while building the package feature: signature
-  verification performed by a script the attacker can edit verifies nothing.
-  [SATOM-RUNNER-ROOT-COPY]
-
-- `client_max_body_size` raised to 400M in the generated vhost, matching the
-  application's own upload limit. Below it, a valid package dies with an opaque
-  nginx 413 that the application never sees and therefore cannot explain.
-
-### Changed
 
 - **License changed from Apache-2.0 to the [Elastic License 2.0](LICENSE).**
   The change applies to the SATOM project as a whole, including the versions
@@ -237,6 +210,34 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **SECURITY: the privileged update runner ran root-owned code out of a tree the
+  service account owns.** `satom-updater.service` runs as **root** and its
+  shipped unit points at `/opt/satom/deploy/self_update_runner.py`, inside the
+  application tree — which belongs to the unprivileged service account after the
+  de-privilege. The web worker could therefore rewrite the script root was about
+  to execute and then enqueue a request, which it is *designed* to be able to
+  do, and the next trigger would run its code as root. That is a complete
+  escalation across the boundary `docs/privilege-model.md` exists to defend, and
+  it is present in every release from 1.2 onward. A second path in the same
+  process: `_pip_allowlist()` imported `app.services.system_info`, executing the
+  entire Flask package as root out of the same writable tree.
+  `deploy/install-runner.sh` now installs a `root:root` copy of the runner and
+  its verifier in `/usr/local/lib/satom-runner`, run by a **system** interpreter,
+  and redirects the unit with a drop-in — not an edit, because the update runner
+  re-copies `deploy/<unit>` on every update. It runs from the installer, the
+  de-privilege migrator, every code update and
+  `satom execute reinstall runner`. The curated pip allowlist is now local to
+  the runner, with a test asserting it still equals `system_info._LIBRARIES`.
+  **Existing nodes are not fixed by updating alone** — run
+  `satom execute reinstall runner` (or re-run the installer), then confirm with
+  `satom diagnose updates`. Found while building the package feature: signature
+  verification performed by a script the attacker can edit verifies nothing.
+  [SATOM-RUNNER-ROOT-COPY]
+
+- `client_max_body_size` raised to 400M in the generated vhost, matching the
+  application's own upload limit. Below it, a valid package dies with an opaque
+  nginx 413 that the application never sees and therefore cannot explain.
+
 - **The unread badge on the topbar bell floated off the bell.** It was
   positioned with Bootstrap's `.top-0 .start-100 .translate-middle`, which
   anchor to the offset parent's border box — the button's padded hit area, not
@@ -263,6 +264,37 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   EOF *with* partial data (a last line without a newline) remains a valid
   answer. Guarded structurally, so a prompt added later cannot bypass them.
   See `docs/safeguards.md` 10f. [SATOM-LOUD-READ]
+
+- **The metrics store was never installed by the installer.** VictoriaMetrics
+  was placed by hand on the development pair, so a freshly installed node got
+  the analytics pages, the `metrics_scrape` scheduled action and the
+  `satom-metrics.service` entry that `diagnose all` checks -- with no store
+  behind any of them. An air-gapped install was worse than degraded: with no
+  route to the internet there was no way to obtain the binary at all.
+  `install-satom.sh` now installs it (bundle first, pinned download second,
+  sha256 verified, warn rather than abort), creates `/var/lib/satom-metrics`
+  and enables the unit *after* the service-account drop-in exists; all three
+  offline builders carry the binary and **fail** rather than ship a bundle
+  without it; and the digest is a single pinned value shared by installer and
+  builders, because drift means a bundle one of them would refuse -- a failure
+  that surfaces only on an air-gapped node. The artefact name is pinned and
+  the `-enterprise` / `-cluster` builds published under the same upstream tag
+  are refused: they are not Apache-2.0 and this product redistributes what it
+  fetches. Same failure class as `sudo` missing from the 1.1 bundles and
+  `lego` from the RHEL bundle; see `docs/safeguards.md` 16.
+  [SATOM-METRICS-STORE] [SATOM-METRICS-BUNDLE]
+
+- **The changelog stacked duplicate sections, and the published release pages
+  showed them.** Sessions appended their own `### Changed` / `### Fixed`
+  headings independently, so `[Unreleased]` carried three "Changed" and two
+  "Fixed", and the already-published `[1.3]` block carried 25 sections where
+  three were meant. Nothing errored -- the file parsed, the site built, and
+  each release page simply rendered the same heading several times, reading as
+  though one version contained several releases. Both blocks are merged (no
+  entry text changed; 168 bullets before and after) and a guard now fails on a
+  repeated kind inside a flat block. Blocks that group entries under
+  descriptive sub-headings are exempt: repeats across sub-sections are correct
+  there, and the release-notes generator renders them as written.
 
 ## [1.3.5] - 2026-08-04
 
@@ -541,6 +573,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.
 ## [1.3] - 2026-08-02
 
 ### Added
+
 - **The manual is reachable from the sign-in screen.** The login page offered a
   link to the API manual and nothing else. The person who cannot get in is
   exactly the person who needs the installation guide, the operator-console
@@ -574,7 +607,328 @@ openSUSE 15) from this tree and publishes them alongside the changes below.
   application code does not compile — that has happened. A structural test
   fails the suite if the generator ever re-declares any of it.
 
+- **The changelog is published on all three surfaces.** The same file is now
+  readable in the repository, inside the application under **Documentation**,
+  and on the public documentation site. One source, three renderings — no copy
+  to fall out of date. A test fails the suite if any surface stops carrying it.
+
+- **The public site ships switchable colour themes.** Three palettes —
+  **Aurora** (default, light canvas over navy chrome), **Abyss** (dark canvas
+  with the blue/gold glow) and **Classic** (the palette SATOM originally
+  shipped) — selectable from a swatch control in the nav and remembered per
+  browser. The whole palette lives in custom properties; `:root` carries the
+  default, so the site still renders correctly with scripting disabled, and a
+  blocking read in `<head>` applies a stored choice before first paint instead
+  of flashing the default and flipping.
+- **Brand gradients and glows are first-class tokens** (`--grad-blue`,
+  `--grad-gold`, `--glow-blue`, `--glow-gold`, `--glow-strength`), used by the
+  hero headline, the primary button, the nav hairline and the brand mark. Glow
+  intensity is per-theme, so the dark palette can lean on it without the light
+  one looking neon.
+
+- **Operator CLI: `show tree` (alias `tree`) prints the whole command surface**
+  — every command as a tree, with `*` for root-required and `!` for
+  destructive, plus `--commands` (flat, fixed-column, `awk`-friendly),
+  `--depth N`, `--root`, `--danger` and `--json`. It renders the LIVE registry,
+  so it cannot drift from what the build supports; a test fails the suite if
+  any runnable command is missing from it.
+- **Output policy made explicit**: `--color` / `--no-color` / `--ascii` /
+  `--width N`, plus `NO_COLOR` and `SATOM_CLI_COLOR`. The contract is
+  *decoration is for a TTY, content is identical either way* — through a pipe
+  there are no escape sequences and nothing is truncated.
+- **The manual is now published, generated and redacted.** `docs/README.md`
+  is the documentation index — every document, which of the four surfaces to
+  read it on, and a reading path per role. The complete command table inside
+  `docs/cli.md` is generated from the live registry, and the whole manual is
+  rendered to the public site under `/docs/` from the same Markdown, so neither
+  copy can drift from the source the team edits.
+- **Publication redacts and then refuses.** Internal addresses, management
+  hostnames, hypervisor and node names, the backup server and personal e-mail
+  addresses are rewritten to `{placeholders}`; the generator then re-scans its
+  own output and **aborts** on any survivor, naming pattern, file and line.
+  Publication is opt-in: a document not listed is not published.
+
+- **Operator CLI, second pass: the automated half now has a console.** 39 more
+  commands, organised around the failure modes this product has actually had
+  rather than around the code layout. Reads for the layer that has no UI of its
+  own — `get backup status` (the four copies side by side), `get scheduler
+  status`, `get timer status`, `get device status`, `get monitor status`,
+  `get alerts status` (*is anyone actually told?*), `get job list`,
+  `get git status`, `get user list`, `get update history`,
+  `get system disk|time`, `get certificate list`. New probes: `diagnose
+  install` (is the node ARMED, or merely installed?), `diagnose code` (is each
+  process running the code on disk?), `diagnose scheduler`, `diagnose units`,
+  `diagnose config`, `diagnose nginx`, `diagnose git`, `diagnose acme` —
+  `diagnose all` now folds 24 checks into one exit code in ~3.5 s. New verbs:
+  `execute seed actions`, `execute restore db`, `execute backup git`,
+  `execute repair jobs|tmp`, `execute admin reset-password|unlock`,
+  `execute scheduler run|enable|disable`, `execute maintenance`,
+  `execute enable|disable`, `execute restart-all`, `execute support bundle`.
+- **Twelve offline runbooks** in `satom show runbook` — web-down, db-down,
+  scheduler-idle, update-stuck, cert-expired, disk-full, peer, promote,
+  restore, fresh-install, locked-out, device-unreachable. They live in the
+  binary, not in the wiki or on the public site, because the operator who needs
+  them has no web UI, no browser and usually no route to the internet.
+- **`execute seed actions`** closes the gap documented in `safeguards.md` §10:
+  no `ScheduledAction` row is ever seeded, so a fresh node has every
+  capability, zero coverage, and looks perfectly healthy while it takes no
+  backups at all. It prints the plan and only applies with `--yes`, and it
+  never touches an existing row — operator edits still win.
+
+- **An operator CLI (`satom`) for a node whose web UI is down.** Modelled on the
+  appliance CLIs this product manages: `get` / `show` / `diagnose` / `execute`,
+  `?` completion at any depth, one-shot for scripts and an interactive prompt on
+  top of the *same* dispatcher. It wraps what already existed (the `flask`
+  commands, the deploy scripts, the privileged update queue) behind one
+  discoverable door rather than reimplementing any of it.
+
+  Three properties are load-bearing and are enforced by `tests/test_cli.py`:
+
+  * **Standard library only** at module level — no Flask, no SQLAlchemy, not even
+    the app package. A tool that needs a healthy venv to report that the venv is
+    broken is not a recovery tool. An AST check fails the suite on a stray
+    module-level import; commands that genuinely need the app import it lazily
+    and degrade with a stated reason.
+  * **Degrades by privilege instead of failing.** `get`, `show` and `diagnose`
+    work as any user; `execute` requires root and refuses with the full command
+    echoed back and an exit code of `3` — never a traceback, at the one moment a
+    traceback is least useful.
+  * **Installed as a `root:root` copy outside the app tree**
+    (`/usr/local/sbin/satom` + `/usr/local/lib/satom-cli/`). The app tree is
+    writable by the service account, so a launcher executing from there would let
+    a compromised web worker rewrite what an operator runs under `sudo`. The
+    installer verifies owner, mode and "not a symlink"; `satom diagnose
+    privilege` re-verifies on demand and also fails if the CLI has been granted
+    to the service account (that grant would equal `NOPASSWD: ALL`).
+
+  `deploy/install-cli.sh` is called from the installer, from
+  `self_update_runner.py` after every code update (the CLI lives outside the app
+  tree, so `git pull` does not reach it) and from `satom execute reinstall cli`.
+
+  New command of note: **`diagnose python`** runs `compileall` over `app/` and
+  `deploy/` *and* explicitly imports the modules the app only imports inside
+  functions. That is the class of failure that shipped a hard `SyntaxError` in
+  `cert_service.py` inside the 1.2 and 1.2.1 bundles while the app booted,
+  `/healthz` returned 200 and the whole test suite stayed green.
+
+  Reference: [`docs/cli.md`](docs/cli.md). Permissions to request:
+  `docs/INSTALL.md` §5, *Cuenta de OPERADOR*.
+
+- **A scheduled automation that breaks now raises its own alert.** Silencing
+  successful housekeeping runs is only safe if the failing run is loud, and it
+  was not: `scheduled_actions` held no notification path and the alert engine
+  had no check for it, so `device_sync` had failed **24 consecutive scheduled
+  runs** with nobody told, and the day the scheduler sidecar stopped firing
+  entirely it stayed silent for hours while systemd still showed the unit
+  `active`. `alerts._check_actions` grades two signals — a consecutive
+  scheduled-failure streak, and an enabled action whose due time is long past
+  (a dead scheduler produces no failed runs to count) — as **one finding per
+  action**, with the severity in the cooldown key so a warn → crit escalation
+  still gets through. Only `trigger='schedule'` runs count: a manual retry is
+  already on the operator's screen, and mixing the two hides the exact case
+  where the sidecar is running stale code. A streak that hits the history
+  window is reported as `N+`, not as a count; a `skipped` run clears a streak
+  just as `ok` does, so an action whose targets are all parked goes quiet
+  instead of sitting critical forever. Two knobs in Settings → Alerts
+  (*Automation fail streak → critical*, *Automation overdue (hours)*).
+
+- **Device traffic cards are collapsible** on Deep monitors and Service Monitor,
+  with the state persisted in `localStorage` keyed per page — `renderDevices()`
+  rewrites `innerHTML` on every 20 s poll, so DOM-only state would re-expand
+  every card three times a minute. A collapsed card keeps its status badge and a
+  headline chip (avg throughput / policy count) so folding hides the detail, not
+  the finding. Keyboard reachable, no inline handlers (CSP).
+  See `docs/safeguards.md` §9j.
+- Device cards restyled to the fleet visual standard: layered gradient +
+  glassmorphism surface, blue->violet accent rule, hover elevation.
+- **Traffic per appliance, and a real drill-down per server policy.** Service
+  Monitor was a flat table of probes: the box-wide `Total HTTP Throughput`
+  reading was one row among twenty, and answering *"what is going on inside this
+  policy"* meant reading four rows and joining them by eye. The page now opens
+  with **one traffic card per FortiWeb** — total throughput (average, window
+  peak and a sparkline), box sessions / connection rate / CPU / memory, and a
+  table of that device's server policies with sessions, conn/s, throughput and
+  backends-up. Clicking a policy opens the full view: sessions, conn/s, client
+  RTT, server RTT and application response time as KPIs, every backend pool
+  member with its health, and the sessions / throughput / transactions trends
+  side by side.
+
+  Both views are built **entirely from stored samples** — opening them never
+  contacts an appliance, so they answer with the box powered off or its cmdb API
+  licence-locked, which is the case on fw6 and fw7 today. And they refuse to
+  invent numbers: a probe that is missing, disabled or has never run reports
+  *not measured* rather than `0`, stale samples are flagged with their age, and
+  there is deliberately no single rolled-up per-device badge, because `unknown`
+  sorts as *less* severe than `ok` and one healthy probe would paint over three
+  missing ones. See `docs/safeguards.md` §9h.
+
+- **Service Monitor — runtime telemetry gets its own Monitoring page.** The four
+  REST-telemetry probe kinds (`sessions`, `policy_sessions`, `throughput`,
+  `transactions`) moved out of Deep monitors to **Monitoring → Service Monitor**
+  (`/monitoring/services`), present in all four ADOMs. Deep monitors keeps the
+  five kinds that reach into the appliance (`https`, `interface`, `cpu`,
+  `memory`, `proxyd`).
+
+  Storage, runner and the `deep_monitor` scheduled action are deliberately
+  **not** split — two runners would double-schedule every device. What is split
+  is the set of kinds each page owns, and the partition is enforced on every
+  route: each `/data` filters on its own kinds, create/edit refuse the other
+  page's kinds, a foreign probe id answers 404, *Probe now* is pinned to the
+  page (and the ADOM), and *Discover from device* only offers the steps the page
+  owns. A kind can land on exactly one page — neither on both nor on neither,
+  or the partition test fails. See `docs/safeguards.md` §9f.
+
+  Both pages render from ONE template (`monitoring/_probe_page.html`) driven by
+  a `PageSpec`, so the drill-down chart, rollups, history drawer and port picker
+  cannot drift apart.
+- **Live server-policy picker** in the probe form: the policy name field is
+  backed by a datalist filled from the appliance's LIVE `policystatus` (not the
+  harvest cache, which is empty on a licence-locked box). A failure is printed
+  in the form instead of degrading to an empty dropdown — "no policies" and
+  "could not ask" look identical in a `<select>` and mean opposite things.
+
+- **Drill-down charts on the deep monitors.** Clicking any sparkline opens
+  1 h / 24 h / 7 d / 30 d or an explicit date range, with min/average/max, the
+  status strip, healthy-percentage and threshold lines.
+- **`monitor_rollup` — pre-aggregated history.** Raw samples are capped per
+  probe (~2 days at the default interval and retention), so depth is bought
+  with buckets instead: hourly kept 90 days, daily kept 2 years, under 400 KB
+  per probe for two years of history against roughly 35 MB if the raw rows and
+  their CLI payloads were retained for the same window. Both extremes are
+  stored, not just the mean — a four-minute spike is invisible in an average
+  and is exactly what an operator opens a chart to find.
+  The rollup runs **inside `run_probe`, before the retention prune**, rather
+  than as its own scheduled action: nothing in this product seeds a
+  `ScheduledAction` row, so a feature that depends on the operator creating one
+  does not exist on a fresh install.
+- **`GET /monitoring/deep/probe/<id>/series`** — chart data. The resolution
+  (raw samples, hourly buckets, daily buckets) is chosen server-side and
+  reported back in `source`, and the UI prints which one it drew: an hourly
+  average and a five-minute reading are not the same claim about the device.
+
+### Changed
+
+- **The last `fortinet` identifiers are gone from the platform itself.** The
+  database, the PostgreSQL role, the Linux service account and the PostgreSQL
+  TLS directory were the four names the 2026-07 rename deliberately left alone,
+  because they are live state rather than files. They are now `satom`,
+  `satom`, `satom` and `satomssl`. New installations are born with those names;
+  existing ones migrate with `deploy/migrate-rename-satom-db.sh`, which takes a
+  dump before the rename, keeps the account's numeric id (so no ownership sweep
+  is needed) and verifies health before it reports success.
+
+  Three names are kept on purpose and are **not** a leftover:
+  the *vendor* product names (FortiWeb, FortiADC, FortiAnalyzer and their API
+  fields) — the platform manages those appliances and has to be able to name
+  them; the streaming replication slot, because PostgreSQL has no rename for
+  one and dropping it under a live standby risks a full re-sync for an
+  invisible internal string; and the external backup server, because the
+  appliances push to it by name in their own configuration and renaming it
+  from here would break the nightly push silently.
+
+- **Device cards start folded and tile densely.** Expanded-by-default is
+  unusable past a handful of appliances: a hundred of them was a kilometre of
+  scroll. The cards now open collapsed, tile in a dense ~258 px grid so a large
+  fleet fits in one screenful, and an expanded card takes the full row (the
+  policy table needs the width, and a tall item in a narrow column stretches
+  every tile beside it). The persisted state is now the set of **open** cards,
+  not the closed ones, under a new `localStorage` key — the old key held the
+  inverse set, and reusing the name would have expanded exactly the cards an
+  operator had folded.
+
+- **Service Monitor (and every other probe) now sweeps every 3 minutes** instead
+  of 5. The scheduled sweep action was retimed and *all* probe intervals were
+  aligned to a multiple of the new tick: `due_probes` needs the whole interval
+  to elapse before a tick can fire it, so a 5-minute probe under a 3-minute
+  sweep silently becomes a 6-minute probe. `cpu`, `memory` and `proxyd` moved
+  5 -> 3 rather than being allowed to drift to 6; `interface` and `transactions`
+  stay at 15 (already a multiple of 3). New constants
+  `deep_monitor.DEFAULT_PROBE_INTERVAL_MIN` / `SLOW_PROBE_INTERVAL_MIN` carry
+  the rule into every discovery path so a bare literal cannot reintroduce it.
+  Measured end-to-end cadence is ~3.4-3.7 min: the scheduler anchors `next_run`
+  to run *completion* and ticks every 45 s. See `docs/safeguards.md` §9i.
+- **Background work no longer opens a floating window.** A monitoring sweep used
+  to raise the same toast — progress bar, **Stop** button — as a firmware flash
+  someone was waiting on, and pushed a bell notification on *every* successful
+  run. `jobs.create_job(..., background=True)` now marks work nobody is waiting
+  on: the toast dock's feed (`GET /jobs/?active=1`) filters it out server-side
+  (and `jobs.js` drops it too, so a cached script can't bring the noise back),
+  the Job Manager still shows it in full, and the only thing pushed to the bell
+  is a **failure** — the one outcome the page itself cannot show, because the
+  numbers just stay stale and look current. A clean run says nothing; a probe
+  that turned crit is already carried by the device badge and the alert engine.
+
+  Applied to both probe sweeps and the fleet hardware scan. `background`
+  defaults to `False`, so no new job type can go quiet by accident. *Discover
+  from device* stays foreground on purpose — it creates rows and the operator is
+  waiting to read the count. Notifications from these workers now also carry the
+  ADOM stamped on the job (a worker thread has no request context, so they were
+  landing unscoped, i.e. under FortiWeb). See `docs/safeguards.md` §9g.
+
+- *Probe now* with no selection no longer sweeps every probe in the fleet: it
+  runs the current page's kinds for the current ADOM's devices. Coverage in the
+  Global ADOM is unchanged (the whole fleet); what changed is that the Deep
+  monitors button no longer also runs the Service Monitor probes.
+
+- **Per-appliance runtime telemetry over the REST API — sessions, HTTP
+  throughput and throughput per server policy.** Four new Deep monitor probe
+  kinds that open **no SSH session**: `sessions` (box-wide concurrent sessions
+  and connection rate), `policy_sessions` (per-policy sessions, conn/s, client
+  and server RTT, application response time, plus each pool member's up/health),
+  `throughput` (per-policy or `Total HTTP Throughput` aggregate, charted in
+  Mbps) and `transactions` (bucketed HTTP transaction counts). Thresholds are
+  absolute (`warn_num`/`crit_num`), with the unit shown per kind; the drill-down
+  charts, rollups and 7/30-day history all work unchanged. *Discover from
+  device* gained a **REST telemetry** option.
+
+  FortiWeb 7.6 has no `/api/v2.0/monitor/<resource>` tree — that prefix serves
+  only `monitor/permission-check`. The endpoints used here were enumerated from
+  the appliance's own GUI bundle and verified live against FortiWeb 7.6.8
+  build1128. Notably they keep answering on an appliance whose **cmdb is
+  licence-locked**: fw7 returns HTTP 423 `-20010` for every config read while
+  `policystatus` and `policytraffic` answer 200, so these probes cover exactly
+  the devices whose hourly `device_sync` has been failing. FortiWeb only —
+  FortiADC and FortiAnalyzer are refused by name rather than measured as zero.
+  See `docs/safeguards.md` §9e.
+
+- **A scheduled deep-monitor sweep now reports whether it RAN, not whether it
+  liked what it found.** `ok` was `worst in ("ok","unknown")`, so a single
+  policy with every backend down marked the sweep *failed* and kept it failed
+  until the backend was repaired — making a sweep that could not execute look
+  identical to a healthy one that found something, and pinning the action
+  permanently red. The worst status and per-status counts moved into the
+  summary. See `docs/safeguards.md` §9d.
+
+- **Monitoring is now an ADOM-level submenu, not Global-only.** Fleet health,
+  Metrics and Deep monitors appear in the FortiWeb, FortiADC and FortiAnalyzer
+  ADOMs as well as Global, from a single shared partial
+  (`app/templates/partials/nav_monitoring.html`) so the group cannot drift
+  between ADOMs again. The `monitoring` and `deep_monitor` blueprints were
+  added to the ADC/FAZ product gates; all three pages already scope their rows
+  through `visible_appliances()`, so an ADOM sees only its own devices and
+  probes and anything created from Global against a device of that product
+  appears there automatically (scoping is by device **kind**, not by creator).
+- **The `proxyd` probe reports memory CONSUMED and FREE, in megabytes**, instead
+  of the daemon's `%VSZ`. `%VSZ` is *virtual* size: measured on fw6, the eight
+  largest processes sum to 240 % of installed RAM, because every shared mapping
+  is counted once per process. A figure that can exceed 100 % is not memory
+  used and must not be displayed as though it were. The new numbers come from
+  the `Mem:` header of the same `diagnose system top` output — real, box-wide,
+  no extra round trip. The daemon is still graded alone (running? PID set
+  changed?); thresholds on box memory remain the `memory` probe's job, which
+  already covers every appliance. `%VSZ` is kept in the sample payload as
+  `daemon_vsz_pct`.
+  **Upgrade note:** `value_num` changed units, so `deep_monitor.reset_series(
+  "proxyd")` clears the pre-existing samples of that kind. Charting `59.7` next
+  to `2328` on one axis is a lie no axis label can repair.
+- **Chart.js is served from `static/vendor` (4.4.4) instead of
+  `cdn.jsdelivr.net`.** SATOM ships offline installers for air-gapped
+  management networks; a chart that only renders with public internet access
+  does not render where it matters. The vendored copy was already in the tree
+  and unused.
+
 ### Fixed
+
 - **`/docs/api` was public and served the document unredacted.** The route
   needed no session and rendered `docs/api_v1.md` verbatim, so a management
   hostname and an RFC1918 address were readable by anyone who could load the
@@ -600,7 +954,6 @@ openSUSE 15) from this tree and publishes them alongside the changes below.
   is hard-wrapped at about 90 columns and the renderer had `nl2br` enabled, so
   every wrap became a visible break. The published renderer never had it.
 
-### Fixed
 - **A cluster on openSUSE never replicated files at all, and five more defects
   found by installing a real HA pair.** The first round fixed what stopped a
   single node from coming up; installing a *second* node exposed the rest.
@@ -694,32 +1047,6 @@ openSUSE 15) from this tree and publishes them alongside the changes below.
      The vhost now goes to `vhosts.d/` and the stock block is neutralised, the
      same way `sites-enabled/default` is removed on Debian.
 
-### Changed
-- **The last `fortinet` identifiers are gone from the platform itself.** The
-  database, the PostgreSQL role, the Linux service account and the PostgreSQL
-  TLS directory were the four names the 2026-07 rename deliberately left alone,
-  because they are live state rather than files. They are now `satom`,
-  `satom`, `satom` and `satomssl`. New installations are born with those names;
-  existing ones migrate with `deploy/migrate-rename-satom-db.sh`, which takes a
-  dump before the rename, keeps the account's numeric id (so no ownership sweep
-  is needed) and verifies health before it reports success.
-
-  Three names are kept on purpose and are **not** a leftover:
-  the *vendor* product names (FortiWeb, FortiADC, FortiAnalyzer and their API
-  fields) — the platform manages those appliances and has to be able to name
-  them; the streaming replication slot, because PostgreSQL has no rename for
-  one and dropping it under a live standby risks a full re-sync for an
-  invisible internal string; and the external backup server, because the
-  appliances push to it by name in their own configuration and renaming it
-  from here would break the nightly push silently.
-
-### Added
-- **The changelog is published on all three surfaces.** The same file is now
-  readable in the repository, inside the application under **Documentation**,
-  and on the public documentation site. One source, three renderings — no copy
-  to fall out of date. A test fails the suite if any surface stops carrying it.
-
-### Fixed
 - **The application reported version 1.0 through four releases.** The footer
   and Settings -> System Information each carried a hand-written literal that
   was correct exactly once, while the release pipeline published the real
@@ -729,22 +1056,6 @@ openSUSE 15) from this tree and publishes them alongside the changes below.
   stamping pass that versions the stylesheet, so it cannot drift either. A
   test fails the suite if a version literal reappears in a template or a page.
 
-### Added
-- **The public site ships switchable colour themes.** Three palettes —
-  **Aurora** (default, light canvas over navy chrome), **Abyss** (dark canvas
-  with the blue/gold glow) and **Classic** (the palette SATOM originally
-  shipped) — selectable from a swatch control in the nav and remembered per
-  browser. The whole palette lives in custom properties; `:root` carries the
-  default, so the site still renders correctly with scripting disabled, and a
-  blocking read in `<head>` applies a stored choice before first paint instead
-  of flashing the default and flipping.
-- **Brand gradients and glows are first-class tokens** (`--grad-blue`,
-  `--grad-gold`, `--glow-blue`, `--glow-gold`, `--glow-strength`), used by the
-  hero headline, the primary button, the nav hairline and the brand mark. Glow
-  intensity is per-theme, so the dark palette can lean on it without the light
-  one looking neon.
-
-### Fixed
 - **The site wordmark was effectively invisible.** A single `--accent` served
   both the light canvas and the navy chrome, putting the bold half of the
   wordmark, the active-link underline and the nav button at **1.65:1** against
@@ -761,30 +1072,6 @@ openSUSE 15) from this tree and publishes them alongside the changes below.
   pages, still emitting the company shield rather than the product mark. Both
   surfaces are now asserted against the same expectations.
 
-### Added
-- **Operator CLI: `show tree` (alias `tree`) prints the whole command surface**
-  — every command as a tree, with `*` for root-required and `!` for
-  destructive, plus `--commands` (flat, fixed-column, `awk`-friendly),
-  `--depth N`, `--root`, `--danger` and `--json`. It renders the LIVE registry,
-  so it cannot drift from what the build supports; a test fails the suite if
-  any runnable command is missing from it.
-- **Output policy made explicit**: `--color` / `--no-color` / `--ascii` /
-  `--width N`, plus `NO_COLOR` and `SATOM_CLI_COLOR`. The contract is
-  *decoration is for a TTY, content is identical either way* — through a pipe
-  there are no escape sequences and nothing is truncated.
-- **The manual is now published, generated and redacted.** `docs/README.md`
-  is the documentation index — every document, which of the four surfaces to
-  read it on, and a reading path per role. The complete command table inside
-  `docs/cli.md` is generated from the live registry, and the whole manual is
-  rendered to the public site under `/docs/` from the same Markdown, so neither
-  copy can drift from the source the team edits.
-- **Publication redacts and then refuses.** Internal addresses, management
-  hostnames, hypervisor and node names, the backup server and personal e-mail
-  addresses are rewritten to `{placeholders}`; the generator then re-scans its
-  own output and **aborts** on any survivor, naming pattern, file and line.
-  Publication is opt-in: a document not listed is not published.
-
-### Fixed
 - **The CLI could crash while printing.** An em dash in a title raised
   `UnicodeEncodeError` on a stream with an ASCII encoding (a serial console,
   `PYTHONIOENCODING=ascii`), taking the whole command down. Fixed in two
@@ -803,35 +1090,6 @@ openSUSE 15) from this tree and publishes them alongside the changes below.
 - `Ctrl-C` at the interactive prompt now abandons the line, like a shell,
   instead of leaving the console.
 
-### Added
-- **Operator CLI, second pass: the automated half now has a console.** 39 more
-  commands, organised around the failure modes this product has actually had
-  rather than around the code layout. Reads for the layer that has no UI of its
-  own — `get backup status` (the four copies side by side), `get scheduler
-  status`, `get timer status`, `get device status`, `get monitor status`,
-  `get alerts status` (*is anyone actually told?*), `get job list`,
-  `get git status`, `get user list`, `get update history`,
-  `get system disk|time`, `get certificate list`. New probes: `diagnose
-  install` (is the node ARMED, or merely installed?), `diagnose code` (is each
-  process running the code on disk?), `diagnose scheduler`, `diagnose units`,
-  `diagnose config`, `diagnose nginx`, `diagnose git`, `diagnose acme` —
-  `diagnose all` now folds 24 checks into one exit code in ~3.5 s. New verbs:
-  `execute seed actions`, `execute restore db`, `execute backup git`,
-  `execute repair jobs|tmp`, `execute admin reset-password|unlock`,
-  `execute scheduler run|enable|disable`, `execute maintenance`,
-  `execute enable|disable`, `execute restart-all`, `execute support bundle`.
-- **Twelve offline runbooks** in `satom show runbook` — web-down, db-down,
-  scheduler-idle, update-stuck, cert-expired, disk-full, peer, promote,
-  restore, fresh-install, locked-out, device-unreachable. They live in the
-  binary, not in the wiki or on the public site, because the operator who needs
-  them has no web UI, no browser and usually no route to the internet.
-- **`execute seed actions`** closes the gap documented in `safeguards.md` §10:
-  no `ScheduledAction` row is ever seeded, so a fresh node has every
-  capability, zero coverage, and looks perfectly healthy while it takes no
-  backups at all. It prints the plan and only applies with `--yes`, and it
-  never touches an existing row — operator edits still win.
-
-### Fixed
 - **Two diagnostics were modifying the tree they diagnose.** `git status` run as
   root rewrites `.git/index` and takes it from the service account;
   `compileall` leaves root-owned `__pycache__`. So `get git status` and
@@ -859,47 +1117,6 @@ openSUSE 15) from this tree and publishes them alongside the changes below.
 - `diagnose all` no longer repeats design notes from checks that passed — eight
   lines of explanation attached to nothing buried the two that were findings.
 
-### Added
-- **An operator CLI (`satom`) for a node whose web UI is down.** Modelled on the
-  appliance CLIs this product manages: `get` / `show` / `diagnose` / `execute`,
-  `?` completion at any depth, one-shot for scripts and an interactive prompt on
-  top of the *same* dispatcher. It wraps what already existed (the `flask`
-  commands, the deploy scripts, the privileged update queue) behind one
-  discoverable door rather than reimplementing any of it.
-
-  Three properties are load-bearing and are enforced by `tests/test_cli.py`:
-
-  * **Standard library only** at module level — no Flask, no SQLAlchemy, not even
-    the app package. A tool that needs a healthy venv to report that the venv is
-    broken is not a recovery tool. An AST check fails the suite on a stray
-    module-level import; commands that genuinely need the app import it lazily
-    and degrade with a stated reason.
-  * **Degrades by privilege instead of failing.** `get`, `show` and `diagnose`
-    work as any user; `execute` requires root and refuses with the full command
-    echoed back and an exit code of `3` — never a traceback, at the one moment a
-    traceback is least useful.
-  * **Installed as a `root:root` copy outside the app tree**
-    (`/usr/local/sbin/satom` + `/usr/local/lib/satom-cli/`). The app tree is
-    writable by the service account, so a launcher executing from there would let
-    a compromised web worker rewrite what an operator runs under `sudo`. The
-    installer verifies owner, mode and "not a symlink"; `satom diagnose
-    privilege` re-verifies on demand and also fails if the CLI has been granted
-    to the service account (that grant would equal `NOPASSWD: ALL`).
-
-  `deploy/install-cli.sh` is called from the installer, from
-  `self_update_runner.py` after every code update (the CLI lives outside the app
-  tree, so `git pull` does not reach it) and from `satom execute reinstall cli`.
-
-  New command of note: **`diagnose python`** runs `compileall` over `app/` and
-  `deploy/` *and* explicitly imports the modules the app only imports inside
-  functions. That is the class of failure that shipped a hard `SyntaxError` in
-  `cert_service.py` inside the 1.2 and 1.2.1 bundles while the app booted,
-  `/healthz` returned 200 and the whole test suite stayed green.
-
-  Reference: [`docs/cli.md`](docs/cli.md). Permissions to request:
-  `docs/INSTALL.md` §5, *Cuenta de OPERADOR*.
-
-### Fixed
 - **The device cards on the probe pages were painted for a dark theme.** SATOM
   has no dark mode — `static/css/fortiweb.css` is a light chrome (`#F4F5F7`
   content, `#FFFFFF` cards, `#EF5424` accent) — but the rollup cards added on
@@ -911,37 +1128,6 @@ openSUSE 15) from this tree and publishes them alongside the changes below.
   colours in the drill-down modal, now build from `.fw-card` and the `--fw-*`
   custom properties.
 
-### Changed
-- **Device cards start folded and tile densely.** Expanded-by-default is
-  unusable past a handful of appliances: a hundred of them was a kilometre of
-  scroll. The cards now open collapsed, tile in a dense ~258 px grid so a large
-  fleet fits in one screenful, and an expanded card takes the full row (the
-  policy table needs the width, and a tall item in a narrow column stretches
-  every tile beside it). The persisted state is now the set of **open** cards,
-  not the closed ones, under a new `localStorage` key — the old key held the
-  inverse set, and reusing the name would have expanded exactly the cards an
-  operator had folded.
-
-### Added
-- **A scheduled automation that breaks now raises its own alert.** Silencing
-  successful housekeeping runs is only safe if the failing run is loud, and it
-  was not: `scheduled_actions` held no notification path and the alert engine
-  had no check for it, so `device_sync` had failed **24 consecutive scheduled
-  runs** with nobody told, and the day the scheduler sidecar stopped firing
-  entirely it stayed silent for hours while systemd still showed the unit
-  `active`. `alerts._check_actions` grades two signals — a consecutive
-  scheduled-failure streak, and an enabled action whose due time is long past
-  (a dead scheduler produces no failed runs to count) — as **one finding per
-  action**, with the severity in the cooldown key so a warn → crit escalation
-  still gets through. Only `trigger='schedule'` runs count: a manual retry is
-  already on the operator's screen, and mixing the two hides the exact case
-  where the sidecar is running stale code. A streak that hits the history
-  window is reported as `N+`, not as a count; a `skipped` run clears a streak
-  just as `ok` does, so an action whose targets are all parked goes quiet
-  instead of sitting critical forever. Two knobs in Settings → Alerts
-  (*Automation fail streak → critical*, *Automation overdue (hours)*).
-
-### Fixed
 - **Maintenance mode suppressed alerts but not work.** An appliance parked with
   `maintenance = true` was still swept by every automatic scheduled run and
   still counted as a failure, which pinned the action permanently `failed` —
@@ -960,94 +1146,6 @@ openSUSE 15) from this tree and publishes them alongside the changes below.
   the job feeds (throttled to once every 120 s), and a job that never received a
   pid is considered dead after 10 minutes instead of an hour.
 
-
-### Changed
-- **Service Monitor (and every other probe) now sweeps every 3 minutes** instead
-  of 5. The scheduled sweep action was retimed and *all* probe intervals were
-  aligned to a multiple of the new tick: `due_probes` needs the whole interval
-  to elapse before a tick can fire it, so a 5-minute probe under a 3-minute
-  sweep silently becomes a 6-minute probe. `cpu`, `memory` and `proxyd` moved
-  5 -> 3 rather than being allowed to drift to 6; `interface` and `transactions`
-  stay at 15 (already a multiple of 3). New constants
-  `deep_monitor.DEFAULT_PROBE_INTERVAL_MIN` / `SLOW_PROBE_INTERVAL_MIN` carry
-  the rule into every discovery path so a bare literal cannot reintroduce it.
-  Measured end-to-end cadence is ~3.4-3.7 min: the scheduler anchors `next_run`
-  to run *completion* and ticks every 45 s. See `docs/safeguards.md` §9i.
-- **Background work no longer opens a floating window.** A monitoring sweep used
-  to raise the same toast — progress bar, **Stop** button — as a firmware flash
-  someone was waiting on, and pushed a bell notification on *every* successful
-  run. `jobs.create_job(..., background=True)` now marks work nobody is waiting
-  on: the toast dock's feed (`GET /jobs/?active=1`) filters it out server-side
-  (and `jobs.js` drops it too, so a cached script can't bring the noise back),
-  the Job Manager still shows it in full, and the only thing pushed to the bell
-  is a **failure** — the one outcome the page itself cannot show, because the
-  numbers just stay stale and look current. A clean run says nothing; a probe
-  that turned crit is already carried by the device badge and the alert engine.
-
-  Applied to both probe sweeps and the fleet hardware scan. `background`
-  defaults to `False`, so no new job type can go quiet by accident. *Discover
-  from device* stays foreground on purpose — it creates rows and the operator is
-  waiting to read the count. Notifications from these workers now also carry the
-  ADOM stamped on the job (a worker thread has no request context, so they were
-  landing unscoped, i.e. under FortiWeb). See `docs/safeguards.md` §9g.
-
-### Added
-- **Device traffic cards are collapsible** on Deep monitors and Service Monitor,
-  with the state persisted in `localStorage` keyed per page — `renderDevices()`
-  rewrites `innerHTML` on every 20 s poll, so DOM-only state would re-expand
-  every card three times a minute. A collapsed card keeps its status badge and a
-  headline chip (avg throughput / policy count) so folding hides the detail, not
-  the finding. Keyboard reachable, no inline handlers (CSP).
-  See `docs/safeguards.md` §9j.
-- Device cards restyled to the fleet visual standard: layered gradient +
-  glassmorphism surface, blue->violet accent rule, hover elevation.
-- **Traffic per appliance, and a real drill-down per server policy.** Service
-  Monitor was a flat table of probes: the box-wide `Total HTTP Throughput`
-  reading was one row among twenty, and answering *"what is going on inside this
-  policy"* meant reading four rows and joining them by eye. The page now opens
-  with **one traffic card per FortiWeb** — total throughput (average, window
-  peak and a sparkline), box sessions / connection rate / CPU / memory, and a
-  table of that device's server policies with sessions, conn/s, throughput and
-  backends-up. Clicking a policy opens the full view: sessions, conn/s, client
-  RTT, server RTT and application response time as KPIs, every backend pool
-  member with its health, and the sessions / throughput / transactions trends
-  side by side.
-
-  Both views are built **entirely from stored samples** — opening them never
-  contacts an appliance, so they answer with the box powered off or its cmdb API
-  licence-locked, which is the case on fw6 and fw7 today. And they refuse to
-  invent numbers: a probe that is missing, disabled or has never run reports
-  *not measured* rather than `0`, stale samples are flagged with their age, and
-  there is deliberately no single rolled-up per-device badge, because `unknown`
-  sorts as *less* severe than `ok` and one healthy probe would paint over three
-  missing ones. See `docs/safeguards.md` §9h.
-
-- **Service Monitor — runtime telemetry gets its own Monitoring page.** The four
-  REST-telemetry probe kinds (`sessions`, `policy_sessions`, `throughput`,
-  `transactions`) moved out of Deep monitors to **Monitoring → Service Monitor**
-  (`/monitoring/services`), present in all four ADOMs. Deep monitors keeps the
-  five kinds that reach into the appliance (`https`, `interface`, `cpu`,
-  `memory`, `proxyd`).
-
-  Storage, runner and the `deep_monitor` scheduled action are deliberately
-  **not** split — two runners would double-schedule every device. What is split
-  is the set of kinds each page owns, and the partition is enforced on every
-  route: each `/data` filters on its own kinds, create/edit refuse the other
-  page's kinds, a foreign probe id answers 404, *Probe now* is pinned to the
-  page (and the ADOM), and *Discover from device* only offers the steps the page
-  owns. A kind can land on exactly one page — neither on both nor on neither,
-  or the partition test fails. See `docs/safeguards.md` §9f.
-
-  Both pages render from ONE template (`monitoring/_probe_page.html`) driven by
-  a `PageSpec`, so the drill-down chart, rollups, history drawer and port picker
-  cannot drift apart.
-- **Live server-policy picker** in the probe form: the policy name field is
-  backed by a datalist filled from the appliance's LIVE `policystatus` (not the
-  harvest cache, which is empty on a licence-locked box). A failure is printed
-  in the form instead of degrading to an empty dropdown — "no policies" and
-  "could not ask" look identical in a `<select>` and mean opposite things.
-
-### Fixed
 - **`transactions` could report a silent zero on a saturated policy.** Found by
   a real load test against fortiweb08 (2026-07-28): a policy carrying
   ~2 700 req/s reported **0** transactions in every bucket, and **417 059** the
@@ -1057,43 +1155,6 @@ openSUSE 15) from this tree and publishes them alongside the changes below.
   is carrying sessions or connections it grades `warn` and names the likely
   cause, instead of a green row on a busy service. Mutation-tested.
 
-### Changed
-- *Probe now* with no selection no longer sweeps every probe in the fleet: it
-  runs the current page's kinds for the current ADOM's devices. Coverage in the
-  Global ADOM is unchanged (the whole fleet); what changed is that the Deep
-  monitors button no longer also runs the Service Monitor probes.
-
-- **Per-appliance runtime telemetry over the REST API — sessions, HTTP
-  throughput and throughput per server policy.** Four new Deep monitor probe
-  kinds that open **no SSH session**: `sessions` (box-wide concurrent sessions
-  and connection rate), `policy_sessions` (per-policy sessions, conn/s, client
-  and server RTT, application response time, plus each pool member's up/health),
-  `throughput` (per-policy or `Total HTTP Throughput` aggregate, charted in
-  Mbps) and `transactions` (bucketed HTTP transaction counts). Thresholds are
-  absolute (`warn_num`/`crit_num`), with the unit shown per kind; the drill-down
-  charts, rollups and 7/30-day history all work unchanged. *Discover from
-  device* gained a **REST telemetry** option.
-
-  FortiWeb 7.6 has no `/api/v2.0/monitor/<resource>` tree — that prefix serves
-  only `monitor/permission-check`. The endpoints used here were enumerated from
-  the appliance's own GUI bundle and verified live against FortiWeb 7.6.8
-  build1128. Notably they keep answering on an appliance whose **cmdb is
-  licence-locked**: fw7 returns HTTP 423 `-20010` for every config read while
-  `policystatus` and `policytraffic` answer 200, so these probes cover exactly
-  the devices whose hourly `device_sync` has been failing. FortiWeb only —
-  FortiADC and FortiAnalyzer are refused by name rather than measured as zero.
-  See `docs/safeguards.md` §9e.
-
-### Changed
-- **A scheduled deep-monitor sweep now reports whether it RAN, not whether it
-  liked what it found.** `ok` was `worst in ("ok","unknown")`, so a single
-  policy with every backend down marked the sweep *failed* and kept it failed
-  until the backend was repaired — making a sweep that could not execute look
-  identical to a healthy one that found something, and pinning the action
-  permanently red. The worst status and per-status counts moved into the
-  summary. See `docs/safeguards.md` §9d.
-
-### Fixed
 - **A product ADOM inherited the manager's own infrastructure.** Fleet health
   rendered *Infrastructure health — HA nodes · Git · backup server*, the
   Database / Services & redundancy cards and *Encryption in transit* inside the
@@ -1135,55 +1196,6 @@ openSUSE 15) from this tree and publishes them alongside the changes below.
 - **`maintenance` flag on the Monitoring device card was always false.** The
   payload read a `maintenance_mode` attribute that has never existed on
   `Appliance`; the column is `maintenance`.
-
-### Changed
-- **Monitoring is now an ADOM-level submenu, not Global-only.** Fleet health,
-  Metrics and Deep monitors appear in the FortiWeb, FortiADC and FortiAnalyzer
-  ADOMs as well as Global, from a single shared partial
-  (`app/templates/partials/nav_monitoring.html`) so the group cannot drift
-  between ADOMs again. The `monitoring` and `deep_monitor` blueprints were
-  added to the ADC/FAZ product gates; all three pages already scope their rows
-  through `visible_appliances()`, so an ADOM sees only its own devices and
-  probes and anything created from Global against a device of that product
-  appears there automatically (scoping is by device **kind**, not by creator).
-- **The `proxyd` probe reports memory CONSUMED and FREE, in megabytes**, instead
-  of the daemon's `%VSZ`. `%VSZ` is *virtual* size: measured on fw6, the eight
-  largest processes sum to 240 % of installed RAM, because every shared mapping
-  is counted once per process. A figure that can exceed 100 % is not memory
-  used and must not be displayed as though it were. The new numbers come from
-  the `Mem:` header of the same `diagnose system top` output — real, box-wide,
-  no extra round trip. The daemon is still graded alone (running? PID set
-  changed?); thresholds on box memory remain the `memory` probe's job, which
-  already covers every appliance. `%VSZ` is kept in the sample payload as
-  `daemon_vsz_pct`.
-  **Upgrade note:** `value_num` changed units, so `deep_monitor.reset_series(
-  "proxyd")` clears the pre-existing samples of that kind. Charting `59.7` next
-  to `2328` on one axis is a lie no axis label can repair.
-- **Chart.js is served from `static/vendor` (4.4.4) instead of
-  `cdn.jsdelivr.net`.** SATOM ships offline installers for air-gapped
-  management networks; a chart that only renders with public internet access
-  does not render where it matters. The vendored copy was already in the tree
-  and unused.
-
-### Added
-- **Drill-down charts on the deep monitors.** Clicking any sparkline opens
-  1 h / 24 h / 7 d / 30 d or an explicit date range, with min/average/max, the
-  status strip, healthy-percentage and threshold lines.
-- **`monitor_rollup` — pre-aggregated history.** Raw samples are capped per
-  probe (~2 days at the default interval and retention), so depth is bought
-  with buckets instead: hourly kept 90 days, daily kept 2 years, under 400 KB
-  per probe for two years of history against roughly 35 MB if the raw rows and
-  their CLI payloads were retained for the same window. Both extremes are
-  stored, not just the mean — a four-minute spike is invisible in an average
-  and is exactly what an operator opens a chart to find.
-  The rollup runs **inside `run_probe`, before the retention prune**, rather
-  than as its own scheduled action: nothing in this product seeds a
-  `ScheduledAction` row, so a feature that depends on the operator creating one
-  does not exist on a fresh install.
-- **`GET /monitoring/deep/probe/<id>/series`** — chart data. The resolution
-  (raw samples, hourly buckets, daily buckets) is chosen server-side and
-  reported back in `source`, and the UI prints which one it drew: an hourly
-  average and a five-minute reading are not the same claim about the device.
 
 ## [1.2.2] - 2026-07-27
 

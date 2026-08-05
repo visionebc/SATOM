@@ -54,6 +54,45 @@ OSI_CLAIMS = [
 def _read(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
 
+#: Heading of the section in ``NOTICE`` that attributes THIRD-PARTY components.
+#: Everything under it describes somebody else's licence, so the "must not name
+#: the old licence" rule cannot apply there -- Apache-2.0 requires the notice to
+#: travel with the binary the bundles redistribute.
+THIRD_PARTY_HEADING = "THIRD-PARTY COMPONENTS"
+
+
+def _declaring_body(rel: str) -> str:
+    """The part of a declaring file that speaks about SATOM's OWN licence.
+
+    The file is a sequence of banner sections::
+
+        ------------------------------------------------------------
+        TITLE
+        ------------------------------------------------------------
+        body...
+
+    Everything except the THIRD-PARTY one is SATOM speaking for itself.
+    Splitting on the banner (rather than slicing to the next run of dashes)
+    matters: the heading carries its OWN underline, so a naive "find the next
+    dashes" boundary lands on it and strips nothing.
+    """
+    txt = _read(rel)
+    if THIRD_PARTY_HEADING not in txt:
+        return txt
+    banner = re.compile(r"^-{20,}\n([A-Z][A-Z0-9 &/,'\-]+)\n-{20,}$", re.M)
+    marks = [(m.start(), m.end(), m.group(1).strip()) for m in banner.finditer(txt)]
+    if not marks:
+        return txt
+    out, prev_end, prev_title = [], 0, None
+    for start, end, title in marks:
+        if prev_title != THIRD_PARTY_HEADING:
+            out.append(txt[prev_end:start])
+        prev_end, prev_title = end, title
+    if prev_title != THIRD_PARTY_HEADING:
+        out.append(txt[prev_end:])
+    return "".join(out)
+
+
 
 def _flat(txt: str) -> str:
     """Collapse whitespace.
@@ -109,10 +148,51 @@ def test_declaring_file_names_the_current_license(rel):
 
 @pytest.mark.parametrize("rel", DECLARING)
 def test_declaring_file_does_not_name_the_old_license(rel):
-    txt = _read(rel)
+    # Scoped to the part of the file that speaks for SATOM. The third-party
+    # attribution block names other projects' licences on purpose, and one of
+    # them is Apache-2.0 -- see test_third_party_attribution_is_not_a_loophole
+    # for the guard that keeps that exclusion honest.
+    txt = _declaring_body(rel)
     assert OLD_LICENSE not in txt, (
-        f"{rel} still refers to {OLD_LICENSE}; the project is under "
-        f"{LICENSE_NAME}")
+        f"{rel} still refers to {OLD_LICENSE} outside its third-party "
+        f"attribution block; the project is under {LICENSE_NAME}")
+
+
+@pytest.mark.parametrize("rel", DECLARING)
+def test_third_party_attribution_is_not_a_loophole(rel):
+    """The exclusion above must not swallow the file.
+
+    A helper that returned "" -- a changed heading, a mis-parsed boundary, an
+    over-greedy slice -- would make the rule above vacuous while still passing.
+    It has to keep the part that actually declares SATOM's licence.
+    """
+    body = _declaring_body(rel)
+    full = _read(rel)
+    assert body, f"{rel}: the declaring body parsed as empty"
+    assert LICENSE_NAME in body or LICENSE_NAME not in full, (
+        f"{rel} states {LICENSE_NAME} only inside the region excluded from the "
+        "old-licence rule, so that rule now checks nothing")
+    if THIRD_PARTY_HEADING in full:
+        assert len(body) >= len(full) // 3, (
+            f"{rel}: the third-party exclusion swallowed "
+            f"{100 - 100 * len(body) // len(full)}% of the file")
+
+
+def test_notice_does_not_relicense_satom_inside_the_attribution_block():
+    """Attribution says what a *component* is, never what SATOM is."""
+    txt = _read("NOTICE")
+    if THIRD_PARTY_HEADING not in txt:
+        pytest.skip("no third-party section")
+    section = txt[txt.index(THIRD_PARTY_HEADING):]
+    flat = _flat(section).lower()
+    for claim in (f"satom is licensed under the {OLD_LICENSE.lower()}",
+                  f"satom is under the {OLD_LICENSE.lower()}",
+                  f"this product is licensed under the {OLD_LICENSE.lower()}"):
+        assert claim not in flat, (
+            f"the third-party block declares SATOM itself under {OLD_LICENSE}")
+    assert LICENSE_NAME in section, (
+        "the third-party block does not restate that SATOM is under "
+        f"{LICENSE_NAME}; a reader landing there sees only other licences")
 
 
 @pytest.mark.parametrize("rel", DECLARING)

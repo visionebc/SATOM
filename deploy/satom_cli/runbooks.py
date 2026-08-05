@@ -144,7 +144,7 @@ RUNBOOKS = {
     "  2. Confirm the scheduler now fires here and is idle over there —",
     "     scheduled actions are primary-only:",
     "       satom diagnose scheduler",
-    "  3. Confirm git-publish and the backup timers took over:",
+    "  3. Confirm the backup timers and metrics collection took over:",
     "       satom diagnose backup",
     "",
     "The internal CA key lives ONLY on the original primary. A promoted node",

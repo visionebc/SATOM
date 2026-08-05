@@ -82,7 +82,7 @@
   {# Active ADOM indicator — always visible so an ADOM jump is never silent #}
   {% set _adom_c = {'global': '#3b82f6', 'fortiweb': '#ef4444', 'fortiadc': '#10b981', 'fortiauthenticator': '#7c3aed', 'fortianalyzer': '#d97706'}.get(product.key, '#3b82f6') %}
   <span class="fw-adom-badge" title="Active administrative domain"
-        style="display:inline-flex;align-items:center;gap:6px;margin-left:12px;padding:3px 12px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;white-space:nowrap;color:#eaf0fb;background:{{ _adom_c }}26;border:1px solid {{ _adom_c }}99;">
+        style="display:inline-flex;align-items:center;gap:5px;margin-left:8px;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;color:#eaf0fb;background:{{ _adom_c }}26;border:1px solid {{ _adom_c }}99;">
     <i class="bi {{ 'bi-globe2' if product.key == 'global' else 'bi-hdd-rack' }}" style="color:{{ _adom_c }};"></i>
     ADOM: {{ product.name }}
   </span>
@@ -91,7 +91,7 @@
   {% set _is_prod = env_mode == 'production' %}
   {% set _env_c = '#ef4444' if _is_prod else '#f59e0b' %}
   <span class="fw-env-badge" title="Deployment environment (Settings → General → Environment)"
-        style="display:inline-flex;align-items:center;gap:6px;margin-left:10px;padding:3px 12px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.9px;text-transform:uppercase;white-space:nowrap;color:#fff;background:{{ _env_c }}26;border:1px solid {{ _env_c }};">
+        style="display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;color:#fff;background:{{ _env_c }}26;border:1px solid {{ _env_c }};">
     <i class="bi {{ 'bi-broadcast-pin' if _is_prod else 'bi-cone-striped' }}" style="color:{{ _env_c }};"></i>
     {{ 'PRODUCTION' if _is_prod else 'DEVELOPMENT' }}
   </span>
@@ -103,7 +103,7 @@
   {% set _ha_c = '#10b981' if _is_primary else ('#3b82f6' if _is_standby else '#64748b') %}
   <span class="fw-harole-badge"
         title="HA node {{ node_name }}  {{ 'read-write primary' if _is_primary else ('read-only standby' if _is_standby else 'role unknown') }}"
-        style="display:inline-flex;align-items:center;gap:6px;margin-left:10px;padding:3px 12px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.9px;text-transform:uppercase;white-space:nowrap;color:#eaf0fb;background:{{ _ha_c }}26;border:1px solid {{ _ha_c }};">
+        style="display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;color:#eaf0fb;background:{{ _ha_c }}26;border:1px solid {{ _ha_c }};">
     <i class="bi {{ 'bi-star-fill' if _is_primary else ('bi-hdd-stack' if _is_standby else 'bi-question-circle') }}" style="color:{{ _ha_c }};"></i>
     {{ 'PRIMARY' if _is_primary else ('STANDBY' if _is_standby else 'NODE ?') }}
   </span>

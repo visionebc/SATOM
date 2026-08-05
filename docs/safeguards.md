@@ -540,6 +540,51 @@ cannot pin what a recipient already holds: a copy distributed under an earlier
 licence stays under the terms it was received under, and no test changes that.
 `LICENSE` states it in the scope header rather than leaving it implied.
 
+## 7g. The release notes are the changelog, split — never a second copy
+
+`CHANGELOG.md` was published whole, as one page. It is a thousand lines, so the
+question an operator actually asks — *what shipped in 1.3.3, and do I need it?*
+— could only be answered by scrolling. The site now carries a **Release notes**
+section with one page per version.
+
+The obvious way to build that is to write the pages. That is also how a manual
+starts lying: a second copy of something the repository already knows goes stale
+silently, because nobody gets a stack trace from documentation. So every fact on
+those pages is derived from the Markdown — the version list is the changelog's
+own `## [x.y.z]` headings **in file order**, the dates are its own dates, the
+teaser lines are the bold lead-ins of its own bullets, and the *current release*
+badge is the repo-root `VERSION` file. Nothing is typed twice, so nothing can
+disagree.
+
+| Guard | What it prevents | Where |
+|---|---|---|
+| `--check` fails when a page differs from its section | editing the changelog and forgetting the site | `deploy/gen_release_notes.py` |
+| orphan pages are deleted, and their presence fails `--check` | a version renamed in the changelog leaving its old page serving forever | same |
+| the hub's link list must equal the heading list, in order | a version published but unreachable, or a link to a page that does not exist | `tests/test_release_notes_pages.py` |
+| the *current release* badge is read from `VERSION` | the number that sat at `v1.0` for four releases | same |
+| the unreleased section may not carry the *current* badge | merged-but-not-cut work presented as shipped | same |
+| `redact()` then `scan()`, and a survivor **aborts** | publishing an internal identifier in a changelog entry | `gen_release_notes.main` |
+
+Two further notes, both learned the hard way while writing this:
+
+- **The two halves of the leak guard are both required.** A single test that
+  plants an identifier and expects an abort passes trivially — `redact()`
+  removes it first, which is the pipeline working. That test is satisfied by a
+  `redact()`/`scan()` pair narrowed together until neither sees anything, which
+  is exactly how identifiers have reached the public mirror before (§7e). So
+  there is one test that redaction really removes each forbidden class, and one
+  that neutralises redaction and requires the build to refuse.
+- **A generator test must sandbox both ends.** Redirecting only the input still
+  writes to the real destination: the first version of that test deleted the
+  fourteen pages it existed to guard.
+
+`docs/release_notes.md` is a **different document** — the vendor's known-issue
+corpus behind the upgrade advisor. It no longer calls itself "Release notes" on
+the site, and a test enforces that: two things with one name is how an operator
+plans an upgrade from the wrong document.
+
+---
+
 ## 8. Sessions and the web surface
 
 | Guard | Detail |

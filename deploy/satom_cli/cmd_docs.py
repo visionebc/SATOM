@@ -50,13 +50,13 @@ SCHEDULE = [
     ("satom-updater.path", "on demand", "watches data/update-requests (root runner)"),
     ("satom-alerts.timer", "every 15 min", "evaluates the health signals"),
     ("satom-cert-renew.timer", "03:30 daily", "renews a CA-issued service cert"),
-    ("satom-git-publish.timer", "hourly", "publishes reports/ to git (copy 3)"),
     ("satom-ha-datasync.timer", "every 5 min", "STANDBY pulls data/ from the primary"),
     ("action: device_sync", "hourly", "refresh the device source of truth"),
-    ("action: system_backup", "01:30", "pg_dump bundle (+ git, + external server)"),
-    ("action: device_inspect", "02:45", "nightly SoT snapshot -> git"),
-    ("action: git_bundle", "03:15", "git bundle --all (copy on 4 destinations)"),
+    ("action: system_backup", "01:30", "pg_dump bundle (+ external server)"),
+    ("action: device_inspect", "02:45", "nightly SoT push to the backup server"),
     ("action: deep_monitor", "every 3 min", "probe sweep"),
+    ("action: metrics_scrape", "every 3 min", "fleet metrics into the local store"),
+    ("action: monitor_report", "02:00 / Mon / 1st", "period summaries (+ off-box)"),
 ]
 
 
@@ -146,7 +146,7 @@ def services(ctx, args):
         "updater": "PRIVILEGED root runner: installs units, pip, restarts",
         "alerts": "evaluates the health signals every 15 minutes",
         "cert-renew": "renews a CA-issued service certificate at 03:30",
-        "git-publish": "publishes reports/ to git — backup copy 3",
+        "metrics": "local time-series store for fleet metrics (loopback only)",
         "datasync": "STANDBY pulls data/ from the primary every 5 minutes",
         "nginx": "front door: :443, :8443, :80 + the ACME challenge",
         "postgres": "shared state; the standby streams from the primary",

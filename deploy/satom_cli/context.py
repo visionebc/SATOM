@@ -30,7 +30,11 @@ UNITS = {
     "updater": "satom-updater.path",
     "alerts": "satom-alerts.timer",
     "cert-renew": "satom-cert-renew.timer",
-    "git-publish": "satom-git-publish.timer",
+    # satom-git-publish retired 2026-08-05 (the SoT left git). It is NOT
+    # listed here on purpose: a retired unit reported "inactive/dead" on
+    # every healthy node is the same permanent-warning pattern already
+    # removed twice from this output.
+    "metrics": "satom-metrics.service",
     "datasync": "satom-ha-datasync.timer",
     "nginx": "nginx.service",
     "postgres": "postgresql.service",
@@ -40,7 +44,7 @@ UNITS = {
 # deliberately ABSENT: it is the privileged root runner, and a CLI verb that
 # restarts it is a CLI verb that re-enters the privilege boundary sideways.
 RESTARTABLE = ("web", "scheduler", "reconciler", "alerts", "cert-renew",
-               "git-publish", "datasync", "nginx")
+               "metrics", "datasync", "nginx")
 
 
 def run(cmd, timeout=60, env=None, cwd=None, input_=None):

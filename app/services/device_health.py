@@ -257,16 +257,37 @@ def capacity_rows(appliance, warn: float, crit: float) -> list:
 
 
 def cache_meta(appliance) -> dict:
-    """Newest cached-layer metadata for *appliance* (deep layer first)."""
+    """Freshness meta for the NEWEST cached layer of *appliance*.
+
+    Every layer is asked and the newest ``generated_at`` wins, because the
+    layers refresh on different clocks: ``config`` hourly (``device_sync``),
+    ``deep`` nightly (``deep_capture``, FortiWeb-only). Two things follow, and
+    both were live bugs until 2026-08-05:
+
+    * Grading the NIGHTLY layer against ``monitoring.stale_hours`` (6 h, the
+      cadence of the HOURLY sync) is red 18 hours out of 24 on a healthy box.
+    * FortiADC / FortiAnalyzer / FortiAuthenticator have no deep layer at all,
+      so a deep-first reader calls them "never cached" while they hold a
+      snapshot minutes old.
+
+    The membership test is ``cached``, NOT the truthiness of the dict:
+    :func:`read_layer._layer_meta` returns a populated four-key dict even when
+    there is no snapshot, so ``if meta:`` is always true and the second layer
+    was unreachable.
+    """
     from . import read_layer
-    for layer in ("deep", "config"):
+    best: dict = {}
+    for layer in ("config", "deep"):
         try:
             meta = read_layer._layer_meta(appliance.id, layer=layer) or {}
         except Exception:  # noqa: BLE001
-            meta = {}
-        if meta:
-            return meta
-    return {}
+            continue
+        if not meta.get("cached"):
+            continue
+        ga, best_ga = meta.get("generated_at"), best.get("generated_at")
+        if best_ga is None or (ga is not None and ga > best_ga):
+            best = meta
+    return best
 
 
 def collect_for(appliance, warn=None, crit=None, hours: float | None = None) -> dict:

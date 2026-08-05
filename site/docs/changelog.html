@@ -96,7 +96,22 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
-<li><strong>The product-scoping columns could not hold an 18-character ADOM key.</strong>
+<li>
+<p><strong>Two alert engines read the wrong source and complained permanently.</strong>
+  Device freshness graded the <code>deep</code> cache layer -- refreshed once a night by
+  the FortiWeb-only <code>deep_capture</code> -- against the six-hour budget of the
+  <em>hourly</em> sync, so a healthy appliance reported a stale cache eighteen hours
+  out of twenty-four, and every non-FortiWeb product reported "no cached
+  configuration" while holding a snapshot minutes old. <code>cache_meta</code> now reports
+  the age of the newest layer that actually has a snapshot. Config drift diffed
+  git history for <code>reports/&lt;slug&gt;/_config.json</code>; the source of truth left git
+  in the same release, so the migration commit read as fifteen device-side
+  edits. Drift now reads the content-addressed <code>sot_version</code> store, where an
+  unchanged device mints no row, and it honours <code>maintenance</code> -- retired
+  appliances no longer alert. See <code>docs/safeguards.md</code> section 18.</p>
+</li>
+<li>
+<p><strong>The product-scoping columns could not hold an 18-character ADOM key.</strong>
   Every product key the app had ever written was at most 13 characters
   (<code>fortianalyzer</code>), so <code>appliances.kind</code> and the <code>product</code> column on twelve
   other tables were declared <code>varchar(16)</code>. <code>fortiauthenticator</code> is 18 — which
@@ -109,7 +124,8 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   their names: <code>monitor_probe.kind</code>, <code>notifications.kind</code> and <code>plugins.kind</code>
   share a column name but a different domain and were left alone. A guard now
   compares against the longest key declared in <code>branding._FALLBACK</code>, so a
-  longer fifth product is caught the day it is declared.</li>
+  longer fifth product is caught the day it is declared.</p>
+</li>
 </ul>
 <p><em>Nothing yet.</em></p>
 <h2 id="141-2026-08-05">[1.4.1] - 2026-08-05</h2>

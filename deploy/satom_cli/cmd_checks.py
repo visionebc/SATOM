@@ -691,6 +691,61 @@ def git(ctx, args):
     if url.startswith("http://"):
         r.worst("warn")
     r.rows("", rows)
+
+    # SATOM-UNIQUE-STATE: a node holding work that exists nowhere else has to
+    # SAY so, because the operation that destroys it looks routine.
+    # `git reset --hard` discards MODIFICATIONS TO TRACKED FILES and, when it
+    # targets the remote ref, COMMITS THIS NODE HAS NOT PUSHED. Both are the
+    # only copy. Untracked files survive a reset, so they are listed but do
+    # not grade -- grading them would put a permanent warn on the primary,
+    # which legitimately carries an untracked `reports` symlink, and the first
+    # thing a permanent warn teaches is that this check can be ignored.
+    unique = []
+    # --name-only gives BARE paths. Slicing the porcelain "XY " prefix by
+    # position is wrong here: run() strips the captured output, so the first
+    # line loses its leading space and a fixed slice eats the first character
+    # of the filename.
+    rc, dirty_out, _ = run(g + ["diff", "--name-only", "HEAD"])
+    dirty = [x.strip() for x in dirty_out.splitlines() if x.strip()] if rc == 0 else []
+    unique.append(("modified tracked files", str(len(dirty)) if dirty else "none"))
+
+    ahead = 0
+    rc, branch, _ = run(g + ["rev-parse", "--abbrev-ref", "HEAD"])
+    branch = branch.strip()
+    upstream = ""
+    if rc == 0 and branch and branch != "HEAD":
+        rc2, up, _ = run(g + ["rev-parse", "--abbrev-ref", "%s@{upstream}" % branch])
+        if rc2 == 0 and up.strip():
+            upstream = up.strip()
+    if upstream:
+        rc3, cnt, _ = run(g + ["rev-list", "--count", "%s..HEAD" % upstream])
+        if rc3 == 0 and cnt.strip().isdigit():
+            ahead = int(cnt.strip())
+        unique.append(("commits not on %s" % upstream, str(ahead) if ahead else "none"))
+    else:
+        unique.append(("upstream branch", "not set -- cannot tell what is unpushed"))
+
+    rc, parked, _ = run(g + ["for-each-ref", "--format=%(refname)", "refs/backup"])
+    n_parked = len([x for x in parked.splitlines() if x.strip()]) if rc == 0 else 0
+    unique.append(("parked safety refs", str(n_parked) if n_parked else "none"))
+
+    rc, untracked_out, _ = run(
+        g + ["ls-files", "--others", "--exclude-standard"])
+    untracked = [x for x in untracked_out.splitlines() if x.strip()] if rc == 0 else []
+    unique.append(("untracked files", str(len(untracked)) if untracked else "none"))
+
+    r.rows("state that exists only here", unique)
+    if dirty:
+        r.lines("modified", dirty[:12])
+    if dirty or ahead or not upstream:
+        r.worst("warn")
+        r.note("This node currently holds work no other node has. A "
+               "`git reset --hard`, a self-update, or an applied package "
+               "discards it. Commit and push before reconciling this node. "
+               "On the STANDBY this is doubly true: satom-reconciler pulls on "
+               "its own, so a manual reset there is pure risk -- and the "
+               "standby has already been the last surviving copy of "
+               "uncommitted work at least once.")
     if offenders:
         r.lines("root-owned", [x.replace(str(ctx.app_dir) + "/", "")
                                for x in offenders[:12]])

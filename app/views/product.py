@@ -17,6 +17,8 @@ def _home_for(key: str):
         return redirect(url_for('adc.index'))
     if key == 'fortianalyzer':
         return redirect(url_for('faz.index'))
+    if key == 'fortiauthenticator':
+        return redirect(url_for('fac.index'))
     if get_product(key).get('placeholder'):
         # Placeholder ADOMs (FortiAuthenticator / FortiAnalyzer / future) have
         # no backend yet — land on the shared scaffold dashboard.

@@ -30,6 +30,7 @@ file and line — same fail-closed contract as the manual.
 from __future__ import annotations
 
 import argparse
+import json
 import html
 import pathlib
 import re
@@ -170,8 +171,13 @@ def blurb_for(sec: dict) -> str:
     return f"Released{when} — {kinds} · {what}."
 
 
-def render_page(sec: dict, newer: dict | None, older: dict | None,
-                current: str) -> str:
+def render_body(sec: dict) -> tuple[str, dict[str, str]]:
+    """Render one changelog section, and map each heading to its anchor id.
+
+    The id map is what lets a search hit deep-link into the right part of the
+    right release. Recomputing the slug ourselves would be a second copy of the
+    toc extension's algorithm, and the copy is the one that drifts.
+    """
     import markdown as md_lib
 
     # Redact BEFORE rendering, so the placeholder flows into code blocks and
@@ -185,19 +191,154 @@ def render_page(sec: dict, newer: dict | None, older: dict | None,
             yield t
             yield from _flat(t.get("children") or [])
 
-    toc = [t for t in _flat(getattr(md, "toc_tokens", []))
-           if t.get("name") and t.get("level") in (2, 3)]
-    toc_html = "\n".join(
-        '      <a href="#{}">{}</a>'.format(html.escape(t["id"]),
-                                            html.escape(t["name"]))
-        for t in toc[:45])
+    ids = {}
+    for t in _flat(getattr(md, "toc_tokens", [])):
+        if t.get("name") and t.get("level") in (2, 3):
+            # unescape: the token is already HTML-escaped, but the key is
+            # matched against a heading read straight out of the Markdown. A
+            # heading containing "&" would never match and would lose its
+            # anchor, so every hit under it would land at the top of the page.
+            ids.setdefault(plain(html.unescape(t["name"])), t["id"])
+    return body, ids
 
+
+def entries_of(sec: dict, ids: dict[str, str]) -> list[dict]:
+    """Every top-level changelog bullet of one section, as searchable records.
+
+    Parsed from the Markdown rather than scraped back out of the rendered
+    HTML: the text still knows which ``### kind`` heading a bullet sits under,
+    and that is the one fact a result needs in order to say *where* in the
+    release it lives.
+
+    REDACTED FIRST. The rendered body goes through ``redact()`` on its way to
+    the page, but this index is a SECOND path out of the same source, and the
+    first version of it shipped three internal identifiers straight past that
+    pass — caught only because ``scan()`` re-checks the output and aborts
+    rather than warning. Every path out of the changelog redacts, or the one
+    that does not is the leak.
+    """
+    out: list[dict] = []
+    heading = ""
+    cur: list[str] | None = None
+    body = gsd.redact(sec["body"])
+
+    def _flush() -> None:
+        nonlocal cur
+        if not cur:
+            cur = None
+            return
+        raw = "\n".join(cur).strip()
+        lead = LEAD_IN.match("- " + raw)
+        text = plain(raw.replace("\n", " "))
+        title = plain(lead.group(1)) if lead else text[:90]
+        # The summary is what is left AFTER the title. Without this the two
+        # fields are the same sentence twice for every entry that has no bold
+        # lead-in, which is a result that fills two lines and says one thing.
+        rest = text[len(title):] if text.startswith(title) else text
+        out.append({
+            "v": sec["version"], "s": sec["slug"], "d": sec["date"],
+            "k": heading, "a": ids.get(heading, ""),
+            "t": title,
+            "x": rest.lstrip(" —-–:·,.").strip()[:280],
+        })
+        cur = None
+
+    for line in body.splitlines():
+        if line.startswith("### "):
+            _flush()
+            heading = plain(line[4:])
+            continue
+        if line.startswith("- "):
+            _flush()
+            cur = [line[2:]]
+        elif cur is not None:
+            if not line.strip():
+                cur.append("")
+            elif line.startswith((" ", "\t")):
+                cur.append(line.strip())
+            else:                       # unindented prose ends the bullet
+                _flush()
+    _flush()
+    return out
+
+
+def search_payload(records: list[dict]) -> str:
+    """The cross-release search index, inlined as JSON.
+
+    Inlined rather than fetched as a separate asset for two reasons: this site
+    is published to a static host we do not configure, and — the one that
+    matters — ``gsd.scan`` only sees what ``build()`` returns. An index emitted
+    outside the build would bypass the leak scan that gates publication.
+    """
+    return json.dumps(records, ensure_ascii=False, separators=(",", ":")) \
+        .replace("<", "\\u003c")
+
+
+def version_menu(secs: list[dict], current: str, active: str,
+                 prefix: str) -> str:
+    """The left-hand version rail.
+
+    ``prefix`` is ``releases/`` on the hub and empty on a version page, so each
+    surface links correctly from where it sits. The hub's rail is also the
+    ONLY place the hub may name a version page: the published guard asserts
+    that ``href="releases/<slug>.html"`` appears exactly once per version and
+    in changelog order, which is what stops a second link list from silently
+    re-sorting the history.
+
+    The current-release marker here is deliberately NOT the ``rel-badge
+    rel-now`` markup used in a page header. That badge is the guard's evidence
+    that exactly one page claims to be current; painting it into a rail that
+    every page carries would make all seventeen of them claim it.
+    """
+    items = []
+    for sec in secs:
+        cls = "rel-nav-item" + (" is-active" if sec["slug"] == active else "")
+        if sec["slug"] == "unreleased":
+            tag = '<span class="rel-nav-tag rel-nav-next">next</span>'
+        elif sec["version"] == current:
+            tag = '<span class="rel-nav-tag rel-nav-cur">current</span>'
+        else:
+            tag = ""
+        when = html.escape(sec["date"]) if sec["date"] else "unreleased"
+        kinds = " · ".join(html.escape(k) for k in sec["kinds"]) or "Changes"
+        n = sec["entries"]
+        leads = "".join(f"<li>{html.escape(t)}</li>" for t in sec["leads"])
+        more = n - len(sec["leads"])
+        if more > 0:
+            leads += f'<li class="rel-more">… and {more} more</li>'
+        items.append(f"""      <a class="{cls}" href="{prefix}{sec["slug"]}.html" data-rel-version="{html.escape(sec["version"])}">
+        <span class="rel-nav-head"><span class="rel-nav-v">{html.escape(sec["title"])}</span>{tag}</span>
+        <span class="rel-nav-meta">{when} · {kinds} · {n} entr{"y" if n == 1 else "ies"}</span>
+        <ul class="rel-leads">{leads}</ul>
+      </a>""")
+    return "\n".join(items)
+
+
+def badge_for(sec: dict, current: str) -> str:
+    """Which of the three states a section is in.
+
+    One definition: the published guard proves that exactly one page wears the
+    "current release" markup, and it can only stay true while one function
+    decides it.
+    """
     if sec["slug"] == "unreleased":
-        badge = '<span class="rel-badge rel-next">not yet released</span>'
-    elif sec["version"] == current:
-        badge = '<span class="rel-badge rel-now">current release</span>'
-    else:
-        badge = '<span class="rel-badge">superseded</span>'
+        return '<span class="rel-badge rel-next">not yet released</span>'
+    if sec["version"] == current:
+        return '<span class="rel-badge rel-now">current release</span>'
+    return '<span class="rel-badge">superseded</span>'
+
+
+def panel_head(sec: dict, current: str) -> str:
+    badge = badge_for(sec, current)
+    return f"""      <div class="rel-panel-head">
+        <h2>{html.escape(sec["title"])} {badge}</h2>
+        <p class="rel-meta">{html.escape(blurb_for(sec))}</p>
+      </div>"""
+
+
+def render_page(sec: dict, newer: dict | None, older: dict | None,
+                current: str, secs: list[dict]) -> str:
+    body, _ids = render_body(sec)
 
     nav = []
     if newer:
@@ -206,30 +347,37 @@ def render_page(sec: dict, newer: dict | None, older: dict | None,
         nav.append(f'<a href="{older["slug"]}.html">{html.escape(older["title"])} →</a>')
     nav_html = ('<p class="rel-prevnext">' + " · ".join(nav) + "</p>") if nav else ""
 
-    parts = [gsd.head(sec["title"], blurb_for(sec), "../", "releases.html")]
+    parts = [gsd.head(sec["title"], blurb_for(sec), "../", "releases.html",
+                      body_class="wide")]
     parts.append(f"""
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>{html.escape(sec["title"])} {badge}</h1>
+  <h1>{html.escape(sec["title"])} {badge_for(sec, current)}</h1>
   <p class="sub">{html.escape(blurb_for(sec))}</p>
-  <div class="callout" style="margin-top:18px;">
-    <span class="cico">\U0001f5d2️</span>
-    <p><b>Generated from the changelog.</b> This page is one section of
-    <code>CHANGELOG.md</code>; the whole history in one page is the
-    <a href="../docs/changelog.html">Changelog</a>. Internal addresses,
-    hostnames and device names are replaced with <code>{{placeholders}}</code>.</p>
-  </div>
 </header>
 
-<section class="wrap reveal">
-  <div class="doc">
-    <aside class="toc">
-      <div class="toc-title">On this page</div>
-{toc_html}
+<section class="wrap">
+  <div class="doc rel-doc">
+    <aside class="toc rel-nav">
+      <div class="toc-title">Releases</div>
+      <form class="rel-nav-search" action="../releases.html" method="get" role="search">
+        <input type="search" name="q" autocomplete="off" spellcheck="false"
+               placeholder="Search all releases…" aria-label="Search all releases">
+      </form>
+{version_menu(secs, current, sec["slug"], "")}
     </aside>
-    <div class="doc-body mdx">
+    <div class="doc-body">
+      <div class="mdx">
 {body}
 {nav_html}
+      </div>
+      <div class="callout" style="margin-top:24px;">
+        <span class="cico">\U0001f5d2️</span>
+        <p><b>Generated from the changelog.</b> This page is one section of
+        <code>CHANGELOG.md</code>; the whole history in one page is the
+        <a href="../docs/changelog.html">Changelog</a>. Internal addresses,
+        hostnames and device names are replaced with <code>{{placeholders}}</code>.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -239,50 +387,76 @@ def render_page(sec: dict, newer: dict | None, older: dict | None,
 
 
 def render_hub(secs: list[dict], current: str) -> str:
+    """The releases landing page: version rail left, the changes right.
+
+    The rail opens on the SHIPPED version rather than on the newest section,
+    because "what is running on my node" is the question this page is opened
+    with. An unreleased section that is merged but not cut is one click away
+    and says so on its own badge.
+    
+    Not a ``.reveal`` section, unlike the manual. A reveal starts at opacity 0
+    and waits for an intersection observer, and this section contains the
+    search box and the whole version rail — the two controls the page exists
+    for. Reference surfaces do not animate their own navigation.
+    """
+    landing = next((s for s in secs if s["version"] == current), secs[0])
+    body, _ids = render_body(landing)
+
+    records: list[dict] = []
+    for sec in secs:
+        _b, ids = render_body(sec)
+        records.extend(entries_of(sec, ids))
+
     parts = [gsd.head(
         "Release notes",
         "Every SATOM release, newest first: what shipped, when, and why — "
         "one page per version, generated from the changelog.",
-        "", "releases.html")]
+        "", "releases.html", body_class="wide")]
     parts.append(f"""
 <header class="page wrap">
   <h1>Release <span class="grad">notes</span></h1>
-  <p class="sub">One page per version, newest first. The shipped version is
-  <b>v{html.escape(current)}</b>. Every page here is a section of the project's
-  <code>CHANGELOG.md</code> — the same file that ships in the repository and
+  <p class="sub">Pick a version on the left; its changes are on the right. The
+  shipped version is <b>v{html.escape(current)}</b>. Every entry here is a section of the
+  project's <code>CHANGELOG.md</code> — the same file that ships in the repository and
   is readable on a node with <code>satom show docs</code>. The full history in a
   single page is the <a href="docs/changelog.html">Changelog</a>.</p>
 </header>
-""")
-    cards = []
-    for sec in secs:
-        if sec["slug"] == "unreleased":
-            badge = '<span class="rel-badge rel-next">not yet released</span>'
-        elif sec["version"] == current:
-            badge = '<span class="rel-badge rel-now">current</span>'
-        else:
-            badge = ""
-        leads = "".join(
-            f"<li>{html.escape(t)}</li>" for t in sec["leads"])
-        more = sec["entries"] - len(sec["leads"])
-        if more > 0:
-            leads += f'<li class="rel-more">… and {more} more</li>'
-        cards.append(f"""    <div class="card rel-card">
-      <h3><a href="releases/{sec["slug"]}.html">{html.escape(sec["title"])}</a>{" " + badge if badge else ""}</h3>
-      <p class="rel-meta">{html.escape(blurb_for(sec))}</p>
-      <ul class="rel-leads">{leads}</ul>
-    </div>""")
-    parts.append("""
-<section class="wrap reveal">
-  <div class="sec-head">
-    <span class="eyebrow">All versions</span>
-    <h2>Newest first</h2>
+
+<section class="wrap">
+  <div class="doc rel-doc" id="relhub" data-rel-current="{html.escape(current)}">
+    <aside class="toc rel-nav">
+      <div class="toc-title">Releases <span class="rel-count">{len(secs)}</span></div>
+      <div class="rel-nav-search sitesearch" data-search-scope="releases">
+        <label class="ss-field">
+          <span class="ss-ico" aria-hidden="true">🔍</span>
+          <input type="search" id="relsearch-input" name="q" autocomplete="off" spellcheck="false"
+                 placeholder="Search every release…" aria-label="Search every release"
+                 aria-controls="relsearch-results">
+          <button type="button" class="ss-clear" id="relsearch-clear" aria-label="Clear search" hidden>×</button>
+        </label>
+      </div>
+{version_menu(secs, current, landing["slug"], "releases/")}
+    </aside>
+    <div class="doc-body">
+      <div class="ss-results" id="relsearch-results" role="region" aria-live="polite" hidden></div>
+      <div id="rel-panel">
+{panel_head(landing, current)}
+        <div class="mdx">
+{body}
+        </div>
+      </div>
+      <div class="callout" style="margin-top:24px;">
+        <span class="cico">\U0001f5d2️</span>
+        <p><b>Generated from the changelog.</b> Internal addresses, hostnames and
+        device names are replaced with <code>{{placeholders}}</code>. Search covers
+        every entry of every release; each result is labelled with the version it
+        shipped in.</p>
+      </div>
+    </div>
   </div>
-  <div class="grid">
-%s
-  </div>
+  <script type="application/json" id="relsearch-index">{search_payload(records)}</script>
 </section>
-""" % "\n".join(cards))
+""")
     parts.append(gsd.foot(""))
     return "".join(parts)
 
@@ -294,7 +468,8 @@ def build() -> dict[pathlib.Path, str]:
     for i, sec in enumerate(secs):
         newer = secs[i - 1] if i > 0 else None
         older = secs[i + 1] if i + 1 < len(secs) else None
-        out[OUT_DIR / f"{sec['slug']}.html"] = render_page(sec, newer, older, current)
+        out[OUT_DIR / f"{sec['slug']}.html"] = render_page(
+            sec, newer, older, current, secs)
     out[HUB] = render_hub(secs, current)
     return out
 

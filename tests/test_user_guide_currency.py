@@ -80,14 +80,25 @@ def test_every_adom_row_carries_a_url():
 
 
 def test_the_workspace_count_matches_the_roster():
-    """A prose count is a claim, and a wrong one is worse than none."""
+    """A prose count is a claim, and a wrong one is worse than none.
+
+    Anchored on the CLAIM (``<number-word> workspaces``), not on the sentence
+    that carries it: the first version of this guard matched the exact string
+    ``The app hosts N workspaces`` and went silent the moment an edit inserted
+    an adverb -- a guard tied to the wording stops guarding the number. Every
+    occurrence is checked, because the count is stated in more than one place
+    (SS3 and the Settings -> ADOMs reference) and a second copy is exactly how
+    one of them goes stale unnoticed.
+    """
     words = {3: 'three', 4: 'four', 5: 'five', 6: 'six', 7: 'seven'}
     expected = words[len(ACTIVE)]
-    m = re.search(r'The app hosts (\w+) workspaces', guide_text())
-    assert m, 'the ADOM section no longer states how many workspaces exist'
-    assert m.group(1) == expected, (
-        f'the guide says {m.group(1)!r} workspaces; the roster has '
-        f'{len(ACTIVE)} ({expected})'
+    found = re.findall(r'\b(%s) workspaces' % '|'.join(words.values()),
+                       guide_text())
+    assert found, 'the guide no longer states how many workspaces exist'
+    wrong = [w for w in found if w != expected]
+    assert not wrong, (
+        f'the guide says {sorted(set(wrong))} workspaces; the roster has '
+        f'{len(ACTIVE)} ({expected}) -- every prose count must agree'
     )
 
 

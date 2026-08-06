@@ -1208,7 +1208,7 @@ no Operations group, and that is not an oversight:</p>
 </tr>
 <tr>
 <td><strong>Firmware upgrade (§12)</strong></td>
-<td><strong>No.</strong> Upgrade and Boot Partition are FortiWeb-only even on the appliance detail page, and the SSH console, discovery and upgrade-prep actions there are gated to FortiWeb and FortiADC.</td>
+<td><strong>No.</strong> Upgrade and Boot Partition are FortiWeb-only even on the appliance detail page, and the SSH console, discovery and upgrade-prep actions there are gated to FortiWeb and FortiADC. The firmware <strong>library</strong> may still open in this workspace — it is governed by the <code>firmware</code> capability on the ADOM row (§26.11), which an admin can tick, and this installation has it on. Storing an image there is harmless; there is simply no upgrade path that consumes it.</td>
 </tr>
 <tr>
 <td><strong>Monitoring (§14)</strong></td>

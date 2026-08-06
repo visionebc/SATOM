@@ -107,6 +107,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   literal entity. markdown's toc tokens arrive already HTML-escaped and were
   escaped again on the way out. It only shows on a heading containing
   `& < > "`, which is why it survived until a search index inherited it.
+- **A guard that counts workspaces was tied to the sentence, not the number.**
+  It matched the exact string `The app hosts N workspaces`, so inserting one
+  adverb while rewriting the ADOM section made it stop guarding rather than
+  fail. It is anchored on the claim now (`<number-word> workspaces`) and checks
+  **every** occurrence — the count is stated twice, and only one of the two was
+  ever covered.
 
 ### Notes
 
@@ -120,6 +126,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   reachable since July 2026). Payload shapes are read defensively and an
   unrecognised shape yields nothing rather than a plausible wrong number.
 
+- **The `adoms` table beats `branding.py`, and one ADOM proves it.** The
+  FortiAuthenticator entry seeds `cap_firmware`/`cap_naming`/`cap_regex` False
+  and carried a comment asserting they *stay* False; the live row has all three
+  on, set by an admin through Settings → ADOMs on 2026-08-05. The seed is
+  insert-only by design, so operator edits win — the comment was describing an
+  intent the registry had already overridden. The comment now says these are
+  seed defaults and points at the table. **The row was left alone:** overriding
+  an operator's own edit through the mechanism that promises to respect it
+  would be the actual bug. Live effect is narrow — `/naming/` and `/regex-lab/`
+  still redirect out of the FAC workspace (the blueprint gate, not the
+  capability, controls reachability); only the firmware library opens, and §17.2
+  now says so.
 ## [1.5.0] - 2026-08-06
 
 ### Added

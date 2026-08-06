@@ -191,6 +191,12 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   literal entity. markdown's toc tokens arrive already HTML-escaped and were
   escaped again on the way out. It only shows on a heading containing
   <code>&amp; &lt; &gt; "</code>, which is why it survived until a search index inherited it.</li>
+<li><strong>A guard that counts workspaces was tied to the sentence, not the number.</strong>
+  It matched the exact string <code>The app hosts N workspaces</code>, so inserting one
+  adverb while rewriting the ADOM section made it stop guarding rather than
+  fail. It is anchored on the claim now (<code>&lt;number-word&gt; workspaces</code>) and checks
+  <strong>every</strong> occurrence — the count is stated twice, and only one of the two was
+  ever covered.</li>
 </ul>
 <h3 id="notes">Notes</h3>
 <ul>
@@ -200,9 +206,25 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   grading layer, so retiring it today would delete the "every backend behind
   this policy is down" signal with nothing to replace it. Prerequisite: alert
   rules evaluated over the store. See <code>docs/safeguards.md</code> §25c.</li>
-<li>The FortiAnalyzer collector is <strong>unverified against live hardware</strong> (none
+<li>
+<p>The FortiAnalyzer collector is <strong>unverified against live hardware</strong> (none
   reachable since July 2026). Payload shapes are read defensively and an
-  unrecognised shape yields nothing rather than a plausible wrong number.</li>
+  unrecognised shape yields nothing rather than a plausible wrong number.</p>
+</li>
+<li>
+<p><strong>The <code>adoms</code> table beats <code>branding.py</code>, and one ADOM proves it.</strong> The
+  FortiAuthenticator entry seeds <code>cap_firmware</code>/<code>cap_naming</code>/<code>cap_regex</code> False
+  and carried a comment asserting they <em>stay</em> False; the live row has all three
+  on, set by an admin through Settings → ADOMs on 2026-08-05. The seed is
+  insert-only by design, so operator edits win — the comment was describing an
+  intent the registry had already overridden. The comment now says these are
+  seed defaults and points at the table. <strong>The row was left alone:</strong> overriding
+  an operator's own edit through the mechanism that promises to respect it
+  would be the actual bug. Live effect is narrow — <code>/naming/</code> and <code>/regex-lab/</code>
+  still redirect out of the FAC workspace (the blueprint gate, not the
+  capability, controls reachability); only the firmware library opens, and §17.2
+  now says so.</p>
+</li>
 </ul>
 <h2 id="150-2026-08-06">[1.5.0] - 2026-08-06</h2>
 <h3 id="added_1">Added</h3>

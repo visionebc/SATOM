@@ -76,11 +76,15 @@ _FALLBACK: list[dict] = [
                        "TACACS+ clients that authenticate against the unit.",
         # Promoted from placeholder to a real product ADOM on 2026-08-05: it
         # now has a REST client, a registry seeded live from the device and
-        # section pages. cap_firmware stays False — FortiAuthenticator images
-        # are not carried in the firmware repository, and advertising an
-        # upgrade path this product cannot perform is worse than not offering
-        # one. cap_naming/cap_regex are FortiWeb-shaped tools with no meaning
-        # for an identity store.
+        # section pages. This entry SEEDS cap_firmware/cap_naming/cap_regex
+        # False — FortiAuthenticator images are not carried in the firmware
+        # repository, and naming/regex are FortiWeb-shaped tools with no
+        # meaning for an identity store. These are the seed defaults, NOT the
+        # running policy: the `adoms` table is authoritative and the seed is
+        # insert-only, so an admin who ticks these in Settings → ADOMs turns
+        # them on and this file never overrides that. Read the table (or
+        # `branding.live_products(cap)`), never this literal, to learn what a
+        # given installation actually offers.
         "active": True, "placeholder": False, "banner_default": "indigo",
         "cap_banner": True, "cap_tokens": True, "cap_firmware": False,
         "cap_naming": False, "cap_regex": False,

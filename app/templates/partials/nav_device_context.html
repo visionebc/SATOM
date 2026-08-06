@@ -1,5 +1,6 @@
-{# Device context — ONE markup shared by the three appliance ADOMs
-   (FortiWeb / FortiADC / FortiAnalyzer). Always opens #deviceSwitchModal,
+{# Device context — ONE markup shared by the four appliance ADOMs
+   (FortiWeb / FortiADC / FortiAuthenticator / FortiAnalyzer). Always opens
+   #deviceSwitchModal,
    never navigates away. The picker it loads goes through
    product_scope.scope_appliance_query(), so each ADOM only ever lists its
    OWN kind of device. The href is kept purely as a no-JS fallback —
@@ -7,7 +8,9 @@
 {% set _dc_color = '#d97706' if product.key == 'fortianalyzer' else '#10b981' %}
 {% set _dc_href = url_for('adc.index') if product.key == 'fortiadc'
                   else (url_for('faz.index') if product.key == 'fortianalyzer'
-                        else url_for('architecture.index')) %}
+                        else (url_for('fac.index')
+                              if product.key == 'fortiauthenticator'
+                              else url_for('architecture.index'))) %}
 {% set _dc_current = current_appliance and (current_appliance.kind or 'fortiweb') == product.key %}
 <div class="fw-nav-context" data-nav-context="Device">
   <div class="fw-nav-section fw-nav-context-label"><i class="bi bi-hdd-rack fw-nav-section-icon" style="color:{{ _dc_color }};"></i><span>Device</span></div>

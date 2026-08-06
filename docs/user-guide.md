@@ -32,7 +32,16 @@
 20. [The operator console](#20-the-operator-console)
 21. [Provisioning new appliances](#21-provisioning-new-appliances)
 22. [Updating SATOM itself](#22-updating-satom-itself)
-23. [Troubleshooting](#23-troubleshooting)
+23. [Studio: custom views, plugins & Lua](#23-studio-custom-views-plugins--lua)
+24. [High availability](#24-high-availability)
+25. [AppIDs](#25-appids)
+26. [Settings, tab by tab](#26-settings-tab-by-tab)
+27. [Operations: log collection and importing a backup](#27-operations-log-collection-and-importing-a-backup)
+28. [System provisioning: profiles and baselines](#28-system-provisioning-profiles-and-baselines)
+29. [Template library & the section catalog](#29-template-library--the-section-catalog)
+30. [The endpoint registry & the API explorer](#30-the-endpoint-registry--the-api-explorer)
+31. [Release notes & the SATOM changelog](#31-release-notes--the-satom-changelog)
+32. [Troubleshooting](#32-troubleshooting)
 
 ---
 
@@ -43,15 +52,31 @@
   login** (Profile → password).
 - **Account protection:** 10 consecutive failed logins lock the account for
   15 minutes. Login attempts are rate-limited per IP (5/min).
-- **2FA:** TOTP can be enabled per account (QR enrollment in the profile).
-- **Directory auth:** LDAP and RADIUS backends can be configured by an admin,
-  in addition to local accounts.
-- **Roles.** Three effective profiles gate what you can do:
+- **2FA:** TOTP can be enabled per account, with QR enrollment on
+  `Settings → Security`. Enabling it issues **backup codes that are shown
+  exactly once** — save them then; you can regenerate a fresh set later, which
+  immediately invalidates the old one. Set a **recovery email** on the same tab
+  if you want *Forgot password* to be able to reach you (§26.13).
+- **Directory auth:** LDAP and RADIUS backends are configured at
+  `Settings → Authentication` (§26.7), alongside local accounts. That tab also
+  **tests** the connection against unsaved form values, and **syncs directory
+  users** into local rows so an admin can assign a profile *before* first
+  sign-in — synced accounts are created **disabled**, pending approval.
+- **Who can reach the app at all** is a separate question from who can sign in:
+  `Settings → Access Control` (§26.2) carries an **IP whitelist** and an
+  **allowed-users** list. Both mean *everything* when left empty, and loopback
+  and admins are always allowed so neither can lock you out.
+- **Roles.** Three effective profiles ship, and they gate what you can do:
   - *readonly* — see everything, change nothing;
   - *operator* — day-to-day changes (`config_write`): policies, objects,
     exceptions, backups;
   - *admin* (`user_manage`) — everything, including Settings, users, registry,
     templates, scheduled actions, and the Database section.
+
+  **These three are seeded, not a closed set.** `Settings → Profiles` (§26.3)
+  composes profiles freely from the granular permission catalog, so a profile
+  that can, say, use the Lua Studio but not administer users is a configuration,
+  not a feature request.
 - Every write you make is recorded in the **Audit Log** with before/after
   change history.
 
@@ -82,7 +107,14 @@ notices, scoped to the product you are working in.
 
 ## 3. Products (ADOMs)
 
-The app hosts five workspaces, in the style of FortiManager ADOMs:
+The app currently hosts five workspaces, in the style of FortiManager ADOMs.
+**The list is data, not code:** the ADOM registry is a database table, and an
+admin creates, renames, reorders, deactivates or deletes workspaces at
+`Settings → ADOMs` (§26.11) — including which shared capabilities (banner, API
+tokens, firmware, naming, regex) each one offers. `global`, `fortiweb` and
+`fortiadc` are the exception: their keys are wired into URL scoping, so they can
+be deactivated but not deleted. What you see below is this installation's
+current list:
 
 | ADOM | URL | Purpose |
 |---|---|---|
@@ -278,6 +310,29 @@ you see FortiWeb material, in ADC the ADC material).
   report-only. A **Run sweep now** button and a nightly scheduled action keep
   it moving; the page lists everything currently due.
 
+**The ACME DNS-provider registry** lives on the same settings tab
+(`Settings → Certificate Manager`), and it is a *registry*, not a fixed list.
+Each entry is a provider: a slug, a label, the flag the ACME client needs, a
+documentation link, an enable switch, a sort order, and **its own list of
+credential fields**. Because the field list is data, adding a DNS provider that
+was never shipped is a catalog entry, not a code change.
+
+- **Credentials are saved per provider**, into that provider's own named fields,
+  and are never returned to the browser — the audit record names which variables
+  were touched, never their values. Each field has an explicit *clear* tick, so
+  emptying a credential is a decision rather than a side effect of leaving a box
+  blank.
+- **Built-in providers cannot be deleted** — disable them instead; only entries
+  you added are deletable.
+- The shipped catalog and any local additions are layered: the base file plus an
+  overlay, so an update to the shipped list never discards your entries.
+
+> **The node's own certificate is a different concern.** This section is about
+> certificates **on the appliances**. The certificate *SATOM itself* presents to
+> your browser and to its peer is `Settings → Node TLS` (§26.8), and the CAs
+> SATOM **trusts** when it dials an appliance are the trust store (§10.1). Three
+> different questions, three different pages.
+
 ### 10.1 The trust store — the CAs *SATOM itself* trusts
 
 Global → Settings → **Trust store** (admin).
@@ -331,6 +386,27 @@ This page is the missing third position: name the CA and keep the check on.
   with a verified restore path.
 - Pre-upgrade/downgrade backups land in the same vault automatically.
 
+**Off-box copies — the source of truth and the external server.** The vault above
+lives on this node. Two settings decide what leaves it:
+
+- `Settings → Git` (§26.4) is the code repository this node tracks. It is also
+  the transport the shared release-notes corpus (§31.1) rides on. What still
+  works when that remote is down, and how to recover afterwards, is
+  [git-backup-and-outage.md](git-backup-and-outage.md).
+- `Settings → SoT & Backup` (§26.5) configures the **firmware manifest repo**
+  and the **external backup server** over SFTP. That server is where the
+  appliances push their own scheduled config backups, and it is the target of the
+  `push_server` option on the system-backup action and the monitoring reports
+  (§15, §14.9). The scheduled action **`device_inspect`** is the one that
+  uploads the versioned source-of-truth blobs off-box.
+
+How the local source of truth is versioned and what it does and does not hold:
+[source-of-truth-spec.md](source-of-truth-spec.md).
+
+Its two nav siblings under **Operations** — Log Collection and Import Backup —
+are §27. Neither is a backup: one collects read-only diagnostics over SSH, the
+other parses a config file entirely offline.
+
 ## 12. Firmware upgrades
 
 Appliance detail → **Upgrade** (FortiWeb):
@@ -347,6 +423,32 @@ Appliance detail → **Upgrade** (FortiWeb):
    approval.
 5. **Boot partition** management (view/boot the alternate partition) is a
    separate, gated page.
+
+**The Firmware library** (Fleet → **Firmware**, admin) is the store the upgrade
+step 1 picks from, and it is worth using rather than re-uploading an image per
+device.
+
+- Each row is an image with its **version, build, product, platform** (hardware /
+  VM / any), size, uploader, notes and a **sha256** recorded at upload. The binary
+  lives on disk; the database row keeps the metadata and the hash, so integrity is
+  checkable later.
+- **Uploads are chunked and resumable.** A firmware image is hundreds of
+  megabytes and a single POST across a slow link is a coin flip; the upload goes
+  in parts with a status endpoint, and the file is only assembled and hashed once
+  every part has landed.
+- **The page is ADOM-scoped at the query, not in the template** — a FortiWeb
+  workspace sees FortiWeb images and Global sees everything, and a hidden row was
+  never fetched in the first place. Inside a concrete ADOM the product is not
+  offered as a choice, because the upload handler would overrule it anyway.
+- **Two artefact families, kept apart:** kind **Upgrade** (`.out`, applies to a
+  running appliance) and kind **Install** (a hypervisor image, builds a new
+  machine — see 21.5). Choosing the wrong one is the mistake this field exists to
+  prevent.
+- Images are downloadable and deletable, and a JSON manifest of the library is
+  published for the console and the provisioning runs to read.
+- Which ADOMs offer a Firmware page at all is the `firmware` capability on the
+  ADOM registry (§26.11), so a newly firmware-capable workspace appears without a
+  code change.
 
 ## 13. Fleet tools
 
@@ -435,11 +537,42 @@ limits live in Settings → Thresholds under the *SATOM machine* scope. Disk tur
 critical at 92 %, deliberately below 95: a full filesystem stops PostgreSQL
 writing WAL, so the alert has to arrive while there is still room to act on it.
 
-### 14.2 Metrics — *how much does it hold?*
+### 14.2 Metrics — *how much does it hold, and who changed it?*
 
-Inventory counts, audit activity and change history for the active workspace,
-plus daily series where the product supports them. Nothing here touches an
-appliance.
+`Monitoring → Metrics`. Inventory counts and activity for the **active
+workspace**, over a date range. **Nothing here touches an appliance** — it reads
+the local cache, the audit log and the change history, so it opens with the whole
+fleet off.
+
+**Four inventory cards**, labelled per ADOM rather than shared: FortiWeb counts
+Server Policies / Backends / WPPs / Certificates, FortiADC counts Virtual Servers
+/ Real Servers / Server Pools / Certificates, FortiAuthenticator counts Users /
+Groups / RADIUS clients / Certificates, FortiAnalyzer counts Devices / Log
+sources / Reports / Certificates. The totals are rendered **server-side**, so the
+cards are still there if the charts fail to draw.
+
+**Where the totals come from differs by product, and the page will not fake it.**
+FortiWeb and Global read the daily typed snapshots written by the
+`inventory_snapshot` scheduled action (§15) — which is why that action has to be
+scheduled daily for the trend to exist at all. FortiADC has no snapshot pipeline,
+so its totals are counted live off the fleet and cached briefly. A product with
+neither reports **no totals rather than borrowing another product's**: an ADOM
+printing FortiWeb's object counts under its own labels is worse than printing
+nothing, because the numbers look like its own.
+
+**Activity over the range:** total audited actions, real (non-dry-run) config
+changes, distinct active users, and how many appliances were actually touched —
+plus a breakdown of changes by object category (server policy, backend, WAF
+profile, certificate, other) derived from the endpoint each change hit.
+
+**Ranges and comparison:** 7 / 30 / 90 days or a custom window, with a
+**compare** toggle that puts the immediately preceding window of the same length
+beside it — so "is this a busy week" has an answer rather than a number.
+
+**It is ADOM-scoped, precisely.** Audit rows carry their own product stamp;
+change-history rows are scoped through the *kind* of the appliance they were made
+on, by inclusion rather than exclusion. Manager-level changes with no appliance
+count under FortiWeb, which is where they originate. Global sees everything.
 
 ### 14.3 Deep monitors — *is the service still serving?*
 
@@ -549,12 +682,30 @@ many policies the fleet grows.
 | `interfaces` — link state and byte counters | FortiWeb | 3 min |
 | `traffic` — device total plus top-N policies | FortiWeb | 15 min |
 | `transactions` — HTTP transactions, top-N policies | FortiWeb | 60 min |
+| `vservers` — virtual servers: sessions / RTT / pool health, every VS | FortiADC | 3 min |
+| `identity` — accounts, groups, tokens, certificates, RADIUS/TACACS+ clients | FortiAuthenticator | 15 min |
+| `faz` — log volume, storage, alerts, incidents, devices, task queue | FortiAnalyzer | 15 min |
 
 Each row is editable in place: **interval** (1–1440 minutes), **enabled**, and
 **top-N** (1–200) on the two collectors that have one. The expensive collectors
 are bounded twice — a longer interval *and* a top-N cut ranked by live
 connection rate — but the device total is always collected, so the headline
 number never depends on where the cut fell.
+
+Three of those need a note, because what they can and cannot tell you is not
+obvious from the name:
+
+- `vservers` is FortiADC's counterpart to `policies`, and it reads a runtime
+  API that is **not** the one the object browser uses. FortiADC publishes CPU
+  and memory as *installed hardware* ("1 CPU/1 allowed"), never as
+  utilisation — so those two keep coming from the read-only CLI, and a
+  percentage you see for a FortiADC came from there.
+- `identity` counts what the directory **contains**. It cannot tell you whether
+  authentication is succeeding: no FortiAuthenticator resource reports an
+  auth-rate counter, and that signal only exists in syslog, which SATOM does
+  not ingest.
+- `faz` never fetches a log body. Every series is a counter or a state summary,
+  which is the point of monitoring a log collector rather than mirroring it.
 
 - **Run sweep now** runs inside the request and reports targets, errors and
   series written, in the flash message.
@@ -716,12 +867,30 @@ are kept apart on purpose.
 **Scheduled Actions** (FortiWeb ADOM → Administrator, plus the ⏰ button on
 Server Policy for operators):
 
-- Admin catalog: device backup, log collection, rediscovery, policy
-  inspector, signature sync, release-notes scan, statistics, git sync,
-  cert scan, cert lifecycle sweep, device sync, deep capture, upgrade-prep,
-  and the full **upgrade**.
-- User catalog (single-target, date-driven): enable/disable a policy,
-  enable/disable a pool member, swap a certificate.
+- **Admin catalog**, by what it is for:
+
+  | Group | Actions |
+  |---|---|
+  | Source of truth | `device_sync` (refresh the local cache from a device), `device_inspect` (sync **and** push the SoT off-box), `deep_capture`, `signature_sync` |
+  | Backups | `backup` (on-device config backup), `system_backup` (the manager's own `pg_dump` bundle, optionally pushed to the backup server) |
+  | Monitoring — all four are the ones §14 asks you to schedule | `metrics_scrape` (the Collection sweep, §14.7 — **every 3 minutes**), `deep_monitor` (the deep-monitor probe sweep, §14.3 — **every 5 minutes**), `monitor_report` (the period summary, §14.9 — *after* the period closes), `inventory_snapshot` (daily inventory counts for §14.2) |
+  | Certificates | `cert_scan`, the three `cert_manager_*` renewals (server / client+server / client), `cert_lifecycle` (the revoke-and-cleanup sweep) |
+  | Health | `health_check`, `ha_check`, `stats` |
+  | Catalog | `appid_import` (the nightly AppID feed, §25) |
+  | Firmware | `upgrade_prep` (backup + health, flashes nothing) and the full `upgrade` — destructive, fixed date/time, and only inside an approved Change Request window |
+  | Escape hatch | `custom_rest` — any FortiWeb REST request you define; GET is a live read, writes go through the snapshot + audit + dry-run path |
+
+  Two notes on reading that list. **There is no separate `service_monitor`
+  action** — Deep monitors (§14.3) and Service monitor (§14.4) share one storage,
+  one runner and one sweep, so the single `deep_monitor` action populates **both**
+  pages. Two sweeps would mean two sets of samples for the same box. And
+  `git_bundle` is **retired**: git no longer carries the device source of
+  truth, so new installs do not seed it, though the handler still works for a
+  manual run of the code repository.
+
+- **User catalog** (single-target, date-driven): enable/disable a server policy,
+  enable/disable a backend (pool member), **change a backend's IP or port**, and
+  swap a server-policy certificate.
 - Schedules: interval / daily / weekly / monthly / once, with catch-up
   semantics and a run history per action. A dedicated scheduler sidecar fires
   them; **Run now** is always available.
@@ -797,15 +966,37 @@ Management** and **Logging**.
   wrong, statement.
 - **Read-only section pages.** Writes go through the API console, where they are
   dry-run by default, permission-gated and audited.
+- **Section pages live at `/fac/m/<item_key>`** — one URL per menu leaf, where
+  the key is the leaf's own identifier from the unit's menu definition. Each page
+  loads its tabs from the registry endpoints bound to that leaf, capped at 500
+  rows with the truncation stated rather than silently applied, and it never
+  renders a device refusal as an empty table.
 - **API console** (bottom nav → API) — the registry-driven explorer over the
-  FAC catalogue, with live GETs and gated writes against a chosen device.
+  FAC catalogue, with live GETs and gated writes against a chosen device
+  (§30 covers the registry model behind all four consoles).
 - **Analysis** — entitlement, identity inventory and posture (see §13).
+
+**What does *not* apply to FortiAuthenticator.** The FAC ADOM's sidebar carries
+no Operations group, and that is not an oversight:
+
+| Feature | In the FAC ADOM? |
+|---|---|
+| **Certificate Manager (§10)** | **No.** Scanning, issuance, deployment and the lifecycle sweep dispatch on FortiWeb and FortiADC only. The unit's own *Certificate Management* menu group is a **read view of the device's** certificates through the FAC section pages — it is not the fleet Certificate Manager, and material there is not managed, bound or swept by §10. |
+| **Device Backups (§11)** | **Not offered in this workspace.** The vault page is not in the FAC menu; the backup transports are written against the FortiWeb/FortiADC backup APIs. |
+| **Firmware upgrade (§12)** | **No.** Upgrade and Boot Partition are FortiWeb-only even on the appliance detail page, and the SSH console, discovery and upgrade-prep actions there are gated to FortiWeb and FortiADC. The firmware **library** may still open in this workspace — it is governed by the `firmware` capability on the ADOM row (§26.11), which an admin can tick, and this installation has it on. Storing an image there is harmless; there is simply no upgrade path that consumes it. |
+| **Monitoring (§14)** | **Yes**, with product-appropriate kinds — a baseline plus the **entitlement** set (licence headroom, FortiToken pool), and load/memory read over REST rather than the CLI (§14.3, §14.4). |
+| **Appliances, Audit log, Network segment** | **Yes** — the shared administration pages. |
 
 > **Two FortiAuthenticator quirks worth knowing.** Its REST paths need the
 > trailing slash (`/api/v1/<resource>/`), and secrets are genuinely
 > **write-only**: RADIUS client secrets and local-user passwords are *absent*
 > from read payloads, not masked — so they can never leak into the
-> configuration source of truth.
+> configuration source of truth. (The section pages additionally refuse to render
+> a handful of secret-looking field names into a table cell even if a future
+> firmware starts returning them — a belt to that braces, because the cost of
+> being wrong is a credential in every screenshot of the page.)
+
+Full product notes: [docs/fortiauthenticator.md](fortiauthenticator.md).
 
 ### 17.3 FortiAnalyzer
 
@@ -856,6 +1047,19 @@ Practical notes:
   marks are a different, node-local setting.)
 - **Built-ins cannot be edited or deleted**, and deleting the active theme
   falls back to the built-in rather than leaving the console unthemed.
+- **The way to make a theme is to duplicate one.** *Duplicate* copies an
+  existing theme's tokens under a new name and leaves it inactive, so you edit a
+  working palette instead of a blank one. Nothing is applied until you press
+  **Activate**, which is a separate action — editing a theme that is not active
+  changes nothing for anyone. **Preview** renders the current form values without
+  saving.
+- **Export / import moves a theme between installs.** Export downloads a small
+  JSON file — *token overrides only*, no ids and no node state — so it imports
+  cleanly onto any install regardless of what themes that one already has. Import
+  checks the file's schema tag and **validates every token by kind before the
+  theme is created**: a file with a bad value is rejected in full, naming the
+  offending tokens, rather than partially imported. A name that already exists is
+  suffixed rather than overwritten.
 - **If you lock yourself out** with two dark colours: *Revert to the shipped
   look* on this page, activate any built-in, or from a shell on the node run
   `satom execute reset theme`.
@@ -869,8 +1073,10 @@ Full reference: [docs/theming.md](theming.md).
 
 Some failures cannot be fixed from the web interface, because the web interface
 is the thing that failed. Every node ships a local command-line tool, `satom`,
-with **96 commands** across four verbs — `get` (state), `show` (reference),
-`diagnose` (checks) and `execute` (actions).
+with **94 commands in 34 groups** across four verbs — `get` (state), `show`
+(reference), `diagnose` (checks) and `execute` (actions). `satom show tree` prints
+the whole tree; `satom show tree --commands` flattens it to one runnable command
+per line, with the root-only and destructive ones marked.
 
 The three you will use most:
 
@@ -1078,6 +1284,14 @@ In both cases the web application only **enqueues**. A separate privileged
 runner does the work, which is why the application itself never needs the
 rights to install packages or restart services.
 
+> **There is a third update path, and it is not on this page.** The **Libraries**
+> panel on `Settings → General` (§26.1) updates the **Python dependencies** —
+> one package at a time, from a curated allowlist, with a per-package rollback
+> point. This page moves the **application code**; that panel moves what the code
+> runs on. They use the same privileged runner and the same queue, they are both
+> **node-local**, and they are deliberately not merged: a dependency bump and a
+> code release have different blast radii and different reasons to happen.
+
 ### 22.1 Applying an offline package
 
 **Upload → read the preflight → Apply.** The preflight names every check, and a
@@ -1123,7 +1337,813 @@ satom diagnose code       # is the running process actually on the new code?
 How packages are built and signed:
 [docs/offline-update-packages.md](offline-update-packages.md).
 
-## 23. Troubleshooting
+## 23. Studio: custom views, plugins & Lua
+
+Three admin-only authoring tools, grouped under **Studio**. In the Global ADOM
+they sit at Administrator → Studio; in the FortiWeb and FortiADC ADOMs the same
+two authoring pages plus the read side (**Custom Views**) appear in their own
+**Plugins** nav group.
+
+They are gated by **three separate permissions** — `studio.python_console`,
+`studio.plugin_studio` and `studio.lua_studio` — which are *not* the same thing
+as `user_manage`. A profile can be given one studio tool without being given the
+others, and without being given user administration.
+
+| Tool | Page | What it authors |
+|---|---|---|
+| **Python Console** | `/database/py-console` | Throwaway Python over the curated fleet datasets |
+| **Plugin Studio** | `/plugins` | Server-rendered custom views/widgets, published as **Custom Views** |
+| **Lua Studio** | `/lua` | Device scripts for FortiWeb *Web Scripting* and FortiADC *Scripting* |
+
+### 23.1 Plugin Studio and Custom Views
+
+A plugin is a Jinja body plus optional CSS and JS, bound to a list of **curated
+datasets** (fleet appliances, cached server policies, pools, WAF profiles,
+managed certificates, recent audit activity, fleet counts, scheduled actions).
+You pick datasets from a checklist; you never write SQL.
+
+**Lifecycle: draft → testing → published.** The two gates are deliberate:
+
+- you cannot jump from *draft* straight to *published* — a view has to sit in
+  *testing* and be previewed first;
+- publishing is **refused if the saved body does not render cleanly**. A broken
+  view can never be promoted into every engineer's Custom Views list.
+
+A **published** plugin is readable by any signed-in user in that ADOM; *draft*
+and *testing* stay author-only. Demoting back to draft is always allowed.
+
+**The sandbox contract** — worth understanding before you write anything, because
+it explains what a plugin *cannot* do:
+
+- The body renders in an **immutable Jinja sandbox**. Attribute access to
+  mutating methods and the usual `__class__`/`__mro__` gadget chains raise a
+  security error: the template can read the data it was handed and nothing else.
+- **Data is curated, never author-supplied.** Each dataset is a fixed SELECT-only
+  query run through the same masked, row-capped, read-only path the SQL console
+  uses. There is no way for a plugin to run its own SQL or reach a write.
+- The rendered document is served **only** inside an
+  `<iframe sandbox="allow-scripts">` **without `allow-same-origin`**. That gives
+  the plugin's JavaScript an *opaque origin*: it cannot read the app's cookies,
+  DOM or session, and it cannot fetch anything back from the app. Its datasets
+  are injected into the frame as a JSON island precisely because it cannot go
+  and get them.
+- A render error is a **visible red card inside the frame**, never a broken host
+  page.
+
+**Input parameters.** A plugin may declare selectors (device, select, text,
+number, date) so the consumer can filter it. Values arrive as `?p_<name>=…` and
+reach the body as `params.<name>`. They **never touch SQL** — the dataset stays
+fixed, so a parameter can only narrow data that was already loaded, never widen
+access. A `device` selector is populated from the live appliance list, scoped to
+the ADOM you are in.
+
+> **Custom Views is ADOM-scoped; Plugin Studio is not.** The read-side gallery
+> ("Custom Views") is only surfaced in the FortiWeb and FortiADC ADOMs, and every
+> plugin is stamped with the ADOM it was authored in. The *authoring* pages are
+> reachable from the Global ADOM too, under Administrator → Studio.
+
+### 23.2 Lua Studio
+
+Author a device script, lint it, read a static analysis of it, and deploy it —
+in that order. Targets are **FortiWeb "Web Scripting"** and **FortiADC
+"Scripting"**, picked when you create the script.
+
+- **Nothing here ever executes device code.** Linting is `luac -p`, which parses
+  without running; the worst a pasted script can do is fail to compile, and the
+  error comes back with its line number. FortiADC's *Scripting* is an
+  iRule-style event DSL rather than standalone Lua, so `luac` cannot parse it —
+  that target gets a **structural** check instead (bracket balance plus at least
+  one event block), and the result says which engine produced it.
+- **Analysis is static.** It reports what the script touches (request/response,
+  headers, URL, pools…) against a curated API dictionary, lists calls it does not
+  recognise, and flags cheap mistakes — an unbalanced `end` count, an `=` inside
+  a condition, `os.execute`/`io.popen`.
+- **Lifecycle: draft ↔ tested, and `deployed` only from a real push.** Marking a
+  script *tested* re-runs the lint gate and refuses if it fails. You cannot stamp
+  `deployed` by hand — only a successful non-dry-run deploy sets it.
+- **Deploy is dry-run by default.** A dry run returns the exact request that
+  *would* be sent (endpoint, method, content field, body) and contacts nothing.
+  A real push needs **both** `config_write` **and** an explicit confirmation, and
+  the lint gate runs again first — a script that does not parse is refused before
+  any transport is opened.
+- The dry-run plan is marked **not verified**: the scripting wire format has not
+  been round-tripped live on this fleet, which is exactly why the default is a
+  preview and the real push asks twice.
+
+### 23.3 Python Console
+
+Admin-authored Python, run against the **same curated dataset bundle** the
+plugins use, in a bubblewrap jail with no environment, no network namespace and
+none of the application tree mounted — so a script cannot open the `.env`, the
+database or the keyring, and cannot open a socket. Wall-clock, CPU, memory and
+process-count caps stop runaway loops. The console receives a JSON snapshot of
+the data; it never touches the database itself. Every run is audited, including
+the first kilobyte of the source.
+
+## 24. High availability
+
+Global → Administrator → **High Availability** (admin, `user_manage`). This page
+was **split out of Software Update** so that the two questions get their own nav
+entry: *Software Update* (§22) is "what code is this node running"; *High
+Availability* is "how many nodes are there, which one is primary, and is the
+standby actually receiving anything".
+
+**Loading it never touches an appliance.** Everything on it comes from this
+node's own PostgreSQL plus a best-effort HTTP probe of the peer, so the page
+opens with the entire fleet switched off.
+
+**Cluster architecture graph.** One card per registered node, laid out with the
+live replication arrow drawn between them: role (primary / standby), host,
+reachability, revision, health. Click a node to load it into the editor below.
+The arrow's direction is the real streaming direction and its label carries the
+current WAL lag — the reconciler drives the staged code rollout along that same
+path. Below the graph is a fixed reference table of the **node-to-node channels**
+and what each carries, which exists because `:443` (your browser → the app) is
+routinely confused with the node-to-node traffic; the heavy sync — the standby's
+actual database — is Postgres streaming replication, not the peer HTTPS channel.
+Live per-channel encryption status is on Monitoring → SATOM health (§14.1).
+
+**Deployment mode.** A switch between **HA** and **STANDALONE**. It lives in the
+replicated settings table, which means it can only be *written* where Postgres is
+read-write: **the primary**. On a standby the page says so instead of failing the
+save. (The related *deploy automation* switch — reconciler AUTO vs MANUAL — is on
+the Software Update page, because it is about how code rolls out.)
+
+**The HA node registry.** Add / update / remove the peer by name (its hostname)
+and host. The registry is a file in the replicated data directory: it reaches the
+peer on the next data sync, and its *live* state is probed on this page rather
+than trusted from the record. You cannot remove the node you are on.
+
+**Database replication & failover.** The card shows the live streaming state read
+from the local PostgreSQL — on a primary the sender side (who is connected, in
+what state, how many bytes behind), on a standby its own apply lag.
+
+**Manual failover is guarded three ways.** *Promote this node to PRIMARY* only
+appears on a node that is genuinely in recovery; it requires typing that node's
+hostname exactly; and it does not run in the web worker — it enqueues, and a
+privileged runner performs the promotion. Promote only when the old primary is
+confirmed **down**: nothing in SATOM arbitrates a split brain for you. On the
+primary the card says plainly that failover is initiated from the standby's own
+page.
+
+Further reading — neither of these is a page in the product, and both matter the
+day something goes wrong:
+
+- [Encryption in transit, node TLS & the service certificate](encryption-and-node-tls.md)
+  — what each channel encrypts, and how the node's own certificate is issued and
+  renewed (the settings for it are §26.8).
+- [Git backup and surviving a Gitea outage](git-backup-and-outage.md) — what
+  keeps working when the code remote is unreachable, and how to recover from it.
+
+## 25. AppIDs
+
+Global ADOM → Administrator → **AppIDs** (admin, `user_manage`).
+
+An **AppID** is two things at once, which is why it has its own catalog rather
+than living in a policy comment:
+
+- a **billing key** — which customer a FortiWeb Server Policy is charged to;
+- an **access-control unit** — the scope an API token can be pinned to, so an
+  external integrator only reaches the backends of *their* AppIDs.
+
+Because it decides money *and* permissions, the authority is always the two local
+tables — the catalog and the policy bindings — never a file and never a comment
+string. Files and URLs are *sources* that feed the catalog.
+
+**Manual vs imported, and the stale badge.** A row you type by hand is a *manual*
+entry. A row that arrived from a feed is *imported*. Import is strictly
+**additive**: it inserts, updates and stamps `last_seen`. An imported AppID that
+stops appearing in the feed is flagged **stale** for review — it is never deleted
+and never unassigned, because that would silently de-bill a customer or drop a
+token's scope. Manual rows are never auto-staled.
+
+**The upload flow — map once, reuse forever.**
+
+1. **Upload** a CSV, TSV, TXT or PDF. The file is parsed and previewed; nothing
+   is imported yet.
+2. **Map the columns** to the fields: `app_id` (required), plus customer, label
+   and rate, and any number of extra named columns you want carried along.
+   Column references are header names, or index numbers if you say the file has
+   no header row.
+3. **Import.** The mapping is **saved**, and it is reused by every later upload
+   *and* by the nightly scheduled action — that is the whole point. You map once,
+   not once per file.
+
+**External source (for the nightly).** Configure a URL, its auth mode (none /
+basic / bearer) and the credential; the secret is stored Fernet-encrypted and is
+never returned to the browser (the page only tells you whether one is set). The
+scheduled action **`appid_import`** (§15) fetches that URL, applies the saved
+mapping and imports additively. With no source configured the nightly reports
+"no source configured" rather than pretending it ran.
+
+**Assignment.** Assign an AppID to a Server Policy by picking the device and the
+policy name. The binding is unique per `(appliance, server policy)`, so a policy
+belongs to exactly **one** AppID; assigning a second one replaces the first
+rather than double-billing. Unassign is a separate action. Deleting an AppID also
+deletes its bindings, and says so.
+
+The assignment picker spans both FortiWeb and FortiADC appliances — the catalog
+is a single **global** one, not per-ADOM.
+
+## 26. Settings, tab by tab
+
+`Settings` is one page with **22 tabs**. Twenty of them are admin-only
+(`user_manage`); the last two — **Security** and **Change Password** — are
+self-service and are the only ones a non-admin sees. Throughout this manual a
+setting is addressed as `Settings → <Tab>`.
+
+Six tabs are documented where the feature they configure is documented, because
+the setting is meaningless without it. They are not repeated here:
+
+| Tab | Documented in |
+|---|---|
+| **Thresholds** | §14.10 — measurement policy for every probe and device roll-up |
+| **Trust store** | §10.1 — the CAs *SATOM itself* trusts when it dials an appliance |
+| **Certificate Manager** | §10 — issuance protocol, lifecycle policy, and the ACME provider registry |
+| **Hypervisors** | §21.1 — the Proxmox / ESXi endpoints provisioning may build on |
+| **Clone / Migrate** | §6 — dummy-VIP rewrite rules and the copy-WPP default |
+| **Appearance** | §19 — themes, tokens, logo and favicon |
+
+The rest follow.
+
+### 26.1 General — identity, logging, and the Libraries panel
+
+Application name (browser title and top bar), environment (which drives the
+**PROD**/**DEV** badge), default appliance platform, session-lock timeout, status
+poll interval, which log severities are written, display timezone, log format,
+and whether policy detail pages expose their raw JSON. A separate card opts an
+admin in or out of **bug-report notifications** (bell + email).
+
+The **System Information** card is read-only inventory — version, node, Python,
+and the library list. Underneath it sits **Libraries**, which is a **second,
+separate updater** and is easy to confuse with §22:
+
+- §22 *Software Update* moves the **application code** (a git revision, or a
+  signed offline package).
+- Settings → General → **Libraries** moves the **Python dependencies** — one
+  package at a time, from a **curated allowlist**, with a rollback point recorded
+  per package.
+
+They are different mechanisms with different blast radii, and they are
+deliberately not merged. Practical notes:
+
+- **"Check for updates"** is the only thing that reaches PyPI, and it does so
+  *outside* the page render — the Settings page itself never touches the network,
+  so an unreachable PyPI cannot hang or 500 it. Results are cached for hours;
+  the button forces a fresh look.
+- **The web worker never runs `pip`.** It writes a request that the privileged
+  updater applies, and the allowlist is enforced in both places. A package that
+  is not on the list is refused before it reaches the queue.
+- **It is node-local.** The virtual environment does not replicate. The card
+  prints which node you are on, and you repeat the change on the other one (§22.2).
+- A queued change is polled live and its steps are written by the runner.
+
+### 26.2 Access Control — who may reach the app at all
+
+Two independent gates, and **both are empty-means-everything**:
+
+- **IP whitelist** — only these source addresses or CIDRs may reach the app.
+  Leave it empty to allow all. Each entry is validated as an IP or CIDR on save
+  and an invalid one is skipped with a warning rather than silently stored.
+- **Allowed users** — only the ticked users may sign in. Tick none to allow all.
+
+**Loopback and admins are always allowed**, on purpose: this page is exactly
+where a typo would otherwise lock everybody — including you — out of a running
+appliance. Only non-admin accounts are even offered in the list.
+
+> The per-user **top-bar banner** picker is *not* here and is not a login
+> banner: it is a personal appearance preference, saved against your account, on
+> your **Profile** page. Each ADOM can carry a different one.
+
+### 26.3 Users and Profiles
+
+**Users** is the account list — create, edit, disable, reset, assign a profile.
+
+**Profiles** is the one that matters for §1: the three named profiles
+(*readonly*, *operator*, *admin*) are **seeded, not hard-coded**. This page
+composes permission sets from the granular catalog — eleven areas
+(Monitoring, Web Protection, Network, Operations, Backups, API Registry, Audit
+Log, Appliances, Studio, Users, Profiles), each with its own view/edit/apply-
+style actions — and you can create your own profiles freely. The three seeded
+ones exist because they reproduce the legacy role behaviour exactly; they are a
+starting point, not the ceiling.
+
+An **anti-lockout guard** keeps at least one active account holding both user
+management and profile management, so this page cannot be used to remove the
+last administrator.
+
+### 26.4 Git — the code repository this node tracks
+
+- **Repository** — remote, branch, HEAD, working-tree status and ahead/behind,
+  refreshed on demand.
+- **Configure repository** — set the remote URL, an optional token (embedded in
+  the URL, never displayed back) and the branch.
+- **Update from Gitea** — a fast-forward-only `git pull`. Python changes need a
+  service restart to take effect; the normal path for a code change is §22, not
+  this button.
+- **Manual git console** — one git command per line, `#` for comments. It is
+  **git-only, not a shell**: anything that is not a git subcommand is refused.
+- **Recent commits** lists what actually landed.
+
+See also [git backup and surviving a Gitea outage](git-backup-and-outage.md).
+
+### 26.5 SoT & Backup — the firmware manifest repo and the external backup server
+
+Two settings that the rest of the product leans on:
+
+- **Firmware source-of-truth repository** — a *separate* git repo from the
+  application code. It versions the firmware **manifest** (filenames, versions,
+  sha256, where the blob lives). The `.out` binaries themselves stay on the
+  backup server: git is the wrong tool for multi-hundred-megabyte blobs.
+- **Backup server access (SFTP)** — host, port, user, password, and the two
+  paths (config backups, firmware). This is the external box the appliances push
+  their own scheduled config backups to and where firmware binaries live. SATOM
+  connects read-mostly: inventory on the System Backup page, pulling firmware for
+  console-driven restores, and the `push_server` option on the system-backup and
+  monitoring-report actions (§15, §14.9).
+- **Test connection** proves the credentials and the paths before anything
+  depends on them. The password is stored Fernet-encrypted; the paths are as seen
+  *inside* the SFTP session, because the server chroots the backup user.
+
+### 26.6 Email & Alerts — this is the delivery policy §14.10 defers to
+
+**Email (SMTP)** — enable/disable, server, port, TLS verification (with an
+explicit "uncheck for an internal self-signed server, and know that it is
+insecure"), optional authentication, from-name and from-address, default
+recipients and a timeout. **Send a test email** uses the *currently saved*
+settings — save first, then test.
+
+**Alerts & notifications** — this is where *who is told, and how often* is
+decided. §14.10 is measurement policy (what counts as bad); this is delivery
+policy (what happens then), and the two are kept apart deliberately.
+
+- **Enable alert dispatch** and the **alert recipients**. Blank recipients fall
+  back to the email tab's defaults, and the page prints what that fallback
+  currently resolves to.
+- **Checks enabled** — tick the individual health checks that may raise mail.
+- Delivery-shaping numbers: certificate warning days, a **cooldown** in hours so
+  a flapping condition cannot mail every sweep, git-behind and git-unpushed
+  limits (a local commit that never reached the remote is a *silent* push
+  failure), backup staleness, a drift window, an automation **failure streak**
+  that escalates to critical, an automation **overdue** window — because a
+  scheduler that stops firing produces no failed runs at all and would otherwise
+  be invisible — and the **device alert floor**, the severity at which device
+  health starts mailing.
+- **Preview now** evaluates every enabled check and shows what *would* fire,
+  including the resolved recipient list, **without sending anything**. This is the
+  right first move when a device is red and no mail arrived.
+
+### 26.7 Authentication — LDAP / RADIUS and directory sync
+
+Choose the backend and configure it; local accounts keep working alongside it.
+
+- **Test** validates the connection using the values **in the form**, unsaved, so
+  you can iterate without committing a broken configuration.
+- **Sync directory users** imports the accounts in the configured sync group/OU
+  as local rows, so an admin can assign a profile and decide access **before the
+  user's first sign-in**. Imported rows are created **disabled** — pending
+  approval — and you land on the Users page to act on them. Nothing about this
+  grants access on its own.
+
+Directory accounts manage their own password and MFA at the directory; the
+Security tab says so rather than offering controls that would not work.
+
+### 26.8 Node TLS — the certificate *SATOM itself* presents
+
+A different concern from §10 (which is about certificates **on the appliances**)
+and from §10.1 (which is about the CAs SATOM **trusts**). This tab is the
+certificate the node **serves**, and the "Encryption in transit" card on
+Monitoring → SATOM health (§14.1) points here.
+
+- **State** shows the current certificate, its subject and expiry, the node
+  hostname it was issued for, the renew mode, and the Postgres SSL policy.
+- **Issue** mints one from the internal CA. **Import** takes a cert + key PEM
+  pair (plus an optional chain) for a certificate issued elsewhere. **Renew**
+  forces the renewal pass now instead of waiting for the timer.
+- **Renew mode** decides what happens to an *imported* certificate as it ages:
+  `alert` (warn only — you renew it wherever it came from) or `autopull` (fetch
+  and install the new material from a configured SFTP source). **Autopull** also
+  has a one-off *test now* button that ignores the mode gate.
+- **PostgreSQL SSL policy** — minimum protocol version and cipher list for the
+  replication/database channel, applied from this tab.
+
+Background: [encryption-and-node-tls.md](encryption-and-node-tls.md).
+
+### 26.9 DNS Lookup and DNS Records
+
+- **DNS Lookup** is the resolver list behind the fleet DNS & LB Lookup tool
+  (§13): a variable-length list of name + server rows, each individually
+  enabled. Clearing a row removes that server.
+- **DNS Records** is the *write* side — the DNS/IPAM provider SATOM may create
+  records through (used by ACME dns-01 in §10 and by provisioning in §21). Pick
+  the provider, fill its connection fields, and store its one secret
+  Fernet-encrypted. A blank secret on save keeps the stored one; an explicit
+  *clear* tick wipes it, which is what you want when switching provider.
+  **Test connection** runs against the values in the form and falls back to the
+  stored secret if you left the field blank.
+
+### 26.10 Policy Links — deep links onto every Server Policy page
+
+Up to ten links rendered at the top of every **Server Policy** detail page, with
+`{token}` placeholders that each policy fills from its own context — so one entry
+(a log search, a ticket query, a dashboard) jumps straight to *that* policy's
+data. The available tokens are listed on the tab. A link naming a field the
+policy does not have is **skipped, never rendered broken**. Each row can be
+enabled and can open in a new tab; the list is shared by all ADOMs.
+
+### 26.11 ADOMs — the product list is data, not code
+
+Create, edit, deactivate and delete ADOMs. This is why §3's five workspaces are a
+*current* list rather than a fixed one.
+
+Each row carries a key (lowercase, the URL-scoping identifier), a display name,
+title, tagline, description, sort order, an uploaded logo, a default banner, an
+**active** flag, a **placeholder** flag (a workspace that is listed but has no
+product pages behind it yet), and five **capability** switches — banner, API
+tokens, firmware, naming and regex — which decide which shared features that
+workspace offers.
+
+**`global`, `fortiweb` and `fortiadc` cannot be deleted**; their keys are wired
+into URL scoping and deleting them would orphan data. Deactivate them instead.
+Everything else is fully deletable.
+
+### 26.12 FAZ Menu — trim the FortiAnalyzer sidebar
+
+Hide FortiAnalyzer menu groups and leaves. Turning a **group** off cascades to
+everything under it; turning a single **item** off hides just that leaf. Hidden
+entries disappear from the sidebar and dashboard **and are not reachable by URL**.
+It applies to every user of that ADOM, and it changes only the GUI menu — the
+devices and the configuration harvest are unaffected.
+
+### 26.13 Security and Change Password — self-service, for every account
+
+The two tabs any signed-in user gets.
+
+- **Two-factor authentication (TOTP).** Scan the QR with an authenticator app and
+  confirm one code to enable it. Enabling generates **backup codes shown exactly
+  once** — save them then. *Regenerate backup codes* issues a fresh set and
+  immediately invalidates the old one. Disabling 2FA asks for your current
+  password first.
+- **Recovery email** — used by *Forgot password* on the sign-in page to send a
+  reset link. It needs server email (§26.6) configured to be worth anything.
+- **Security status** and your **active session**, with a clean sign-out.
+- **Change Password** — current, new, confirm.
+
+Directory-backed accounts see an explicit note instead of these controls: they
+manage password and MFA at the directory.
+
+### 26.14 Settings endpoints owned by other pages
+
+A few settings are *stored* by this blueprint but *edited* elsewhere, so looking
+for them among the tabs is a dead end:
+
+- **Naming** — the object-naming patterns; edited on the Naming page.
+- **Classification** — the zone / line / department vocabulary that scopes
+  baselines (§28); edited on the Classification page.
+- **Segments** — the network-segment registry; edited on the Network Segment
+  page.
+- **PostgreSQL SSL policy** — saved from the Node TLS tab (§26.8).
+- **ACME provider registry** — saved from the Certificate Manager tab (§10).
+
+## 27. Operations: log collection and importing a backup
+
+The FortiWeb ADOM's **Operations** group has three entries. §11 documents the
+third one (Device Backups). These are the other two — they look adjacent and they
+do completely different things.
+
+### 27.1 Log Collection — a read-only diagnostic battery over SSH
+
+FortiWeb ADOM → Operations → **Log Collection** (`config_write`).
+
+**What it is not:** it is *not* a viewer of the appliance's on-box log database.
+It does not page attack or event logs.
+
+**What it is:** tick one or more FortiWeb appliances, give the run a label, and
+it opens one SSH session per box and runs a curated battery of read-only
+`get` / `diagnose` commands — system status and performance, HA (nodes, status,
+sync state, event log), hardware (CPU, NIC, interrupts, disks and their SMART
+health), routing, ARP, memory, proxy debug — writing each device's output to its
+own labelled `.txt`.
+
+- **Read-only by construction.** Every command in the run — the battery *and*
+  anything you type into the custom-commands box — is asserted read-only before
+  the session opens. One command that could mutate configuration refuses **the
+  whole run**, not just that line.
+- Long fleet runs happen in the background and report progress through a file, so
+  the status keeps updating no matter which worker serves the poll.
+- **History** lists every previous run; open any file in the browser or download
+  it. That is what makes this useful for a support case: the artefact is a plain
+  text file with a label and a timestamp.
+- FortiWeb only. It is `config_write`-gated even though it writes nothing to the
+  device, because it opens an administrative SSH session with the stored
+  credentials.
+
+### 27.2 Import Backup — parse a config file with no appliance at all
+
+FortiWeb ADOM → Operations → **Import Backup** (`config_write`).
+
+Upload a FortiWeb configuration backup — `.conf`, `.txt`, `.cfg`, `.zip` or
+`.gz` — and it is parsed **entirely offline**. **No appliance is contacted**, at
+any point. The result is a structured per-device snapshot: detected firmware,
+total object count, per-section counts, and the raw text, all browsable
+afterwards from the same page.
+
+Use it for a box you do not manage, a backup someone emailed you, or a
+pre-migration comparison. A file that is encrypted, truncated or simply not a
+FortiWeb configuration is rejected with the reason and **no snapshot is stored** —
+a half-parsed snapshot that looks real is worse than no snapshot.
+
+## 28. System provisioning: profiles and baselines
+
+FortiWeb ADOM → Automation → **System Provisioning** — the second of the two
+entries named in §21. Device Provisioning builds an appliance that does not
+exist; this one applies *system* configuration to appliances that already do.
+
+Every route on this page requires `config_write`, except approve/reject which
+require the template-approval permission (`operations.template_approve`).
+
+### 28.1 Composing a system profile
+
+A **system profile** is a declarative list of configuration elements — DNS, NTP,
+RADIUS, SNMP, administrators, and in fact any `cmdb` object the endpoint registry
+knows about, offered grouped by the GUI section it belongs to. For each element
+you pick the object, say whether it is a singleton or carries an mkey, and supply
+its values as JSON. Rows reorder with the up/down buttons, and the order is the
+order they are pushed in.
+
+A profile also carries a **scope** — zone, line, department — drawn from the
+Classification vocabulary. That is what later lets a baseline match devices.
+
+**Secrets are entered at apply time and are never persisted.** Elements that
+carry secret material are flagged sensitive, and saving the profile **strips**
+every secret-looking field out of the stored body — recursively — before it is
+written. The RADIUS shared secret, admin passwords and SNMPv3 auth/priv keys are
+supplied again at apply time. A template is a thing that gets versioned, shared,
+exported and reviewed; a template is not a place for a password.
+
+Saving stores the profile as a **versioned Template of kind `system-profile`**
+(§29). Editing it creates a **new version** rather than overwriting the old one.
+
+### 28.2 Applying to one device or to the fleet
+
+Apply asks for a target hostname and a **Change ID** — both are required, and both
+land in the audit record, so a system-wide push is always attributable to a
+change.
+
+Then it is two-phase, as everywhere else in the product:
+
+1. **Preview** — `dry_run`, showing the exact planned requests per device.
+   Nothing is contacted for real.
+2. **Confirm** — a **canary-gated** live write: the first device goes first and
+   the rest only follow if it succeeded. The result reports `{canary, rest,
+   aborted}`.
+
+Choosing *Entire fleet* is explicit. Selecting "selected devices" and then
+selecting nothing is **refused**, rather than being quietly treated as "all" —
+the empty selection is exactly the shape a fleet-wide accident takes.
+
+### 28.3 Approval
+
+A saved profile is pending until someone with the approval permission
+**approves** it (making it selectable for baselines) or **rejects** it with a
+reason the author can read. Approval and authorship are separate permissions on
+purpose.
+
+### 28.4 Baselines
+
+A **baseline** is a *combo* — a zone × line × department permutation — with a set
+of **approved** templates assigned to it. It answers "what should every device in
+this scope have".
+
+- **Generate** creates a combo for every zone × line × department permutation
+  that does not have one yet. (It does **not** read a device: a baseline is
+  composed from approved templates, not captured from a box.)
+- **Assign / unassign** attaches an approved template to a combo, one at a time
+  from the combo's own page, or one template to many combos at once from the
+  catalog grid.
+- **Matching devices** are computed from the appliances' own classification. An
+  empty facet on a combo means *any*, so a combo with no zone matches every zone.
+- **Apply** is the same two-phase machinery: a dry-run preview across the matching
+  devices, then a confirmed rollout that runs as a **background job** with live
+  progress in the job dock — a fleet rollout must not live inside an HTTP request.
+- A baseline that matches no devices, or that has no composing templates, says so
+  and does nothing.
+
+The filter (zone / line / department / name) can be **saved to your account** and
+is restored on your next visit.
+
+## 29. Template library & the section catalog
+
+Two pages that are the same data seen from two ends: the **Template Library** is
+where desired state is authored and reviewed, and the **Section Catalog** is the
+approved subset, arranged the way FortiWeb arranges it.
+
+### 29.1 The Template Library
+
+FortiWeb ADOM → Administrator → **Template Library**. A template is a named,
+**versioned** blob of desired state of a given kind (web-protection profile,
+system profile, and the other configuration kinds). Editing never overwrites:
+saving produces a **new version** of the same kind and name, and the previous
+version stays.
+
+Permissions are split three ways, and they are not the same permission:
+
+| Action | Needs |
+|---|---|
+| Browse the library | `operations.view` |
+| Create / edit / clone / delete a template | `operations.template_save` |
+| Apply a template to **one** device | `operations.template_apply` |
+| Apply to **several** devices (a fleet rollout) | `operations.apply` **and** an approved template |
+| Approve / reject / revoke approval | `operations.template_approve` (admin) |
+
+So an operator can author a draft and try it on a single box; making it
+fleet-deployable is a separate, gated decision by someone else.
+
+**Lifecycle: pending → approved (or rejected) → applied.**
+
+- A new or edited template lands **pending**.
+- **Approve** makes it fleet-deployable. **Reject** records a reason the author
+  can read. **Revoke approval** returns an approved template to pending.
+- Applying is two-phase everywhere: a POST without confirmation returns a
+  **dry-run preview** and contacts nothing; a confirmed apply runs canary-first
+  and, for more than one device, as a **background job** in the job dock.
+- **Approval status and deployment are different things.** A template can be
+  approved and never applied. The one deliberate exception: approving a **Web
+  Protection Profile** template *does* start a fleet-wide rollout immediately,
+  because the team rule is that a template-managed WPP is read-only on the devices
+  — the approved version is what must be on every one of them (§9).
+
+### 29.2 The Section Catalog
+
+FortiWeb ADOM → **Section Catalog** (admin). It lists **only templates whose
+status is `approved`**, grouped by the FortiWeb section each kind belongs to,
+with an unknown-section bucket last so nothing silently vanishes.
+
+Two things it is not:
+
+- It is **not a live device browser.** That is the *Configuration* area, which
+  reads what is on the box. This page is **desired state** — what someone decided
+  should be true, approved.
+- It is not the whole library. Pending and rejected templates are absent by
+  construction, so the catalog is clean without anyone curating it.
+
+**This is the connective tissue to §28.** The approved templates listed here are
+exactly the pool that baselines draw from: a template is authored in the library
+(29.1), approved, appears here grouped by section, and is then assignable to a
+zone × line × department combo in System Provisioning (28.4). A template that
+never got approved cannot reach a baseline, which is the point.
+
+## 30. The endpoint registry & the API explorer
+
+Every product workspace has an API console (§17.1, §17.2, §17.3 cover the ADC,
+FAC and FAZ ones). This section documents the **FortiWeb** one and, more
+importantly, the **registry model all four share**.
+
+### 30.1 What the registry is
+
+The registry is the map from a **logical endpoint name** the application uses
+(`server_policy`, `dns`, `system_global`…) to the **concrete URI** on that
+firmware. There is one catalog per product, each with its own API dialect
+(FortiWeb `v2.0`, FortiADC `v1`, FortiAuthenticator `v1`, FortiAnalyzer
+JSON-RPC).
+
+It is **DB-first with the YAML as seed and fallback**:
+
+- the live catalog is a database table, editable from the console and captured by
+  the nightly database dump;
+- the git-tracked `endpoints*.yaml` files at the repository root are the **seed**.
+  At boot they are synced **INSERT-ONLY**: a name already present in the database
+  is never touched, so an operator edit always wins over the shipped file;
+- if the database cannot serve the catalog at all — an early script, a standalone
+  tool, a fresh tree — the YAML is served directly, so nothing ever breaks for
+  want of a table.
+
+Reads go through a short-lived per-process cache. An edit invalidates the cache
+of the worker that served it immediately; the other workers converge within a
+minute.
+
+**This is why §17.3's claim holds.** When a firmware upgrade moves a URI, the fix
+is a registry edit on the affected product's console — a row change, audited,
+effective across the workers within a minute. It is not a code change, not a
+release, and not a redeploy.
+
+### 30.2 Editing the catalog
+
+Editing needs `registry_edit`, every change is **audited** with the before/after
+URI, and it happens **in place on the console's API-menu tree** — the standalone
+Registry page was fused into the explorer, so there is one page and one write
+path rather than two that can disagree. Old `/registry` and `/registry/<section>`
+bookmarks redirect to the explorer; `/registry/search` still serves a plain
+name/URI search across the catalog.
+
+Two rules on the write path:
+
+- A name is validated (letters, digits, `_`, `-`, `.`) and a URI must be an
+  absolute API path. A duplicate name within the same product and API version is
+  refused, naming the row it collides with.
+- **Removal is a soft delete.** Disabling a row sets `enabled=false` and *keeps
+  the row*, precisely so the boot seeder cannot resurrect a name the operator
+  removed. Re-enabling is the same button. Nothing here hard-deletes a catalog
+  entry.
+
+### 30.3 The FortiWeb API explorer
+
+FortiWeb ADOM → **API** — the registry catalog browsed as the FortiWeb API menu
+on the left, and a request console on the right: pick an appliance, pick or type
+an endpoint, choose a method, supply a JSON body, execute.
+
+- **GET is always allowed** to any user who can reach the page.
+- **POST / PUT / DELETE / PATCH require the `registry.execute_write` permission**
+  and are refused with that message otherwise. Note that this is a *separate*
+  permission from `registry.edit`: one lets you change the catalog, the other
+  lets you fire writes at a device through it.
+- Every execution is audited with the method and endpoint.
+- The device's own response is shown as it came back — a device error is rendered
+  as the device's error, never smoothed into an empty result.
+
+Unlike the FortiAuthenticator console (§17.2), the FortiWeb explorer's writes are
+**not dry-run by default** — this is the raw request console, and the confirmation
+is the permission.
+
+Endpoint conventions, dialects and per-product quirks:
+[docs/device-api.md](device-api.md).
+
+## 31. Release notes & the SATOM changelog
+
+**Two different things share the name "release notes", and confusing them wastes
+an afternoon.** One is the **vendor's** notes for the *appliance* firmware,
+harvested into the product. The other is **SATOM's own** changelog, which tells
+you what changed in *this manager*. This section covers both, in that order.
+
+### 31.1 Vendor release notes (the topbar modal)
+
+In the FortiWeb and FortiADC ADOMs the top banner opens a **Release Notes**
+modal. It reads a corpus of harvested vendor notes — Known and Resolved issue
+tables plus the prose sections — and it is the corpus §12 step 3 diffs against
+when it advises you on an upgrade.
+
+Three tabs:
+
+| Tab | What it answers |
+|---|---|
+| **Issues** | Every Known / Resolved issue, filterable by version, status, topic and free text |
+| **Upgrade advisor** | Pick a current and a target version: what the move **resolves**, what is still **known** in the target, and the relevant notes |
+| **Notes** | The prose sections of a release, by version and section |
+
+Reading any of it needs only the view permission. Two buttons change the corpus:
+
+- **⤓ Sync from git** — `git pull`, then reload the corpus from disk. **Any
+  signed-in user** may do this; it is how a second node or a colleague picks up a
+  scan somebody else ran. With nothing in git yet it says so and tells you to run
+  a scan.
+- **🔎 Scan from Fortinet** — **admin only**. It auto-discovers every published
+  version for that product on the vendor documentation site and harvests the
+  issue tables and prose into the corpus. You choose which majors (or all), and
+  the transport (direct fetch, an optional crawler fallback, at least one
+  required). If **publish** is left on, the corpus is committed and pushed so the
+  whole team shares one harvest rather than each node scraping the vendor
+  separately.
+
+Two operational details worth knowing:
+
+- **A scan runs in a background thread and writes its progress to a status file**,
+  so the poll is answered correctly no matter which worker handles it — and you
+  can close the modal. When it finishes, the result arrives as a **bell
+  notification** in that ADOM, success or failure.
+- A second scan is refused while one is running, but a "running" flag older than
+  half an hour is treated as dead, so a crashed thread cannot trap you behind a
+  permanent conflict.
+
+The corpus holds both products in one shared file, tagged per row, and every read
+is filtered by the ADOM you are in — a FortiADC workspace never shows FortiWeb
+rows.
+
+### 31.2 SATOM's own changelog — what changed in *your* version
+
+The manager's own history lives in **`CHANGELOG.md`** at the repository root. It
+is a normal Keep-a-Changelog file, one section per released version, and it is
+the authoritative answer to "what is new since we last updated".
+
+Where to read it:
+
+- **On the published documentation site** — the release pipeline renders
+  `CHANGELOG.md` into the site's **Releases** section, one page per version.
+- **On the node, with no network at all** — the operator console (§20) prints it:
+
+  ```bash
+  satom show changelog          # the most recent release notes from the tree
+  satom show docs changelog     # the same file through the manual reader
+  ```
+
+**Which version am I on?** Three answers, all equivalent:
+
+- the **console footer** of every page prints `v<version>`;
+- `satom show version` — the app, the CLI and Python;
+- `satom get system status` — identity, version, HA role and your privilege
+  level, in one place. On a pair, run it on **each** node: the code is per-node
+  and a half-applied update is exactly the situation this tells you about (§22.2).
+
+## 32. Troubleshooting
 
 | Symptom | Likely cause / fix |
 |---|---|
@@ -1156,3 +2176,16 @@ How packages are built and signed:
 | A muted probe is still shown as failing on its own page | Correct: mute changes the grade, not the visibility. It stops raising the device badge and the mail, and is counted as lost coverage in both. |
 | A probe started alerting again on its own | Mutes expire (720 h maximum) and there is no permanent mute. Re-mute it with a reason, or fix the condition. |
 | Host disk alerts at 92 % rather than 95 % | Deliberate. A full filesystem stops PostgreSQL writing WAL, so the warning has to arrive while there is still room to act. Adjustable under the *SATOM machine* scope. |
+| A page says the object is **locked by another user** | A lease lock. Edit pages hold a short lease on `<kind>:<name>` per appliance and refresh it with a heartbeat; a browser that closed or crashed stops heartbeating and the lease **expires by itself in about two minutes**. Wait it out. If the holder is genuinely gone and you cannot wait, the page offers an explicit take-over — deliberately explicit, because two concurrent editors on one device object is what the lease exists to prevent. |
+| A plugin preview renders as a blank iframe | The frame is a sandboxed **opaque origin** by design (no `allow-same-origin`), so anything the plugin's JS tries to read from the parent app silently yields nothing. Use `window.pluginData` / `window.pluginParams`, which are injected into the frame — a plugin cannot fetch its datasets back (23.1). A *render* error would show as a red card instead, so a truly blank frame is usually empty output or JS reaching outward. |
+| Lua **Deploy** returns a plan instead of pushing | Correct: deploy is dry-run by default. A real push needs `config_write` **and** an explicit confirmation, and the lint gate runs again first (23.2). A refusal naming *lint failed* means the script does not parse — fix it, then mark it tested. |
+| The HA page shows the standby with growing WAL lag | Replication is streaming but not keeping up, or the standby is stalled. Read the replication card on Global → Administrator → **High Availability** (§24); it prints the sender/apply state and byte lag from Postgres itself. Do not promote a lagging standby: promotion is for a primary confirmed **down**. |
+| Deployment mode / HA node changes will not save | The setting is in the **replicated** settings store, so it is writable only where Postgres is read-write — the **primary**. The standby's database is read-only and the page says so (§24). |
+| An AppID import lands zero rows, or the wrong columns | The saved column mapping does not match this file. The importer says *no rows with a non-empty AppID were found* when the `app_id` column is mapped wrong. Re-upload, re-map on the preview, and import — the corrected mapping is then reused by later uploads **and** by the nightly (§25). |
+| An AppID went **stale** after the nightly | It stopped appearing in the feed. That is a flag for review, not a deletion: the row, its billing and its policy bindings are all intact by design (§25). |
+| LDAP/RADIUS sign-in fails, or a directory sync imports nothing | Use `Settings → Authentication → Test`, which runs against the values **in the form**, then check the sync group/OU. Remember that synced users are created **disabled** — they exist, pending your approval, and until you enable them their sign-in will fail (§26.7). |
+| The node certificate expired although autopull is on | Autopull only applies to an **imported** certificate and only in `autopull` renew mode; in `alert` mode SATOM warns and renews nothing. Check the source connection with the one-off pull button on `Settings → Node TLS`, and confirm the mode (§26.8). |
+| Log Collection returns 403, or refuses the whole run | The page is `config_write`-gated even though it writes nothing to the device (27.1). A run refused with a read-only violation means one command — battery or custom — could mutate configuration; the whole run is refused rather than the offending line skipped. |
+| A template is stuck in **pending** and will not roll out to the fleet | Single-device apply works at any status; a **multi-device** rollout needs the template **approved** *and* the Run-operations permission. Approving is a separate permission (`operations.template_approve`) from authoring (29.1). |
+| A registry-driven page 404s on the device after a firmware upgrade | The firmware moved that URI. Fix it as a **registry edit** on that product's API console — the catalog is DB-first, the edit is audited, and it converges across workers within a minute. No code change or release is involved (30.1). |
+| A registry endpoint you disabled came back after a restart | It did not — disabling is a **soft delete** and the row survives exactly so the boot seeder cannot resurrect the name. If the name is live again, someone re-enabled it; the toggle is audited (30.2). |

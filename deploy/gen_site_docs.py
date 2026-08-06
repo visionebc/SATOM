@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import html
 import importlib.util
+import json
 import pathlib
 import sys
 
@@ -88,7 +89,15 @@ NAV = [("index.html", "Home"), ("features.html", "Features"),
 SOURCE_URL = "https://github.com/visionebc/SATOM"
 
 
-def head(title: str, description: str, up: str, active: str) -> str:
+def head(title: str, description: str, up: str, active: str,
+         body_class: str = "") -> str:
+    """The chrome every generated page gets.
+
+    ``body_class`` widens the reading column. It is a BODY class rather than a
+    per-element modifier because ``.wrap`` is used four times on a page (nav,
+    header, content, footer) and a page whose nav is 1120px wide over content
+    that is 1536px wide reads as a layout bug. One class, one decision.
+    """
     css_v = _asset_digest("site.css")
     js_v = _asset_digest("site.js")
     links = "\n".join(
@@ -113,7 +122,7 @@ def head(title: str, description: str, up: str, active: str) -> str:
 <link rel="stylesheet" href="{up}assets/site.css?v={css_v}">
 <script src="{up}assets/site.js?v={js_v}" defer></script>
 </head>
-<body>
+<body{f' class="{body_class}"' if body_class else ""}>
 
 <nav>
   <div class="wrap nav-inner">
@@ -157,7 +166,14 @@ def foot(up: str) -> str:
 """
 
 
-def render_doc(md_name: str, slug: str, title: str, icon: str, blurb: str) -> str:
+def render_doc(md_name: str, slug: str, title: str, icon: str,
+               blurb: str) -> tuple[str, list[dict]]:
+    """Render one manual page.
+
+    Returns the page AND its headings, because the hub's search index is built
+    from the same render. Deriving the index from a second pass would be a
+    second copy of the parse, and the copy is the one that rots.
+    """
     import markdown as md_lib
 
     source = source_for(md_name)
@@ -188,11 +204,25 @@ def render_doc(md_name: str, slug: str, title: str, icon: str, blurb: str) -> st
     if not toc:  # a document written entirely with h1/h3 still gets a usable TOC
         toc = [t for t in _flat(getattr(md, "toc_tokens", []))
                if t.get("name") and t.get("level") in (1, 3)]
+    # unescape FIRST: markdown's toc tokens carry the heading already
+    # HTML-escaped, so escaping again shipped "Backups &amp;amp; restore" to
+    # every sidebar. It only shows on a heading containing & < > or ", which is
+    # why it survived this long.
     toc_html = "\n".join(
-        '      <a href="#{}">{}</a>'.format(html.escape(t["id"]), html.escape(t["name"]))
+        '      <a href="#{}">{}</a>'.format(html.escape(t["id"]),
+                                            html.escape(html.unescape(t["name"])))
         for t in toc[:45])
 
-    parts = [head(title, blurb, "../", "docs.html")]
+    # The search index carries h2 AND h3: half of what an operator looks for is
+    # a numbered subsection ("10.1 Trust store", "14.10 Thresholds"), and an
+    # index that only knew top-level headings would send them to a 1200-line
+    # page and leave them to scroll.
+    headings = [{"id": t["id"], "text": html.unescape(t["name"]),
+                 "level": t["level"]}
+                for t in _flat(getattr(md, "toc_tokens", []))
+                if t.get("name") and t.get("level") in (2, 3)]
+
+    parts = [head(title, blurb, "../", "docs.html", body_class="wide")]
     parts.append(f"""
 <header class="page wrap">
   <p class="eyebrow"><a href="../docs.html" style="color:inherit;text-decoration:none;">← Documentation</a></p>
@@ -220,15 +250,39 @@ def render_doc(md_name: str, slug: str, title: str, icon: str, blurb: str) -> st
 </section>
 """)
     parts.append(foot("../"))
-    return "".join(parts)
+    return "".join(parts), headings
 
 
-def render_hub() -> str:
+def _search_index(headings_by_slug: dict[str, list[dict]]) -> str:
+    """The manual's client-side search index, inlined as JSON.
+
+    Inlined rather than fetched: this site is published to a static host with no
+    configuration of ours, and a search that needs a second request is a search
+    that is broken by the first CDN hiccup or file:// preview. It is also the
+    only shape the publication leak scan can see — ``scan()`` runs over the page
+    text, so an index emitted as a separate asset would bypass it entirely.
+    """
+    group_of = {slug: name for name, _lead, slugs in GROUPS for slug in slugs}
+    docs = []
+    for _md, slug, title, icon, blurb in PAGES:
+        docs.append({
+            "s": slug, "t": title, "i": icon, "b": blurb,
+            "g": group_of.get(slug, ""),
+            "h": [{"a": h["id"], "t": h["text"], "l": h["level"]}
+                  for h in headings_by_slug.get(slug, [])],
+        })
+    # `</script>` inside a JSON string would close the block early; escaping the
+    # angle bracket is the standard fix and keeps the payload valid JSON.
+    return json.dumps(docs, ensure_ascii=False, separators=(",", ":")) \
+        .replace("<", "\\u003c")
+
+
+def render_hub(headings_by_slug: dict[str, list[dict]] | None = None) -> str:
     by_slug = {slug: (icon, title, blurb) for _md, slug, title, icon, blurb in PAGES}
     parts = [head("Documentation",
                   "The complete SATOM manual: overview, user guide, installation, operator "
                   "console, privilege model, safeguards, API and device reference.",
-                  "", "docs.html")]
+                  "", "docs.html", body_class="wide")]
     parts.append("""
 <header class="page wrap">
   <h1>The <span class="grad">manual</span></h1>
@@ -237,6 +291,23 @@ def render_hub() -> str:
   users; the recovery procedures are also readable from the console itself with
   <code>satom show runbook</code>, on a node with no browser and no internet.</p>
 </header>
+""")
+    # Deliberately NOT inside a `.reveal` section: the reveal animation starts a
+    # block at opacity 0 and waits for an observer. A search box that is
+    # invisible until you scroll past it is a search box nobody finds.
+    parts.append(f"""
+<section class="wrap sitesearch" id="docsearch" data-search-scope="docs">
+  <label class="ss-field">
+    <span class="ss-ico" aria-hidden="true">🔍</span>
+    <input type="search" id="docsearch-input" autocomplete="off" spellcheck="false"
+           placeholder="Search the manual — try “trust store”, “threshold”, “ACME”, “provisioning”"
+           aria-label="Search the manual" aria-controls="docsearch-results">
+    <button type="button" class="ss-clear" id="docsearch-clear" aria-label="Clear search" hidden>×</button>
+  </label>
+  <p class="ss-hint" id="docsearch-hint">{len(PAGES)} documents · searches titles, summaries and every section heading</p>
+  <div class="ss-results" id="docsearch-results" role="region" aria-live="polite" hidden></div>
+  <script type="application/json" id="docsearch-index">{_search_index(headings_by_slug or {})}</script>
+</section>
 """)
     for name, lead, slugs in GROUPS:
         cards = []
@@ -247,7 +318,7 @@ def render_hub() -> str:
                 f'<h3><a href="docs/{slug}.html">{html.escape(title)}</a></h3>'
                 f'<p>{html.escape(blurb)}</p></div>')
         parts.append(f"""
-<section class="wrap reveal">
+<section class="wrap reveal" data-search-hide>
   <div class="sec-head">
     <span class="eyebrow">{html.escape(name)}</span>
     <h2>{html.escape(lead)}</h2>
@@ -263,9 +334,12 @@ def render_hub() -> str:
 
 def build() -> dict[pathlib.Path, str]:
     out: dict[pathlib.Path, str] = {}
+    headings_by_slug: dict[str, list[dict]] = {}
     for md_name, slug, title, icon, blurb in PAGES:
-        out[OUT_DIR / f"{slug}.html"] = render_doc(md_name, slug, title, icon, blurb)
-    out[HUB] = render_hub()
+        page, headings = render_doc(md_name, slug, title, icon, blurb)
+        out[OUT_DIR / f"{slug}.html"] = page
+        headings_by_slug[slug] = headings
+    out[HUB] = render_hub(headings_by_slug)
     return out
 
 

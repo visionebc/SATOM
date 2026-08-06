@@ -2704,6 +2704,104 @@ duplicate. Every first-time save was rejected as a name clash *and* left a
 credential-less row behind, which then failed its connection test with an
 authentication error pointing at the wrong cause. Validate, then add.
 
+## 23. A threshold is declared once, inherited live, and always explained
+
+Measured on the live primary on 2026-08-06: **all 42 probes carried the
+identical pair 80 / 95.** Not a fleet whose thresholds had been considered and
+found to agree — a fleet with no way to *state* a threshold. The only two homes
+a graded number had were a column on one probe row and the literal that stamped
+it there at creation. Tuning the target fleet (60 FortiWeb + 30 FortiADC +
+10 FortiAnalyzer) meant roughly two thousand individual form edits, so nobody
+ever did one.
+
+Part of the stored value was not even meaningful: `warn_pct = 80` sat on
+`interface`, `proxyd`, `throughput` and `transactions` rows, none of which
+grade on a percentage. Noise that reads as configuration.
+
+`app/services/thresholds.py` is now the one place a limit is declared, resolved
+and explained, over six scopes: the four product ADOMs (derived from the ADOM
+registry, never listed), the manager application, and the machine.
+
+**The registry is DATA.** A field is an entry in `MEASURE`, `ROLLUP`, `FACTS`,
+`SATOM` or `HOST`; the form, the validator, the resolver and the origin report
+all read that entry. Same contract as `registry_endpoints` / `adoms` /
+`acme_dns_providers`. A `MEASURE` key IS the probe column it overrides, so the
+override and its default cannot drift by being spelled differently.
+
+**Resolution is live, not copy-on-create.** `NULL` on a probe column means
+*inherit*; the scope value is read at grading time. Copy-on-create is what
+already existed — it just spells the literal differently, and it freezes every
+probe created before the edit. The cost is real and is accepted: a probe nobody
+touched can change severity because somebody edited a product default. That is
+the point, and it is why the next rule is not optional.
+
+**Every resolved value carries its ORIGIN** — `probe`, `scope` or `default` —
+and both probe pages print it. Without it a critical appears with no visible
+cause and the operator is worse off than with the frozen literals.
+
+**`0` disables a level; `NULL` inherits.** Different answers, kept different in
+storage. This is why the migration may blank a column only when it still holds
+the historical creation literal: a `0` somebody chose means "never page me for
+this", and inheriting over it would start paging them.
+
+**A binary fact has no threshold, only a volume.** "Every backend of this policy
+is down" is not a number. What the operator governs is how loudly it lands —
+`crit`, `warn`, or `off` — and only that. **A silenced fact is still printed on
+the probe.** Silencing changes the grade, never the visibility; a fact that
+stops being printed is an outage nobody can see.
+
+**A mute is targeted, reasoned and expiring.** A probe may be suppressed for up
+to 720 hours with a recorded reason. It keeps running, keeps storing samples and
+keeps showing its own status; what it stops doing is raising the DEVICE roll-up
+— the single roll-up that both the badge and the mail read, so the page and the
+mailbox cannot disagree. It is reported as *lost coverage*, exactly like a
+disabled probe: a silence somebody chose is still a silence. There is no
+permanent mute, because a silence that never expires becomes permanent by
+inattention.
+
+**The manager scope writes the engine's own keys.** The `satom` fields store
+into `alerts.*`, not into a parallel `thresholds.satom.*` namespace. One number,
+two views; a twin would drift the first time somebody edited the older Email
+tab. The shipped defaults are duplicated in the registry (a NamedTuple default
+is evaluated at import, and importing the engine there would be a cycle) and
+pinned by a test against `alerts.DEFAULTS` — a "factory default" printed on a
+form that is not what the engine uses is a lie nothing raises about.
+
+**Anti-lockout.** *Revert scope to shipped defaults* clears every override a
+scope owns, including the `alerts.*`-backed ones. A scope tuned into permanent
+red — or permanent silence — must be recoverable without a psql session.
+
+### 23b. The machine had no signal at all
+
+`system_health.host_stats()` reported the node's load, memory and filesystems
+from the day the Monitoring page was written. Nothing ever **graded** it.
+
+On 2026-07-28 the primary reached **95 % disk in six minutes**. Every unit
+stayed active, `/healthz` stayed 200, the badge stayed green and the mailbox
+stayed empty. It was found by a human running `df`.
+
+`app/services/host_health.py` supplies the grade, on both nodes from one place —
+the peer's numbers already ride its `/healthz` response, so the standby is
+covered without SSH and without a second implementation. That matters because
+the standby is the node *more* likely to fill: it holds the replicated `data/`
+tree and the WAL.
+
+Three rules it keeps:
+
+* **A node we could not read is `unknown`, never `ok`.** An unreachable standby
+  has told us nothing about its disk. This is the same defect that once made the
+  Fleet health badge structurally incapable of turning red (§9b).
+* **An unreachable node is not *mailed* about here.** The redundancy check
+  already owns "the peer is gone"; two mails for one dead standby is how an
+  operator learns to filter the sender.
+* **`crit` for disk is 92, not 95.** A full filesystem stops Postgres writing
+  WAL. The page has to arrive before the damage, not with it.
+
+Load is normalised to **percent of cores**, not a raw load average: "load 6" is
+a crisis on two cores and idle on thirty-two, so a fleet-wide number would mean
+something different on every node.
+
+
 ## 11. Known gaps (kept honest, on purpose)
 
 * Per-device configuration restore is dry-run gated — no live canary round-trip yet.
@@ -3355,6 +3453,48 @@ A failure names the board, the panel and the ADOM that cannot fill it.
 * [`source-of-truth-spec.md`](source-of-truth-spec.md) — the write path and the local persistence layer
 * [`metrics-architecture.md`](metrics-architecture.md) — where operational data lives, and the fleet-scale measurement behind it
 * [`INSTALL.md`](INSTALL.md) — what to request from systems, and the hardening checklist
+
+### Thresholds are declared, inherited and explained (23)
+
+```bash
+# 1. Nothing is stamped at creation any more: a fresh probe inherits.
+#    (Non-zero counts here are overrides somebody actually chose.)
+psql -h 127.0.0.1 -U satom -d satom -tAc "
+  select kind, count(*), count(warn_pct), count(crit_pct),
+         count(warn_num), count(crit_num)
+  from monitor_probe group by kind order by kind"
+
+# 2. NULL inherits, 0 disables, and the origin is always reported.
+satom show paths >/dev/null   # (app dir)
+cd /opt/satom && set -a && . ./.env && set +a && runuser -u satom -- \
+  venv/bin/python3 -c "
+from app import create_app
+from app.models import MonitorProbe
+from app.services import thresholds as th
+with create_app().app_context():
+    p = MonitorProbe.query.filter_by(kind='cpu').first()
+    for o in th.probe_origins(p):
+        print(o['key'], o['value'], o['explain'])"
+
+# 3. A silenced fact is still PRINTED. Expect 'ALL backends down' in BOTH,
+#    and only the grade to change.
+runuser -u satom -- venv/bin/python3 -c "
+from app.services import deep_monitor as dm
+row={'sessions':1,'conn_per_sec':2,'status':'enable','app_response_time':0}
+mem=[{'server':'192.0.2.20','port':80,'up':False,'health':'up'}]
+k=dict(warn_num=0,crit_num=0,warn_ms=0,fingerprint='a',prev_fingerprint='a')
+print(dm.classify_policy_sessions(row,mem,**k))
+print(dm.classify_policy_sessions(row,mem,sev={'backends_all_down':None},**k))"
+
+# 4. The machine can now say something bad. Expect a non-ok status when the
+#    threshold is dropped below the live reading, and 'unknown' -- never 'ok' --
+#    for a node with no reading.
+runuser -u satom -- venv/bin/python3 -c "
+from app.services import host_health as hh
+print(hh.local()['status'], [ (k,v['status']) for k,v in hh.local()['signals'].items() ])
+print(hh.grade_stats(None)['status'])"
+```
+
 
 ### The monitoring panels report bad news (17)
 

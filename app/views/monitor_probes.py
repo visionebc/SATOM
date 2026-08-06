@@ -60,6 +60,44 @@ _INT_FIELDS = ("expect_status", "warn_ms", "tls_warn_days", "stale_after_h",
 # integer would silently disable the level on a slow link.
 _FLOAT_FIELDS = ("warn_num", "crit_num")
 
+#: Columns that understand NULL as "inherit from this product's scope"
+#: (``services.thresholds``). Everything else in ``_INT_FIELDS`` is plumbing —
+#: an interval or a timeout — that has no scope to fall back to.
+_INHERITABLE = ("warn_ms", "tls_warn_days", "stale_after_h",
+                "warn_pct", "crit_pct", "warn_num", "crit_num")
+
+#: Longest mute this page will write. There is deliberately no "forever": a
+#: silence that never expires becomes permanent by inattention, and the reason
+#: it was granted stops being true long before anybody re-reads it.
+MAX_SUPPRESS_HOURS = 720.0
+
+
+def _apply_suppression(probe, form) -> None:
+    """Mute or unmute a probe from the edit form.
+
+    A suppressed probe still runs, still stores samples and still shows its own
+    real status; what it stops doing is raising the DEVICE roll-up — which is
+    the one thing both the badge and the alert mail read, so the page and the
+    mailbox stay in agreement. The reason and the expiry are mandatory
+    together: a silence nobody can explain is indistinguishable from a bug.
+    """
+    if "suppress_hours" not in form:
+        return
+    raw = (form.get("suppress_hours") or "").strip()
+    try:
+        hours = float(raw) if raw else 0.0
+    except ValueError:
+        hours = 0.0
+    reason = (form.get("suppress_reason") or "").strip()[:200]
+    if hours <= 0:
+        probe.suppress_until = None
+        probe.suppress_reason = ""
+        return
+    from datetime import timedelta
+    probe.suppress_until = (datetime.utcnow()
+                            + timedelta(hours=min(hours, MAX_SUPPRESS_HOURS)))
+    probe.suppress_reason = reason or "no reason recorded"
+
 
 def _visible_ids() -> set[int]:
     return {a.id for a in visible_appliances().all()}
@@ -87,13 +125,18 @@ def _parse_dt(raw: str | None):
 
 
 def _thresholds(probe) -> dict:
-    """Threshold lines to draw, per kind — empty when the kind has none."""
+    """Threshold lines to draw, per kind — empty when the kind has none.
+
+    Resolved, never read off the column: a probe that inherits its levels holds
+    NULL there, and a chart drawn from the raw column would show no threshold
+    line at all on the majority of probes while still grading against one."""
+    from ..services import thresholds as th
     if probe.kind in ("cpu", "memory"):
-        return {"warn": probe.warn_pct or 0, "crit": probe.crit_pct or 0}
+        return {"warn": th.num(probe, "warn_pct"), "crit": th.num(probe, "crit_pct")}
     if probe.kind == "https":
-        return {"warn": probe.warn_ms or 0, "crit": 0}
+        return {"warn": th.num(probe, "warn_ms"), "crit": 0}
     if probe.kind in dm.API_KINDS:
-        return {"warn": probe.warn_num or 0, "crit": probe.crit_num or 0}
+        return {"warn": th.num(probe, "warn_num"), "crit": th.num(probe, "crit_num")}
     return {}
 
 
@@ -240,6 +283,13 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
             # A probe that has never run is 'unknown', not 'ok' — never imply
             # health we have not measured.
             row["status"] = (latest or {}).get("status") or "unknown"
+            # Where each number came from. Without this the page shows a grade
+            # produced by a value the operator never typed and cannot locate.
+            from ..services import thresholds as th
+            row["resolved"] = {o["key"]: o for o in th.probe_origins(p)}
+            row["suppressed"] = bool(getattr(p, "suppressed", False))
+            row["suppress_note"] = getattr(p, "suppress_note", "") or ""
+            row["suppress_reason"] = p.suppress_reason or ""
             out.append(row)
             by_kind.setdefault(p.kind, []).append(row["status"])
         summary = {k: {"count": len(v), "worst": dm.worst(v)}
@@ -472,14 +522,27 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
             probe.target = (form.get('target') or '').strip()[:120]
         probe.url = (form.get('url') or '').strip()[:500]
         probe.process_name = (form.get('process_name') or 'proxyd').strip()[:48]
+        # Three inputs, three different answers, and conflating any two of
+        # them loses information the operator supplied:
+        #   field ABSENT from the form -> leave the column alone (the edit form
+        #     for another kind simply does not render it),
+        #   field PRESENT and EMPTY   -> clear the override, inherit the scope,
+        #   field PRESENT with a value -> override (0 switches that level off).
         for f in _INT_FIELDS:
+            if f in _INHERITABLE and f in form and not (form.get(f) or "").strip():
+                setattr(probe, f, None)
+                continue
             val = form.get(f, type=int)
             if val is not None:
                 setattr(probe, f, max(0, val))
         for f in _FLOAT_FIELDS:
+            if f in _INHERITABLE and f in form and not (form.get(f) or "").strip():
+                setattr(probe, f, None)
+                continue
             val = form.get(f, type=float)
             if val is not None:
                 setattr(probe, f, max(0.0, val))
+        _apply_suppression(probe, form)
         probe.interval_min = max(1, int(probe.interval_min or 5))
         probe.timeout_s = max(1, int(probe.timeout_s or 10))
         probe.retention = max(10, int(probe.retention or dm.DEFAULT_RETENTION))
@@ -563,6 +626,21 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
         log_action(f"{spec.key}.toggle", target=probe.name,
                    extra={"enabled": probe.enabled})
         return jsonify({"ok": True, "enabled": probe.enabled})
+
+    @bp.route('/probe/<int:pid>/unmute', methods=['POST'])
+    @login_required
+    @require_permission(Permission.CONFIG_WRITE)
+    def unmute(pid: int):
+        """Lift a suppression now. Muting needs a reason and an expiry and so
+        lives in the edit form; lifting one never needs justifying."""
+        probe, err_res = get_probe(pid)
+        if err_res:
+            return err_res
+        probe.suppress_until = None
+        probe.suppress_reason = ""
+        db.session.commit()
+        log_action(f"{spec.key}.unmute", target=probe.name, extra={"id": pid})
+        return jsonify({"ok": True})
 
     @bp.route('/probe/<int:pid>/delete', methods=['POST'])
     @login_required

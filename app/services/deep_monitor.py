@@ -52,6 +52,8 @@ import time
 from datetime import datetime, timedelta
 from typing import Any
 
+from . import thresholds as th
+
 # Status vocabulary shared with the UI (worst-first ordering).
 STATUS_ORDER = {"crit": 0, "error": 1, "warn": 2, "ok": 3, "unknown": 4}
 
@@ -536,7 +538,8 @@ def classify_interface(fingerprint: str, prev_fingerprint: str,
                        slim: list[dict], prev_slim: list[dict],
                        *, cache_age_h: float | None,
                        stale_after_h: float,
-                       missing: list[str] | None = None) -> tuple[str, str]:
+                       missing: list[str] | None = None,
+                       sev: dict | None = None) -> tuple[str, str]:
     """Grade an interface snapshot: drift is a warn, a lost IP is critical.
 
     ``missing`` names watched ports the harvest no longer holds. That is graded
@@ -544,8 +547,9 @@ def classify_interface(fingerprint: str, prev_fingerprint: str,
     loudest drift there is, and it must not degrade into "fewer interfaces".
     """
     if missing:
-        return "crit", ("watched port(s) absent from the device cache: "
-                        + ", ".join(missing))
+        st, sfx = apply_fact("ok", "iface_missing", sev)
+        return st, ("watched port(s) absent from the device cache: "
+                    + ", ".join(missing) + sfx)
     if not slim:
         return "error", "no interfaces in the device cache — run a device sync"
     no_ip = [s["name"] for s in slim
@@ -565,8 +569,15 @@ def classify_interface(fingerprint: str, prev_fingerprint: str,
         bits.append(f"down: {', '.join(down[:6])}")
     if changes:
         # Drift against the previous sample is the whole point of this probe.
-        status = "crit" if any("IP" in c for c in changes) else "warn"
-        bits.append("CHANGED — " + "; ".join(changes[:6]))
+        # An ADDRESS move is the governed fact; any other change is already the
+        # lowest non-ok grade, so there is nothing for a severity knob to do
+        # with it and none is offered.
+        sfx = ""
+        if any("IP" in c for c in changes):
+            status, sfx = apply_fact(status, "iface_changed", sev)
+        else:
+            status = worst([status, "warn"])
+        bits.append("CHANGED — " + "; ".join(changes[:6]) + sfx)
     elif prev_fingerprint and prev_fingerprint == fingerprint:
         bits.append("unchanged")
     if no_ip and not changes:
@@ -616,7 +627,8 @@ def fmt_memory(summary: dict) -> str:
 
 
 def classify_proxyd(agg: dict, parsed: dict, prev_fingerprint: str,
-                    *, memory: dict | None = None) -> tuple[str, str]:
+                    *, memory: dict | None = None,
+                    sev: dict | None = None) -> tuple[str, str]:
     """Grade the DAEMON alone: absent = critical, a new PID set = silent restart.
 
     Memory is REPORTED here, never graded, and it is reported as megabytes
@@ -640,15 +652,17 @@ def classify_proxyd(agg: dict, parsed: dict, prev_fingerprint: str,
         return "error", (f"could not parse `{TOP_CMD}` output — raw response "
                          "captured in the sample payload")
     if agg["count"] == 0:
-        return "crit", f"{agg['process']} is NOT running"
+        st, sfx = apply_fact("ok", "proxyd_absent", sev)
+        return st, f"{agg['process']} is NOT running{sfx}"
 
     bits = [f"{agg['count']} worker" + ("s" if agg["count"] != 1 else "")]
     mem = fmt_memory(memory or {})
     bits.append(mem or "memory unreadable")
     status = "ok"
     if prev_fingerprint and prev_fingerprint != agg["pid_fingerprint"]:
-        status = "warn"
-        bits.append(f"PIDs CHANGED — {agg['process']} restarted since last check")
+        status, sfx = apply_fact(status, "proxyd_restarted", sev)
+        bits.append(f"PIDs CHANGED — {agg['process']} restarted since last "
+                    f"check{sfx}")
     return status, "; ".join(bits)
 
 
@@ -657,6 +671,40 @@ def worst(statuses: list[str]) -> str:
     if not statuses:
         return "unknown"
     return sorted(statuses, key=lambda s: STATUS_ORDER.get(s, 9))[0]
+
+
+def fact_severities(probe) -> dict:
+    """How loudly each BINARY fact lands on this probe's product.
+
+    Read once per run and handed to the classifier, so the classifiers stay
+    network-free and DB-free and can still be unit tested without an app
+    context -- the property this module's docstring already insists on,
+    because the appliances are usually unreachable when this code is edited.
+    """
+    scope = th.probe_scope(probe)
+    return {f.key: th.fact_status(scope, f.key) for f in th.FACTS}
+
+
+def apply_fact(status: str, key: str, sev: dict | None = None) -> tuple[str, str]:
+    """Fold a binary fact into a running status at the operator's severity.
+
+    Returns ``(status, suffix)``. The caller ALWAYS appends its own description
+    of the fact; ``suffix`` only annotates that the grade was changed or
+    silenced. **Silencing changes the grade, never the visibility** -- a fact
+    that stops being printed is an outage nobody can see, and a page that hides
+    one is worse than a page with no severity control at all.
+
+    ``sev is None`` means "use the shipped defaults", which is what every
+    existing caller and every unit test gets for free.
+    """
+    field = th.FACT_BY_KEY.get(key)
+    default = field.default if field else "warn"
+    s = default if sev is None else sev.get(key, default)
+    if not s or s == "off":
+        return status, " [severity: off]"
+    if s != default:
+        return worst([status, s]), " [severity: %s]" % s
+    return worst([status, s]), ""
 
 
 # ---------------------------------------------------------------------------
@@ -734,8 +782,8 @@ def run_https(probe) -> dict:
     tls = tls_days_left(host, port) if scheme == "https" else None
     status, detail = classify_https(
         data, expect_status=int(probe.expect_status or 0),
-        warn_ms=int(probe.warn_ms or 0), tls_days=tls,
-        tls_warn_days=int(probe.tls_warn_days or 21))
+        warn_ms=int(th.num(probe, "warn_ms")), tls_days=tls,
+        tls_warn_days=int(th.num(probe, "tls_warn_days")))
     return {
         "status": status,
         "detail": detail,
@@ -788,7 +836,8 @@ def run_interface(probe, prev) -> dict:
 
     status, detail = classify_interface(
         fingerprint, prev_fp, slim, prev_slim,
-        cache_age_h=age_h, stale_after_h=float(probe.stale_after_h or 6),
+        cache_age_h=age_h, stale_after_h=th.num(probe, "stale_after_h"),
+        sev=fact_severities(probe),
         missing=missing)
     with_ip = sum(1 for s in slim if s["ip"])
     return {
@@ -880,8 +929,8 @@ def run_box(probe, kind: str) -> dict:
                 "payload": {"command": PERF_CMD, "error": str(exc)}}
     perf = parse_performance(raw)
     status, detail = classify_box(
-        kind, perf, warn_pct=float(probe.warn_pct or 0),
-        crit_pct=float(probe.crit_pct or 0))
+        kind, perf, warn_pct=th.num(probe, "warn_pct", kind),
+        crit_pct=th.num(probe, "crit_pct", kind))
     return {
         "status": status, "detail": detail,
         "value_num": perf.get(meta["key"]),
@@ -1023,7 +1072,8 @@ def policy_fingerprint(row: dict, members: list[dict]) -> str:
 def classify_policy_sessions(row: dict, members: list[dict], *,
                              warn_num: float, crit_num: float,
                              warn_ms: int, fingerprint: str,
-                             prev_fingerprint: str) -> tuple[str, str]:
+                             prev_fingerprint: str,
+                             sev: dict | None = None) -> tuple[str, str]:
     """Grade one server policy.
 
     A *disabled* policy is reported ``warn``, never ``ok``: a policy that is not
@@ -1035,8 +1085,8 @@ def classify_policy_sessions(row: dict, members: list[dict], *,
     bits = ["%d sessions" % row["sessions"], "%d conn/s" % row["conn_per_sec"]]
     status = "ok"
     if row["status"].lower() != "enable":
-        status = "warn"
-        bits.append("policy %s" % (row["status"] or "unknown"))
+        status, sfx = apply_fact(status, "policy_disabled", sev)
+        bits.append("policy %s%s" % (row["status"] or "unknown", sfx))
     art = row["app_response_time"]
     if art:
         bits.append("app %d ms" % art)
@@ -1047,12 +1097,12 @@ def classify_policy_sessions(row: dict, members: list[dict], *,
     if members:
         bits.append("%d/%d backends up" % (len(members) - len(down), len(members)))
     if down and len(down) == len(members):
-        status = "crit"
-        bits.append("ALL backends down")
+        status, sfx = apply_fact(status, "backends_all_down", sev)
+        bits.append("ALL backends down" + sfx)
     elif down:
-        status = worst([status, "warn"])
+        status, sfx = apply_fact(status, "backends_partial_down", sev)
         bits.append("down: " + ", ".join("%s:%d" % (m["server"], m["port"])
-                                        for m in down[:4]))
+                                         for m in down[:4]) + sfx)
     n = row["sessions"]
     if crit_num and n >= crit_num:
         status = "crit"
@@ -1061,8 +1111,8 @@ def classify_policy_sessions(row: dict, members: list[dict], *,
         status = worst([status, "warn"])
         bits.append(">= warn %g" % warn_num)
     if prev_fingerprint and fingerprint != prev_fingerprint:
-        status = worst([status, "warn"])
-        bits.append("shape changed since last sample")
+        status, sfx = apply_fact(status, "policy_shape_changed", sev)
+        bits.append("shape changed since last sample" + sfx)
     return status, "; ".join(bits)
 
 
@@ -1150,7 +1200,8 @@ def parse_transactions(rows: Any) -> dict:
             "peak": max((b["count"] for b in buckets), default=0)}
 
 
-def classify_transactions(tx: dict, *, warn_num: float, crit_num: float,
+def classify_transactions(tx: dict, *, sev: dict | None = None,
+                          warn_num: float, crit_num: float,
                           carrying: dict | None = None) -> tuple[str, str]:
     """Grade HTTP transaction volume over the window.
 
@@ -1177,12 +1228,13 @@ def classify_transactions(tx: dict, *, warn_num: float, crit_num: float,
     if not tx["total"] and carrying:
         live = max(_i(carrying.get("sessions")), _i(carrying.get("conn_per_sec")))
         if live > 0:
-            return "warn", (
+            _st, _sfx = apply_fact("ok", "transactions_zero_under_load", sev)
+            return _st, ((
                 "0 transactions reported, but the policy is carrying traffic "
                 "right now (%d session(s), %d conn/s) — this endpoint reports "
                 "nothing for a policy with no web-protection-profile attached"
                 % (_i(carrying.get("sessions")),
-                   _i(carrying.get("conn_per_sec"))))
+                   _i(carrying.get("conn_per_sec")))) + _sfx)
     bits = ["%d transactions" % tx["total"],
             "peak %d/bucket" % tx["peak"],
             "%d buckets" % len(tx["buckets"])]
@@ -1243,8 +1295,8 @@ def run_sessions(probe) -> dict:
                             "error": error}}
     box = parse_system_resource(res)
     status, detail = classify_sessions(
-        box, warn_num=float(probe.warn_num or 0),
-        crit_num=float(probe.crit_num or 0))
+        box, warn_num=th.num(probe, "warn_num"),
+        crit_num=th.num(probe, "crit_num"))
     return {
         "status": status, "detail": detail,
         "value_num": box.get("sessions"),
@@ -1285,8 +1337,9 @@ def run_policy_sessions(probe, prev) -> dict:
     fp = policy_fingerprint(row, parsed_members)
     status, detail = classify_policy_sessions(
         row, parsed_members,
-        warn_num=float(probe.warn_num or 0), crit_num=float(probe.crit_num or 0),
-        warn_ms=int(probe.warn_ms or 0), fingerprint=fp,
+        warn_num=th.num(probe, "warn_num"), crit_num=th.num(probe, "crit_num"),
+        warn_ms=int(th.num(probe, "warn_ms")), fingerprint=fp,
+        sev=fact_severities(probe),
         prev_fingerprint=(prev.fingerprint if prev else ""))
     if m_err:
         detail = "%s; backend health unavailable: %s" % (detail, m_err)
@@ -1314,8 +1367,8 @@ def run_throughput(probe) -> dict:
     tr = parse_traffic(res)
     stats = traffic_stats(tr.get("bps") or [])
     status, detail = classify_throughput(
-        stats, warn_num=float(probe.warn_num or 0),
-        crit_num=float(probe.crit_num or 0))
+        stats, warn_num=th.num(probe, "warn_num"),
+        crit_num=th.num(probe, "crit_num"))
     if tr.get("cache_enabled"):
         c = traffic_stats(tr.get("cache_bps") or [])
         detail = "%s; cached avg %s" % (detail, fmt_mbps(c["avg_mbps"]))
@@ -1344,7 +1397,13 @@ def run_transactions(probe) -> dict:
         return {"status": "error",
                 "detail": "httptransactions needs a real policy name, not %r" % name,
                 "payload": {"target": name}}
-    hours = max(1, int(probe.stale_after_h or 1))
+    # ``stale_after_h`` doubles as this probe's LOOKBACK WINDOW, which is not
+    # a threshold and is therefore not inherited. It is now nullable, and the
+    # old ``or 1`` would have silently narrowed a 6-hour window to 1 hour on
+    # every migrated probe -- fewer transactions counted, read as a quiet
+    # service.
+    hours = max(1, int(probe.stale_after_h
+                       if probe.stale_after_h is not None else 6))
     rows, error = client.http_transactions(name, hours)
     if error:
         return {"status": "crit", "detail": "API unreachable: %s" % error,
@@ -1365,8 +1424,9 @@ def run_transactions(probe) -> dict:
         except Exception:  # noqa: BLE001
             carrying = None
     status, detail = classify_transactions(
-        tx, warn_num=float(probe.warn_num or 0),
-        crit_num=float(probe.crit_num or 0), carrying=carrying)
+        tx, warn_num=th.num(probe, "warn_num"),
+        crit_num=th.num(probe, "crit_num"), carrying=carrying,
+        sev=fact_severities(probe))
     return {
         "status": status, "detail": "%s over %dh" % (detail, hours),
         "value_num": tx["total"], "value2_num": tx["last"],
@@ -1614,8 +1674,9 @@ def _run_box_rest(probe, kind: str) -> dict:
                            % meta["label"]),
                 "payload": {"endpoint": "/api/v1/systeminfo/",
                             "metric": kind, "parsed": parsed}}
-    status, note = _grade_pct(float(val), warn_num=float(probe.warn_pct or 0),
-                              crit_num=float(probe.crit_pct or 0))
+    status, note = _grade_pct(float(val),
+                              warn_num=th.num(probe, "warn_pct", kind),
+                              crit_num=th.num(probe, "crit_pct", kind))
     bits = ["%s %g%%" % (meta["label"], val)]
     if kind == "memory" and parsed.get("mem_used_bytes"):
         bits.append("%d MB used of %d MB"
@@ -1647,8 +1708,8 @@ def run_licence(probe) -> dict:
         return err
     cap = (parsed.get("capacity") or {}).get(resource)
     status, detail = classify_licence(
-        resource, cap, warn_num=float(probe.warn_num or 0),
-        crit_num=float(probe.crit_num or 0))
+        resource, cap, warn_num=th.num(probe, "warn_num"),
+        crit_num=th.num(probe, "crit_num"))
     return {
         "status": status, "detail": detail,
         "value_num": (cap or {}).get("pct"),
@@ -1676,8 +1737,8 @@ def run_tokens(probe) -> dict:
         return err
     tok = (parsed.get("tokens") or {}).get(ttype)
     status, detail = classify_tokens(
-        ttype, tok, warn_num=float(probe.warn_num or 0),
-        crit_num=float(probe.crit_num or 0))
+        ttype, tok, warn_num=th.num(probe, "warn_num"),
+        crit_num=th.num(probe, "crit_num"))
     free = (max(0, tok["total"] - tok["used"]) if tok else None)
     return {
         "status": status, "detail": detail,
@@ -1998,9 +2059,14 @@ def discover_api_probes(appliance, *, session=None) -> dict:
             "total_targets": len(policies)}
 
 
-#: Thresholds stamped on a freshly discovered FAC probe, in percent consumed.
-#: A licence probe created with both levels at 0 is a row that can never say
-#: anything -- and "discovery created 6 probes" would then read as coverage.
+#: The FortiAuthenticator percent-consumed levels, in ONE place.
+#:
+#: Discovery no longer stamps these onto the row. It leaves the columns NULL so
+#: the probe INHERITS them from the FortiAuthenticator scope, whose shipped
+#: default is these same two numbers -- identical behaviour on day one, and one
+#: form field to change on day two instead of one edit per probe. The constants
+#: stay because ``services.thresholds`` ships the same pair and the migration
+#: recognises them as the historical default.
 FAC_WARN_PCT = 80.0
 FAC_CRIT_PCT = 95.0
 
@@ -2051,7 +2117,7 @@ def _discover_fac_probes(appliance, *, session=None) -> dict:
             appliance_id=appliance.id, kind=kind, target=target[:120],
             name=("%s · %s" % (appliance.name, label))[:120],
             enabled=True, interval_min=DEFAULT_PROBE_INTERVAL_MIN,
-            warn_num=FAC_WARN_PCT, crit_num=FAC_CRIT_PCT, note=note[:250]))
+            note=note[:250]))
         have.add(key)
         created += 1
 
@@ -2234,8 +2300,14 @@ def split_legacy_proxyd(*, session=None) -> dict:
                 appliance_id=p.appliance_id, kind=kind,
                 name=f"{dev} · {label}"[:120], enabled=bool(p.enabled),
                 interval_min=int(p.interval_min or 5),
-                warn_pct=int(p.warn_cpu or 80) if kind == "cpu" else 80,
-                crit_pct=95,
+                # Left NULL on purpose: the baseline probe inherits its
+                # product's levels instead of freezing today's literal. The
+                # legacy per-probe ``warn_cpu`` is still honoured when it was
+                # actually tuned away from the old default.
+                warn_pct=(int(p.warn_cpu) if (kind == "cpu" and p.warn_cpu
+                                              and int(p.warn_cpu) != 80)
+                          else None),
+                crit_pct=None,
                 note="split out of the proxyd probe (2026-07-28)"[:250]))
             created.append(f"{dev}:{kind}")
     session.commit()

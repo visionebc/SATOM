@@ -63,15 +63,51 @@ def worst_of(statuses) -> str:
     return out
 
 
-def stale_hours() -> float:
-    """Cache-age budget before a device is called stale. Operator-tunable via
-    the ``monitoring.stale_hours`` setting."""
-    from ..models import AppSetting
+#: Roll-up keys this module resolves from a product scope. The constants above
+#: remain the SHIPPED defaults; ``services.thresholds`` decides whether a
+#: product overrides them.
+_ROLLUP_KEYS = ("stale_hours", "crit_stale_mult", "error_streak_crit",
+                "capacity_warn_pct", "capacity_crit_pct")
+
+
+def scope_of(appliance) -> str:
+    """The threshold scope a device inherits — its product key."""
+    return (getattr(appliance, "kind", "") or "").strip().lower()
+
+
+def limits(scope: str = "") -> dict:
+    """Every roll-up threshold for one product, resolved once per device.
+
+    A FortiAnalyzer legitimately lives at a different cache cadence and a
+    different disk-shaped normality than a FortiWeb; one global number for the
+    whole fleet is how a correct product ends up permanently amber, and a check
+    that always complains is a check the operator learns to skip.
+    """
+    out = {"stale_hours": DEFAULT_STALE_HOURS,
+           "crit_stale_mult": CRIT_STALE_MULT,
+           "error_streak_crit": ERROR_STREAK_CRIT,
+           "capacity_warn_pct": 80.0, "capacity_crit_pct": 95.0}
     try:
-        v = float(AppSetting.get("monitoring.stale_hours", "") or DEFAULT_STALE_HOURS)
-    except (TypeError, ValueError):
-        return DEFAULT_STALE_HOURS
-    return v if v > 0 else DEFAULT_STALE_HOURS
+        from . import thresholds as th
+        for k in _ROLLUP_KEYS:
+            v = th.rollup(scope, k).value
+            if v is not None:
+                out[k] = v
+    except Exception:  # noqa: BLE001 — a threshold read must never sink the page
+        pass
+    if not out["stale_hours"] or float(out["stale_hours"]) <= 0:
+        out["stale_hours"] = DEFAULT_STALE_HOURS
+    return out
+
+
+def stale_hours(scope: str = "") -> float:
+    """Cache-age budget before a device is called stale.
+
+    Resolution order (``services.thresholds``): the product's own
+    ``stale_hours`` > the legacy global ``monitoring.stale_hours`` > the
+    shipped default. The legacy key is honoured so an operator who set it years
+    ago keeps what they set until they say otherwise on the Thresholds page."""
+    return float(limits(scope)["stale_hours"])
 
 
 def _ago(dt) -> str:
@@ -97,8 +133,9 @@ def _hours(h: float) -> str:
 
 # --- individual signals ------------------------------------------------------
 
-def sync_signal(appliance_id: int) -> dict:
+def sync_signal(appliance_id: int, streak_crit: int | None = None) -> dict:
     """Status of the hourly harvest for one device."""
+    streak_crit = int(streak_crit or ERROR_STREAK_CRIT)
     from ..models_cache import SyncRun
     try:
         rows = (SyncRun.query
@@ -119,15 +156,17 @@ def sync_signal(appliance_id: int) -> dict:
             break
         streak += 1
     head = ((last.detail or "").strip().splitlines() or ["no detail"])[0][:160]
-    status = "crit" if streak >= ERROR_STREAK_CRIT else "warn"
+    status = "crit" if streak >= streak_crit else "warn"
     plural = "s" if streak != 1 else ""
     return {"status": status, "streak": streak,
             "text": f"harvest failing ({streak} run{plural} in a row) - {head}"}
 
 
-def cache_signal(meta: dict | None, hours: float | None = None) -> dict:
+def cache_signal(meta: dict | None, hours: float | None = None,
+                 mult: float | None = None) -> dict:
     """Freshness of the cached configuration this ADOM renders from."""
     hours = stale_hours() if hours is None else hours
+    mult = float(mult or CRIT_STALE_MULT)
     ga = (meta or {}).get("generated_at")
     if isinstance(ga, str):
         try:
@@ -137,7 +176,7 @@ def cache_signal(meta: dict | None, hours: float | None = None) -> dict:
     if not isinstance(ga, datetime):
         return {"status": "warn", "text": "no cached configuration on this node"}
     age = (datetime.utcnow() - ga).total_seconds() / 3600.0
-    if age >= hours * CRIT_STALE_MULT:
+    if age >= hours * mult:
         return {"status": "crit",
                 "text": f"cache {_hours(age)} old (budget {hours:g} h)"}
     if age >= hours:
@@ -161,15 +200,32 @@ def probe_signal(appliance_id: int) -> dict:
         n = len(rows)
         return {"status": "warn",
                 "text": f"all {n} deep monitor{'s' if n != 1 else ''} disabled - no coverage"}
-    mapped = [_PROBE_MAP.get(p.last_status or "unknown", "unknown") for p in on]
+    # A SUPPRESSED probe is withheld from the roll-up -- from this ONE roll-up,
+    # which is what both the badge and the mail read, so the page and the
+    # mailbox cannot disagree (the divergence device_health exists to prevent).
+    # The probe itself keeps running, keeps storing samples and keeps showing
+    # its real status on its own row with a reason and an expiry; what it stops
+    # doing is speaking for the whole device. It is reported here as lost
+    # coverage for the same reason a disabled probe is: a silence somebody
+    # chose is still a silence.
+    sup = [p for p in on if getattr(p, "suppressed", False)]
+    live = [p for p in on if not getattr(p, "suppressed", False)]
+    tail = (f"; {len(sup)} suppressed" if sup else "")
+    if not live:
+        return {"status": "unknown", "suppressed": len(sup),
+                "text": f"all {len(on)} enabled probes suppressed - no coverage"}
+    mapped = [_PROBE_MAP.get(p.last_status or "unknown", "unknown") for p in live]
     st = worst_of(mapped)
     if st in ("warn", "crit"):
-        bad = [p.name or p.kind for p, m in zip(on, mapped) if m in ("warn", "crit")]
-        return {"status": st,
-                "text": f"{len(bad)}/{len(on)} probes alerting: " + ", ".join(bad[:4])}
+        bad = [p.name or p.kind for p, m in zip(live, mapped) if m in ("warn", "crit")]
+        return {"status": st, "suppressed": len(sup),
+                "text": f"{len(bad)}/{len(live)} probes alerting: "
+                        + ", ".join(bad[:4]) + tail}
     if st == "ok":
-        return {"status": "ok", "text": f"{len(on)} probes ok"}
-    return {"status": "unknown", "text": f"{len(on)} probes have never run"}
+        return {"status": "ok", "suppressed": len(sup),
+                "text": f"{len(live)} probes ok" + tail}
+    return {"status": "unknown", "suppressed": len(sup),
+            "text": f"{len(live)} probes have never run" + tail}
 
 
 def capacity_signal(caps) -> dict:
@@ -190,18 +246,22 @@ def capacity_signal(caps) -> dict:
 
 # --- roll-up -----------------------------------------------------------------
 
-def collect(appliance, caps=None, meta=None, hours: float | None = None) -> dict:
+def collect(appliance, caps=None, meta=None, hours: float | None = None,
+            lim: dict | None = None) -> dict:
     """Full health verdict for one appliance.
 
     Returns ``{status, signals: {key: {status, text}}, reasons: [...]}`` where
     *reasons* holds only the signals that are not ok, worst first -- what the
     card prints under the badge so the state is never unexplained.
     """
-    hours = stale_hours() if hours is None else hours
+    scope = scope_of(appliance)
+    lim = lim or limits(scope)
+    hours = float(lim["stale_hours"]) if hours is None else hours
     aid = getattr(appliance, "id", None)
     signals = {
-        "sync": sync_signal(aid) if aid else {"status": "unknown", "text": "no device"},
-        "cache": cache_signal(meta, hours),
+        "sync": (sync_signal(aid, lim["error_streak_crit"]) if aid
+                 else {"status": "unknown", "text": "no device"}),
+        "cache": cache_signal(meta, hours, lim["crit_stale_mult"]),
         "probe": probe_signal(aid) if aid else {"status": "unknown", "text": "no device"},
         "capacity": capacity_signal(caps),
     }
@@ -210,6 +270,7 @@ def collect(appliance, caps=None, meta=None, hours: float | None = None) -> dict
                for k, v in signals.items() if v["status"] != "ok"]
     reasons.sort(key=lambda r: -RANK.get(r["status"], 0))
     return {"status": status, "signals": signals, "reasons": reasons,
+            "scope": scope, "limits": lim,
             "maintenance": bool(getattr(appliance, "maintenance_mode", False)
                                 or getattr(appliance, "maintenance", False))}
 
@@ -220,8 +281,12 @@ def collect(appliance, caps=None, meta=None, hours: float | None = None) -> dict
 # which is the failure this whole module exists to remove. These helpers are the
 # single gathering path; the view still owns rendering, the engine owns dispatch.
 
-def thresholds() -> tuple[float, float]:
-    """Capacity warn/crit percentages from ``capacity.warn_pct`` / ``crit_pct``."""
+def thresholds(scope: str = "") -> tuple[float, float]:
+    """Capacity warn/crit percentages for one product.
+
+    Resolution order: the product's ``capacity_warn_pct`` / ``capacity_crit_pct``
+    on the Thresholds page > the legacy global ``capacity.warn_pct`` /
+    ``capacity.crit_pct`` > 80 / 95."""
     from ..models import AppSetting
 
     def _f(key, default):
@@ -230,7 +295,14 @@ def thresholds() -> tuple[float, float]:
         except (TypeError, ValueError):
             return float(default)
 
-    return _f("capacity.warn_pct", 80.0), _f("capacity.crit_pct", 95.0)
+    lim = limits(scope)
+    warn = lim.get("capacity_warn_pct")
+    crit = lim.get("capacity_crit_pct")
+    if warn is None:
+        warn = _f("capacity.warn_pct", 80.0)
+    if crit is None:
+        crit = _f("capacity.crit_pct", 95.0)
+    return float(warn), float(crit)
 
 
 def capacity_rows(appliance, warn: float, crit: float) -> list:
@@ -292,10 +364,17 @@ def cache_meta(appliance) -> dict:
 
 def collect_for(appliance, warn=None, crit=None, hours: float | None = None) -> dict:
     """:func:`collect` for a caller that has not gathered caps/meta itself --
-    the entry point for everything outside the Monitoring view."""
+    the entry point for everything outside the Monitoring view.
+
+    ``warn``/``crit`` are resolved from the DEVICE's own product when the caller
+    does not pass them. The alert engine used to resolve them once for the whole
+    fleet and pass the same pair to every device, which silently defeated
+    per-product capacity thresholds for exactly the caller that sends the mail."""
+    scope = scope_of(appliance)
+    lim = limits(scope)
     if warn is None or crit is None:
-        w, c = thresholds()
+        w, c = thresholds(scope)
         warn = w if warn is None else warn
         crit = c if crit is None else crit
     return collect(appliance, capacity_rows(appliance, warn, crit),
-                   cache_meta(appliance), hours=hours)
+                   cache_meta(appliance), hours=hours, lim=lim)

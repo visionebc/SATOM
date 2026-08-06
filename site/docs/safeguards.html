@@ -2795,9 +2795,43 @@ before §9b, arriving through presentation instead of grading.</p>
 <h3 id="the-rules_1">The rules</h3>
 <p><strong>No product reaches a page through an <code>else</code>.</strong> <code>views/analysis.py</code> holds an
 explicit <code>ANALYSIS_PAGES</code> map with no fallthrough. A product with no entry gets
-a page that says so. FortiADC is mapped to the FortiWeb page <em>on purpose</em> and
-labelled as known debt in the map itself — keeping the gap visible beats hiding
-it behind a default.</p>
+a page that says so. All four products now have their own page; the map exists
+so the <em>next</em> one is a deliberate decision rather than a silent inheritance.</p>
+<p><strong>A page written for one traffic device does not transfer to another.</strong> This
+was the trap in the FortiADC case, and it is subtler than the FortiAuthenticator
+one. An authenticator is obviously not a WAF, so the mismatch was visible. An
+ADC <em>is</em> a traffic device — same nouns at a distance, published services with
+back-ends behind them — which made "close enough" tempting. It is not close
+enough: <code>services.analysis</code> reads <code>server_policy</code> objects plus the
+<code>DeviceServerPool</code> and <code>DeviceWebProtectionProfile</code> projections, and a FortiADC
+harvest contains <strong>none of the three</strong>. It has <code>load_balance_virtual_server</code>,
+<code>load_balance_pool</code>, <code>load_balance_real_server</code>, and a security model where
+profiles do nothing until a virtual server references them. <code>analysis_adc</code>
+answers the questions that model actually poses: what is published, whether a
+pool has a health check, whether a published service has any inspection
+attached at all, and which certificates and TLS profiles are past their time.</p>
+<p><strong>Payload keys are transcribed from a live object, never from the reference.</strong>
+FortiADC mixes separators inside a single object — <code>waf-profile</code> and
+<code>av-profile</code> are hyphenated while <code>ips_profile</code>, <code>dos_profile</code>, <code>auth_policy</code>
+and <code>ztna_profile</code> are not — and it pads values with trailing spaces
+(<code>"status": "up "</code>, <code>"port": "80 "</code>). A guessed key does not raise: it reads as
+<em>nothing attached</em>, so the page reports a fleet with no protection anywhere,
+confidently and wrongly. The IPS profile object goes further and ships an
+<strong>empty <code>mkey</code></strong>, with the real name in <code>ips_profile_name</code>; reading <code>mkey</code>
+renders a table of blank rows. <code>tests/test_adc_analysis.py</code> pins the field
+names against a fixture transcribed from a live FortiADC 8.0.3 unit.</p>
+<p><strong>A profile that exists protects nothing.</strong> "Profiles defined" and "profiles
+applied" are different statements, and only the second one inspects traffic.
+The security section counts virtual servers that <em>reference</em> each profile kind.
+Factory objects (<code>_noneditable: 1</code>) are labelled rather than counted as work —
+three WAF profiles that are all shipped defaults is a different sentence from
+three somebody tuned, and rolling them together lets an untouched box look
+configured.</p>
+<p><strong>Findings come only from sections the sweep collected.</strong> A missing-health-check
+or dangling-pool warning derived from a section that was never harvested is a
+fabricated outage. Each block reports <code>harvested</code> for its source and stays
+silent when it is false — including the inverse case, where an empty member
+section would otherwise make <em>every</em> real server look orphaned.</p>
 <p><strong>Global and the empty scope resolve to the widest page, never to the
 refusal.</strong> <code>product_scope.GLOBAL</code> is the string <code>global</code>; <code>''</code> is the
 no-context case (a worker thread, or a session stamped before the ADOM split).

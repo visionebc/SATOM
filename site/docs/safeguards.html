@@ -13,10 +13,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/site.css?v=fe7bfd72c7">
-<script src="../assets/site.js?v=0f03aeb694" defer></script>
+<link rel="stylesheet" href="../assets/site.css?v=72c63f9378">
+<script src="../assets/site.js?v=bf3b55a92e" defer></script>
 </head>
-<body>
+<body class="wide">
 
 <nav>
   <div class="wrap nav-inner">
@@ -104,7 +104,7 @@
       <a href="#22-a-capability-probe-that-guesses-is-worse-than-no-probe">22. A capability probe that guesses is worse than no probe</a>
       <a href="#23-a-threshold-is-declared-once-inherited-live-and-always-explained">23. A threshold is declared once, inherited live, and always explained</a>
       <a href="#24-a-cached-artifact-is-stale-until-the-process-restarts">24. A cached artifact is stale until the process restarts</a>
-      <a href="#11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</a>
+      <a href="#25-monitoring-has-two-layers-and-neither-substitutes-for-the-other">25. Monitoring has two layers, and neither substitutes for the other</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="safeguards-what-stops-satom-from-hurting-itself">Safeguards — what stops SATOM from hurting itself</h1>
@@ -3159,6 +3159,106 @@ missed restart.</p>
 </ul>
 <p>A template change is verified against the <strong>running service</strong>, never against a
 <code>test_client</code>. That distinction is the whole reason this section exists.</p>
+<h2 id="25-monitoring-has-two-layers-and-neither-substitutes-for-the-other">25. Monitoring has two layers, and neither substitutes for the other</h2>
+<p>SATOM measures the same appliance twice, on purpose, and the two halves answer
+different questions:</p>
+<ul>
+<li><strong>Collection</strong> (<code>services/metrics_collect</code>) is the <strong>time-series</strong> layer.
+  One scrape target per <em>collector</em>, so a device with 10 000 server policies
+  still costs five rows and five calls. It publishes series. It grades nothing.</li>
+<li><strong>Deep monitors / Service Monitor</strong> (<code>services/deep_monitor</code>) is the
+  <strong>threshold</strong> layer. It carries warn/crit levels, produces a graded verdict,
+  and feeds the <code>probe</code> signal of Fleet health and the device-health alert.</li>
+</ul>
+<p>Confusing the two has already produced one outage-shaped gap and nearly
+produced two more.</p>
+<h3 id="25a-both-halves-are-provisioned-from-one-seam">25a. Both halves are provisioned from one seam</h3>
+<p>Until 2026-08-06 only the metrics half ran when an appliance was saved:
+<code>ensure_baseline</code> was reachable <strong>only</strong> from the <em>Discover</em> button. A device
+added through the normal form collected metrics and carried <strong>no thresholds</strong>,
+and neither page said so. The four appliances onboarded on 2026-08-05 had five
+collectors and <strong>zero</strong> threshold probes.</p>
+<p>Both now come from <code>services/monitoring_provision.provision_monitoring</code>, called
+from all three appliance-creation paths. Each half is guarded separately, so a
+failure in one still provisions the other — and the failure is <em>reported</em>,
+because a half-monitored device looks exactly like a monitored one.</p>
+<h3 id="25b-the-scale-rule-is-a-guard-not-a-comment">25b. The scale rule is a guard, not a comment</h3>
+<p>The rule is <strong>not</strong> "fewer probes". It is <em>per-device, never per-policy</em>:</p>
+<table>
+<thead>
+<tr>
+<th>shape</th>
+<th>at 50 devices x 750 policies</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>per-device probe (interface, cpu, memory, proxyd)</td>
+<td>200 rows</td>
+</tr>
+<tr>
+<td>per-policy probe (sessions, throughput, transactions...)</td>
+<td><strong>37 500 rows, 37 500 calls per sweep</strong></td>
+</tr>
+</tbody>
+</table>
+<p><code>tests/test_monitoring_provision.py</code> fails if any kind in
+<code>deep_monitor.API_KINDS</code> enters the baseline set. Those are created
+deliberately, from <em>Discover</em>, by an operator who chose the policies.</p>
+<p><strong>The obvious-looking saving is wrong.</strong> "Collection already reads CPU and
+memory, so drop those probes" deletes the only thresholds in the system from
+devices that had them, while every page keeps showing data. That is the failure
+<code>deep_monitor.split_legacy_proxyd</code> exists to prevent, in a new costume.</p>
+<h3 id="25c-retiring-the-threshold-layer-is-blocked-and-the-reason-is-written-down">25c. Retiring the threshold layer is blocked, and the reason is written down</h3>
+<p>Service Monitor's four kinds (<code>sessions</code>, <code>policy_sessions</code>, <code>throughput</code>,
+<code>transactions</code>) are each covered 1:1 by a scrape target, and the collector does
+in ONE call what the probes do in N. That makes them look redundant. They are
+not, yet:</p>
+<ul>
+<li><code>services/alerts.py</code> contains <strong>no reference to the store</strong> — verified, zero
+  matches for <code>vm_store</code> / <code>satom_</code>. Every alert check reads probes, actions,
+  certificates, git or the host.</li>
+<li>Collection has <strong>no grading layer at all</strong>. It publishes numbers; nothing
+  turns a number into warn/crit.</li>
+</ul>
+<p>So retiring Service Monitor today removes the "every backend behind this policy
+is down" signal from Fleet health and from the alert mail, and <strong>nothing
+replaces it</strong>. The prerequisite is alert rules evaluated over the store, which
+does not exist. Until it does, the duplication is the cheaper mistake.</p>
+<h3 id="25d-a-value-the-store-never-produced-is-never-interpolated">25d. A value the store never produced is never interpolated</h3>
+<p>Dashboard variables resolve their options from <code>vm_store.label_values</code>. That
+enumeration is also the <strong>allowlist</strong>: a selection that is not among the
+store's own answers falls back to <em>All</em> rather than reaching a query. There are
+two layers — <code>resolve</code> picks the value, <code>substitution</code> re-checks it — and the
+second is reachable on its own, so it does not trust the <code>value</code> field handed
+to it.</p>
+<p>Escaping is <strong>not</strong> <code>re.escape</code>. Python escapes a hyphen as <code>\-</code>; RE2, the
+engine VictoriaMetrics uses, rejects that as an <em>invalid escape</em> and answers
+HTTP 422. Every device and policy name in this fleet contains a hyphen, so
+<code>re.escape</code> broke the common case and left the rare one working. This was found
+end-to-end against the live store — a unit test on the escaper alone cannot
+see it, because the output is only invalid to the <strong>engine</strong>.</p>
+<p>An expression referencing a variable that could not be resolved becomes a panel
+<strong>error</strong>. Running it with the token still in makes the store reject a <em>parse</em>
+error, which on screen is indistinguishable from the store being down.</p>
+<h3 id="25e-endpoint-families-are-censused-never-guessed">25e. Endpoint families are censused, never guessed</h3>
+<p>FortiADC has no <code>monitor/</code> namespace: every guessed runtime path returns a flat
+404. The real surface was read out of the appliance's own GUI bundle and
+verified live — <code>/api/&lt;entity&gt;/&lt;_method&gt;</code>, a different shape from the
+<code>/api/&lt;object&gt;</code> cmdb surface the registry drives.</p>
+<p>Two traps worth keeping:</p>
+<ul>
+<li><code>platform/resources</code> returns <code>"1 CPU/1 allowed"</code> and <code>" 3831 MB RAM"</code> —
+  <strong>installed hardware, not utilisation</strong>. Parsing it as a percentage publishes
+  a fabricated series. CPU and memory keep coming from the read-only CLI.</li>
+<li><code>status_history/vs_status</code> is the analogue of FortiWeb's <code>policystatus</code>: ONE
+  call carries the whole vdom, which is why virtual servers are a <em>collector</em>
+  and not a probe-per-service.</li>
+</ul>
+<p>Where a shape could not be verified against live hardware (FortiAnalyzer: none
+reachable since July 2026), the payload is read <strong>defensively</strong> and an
+unrecognised shape yields nothing. A plausible wrong number on a log collector
+is worse than a gap.</p>
 <h2 id="11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</h2>
 <ul>
 <li>Per-device configuration restore is dry-run gated — no live canary round-trip yet.</li>
@@ -3194,6 +3294,35 @@ grep -n &quot;clash = HypervisorTarget&quot; -A3 app/views/settings.py
 sed -n '/fortiweb_scoped = {/,/}/p' app/__init__.py | grep -c device_provision
 </code></pre>
 <h2 id="verifying-the-guards-are-armed_5">Verifying the guards are armed</h2>
+<h3 id="monitoring-layers-25">Monitoring layers (25)</h3>
+<p>Both halves provisioned from one seam, and no per-policy kind in the baseline:</p>
+<pre><code class="language-bash"># a saved appliance gets BOTH collectors and threshold probes
+satom get monitor coverage        # or, against the app:
+#   provision_monitoring(a) -&gt; {&quot;targets&quot;: N, &quot;probes&quot;: [...]}
+
+# the scale guard: this must print nothing
+python3 - &lt;&lt;'PY'
+from app.services import deep_monitor as dm
+import ast, inspect
+src = inspect.getsource(dm.ensure_baseline)
+kinds = {n.elts[0].value for n in ast.walk(ast.parse(src.lstrip()))
+         if isinstance(n, ast.Tuple) and n.elts
+         and isinstance(n.elts[0], ast.Constant)}
+print(sorted(kinds &amp; set(dm.API_KINDS)))   # must be []
+PY
+</code></pre>
+<p>The store is still not an alerting source — if this stops printing 0, §25c has
+been overtaken and Service Monitor may finally be retirable:</p>
+<pre><code class="language-bash">grep -c 'vm_store\|satom_' app/services/alerts.py     # 0 today
+</code></pre>
+<p>A variable never interpolates a value the store did not produce, and the
+escaper does not escape a hyphen:</p>
+<pre><code class="language-bash">python3 -c &quot;
+from app.services.dashboard_vars import _escape_regex as e
+assert e('pol-satom-lab') == 'pol-satom-lab'   # RE2 rejects a backslash-hyphen
+assert '\\.' in e('fw.08')                     # but metacharacters ARE escaped
+print('ok')&quot;
+</code></pre>
 <h3 id="the-freshness-check-sees-what-the-process-caches-24">The freshness check sees what the process caches (24)</h3>
 <p>Two artifacts, charged to different processes. Both rows must be present:</p>
 <pre><code>satom diagnose code

@@ -13,10 +13,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/site.css?v=fe7bfd72c7">
-<script src="../assets/site.js?v=0f03aeb694" defer></script>
+<link rel="stylesheet" href="../assets/site.css?v=72c63f9378">
+<script src="../assets/site.js?v=bf3b55a92e" defer></script>
 </head>
-<body>
+<body class="wide">
 
 <nav>
   <div class="wrap nav-inner">
@@ -84,8 +84,128 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
-<h2 id="150-2026-08-06">[1.5.0] - 2026-08-06</h2>
 <h3 id="added">Added</h3>
+<ul>
+<li>Monitoring is provisioned from <strong>one seam</strong>. Saving an appliance now creates
+  both its scrape targets and its threshold probes; until now <code>ensure_baseline</code>
+  was reachable only from <em>Discover</em>, so a device added through the form had
+  metrics and no thresholds and nothing said so.</li>
+<li><strong>FortiADC virtual servers</strong> (<code>vservers</code> collector). FortiADC has no
+  <code>monitor/</code> namespace — every guessed endpoint 404s — so the runtime surface
+  was censused from the appliance's own GUI bundle and verified live on 8.0.3.
+  <code>status_history/vs_status</code> carries the whole vdom in ONE call, so 500 virtual
+  servers cost one round trip. Interfaces extended to FortiADC.</li>
+<li><strong>FortiAuthenticator identity inventory</strong> (<code>identity</code> collector) — accounts,
+  groups, tokens, certificates, RADIUS/TACACS+ clients. Counted via Tastypie
+  <code>meta.total_count</code>, so a 50 000-user directory costs the same as an empty one.</li>
+<li><strong>FortiAnalyzer</strong> (<code>faz</code> collector) — log volume, storage, alerts, incidents,
+  registered devices and task queue. Counters only; no log body is ever
+  fetched. FortiAnalyzer previously had <strong>no collectors at all</strong>.</li>
+<li>
+<p><strong>Dashboard variables</strong> with two drill-down boards. One board answers for
+  every device in the fleet instead of one board per device, and the service
+  picker is <em>chained</em> to the device picker so it offers only what exists on the
+  selected appliance.</p>
+</li>
+<li>
+<p><strong>Search on the published manual.</strong> The hub carries a client-side index of
+  every published document and <strong>every h2/h3 heading in it</strong> — 573 headings
+  across 27 documents — so a result deep-links to the subsection rather than
+  dropping the reader at the top of a two-thousand-line page. The index is
+  derived from the same render that produces the pages, not from a second
+  parse, and is inlined rather than fetched: the site is published to a static
+  host we do not configure, and the publication leak scan only sees what the
+  build returns.</p>
+</li>
+<li><strong>Search across every release.</strong> The release notes index all 226 changelog
+  entries, and each result is labelled with the version it shipped in and
+  links into that release's own page. The version rail filters to the releases
+  that actually contain a hit, so the left side answers "which versions is
+  this in?" without reading the results.</li>
+<li><strong>Nine sections of the user guide that had no coverage at all</strong> — Studio
+  (custom views, plugins, Lua), High availability, AppIDs, a tab-by-tab
+  Settings reference, log collection and offline backup import, system
+  provisioning profiles and baselines, the template library and section
+  catalog, the endpoint registry and API explorer, and release notes. The
+  manual went from 23 sections to 32 and now says where to read what changed
+  in a version — it had never mentioned the changelog.</li>
+</ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li><strong>The release notes are a rail and a panel, not a wall of cards.</strong> Versions
+  on the left, that version's changes on the right, newest first, opening on
+  the shipped version because "what is running on my node" is the question the
+  page is opened with. Each version page carries the whole rail, so "when did
+  this change?" stops being a scroll through the changelog.</li>
+<li><strong>The manual and the release notes read at 80% of the screen</strong> above
+  1400px. Only above: 80% of a 1280px screen is 1024px, which is <em>narrower</em>
+  than the 1120px it replaces, so widening unconditionally would have made the
+  manual harder to read on the machines most operators use. Marketing pages
+  stay narrow deliberately.</li>
+</ul>
+<h3 id="removed">Removed</h3>
+<ul>
+<li><strong>Lua Studio is no longer reachable from the FortiAuthenticator ADOM.</strong> It
+  was in the ADOM's blueprint set, but <code>LuaScript.TARGETS</code> is FortiWeb and
+  FortiADC — the unit is an identity store with no scripting object anywhere in
+  its API, so the page listed zero targets and zero devices. A page that can
+  only fail is worse than one that is not offered.</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li>
+<p>Dashboard variable values were escaped with <code>re.escape</code>, which escapes a
+  hyphen as <code>\-</code>. RE2 — the engine VictoriaMetrics uses — rejects that as an
+  invalid escape and answered <strong>HTTP 422</strong>. Every device and policy name in
+  this fleet contains a hyphen, so the common case was broken and the rare one
+  worked. Found end-to-end against the live store; a unit test on the escaper
+  alone could not see it, because the output is only invalid to the engine.</p>
+</li>
+<li>
+<p><strong>Entering the FortiAuthenticator ADOM landed on the FortiWeb home.</strong>
+  <code>_home_for()</code> had branches for FortiADC and FortiAnalyzer and then a
+  placeholder check; FortiAuthenticator stopped being a placeholder and fell
+  through to <code>fortiweb_home</code>. Every route into the ADOM — the product picker,
+  the sidebar, the device rail — silently opened the wrong product and then
+  pinned the session to it. <code>/fac/</code> was reachable only by typing the URL.</p>
+</li>
+<li><strong>The Global home page hardcoded two ADOMs.</strong> It shipped a stat-card for
+  FortiWeb and FortiADC and nothing else, and its fleet table could render only
+  those two kinds — so FortiAuthenticator and FortiAnalyzer units were
+  invisible on the one console meant to see everything. Cards and table now
+  come from the ADOM registry, so the next product appears without touching
+  this page; devices whose kind matches no active ADOM are listed too, because
+  Global is the only console that can see them.</li>
+<li><strong>An ADOM with registered appliances could be deleted.</strong> The guard was a
+  hardcoded set of three keys. An appliance's <code>kind</code> IS an ADOM key, so
+  deleting the row silently un-managed every device stamped with it: the boxes
+  stay in the table, no console can reach them, and nothing raises. The guard is
+  derived now — the three core keys plus any ADOM owning at least one
+  appliance, recomputed per check, so onboarding the first unit of a product
+  protects it immediately. The refusal also says which of the two reasons it
+  is, and how many appliances are in the way.</li>
+<li>The FortiAuthenticator ADOM had no top-bar search icon and no device-rail
+  link, though <code>search</code> was already in its blueprint set.</li>
+<li><strong>Table-of-contents entries were escaped twice</strong> — the sidebar of every
+  manual page rendered <code>Backups &amp;amp;amp; restore</code>, which a reader sees as a
+  literal entity. markdown's toc tokens arrive already HTML-escaped and were
+  escaped again on the way out. It only shows on a heading containing
+  <code>&amp; &lt; &gt; "</code>, which is why it survived until a search index inherited it.</li>
+</ul>
+<h3 id="notes">Notes</h3>
+<ul>
+<li><strong>Service Monitor was NOT retired</strong>, though its four kinds are each covered
+  1:1 by a collector that does the same work in one call instead of N. The
+  alert engine has no reference to the metrics store and Collection has no
+  grading layer, so retiring it today would delete the "every backend behind
+  this policy is down" signal with nothing to replace it. Prerequisite: alert
+  rules evaluated over the store. See <code>docs/safeguards.md</code> §25c.</li>
+<li>The FortiAnalyzer collector is <strong>unverified against live hardware</strong> (none
+  reachable since July 2026). Payload shapes are read defensively and an
+  unrecognised shape yields nothing rather than a plausible wrong number.</li>
+</ul>
+<h2 id="150-2026-08-06">[1.5.0] - 2026-08-06</h2>
+<h3 id="added_1">Added</h3>
 <ul>
 <li><strong>Settings &gt; Thresholds</strong> — a 22nd tab, and the first place in this product
   where a limit can be stated once instead of once per probe. Six scopes: the
@@ -258,7 +378,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   mode was previously told where each one stops but not what it costs, which
   is the half of the decision that matters.</li>
 </ul>
-<h3 id="changed">Changed</h3>
+<h3 id="changed_1">Changed</h3>
 <ul>
 <li><strong>Analysis moved into the Monitoring submenu.</strong> It was a bare Fleet item
   written out five times in <code>base.html</code>, once per ADOM block — the exact drift
@@ -279,7 +399,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   column holding anything else was left alone.</li>
 <li>Alert bodies now name the Thresholds scope that governs the finding.</li>
 </ul>
-<h3 id="fixed">Fixed</h3>
+<h3 id="fixed_1">Fixed</h3>
 <ul>
 <li><strong><code>satom diagnose code</code> now sees the artifact gunicorn actually caches.</strong> It
   compared the newest <code>.py</code> against each process start time, so a change that
@@ -479,7 +599,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   shadowing the tracked templates under <code>app/templates/backups/</code>.</li>
 </ul>
 <h2 id="141-2026-08-05">[1.4.1] - 2026-08-05</h2>
-<h3 id="fixed_1">Fixed</h3>
+<h3 id="fixed_2">Fixed</h3>
 <ul>
 <li>
 <p><strong>The installation page was answering a question about the appliances.</strong>
@@ -505,7 +625,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   count nodes is <code>unknown</code>, never <code>standalone</code>. Split-brain is its own badge.</p>
 </li>
 </ul>
-<h3 id="changed_1">Changed</h3>
+<h3 id="changed_2">Changed</h3>
 <ul>
 <li>The HA pill on both pages uses the product's own <code>fw-badge</code> set instead of a
   local palette, so cluster state reads like every other status in the console.</li>
@@ -514,7 +634,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   column, which nothing else writes and which was empty on the whole fleet.</li>
 </ul>
 <h2 id="140-2026-08-05">[1.4.0] - 2026-08-05</h2>
-<h3 id="added_1">Added</h3>
+<h3 id="added_2">Added</h3>
 <ul>
 <li>
 <p><strong>SATOM health and Device health are two pages.</strong> Fleet health carried the
@@ -642,7 +762,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   states that their terms are not superseded.</p>
 </li>
 </ul>
-<h3 id="changed_2">Changed</h3>
+<h3 id="changed_3">Changed</h3>
 <ul>
 <li>
 <p><strong>Collection moved from Monitoring to Administrator.</strong> The other six
@@ -786,7 +906,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   [SATOM-LICENSE-TAGS]</p>
 </li>
 </ul>
-<h3 id="fixed_2">Fixed</h3>
+<h3 id="fixed_3">Fixed</h3>
 <ul>
 <li>
 <p><strong>A missing systemd unit is no longer reported as a failed one.</strong>
@@ -1153,7 +1273,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   published copy.</li>
 </ul>
 <h2 id="13-2026-08-02">[1.3] - 2026-08-02</h2>
-<h3 id="added_2">Added</h3>
+<h3 id="added_3">Added</h3>
 <ul>
 <li><strong>The manual is reachable from the sign-in screen.</strong> The login page offered a
   link to the API manual and nothing else. The person who cannot get in is
@@ -1401,7 +1521,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   reported back in <code>source</code>, and the UI prints which one it drew: an hourly
   average and a five-minute reading are not the same claim about the device.</li>
 </ul>
-<h3 id="changed_3">Changed</h3>
+<h3 id="changed_4">Changed</h3>
 <ul>
 <li><strong>The last <code>fortinet</code> identifiers are gone from the platform itself.</strong> The
   database, the PostgreSQL role, the Linux service account and the PostgreSQL
@@ -1531,7 +1651,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   does not render where it matters. The vendored copy was already in the tree
   and unused.</li>
 </ul>
-<h3 id="fixed_3">Fixed</h3>
+<h3 id="fixed_4">Fixed</h3>
 <ul>
 <li><strong><code>/docs/api</code> was public and served the document unredacted.</strong> The route
   needed no session and rendered <code>docs/api_v1.md</code> verbatim, so a management
@@ -1829,7 +1949,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   <code>Appliance</code>; the column is <code>maintenance</code>.</li>
 </ul>
 <h2 id="122-2026-07-27">[1.2.2] - 2026-07-27</h2>
-<h3 id="fixed_4">Fixed</h3>
+<h3 id="fixed_5">Fixed</h3>
 <ul>
 <li><strong><code>app/services/cert_service.py</code> did not parse.</strong> An <code>import os</code> had been
   placed above <code>from __future__ import annotations</code>, which is a hard
@@ -1840,7 +1960,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   Certificate Manager endpoints raised on import, and the cert alert degraded
   to reporting the import error instead of the certificate's real state.</li>
 </ul>
-<h3 id="added_3">Added</h3>
+<h3 id="added_4">Added</h3>
 <ul>
 <li><strong><code>tests/test_every_module_imports.py</code></strong> — every shipped module under <code>app/</code>
   and <code>deploy/</code> must compile, and the modules that callers import <em>lazily</em>
@@ -1852,7 +1972,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
 <h2 id="121-2026-07-27">[1.2.1] - 2026-07-27</h2>
 <p>Documentation release. No application code changed; the offline bundles were
 rebuilt so that the shipped tree matches the documentation set.</p>
-<h3 id="added_4">Added</h3>
+<h3 id="added_5">Added</h3>
 <ul>
 <li><strong><code>docs/safeguards.md</code></strong> — single catalog of every protection in the product:
   what it prevents, where it lives, and <strong>how to verify it is armed</strong>. Covers
@@ -1872,7 +1992,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li>Public site: <code>site/safeguards.html</code> (linked from the nav and footer of every
   page) and the matching notes on <code>site/install.html</code>.</li>
 </ul>
-<h3 id="changed_4">Changed</h3>
+<h3 id="changed_5">Changed</h3>
 <ul>
 <li>In-app <strong>Documentation</strong> index now curates a title, order and description for
   all 18 manuals; half of them previously fell through to an auto-generated
@@ -1880,7 +2000,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li><strong>Rule recorded in <code>docs/overview.md</code></strong>: a new safeguard lands in
   <code>docs/safeguards.md</code> in the same commit that introduces it.</li>
 </ul>
-<h3 id="fixed_5">Fixed</h3>
+<h3 id="fixed_6">Fixed</h3>
 <ul>
 <li>Offline bundle checksums used an absolute path, so <code>sha256sum -c</code> failed in
   the directory the file was downloaded to. Now basename-only, as the RHEL
@@ -1918,7 +2038,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   with <code>from=</code>, <code>restrict</code> and a forced command that can only serve
   <code>rsync --sender</code> over the data directory.</li>
 </ul>
-<h3 id="added_5">Added</h3>
+<h3 id="added_6">Added</h3>
 <ul>
 <li><strong>ACME / Let's Encrypt certificate issuance</strong> with a DNS-provider catalog
   (30 providers seeded as data, editable by the operator) and per-provider
@@ -1944,7 +2064,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   Manager</strong>. Vendor names (FortiWeb, FortiADC, FortiAnalyzer) are untouched:
   the product manages those appliances and has to name them.</li>
 </ul>
-<h3 id="fixed_6">Fixed</h3>
+<h3 id="fixed_7">Fixed</h3>
 <ul>
 <li><strong>Scheduler and git-publish were silently dead</strong> after the privilege drop:
   both guard scripts used <code>runuser</code>, which only works as root. The scheduler
@@ -1986,7 +2106,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   server (appliance-side push config points at it), and <code>FM_*</code> env var names.</li>
 </ul>
 <h2 id="10-2026-07-14">[1.0] - 2026-07-14</h2>
-<h3 id="added_6">Added</h3>
+<h3 id="added_7">Added</h3>
 <ul>
 <li><strong>DNS Records management (IPAM/DDI)</strong>: "+DNS Records" CRUD in the DNS &amp; LB
   lookup tool, backed by pluggable providers (EfficientIP SOLIDserver,
@@ -2004,20 +2124,20 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   bundles), generic package-manager support, public site (GitHub Pages),
   package registry artifacts.</li>
 </ul>
-<h3 id="fixed_7">Fixed</h3>
+<h3 id="fixed_8">Fixed</h3>
 <ul>
 <li>Upgrade-event timestamps now render in local time (<code>| localtime</code>) instead
   of raw UTC.</li>
 </ul>
 <h2 id="09-2026-07-13">[0.9] - 2026-07-13</h2>
-<h3 id="added_7">Added</h3>
+<h3 id="added_8">Added</h3>
 <ul>
 <li><strong>Node TLS + node-to-node encryption</strong>: internal CA, per-node leaf certs,
   mutually-authenticated Postgres replication, HTTPS peer probes, and
   "encryption in transit" monitoring cards (every badge backed by a live probe).</li>
 </ul>
 <h2 id="08-2026-07-12">[0.8] - 2026-07-12</h2>
-<h3 id="added_8">Added</h3>
+<h3 id="added_9">Added</h3>
 <ul>
 <li><strong>FortiAnalyzer</strong> integration (JSON-RPC, dual dialect) as a full ADOM, with
   its endpoints in the DB registry and a git source-of-truth harvest.</li>

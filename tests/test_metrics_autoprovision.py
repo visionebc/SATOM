@@ -95,12 +95,12 @@ def _calls_in(func_name: str) -> list:
     raise AssertionError("no function %r in %s" % (func_name, VIEW))
 
 
-def test_create_provisions_metrics():
-    assert "_provision_metrics" in _calls_in("create")
+def test_create_provisions_monitoring():
+    assert "_provision_monitoring" in _calls_in("create")
 
 
-def test_edit_provisions_metrics():
-    assert "_provision_metrics" in _calls_in("edit_save")
+def test_edit_provisions_monitoring():
+    assert "_provision_monitoring" in _calls_in("edit_save")
 
 
 def test_cluster_member_add_provisions_metrics():
@@ -110,12 +110,18 @@ def test_cluster_member_add_provisions_metrics():
     names = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
     member = [n for n in names if "member" in n and "add" in n]
     assert member, "no cluster-member-add function found in %s" % VIEW
-    assert any("_provision_metrics" in _calls_in(n) for n in member)
+    assert any("_provision_monitoring" in _calls_in(n) for n in member)
 
 
 def test_provisioning_failure_cannot_lose_the_device(app):
-    """Metrics are downstream of inventory. If provisioning raises, the helper
-    swallows it — the appliance the operator just typed in must survive."""
+    """Monitoring is downstream of inventory. If provisioning raises, the
+    helper swallows it — the appliance the operator just typed in must
+    survive.
+
+    Since 2026-08-06 the helper returns a DICT of both halves, and a failure in
+    one half is reported in ``errors`` rather than silently returning zero:
+    a half-monitored device looks exactly like a monitored one.
+    """
     from app.views import appliances as av
     from app.services import metrics_collect as mc
     with app.app_context():
@@ -123,7 +129,9 @@ def test_provisioning_failure_cannot_lose_the_device(app):
         orig = mc.ensure_targets
         mc.ensure_targets = lambda _a: (_ for _ in ()).throw(RuntimeError("boom"))
         try:
-            assert av._provision_metrics(a) == 0     # no exception escapes
+            out = av._provision_monitoring(a)        # no exception escapes
+            assert out["targets"] == 0
+            assert out["errors"], "the failure was swallowed silently"
         finally:
             mc.ensure_targets = orig
 
@@ -131,15 +139,35 @@ def test_provisioning_failure_cannot_lose_the_device(app):
 # ── a device that yields nothing is NAMED, not omitted ───────────────────────
 
 def test_a_product_with_no_collectors_is_reported_not_hidden(app):
-    """FortiAnalyzer has no collectors today. Auto-provisioning is a no-op for
-    it, and a no-op that shows up nowhere is indistinguishable from success."""
+    """A no-op that shows up nowhere is indistinguishable from success.
+
+    Originally written against FortiAnalyzer, which had no collectors. It has
+    one since 2026-08-06, so the guard now uses a product the registry does not
+    know: the rule being protected is the MECHANISM — any device that yields
+    no targets must be NAMED with the reason — not the coverage status of one
+    particular product, which is expected to change.
+    """
     from app.services import metrics_collect as mc
     with app.app_context():
-        faz = _appliance(name="fazp", kind="fortianalyzer", host="192.0.2.12")
-        assert mc.collectors_for("fortianalyzer") == []
-        assert mc.ensure_targets(faz) == 0
-        gaps = {g["name"]: g["reason"] for g in mc.coverage_gaps([faz])}
-        assert "fazp" in gaps and "fortianalyzer" in gaps["fazp"]
+        unknown = "fortiproxy"
+        assert mc.collectors_for(unknown) == [], (
+            "%s gained collectors; pick another uncovered kind" % unknown)
+        dev = _appliance(name="ghost", kind=unknown, host="192.0.2.12")
+        assert mc.ensure_targets(dev) == 0
+        gaps = {g["name"]: g["reason"] for g in mc.coverage_gaps([dev])}
+        assert "ghost" in gaps and unknown in gaps["ghost"]
+
+
+def test_every_real_product_now_has_at_least_one_collector(app):
+    """The counterpart of the guard above: FortiAnalyzer used to yield nothing
+    at all, which meant a log collector could sit in the fleet completely
+    unmeasured. Every product the ADOM registry ships must now produce targets."""
+    from app.services import metrics_collect as mc
+    from app.services.product_scope import concrete_products
+    for key in concrete_products():
+        assert mc.collectors_for(key), (
+            "product %r has no collectors — a device of that kind would be "
+            "onboarded and never measured" % key)
 
 
 def test_a_provisioned_device_is_not_a_gap(app):

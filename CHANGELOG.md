@@ -28,29 +28,6 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   picker is *chained* to the device picker so it offers only what exists on the
   selected appliance.
 
-### Fixed
-
-- Dashboard variable values were escaped with `re.escape`, which escapes a
-  hyphen as `\-`. RE2 — the engine VictoriaMetrics uses — rejects that as an
-  invalid escape and answered **HTTP 422**. Every device and policy name in
-  this fleet contains a hyphen, so the common case was broken and the rare one
-  worked. Found end-to-end against the live store; a unit test on the escaper
-  alone could not see it, because the output is only invalid to the engine.
-
-### Notes
-
-- **Service Monitor was NOT retired**, though its four kinds are each covered
-  1:1 by a collector that does the same work in one call instead of N. The
-  alert engine has no reference to the metrics store and Collection has no
-  grading layer, so retiring it today would delete the "every backend behind
-  this policy is down" signal with nothing to replace it. Prerequisite: alert
-  rules evaluated over the store. See `docs/safeguards.md` §25c.
-- The FortiAnalyzer collector is **unverified against live hardware** (none
-  reachable since July 2026). Payload shapes are read defensively and an
-  unrecognised shape yields nothing rather than a plausible wrong number.
-
-
-### Added
 - **Search on the published manual.** The hub carries a client-side index of
   every published document and **every h2/h3 heading in it** — 573 headings
   across 27 documents — so a result deep-links to the subsection rather than
@@ -73,6 +50,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   in a version — it had never mentioned the changelog.
 
 ### Changed
+
 - **The release notes are a rail and a panel, not a wall of cards.** Versions
   on the left, that version's changes on the right, newest first, opening on
   the shipped version because "what is running on my node" is the question the
@@ -85,6 +63,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   stay narrow deliberately.
 
 ### Removed
+
 - **Lua Studio is no longer reachable from the FortiAuthenticator ADOM.** It
   was in the ADOM's blueprint set, but `LuaScript.TARGETS` is FortiWeb and
   FortiADC — the unit is an identity store with no scripting object anywhere in
@@ -92,6 +71,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   only fail is worse than one that is not offered.
 
 ### Fixed
+
+- Dashboard variable values were escaped with `re.escape`, which escapes a
+  hyphen as `\-`. RE2 — the engine VictoriaMetrics uses — rejects that as an
+  invalid escape and answered **HTTP 422**. Every device and policy name in
+  this fleet contains a hyphen, so the common case was broken and the rare one
+  worked. Found end-to-end against the live store; a unit test on the escaper
+  alone could not see it, because the output is only invalid to the engine.
+
 - **Entering the FortiAuthenticator ADOM landed on the FortiWeb home.**
   `_home_for()` had branches for FortiADC and FortiAnalyzer and then a
   placeholder check; FortiAuthenticator stopped being a placeholder and fell
@@ -120,6 +107,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   literal entity. markdown's toc tokens arrive already HTML-escaped and were
   escaped again on the way out. It only shows on a heading containing
   `& < > "`, which is why it survived until a search index inherited it.
+
+### Notes
+
+- **Service Monitor was NOT retired**, though its four kinds are each covered
+  1:1 by a collector that does the same work in one call instead of N. The
+  alert engine has no reference to the metrics store and Collection has no
+  grading layer, so retiring it today would delete the "every backend behind
+  this policy is down" signal with nothing to replace it. Prerequisite: alert
+  rules evaluated over the store. See `docs/safeguards.md` §25c.
+- The FortiAnalyzer collector is **unverified against live hardware** (none
+  reachable since July 2026). Payload shapes are read defensively and an
+  unrecognised shape yields nothing rather than a plausible wrong number.
 
 ## [1.5.0] - 2026-08-06
 

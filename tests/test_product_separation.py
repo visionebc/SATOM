@@ -52,6 +52,13 @@ PLATFORM_WHITELIST = {
     "app/views/product.py",
     "app/services/product_scope.py",
     "app/clients/__init__.py",
+    # The collector engine is fleet-wide by construction: COLLECTORS declares
+    # which products each collector serves and _RUNNERS dispatches by
+    # appliance.kind. It already imports the FortiWeb and FortiAuthenticator
+    # clients for the same reason. Keeping it out of the whitelist would force
+    # a per-product copy of the sweep, which is the shape this file exists to
+    # prevent in the other direction.
+    "app/services/metrics_collect.py",
 }
 
 

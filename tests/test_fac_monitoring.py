@@ -414,8 +414,14 @@ def test_every_declared_collector_has_a_runner():
     assert set(mc._RUNNERS) == set(mc.COLLECTORS)
 
 
-def test_fac_collects_box_and_capacity_only():
-    assert set(mc.collectors_for(FAC)) == {"box", "capacity"}
+def test_fac_collects_box_capacity_and_identity_only():
+    """``identity`` joined on 2026-08-06: what the directory CONTAINS.
+
+    Still pinned as an exact set, because the failure this guards is a
+    FortiWeb-shaped collector landing on an identity appliance and reporting
+    permanently empty rather than not-applicable.
+    """
+    assert set(mc.collectors_for(FAC)) == {"box", "capacity", "identity"}
 
 
 def test_the_forwarding_collectors_stay_off_the_identity_product():

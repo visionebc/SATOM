@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-08-07
+
 ### Added
 
 - Monitoring is provisioned from **one seam**. Saving an appliance now creates

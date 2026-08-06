@@ -30,7 +30,9 @@
 18. [API tokens](#18-api-tokens)
 19. [Appearance: logo, colours & themes](#19-appearance-logo-colours--themes)
 20. [The operator console](#20-the-operator-console)
-21. [Troubleshooting](#21-troubleshooting)
+21. [Provisioning new appliances](#21-provisioning-new-appliances)
+22. [Updating SATOM itself](#22-updating-satom-itself)
+23. [Troubleshooting](#23-troubleshooting)
 
 ---
 
@@ -276,6 +278,41 @@ you see FortiWeb material, in ADC the ADC material).
   report-only. A **Run sweep now** button and a nightly scheduled action keep
   it moving; the page lists everything currently due.
 
+### 10.1 The trust store — the CAs *SATOM itself* trusts
+
+Global → Settings → **Trust store** (admin).
+
+Every appliance row carries a `verify_ssl` switch, and until this page existed
+it had only two positions: validate against the **public** roots — which an
+appliance signed by your own CA can never satisfy — or validate **nothing**.
+That is why the answer to "the new device never syncs" was always the same
+`verify_ssl=false`, including on devices where verification would have worked.
+This page is the missing third position: name the CA and keep the check on.
+
+- **Import** accepts a pasted PEM or an uploaded file, in two labelled boxes —
+  **Root CA** and **Intermediate CA**. A whole chain in one blob is the normal
+  case and is handled. Both boxes are submitted as a single transaction, so a
+  root cannot land while its intermediate fails and leave behind a chain gap
+  you never asked for.
+- **The label is a hint, not the verdict.** The role is derived from the
+  certificate itself (self-issued ⇒ root), so a root pasted into the
+  intermediate box is still recorded as a root. A form field must not be able
+  to relabel a trust anchor.
+- **Only CA certificates are accepted.** A device's own self-signed *leaf* is
+  refused, with the reason: nothing can anchor a chain on it, so importing it
+  would appear to work and then fail every handshake.
+- **The bundle adds to the public roots; it never replaces them.** A mixed
+  fleet — some devices behind your CA, others behind a publicly-signed
+  wildcard — keeps working. If the bundle cannot be built at all, verification
+  falls back to the public roots, never to *off*.
+- The page lists **incomplete chains**: an enabled intermediate whose issuer is
+  in neither the store nor the public roots.
+- **Probe** aims a real TLS handshake at any device visible in this ADOM and
+  separates the three causes, because each needs a different fix: untrusted
+  issuer (import a CA), hostname mismatch (correct the appliance's host, or
+  reissue with that name in the SAN), and an expired leaf (reissue — no CA
+  rescues it). *"Verification failed"* on its own is not an answer.
+
 ## 11. Backups & restore
 
 - **Device Backups** (FortiWeb ADOM → Operations) is the config-backup
@@ -480,6 +517,109 @@ three-minute reading are not the same claim about the appliance.
 > same axis. That is a deliberate, manual operation — never a side effect of a
 > restart.
 
+### 14.7 Collection — the metrics store
+
+Monitoring → **Collection** (needs config-write).
+
+A probe asks one question. That is the right shape for *"is this one thing
+still working"* and the wrong shape for a fleet: at scale it becomes one API
+call per object per sweep. A **collector** asks once per device and keeps
+everything that came back — `policies` returns every policy on the box in a
+single call. So the unit here is **(device, collector)**, never (device,
+object): the table stays roughly one row per device per collector no matter how
+many policies the fleet grows.
+
+| Collector | Products | Default interval |
+|---|---|---|
+| `box` — CPU, memory, sessions | FortiWeb, FortiADC, FortiAuthenticator | 3 min |
+| `capacity` — licence headroom, FortiToken pools | FortiAuthenticator | 3 min |
+| `policies` — sessions / conn rate / RTT, every policy | FortiWeb | 3 min |
+| `interfaces` — link state and byte counters | FortiWeb | 3 min |
+| `traffic` — device total plus top-N policies | FortiWeb | 15 min |
+| `transactions` — HTTP transactions, top-N policies | FortiWeb | 60 min |
+
+Each row is editable in place: **interval** (1–1440 minutes), **enabled**, and
+**top-N** (1–200) on the two collectors that have one. The expensive collectors
+are bounded twice — a longer interval *and* a top-N cut ranked by live
+connection rate — but the device total is always collected, so the headline
+number never depends on where the cut fell.
+
+- **Run sweep now** runs inside the request and reports targets, errors and
+  series written, in the flash message.
+- Devices in **maintenance**, and retired rows, are not scraped at all.
+- A collector that fails records `satom_scrape_up 0` for that target. Missing
+  data is never rendered as health.
+- Targets appear automatically for new appliances. The sweep itself is the
+  scheduled action **`metrics_scrape`** which, like every action, is **not**
+  seeded on a fresh install (§15).
+
+Samples land in a time-series store that runs **on each node, bound to
+loopback**. It is not a shared database and it carries no authentication: each
+node keeps its own, which is why a board can draw on one node of a pair and
+report a query error on the other. Architecture, retention and sizing:
+[docs/metrics-architecture.md](metrics-architecture.md).
+
+### 14.8 Analytics boards
+
+Monitoring → **Analytics**: boards of panels over the data the rest of this
+section collects. It is a renderer, not a fourth source of measurements.
+
+Built-in boards ship per ADOM. To change one, **Duplicate** it first. Panels
+are dragged to reorder; each board has a default range and optional
+auto-refresh.
+
+- **Panel types:** line, area, bar, stat, gauge, heatmap, table, status strip.
+- **Three ways to choose what a panel draws:**
+  - **Probes** — an explicit list.
+  - **Rule** — everything matching a kind or device.
+  - **MetricsQL** — an expression evaluated against the node's store. One
+    expression can draw a hundred devices (`topk(10, …)`), and it is the only
+    mode that survives a fleet where enumerating the series is not an option.
+    The expression is validated by *running* it, because the store is the only
+    authority on its own query language.
+- **Ranges:** 1 h, 6 h, 24 h, 7 d, 30 d, 90 d, or a custom window. Ninety days
+  is the longest offered because that is how long hourly roll-ups are kept.
+- **One resolution per panel.** The server picks the coarsest source any series
+  on that panel needs, and the footer states which. Two series on one axis read
+  from two different tables is a claim no legend can repair — the finer line
+  shows spikes the coarser one averaged away, and it reads as a difference
+  between *devices*.
+- **A gap stays a gap.** No line is drawn across missing data: carrying the
+  last value forward paints a convincing straight line over exactly the outage
+  the chart was opened to investigate.
+- **A failed query renders as an error, never as an empty chart.** On a canvas
+  the two look identical and mean opposite things.
+
+**Collection cadence** (button in the page header) shows every probe's
+*declared* interval beside its *effective* one and flags the mismatches. A
+probe fires only when its interval has elapsed **and** the sweep ticks, so the
+real cadence is the tick rounded up: a 5-minute probe under a 3-minute sweep is
+a 6-minute probe, and its own row still says 5. With no sweep scheduled the
+modal reports **0** — never a plausible-looking number for collection that is
+not happening.
+
+### 14.9 Period reports
+
+Monitoring → **Reports**: daily, weekly and monthly summaries over the last
+**complete** period. The windows are half-open, so two adjacent reports can
+never claim the same bucket.
+
+Reports are **stored, not recomputed on demand.** Raw samples expire in about
+two days, so a summary rebuilt six months later would quietly answer from
+coarser data while looking exactly like one built on time.
+
+- Generate on demand, or schedule the **`monitor_report`** action (`period`,
+  optional `email`, `keep` for retention, and `push_server` to copy the summary
+  to the external backup server).
+- Read it in the browser or export **JSON**, **CSV** or plain **text**;
+  **Email** sends it to the alert recipients.
+- Re-running a period **replaces** its row rather than adding a second one, so
+  a retry after a failed mail run updates the report you already have.
+- **A mail failure does not fail the action.** The report is written and
+  readable; failing the run would leave the action permanently red over an SMTP
+  outage.
+- A period with no samples reports **unknown**, not a healthy zero.
+
 ## 15. Automation
 
 **Scheduled Actions** (FortiWeb ADOM → Administrator, plus the ⏰ button on
@@ -660,7 +800,137 @@ satom show sudoers <account>   # prints the sudoers line; changes nothing
 Full reference, including the complete command tree and the runbooks:
 [docs/cli.md](cli.md).
 
-## 21. Troubleshooting
+## 21. Provisioning new appliances
+
+Two entries under **Automation**, answering different questions:
+
+| Page | Question it answers |
+|---|---|
+| **Device Provisioning** | *Build me an appliance that does not exist yet.* |
+| **System Provisioning** | *Apply this system profile or baseline to appliances that already exist.* |
+
+The rest of this section is the first one.
+
+### 21.1 Registering a hypervisor
+
+Settings → **Hypervisors** (admin). The backends are **Proxmox VE** and
+**VMware ESXi**, and the registry is multi-target: a site can hold several of
+each. Credentials are encrypted at rest, exactly like an appliance row.
+**Test** resolves that host's capabilities against the live endpoint and
+records the verdict.
+
+> **Capabilities are reported, never assumed.** A free-licensed ESXi host
+> answers the vSphere API *read-only*, so SATOM refuses to build through it and
+> says why — rather than failing halfway with "provisioning failed", which
+> sends you to the wrong end of the problem. Give that host shell credentials
+> (optional fields on the target; its SSH service must be enabled) and SATOM
+> builds over the host shell instead. Likewise a Proxmox storage without the
+> `import` content type cannot receive a disk image, and the page says so
+> instead of discovering it mid-run.
+
+### 21.2 Install media is not upgrade media
+
+Firmware → **Upload**, with kind **Install** and the hypervisor flavour: KVM /
+Proxmox (`.qcow2`) or VMware ESXi (`.ovf` / `.ova`). An upgrade `.out` applies
+to a *running* appliance and cannot build a machine — two different artefact
+families, kept apart on purpose.
+
+### 21.3 Modes
+
+The product cannot promise unattended first boot on every hypervisor, so how
+far a run goes is a **choice**, not a guess.
+
+| Mode | Does | Where it stops |
+|---|---|---|
+| **Full** | create, boot, configure, onboard | needs an API serial console to drive the appliance's first-boot dialog |
+| **Semi** | create and boot | at the console: set the admin password and the management address, then resume the run |
+| **DHCP** | create and boot; the appliance takes a lease, SATOM finds it and continues | runs to the end |
+| **VM only** | create and boot, nothing else | as requested |
+| **Config only** | no hypervisor at all — reserve the address, issue the certificate, apply the profile | runs to the end; for a machine that already exists, including a physical one |
+
+### 21.4 Running one
+
+1. **New run** — name, mode, hypervisor, node / datastore / network, CPU, RAM,
+   disk, management address (or tick **use IPAM**), admin account, install
+   image and system profile. Started from the Global ADOM you must also say
+   which product you are building, because that decides what gets registered at
+   the end.
+2. **Preflight** prints the exact plan and the host's capabilities *before
+   anything is created*. A run that cannot finish is **refused** with the
+   blockers named — not started and then failed halfway.
+3. **Advance** walks the plan one step at a time and logs each step.
+4. **Stopping is not failing.** Semi and VM-only finish as **paused**, with the
+   reason printed verbatim, so *"why did it stop?"* never needs a support round
+   trip.
+5. **Rollback undoes the run from what it recorded**, never from inspecting the
+   world: the address is released only if SATOM allocated it (a hand-typed
+   address belongs to whoever typed it), the machine is deleted only if a
+   handle was written down, and a device that already reached **onboarded** is
+   deliberately left registered — deleting it would orphan the configuration
+   history already hanging off it.
+
+Backend detail, the capability matrix and the state machine:
+[docs/provisioning-hypervisors.md](provisioning-hypervisors.md).
+
+## 22. Updating SATOM itself
+
+Administrator → **Software Update** (admin). Two paths, for two situations:
+
+1. **From the repository** — *Check*, then *Apply*. The normal path on a node
+   that can reach the code remote.
+2. **An offline signed package** — for a node on a management network with no
+   route out. Same update, delivered as a file.
+
+In both cases the web application only **enqueues**. A separate privileged
+runner does the work, which is why the application itself never needs the
+rights to install packages or restart services.
+
+### 22.1 Applying an offline package
+
+**Upload → read the preflight → Apply.** The preflight names every check, and a
+blocking one disables Apply:
+
+| Check | What it answers |
+|---|---|
+| Trust store | Is there a key that could vouch for this at all? |
+| Archive | Is the file a well-formed package? |
+| Signature & integrity | Is it signed by a trusted key, and do the contents match what was signed? |
+| Version | Where does this move the node? |
+| Upgrade path | Is this node new enough to accept it? |
+| Python / Dependencies | Are the shipped wheels the ones this node needs? |
+| Disk space | Is there room? |
+| This node | Which machine, in which role, you are about to change. |
+
+> **Staging is not applying.** Uploading changes nothing. And when you do press
+> Apply, the privileged runner **re-verifies everything from scratch** — the
+> page you were reading could be minutes old, and *"the button was enabled"* is
+> not a safety property.
+
+- **Signing keys live outside the application**, in a root-owned directory the
+  web application cannot write to. An empty trust store accepts nothing.
+  Manage it from the console: `satom show trust`, `satom execute trust add-key`.
+- **Downgrades require an explicit tick.** Going backwards is legitimate and is
+  never the default.
+- **Local work survives.** Commits that are not on the remote are parked in a
+  backup ref before anything is reset, and the update aborts rather than
+  continuing if it cannot park them. The apply commits only the paths the
+  package itself wrote.
+- Uploads are size-capped and the staging area keeps only the newest few.
+
+### 22.2 On a pair
+
+The metrics store, the virtual environment and the installed packages are **per
+node** — none of it replicates. Apply on each node, then confirm each one:
+
+```bash
+satom diagnose updates    # trust store, runner, staged packages
+satom diagnose code       # is the running process actually on the new code?
+```
+
+How packages are built and signed:
+[docs/offline-update-packages.md](offline-update-packages.md).
+
+## 23. Troubleshooting
 
 | Symptom | Likely cause / fix |
 |---|---|

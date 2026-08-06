@@ -6,7 +6,33 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+
+
 ### Added
+
+- **Settings > Hypervisors** — register the Proxmox and/or ESXi endpoints SATOM
+  may build machines on, more than one of each. Credentials are Fernet-encrypted
+  and never returned to the browser; a blank secret on edit keeps the stored
+  one. The **Test** button reports what the host will actually permit, including
+  the read-only-API case, so the limit is learned there rather than three steps
+  into a run that already reserved an address. The tab also carries a
+  capability comparison of the two backends and the reasons behind it.
+- **Device Provisioning** (`/device-provisioning`) in every ADOM — build an
+  appliance machine from nothing, then hand it to System Provisioning for its
+  configuration. Five modes (`full`, `semi`, `dhcp`, `vm_only`, `config_only`),
+  each with its advantages and disadvantages spelled out on the page, and each
+  preflighted against the live hypervisor before anything changes. Runs are
+  stamped with their ADOM and filtered on the query; a run from another ADOM
+  answers 404.
+- **Provisioning orchestrator** (`app/services/provision_runner.py`) — the
+  `ProvisionRun` state machine with per-step logging and a rollback that undoes
+  only what the run recorded creating.
+- **ESXi host-shell transport** (`app/services/hypervisors/esxi_shell.py`) — the
+  free vSphere Hypervisor licence makes the remote API read-only, while the
+  host's own shell is a different code path inside ESXi. Given SSH credentials
+  SATOM creates, powers and deletes machines with `vim-cmd` instead. SATOM
+  detects that `TSM-SSH` is off and prints the line to enable it; it never
+  enables it. The shell is claimed only after a command has run on it.
 
 - **Analysis page for the FortiAuthenticator ADOM.** An identity appliance has
   no throughput to plot and no policy fan-out to map, so the new page answers
@@ -85,7 +111,46 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   source-of-truth store and the fleet-wide scheduled sweeps.
   See `docs/fortiauthenticator.md`.
 
+- **The user guide now describes five ADOMs, not three.** `docs/user-guide.md`
+  still opened with "the app hosts three workspaces" and a table listing only
+  Global, FortiWeb and FortiADC — FortiAnalyzer had been shipping since July
+  and FortiAuthenticator since August with no entry at all, and that manual is
+  published publicly. Nothing fails when a manual goes stale; the claim simply
+  stops being true, which is exactly how it drifted a month. Added: the
+  five-ADOM table, the two missing device kinds plus the TLS-verification and
+  API-key notes that go with registering one, a product-by-product Analysis
+  table (the page is deliberately per-product and has no shared fallback), the
+  FortiAuthenticator entitlement probe kinds and the per-product restrictions
+  on deep monitors, and section 17 recast as *Product workspaces* with
+  FortiADC, FortiAuthenticator and FortiAnalyzer subsections.
+
 ### Fixed
+
+- **`list_datastores()` reported a false capability.** Proxmox splits `images`
+  (can hold a disk) from `import` (can receive an upload) across different
+  storages. The listing filtered on `images` first and only then read `import`,
+  so the stock `local` storage — which has `import` and not `images` — was
+  dropped before its flag was evaluated, and the probe told the operator to add
+  a content type the host already had. `disk_datastores()` and
+  `import_datastores()` now name the two questions separately.
+- **`list_vms()` answered "does this exist" from a cache.**
+  `/cluster/resources` is refreshed on `pvestatd`'s cycle: a machine SATOM had
+  just created and powered on was absent from it, while the rollback that
+  followed deleted the same machine without trouble. With a node in hand the
+  live `/nodes/<node>/qemu` endpoint is used instead.
+- **Saving a hypervisor target failed the first time, every time.** The
+  uniqueness check ran after `db.session.add()`, so autoflush pushed the pending
+  INSERT to satisfy the very query looking for a duplicate — the row collided
+  with itself. It also left a credential-less row behind, which then failed its
+  connection test with an authentication error pointing at the wrong cause.
+- **`models_provision` was never imported**, so `db.create_all()` never created
+  `hypervisor_targets` or `provision_runs`. The models were dead code that
+  looked alive.
+- **Device provisioning was registered as a FortiWeb area.** Membership of
+  `fortiweb_scoped` means "opening this from Global is an ADOM jump into
+  FortiWeb", which made the Global ADOM silently become FortiWeb: a Global
+  operator saw only FortiWeb runs and never got the product picker Global
+  needs.
 
 - **The FortiADC ADOM showed the FortiWeb WAF dashboard.** `/analysis/` mapped
   `fortiadc` to the FortiWeb page as acknowledged debt, so the ADOM rendered

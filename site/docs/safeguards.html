@@ -101,6 +101,7 @@
       <a href="#19-an-adom-shows-its-own-product-and-nothing-else">19. An ADOM shows its own product and nothing else</a>
       <a href="#20-trusting-a-device-means-naming-its-ca-not-disabling-the-check">20. Trusting a device means naming its CA, not disabling the check</a>
       <a href="#21-a-page-is-read-as-a-claim-about-the-adom-it-is-shown-in">21. A page is read as a claim about the ADOM it is shown in</a>
+      <a href="#22-a-capability-probe-that-guesses-is-worse-than-no-probe">22. A capability probe that guesses is worse than no probe</a>
       <a href="#11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</a>
       <a href="#verifying-the-guards-are-armed_5">Verifying the guards are armed</a>
       <a href="#related">Related</a>
@@ -2887,6 +2888,52 @@ a device with no data.</p>
 and all nine bite, including reverting the dispatch to the <code>else</code>, dropping the
 <code>kind</code> matcher, re-seeding the FortiWeb boards Global, collapsing <code>harvested</code>
 to a constant, and defaulting an unprobed capacity row to <code>ok</code>.</p>
+<h2 id="22-a-capability-probe-that-guesses-is-worse-than-no-probe">22. A capability probe that guesses is worse than no probe</h2>
+<p>Device provisioning drives someone else's hypervisor, and the thing that
+decides whether a run can finish is not SATOM's code — it is what that host
+will permit. Every guard in this area exists because a wrong answer here is not
+a wrong screen: it is a machine half-built, an address reserved, and a DNS row
+nobody will clean up.</p>
+<p><strong>The rule: a capability is reported only after it has been established, and
+"unknown" resolves to unavailable.</strong> <code>app/services/hypervisors/base.py</code> defaults
+every flag in <code>Capabilities</code> to <code>False</code>; a backend opts in to what it proved.
+An unreadable licence is treated as not-writable, because a run that dies at
+<code>CreateVM_Task</code> after committing an address is worse than one that never
+started. <code>EsxiShell.probe()</code> runs <code>vmware -v</code> — the shell is never claimed from
+an open port.</p>
+<p><strong>Preflight before state, always.</strong> <code>provision_runner.preflight()</code> compares the
+mode's <code>MODE_REQUIRES</code> against the live capabilities and the <code>/advance</code> route
+<strong>refuses with 409</strong> rather than starting a run it cannot finish. Verified by
+running it: <code>full</code> against a free-licensed ESXi is refused with three named
+blockers and the run row is left at <code>step=draft</code>, <code>vm_ref=''</code>.</p>
+<p><strong>Never narrow a list by one role while reporting on another.</strong> Proxmox splits
+<code>images</code> (can hold a disk) from <code>import</code> (can receive an upload) across
+different storages. <code>list_datastores()</code> filtered on <code>images</code> first and only then
+read <code>import</code>, so the stock <code>local</code> storage — which has <code>import</code> and not
+<code>images</code> — was dropped before its flag was ever evaluated, and the probe told
+the operator to add a content type the host already had.</p>
+<p><strong>Never read a cache to answer "does this exist now".</strong> <code>list_vms()</code> used
+<code>/cluster/resources</code>, refreshed on <code>pvestatd</code>'s cycle; a machine SATOM had just
+built was absent from it while the rollback that followed deleted the same
+machine fine.</p>
+<p><strong>Rollback is driven by recorded facts, not by inspecting the world.</strong> An
+address is released only when <code>ip_from_ipam</code> says SATOM took it; a machine is
+deleted only when <code>vm_ref</code> says SATOM built it; an onboarded <code>Appliance</code> row is
+left in place and named in the log. Inferring ownership from current state is
+how a rollback deletes somebody else's machine.</p>
+<p><strong>Stopping is not failing.</strong> <code>semi</code> and <code>vm_only</code> end in <code>paused</code> with their
+reason from <code>MODE_STOP_REASON</code>. Marking a designed handoff as <code>failed</code> teaches
+operators to ignore the status column, and then they ignore the real failures.</p>
+<p><strong>A durable change to someone else's security posture is never a side effect.</strong>
+SATOM detects that <code>TSM-SSH</code> is off on an ESXi host and prints the one line
+that enables it. It does not enable it. A capability probe that silently opens
+a remote root shell to make its own feature work is a surprise, not a feature.</p>
+<p>Related bug this class already produced, fixed in the same commit: the
+uniqueness check in <code>hypervisor_save</code> ran <strong>after</strong> <code>db.session.add()</code>, so
+autoflush pushed the pending INSERT to satisfy the very query looking for a
+duplicate. Every first-time save was rejected as a name clash <em>and</em> left a
+credential-less row behind, which then failed its connection test with an
+authentication error pointing at the wrong cause. Validate, then add.</p>
 <h2 id="11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</h2>
 <ul>
 <li>Per-device configuration restore is dry-run gated — no live canary round-trip yet.</li>
@@ -2896,6 +2943,31 @@ to a constant, and defaulting an unprobed capacity row to <code>ok</code>.</p>
 <li>Gitea and the standby share a host ({hypervisor}). The bundle to {backup-server} exists
   because of that, but it mitigates rather than fixes it.</li>
 </ul>
+<h3 id="capability-probes-and-provisioning-22">Capability probes and provisioning (22)</h3>
+<pre><code class="language-sh"># Every capability flag defaults to False — a backend opts in to what it proved.
+grep -n &quot;= False&quot; app/services/hypervisors/base.py | head
+
+# The shell transport is claimed only after a command actually ran.
+grep -n &quot;def probe&quot; -A8 app/services/hypervisors/esxi_shell.py
+
+# Preflight gates /advance; a refused run must not reach a step function.
+grep -n &quot;preflight refused this run&quot; -B6 app/views/device_provision.py
+
+# The two Proxmox storage roles are asked separately.
+grep -n &quot;def disk_datastores\|def import_datastores&quot; app/services/hypervisors/proxmox.py
+
+# &quot;Does it exist now&quot; is answered from live node state, not the cluster cache.
+grep -n &quot;nodes/{node}/qemu&quot; app/services/hypervisors/proxmox.py
+
+# Rollback is guarded by recorded facts.
+grep -n &quot;ip_from_ipam\|run.ref()&quot; app/services/provision_runner.py
+
+# Uniqueness is checked BEFORE the row joins the session (autoflush self-clash).
+grep -n &quot;clash = HypervisorTarget&quot; -A3 app/views/settings.py
+
+# Device provisioning is NOT a FortiWeb area (0 expected).
+sed -n '/fortiweb_scoped = {/,/}/p' app/__init__.py | grep -c device_provision
+</code></pre>
 <h2 id="verifying-the-guards-are-armed_5">Verifying the guards are armed</h2>
 <h3 id="freshness-and-drift-read-the-right-source-18">Freshness and drift read the right source (18)</h3>
 <p>Freshness must follow the <em>newest</em> layer, not the nightly one. On a FortiWeb

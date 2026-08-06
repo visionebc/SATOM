@@ -1735,3 +1735,238 @@ def reset_theme():
     log_action('settings.theme.reset', detail='name=%s' % name)
     flash('Reverted to %r.' % name, 'success')
     return _theme_redirect()
+
+
+# ---------------------------------------------------------------------------
+# Hypervisors — where SATOM may build appliance virtual machines.
+#
+# Multi-target on purpose: a site commonly runs both Proxmox and ESXi, and
+# more than one of each. That is why these live in a table rather than in an
+# ``app_settings`` key like the DNS provider — a single-value setting cannot
+# express "build this one on the lab Proxmox and that one on the DMZ ESXi".
+#
+# Three rules this section enforces:
+#
+# 1. **Secrets never cross back to the browser.** ``public()`` is the only
+#    shape sent out; an empty password field on edit means "keep what is
+#    stored", never "blank it".
+# 2. **Capabilities are resolved against the live endpoint, not assumed.** The
+#    Test button reports what the host will actually permit, including the
+#    read-only-API case, so the operator learns the limit here rather than
+#    three steps into a provisioning run that already reserved an address.
+# 3. **Admin only.** These credentials can create and destroy machines.
+# ---------------------------------------------------------------------------
+
+def _hv_target_or_404(target_id: int):
+    from ..models_provision import HypervisorTarget
+    row = HypervisorTarget.query.get(target_id)
+    if row is None:
+        abort(404)
+    return row
+
+
+@bp.route('/hypervisors/state')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def hypervisor_state():
+    from ..services import hypervisors as hv
+    from ..models_provision import HypervisorTarget, MODES
+    rows = HypervisorTarget.query.order_by(HypervisorTarget.name.asc()).all()
+    return jsonify({
+        'targets': [r.public() for r in rows],
+        'backends': [{'key': k, 'label': hv.BACKEND_LABELS.get(k, k),
+                      'fields': hv.FIELD_SPECS.get(k, []),
+                      'default_port': hv.DEFAULT_PORTS.get(k)}
+                     for k in sorted(hv.BACKENDS)],
+        'modes': MODES,
+    })
+
+
+@bp.route('/hypervisors/save', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def hypervisor_save():
+    from ..services import hypervisors as hv
+    from ..models_provision import HypervisorTarget
+    f = request.form
+    tid = (f.get('id') or '').strip()
+    backend = (f.get('backend') or '').strip().lower()
+    if not hv.is_valid(backend):
+        return jsonify({'ok': False,
+                        'error': 'unknown backend %r' % backend}), 400
+    name = (f.get('name') or '').strip()
+    if not name:
+        return jsonify({'ok': False, 'error': 'a name is required'}), 400
+    host = (f.get('host') or '').strip()
+    if not host:
+        return jsonify({'ok': False, 'error': 'a host is required'}), 400
+
+    row = HypervisorTarget.query.get(int(tid)) if tid.isdigit() else None
+    creating = row is None
+    # Uniqueness is checked BEFORE the row joins the session. With the add()
+    # first, SQLAlchemy's autoflush pushes the pending INSERT to satisfy the
+    # very query that is looking for a duplicate, so the row collides with
+    # itself and every first-time save is rejected as a name clash — while
+    # leaving the half-written row behind for the transaction to commit later.
+    clash = HypervisorTarget.query.filter(
+        HypervisorTarget.name == name,
+        HypervisorTarget.id != (row.id if row is not None else -1)).first()
+    if clash is not None:
+        db.session.rollback()
+        return jsonify({'ok': False,
+                        'error': 'another target is already called %r' % name}), 400
+    if creating:
+        row = HypervisorTarget(name=name, backend=backend, host=host)
+        db.session.add(row)
+
+    row.name, row.backend, row.host = name, backend, host
+    try:
+        row.port = int(f.get('port') or 0) or hv.DEFAULT_PORTS.get(backend)
+    except ValueError:
+        row.port = hv.DEFAULT_PORTS.get(backend)
+    row.username = (f.get('username') or '').strip()
+    row.verify_ssl = (f.get('verify_ssl') or '').lower() in ('1', 'on', 'true')
+    row.enabled = (f.get('enabled') or '').lower() in ('1', 'on', 'true')
+    row.notes = (f.get('notes') or '').strip()
+    row.default_node = (f.get('default_node') or '').strip()
+    row.default_datastore = (f.get('default_datastore') or '').strip()
+    row.default_network = (f.get('default_network') or '').strip()
+    row.token_id = (f.get('token_id') or '').strip()
+    row.ssh_user = (f.get('ssh_user') or '').strip()
+    try:
+        row.ssh_port = int(f.get('ssh_port') or 22)
+    except ValueError:
+        row.ssh_port = 22
+
+    # An empty secret field means "leave the stored one alone". Treating blank
+    # as "erase" would silently break a working target every time somebody
+    # edited its name, and the operator would have no way to tell why.
+    for field, setter in (('password', 'password'),
+                          ('token_secret', 'token_secret'),
+                          ('ssh_password', 'ssh_password')):
+        val = f.get(field)
+        if val:
+            setattr(row, setter, val)
+    db.session.commit()
+    log_action('settings.hypervisor.save',
+               detail='name=%s backend=%s created=%s' % (name, backend, creating))
+    return jsonify({'ok': True, 'target': row.public()})
+
+
+@bp.route('/hypervisors/<int:target_id>/test', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def hypervisor_test(target_id: int):
+    """Authenticate, then report what this host will actually permit.
+
+    The capability probe is the point of this button. "Connected OK" alone
+    would be a comfortable lie on a free-licensed ESXi, whose API answers
+    every read and refuses every write.
+    """
+    from datetime import datetime
+    from ..services.hypervisors import HypervisorError
+    row = _hv_target_or_404(target_id)
+    out = {'ok': False, 'target': row.public()}
+    try:
+        client = row.client()
+        info = client.test_connection()
+        caps = client.capabilities()
+        out.update({
+            'ok': True,
+            'info': info,
+            'capabilities': {
+                'create_vm': caps.create_vm, 'delete_vm': caps.delete_vm,
+                'power_control': caps.power_control,
+                'upload_image': caps.upload_image,
+                'ovf_import': caps.ovf_import,
+                'disk_import': caps.disk_import,
+                'serial_console': caps.serial_console,
+                'notes': list(caps.notes),
+                'blocking': caps.missing_for_full_provision(),
+            },
+        })
+        row.last_status = 'online' if caps.create_vm else 'readonly'
+        row.last_error = ''
+    except HypervisorError as exc:
+        row.last_status = 'error'
+        row.last_error = '%s %s' % (exc, exc.detail or '')
+        out['error'] = str(exc)
+        out['detail'] = exc.detail
+    except Exception as exc:  # noqa: BLE001 — never 500 a diagnostics button
+        row.last_status = 'error'
+        row.last_error = str(exc)
+        out['error'] = str(exc)
+    row.last_checked_at = datetime.utcnow()
+    db.session.commit()
+    out['target'] = row.public()
+    log_action('settings.hypervisor.test',
+               detail='name=%s status=%s' % (row.name, row.last_status))
+    return jsonify(out)
+
+
+@bp.route('/hypervisors/<int:target_id>/inventory')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def hypervisor_inventory(target_id: int):
+    """Nodes / networks / datastores, for the placement dropdowns."""
+    from ..services.hypervisors import HypervisorError
+    row = _hv_target_or_404(target_id)
+    node = (request.args.get('node') or row.default_node or '').strip()
+    try:
+        client = row.client()
+        nodes = client.list_nodes()
+        if not node and nodes:
+            node = nodes[0].get('node') or ''
+        stores = client.list_datastores(node)
+        return jsonify({
+            'ok': True, 'node': node, 'nodes': nodes,
+            'networks': client.list_networks(node),
+            'datastores': stores,
+            # Split by role: Proxmox keeps the disk and the uploaded image on
+            # DIFFERENT storages and there is no rule that one does both.
+            'disk_datastores': [s for s in stores if s.get('can_disk')],
+            'import_datastores': [s for s in stores if s.get('can_import')],
+        })
+    except HypervisorError as exc:
+        return jsonify({'ok': False, 'error': str(exc),
+                        'detail': exc.detail}), 502
+
+
+@bp.route('/hypervisors/<int:target_id>/toggle', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def hypervisor_toggle(target_id: int):
+    row = _hv_target_or_404(target_id)
+    row.enabled = not row.enabled
+    db.session.commit()
+    log_action('settings.hypervisor.toggle',
+               detail='name=%s enabled=%s' % (row.name, row.enabled))
+    return jsonify({'ok': True, 'target': row.public()})
+
+
+@bp.route('/hypervisors/<int:target_id>/delete', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def hypervisor_delete(target_id: int):
+    """Remove a target. Refused while runs still point at it.
+
+    A provisioning run keeps the target id as its undo handle: deleting the
+    target would leave a machine SATOM built with no way to reach it again.
+    """
+    from ..models_provision import ProvisionRun
+    row = _hv_target_or_404(target_id)
+    live = ProvisionRun.query.filter(
+        ProvisionRun.target_id == row.id,
+        ProvisionRun.status.notin_(('done', 'aborted'))).count()
+    if live:
+        return jsonify({
+            'ok': False,
+            'error': '%d provisioning run(s) still reference this target'
+                     % live,
+            'detail': 'Finish or abort them first — they hold the only handle '
+                      'back to the machines SATOM created here.'}), 409
+    name = row.name
+    db.session.delete(row)
+    db.session.commit()
+    log_action('settings.hypervisor.delete', detail='name=%s' % name)
+    return jsonify({'ok': True})

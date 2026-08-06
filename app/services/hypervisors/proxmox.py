@@ -32,6 +32,9 @@ from .base import Capabilities, HypervisorClient, HypervisorError, VmRef, VmSpec
 #: uploaded through the API and consumed by ``import-from``. Proxmox 8.3+
 #: exposes it on ``dir`` storages, but it is opt-in per storage.
 IMPORT_CONTENT = "import"
+# A storage that can hold a running VM disk. Distinct from IMPORT_CONTENT:
+# the stock ``local`` storage carries "import" without "images".
+DISK_CONTENT = "images"
 
 
 class ProxmoxClient(HypervisorClient):
@@ -132,6 +135,7 @@ class ProxmoxClient(HypervisorClient):
             node = nodes[0]["node"] if nodes else ""
             stores = self.list_datastores(node) if node else []
             importable = [s["id"] for s in stores if s.get("can_import")]
+            diskable = [s["id"] for s in stores if s.get("can_disk")]
             if importable:
                 disk_import = upload = True
                 notes.append("import-ready storage: " + ", ".join(importable))
@@ -143,6 +147,12 @@ class ProxmoxClient(HypervisorClient):
                     "no storage advertises the 'import' content type — add "
                     "'import' to a directory storage in Datacenter > Storage "
                     "to upload appliance images through the API")
+            if diskable:
+                notes.append("disk-capable storage: " + ", ".join(diskable))
+            else:
+                notes.append(
+                    "no storage advertises the 'images' content type — a VM "
+                    "created here would have nowhere to put its disk")
         except HypervisorError as exc:
             notes.append(f"capability probe incomplete: {exc}")
         return Capabilities(
@@ -180,6 +190,22 @@ class ProxmoxClient(HypervisorClient):
         return sorted(out, key=lambda x: x["id"] or "")
 
     def list_datastores(self, node: str = "") -> list[dict[str, Any]]:
+        """Every active storage, each labelled with what it can be used for.
+
+        Proxmox splits these two roles across DIFFERENT storages and there is
+        no requirement that one storage does both:
+
+        * ``images``  -> can hold a running VM disk   (``can_disk``)
+        * ``import``  -> can receive an uploaded image (``can_import``)
+
+        An earlier version filtered on ``images`` FIRST and only then looked
+        at ``import``, so a storage that advertises ``import`` but not
+        ``images`` — which is the default shape of the stock ``local`` storage
+        — was dropped before its import flag was ever read. The capability
+        probe then told the operator to "add import to a storage" on a host
+        that already had one. Never narrow a list by one role while reporting
+        on another.
+        """
         node = node or self._first_node()
         rows = self._call("GET", f"/nodes/{node}/storage") or []
         out = []
@@ -188,24 +214,53 @@ class ProxmoxClient(HypervisorClient):
             types = {c.strip() for c in content.split(",") if c.strip()}
             if not r.get("active"):
                 continue
-            if "images" not in types:
-                continue  # cannot hold a VM disk — not a provisioning target
+            can_disk = DISK_CONTENT in types
+            can_import = IMPORT_CONTENT in types
+            if not (can_disk or can_import):
+                continue  # neither role — not a provisioning target
             avail = int(r.get("avail") or 0)
             out.append({
                 "id": r.get("storage"), "name": r.get("storage"),
                 "type": r.get("type"), "content": sorted(types),
                 "avail_bytes": avail, "avail_gb": avail // (1024 ** 3),
                 "total_gb": int(r.get("total") or 0) // (1024 ** 3),
-                "can_import": IMPORT_CONTENT in types,
+                "can_disk": can_disk,
+                "can_import": can_import,
             })
         return sorted(out, key=lambda x: -x["avail_bytes"])
 
+    def disk_datastores(self, node: str = "") -> list[dict[str, Any]]:
+        """Only the storages that can hold a VM disk."""
+        return [s for s in self.list_datastores(node) if s.get("can_disk")]
+
+    def import_datastores(self, node: str = "") -> list[dict[str, Any]]:
+        """Only the storages that can receive an uploaded appliance image."""
+        return [s for s in self.list_datastores(node) if s.get("can_import")]
+
     def list_vms(self, node: str = "") -> list[dict[str, Any]]:
+        """Machines on one node (live) or across the cluster (cached).
+
+        ``/cluster/resources`` is an aggregate refreshed on ``pvestatd``'s
+        cycle, so a machine created seconds ago is genuinely absent from it —
+        verified: a VM SATOM had just built and powered on did not appear,
+        while the rollback that followed deleted it without trouble. On a
+        provisioning page that reads as "the machine was not created", which
+        is the opposite of the truth.
+
+        With a node in hand, ``/nodes/<node>/qemu`` answers from that node's
+        own state and shows the machine immediately. The cached aggregate is
+        kept only for the node-less, whole-cluster view, where it is the only
+        single-call option.
+        """
+        if node:
+            rows = self._call("GET", f"/nodes/{node}/qemu") or []
+            return [{"vmid": r.get("vmid"), "name": r.get("name"),
+                     "node": node, "status": r.get("status"),
+                     "type": "qemu"} for r in rows]
         rows = self._call("GET", "/cluster/resources?type=vm") or []
         return [{"vmid": r.get("vmid"), "name": r.get("name"),
                  "node": r.get("node"), "status": r.get("status"),
-                 "type": r.get("type")} for r in rows
-                if not node or r.get("node") == node]
+                 "type": r.get("type")} for r in rows]
 
     def _first_node(self) -> str:
         nodes = self.list_nodes()

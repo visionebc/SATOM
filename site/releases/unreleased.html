@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Fixed · 14 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Fixed · 24 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Fixed · 14 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Fixed · 24 entries.</p>
   <div class="callout" style="margin-top:18px;">
     <span class="cico">🗒️</span>
     <p><b>Generated from the changelog.</b> This page is one section of
@@ -66,7 +66,33 @@
     <div class="doc-body mdx">
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>Analysis page for the FortiAuthenticator ADOM.</strong> An identity appliance has
+<li><strong>Settings &gt; Hypervisors</strong> — register the Proxmox and/or ESXi endpoints SATOM
+  may build machines on, more than one of each. Credentials are Fernet-encrypted
+  and never returned to the browser; a blank secret on edit keeps the stored
+  one. The <strong>Test</strong> button reports what the host will actually permit, including
+  the read-only-API case, so the limit is learned there rather than three steps
+  into a run that already reserved an address. The tab also carries a
+  capability comparison of the two backends and the reasons behind it.</li>
+<li><strong>Device Provisioning</strong> (<code>/device-provisioning</code>) in every ADOM — build an
+  appliance machine from nothing, then hand it to System Provisioning for its
+  configuration. Five modes (<code>full</code>, <code>semi</code>, <code>dhcp</code>, <code>vm_only</code>, <code>config_only</code>),
+  each with its advantages and disadvantages spelled out on the page, and each
+  preflighted against the live hypervisor before anything changes. Runs are
+  stamped with their ADOM and filtered on the query; a run from another ADOM
+  answers 404.</li>
+<li><strong>Provisioning orchestrator</strong> (<code>app/services/provision_runner.py</code>) — the
+  <code>ProvisionRun</code> state machine with per-step logging and a rollback that undoes
+  only what the run recorded creating.</li>
+<li>
+<p><strong>ESXi host-shell transport</strong> (<code>app/services/hypervisors/esxi_shell.py</code>) — the
+  free vSphere Hypervisor licence makes the remote API read-only, while the
+  host's own shell is a different code path inside ESXi. Given SSH credentials
+  SATOM creates, powers and deletes machines with <code>vim-cmd</code> instead. SATOM
+  detects that <code>TSM-SSH</code> is off and prints the line to enable it; it never
+  enables it. The shell is claimed only after a command has run on it.</p>
+</li>
+<li>
+<p><strong>Analysis page for the FortiAuthenticator ADOM.</strong> An identity appliance has
   no throughput to plot and no policy fan-out to map, so the new page answers
   the questions it actually has: entitlement headroom (an unlicensed unit
   refuses the sixth user outright — a cliff no CPU chart shows), what identity
@@ -76,7 +102,8 @@
   "not harvested" is rendered distinctly from <code>0</code> because the two demand
   opposite actions. Entitlement is reported, never re-graded: the licence and
   token probes own the thresholds, and a capacity row with no probe reads
-  <code>unmonitored</code>, not <code>ok</code>.</li>
+  <code>unmonitored</code>, not <code>ok</code>.</p>
+</li>
 <li>
 <p><strong>Analytics boards for FortiAuthenticator</strong> — <code>fac-entitlement</code> (licence and
   token series from the metrics store) and <code>fac-identity</code> (the same signals
@@ -149,9 +176,50 @@
   source-of-truth store and the fleet-wide scheduled sweeps.
   See <code>docs/fortiauthenticator.md</code>.</p>
 </li>
+<li>
+<p><strong>The user guide now describes five ADOMs, not three.</strong> <code>docs/user-guide.md</code>
+  still opened with "the app hosts three workspaces" and a table listing only
+  Global, FortiWeb and FortiADC — FortiAnalyzer had been shipping since July
+  and FortiAuthenticator since August with no entry at all, and that manual is
+  published publicly. Nothing fails when a manual goes stale; the claim simply
+  stops being true, which is exactly how it drifted a month. Added: the
+  five-ADOM table, the two missing device kinds plus the TLS-verification and
+  API-key notes that go with registering one, a product-by-product Analysis
+  table (the page is deliberately per-product and has no shared fallback), the
+  FortiAuthenticator entitlement probe kinds and the per-product restrictions
+  on deep monitors, and section 17 recast as <em>Product workspaces</em> with
+  FortiADC, FortiAuthenticator and FortiAnalyzer subsections.</p>
+</li>
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><strong><code>list_datastores()</code> reported a false capability.</strong> Proxmox splits <code>images</code>
+  (can hold a disk) from <code>import</code> (can receive an upload) across different
+  storages. The listing filtered on <code>images</code> first and only then read <code>import</code>,
+  so the stock <code>local</code> storage — which has <code>import</code> and not <code>images</code> — was
+  dropped before its flag was evaluated, and the probe told the operator to add
+  a content type the host already had. <code>disk_datastores()</code> and
+  <code>import_datastores()</code> now name the two questions separately.</li>
+<li><strong><code>list_vms()</code> answered "does this exist" from a cache.</strong>
+  <code>/cluster/resources</code> is refreshed on <code>pvestatd</code>'s cycle: a machine SATOM had
+  just created and powered on was absent from it, while the rollback that
+  followed deleted the same machine without trouble. With a node in hand the
+  live <code>/nodes/&lt;node&gt;/qemu</code> endpoint is used instead.</li>
+<li><strong>Saving a hypervisor target failed the first time, every time.</strong> The
+  uniqueness check ran after <code>db.session.add()</code>, so autoflush pushed the pending
+  INSERT to satisfy the very query looking for a duplicate — the row collided
+  with itself. It also left a credential-less row behind, which then failed its
+  connection test with an authentication error pointing at the wrong cause.</li>
+<li><strong><code>models_provision</code> was never imported</strong>, so <code>db.create_all()</code> never created
+  <code>hypervisor_targets</code> or <code>provision_runs</code>. The models were dead code that
+  looked alive.</li>
+<li>
+<p><strong>Device provisioning was registered as a FortiWeb area.</strong> Membership of
+  <code>fortiweb_scoped</code> means "opening this from Global is an ADOM jump into
+  FortiWeb", which made the Global ADOM silently become FortiWeb: a Global
+  operator saw only FortiWeb runs and never got the product picker Global
+  needs.</p>
+</li>
 <li>
 <p><strong>The FortiADC ADOM showed the FortiWeb WAF dashboard.</strong> <code>/analysis/</code> mapped
   <code>fortiadc</code> to the FortiWeb page as acknowledged debt, so the ADOM rendered

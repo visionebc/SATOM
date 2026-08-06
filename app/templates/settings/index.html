@@ -77,6 +77,11 @@
     </button>
   </li>
   <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-hypervisors" type="button">
+      <i class="bi bi-hdd-stack-fill me-1"></i>Hypervisors
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-dnstool" type="button">
       <i class="bi bi-globe2 me-1"></i>DNS Lookup
     </button>
@@ -1849,6 +1854,407 @@
           });
       });
       load();
+    })();
+    </script>
+  </div>
+
+  <div class="tab-pane fade" id="tab-hypervisors">
+    <div class="fw-card" style="max-width:1120px;">
+      <div class="fw-card-header"><span><i class="bi bi-hdd-stack-fill me-1"></i>Hypervisors — where SATOM builds appliance machines</span></div>
+      <div class="fw-card-body">
+        <p class="text-muted small mb-3">
+          Register the Proxmox and&nbsp;/&nbsp;or ESXi endpoints SATOM may create virtual machines on.
+          More than one of each is supported. <strong>With none registered, device provisioning is
+          hidden entirely</strong> rather than shown as a button that fails — the machine-creation
+          steps simply are not offered, and the rest of the pipeline (address, DNS, certificate,
+          configuration profile) still works against a machine you built by hand.
+          <br><span class="text-body-secondary">Credentials are encrypted at rest and are never sent
+          back to the browser. Leave a secret field blank when editing to keep the stored value.</span>
+        </p>
+
+        <div class="alert alert-light border small mb-3">
+          <div class="fw-semibold mb-2"><i class="bi bi-info-circle me-1"></i>What each backend can and cannot do</div>
+          <div class="table-responsive">
+            <table class="table table-sm mb-2">
+              <thead><tr>
+                <th style="width:22%">Capability</th><th style="width:39%">Proxmox VE</th><th style="width:39%">VMware ESXi</th>
+              </tr></thead>
+              <tbody>
+                <tr>
+                  <td>Create / power / delete</td>
+                  <td><span class="fw-badge fw-badge-success">Yes</span> over the REST API, no extra services needed.</td>
+                  <td><span class="fw-badge fw-badge-warning">Licence-dependent</span> — the free <em>vSphere&nbsp;Hypervisor</em> edition makes the vSphere API <strong>read&#8209;only</strong>. Paid licence or vCenter unlocks it; otherwise SATOM falls back to the host shell (below).</td>
+                </tr>
+                <tr>
+                  <td>Upload an install image</td>
+                  <td><span class="fw-badge fw-badge-success">Yes</span>, into a storage that advertises the <code>import</code> content type. Note this is usually a <em>different</em> storage from the one holding the disk.</td>
+                  <td><span class="fw-badge fw-badge-success">Yes</span> — a datastore is a plain filesystem, so both roles always apply.</td>
+                </tr>
+                <tr>
+                  <td>Attach the appliance disk</td>
+                  <td><span class="fw-badge fw-badge-success">Yes</span> — <code>import-from</code> converts qcow2 during creation.</td>
+                  <td><span class="fw-badge fw-badge-secondary">API: OVF only</span> (<code>ImportVApp</code>, licence-gated). Over the shell, <code>vmkfstools</code> converts anything.</td>
+                </tr>
+                <tr>
+                  <td>Drive the first-boot dialog</td>
+                  <td><span class="fw-badge fw-badge-success">Yes</span> — the serial console is exposed over the API, so the factory admin-password prompt can be walked unattended. This is what makes <em>Full</em> mode possible.</td>
+                  <td><span class="fw-badge fw-badge-danger">No</span> — and this is <strong>not</strong> a licence limit. The only console is graphical (MKS); there is no scriptable text console. <em>Full</em> mode is therefore unavailable on ESXi at any licence tier.</td>
+                </tr>
+                <tr>
+                  <td>Highest mode reachable</td>
+                  <td><span class="fw-badge fw-badge-success">Full</span></td>
+                  <td><span class="fw-badge fw-badge-warning">Semi</span> (or DHCP)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="small text-body-secondary">
+            <strong>ESXi host-shell fallback.</strong> The free licence gates the <em>remote API</em> write
+            methods, not the host&rsquo;s own shell. Give a target an SSH username and password and SATOM
+            will create, power and delete machines with <code>vim-cmd</code> instead. That requires
+            <code>TSM-SSH</code> to be running on the host — <strong>SATOM will not enable it for you</strong>,
+            because a permanent remote-root path on your hypervisor is your decision, not a side effect of a
+            capability probe. The Test button reports which transport a target will actually use, and only
+            claims the shell after running a command on it.
+          </div>
+        </div>
+
+        <div class="table-responsive mb-4">
+          <table class="table table-sm align-middle">
+            <thead><tr>
+              <th>Name</th><th>Backend</th><th>Endpoint</th><th>Status</th>
+              <th>Defaults</th><th class="text-end">Actions</th>
+            </tr></thead>
+            <tbody id="hv-rows"><tr><td colspan="6" class="text-muted">Loading…</td></tr></tbody>
+          </table>
+        </div>
+
+        <div id="hv-result" class="mb-3"></div>
+
+        <hr class="my-4">
+        <h6 class="mb-3" id="hv-form-title">Add a hypervisor</h6>
+        <form id="hv-form" class="row g-3" autocomplete="off">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="id" id="hv-id" value="">
+          <div class="col-md-4">
+            <label class="form-label small">Name</label>
+            <input class="form-control form-control-sm" name="name" id="hv-name" required
+                   placeholder="lab-proxmox">
+            <div class="form-text">How this endpoint is referred to when provisioning.</div>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small">Backend</label>
+            <select class="form-select form-select-sm" name="backend" id="hv-backend"></select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small">Host</label>
+            <input class="form-control form-control-sm" name="host" id="hv-host" required
+                   placeholder="pve.example.com">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label small">Port</label>
+            <input class="form-control form-control-sm" name="port" id="hv-port" placeholder="8006">
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label small">Username</label>
+            <input class="form-control form-control-sm" name="username" id="hv-username"
+                   placeholder="root@pam">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small">Password</label>
+            <input class="form-control form-control-sm" type="password" name="password"
+                   id="hv-password" placeholder="(unchanged)">
+          </div>
+          <div class="col-md-4" id="hv-token-wrap">
+            <label class="form-label small">API token id <span class="text-muted">(Proxmox, optional)</span></label>
+            <input class="form-control form-control-sm" name="token_id" id="hv-token-id"
+                   placeholder="root@pam!satom">
+          </div>
+          <div class="col-md-4" id="hv-tokensec-wrap">
+            <label class="form-label small">API token secret</label>
+            <input class="form-control form-control-sm" type="password" name="token_secret"
+                   id="hv-token-secret" placeholder="(unchanged)">
+          </div>
+
+          <div class="col-12" id="hv-shell-wrap">
+            <div class="border rounded p-3 bg-body-tertiary">
+              <div class="small fw-semibold mb-2">
+                <i class="bi bi-terminal me-1"></i>Host shell (ESXi only — needed when the API is read-only)
+              </div>
+              <div class="row g-3">
+                <div class="col-md-4">
+                  <label class="form-label small">Shell username</label>
+                  <input class="form-control form-control-sm" name="ssh_user" id="hv-ssh-user"
+                         placeholder="root">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label small">Shell password</label>
+                  <input class="form-control form-control-sm" type="password" name="ssh_password"
+                         id="hv-ssh-password" placeholder="(unchanged)">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label small">Shell port</label>
+                  <input class="form-control form-control-sm" name="ssh_port" id="hv-ssh-port"
+                         placeholder="22">
+                </div>
+              </div>
+              <div class="form-text mt-2">
+                Leave empty on a licensed host. SATOM only uses this when the API refuses writes, and
+                reports which transport it chose.
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label small">Default node</label>
+            <input class="form-control form-control-sm" name="default_node" id="hv-default-node"
+                   placeholder="(remembered after the first run)">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small">Default datastore</label>
+            <input class="form-control form-control-sm" name="default_datastore"
+                   id="hv-default-datastore">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small">Default network</label>
+            <input class="form-control form-control-sm" name="default_network"
+                   id="hv-default-network">
+          </div>
+
+          <div class="col-12">
+            <label class="form-label small">Notes</label>
+            <input class="form-control form-control-sm" name="notes" id="hv-notes">
+          </div>
+
+          <div class="col-12 d-flex align-items-center gap-3">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="verify_ssl" id="hv-verify" value="1">
+              <label class="form-check-label small" for="hv-verify">
+                Verify TLS <span class="text-muted">(needs the host&rsquo;s CA in the trust store)</span>
+              </label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="enabled" id="hv-enabled" value="1" checked>
+              <label class="form-check-label small" for="hv-enabled">Enabled</label>
+            </div>
+            <div class="ms-auto">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="hv-reset">Clear</button>
+              <button type="submit" class="btn btn-sm btn-primary">Save hypervisor</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script nonce="{{ csp_nonce }}">
+    (function () {
+      var root = document.getElementById('tab-hypervisors');
+      if (!root) { return; }
+      var BACKENDS = [];
+      var TARGETS = [];
+      var loaded = false;
+
+      function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+          return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+        });
+      }
+      function badge(status) {
+        var map = {online: 'success', readonly: 'warning', error: 'danger'};
+        var label = {online: 'ready', readonly: 'read-only API', error: 'error'};
+        var k = map[status] || 'secondary';
+        return '<span class="fw-badge fw-badge-' + k + '">' +
+               esc(label[status] || status || 'untested') + '</span>';
+      }
+      function post(url, body) {
+        return fetch(url, {
+          method: 'POST',
+          headers: {'X-CSRFToken': root.querySelector('[name=csrf_token]').value},
+          body: body || new FormData()
+        }).then(function (r) { return r.json().catch(function () { return {ok: false, error: 'bad response'}; }); });
+      }
+
+      function render() {
+        var tb = document.getElementById('hv-rows');
+        if (!TARGETS.length) {
+          tb.innerHTML = '<tr><td colspan="6" class="text-muted">' +
+            'No hypervisor registered. Device provisioning stays hidden until one is added.' +
+            '</td></tr>';
+          return;
+        }
+        tb.innerHTML = TARGETS.map(function (t) {
+          var defs = [t.default_node, t.default_datastore, t.default_network]
+                       .filter(Boolean).join(' / ') || '<span class="text-muted">—</span>';
+          return '<tr' + (t.enabled ? '' : ' class="opacity-50"') + '>' +
+            '<td class="fw-semibold">' + esc(t.name) + (t.enabled ? '' :
+              ' <span class="fw-badge fw-badge-secondary">disabled</span>') + '</td>' +
+            '<td>' + esc(t.backend) + (t.has_ssh ?
+              ' <span class="fw-badge fw-badge-secondary" title="host shell credentials stored">+shell</span>' : '') + '</td>' +
+            '<td><code>' + esc(t.host) + (t.port ? ':' + esc(t.port) : '') + '</code></td>' +
+            '<td>' + badge(t.last_status) +
+              (t.last_error ? '<div class="small text-danger">' + esc(t.last_error.slice(0, 160)) + '</div>' : '') + '</td>' +
+            '<td class="small">' + defs + '</td>' +
+            '<td class="text-end">' +
+              '<button class="btn btn-sm btn-outline-primary" data-hv-test="' + t.id + '">Test</button> ' +
+              '<button class="btn btn-sm btn-outline-secondary" data-hv-edit="' + t.id + '">Edit</button> ' +
+              '<button class="btn btn-sm btn-outline-secondary" data-hv-toggle="' + t.id + '">' +
+                (t.enabled ? 'Disable' : 'Enable') + '</button> ' +
+              '<button class="btn btn-sm btn-outline-danger" data-hv-del="' + t.id + '">Delete</button>' +
+            '</td></tr>';
+        }).join('');
+      }
+
+      function load() {
+        return fetch('{{ url_for("settings.hypervisor_state") }}')
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            BACKENDS = d.backends || [];
+            TARGETS = d.targets || [];
+            var sel = document.getElementById('hv-backend');
+            if (!sel.options.length) {
+              sel.innerHTML = BACKENDS.map(function (b) {
+                return '<option value="' + esc(b.key) + '">' + esc(b.label) + '</option>';
+              }).join('');
+            }
+            syncBackendFields();
+            render();
+          });
+      }
+
+      function syncBackendFields() {
+        var b = document.getElementById('hv-backend').value;
+        document.getElementById('hv-shell-wrap').style.display = (b === 'esxi') ? '' : 'none';
+        var pve = (b === 'proxmox') ? '' : 'none';
+        document.getElementById('hv-token-wrap').style.display = pve;
+        document.getElementById('hv-tokensec-wrap').style.display = pve;
+      }
+
+      function fill(t) {
+        document.getElementById('hv-id').value = t ? t.id : '';
+        document.getElementById('hv-name').value = t ? t.name : '';
+        document.getElementById('hv-backend').value = t ? t.backend : (BACKENDS[0] || {}).key || '';
+        document.getElementById('hv-host').value = t ? t.host : '';
+        document.getElementById('hv-port').value = t && t.port ? t.port : '';
+        document.getElementById('hv-username').value = t ? t.username : '';
+        document.getElementById('hv-token-id').value = t ? (t.token_id || '') : '';
+        document.getElementById('hv-ssh-user').value = t ? (t.ssh_user || '') : '';
+        document.getElementById('hv-ssh-port').value = t ? (t.ssh_port || '') : '';
+        document.getElementById('hv-default-node').value = t ? (t.default_node || '') : '';
+        document.getElementById('hv-default-datastore').value = t ? (t.default_datastore || '') : '';
+        document.getElementById('hv-default-network').value = t ? (t.default_network || '') : '';
+        document.getElementById('hv-notes').value = t ? (t.notes || '') : '';
+        document.getElementById('hv-verify').checked = !!(t && t.verify_ssl);
+        document.getElementById('hv-enabled').checked = t ? !!t.enabled : true;
+        document.getElementById('hv-password').value = '';
+        document.getElementById('hv-token-secret').value = '';
+        document.getElementById('hv-ssh-password').value = '';
+        document.getElementById('hv-form-title').textContent =
+          t ? ('Edit ' + t.name) : 'Add a hypervisor';
+        syncBackendFields();
+      }
+
+      function showTest(d) {
+        var box = document.getElementById('hv-result');
+        if (!d.ok) {
+          box.innerHTML = '<div class="alert alert-danger small mb-0"><strong>Test failed.</strong> ' +
+            esc(d.error || 'unknown error') +
+            (d.detail ? '<div class="mt-1">' + esc(d.detail) + '</div>' : '') + '</div>';
+          return;
+        }
+        var c = d.capabilities || {};
+        function yn(v) {
+          return v ? '<span class="fw-badge fw-badge-success">yes</span>'
+                   : '<span class="fw-badge fw-badge-danger">no</span>';
+        }
+        var blocking = (c.blocking || []);
+        var cls = blocking.length ? 'alert-warning' : 'alert-success';
+        box.innerHTML = '<div class="alert ' + cls + ' small mb-0">' +
+          '<div class="fw-semibold mb-2">Connected — ' +
+            esc((d.info || {}).backend || '') + ' ' + esc((d.info || {}).version || '') + '</div>' +
+          '<div class="d-flex flex-wrap gap-3 mb-2">' +
+            '<span>create VM ' + yn(c.create_vm) + '</span>' +
+            '<span>power ' + yn(c.power_control) + '</span>' +
+            '<span>upload image ' + yn(c.upload_image) + '</span>' +
+            '<span>attach disk ' + yn(c.disk_import || c.ovf_import) + '</span>' +
+            '<span>serial console ' + yn(c.serial_console) + '</span>' +
+          '</div>' +
+          (blocking.length
+            ? '<div class="mb-2"><strong>Blocks an unattended (Full) run:</strong><ul class="mb-0">' +
+              blocking.map(function (b) { return '<li>' + esc(b) + '</li>'; }).join('') + '</ul></div>'
+            : '<div class="mb-2">Every step of an unattended run is available on this host.</div>') +
+          ((c.notes || []).length
+            ? '<ul class="mb-0 text-body-secondary">' +
+              c.notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul>'
+            : '') +
+          '</div>';
+      }
+
+      document.addEventListener('click', function (ev) {
+        var el = ev.target.closest('[data-hv-test],[data-hv-edit],[data-hv-toggle],[data-hv-del]');
+        if (!el || !root.contains(el)) { return; }
+        ev.preventDefault();
+        var id;
+        if ((id = el.getAttribute('data-hv-test'))) {
+          el.disabled = true;
+          document.getElementById('hv-result').innerHTML =
+            '<div class="text-muted small">Testing…</div>';
+          post('/settings/hypervisors/' + id + '/test').then(function (d) {
+            el.disabled = false; showTest(d); load();
+          });
+        } else if ((id = el.getAttribute('data-hv-edit'))) {
+          fill(TARGETS.filter(function (t) { return String(t.id) === String(id); })[0]);
+          document.getElementById('hv-name').focus();
+        } else if ((id = el.getAttribute('data-hv-toggle'))) {
+          post('/settings/hypervisors/' + id + '/toggle').then(load);
+        } else if ((id = el.getAttribute('data-hv-del'))) {
+          if (el.getAttribute('data-armed') !== '1') {
+            el.setAttribute('data-armed', '1');
+            el.textContent = 'Confirm';
+            setTimeout(function () {
+              el.removeAttribute('data-armed'); el.textContent = 'Delete';
+            }, 4000);
+            return;
+          }
+          post('/settings/hypervisors/' + id + '/delete').then(function (d) {
+            if (!d.ok) {
+              document.getElementById('hv-result').innerHTML =
+                '<div class="alert alert-warning small mb-0">' + esc(d.error) +
+                (d.detail ? '<div>' + esc(d.detail) + '</div>' : '') + '</div>';
+            }
+            load();
+          });
+        }
+      });
+
+      document.addEventListener('change', function (ev) {
+        if (ev.target && ev.target.id === 'hv-backend') { syncBackendFields(); }
+      });
+
+      document.getElementById('hv-reset').addEventListener('click', function () { fill(null); });
+
+      document.getElementById('hv-form').addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        post('/settings/hypervisors/save', new FormData(ev.target)).then(function (d) {
+          if (!d.ok) {
+            document.getElementById('hv-result').innerHTML =
+              '<div class="alert alert-danger small mb-0">' + esc(d.error) + '</div>';
+            return;
+          }
+          document.getElementById('hv-result').innerHTML =
+            '<div class="alert alert-success small mb-0">Saved. Use <strong>Test</strong> to see what ' +
+            'this host will actually permit.</div>';
+          fill(null);
+          load();
+        });
+      });
+
+      var btn = document.querySelector('[data-bs-target="#tab-hypervisors"]');
+      if (btn) {
+        btn.addEventListener('shown.bs.tab', function () {
+          if (!loaded) { loaded = true; load(); }
+        });
+      }
     })();
     </script>
   </div>

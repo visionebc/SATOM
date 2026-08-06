@@ -33,6 +33,7 @@ from xml.sax.saxutils import escape as xml_escape
 import httpx
 
 from .base import Capabilities, HypervisorClient, HypervisorError, VmRef, VmSpec
+from .esxi_shell import EsxiShell, ShellState
 
 VIM = "urn:vim25"
 NS = {"s": "http://schemas.xmlsoap.org/soap/envelope/", "v": VIM}
@@ -52,6 +53,7 @@ class EsxiClient(HypervisorClient):
 
     def __init__(self, **kw: Any):
         super().__init__(**kw)
+        self._shell: EsxiShell | None = None
         self._cookie: str | None = None
         self._content: dict[str, str] = {}
         self._about: dict[str, str] = {}
@@ -208,6 +210,61 @@ class EsxiClient(HypervisorClient):
                 "free": free, "evaluation_expired": expired,
                 "api_writable": not free}
 
+    # -- shell transport -------------------------------------------------
+    def shell(self) -> EsxiShell | None:
+        """The SSH transport for this target, or None if not configured.
+
+        Not configured is a first-class answer: it means the operator has not
+        given SATOM shell credentials, which is different from "SSH is off"
+        and different again from "SSH works". All three are reported
+        separately because they have three different remedies.
+        """
+        user = (self.options.get("ssh_user") or "").strip()
+        if not user:
+            return None
+        if self._shell is None:
+            self._shell = EsxiShell(
+                self.host, user,
+                self.options.get("ssh_password") or "",
+                port=int(self.options.get("ssh_port") or 22),
+                timeout=self.timeout)
+        return self._shell
+
+    def shell_state(self) -> ShellState:
+        """Probe the shell path. Runs a command; never infers from a port."""
+        sh = self.shell()
+        if sh is None:
+            return ShellState(
+                reachable=False,
+                error="no shell credentials configured for this target",
+                remedy="Add an SSH username and password to the hypervisor "
+                       "target in Settings > Hypervisors, then re-test.")
+        return sh.probe()
+
+    def _writer(self):
+        """Whichever transport can actually write, or raise saying why.
+
+        Order matters: the API is preferred when it is writable because it
+        needs no extra service enabled on the host. The shell is the fallback
+        for exactly the free-licence case.
+        """
+        try:
+            if self.license_info()["api_writable"]:
+                return None  # None == use the API path in EsxiClient
+        except HypervisorError:
+            pass
+        sh = self.shell()
+        if sh is None:
+            raise HypervisorError(
+                "this ESXi host will not accept writes over the API and no "
+                "shell transport is configured",
+                detail="The free vSphere Hypervisor licence makes the API "
+                       "read-only. Either assign a paid licence / manage the "
+                       "host through vCenter, or give SATOM SSH credentials "
+                       "for this target so it can use the host shell. "
+                       + EsxiShell.ENABLE_HINT)
+        return sh
+
     def capabilities(self) -> Capabilities:
         notes: list[str] = []
         try:
@@ -247,11 +304,31 @@ class EsxiClient(HypervisorClient):
             writable = False
             notes.append(f"licence state unreadable ({exc}) — write "
                          "operations treated as unavailable")
+        # The shell is a SECOND write path, not a nicer name for the first.
+        # It is only claimed after a command actually ran on it — a flag set
+        # from an open port would promise a pipeline that dies three steps in,
+        # after an address and a DNS row were already committed.
+        shell_ok = False
+        if not writable:
+            st = self.shell_state()
+            shell_ok = bool(st.reachable)
+            if shell_ok:
+                notes.append(
+                    "host shell reachable over SSH — SATOM will create, power "
+                    f"and delete machines with vim-cmd instead ({st.version})")
+            elif st.error:
+                notes.append("shell transport unavailable: " + st.error)
+                if st.remedy:
+                    notes.append(st.remedy)
+        can_write = writable or shell_ok
         return Capabilities(
-            create_vm=writable, delete_vm=writable, power_control=writable,
+            create_vm=can_write, delete_vm=can_write, power_control=can_write,
             list_networks=True, list_datastores=True,
-            upload_image=writable,  # /folder verified HTTP 200, still gated
-            ovf_import=writable, disk_import=False,
+            # /folder upload is a plain HTTPS PUT and is NOT part of the VIM
+            # API surface the licence gates; the shell can also stage a file.
+            upload_image=can_write,
+            ovf_import=writable,        # ImportVApp is API-only
+            disk_import=shell_ok,       # vmkfstools is shell-only
             serial_console=False,
             notes=tuple(notes),
         )
@@ -318,6 +395,10 @@ class EsxiClient(HypervisorClient):
                         "avail_gb": free // (1024 ** 3),
                         "total_gb": int(r.get("summary.capacity") or 0)
                         // (1024 ** 3),
+                        "can_disk": True,
+                        # A datastore is a filesystem: ESXi has no
+                        # per-storage content roles like Proxmox, so
+                        # both roles are always true here.
                         "can_import": True})
         return sorted(out, key=lambda x: -x["avail_bytes"])
 

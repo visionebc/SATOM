@@ -221,3 +221,176 @@ Watch for the two traps the live run exposed:
   retry collides with a vmid that is not free yet;
 * a capability record that was never probed against the endpoint will happily
   advertise writes on a read-only licence.
+
+## 7. Choosing a mode — advantages and disadvantages
+
+A factory Fortinet appliance boots into a first-boot dialog: `admin` with an
+empty password and a forced change. Nothing can reach its API until that dialog
+is completed. So "fully automatic" turns entirely on one question — **does the
+hypervisor expose a scriptable serial console?** Proxmox does (`termproxy`); a
+standalone ESXi does not, at any licence tier. Every mode below is a different
+answer to that fact.
+
+| Mode | What it does | Advantages | Disadvantages |
+|---|---|---|---|
+| **full** | Address, DNS, machine, boot, walks the first-boot dialog over the serial console, registers the appliance, hands off to the configuration profile. | No human step. Repeatable and auditable end to end; every action lands in the run log. | **Proxmox only** — needs an API serial console. Most moving parts, so the widest surface for a mid-run failure; this is what rollback exists for. |
+| **semi** | Builds and boots, then stops. The operator completes the first-boot dialog on the hypervisor console and resumes. | Works on **every** backend, including a free-licensed ESXi. The one manual step is the one a human is genuinely required for. | Not unattended — a run waits until somebody acts on it. |
+| **dhcp** | Builds and boots; the appliance takes a lease and SATOM finds it there. | Unattended without a serial console. | Needs DHCP reachable from the machine's network, and the address is not the one you chose. Not every appliance takes a lease on its factory configuration. |
+| **vm_only** | Creates and powers on the machine. Stops. | Smallest blast radius. Right when the appliance is configured by another team or tool. | No address, no DNS, no registration — nothing else in SATOM knows the machine exists. |
+| **config_only** | Skips machine creation: address, DNS, registration and profile against a machine that already exists. | Needs **no hypervisor at all**. The path for physical appliances and anything built outside SATOM. | You built the machine, so its CPU, memory, disk and network are outside the run log and outside the audit trail. |
+
+`MODE_STEPS` in `app/services/provision_runner.py` is the single source for
+these plans, and the UI renders the plan from it before anything runs. Adding a
+mode is one dict entry, not an `if` inside the loop.
+
+**Stopping is not failing.** `semi` and `vm_only` are *designed* to stop; the
+run lands in `paused` with its reason in `MODE_STOP_REASON` and the operator
+resumes it. Marking a deliberate handoff as `failed` teaches people to ignore
+the status column, and then they ignore the real failures too.
+
+## 8. The ESXi host-shell transport
+
+The free `esx.hypervisor.*` licence gates the **remote VIM API write methods**
+— `CreateVM_Task`, `PowerOnVM_Task`, `ImportVApp` — while every read keeps
+working. The host's own shell (`vim-cmd`, `vmkfstools`, `esxcli`) is a
+different code path inside ESXi and is not gated the same way. Give a target
+SSH credentials and `app/services/hypervisors/esxi_shell.py` becomes a second
+write path.
+
+| | API transport | Shell transport |
+|---|---|---|
+| Needs | nothing extra | `TSM-SSH` running on the host |
+| Create / power / delete | licence-gated | `vim-cmd` |
+| Attach a disk | `ImportVApp` (OVF only) | `vmkfstools -i` converts anything |
+| Advantage | no extra service, no extra credential | works on a free licence |
+| Disadvantage | unusable on a free licence | a permanent remote-root path on the hypervisor; the operator owns that decision |
+
+Three things the transport refuses to do, and why:
+
+1. **It never enables SSH itself.** Turning on `TSM-SSH` is a durable change to
+   the security posture of someone else's hypervisor. SATOM detects the state
+   and prints the one line to run. A capability probe that silently opens a
+   root shell to make its own feature work is the definition of a surprise.
+2. **It never claims the shell until a command has actually run on it.**
+   `EsxiShell.probe()` runs `vmware -v`. A flag set from "the port looks open"
+   would promise a pipeline that dies three steps later, after an address and a
+   DNS row were already committed.
+3. **It never interpolates operator input into a shell string.** Every value is
+   `shlex.quote`d and names are validated against `SAFE_NAME`. A VM called
+   `foo; rm -rf /vmfs` is rejected at the boundary, not escaped halfway down.
+   Commands are restricted to `ALLOWED_BINARIES`.
+
+**Honest status:** this path is [Probable], not [Verified], on the fleet host it
+was written against — `TSM-SSH` is `policy=off` there, so it has not been
+exercised end to end. `capabilities()` reports exactly that rather than
+assuming success.
+
+Even with the shell, **`full` stays unavailable on ESXi**: the only console is
+graphical (MKS), and a network serial port would itself be a config write. The
+ceiling on ESXi is `semi`.
+
+## 9. Two Proxmox storage roles that are not the same role
+
+Proxmox splits these across **different** storages, and nothing requires one
+storage to do both:
+
+* `images` — can hold a running VM disk (`can_disk`)
+* `import` — can receive an uploaded appliance image (`can_import`)
+
+On the fleet host the stock `local` storage carries `import` **without**
+`images`, while every LVM-thin pool carries `images` without `import`.
+
+`list_datastores()` originally filtered on `images` first and only then looked
+at `import`, so `local` was dropped before its import flag was ever read — and
+the capability probe told the operator to "add import to a storage" on a host
+that already had one. **Never narrow a list by one role while reporting on
+another.** `disk_datastores()` and `import_datastores()` now name the two
+questions separately, and the Test button prints both.
+
+## 10. `/cluster/resources` is a cache
+
+`list_vms()` used `/cluster/resources?type=vm`, an aggregate refreshed on
+`pvestatd`'s cycle. Verified: a machine SATOM had just created and powered on
+was **absent** from it, while the rollback that followed deleted the same
+machine without trouble. On a provisioning page that reads as "the machine was
+not created", which is the opposite of the truth.
+
+With a node in hand, `/nodes/<node>/qemu` answers from that node's own state and
+shows the machine immediately. The cached aggregate is kept only for the
+node-less, whole-cluster view, where it is the single-call option.
+
+Two more Proxmox behaviours worth keeping in mind:
+
+* `DELETE` returns a UPID. Without waiting on the task, rollback reports
+  "deleted" while the machine is still in the inventory, and a retry collides
+  with a vmid that is not free yet.
+* `destroy-unreferenced-disks=1` makes Proxmox scan **every** storage, so one
+  offline storage aborts the destroy halfway and leaves a guest with a config
+  file and no disks. The flag stays off; the machine's own disks are removed
+  regardless.
+
+## 11. Rollback undoes only what the run recorded
+
+Every arm is guarded by a **recorded fact**, never by looking at the world:
+
+* an address is released only when `ip_from_ipam` says SATOM took it — a
+  hand-typed address is not ours to hand back to a pool;
+* a machine is deleted only when `vm_ref` says SATOM built it;
+* an `Appliance` row created by the run is **left in place on purpose** and
+  named in the log. By the time onboarding happened the device was answering,
+  and deleting the record would orphan any harvest, snapshot or note already
+  attached to it.
+
+Inferring ownership from current state is how a rollback deletes somebody
+else's machine.
+
+## 12. Where the ADOM boundary is enforced
+
+`ProvisionRun.product` is stamped from the request scope, never from a form
+field: a run that could re-label its own ADOM would let a FortiADC session
+build a FortiWeb and file it under FortiWeb. From the Global ADOM — which has
+no single answer — the product is an explicit required choice.
+
+Filtering happens on the **query** (`product_scope.scope_query`), not in the
+template: a row hidden by a template is still a row the page fetched, and the
+JSON feed would return it. A run belonging to another ADOM answers **404**, not
+403 — from this ADOM it does not exist, and 403 would confirm that a run with
+that id exists somewhere.
+
+`device_provision` is deliberately **not** in `fortiweb_scoped`. Membership
+there means "opening this from Global is an ADOM jump into FortiWeb", which is
+right for `/workspace` and wrong for a page mirrored into every ADOM: it made
+the Global ADOM silently become FortiWeb, so a Global operator saw only
+FortiWeb runs and never got the product picker Global specifically needs.
+`firmware`, `monitoring` and `metrics` are the precedent.
+
+## 13. Do not mount a blueprint under `/provisioning`
+
+The legacy-URL shim in `create_app` rewrites every path beginning with
+`/provisioning` onto `/web/...` for the 2026-07-07 ADOM split. A blueprint
+mounted at `/provisioning/device` was rewritten to `/web/provisioning/device`,
+which matches no route — a 404 in Global and FortiWeb and a gate redirect
+elsewhere, with the blueprint registered correctly the whole time. Device
+provisioning lives at `/device-provisioning` for that reason.
+
+## 14. Verifying the guards are armed
+
+```sh
+# The two storage roles are asked separately, not conflated.
+grep -n "can_disk\|can_import" app/services/hypervisors/proxmox.py
+
+# The shell is only claimed after a command ran.
+grep -n "def probe" -A6 app/services/hypervisors/esxi_shell.py
+
+# The uniqueness check runs BEFORE the row joins the session (autoflush).
+grep -n "clash = HypervisorTarget" -B4 app/views/settings.py
+
+# Device provisioning is not a FortiWeb area.
+grep -c "device_provision" <<< "$(sed -n '/fortiweb_scoped = {/,/}/p' app/__init__.py)"   # -> 0
+
+# Every ADOM reaches it and sees only its own rows.
+for a in global fortiweb fortiadc fortianalyzer fortiauthenticator; do
+  curl -sk -H "X-ADOM: $a" "https://<node>/device-provisioning/data?_adom=$a" \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["scope"], len(d["runs"]))'
+done
+```

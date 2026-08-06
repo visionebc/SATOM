@@ -77,7 +77,7 @@
       <a href="#14-monitoring-fleet-health-metrics-probes">14. Monitoring: fleet health, metrics &amp;amp; probes</a>
       <a href="#15-automation">15. Automation</a>
       <a href="#16-reports-database-tools">16. Reports &amp;amp; database tools</a>
-      <a href="#17-the-fortiadc-workspace">17. The FortiADC workspace</a>
+      <a href="#17-product-workspaces">17. Product workspaces</a>
       <a href="#18-api-tokens">18. API tokens</a>
       <a href="#19-appearance-logo-colours-themes">19. Appearance: logo, colours &amp;amp; themes</a>
       <a href="#20-the-operator-console">20. The operator console</a>
@@ -97,7 +97,7 @@ codebase is assumed. For architecture and internals see the
 <ol>
 <li><a href="#1-signing-in--accounts">Signing in &amp; accounts</a></li>
 <li><a href="#2-core-concepts">Core concepts</a></li>
-<li><a href="#3-products-adoms">Products (ADOMs): Global, FortiWeb, FortiADC</a></li>
+<li><a href="#3-products-adoms">Products (ADOMs): Global, FortiWeb, FortiADC, FortiAuthenticator, FortiAnalyzer</a></li>
 <li><a href="#4-registering-and-operating-devices">Registering and operating devices</a></li>
 <li><a href="#5-server-policy">Server Policy</a></li>
 <li><a href="#6-cloning--migrating-policies">Cloning &amp; migrating policies</a></li>
@@ -111,7 +111,7 @@ codebase is assumed. For architecture and internals see the
 <li><a href="#14-monitoring-fleet-health-metrics--probes">Monitoring: fleet health, metrics &amp; probes</a></li>
 <li><a href="#15-automation">Automation: scheduled actions, change requests, jobs</a></li>
 <li><a href="#16-reports--database-tools">Reports &amp; database tools</a></li>
-<li><a href="#17-the-fortiadc-workspace">The FortiADC workspace</a></li>
+<li><a href="#17-product-workspaces">Product workspaces: FortiADC, FortiAuthenticator, FortiAnalyzer</a></li>
 <li><a href="#18-api-tokens">API tokens</a></li>
 <li><a href="#19-appearance-logo-colours--themes">Appearance: logo, colours &amp; themes</a></li>
 <li><a href="#20-the-operator-console">The operator console</a></li>
@@ -159,7 +159,7 @@ screen tracks progress and survives page navigation; the <strong>Jobs</strong> p
 <p><strong>Notifications.</strong> The bell in the top bar collects job results and system
 notices, scoped to the product you are working in.</p>
 <h2 id="3-products-adoms">3. Products (ADOMs)</h2>
-<p>The app hosts three workspaces, in the style of FortiManager ADOMs:</p>
+<p>The app hosts five workspaces, in the style of FortiManager ADOMs:</p>
 <table>
 <thead>
 <tr>
@@ -184,8 +184,21 @@ notices, scoped to the product you are working in.</p>
 <td><code>/adc/</code></td>
 <td>Load-balancer management: the FortiADC 8.0 GUI menu (Server LB, Link LB, Global LB, WAF, Network…), signatures, and an ADC API console</td>
 </tr>
+<tr>
+<td><strong>FortiAuthenticator</strong></td>
+<td><code>/fac/</code></td>
+<td>Identity and access: local/LDAP/RADIUS users and groups, FortiTokens, issued certificates, RADIUS and TACACS+ clients, and a FAC API console</td>
+</tr>
+<tr>
+<td><strong>FortiAnalyzer</strong></td>
+<td><code>/faz/</code></td>
+<td>Logging and analytics: Device Manager, FortiView, Log View, Incidents &amp; Events, Reports, and a JSON-RPC API console</td>
+</tr>
 </tbody>
 </table>
+<p>Each product workspace mirrors its appliance's own GUI menu, so an operator who
+knows the device knows where to look. §17 covers what each one adds beyond the
+shared pages.</p>
 <p>Switch ADOMs from the product selector or the <code>‹ Global</code> link at the top of
 each sidebar. <strong>The ADOM is per browser tab</strong> — you can keep FortiWeb open in
 one tab and FortiADC in another; switching in one tab never changes the other.
@@ -194,18 +207,31 @@ notifications, templates and appliances (and vice versa); Global sees all.</p>
 <h2 id="4-registering-and-operating-devices">4. Registering and operating devices</h2>
 <p><strong>Appliances</strong> (Administrator → Appliances, or Global dashboard):</p>
 <ol>
-<li><strong>Add appliance</strong> — name, host/IP, port, kind (fortiweb / fortiadc),
-   credentials (stored encrypted), TLS verification mode.</li>
-<li><strong>Test connection</strong> — validates REST reachability and credentials.</li>
-<li><strong>Discovery / Rediscovery</strong> — sweeps every registry endpoint and stores the
+<li><strong>Add appliance</strong> — name, host/IP, port, kind (fortiweb / fortiadc /
+   fortiauthenticator / fortianalyzer), credentials (stored encrypted), TLS
+   verification mode.</li>
+</ol>
+<blockquote>
+<p><strong>If a new appliance never syncs, check TLS verification first.</strong> An
+appliance that presents a self-signed certificate fails
+<code>CERTIFICATE_VERIFY_FAILED</code> <em>before it ever authenticates</em>, so the row
+sits at <code>unknown</code> forever with credentials that are perfectly good. Either
+import its CA under Settings → Trust store, or set verification off for
+that device. This is the single most common cause of a brand-new device
+that will not come online.</p>
+</blockquote>
+<p>FortiAuthenticator authenticates with a <strong>per-user API key</strong>, not the login
+   password: issue one by ticking <em>Web service access</em> on an Administrator
+   account on the unit, and store that key as the appliance password.
+2. <strong>Test connection</strong> — validates REST reachability and credentials.
+3. <strong>Discovery / Rediscovery</strong> — sweeps every registry endpoint and stores the
    device's full configuration in the local cache; also fills the hardware /
    firmware inventory. Run it after registering and after any large
-   out-of-band change.</li>
-<li><strong>Deep capture</strong> — a deeper sweep that walks each server policy's whole
+   out-of-band change.
+4. <strong>Deep capture</strong> — a deeper sweep that walks each server policy's whole
    object graph (pools, members, WAF profile sub-policies…). This is what
    powers the DB-first policy detail and the Architecture map. Can run
-   fleet-wide and is normally scheduled nightly.</li>
-</ol>
+   fleet-wide and is normally scheduled nightly.</p>
 <p>Each appliance's detail page is the hub for device-level actions:</p>
 <ul>
 <li><strong>VS/Policy Inspector</strong> — a tree report of each policy and everything it
@@ -394,15 +420,46 @@ you see FortiWeb material, in ADC the ADC material).</p>
 <li><strong>Fleet Objects</strong> — typed, cross-device object listings (server policies,
   WAF profiles, pools…) with filters and CSV export, plus a generic
   any-field search over the entire cache.</li>
-<li><strong>Analysis</strong> — FortiView traffic/sources per device with filtering, and an
-  assisted <strong>packet capture</strong> builder that runs the appliance sniffer over
-  SSH and hands you a Wireshark bundle (<code>.pcap</code> + TLS key log for decryption).</li>
-<li><strong>DNS &amp; LB Lookup</strong> — resolve any name against your configured DNS servers
+<li><strong>Analysis</strong> — <strong>product-specific by design.</strong> A load balancer, a WAF and
+  an identity server do not have the same failure modes, so each ADOM gets a
+  page written against the objects that product actually has. There is no
+  shared fallback: a workspace whose analyser is not written yet says so
+  instead of showing another product's empty panels.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>ADOM</th>
+<th>What Analysis shows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>FortiWeb</strong></td>
+<td>FortiView traffic/sources per device with filtering, plus an assisted <strong>packet capture</strong> builder that runs the appliance sniffer over SSH and hands you a Wireshark bundle (<code>.pcap</code> + TLS key log for decryption)</td>
+</tr>
+<tr>
+<td><strong>FortiADC</strong></td>
+<td>Delivery posture from the cached config: virtual servers and their published services, pools with member counts and <strong>health-check coverage</strong>, real servers, the security profiles each virtual server references (WAF / IPS / AV / DoS), client-SSL profiles and <strong>local certificate expiry</strong></td>
+</tr>
+<tr>
+<td><strong>FortiAuthenticator</strong></td>
+<td><strong>Entitlement first</strong> — licensed users, groups, FSSO and SSO-mobility seats used against their ceiling, FortiToken stock, then identity inventory (local/remote users, groups, RADIUS and TACACS+ clients, issued certificates) and unit posture</td>
+</tr>
+<tr>
+<td><strong>FortiAnalyzer</strong></td>
+<td>Its own FortiView group inside the workspace menu (§17.3)</td>
+</tr>
+</tbody>
+</table>
+<p>Every finding names the object it came from, and the page reads the local
+  cache only — it opens with the appliance switched off, and it keeps working
+  when the device's configuration API is refusing calls.
+- <strong>DNS &amp; LB Lookup</strong> — resolve any name against your configured DNS servers
   (AdGuard/OPNsense/etc., admin-configurable list) and simultaneously match it
   against the fleet's load-balancing config: which policy/virtual server
-  publishes it, with a mini policy→pool→backend graph and config deep links.</li>
-<li><strong>Monitoring / Metrics</strong> — see §14.</li>
-</ul>
+  publishes it, with a mini policy→pool→backend graph and config deep links.
+- <strong>Monitoring / Metrics</strong> — see §14.</p>
 <h2 id="14-monitoring-fleet-health-metrics-probes">14. Monitoring: fleet health, metrics &amp; probes</h2>
 <p>Monitoring lives in <strong>every</strong> workspace, not only Global. It is scoped by
 device kind, so the FortiWeb workspace shows FortiWeb appliances and nothing
@@ -491,6 +548,14 @@ or read-only CLI over SSH):</p>
 </tr>
 </tbody>
 </table>
+<p><strong>Not every kind fits every product, and the form says so rather than measuring
+zero.</strong> <em>Service policy</em>, <em>processor load</em> and <em>memory usage</em> are offered on
+FortiWeb, FortiADC and FortiAuthenticator; <em>interface</em> and <em>proxyd</em> are
+FortiWeb-only. On FortiAuthenticator, load and memory are read from the unit's
+<strong>REST</strong> status resource, not the CLI — the FAC shell answers
+<code>No such command.</code> to the performance summary, which is a <em>successful</em> round
+trip carrying no reading, exactly the kind of silence a monitor must never
+grade as healthy.</p>
 <h3 id="144-service-monitor-telemetry-over-the-api">14.4 Service monitor — telemetry over the API</h3>
 <p><code>Monitoring → Service monitor</code>. Same engine, no shell access — these read the
 appliance's monitoring API only, which means they keep working on a device
@@ -521,6 +586,30 @@ whose configuration API is refusing calls (an expired licence, typically):</p>
 </tr>
 </tbody>
 </table>
+<p>On <strong>FortiAuthenticator</strong> the ceiling is not bandwidth, it is entitlement, so
+the kinds are different:</p>
+<table>
+<thead>
+<tr>
+<th>Kind</th>
+<th>Unit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Licence headroom</strong></td>
+<td>% of the licensed user / group / FSSO / SSO-mobility seats consumed, with the free count spelled out</td>
+</tr>
+<tr>
+<td><strong>FortiToken pool</strong></td>
+<td>% of the imported token stock already assigned</td>
+</tr>
+</tbody>
+</table>
+<p>Both grade on <strong>percent consumed</strong> — same direction as every other probe in the
+product, so a threshold never has to be read backwards. A counter with no
+ceiling, or a pool with no tokens imported, reports <code>unknown</code>: neither is
+health.</p>
 <p>The page also groups results per device: a traffic card per appliance and a
 per-policy detail view, both served from stored samples.</p>
 <blockquote>
@@ -531,9 +620,11 @@ grades <em>sessions</em> — for HTTP front ends, watch the throughput probe ins
 </blockquote>
 <h3 id="145-creating-probes">14.5 Creating probes</h3>
 <ul>
-<li><strong>Discover from device</strong> offers four sets: published policies, a baseline,
-  one probe per interface, or the API telemetry set. Ports are picked from the
-  cached configuration, so the dialog opens with the appliance switched off.</li>
+<li><strong>Discover from device</strong> offers the sets that apply to that product:
+  published policies, a baseline, one probe per interface, or the API telemetry
+  set on FortiWeb; a baseline plus the entitlement set on FortiAuthenticator.
+  Ports and policy names are picked from the cached configuration, so the
+  dialog opens with the appliance switched off.</li>
 <li><strong>Interval must be a multiple of the sweep</strong> (3 minutes). A probe only fires
   when its own interval has elapsed <em>and</em> a sweep tick happens, so a 5-minute
   probe under a 3-minute sweep would really run every 6 minutes.</li>
@@ -601,7 +692,11 @@ boot.</p>
 <li><strong>Tables browser + SQL console</strong> — read-only introspection with sensitive
   columns masked.</li>
 </ul>
-<h2 id="17-the-fortiadc-workspace">17. The FortiADC workspace</h2>
+<h2 id="17-product-workspaces">17. Product workspaces</h2>
+<p>Beyond the shared pages (appliances, monitoring, backups, jobs, automation),
+each product ADOM carries its own menu, mirrored from the appliance's real GUI
+so the navigation matches what the device itself shows.</p>
+<h3 id="171-fortiadc">17.1 FortiADC</h3>
 <p>The <code>/adc/</code> ADOM mirrors the FortiADC 8.0 GUI menu: Server Load Balance, Link
 Load Balance, Global Load Balance, Web Application Firewall, Network Security,
 Network, Shared Resources, User Authentication, System, Log &amp; Report.</p>
@@ -618,6 +713,47 @@ Network, Shared Resources, User Authentication, System, Log &amp; Report.</p>
   VS inspector, discovery, SSH console with ADC presets, upgrade-prep health
   battery, SSH config backups. (Firmware flash / restore-apply have <strong>no REST
   transport on FortiADC</strong> — the UI states this rather than pretending.)</li>
+</ul>
+<h3 id="172-fortiauthenticator">17.2 FortiAuthenticator</h3>
+<p>The <code>/fac/</code> ADOM mirrors the six top-level groups the unit's own GUI declares:
+<strong>System</strong>, <strong>Authentication</strong>, <strong>Fortinet SSO</strong>, <strong>Monitor</strong>, <strong>Certificate
+Management</strong> and <strong>Logging</strong>.</p>
+<ul>
+<li><strong>The GUI is wider than the API, and the pages admit it.</strong> The unit advertises
+  58 REST resources, of which 40 answer a read; its menu has 129 leaves. Panes
+  with nothing behind them (Network, Portals, SAML IdP, LDAP Service, the
+  Monitor group, Certificate Authorities, Log Access…) render an explicit
+  <strong>"no endpoint bound"</strong> state and name which GUI leaves they cover. An empty
+  table would read as "nothing is configured" — which is a different, and
+  wrong, statement.</li>
+<li><strong>Read-only section pages.</strong> Writes go through the API console, where they are
+  dry-run by default, permission-gated and audited.</li>
+<li><strong>API console</strong> (bottom nav → API) — the registry-driven explorer over the
+  FAC catalogue, with live GETs and gated writes against a chosen device.</li>
+<li><strong>Analysis</strong> — entitlement, identity inventory and posture (see §13).</li>
+</ul>
+<blockquote>
+<p><strong>Two FortiAuthenticator quirks worth knowing.</strong> Its REST paths need the
+trailing slash (<code>/api/v1/&lt;resource&gt;/</code>), and secrets are genuinely
+<strong>write-only</strong>: RADIUS client secrets and local-user passwords are <em>absent</em>
+from read payloads, not masked — so they can never leak into the
+configuration source of truth.</p>
+</blockquote>
+<h3 id="173-fortianalyzer">17.3 FortiAnalyzer</h3>
+<p>The <code>/faz/</code> ADOM mirrors the FortiAnalyzer menu: <strong>Device Manager</strong>,
+<strong>FortiView</strong>, <strong>Log View</strong>, <strong>Fabric View</strong>, <strong>Incidents &amp; Events</strong>,
+<strong>FortiAI</strong>, <strong>Reports</strong> and <strong>System Settings</strong>.</p>
+<ul>
+<li>The unit speaks <strong>JSON-RPC</strong> on a single endpoint, in two dialects, and the
+  endpoint registry stores which one each URI needs — an upgrade that moves a
+  URI is a Registry edit, never a code change.</li>
+<li>Section pages read <strong>one tab per request</strong>, so a heavy log view never blocks
+  the rest of the page.</li>
+<li><strong>API console</strong> (bottom nav → API) — same registry-driven explorer, JSON-RPC
+  aware, with audited and permission-gated writes.</li>
+<li>Operational endpoints (alerts, incidents, log statistics, storage) are
+  deliberately <strong>excluded from the configuration source of truth</strong>: they change
+  between two reads of an idle unit and would defeat change detection.</li>
 </ul>
 <h2 id="18-api-tokens">18. API tokens</h2>
 <p>Administrators issue bearer tokens (API Tokens section) for the <code>/api/v1</code>

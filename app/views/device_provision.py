@@ -95,6 +95,7 @@ def index():
         mode_stop=MODE_STOP_REASON, install_images=fw,
         has_hypervisor=bool(targets),
         adom=getattr(g, "product", "") or "global",
+        kind_options=product_scope.device_products(),
     )
 
 

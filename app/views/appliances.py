@@ -21,6 +21,7 @@ from ..clients import client_for
 from ..services.audit import log_action
 from ..services import settings_store as store
 from ..services import datasheets
+from ..services import product_scope
 
 HW_TYPES = ("hardware", "vm", "unknown")
 HA_MODES = ("per_node", "vip")
@@ -127,6 +128,7 @@ def index():
                            appliances=pagination.items,
                            pagination=pagination, q=q,
                            total_count=total_count, kinds_count=kinds_count,
+                           kind_options=product_scope.creatable_kinds(),
                            classification=store.all_classification(),
                            has_snapshot=rediscovery.has_snapshot)
 
@@ -157,7 +159,14 @@ def detail(id):
 @require_permission(Permission.CONFIG_WRITE)
 def create():
     name = request.form.get('name', '').strip()
-    kind = request.form.get('kind', 'fortiweb').strip()
+    kind = request.form.get('kind', '').strip().lower()
+    # An ADOM creates its OWN product and nothing else. Trusting the posted
+    # field lets one field move a device into an ADOM the creator cannot see,
+    # which reads as a save that silently did nothing.
+    if not product_scope.may_assign_kind(kind):
+        allowed = ', '.join(n for _, n in product_scope.creatable_kinds())
+        flash(f'This ADOM can only add {allowed} appliances.', 'danger')
+        return redirect(url_for('appliances.index'))
     host = request.form.get('host', '').strip()
     port = int(request.form.get('port', 443) or 443)
     username = request.form.get('username', '').strip()
@@ -218,6 +227,7 @@ def create():
 def edit(id):
     appliance = visible_appliance_or_404(id)
     return render_template('appliances/edit.html', appliance=appliance,
+                           kind_options=product_scope.creatable_kinds(),
                            classification=store.all_classification())
 
 
@@ -227,7 +237,15 @@ def edit(id):
 def edit_save(id):
     appliance = visible_appliance_or_404(id)
     appliance.name = request.form.get('name', appliance.name).strip()
-    appliance.kind = request.form.get('kind', appliance.kind).strip()
+    # Guard the CHANGE, not the field: an unchanged kind is always allowed,
+    # so a legacy row whose kind no ADOM claims stays editable from Global.
+    new_kind = request.form.get('kind', appliance.kind or '').strip().lower()
+    if new_kind and new_kind != (appliance.kind or '').lower():
+        if not product_scope.may_assign_kind(new_kind):
+            flash('This ADOM cannot move an appliance to another platform.',
+                  'danger')
+            return redirect(url_for('appliances.edit', id=appliance.id))
+        appliance.kind = new_kind
     appliance.host = request.form.get('host', appliance.host).strip()
     appliance.port = int(request.form.get('port', appliance.port) or 443)
     appliance.username = request.form.get('username', appliance.username).strip()

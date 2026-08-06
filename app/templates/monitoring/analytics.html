@@ -75,6 +75,11 @@
       {% endfor %}
     </div>
 
+    {# Variable pickers. Rendered EMPTY and filled from the payload: their
+       options come from the metrics store's own label values, so a board that
+       hard-coded them here would go stale the moment a device is onboarded. #}
+    <div class="an-vars d-flex align-items-center gap-2" id="an-vars"></div>
+
     <span class="an-spacer"></span>
 
     <div class="an-ranges">

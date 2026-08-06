@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Fixed · 25 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Fixed · 26 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Fixed · 25 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Fixed · 26 entries.</p>
   <div class="callout" style="margin-top:18px;">
     <span class="cico">🗒️</span>
     <p><b>Generated from the changelog.</b> This page is one section of
@@ -200,6 +200,15 @@
   must resolve to real sections, section numbers must be a gapless sequence,
   every linked manual must exist, and every collector and provisioning mode in
   the code must be named in the section that explains it.</li>
+<li><strong>The provisioning section now carries the trade-offs, not just the steps.</strong>
+  Section 21 gained a backend comparison (Proxmox against ESXi, with the reason
+  <em>Full</em> is reachable on one and not the other at any licence tier), the ESXi
+  host-shell transport and what accepting it costs, the two Proxmox storage
+  roles that are routinely on different storages, an advantages/disadvantages
+  column for every mode, and where the management address comes from. Seven
+  provisioning entries were added to Troubleshooting. An operator choosing a
+  mode was previously told where each one stops but not what it costs, which
+  is the half of the decision that matters.</li>
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>

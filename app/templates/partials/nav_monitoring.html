@@ -20,7 +20,7 @@
    Collection moved OUT of here into Administrator (partials/nav_collection.html):
    it sets collection policy, it does not display a measurement.
    ========================================================================= #}
-<div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['monitoring','metrics','deep_monitor','service_monitor','monitor_analytics','monitor_reports'] }}" data-nav-subgroup="Monitoring">
+<div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['monitoring','metrics','analysis','deep_monitor','service_monitor','monitor_analytics','monitor_reports'] }}" data-nav-subgroup="Monitoring">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-activity fw-nav-icon"></i><span>Monitoring</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
 
@@ -38,6 +38,8 @@
 
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics' else '' }}" href="{{ url_for('metrics.index', _adom=product.key) }}">
       <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>Metrics</span></a>
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'analysis' else '' }}" href="{{ url_for('analysis.index', _adom=product.key) }}">
+      <i class="bi bi-graph-up fw-nav-icon"></i><span>Analysis</span></a>
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'deep_monitor' else '' }}" href="{{ url_for('deep_monitor.index', _adom=product.key) }}">
       <i class="bi bi-broadcast-pin fw-nav-icon"></i><span>Deep monitors</span></a>
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'service_monitor' else '' }}" href="{{ url_for('service_monitor.index', _adom=product.key) }}">

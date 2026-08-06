@@ -192,6 +192,38 @@ unpushed-commit count needs an upstream branch to be meaningful, so a detached
 HEAD or a branch with no upstream is reported as *cannot tell* rather than as
 zero. Zero would be a comforting number the check has no basis for.
 
+### Scratch that git can offer for staging is scratch that can be committed
+
+The same loss has a second, quieter path into the tree. Sessions leave hidden
+throwaway scripts at the repo root — `.patch_a.py`, `.smoke1.py`,
+`.runsuite.sh`. Untracked and un-ignored, they are exactly what an unrelated
+`git add -A` sweeps up, and that is how another session's work was swallowed by
+a commit titled *apply update package*. They also bury the real signal: a
+`git status` that lists thirty throwaways is one nobody reads closely enough to
+notice the one modified file that mattered.
+
+They are ignorable without judgement because a Python module name cannot begin
+with a dot — a dot-prefixed file at the repo root is never importable code, so
+it is always a throwaway. That is the same proof `diagnose code` uses to skip
+them when deciding whether a process is stale (§24); here it decides whether
+git may offer them for staging.
+
+| Guard | Prevents | Where |
+|---|---|---|
+| `/.[!.]*.{py,sh,log,rc}` ignored, **anchored to the repo root** | An unrelated `git add -A` committing another session's scratch; `git status` too noisy to read | `.gitignore` |
+| Guards assert through `git check-ignore --no-index`, never by grepping `.gitignore` | A rule that is present and wrong. The pattern syntax is git's, so only git can say whether a rule matches — and **without `--no-index` git refuses to report a tracked path as ignored**, which makes every "must not be ignored" assertion pass vacuously, even against a rule of `*` | `tests/test_template_staleness.py` |
+| No tracked file may match any ignore rule | A tracked file that works until someone deletes and re-adds it, then silently does not come back. This found a real one: unanchored `backups/` shadowed the tracked templates under `app/templates/backups/` | same |
+
+Verify the guards are armed:
+
+```bash
+cd /opt/satom
+git --no-optional-locks check-ignore -q --no-index -- .patch_a.py   # rc 0
+git --no-optional-locks check-ignore -q --no-index -- app/.probe.py # rc 1 (root-anchored)
+git --no-optional-locks ls-files | \
+  git --no-optional-locks check-ignore --no-index --stdin           # no output
+```
+
 ## 5. Writing to the appliances
 
 This is the part that can take a customer offline, so it has the most gates.
@@ -1425,6 +1457,26 @@ run whose whole target set is parked reports **skipped**, which does not feed th
 streak. A **manual** run still reaches them: you park a box precisely to work
 on it, and the default value of the kwarg is the safe one.
 
+**And a third path it never reached: the probe sweep.** `_resolve_targets`
+covers harvests. `deep_monitor.due_probes` filtered on `enabled` alone, so the
+sweep kept opening SSH and REST connections to parked boxes every few minutes.
+That stayed invisible while parked meant *broken*, and stopped being invisible
+once retired appliance rows had their IPs recycled: the sweep was authenticating
+against unrelated live hardware, which had a three-attempt admin lockout on the
+other end. **Host-key verification is what stopped it, not design.** The
+scheduled path now drops parked appliances; `force=True` — somebody pressing
+*Probe now* — still reaches them, the same split drawn above. A probe with no
+appliance row is a bare URL check and is never treated as parked: guessing the
+other way stops collecting and reads as healthy.
+
+The read-out had to follow. `get monitor status` counted every disabled probe
+as lost coverage, including the ones disabled *because* their appliance was
+parked — which is the correct response to parking it, not a loss. Fifteen such
+probes held that check at a permanent `FAIL`, and the first thing a permanent
+FAIL teaches is that the check can be ignored. They are now reported separately
+and do not grade. What still grades is a live probe in `crit`, which is the
+whole point: the exemption must not be able to mask a real failure.
+
 **Where:** `app/services/alerts.py` (`_check_actions`, `_RUN_WINDOW`,
 `K_CHK_ACTIONS`, `K_ACT_STREAK_CRIT`, `K_ACT_OVERDUE_H`),
 `app/services/scheduled_actions.py` (`_resolve_targets`, `_run_targets`,
@@ -1440,9 +1492,12 @@ from app import create_app; from app.services import alerts
 with create_app().app_context():
     print([f['key'] for f in alerts._check_actions()])"
 
-# 2. an automatic run does not touch a parked appliance
+# 2. an automatic run does not touch a parked appliance -- harvest OR probe
 runuser -u satom -- venv/bin/python3 -m pytest \
   tests/test_alerts_scheduled_actions.py tests/test_action_maintenance.py -q
+
+# 3. a parked box's disabled probes are not reported as lost coverage
+satom get monitor status | grep -i 'parked+disabled'
 ```
 
 ## 10. Fresh installs, and what an offline bundle can promise

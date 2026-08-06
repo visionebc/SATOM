@@ -1860,8 +1860,20 @@ def run_probe(probe, *, session=None) -> dict:
 
 
 def due_probes(*, session=None, force: bool = False) -> list:
-    """Enabled probes whose ``interval_min`` has elapsed (all of them if forced)."""
-    from ..models import MonitorProbe, db
+    """Enabled probes whose ``interval_min`` has elapsed (all of them if forced).
+
+    A ``force`` run is somebody pressing *Probe now*, so it reaches every
+    enabled probe — you park a device precisely in order to work on it.
+    The scheduled path skips probes whose appliance is in **maintenance**,
+    which is the same rule ``scheduled_actions._resolve_targets`` already
+    applies to harvests: parking a device silences its alerts and its
+    automatic runs, and until now it did not silence the one path that still
+    opened SSH and REST connections to it every few minutes.
+
+    A probe whose appliance row is missing is treated as NOT parked. Guessing
+    the other way would stop collecting and call it healthy.
+    """
+    from ..models import Appliance, MonitorProbe, db
 
     session = session or db.session
     rows = (session.query(MonitorProbe)
@@ -1869,6 +1881,11 @@ def due_probes(*, session=None, force: bool = False) -> list:
             .order_by(MonitorProbe.name).all())
     if force:
         return rows
+    parked = {
+        a.id for a in session.query(Appliance)
+        .filter(Appliance.maintenance.is_(True)).all()
+    }
+    rows = [p for p in rows if p.appliance_id not in parked]
     now = datetime.utcnow()
     out = []
     for p in rows:

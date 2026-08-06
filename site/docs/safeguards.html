@@ -424,6 +424,52 @@ nothing should: the operator is the authority on their own node. And an
 unpushed-commit count needs an upstream branch to be meaningful, so a detached
 HEAD or a branch with no upstream is reported as <em>cannot tell</em> rather than as
 zero. Zero would be a comforting number the check has no basis for.</p>
+<h3 id="scratch-that-git-can-offer-for-staging-is-scratch-that-can-be-committed">Scratch that git can offer for staging is scratch that can be committed</h3>
+<p>The same loss has a second, quieter path into the tree. Sessions leave hidden
+throwaway scripts at the repo root — <code>.patch_a.py</code>, <code>.smoke1.py</code>,
+<code>.runsuite.sh</code>. Untracked and un-ignored, they are exactly what an unrelated
+<code>git add -A</code> sweeps up, and that is how another session's work was swallowed by
+a commit titled <em>apply update package</em>. They also bury the real signal: a
+<code>git status</code> that lists thirty throwaways is one nobody reads closely enough to
+notice the one modified file that mattered.</p>
+<p>They are ignorable without judgement because a Python module name cannot begin
+with a dot — a dot-prefixed file at the repo root is never importable code, so
+it is always a throwaway. That is the same proof <code>diagnose code</code> uses to skip
+them when deciding whether a process is stale (§24); here it decides whether
+git may offer them for staging.</p>
+<table>
+<thead>
+<tr>
+<th>Guard</th>
+<th>Prevents</th>
+<th>Where</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/.[!.]*.{py,sh,log,rc}</code> ignored, <strong>anchored to the repo root</strong></td>
+<td>An unrelated <code>git add -A</code> committing another session's scratch; <code>git status</code> too noisy to read</td>
+<td><code>.gitignore</code></td>
+</tr>
+<tr>
+<td>Guards assert through <code>git check-ignore --no-index</code>, never by grepping <code>.gitignore</code></td>
+<td>A rule that is present and wrong. The pattern syntax is git's, so only git can say whether a rule matches — and <strong>without <code>--no-index</code> git refuses to report a tracked path as ignored</strong>, which makes every "must not be ignored" assertion pass vacuously, even against a rule of <code>*</code></td>
+<td><code>tests/test_template_staleness.py</code></td>
+</tr>
+<tr>
+<td>No tracked file may match any ignore rule</td>
+<td>A tracked file that works until someone deletes and re-adds it, then silently does not come back. This found a real one: unanchored <code>backups/</code> shadowed the tracked templates under <code>app/templates/backups/</code></td>
+<td>same</td>
+</tr>
+</tbody>
+</table>
+<p>Verify the guards are armed:</p>
+<pre><code class="language-bash">cd /opt/satom
+git --no-optional-locks check-ignore -q --no-index -- .patch_a.py   # rc 0
+git --no-optional-locks check-ignore -q --no-index -- app/.probe.py # rc 1 (root-anchored)
+git --no-optional-locks ls-files | \
+  git --no-optional-locks check-ignore --no-index --stdin           # no output
+</code></pre>
 <h2 id="5-writing-to-the-appliances">5. Writing to the appliances</h2>
 <p>This is the part that can take a customer offline, so it has the most gates.</p>
 <ul>
@@ -1790,6 +1836,24 @@ the "always red, therefore ignored" mode this document exists to prevent.
 run whose whole target set is parked reports <strong>skipped</strong>, which does not feed the
 streak. A <strong>manual</strong> run still reaches them: you park a box precisely to work
 on it, and the default value of the kwarg is the safe one.</p>
+<p><strong>And a third path it never reached: the probe sweep.</strong> <code>_resolve_targets</code>
+covers harvests. <code>deep_monitor.due_probes</code> filtered on <code>enabled</code> alone, so the
+sweep kept opening SSH and REST connections to parked boxes every few minutes.
+That stayed invisible while parked meant <em>broken</em>, and stopped being invisible
+once retired appliance rows had their IPs recycled: the sweep was authenticating
+against unrelated live hardware, which had a three-attempt admin lockout on the
+other end. <strong>Host-key verification is what stopped it, not design.</strong> The
+scheduled path now drops parked appliances; <code>force=True</code> — somebody pressing
+<em>Probe now</em> — still reaches them, the same split drawn above. A probe with no
+appliance row is a bare URL check and is never treated as parked: guessing the
+other way stops collecting and reads as healthy.</p>
+<p>The read-out had to follow. <code>get monitor status</code> counted every disabled probe
+as lost coverage, including the ones disabled <em>because</em> their appliance was
+parked — which is the correct response to parking it, not a loss. Fifteen such
+probes held that check at a permanent <code>FAIL</code>, and the first thing a permanent
+FAIL teaches is that the check can be ignored. They are now reported separately
+and do not grade. What still grades is a live probe in <code>crit</code>, which is the
+whole point: the exemption must not be able to mask a real failure.</p>
 <p><strong>Where:</strong> <code>app/services/alerts.py</code> (<code>_check_actions</code>, <code>_RUN_WINDOW</code>,
 <code>K_CHK_ACTIONS</code>, <code>K_ACT_STREAK_CRIT</code>, <code>K_ACT_OVERDUE_H</code>),
 <code>app/services/scheduled_actions.py</code> (<code>_resolve_targets</code>, <code>_run_targets</code>,
@@ -1802,9 +1866,12 @@ from app import create_app; from app.services import alerts
 with create_app().app_context():
     print([f['key'] for f in alerts._check_actions()])&quot;
 
-# 2. an automatic run does not touch a parked appliance
+# 2. an automatic run does not touch a parked appliance -- harvest OR probe
 runuser -u satom -- venv/bin/python3 -m pytest \
   tests/test_alerts_scheduled_actions.py tests/test_action_maintenance.py -q
+
+# 3. a parked box's disabled probes are not reported as lost coverage
+satom get monitor status | grep -i 'parked+disabled'
 </code></pre>
 <h2 id="10-fresh-installs-and-what-an-offline-bundle-can-promise">10. Fresh installs, and what an offline bundle can promise</h2>
 <p>The guards travel with the code. A node installed from the online path or from an

@@ -822,33 +822,122 @@ records the verdict.
 > **Capabilities are reported, never assumed.** A free-licensed ESXi host
 > answers the vSphere API *read-only*, so SATOM refuses to build through it and
 > says why — rather than failing halfway with "provisioning failed", which
-> sends you to the wrong end of the problem. Give that host shell credentials
-> (optional fields on the target; its SSH service must be enabled) and SATOM
-> builds over the host shell instead. Likewise a Proxmox storage without the
-> `import` content type cannot receive a disk image, and the page says so
+> sends you to the wrong end of the problem. Likewise a Proxmox storage without
+> the `import` content type cannot receive a disk image, and the page says so
 > instead of discovering it mid-run.
 
-### 21.2 Install media is not upgrade media
+**Test** is therefore worth reading rather than glancing at. It answers four
+questions, and each one closes off a different option:
+
+| The probe reports | If it is missing |
+|---|---|
+| Can create / power / delete a machine | nothing can be built here — only **Config only** remains |
+| Can receive an uploaded image | you must place the install image on the hypervisor yourself |
+| Has a serial console SATOM can drive | **Full** is unavailable; **Semi** is the ceiling |
+| Which storages and networks exist | the run form has nothing to offer you |
+
+### 21.2 Choosing a backend
+
+Both backends do the same job and they fail in different places. Neither is
+"better" — pick the one whose disadvantage you can live with.
+
+| | **Proxmox VE** | **VMware ESXi** |
+|---|---|---|
+| How SATOM talks to it | REST API, username + password | vSphere SOAP API |
+| Create / boot / delete | yes | **only on a paid licence**, or over the host shell (21.3) |
+| Upload an install image | yes, to a storage carrying the `import` role (21.4) | the file upload works; turning it into a machine is a licensed write |
+| Serial console SATOM can drive | **yes** | **no — at any licence tier** |
+| Highest mode reachable | **Full** | **Semi** |
+| Advantage | the only backend where a run can finish with nobody at the console | fits an existing VMware estate; no second virtualisation platform to operate |
+| Disadvantage | another platform to run if your estate is VMware | a free licence blocks the write API outright, and unattended first boot is impossible regardless of licence |
+
+> **Why "Full" is Proxmox-only, and why that is not a licensing question.** A
+> factory Fortinet appliance boots into a first-boot dialog — `admin`, empty
+> password, forced change — and **nothing can reach its API until that dialog
+> is completed**. Driving it needs a serial console SATOM can type into.
+> Proxmox exposes one. A standalone ESXi's only console is graphical, and
+> adding a network serial port to the machine would itself be a licensed
+> configuration write. Paying for ESXi unlocks the write API; it does not
+> create a console. On ESXi the ceiling stays **Semi**.
+
+### 21.3 When the write API is closed: the ESXi host shell
+
+A free ESXi licence gates the **remote API write calls** — create, power on,
+import — while every read keeps working. The host's own shell is a different
+path inside ESXi and is not gated the same way, so giving a target SSH
+credentials gives SATOM a second way to write.
+
+| | API transport | Shell transport |
+|---|---|---|
+| Needs | nothing beyond the account you already gave | the host's SSH service running, plus SSH credentials on the target |
+| Create / power / delete | blocked on a free licence | works |
+| Attach a disk image | OVF/OVA only | any format the host can convert |
+| Advantage | no extra service, no extra credential, nothing new exposed | a free-licensed host can build machines |
+| Disadvantage | unusable on a free licence | it is a **standing remote-root path into your hypervisor** — that is a security decision, and it is yours |
+
+Three things this path deliberately will not do:
+
+1. **It never switches SSH on for you.** Enabling it is a durable change to the
+   security posture of a machine SATOM does not own. The page detects the state
+   and tells you what to enable; it does not reach in and enable it.
+2. **It never claims the shell works until a command has actually run on it.**
+   A capability inferred from "the port looks open" would promise a run that
+   dies three steps later — after an address and a DNS record were already
+   committed.
+3. **It never puts what you typed into a shell command unquoted.** Machine
+   names are validated and every value is quoted, so a name containing shell
+   syntax is refused at the form rather than escaped somewhere downstream.
+
+> **Honest status:** on the host this was developed against, SSH is switched
+> off — so this transport is implemented and unit-tested but **has not been
+> exercised end to end against a live host**. The capabilities panel says
+> exactly that rather than reporting a confident yes.
+
+### 21.4 Two Proxmox storages, two different jobs
+
+Proxmox lets a storage declare what it may hold, and the two roles provisioning
+needs are frequently **on different storages**:
+
+- **`images`** — can hold a running machine's disk.
+- **`import`** — can receive an uploaded appliance image.
+
+A stock installation commonly has the default `local` storage carrying
+`import` but not `images`, while the thin pools carry `images` but not
+`import`. That is a working configuration, not a fault: the run form asks for
+both, and they are simply not the same answer.
+
+If **Test** reports that no storage can receive an image, add the `import`
+content type to a storage in *Datacenter → Storage* on the hypervisor, picking
+one with room for the appliance images you intend to keep. Nothing in SATOM can
+grant that — it is the hypervisor's own setting.
+
+### 21.5 Install media is not upgrade media
 
 Firmware → **Upload**, with kind **Install** and the hypervisor flavour: KVM /
 Proxmox (`.qcow2`) or VMware ESXi (`.ovf` / `.ova`). An upgrade `.out` applies
 to a *running* appliance and cannot build a machine — two different artefact
 families, kept apart on purpose.
 
-### 21.3 Modes
+### 21.6 Modes — advantages and disadvantages
 
 The product cannot promise unattended first boot on every hypervisor, so how
-far a run goes is a **choice**, not a guess.
+far a run goes is a **choice**, not a guess. Each mode is a different answer to
+the first-boot dialog described in 21.2.
 
-| Mode | Does | Where it stops |
-|---|---|---|
-| **Full** | create, boot, configure, onboard | needs an API serial console to drive the appliance's first-boot dialog |
-| **Semi** | create and boot | at the console: set the admin password and the management address, then resume the run |
-| **DHCP** | create and boot; the appliance takes a lease, SATOM finds it and continues | runs to the end |
-| **VM only** | create and boot, nothing else | as requested |
-| **Config only** | no hypervisor at all — reserve the address, issue the certificate, apply the profile | runs to the end; for a machine that already exists, including a physical one |
+| Mode | What it does | Advantages | Disadvantages |
+|---|---|---|---|
+| **Full** | Address, DNS, machine, boot, walks the first-boot dialog over the serial console, registers the appliance, applies the configuration profile. | No human step at all. Repeatable and auditable end to end — every action lands in the run log. | **Proxmox only.** The most moving parts, so the widest surface for a mid-run failure; this is what rollback exists for. |
+| **Semi** | Builds and boots, then stops. You complete the first-boot dialog on the hypervisor console and resume the run. | Works on **every** backend, including a free-licensed ESXi. The one manual step is the one a human is genuinely required for. | Not unattended — the run waits until somebody acts on it. |
+| **DHCP** | Builds and boots; the appliance takes a lease, SATOM finds it there and carries on. | Unattended without needing a serial console. | Needs DHCP reachable from that network, and the appliance ends up on an address you did not choose. Not every appliance takes a lease on its factory configuration. |
+| **VM only** | Creates and powers on the machine. Stops. | Smallest blast radius. The right choice when another team or tool configures the appliance. | No address, no DNS, no registration — nothing else in SATOM knows the machine exists until you add it. |
+| **Config only** | No hypervisor involved: reserve the address, issue the certificate, register and apply the profile against a machine that already exists. | Needs **no hypervisor at all** — the path for physical appliances and for anything built outside SATOM. | You built the machine, so its CPU, memory, disk and network are outside the run log and outside the audit trail. |
 
-### 21.4 Running one
+> **Stopping is not failing.** *Semi* and *VM only* are designed to stop. Such
+> a run lands as **paused** with its reason printed, and you resume it. Marking
+> a deliberate handoff as *failed* would teach everyone to ignore the status
+> column — and then they ignore the real failures too.
+
+### 21.7 Running one
 
 1. **New run** — name, mode, hypervisor, node / datastore / network, CPU, RAM,
    disk, management address (or tick **use IPAM**), admin account, install
@@ -859,15 +948,28 @@ far a run goes is a **choice**, not a guess.
    anything is created*. A run that cannot finish is **refused** with the
    blockers named — not started and then failed halfway.
 3. **Advance** walks the plan one step at a time and logs each step.
-4. **Stopping is not failing.** Semi and VM-only finish as **paused**, with the
-   reason printed verbatim, so *"why did it stop?"* never needs a support round
-   trip.
+4. A **paused** run is not a failed one — see 21.6. The reason is printed
+   verbatim, so *"why did it stop?"* never needs a support round trip.
 5. **Rollback undoes the run from what it recorded**, never from inspecting the
    world: the address is released only if SATOM allocated it (a hand-typed
    address belongs to whoever typed it), the machine is deleted only if a
    handle was written down, and a device that already reached **onboarded** is
    deliberately left registered — deleting it would orphan the configuration
    history already hanging off it.
+
+### 21.8 Where the address comes from
+
+Two options, and the choice changes what rollback is allowed to undo:
+
+| | You type the address | **Use IPAM** |
+|---|---|---|
+| Requires | nothing | an address-management provider configured in Settings, and the tick on this run |
+| Advantage | always available; you keep full control of the plan | no spreadsheet, no collision, and the record is created for you |
+| Disadvantage | you are responsible for the address being free | the run now depends on a second system being reachable |
+| On rollback | **left alone** — an address you chose is not SATOM's to release | released, because SATOM allocated it |
+
+IPAM is never implicit: with no provider configured the option is not offered,
+and with one configured it still applies only to a run you ticked it on.
 
 Backend detail, the capability matrix and the state machine:
 [docs/provisioning-hypervisors.md](provisioning-hypervisors.md).
@@ -950,3 +1052,10 @@ How packages are built and signed:
 | Scheduled actions all show *skipped (maintenance)* | Every target of that action is parked. Skipped does not count as a failure; unpark a device or retarget the action. |
 | A chart shows fewer points than expected over a long range | The server dropped to hourly or daily roll-ups; the footer states which table it drew. Raw samples are capped per probe by design. |
 | The console reports `nothing to repair` while files are clearly root-owned | The whole tree is root-owned, so the repair verb concludes the installation runs as root. Fix ownership manually, then re-run `satom diagnose privilege`. |
+| A hypervisor's **Test** says it cannot create machines | Expected on a free-licensed ESXi: the write API is licensed, reads are not. Either license the host (or put it behind vCenter), or give the target SSH credentials to build over the host shell (21.3). |
+| A Proxmox target reports that no storage can receive an image | No storage carries the `import` content type. Add it in *Datacenter → Storage* on the hypervisor — `images` and `import` are different roles and are often on different storages (21.4). |
+| **Full** is unavailable on an ESXi target | By design, and not a licensing problem: a standalone ESXi exposes no serial console SATOM can drive, so the first-boot dialog cannot be automated. Use **Semi** (21.2). |
+| A run was refused before creating anything | That is preflight working. The blockers are named on the page; a run that cannot finish is never started, so there is nothing to clean up. |
+| A run says **paused**, not finished | *Semi* and *VM only* stop on purpose. The reason is printed verbatim — do the console step, then resume. |
+| A machine SATOM just created is missing from the hypervisor's own list | Cluster-wide inventory in Proxmox is a cached aggregate and lags by seconds. Look at the node's own view, or wait for the refresh. The run log is authoritative about what was created. |
+| Rollback left the appliance registered | Deliberate: a device that reached *onboarded* keeps its registration, because deleting it would orphan the configuration history and captures already hanging off it. Remove it from the appliance list if you really want it gone. |

@@ -133,6 +133,15 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   must resolve to real sections, section numbers must be a gapless sequence,
   every linked manual must exist, and every collector and provisioning mode in
   the code must be named in the section that explains it.
+- **The provisioning section now carries the trade-offs, not just the steps.**
+  Section 21 gained a backend comparison (Proxmox against ESXi, with the reason
+  *Full* is reachable on one and not the other at any licence tier), the ESXi
+  host-shell transport and what accepting it costs, the two Proxmox storage
+  roles that are routinely on different storages, an advantages/disadvantages
+  column for every mode, and where the management address comes from. Seven
+  provisioning entries were added to Troubleshooting. An operator choosing a
+  mode was previously told where each one stops but not what it costs, which
+  is the half of the decision that matters.
 
 ### Fixed
 

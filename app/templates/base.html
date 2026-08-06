@@ -159,7 +159,7 @@
       </ul>
     </div>
 
-    {% if product.key in ('fortiweb', 'fortiadc', 'global') %}
+    {% if product.key in ('fortiweb', 'fortiadc', 'fortiauthenticator', 'global') %}
     <!-- Global search shortcut (sits just left of the bell) -->
     <a href="{{ url_for('search.index') }}"
        class="fw-topbar-btn" title="Search (/)">

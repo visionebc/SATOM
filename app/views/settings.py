@@ -602,10 +602,67 @@ from ..models_adom import Adom
 from .. import branding
 
 _ADOM_KEY_RE = _re.compile(r'^[a-z][a-z0-9_-]{1,63}$')
-# The three real ADOMs may be edited/deactivated but NOT deleted (their keys are
-# wired into URL scoping and would orphan data). Custom/placeholder ADOMs are
-# fully deletable.
-_ADOM_UNDELETABLE = {'global', 'fortiweb', 'fortiadc'}
+
+
+class _UndeletableAdoms:
+    """The ADOM keys Settings -> ADOMs refuses to delete.
+
+    Two sources, unioned on every membership test:
+
+    * :data:`CORE` -- ``global``/``fortiweb``/``fortiadc`` are wired into URL
+      scoping and would orphan data. They may be edited or deactivated, never
+      deleted.
+    * ANY ADOM that still owns registered appliances. An appliance's ``kind``
+      IS an ADOM key, so deleting that row silently un-manages every device
+      stamped with it: the boxes stay in the table, no product console can see
+      them any more, and nothing raises. This half used to be missing, which is
+      how ``fortiauthenticator`` and ``fortianalyzer`` -- both real products
+      with registered units -- stayed one POST away from disappearing.
+
+    Membership is computed per check, never cached, so onboarding the first
+    appliance of a product protects that product's ADOM immediately. A DB
+    failure degrades to :data:`CORE` (the pre-2026-08-06 behaviour) rather than
+    blocking every delete or, worse, allowing every delete.
+    """
+
+    CORE = frozenset({'global', 'fortiweb', 'fortiadc'})
+
+    def __contains__(self, key) -> bool:
+        k = (key or '').strip().lower()
+        if k in self.CORE:
+            return True
+        try:
+            from ..models import Appliance
+            return db.session.query(
+                Appliance.query.filter(Appliance.kind == k).exists()
+            ).scalar() is True
+        except Exception:  # noqa: BLE001 -- never break the settings page
+            return False
+
+    def appliance_count(self, key) -> int:
+        """How many registered appliances would be orphaned by the delete.
+
+        The refusal message needs this. Two different conditions land in the
+        same branch, and telling an operator that FortiAuthenticator is "a core
+        product" sends them looking for a flag that does not exist instead of
+        at the four devices they have to move first.
+        """
+        try:
+            from ..models import Appliance
+            return Appliance.query.filter(
+                Appliance.kind == (key or '').strip().lower()).count()
+        except Exception:  # noqa: BLE001 -- a count must not break the page
+            return 0
+
+    def __iter__(self):
+        return iter(sorted(self.CORE))
+
+    def __repr__(self) -> str:
+        return '_UndeletableAdoms(core=%r, plus any ADOM with appliances)' % (
+            sorted(self.CORE),)
+
+
+_ADOM_UNDELETABLE = _UndeletableAdoms()
 _LOGO_RASTER_EXT = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
 _LOGO_MAX_PX = 256   # rasters are fit within this box (aspect preserved)
 
@@ -754,8 +811,15 @@ def delete_adom(key):
     if not _is_admin():
         abort(403)
     if key in _ADOM_UNDELETABLE:
-        flash('The %r ADOM is a core product and cannot be deleted — '
-              'deactivate it instead.' % key, 'danger')
+        n = _ADOM_UNDELETABLE.appliance_count(key)
+        if n and key not in _UndeletableAdoms.CORE:
+            flash('The %r ADOM still has %d registered appliance%s and cannot '
+                  'be deleted — move or de-register them first, or deactivate '
+                  'the ADOM instead.' % (key, n, '' if n == 1 else 's'),
+                  'danger')
+        else:
+            flash('The %r ADOM is a core product and cannot be deleted — '
+                  'deactivate it instead.' % key, 'danger')
         return redirect(url_for('settings.index') + '#tab-adoms')
     adom = Adom.query.filter_by(key=key).first_or_404()
     db.session.delete(adom)

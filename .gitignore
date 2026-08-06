@@ -18,8 +18,11 @@ instance/
 *.bak
 *.bak-*
 
-# Host-only snapshots (may contain .env secrets) — never commit
-backups/
+# Host-only snapshots (may contain .env secrets) — never commit.
+# Anchored: unanchored, this also shadowed the tracked templates under
+# app/templates/backups/, which keep working only until someone deletes
+# and re-adds them. data/backups (the device vault) stays covered by /data/.
+/backups/
 
 # Phase 9 system backup bundles (binary, large)
 data/system_backups/
@@ -51,3 +54,15 @@ publication-rules.local.json
 # Retired git SoT (2026-08-05): the live tree moved to data/reports; the
 # old repo-root path survives only as an untracked compat symlink.
 /reports/
+
+# Root-level hidden scratch: .patch_a.py, .smoke1.py, .runsuite.sh, .suite.log...
+# A module name cannot start with a dot, so a dot-prefixed file at the repo root
+# is never importable code -- it is always a throwaway. Ignored for two reasons:
+# an unrelated `git add -A` cannot sweep another session's scratch into a commit
+# (it has, twice), and `git status` stays readable enough that real uncommitted
+# work is visible. Scoped to the repo root and to throwaway suffixes on purpose:
+# a broader rule would hide source. See docs/safeguards.md 4b and 24.
+/.[!.]*.py
+/.[!.]*.sh
+/.[!.]*.log
+/.[!.]*.rc

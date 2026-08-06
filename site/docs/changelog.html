@@ -450,6 +450,19 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   compares against the longest key declared in <code>branding._FALLBACK</code>, so a
   longer fifth product is caught the day it is declared.</p>
 </li>
+<li><strong>Maintenance now silences the probe sweep, not just alerts.</strong> A parked
+  appliance was still probed over SSH and REST every few minutes:
+  <code>deep_monitor.due_probes</code> filtered on <code>enabled</code> alone. Scheduled runs now
+  skip parked appliances; <em>Probe now</em> still reaches them, and a probe with no
+  appliance row (a bare URL check) is never treated as parked.</li>
+<li><strong><code>get monitor status</code> no longer calls a parked box's disabled probes lost
+  coverage.</strong> Disabling them is the correct response to parking the device, and
+  counting it as loss held the check at a permanent <code>FAIL</code>. A live probe in
+  <code>crit</code> still fails it.</li>
+<li>Root-level hidden scratch (<code>.patch_a.py</code>, <code>.runsuite.sh</code>) is git-ignored, so
+  an unrelated <code>git add -A</code> can no longer sweep another session's throwaway
+  into a commit. Anchoring this exposed a real one: unanchored <code>backups/</code> was
+  shadowing the tracked templates under <code>app/templates/backups/</code>.</li>
 </ul>
 <h2 id="141-2026-08-05">[1.4.1] - 2026-08-05</h2>
 <h3 id="fixed_1">Fixed</h3>

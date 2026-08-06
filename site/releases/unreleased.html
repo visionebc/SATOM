@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 42 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 45 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 42 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 45 entries.</p>
   <div class="callout" style="margin-top:18px;">
     <span class="cico">🗒️</span>
     <p><b>Generated from the changelog.</b> This page is one section of
@@ -432,6 +432,19 @@
   compares against the longest key declared in <code>branding._FALLBACK</code>, so a
   longer fifth product is caught the day it is declared.</p>
 </li>
+<li><strong>Maintenance now silences the probe sweep, not just alerts.</strong> A parked
+  appliance was still probed over SSH and REST every few minutes:
+  <code>deep_monitor.due_probes</code> filtered on <code>enabled</code> alone. Scheduled runs now
+  skip parked appliances; <em>Probe now</em> still reaches them, and a probe with no
+  appliance row (a bare URL check) is never treated as parked.</li>
+<li><strong><code>get monitor status</code> no longer calls a parked box's disabled probes lost
+  coverage.</strong> Disabling them is the correct response to parking the device, and
+  counting it as loss held the check at a permanent <code>FAIL</code>. A live probe in
+  <code>crit</code> still fails it.</li>
+<li>Root-level hidden scratch (<code>.patch_a.py</code>, <code>.runsuite.sh</code>) is git-ignored, so
+  an unrelated <code>git add -A</code> can no longer sweep another session's throwaway
+  into a commit. Anchoring this exposed a real one: unanchored <code>backups/</code> was
+  shadowing the tracked templates under <code>app/templates/backups/</code>.</li>
 </ul>
 <p class="rel-prevnext"><a href="v1.4.1.html">Version 1.4.1 →</a></p>
     </div>

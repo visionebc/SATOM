@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 1.3.5 — SATOM</title>
-<meta name="description" content="Released on 2026-08-04 — The node was never told which names it answers to · 5 entries.">
+<title>Version 1.6.0 — SATOM</title>
+<meta name="description" content="Released on 2026-08-07 — Added · Changed · Removed · Fixed · 21 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 1.3.5 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-08-04 — The node was never told which names it answers to · 5 entries.</p>
+  <h1>Version 1.6.0 <span class="rel-badge rel-now">current release</span></h1>
+  <p class="sub">Released on 2026-08-07 — Added · Changed · Removed · Fixed · 21 entries.</p>
 </header>
 
 <section class="wrap">
@@ -62,7 +62,7 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
-      <a class="rel-nav-item" href="v1.6.0.html" data-rel-version="1.6.0">
+      <a class="rel-nav-item is-active" href="v1.6.0.html" data-rel-version="1.6.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.6.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
         <span class="rel-nav-meta">2026-08-07 · Added · Changed · Removed · Fixed · 21 entries</span>
         <ul class="rel-leads"><li>FortiADC virtual servers</li><li>FortiAuthenticator identity inventory</li><li>FortiAnalyzer</li><li class="rel-more">… and 18 more</li></ul>
@@ -82,7 +82,7 @@
         <span class="rel-nav-meta">2026-08-05 · Added · Changed · Fixed · 27 entries</span>
         <ul class="rel-leads"><li>SATOM health and Device health are two pages</li><li>satom-metrics is a monitored unit</li><li>Device HA posture, derived from the harvest</li><li class="rel-more">… and 24 more</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v1.3.5.html" data-rel-version="1.3.5">
+      <a class="rel-nav-item" href="v1.3.5.html" data-rel-version="1.3.5">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.3.5</span></span>
         <span class="rel-nav-meta">2026-08-04 · The node was never told which names it answers to · 5 entries</span>
         <ul class="rel-leads"><li>proxy_set_header Host $host dropped the port</li><li>server_name and the node certificate&#x27;s SAN were both the short hostname</li><li class="rel-more">… and 3 more</li></ul>
@@ -150,33 +150,149 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="the-node-was-never-told-which-names-it-answers-to">The node was never told which names it answers to</h3>
-<p>Two defects, one root cause -- the installer guessed the served names from
-<code>hostname</code> (the short name) and minted two artefacts from that guess.</p>
+<h3 id="added">Added</h3>
 <ul>
-<li><strong><code>proxy_set_header Host $host</code> dropped the port.</strong> Flask-WTF compares the
-  browser's <code>Referer</code> -- port included -- against the origin the app believes it
-  is on, so behind a NAT or a proxy on a non-standard port <strong>every POST,
-  including the login, failed CSRF</strong> and reported an expired session. Invisible
-  on <code>:443</code>, where browsers omit the default port. Now <code>$http_host</code>, in the
-  installer and in <code>deploy/nginx-vhost.conf</code>.</li>
-<li><strong><code>server_name</code> and the node certificate's SAN were both the short hostname.</strong>
-  A node reached by FQDN answered only because the vhost also claimed
-  <code>default_server</code>, and its freshly issued certificate had no SAN for the name
-  the browser used. The installer now asks for the served DNS names in step 1
-  (default <code>hostname -f</code>, override <code>SATOM_SERVED_NAMES</code>) and feeds them to both.</li>
-<li><code>satom diagnose nginx</code> gains two verifications: any proxying vhost passing
-  <code>$host</code> is a failure, and the served certificate must cover every FQDN in
-  <code>server_name</code> (RFC 6125 wildcard matching -- one label, no bare apex).</li>
-<li>New <code>satom execute repair nginx [--yes]</code> brings an already-installed node to
-  the corrected shape, with backups, <code>nginx -t</code> and automatic rollback. The
-  vhost is not in git, so a code update alone could never carry the fix.</li>
-<li>The HTTPS redirect no longer pins an explicit <code>:443</code>.</li>
+<li>Monitoring is provisioned from <strong>one seam</strong>. Saving an appliance now creates
+  both its scrape targets and its threshold probes; until now <code>ensure_baseline</code>
+  was reachable only from <em>Discover</em>, so a device added through the form had
+  metrics and no thresholds and nothing said so.</li>
+<li><strong>FortiADC virtual servers</strong> (<code>vservers</code> collector). FortiADC has no
+  <code>monitor/</code> namespace — every guessed endpoint 404s — so the runtime surface
+  was censused from the appliance's own GUI bundle and verified live on 8.0.3.
+  <code>status_history/vs_status</code> carries the whole vdom in ONE call, so 500 virtual
+  servers cost one round trip. Interfaces extended to FortiADC.</li>
+<li><strong>FortiAuthenticator identity inventory</strong> (<code>identity</code> collector) — accounts,
+  groups, tokens, certificates, RADIUS/TACACS+ clients. Counted via Tastypie
+  <code>meta.total_count</code>, so a 50 000-user directory costs the same as an empty one.</li>
+<li><strong>FortiAnalyzer</strong> (<code>faz</code> collector) — log volume, storage, alerts, incidents,
+  registered devices and task queue. Counters only; no log body is ever
+  fetched. FortiAnalyzer previously had <strong>no collectors at all</strong>.</li>
+<li>
+<p><strong>Dashboard variables</strong> with two drill-down boards. One board answers for
+  every device in the fleet instead of one board per device, and the service
+  picker is <em>chained</em> to the device picker so it offers only what exists on the
+  selected appliance.</p>
+</li>
+<li>
+<p><strong>Search on the published manual.</strong> The hub carries a client-side index of
+  every published document and <strong>every h2/h3 heading in it</strong> — 573 headings
+  across 27 documents — so a result deep-links to the subsection rather than
+  dropping the reader at the top of a two-thousand-line page. The index is
+  derived from the same render that produces the pages, not from a second
+  parse, and is inlined rather than fetched: the site is published to a static
+  host we do not configure, and the publication leak scan only sees what the
+  build returns.</p>
+</li>
+<li><strong>Search across every release.</strong> The release notes index all 226 changelog
+  entries, and each result is labelled with the version it shipped in and
+  links into that release's own page. The version rail filters to the releases
+  that actually contain a hit, so the left side answers "which versions is
+  this in?" without reading the results.</li>
+<li><strong>Nine sections of the user guide that had no coverage at all</strong> — Studio
+  (custom views, plugins, Lua), High availability, AppIDs, a tab-by-tab
+  Settings reference, log collection and offline backup import, system
+  provisioning profiles and baselines, the template library and section
+  catalog, the endpoint registry and API explorer, and release notes. The
+  manual went from 23 sections to 32 and now says where to read what changed
+  in a version — it had never mentioned the changelog.</li>
 </ul>
-<p>The vhost is not in git, so an update alone cannot carry this fix to an
-installed node: run <code>satom execute repair nginx --yes</code>, or reinstall from
-this release. Releases 1.3 through 1.3.4 all emit the defective vhost.</p>
-<p class="rel-prevnext"><a href="v1.4.0.html">← Version 1.4.0</a> · <a href="v1.3.4.html">Version 1.3.4 →</a></p>
+<h3 id="changed">Changed</h3>
+<ul>
+<li><strong>The release notes are a rail and a panel, not a wall of cards.</strong> Versions
+  on the left, that version's changes on the right, newest first, opening on
+  the shipped version because "what is running on my node" is the question the
+  page is opened with. Each version page carries the whole rail, so "when did
+  this change?" stops being a scroll through the changelog.</li>
+<li><strong>The manual and the release notes read at 80% of the screen</strong> above
+  1400px. Only above: 80% of a 1280px screen is 1024px, which is <em>narrower</em>
+  than the 1120px it replaces, so widening unconditionally would have made the
+  manual harder to read on the machines most operators use. Marketing pages
+  stay narrow deliberately.</li>
+</ul>
+<h3 id="removed">Removed</h3>
+<ul>
+<li><strong>Lua Studio is no longer reachable from the FortiAuthenticator ADOM.</strong> It
+  was in the ADOM's blueprint set, but <code>LuaScript.TARGETS</code> is FortiWeb and
+  FortiADC — the unit is an identity store with no scripting object anywhere in
+  its API, so the page listed zero targets and zero devices. A page that can
+  only fail is worse than one that is not offered.</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li>
+<p>Dashboard variable values were escaped with <code>re.escape</code>, which escapes a
+  hyphen as <code>\-</code>. RE2 — the engine VictoriaMetrics uses — rejects that as an
+  invalid escape and answered <strong>HTTP 422</strong>. Every device and policy name in
+  this fleet contains a hyphen, so the common case was broken and the rare one
+  worked. Found end-to-end against the live store; a unit test on the escaper
+  alone could not see it, because the output is only invalid to the engine.</p>
+</li>
+<li>
+<p><strong>Entering the FortiAuthenticator ADOM landed on the FortiWeb home.</strong>
+  <code>_home_for()</code> had branches for FortiADC and FortiAnalyzer and then a
+  placeholder check; FortiAuthenticator stopped being a placeholder and fell
+  through to <code>fortiweb_home</code>. Every route into the ADOM — the product picker,
+  the sidebar, the device rail — silently opened the wrong product and then
+  pinned the session to it. <code>/fac/</code> was reachable only by typing the URL.</p>
+</li>
+<li><strong>The Global home page hardcoded two ADOMs.</strong> It shipped a stat-card for
+  FortiWeb and FortiADC and nothing else, and its fleet table could render only
+  those two kinds — so FortiAuthenticator and FortiAnalyzer units were
+  invisible on the one console meant to see everything. Cards and table now
+  come from the ADOM registry, so the next product appears without touching
+  this page; devices whose kind matches no active ADOM are listed too, because
+  Global is the only console that can see them.</li>
+<li><strong>An ADOM with registered appliances could be deleted.</strong> The guard was a
+  hardcoded set of three keys. An appliance's <code>kind</code> IS an ADOM key, so
+  deleting the row silently un-managed every device stamped with it: the boxes
+  stay in the table, no console can reach them, and nothing raises. The guard is
+  derived now — the three core keys plus any ADOM owning at least one
+  appliance, recomputed per check, so onboarding the first unit of a product
+  protects it immediately. The refusal also says which of the two reasons it
+  is, and how many appliances are in the way.</li>
+<li>The FortiAuthenticator ADOM had no top-bar search icon and no device-rail
+  link, though <code>search</code> was already in its blueprint set.</li>
+<li><strong>Table-of-contents entries were escaped twice</strong> — the sidebar of every
+  manual page rendered <code>Backups &amp;amp;amp; restore</code>, which a reader sees as a
+  literal entity. markdown's toc tokens arrive already HTML-escaped and were
+  escaped again on the way out. It only shows on a heading containing
+  <code>&amp; &lt; &gt; "</code>, which is why it survived until a search index inherited it.</li>
+<li><strong>A guard that counts workspaces was tied to the sentence, not the number.</strong>
+  It matched the exact string <code>The app hosts N workspaces</code>, so inserting one
+  adverb while rewriting the ADOM section made it stop guarding rather than
+  fail. It is anchored on the claim now (<code>&lt;number-word&gt; workspaces</code>) and checks
+  <strong>every</strong> occurrence — the count is stated twice, and only one of the two was
+  ever covered.</li>
+</ul>
+<h3 id="notes">Notes</h3>
+<ul>
+<li><strong>Service Monitor was NOT retired</strong>, though its four kinds are each covered
+  1:1 by a collector that does the same work in one call instead of N. The
+  alert engine has no reference to the metrics store and Collection has no
+  grading layer, so retiring it today would delete the "every backend behind
+  this policy is down" signal with nothing to replace it. Prerequisite: alert
+  rules evaluated over the store. See <code>docs/safeguards.md</code> §25c.</li>
+<li>
+<p>The FortiAnalyzer collector is <strong>unverified against live hardware</strong> (none
+  reachable since July 2026). Payload shapes are read defensively and an
+  unrecognised shape yields nothing rather than a plausible wrong number.</p>
+</li>
+<li>
+<p><strong>The <code>adoms</code> table beats <code>branding.py</code>, and one ADOM proves it.</strong> The
+  FortiAuthenticator entry seeds <code>cap_firmware</code>/<code>cap_naming</code>/<code>cap_regex</code> False
+  and carried a comment asserting they <em>stay</em> False; the live row has all three
+  on, set by an admin through Settings → ADOMs on 2026-08-05. The seed is
+  insert-only by design, so operator edits win — the comment was describing an
+  intent the registry had already overridden. The comment now says these are
+  seed defaults and points at the table. <strong>The row was left alone:</strong> overriding
+  an operator's own edit through the mechanism that promises to respect it
+  would be the actual bug. Live effect is narrow — <code>/naming/</code> and <code>/regex-lab/</code>
+  still redirect out of the FAC workspace (the blueprint gate, not the
+  capability, controls reachability); only the firmware library opens, and §17.2
+  now says so.</p>
+</li>
+</ul>
+<p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v1.5.0.html">Version 1.5.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

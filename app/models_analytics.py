@@ -83,13 +83,6 @@ class MonitorDashboard(db.Model):
     # options would be a copy of the fleet, and copies rot.
     variables = db.Column(db.Text, nullable=True, default="")
 
-    # Variables: JSON list of {name, label, label_key, match, allow_all}.
-    # Their OPTIONS are never stored — they are enumerated from the store's own
-    # label values on every render, so a newly onboarded device joins the
-    # picker with no edit and a retired one stops being offered. Storing the
-    # options would be a copy of the fleet, and copies rot.
-    variables = db.Column(db.Text, nullable=True, default="")
-
     # Board-level defaults a panel may override.
     default_range = db.Column(db.String(16), nullable=False, default="24h")
     refresh_s = db.Column(db.Integer, nullable=False, default=0)   # 0 = manual

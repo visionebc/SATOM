@@ -34,7 +34,8 @@
     charts: {},          // panelId -> Chart instance
     hidden: {},          // panelId -> {seriesIdx: true}
     timer: null,
-    busy: false
+    busy: false,
+    vars: {}           // variable name -> selected value
   };
 
   // ---------------------------------------------------------------- utils --
@@ -63,8 +64,63 @@
     } else {
       p.set('range', state.range);
     }
+    // Selections ride on EVERY request, the per-panel refresh included: a
+    // panel that resolves $device on load but not on refresh draws once and
+    // then errors, which reads as a store fault rather than a missing arg.
+    Object.keys(state.vars || {}).forEach(function (k) {
+      p.set('var_' + k, state.vars[k]);
+    });
     Object.keys(extra || {}).forEach(function (k) { p.set(k, extra[k]); });
     return p.toString();
+  }
+
+  function vesc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;',
+               '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function renderVars(list) {
+    var host = document.getElementById('an-vars');
+    if (!host) { return; }
+    if (!list || !list.length) { host.innerHTML = ''; return; }
+    var html = '';
+    list.forEach(function (v) {
+      var id = 'an-var-' + v.name;
+      html += '<label class="text-muted small mb-0" for="' + id + '">' +
+              vesc(v.label) + '</label>';
+      if (v.error) {
+        // A picker whose options could not be fetched must SAY so. Rendering
+        // it empty would look like a fleet with nothing in it.
+        html += '<span class="fw-badge fw-badge-danger" title="' +
+                vesc(v.error) + '">unavailable</span>';
+        return;
+      }
+      html += '<select class="form-select form-select-sm" id="' + id +
+              '" data-act="var" data-var="' + vesc(v.name) +
+              '" style="width:auto" data-an-scope>';
+      if (v.allow_all !== false) {
+        html += '<option value="$__all"' +
+                (v.value === '$__all' ? ' selected' : '') + '>All</option>';
+      }
+      (v.options || []).forEach(function (o) {
+        html += '<option value="' + vesc(o) + '"' +
+                (o === v.value ? ' selected' : '') + '>' + vesc(o) + '</option>';
+      });
+      html += '</select>';
+      if (v.truncated) {
+        html += '<span class="text-muted small" title="more values exist than ' +
+                'can be listed">(truncated)</span>';
+      }
+    });
+    host.innerHTML = html;
+    // Mirror the SERVER's resolved values back into state. The server is the
+    // authority on what a selection resolved to, so a value it refused must
+    // not survive in the client and be re-sent on the next request.
+    (list || []).forEach(function (v) {
+      if (!v.error) { state.vars[v.name] = v.value; }
+    });
   }
 
   function post(url, data) {
@@ -657,6 +713,7 @@
       .then(function (r) { return r.json(); })
       .then(function (payload) {
         if (!payload.ok) { throw new Error(payload.error || 'load failed'); }
+        renderVars(payload.variables);
         render(payload);
         var stamp = document.getElementById('an-window');
         if (stamp) {
@@ -917,6 +974,10 @@
     }
     if (t.id === 'an-refresh') {
       scheduleRefresh(parseInt(t.value, 10) || 0);
+    }
+    if (t.dataset && t.dataset.act === 'var') {
+      state.vars[t.dataset.var] = t.value;
+      load();
     }
   });
 

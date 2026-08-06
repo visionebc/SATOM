@@ -279,6 +279,22 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><strong><code>satom diagnose code</code> now sees the artifact gunicorn actually caches.</strong> It
+  compared the newest <code>.py</code> against each process start time, so a change that
+  touched only templates was invisible — and Jinja caches a compiled template
+  for the life of the worker, per worker and lazily, so an edit without a
+  restart leaves some workers serving the old markup and some the new. The
+  symptom is a page element that appears and vanishes with no pattern. Template
+  mtime is charged to the <strong>web</strong> process only (nothing else renders Jinja), the
+  read-out names which artifact moved, and the note names both the per-worker
+  cache and the fact that a <code>test_client</code> render — a fresh process reading from
+  disk — reports the change present while the running service serves it to
+  nobody.</li>
+<li><strong>Neither freshness scan counts an artifact no loader reads.</strong> The template
+  tree carries editor backups and the repo root collects hidden scratch scripts;
+  a module name cannot begin with a dot, so a hidden <code>.py</code> can never be
+  imported. Both were being reported as the newest artifact, sending the
+  operator to restart a service because of a throwaway file.</li>
 <li><code>alerts._check_devices</code> resolved capacity thresholds <strong>once for the whole
   fleet</strong> and passed the same pair to every appliance, which silently defeated
   per-product capacity limits for the one caller that actually sends the mail.</li>

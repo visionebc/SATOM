@@ -279,7 +279,7 @@ def test_report_fleet_section_reports_unavailable_store_honestly(app, monkeypatc
 def test_report_body_carries_the_fleet_section(app, monkeypatch):
     from app.services import monitor_reports as mrep
     monkeypatch.setattr(mrep, "fleet_section",
-                        lambda s, e: {"available": True, "metrics": [],
+                        lambda s, e, product=None: {"available": True, "metrics": [],
                                       "down_policies": [],
                                       "failed_collectors": [], "detail": ""})
     with app.app_context():

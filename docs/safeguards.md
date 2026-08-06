@@ -2396,6 +2396,48 @@ Guards: `tests/test_product_scope_isolation.py`, parametrised over
 product is covered without an edit. An anti-vacuity test fails if that set ever
 comes back empty.
 
+### 19b. Hiding a row is not scoping it, and a form is not a rule
+
+The same product raised three more (2026-08-06), all on the appliance
+inventory, and all silent:
+
+* **The platform roster was a hardcoded list.** "New appliance" offered exactly
+  three platforms, written by hand in four places -- two selects and a filter on
+  the index page, one more on the standalone edit page. FortiAuthenticator had
+  been a real product for a day and was in none of them, so its ADOM could not
+  onboard its own devices from the UI. Nothing failed; the option was simply
+  absent.
+* **Every ADOM offered every platform.** Choosing a foreign one saved a device
+  the creating session could not see the moment it was saved -- the row landed
+  in another ADOM and the operator read it as a save that did nothing.
+* **The by-id loader had no product filter at all.** `visible_appliances()`
+  scoped the LIST while `visible_appliance_or_404()` read the table directly, so
+  detail, edit, delete, backups and console answered 200 for another product's
+  device to anyone who knew the id.
+
+The rules:
+
+* **A page that hides a row and serves it one URL away is not scoped, it is
+  decorated.** The list filter and the by-id loader must apply the SAME rule;
+  the loader is the one that enforces it, because it is the one an URL reaches.
+* **The roster is derived, never written.** An appliance's `kind` IS an ADOM
+  key, so the platform roster is `product_scope.device_products()` read from the
+  registry. A fifth product is offerable the day it is declared.
+* **A concrete ADOM offers exactly one platform: its own.** Where there is only
+  one, the kind filter is not rendered at all -- a control that can only ever be
+  a no-op teaches the operator to ignore the toolbar.
+* **The form is a hint; the server is the rule.** `may_assign_kind()` re-checks
+  the posted `kind` on create and on edit. Without it the field is a one-field
+  ADOM jump.
+* **Guard the CHANGE, not the field.** An unchanged kind is always accepted, so
+  a legacy row whose kind no ADOM claims stays editable from Global, and the
+  edit form keeps the row's own platform selectable even where the active ADOM
+  does not offer it -- otherwise saving any other field re-kinds the device.
+
+Guards: `tests/test_appliance_adom_scope.py`, parametrised over the product
+ADOMs, plus a structural test that no template emits a hardcoded platform
+`<option>`. All five mutations bite.
+
 ## 20. Trusting a device means naming its CA, not disabling the check
 
 `Appliance.verify_ssl` had exactly two settings: validate against the PUBLIC
@@ -2717,6 +2759,20 @@ body of the check and confirm no git invocation survives inside it:
 
 And a parked box must be silent: drop the `maintenance` test from the loop and
 `tests/test_health_freshness_and_drift.py` fails.
+
+### The appliance roster is per-ADOM, list AND by-id (19b)
+
+No template may name a platform in an option value -- that list is derived:
+
+    grep -rn 'option value="forti' app/templates/ | wc -l
+    # expect 0
+
+Then check the two halves separately, because the list was already correct
+while the by-id route was not. Inside one product ADOM, the index must show
+only that product, and another product's appliance id must answer 404:
+
+    curl -sk -H 'X-ADOM: fortiweb' https://<node>/appliances/<a-fortiadc-id>
+    # expect 404, not 200 and not 403
 
 ### An ADOM shows only its own product (19)
 

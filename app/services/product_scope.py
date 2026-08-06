@@ -132,6 +132,62 @@ def scope_query(query, column):
     return query.filter(column == p)
 
 
+# ── device kinds (the appliance roster an ADOM may show / create) ───────────
+# An appliance's ``kind`` IS an ADOM key, so the roster of kinds is the roster
+# of product ADOMs. Deriving it here is the same rule the module docstring
+# already argues for the key set: a hardcoded list in a form is how
+# FortiAuthenticator ended up unofferable in "New appliance" for a day after it
+# became a real product, with nothing raising — the option was simply absent.
+_FALLBACK_DEVICE_PRODUCTS = (
+    (FORTIWEB, "FortiWeb"),
+    (FORTIADC, "FortiADC"),
+    (FORTIAUTHENTICATOR, "FortiAuthenticator"),
+    (FORTIANALYZER, "FortiAnalyzer"),
+)
+
+
+def device_products() -> tuple[tuple[str, str], ...]:
+    """``((key, display name), ...)`` for every ACTIVE product ADOM, in
+    registry order. ``global`` is excluded: it is a console, not a device."""
+    try:
+        from ..branding import all_adoms
+        out = []
+        for row in all_adoms():
+            key = str(row.get("key") or "").strip().lower()
+            if not key or key == GLOBAL or not row.get("active", True):
+                continue
+            out.append((key, str(row.get("name") or key)))
+        if out:
+            return tuple(out)
+    except Exception:  # noqa: BLE001 — scoping must never break a caller
+        pass
+    return _FALLBACK_DEVICE_PRODUCTS
+
+
+def creatable_kinds() -> tuple[tuple[str, str], ...]:
+    """The kinds the ACTIVE session may put on an appliance.
+
+    A concrete ADOM gets exactly ONE: its own. Offering the others there
+    creates a device the creating session cannot see the moment it is saved —
+    the row lands in a different ADOM and the operator reads it as a failed
+    save. Global, which sees everything, gets the full roster."""
+    everything = device_products()
+    p = session_product()
+    if p not in concrete_products():
+        return everything
+    mine = tuple(t for t in everything if t[0] == p)
+    # An ADOM deactivated mid-session still has to be able to name itself,
+    # or its console would render a form with no platform to choose.
+    return mine or ((p, p),)
+
+
+def may_assign_kind(kind: str | None) -> bool:
+    """Server side of :func:`creatable_kinds`. The form is a hint; this is the
+    rule. Without it, a posted ``kind`` field is a one-field ADOM jump."""
+    k = (kind or "").strip().lower()
+    return bool(k) and k in {key for key, _ in creatable_kinds()}
+
+
 def scope_appliance_query(query, kind_column):
     """Scope an Appliance query by device KIND: a concrete ADOM sees only the
     boxes of its own product; the FortiWeb ADOM also sees NULL/'' kinds

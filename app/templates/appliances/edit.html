@@ -11,9 +11,15 @@
     <div class="col-md-6"><label class="form-label">Name</label><input type="text" name="name" class="form-control" value="{{ appliance.name }}" required></div>
     <div class="col-md-6"><label class="form-label">Kind</label>
       <select name="kind" class="form-select">
-        <option value="fortiweb" {{ 'selected' if appliance.kind=='fortiweb' }}>FortiWeb</option>
-        <option value="fortiadc" {{ 'selected' if appliance.kind=='fortiadc' }}>FortiADC</option>
-        <option value="fortianalyzer" {{ 'selected' if appliance.kind=='fortianalyzer' }}>FortiAnalyzer</option>
+        {% set offered = (kind_options or [])|map(attribute=0)|list %}
+        {% for key, label in (kind_options or []) %}
+        <option value="{{ key }}" {{ 'selected' if appliance.kind == key }}>{{ label }}</option>
+        {% endfor %}
+        {# Keep the device's own platform selectable even where this ADOM does
+           not offer it — otherwise saving any other field re-kinds the row. #}
+        {% if appliance.kind and appliance.kind not in offered %}
+        <option value="{{ appliance.kind }}" selected>{{ appliance.kind }}</option>
+        {% endif %}
       </select>
     </div>
     <div class="col-md-8"><label class="form-label">Host</label><input type="text" name="host" class="form-control" value="{{ appliance.host }}" required></div>

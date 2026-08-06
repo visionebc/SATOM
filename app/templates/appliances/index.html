@@ -75,12 +75,14 @@
     <input type="text" id="tableSearch" name="q" value="{{ q or '' }}"
            placeholder="Search appliances… (Enter = whole fleet)">
   </form>
+  {# One platform in this ADOM = a filter that can only ever be a no-op.
+     Rendered from the ADOM registry, never a hardcoded list. #}
+  {% if (kind_options or [])|length > 1 %}
   <select class="form-select form-select-sm" style="width:auto;" id="kindFilter">
     <option value="">All Kinds</option>
-    <option value="fortiweb">FortiWeb</option>
-    <option value="fortiadc">FortiADC</option>
-    <option value="fortianalyzer">FortiAnalyzer</option>
+    {% for key, label in kind_options %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
   </select>
+  {% endif %}
   <button class="btn btn-fw-outline btn-sm" data-js="refresh-page">
     <i class="bi bi-arrow-clockwise me-1"></i>Refresh
   </button>
@@ -245,11 +247,12 @@
             <div class="col-md-6">
               <label class="fw-form-label">Kind <span class="text-danger">*</span></label>
               <select class="form-select fw-form-control" name="kind" required>
-                <option value="">Select platform…</option>
-                <option value="fortiweb">FortiWeb</option>
-                <option value="fortiadc">FortiADC</option>
-                <option value="fortianalyzer">FortiAnalyzer</option>
+                {% if (kind_options or [])|length != 1 %}<option value="">Select platform…</option>{% endif %}
+                {% for key, label in (kind_options or []) %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
               </select>
+              {% if (kind_options or [])|length == 1 %}
+              <div class="form-text mt-1"><i class="bi bi-shield-lock me-1"></i>This ADOM manages {{ kind_options[0][1] }} only. Use the Global ADOM to add other platforms.</div>
+              {% endif %}
             </div>
             <div class="col-md-8">
               <label class="fw-form-label">Host / IP <span class="text-danger">*</span></label>
@@ -364,9 +367,7 @@
             <div class="col-md-6">
               <label class="fw-form-label">Kind</label>
               <select class="form-select" name="kind" id="edit-kind">
-                <option value="fortiweb">FortiWeb</option>
-                <option value="fortiadc">FortiADC</option>
-                <option value="fortianalyzer">FortiAnalyzer</option>
+                {% for key, label in (kind_options or []) %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
               </select>
             </div>
             <div class="col-md-8">
@@ -467,7 +468,14 @@ function filterTable(query) {
 
 function openEditModal(appliance) {
   document.getElementById('edit-name').value     = appliance.name || '';
-  document.getElementById('edit-kind').value     = appliance.kind || 'fortiweb';
+  // Add the row's own kind if this ADOM does not list it, so opening the
+  // modal never rewrites the platform of the device being edited.
+  var kindSel = document.getElementById('edit-kind');
+  var wanted  = appliance.kind || '';
+  if (wanted && !Array.from(kindSel.options).some(function (o) { return o.value === wanted; })) {
+    kindSel.add(new Option(wanted, wanted));
+  }
+  kindSel.value = wanted;
   document.getElementById('edit-host').value     = appliance.host || '';
   document.getElementById('edit-port').value     = appliance.port || 443;
   document.getElementById('edit-username').value = appliance.username || '';

@@ -155,10 +155,9 @@
         <label class="form-label small">Product</label>
         <select class="form-select form-select-sm" name="product" required>
           <option value="">— pick one —</option>
-          <option value="fortiweb">FortiWeb</option>
-          <option value="fortiadc">FortiADC</option>
-          <option value="fortianalyzer">FortiAnalyzer</option>
-          <option value="fortiauthenticator">FortiAuthenticator</option>
+          {# Derived from the ADOM registry: a hardcoded roster here is how
+             a shipped product becomes unofferable with nothing raising. #}
+          {% for key, label in (kind_options or []) %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
         </select>
         <div class="form-text">Decides what kind of appliance is registered.</div>
       </div>

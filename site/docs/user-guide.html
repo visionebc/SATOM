@@ -547,11 +547,23 @@ unexplained:</p>
 <p>Appliances in <strong>maintenance</strong> are marked as such and are skipped by automatic
 runs and by their alerts. That is the correct way to silence a box you know is
 down — not lowering the alert floor.</p>
-<p>In the Global workspace the same page also carries <strong>Infrastructure health</strong>
-(cluster peers, repository, external backup server, database, systemd units,
-redundancy) and <strong>Encryption in transit</strong>, where every badge is backed by a
-live probe rather than by configuration. Those sections are absent from a
-product workspace by design.</p>
+<p>Fleet health is <strong>two pages</strong>, because a number is read as a claim about the
+page it sits on:</p>
+<ul>
+<li><strong>Device health</strong> (<code>/monitoring/</code>) — the appliance cards above. Present in
+  every workspace, scoped to that workspace's device kind.</li>
+<li><strong>SATOM health</strong> (<code>/monitoring/satom</code>) — the installation itself: cluster
+  peers, repository, external backup server, database, systemd units,
+  redundancy, <strong>the host machine</strong> and <strong>Encryption in transit</strong>, where every
+  badge is backed by a live probe rather than by configuration. <strong>Global only</strong>
+  — a product workspace does not reach it, because those cards carry node
+  hostnames and infrastructure addresses.</li>
+</ul>
+<p>The <strong>host machine</strong> row grades disk, memory and load <strong>on both HA nodes</strong>, and
+it exists because nothing in the product used to measure its own box. Its
+limits live in Settings → Thresholds under the <em>SATOM machine</em> scope. Disk turns
+critical at 92 %, deliberately below 95: a full filesystem stops PostgreSQL
+writing WAL, so the alert has to arrive while there is still room to act on it.</p>
 <h3 id="142-metrics-how-much-does-it-hold">14.2 Metrics — <em>how much does it hold?</em></h3>
 <p>Inventory counts, audit activity and change history for the active workspace,
 plus daily series where the product supports them. Nothing here touches an
@@ -812,6 +824,65 @@ coarser data while looking exactly like one built on time.</p>
   outage.</li>
 <li>A period with no samples reports <strong>unknown</strong>, not a healthy zero.</li>
 </ul>
+<h3 id="1410-thresholds-declare-a-limit-once">14.10 Thresholds — declare a limit once</h3>
+<p>Settings → <strong>Thresholds</strong> (admin). Before this page every limit lived on an
+individual probe, so tuning a fleet meant editing each monitor by hand; in
+practice nobody did, and all 42 production probes sat on the same factory
+number regardless of what they were watching.</p>
+<p><strong>Six scopes</strong>, picked from the selector at the top: the four product ADOMs
+(FortiWeb, FortiADC, FortiAnalyzer, FortiAuthenticator), <strong>SATOM</strong> the
+application, and the <strong>SATOM machine</strong>. Each scope carries three blocks.</p>
+<p><strong>Measurement limits</strong> — CPU, memory, sessions, throughput, transactions,
+licence and token headroom, interface staleness, TLS expiry, response time.</p>
+<p><strong>Device roll-up</strong> — what makes an <em>appliance</em> critical rather than a single
+reading: the cache-age budget, its critical multiplier, the harvest failure
+streak, and the capacity percentages. These used to be constants in the source.</p>
+<p><strong>Binary facts and mute</strong> — see below.</p>
+<h4 id="how-a-number-is-chosen">How a number is chosen</h4>
+<pre><code>the probe's own column        ← only if the operator typed one there
+  ↓ empty
+the product scope's value     ← what you set on this page
+  ↓ unset
+the factory default           ← documented in code, never a crash
+</code></pre>
+<p>Two states that look alike and are not:</p>
+<ul>
+<li><strong>Empty</strong> means <em>inherit</em>. Change the product value and every probe that
+  nobody has touched moves with it, immediately.</li>
+<li><strong><code>0</code></strong> means <em>this level is switched off</em>. It is a decision, and inheritance
+  never overwrites it.</li>
+</ul>
+<p>Newly discovered probes are created <strong>empty</strong>, so they inherit. If they were
+stamped with a literal they would be frozen at birth and this page would only
+ever affect probes that do not exist yet.</p>
+<h4 id="every-grade-says-where-its-number-came-from">Every grade says where its number came from</h4>
+<p>Both probe pages print the resolved limit <strong>and its origin</strong> — <code>set on this
+probe</code>, <code>inherited from FortiWeb</code>, or <code>factory default</code>. Live inheritance means
+a probe you never edited can change severity because someone edited a product
+default; without the origin printed, that critical would appear with no visible
+cause. Each probe also has a <strong>revert to inherited</strong> control, which clears the
+column rather than writing the current value back into it.</p>
+<h4 id="binary-facts">Binary facts</h4>
+<p>Some conditions have nothing to compare against: <em>every backend of a policy is
+down</em>, <em>the policy is administratively disabled</em>, <em><code>proxyd</code> is gone</em>, <em>a
+monitored interface moved</em>. They were unconditional in the source. Per product
+you can now set each one to <strong>critical</strong>, <strong>warning</strong> or <strong>off</strong>.</p>
+<p><strong>Off changes the grade, never the visibility.</strong> The fact is still printed on
+the probe. A condition that disappears from the page when you silence it is how
+an operator later concludes the check never fired.</p>
+<h4 id="targeted-expiring-mute">Targeted, expiring mute</h4>
+<p>To silence <em>one</em> probe — a policy left over from a migration, say — mute it with
+a <strong>reason</strong> and a duration of up to 720 hours. While muted it keeps running and
+keeps showing its own status; it stops raising the device badge and the alert
+mail, and it is reported as <strong>lost coverage</strong> in both. There is no permanent
+mute: a silence nobody renews turns itself back on.</p>
+<p>Prefer this to the alternatives. Lowering a product default to hide two dead
+policies blinds the whole fleet, and putting a healthy appliance into
+maintenance switches off its other working monitors as well.</p>
+<h4 id="what-this-does-not-do">What this does not do</h4>
+<p>It does not decide <em>who</em> is mailed or <em>how often</em> — that is Settings → Email &amp;
+Alerts, which is delivery policy. This page is measurement policy, and the two
+are kept apart on purpose.</p>
 <h2 id="15-automation">15. Automation</h2>
 <p><strong>Scheduled Actions</strong> (FortiWeb ADOM → Administrator, plus the ⏰ button on
 Server Policy for operators):</p>
@@ -1463,6 +1534,30 @@ satom diagnose code       # is the running process actually on the new code?
 <tr>
 <td>Rollback left the appliance registered</td>
 <td>Deliberate: a device that reached <em>onboarded</em> keeps its registration, because deleting it would orphan the configuration history and captures already hanging off it. Remove it from the appliance list if you really want it gone.</td>
+</tr>
+<tr>
+<td>A probe grades on a number nobody typed on it</td>
+<td>It is inheriting. The probe page prints the origin next to the value — <code>inherited from &lt;product&gt;</code> points at Settings → Thresholds; <code>factory default</code> means that scope has no value set either (14.10).</td>
+</tr>
+<tr>
+<td>Editing a product threshold changed nothing for some probes</td>
+<td>Those probes carry their own value, which always wins. Use <strong>revert to inherited</strong> on the probe to hand it back to the product default.</td>
+</tr>
+<tr>
+<td>A threshold set to <code>0</code> is being ignored</td>
+<td><code>0</code> is not <em>unset</em> — it switches that level off, on purpose. Clear the field entirely to inherit instead.</td>
+</tr>
+<tr>
+<td>A muted probe is still shown as failing on its own page</td>
+<td>Correct: mute changes the grade, not the visibility. It stops raising the device badge and the mail, and is counted as lost coverage in both.</td>
+</tr>
+<tr>
+<td>A probe started alerting again on its own</td>
+<td>Mutes expire (720 h maximum) and there is no permanent mute. Re-mute it with a reason, or fix the condition.</td>
+</tr>
+<tr>
+<td>Host disk alerts at 92 % rather than 95 %</td>
+<td>Deliberate. A full filesystem stops PostgreSQL writing WAL, so the warning has to arrive while there is still room to act. Adjustable under the <em>SATOM machine</em> scope.</td>
 </tr>
 </tbody>
 </table>

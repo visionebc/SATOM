@@ -417,11 +417,23 @@ Appliances in **maintenance** are marked as such and are skipped by automatic
 runs and by their alerts. That is the correct way to silence a box you know is
 down — not lowering the alert floor.
 
-In the Global workspace the same page also carries **Infrastructure health**
-(cluster peers, repository, external backup server, database, systemd units,
-redundancy) and **Encryption in transit**, where every badge is backed by a
-live probe rather than by configuration. Those sections are absent from a
-product workspace by design.
+Fleet health is **two pages**, because a number is read as a claim about the
+page it sits on:
+
+- **Device health** (`/monitoring/`) — the appliance cards above. Present in
+  every workspace, scoped to that workspace's device kind.
+- **SATOM health** (`/monitoring/satom`) — the installation itself: cluster
+  peers, repository, external backup server, database, systemd units,
+  redundancy, **the host machine** and **Encryption in transit**, where every
+  badge is backed by a live probe rather than by configuration. **Global only**
+  — a product workspace does not reach it, because those cards carry node
+  hostnames and infrastructure addresses.
+
+The **host machine** row grades disk, memory and load **on both HA nodes**, and
+it exists because nothing in the product used to measure its own box. Its
+limits live in Settings → Thresholds under the *SATOM machine* scope. Disk turns
+critical at 92 %, deliberately below 95: a full filesystem stops PostgreSQL
+writing WAL, so the alert has to arrive while there is still room to act on it.
 
 ### 14.2 Metrics — *how much does it hold?*
 
@@ -619,6 +631,85 @@ coarser data while looking exactly like one built on time.
   readable; failing the run would leave the action permanently red over an SMTP
   outage.
 - A period with no samples reports **unknown**, not a healthy zero.
+
+### 14.10 Thresholds — declare a limit once
+
+Settings → **Thresholds** (admin). Before this page every limit lived on an
+individual probe, so tuning a fleet meant editing each monitor by hand; in
+practice nobody did, and all 42 production probes sat on the same factory
+number regardless of what they were watching.
+
+**Six scopes**, picked from the selector at the top: the four product ADOMs
+(FortiWeb, FortiADC, FortiAnalyzer, FortiAuthenticator), **SATOM** the
+application, and the **SATOM machine**. Each scope carries three blocks.
+
+**Measurement limits** — CPU, memory, sessions, throughput, transactions,
+licence and token headroom, interface staleness, TLS expiry, response time.
+
+**Device roll-up** — what makes an *appliance* critical rather than a single
+reading: the cache-age budget, its critical multiplier, the harvest failure
+streak, and the capacity percentages. These used to be constants in the source.
+
+**Binary facts and mute** — see below.
+
+#### How a number is chosen
+
+```
+the probe's own column        ← only if the operator typed one there
+  ↓ empty
+the product scope's value     ← what you set on this page
+  ↓ unset
+the factory default           ← documented in code, never a crash
+```
+
+Two states that look alike and are not:
+
+- **Empty** means *inherit*. Change the product value and every probe that
+  nobody has touched moves with it, immediately.
+- **`0`** means *this level is switched off*. It is a decision, and inheritance
+  never overwrites it.
+
+Newly discovered probes are created **empty**, so they inherit. If they were
+stamped with a literal they would be frozen at birth and this page would only
+ever affect probes that do not exist yet.
+
+#### Every grade says where its number came from
+
+Both probe pages print the resolved limit **and its origin** — `set on this
+probe`, `inherited from FortiWeb`, or `factory default`. Live inheritance means
+a probe you never edited can change severity because someone edited a product
+default; without the origin printed, that critical would appear with no visible
+cause. Each probe also has a **revert to inherited** control, which clears the
+column rather than writing the current value back into it.
+
+#### Binary facts
+
+Some conditions have nothing to compare against: *every backend of a policy is
+down*, *the policy is administratively disabled*, *`proxyd` is gone*, *a
+monitored interface moved*. They were unconditional in the source. Per product
+you can now set each one to **critical**, **warning** or **off**.
+
+**Off changes the grade, never the visibility.** The fact is still printed on
+the probe. A condition that disappears from the page when you silence it is how
+an operator later concludes the check never fired.
+
+#### Targeted, expiring mute
+
+To silence *one* probe — a policy left over from a migration, say — mute it with
+a **reason** and a duration of up to 720 hours. While muted it keeps running and
+keeps showing its own status; it stops raising the device badge and the alert
+mail, and it is reported as **lost coverage** in both. There is no permanent
+mute: a silence nobody renews turns itself back on.
+
+Prefer this to the alternatives. Lowering a product default to hide two dead
+policies blinds the whole fleet, and putting a healthy appliance into
+maintenance switches off its other working monitors as well.
+
+#### What this does not do
+
+It does not decide *who* is mailed or *how often* — that is Settings → Email &
+Alerts, which is delivery policy. This page is measurement policy, and the two
+are kept apart on purpose.
 
 ## 15. Automation
 
@@ -1059,3 +1150,9 @@ How packages are built and signed:
 | A run says **paused**, not finished | *Semi* and *VM only* stop on purpose. The reason is printed verbatim — do the console step, then resume. |
 | A machine SATOM just created is missing from the hypervisor's own list | Cluster-wide inventory in Proxmox is a cached aggregate and lags by seconds. Look at the node's own view, or wait for the refresh. The run log is authoritative about what was created. |
 | Rollback left the appliance registered | Deliberate: a device that reached *onboarded* keeps its registration, because deleting it would orphan the configuration history and captures already hanging off it. Remove it from the appliance list if you really want it gone. |
+| A probe grades on a number nobody typed on it | It is inheriting. The probe page prints the origin next to the value — `inherited from <product>` points at Settings → Thresholds; `factory default` means that scope has no value set either (14.10). |
+| Editing a product threshold changed nothing for some probes | Those probes carry their own value, which always wins. Use **revert to inherited** on the probe to hand it back to the product default. |
+| A threshold set to `0` is being ignored | `0` is not *unset* — it switches that level off, on purpose. Clear the field entirely to inherit instead. |
+| A muted probe is still shown as failing on its own page | Correct: mute changes the grade, not the visibility. It stops raising the device badge and the mail, and is counted as lost coverage in both. |
+| A probe started alerting again on its own | Mutes expire (720 h maximum) and there is no permanent mute. Re-mute it with a reason, or fix the condition. |
+| Host disk alerts at 92 % rather than 95 % | Deliberate. A full filesystem stops PostgreSQL writing WAL, so the warning has to arrive while there is still room to act. Adjustable under the *SATOM machine* scope. |

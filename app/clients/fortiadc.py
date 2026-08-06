@@ -193,6 +193,66 @@ class FortiADCClient(BaseClient):
                     return data
         return {}
 
+    # -- runtime telemetry --------------------------------------------------
+    #
+    # FortiADC has no ``monitor/`` namespace. Guessing names returns a flat 404
+    # for every candidate (probed live, 2026-08-06), so these were censused out
+    # of the GUI's own bundle (``/ui/js/all.min.js``): the console builds its
+    # calls as ``/api/<entity>/<_method>``, which is a different shape from the
+    # ``/api/<object>`` cmdb surface the registry drives.
+    #
+    # NOT usable, and the reason matters:
+    #   ``/api/platform/resources`` returns "1 CPU/1 allowed", " 3831 MB RAM" —
+    #   installed hardware, not utilisation. Parsing it as a percentage would
+    #   publish a fabricated series. CPU and memory therefore keep coming from
+    #   ``get system performance`` over the read-only CLI.
+
+    def _runtime(self, path: str, **params):
+        """GET a runtime endpoint, returning its ``payload`` (or None)."""
+        resp = self._api('GET', path, params=params or None)
+        if self._device_error(resp) or resp.status_code != 200:
+            return None
+        try:
+            body = resp.json()
+        except ValueError:
+            return None
+        return body.get('payload') if isinstance(body, dict) else None
+
+    def vs_status(self, vdom: str = 'root', vsname: str | None = None):
+        """Aggregate (or per-virtual-server) runtime counters.
+
+        This is FortiADC's analogue of FortiWeb's ``policystatus``: ONE call
+        carries sessions, RTT, byte and request/error counters for the whole
+        vdom, so a device with 500 virtual servers costs one round trip rather
+        than 500. VERIFIED LIVE on 8.0.3 — keys: current_sessions,
+        total_sessions, limit_sessions, in_bytes, out_bytes, requests,
+        request_errors, response_errors, client_rtt, server_rtt, app_response.
+        """
+        params = {'vdom': vdom}
+        if vsname:
+            params['vsname'] = vsname
+        return self._runtime('/api/status_history/vs_status', **params)
+
+    def vs_list(self, vdom: str = 'root'):
+        """Virtual servers with their runtime state (list; [] when none)."""
+        rows = self._runtime('/api/all_vs_info/vs_list', vdom=vdom)
+        return rows if isinstance(rows, list) else []
+
+    def pool_member_list(self, vdom: str = 'root'):
+        """Pool members with health-check state (list; [] when none)."""
+        rows = self._runtime('/api/all_vs_info/pool_member_list', vdom=vdom)
+        return rows if isinstance(rows, list) else []
+
+    def interface_info(self, vdom: str = 'root'):
+        """Interface runtime (link, addressing, counters); [] when none."""
+        rows = self._runtime('/api/system_interface/interface_info', vdom=vdom)
+        return rows if isinstance(rows, list) else []
+
+    def ha_peer_status(self, vdom: str = 'root'):
+        """``system_ha/peerstatus`` — mode, local_state, peers. {} on failure."""
+        data = self._runtime('/api/system_ha/peerstatus', vdom=vdom)
+        return data if isinstance(data, dict) else {}
+
     def api_call(self, method: str, path: str, data=None):
         return self._api(method, path, json=data)
 

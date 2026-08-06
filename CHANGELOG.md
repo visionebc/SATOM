@@ -6,6 +6,121 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- Monitoring is provisioned from **one seam**. Saving an appliance now creates
+  both its scrape targets and its threshold probes; until now `ensure_baseline`
+  was reachable only from *Discover*, so a device added through the form had
+  metrics and no thresholds and nothing said so.
+- **FortiADC virtual servers** (`vservers` collector). FortiADC has no
+  `monitor/` namespace — every guessed endpoint 404s — so the runtime surface
+  was censused from the appliance's own GUI bundle and verified live on 8.0.3.
+  `status_history/vs_status` carries the whole vdom in ONE call, so 500 virtual
+  servers cost one round trip. Interfaces extended to FortiADC.
+- **FortiAuthenticator identity inventory** (`identity` collector) — accounts,
+  groups, tokens, certificates, RADIUS/TACACS+ clients. Counted via Tastypie
+  `meta.total_count`, so a 50 000-user directory costs the same as an empty one.
+- **FortiAnalyzer** (`faz` collector) — log volume, storage, alerts, incidents,
+  registered devices and task queue. Counters only; no log body is ever
+  fetched. FortiAnalyzer previously had **no collectors at all**.
+- **Dashboard variables** with two drill-down boards. One board answers for
+  every device in the fleet instead of one board per device, and the service
+  picker is *chained* to the device picker so it offers only what exists on the
+  selected appliance.
+
+### Fixed
+
+- Dashboard variable values were escaped with `re.escape`, which escapes a
+  hyphen as `\-`. RE2 — the engine VictoriaMetrics uses — rejects that as an
+  invalid escape and answered **HTTP 422**. Every device and policy name in
+  this fleet contains a hyphen, so the common case was broken and the rare one
+  worked. Found end-to-end against the live store; a unit test on the escaper
+  alone could not see it, because the output is only invalid to the engine.
+
+### Notes
+
+- **Service Monitor was NOT retired**, though its four kinds are each covered
+  1:1 by a collector that does the same work in one call instead of N. The
+  alert engine has no reference to the metrics store and Collection has no
+  grading layer, so retiring it today would delete the "every backend behind
+  this policy is down" signal with nothing to replace it. Prerequisite: alert
+  rules evaluated over the store. See `docs/safeguards.md` §25c.
+- The FortiAnalyzer collector is **unverified against live hardware** (none
+  reachable since July 2026). Payload shapes are read defensively and an
+  unrecognised shape yields nothing rather than a plausible wrong number.
+
+
+### Added
+- **Search on the published manual.** The hub carries a client-side index of
+  every published document and **every h2/h3 heading in it** — 573 headings
+  across 27 documents — so a result deep-links to the subsection rather than
+  dropping the reader at the top of a two-thousand-line page. The index is
+  derived from the same render that produces the pages, not from a second
+  parse, and is inlined rather than fetched: the site is published to a static
+  host we do not configure, and the publication leak scan only sees what the
+  build returns.
+- **Search across every release.** The release notes index all 226 changelog
+  entries, and each result is labelled with the version it shipped in and
+  links into that release's own page. The version rail filters to the releases
+  that actually contain a hit, so the left side answers "which versions is
+  this in?" without reading the results.
+- **Nine sections of the user guide that had no coverage at all** — Studio
+  (custom views, plugins, Lua), High availability, AppIDs, a tab-by-tab
+  Settings reference, log collection and offline backup import, system
+  provisioning profiles and baselines, the template library and section
+  catalog, the endpoint registry and API explorer, and release notes. The
+  manual went from 23 sections to 32 and now says where to read what changed
+  in a version — it had never mentioned the changelog.
+
+### Changed
+- **The release notes are a rail and a panel, not a wall of cards.** Versions
+  on the left, that version's changes on the right, newest first, opening on
+  the shipped version because "what is running on my node" is the question the
+  page is opened with. Each version page carries the whole rail, so "when did
+  this change?" stops being a scroll through the changelog.
+- **The manual and the release notes read at 80% of the screen** above
+  1400px. Only above: 80% of a 1280px screen is 1024px, which is *narrower*
+  than the 1120px it replaces, so widening unconditionally would have made the
+  manual harder to read on the machines most operators use. Marketing pages
+  stay narrow deliberately.
+
+### Removed
+- **Lua Studio is no longer reachable from the FortiAuthenticator ADOM.** It
+  was in the ADOM's blueprint set, but `LuaScript.TARGETS` is FortiWeb and
+  FortiADC — the unit is an identity store with no scripting object anywhere in
+  its API, so the page listed zero targets and zero devices. A page that can
+  only fail is worse than one that is not offered.
+
+### Fixed
+- **Entering the FortiAuthenticator ADOM landed on the FortiWeb home.**
+  `_home_for()` had branches for FortiADC and FortiAnalyzer and then a
+  placeholder check; FortiAuthenticator stopped being a placeholder and fell
+  through to `fortiweb_home`. Every route into the ADOM — the product picker,
+  the sidebar, the device rail — silently opened the wrong product and then
+  pinned the session to it. `/fac/` was reachable only by typing the URL.
+- **The Global home page hardcoded two ADOMs.** It shipped a stat-card for
+  FortiWeb and FortiADC and nothing else, and its fleet table could render only
+  those two kinds — so FortiAuthenticator and FortiAnalyzer units were
+  invisible on the one console meant to see everything. Cards and table now
+  come from the ADOM registry, so the next product appears without touching
+  this page; devices whose kind matches no active ADOM are listed too, because
+  Global is the only console that can see them.
+- **An ADOM with registered appliances could be deleted.** The guard was a
+  hardcoded set of three keys. An appliance's `kind` IS an ADOM key, so
+  deleting the row silently un-managed every device stamped with it: the boxes
+  stay in the table, no console can reach them, and nothing raises. The guard is
+  derived now — the three core keys plus any ADOM owning at least one
+  appliance, recomputed per check, so onboarding the first unit of a product
+  protects it immediately. The refusal also says which of the two reasons it
+  is, and how many appliances are in the way.
+- The FortiAuthenticator ADOM had no top-bar search icon and no device-rail
+  link, though `search` was already in its blueprint set.
+- **Table-of-contents entries were escaped twice** — the sidebar of every
+  manual page rendered `Backups &amp;amp; restore`, which a reader sees as a
+  literal entity. markdown's toc tokens arrive already HTML-escaped and were
+  escaped again on the way out. It only shows on a heading containing
+  `& < > "`, which is why it survived until a search index inherited it.
+
 ## [1.5.0] - 2026-08-06
 
 ### Added

@@ -2900,6 +2900,111 @@ A template change is verified against the **running service**, never against a
 `test_client`. That distinction is the whole reason this section exists.
 
 
+## 25. Monitoring has two layers, and neither substitutes for the other
+
+SATOM measures the same appliance twice, on purpose, and the two halves answer
+different questions:
+
+* **Collection** (`services/metrics_collect`) is the **time-series** layer.
+  One scrape target per *collector*, so a device with 10 000 server policies
+  still costs five rows and five calls. It publishes series. It grades nothing.
+* **Deep monitors / Service Monitor** (`services/deep_monitor`) is the
+  **threshold** layer. It carries warn/crit levels, produces a graded verdict,
+  and feeds the `probe` signal of Fleet health and the device-health alert.
+
+Confusing the two has already produced one outage-shaped gap and nearly
+produced two more.
+
+### 25a. Both halves are provisioned from one seam
+
+Until 2026-08-06 only the metrics half ran when an appliance was saved:
+`ensure_baseline` was reachable **only** from the *Discover* button. A device
+added through the normal form collected metrics and carried **no thresholds**,
+and neither page said so. The four appliances onboarded on 2026-08-05 had five
+collectors and **zero** threshold probes.
+
+Both now come from `services/monitoring_provision.provision_monitoring`, called
+from all three appliance-creation paths. Each half is guarded separately, so a
+failure in one still provisions the other — and the failure is *reported*,
+because a half-monitored device looks exactly like a monitored one.
+
+### 25b. The scale rule is a guard, not a comment
+
+The rule is **not** "fewer probes". It is *per-device, never per-policy*:
+
+| shape | at 50 devices x 750 policies |
+|---|---|
+| per-device probe (interface, cpu, memory, proxyd) | 200 rows |
+| per-policy probe (sessions, throughput, transactions...) | **37 500 rows, 37 500 calls per sweep** |
+
+`tests/test_monitoring_provision.py` fails if any kind in
+`deep_monitor.API_KINDS` enters the baseline set. Those are created
+deliberately, from *Discover*, by an operator who chose the policies.
+
+**The obvious-looking saving is wrong.** "Collection already reads CPU and
+memory, so drop those probes" deletes the only thresholds in the system from
+devices that had them, while every page keeps showing data. That is the failure
+`deep_monitor.split_legacy_proxyd` exists to prevent, in a new costume.
+
+### 25c. Retiring the threshold layer is blocked, and the reason is written down
+
+Service Monitor's four kinds (`sessions`, `policy_sessions`, `throughput`,
+`transactions`) are each covered 1:1 by a scrape target, and the collector does
+in ONE call what the probes do in N. That makes them look redundant. They are
+not, yet:
+
+* `services/alerts.py` contains **no reference to the store** — verified, zero
+  matches for `vm_store` / `satom_`. Every alert check reads probes, actions,
+  certificates, git or the host.
+* Collection has **no grading layer at all**. It publishes numbers; nothing
+  turns a number into warn/crit.
+
+So retiring Service Monitor today removes the "every backend behind this policy
+is down" signal from Fleet health and from the alert mail, and **nothing
+replaces it**. The prerequisite is alert rules evaluated over the store, which
+does not exist. Until it does, the duplication is the cheaper mistake.
+
+### 25d. A value the store never produced is never interpolated
+
+Dashboard variables resolve their options from `vm_store.label_values`. That
+enumeration is also the **allowlist**: a selection that is not among the
+store's own answers falls back to *All* rather than reaching a query. There are
+two layers — `resolve` picks the value, `substitution` re-checks it — and the
+second is reachable on its own, so it does not trust the `value` field handed
+to it.
+
+Escaping is **not** `re.escape`. Python escapes a hyphen as `\-`; RE2, the
+engine VictoriaMetrics uses, rejects that as an *invalid escape* and answers
+HTTP 422. Every device and policy name in this fleet contains a hyphen, so
+`re.escape` broke the common case and left the rare one working. This was found
+end-to-end against the live store — a unit test on the escaper alone cannot
+see it, because the output is only invalid to the **engine**.
+
+An expression referencing a variable that could not be resolved becomes a panel
+**error**. Running it with the token still in makes the store reject a *parse*
+error, which on screen is indistinguishable from the store being down.
+
+### 25e. Endpoint families are censused, never guessed
+
+FortiADC has no `monitor/` namespace: every guessed runtime path returns a flat
+404. The real surface was read out of the appliance's own GUI bundle and
+verified live — `/api/<entity>/<_method>`, a different shape from the
+`/api/<object>` cmdb surface the registry drives.
+
+Two traps worth keeping:
+
+* `platform/resources` returns `"1 CPU/1 allowed"` and `" 3831 MB RAM"` —
+  **installed hardware, not utilisation**. Parsing it as a percentage publishes
+  a fabricated series. CPU and memory keep coming from the read-only CLI.
+* `status_history/vs_status` is the analogue of FortiWeb's `policystatus`: ONE
+  call carries the whole vdom, which is why virtual servers are a *collector*
+  and not a probe-per-service.
+
+Where a shape could not be verified against live hardware (FortiAnalyzer: none
+reachable since July 2026), the payload is read **defensively** and an
+unrecognised shape yields nothing. A plausible wrong number on a log collector
+is worse than a gap.
+
 ## 11. Known gaps (kept honest, on purpose)
 
 * Per-device configuration restore is dry-run gated — no live canary round-trip yet.
@@ -2938,6 +3043,46 @@ sed -n '/fortiweb_scoped = {/,/}/p' app/__init__.py | grep -c device_provision
 ```
 
 ## Verifying the guards are armed
+
+### Monitoring layers (25)
+
+Both halves provisioned from one seam, and no per-policy kind in the baseline:
+
+```bash
+# a saved appliance gets BOTH collectors and threshold probes
+satom get monitor coverage        # or, against the app:
+#   provision_monitoring(a) -> {"targets": N, "probes": [...]}
+
+# the scale guard: this must print nothing
+python3 - <<'PY'
+from app.services import deep_monitor as dm
+import ast, inspect
+src = inspect.getsource(dm.ensure_baseline)
+kinds = {n.elts[0].value for n in ast.walk(ast.parse(src.lstrip()))
+         if isinstance(n, ast.Tuple) and n.elts
+         and isinstance(n.elts[0], ast.Constant)}
+print(sorted(kinds & set(dm.API_KINDS)))   # must be []
+PY
+```
+
+The store is still not an alerting source — if this stops printing 0, §25c has
+been overtaken and Service Monitor may finally be retirable:
+
+```bash
+grep -c 'vm_store\|satom_' app/services/alerts.py     # 0 today
+```
+
+A variable never interpolates a value the store did not produce, and the
+escaper does not escape a hyphen:
+
+```bash
+python3 -c "
+from app.services.dashboard_vars import _escape_regex as e
+assert e('pol-satom-lab') == 'pol-satom-lab'   # RE2 rejects a backslash-hyphen
+assert '\\.' in e('fw.08')                     # but metacharacters ARE escaped
+print('ok')"
+```
+
 
 ### The freshness check sees what the process caches (24)
 

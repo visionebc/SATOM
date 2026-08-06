@@ -248,7 +248,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        # ADOM sees and uploads only its own images. It used to
                        # be reachable from FortiAnalyzer only, which is why the
                        # FAZ ADOM could see FortiWeb images.
-                       'firmware',
+                       'firmware', 'device_provision',
                        # Custom Views: Plugin Studio + Lua Studio are
                        # product-scoped (records stamped per ADOM), so the
                        # ADC ADOM reaches them and sees only its own.
@@ -288,6 +288,7 @@ def create_app(config_override: object | None = None) -> Flask:
             faz_bps = {'faz', 'faz_api', 'appliances', 'settings', 'audit', 'jobs',
                        'notifications', 'profiles', 'users', 'docs',
                        'database', 'locks', 'firmware', 'segments',
+                       'device_provision',
                        'architecture', 'metrics', 'search', 'analysis',
                        'fleet_objects', 'dns_tool', 'backups',
                        # Mirrored per-ADOM monitoring (2026-07-28) — see the
@@ -307,6 +308,7 @@ def create_app(config_override: object | None = None) -> Flask:
             fac_bps = {'fac', 'fac_api', 'appliances', 'settings', 'audit', 'jobs',
                        'notifications', 'profiles', 'users', 'docs',
                        'database', 'locks', 'segments', 'firmware',
+                       'device_provision',
                        'architecture', 'metrics', 'search', 'analysis',
                        'fleet_objects', 'dns_tool', 'backups',
                        # Mirrored per-ADOM monitoring (2026-07-28) — scoping is
@@ -1259,6 +1261,11 @@ def create_app(config_override: object | None = None) -> Flask:
             from . import models_sot  # noqa: F401
             from . import models_metrics  # noqa: F401
             from . import models_trust  # noqa: F401
+            # Provisioning tables (hypervisor targets + run state machine).
+            # Imported for its side effect: without this the models are dead
+            # code, create_all() never makes the tables, and the feature 500s
+            # the first time an operator opens it.
+            from . import models_provision  # noqa: F401
             db.create_all()
             _ensure_columns()
             _ensure_indexes()
@@ -1375,6 +1382,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.cert_manager", "bp"),
         ("app.views.change_requests", "bp"),
         ("app.views.provisioning", "bp"),
+        ("app.views.device_provision", "bp"),
         ("app.views.section_config", "bp"),
         ("app.views.section_catalog", "bp"),
         ("app.views.settings", "bp"),

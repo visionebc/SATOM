@@ -76,6 +76,16 @@ class HypervisorTarget(db.Model):
     # its CA into the SATOM trust store can turn it on and have it mean
     # something. Same reasoning as Appliance.verify_ssl.
     verify_ssl = db.Column(db.Boolean, nullable=False, default=False)
+    # ESXi only: credentials for the HOST SHELL transport. The free vSphere
+    # Hypervisor licence makes the remote API read-only, and the host shell
+    # (vim-cmd / vmkfstools) is a different code path inside ESXi that is not
+    # gated the same way. Kept separate from username/password because they
+    # are genuinely different accounts on some deployments, and because a
+    # target with API credentials but no shell credentials is a normal,
+    # supported state that must be distinguishable from a misconfigured one.
+    ssh_user = db.Column(db.String(64), default="")
+    ssh_password_enc = db.Column(db.Text, default="")
+    ssh_port = db.Column(db.Integer, default=22)
     enabled = db.Column(db.Boolean, nullable=False, default=True)
     #: Preferred placement, remembered so the operator does not re-pick it.
     default_node = db.Column(db.String(64), default="")
@@ -95,6 +105,14 @@ class HypervisorTarget(db.Model):
     @password.setter
     def password(self, plaintext: str) -> None:
         self.password_enc = _enc(plaintext or "")
+
+    @property
+    def ssh_password(self) -> str:
+        return _dec(self.ssh_password_enc) if self.ssh_password_enc else ""
+
+    @ssh_password.setter
+    def ssh_password(self, plaintext: str) -> None:
+        self.ssh_password_enc = _enc(plaintext or "") if plaintext else ""
 
     @property
     def token_secret(self) -> str:
@@ -117,6 +135,9 @@ class HypervisorTarget(db.Model):
             "verify_ssl": bool(self.verify_ssl), "enabled": bool(self.enabled),
             "has_password": bool(self.password_enc),
             "has_token": bool(self.token_id and self.token_secret_enc),
+            "ssh_user": self.ssh_user or "",
+            "ssh_port": self.ssh_port or 22,
+            "has_ssh": bool(self.ssh_user and self.ssh_password_enc),
             "token_id": self.token_id or "",
             "default_node": self.default_node or "",
             "default_datastore": self.default_datastore or "",

@@ -31,6 +31,39 @@ def _ip_allowed(ip: str, whitelist: list) -> bool:
     return False
 
 
+def widen_plan(tables, live_widths):
+    """Return [(table, column, want)] for VARCHAR columns narrower than the model.
+
+    Pure so the decision can be tested with data instead of a live database.
+    ``tables`` is SQLAlchemy metadata's sorted_tables; ``live_widths`` maps
+    ``table -> {column: length_or_None}`` as reported by the database.
+
+    Only ever widens.  Narrowing can truncate committed rows, so a model that
+    shrinks is deliberately ignored — a schema that is wider than declared is
+    harmless, a schema that is narrower than the data is not recoverable.
+    A column absent from ``live_widths`` is left to :func:`_ensure_columns`;
+    guessing here would emit DDL for a column that does not exist yet.
+    """
+    from sqlalchemy.types import String
+
+    plan = []
+    for table in tables:
+        live = live_widths.get(table.name)
+        if live is None:
+            continue
+        for col in table.columns:
+            if not isinstance(col.type, String):
+                continue
+            want = getattr(col.type, 'length', None)
+            if not want:
+                continue
+            have = live.get(col.name)
+            if have is None or have >= want:
+                continue
+            plan.append((table.name, col.name, want))
+    return plan
+
+
 def create_app(config_override: object | None = None) -> Flask:
     app = Flask(__name__, instance_relative_config=False)
 
@@ -1079,6 +1112,53 @@ def create_app(config_override: object | None = None) -> Flask:
         else:
             print('Database already contains users — skipping seed.')
 
+    def _ensure_widths():
+        """Widen VARCHAR columns that the models grew after the table existed.
+
+        ``db.create_all()`` never ALTERs an existing table, and
+        :func:`_ensure_columns` only ADDs — so a column whose model declaration
+        grew (``String(16)`` -> ``String(32)``) stays narrow forever on an
+        installation that predates the change.  That is not cosmetic: the ADOM
+        key ``fortiauthenticator`` is 18 characters, so the first row written
+        for the fourth product fails with ``StringDataRightTruncation`` on a
+        column the model believes is wide enough.  The failures land late — an
+        audit row, an alert, an API token — long after the operator registered
+        the appliance and concluded it worked.
+
+        Derived from the model metadata rather than a hand-written list, so a
+        future widening needs no second edit here.  **Only ever widens**:
+        narrowing can truncate real data, so a model that shrinks is ignored.
+        Widening a ``varchar`` in PostgreSQL is a catalog-only change (no table
+        rewrite) and replicates to the standby through WAL like any other DDL.
+        SQLite does not enforce ``VARCHAR`` length at all, so it is skipped.
+        """
+        from sqlalchemy import inspect, text
+
+        # SQLite does not enforce VARCHAR length, so there is nothing to widen
+        # and ALTER COLUMN TYPE is not supported there either.
+        if db.engine.dialect.name == 'sqlite':
+            return
+        insp = inspect(db.engine)
+        live_widths = {}
+        try:
+            for name in insp.get_table_names():
+                live_widths[name] = {
+                    c['name']: getattr(c.get('type'), 'length', None)
+                    for c in insp.get_columns(name)
+                }
+        except Exception:  # noqa: BLE001 — never block boot on a migration
+            return
+
+        for table, col, want in widen_plan(db.metadata.sorted_tables,
+                                           live_widths):
+            try:
+                db.session.execute(text(
+                    'ALTER TABLE %s ALTER COLUMN %s TYPE VARCHAR(%d)'
+                    % (table, col, want)))
+                db.session.commit()
+            except Exception:  # noqa: BLE001
+                db.session.rollback()
+
     def _ensure_columns():
         """Idempotently add columns introduced after a table already existed.
 
@@ -1094,7 +1174,7 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('reject_reason', 'TEXT'),
                 ('reviewed_by', 'VARCHAR(64)'),
                 ('reviewed_at', 'DATETIME'),
-                ('product', "VARCHAR(16) DEFAULT 'fortiweb'"),
+                ('product', "VARCHAR(32) DEFAULT 'fortiweb'"),
             ],
             'users': [
                 ('profile_id', 'INTEGER'),
@@ -1130,16 +1210,16 @@ def create_app(config_override: object | None = None) -> Flask:
             ],
             # --- product/ADOM separation (2026-07-07) ---
             'audit_logs': [
-                ('product', "VARCHAR(16) DEFAULT ''"),
+                ('product', "VARCHAR(32) DEFAULT ''"),
             ],
             'notifications': [
-                ('product', "VARCHAR(16) DEFAULT ''"),
+                ('product', "VARCHAR(32) DEFAULT ''"),
             ],
             'baselines': [
-                ('product', "VARCHAR(16) DEFAULT 'fortiweb'"),
+                ('product', "VARCHAR(32) DEFAULT 'fortiweb'"),
             ],
             'scheduled_action': [
-                ('product', "VARCHAR(16) DEFAULT 'fortiweb'"),
+                ('product', "VARCHAR(32) DEFAULT 'fortiweb'"),
             ],
             'db_reports': [
                 ('builtin', 'BOOLEAN DEFAULT FALSE'),
@@ -1344,6 +1424,9 @@ def create_app(config_override: object | None = None) -> Flask:
             from . import models_provision  # noqa: F401
             db.create_all()
             _ensure_columns()
+            # After the additive pass: a column that already existed may be
+            # narrower than the model now declares (see _ensure_widths).
+            _ensure_widths()
             _relax_probe_thresholds()
             _ensure_indexes()
             _seed_profiles()

@@ -78,9 +78,21 @@ def dump(variables: list) -> str:
     return json.dumps(parse(variables), separators=(",", ":"))
 
 
+#: Characters RE2 treats as special OUTSIDE a character class.
+#: Deliberately NOT ``re.escape``: Python escapes ``-`` as a backslash-hyphen,
+#: which RE2 rejects as an invalid escape -- the store answers HTTP 422 and the
+#: panel shows a store error for a perfectly ordinary hostname. Every device and
+#: policy name in this fleet contains a hyphen, so ``re.escape`` broke the common
+#: case and left the rare one working. Caught end-to-end against the live store
+#: on 2026-08-06; a unit test on the escaper alone could not have seen it,
+#: because the escaped string is only invalid to the ENGINE.
+_RE2_SPECIAL = frozenset('.+*?()|[]{}^$' + '\\')
+
+
 def _escape_regex(value: str) -> str:
-    """Escape a label value for use inside a MetricsQL regex matcher."""
-    return re.escape(value)
+    """Escape a label value for use inside a MetricsQL (RE2) regex matcher."""
+    return ''.join(('\\' + ch) if ch in _RE2_SPECIAL else ch
+                   for ch in value)
 
 
 def resolve(board, selected: dict | None = None) -> list:

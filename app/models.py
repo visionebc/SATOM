@@ -1951,11 +1951,18 @@ class MonitorProbe(db.Model):
     target = db.Column(db.String(120), nullable=True, default="")   # policy name
     url = db.Column(db.String(500), nullable=True, default="")
     expect_status = db.Column(db.Integer, nullable=False, default=0)  # 0 = any <400
-    warn_ms = db.Column(db.Integer, nullable=False, default=2000)
-    tls_warn_days = db.Column(db.Integer, nullable=False, default=21)
+    # NULL on any threshold column below means INHERIT (see
+    # ``services.thresholds``): the value is resolved at grading time from the
+    # appliance's product scope, then from the shipped default. ``0`` is a
+    # different answer -- it disables that level -- and the two must stay
+    # distinguishable, which is why none of these carries a non-null default any
+    # more. Stamping 80/95 at creation is exactly how all 42 live probes came to
+    # hold one identical, never-chosen pair.
+    warn_ms = db.Column(db.Integer, nullable=True, default=None)
+    tls_warn_days = db.Column(db.Integer, nullable=True, default=None)
 
     # interface
-    stale_after_h = db.Column(db.Integer, nullable=False, default=6)
+    stale_after_h = db.Column(db.Integer, nullable=True, default=None)
 
     # proxyd / process. `warn_cpu` is legacy: the daemon's CPU cannot be read
     # from a single BusyBox top shot, so the box CPU threshold moved to its own
@@ -1966,20 +1973,30 @@ class MonitorProbe(db.Model):
 
     # cpu / memory — box metrics from `get system performance`. Two levels so a
     # warning does not have to escalate to a page; 0 disables that level.
-    warn_pct = db.Column(db.Integer, nullable=False, default=80)
-    crit_pct = db.Column(db.Integer, nullable=False, default=95)
+    warn_pct = db.Column(db.Integer, nullable=True, default=None)
+    crit_pct = db.Column(db.Integer, nullable=True, default=None)
 
     # sessions / policy_sessions / throughput / transactions — ABSOLUTE
     # thresholds, because a session count and a Mbps figure have no percentage
     # of anything to be measured against. Unit depends on the kind and is
     # published in ``deep_monitor.NUM_UNIT``; 0 disables that level, matching
     # the warn_pct/crit_pct convention.
-    warn_num = db.Column(db.Float, nullable=False, default=0)
-    crit_num = db.Column(db.Float, nullable=False, default=0)
+    warn_num = db.Column(db.Float, nullable=True, default=None)
+    crit_num = db.Column(db.Float, nullable=True, default=None)
 
     timeout_s = db.Column(db.Integer, nullable=False, default=10)
     interval_min = db.Column(db.Integer, nullable=False, default=5)
     retention = db.Column(db.Integer, nullable=False, default=500)
+
+    # Targeted, EXPIRING suppression. A probe that is suppressed still runs,
+    # still stores samples and still shows its real status on its own row --
+    # what it stops doing is raising the device roll-up and the mail. That is
+    # the difference between silencing a known-dead policy and hiding it: the
+    # fact stays on the page with a visible chip and a reason, and it comes
+    # back on by itself when nobody renews it. A permanent silence has no such
+    # property, which is why there is no "suppress forever".
+    suppress_until = db.Column(db.DateTime, nullable=True)
+    suppress_reason = db.Column(db.String(200), nullable=True, default="")
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     last_run_at = db.Column(db.DateTime, nullable=True)
@@ -1998,6 +2015,22 @@ class MonitorProbe(db.Model):
     rollups = db.relationship(
         "MonitorRollup", backref="probe", lazy="dynamic",
         cascade="all, delete-orphan")
+
+    # ── suppression ─────────────────────────────────────────────────────
+    @property
+    def suppressed(self) -> bool:
+        """True while an unexpired suppression window is in force."""
+        from datetime import datetime
+        return bool(self.suppress_until
+                    and self.suppress_until > datetime.utcnow())
+
+    @property
+    def suppress_note(self) -> str:
+        if not self.suppressed:
+            return ""
+        return "%s (until %s UTC)" % (
+            (self.suppress_reason or "no reason recorded"),
+            self.suppress_until.strftime("%Y-%m-%d %H:%M"))
 
     def to_dict(self) -> dict[str, Any]:
         return {

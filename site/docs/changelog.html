@@ -85,13 +85,40 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>Settings &gt; Hypervisors</strong> — register the Proxmox and/or ESXi endpoints SATOM
+<li><strong>Settings &gt; Thresholds</strong> — a 22nd tab, and the first place in this product
+  where a limit can be stated once instead of once per probe. Six scopes: the
+  four product ADOMs, SATOM itself and the SATOM host. A probe column left empty
+  <strong>inherits</strong> its product's value at grading time; <code>0</code> still means "switch this
+  level off", and the two never collapse into each other. Both probe pages print
+  the resolved number <strong>and where it came from</strong> (<code>set on this probe</code> /
+  <code>inherited from &lt;product&gt;</code> / <code>factory default</code>), because a grade produced by a
+  number nobody typed has to be locatable.</li>
+<li><strong>Binary-fact severity.</strong> Conditions with no number to compare against — every
+  backend of a policy down, a policy administratively disabled, <code>proxyd</code> gone, a
+  monitored interface moving — can now be raised, lowered or silenced per
+  product. <strong>A silenced fact is still printed on the probe</strong>: silencing changes
+  the grade, never the visibility.</li>
+<li><strong>Targeted, expiring probe mute.</strong> Suppress one probe for up to 720 hours with
+  a recorded reason. It keeps running and keeps showing its own status; it stops
+  raising the device badge and the alert mail, and is reported as lost coverage
+  in both. There is no permanent mute.</li>
+<li>
+<p><strong>Host health (<code>app/services/host_health.py</code>)</strong> — disk, memory and load of the
+  machine, graded on <strong>both HA nodes</strong> and wired into a new <code>alerts.check.host</code>.
+  Nothing in the product measured its own box before: on 2026-07-28 the primary
+  reached 95 % disk in six minutes with every unit active, <code>/healthz</code> at 200, the
+  badge green and no mail sent. Disk criticality is 92 %, deliberately below 95:
+  a full filesystem stops Postgres writing WAL.</p>
+</li>
+<li>
+<p><strong>Settings &gt; Hypervisors</strong> — register the Proxmox and/or ESXi endpoints SATOM
   may build machines on, more than one of each. Credentials are Fernet-encrypted
   and never returned to the browser; a blank secret on edit keeps the stored
   one. The <strong>Test</strong> button reports what the host will actually permit, including
   the read-only-API case, so the limit is learned there rather than three steps
   into a run that already reserved an address. The tab also carries a
-  capability comparison of the two backends and the reasons behind it.</li>
+  capability comparison of the two backends and the reasons behind it.</p>
+</li>
 <li><strong>Device Provisioning</strong> (<code>/device-provisioning</code>) in every ADOM — build an
   appliance machine from nothing, then hand it to System Provisioning for its
   configuration. Five modes (<code>full</code>, <code>semi</code>, <code>dhcp</code>, <code>vm_only</code>, <code>config_only</code>),
@@ -229,13 +256,41 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   mode was previously told where each one stops but not what it costs, which
   is the half of the decision that matters.</li>
 </ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li>The device roll-up (<code>stale_hours</code>, the critical multiplier, the harvest-failure
+  streak and the capacity levels) is resolved <strong>per product</strong> instead of from one
+  fleet-wide constant. A FortiAnalyzer legitimately lives at a different cache
+  cadence than a FortiWeb, and one number for both is how a correct product ends
+  up permanently amber.</li>
+<li>Discovery no longer stamps <code>80 / 95</code> (or <code>0 / 0</code>) onto a new probe; it leaves
+  the columns NULL so the probe inherits. Existing rows still holding exactly the
+  historical creation literal were handed back to inheritance on first boot,
+  which changes no behaviour on the day and makes it tunable from then on. A
+  column holding anything else was left alone.</li>
+<li>Alert bodies now name the Thresholds scope that governs the finding.</li>
+</ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
-<li><strong>"New appliance" could not add a FortiAuthenticator.</strong> The platform roster
+<li><code>alerts._check_devices</code> resolved capacity thresholds <strong>once for the whole
+  fleet</strong> and passed the same pair to every appliance, which silently defeated
+  per-product capacity limits for the one caller that actually sends the mail.</li>
+<li>The <code>transactions</code> probe reads its lookback window from <code>stale_after_h</code>, which
+  is now nullable; the old <code>or 1</code> fallback would have narrowed a six-hour window
+  to one hour on every migrated probe — fewer transactions counted, read as a
+  quiet service.</li>
+<li>
+<p>The chart threshold lines were drawn from the raw probe column, so a probe that
+  inherits its levels would have shown no threshold line at all while still being
+  graded against one.</p>
+</li>
+<li>
+<p><strong>"New appliance" could not add a FortiAuthenticator.</strong> The platform roster
   was a hardcoded three-item list repeated in four templates and never updated
   when the product shipped, so its own ADOM had no way to onboard its own
   devices. The roster is now derived from the ADOM registry, so a new product is
-  offerable the day it is declared.</li>
+  offerable the day it is declared.</p>
+</li>
 <li><strong>Every ADOM offered every platform, and the server accepted it.</strong> Adding a
   device from one ADOM while picking another product's platform saved a row the
   creating session could not see -- indistinguishable from a save that failed. A
@@ -401,7 +456,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   count nodes is <code>unknown</code>, never <code>standalone</code>. Split-brain is its own badge.</p>
 </li>
 </ul>
-<h3 id="changed">Changed</h3>
+<h3 id="changed_1">Changed</h3>
 <ul>
 <li>The HA pill on both pages uses the product's own <code>fw-badge</code> set instead of a
   local palette, so cluster state reads like every other status in the console.</li>
@@ -538,7 +593,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   states that their terms are not superseded.</p>
 </li>
 </ul>
-<h3 id="changed_1">Changed</h3>
+<h3 id="changed_2">Changed</h3>
 <ul>
 <li>
 <p><strong>Collection moved from Monitoring to Administrator.</strong> The other six
@@ -1297,7 +1352,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   reported back in <code>source</code>, and the UI prints which one it drew: an hourly
   average and a five-minute reading are not the same claim about the device.</li>
 </ul>
-<h3 id="changed_2">Changed</h3>
+<h3 id="changed_3">Changed</h3>
 <ul>
 <li><strong>The last <code>fortinet</code> identifiers are gone from the platform itself.</strong> The
   database, the PostgreSQL role, the Linux service account and the PostgreSQL
@@ -1768,7 +1823,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li>Public site: <code>site/safeguards.html</code> (linked from the nav and footer of every
   page) and the matching notes on <code>site/install.html</code>.</li>
 </ul>
-<h3 id="changed_3">Changed</h3>
+<h3 id="changed_4">Changed</h3>
 <ul>
 <li>In-app <strong>Documentation</strong> index now curates a title, order and description for
   all 18 manuals; half of them previously fell through to an auto-generated

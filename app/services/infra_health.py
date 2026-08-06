@@ -89,6 +89,13 @@ def _nodes() -> list[dict]:
     return out
 
 
+def nodes() -> list[dict]:
+    """Public alias for :func:`_nodes` — the HA node list with each node's
+    ``host_stats``. :mod:`app.services.host_health` grades these, and a private
+    name there would be a second implementation waiting to drift."""
+    return _nodes()
+
+
 # ---------------------------------------------------------------------------
 # Git source of truth (Gitea)
 # ---------------------------------------------------------------------------

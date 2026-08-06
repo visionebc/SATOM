@@ -46,6 +46,7 @@ K_CHK_DEVICE = "alerts.check.device"
 K_CHK_BACKUP = "alerts.check.backup"
 K_CHK_DRIFT = "alerts.check.drift"
 K_CHK_ACTIONS = "alerts.check.actions"
+K_CHK_HOST = "alerts.check.host"
 K_ACT_STREAK_CRIT = "alerts.action_fail_streak_crit"  # crit at N straight failures
 K_ACT_OVERDUE_H = "alerts.action_overdue_hours"       # enabled action this late to fire
 K_DRIFT_WINDOW_MIN = "alerts.drift_window_min"  # only alert on drift newer than this
@@ -64,6 +65,7 @@ DEFAULTS = {
     K_CHK_BACKUP: "1",
     K_CHK_DRIFT: "1",
     K_CHK_ACTIONS: "1",
+    K_CHK_HOST: "1",
     K_ACT_STREAK_CRIT: "3",
     K_ACT_OVERDUE_H: "3",
     K_DRIFT_WINDOW_MIN: "90",
@@ -150,6 +152,7 @@ def config() -> dict:
             "backup": _flag(K_CHK_BACKUP),
             "drift": _flag(K_CHK_DRIFT),
             "actions": _flag(K_CHK_ACTIONS),
+            "host": _flag(K_CHK_HOST),
         },
     }
 
@@ -194,6 +197,7 @@ def save_config(form) -> None:
     AppSetting.set(K_CHK_BACKUP, cb("check_backup"))
     AppSetting.set(K_CHK_DRIFT, cb("check_drift"))
     AppSetting.set(K_CHK_ACTIONS, cb("check_actions"))
+    AppSetting.set(K_CHK_HOST, cb("check_host"))
     # AppSetting.set commits per call — no trailing commit needed.
 
 
@@ -389,10 +393,10 @@ def _check_devices() -> list[dict]:
                  "detail": f"Appliance.query failed: {exc}"}]
 
     floor = devhealth.RANK.get(_get(K_DEV_MIN), 0) or devhealth.RANK["warn"]
-    try:
-        warn_pct, crit_pct = devhealth.thresholds()
-    except Exception:  # noqa: BLE001
-        warn_pct, crit_pct = 80.0, 95.0
+    # Capacity thresholds are resolved PER DEVICE inside ``collect_for`` from
+    # that device's own product. Resolving one pair here and passing it to every
+    # appliance is what previously defeated per-product thresholds for the one
+    # caller that actually sends the mail.
 
     findings: list[dict] = []
     for a in appliances:
@@ -401,7 +405,7 @@ def _check_devices() -> list[dict]:
         host, port = a.host, int(a.port or 443)
         reachable = _reachable(host, port)
         try:
-            health = devhealth.collect_for(a, warn_pct, crit_pct)
+            health = devhealth.collect_for(a)
         except Exception as exc:  # noqa: BLE001 — one bad device never sinks the run
             findings.append({"key": f"device.error.{a.name}", "severity": SEV_WARNING,
                              "title": f"Health roll-up failed for {a.name}",
@@ -430,7 +434,8 @@ def _check_devices() -> list[dict]:
             "product": _product_of(a),
             "detail": ("\n".join(lines) +
                        f"\n\n{a.kind} appliance at {host}:{port}, probed from "
-                       f"{_node()}. Full picture: /monitoring/")})
+                       f"{_node()}. Full picture: /monitoring/ — thresholds: "
+                       f"Settings -> Thresholds -> {a.kind or 'this product'}.")})
     return findings
 
 
@@ -666,6 +671,52 @@ def _check_drift() -> list[dict]:
     return findings
 
 
+def _check_host() -> list[dict]:
+    """One finding per node whose MACHINE is degraded — disk, memory, load.
+
+    This check exists because nothing in the product measured the box it runs
+    on. On 2026-07-28 the primary reached 95 % disk in six minutes; every unit
+    stayed active, ``/healthz`` stayed 200, the badge stayed green and no mail
+    was sent. It was found by a human running ``df``.
+
+    Two boundaries, both deliberate:
+
+    * **An unreachable node is not alerted here.** It grades ``unknown`` (we
+      learned nothing about its disk) and the redundancy check already owns
+      "the peer is gone". Alerting both would send two mails for one dead
+      standby.
+    * **One finding per node, every failing signal listed** — the same contract
+      as :func:`_check_devices`. Three mails about one full disk is how an
+      operator learns to filter the sender.
+    """
+    from . import host_health as hh
+    try:
+        fleet = hh.fleet()
+    except Exception as exc:  # noqa: BLE001
+        return [{"key": "host.error", "severity": SEV_WARNING,
+                 "title": "Host health unreadable",
+                 "detail": f"host_health.fleet() raised: {exc}"}]
+
+    findings: list[dict] = []
+    for n in fleet.get("nodes") or []:
+        bad = [r for r in (n.get("reasons") or [])
+               if r.get("status") in ("warn", "crit")]
+        if not bad:
+            continue
+        crit = any(r["status"] == "crit" for r in bad)
+        name = n.get("name") or "this node"
+        findings.append({
+            # The status is part of the key so an escalation from warn to crit
+            # inside the cooldown window still reaches the operator.
+            "key": f"host.{name}.{'crit' if crit else 'warn'}",
+            "severity": SEV_CRITICAL if crit else SEV_WARNING,
+            "title": f"Host {name} is {'critical' if crit else 'degraded'}",
+            "detail": ("\n".join(f"- {r['label']}: {r['text']}" for r in bad)
+                       + "\n\nThresholds: Settings -> Thresholds -> "
+                         "SATOM host (the machine).")})
+    return findings
+
+
 _CHECKS = [
     (K_CHK_CERT, _check_cert),
     (K_CHK_GIT, _check_git),
@@ -673,6 +724,7 @@ _CHECKS = [
     (K_CHK_BACKUP, _check_backup),
     (K_CHK_DRIFT, _check_drift),
     (K_CHK_ACTIONS, _check_actions),
+    (K_CHK_HOST, _check_host),
 ]
 
 

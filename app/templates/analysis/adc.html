@@ -1,0 +1,407 @@
+{% extends "base.html" %}
+{% block title %}Analysis — FortiADC{% endblock %}
+
+{% block head %}
+<style nonce="{{ csp_nonce }}">
+  .ana-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.75rem;margin-bottom:1.4rem}
+  .ana-card{background:var(--fw-surface,#fff);border:1px solid var(--fw-border,#e3e8f0);border-radius:12px;padding:.85rem 1rem;box-shadow:0 1px 2px rgba(20,30,60,.04)}
+  .ana-card .v{font-size:1.6rem;font-weight:700;line-height:1.1;color:var(--fw-accent,#1f3a8a)}
+  .ana-card .k{font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;opacity:.65;font-weight:600;margin-top:.15rem}
+  .ana-card .s{font-size:.72rem;opacity:.6;margin-top:.2rem}
+  .ana-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:1rem;margin-bottom:1.4rem}
+  .ana-panel{background:var(--fw-surface,#fff);border:1px solid var(--fw-border,#e3e8f0);border-radius:12px;padding:1rem;box-shadow:0 1px 2px rgba(20,30,60,.04)}
+  .ana-panel h3{font-size:.82rem;text-transform:uppercase;letter-spacing:.05em;margin:0 0 .7rem;opacity:.75;font-weight:700}
+  .ana-panel.wide{grid-column:1/-1}
+  .ana-sec{font-size:1rem;font-weight:700;margin:1.6rem 0 .8rem;padding-bottom:.35rem;border-bottom:2px solid var(--fw-border,#e3e8f0);color:var(--fw-accent,#1f3a8a)}
+  table.ana-tbl{width:100%;border-collapse:collapse;font-size:.82rem}
+  table.ana-tbl th{text-align:left;text-transform:uppercase;font-size:.68rem;letter-spacing:.04em;opacity:.6;border-bottom:1px solid var(--fw-border,#e3e8f0);padding:.35rem .5rem}
+  table.ana-tbl td{padding:.35rem .5rem;border-bottom:1px solid var(--fw-border,#f1f4f9)}
+  table.ana-tbl tbody tr:hover{background:var(--fw-surface-alt,#f7f9fd)}
+  .ana-empty{opacity:.55;font-size:.85rem;padding:.6rem}
+  .ana-scroll{max-height:420px;overflow:auto}
+  .adc-none{opacity:.45;font-style:italic}
+  .adc-note{font-size:.8rem;opacity:.75;background:var(--fw-surface-alt,#f7f9fd);border:1px solid var(--fw-border,#e3e8f0);border-left:3px solid var(--fw-accent,#2563eb);border-radius:8px;padding:.6rem .8rem;margin-bottom:1.1rem}
+  .adc-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78rem}
+  .adc-chip{display:inline-block;font-size:.68rem;padding:.08rem .4rem;border-radius:999px;border:1px solid var(--fw-border,#e3e8f0);background:var(--fw-surface-alt,#f7f9fd);margin:0 .18rem .18rem 0}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<nav class="fw-breadcrumb"><span>Analysis</span></nav>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1>Analysis — delivery</h1>
+    <p class="fw-page-sub">Published services, back-end health, security
+      attachment and TLS posture across every FortiADC in this ADOM. Read
+      entirely from the configuration cache — opening this page never contacts
+      an appliance.</p>
+  </div>
+</div>
+
+{% if not data.devices %}
+  <div class="ana-empty">No FortiADC appliance is visible in this ADOM.</div>
+{% else %}
+
+{% set d = data.delivery %}{% set b = data.backends %}
+{% set s = data.security %}{% set t = data.tls %}{% set sm = data.summary %}
+
+{# ---------------------------------------------------------------- headline #}
+<div class="ana-cards">
+  <div class="ana-card">
+    <div class="v">{{ sm.virtual_servers }}</div>
+    <div class="k">Virtual servers</div>
+    <div class="s">{{ sm.virtual_servers_enabled }} enabled</div>
+  </div>
+  <div class="ana-card">
+    <div class="v">{{ sm.pools }}</div>
+    <div class="k">Pools</div>
+    <div class="s">{{ sm.pool_members }} member(s), {{ sm.real_servers }} real server(s)</div>
+  </div>
+  <div class="ana-card">
+    <div class="v">{{ sm.pools_without_health_check }}</div>
+    <div class="k">Pools with no health check</div>
+    <div class="s">traffic keeps flowing to dead members</div>
+  </div>
+  <div class="ana-card">
+    <div class="v">{{ sm.bare_virtual_servers }}</div>
+    <div class="k">Virtual servers with no security profile</div>
+  </div>
+  <div class="ana-card">
+    <div class="v">{{ sm.certificates_expired }}<span style="font-size:.9rem;opacity:.5">/{{ sm.certificates }}</span></div>
+    <div class="k">Expired certificates</div>
+  </div>
+  <div class="ana-card">
+    <div class="v">{{ data.inventory.endpoints_present }}<span style="font-size:.9rem;opacity:.5">/{{ data.inventory.endpoints_known }}</span></div>
+    <div class="k">Endpoints harvested</div>
+    <div class="s">registry-derived</div>
+  </div>
+</div>
+
+{# ---------------------------------------------------------------- findings #}
+<div class="ana-sec">Findings</div>
+<div class="adc-note">
+  Every finding below is derived from a section the sweep actually collected. A
+  section that was never harvested produces <em>no</em> finding rather than a
+  reassuring zero — “nothing collected” and “nothing wrong” are opposite facts
+  and only one of them is safe to act on.
+</div>
+<div class="ana-panel wide" style="margin-bottom:1.4rem">
+  {% if not data.findings %}
+    <div class="ana-empty">No findings — every harvested section is clean.</div>
+  {% else %}
+  <div class="ana-scroll">
+    <table class="ana-tbl">
+      <thead><tr><th>Severity</th><th>Device</th><th>Finding</th><th>Detail</th></tr></thead>
+      <tbody>
+        {% for f in data.findings %}
+        <tr>
+          <td>
+            {% if f.severity == 'crit' %}<span class="fw-badge fw-badge-danger">crit</span>
+            {% elif f.severity == 'warn' %}<span class="fw-badge fw-badge-warning">warn</span>
+            {% elif f.severity == 'info' %}<span class="fw-badge fw-badge-secondary">info</span>
+            {% else %}<span class="fw-badge fw-badge-success">ok</span>{% endif %}
+          </td>
+          <td>{{ f.device }}</td>
+          <td><strong>{{ f.title }}</strong></td>
+          <td style="opacity:.8">{{ f.detail }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+{# ---------------------------------------------------------------- delivery #}
+<div class="ana-sec">Delivery — what this ADC publishes</div>
+{% if not d.harvested %}
+  <div class="ana-empty">The virtual-server section has never been harvested for
+    the devices in scope. This is not “no published services” — it is no data.</div>
+{% else %}
+<div class="ana-grid">
+  <div class="ana-panel">
+    <h3>By type</h3>
+    {% for r in d.by_type %}
+      <div style="display:flex;justify-content:space-between"><span>{{ r.label }}</span><strong>{{ r.count }}</strong></div>
+    {% else %}<div class="ana-empty">none</div>{% endfor %}
+  </div>
+  <div class="ana-panel">
+    <h3>By admin status</h3>
+    {% for r in d.by_status %}
+      <div style="display:flex;justify-content:space-between"><span>{{ r.label }}</span><strong>{{ r.count }}</strong></div>
+    {% else %}<div class="ana-empty">none</div>{% endfor %}
+  </div>
+  <div class="ana-panel">
+    <h3>Reported availability</h3>
+    {% for r in d.by_availability %}
+      <div style="display:flex;justify-content:space-between"><span>{{ r.label }}</span><strong>{{ r.count }}</strong></div>
+    {% else %}<div class="ana-empty">none</div>{% endfor %}
+    <div style="font-size:.72rem;opacity:.55;margin-top:.4rem">Last value the
+      harvest captured, not a live probe.</div>
+  </div>
+  <div class="ana-panel wide">
+    <h3>Virtual servers</h3>
+    <div class="ana-scroll">
+      <table class="ana-tbl">
+        <thead><tr>
+          <th>Device</th><th>Name</th><th>Status</th><th>Type</th>
+          <th>Front-end</th><th>Interface</th><th>Pool</th><th>Method</th>
+          <th>Security</th><th>Traffic log</th>
+        </tr></thead>
+        <tbody>
+          {% for r in d.rows %}
+          <tr>
+            <td>{{ r.device }}</td>
+            <td><strong>{{ r.name }}</strong></td>
+            <td>{% if r.status == 'enabled' %}<span class="fw-badge fw-badge-success">enabled</span>
+                {% else %}<span class="fw-badge fw-badge-secondary">disabled</span>{% endif %}</td>
+            <td>{{ r.type }}</td>
+            <td class="adc-mono">{{ r.address }}{% if r.port %}:{{ r.port }}{% endif %}</td>
+            <td>{{ r.interface or '—' }}</td>
+            <td>{{ r.pool or '' }}{% if not r.pool %}<span class="adc-none">none</span>{% endif %}</td>
+            <td>{{ r.method or '—' }}</td>
+            <td>{% for x in r.security %}<span class="adc-chip">{{ x }}</span>{% else %}<span class="adc-none">none</span>{% endfor %}</td>
+            <td>{% if r.traffic_log %}on{% else %}<span class="adc-none">off</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ---------------------------------------------------------------- backends #}
+<div class="ana-sec">Back-ends — pools, members and real servers</div>
+{% if not b.harvested %}
+  <div class="ana-empty">The pool section has never been harvested for the
+    devices in scope.</div>
+{% else %}
+<div class="adc-note">
+  A pool with no health check is the ADC’s signature outage: it keeps balancing
+  onto a member that stopped answering, and nothing in the traffic path notices.
+  Both the <code>health_check</code> flag and a populated
+  <code>health_check_list</code> count as configured.
+</div>
+<div class="ana-grid">
+  <div class="ana-panel wide">
+    <h3>Pools</h3>
+    <div class="ana-scroll">
+      <table class="ana-tbl">
+        <thead><tr>
+          <th>Device</th><th>Pool</th><th>Type</th><th>Port</th>
+          <th>Health check</th><th style="text-align:right">Members</th>
+          <th style="text-align:right">Enabled</th><th>Availability</th>
+        </tr></thead>
+        <tbody>
+          {% for r in b.rows %}
+          <tr>
+            <td>{{ r.device }}</td>
+            <td><strong>{{ r.name }}</strong></td>
+            <td>{{ r.type }}{% if r.pool_type %} / {{ r.pool_type }}{% endif %}</td>
+            <td class="adc-mono">{{ r.service_port or '—' }}</td>
+            <td>{% if r.health_check %}<span class="fw-badge fw-badge-success">configured</span>
+                  {% for h in r.health_check_list %}<span class="adc-chip">{{ h }}</span>{% endfor %}
+                {% else %}<span class="fw-badge fw-badge-warning">none</span>{% endif %}</td>
+            <td style="text-align:right">{{ r.members }}</td>
+            <td style="text-align:right">{{ r.members_up }}</td>
+            <td>{{ r.availability }}</td>
+          </tr>
+          {% for m in r.member_rows %}
+          <tr>
+            <td></td>
+            <td style="padding-left:1.4rem;opacity:.75">↳ member {{ m.id }}</td>
+            <td colspan="2" class="adc-mono">{{ m.address }}{% if m.port %}:{{ m.port }}{% endif %}</td>
+            <td>{{ m.real_server or '—' }}</td>
+            <td colspan="2" style="text-align:right">weight {{ m.weight }}{% if m.backup %} · backup{% endif %}</td>
+            <td>{% if m.status == 'enabled' %}enabled{% else %}<span class="adc-none">disabled</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="ana-panel wide">
+    <h3>Real servers</h3>
+    {% if not b.rs_harvested %}
+      <div class="ana-empty">not harvested</div>
+    {% else %}
+    <table class="ana-tbl">
+      <thead><tr><th>Device</th><th>Name</th><th>Address</th><th>Status</th><th>In a pool?</th></tr></thead>
+      <tbody>
+        {% for r in b.real_server_rows %}
+        <tr>
+          <td>{{ r.device }}</td><td><strong>{{ r.name }}</strong></td>
+          <td class="adc-mono">{{ r.address or '—' }}</td>
+          <td>{% if r.status == 'enabled' %}enabled{% else %}<span class="adc-none">disabled</span>{% endif %}</td>
+          <td>{% if r.referenced %}<span class="fw-badge fw-badge-success">referenced</span>
+              {% else %}<span class="fw-badge fw-badge-secondary">unreferenced</span>{% endif %}</td>
+        </tr>
+        {% else %}<tr><td colspan="5" class="ana-empty">none</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ---------------------------------------------------------------- security #}
+<div class="ana-sec">Security — defined versus applied</div>
+<div class="adc-note">
+  A profile that exists protects nothing. These counts are the number of
+  virtual servers that <em>reference</em> each profile kind, which is the only
+  measure that corresponds to traffic actually being inspected.
+</div>
+<div class="ana-grid">
+  <div class="ana-panel">
+    <h3>Attachment across {{ s.virtual_servers }} virtual server(s)</h3>
+    <table class="ana-tbl">
+      <thead><tr><th>Profile kind</th><th style="text-align:right">Attached</th><th style="text-align:right">Bare</th></tr></thead>
+      <tbody>
+        {% for c in s.coverage %}
+        <tr>
+          <td>{{ c.slot }} <code style="opacity:.5;font-size:.7rem">{{ c.field }}</code></td>
+          <td style="text-align:right"><strong>{{ c.attached }}</strong></td>
+          <td style="text-align:right">{% if c.bare %}<span class="fw-badge fw-badge-warning">{{ c.bare }}</span>{% else %}0{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="ana-panel">
+    <h3>WAF profiles ({{ s.waf_tuned }} tuned of {{ s.waf_total }})</h3>
+    <table class="ana-tbl">
+      <thead><tr><th>Device</th><th>Profile</th><th style="text-align:right">Modules</th><th>Origin</th></tr></thead>
+      <tbody>
+        {% for r in s.waf_profiles %}
+        <tr>
+          <td>{{ r.device }}</td><td><strong>{{ r.name }}</strong></td>
+          <td style="text-align:right">{{ r.modules_filled }}<span style="opacity:.45">/{{ r.modules_total }}</span></td>
+          <td>{% if r.factory %}<span class="adc-none">factory</span>{% else %}<span class="fw-badge fw-badge-success">tuned</span>{% endif %}</td>
+        </tr>
+        {% else %}<tr><td colspan="4" class="ana-empty">none</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="ana-panel">
+    <h3>IPS profiles</h3>
+    <table class="ana-tbl">
+      <thead><tr><th>Device</th><th>Profile</th><th>Comment</th></tr></thead>
+      <tbody>
+        {% for r in s.ips_profiles %}
+        <tr><td>{{ r.device }}</td><td><strong>{{ r.name }}</strong></td>
+            <td style="opacity:.75">{{ r.comments }}</td></tr>
+        {% else %}<tr><td colspan="3" class="ana-empty">none</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# --------------------------------------------------------------------- TLS #}
+<div class="ana-sec">TLS posture</div>
+<div class="ana-grid">
+  <div class="ana-panel">
+    <h3>Client-SSL profiles ({{ t.profiles_with_legacy }} allow legacy TLS)</h3>
+    <div class="ana-scroll">
+      <table class="ana-tbl">
+        <thead><tr><th>Device</th><th>Profile</th><th>Versions</th><th>Origin</th></tr></thead>
+        <tbody>
+          {% for r in t.profiles %}
+          <tr>
+            <td>{{ r.device }}</td><td><strong>{{ r.name }}</strong></td>
+            <td>{% for v in r.versions %}<span class="adc-chip">{{ v }}</span>{% else %}<span class="adc-none">unset</span>{% endfor %}</td>
+            <td>{% if r.factory %}<span class="adc-none">factory</span>{% else %}tuned{% endif %}</td>
+          </tr>
+          {% else %}<tr><td colspan="4" class="ana-empty">none</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="ana-panel">
+    <h3>Local certificates</h3>
+    <div class="ana-scroll">
+      <table class="ana-tbl">
+        <thead><tr><th>Device</th><th>Name</th><th>Expires</th><th style="text-align:right">Days left</th></tr></thead>
+        <tbody>
+          {% for r in t.certificates %}
+          <tr>
+            <td>{{ r.device }}</td><td><strong>{{ r.name }}</strong></td>
+            <td class="adc-mono">{{ r.valid_to or '—' }}</td>
+            <td style="text-align:right">
+              {% if r.days_left is none %}<span class="adc-none">unparsed</span>
+              {% elif r.days_left < 0 %}<span class="fw-badge fw-badge-danger">expired</span>
+              {% elif r.days_left <= 30 %}<span class="fw-badge fw-badge-warning">{{ r.days_left }}</span>
+              {% else %}{{ r.days_left }}{% endif %}
+            </td>
+          </tr>
+          {% else %}<tr><td colspan="4" class="ana-empty">none</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div style="font-size:.72rem;opacity:.55;margin-top:.4rem">Expiry is read at
+      day precision: the appliance stamps a timezone abbreviation that cannot be
+      parsed unambiguously, so the time of day is discarded.</div>
+  </div>
+</div>
+
+{# --------------------------------------------------------------- inventory #}
+<div class="ana-sec">Object inventory</div>
+<div class="adc-note">
+  Rows are derived from the FortiADC endpoint registry, so an endpoint a
+  firmware adds appears here without a code change.
+  <strong>not harvested</strong> means the sweep stored no rows for that
+  endpoint — which is different from the endpoint being empty.
+</div>
+<div class="ana-panel wide" style="margin-bottom:1.4rem">
+  <div class="ana-scroll">
+    <table class="ana-tbl">
+      <thead><tr>
+        <th>Section</th><th>Object</th><th>Endpoint</th>
+        {% for dv in data.devices %}<th style="text-align:right">{{ dv.name }}</th>{% endfor %}
+        <th style="text-align:right">Total</th>
+      </tr></thead>
+      <tbody>
+        {% for row in data.inventory.rows %}
+        <tr>
+          <td style="opacity:.7">{{ row.section }}</td>
+          <td><strong>{{ row.label }}</strong></td>
+          <td><code style="font-size:.72rem;opacity:.6">{{ row.endpoint }}</code></td>
+          {% for p in row.devices %}
+          <td style="text-align:right">
+            {% if p.harvested %}{{ p.count }}{% else %}<span class="adc-none" title="the sweep stored no rows for this endpoint">not harvested</span>{% endif %}
+          </td>
+          {% endfor %}
+          <td style="text-align:right"><strong>{{ row.total }}</strong></td>
+        </tr>
+        {% else %}<tr><td colspan="4" class="ana-empty">nothing cached</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# --------------------------------------------------------------- freshness #}
+<div class="ana-sec">Cache freshness</div>
+<div class="ana-panel wide">
+  <table class="ana-tbl">
+    <thead><tr><th>Device</th><th>Host</th><th>Harvested</th><th>Age</th><th>Layer</th><th>State</th></tr></thead>
+    <tbody>
+      {% for r in data.freshness.rows %}
+      <tr>
+        <td><strong>{{ r.device }}</strong></td>
+        <td class="adc-mono">{{ r.host }}</td>
+        <td>{% if r.cached %}{{ r.generated_at }}{% else %}<span class="fw-badge fw-badge-warning">never</span>{% endif %}</td>
+        <td>{% if r.age_hours is not none %}{{ r.age_hours|round(1) }} h{% else %}—{% endif %}</td>
+        <td>{{ r.layer or '—' }}</td>
+        <td>{% if r.maintenance %}<span class="fw-badge fw-badge-secondary">maintenance</span>{% else %}<span class="fw-badge fw-badge-success">active</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endif %}
+{% endblock %}

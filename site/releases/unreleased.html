@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Fixed · 26 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Fixed · 29 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Fixed · 26 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Fixed · 29 entries.</p>
   <div class="callout" style="margin-top:18px;">
     <span class="cico">🗒️</span>
     <p><b>Generated from the changelog.</b> This page is one section of
@@ -212,13 +212,32 @@
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
-<li><strong><code>list_datastores()</code> reported a false capability.</strong> Proxmox splits <code>images</code>
+<li><strong>"New appliance" could not add a FortiAuthenticator.</strong> The platform roster
+  was a hardcoded three-item list repeated in four templates and never updated
+  when the product shipped, so its own ADOM had no way to onboard its own
+  devices. The roster is now derived from the ADOM registry, so a new product is
+  offerable the day it is declared.</li>
+<li><strong>Every ADOM offered every platform, and the server accepted it.</strong> Adding a
+  device from one ADOM while picking another product's platform saved a row the
+  creating session could not see -- indistinguishable from a save that failed. A
+  product ADOM now offers exactly its own platform, Global offers all of them,
+  and the posted value is re-checked server-side on create and on edit.</li>
+<li>
+<p><strong>Appliance detail, edit and delete were reachable across ADOMs by id.</strong> The
+  appliance LIST was product-scoped but the by-id loader was not, so every
+  per-appliance route answered 200 for another product's device to anyone who
+  knew the id. <code>visible_appliance_or_404()</code> now applies the same product filter
+  the list does; Global still reaches everything.</p>
+</li>
+<li>
+<p><strong><code>list_datastores()</code> reported a false capability.</strong> Proxmox splits <code>images</code>
   (can hold a disk) from <code>import</code> (can receive an upload) across different
   storages. The listing filtered on <code>images</code> first and only then read <code>import</code>,
   so the stock <code>local</code> storage — which has <code>import</code> and not <code>images</code> — was
   dropped before its flag was evaluated, and the probe told the operator to add
   a content type the host already had. <code>disk_datastores()</code> and
-  <code>import_datastores()</code> now name the two questions separately.</li>
+  <code>import_datastores()</code> now name the two questions separately.</p>
+</li>
 <li><strong><code>list_vms()</code> answered "does this exist" from a cache.</strong>
   <code>/cluster/resources</code> is refreshed on <code>pvestatd</code>'s cycle: a machine SATOM had
   just created and powered on was absent from it, while the rollback that

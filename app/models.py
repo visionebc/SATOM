@@ -485,9 +485,19 @@ def visible_appliances(query=None, user=None):
 
 def visible_appliance_or_404(id, user=None):
     """Load one appliance by id, but abort 404 (never 403 — do not confirm the
-    row exists) when it is in maintenance and *user* may not see it."""
+    row exists) when it is in maintenance and *user* may not see it, or when it
+    belongs to another ADOM.
+
+    The ADOM half was missing until 2026-08-06: :func:`visible_appliances`
+    scoped the LIST while this loader read the table directly, so every
+    by-id route (detail, edit, delete, backups, console, the API) answered 200
+    for another product's device to anyone who knew the id. A page that hides a
+    row and then serves it one URL away is not scoped — it is decorated."""
     from flask import abort
-    a = Appliance.query.get(id)
+    from .services.product_scope import scope_appliance_query
+    q = scope_appliance_query(Appliance.query.filter(Appliance.id == id),
+                              Appliance.kind)
+    a = q.first()
     if a is None or (a.maintenance and not can_view_maintenance(user)):
         abort(404)
     return a

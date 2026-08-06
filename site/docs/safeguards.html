@@ -2705,6 +2705,46 @@ not fail closed here; it disables scoping.</p>
 <code>concrete_products()</code> rather than a list written in the test, so the next
 product is covered without an edit. An anti-vacuity test fails if that set ever
 comes back empty.</p>
+<h3 id="19b-hiding-a-row-is-not-scoping-it-and-a-form-is-not-a-rule">19b. Hiding a row is not scoping it, and a form is not a rule</h3>
+<p>The same product raised three more (2026-08-06), all on the appliance
+inventory, and all silent:</p>
+<ul>
+<li><strong>The platform roster was a hardcoded list.</strong> "New appliance" offered exactly
+  three platforms, written by hand in four places -- two selects and a filter on
+  the index page, one more on the standalone edit page. FortiAuthenticator had
+  been a real product for a day and was in none of them, so its ADOM could not
+  onboard its own devices from the UI. Nothing failed; the option was simply
+  absent.</li>
+<li><strong>Every ADOM offered every platform.</strong> Choosing a foreign one saved a device
+  the creating session could not see the moment it was saved -- the row landed
+  in another ADOM and the operator read it as a save that did nothing.</li>
+<li><strong>The by-id loader had no product filter at all.</strong> <code>visible_appliances()</code>
+  scoped the LIST while <code>visible_appliance_or_404()</code> read the table directly, so
+  detail, edit, delete, backups and console answered 200 for another product's
+  device to anyone who knew the id.</li>
+</ul>
+<p>The rules:</p>
+<ul>
+<li><strong>A page that hides a row and serves it one URL away is not scoped, it is
+  decorated.</strong> The list filter and the by-id loader must apply the SAME rule;
+  the loader is the one that enforces it, because it is the one an URL reaches.</li>
+<li><strong>The roster is derived, never written.</strong> An appliance's <code>kind</code> IS an ADOM
+  key, so the platform roster is <code>product_scope.device_products()</code> read from the
+  registry. A fifth product is offerable the day it is declared.</li>
+<li><strong>A concrete ADOM offers exactly one platform: its own.</strong> Where there is only
+  one, the kind filter is not rendered at all -- a control that can only ever be
+  a no-op teaches the operator to ignore the toolbar.</li>
+<li><strong>The form is a hint; the server is the rule.</strong> <code>may_assign_kind()</code> re-checks
+  the posted <code>kind</code> on create and on edit. Without it the field is a one-field
+  ADOM jump.</li>
+<li><strong>Guard the CHANGE, not the field.</strong> An unchanged kind is always accepted, so
+  a legacy row whose kind no ADOM claims stays editable from Global, and the
+  edit form keeps the row's own platform selectable even where the active ADOM
+  does not offer it -- otherwise saving any other field re-kinds the device.</li>
+</ul>
+<p>Guards: <code>tests/test_appliance_adom_scope.py</code>, parametrised over the product
+ADOMs, plus a structural test that no template emits a hardcoded platform
+<code>&lt;option&gt;</code>. All five mutations bite.</p>
 <h2 id="20-trusting-a-device-means-naming-its-ca-not-disabling-the-check">20. Trusting a device means naming its CA, not disabling the check</h2>
 <p><code>Appliance.verify_ssl</code> had exactly two settings: validate against the PUBLIC
 root store, which no privately-signed appliance can ever satisfy, or validate
@@ -2982,6 +3022,17 @@ body of the check and confirm no git invocation survives inside it:</p>
 </code></pre>
 <p>And a parked box must be silent: drop the <code>maintenance</code> test from the loop and
 <code>tests/test_health_freshness_and_drift.py</code> fails.</p>
+<h3 id="the-appliance-roster-is-per-adom-list-and-by-id-19b">The appliance roster is per-ADOM, list AND by-id (19b)</h3>
+<p>No template may name a platform in an option value -- that list is derived:</p>
+<pre><code>grep -rn 'option value="forti' app/templates/ | wc -l
+# expect 0
+</code></pre>
+<p>Then check the two halves separately, because the list was already correct
+while the by-id route was not. Inside one product ADOM, the index must show
+only that product, and another product's appliance id must answer 404:</p>
+<pre><code>curl -sk -H 'X-ADOM: fortiweb' https://&lt;node&gt;/appliances/&lt;a-fortiadc-id&gt;
+# expect 404, not 200 and not 403
+</code></pre>
 <h3 id="an-adom-shows-only-its-own-product-19">An ADOM shows only its own product (19)</h3>
 <p>Every concrete ADOM must see its own devices and nothing else. Count them per
 ADOM against the live database -- the numbers must partition, and only FortiWeb

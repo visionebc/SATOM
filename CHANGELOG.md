@@ -145,6 +145,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+
+- **"New appliance" could not add a FortiAuthenticator.** The platform roster
+  was a hardcoded three-item list repeated in four templates and never updated
+  when the product shipped, so its own ADOM had no way to onboard its own
+  devices. The roster is now derived from the ADOM registry, so a new product is
+  offerable the day it is declared.
+- **Every ADOM offered every platform, and the server accepted it.** Adding a
+  device from one ADOM while picking another product's platform saved a row the
+  creating session could not see -- indistinguishable from a save that failed. A
+  product ADOM now offers exactly its own platform, Global offers all of them,
+  and the posted value is re-checked server-side on create and on edit.
+- **Appliance detail, edit and delete were reachable across ADOMs by id.** The
+  appliance LIST was product-scoped but the by-id loader was not, so every
+  per-appliance route answered 200 for another product's device to anyone who
+  knew the id. `visible_appliance_or_404()` now applies the same product filter
+  the list does; Global still reaches everything.
+
 - **`list_datastores()` reported a false capability.** Proxmox splits `images`
   (can hold a disk) from `import` (can receive an upload) across different
   storages. The listing filtered on `images` first and only then read `import`,

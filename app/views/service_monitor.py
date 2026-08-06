@@ -68,7 +68,17 @@ SPEC = mp.PageSpec(
         "runs out of entitlement, not of bandwidth. All of it over the "
         "appliance's REST monitor API: no SSH, and no dependency on the config "
         "API, so these keep reporting on a device whose <em>cmdb</em> is "
-        "licence-locked."),
+        "licence-locked."
+        "<br><br><b>One probe per service does not scale, and Collection "
+        "already covers these signals.</b> A scrape target reads every policy "
+        "on a device in a single call; a probe reads one. At a few hundred "
+        "services the probe shape is thousands of rows and thousands of calls "
+        "per sweep. These probes are kept because they are the only thing that "
+        "<em>grades</em> — Collection publishes numbers and nothing turns a "
+        "number into warn/crit, so retiring them today would delete the "
+        "\u201cevery backend behind this policy is down\u201d signal from "
+        "Fleet health. Prefer <b>Analytics &rarr; Service drill-down</b> for "
+        "anything you only need to look at."),
     footnote=(
         "Every kind here is a REST call: <code>system/status.systemresource</code> "
         "for box sessions and connection rate, <code>policy/policystatus</code> "

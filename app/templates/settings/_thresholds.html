@@ -1,0 +1,200 @@
+{# Settings -> Thresholds. Rendered client-side from /settings/thresholds/state
+   so the 4 000-line index.html does not grow another 300 lines of markup for a
+   panel whose shape is DATA (services/thresholds.py) rather than layout. #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><span><i class="bi bi-sliders me-2"></i>Alert thresholds</span></div>
+  <div class="fw-card-body">
+    <p class="text-muted mb-3">
+      Declare a limit once and every probe that has not been given its own value
+      follows it. A probe keeps an explicit value only where somebody set one;
+      everything else says <em>inherited</em>, and the Monitoring pages print
+      which is which so a grade is never unexplained.
+    </p>
+
+    <div class="d-flex flex-wrap gap-2 mb-3" id="th-scopes"></div>
+
+    <form id="th-form" autocomplete="off">
+      <input type="hidden" name="scope" id="th-scope">
+      <div id="th-body" class="text-muted">Loading…</div>
+
+      <div class="d-flex align-items-center gap-2 mt-3 pt-3 border-top">
+        <button class="btn fw-btn-primary" type="submit">
+          <i class="bi bi-check2 me-1"></i>Save this scope
+        </button>
+        <button class="btn fw-btn-secondary" type="button" id="th-reset">
+          <i class="bi bi-arrow-counterclockwise me-1"></i>Revert scope to shipped defaults
+        </button>
+        <span id="th-msg" class="ms-2 small"></span>
+      </div>
+      <div class="form-text mt-2">
+        Leave a box <strong>empty</strong> to clear the override — the field falls
+        back to the shipped default and every probe inheriting it follows.
+        <strong>0</strong> is not the same answer: it switches that level off.
+      </div>
+    </form>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var root = document.getElementById('tab-thresholds');
+  if (!root) return;
+  var scopesEl = document.getElementById('th-scopes');
+  var bodyEl = document.getElementById('th-body');
+  var scopeEl = document.getElementById('th-scope');
+  var msgEl = document.getElementById('th-msg');
+  var form = document.getElementById('th-form');
+  var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+  var current = '';
+
+  function esc(s) {
+    return String(s === null || s === undefined ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // The origin chip is the whole reason live inheritance is safe: a number the
+  // operator did not type has to say where it came from.
+  function chip(f) {
+    if (f.origin === 'scope')
+      return '<span class="fw-badge fw-badge-info ms-2">set here</span>';
+    return '<span class="fw-badge fw-badge-secondary ms-2">default ' +
+           esc(f.default) + '</span>';
+  }
+
+  function field(f, prefix) {
+    return '' +
+      '<div class="col-md-6 col-xl-4 mb-3">' +
+      '<label class="form-label mb-1">' + esc(f.label) + chip(f) + '</label>' +
+      '<div class="input-group input-group-sm">' +
+      '<input class="form-control" type="text" inputmode="decimal" ' +
+      'name="' + esc(prefix + f.key) + '" value="' + esc(f.raw) + '" ' +
+      'placeholder="' + esc(f.default) + '">' +
+      (f.unit ? '<span class="input-group-text">' + esc(f.unit) + '</span>' : '') +
+      '</div>' +
+      (f.help ? '<div class="form-text">' + esc(f.help) + '</div>' : '') +
+      '</div>';
+  }
+
+  function severity(fact) {
+    var opts = ['crit', 'warn', 'off'].map(function (s) {
+      return '<option value="' + s + '"' + (fact.value === s ? ' selected' : '') +
+             '>' + (s === 'off' ? 'off (still shown, never graded)' : s) + '</option>';
+    }).join('');
+    return '' +
+      '<div class="col-md-6 mb-3">' +
+      '<label class="form-label mb-1">' + esc(fact.label) +
+      (fact.overridden
+        ? '<span class="fw-badge fw-badge-info ms-2">changed</span>'
+        : '<span class="fw-badge fw-badge-secondary ms-2">default ' +
+          esc(fact.default) + '</span>') +
+      '</label>' +
+      '<select class="form-select form-select-sm" name="f__' + esc(fact.key) + '">' +
+      opts + '</select>' +
+      (fact.help ? '<div class="form-text">' + esc(fact.help) + '</div>' : '') +
+      '</div>';
+  }
+
+  function section(title, note, inner) {
+    return '<h6 class="mt-3 mb-1">' + esc(title) + '</h6>' +
+           (note ? '<p class="text-muted small mb-2">' + note + '</p>' : '') +
+           '<div class="row">' + inner + '</div>';
+  }
+
+  function render(d) {
+    scopesEl.innerHTML = (d.scopes || []).map(function (s) {
+      return '<button type="button" class="btn btn-sm ' +
+        (s.key === d.scope ? 'fw-btn-primary' : 'fw-btn-secondary') +
+        '" data-th-scope="' + esc(s.key) + '">' + esc(s.name) + '</button>';
+    }).join('');
+    scopeEl.value = d.scope;
+    current = d.scope;
+
+    var html = '';
+    if (d.type === 'product') {
+      var meas = (d.measure || []).map(function (g) {
+        return '<div class="col-12"><div class="small text-uppercase text-muted mt-2 mb-1">' +
+               esc(g.kind) + '</div></div>' +
+               g.fields.map(function (f) { return field(f, 'm__' + g.kind + '__'); }).join('');
+      }).join('');
+      html += section('Measurement',
+        'What a number has to reach before it is graded. Applies to every probe ' +
+        'of this product that has no value of its own.', meas);
+      html += section('Device roll-up',
+        'How the four device signals combine into the badge on the Fleet health page.',
+        (d.rollup || []).map(function (f) { return field(f, 'r__'); }).join(''));
+      html += section('Binary facts',
+        'Conditions with no number to compare against. You can change how loudly ' +
+        'one lands, or silence it — <strong>the fact is still printed on the ' +
+        'probe either way</strong>. Silencing changes the grade, never the ' +
+        'visibility.',
+        (d.facts || []).map(severity).join(''));
+    } else if (d.type === 'manager') {
+      html += section('SATOM (the application)',
+        'These write the same settings the Email &amp; Alerts tab shows — one ' +
+        'number, two views, deliberately not two keys.',
+        (d.fields || []).map(function (f) { return field(f, 's__'); }).join(''));
+    } else {
+      html += section('SATOM host (the machine)',
+        'Disk, memory and load of the node itself, graded on both HA nodes. ' +
+        'Nothing measured this before 2026-08-06.',
+        (d.fields || []).map(function (f) { return field(f, 's__'); }).join(''));
+    }
+    bodyEl.innerHTML = html;
+  }
+
+  function load(scope) {
+    bodyEl.innerHTML = '<span class="text-muted">Loading…</span>';
+    fetch('{{ url_for("settings.thresholds_state") }}?scope=' + encodeURIComponent(scope || ''),
+          { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(render)
+      .catch(function (e) {
+        bodyEl.innerHTML = '<div class="text-danger">Could not load thresholds: ' +
+                           esc(e) + '</div>';
+      });
+  }
+
+  function say(text, bad) {
+    msgEl.className = 'ms-2 small ' + (bad ? 'text-danger' : 'text-success');
+    msgEl.textContent = text;
+  }
+
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-th-scope]');
+    if (b && scopesEl.contains(b)) { ev.preventDefault(); load(b.dataset.thScope); return; }
+    if (ev.target.closest('#th-reset')) {
+      ev.preventDefault();
+      if (!window.confirm('Clear every override in this scope and go back to the ' +
+                          'shipped defaults?')) return;
+      var fd = new FormData(); fd.append('scope', current);
+      fetch('{{ url_for("settings.reset_thresholds") }}',
+            { method: 'POST', body: fd, credentials: 'same-origin',
+              headers: { 'X-CSRFToken': csrf } })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { say('Cleared ' + (d.cleared || 0) + ' override(s).');
+                             load(current); })
+        .catch(function (e) { say(String(e), true); });
+    }
+  });
+
+  form.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    say('Saving…');
+    fetch('{{ url_for("settings.save_thresholds") }}',
+          { method: 'POST', body: new FormData(form), credentials: 'same-origin',
+            headers: { 'X-CSRFToken': csrf } })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.errors && d.errors.length) { say(d.errors.join(' · '), true); }
+        else { say('Saved ' + (d.saved || 0) + ', cleared ' + (d.cleared || 0) + '.'); }
+        load(current);
+      })
+      .catch(function (e) { say(String(e), true); });
+  });
+
+  // Load lazily: the panel is one of 22 tabs and most sessions never open it.
+  var btn = document.querySelector('[data-bs-target="#tab-thresholds"]');
+  if (btn) btn.addEventListener('shown.bs.tab', function () { if (!current) load(''); });
+})();
+</script>

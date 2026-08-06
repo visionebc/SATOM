@@ -6,9 +6,32 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
-
-
 ### Added
+- **Settings > Thresholds** — a 22nd tab, and the first place in this product
+  where a limit can be stated once instead of once per probe. Six scopes: the
+  four product ADOMs, SATOM itself and the SATOM host. A probe column left empty
+  **inherits** its product's value at grading time; `0` still means "switch this
+  level off", and the two never collapse into each other. Both probe pages print
+  the resolved number **and where it came from** (`set on this probe` /
+  `inherited from <product>` / `factory default`), because a grade produced by a
+  number nobody typed has to be locatable.
+- **Binary-fact severity.** Conditions with no number to compare against — every
+  backend of a policy down, a policy administratively disabled, `proxyd` gone, a
+  monitored interface moving — can now be raised, lowered or silenced per
+  product. **A silenced fact is still printed on the probe**: silencing changes
+  the grade, never the visibility.
+- **Targeted, expiring probe mute.** Suppress one probe for up to 720 hours with
+  a recorded reason. It keeps running and keeps showing its own status; it stops
+  raising the device badge and the alert mail, and is reported as lost coverage
+  in both. There is no permanent mute.
+- **Host health (`app/services/host_health.py`)** — disk, memory and load of the
+  machine, graded on **both HA nodes** and wired into a new `alerts.check.host`.
+  Nothing in the product measured its own box before: on 2026-07-28 the primary
+  reached 95 % disk in six minutes with every unit active, `/healthz` at 200, the
+  badge green and no mail sent. Disk criticality is 92 %, deliberately below 95:
+  a full filesystem stops Postgres writing WAL.
+
+
 
 - **Settings > Hypervisors** — register the Proxmox and/or ESXi endpoints SATOM
   may build machines on, more than one of each. Credentials are Fernet-encrypted
@@ -143,7 +166,33 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   mode was previously told where each one stops but not what it costs, which
   is the half of the decision that matters.
 
+### Changed
+- The device roll-up (`stale_hours`, the critical multiplier, the harvest-failure
+  streak and the capacity levels) is resolved **per product** instead of from one
+  fleet-wide constant. A FortiAnalyzer legitimately lives at a different cache
+  cadence than a FortiWeb, and one number for both is how a correct product ends
+  up permanently amber.
+- Discovery no longer stamps `80 / 95` (or `0 / 0`) onto a new probe; it leaves
+  the columns NULL so the probe inherits. Existing rows still holding exactly the
+  historical creation literal were handed back to inheritance on first boot,
+  which changes no behaviour on the day and makes it tunable from then on. A
+  column holding anything else was left alone.
+- Alert bodies now name the Thresholds scope that governs the finding.
+
 ### Fixed
+- `alerts._check_devices` resolved capacity thresholds **once for the whole
+  fleet** and passed the same pair to every appliance, which silently defeated
+  per-product capacity limits for the one caller that actually sends the mail.
+- The `transactions` probe reads its lookback window from `stale_after_h`, which
+  is now nullable; the old `or 1` fallback would have narrowed a six-hour window
+  to one hour on every migrated probe — fewer transactions counted, read as a
+  quiet service.
+- The chart threshold lines were drawn from the raw probe column, so a probe that
+  inherits its levels would have shown no threshold line at all while still being
+  graded against one.
+
+
+
 
 
 - **"New appliance" could not add a FortiAuthenticator.** The platform roster
@@ -276,6 +325,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   longer fifth product is caught the day it is declared.
 
 _Nothing yet._
+
 
 ## [1.4.1] - 2026-08-05
 

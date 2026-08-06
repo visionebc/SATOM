@@ -1160,6 +1160,9 @@ def create_app(config_override: object | None = None) -> Flask:
                 # --- REST monitor API probes (sessions / throughput) ---
                 ('warn_num', 'DOUBLE PRECISION DEFAULT 0'),
                 ('crit_num', 'DOUBLE PRECISION DEFAULT 0'),
+                # --- targeted, expiring suppression (2026-08-06) ---
+                ('suppress_until', 'TIMESTAMP'),
+                ('suppress_reason', "VARCHAR(200) DEFAULT ''"),
             ],
             # --- AppID-scoped API tokens (Phase 2 enforcement) ---
             'api_tokens': [
@@ -1221,6 +1224,79 @@ def create_app(config_override: object | None = None) -> Flask:
         except Exception:  # noqa: BLE001 — never block boot on a migration
             db.session.rollback()
 
+
+    def _relax_probe_thresholds():
+        """Let a probe say "inherit", and hand the never-chosen rows back.
+
+        Two steps, both one-shot and both guarded, because they are the only
+        migration in this file that CHANGES EXISTING DATA.
+
+        1. ``warn_ms`` / ``tls_warn_days`` / ``stale_after_h`` were NOT NULL, so
+           the column could not express "inherit" at all. (``warn_pct`` and the
+           two ``*_num`` columns were already nullable in the database even
+           though the model claimed otherwise.)
+
+        2. Every probe created before 2026-08-06 was stamped with the discovery
+           literal. Blanking a column that still holds EXACTLY that literal
+           hands the row back to the scope default -- which is seeded to the
+           same number, so behaviour is unchanged on the day of the migration
+           and tunable from then on. A column holding anything else is a value
+           somebody chose and is left alone; in particular a ``0`` means "never
+           page me for this level" and inheriting over it would start paging.
+
+        Guarded by a marker setting: without it, an operator who later sets a
+        threshold back to exactly 80 would have it silently blanked on the next
+        boot.
+        """
+        from sqlalchemy import inspect, text
+        from .models import AppSetting, db as _db
+
+        MARK = "thresholds.inherit_migrated"
+        insp = inspect(_db.engine)
+        if not insp.has_table("monitor_probe"):
+            return
+        for col in ("warn_ms", "tls_warn_days", "stale_after_h"):
+            try:
+                _db.session.execute(text(
+                    "ALTER TABLE monitor_probe ALTER COLUMN %s DROP NOT NULL" % col))
+                _db.session.commit()
+            except Exception:  # noqa: BLE001 -- SQLite has no DROP NOT NULL
+                _db.session.rollback()
+        try:
+            if AppSetting.get(MARK, "") == "1":
+                return
+        except Exception:  # noqa: BLE001
+            return
+        # (column, historical literal, kinds it applies to or None for all)
+        plan = [
+            ("warn_pct", "80", None), ("crit_pct", "95", None),
+            ("warn_ms", "2000", None), ("tls_warn_days", "21", None),
+            ("stale_after_h", "6", None),
+            ("warn_num", "0", "NOT IN ('licence','tokens')"),
+            ("crit_num", "0", "NOT IN ('licence','tokens')"),
+            ("warn_num", "80", "IN ('licence','tokens')"),
+            ("crit_num", "95", "IN ('licence','tokens')"),
+        ]
+        blanked = 0
+        for col, lit, kinds in plan:
+            try:
+                sql = ("UPDATE monitor_probe SET %s = NULL WHERE %s = %s"
+                       % (col, col, lit))
+                if kinds:
+                    sql += " AND kind %s" % kinds
+                res = _db.session.execute(text(sql))
+                blanked += int(res.rowcount or 0)
+                _db.session.commit()
+            except Exception:  # noqa: BLE001 -- never block boot on a migration
+                _db.session.rollback()
+        try:
+            AppSetting.set(MARK, "1")
+            _db.session.commit()
+            app.logger.info("thresholds: %d probe threshold(s) handed back to "
+                            "scope inheritance", blanked)
+        except Exception:  # noqa: BLE001
+            _db.session.rollback()
+
     def _ensure_indexes():
         """Create covering indexes on foreign-key columns that lack one.
 
@@ -1268,6 +1344,7 @@ def create_app(config_override: object | None = None) -> Flask:
             from . import models_provision  # noqa: F401
             db.create_all()
             _ensure_columns()
+            _relax_probe_thresholds()
             _ensure_indexes()
             _seed_profiles()
             _seed_admin()

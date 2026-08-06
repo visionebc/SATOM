@@ -415,6 +415,29 @@
             <div class="col-6"><label class="form-label small">Timeout (s)</label>
               <input type="number" class="form-control form-control-sm" name="timeout_s" id="dpFto" value="10"></div>
           </div>
+          <div class="form-text small mt-2">
+            Leave a threshold box <b>empty</b> to inherit this product's value from
+            Settings&nbsp;&rarr;&nbsp;Thresholds; the greyed number in the box is
+            what it will inherit. <b>0</b> is a different answer &mdash; it switches
+            that level off.
+          </div>
+          <div class="row g-2 mt-2 pt-2 border-top">
+            <div class="col-12"><label class="form-label small mb-1">Mute this probe (hours)</label>
+              <div class="form-text small mb-1">
+                A muted probe keeps running and keeps showing its own status &mdash;
+                what it stops doing is raising the device badge and the alert mail.
+                Maximum 720&nbsp;h; there is no permanent mute, and it switches
+                itself back on when it expires. 0 or empty lifts it.
+              </div>
+            </div>
+            <div class="col-4">
+              <input type="number" min="0" step="1" class="form-control form-control-sm"
+                     name="suppress_hours" id="dpFsuph" placeholder="0"></div>
+            <div class="col-8">
+              <input type="text" maxlength="200" class="form-control form-control-sm"
+                     name="suppress_reason" id="dpFsupr"
+                     placeholder="why (recorded and shown on the row)"></div>
+          </div>
           <div class="alert alert-danger py-2 px-3 mt-2 small d-none" id="dpFerr"></div>
         </div>
         <div class="modal-footer">
@@ -482,6 +505,13 @@
 </div>
 {% endif %}
 
+<style nonce="{{ csp_nonce }}">
+  .dp-inh { color: var(--fw-text-muted, #5B6B7D); margin-left: 2px;
+            cursor: help; font-weight: 700; }
+  .dp-muted-chip { display: inline-block; padding: 0 6px; border-radius: 10px;
+                   font-size: .72rem; font-weight: 600; cursor: help;
+                   color: #4C2A85; background: rgba(76, 42, 133, .12); }
+</style>
 <script nonce="{{ csp_nonce }}">
 (function () {
   'use strict';
@@ -582,18 +612,21 @@
     }
     document.getElementById('dpRows').innerHTML = d.probes.map(function (p) {
       var where = p.appliance ? esc(p.appliance) : 'no device';
+      if (p.suppressed)
+        where = '<span class="dp-muted-chip" title="' + esc(p.suppress_note) +
+                '">muted</span> ' + where;
       if (p.kind === 'https' && p.url) where += ' · ' + esc(p.url);
       else if (p.kind === 'proxyd') where += ' · ' + esc(p.process_name);
       else if (p.kind === 'cpu' || p.kind === 'memory')
-        where += ' · warn ' + p.warn_pct + '% / crit ' + p.crit_pct + '%';
+        where += ' · ' + lvl(p, 'warn_pct') + ' / ' + lvl(p, 'crit_pct');
       else if (p.kind === 'throughput')
         where += ' · ' + esc(p.target || 'Total HTTP Throughput') +
-                 (p.warn_num ? ' · warn ' + p.warn_num + ' Mbps' : '');
+                 ' · ' + lvl(p, 'warn_num');
       else if (p.kind === 'policy_sessions' || p.kind === 'transactions')
         where += ' · ' + esc(p.target || '(no policy)') +
-                 (p.warn_num ? ' · warn ' + p.warn_num : '');
+                 ' · ' + lvl(p, 'warn_num');
       else if (p.kind === 'sessions')
-        where += ' · box-wide' + (p.warn_num ? ' · warn ' + p.warn_num : '');
+        where += ' · box-wide · ' + lvl(p, 'warn_num');
       else if (p.kind === 'interface')
         where += ' · ' + (p.target ? esc(p.target) : 'all ports');
       var act = CAN_EDIT
@@ -621,6 +654,19 @@
           p.interval_min + ' min</span></td>' +
         '<td class="text-end">' + act + '</td></tr>';
     }).join('');
+  }
+
+  // A resolved threshold, with the marker that says it was not typed here.
+  // "0" prints as "off" rather than as a limit of zero, because a level of zero
+  // is disabled everywhere in this product and rendering it as a number reads
+  // as "this alerts at zero".
+  function lvl(p, key) {
+    var r = (p.resolved || {})[key];
+    if (!r) return '';
+    var label = key.indexOf('warn') === 0 ? 'warn' : 'crit';
+    var body = (!r.value ? 'off' : r.value + (r.unit ? ' ' + esc(r.unit) : ''));
+    return label + ' ' + body + (r.origin === 'probe' ? ''
+      : '<span class="dp-inh" title="' + esc(r.explain) + '">\u21b3</span>');
   }
 
   function load() {
@@ -1359,18 +1405,31 @@
       document.getElementById('dpEditTitle').textContent = 'Edit probe';
       document.getElementById('dpFerr').classList.add('d-none');
       fillDevices();
+      // A NULL column means "inherit": the box must be EMPTY, and the value it
+      // would inherit becomes the PLACEHOLDER. Writing the resolved number into
+      // the box instead would silently convert an inheriting probe into an
+      // overriding one the first time anybody pressed Save.
+      var blank = function (v) { return (v === null || v === undefined) ? '' : v; };
       var set = {
         dpFkind: p.kind, dpFname: p.name || '', dpFdev: p.appliance_id || '',
-        dpFurl: p.url || '', dpFexp: p.expect_status, dpFms: p.warn_ms,
-        dpFtls: p.tls_warn_days, dpFproc: p.process_name || 'proxyd',
-        dpFwarnp: p.warn_pct, dpFcritp: p.crit_pct,
-        dpFwarnn: p.warn_num, dpFcritn: p.crit_num,
-        dpFpol: p.target || '', dpFhours: p.stale_after_h,
-        dpFstale: p.stale_after_h, dpFint: p.interval_min, dpFto: p.timeout_s
+        dpFurl: p.url || '', dpFexp: p.expect_status, dpFms: blank(p.warn_ms),
+        dpFtls: blank(p.tls_warn_days), dpFproc: p.process_name || 'proxyd',
+        dpFwarnp: blank(p.warn_pct), dpFcritp: blank(p.crit_pct),
+        dpFwarnn: blank(p.warn_num), dpFcritn: blank(p.crit_num),
+        dpFpol: p.target || '', dpFhours: blank(p.stale_after_h),
+        dpFstale: blank(p.stale_after_h), dpFint: p.interval_min, dpFto: p.timeout_s,
+        dpFsuph: '', dpFsupr: p.suppress_reason || ''
       };
       Object.keys(set).forEach(function (k) {
         var el = document.getElementById(k);
         if (el) el.value = set[k];
+      });
+      [['dpFms', 'warn_ms'], ['dpFtls', 'tls_warn_days'], ['dpFstale', 'stale_after_h'],
+       ['dpFwarnp', 'warn_pct'], ['dpFcritp', 'crit_pct'],
+       ['dpFwarnn', 'warn_num'], ['dpFcritn', 'crit_num']].forEach(function (pair) {
+        var el = document.getElementById(pair[0]);
+        var r = (p.resolved || {})[pair[1]];
+        if (el) el.placeholder = r ? (r.value + ' (' + r.explain + ')') : '';
       });
       syncKind();
       loadPorts(p.appliance_id, String(p.target || '').split(',').map(function (s) {

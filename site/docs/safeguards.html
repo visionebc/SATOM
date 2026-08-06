@@ -102,9 +102,9 @@
       <a href="#20-trusting-a-device-means-naming-its-ca-not-disabling-the-check">20. Trusting a device means naming its CA, not disabling the check</a>
       <a href="#21-a-page-is-read-as-a-claim-about-the-adom-it-is-shown-in">21. A page is read as a claim about the ADOM it is shown in</a>
       <a href="#22-a-capability-probe-that-guesses-is-worse-than-no-probe">22. A capability probe that guesses is worse than no probe</a>
+      <a href="#23-a-threshold-is-declared-once-inherited-live-and-always-explained">23. A threshold is declared once, inherited live, and always explained</a>
       <a href="#11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</a>
       <a href="#verifying-the-guards-are-armed_5">Verifying the guards are armed</a>
-      <a href="#related">Related</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="safeguards-what-stops-satom-from-hurting-itself">Safeguards — what stops SATOM from hurting itself</h1>
@@ -2974,6 +2974,86 @@ autoflush pushed the pending INSERT to satisfy the very query looking for a
 duplicate. Every first-time save was rejected as a name clash <em>and</em> left a
 credential-less row behind, which then failed its connection test with an
 authentication error pointing at the wrong cause. Validate, then add.</p>
+<h2 id="23-a-threshold-is-declared-once-inherited-live-and-always-explained">23. A threshold is declared once, inherited live, and always explained</h2>
+<p>Measured on the live primary on 2026-08-06: <strong>all 42 probes carried the
+identical pair 80 / 95.</strong> Not a fleet whose thresholds had been considered and
+found to agree — a fleet with no way to <em>state</em> a threshold. The only two homes
+a graded number had were a column on one probe row and the literal that stamped
+it there at creation. Tuning the target fleet (60 FortiWeb + 30 FortiADC +
+10 FortiAnalyzer) meant roughly two thousand individual form edits, so nobody
+ever did one.</p>
+<p>Part of the stored value was not even meaningful: <code>warn_pct = 80</code> sat on
+<code>interface</code>, <code>proxyd</code>, <code>throughput</code> and <code>transactions</code> rows, none of which
+grade on a percentage. Noise that reads as configuration.</p>
+<p><code>app/services/thresholds.py</code> is now the one place a limit is declared, resolved
+and explained, over six scopes: the four product ADOMs (derived from the ADOM
+registry, never listed), the manager application, and the machine.</p>
+<p><strong>The registry is DATA.</strong> A field is an entry in <code>MEASURE</code>, <code>ROLLUP</code>, <code>FACTS</code>,
+<code>SATOM</code> or <code>HOST</code>; the form, the validator, the resolver and the origin report
+all read that entry. Same contract as <code>registry_endpoints</code> / <code>adoms</code> /
+<code>acme_dns_providers</code>. A <code>MEASURE</code> key IS the probe column it overrides, so the
+override and its default cannot drift by being spelled differently.</p>
+<p><strong>Resolution is live, not copy-on-create.</strong> <code>NULL</code> on a probe column means
+<em>inherit</em>; the scope value is read at grading time. Copy-on-create is what
+already existed — it just spells the literal differently, and it freezes every
+probe created before the edit. The cost is real and is accepted: a probe nobody
+touched can change severity because somebody edited a product default. That is
+the point, and it is why the next rule is not optional.</p>
+<p><strong>Every resolved value carries its ORIGIN</strong> — <code>probe</code>, <code>scope</code> or <code>default</code> —
+and both probe pages print it. Without it a critical appears with no visible
+cause and the operator is worse off than with the frozen literals.</p>
+<p><strong><code>0</code> disables a level; <code>NULL</code> inherits.</strong> Different answers, kept different in
+storage. This is why the migration may blank a column only when it still holds
+the historical creation literal: a <code>0</code> somebody chose means "never page me for
+this", and inheriting over it would start paging them.</p>
+<p><strong>A binary fact has no threshold, only a volume.</strong> "Every backend of this policy
+is down" is not a number. What the operator governs is how loudly it lands —
+<code>crit</code>, <code>warn</code>, or <code>off</code> — and only that. <strong>A silenced fact is still printed on
+the probe.</strong> Silencing changes the grade, never the visibility; a fact that
+stops being printed is an outage nobody can see.</p>
+<p><strong>A mute is targeted, reasoned and expiring.</strong> A probe may be suppressed for up
+to 720 hours with a recorded reason. It keeps running, keeps storing samples and
+keeps showing its own status; what it stops doing is raising the DEVICE roll-up
+— the single roll-up that both the badge and the mail read, so the page and the
+mailbox cannot disagree. It is reported as <em>lost coverage</em>, exactly like a
+disabled probe: a silence somebody chose is still a silence. There is no
+permanent mute, because a silence that never expires becomes permanent by
+inattention.</p>
+<p><strong>The manager scope writes the engine's own keys.</strong> The <code>satom</code> fields store
+into <code>alerts.*</code>, not into a parallel <code>thresholds.satom.*</code> namespace. One number,
+two views; a twin would drift the first time somebody edited the older Email
+tab. The shipped defaults are duplicated in the registry (a NamedTuple default
+is evaluated at import, and importing the engine there would be a cycle) and
+pinned by a test against <code>alerts.DEFAULTS</code> — a "factory default" printed on a
+form that is not what the engine uses is a lie nothing raises about.</p>
+<p><strong>Anti-lockout.</strong> <em>Revert scope to shipped defaults</em> clears every override a
+scope owns, including the <code>alerts.*</code>-backed ones. A scope tuned into permanent
+red — or permanent silence — must be recoverable without a psql session.</p>
+<h3 id="23b-the-machine-had-no-signal-at-all">23b. The machine had no signal at all</h3>
+<p><code>system_health.host_stats()</code> reported the node's load, memory and filesystems
+from the day the Monitoring page was written. Nothing ever <strong>graded</strong> it.</p>
+<p>On 2026-07-28 the primary reached <strong>95 % disk in six minutes</strong>. Every unit
+stayed active, <code>/healthz</code> stayed 200, the badge stayed green and the mailbox
+stayed empty. It was found by a human running <code>df</code>.</p>
+<p><code>app/services/host_health.py</code> supplies the grade, on both nodes from one place —
+the peer's numbers already ride its <code>/healthz</code> response, so the standby is
+covered without SSH and without a second implementation. That matters because
+the standby is the node <em>more</em> likely to fill: it holds the replicated <code>data/</code>
+tree and the WAL.</p>
+<p>Three rules it keeps:</p>
+<ul>
+<li><strong>A node we could not read is <code>unknown</code>, never <code>ok</code>.</strong> An unreachable standby
+  has told us nothing about its disk. This is the same defect that once made the
+  Fleet health badge structurally incapable of turning red (§9b).</li>
+<li><strong>An unreachable node is not <em>mailed</em> about here.</strong> The redundancy check
+  already owns "the peer is gone"; two mails for one dead standby is how an
+  operator learns to filter the sender.</li>
+<li><strong><code>crit</code> for disk is 92, not 95.</strong> A full filesystem stops Postgres writing
+  WAL. The page has to arrive before the damage, not with it.</li>
+</ul>
+<p>Load is normalised to <strong>percent of cores</strong>, not a raw load average: "load 6" is
+a crisis on two cores and idle on thirty-two, so a fleet-wide number would mean
+something different on every node.</p>
 <h2 id="11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</h2>
 <ul>
 <li>Per-device configuration restore is dry-run gated — no live canary round-trip yet.</li>
@@ -3514,6 +3594,44 @@ grep -n 'def _sel' -A6 app/services/monitor_reports.py
 <li><a href="metrics-architecture.html"><code>metrics-architecture.md</code></a> — where operational data lives, and the fleet-scale measurement behind it</li>
 <li><a href="install.html"><code>INSTALL.md</code></a> — what to request from systems, and the hardening checklist</li>
 </ul>
+<h3 id="thresholds-are-declared-inherited-and-explained-23">Thresholds are declared, inherited and explained (23)</h3>
+<pre><code class="language-bash"># 1. Nothing is stamped at creation any more: a fresh probe inherits.
+#    (Non-zero counts here are overrides somebody actually chose.)
+psql -h 127.0.0.1 -U satom -d satom -tAc &quot;
+  select kind, count(*), count(warn_pct), count(crit_pct),
+         count(warn_num), count(crit_num)
+  from monitor_probe group by kind order by kind&quot;
+
+# 2. NULL inherits, 0 disables, and the origin is always reported.
+satom show paths &gt;/dev/null   # (app dir)
+cd /opt/satom &amp;&amp; set -a &amp;&amp; . ./.env &amp;&amp; set +a &amp;&amp; runuser -u satom -- \
+  venv/bin/python3 -c &quot;
+from app import create_app
+from app.models import MonitorProbe
+from app.services import thresholds as th
+with create_app().app_context():
+    p = MonitorProbe.query.filter_by(kind='cpu').first()
+    for o in th.probe_origins(p):
+        print(o['key'], o['value'], o['explain'])&quot;
+
+# 3. A silenced fact is still PRINTED. Expect 'ALL backends down' in BOTH,
+#    and only the grade to change.
+runuser -u satom -- venv/bin/python3 -c &quot;
+from app.services import deep_monitor as dm
+row={'sessions':1,'conn_per_sec':2,'status':'enable','app_response_time':0}
+mem=[{'server':'192.0.2.20','port':80,'up':False,'health':'up'}]
+k=dict(warn_num=0,crit_num=0,warn_ms=0,fingerprint='a',prev_fingerprint='a')
+print(dm.classify_policy_sessions(row,mem,**k))
+print(dm.classify_policy_sessions(row,mem,sev={'backends_all_down':None},**k))&quot;
+
+# 4. The machine can now say something bad. Expect a non-ok status when the
+#    threshold is dropped below the live reading, and 'unknown' -- never 'ok' --
+#    for a node with no reading.
+runuser -u satom -- venv/bin/python3 -c &quot;
+from app.services import host_health as hh
+print(hh.local()['status'], [ (k,v['status']) for k,v in hh.local()['signals'].items() ])
+print(hh.grade_stats(None)['status'])&quot;
+</code></pre>
 <h3 id="the-monitoring-panels-report-bad-news-17">The monitoring panels report bad news (17)</h3>
 <pre><code class="language-bash"># 1. the store is watched, and units inactive BY DESIGN are not
 python3 -c &quot;from app.services.system_health import MONITORED_UNITS as U; \

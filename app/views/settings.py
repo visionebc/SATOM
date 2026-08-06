@@ -174,6 +174,58 @@ def index():
     )
 
 
+# ---------------------------------------------------------------------------
+# Thresholds — one declared limit, many probes
+# ---------------------------------------------------------------------------
+# Deliberately NOT folded into the Email & Alerts tab. That tab is DELIVERY
+# policy (who is mailed, how often, from what severity); this is MEASUREMENT
+# policy (what counts as bad). Mixing them is how ``warn_pct = 80`` ended up
+# stored on interface and throughput probes, which do not grade on a percentage
+# at all.
+@bp.route('/thresholds/state')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def thresholds_state():
+    from ..services import thresholds as th
+    scope = (request.args.get('scope') or '').strip().lower()
+    if not th.is_scope(scope):
+        scope = th.all_scopes()[0]['key']
+    return jsonify(ok=True, **th.state(scope))
+
+
+@bp.route('/thresholds', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_thresholds():
+    from ..services import thresholds as th
+    scope = (request.form.get('scope') or '').strip().lower()
+    if not th.is_scope(scope):
+        return jsonify(ok=False, error='unknown scope', errors=['unknown scope']), 400
+    res = th.save_scope(scope, request.form)
+    log_action('thresholds.save', scope,
+               {'saved': res['saved'], 'cleared': res['cleared'],
+                'errors': res['errors']})
+    return jsonify(ok=not res['errors'], **res)
+
+
+@bp.route('/thresholds/reset', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def reset_thresholds():
+    """Anti-lockout: one button back to the shipped behaviour.
+
+    A scope tuned into permanent red (or permanent silence) has to be
+    recoverable without a psql session, for the same reason the theme engine
+    ships ``satom execute reset theme``."""
+    from ..services import thresholds as th
+    scope = (request.form.get('scope') or '').strip().lower()
+    if not th.is_scope(scope):
+        return jsonify(ok=False, error='unknown scope'), 400
+    n = th.reset_scope(scope)
+    log_action('thresholds.reset', scope, {'cleared': n})
+    return jsonify(ok=True, cleared=n)
+
+
 @bp.route('/library-updates')
 @login_required
 @require_permission(Permission.USER_MANAGE)

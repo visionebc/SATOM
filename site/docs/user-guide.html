@@ -1001,57 +1001,230 @@ records the verdict.</p>
 <p><strong>Capabilities are reported, never assumed.</strong> A free-licensed ESXi host
 answers the vSphere API <em>read-only</em>, so SATOM refuses to build through it and
 says why — rather than failing halfway with "provisioning failed", which
-sends you to the wrong end of the problem. Give that host shell credentials
-(optional fields on the target; its SSH service must be enabled) and SATOM
-builds over the host shell instead. Likewise a Proxmox storage without the
-<code>import</code> content type cannot receive a disk image, and the page says so
+sends you to the wrong end of the problem. Likewise a Proxmox storage without
+the <code>import</code> content type cannot receive a disk image, and the page says so
 instead of discovering it mid-run.</p>
 </blockquote>
-<h3 id="212-install-media-is-not-upgrade-media">21.2 Install media is not upgrade media</h3>
+<p><strong>Test</strong> is therefore worth reading rather than glancing at. It answers four
+questions, and each one closes off a different option:</p>
+<table>
+<thead>
+<tr>
+<th>The probe reports</th>
+<th>If it is missing</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Can create / power / delete a machine</td>
+<td>nothing can be built here — only <strong>Config only</strong> remains</td>
+</tr>
+<tr>
+<td>Can receive an uploaded image</td>
+<td>you must place the install image on the hypervisor yourself</td>
+</tr>
+<tr>
+<td>Has a serial console SATOM can drive</td>
+<td><strong>Full</strong> is unavailable; <strong>Semi</strong> is the ceiling</td>
+</tr>
+<tr>
+<td>Which storages and networks exist</td>
+<td>the run form has nothing to offer you</td>
+</tr>
+</tbody>
+</table>
+<h3 id="212-choosing-a-backend">21.2 Choosing a backend</h3>
+<p>Both backends do the same job and they fail in different places. Neither is
+"better" — pick the one whose disadvantage you can live with.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><strong>Proxmox VE</strong></th>
+<th><strong>VMware ESXi</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>How SATOM talks to it</td>
+<td>REST API, username + password</td>
+<td>vSphere SOAP API</td>
+</tr>
+<tr>
+<td>Create / boot / delete</td>
+<td>yes</td>
+<td><strong>only on a paid licence</strong>, or over the host shell (21.3)</td>
+</tr>
+<tr>
+<td>Upload an install image</td>
+<td>yes, to a storage carrying the <code>import</code> role (21.4)</td>
+<td>the file upload works; turning it into a machine is a licensed write</td>
+</tr>
+<tr>
+<td>Serial console SATOM can drive</td>
+<td><strong>yes</strong></td>
+<td><strong>no — at any licence tier</strong></td>
+</tr>
+<tr>
+<td>Highest mode reachable</td>
+<td><strong>Full</strong></td>
+<td><strong>Semi</strong></td>
+</tr>
+<tr>
+<td>Advantage</td>
+<td>the only backend where a run can finish with nobody at the console</td>
+<td>fits an existing VMware estate; no second virtualisation platform to operate</td>
+</tr>
+<tr>
+<td>Disadvantage</td>
+<td>another platform to run if your estate is VMware</td>
+<td>a free licence blocks the write API outright, and unattended first boot is impossible regardless of licence</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Why "Full" is Proxmox-only, and why that is not a licensing question.</strong> A
+factory Fortinet appliance boots into a first-boot dialog — <code>admin</code>, empty
+password, forced change — and <strong>nothing can reach its API until that dialog
+is completed</strong>. Driving it needs a serial console SATOM can type into.
+Proxmox exposes one. A standalone ESXi's only console is graphical, and
+adding a network serial port to the machine would itself be a licensed
+configuration write. Paying for ESXi unlocks the write API; it does not
+create a console. On ESXi the ceiling stays <strong>Semi</strong>.</p>
+</blockquote>
+<h3 id="213-when-the-write-api-is-closed-the-esxi-host-shell">21.3 When the write API is closed: the ESXi host shell</h3>
+<p>A free ESXi licence gates the <strong>remote API write calls</strong> — create, power on,
+import — while every read keeps working. The host's own shell is a different
+path inside ESXi and is not gated the same way, so giving a target SSH
+credentials gives SATOM a second way to write.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>API transport</th>
+<th>Shell transport</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Needs</td>
+<td>nothing beyond the account you already gave</td>
+<td>the host's SSH service running, plus SSH credentials on the target</td>
+</tr>
+<tr>
+<td>Create / power / delete</td>
+<td>blocked on a free licence</td>
+<td>works</td>
+</tr>
+<tr>
+<td>Attach a disk image</td>
+<td>OVF/OVA only</td>
+<td>any format the host can convert</td>
+</tr>
+<tr>
+<td>Advantage</td>
+<td>no extra service, no extra credential, nothing new exposed</td>
+<td>a free-licensed host can build machines</td>
+</tr>
+<tr>
+<td>Disadvantage</td>
+<td>unusable on a free licence</td>
+<td>it is a <strong>standing remote-root path into your hypervisor</strong> — that is a security decision, and it is yours</td>
+</tr>
+</tbody>
+</table>
+<p>Three things this path deliberately will not do:</p>
+<ol>
+<li><strong>It never switches SSH on for you.</strong> Enabling it is a durable change to the
+   security posture of a machine SATOM does not own. The page detects the state
+   and tells you what to enable; it does not reach in and enable it.</li>
+<li><strong>It never claims the shell works until a command has actually run on it.</strong>
+   A capability inferred from "the port looks open" would promise a run that
+   dies three steps later — after an address and a DNS record were already
+   committed.</li>
+<li><strong>It never puts what you typed into a shell command unquoted.</strong> Machine
+   names are validated and every value is quoted, so a name containing shell
+   syntax is refused at the form rather than escaped somewhere downstream.</li>
+</ol>
+<blockquote>
+<p><strong>Honest status:</strong> on the host this was developed against, SSH is switched
+off — so this transport is implemented and unit-tested but <strong>has not been
+exercised end to end against a live host</strong>. The capabilities panel says
+exactly that rather than reporting a confident yes.</p>
+</blockquote>
+<h3 id="214-two-proxmox-storages-two-different-jobs">21.4 Two Proxmox storages, two different jobs</h3>
+<p>Proxmox lets a storage declare what it may hold, and the two roles provisioning
+needs are frequently <strong>on different storages</strong>:</p>
+<ul>
+<li><strong><code>images</code></strong> — can hold a running machine's disk.</li>
+<li><strong><code>import</code></strong> — can receive an uploaded appliance image.</li>
+</ul>
+<p>A stock installation commonly has the default <code>local</code> storage carrying
+<code>import</code> but not <code>images</code>, while the thin pools carry <code>images</code> but not
+<code>import</code>. That is a working configuration, not a fault: the run form asks for
+both, and they are simply not the same answer.</p>
+<p>If <strong>Test</strong> reports that no storage can receive an image, add the <code>import</code>
+content type to a storage in <em>Datacenter → Storage</em> on the hypervisor, picking
+one with room for the appliance images you intend to keep. Nothing in SATOM can
+grant that — it is the hypervisor's own setting.</p>
+<h3 id="215-install-media-is-not-upgrade-media">21.5 Install media is not upgrade media</h3>
 <p>Firmware → <strong>Upload</strong>, with kind <strong>Install</strong> and the hypervisor flavour: KVM /
 Proxmox (<code>.qcow2</code>) or VMware ESXi (<code>.ovf</code> / <code>.ova</code>). An upgrade <code>.out</code> applies
 to a <em>running</em> appliance and cannot build a machine — two different artefact
 families, kept apart on purpose.</p>
-<h3 id="213-modes">21.3 Modes</h3>
+<h3 id="216-modes-advantages-and-disadvantages">21.6 Modes — advantages and disadvantages</h3>
 <p>The product cannot promise unattended first boot on every hypervisor, so how
-far a run goes is a <strong>choice</strong>, not a guess.</p>
+far a run goes is a <strong>choice</strong>, not a guess. Each mode is a different answer to
+the first-boot dialog described in 21.2.</p>
 <table>
 <thead>
 <tr>
 <th>Mode</th>
-<th>Does</th>
-<th>Where it stops</th>
+<th>What it does</th>
+<th>Advantages</th>
+<th>Disadvantages</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>Full</strong></td>
-<td>create, boot, configure, onboard</td>
-<td>needs an API serial console to drive the appliance's first-boot dialog</td>
+<td>Address, DNS, machine, boot, walks the first-boot dialog over the serial console, registers the appliance, applies the configuration profile.</td>
+<td>No human step at all. Repeatable and auditable end to end — every action lands in the run log.</td>
+<td><strong>Proxmox only.</strong> The most moving parts, so the widest surface for a mid-run failure; this is what rollback exists for.</td>
 </tr>
 <tr>
 <td><strong>Semi</strong></td>
-<td>create and boot</td>
-<td>at the console: set the admin password and the management address, then resume the run</td>
+<td>Builds and boots, then stops. You complete the first-boot dialog on the hypervisor console and resume the run.</td>
+<td>Works on <strong>every</strong> backend, including a free-licensed ESXi. The one manual step is the one a human is genuinely required for.</td>
+<td>Not unattended — the run waits until somebody acts on it.</td>
 </tr>
 <tr>
 <td><strong>DHCP</strong></td>
-<td>create and boot; the appliance takes a lease, SATOM finds it and continues</td>
-<td>runs to the end</td>
+<td>Builds and boots; the appliance takes a lease, SATOM finds it there and carries on.</td>
+<td>Unattended without needing a serial console.</td>
+<td>Needs DHCP reachable from that network, and the appliance ends up on an address you did not choose. Not every appliance takes a lease on its factory configuration.</td>
 </tr>
 <tr>
 <td><strong>VM only</strong></td>
-<td>create and boot, nothing else</td>
-<td>as requested</td>
+<td>Creates and powers on the machine. Stops.</td>
+<td>Smallest blast radius. The right choice when another team or tool configures the appliance.</td>
+<td>No address, no DNS, no registration — nothing else in SATOM knows the machine exists until you add it.</td>
 </tr>
 <tr>
 <td><strong>Config only</strong></td>
-<td>no hypervisor at all — reserve the address, issue the certificate, apply the profile</td>
-<td>runs to the end; for a machine that already exists, including a physical one</td>
+<td>No hypervisor involved: reserve the address, issue the certificate, register and apply the profile against a machine that already exists.</td>
+<td>Needs <strong>no hypervisor at all</strong> — the path for physical appliances and for anything built outside SATOM.</td>
+<td>You built the machine, so its CPU, memory, disk and network are outside the run log and outside the audit trail.</td>
 </tr>
 </tbody>
 </table>
-<h3 id="214-running-one">21.4 Running one</h3>
+<blockquote>
+<p><strong>Stopping is not failing.</strong> <em>Semi</em> and <em>VM only</em> are designed to stop. Such
+a run lands as <strong>paused</strong> with its reason printed, and you resume it. Marking
+a deliberate handoff as <em>failed</em> would teach everyone to ignore the status
+column — and then they ignore the real failures too.</p>
+</blockquote>
+<h3 id="217-running-one">21.7 Running one</h3>
 <ol>
 <li><strong>New run</strong> — name, mode, hypervisor, node / datastore / network, CPU, RAM,
    disk, management address (or tick <strong>use IPAM</strong>), admin account, install
@@ -1062,9 +1235,8 @@ far a run goes is a <strong>choice</strong>, not a guess.</p>
    anything is created</em>. A run that cannot finish is <strong>refused</strong> with the
    blockers named — not started and then failed halfway.</li>
 <li><strong>Advance</strong> walks the plan one step at a time and logs each step.</li>
-<li><strong>Stopping is not failing.</strong> Semi and VM-only finish as <strong>paused</strong>, with the
-   reason printed verbatim, so <em>"why did it stop?"</em> never needs a support round
-   trip.</li>
+<li>A <strong>paused</strong> run is not a failed one — see 21.6. The reason is printed
+   verbatim, so <em>"why did it stop?"</em> never needs a support round trip.</li>
 <li><strong>Rollback undoes the run from what it recorded</strong>, never from inspecting the
    world: the address is released only if SATOM allocated it (a hand-typed
    address belongs to whoever typed it), the machine is deleted only if a
@@ -1072,6 +1244,41 @@ far a run goes is a <strong>choice</strong>, not a guess.</p>
    deliberately left registered — deleting it would orphan the configuration
    history already hanging off it.</li>
 </ol>
+<h3 id="218-where-the-address-comes-from">21.8 Where the address comes from</h3>
+<p>Two options, and the choice changes what rollback is allowed to undo:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>You type the address</th>
+<th><strong>Use IPAM</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Requires</td>
+<td>nothing</td>
+<td>an address-management provider configured in Settings, and the tick on this run</td>
+</tr>
+<tr>
+<td>Advantage</td>
+<td>always available; you keep full control of the plan</td>
+<td>no spreadsheet, no collision, and the record is created for you</td>
+</tr>
+<tr>
+<td>Disadvantage</td>
+<td>you are responsible for the address being free</td>
+<td>the run now depends on a second system being reachable</td>
+</tr>
+<tr>
+<td>On rollback</td>
+<td><strong>left alone</strong> — an address you chose is not SATOM's to release</td>
+<td>released, because SATOM allocated it</td>
+</tr>
+</tbody>
+</table>
+<p>IPAM is never implicit: with no provider configured the option is not offered,
+and with one configured it still applies only to a run you ticked it on.</p>
 <p>Backend detail, the capability matrix and the state machine:
 <a href="provisioning-hypervisors.html">docs/provisioning-hypervisors.md</a>.</p>
 <h2 id="22-updating-satom-itself">22. Updating SATOM itself</h2>
@@ -1228,6 +1435,34 @@ satom diagnose code       # is the running process actually on the new code?
 <tr>
 <td>The console reports <code>nothing to repair</code> while files are clearly root-owned</td>
 <td>The whole tree is root-owned, so the repair verb concludes the installation runs as root. Fix ownership manually, then re-run <code>satom diagnose privilege</code>.</td>
+</tr>
+<tr>
+<td>A hypervisor's <strong>Test</strong> says it cannot create machines</td>
+<td>Expected on a free-licensed ESXi: the write API is licensed, reads are not. Either license the host (or put it behind vCenter), or give the target SSH credentials to build over the host shell (21.3).</td>
+</tr>
+<tr>
+<td>A Proxmox target reports that no storage can receive an image</td>
+<td>No storage carries the <code>import</code> content type. Add it in <em>Datacenter → Storage</em> on the hypervisor — <code>images</code> and <code>import</code> are different roles and are often on different storages (21.4).</td>
+</tr>
+<tr>
+<td><strong>Full</strong> is unavailable on an ESXi target</td>
+<td>By design, and not a licensing problem: a standalone ESXi exposes no serial console SATOM can drive, so the first-boot dialog cannot be automated. Use <strong>Semi</strong> (21.2).</td>
+</tr>
+<tr>
+<td>A run was refused before creating anything</td>
+<td>That is preflight working. The blockers are named on the page; a run that cannot finish is never started, so there is nothing to clean up.</td>
+</tr>
+<tr>
+<td>A run says <strong>paused</strong>, not finished</td>
+<td><em>Semi</em> and <em>VM only</em> stop on purpose. The reason is printed verbatim — do the console step, then resume.</td>
+</tr>
+<tr>
+<td>A machine SATOM just created is missing from the hypervisor's own list</td>
+<td>Cluster-wide inventory in Proxmox is a cached aggregate and lags by seconds. Look at the node's own view, or wait for the refresh. The run log is authoritative about what was created.</td>
+</tr>
+<tr>
+<td>Rollback left the appliance registered</td>
+<td>Deliberate: a device that reached <em>onboarded</em> keeps its registration, because deleting it would orphan the configuration history and captures already hanging off it. Remove it from the appliance list if you really want it gone.</td>
 </tr>
 </tbody>
 </table>

@@ -2466,6 +2466,108 @@ the affordance itself by a test that renders the page and requires the
 intermediate slot to be present — a backend that classifies correctly is no
 use if the operator cannot see where to paste.
 
+## 21. A page is read as a claim about the ADOM it is shown in
+
+Section 19 stops an ADOM from *listing another product's devices*. This one
+stops it from being shown another product's **questions**.
+
+The three analytical surfaces — Analysis, Reports and Analytics — were all
+built against FortiWeb first, and all three reached a fourth product by
+accident rather than by decision:
+
+* **Analysis** dispatched with `if product == 'fortianalyzer': faz else:
+  index`. FortiADC, then FortiAuthenticator, inherited the FortiWeb WAF
+  dashboard through the `else`. Scoped to a product with no server policies and
+  no protection profiles, every panel on that page is empty.
+* **Reports** stored a product on the report row and then computed its fleet
+  section over the *whole* metrics store, with no `kind` matcher — so a
+  FortiAuthenticator report carried FortiWeb's throughput, under a heading that
+  named the identity ADOM.
+* **Analytics** seeded its built-in boards with `product = ""`, which is
+  visible in every ADOM. The `traffic` and `service-health` boards read probe
+  kinds that only FortiWeb supports.
+
+Nothing failed in any of the three. Every route returned 200, every template
+rendered, every chart drew its axes. **An empty panel reads as "quiet", not as
+"not applicable"** — which is the same failure the Fleet health badge had
+before §9b, arriving through presentation instead of grading.
+
+### The rules
+
+**No product reaches a page through an `else`.** `views/analysis.py` holds an
+explicit `ANALYSIS_PAGES` map with no fallthrough. A product with no entry gets
+a page that says so. FortiADC is mapped to the FortiWeb page *on purpose* and
+labelled as known debt in the map itself — keeping the gap visible beats hiding
+it behind a default.
+
+**Global and the empty scope resolve to the widest page, never to the
+refusal.** `product_scope.GLOBAL` is the string `global`; `''` is the
+no-context case (a worker thread, or a session stamped before the ADOM split).
+Failing closed on an unrecognised scope would blind the one view meant to see
+everything.
+
+**A product-scoped document must be product-scoped in its queries too.** Half a
+fix is worse than none here: `fleet_queries(product)` picks the metric set and
+`_sel(base, product)` adds `{kind="<product>"}` to every expression. Every
+series the collectors write carries `kind = appliance.kind`, and the ADOM key
+*is* the appliance kind, so one label matcher does it — no device list to
+rebuild as the fleet changes. Global still gets the **union**, not the
+intersection: the manager-wide view must not shrink because one product has no
+throughput.
+
+**A roll-up that cannot apply is omitted, not zeroed.** "0 policies with every
+backend down" on an identity product is a clean bill of health for a check that
+never ran. `POLICY_PRODUCTS` gates it, and `fleet_section` reports
+`policy_scope` so the renderer can say *not applicable* rather than *none*.
+
+**A built-in board may not offer a panel its audience cannot fill.** A board
+seeded Global appears in every ADOM, so each of its rule panels must name a
+probe kind every concrete product supports. FortiWeb-only telemetry lives on
+`product = "fortiweb"` boards; FortiAuthenticator has its own.
+
+**Not harvested is not zero.** A counter the sweep never collected and a
+counter that collected nothing render identically as `0` and demand opposite
+actions — fix the harvest, or nothing at all. Every inventory row carries
+`harvested`, and the template prints the two differently.
+
+**Entitlement is reported, not re-graded.** The licence and token probes own
+the thresholds, the history and the alerting. The Analysis page joins their
+verdict instead of deriving a second one from the same numbers; a row with no
+probe reads `unmonitored`, which is lost coverage, not health (§9b again). A
+counter with no ceiling shows no percentage at all, because a fabricated `0 %`
+looks like plenty of room.
+
+### Why FortiAuthenticator needed its own page rather than a filtered one
+
+An authenticator is not a traffic device. It has no throughput to plot and no
+policy fan-out to map; what bounds it is **entitlement** — an unlicensed unit
+reports `users {max: 5}` and refuses the sixth user outright, a cliff no CPU
+series would ever show. So the identity page answers three different questions:
+entitlement headroom, what identity objects actually exist, and the
+authentication settings whose *absence* is the finding (no lockout, no
+scheduled backup).
+
+Its inventory rows are **derived from the endpoint registry**, not from a list
+written in the page. A list would be a copy, and the first endpoint a release
+adds would be missing with nothing failing to say so — the same contract as
+`registry_endpoints`, `adoms` and `acme_dns_providers`.
+
+Its posture readers **guard on key membership before they read**. A default
+assumed for a missing field produces a confident verdict about a setting nobody
+looked at, and that is worse than a gap: the operator stops checking.
+
+And it keeps the DB-first contract of `services.analysis` — cache, manager
+tables and the node-local metrics store only. The page opens with the unit
+powered off. The guard monkeypatches the client to **raise**, not to return
+empty: a stub that returned nothing would let a live call through looking like
+a device with no data.
+
+Guards: `tests/test_fac_analysis.py` (22 tests). Nine mutations were applied
+and all nine bite, including reverting the dispatch to the `else`, dropping the
+`kind` matcher, re-seeding the FortiWeb boards Global, collapsing `harvested`
+to a constant, and defaulting an unprobed capacity row to `ok`.
+
+
 ## 11. Known gaps (kept honest, on purpose)
 
 * Per-device configuration restore is dry-run gated — no live canary round-trip yet.
@@ -3030,6 +3132,42 @@ Step 3 is the one that matters. Steps 1 and 2 read the build scripts; only
 step 3 reads the artefact the customer downloads, and every entry in the table
 in 16 was a case where the scripts were fine and the artefact was not.
 
+
+### A page is about its own ADOM (21)
+
+Every ADOM must resolve to a page written for it, and no ADOM may be offered a
+built-in board it cannot fill:
+
+```bash
+satom_check_adom_pages() {
+  cd /opt/satom && set -a && . ./.env && set +a
+  runuser -u "$(stat -c %U /opt/satom)" -- venv/bin/python3 - <<'PY'
+from app import create_app
+from app.views import analysis
+from app.services.product_scope import concrete_products, GLOBAL
+missing = [p for p in concrete_products() if p not in analysis.ANALYSIS_PAGES]
+print("unmapped ADOMs:", missing or "none")
+print("global ->", analysis.ANALYSIS_PAGES.get(GLOBAL))
+PY
+}
+```
+
+Then the report scoping — a product report must never ask an unscoped query:
+
+```bash
+# expect kind="<product>" on EVERY expression, and no satom_policy_up
+# anywhere outside FortiWeb
+grep -n 'def _sel' -A6 app/services/monitor_reports.py
+```
+
+And the board audience, which is the test that generalises to the next product:
+
+```bash
+runuser -u "$(stat -c %U /opt/satom)" -- venv/bin/python3 -m pytest \
+  tests/test_fac_analysis.py::test_no_builtin_board_offers_a_panel_the_adom_cannot_produce -q
+```
+
+A failure names the board, the panel and the ADOM that cannot fill it.
 
 ## Related
 

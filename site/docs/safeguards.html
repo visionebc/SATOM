@@ -100,6 +100,7 @@
       <a href="#18-a-check-must-read-the-source-that-holds-the-answer">18. A check must read the source that holds the answer</a>
       <a href="#19-an-adom-shows-its-own-product-and-nothing-else">19. An ADOM shows its own product and nothing else</a>
       <a href="#20-trusting-a-device-means-naming-its-ca-not-disabling-the-check">20. Trusting a device means naming its CA, not disabling the check</a>
+      <a href="#21-a-page-is-read-as-a-claim-about-the-adom-it-is-shown-in">21. A page is read as a claim about the ADOM it is shown in</a>
       <a href="#11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</a>
       <a href="#verifying-the-guards-are-armed_5">Verifying the guards are armed</a>
       <a href="#related">Related</a>
@@ -2768,6 +2769,90 @@ test that swaps the two boxes and asserts the stored roles are unchanged, and
 the affordance itself by a test that renders the page and requires the
 intermediate slot to be present — a backend that classifies correctly is no
 use if the operator cannot see where to paste.</p>
+<h2 id="21-a-page-is-read-as-a-claim-about-the-adom-it-is-shown-in">21. A page is read as a claim about the ADOM it is shown in</h2>
+<p>Section 19 stops an ADOM from <em>listing another product's devices</em>. This one
+stops it from being shown another product's <strong>questions</strong>.</p>
+<p>The three analytical surfaces — Analysis, Reports and Analytics — were all
+built against FortiWeb first, and all three reached a fourth product by
+accident rather than by decision:</p>
+<ul>
+<li><strong>Analysis</strong> dispatched with <code>if product == 'fortianalyzer': faz else:
+  index</code>. FortiADC, then FortiAuthenticator, inherited the FortiWeb WAF
+  dashboard through the <code>else</code>. Scoped to a product with no server policies and
+  no protection profiles, every panel on that page is empty.</li>
+<li><strong>Reports</strong> stored a product on the report row and then computed its fleet
+  section over the <em>whole</em> metrics store, with no <code>kind</code> matcher — so a
+  FortiAuthenticator report carried FortiWeb's throughput, under a heading that
+  named the identity ADOM.</li>
+<li><strong>Analytics</strong> seeded its built-in boards with <code>product = ""</code>, which is
+  visible in every ADOM. The <code>traffic</code> and <code>service-health</code> boards read probe
+  kinds that only FortiWeb supports.</li>
+</ul>
+<p>Nothing failed in any of the three. Every route returned 200, every template
+rendered, every chart drew its axes. <strong>An empty panel reads as "quiet", not as
+"not applicable"</strong> — which is the same failure the Fleet health badge had
+before §9b, arriving through presentation instead of grading.</p>
+<h3 id="the-rules_1">The rules</h3>
+<p><strong>No product reaches a page through an <code>else</code>.</strong> <code>views/analysis.py</code> holds an
+explicit <code>ANALYSIS_PAGES</code> map with no fallthrough. A product with no entry gets
+a page that says so. FortiADC is mapped to the FortiWeb page <em>on purpose</em> and
+labelled as known debt in the map itself — keeping the gap visible beats hiding
+it behind a default.</p>
+<p><strong>Global and the empty scope resolve to the widest page, never to the
+refusal.</strong> <code>product_scope.GLOBAL</code> is the string <code>global</code>; <code>''</code> is the
+no-context case (a worker thread, or a session stamped before the ADOM split).
+Failing closed on an unrecognised scope would blind the one view meant to see
+everything.</p>
+<p><strong>A product-scoped document must be product-scoped in its queries too.</strong> Half a
+fix is worse than none here: <code>fleet_queries(product)</code> picks the metric set and
+<code>_sel(base, product)</code> adds <code>{kind="&lt;product&gt;"}</code> to every expression. Every
+series the collectors write carries <code>kind = appliance.kind</code>, and the ADOM key
+<em>is</em> the appliance kind, so one label matcher does it — no device list to
+rebuild as the fleet changes. Global still gets the <strong>union</strong>, not the
+intersection: the manager-wide view must not shrink because one product has no
+throughput.</p>
+<p><strong>A roll-up that cannot apply is omitted, not zeroed.</strong> "0 policies with every
+backend down" on an identity product is a clean bill of health for a check that
+never ran. <code>POLICY_PRODUCTS</code> gates it, and <code>fleet_section</code> reports
+<code>policy_scope</code> so the renderer can say <em>not applicable</em> rather than <em>none</em>.</p>
+<p><strong>A built-in board may not offer a panel its audience cannot fill.</strong> A board
+seeded Global appears in every ADOM, so each of its rule panels must name a
+probe kind every concrete product supports. FortiWeb-only telemetry lives on
+<code>product = "fortiweb"</code> boards; FortiAuthenticator has its own.</p>
+<p><strong>Not harvested is not zero.</strong> A counter the sweep never collected and a
+counter that collected nothing render identically as <code>0</code> and demand opposite
+actions — fix the harvest, or nothing at all. Every inventory row carries
+<code>harvested</code>, and the template prints the two differently.</p>
+<p><strong>Entitlement is reported, not re-graded.</strong> The licence and token probes own
+the thresholds, the history and the alerting. The Analysis page joins their
+verdict instead of deriving a second one from the same numbers; a row with no
+probe reads <code>unmonitored</code>, which is lost coverage, not health (§9b again). A
+counter with no ceiling shows no percentage at all, because a fabricated <code>0 %</code>
+looks like plenty of room.</p>
+<h3 id="why-fortiauthenticator-needed-its-own-page-rather-than-a-filtered-one">Why FortiAuthenticator needed its own page rather than a filtered one</h3>
+<p>An authenticator is not a traffic device. It has no throughput to plot and no
+policy fan-out to map; what bounds it is <strong>entitlement</strong> — an unlicensed unit
+reports <code>users {max: 5}</code> and refuses the sixth user outright, a cliff no CPU
+series would ever show. So the identity page answers three different questions:
+entitlement headroom, what identity objects actually exist, and the
+authentication settings whose <em>absence</em> is the finding (no lockout, no
+scheduled backup).</p>
+<p>Its inventory rows are <strong>derived from the endpoint registry</strong>, not from a list
+written in the page. A list would be a copy, and the first endpoint a release
+adds would be missing with nothing failing to say so — the same contract as
+<code>registry_endpoints</code>, <code>adoms</code> and <code>acme_dns_providers</code>.</p>
+<p>Its posture readers <strong>guard on key membership before they read</strong>. A default
+assumed for a missing field produces a confident verdict about a setting nobody
+looked at, and that is worse than a gap: the operator stops checking.</p>
+<p>And it keeps the DB-first contract of <code>services.analysis</code> — cache, manager
+tables and the node-local metrics store only. The page opens with the unit
+powered off. The guard monkeypatches the client to <strong>raise</strong>, not to return
+empty: a stub that returned nothing would let a live call through looking like
+a device with no data.</p>
+<p>Guards: <code>tests/test_fac_analysis.py</code> (22 tests). Nine mutations were applied
+and all nine bite, including reverting the dispatch to the <code>else</code>, dropping the
+<code>kind</code> matcher, re-seeding the FortiWeb boards Global, collapsing <code>harvested</code>
+to a constant, and defaulting an unprobed capacity row to <code>ok</code>.</p>
 <h2 id="11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</h2>
 <ul>
 <li>Per-device configuration restore is dry-run gated — no live canary round-trip yet.</li>
@@ -3238,6 +3323,31 @@ satom diagnose all | grep -i metric
 <p>Step 3 is the one that matters. Steps 1 and 2 read the build scripts; only
 step 3 reads the artefact the customer downloads, and every entry in the table
 in 16 was a case where the scripts were fine and the artefact was not.</p>
+<h3 id="a-page-is-about-its-own-adom-21">A page is about its own ADOM (21)</h3>
+<p>Every ADOM must resolve to a page written for it, and no ADOM may be offered a
+built-in board it cannot fill:</p>
+<pre><code class="language-bash">satom_check_adom_pages() {
+  cd /opt/satom &amp;&amp; set -a &amp;&amp; . ./.env &amp;&amp; set +a
+  runuser -u &quot;$(stat -c %U /opt/satom)&quot; -- venv/bin/python3 - &lt;&lt;'PY'
+from app import create_app
+from app.views import analysis
+from app.services.product_scope import concrete_products, GLOBAL
+missing = [p for p in concrete_products() if p not in analysis.ANALYSIS_PAGES]
+print(&quot;unmapped ADOMs:&quot;, missing or &quot;none&quot;)
+print(&quot;global -&gt;&quot;, analysis.ANALYSIS_PAGES.get(GLOBAL))
+PY
+}
+</code></pre>
+<p>Then the report scoping — a product report must never ask an unscoped query:</p>
+<pre><code class="language-bash"># expect kind=&quot;&lt;product&gt;&quot; on EVERY expression, and no satom_policy_up
+# anywhere outside FortiWeb
+grep -n 'def _sel' -A6 app/services/monitor_reports.py
+</code></pre>
+<p>And the board audience, which is the test that generalises to the next product:</p>
+<pre><code class="language-bash">runuser -u &quot;$(stat -c %U /opt/satom)&quot; -- venv/bin/python3 -m pytest \
+  tests/test_fac_analysis.py::test_no_builtin_board_offers_a_panel_the_adom_cannot_produce -q
+</code></pre>
+<p>A failure names the board, the panel and the ADOM that cannot fill it.</p>
 <h2 id="related">Related</h2>
 <ul>
 <li><a href="privilege-model.html"><code>privilege-model.md</code></a> — accounts, sudo, the runner boundary, HA trust</li>

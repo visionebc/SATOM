@@ -85,6 +85,57 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>Analysis page for the FortiAuthenticator ADOM.</strong> An identity appliance has
+  no throughput to plot and no policy fan-out to map, so the new page answers
+  the questions it actually has: entitlement headroom (an unlicensed unit
+  refuses the sixth user outright — a cliff no CPU chart shows), what identity
+  objects exist, and the authentication settings whose <em>absence</em> is the finding.
+  Inventory rows are derived from the endpoint registry rather than a list in
+  the page, so an endpoint added later appears without a second edit, and
+  "not harvested" is rendered distinctly from <code>0</code> because the two demand
+  opposite actions. Entitlement is reported, never re-graded: the licence and
+  token probes own the thresholds, and a capacity row with no probe reads
+  <code>unmonitored</code>, not <code>ok</code>.</li>
+<li>
+<p><strong>Analytics boards for FortiAuthenticator</strong> — <code>fac-entitlement</code> (licence and
+  token series from the metrics store) and <code>fac-identity</code> (the same signals
+  through their probes, carrying the operator's thresholds).</p>
+</li>
+<li>
+<p><strong>Hypervisor provisioning — build an appliance from nothing.</strong> New
+  <code>app/services/hypervisors/</code> layer with two backends, both plain HTTPS and
+  neither adding a Python dependency (this product ships offline bundles;
+  <code>proxmoxer</code>/<code>pyVmomi</code> would each force a rebuild of three bundles).</p>
+</li>
+<li><strong>Proxmox VE</strong> over <code>/api2/json</code>, API-token or ticket auth. Verified end
+    to end against a live host: create, power on, power off, delete, and
+    delete again.</li>
+<li><strong>VMware ESXi</strong> over vSphere SOAP <code>/sdk</code>, parsed with the standard
+    library. A standalone host serves no vSphere REST API (<code>/api</code> and <code>/rest</code>
+    answer HTTP 400), so REST-based code would look correct and fail on every
+    standalone host in the field. Read operations verified live against ESXi
+    8.0.3.</li>
+<li><code>Capabilities</code> is resolved against the <strong>live endpoint</strong> and reports what
+    a backend cannot do rather than assuming it can, including the reason.
+    Unknown state is never treated as permission.</li>
+<li><code>HypervisorTarget</code> (multi-target: a site may run several of each) with
+    Fernet-encrypted passwords and API-token secrets, same pattern as
+    <code>Appliance</code>; <code>public()</code> is the only shape the browser sees.</li>
+<li><code>ProvisionRun</code> records the pipeline as an explicit state machine so a run
+    that dies mid-way can be undone. <code>ip_from_ipam</code> exists because a
+    user-typed address is not ours to release. Five modes (<code>full</code>, <code>semi</code>,
+    <code>dhcp</code>, <code>vm_only</code>, <code>config_only</code>) because the product cannot promise
+    unattended first boot on a hypervisor with no API serial console.</li>
+<li><strong>Firmware repository distinguishes install images from upgrade images.</strong>
+  Fortinet publishes two artefacts per release and they are not
+  interchangeable. <code>FirmwareImage.image_kind</code> (<code>upgrade</code> | <code>install</code>,
+  defaulting to <code>upgrade</code> because every pre-existing row is one) and
+  <code>hypervisor</code> (<code>kvm</code> | <code>vmware</code>). Accepted extensions follow the kind in
+  <strong>both</strong> upload paths — the page previously had a single <code>.out</code> allow-list
+  and was structurally unable to hold install media at all.</li>
+<li>
+<p><code>docs/provisioning-hypervisors.md</code>, published to the manual.</p>
+</li>
 <li>
 <p><strong>TLS trust store — import your own Root and Intermediate CA.</strong> Until now
   <code>Appliance.verify_ssl</code> meant either "validate against the PUBLIC root store",
@@ -120,6 +171,36 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li>
+<p><strong>Three analytical surfaces were showing every ADOM another product's
+  questions.</strong> Analysis dispatched through an <code>else</code>, so FortiADC and then
+  FortiAuthenticator inherited the FortiWeb WAF dashboard and rendered every
+  panel empty. Reports stored a product on the row and then computed the fleet
+  section over the <em>whole</em> metrics store, so a FortiAuthenticator report
+  carried FortiWeb's throughput under a heading naming the identity ADOM.
+  Analytics seeded its built-in boards Global, so the FortiWeb-only <code>traffic</code>
+  and <code>service-health</code> boards appeared in every ADOM. Nothing failed in any of
+  the three — an empty panel reads as "quiet", not as "not applicable".
+  Analysis now dispatches from an explicit map with no fallthrough; the report
+  fleet section scopes both its metric set and every query by <code>kind</code>, and omits
+  the policy roll-up where it cannot apply rather than reporting zero; the
+  FortiWeb-only boards are product-scoped. Documented as safeguards §21.</p>
+</li>
+<li>
+<p><strong>The firmware page leaked images across ADOMs.</strong> <code>index()</code> listed every
+  row regardless of the active product, and <code>upload()</code> validated the product
+  against every firmware-capable product rather than against the ADOM. The
+  list is now filtered in the <strong>query</strong> (a row hidden by a template is still
+  a row the page fetched, and the JSON callers kept leaking it) and both
+  upload endpoints re-derive the product from the request scope — a
+  hand-crafted POST could otherwise file a FortiWeb image under FortiADC.</p>
+</li>
+<li>
+<p><strong>The firmware page was unreachable from two ADOMs.</strong> It sat in the
+  FortiAnalyzer blueprint set only, so FortiADC and FortiAuthenticator
+  sessions bounced off it while a FortiAnalyzer session could see FortiWeb
+  images. It is now in every product ADOM, scoped by row.</p>
+</li>
 <li>
 <p><strong>An ADOM showed other products' data, and the new product showed up in
   everyone else's.</strong> Two defects with one cause, both fired by adding a fourth

@@ -8,6 +8,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Analysis page for the FortiAuthenticator ADOM.** An identity appliance has
+  no throughput to plot and no policy fan-out to map, so the new page answers
+  the questions it actually has: entitlement headroom (an unlicensed unit
+  refuses the sixth user outright — a cliff no CPU chart shows), what identity
+  objects exist, and the authentication settings whose *absence* is the finding.
+  Inventory rows are derived from the endpoint registry rather than a list in
+  the page, so an endpoint added later appears without a second edit, and
+  "not harvested" is rendered distinctly from `0` because the two demand
+  opposite actions. Entitlement is reported, never re-graded: the licence and
+  token probes own the thresholds, and a capacity row with no probe reads
+  `unmonitored`, not `ok`.
+- **Analytics boards for FortiAuthenticator** — `fac-entitlement` (licence and
+  token series from the metrics store) and `fac-identity` (the same signals
+  through their probes, carrying the operator's thresholds).
+
+
 - **Hypervisor provisioning — build an appliance from nothing.** New
   `app/services/hypervisors/` layer with two backends, both plain HTTPS and
   neither adding a Python dependency (this product ships offline bundles;
@@ -40,23 +56,6 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   and was structurally unable to hold install media at all.
 - `docs/provisioning-hypervisors.md`, published to the manual.
 
-### Fixed
-
-- **The firmware page leaked images across ADOMs.** `index()` listed every
-  row regardless of the active product, and `upload()` validated the product
-  against every firmware-capable product rather than against the ADOM. The
-  list is now filtered in the **query** (a row hidden by a template is still
-  a row the page fetched, and the JSON callers kept leaking it) and both
-  upload endpoints re-derive the product from the request scope — a
-  hand-crafted POST could otherwise file a FortiWeb image under FortiADC.
-- **The firmware page was unreachable from two ADOMs.** It sat in the
-  FortiAnalyzer blueprint set only, so FortiADC and FortiAuthenticator
-  sessions bounced off it while a FortiAnalyzer session could see FortiWeb
-  images. It is now in every product ADOM, scoped by row.
-
-
-### Added
-
 - **TLS trust store — import your own Root and Intermediate CA.** Until now
   `Appliance.verify_ssl` meant either "validate against the PUBLIC root store",
   which no privately-signed appliance can satisfy, or "validate nothing" — so
@@ -88,6 +87,33 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   See `docs/fortiauthenticator.md`.
 
 ### Fixed
+
+- **Three analytical surfaces were showing every ADOM another product's
+  questions.** Analysis dispatched through an `else`, so FortiADC and then
+  FortiAuthenticator inherited the FortiWeb WAF dashboard and rendered every
+  panel empty. Reports stored a product on the row and then computed the fleet
+  section over the *whole* metrics store, so a FortiAuthenticator report
+  carried FortiWeb's throughput under a heading naming the identity ADOM.
+  Analytics seeded its built-in boards Global, so the FortiWeb-only `traffic`
+  and `service-health` boards appeared in every ADOM. Nothing failed in any of
+  the three — an empty panel reads as "quiet", not as "not applicable".
+  Analysis now dispatches from an explicit map with no fallthrough; the report
+  fleet section scopes both its metric set and every query by `kind`, and omits
+  the policy roll-up where it cannot apply rather than reporting zero; the
+  FortiWeb-only boards are product-scoped. Documented as safeguards §21.
+
+
+- **The firmware page leaked images across ADOMs.** `index()` listed every
+  row regardless of the active product, and `upload()` validated the product
+  against every firmware-capable product rather than against the ADOM. The
+  list is now filtered in the **query** (a row hidden by a template is still
+  a row the page fetched, and the JSON callers kept leaking it) and both
+  upload endpoints re-derive the product from the request scope — a
+  hand-crafted POST could otherwise file a FortiWeb image under FortiADC.
+- **The firmware page was unreachable from two ADOMs.** It sat in the
+  FortiAnalyzer blueprint set only, so FortiADC and FortiAuthenticator
+  sessions bounced off it while a FortiAnalyzer session could see FortiWeb
+  images. It is now in every product ADOM, scoped by row.
 
 - **An ADOM showed other products' data, and the new product showed up in
   everyone else's.** Two defects with one cause, both fired by adding a fourth
@@ -137,6 +163,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   longer fifth product is caught the day it is declared.
 
 _Nothing yet._
+
 
 ## [1.4.1] - 2026-08-05
 

@@ -48,14 +48,13 @@ def _parse_filters(args) -> dict:
 #: while still promising WAF analytics: the reader concludes the fleet is
 #: clean, not that the page is wrong.
 #:
-#: FortiADC is mapped to the FortiWeb page ON PURPOSE and is KNOWN DEBT — it
-#: has virtual servers and real-server pools, not the FortiWeb projections this
-#: page reads, so most of its panels are empty too. Giving it a real page is a
-#: separate piece of work; leaving it in the map keeps the gap visible instead
-#: of hiding it behind an ``else``.
+#: Every product with a page of its own is listed explicitly. The map is not an
+#: optimisation over an ``if``: it is the thing that makes a missing page fail
+#: LOUDLY, as ``analysis/unavailable.html``, instead of quietly borrowing
+#: another product's dashboard.
 ANALYSIS_PAGES = {
     'fortiweb': 'analysis/index.html',
-    'fortiadc': 'analysis/index.html',   # known debt, see above
+    'fortiadc': 'analysis/adc.html',
     'fortianalyzer': 'analysis/faz.html',
     'fortiauthenticator': 'analysis/fac.html',
     # Global is the string 'global' (product_scope.GLOBAL), and '' is the
@@ -69,6 +68,7 @@ ANALYSIS_PAGES = {
 
 #: Products whose page is built by a module other than ``services.analysis``.
 ANALYSIS_SERVICE = {
+    'fortiadc': 'analysis_adc',
     'fortiauthenticator': 'analysis_fac',
 }
 

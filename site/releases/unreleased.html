@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Fixed · 13 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Fixed · 14 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Fixed · 13 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Fixed · 14 entries.</p>
   <div class="callout" style="margin-top:18px;">
     <span class="cico">🗒️</span>
     <p><b>Generated from the changelog.</b> This page is one section of
@@ -152,6 +152,21 @@
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li>
+<p><strong>The FortiADC ADOM showed the FortiWeb WAF dashboard.</strong> <code>/analysis/</code> mapped
+  <code>fortiadc</code> to the FortiWeb page as acknowledged debt, so the ADOM rendered
+  server policies, web-protection profiles, App IDs and signature exceptions —
+  every panel at zero, because a FortiADC harvest contains none of those
+  objects. Nothing failed; the page simply answered another product's
+  questions, and an empty panel reads as "quiet" rather than "not applicable".
+  FortiADC now has <code>analysis_adc</code> and <code>analysis/adc.html</code>, written against the
+  objects an ADC actually has: virtual servers, pools and their members, real
+  servers, health checks, the security profiles a virtual server references,
+  client-SSL profiles and local certificates. Against the live cache it reports
+  five real findings where the old page reported nothing — including a
+  certificate 26 days from expiry and a pool forwarding to its member with no
+  health check configured.</p>
+</li>
 <li>
 <p><strong>Three analytical surfaces were showing every ADOM another product's
   questions.</strong> Analysis dispatched through an <code>else</code>, so FortiADC and then

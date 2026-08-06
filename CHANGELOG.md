@@ -23,7 +23,6 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   token series from the metrics store) and `fac-identity` (the same signals
   through their probes, carrying the operator's thresholds).
 
-
 - **Hypervisor provisioning — build an appliance from nothing.** New
   `app/services/hypervisors/` layer with two backends, both plain HTTPS and
   neither adding a Python dependency (this product ships offline bundles;
@@ -88,6 +87,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **The FortiADC ADOM showed the FortiWeb WAF dashboard.** `/analysis/` mapped
+  `fortiadc` to the FortiWeb page as acknowledged debt, so the ADOM rendered
+  server policies, web-protection profiles, App IDs and signature exceptions —
+  every panel at zero, because a FortiADC harvest contains none of those
+  objects. Nothing failed; the page simply answered another product's
+  questions, and an empty panel reads as "quiet" rather than "not applicable".
+  FortiADC now has `analysis_adc` and `analysis/adc.html`, written against the
+  objects an ADC actually has: virtual servers, pools and their members, real
+  servers, health checks, the security profiles a virtual server references,
+  client-SSL profiles and local certificates. Against the live cache it reports
+  five real findings where the old page reported nothing — including a
+  certificate 26 days from expiry and a pool forwarding to its member with no
+  health check configured.
+
 - **Three analytical surfaces were showing every ADOM another product's
   questions.** Analysis dispatched through an `else`, so FortiADC and then
   FortiAuthenticator inherited the FortiWeb WAF dashboard and rendered every
@@ -101,7 +114,6 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   fleet section scopes both its metric set and every query by `kind`, and omits
   the policy roll-up where it cannot apply rather than reporting zero; the
   FortiWeb-only boards are product-scoped. Documented as safeguards §21.
-
 
 - **The firmware page leaked images across ADOMs.** `index()` listed every
   row regardless of the active product, and `upload()` validated the product
@@ -163,7 +175,6 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   longer fifth product is caught the day it is declared.
 
 _Nothing yet._
-
 
 ## [1.4.1] - 2026-08-05
 

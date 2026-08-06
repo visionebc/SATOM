@@ -2802,6 +2802,49 @@ a crisis on two cores and idle on thirty-two, so a fleet-wide number would mean
 something different on every node.
 
 
+## 24. A cached artifact is stale until the process restarts
+
+`satom diagnose code` exists because a long-lived process can serve code that
+no longer exists on disk while every other signal reports health. It compared
+the newest `.py` against each process start time — which left out the artifact
+gunicorn actually caches.
+
+Jinja compiles a template the first time a process renders it and, with
+auto-reload off (the production default), keeps that compiled copy for the life
+of the worker. **The cache is per worker and filled lazily.** After a template
+edit without a restart, the worker that already rendered the page keeps the old
+markup forever while a worker rendering it for the first time picks up the new
+one. The symptom is a navigation entry that appears, vanishes and comes back
+depending on which worker answers — which reads as a front-end bug, not as a
+missed restart.
+
+The rules:
+
+* **Each artifact is charged only to the processes that load it.** Templates go
+  to the web worker alone: `render_template` appears nowhere outside the request
+  path. Charging them to the sidecars would mark them stale for markup they
+  never load, and a check that always complains is a check the operator learns
+  to skip — the same failure already removed from `get system health` and from
+  the status colouring.
+* **Only artifacts a loader can actually read are scanned.** The template tree
+  carries editor backups (`*.bak`, `*.pre-<stamp>`, `*.retired-*`) and the repo
+  root collects hidden scratch scripts. A module name cannot begin with a dot,
+  so a hidden `.py` is structurally unimportable. Neither is ever served, and
+  naming one as the reason to restart a service is a false positive that costs
+  the operator a restart and costs the check its credibility.
+* **The read-out names which artifact moved**, not merely that one did — the
+  remedy for a source change and the remedy for a template change are the same
+  command, but the explanation an operator needs is not.
+* **The template case names the per-worker cache and the false-green
+  verification.** A `test_client` render is a fresh process reading from disk,
+  so it reports the change present while the running service serves it to
+  nobody. Without saying so, the next template edit gets debugged as a
+  navigation bug all over again.
+
+A template change is verified against the **running service**, never against a
+`test_client`. That distinction is the whole reason this section exists.
+
+
 ## 11. Known gaps (kept honest, on purpose)
 
 * Per-device configuration restore is dry-run gated — no live canary round-trip yet.
@@ -2840,6 +2883,31 @@ sed -n '/fortiweb_scoped = {/,/}/p' app/__init__.py | grep -c device_provision
 ```
 
 ## Verifying the guards are armed
+
+### The freshness check sees what the process caches (24)
+
+Two artifacts, charged to different processes. Both rows must be present:
+
+    satom diagnose code
+    # expect a "newest source" AND a "newest template" row
+
+Neither scan may pick up something no loader reads. Plant a backup newer than
+every template and a hidden scratch script newer than every module; the named
+artifacts must not change:
+
+    touch app/templates/base.html.bak .scratch.py
+    satom diagnose code | grep -E 'newest (source|template)'
+    # expect a real .html and a real .py -- never the .bak, never the dotfile
+
+The sidecars must stay clean for a template-only edit:
+
+    touch app/templates/base.html
+    satom diagnose code | grep -E 'scheduler|reconciler'
+    # expect "current" on both -- they do not render Jinja
+
+And drop the suffix filter, the dot filter or the TEMPLATE_CONSUMERS tuple and
+`tests/test_template_staleness.py` fails.
+
 
 ### Freshness and drift read the right source (18)
 

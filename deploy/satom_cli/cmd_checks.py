@@ -91,7 +91,54 @@ def _newest_source(ctx):
     for p in candidates:
         if "__pycache__" in p.parts:
             continue
+        # A module name cannot begin with a dot, so a hidden .py is
+        # structurally unimportable: nothing loads it, ever. The tree collects
+        # them (scratch patches, one-off probes) and without this the check
+        # names a throwaway script as the reason to restart a service.
+        if any(part.startswith(".") for part in p.relative_to(ctx.app_dir).parts):
+            continue
         try:
+            m = p.stat().st_mtime
+        except OSError:
+            continue
+        if m > newest_m:
+            newest, newest_m = p, m
+    return newest, newest_m
+
+
+# Jinja compiles a template the first time a process renders it and, with
+# auto-reload off (the production default), keeps the compiled copy for the
+# life of the worker. The cache is per WORKER and filled lazily, so after a
+# template edit some workers serve the new markup and some serve the old one:
+# the symptom is a menu entry that appears, vanishes and comes back with no
+# pattern, which reads as a navigation bug rather than a missed restart.
+TEMPLATE_SUFFIXES = (".html", ".htm", ".txt", ".j2", ".jinja", ".jinja2", ".xml")
+
+# Only the web process renders templates: render_template appears nowhere
+# outside the request path. Charging template mtime to the sidecars would mark
+# them stale for markup they never load, and a check that always complains is
+# a check the operator learns to skip.
+TEMPLATE_CONSUMERS = ("web",)
+
+
+def _newest_template(ctx):
+    """(path, mtime) of the newest file a Jinja loader can actually LOAD.
+
+    Filtered by suffix on purpose. app/templates carries editor backups
+    (*.bak, *.pre-<something>, *.retired-*) that no loader will ever read; a
+    bare newest-file scan would pick up a backup written seconds ago and
+    report the web worker stale against markup that is not served.
+    """
+    root = ctx.app_dir / "app" / "templates"
+    if not root.is_dir():
+        return None, 0
+    newest, newest_m = None, 0
+    for p in root.rglob("*"):
+        if p.suffix.lower() not in TEMPLATE_SUFFIXES:
+            continue
+        try:
+            if not p.is_file():
+                continue
             m = p.stat().st_mtime
         except OSError:
             continue
@@ -109,13 +156,18 @@ def code(ctx, args):
     succeeds while the scheduled run fails with 'Unknown action'.
     """
     newest, newest_m = _newest_source(ctx)
+    tpl, tpl_m = _newest_template(ctx)
     r = Result("ok", "code freshness")
-    if not newest:
+    if not newest and not tpl:
         r.status = "warn"
         r.rows("", [("source tree", "no .py files found under %s" % ctx.app_dir)])
         return r
-    rows = [("newest source", str(newest.relative_to(ctx.app_dir)))]
-    stale = []
+    rows = []
+    if newest:
+        rows.append(("newest source", str(newest.relative_to(ctx.app_dir))))
+    if tpl:
+        rows.append(("newest template", str(tpl.relative_to(ctx.app_dir))))
+    stale = {}
     for alias in ("web", "scheduler", "reconciler"):
         st = ctx.unit_state(alias)
         if st["enabled"] == "not-found" or st["active"] != "active":
@@ -126,16 +178,25 @@ def code(ctx, args):
         if started is None:
             rows.append((alias, "running, start time unavailable"))
             continue
-        delta_h = (newest_m - started) / 3600.0
+        watch_m, kind = newest_m, "source"
+        if alias in TEMPLATE_CONSUMERS and tpl_m > watch_m:
+            watch_m, kind = tpl_m, "template"
+        delta_h = (watch_m - started) / 3600.0
         if delta_h > 0:
-            rows.append((alias, "STALE — started %.1f h before the newest source" % delta_h))
-            stale.append(alias)
+            rows.append((alias, "STALE — started %.1f h before the newest %s"
+                         % (delta_h, kind)))
+            stale[alias] = kind
         else:
             rows.append((alias, "current (started %.1f h after)" % (-delta_h)))
     r.rows("", rows)
     if stale:
         r.status = "warn"
         r.note("Restart: %s" % "  ".join("sudo satom execute restart %s" % a for a in stale))
+        if "template" in stale.values():
+            r.note("A template edit is cached per gunicorn WORKER, so the page "
+                   "is right on some requests and wrong on others. It is also "
+                   "invisible to a test_client render, which is a fresh process "
+                   "reading from disk — verify against the running service.")
         if "scheduler" in stale:
             r.note("The scheduler is the dangerous one: it fails only on the "
                    "SCHEDULED path, so a manual test of the same action passes.")

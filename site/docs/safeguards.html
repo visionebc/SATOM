@@ -103,8 +103,8 @@
       <a href="#21-a-page-is-read-as-a-claim-about-the-adom-it-is-shown-in">21. A page is read as a claim about the ADOM it is shown in</a>
       <a href="#22-a-capability-probe-that-guesses-is-worse-than-no-probe">22. A capability probe that guesses is worse than no probe</a>
       <a href="#23-a-threshold-is-declared-once-inherited-live-and-always-explained">23. A threshold is declared once, inherited live, and always explained</a>
+      <a href="#24-a-cached-artifact-is-stale-until-the-process-restarts">24. A cached artifact is stale until the process restarts</a>
       <a href="#11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</a>
-      <a href="#verifying-the-guards-are-armed_5">Verifying the guards are armed</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="safeguards-what-stops-satom-from-hurting-itself">Safeguards — what stops SATOM from hurting itself</h1>
@@ -3054,6 +3054,44 @@ tree and the WAL.</p>
 <p>Load is normalised to <strong>percent of cores</strong>, not a raw load average: "load 6" is
 a crisis on two cores and idle on thirty-two, so a fleet-wide number would mean
 something different on every node.</p>
+<h2 id="24-a-cached-artifact-is-stale-until-the-process-restarts">24. A cached artifact is stale until the process restarts</h2>
+<p><code>satom diagnose code</code> exists because a long-lived process can serve code that
+no longer exists on disk while every other signal reports health. It compared
+the newest <code>.py</code> against each process start time — which left out the artifact
+gunicorn actually caches.</p>
+<p>Jinja compiles a template the first time a process renders it and, with
+auto-reload off (the production default), keeps that compiled copy for the life
+of the worker. <strong>The cache is per worker and filled lazily.</strong> After a template
+edit without a restart, the worker that already rendered the page keeps the old
+markup forever while a worker rendering it for the first time picks up the new
+one. The symptom is a navigation entry that appears, vanishes and comes back
+depending on which worker answers — which reads as a front-end bug, not as a
+missed restart.</p>
+<p>The rules:</p>
+<ul>
+<li><strong>Each artifact is charged only to the processes that load it.</strong> Templates go
+  to the web worker alone: <code>render_template</code> appears nowhere outside the request
+  path. Charging them to the sidecars would mark them stale for markup they
+  never load, and a check that always complains is a check the operator learns
+  to skip — the same failure already removed from <code>get system health</code> and from
+  the status colouring.</li>
+<li><strong>Only artifacts a loader can actually read are scanned.</strong> The template tree
+  carries editor backups (<code>*.bak</code>, <code>*.pre-&lt;stamp&gt;</code>, <code>*.retired-*</code>) and the repo
+  root collects hidden scratch scripts. A module name cannot begin with a dot,
+  so a hidden <code>.py</code> is structurally unimportable. Neither is ever served, and
+  naming one as the reason to restart a service is a false positive that costs
+  the operator a restart and costs the check its credibility.</li>
+<li><strong>The read-out names which artifact moved</strong>, not merely that one did — the
+  remedy for a source change and the remedy for a template change are the same
+  command, but the explanation an operator needs is not.</li>
+<li><strong>The template case names the per-worker cache and the false-green
+  verification.</strong> A <code>test_client</code> render is a fresh process reading from disk,
+  so it reports the change present while the running service serves it to
+  nobody. Without saying so, the next template edit gets debugged as a
+  navigation bug all over again.</li>
+</ul>
+<p>A template change is verified against the <strong>running service</strong>, never against a
+<code>test_client</code>. That distinction is the whole reason this section exists.</p>
 <h2 id="11-known-gaps-kept-honest-on-purpose">11. Known gaps (kept honest, on purpose)</h2>
 <ul>
 <li>Per-device configuration restore is dry-run gated — no live canary round-trip yet.</li>
@@ -3089,6 +3127,25 @@ grep -n &quot;clash = HypervisorTarget&quot; -A3 app/views/settings.py
 sed -n '/fortiweb_scoped = {/,/}/p' app/__init__.py | grep -c device_provision
 </code></pre>
 <h2 id="verifying-the-guards-are-armed_5">Verifying the guards are armed</h2>
+<h3 id="the-freshness-check-sees-what-the-process-caches-24">The freshness check sees what the process caches (24)</h3>
+<p>Two artifacts, charged to different processes. Both rows must be present:</p>
+<pre><code>satom diagnose code
+# expect a "newest source" AND a "newest template" row
+</code></pre>
+<p>Neither scan may pick up something no loader reads. Plant a backup newer than
+every template and a hidden scratch script newer than every module; the named
+artifacts must not change:</p>
+<pre><code>touch app/templates/base.html.bak .scratch.py
+satom diagnose code | grep -E 'newest (source|template)'
+# expect a real .html and a real .py -- never the .bak, never the dotfile
+</code></pre>
+<p>The sidecars must stay clean for a template-only edit:</p>
+<pre><code>touch app/templates/base.html
+satom diagnose code | grep -E 'scheduler|reconciler'
+# expect "current" on both -- they do not render Jinja
+</code></pre>
+<p>And drop the suffix filter, the dot filter or the TEMPLATE_CONSUMERS tuple and
+<code>tests/test_template_staleness.py</code> fails.</p>
 <h3 id="freshness-and-drift-read-the-right-source-18">Freshness and drift read the right source (18)</h3>
 <p>Freshness must follow the <em>newest</em> layer, not the nightly one. On a FortiWeb
 (which has both layers) and on any non-FortiWeb device (which has only

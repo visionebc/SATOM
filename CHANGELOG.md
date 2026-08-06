@@ -187,6 +187,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - Alert bodies now name the Thresholds scope that governs the finding.
 
 ### Fixed
+- **`satom diagnose code` now sees the artifact gunicorn actually caches.** It
+  compared the newest `.py` against each process start time, so a change that
+  touched only templates was invisible — and Jinja caches a compiled template
+  for the life of the worker, per worker and lazily, so an edit without a
+  restart leaves some workers serving the old markup and some the new. The
+  symptom is a page element that appears and vanishes with no pattern. Template
+  mtime is charged to the **web** process only (nothing else renders Jinja), the
+  read-out names which artifact moved, and the note names both the per-worker
+  cache and the fact that a `test_client` render — a fresh process reading from
+  disk — reports the change present while the running service serves it to
+  nobody.
+- **Neither freshness scan counts an artifact no loader reads.** The template
+  tree carries editor backups and the repo root collects hidden scratch scripts;
+  a module name cannot begin with a dot, so a hidden `.py` can never be
+  imported. Both were being reported as the newest artifact, sending the
+  operator to restart a service because of a throwaway file.
 - `alerts._check_devices` resolved capacity thresholds **once for the whole
   fleet** and passed the same pair to every appliance, which silently defeated
   per-product capacity limits for the one caller that actually sends the mail.

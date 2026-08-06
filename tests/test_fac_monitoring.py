@@ -386,15 +386,23 @@ def test_fac_discovery_skips_counters_with_no_ceiling_and_names_them(
 
 
 def test_discovered_fac_probes_carry_thresholds(app, fac_device, monkeypatch):
-    # A probe created with both levels at 0 can never say anything, and
-    # "discovery created 4 probes" would then read as coverage.
+    # A probe that can never say anything would make "discovery created 4
+    # probes" read as coverage.  Since 2026-08-06 discovery stores NULL so the
+    # probe inherits, so the assertion has to be about the RESOLVED limit --
+    # asserting the stored column would only prove a literal was written and
+    # would pass even if the inheritance chain were broken.
+    from app.services import thresholds as th
     _stub_systeminfo(monkeypatch)
     with app.app_context():
         a = db.session.get(Appliance, fac_device)
         dm.discover_api_probes(a)
-        for p in MonitorProbe.query.filter_by(appliance_id=a.id,
-                                              kind="licence").all():
-            assert p.warn_num and p.crit_num and p.crit_num > p.warn_num
+        rows = MonitorProbe.query.filter_by(appliance_id=a.id,
+                                            kind="licence").all()
+        assert rows, "discovery created no licence probe to grade"
+        for p in rows:
+            warn = th.num(p, "warn_num", kind="licence")
+            crit = th.num(p, "crit_num", kind="licence")
+            assert warn and crit and crit > warn
             assert p.interval_min % dm.DEFAULT_PROBE_INTERVAL_MIN == 0
 
 

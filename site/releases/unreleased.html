@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 39 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 40 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 39 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 40 entries.</p>
   <div class="callout" style="margin-top:18px;">
     <span class="cico">🗒️</span>
     <p><b>Generated from the changelog.</b> This page is one section of
@@ -240,6 +240,13 @@
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
+<li><strong>Analysis moved into the Monitoring submenu.</strong> It was a bare Fleet item
+  written out five times in <code>base.html</code>, once per ADOM block — the exact drift
+  <code>partials/nav_monitoring.html</code> exists to prevent, and which had already
+  happened to Metrics once. Five copies means an edit lands in one ADOM and is
+  silently missing from the other four, and nothing fails when it does. One
+  definition, five call sites; the submenu now re-opens on the Analysis page
+  like every other entry in it.</li>
 <li>The device roll-up (<code>stale_hours</code>, the critical multiplier, the harvest-failure
   streak and the capacity levels) is resolved <strong>per product</strong> instead of from one
   fleet-wide constant. A FortiAnalyzer legitimately lives at a different cache
@@ -410,7 +417,6 @@
   longer fifth product is caught the day it is declared.</p>
 </li>
 </ul>
-<p><em>Nothing yet.</em></p>
 <p class="rel-prevnext"><a href="v1.4.1.html">Version 1.4.1 →</a></p>
     </div>
   </div>

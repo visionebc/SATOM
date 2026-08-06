@@ -361,7 +361,8 @@ def _vm_stat(values: list, func: str):
     return values[-1]
 
 
-def vm_panel_payload(panel, start: datetime, end: datetime) -> dict:
+def vm_panel_payload(panel, start: datetime, end: datetime,
+                     variables: list | None = None) -> dict:
     """Draw a panel from a MetricsQL expression.
 
     Unlike the probe path there is no rollup table to choose: the store keeps
@@ -371,7 +372,14 @@ def vm_panel_payload(panel, start: datetime, end: datetime) -> dict:
     """
     from . import vm_store
 
-    expr = (panel.vm_expr or "").strip()
+    from . import dashboard_vars as dv
+
+    raw_expr = (panel.vm_expr or "").strip()
+    # Substitute board variables BEFORE anything else. An expression that
+    # references an unresolvable variable becomes a panel ERROR: running it
+    # with the token still in would make the store reject a parse error, which
+    # on screen is indistinguishable from the store being down.
+    expr = dv.interpolate(raw_expr, variables or []) if raw_expr else raw_expr
     step = vm_step(start, end)
     out = {
         "panel": panel.to_dict(), "axis": [], "series": [],
@@ -379,10 +387,16 @@ def vm_panel_payload(panel, start: datetime, end: datetime) -> dict:
         "from": start.isoformat(timespec="seconds"),
         "to": end.isoformat(timespec="seconds"),
         "units": [panel.vm_unit] if panel.vm_unit else [],
-        "mixed_units": False, "empty": True, "expr": expr,
+        "mixed_units": False, "empty": True, "expr": expr or raw_expr,
     }
-    if not expr:
+    if not raw_expr:
         out["error"] = "no expression"
+        return out
+    if expr is None:
+        out["error"] = ("expression references a variable this board could "
+                        "not resolve — the picker has no confirmed value for "
+                        "it, so the query was not run")
+        out["expr"] = raw_expr
         return out
     res = vm_store.query_range(expr, start.timestamp(), end.timestamp(), step)
     if res.get("status") != "success":
@@ -429,7 +443,8 @@ def vm_panel_payload(panel, start: datetime, end: datetime) -> dict:
     return out
 
 
-def panel_payload(panel, start: datetime, end: datetime, *, session=None) -> dict:
+def panel_payload(panel, start: datetime, end: datetime, *, session=None,
+                  variables: list | None = None) -> dict:
     """Everything the front end needs to draw ONE panel.
 
     Returns the shared axis plus one entry per series, already aligned to it, so
@@ -437,7 +452,7 @@ def panel_payload(panel, start: datetime, end: datetime, *, session=None) -> dic
     an off-by-one silently shifts one device's line against another's.
     """
     if (panel.select_mode or "") == "metricsql":
-        return vm_panel_payload(panel, start, end)
+        return vm_panel_payload(panel, start, end, variables)
     probes = resolve_panel_probes(panel, session=session)
     ids = [p.id for p in probes]
     source = panel_source(ids, start, end, session=session)
@@ -543,14 +558,24 @@ def _previous_window(panel, start: datetime, end: datetime, *,
 
 
 def dashboard_payload(dash, start: datetime, end: datetime, *,
-                      session=None) -> dict:
-    """Every panel of a board, resolved. One request, one consistent window."""
-    panels = [panel_payload(p, start, end, session=session)
+                      session=None, selected: dict | None = None) -> dict:
+    """Every panel of a board, resolved. One request, one consistent window.
+
+    Variables are resolved ONCE for the board, not per panel. Two panels
+    resolving the same picker independently could disagree — one enumerating
+    the store a second later than the other — and a board whose panels quietly
+    describe different device sets is worse than one that fails.
+    """
+    from . import dashboard_vars as dv
+
+    variables = dv.resolve(dash, selected or {})
+    panels = [panel_payload(p, start, end, session=session, variables=variables)
               for p in dash.panels]
     return {
         "dashboard": dash.to_dict(),
         "from": start.isoformat(timespec="seconds"),
         "to": end.isoformat(timespec="seconds"),
+        "variables": variables,
         "panels": panels,
     }
 

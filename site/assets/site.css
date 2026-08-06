@@ -570,3 +570,115 @@ header.hero > *:nth-child(4){ animation-delay:.15s } header.hero > *:nth-child(5
   display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; font-size: .9rem; }
 .rel-prevnext a { color: var(--accent); text-decoration: none; font-weight: 600; }
 .rel-prevnext a:hover { text-decoration: underline; }
+
+/* ---------------------------------------------------------------------------
+   Wide reading column (body.wide)
+
+   A BODY class, not a per-element modifier: `.wrap` appears four times on a
+   page (nav, header, content, footer) and a 1120px nav sitting over a 1536px
+   article reads as a layout bug, not as a wide page.
+
+   Only above 1400px. Below that, 80% of the viewport is NARROWER than the
+   1120px it replaces, so widening the column would quietly make the manual
+   harder to read on the laptops most operators actually use.
+--------------------------------------------------------------------------- */
+@media (min-width: 1401px) {
+  body.wide .wrap { max-width: 80%; }
+  body.wide .doc { grid-template-columns: 268px 1fr; }
+}
+
+/* ---------------------------------------------------------------------------
+   Site search (manual hub + release notes)
+
+   Never inside a `.reveal` block. A reveal starts at opacity 0 and waits for
+   an intersection observer; a search box you cannot see until you scroll past
+   it is a search box nobody finds.
+--------------------------------------------------------------------------- */
+.sitesearch { padding-top: 8px; padding-bottom: 0; }
+.ss-field { position: relative; display: flex; align-items: center; }
+.ss-field .ss-ico { position: absolute; left: 14px; font-size: .95rem; opacity: .65; pointer-events: none; }
+.ss-field input[type="search"] {
+  width: 100%; font: inherit; font-size: .95rem; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 12px 40px 12px 40px;
+  box-shadow: var(--shadow); transition: border-color .18s, box-shadow .18s;
+  -webkit-appearance: none; appearance: none;
+}
+.ss-field input[type="search"]::-webkit-search-cancel-button { display: none; }
+.ss-field input[type="search"]::placeholder { color: var(--muted); }
+.ss-field input[type="search"]:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+.ss-clear {
+  position: absolute; right: 8px; width: 26px; height: 26px; line-height: 1;
+  display: grid; place-items: center; cursor: pointer; font-size: 1.15rem;
+  color: var(--muted); background: transparent; border: 0; border-radius: var(--radius);
+}
+.ss-clear:hover { color: var(--text); background: var(--surface-3); }
+.ss-hint { margin-top: 10px; font-size: .8rem; color: var(--muted); }
+.ss-results { margin-top: 18px; }
+.ss-empty { padding: 26px 4px; color: var(--muted); font-size: .92rem; }
+.ss-group { font-size: .71rem; text-transform: uppercase; letter-spacing: .12em;
+  color: var(--muted); font-weight: 700; margin: 20px 0 8px; }
+.ss-hit {
+  display: block; padding: 11px 14px; margin-bottom: 6px; text-decoration: none;
+  background: var(--surface); border: 1px solid var(--border);
+  border-left: 3px solid var(--border); border-radius: var(--radius-lg);
+  transition: border-color .16s, background .16s, transform .16s;
+}
+.ss-hit:hover { border-left-color: var(--accent); background: var(--surface-2); transform: translateX(2px); }
+.ss-hit-t { display: block; font-weight: 600; font-size: .93rem; color: var(--text); }
+.ss-hit-x { display: block; margin-top: 3px; font-size: .84rem; color: var(--text-2); line-height: 1.5; }
+.ss-hit-w { display: block; margin-top: 4px; font-size: .76rem; color: var(--muted); }
+.ss-hit mark { background: var(--accent-light); color: var(--accent-hover); padding: 0 2px; border-radius: 2px; }
+.ss-tag {
+  display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px;
+  font-size: .7rem; font-weight: 700; letter-spacing: .04em;
+  color: var(--text); background: var(--surface-2); border: 1px solid var(--accent);
+}
+
+/* ---------------------------------------------------------------------------
+   Release notes: version rail left, the changes right
+--------------------------------------------------------------------------- */
+.rel-count { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 999px;
+  font-size: .68rem; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); }
+.rel-nav { max-height: calc(100vh - 96px); overflow-y: auto; padding-right: 6px; }
+.rel-nav-search { margin-bottom: 14px; }
+.rel-nav-search input[type="search"] { padding: 9px 12px 9px 34px; font-size: .86rem; }
+.rel-nav-search .ss-ico { left: 11px; font-size: .84rem; }
+.rel-nav .rel-nav-item {
+  display: block; padding: 10px 12px; margin-bottom: 6px; text-decoration: none;
+  border-left: 2px solid var(--border); border-radius: 0 var(--radius) var(--radius) 0;
+  transition: background .16s, border-color .16s;
+}
+.rel-nav .rel-nav-item:hover { background: var(--surface-3); }
+.rel-nav .rel-nav-item.is-active { border-left-color: var(--accent); background: var(--accent-light); }
+.rel-nav-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rel-nav-v { font-weight: 700; font-size: .9rem; color: var(--text); }
+.rel-nav-item.is-active .rel-nav-v { color: var(--accent-hover); }
+.rel-nav-meta { display: block; margin-top: 2px; font-size: .74rem; color: var(--muted); }
+.rel-nav-tag { padding: 1px 7px; border-radius: 999px; font-size: .62rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--text-2);
+  background: var(--surface-2); border: 1px solid var(--border); }
+.rel-nav-tag.rel-nav-cur { color: var(--text); border-color: var(--accent); }
+.rel-nav-tag.rel-nav-next { color: var(--text); border-color: var(--gold); }
+.rel-nav .rel-leads { margin-top: 6px; }
+.rel-nav .rel-leads li { font-size: .76rem; color: var(--text-2); line-height: 1.4; }
+.rel-panel-head { padding-bottom: 14px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
+.rel-panel-head h2 { font-size: 1.5rem; font-weight: 800; letter-spacing: -.02em; color: var(--text); }
+.rel-panel-head .rel-meta { margin-top: 6px; }
+@media (max-width: 900px) {
+  .rel-nav { max-height: none; overflow: visible; display: block; }
+  .rel-nav .rel-nav-item { border-left: 2px solid var(--border); border-radius: 0 var(--radius) var(--radius) 0; }
+  .rel-nav .rel-leads { display: none; }
+}
+
+/* The `hidden` attribute is only `display:none` in the UA stylesheet, so any
+   author rule that sets `display` silently outranks it. Three elements here
+   are toggled with `.hidden` from script and each one carries a display rule,
+   so the clear button showed on an empty box and the filtered version rail
+   never actually filtered. Re-assert it for exactly those. */
+.ss-clear[hidden],
+.ss-hit[hidden],
+.rel-nav .rel-nav-item[hidden] { display: none; }

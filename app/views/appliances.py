@@ -27,24 +27,26 @@ HW_TYPES = ("hardware", "vm", "unknown")
 HA_MODES = ("per_node", "vip")
 
 
-def _provision_metrics(appliance):
-    """Give a newly saved appliance its scrape targets immediately.
+def _provision_monitoring(appliance):
+    """Give a newly saved appliance BOTH halves of monitoring immediately.
 
-    The sweep already auto-provisions, but only on its next tick and only
-    where a scheduler is armed — so a device added on a fresh install, or on
-    a standby, would sit uncollected with nothing saying so. Provisioning at
-    save time makes the Collection page true the moment the device exists.
+    Scrape targets (the time-series layer) and baseline probes (the threshold
+    layer that feeds Fleet health). Until 2026-08-06 only the first ran here:
+    a device added through this form collected metrics but carried no
+    thresholds, because ``ensure_baseline`` was reachable only from the
+    *Discover* button. Both now come from one seam — see
+    ``services/monitoring_provision``.
 
-    Never fails the save: metrics collection is downstream of device
-    inventory, so a hiccup here must not cost the operator the device row.
+    Never fails the save: monitoring is downstream of device inventory, so a
+    hiccup here must not cost the operator the device row.
     """
     try:
-        from ..services import metrics_collect as mc
-        return mc.ensure_targets(appliance)
+        from ..services.monitoring_provision import provision_monitoring
+        return provision_monitoring(appliance)
     except Exception as exc:            # noqa: BLE001 - inventory must survive
         db.session.rollback()
-        log_exception(exc, context='metrics.ensure_targets')
-        return 0
+        log_exception(exc, context='monitoring.provision')
+        return {"targets": 0, "probes": [], "errors": [str(exc)[:120]]}
 
 
 def _parse_ha(form):
@@ -214,10 +216,19 @@ def create():
         flash(f'Appliance name {name!r} already exists.', 'danger')
         return redirect(url_for('appliances.index'))
     log_action('appliance.create', target=name)
-    made = _provision_metrics(appliance)
+    prov = _provision_monitoring(appliance)
+    # Report BOTH halves. A device with collectors but no threshold probes is
+    # graphed and unalerted, and that difference is invisible on every page.
+    bits = []
+    if prov.get('targets'):
+        bits.append(f"{prov['targets']} metrics collector(s)")
+    if prov.get('probes'):
+        bits.append(f"{len(prov['probes'])} threshold probe(s)")
     flash(f'Appliance {name} created.'
-          + (f' {made} metrics collector(s) provisioned.' if made else ''),
-          'success')
+          + (' ' + ' and '.join(bits) + ' provisioned.' if bits else '')
+          + (' Monitoring warning: ' + '; '.join(prov['errors'])
+             if prov.get('errors') else ''),
+          'warning' if prov.get('errors') else 'success')
     return redirect(url_for('appliances.detail', id=appliance.id))
 
 
@@ -294,7 +305,7 @@ def edit_save(id):
     log_action('appliance.update', target=appliance.name)
     # An edit can make a device collectable that was not: maintenance cleared,
     # product changed, host filled in. Existing targets are never touched.
-    _provision_metrics(appliance)
+    _provision_monitoring(appliance)
     flash(f'Appliance {appliance.name} updated.', 'success')
     return redirect(url_for('appliances.detail', id=appliance.id))
 
@@ -399,7 +410,7 @@ def add_member(id):
         flash('A member with that name already exists.', 'danger')
         return redirect(url_for('appliances.detail', id=id))
     log_action('appliance.member_add', target=node0.name)
-    _provision_metrics(m)   # a member node is a real device with its own host
+    _provision_monitoring(m)   # a member node is a real device with its own host
     flash('Cluster member added.', 'success')
     return redirect(url_for('appliances.detail', id=id))
 

@@ -26,6 +26,7 @@ from ..models import Permission, db
 from ..models_analytics import (SELECT_MODES, STAT_FUNCS, VIZ_KINDS,
                                 MonitorDashboard, MonitorPanel)
 from ..services import monitor_analytics as ma
+from ..services import dashboard_vars as dv
 from ..services.audit import log_action
 
 bp = Blueprint('monitor_analytics', __name__, url_prefix='/monitoring/analytics')
@@ -58,6 +59,18 @@ def _get_board(slug: str):
         if b.slug == slug:
             return b
     return None
+
+
+def _selected_vars():
+    """Variable selections from the query string (``?var_device=fw08``).
+
+    Returned verbatim. Validation is NOT done here on purpose: the only
+    authority on whether a value is real is the store's own label values, and
+    ``dashboard_vars.resolve`` checks against those. Filtering here would put
+    a second, weaker allowlist in front of the real one.
+    """
+    return {k[4:]: v for k, v in request.args.items()
+            if k.startswith('var_') and len(k) > 4}
 
 
 def _window():
@@ -99,7 +112,8 @@ def data():
             return jsonify({"ok": False, "error": "no boards"}), 404
         board = boards[0]
     start, end, key = _window()
-    payload = ma.dashboard_payload(board, start, end)
+    payload = ma.dashboard_payload(board, start, end,
+                                   selected=_selected_vars())
     payload["range"] = key
     payload["ok"] = True
     return jsonify(payload)
@@ -113,7 +127,14 @@ def panel_data(pid: int):
     if panel is None or _get_board_of(panel) is None:
         return jsonify({"ok": False, "error": "not found"}), 404
     start, end, key = _window()
-    out = ma.panel_payload(panel, start, end)
+    # Resolve the OWNING BOARD's variables. Auto-refresh and per-panel range
+    # come through here, so without this a panel that uses $device would draw
+    # correctly on load and then fail on its first refresh — an intermittent
+    # error that reads as a store problem rather than a missing argument.
+    board = _get_board_of(panel)
+    variables = dv.resolve(board, _selected_vars()) if board is not None else []
+    out = ma.panel_payload(panel, start, end, variables=variables)
+    out["variables"] = variables
     out["range"] = key
     out["ok"] = True
     return jsonify(out)

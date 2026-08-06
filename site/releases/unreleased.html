@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Fixed · 24 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Fixed · 25 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Fixed · 24 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Fixed · 25 entries.</p>
   <div class="callout" style="margin-top:18px;">
     <span class="cico">🗒️</span>
     <p><b>Generated from the changelog.</b> This page is one section of
@@ -190,6 +190,16 @@
   on deep monitors, and section 17 recast as <em>Product workspaces</em> with
   FortiADC, FortiAuthenticator and FortiAnalyzer subsections.</p>
 </li>
+<li><strong>The user guide now covers provisioning, updates, the metrics store and
+  the trust store.</strong> Five areas shipped without a line in the manual that is
+  published publicly: hypervisor provisioning, offline signed update packages,
+  Monitoring → Collection, Analytics boards, period reports, and the TLS trust
+  store. New sections 21 (<em>Provisioning new appliances</em>) and 22 (<em>Updating
+  SATOM itself</em>), plus 10.1, 14.7, 14.8 and 14.9. Nothing fails when a manual
+  goes stale, so the structure is now guarded mechanically: contents entries
+  must resolve to real sections, section numbers must be a gapless sequence,
+  every linked manual must exist, and every collector and provisioning mode in
+  the code must be named in the section that explains it.</li>
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>

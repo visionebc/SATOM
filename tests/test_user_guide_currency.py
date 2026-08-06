@@ -27,6 +27,8 @@ import re
 import pytest
 
 from app import branding
+from app.models_provision import MODES
+from app.services.metrics_collect import COLLECTORS
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 GUIDE = ROOT / 'docs' / 'user-guide.md'
@@ -106,3 +108,122 @@ def test_the_roster_is_not_empty():
     above would pass with zero cases."""
     assert len(ACTIVE) >= 3
     assert len(PRODUCTS) >= 2
+
+
+# ---------------------------------------------------------------------------
+# Structure: the contents list and the sections it points at
+#
+# Renumbering a section and forgetting the contents list breaks nothing that
+# any other test can see: the file still parses, the site still builds, every
+# page still returns 200 — the reader just lands somewhere else, or nowhere.
+# That is the same silent-staleness failure the top of this file describes, so
+# it gets the same treatment: a mechanical, derived check.
+# ---------------------------------------------------------------------------
+
+def anchor(title: str) -> str:
+    """The fragment a Markdown renderer derives from a heading.
+
+    Lower-case, drop everything that is not alphanumeric / space / hyphen,
+    spaces become hyphens. Matches the fragments already written by hand in
+    the contents list, which is what makes this checkable at all.
+    """
+    s = ''.join(c for c in title.lower() if c.isalnum() or c in ' -')
+    return s.replace(' ', '-')
+
+
+def numbered_headings() -> list:
+    """(number, title) for every ``## N. Title`` heading, in file order."""
+    return [(int(m.group(1)), m.group(2).strip())
+            for m in re.finditer(r'^## (\d+)\. (.+)$', guide_text(), re.M)]
+
+
+def toc_entries() -> list:
+    """(number, fragment) for every numbered line of the contents list."""
+    return [(int(m.group(1)), m.group(2))
+            for m in re.finditer(r'^(\d+)\. \[[^\]]+\]\(#([^)]+)\)$',
+                                 guide_text(), re.M)]
+
+
+def test_the_manual_still_has_a_structure_to_check():
+    """Anti-vacuity. Every test below iterates over these two lists; if a
+    pattern stopped matching they would all pass over nothing."""
+    assert len(numbered_headings()) >= 20
+    assert len(toc_entries()) >= 20
+
+
+def test_section_numbers_are_a_gapless_sequence():
+    nums = [n for n, _ in numbered_headings()]
+    assert nums == list(range(1, len(nums) + 1)), (
+        f'sections are numbered {nums} — inserting a section means renumbering '
+        f'the ones after it, or appending instead'
+    )
+
+
+def test_every_contents_entry_points_at_a_real_section():
+    live = {anchor(f'{n}. {t}') for n, t in numbered_headings()}
+    for num, frag in toc_entries():
+        assert frag in live, (
+            f'contents entry {num} links to #{frag}, which no heading '
+            f'produces — the section was renamed or renumbered and the '
+            f'contents list was not'
+        )
+
+
+def test_every_section_is_reachable_from_the_contents():
+    listed = {n for n, _ in toc_entries()}
+    for num, title in numbered_headings():
+        assert num in listed, (
+            f'section {num} ({title!r}) exists but the contents list never '
+            f'mentions it'
+        )
+
+
+def test_every_document_the_guide_links_to_exists():
+    """A link to a file that is not there degrades to plain text on the public
+    site: the sentence still reads, and the reference is silently gone."""
+    targets = set(re.findall(r'\]\(([A-Za-z0-9_.-]+\.md)\)', guide_text()))
+    assert targets, 'the guide links to no other manual at all'
+    for t in sorted(targets):
+        assert (GUIDE.parent / t).exists(), (
+            f'the guide links to {t}, which does not exist in docs/'
+        )
+
+
+# ---------------------------------------------------------------------------
+# Derived rosters: the same rule as the ADOM table, applied to the two
+# registries a reader has to be able to act on.
+# ---------------------------------------------------------------------------
+
+def bounded(head: str, stop: str) -> str:
+    """The named section and nothing after it, so a word used elsewhere in the
+    manual cannot satisfy a guard by accident."""
+    txt = guide_text()
+    start = txt.index(head)
+    nxt = txt.find(stop, start + len(head))
+    return txt[start:] if nxt == -1 else txt[start:nxt]
+
+
+@pytest.mark.parametrize('key', sorted(COLLECTORS))
+def test_every_collector_is_named_in_the_collection_section(key):
+    body = bounded('### 14.7 Collection', '\n### ')
+    assert f'`{key}`' in body, (
+        f'collector {key!r} is scraped from every supported device and the '
+        f'Collection section never names it, so an operator cannot know what '
+        f'the interval they are editing controls'
+    )
+
+
+@pytest.mark.parametrize('key', sorted(MODES))
+def test_every_provisioning_mode_is_named_in_the_provisioning_section(key):
+    label = MODES[key].split(' — ')[0].strip()
+    body = bounded('## 21. Provisioning new appliances', '\n## ')
+    assert label in body, (
+        f'provisioning mode {key!r} is offered in the form as {label!r} and '
+        f'the manual never explains where it stops'
+    )
+
+
+def test_the_two_registries_are_not_empty():
+    """Anti-vacuity for the two parametrised guards above."""
+    assert len(COLLECTORS) >= 4
+    assert len(MODES) >= 4

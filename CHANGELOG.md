@@ -123,6 +123,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   FortiAuthenticator entitlement probe kinds and the per-product restrictions
   on deep monitors, and section 17 recast as *Product workspaces* with
   FortiADC, FortiAuthenticator and FortiAnalyzer subsections.
+- **The user guide now covers provisioning, updates, the metrics store and
+  the trust store.** Five areas shipped without a line in the manual that is
+  published publicly: hypervisor provisioning, offline signed update packages,
+  Monitoring → Collection, Analytics boards, period reports, and the TLS trust
+  store. New sections 21 (*Provisioning new appliances*) and 22 (*Updating
+  SATOM itself*), plus 10.1, 14.7, 14.8 and 14.9. Nothing fails when a manual
+  goes stale, so the structure is now guarded mechanically: contents entries
+  must resolve to real sections, section numbers must be a gapless sequence,
+  every linked manual must exist, and every collector and provisioning mode in
+  the code must be named in the section that explains it.
 
 ### Fixed
 

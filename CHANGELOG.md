@@ -167,6 +167,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   is the half of the decision that matters.
 
 ### Changed
+- **Analysis moved into the Monitoring submenu.** It was a bare Fleet item
+  written out five times in `base.html`, once per ADOM block — the exact drift
+  `partials/nav_monitoring.html` exists to prevent, and which had already
+  happened to Metrics once. Five copies means an edit lands in one ADOM and is
+  silently missing from the other four, and nothing fails when it does. One
+  definition, five call sites; the submenu now re-opens on the Analysis page
+  like every other entry in it.
 - The device roll-up (`stale_hours`, the critical multiplier, the harvest-failure
   streak and the capacity levels) is resolved **per product** instead of from one
   fleet-wide constant. A FortiAnalyzer legitimately lives at a different cache

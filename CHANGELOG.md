@@ -331,8 +331,6 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   compares against the longest key declared in `branding._FALLBACK`, so a
   longer fifth product is caught the day it is declared.
 
-_Nothing yet._
-
 
 ## [1.4.1] - 2026-08-05
 

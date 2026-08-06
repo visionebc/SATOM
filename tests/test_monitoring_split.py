@@ -489,3 +489,39 @@ def test_the_nav_hides_satom_health_outside_global(client, admin_id, adom):
     body = client.get("/monitoring/", headers={"X-ADOM": adom}).get_data(as_text=True)
     assert "SATOM health" not in body
     assert "Device health" in body
+
+
+# ---------------------------------------------------------------------------
+# Analysis belongs to Monitoring (2026-08-06)
+#
+# It used to be a bare Fleet item written out FIVE times in base.html -- once
+# per ADOM block -- which is the precise drift partials/nav_monitoring.html
+# exists to prevent (the same thing had already happened to Metrics).  Five
+# copies means an edit lands in one ADOM and is forgotten in the other four,
+# and nothing fails when that happens: the entry is simply missing.
+# ---------------------------------------------------------------------------
+
+
+def test_analysis_lives_in_the_monitoring_submenu():
+    nav = NAV_MON.read_text()
+    assert "url_for('analysis.index'" in nav, \
+        "Analysis must be an entry of the Monitoring submenu partial"
+    assert "_adom=product.key" in nav.split("analysis.index", 1)[1][:60], \
+        "a hard (non-Turbo) navigation cannot carry X-ADOM -- pin it on the URL"
+
+
+def test_base_html_carries_no_second_analysis_nav_entry():
+    """One definition, five call sites.  A bare entry in base.html would be a
+    sixth copy that only one ADOM gets."""
+    base = BASE_HTML.read_text()
+    assert ">Analysis</span></a>" not in base, \
+        "Analysis must be reached through partials/nav_monitoring.html only"
+    assert "url_for('analysis.index')" not in base
+
+
+def test_the_monitoring_submenu_reopens_on_the_analysis_page():
+    """Every other page in this group re-opens the submenu it belongs to.  A
+    page that collapses its own menu reads as if it lived somewhere else."""
+    nav = NAV_MON.read_text()
+    open_list = nav.split('data-nav-subgroup="Monitoring"', 1)[0]
+    assert "'analysis'" in open_list

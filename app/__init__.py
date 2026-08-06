@@ -351,7 +351,12 @@ def create_app(config_override: object | None = None) -> Flask:
                        'metrics_admin',
                        'templates', 'capacity',
                        'api_tokens', 'api_v1',
-                       'plugins', 'lua_studio'}
+                       # NOT lua_studio: FortiAuthenticator has no scripting
+                       # object (endpoints_fortiauthenticator.yaml declares
+                       # none) and LuaScript.TARGETS therefore cannot list it.
+                       # Letting the ADOM reach the studio only produced an
+                       # editor with zero valid targets.
+                       'plugins'}
             if bp_name not in fac_bps:
                 return redirect(url_for('fac.index'))
         return None
@@ -1228,6 +1233,10 @@ def create_app(config_override: object | None = None) -> Flask:
             'plugins': [
                 ('params', "TEXT DEFAULT '[]'"),
             ],
+            # --- Analytics: dashboard variables (one board, whole fleet) ---
+            'monitor_dashboard': [
+                ('variables', "TEXT DEFAULT ''"),
+            ],
             # --- Deep monitors: box CPU / memory split out of the proxyd probe ---
             'monitor_panel': [
                 ('vm_expr', 'VARCHAR(500)'),
@@ -1925,12 +1934,109 @@ def _seed_analytics_boards() -> None:
                  "rule_kind": "licence", "width": 12, "height": 260},
             ],
         },
+        {
+            # ONE board for every device in the fleet. The device moves out of
+            # the panels and into a picker, so fifty appliances are fifty
+            # SELECTIONS rather than fifty boards to build and keep in step.
+            # Every panel is store-backed and filtered by $device.
+            "slug": "device-drilldown", "title": "Device drill-down",
+            "position": 7, "product": "",
+            "description": "Everything the store knows about ONE appliance. "
+                           "Pick the device above — the board is the same for "
+                           "all of them, so a newly onboarded appliance needs "
+                           "no new board.",
+            "default_range": "24h",
+            "mode": "metricsql",
+            "variables": [
+                {"name": "device", "label": "Device", "label_key": "device"},
+            ],
+            "panels": [
+                {"title": "CPU used", "viz": "line", "width": 6,
+                 "vm_expr": 'satom_box_cpu_pct{device=~"$device"}',
+                 "vm_unit": "%", "vm_legend": "device", "show_band": False},
+                {"title": "Memory used", "viz": "line", "width": 6,
+                 "vm_expr": 'satom_box_mem_pct{device=~"$device"}',
+                 "vm_unit": "%", "vm_legend": "device", "show_band": False},
+                {"title": "Concurrent sessions", "viz": "line", "width": 6,
+                 "vm_expr": 'satom_box_sessions{device=~"$device"}',
+                 "vm_unit": "sessions", "vm_legend": "device",
+                 "show_band": False},
+                {"title": "New connections / s", "viz": "line", "width": 6,
+                 "vm_expr": 'satom_box_conn_per_sec{device=~"$device"}',
+                 "vm_unit": "conn/s", "vm_legend": "device",
+                 "show_band": False},
+                {"title": "Interfaces down", "viz": "line", "width": 6,
+                 "vm_expr": 'sum by (device) (satom_iface_up{device=~"$device"} == 0)',
+                 "vm_unit": "ports", "vm_legend": "device", "show_band": False},
+                {"title": "Published services", "viz": "line", "width": 6,
+                 "vm_expr": 'satom_policy_count{device=~"$device"}',
+                 "vm_unit": "services", "vm_legend": "device",
+                 "show_band": False},
+                # Absence is not health: a collector that stops answering has
+                # to be visible on the device's own board, not only on Fleet.
+                {"title": "Collectors failing", "viz": "line", "width": 12,
+                 "vm_expr": 'sum by (collector) (satom_scrape_up{device=~"$device"} == 0)',
+                 "vm_unit": "collectors", "vm_legend": "collector",
+                 "show_band": False, "height": 220},
+            ],
+        },
+        {
+            # The per-service view, and the reason variables CHAIN: $policy is
+            # enumerated with a match that already references $device, so the
+            # policy picker offers only services that exist on the selected
+            # appliance instead of every policy in the fleet.
+            "slug": "service-drilldown", "title": "Service drill-down",
+            "position": 8, "product": "",
+            "description": "One published service — FortiWeb server policy or "
+                           "FortiADC virtual server. The policy picker is "
+                           "scoped to the device picked above.",
+            "default_range": "24h",
+            "mode": "metricsql",
+            "variables": [
+                {"name": "device", "label": "Device", "label_key": "device",
+                 "match": 'satom_policy_up'},
+                {"name": "policy", "label": "Service", "label_key": "policy",
+                 "match": 'satom_policy_up{device=~"$device"}'},
+            ],
+            "panels": [
+                {"title": "Service up", "viz": "status", "width": 12,
+                 "height": 200,
+                 "vm_expr": 'satom_policy_up{device=~"$device",policy=~"$policy"}',
+                 "vm_unit": "up", "vm_legend": "policy", "show_band": False},
+                {"title": "Sessions", "viz": "line", "width": 6,
+                 "vm_expr": 'satom_policy_sessions{device=~"$device",policy=~"$policy"}',
+                 "vm_unit": "sessions", "vm_legend": "policy",
+                 "show_band": False},
+                {"title": "Connections / s", "viz": "line", "width": 6,
+                 "vm_expr": 'satom_policy_conn_per_sec{device=~"$device",policy=~"$policy"}',
+                 "vm_unit": "conn/s", "vm_legend": "policy",
+                 "show_band": False},
+                {"title": "Client RTT", "viz": "line", "width": 4,
+                 "vm_expr": 'satom_policy_client_rtt_ms{device=~"$device",policy=~"$policy"}',
+                 "vm_unit": "ms", "vm_legend": "policy", "show_band": False},
+                {"title": "Server RTT", "viz": "line", "width": 4,
+                 "vm_expr": 'satom_policy_server_rtt_ms{device=~"$device",policy=~"$policy"}',
+                 "vm_unit": "ms", "vm_legend": "policy", "show_band": False},
+                {"title": "App response", "viz": "line", "width": 4,
+                 "vm_expr": 'satom_policy_app_response_ms{device=~"$device",policy=~"$policy"}',
+                 "vm_unit": "ms", "vm_legend": "policy", "show_band": False},
+                {"title": "Throughput", "viz": "area", "width": 12,
+                 "vm_expr": 'satom_policy_throughput_bps{device=~"$device",policy=~"$policy"}',
+                 "vm_unit": "bps", "vm_legend": "policy", "show_band": False},
+            ],
+        },
     ]
 
     changed = False
     for spec in boards:
         panels = spec.pop("panels")
         mode = spec.pop("mode", "rule")
+        # Variables are stored as JSON text. Dumping through the parser (rather
+        # than json.dumps on the literal) means a malformed built-in definition
+        # is caught here, at boot, instead of rendering a picker that changes
+        # nothing.
+        from .services.dashboard_vars import dump as _dump_vars
+        spec["variables"] = _dump_vars(spec.pop("variables", []))
         board = MonitorDashboard.query.filter_by(slug=spec["slug"]).first()
         if board is None:
             board = MonitorDashboard(slug=spec["slug"], builtin=True, product="")

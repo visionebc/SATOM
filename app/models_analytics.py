@@ -83,6 +83,13 @@ class MonitorDashboard(db.Model):
     # options would be a copy of the fleet, and copies rot.
     variables = db.Column(db.Text, nullable=True, default="")
 
+    # Variables: JSON list of {name, label, label_key, match, allow_all}.
+    # Their OPTIONS are never stored — they are enumerated from the store's own
+    # label values on every render, so a newly onboarded device joins the
+    # picker with no edit and a retired one stops being offered. Storing the
+    # options would be a copy of the fleet, and copies rot.
+    variables = db.Column(db.Text, nullable=True, default="")
+
     # Board-level defaults a panel may override.
     default_range = db.Column(db.String(16), nullable=False, default="24h")
     refresh_s = db.Column(db.Integer, nullable=False, default=0)   # 0 = manual
@@ -109,6 +116,7 @@ class MonitorDashboard(db.Model):
             "position": self.position,
             "default_range": self.default_range or "24h",
             "variables": _dash_vars(self.variables),
+            "variables": _dash_vars(self.variables),
             "refresh_s": self.refresh_s or 0,
             "created_by": self.created_by or "",
             "updated_at": self.updated_at.isoformat(timespec="seconds")
@@ -120,6 +128,16 @@ class MonitorDashboard(db.Model):
 
     def __repr__(self) -> str:
         return f"<MonitorDashboard {self.slug!r}>"
+
+
+def _dash_vars(raw):
+    """Parse stored variable definitions, tolerating anything unparseable.
+
+    Imported lazily: this module is imported at model-registration time, and a
+    service import here would make the schema depend on the store client.
+    """
+    from .services.dashboard_vars import parse
+    return parse(raw)
 
 
 def _dash_vars(raw):

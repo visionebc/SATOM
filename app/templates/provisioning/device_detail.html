@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}{{ run.name }} — Device Provisioning — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('device_provision.index') }}">Device Provisioning</a>
+  <span class="separator">/</span>
+  <span>{{ run.name }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-hdd-network-fill me-2 text-accent"></i>{{ run.name }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Mode <strong>{{ run.mode }}</strong> &middot; step <code>{{ run.step }}</code> &middot;
+      status <strong>{{ run.status }}</strong>
+      {% if run.mgmt_ip %}&middot; {{ run.mgmt_ip }}{% endif %}
+    </p>
+  </div>
+</div>
+
+{% if run.error %}
+<div class="alert alert-{{ 'warning' if run.status == 'paused' else 'danger' }}">
+  {{ run.error }}
+</div>
+{% endif %}
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><span><i class="bi bi-list-ol me-1"></i>Pipeline</span></div>
+  <div class="fw-card-body">
+    <p class="text-muted small">
+      Greyed steps are not part of this mode&rsquo;s plan — they are skipped by design, not failures.
+    </p>
+    <div class="d-flex flex-wrap gap-2">
+      {% for s in steps %}
+        {% set planned = s in plan %}
+        {% set passed = steps.index(s) <= steps.index(run.step) %}
+        <span class="fw-badge fw-badge-{{ 'success' if (planned and passed) else ('secondary' if planned else 'light') }}"
+              {% if not planned %}style="opacity:.45;"{% endif %}>{{ s }}</span>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header"><span><i class="bi bi-journal-text me-1"></i>Run log</span></div>
+  <div class="fw-card-body">
+    {% if not run.log() %}
+      <p class="text-muted mb-0">Nothing has run yet.</p>
+    {% else %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead><tr><th style="width:18%">Step</th><th style="width:8%">OK</th>
+          <th>Detail</th><th style="width:18%">At</th></tr></thead>
+        <tbody>
+        {% for e in run.log()|reverse %}
+          <tr>
+            <td><code>{{ e.step }}</code></td>
+            <td>{% if e.ok %}<span class="fw-badge fw-badge-success">ok</span>
+                {% else %}<span class="fw-badge fw-badge-danger">fail</span>{% endif %}</td>
+            <td class="small">{{ e.detail }}</td>
+            <td class="small text-muted">{{ e.at }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

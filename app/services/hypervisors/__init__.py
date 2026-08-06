@@ -43,6 +43,12 @@ FIELD_SPECS: dict[str, list[dict[str, Any]]] = {
         {"key": "host", "label": "Host", "ph": "esxi.example.com"},
         {"key": "port", "label": "Port", "ph": "443"},
         {"key": "username", "label": "Username", "ph": "root"},
+        {"key": "ssh_user", "label": "Shell username (optional)",
+         "ph": "root",
+         "help": "Only needed on a free-licensed host, whose vSphere API is "
+                 "read-only. SATOM then creates machines over SSH with "
+                 "vim-cmd. Requires TSM-SSH enabled on the host."},
+        {"key": "ssh_port", "label": "Shell port", "ph": "22"},
     ],
 }
 
@@ -74,6 +80,13 @@ def build_client(target, *, timeout: int = 30) -> HypervisorClient:
         "port": target.port or DEFAULT_PORTS.get(key),
         "timeout": timeout,
     }
+    if key == "esxi" and getattr(target, "ssh_user", ""):
+        # Second write path for a free-licensed host. Absent credentials are a
+        # supported state: the client reports "not configured" rather than
+        # pretending the API is writable.
+        kwargs["ssh_user"] = target.ssh_user
+        kwargs["ssh_password"] = target.ssh_password
+        kwargs["ssh_port"] = target.ssh_port or 22
     if key == "proxmox" and getattr(target, "token_id", ""):
         kwargs["token_id"] = target.token_id
         kwargs["token_secret"] = target.token_secret

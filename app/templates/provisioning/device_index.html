@@ -1,0 +1,381 @@
+{% extends "base.html" %}
+
+{% block title %}Device Provisioning — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <span>Device Provisioning</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-hdd-network-fill me-2 text-accent"></i>Device Provisioning</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Build an appliance machine from nothing: create the virtual machine, give it an address and a
+      DNS name, bring it up, register it, and hand it to System Provisioning for its configuration.
+      Scoped to the <strong>{{ adom }}</strong> ADOM.
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-fw-secondary" href="{{ url_for('provisioning.index') }}">
+      <i class="bi bi-sliders me-1"></i>System Provisioning</a>
+    <button class="btn btn-fw-primary" id="dp-new-btn"><i class="bi bi-plus-lg me-1"></i>New machine</button>
+  </div>
+</div>
+
+{% if not has_hypervisor %}
+<div class="alert alert-warning">
+  <div class="fw-semibold mb-1"><i class="bi bi-exclamation-triangle me-1"></i>No hypervisor is registered</div>
+  <p class="mb-1 small">
+    SATOM cannot create virtual machines until a Proxmox or ESXi endpoint is registered in
+    <a href="{{ url_for('settings.index') }}#tab-hypervisors">Settings &rsaquo; Hypervisors</a>.
+    The machine-building modes are therefore not offered below — rather than shown as buttons that
+    would fail partway through.
+  </p>
+  <p class="mb-0 small">
+    <strong>Config only</strong> still works: point it at a machine you built by hand and SATOM will
+    reserve the address, create the DNS record, register the appliance and apply the profile.
+  </p>
+</div>
+{% endif %}
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><span><i class="bi bi-signpost-split me-1"></i>How far SATOM can take it — pick a mode</span></div>
+  <div class="fw-card-body">
+    <p class="text-muted small">
+      A factory Fortinet appliance boots into a first-boot dialog: <em>admin</em> with an empty
+      password and a forced change. Nothing can reach its API until that dialog is completed, so
+      &ldquo;fully automatic&rdquo; depends entirely on whether the hypervisor exposes a
+      <strong>scriptable serial console</strong>. Proxmox does; a standalone ESXi does not, at any
+      licence tier. That single fact is what the modes are about.
+    </p>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead><tr>
+          <th style="width:13%">Mode</th><th style="width:29%">What it does</th>
+          <th style="width:29%">Advantages</th><th style="width:29%">Disadvantages</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="fw-badge fw-badge-success">Full</span></td>
+            <td>Everything: address, DNS, machine, boot, walks the first-boot dialog over the serial
+                console, registers the appliance, applies the profile.</td>
+            <td>No human step. Repeatable and auditable end to end; every action lands in the run log.</td>
+            <td><strong>Proxmox only.</strong> Needs an API serial console. Most moving parts, so the
+                widest surface for a mid-run failure — which is why rollback exists.</td>
+          </tr>
+          <tr>
+            <td><span class="fw-badge fw-badge-primary">Semi</span></td>
+            <td>Builds and boots the machine, then <em>stops</em>. You complete the first-boot dialog
+                on the hypervisor console and press Resume.</td>
+            <td>Works on <strong>every</strong> backend, including a free-licensed ESXi. The manual
+                step is the one a human is genuinely needed for; everything else is automated.</td>
+            <td>Not unattended — a run sits waiting until somebody acts on it.</td>
+          </tr>
+          <tr>
+            <td><span class="fw-badge fw-badge-primary">DHCP</span></td>
+            <td>Builds and boots; the appliance takes a lease, SATOM finds it at that address and
+                carries on.</td>
+            <td>Unattended without a serial console. Good on a build VLAN that runs DHCP.</td>
+            <td>Needs DHCP reachable from the machine&rsquo;s network, and the address it lands on is
+                not the one you chose. Not every appliance takes a lease on its factory config.</td>
+          </tr>
+          <tr>
+            <td><span class="fw-badge fw-badge-secondary">VM only</span></td>
+            <td>Creates and powers on the machine. Stops there, by design.</td>
+            <td>Smallest blast radius. Useful when the appliance is configured by another team or a
+                different tool.</td>
+            <td>No address, no DNS, no registration — none of the rest of SATOM knows the machine
+                exists until you onboard it.</td>
+          </tr>
+          <tr>
+            <td><span class="fw-badge fw-badge-secondary">Config only</span></td>
+            <td>Skips machine creation entirely: reserves the address, writes DNS, registers the
+                appliance and applies the profile against a machine that already exists.</td>
+            <td>Needs <strong>no hypervisor at all</strong>. The path for physical appliances and for
+                anything built outside SATOM.</td>
+            <td>You built the machine, so its CPU, memory, disk and network are outside the run log
+                and outside the audit trail.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="small text-body-secondary">
+      <i class="bi bi-shield-check me-1"></i>
+      Every mode is preflighted before it changes anything: SATOM asks the hypervisor what it can
+      actually do and refuses a run it cannot finish, rather than discovering the limit after an
+      address and a DNS record have already been committed.
+    </div>
+  </div>
+</div>
+
+<div class="fw-card mb-3" id="dp-form-card" style="display:none;">
+  <div class="fw-card-header"><span><i class="bi bi-plus-circle me-1"></i>New machine</span></div>
+  <div class="fw-card-body">
+    <form id="dp-form" class="row g-3" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-3">
+        <label class="form-label small">Machine name</label>
+        <input class="form-control form-control-sm" name="name" required placeholder="fortiweb11">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">Mode</label>
+        <select class="form-select form-select-sm" name="mode" id="dp-mode">
+          {% for k, label in modes.items() %}
+          <option value="{{ k }}"{% if k == 'semi' %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">Hypervisor</label>
+        <select class="form-select form-select-sm" name="target_id" id="dp-target">
+          <option value="">— none (config only) —</option>
+          {% for t in targets %}
+          <option value="{{ t.id }}">{{ t.name }} ({{ t.backend }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">Install image</label>
+        <select class="form-select form-select-sm" name="firmware_id">
+          <option value="">— none —</option>
+          {% for f in install_images %}
+          <option value="{{ f.id }}">{{ f.version }} {{ f.filename }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Install media only — upgrade images are a different list.</div>
+      </div>
+
+      {% if adom == 'global' %}
+      <div class="col-md-3">
+        <label class="form-label small">Product</label>
+        <select class="form-select form-select-sm" name="product" required>
+          <option value="">— pick one —</option>
+          <option value="fortiweb">FortiWeb</option>
+          <option value="fortiadc">FortiADC</option>
+          <option value="fortianalyzer">FortiAnalyzer</option>
+          <option value="fortiauthenticator">FortiAuthenticator</option>
+        </select>
+        <div class="form-text">Decides what kind of appliance is registered.</div>
+      </div>
+      {% endif %}
+
+      <div class="col-md-3">
+        <label class="form-label small">Hostname (DNS)</label>
+        <input class="form-control form-control-sm" name="hostname" placeholder="fortiweb11.example.com">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">Management address</label>
+        <input class="form-control form-control-sm" name="mgmt_ip" placeholder="192.0.2.20">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">Netmask</label>
+        <input class="form-control form-control-sm" name="netmask" placeholder="255.255.255.0">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">Gateway</label>
+        <input class="form-control form-control-sm" name="gateway" placeholder="192.0.2.1">
+      </div>
+
+      <div class="col-md-2">
+        <label class="form-label small">vCPU</label>
+        <input class="form-control form-control-sm" name="cpus" value="4">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small">Memory (MB)</label>
+        <input class="form-control form-control-sm" name="memory_mb" value="4096">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small">Disk (GB)</label>
+        <input class="form-control form-control-sm" name="disk_gb" value="0">
+        <div class="form-text">0 = from image</div>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small">Node</label>
+        <input class="form-control form-control-sm" name="node">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small">Datastore</label>
+        <input class="form-control form-control-sm" name="datastore">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small">Network</label>
+        <input class="form-control form-control-sm" name="network">
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label small">Admin user</label>
+        <input class="form-control form-control-sm" name="admin_user" value="admin">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">Admin password to set</label>
+        <input class="form-control form-control-sm" type="password" name="admin_password">
+      </div>
+      <div class="col-md-6 d-flex align-items-end">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="use_ipam" id="dp-ipam" value="1">
+          <label class="form-check-label small" for="dp-ipam">
+            Take the address from IPAM
+            <span class="text-muted">— only then is it released on rollback; a typed address is
+            never handed back to a pool</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="col-12 text-end">
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="dp-cancel">Cancel</button>
+        <button type="submit" class="btn btn-sm btn-fw-primary">Create run</button>
+      </div>
+    </form>
+    <div id="dp-form-msg" class="mt-3"></div>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header"><span><i class="bi bi-list-task me-1"></i>Runs</span></div>
+  <div class="fw-card-body">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead><tr>
+          <th>Name</th><th>Mode</th><th>Step</th><th>Progress</th>
+          <th>Address</th><th>Status</th><th class="text-end">Actions</th>
+        </tr></thead>
+        <tbody id="dp-rows"><tr><td colspan="7" class="text-muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var root = document.querySelector('.fw-page-header').parentNode;
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+  function tok() { return document.querySelector('#dp-form [name=csrf_token]').value; }
+  function post(url, body) {
+    return fetch(url, {method: 'POST', headers: {'X-CSRFToken': tok()}, body: body})
+      .then(function (r) { return r.json().catch(function () { return {ok: false, error: 'bad response'}; }); });
+  }
+  function statusBadge(s) {
+    var m = {done: 'success', running: 'primary', paused: 'warning',
+             failed: 'danger', aborted: 'secondary', draft: 'secondary'};
+    return '<span class="fw-badge fw-badge-' + (m[s] || 'secondary') + '">' + esc(s) + '</span>';
+  }
+  function render(runs) {
+    var tb = document.getElementById('dp-rows');
+    if (!runs.length) {
+      tb.innerHTML = '<tr><td colspan="7" class="text-muted">No runs in this ADOM yet.</td></tr>';
+      return;
+    }
+    tb.innerHTML = runs.map(function (r) {
+      return '<tr>' +
+        '<td><a href="/device-provisioning/' + r.id + '">' + esc(r.name) + '</a></td>' +
+        '<td>' + esc(r.mode) + '</td>' +
+        '<td><code>' + esc(r.step) + '</code></td>' +
+        '<td style="min-width:120px;"><div class="progress" style="height:6px;">' +
+          '<div class="progress-bar" style="width:' + r.progress + '%"></div></div></td>' +
+        '<td>' + esc(r.mgmt_ip || '—') + '</td>' +
+        '<td>' + statusBadge(r.status) +
+          (r.error ? '<div class="small text-muted">' + esc(r.error.slice(0, 120)) + '</div>' : '') + '</td>' +
+        '<td class="text-end">' +
+          '<button class="btn btn-sm btn-outline-secondary" data-dp-pre="' + r.id + '">Preflight</button> ' +
+          (r.status === 'done' || r.status === 'aborted' ? '' :
+            '<button class="btn btn-sm btn-outline-primary" data-dp-run="' + r.id + '">' +
+            (r.status === 'paused' ? 'Resume' : 'Run') + '</button> ') +
+          (r.status === 'aborted' ? '' :
+            '<button class="btn btn-sm btn-outline-danger" data-dp-rb="' + r.id + '">Roll back</button>') +
+        '</td></tr>';
+    }).join('');
+  }
+  function load() {
+    return fetch('/device-provisioning/data').then(function (r) { return r.json(); })
+      .then(function (d) { render(d.runs || []); });
+  }
+  function msg(html, kind) {
+    document.getElementById('dp-form-msg').innerHTML =
+      '<div class="alert alert-' + (kind || 'info') + ' small mb-0">' + html + '</div>';
+  }
+
+  document.getElementById('dp-new-btn').addEventListener('click', function () {
+    var c = document.getElementById('dp-form-card');
+    c.style.display = (c.style.display === 'none') ? '' : 'none';
+  });
+  document.getElementById('dp-cancel').addEventListener('click', function () {
+    document.getElementById('dp-form-card').style.display = 'none';
+  });
+  document.getElementById('dp-form').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    post('/device-provisioning/new', new FormData(ev.target)).then(function (d) {
+      if (!d.ok) {
+        msg('<strong>' + esc(d.error) + '</strong>' +
+            (d.detail ? '<div>' + esc(d.detail) + '</div>' : ''), 'danger');
+        return;
+      }
+      msg('Run created. Press <strong>Preflight</strong> to see what it will be able to do ' +
+          'before anything changes.', 'success');
+      ev.target.reset();
+      load();
+    });
+  });
+
+  document.addEventListener('click', function (ev) {
+    var el = ev.target.closest('[data-dp-pre],[data-dp-run],[data-dp-rb]');
+    if (!el) { return; }
+    ev.preventDefault();
+    var id;
+    if ((id = el.getAttribute('data-dp-pre'))) {
+      post('/device-provisioning/' + id + '/preflight').then(function (d) {
+        var p = d.preflight || {};
+        var body = '<div class="fw-semibold mb-1">Plan: ' +
+          (p.plan || []).map(esc).join(' &rarr; ') + '</div>';
+        if ((p.blockers || []).length) {
+          body += '<div class="mb-1"><strong>Blocked:</strong><ul class="mb-0">' +
+            p.blockers.map(function (b) { return '<li>' + esc(b) + '</li>'; }).join('') + '</ul></div>';
+        }
+        if ((p.warnings || []).length) {
+          body += '<div><strong>Warnings:</strong><ul class="mb-0">' +
+            p.warnings.map(function (b) { return '<li>' + esc(b) + '</li>'; }).join('') + '</ul></div>';
+        }
+        if (!(p.blockers || []).length && !(p.warnings || []).length) {
+          body += '<div>Nothing blocks this run.</div>';
+        }
+        document.getElementById('dp-form-card').style.display = '';
+        msg(body, (p.blockers || []).length ? 'warning' : 'success');
+      });
+    } else if ((id = el.getAttribute('data-dp-run'))) {
+      el.disabled = true;
+      post('/device-provisioning/' + id + '/advance').then(function (d) {
+        el.disabled = false;
+        if (!d.ok) {
+          document.getElementById('dp-form-card').style.display = '';
+          msg('<strong>' + esc(d.error) + '</strong>' +
+              ((d.blockers || []).length ? '<ul class="mb-0">' +
+                d.blockers.map(function (b) { return '<li>' + esc(b) + '</li>'; }).join('') + '</ul>' : ''),
+              'warning');
+        }
+        load();
+      });
+    } else if ((id = el.getAttribute('data-dp-rb'))) {
+      if (el.getAttribute('data-armed') !== '1') {
+        el.setAttribute('data-armed', '1');
+        el.textContent = 'Confirm roll back';
+        setTimeout(function () {
+          el.removeAttribute('data-armed'); el.textContent = 'Roll back';
+        }, 4000);
+        return;
+      }
+      post('/device-provisioning/' + id + '/rollback').then(load);
+    }
+  });
+
+  load();
+})();
+</script>
+{% endblock %}

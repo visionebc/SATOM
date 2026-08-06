@@ -12,6 +12,9 @@ work on it.
 """
 from __future__ import annotations
 
+import os
+import sys
+
 import pytest
 
 from app.models import Appliance, ScheduledAction, db
@@ -109,3 +112,109 @@ def test_explicit_target_list_is_respected(app):
         row = _action(targets=f"[{a.id}]")
         assert [d.name for d in sa._resolve_targets(row, _spec(),
                                                     trigger="schedule")] == ["chosen"]
+
+
+# ---------------------------------------------------------------------------
+# The deep-monitor sweep was the one automatic path maintenance did NOT reach.
+# It opened SSH and REST connections to parked boxes every few minutes. That
+# stayed invisible until retired appliance rows had their hosts recycled, at
+# which point the sweep was authenticating against unrelated live hardware --
+# with a 3-attempt admin lockout on the other end. Host-key verification, not
+# design, is what stopped it.
+# ---------------------------------------------------------------------------
+
+def _probe(dev, name, enabled=True):
+    from app.models import MonitorProbe
+    p = MonitorProbe(appliance_id=(dev.id if dev is not None else None),
+                     kind="cpu", name=name, enabled=enabled, interval_min=3)
+    db.session.add(p)
+    db.session.commit()
+    return p
+
+
+def test_the_probe_sweep_skips_parked_appliances(app):
+    with app.app_context():
+        from app.services import deep_monitor as dm
+        live = _dev("live-box")
+        parked = _dev("parked-box", maintenance=True)
+        _probe(live, "cpu-live")
+        _probe(parked, "cpu-parked")
+
+        names = {p.name for p in dm.due_probes(force=False)}
+
+        assert "cpu-live" in names
+        assert "cpu-parked" not in names, (
+            "a parked appliance was still being probed on the scheduled path")
+
+
+def test_a_manual_probe_run_still_reaches_a_parked_appliance(app):
+    """Anti-vacuity: 'skip everything' would satisfy the test above.
+
+    You park a device precisely in order to work on it, so *Probe now* has to
+    reach it -- the same split scheduled_actions already draws.
+    """
+    with app.app_context():
+        from app.services import deep_monitor as dm
+        parked = _dev("parked-box", maintenance=True)
+        _probe(parked, "cpu-parked")
+
+        names = {p.name for p in dm.due_probes(force=True)}
+
+        assert "cpu-parked" in names, "a manual run must still reach a parked box"
+
+
+def test_a_probe_with_no_appliance_is_never_treated_as_parked(app):
+    """A bare URL check has no appliance row. Dropping it would stop
+    collecting and read as healthy -- the failure this repo keeps designing
+    against. Absence of a device is not evidence of maintenance."""
+    with app.app_context():
+        from app.services import deep_monitor as dm
+        _dev("parked-box", maintenance=True)
+        _probe(None, "bare-url")
+
+        assert "bare-url" in {p.name for p in dm.due_probes(force=False)}
+
+
+# --- and the CLI must stop calling that expected state "lost coverage" ------
+
+def _row(pid, name, enabled, status, dev, maint):
+    return [pid, "cpu", name, enabled, status, "2026-08-06 14:00", 3,
+            "detail", dev, maint]
+
+
+def _monitors(monkeypatch, rows):
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "deploy"))
+    from satom_cli import cmd_ops, dbq
+    monkeypatch.setattr(dbq, "query", lambda ctx, q: (rows, None))
+    return cmd_ops.monitor_status(object(), [])
+
+
+def test_a_parked_appliances_disabled_probe_is_not_lost_coverage(monkeypatch):
+    res = _monitors(monkeypatch, [
+        _row(1, "cpu-parked", False, "crit", "retired-box", True),
+        _row(2, "cpu-live", True, "ok", "live-box", False),
+    ])
+    assert res.data["disabled"] == 0, (
+        "disabling the probes of a device you parked is the correct response "
+        "to parking it, not lost coverage")
+    assert res.data["disabled_parked"] == 1
+    assert res.status == "ok"
+
+
+def test_a_live_appliances_disabled_probe_is_still_lost_coverage(monkeypatch):
+    """Anti-vacuity: the exemption is about maintenance, not about being
+    disabled. Silence on a box nobody parked is coverage that went missing."""
+    res = _monitors(monkeypatch, [
+        _row(1, "cpu-live", False, "ok", "live-box", False),
+    ])
+    assert res.data["disabled"] == 1
+    assert res.data["disabled_parked"] == 0
+
+
+def test_a_live_probe_in_crit_still_fails_the_check(monkeypatch):
+    """The exemption must not be able to mask a real failure."""
+    res = _monitors(monkeypatch, [
+        _row(1, "cpu-parked", False, "crit", "retired-box", True),
+        _row(2, "cpu-live", True, "crit", "live-box", False),
+    ])
+    assert res.status not in ("ok",), "a live probe in crit stopped failing"

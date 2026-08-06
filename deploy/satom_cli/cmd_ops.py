@@ -280,12 +280,21 @@ def monitor_status(ctx, args):
         r.lines("", ["Nothing is watching the appliances between harvests.",
                      "Create them from Monitoring -> Deep monitors -> Discover."])
         return r
-    counts, bad, parked, disabled = {}, [], [], 0
+    counts, bad, parked, disabled, disabled_parked = {}, [], [], 0, 0
     for row in rows:
         (pid, kind, name, enabled, status, last, interval, detail, dev,
          maint) = (row + [""] * 10)[:10]
         if not dbq.bool_of(enabled):
-            disabled += 1
+            # Disabling the probes of a device you have parked is the correct
+            # response to parking it, not lost coverage. Counting it as loss
+            # is how this check sat at a permanent FAIL, and the first thing a
+            # permanent FAIL teaches is that the check can be ignored. The
+            # rule already exists a few lines below for ENABLED probes on a
+            # parked device; this applies it consistently.
+            if dbq.bool_of(maint):
+                disabled_parked += 1
+            else:
+                disabled += 1
             continue
         label = ("%-4s %-16s %s" % (kind, dev, name),
                  "%s — %s" % (status, detail[:70]))
@@ -296,7 +305,8 @@ def monitor_status(ctx, args):
         counts[status or "-"] = counts.get(status or "-", 0) + 1
         if status in ("warn", "crit", "error"):
             bad.append(label)
-    r = Result("ok", "monitor probes — %d (%d disabled)" % (len(rows), disabled))
+    r = Result("ok", "monitor probes — %d (%d disabled, %d parked+disabled)"
+               % (len(rows), disabled, disabled_parked))
     r.rows("by state", sorted(counts.items()) or [("(none active)", "")])
     if bad:
         r.rows("not ok", bad[:40])
@@ -310,7 +320,12 @@ def monitor_status(ctx, args):
         r.note("%d probe(s) are failing against appliances in maintenance. "
                "They do not raise this roll-up — un-park the device and they "
                "will." % len(parked))
-    r.set(total=len(rows), disabled=disabled, parked=len(parked))
+    if disabled_parked:
+        r.note("%d probe(s) are disabled on appliances in maintenance. That is "
+               "the expected state for a parked device, so they are not counted "
+               "as lost coverage." % disabled_parked)
+    r.set(total=len(rows), disabled=disabled, parked=len(parked),
+          disabled_parked=disabled_parked)
     return r
 
 

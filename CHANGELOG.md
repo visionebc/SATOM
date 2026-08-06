@@ -346,6 +346,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   share a column name but a different domain and were left alone. A guard now
   compares against the longest key declared in `branding._FALLBACK`, so a
   longer fifth product is caught the day it is declared.
+- **Maintenance now silences the probe sweep, not just alerts.** A parked
+  appliance was still probed over SSH and REST every few minutes:
+  `deep_monitor.due_probes` filtered on `enabled` alone. Scheduled runs now
+  skip parked appliances; *Probe now* still reaches them, and a probe with no
+  appliance row (a bare URL check) is never treated as parked.
+- **`get monitor status` no longer calls a parked box's disabled probes lost
+  coverage.** Disabling them is the correct response to parking the device, and
+  counting it as loss held the check at a permanent `FAIL`. A live probe in
+  `crit` still fails it.
+- Root-level hidden scratch (`.patch_a.py`, `.runsuite.sh`) is git-ignored, so
+  an unrelated `git add -A` can no longer sweep another session's throwaway
+  into a commit. Anchoring this exposed a real one: unanchored `backups/` was
+  shadowing the tracked templates under `app/templates/backups/`.
 
 
 ## [1.4.1] - 2026-08-05

@@ -14,6 +14,7 @@ from disk — reported the change present while the live service served it on
 0 of 30 requests.
 """
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -261,3 +262,81 @@ def test_scratch_files_alone_do_not_make_a_process_look_stale(tree):
     result = cmd_checks.code(tree, [])
 
     assert result.status == "ok", "scratch files triggered a restart recommendation"
+
+
+# --------------------------------------------------------------------------
+# The same dot-file reasoning, one layer out: git must not offer the scratch
+# for staging either. `diagnose code` learning to skip these files stopped the
+# false "restart your service" advice, but the files were still untracked and
+# still visible, so an unrelated `git add -A` could sweep another session's
+# throwaway into a commit. That has happened twice in this repo.
+#
+# Assert through git itself rather than by grepping .gitignore: the pattern
+# syntax is git's, so only git can say whether a rule actually matches. A
+# substring assertion would pass on a rule that is present and wrong.
+# --------------------------------------------------------------------------
+
+SCRATCH_NAMES = (".patch_a.py", ".smoke1.py", ".tsh.py", ".runsuite.sh",
+                 ".suite.log", ".suite.rc")
+
+REAL_SOURCE = ("wsgi.py", "app/__init__.py", "deploy/satom_cli/tree.py",
+               "tests/conftest.py", "app/templates/base.html", ".gitignore")
+
+
+def _ignored(name):
+    """True when the ignore RULES match `name`.
+
+    ``--no-index`` is load-bearing: without it git refuses to report a tracked
+    path as ignored, so every "this must NOT be ignored" assertion below would
+    pass vacuously — including against a rule of ``*``. Verified by mutation.
+    """
+    proc = subprocess.run(
+        ["git", "--no-optional-locks", "check-ignore", "-q", "--no-index", "--", name],
+        cwd=str(REPO), capture_output=True,
+    )
+    assert proc.returncode in (0, 1), (
+        "git check-ignore failed: %s" % proc.stderr.decode()[:200])
+    return proc.returncode == 0
+
+
+@pytest.mark.parametrize("name", SCRATCH_NAMES)
+def test_root_level_hidden_scratch_is_ignored_by_git(name):
+    assert _ignored(name), (
+        f"{name} is not ignored: an unrelated `git add -A` can sweep it into "
+        "a commit, which is how uncommitted work was lost here twice"
+    )
+
+
+@pytest.mark.parametrize("name", REAL_SOURCE)
+def test_the_scratch_rule_does_not_shadow_real_files(name):
+    """Anti-vacuity: a rule of `*` would satisfy the test above and hide
+    the entire tree. Source must stay visible to git."""
+    assert not _ignored(name), f"{name} must never be ignored"
+
+
+def test_no_tracked_file_is_shadowed_by_an_ignore_rule():
+    """A tracked file matching an ignore rule keeps working until someone
+    deletes and re-adds it, and then it silently will not come back."""
+    tracked = subprocess.run(
+        ["git", "--no-optional-locks", "ls-files"],
+        cwd=str(REPO), capture_output=True, text=True,
+    ).stdout.split()
+    assert tracked, "expected a populated index"
+    shadowed = [t for t in tracked if _ignored(t)]
+    assert not shadowed, f"tracked but ignored: {shadowed}"
+
+
+NESTED_SCRATCH = ("app/.probe.py", "deploy/.tmp.sh", "tests/.scratch.log")
+
+
+@pytest.mark.parametrize("name", NESTED_SCRATCH)
+def test_the_scratch_rule_stays_at_the_repo_root(name):
+    """The rule is root-anchored, and that has to be observable.
+
+    Without this, dropping the leading ``/`` is a silent no-op for every name
+    the other tests use — they are all at the root. A wider rule would reach
+    inside packages, and blast radius is the whole point of the anchor.
+    """
+    assert not _ignored(name), (
+        f"{name} is ignored: the scratch rule escaped the repo root"
+    )

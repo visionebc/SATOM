@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-08-06
+
 ### Added
 - **Settings > Thresholds** — a 22nd tab, and the first place in this product
   where a limit can be stated once instead of once per probe. Six scopes: the
@@ -346,6 +348,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   share a column name but a different domain and were left alone. A guard now
   compares against the longest key declared in `branding._FALLBACK`, so a
   longer fifth product is caught the day it is declared.
+- **An existing installation never received that widening.** The models were
+  widened to 32, but `db.create_all()` never ALTERs and `_ensure_columns()` only
+  ADDs — so an installation that predates the change kept `varchar(16)` forever
+  and would fail on the first row written for the fourth ADOM, in an audit row
+  or an alert, long after the operator had registered the appliance and
+  concluded it worked. `_ensure_widths()` now widens any VARCHAR column the
+  models outgrew, derived from the model metadata rather than a hand-written
+  list. It only ever widens: narrowing can truncate committed rows. Widening a
+  `varchar` in PostgreSQL is a catalog-only change and replicates through WAL;
+  SQLite does not enforce the length and is skipped. `_ensure_columns()` was
+  also still emitting `VARCHAR(16)` for five `product` columns of its own, so
+  the ceiling could return even after a manual widening.
 - **Maintenance now silences the probe sweep, not just alerts.** A parked
   appliance was still probed over SSH and REST every few minutes:
   `deep_monitor.due_probes` filtered on `enabled` alone. Scheduled runs now

@@ -305,7 +305,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*98 commands in 36 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*99 commands in 36 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -410,6 +410,7 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute reinstall units` | yes | — | Re-copy the systemd units AND re-pin User= via drop-in. |
 | `satom execute reinstall cli` | yes | — | Refresh the root-owned copy of this CLI from the repo. |
 | `satom execute reinstall runner` | yes | — | Refresh the root-owned copy of the privileged update runner. |
+| `satom execute reinstall metrics-store` | yes | — | Install or re-assert the node-local metrics store (VictoriaMetrics). |
 | `satom execute trust add-key <file.pub> [--name <slug>]` | yes | — | Install a signing public key into the trust store. |
 | `satom execute trust remove-key <name\|fingerprint> --yes` | yes | ! | Stop accepting packages signed by a key. Needs --yes. |
 | `satom execute repair permissions` | yes | — | Give root-owned files in the app tree back to the service account. |

@@ -32,6 +32,10 @@ INSTALLER = ROOT / "installers" / "install-satom.sh"
 RUNNER = ROOT / "deploy" / "self_update_runner.py"
 UNIT = ROOT / "deploy" / "satom-metrics.service"
 NOTICE = ROOT / "NOTICE"
+ENV_FILE = ROOT / "deploy" / "metrics-store.env"
+SCRIPT = ROOT / "deploy" / "install-metrics-store.sh"
+CHECKS = ROOT / "deploy" / "satom_cli" / "cmd_checks.py"
+SCRIPT_NAME = "install-metrics-store.sh"
 
 BUILDERS = sorted(ROOT.glob("installers/build-offline-bundle*.sh"))
 
@@ -187,7 +191,7 @@ def test_a_builder_fails_rather_than_ship_an_incomplete_bundle(builder):
 def test_the_pinned_digest_is_the_same_everywhere():
     """Installer and builders must agree, or the installer rejects its own bundle."""
     digests = {}
-    for p in [INSTALLER, *BUILDERS]:
+    for p in [INSTALLER, ENV_FILE, *BUILDERS]:
         for ln in _exec_lines(p):
             if "VM_SHA256" in ln:
                 m = SHA_RE.search(ln)
@@ -202,6 +206,12 @@ def test_the_pinned_digest_is_the_same_everywhere():
     )
     files = next(iter(digests.values()))
     assert INSTALLER.name in files, "the installer does not pin a digest"
+    # deploy/metrics-store.env is the SINGLE HOME the re-assert script reads.
+    # The four shell files cannot source it -- the installer runs before the
+    # app tree exists and the builders run against a checkout that may predate
+    # it -- so it has to be pinned to them here, or it becomes a fifth literal
+    # that drifts in the one direction nothing else would catch.
+    assert ENV_FILE.name in files, "deploy/metrics-store.env does not pin the digest"
     for b in BUILDERS:
         assert b.name in files, f"{b.name} does not pin the digest"
 
@@ -238,3 +248,175 @@ def test_notice_attributes_the_binaries_the_product_redistributes():
     assert "VictoriaMetrics" in txt, "NOTICE does not mention the redistributed store"
     assert "Apache License 2.0" in txt, "NOTICE does not state its license"
     assert "lego" in txt, "NOTICE does not mention the redistributed ACME client"
+
+
+# --------------------------------------------------------------------------- #
+# 4. every node re-asserts its own store
+#
+# The store is node-local BY DESIGN: it sits outside the app tree because the
+# datasync replicates data/ with rsync --delete and a TSDB cannot be rsynced
+# under a live process. The price is that NOTHING carries it between nodes --
+# not git, not the datasync, not a pg_dump. Installed once, then never again.
+#
+# That is how the standby ended up running the analytics code, the
+# metrics_scrape action and the satom-metrics unit entry with no store behind
+# any of them, while every other signal called the pair healthy: its panels
+# returned a query error, which reads as a UI bug, not a missing subsystem.
+#
+# The operator CLI and the /usr/local/sbin helpers already had the cure -- the
+# update runner reinstalls them after every code update. These hold the store
+# to the same contract.
+# --------------------------------------------------------------------------- #
+
+def _reassert_loops():
+    """For-loops whose iterable is the (script, label) node-local re-assert tuple."""
+    import ast
+    found = []
+    for node in ast.walk(ast.parse(_text(RUNNER))):
+        if not isinstance(node, ast.For) or not isinstance(node.iter, ast.Tuple):
+            continue
+        names = [e.elts[0].value for e in node.iter.elts
+                 if isinstance(e, ast.Tuple) and e.elts
+                 and isinstance(e.elts[0], ast.Constant)
+                 and isinstance(e.elts[0].value, str)]
+        if "install-cli.sh" in names:
+            found.append(names)
+    return found
+
+
+def test_the_runner_reasserts_the_store_at_every_call_site():
+    """Both update paths -- git update and uploaded package -- or it drifts on one.
+
+    Asserted on the AST, not the source text: a substring check is satisfied by
+    the comment that describes the call site, which is how several guards in
+    this repo have quietly measured nothing.
+    """
+    loops = _reassert_loops()
+    assert len(loops) == 2, (
+        "expected 2 node-local re-assert loops in self_update_runner.py, found %d"
+        % len(loops))
+    for names in loops:
+        assert SCRIPT_NAME in names, (
+            "a re-assert loop refreshes %s but not the metrics store" % names)
+
+
+def test_the_reassert_cannot_raise():
+    """A failed refresh is recorded as a step; it never fails the update."""
+    import ast
+    for node in ast.walk(ast.parse(_text(RUNNER))):
+        if isinstance(node, ast.For) and isinstance(node.iter, ast.Tuple):
+            names = [e.elts[0].value for e in node.iter.elts
+                     if isinstance(e, ast.Tuple) and e.elts
+                     and isinstance(e.elts[0], ast.Constant)]
+            if SCRIPT_NAME in names:
+                assert not [n for n in ast.walk(node) if isinstance(n, ast.Raise)], (
+                    "the node-local re-assert must not raise")
+
+
+def test_the_script_does_not_carry_its_own_copy_of_the_digest():
+    body = "\n".join(_exec_lines(SCRIPT))
+    assert not SHA_RE.search(body), (
+        "install-metrics-store.sh must source deploy/metrics-store.env, not "
+        "hardcode the digest -- that would be a fifth divergent literal")
+    assert "metrics-store.env" in body
+
+
+def test_the_script_verifies_the_digest_and_takes_only_the_apache_artefact():
+    body = "\n".join(_exec_lines(SCRIPT))
+    assert "sha256sum" in body and "sha_ok" in body
+    assert "victoria-metrics-linux-amd64" in body
+    # The same upstream tag also publishes a build that is NOT Apache-2.0.
+    assert "-enterprise" not in body and "-cluster" not in body
+
+
+def test_the_script_never_aborts_a_code_update():
+    """On an isolated management network the download always fails.
+
+    If that were fatal, every code update on every air-gapped node would fail
+    forever -- trading a missing optional subsystem for an un-updatable product.
+    """
+    body = "\n".join(_exec_lines(SCRIPT))
+    assert "set -uo pipefail" in body, (
+        "must NOT use 'set -e' here: a failed curl would abort the re-assert")
+    assert body.rstrip().endswith("exit 0")
+    assert "--max-time" in body, "an unbounded curl would stall the update runner"
+
+
+def test_the_script_arms_the_unit_only_when_the_capability_was_absent():
+    """Re-enabling on every update would silently undo a deliberate stop.
+
+    Settings -> General can stop this exact unit. Runtime state belongs to the
+    operator; the re-assert may only arm a node that could not have had it.
+    """
+    body = "\n".join(_exec_lines(SCRIPT))
+    m = re.search(r'if \[ "\$INSTALLED_NOW" -eq 1 \] \|\| \[ "\$UNIT_WAS_MISSING" -eq 1 \]',
+                  body)
+    assert m, "the enable step must be guarded by INSTALLED_NOW/UNIT_WAS_MISSING"
+    assert "enable --now" not in body[:m.start()], "the unit is armed outside the guard"
+
+
+def test_the_script_derives_the_service_account_from_the_tree():
+    """A hardcoded account name already broke the datasync once after a rename."""
+    body = "\n".join(_exec_lines(SCRIPT))
+    assert "stat -c %U" in body
+    assert "satom:satom" not in body
+
+
+# --------------------------------------------------------------------------- #
+# 5. absence is visible
+# --------------------------------------------------------------------------- #
+
+def _fn(path, name):
+    import ast
+    for node in ast.walk(ast.parse(_text(path))):
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return node
+    return None
+
+
+def test_diagnose_grades_an_absent_store():
+    import ast
+    fn = _fn(CHECKS, "_metrics_store_rows")
+    assert fn is not None, "diagnose has no metrics-store probe"
+    assert _fn(CHECKS, "_metrics_store_anchor") is not None
+    absent = None
+    for node in ast.walk(fn):
+        if isinstance(node, ast.If) and any(
+                isinstance(n, ast.Attribute) and n.attr == "exists"
+                for n in ast.walk(node.test)):
+            absent = node
+            break
+    assert absent is not None, "the probe never tests for an absent binary"
+    # absent.body ONLY: an ast.If carries its elif/else in .orelse, so walking
+    # the whole node is satisfied by the grading done in the sha-mismatch
+    # branch and passes with this branch gutted. (Found by mutation.)
+    assert any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+               and n.func.attr == "worst"
+               for stmt in absent.body for n in ast.walk(stmt)), (
+        "an ABSENT metrics store must grade the result -- that is the drift "
+        "this whole re-assert exists to surface")
+
+
+def test_diagnose_does_not_grade_the_units_runtime_state():
+    """The permanent-amber trap, burned three times on this node already.
+
+    satom-ha-datasync is inert on the primary BY DESIGN; status words were once
+    coloured red merely for saying 'inactive'; the :8443 peer probe warned
+    forever on a standalone. A stopped store is an operator decision -- print
+    it, do not grade it, or this becomes the check people skip.
+    """
+    import ast
+    fn = _fn(CHECKS, "_metrics_store_rows")
+    body = [st for st in fn.body
+            if not (isinstance(st, ast.Expr) and isinstance(st.value, ast.Constant))]
+    idx = next((i for i, st in enumerate(body)
+                if any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                       and n.func.attr == "unit_state" for n in ast.walk(st))), None)
+    assert idx is not None, "the probe never reads the unit state"
+    for st in body[idx:]:
+        for n in ast.walk(st):
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute):
+                assert n.func.attr not in ("worst", "_pass"), (
+                    "the unit's runtime state must be reported, not graded")
+            assert not (isinstance(n, ast.Attribute) and n.attr == "status"), (
+                "the unit's runtime state must not set the overall status")

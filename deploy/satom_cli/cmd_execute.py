@@ -365,6 +365,30 @@ def reinstall_cli(ctx, args):
     return r
 
 
+def reinstall_metrics_store(ctx, args):
+    """Install or re-assert the node-local metrics store.
+
+    Node-local on purpose: the store lives outside the app tree because the
+    datasync replicates data/ with rsync --delete and a TSDB cannot be rsynced
+    under a live process. Nothing therefore carries it between nodes, which is
+    how a standby ended up running the analytics code with no backend behind
+    it. The update runner now re-asserts it on every code update; this is the
+    manual lever for a node that must not wait for one.
+    """
+    script = ctx.app_dir / "deploy" / "install-metrics-store.sh"
+    if not script.exists():
+        return Result("bad", "missing %s" % script)
+    rc, out, err = run(["bash", str(script)], timeout=240)
+    r = Result("ok" if rc == 0 else "bad", "reinstall metrics store")
+    r.lines("", ((out or "") + (err or "")).splitlines())
+    if rc != 0:
+        r.note("With no bundle and no route to the internet the binary cannot "
+               "be fetched. Copy it from a node that has it, or install from "
+               "an offline bundle.")
+    r.note("Confirm with: satom diagnose install")
+    return r
+
+
 def repair_permissions(ctx, args):
     """Give the app tree back to the service account.
 

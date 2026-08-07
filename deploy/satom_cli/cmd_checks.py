@@ -7,6 +7,7 @@ the app reachable by name still wins, and whether the privilege model survived
 the last update. Each one exists because the corresponding failure happened
 here and reported success while it did.
 """
+import hashlib
 import json
 import os
 import shutil
@@ -868,6 +869,72 @@ def acme(ctx, args):
     return r
 
 
+def _metrics_store_anchor(ctx):
+    """(version, sha256) the node is SUPPOSED to have, or (None, None).
+
+    Read from deploy/metrics-store.env, which is the single home for the
+    artifact identity. Never guessed: a wrong digest here would report a
+    correct binary as tampered, and this check would be the thing operators
+    learn to ignore.
+    """
+    f = ctx.app_dir / "deploy" / "metrics-store.env"
+    ver = sha = None
+    try:
+        for line in f.read_text().splitlines():
+            line = line.strip()
+            k, _, v = line.partition("=")
+            v = v.strip().strip('"').strip("'")
+            if k == "VM_VERSION":
+                ver = v
+            elif k == "VM_SHA256":
+                sha = v
+    except Exception:  # noqa: BLE001 -- absent file is "cannot tell", not "bad"
+        pass
+    return ver, sha
+
+
+def _metrics_store_rows(ctx, rows, r):
+    """Grade the store BINARY; only report the unit's runtime state.
+
+    [SATOM-METRICS-NODE-LOCAL] The binary is node-local and nothing carries it
+    between nodes -- not git, not the datasync, not a pg_dump -- so its absence
+    is real drift and is graded. The unit's enabled/active state is an OPERATOR
+    decision (Settings -> General can stop it), so it is printed and NOT graded:
+    a check that goes amber the moment somebody legitimately stops a service is
+    a check nobody reads. This node has burned that lesson three times already
+    (satom-ha-datasync idle on the primary, status words coloured red, the
+    :8443 peer probe on a standalone).
+    """
+    ver, want = _metrics_store_anchor(ctx)
+    binp = Path("/usr/local/bin/victoria-metrics")
+
+    if not binp.exists():
+        _pass(rows, "metrics store binary", False,
+              "MISSING — /monitoring/analytics has no backend on this node; "
+              "run 'sudo bash %s/deploy/install-metrics-store.sh'" % ctx.app_dir)
+        r.worst("warn")
+    elif not want:
+        _pass(rows, "metrics store binary", True, "%s (digest unverifiable: "
+              "deploy/metrics-store.env unreadable)" % binp)
+    else:
+        try:
+            got = hashlib.sha256(binp.read_bytes()).hexdigest()
+        except Exception as exc:  # noqa: BLE001
+            got = ""
+            _pass(rows, "metrics store binary", False, str(exc)[:120])
+            r.worst("warn")
+        if got:
+            if not _pass(rows, "metrics store binary", got == want,
+                         ("v%s (sha256 verified)" % ver) if got == want
+                         else "sha256 does NOT match the anchored v%s build" % ver):
+                r.worst("warn")
+
+    st = ctx.unit_state("metrics")
+    rows.append(("metrics store service",
+                 "%s/%s   (runtime state is the operator's; not graded)"
+                 % (st.get("enabled", "?"), st.get("active", "?"))))
+
+
 def install(ctx, args):
     """Is this node fully ARMED, as opposed to merely installed?
 
@@ -914,6 +981,8 @@ def install(ctx, args):
     venv_ok = (ctx.app_dir / "venv" / "bin" / "python3").exists()
     if not _pass(rows, "venv present", venv_ok):
         r.status = "bad"
+
+    _metrics_store_rows(ctx, rows, r)
 
     r.rows("infrastructure", rows)
 

@@ -2284,6 +2284,88 @@ carries VictoriaMetrics (Apache-2.0) and lego (MIT), plus the vendored browser
 assets. SATOM is ELv2; those components are not, and their terms are not
 superseded by it.
 
+### 16b. Shipping it once is not the same as every node having it
+
+Everything above is about the *installer*, and all of it held: the store was in
+`install-satom.sh` and in all three bundles. The standby still had no store.
+
+The cause is the store's own correct design. The binary and `/var/lib/satom-metrics`
+live **outside** the app tree because `satom-ha-datasync` replicates `data/`
+with `rsync --delete`, and a TSDB cannot be rsynced under a live process. So
+nothing carries the store between nodes -- not git, not the datasync, not a
+`pg_dump`. The installer wrote it once and nothing ever wrote it again. A node
+that joined the pair later, or was rebuilt, ran the analytics code, the
+`metrics_scrape` action and the `satom-metrics.service` entry `diagnose all`
+checks -- with no store behind any of them. Its panels returned a query error,
+which reads as a UI bug rather than a missing subsystem.
+
+That failure shape already had a cure here. The operator CLI and the
+`/usr/local/sbin` helpers are node-local and root-owned for the same reason
+(a sudo target the service account can rewrite is a root escalation), so the
+update runner **reinstalls them on every code update** -- a comment at that
+call site records `satom-ha-datasync.sh` sitting eleven days and two bug-fixes
+behind git while reporting SUCCESS. The store now has the same contract:
+`deploy/install-metrics-store.sh`, called from the installer, from **both**
+update paths in `self_update_runner.py`, and from
+`satom execute reinstall metrics-store`.
+
+That is also what makes it symmetric across the pair without a fan-out. The
+standby's reconciler *enqueues*; it never runs git itself. So every node runs
+its own privileged runner on every update and re-asserts its own node-local
+artefacts. Nothing has to reach across, and the mechanism cannot skip the node
+nobody was looking at.
+
+Four rules, each with a guard in `tests/test_metrics_store_install.py`:
+
+1. **It re-asserts at BOTH call sites** -- git update and uploaded package.
+   Covering one leaves the other path drifting, and which one a node takes is
+   not something the operator thinks about. Asserted on the AST: a substring
+   check is satisfied by the comment describing the call site, which is how
+   several guards in this repo quietly measured nothing.
+2. **It can never abort an update.** No `set -e`, bounded `curl`, and it ends
+   `exit 0` when the store is present. On an isolated management network the
+   download always fails; making that fatal would trade a missing optional
+   subsystem for an un-updatable product. Absence is reported by
+   `satom diagnose install`, which is the surface that outlives the update.
+3. **It arms the unit only when the capability was absent** -- a fresh binary,
+   or a missing unit file. Settings -> General can now stop this exact unit; a
+   re-assert that re-enabled it on every code update would silently undo a
+   deliberate stop. Runtime state belongs to the operator.
+4. **The digest has one home.** `deploy/metrics-store.env` is what the script
+   reads. The installer and the three builders keep literals -- they cannot
+   source it, since the installer runs before the app tree exists -- so the
+   test pins all five to one value.
+
+`diagnose install` grades the **binary** and merely prints the unit's
+enabled/active state. That asymmetry is deliberate: a missing binary is drift,
+but a stopped service is a decision, and a check that goes amber the moment
+somebody legitimately stops something is a check people learn to skip. This
+node has burned that lesson three times -- `satom-ha-datasync` idle on the
+primary, status words coloured red for saying `inactive`, and the `:8443` peer
+probe warning forever on a standalone.
+
+**Verifying the guard is armed**
+
+```bash
+# both update paths re-assert it (expect two loops, each containing the script)
+python3 - <<'EOF'
+import ast
+src = open('deploy/self_update_runner.py').read()
+for n in ast.walk(ast.parse(src)):
+    if isinstance(n, ast.For) and isinstance(n.iter, ast.Tuple):
+        names = [e.elts[0].value for e in n.iter.elts
+                 if isinstance(e, ast.Tuple) and isinstance(e.elts[0], ast.Constant)]
+        if 'install-cli.sh' in names:
+            print(names)
+EOF
+
+# the store is actually here, and matches the anchored build
+sudo satom diagnose install | grep -i 'metrics store'
+
+# the re-assert is idempotent: running it twice changes nothing
+sudo bash deploy/install-metrics-store.sh
+```
+
 ## 17. A panel that cannot report bad news is not a panel
 
 Four defects in the same console shipped and survived review because none of

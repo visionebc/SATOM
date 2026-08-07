@@ -3293,7 +3293,53 @@ grep -n &quot;clash = HypervisorTarget&quot; -A3 app/views/settings.py
 # Device provisioning is NOT a FortiWeb area (0 expected).
 sed -n '/fortiweb_scoped = {/,/}/p' app/__init__.py | grep -c device_provision
 </code></pre>
+<h2 id="26-a-model-proposing-a-change-is-not-the-same-as-a-change">26. A model proposing a change is not the same as a change</h2>
+<p>The AI Advisor (<code>docs/ai-advisor.md</code>) can suggest a WAF exception or a Lua
+script. It cannot create either on a device, and it cannot write SATOM's own
+applied configuration. What it CAN do is emit a schema-validated
+<code>AdvisorProposal</code> row, and an operator with the SAME permission the manual
+form already requires can turn that into a DRAFT — a <code>WppException</code> row via
+the guided-exceptions store, or a <code>LuaScript</code> row in <code>status: draft</code> — never
+a device call. Applying still needs the guided flow (Exceptions page) or Lua
+Studio's own dry-run deploy, exactly as if the operator had typed it in.</p>
+<p>Two failure modes this guards against, both concrete:</p>
+<ul>
+<li><strong>A softer gate than the manual form.</strong> <code>apply_proposal</code> is called with the
+  SAME coarse/granular permission key the hand-typed endpoint checks
+  (<code>config_write</code> for exceptions, <code>studio.lua_studio</code> — super-admin only —
+  for Lua). Gating the AI path on anything looser would make it an easier
+  route to a Lua draft than typing one in.</li>
+<li><strong>Untrusted device data steering the model.</strong> A WAF log line is
+  attacker-influenced text. It is wrapped in an explicit delimiter
+  (<code>&lt;&lt;&lt;UNTRUSTED&gt;&gt;&gt; ... &lt;&lt;&lt;END_UNTRUSTED&gt;&gt;&gt;</code>) with a system-prompt
+  instruction never to follow directives found inside it — but the write
+  boundary above is what actually holds if that instruction is ignored: a
+  successfully-injected model still cannot reach a device, only propose a
+  draft a human reviews.</li>
+</ul>
+<p>An external provider call is gated TWICE past having a key configured:
+<code>ai.external_allowed</code> must be explicitly on, and the outbound text (message
++ attachments) is redacted with the SAME identifier table that protects the
+public documentation site before it leaves the LAN, with the count and the
+exact text shown to the operator in a pre-send preview
+(<code>POST /advisor/&lt;id&gt;/preview</code>) before <code>/send</code> is ever called.</p>
 <h2 id="verifying-the-guards-are-armed_5">Verifying the guards are armed</h2>
+<h3 id="the-ai-advisor-write-boundary-26">The AI Advisor write boundary (26)</h3>
+<pre><code class="language-bash"># applying a proposal never touches a device — it only ever inserts into
+# WppException or LuaScript, gated by the SAME permission the manual form uses
+grep -n &quot;wpp_exceptions.add\|LuaScript(&quot; app/services/advisor.py
+
+# external providers need BOTH a configured provider AND the explicit flag
+python3 - &lt;&lt;'PY'
+from app.services import advisor as svc
+assert not svc.external_allowed()  # off by default on a fresh install
+PY
+
+# the guards themselves, and proof they bite: seven mutations, seven kills
+# (write boundary, external switch, draft status, untrusted wrapping,
+#  validation, shipped-on defaults, preview honesty)
+venv/bin/python3 -m pytest tests/test_advisor.py -q
+</code></pre>
 <h3 id="monitoring-layers-25">Monitoring layers (25)</h3>
 <p>Both halves provisioned from one seam, and no per-policy kind in the baseline:</p>
 <pre><code class="language-bash"># a saved appliance gets BOTH collectors and threshold probes

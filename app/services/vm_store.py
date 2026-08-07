@@ -21,11 +21,26 @@ DEFAULT_URL = "http://127.0.0.1:8428"
 
 
 def base_url() -> str:
+    """The metrics store this node talks to.
+
+    ``settings_store.get`` has never existed -- the accessor is ``get_str`` --
+    so this raised ``AttributeError`` on every call, the broad ``except`` ate
+    it, and ``metrics.vm_url`` was silently unconfigurable: the default was
+    always returned no matter what the operator set. Same shape as
+    ``hypervisors.base`` importing a ``trust_store.verify_target`` that was
+    never defined. A name error is a programming mistake, not an environment
+    problem, so it is no longer folded in with "we are outside an app context".
+    """
     try:
         from . import settings_store
-        return (settings_store.get("metrics.vm_url", "") or DEFAULT_URL).rstrip("/")
+        configured = settings_store.get_str("metrics.vm_url", "") or ""
+    except AttributeError:
+        # Never silently: a missing accessor means this function is wrong, and
+        # the whole point of this comment is that it went unnoticed for months.
+        raise
     except Exception:  # noqa: BLE001 — outside app context (tests, CLI)
         return DEFAULT_URL
+    return (configured or DEFAULT_URL).rstrip("/")
 
 
 def _http(path: str, *, data: bytes | None = None, timeout: float = 10.0,

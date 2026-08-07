@@ -139,3 +139,42 @@ def peer_get(host: str, path: str, timeout: float = 2.0):
         except Exception:
             continue  # TLS unreachable → try plain HTTP; then give up
     return None, b"", False
+
+
+def peer_post(host: str, path: str, data: bytes, timeout: float = 2.0):
+    """POST ``data`` (JSON bytes) to a peer — the write twin of :func:`peer_get`.
+
+    Same transport, same trust model, deliberately: HTTPS :8443 first with the
+    same unverified-cert context, plain HTTP :8000 only if TLS is unreachable,
+    the same ``X-FM-Node-Key`` identity header (there is exactly ONE inter-node
+    auth scheme and this is it), the same timeout and the same return shape
+    ``(status, body_bytes, secure)``. ``status`` is None only when the peer
+    answered on neither port; an HTTP error status IS an answer and is returned
+    as-is so the caller can tell "refused" from "unreachable".
+
+    Authenticity still comes from the header, not the certificate — see
+    :func:`peer_ssl_context`. The RECEIVER is responsible for re-validating
+    whatever it is being asked to do; this function only carries bytes.
+    """
+    ctx = peer_ssl_context()
+    hdrs = dict(auth_headers())
+    hdrs["Content-Type"] = "application/json"
+    for scheme, port, secure in (("https", HTTPS_PORT, True), ("http", HTTP_PORT, False)):
+        url = "%s://%s:%d%s" % (scheme, host, port, path)
+        try:
+            req = urllib.request.Request(url, data=data or b"", headers=hdrs,
+                                         method="POST")
+            kw = {"timeout": timeout}
+            if secure:
+                kw["context"] = ctx
+            with urllib.request.urlopen(req, **kw) as r:
+                return r.getcode(), r.read(), secure
+        except urllib.error.HTTPError as e:  # reachable, non-2xx — valid answer
+            try:
+                body = e.read()
+            except Exception:
+                body = b""
+            return e.code, body, secure
+        except Exception:
+            continue  # TLS unreachable → try plain HTTP; then give up
+    return None, b"", False

@@ -15,7 +15,7 @@ Box-affecting steps go through the service layer
 """
 from __future__ import annotations
 
-from flask import (Blueprint, flash, redirect, render_template, request,
+from flask import (Blueprint, flash, jsonify, redirect, render_template, request,
                    url_for)
 from flask_login import current_user, login_required
 
@@ -471,7 +471,18 @@ def renewals():
     'something is wrong', this page says WHAT and shows the exact error."""
     from ..services import cert_renew_log as jrn
 
+    # Durability pass. The journal is node-local by design, so the PRIMARY pulls
+    # the peer's copy into data/ (which it owns — the datasync propagates the
+    # primary's data/ to the standby, it does not delete it). Throttled and
+    # inert on a standby; a failure here must never 500 the page it explains.
+    try:
+        refresh = jrn.archive_refresh()
+    except Exception as exc:  # noqa: BLE001
+        refresh = {"role": "unknown", "skipped": "error",
+                   "error": "%s: %s" % (type(exc).__name__, exc), "results": []}
+
     nodes = jrn.fleet_view(limit=150)
+    archive_alerts = jrn.durability_alerts(nodes, role=refresh.get("role") or "")
 
     # Appliance / ACME certificates: the failed lifecycle events (sign, deploy,
     # renew, revoke). Same question, different pipeline — one page for both.
@@ -493,7 +504,42 @@ def renewals():
         flash("Could not read appliance certificate events: %s" % exc, "warning")
 
     return render_template("cert_manager/renewals.html",
-                           nodes=nodes, dev_failures=dev_failures)
+                           nodes=nodes, dev_failures=dev_failures,
+                           archive_alerts=archive_alerts,
+                           archive_retention=jrn.retention_policy())
+
+
+@bp.route("/renewals/durability.json")
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def renewals_durability():
+    """Per-node durability of the renewal journal, as JSON.
+
+    Answers the three questions the live journal cannot: how much archived
+    history survives this node's disk, when the archive was last refreshed from
+    each node, and — when it could not be — since when. ``?force=1`` bypasses the
+    pull throttle so an operator can prove the channel works right now.
+    """
+    from ..services import cert_renew_log as jrn
+    force = (request.args.get("force") or "").strip() in ("1", "true", "yes")
+    try:
+        refresh = jrn.archive_refresh(force=force)
+    except Exception as exc:  # noqa: BLE001
+        refresh = {"role": "unknown", "skipped": "error",
+                   "error": "%s: %s" % (type(exc).__name__, exc), "results": []}
+    nodes = []
+    for n in jrn.fleet_view(limit=150):
+        nodes.append({"name": n.get("name"), "host": n.get("host"),
+                      "is_self": n.get("is_self"), "reachable": n.get("reachable"),
+                      "live_runs": len(n.get("runs") or []),
+                      "archived_runs": len(n.get("archived") or []),
+                      "archive": n.get("archive") or {}})
+    return jsonify({"ok": True, "role": refresh.get("role"),
+                    "refresh": refresh, "nodes": nodes,
+                    "retention": jrn.retention_policy(),
+                    "alerts": jrn.durability_alerts(
+                        [{"name": n["name"], "archive": n["archive"]} for n in nodes],
+                        role=refresh.get("role") or "")})
 
 
 @bp.route("/renewals/run", methods=["POST"])

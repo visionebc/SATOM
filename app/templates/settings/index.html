@@ -299,6 +299,13 @@
             {% if is_admin %}
             <div id="lib-updates-meta" class="text-muted mb-1" style="font-size:11px;display:none;"></div>
             <div id="lib-node-note" class="text-muted mb-1" style="font-size:11px;display:none;"></div>
+            <div id="lib-peer-box" class="mb-1" style="font-size:11px;display:none;">
+              <label class="d-inline-flex align-items-center gap-1 mb-0" for="lib-peer-apply">
+                <input class="form-check-input mt-0" type="checkbox" id="lib-peer-apply">
+                <span>Also apply on the peer node(s)</span>
+              </label>
+              <span class="text-muted ms-1" id="lib-peer-hint"></span>
+            </div>
             {% endif %}
             <table class="table table-sm mb-0" style="font-size:13px;">
               <tbody>
@@ -311,6 +318,13 @@
             <div id="lib-pip-out" class="mt-2" style="display:none;font-size:11px;">
               <div class="text-muted mb-1" id="lib-pip-title"></div>
               <pre id="lib-pip-pre" class="mb-0 p-2" style="max-height:220px;overflow:auto;background:rgba(15,23,42,0.6);border:1px solid rgba(148,163,184,0.12);border-radius:8px;white-space:pre-wrap;"></pre>
+              <pre id="lib-peer-out" class="mb-0 mt-1 p-2" style="display:none;max-height:160px;overflow:auto;background:rgba(15,23,42,0.6);border:1px solid rgba(148,163,184,0.12);border-radius:8px;white-space:pre-wrap;"></pre>
+            </div>
+            <div id="lib-drift" class="mt-2" style="display:none;font-size:11px;">
+              <div class="mb-1" id="lib-drift-title"></div>
+              <table class="table table-sm mb-0" style="font-size:11px;">
+                <thead id="lib-drift-head"></thead><tbody id="lib-drift-body"></tbody>
+              </table>
             </div>
             {% endif %}
           </div>
@@ -3381,6 +3395,16 @@
 {% if is_admin %}
 // --- Libraries: best-effort 'update available' check (PyPI, cached server-side) ---
 var LIB_UPDATES_URL = "{{ url_for('settings.library_updates') }}";
+var LIB_DRIFT_URL = "{{ url_for('settings.library_pip_drift') }}";
+function libEsc(s) {
+  var d = document.createElement('div');
+  d.textContent = (s === null || s === undefined) ? '' : String(s);
+  return d.innerHTML;
+}
+function libPeerWanted() {
+  var c = document.getElementById('lib-peer-apply');
+  return !!(c && c.checked);
+}
 function libBadge(sev, latest) {
   var map = {
     major:  ['#ef4444', '#fff',    'major update'],
@@ -3432,31 +3456,110 @@ function libPollStatus(uid, pre) {
         setTimeout(function () { libPollStatus(uid, pre); }, 2000);
       } else {
         // done — refresh installed versions + rollback buttons
-        setTimeout(function () { libLoadState(); checkLibraryUpdates(false); }, 1500);
+        setTimeout(function () {
+          libLoadState(); checkLibraryUpdates(false); libLoadDrift();
+        }, 1500);
       }
     })
     .catch(function () {
       if (pre) pre.textContent += '\n(status poll failed)';
     });
 }
+function libRenderPeers(peers, partial, alsoPeer) {
+  var box = document.getElementById('lib-peer-out');
+  if (!box) { return; }
+  if (!alsoPeer) { box.style.display = 'none'; box.textContent = ''; return; }
+  var lines = [];
+  (peers || []).forEach(function (p) {
+    var tag = p.state === 'queued' ? 'queued'
+            : (p.state === 'unreachable' ? 'UNREACHABLE' : 'REJECTED');
+    lines.push('peer ' + (p.node || '?') + ' (' + (p.host || '?') + '): ' + tag
+      + (p.uid ? ' ' + p.uid : '') + (p.error ? ' — ' + p.error : ''));
+  });
+  if (!lines.length) { lines.push('peer: no other node is registered — this node only.'); }
+  if (partial) {
+    lines.push('PARTIAL: the change is queued HERE but NOT on the peer. '
+      + 'The pair will drift until you retry on the peer.');
+  }
+  box.style.display = '';
+  box.textContent = lines.join('\n');
+}
 function libPipChange(pkg, version, action) {
   var verb = action === 'rollback' ? 'Roll back' : 'Upgrade';
-  if (!window.confirm(verb + ' ' + pkg + ' to ' + version + ' on THIS node?\n\n'
-      + 'The privileged runner installs it and restarts the service; on failure '
-      + 'it auto-reverts to the current version.')) { return; }
+  var alsoPeer = libPeerWanted();
+  var scope = alsoPeer ? 'THIS node AND the peer node(s)' : 'THIS node only';
+  if (!window.confirm(verb + ' ' + pkg + ' to ' + version + ' on ' + scope + '?\n\n'
+      + 'The privileged runner on each node installs it and restarts the service; '
+      + 'on failure it auto-reverts to the current version.')) { return; }
   var pre = libPipOut(verb + ' ' + pkg + ' → ' + version + ' …');
+  libRenderPeers([], false, false);
   fetch('/settings/library-pip', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': libCsrf() },
-    body: JSON.stringify({ package: pkg, version: version, action: action })
+    body: JSON.stringify({ package: pkg, version: version, action: action,
+                           also_peer: alsoPeer })
   })
     .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
     .then(function (res) {
       if (!res.ok) { if (pre) pre.textContent = 'Error: ' + (res.d.error || 'request rejected'); return; }
       if (pre) pre.textContent = 'queued (' + res.d.uid + ') on ' + res.d.node + ' — applying…';
+      libRenderPeers(res.d.peers, res.d.partial, !!res.d.also_peer);
       libPollStatus(res.d.uid, pre);
     })
     .catch(function (e) { if (pre) pre.textContent = 'Error: ' + e.message; });
+}
+function libLoadDrift() {
+  fetch(LIB_DRIFT_URL, { headers: { 'Accept': 'application/json' } })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (d) {
+      var peerBox = document.getElementById('lib-peer-box');
+      var hint = document.getElementById('lib-peer-hint');
+      var box = document.getElementById('lib-drift');
+      var head = document.getElementById('lib-drift-head');
+      var body = document.getElementById('lib-drift-body');
+      var title = document.getElementById('lib-drift-title');
+      var nodes = d.nodes || [];
+      if (peerBox) { peerBox.style.display = (d.peers > 0) ? '' : 'none'; }
+      if (hint) {
+        hint.textContent = (d.peers > 0)
+          ? '— off by default; stage on one node first if you prefer' : '';
+      }
+      if (!box || nodes.length < 2) { if (box) { box.style.display = 'none'; } return; }
+      var unreachable = nodes.filter(function (n) { return !n.reachable; });
+      box.style.display = '';
+      if (title) {
+        if (unreachable.length) {
+          title.innerHTML = '<span style="color:#f59e0b;"><i class="bi bi-question-circle me-1"></i>'
+            + 'Pair state UNKNOWN — ' + libEsc(unreachable.map(function (n) { return n.name; }).join(', '))
+            + ' unreachable</span>';
+        } else if (d.level) {
+          title.innerHTML = '<span style="color:#10b981;"><i class="bi bi-check-circle me-1"></i>'
+            + 'Nodes are level — every curated library matches</span>';
+        } else {
+          title.innerHTML = '<span style="color:#ef4444;"><i class="bi bi-exclamation-triangle me-1"></i>'
+            + 'Version DRIFT between nodes</span>';
+        }
+      }
+      if (head) {
+        head.innerHTML = '<tr><th class="text-muted">Library</th>' + nodes.map(function (n) {
+          return '<th class="text-muted">' + libEsc(n.name)
+            + (n.reachable ? '' : ' <span style="color:#f59e0b;">(unreachable)</span>') + '</th>';
+        }).join('') + '</tr>';
+      }
+      if (body) {
+        body.innerHTML = (d.packages || []).map(function (p) {
+          return '<tr><td class="text-muted">' + libEsc(p.package) + '</td>' + nodes.map(function (n) {
+            if (!n.reachable) { return '<td class="text-muted" title="node unreachable">?</td>'; }
+            var v = p.versions[n.name];
+            return '<td>' + (v ? '<code>' + libEsc(v) + '</code>'
+                               : '<span class="text-muted">—</span>')
+              + (p.level ? '' : ' <span style="color:#ef4444;" title="differs across nodes">●</span>')
+              + '</td>';
+          }).join('') + '</tr>';
+        }).join('');
+      }
+    })
+    .catch(function () {});
 }
 function libLoadState() {
   fetch('/settings/library-pip/state', { headers: { 'Accept': 'application/json' } })
@@ -3545,7 +3648,9 @@ function checkLibraryUpdates(force) {
       if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Check for updates'; }
     });
 }
-document.addEventListener('DOMContentLoaded', function () { libLoadState(); checkLibraryUpdates(false); });
+document.addEventListener('DOMContentLoaded', function () {
+  libLoadState(); checkLibraryUpdates(false); libLoadDrift();
+});
 {% endif %}
 
 // --- activate the tab named in the URL hash (after a save redirect) ---

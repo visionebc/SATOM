@@ -851,6 +851,32 @@ only greps the HTML:
     chromium --headless=new --dump-dom <page-url>   # plus a probe reading
                                                     # getComputedStyle(...).opacity
 
+### Sealed recovery custody (32)
+
+```bash
+# 1. Is there an envelope, and does it hold THIS node's current keys?
+sudo satom diagnose recovery
+
+# 2. The envelope must be under data/ -- the only directory both the HA
+#    datasync and the backup bundle carry. Anywhere else is carried by neither.
+ls -l /opt/satom/data/recovery/seal.json      # expect 0600
+
+# 3. It must contain no plaintext. Neither secret may appear in it.
+sudo grep -c "$(sudo grep '^FERNET_KEY=' /opt/satom/.env | cut -d= -f2)" \
+     /opt/satom/data/recovery/seal.json       # expect 0
+
+# 4. The bundle must actually carry it -- not merely mention it.
+tar tzf /opt/satom/data/system_backups/$(ls -t /opt/satom/data/system_backups \
+     | head -1) | grep recovery-seal.json
+
+# 5. The passphrase must not be anywhere on disk. This must print nothing.
+sudo grep -rl "$SEAL_PASSPHRASE" /opt/satom /var/log/satom 2>/dev/null
+
+# 6. Round trip. Wrong passphrase must be refused.
+SATOM_SEAL_PASSPHRASE='<yours>' sudo -E satom execute unseal recovery --yes
+```
+
+
 ## 8g. A badge is pinned to the glyph, not to the padded hit area
 
 The unread-count bubble on the topbar bell was positioned with Bootstrap's
@@ -3431,6 +3457,84 @@ The script it named had no source in the repository at all.
 
 A retired mechanism that still appears in the documentation is worse than one
 that was never built: it is a copy the operator believes they have.
+
+## 32. A secret that must not spread in the clear can still spread sealed
+
+Section 28 argued that `FERNET_KEY` and the internal CA key must stay out of a
+backup bundle, and that argument still holds: a bundle is retained, mirrored to
+the peer and pushed off-box over SFTP with a password that lives in a column
+`FERNET_KEY` opens. Plaintext there collapses the whole scheme into a single
+file — lose one bundle, lose the estate.
+
+But the argument was never *the material must not leave the node*. It was **the
+material must not leave the node in the clear**. Reading it the stronger way
+bought a real cost: a bundle restored onto a rebuilt node is a database of
+unreadable secrets, and `diagnose recovery` kept reporting that nobody had ever
+run the export that would have prevented it — because "print it and file it
+somewhere" works exactly as well as the operator's filing.
+
+The envelope inverts the asymmetry instead of choosing a side. Whoever steals a
+bundle holds ciphertext. The operator, holding a passphrase and nothing else,
+rebuilds the installation from **any** copy.
+
+### The rules
+
+1. **The envelope lives in `data/`, and nowhere else is acceptable.** `data/`
+   is the one directory both mechanisms carry: the HA datasync rsyncs it to the
+   peer and the bundle packages it. A file outside it is carried by neither —
+   which is precisely how `publication-rules.local.json` sat stale on the
+   standby for weeks (§27). `data/` is also gitignored, so no envelope can
+   reach the published mirror.
+
+2. **The passphrase is created at INSTALL, not at cluster join.** A standalone
+   node never joins, and a standalone node is the one with no second copy of
+   anything — it needs the envelope *more* than a pair does. A secondary
+   inherits the passphrase through the join key so both nodes open the same
+   envelope; that adds no new class of secret, because the join key already
+   carries `fernet_key` and `ca_key` in the clear and is the most dangerous
+   artefact in the whole process.
+
+3. **The passphrase is never stored — not even hashed.** A verifier sitting
+   beside the ciphertext is an offline cracking oracle, and *does it open* is
+   the only check anyone ever actually needs. It is printed once and blanked if
+   the seal fails, because telling an operator they hold custody they do not
+   hold is worse than telling them nothing.
+
+4. **The passphrase never enters argv.** `_app_call` runs `python3 -c
+   <snippet>`, so a snippet with the passphrase interpolated into it *is* the
+   child's command line — readable in `ps` by every user on the box — and any
+   traceback echoes the offending source line into whatever the caller
+   redirects. It travels in the environment, and the installer sends the seal
+   call's output to `/dev/null` rather than to a log file that survives on disk
+   beside the node.
+
+5. **The fingerprints stay in the clear, and are authenticated.** Without them
+   a restore cannot tell *this envelope holds the key I need* from *this holds a
+   key from two rotations ago* without first spending a passphrase guess —
+   exactly the moment an operator has none to spare. They are covered by the
+   AEAD's associated data, so an envelope cannot be relabelled to claim a key it
+   does not hold: otherwise the check that exists to prevent a forensic
+   afternoon would cause one.
+
+6. **An unreadable envelope reports "not sealed", never "sealed".** Corrupt must
+   never render as fine — §29 in one more place. Likewise a bundle built without
+   an envelope says so, because a bundle that cannot rebuild anything looks
+   identical to one that can.
+
+7. **A restore keeps the node's own envelope.** A live node is the authority on
+   its own custody; the envelope frozen into an old bundle is by definition
+   older. Overwriting would swap the passphrase the operator holds for one they
+   rotated away from.
+
+8. **Nothing re-seals itself.** An envelope silently re-wrapped under material
+   the operator has not recorded is an envelope the operator cannot open. A key
+   rotation makes the seal *stale* and says so; re-sealing is always explicit.
+
+Sealing does not replace `execute export recovery-key`. That path hands the
+operator the raw secrets for a vault they control; this one guarantees a copy
+survives in places the fleet already replicates to. They fail differently, which
+is the point of having both.
+
 
 ## Verifying the guards are armed
 

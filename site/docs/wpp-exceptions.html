@@ -570,7 +570,7 @@ entry write — and runs in dry-run too (so the preview is faithful) but only ma
 step <code>bound</code> on a real apply.</p>
 <blockquote>
 <p><strong>Status / validate before a real push.</strong> The inject WRITE PATH is <strong>verified live</strong>
-on fw1 7.6.8 (by-parent create + class-action update + container auto-create, with
+on {device} 7.6.8 (by-parent create + class-action update + container auto-create, with
 throwaway objects, all cleaned up). The <strong>"Create target object if missing"</strong>
 checkbox auto-creates the named container (<code>apply_injection(create_container=True)</code>);
 the <strong>auto-bind</strong> UPDATE above is plumbed + unit-tested (fakes) but its bind wire
@@ -598,7 +598,7 @@ secrets), mirroring <code>_inventory.json</code>:</p>
   target; container auto-create AND auto-bind (for the 4 supported types) are wired,
   but the auto-bind UPDATE is not yet round-tripped on a box — keep <code>dry_run</code> default
   and review the plan.</li>
-<li><strong>HTTP-constraint omit-toggles</strong> were corrected against fw1 7.6.8 (the full ~45
+<li><strong>HTTP-constraint omit-toggles</strong> were corrected against {device} 7.6.8 (the full ~45
   set, with the device's MIXED case — <code>Illegal-*</code>/<code>Post-*</code>/<code>Internal-*</code> Capitalised);
   the exception link field is <code>exception_name</code> (UNDERSCORE — see
   [[fortiweb-underscore-fields]]). The editor's <em>Edit raw JSON…</em> escape still covers
@@ -638,7 +638,7 @@ assigned to a Server Policy"). ONE area, both kinds.</p>
   → Exception tab → Create New</em>: exempt a signature ID (e.g. <code>010000001</code>) from matching
   when a request element matches a value. Stored as a row of the signature set's
   <code>filter_list</code> (<code>cmdb/waf/signature/filter_list</code> → logical <code>signature_filter_item</code>).
-  The <code>wpp_specs</code> form has the full, case-exact field set (verified live on fw1 7.6.8):
+  The <code>wpp_specs</code> form has the full, case-exact field set (verified live on {device} 7.6.8):
   <code>signature_id</code>, <code>match-target</code> (Element Type: <code>HTTP_METHOD</code>/<code>CLIENT_IP</code>/<code>HOST</code>/<code>URI</code>/
   <code>FULL_URL</code>/<code>PARAMETER</code>/<code>COOKIE</code>/<code>HTTP_HEADER</code>/<code>JSON_ELEMENTS</code>), <code>operator</code>
   (<code>STRING_MATCH</code>/<code>REGEXP_MATCH</code>/<code>EQ</code>/<code>NE</code>/<code>INCLUDE</code>/<code>EXCLUDE</code>), <code>http-method</code> (NOT
@@ -652,7 +652,7 @@ assigned to a Server Policy"). ONE area, both kinds.</p>
   parent table when a sub-table is empty). <code>detect_signature_exceptions(reader, bindings)</code>
   → <code>DetectedSigExc</code>; <code>import_detected_signature_exceptions(store, …)</code> de-dups by content
   key (idempotent). UI: <code>signature_detect_dialog.SignatureDetectDialog</code>. Verified live on
-  fw1 7.6.8 (finds exactly the <code>010000001</code> carve-out → <code>pol-demo-ecom</code>).</li>
+  {device} 7.6.8 (finds exactly the <code>010000001</code> carve-out → <code>pol-demo-ecom</code>).</li>
 <li><strong>Inject + git-share (wired).</strong> ⬆ <strong>Inject</strong> pushes the by-parent carve-outs onto
   the box — <code>SIGNATURE_REST</code> maps the signature-set sub-lists
   (<code>signature_disable_item</code>/<code>_filter_item</code>/<code>_alert_only_item</code>/<code>_subclass_disable_item</code>)</li>
@@ -674,7 +674,7 @@ assigned to a Server Policy"). ONE area, both kinds.</p>
 <li><strong>Class-action override</strong> injects as an <strong>UPDATE</strong> (<code>ExcRest.op="update"</code>, row keyed
   by <code>main_class_id</code>) — PUTs the existing main-class row on the signature set. Only the
   custom RULE <em>object</em> itself (a top-level create, not a by-parent row) stays out —
-  created via the WPP editor / clone. The WRITE PATH is <strong>verified live</strong> on fw1 7.6.8
+  created via the WPP editor / clone. The WRITE PATH is <strong>verified live</strong> on {device} 7.6.8
   (by-parent create + class-action update + container auto-create + a real
   <code>signature_filter_item</code> create→delete round-trip on <code>sig-test-policy</code>, throwaway
   objects, cleaned up); <code>dry_run</code> stays the default.</li>

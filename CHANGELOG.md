@@ -6,6 +6,31 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The site-rules overlay was replicated by nothing.** It is untracked on
+  purpose — it names the estate — but it also sat beside the application
+  rather than inside `data/`, which is the only directory the HA datasync
+  carries. git ignored it by design, the datasync never saw it, and the backup
+  bundle did not package it: three mechanisms, and the file fell between all
+  three. The standby ran for days on a copy whose device rule predated half
+  the registered appliances. It now lives in `data/publication-rules.local.json`
+  (still ignored, by `/data/`), so the datasync replicates it and the bundle
+  carries it. The old path is still read so that updating to this commit does
+  not brick a node that has not been migrated yet.
+- **The overlay loader answered "absent", "malformed" and "one bad regex" with
+  the same value** — an empty rule table, which every caller reads as *nothing
+  to redact*. The comment above it promised the opposite ("a node that loses it
+  fails loudly instead of quietly redacting less"); that promise was kept only
+  by a test asserting the file exists at collection time. Malformed JSON and
+  unusable entries now raise. A missing overlay raises **on a deployment** and
+  still loads generic rules on a bare checkout — the published mirror has no
+  overlay and must not have one, so absence alone could never be the signal;
+  the presence of `.env` distinguishes the two.
+- Backup bundles now carry node-local config, and a restore places it only
+  where the node has none — the live copy is likelier to be current than one
+  frozen into an old bundle.
+
 ### Added
 
 - **AI Advisor** — a read-only chat assistant (Settings \u2192 AI Advisor,

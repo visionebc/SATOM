@@ -193,38 +193,90 @@ GROUPS: list[tuple[str, str, list[str]]] = [
 # to the application. Absent (a published mirror, a fresh install), the generic
 # rules still apply, and there is nothing site-specific left to redact anyway.
 #
-# The internal suite asserts the overlay is present, so a node that loses it
-# fails loudly instead of quietly redacting less.
-OVERLAY_PATH = ROOT_DIR / "publication-rules.local.json"
+# It lives in data/ because that is the only directory anything replicates.
+# Untracked-by-design put it outside git; sitting beside the application put it
+# outside the datasync, which rsyncs exactly ${APP}/data/. Three mechanisms,
+# and the file fell between all of them -- a standby ran for days on a copy
+# whose device rule predated half the registered appliances. The root path is
+# still read so that a node updating to this commit keeps working until the
+# datasync carries the file across.
+OVERLAY_NAME = "publication-rules.local.json"
+OVERLAY_PATH = ROOT_DIR / "data" / OVERLAY_NAME
+LEGACY_OVERLAY_PATH = ROOT_DIR / OVERLAY_NAME
 
 
-def _load_overlay() -> dict:
-    try:
-        return json.loads(OVERLAY_PATH.read_text(encoding="utf-8"))
-    except (FileNotFoundError, ValueError):
-        return {}
+class OverlayError(RuntimeError):
+    """The site rules could not be loaded, so redaction cannot be trusted."""
+
+
+def _is_deployment(root: pathlib.Path) -> bool:
+    """Distinguish an installation from a source tree.
+
+    Absence of the overlay cannot itself be the alarm: the published mirror
+    has no overlay and must not have one, and there is nothing site-specific
+    left in that tree to redact anyway. What a mirror never has is secrets.
+    """
+    return (root / ".env").exists()
+
+
+def _load_overlay(root=None) -> dict:
+    """Absent, malformed and stale are three different answers.
+
+    They used to be one: an empty dict, which every caller reads as "no rules
+    to apply". A rule table that silently empties is worse than none, because
+    the output still looks redacted.
+    """
+    base = ROOT_DIR if root is None else pathlib.Path(root)
+    for path in (base / "data" / OVERLAY_NAME, base / OVERLAY_NAME):
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        try:
+            return json.loads(raw)
+        except ValueError as exc:
+            raise OverlayError(
+                f"{path} is not valid JSON ({exc}). Documentation redaction "
+                "cannot run with a half-written rule table -- restore it "
+                "before serving or publishing.") from exc
+    if _is_deployment(base):
+        raise OverlayError(
+            f"{base / 'data' / OVERLAY_NAME} is missing on a deployed node. "
+            "Redaction would fall back to generic rules only and the scanner "
+            "would stop flagging the same class -- a fail-open pair. Copy it "
+            "from the peer or restore it from a backup bundle.")
+    return {}
 
 
 _OVERLAY = _load_overlay()
 
 
-def _overlay_rules(key: str) -> list[tuple[re.Pattern, str]]:
+def _overlay_rules(key: str, overlay=None) -> list[tuple[re.Pattern, str]]:
     out = []
-    for entry in _OVERLAY.get(key, []):
+    src = _OVERLAY if overlay is None else overlay
+    for idx, entry in enumerate(src.get(key, [])):
         try:
             out.append((re.compile(entry["pattern"]), entry["replacement"]))
-        except (KeyError, re.error):
-            continue
+        except (KeyError, TypeError, re.error) as exc:
+            # Skipping cost exactly one rule, silently, while every other rule
+            # kept working -- so the page still looked redacted and the one
+            # identifier that entry covered walked straight through.
+            raise OverlayError(
+                f"overlay {key}[{idx}] is unusable ({exc}); refusing to run "
+                "with a partial rule table") from exc
     return out
 
 
-def _overlay_forbidden() -> list[tuple[str, re.Pattern]]:
+def _overlay_forbidden(overlay=None) -> list[tuple[str, re.Pattern]]:
     out = []
-    for entry in _OVERLAY.get("forbidden", []):
+    src = _OVERLAY if overlay is None else overlay
+    for idx, entry in enumerate(src.get("forbidden", [])):
         try:
             out.append((entry["name"], re.compile(entry["pattern"])))
-        except (KeyError, re.error):
-            continue
+        except (KeyError, TypeError, re.error) as exc:
+            raise OverlayError(
+                f"overlay forbidden[{idx}] is unusable ({exc}); this is the "
+                "check that aborts the build, so it cannot run partial") from exc
     return out
 
 

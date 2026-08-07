@@ -85,6 +85,51 @@ def _run(cmd: list, conn: dict, timeout: int = 600):
                           timeout=timeout)
 
 
+
+def config_files() -> list[Path]:
+    """Node-local configuration that no other mechanism carries.
+
+    git ignores it on purpose (it names the estate), and the datasync only
+    reaches the peer that is still up. A bundle is the only copy that survives
+    losing both nodes, so total-loss recovery needs these in it.
+    """
+    from app.services import doc_publication as _pubdoc
+    out = []
+    for p in (_pubdoc.OVERLAY_PATH, _pubdoc.LEGACY_OVERLAY_PATH):
+        if p.exists():
+            out.append(p)
+            break
+    return out
+
+
+def restore_config_files(src: Path, dest: Path) -> list[str]:
+    """Place bundled config only where the node has none.
+
+    A restore repairs a node that is still the authority on its own site
+    rules; the copy frozen into an old bundle is by definition the older one.
+    Overwriting would silently roll redaction back to whenever that bundle was
+    taken.
+    """
+    placed = []
+    if not src.exists():
+        return placed
+    for f in sorted(src.iterdir()):
+        if not f.is_file():
+            continue
+        target = dest / f.name
+        if target.exists():
+            continue
+        shutil.copy2(f, target)
+        placed.append(f.name)
+    return placed
+
+
+def _pubdoc_root() -> Path:
+    """Where config_files() reads from -- the same directory, so a restore
+    puts the file back exactly where the loader looks for it."""
+    from app.services import doc_publication as _pubdoc
+    return _pubdoc.OVERLAY_PATH.parent
+
 def create_backup(*, include_reports: bool = True, publish_git: bool = False,
                   push_server: bool = False, conn: dict | None = None,
                   label: str = "manual") -> dict:
@@ -116,6 +161,13 @@ def create_backup(*, include_reports: bool = True, publish_git: bool = False,
             # instance would have history rows pointing at nothing.
             shutil.copytree(sot_dir(), stage / "sot")
             detail.append("sot/ included")
+
+        cfgs = config_files()
+        if cfgs:
+            (stage / "config").mkdir(exist_ok=True)
+            for src in cfgs:
+                shutil.copy2(src, stage / "config" / src.name)
+            detail.append(f"config/ included ({len(cfgs)})")
 
         manifest = (f"label: {label}\ncreated: {ts}\ndb: {conn['dbname']}\n"
                     f"host: {conn['host']}\nreports: {include_reports}\n")
@@ -211,6 +263,11 @@ def restore_backup(name: str, *, conn: dict | None = None,
             shutil.rmtree(dst, ignore_errors=True)
             shutil.copytree(root / "reports", dst)
             detail += "; reports restored"
+        if (root / "config").exists():
+            names = restore_config_files(root / "config",
+                                         _pubdoc_root())
+            if names:
+                detail += "; config restored: " + ", ".join(names)
         if restore_reports and (root / "sot").exists():
             dst = sot_dir()
             shutil.rmtree(dst, ignore_errors=True)

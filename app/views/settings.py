@@ -244,6 +244,124 @@ def library_updates():
     return jsonify(data)
 
 
+# --------------------------------------------------------------------------
+# Service control — General tab       [SATOM-SERVICE-CONTROL-VIEWS]
+# --------------------------------------------------------------------------
+# The web worker never runs systemctl for a state change; it enqueues a request
+# the privileged runner applies. See app/services/service_control.py for why
+# (a generic sudo systemctl grant is root by another name) and for the table
+# that bounds what a console admin can reach.
+
+
+@bp.route('/services')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def services_state():
+    """Live state of the controllable units on THIS node.
+
+    Read-only and unprivileged (`systemctl show` answers any user), so the card
+    renders on every page load without opening a privileged path.
+    """
+    from ..services import service_control as svc
+    from ..services import self_update as su
+    return jsonify({
+        'node': su.this_node_name(),
+        'role': su.node_role(),
+        'units': svc.states(),
+    })
+
+
+@bp.route('/services/action', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def services_action():
+    """Enqueue an allowlisted start/stop/restart for the privileged runner.
+
+    Returns as soon as the request is queued and never waits for the outcome:
+    restarting satom.service kills the worker handling this very request, so a
+    synchronous answer would be a promise this endpoint cannot keep. The
+    browser polls /services/status/<uid>, whose file the ROOT runner writes.
+    """
+    from ..services import service_control as svc
+    from ..services import self_update as su
+    payload = request.get_json(silent=True) or {}
+    unit = (payload.get('unit') or '').strip()
+    action = (payload.get('action') or '').strip().lower()
+    who = getattr(current_user, 'username', '?')
+    try:
+        uid = svc.request_service_action(unit, action, by=who)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    log_action('settings.service_action',
+               detail='%s %s on %s' % (action, unit, su.this_node_name()))
+    return jsonify({'uid': uid, 'unit': unit, 'action': action,
+                    'node': su.this_node_name()})
+
+
+@bp.route('/services/status/<uid>')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def services_action_status(uid):
+    """Poll a queued service action (steps written by the privileged runner)."""
+    from ..services import self_update as su
+    st = su.update_status(uid)
+    if st is None:
+        return jsonify({'state': 'unknown'}), 404
+    return jsonify(st)
+
+
+@bp.route('/services/peers')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def services_peers():
+    """Live unit state of every registered PEER node.  [SATOM-SERVICE-PEER]
+
+    Deliberately a SEPARATE endpoint from /services rather than another key in
+    it. Reading a peer is a network round trip with a timeout; folding it into
+    the local card would make a dead standby look like a broken page on a
+    perfectly healthy primary. The local table paints immediately and the peer
+    section fills in (or reports why it could not) on its own.
+    """
+    from ..services import service_control as svc
+    return jsonify({'peers': svc.peer_states()})
+
+
+@bp.route('/services/peer-action', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def services_peer_action():
+    """Ask a registered peer to enqueue a start/stop/restart on ITSELF.
+
+    The host is resolved from the node registry by NAME, never taken from the
+    request, so this cannot be aimed at an arbitrary address. The peer is the
+    security boundary: it re-validates against its own allowlist and its own
+    root runner does the work.
+    """
+    from ..services import service_control as svc
+    payload = request.get_json(silent=True) or {}
+    node = (payload.get('node') or '').strip()
+    unit = (payload.get('unit') or '').strip()
+    action = (payload.get('action') or '').strip().lower()
+    who = getattr(current_user, 'username', '?')
+    row = svc.request_service_action_on_peer(node, unit, action, by=who)
+    log_action('settings.service_action.peer',
+               detail='%s %s on peer %s -> %s%s'
+                      % (action, unit, node, row.get('state'),
+                         ' (%s)' % row['error'] if row.get('error') else ''))
+    return jsonify(row), (200 if row.get('state') == 'queued' else 400)
+
+
+@bp.route('/services/peer-status/<node>/<uid>')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def services_peer_action_status(node, uid):
+    """Poll a queued peer action on the peer that is applying it."""
+    from ..services import service_control as svc
+    return jsonify(svc.peer_action_status(node, uid))
+
+
 @bp.route('/library-pip/state')
 @login_required
 @require_permission(Permission.USER_MANAGE)
@@ -404,6 +522,73 @@ def peer_library_pip():
                detail='%s %s==%s enqueued on %s for %s'
                       % (action, package, version, su.this_node_name(), by))
     return jsonify({'uid': uid, 'node': su.this_node_name()})
+
+
+@bp.route('/peer/services')
+@csrf.exempt
+def peer_services():
+    """THIS node's controllable units, for the peer's card. Read-only.
+
+    Exactly what the local card already shows -- `systemctl show` answers any
+    user, so nothing privileged is exposed by answering, and a peer learns
+    nothing it could not learn by being handed this node's console.
+    """
+    denied = _peer_gate()
+    if denied is not None:
+        return denied
+    from ..services import service_control as svc
+    from ..services import self_update as su
+    return jsonify({'node': su.this_node_name(), 'role': su.node_role(),
+                    'units': svc.states()})
+
+
+@bp.route('/peer/service-action', methods=['POST'])
+@csrf.exempt
+def peer_service_action():
+    """Enqueue a start/stop/restart on THIS node, asked for by the peer.
+
+    Writes exactly the request the local button writes, so THIS node's own
+    privileged runner applies it and verifies it. Only a unit NAME and an
+    ACTION cross the wire, and both are re-validated here against THIS node's
+    own POLICY inside ``request_service_action``. The caller is never trusted:
+    a peer holding a valid identity key still cannot reach a unit this node
+    does not list, and cannot reach the updater at all (``FORBIDDEN``).
+    """
+    denied = _peer_gate()
+    if denied is not None:
+        return denied
+    from ..services import service_control as svc
+    from ..services import self_update as su
+    payload = request.get_json(silent=True) or {}
+    unit = (payload.get('unit') or '').strip()
+    action = (payload.get('action') or '').strip().lower()
+    by = '%s@%s' % ((str(payload.get('requested_by') or 'peer').strip() or 'peer')[:40],
+                    (str(payload.get('origin_node') or 'peer').strip() or 'peer')[:40])
+    try:
+        uid = svc.request_service_action(unit, action, by=by, origin='peer-push')
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    log_action('settings.service_action.peer_recv',
+               detail='%s %s enqueued on %s for %s'
+                      % (action, unit, su.this_node_name(), by))
+    return jsonify({'uid': uid, 'unit': unit, 'action': action,
+                    'node': su.this_node_name()})
+
+
+@bp.route('/peer/service-status/<uid>')
+@csrf.exempt
+def peer_service_status(uid):
+    """A queued action's status ON this node, for the peer that asked for it."""
+    denied = _peer_gate()
+    if denied is not None:
+        return denied
+    from ..services import self_update as su
+    st = su.update_status(uid)
+    if st is None:
+        return jsonify({'state': 'unknown'}), 404
+    return jsonify(st)
 
 
 # NOTE: the read-only Database browser (schema + relational model + SQL console)

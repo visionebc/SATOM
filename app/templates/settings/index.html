@@ -154,86 +154,91 @@
             <form method="POST" action="{{ url_for('settings.save_general') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-              <div class="mb-4">
-                <label class="fw-form-label">Application Name</label>
-                <input type="text" name="app_name" class="form-control fw-form-control"
-                       value="{{ settings.app_name }}">
-                <div class="form-text">Displayed in the browser title and top bar</div>
-              </div>
+              <div class="row g-3">
 
-              <div class="mb-4">
-                <label class="fw-form-label">Environment</label>
-                <select name="env_mode" class="form-select fw-form-control" style="max-width:360px;">
-                  <option value="production" {{ 'selected' if settings.env_mode == 'production' else '' }}>Production</option>
-                  <option value="development" {{ 'selected' if settings.env_mode == 'development' else '' }}>Development</option>
-                </select>
-                <div class="form-text">Drives the <strong>PROD</strong>/<strong>DEV</strong> badge shown in the
-                  top bar and on the ADOM (product) picker. Replicated setting — set it on the primary and both HA nodes agree.</div>
-              </div>
+                <div class="col-md-6">
+                  <label class="fw-form-label">Application Name</label>
+                  <input type="text" name="app_name" class="form-control fw-form-control"
+                         value="{{ settings.app_name }}">
+                  <div class="form-text">Displayed in the browser title and top bar</div>
+                </div>
 
-              <div class="mb-4">
-                <label class="fw-form-label">Default Appliance Platform</label>
-                <select name="default_kind" class="form-select fw-form-control">
-                  <option value="FortiWeb" {{ 'selected' if settings.default_kind == 'FortiWeb' else '' }}>FortiWeb (Hardware / VM)</option>
-                  <option value="FortiWeb-Cloud" {{ 'selected' if settings.default_kind == 'FortiWeb-Cloud' else '' }}>FortiWeb-Cloud</option>
-                  <option value="FortiADC" {{ 'selected' if settings.default_kind == 'FortiADC' else '' }}>FortiADC</option>
-                </select>
-              </div>
+                <div class="col-md-6">
+                  <label class="fw-form-label">Environment</label>
+                  <select name="env_mode" class="form-select fw-form-control">
+                    <option value="production" {{ 'selected' if settings.env_mode == 'production' else '' }}>Production</option>
+                    <option value="development" {{ 'selected' if settings.env_mode == 'development' else '' }}>Development</option>
+                  </select>
+                  <div class="form-text">Drives the <strong>PROD</strong>/<strong>DEV</strong> badge in the top bar
+                    and on the ADOM picker. Replicated — set it on the primary and both HA nodes agree.</div>
+                </div>
 
-              <div class="mb-4">
-                <label class="fw-form-label">Session Lock (minutes)</label>
-                <input type="number" name="session_timeout" class="form-control fw-form-control"
-                       value="{{ settings.session_timeout }}" min="5" max="1440" style="max-width:160px;">
-                <div class="form-text">Inactivity before the session expires and re-asks for the password</div>
-              </div>
+                <div class="col-md-6">
+                  <label class="fw-form-label">Default Appliance Platform</label>
+                  <select name="default_kind" class="form-select fw-form-control">
+                    <option value="FortiWeb" {{ 'selected' if settings.default_kind == 'FortiWeb' else '' }}>FortiWeb (Hardware / VM)</option>
+                    <option value="FortiWeb-Cloud" {{ 'selected' if settings.default_kind == 'FortiWeb-Cloud' else '' }}>FortiWeb-Cloud</option>
+                    <option value="FortiADC" {{ 'selected' if settings.default_kind == 'FortiADC' else '' }}>FortiADC</option>
+                  </select>
+                  <div class="form-text">Pre-selected when registering a new appliance</div>
+                </div>
 
-              <div class="mb-4">
-                <label class="fw-form-label">Status Poll Interval (seconds)</label>
-                <input type="number" name="poll_interval" class="form-control fw-form-control"
-                       value="{{ settings.poll_interval }}" min="10" max="3600" style="max-width:160px;">
-                <div class="form-text">How often appliance online/offline status is checked</div>
-              </div>
+                <div class="col-md-6">
+                  <label class="fw-form-label">Timezone</label>
+                  <select name="timezone" class="form-select fw-form-control">
+                    {% for tz in timezones_all %}
+                    <option value="{{ tz }}" {{ 'selected' if tz == settings.timezone else '' }}>{{ tz }}</option>
+                    {% endfor %}
+                  </select>
+                  <div class="form-text">Used to display log and audit timestamps</div>
+                </div>
 
-              <div class="mb-4">
-                <label class="fw-form-label">Log Levels</label>
-                <div class="d-flex flex-wrap gap-3">
-                  {% for lv in log_levels_all %}
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="log_levels" value="{{ lv }}"
-                           id="lvl-{{ lv }}" {{ 'checked' if lv in settings.log_levels else '' }}>
-                    <label class="form-check-label" for="lvl-{{ lv }}">{{ lv }}</label>
+                <div class="col-md-6">
+                  <label class="fw-form-label">Session Lock (minutes)</label>
+                  <input type="number" name="session_timeout" class="form-control fw-form-control"
+                         value="{{ settings.session_timeout }}" min="5" max="1440">
+                  <div class="form-text">Inactivity before the session expires and re-asks for the password</div>
+                </div>
+
+                <div class="col-md-6">
+                  <label class="fw-form-label">Status Poll Interval (seconds)</label>
+                  <input type="number" name="poll_interval" class="form-control fw-form-control"
+                         value="{{ settings.poll_interval }}" min="10" max="3600">
+                  <div class="form-text">How often appliance online/offline status is checked</div>
+                </div>
+
+                <div class="col-md-6">
+                  <label class="fw-form-label">Log Format</label>
+                  <select name="log_format" class="form-select fw-form-control">
+                    <option value="plain" {{ 'selected' if settings.log_format == 'plain' else '' }}>Plain text (level — message)</option>
+                    <option value="detailed" {{ 'selected' if settings.log_format == 'detailed' else '' }}>Detailed (timestamp · level · logger · message)</option>
+                    <option value="json" {{ 'selected' if settings.log_format == 'json' else '' }}>JSON (structured, one object per line)</option>
+                  </select>
+                  <div class="form-text">How application log lines are written</div>
+                </div>
+
+                <div class="col-md-6">
+                  <label class="fw-form-label">Log Levels</label>
+                  <div class="d-flex flex-wrap gap-3">
+                    {% for lv in log_levels_all %}
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="log_levels" value="{{ lv }}"
+                             id="lvl-{{ lv }}" {{ 'checked' if lv in settings.log_levels else '' }}>
+                      <label class="form-check-label" for="lvl-{{ lv }}">{{ lv }}</label>
+                    </div>
+                    {% endfor %}
                   </div>
-                  {% endfor %}
+                  <div class="form-text">Which severities are written to the application log</div>
                 </div>
-                <div class="form-text">Which severities are written to the application log</div>
-              </div>
 
-              <div class="mb-4">
-                <label class="fw-form-label">Timezone</label>
-                <select name="timezone" class="form-select fw-form-control" style="max-width:360px;">
-                  {% for tz in timezones_all %}
-                  <option value="{{ tz }}" {{ 'selected' if tz == settings.timezone else '' }}>{{ tz }}</option>
-                  {% endfor %}
-                </select>
-                <div class="form-text">Timezone used to display log and audit timestamps</div>
-              </div>
-
-              <div class="mb-4">
-                <label class="fw-form-label">Log Format</label>
-                <select name="log_format" class="form-select fw-form-control" style="max-width:360px;">
-                  <option value="plain" {{ 'selected' if settings.log_format == 'plain' else '' }}>Plain text (level — message)</option>
-                  <option value="detailed" {{ 'selected' if settings.log_format == 'detailed' else '' }}>Detailed (timestamp · level · logger · message)</option>
-                  <option value="json" {{ 'selected' if settings.log_format == 'json' else '' }}>JSON (structured, one object per line)</option>
-                </select>
-                <div class="form-text">How application log lines are written</div>
-              </div>
-
-              <div class="mb-4">
-                <div class="form-check form-switch">
-                  <input class="form-check-input" type="checkbox" name="show_raw_config" id="chk-raw"
-                         {{ 'checked' if settings.show_raw_config else '' }}>
-                  <label class="form-check-label" for="chk-raw">Show raw JSON config on policy detail pages</label>
+                <div class="col-12">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="show_raw_config" id="chk-raw"
+                           {{ 'checked' if settings.show_raw_config else '' }}>
+                    <label class="form-check-label" for="chk-raw">Show raw JSON config on policy detail pages</label>
+                  </div>
                 </div>
+
               </div>
 
               <button type="submit" class="btn btn-fw-primary">
@@ -244,9 +249,9 @@
         </div>
       </div>
 
-      {% if current_user.can('user_manage') %}
       <div class="col-lg-5">
-        <div class="fw-card">
+        {% if current_user.can('user_manage') %}
+        <div class="fw-card mb-3">
           <div class="fw-card-header">
             <span class="fw-card-title"><i class="bi bi-bug me-2 text-accent"></i>Bug report notifications</span>
           </div>
@@ -262,71 +267,148 @@
             </form>
           </div>
         </div>
-      </div>
-      {% endif %}
+        {% endif %}
 
-      <div class="col-lg-5">
+      </div>
+    </div>
+
+    <!-- SYSTEM INFORMATION  [SATOM-SYSINFO-TWOCOL]
+         Full width and split in two: the facts and the library inventory used
+         to be stacked in a narrow side column, which made this the tallest
+         thing on the page for no reason. Side by side the card is about half
+         as tall and neither table has to wrap. -->
+    <div class="row g-3 mt-1">
+      <div class="col-12">
         <div class="fw-card">
           <div class="fw-card-header">
             <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>System Information</span>
           </div>
           <div class="fw-card-body">
-            <table class="table table-sm" style="font-size:13px;">
-              <tbody>
-                <tr><td class="text-muted" style="width:50%;">Application</td><td>{{ settings.app_name }}</td></tr>
-                <tr><td class="text-muted">Version</td><td><span class="fw-badge fw-badge-primary">v{{ app_version }}</span></td></tr>
-                <tr><td class="text-muted">Default platform</td><td>{{ settings.default_kind }}</td></tr>
-                <tr><td class="text-muted">Session lock</td><td>{{ settings.session_timeout }} min</td></tr>
-                <tr><td class="text-muted">Status poll</td><td>{{ settings.poll_interval }} s</td></tr>
-                <tr><td class="text-muted">Log levels</td><td>{{ settings.log_levels | join(', ') }}</td></tr>
-                <tr><td class="text-muted">Timezone</td><td>{{ settings.timezone }}</td></tr>
-                <tr><td class="text-muted">Log format</td><td>{{ settings.log_format }}</td></tr>
-                <tr><td class="text-muted">Database</td><td>{{ system_info.database.engine }}{% if system_info.database.version and system_info.database.version != "unknown" %}&nbsp;<span class="fw-badge fw-badge-primary">{{ system_info.database.version }}</span>{% endif %}{% if system_info.database.target %}&nbsp;<code>{{ system_info.database.target }}</code>{% endif %}</td></tr>
-                <tr><td class="text-muted">Settings store</td><td><code>app_settings</code> table</td></tr>
-                <tr><td class="text-muted">Python</td><td>{{ system_info.python_impl }} {{ system_info.python }}</td></tr>
-                <tr><td class="text-muted">Operating system</td><td>{{ system_info.os }} <span class="text-muted">({{ system_info.machine }})</span></td></tr>
-              </tbody>
-            </table>
-            <div class="fw-card-header px-0 mt-2 d-flex justify-content-between align-items-center">
-              <span class="fw-card-title" style="font-size:13px;"><i class="bi bi-boxes me-2 text-accent"></i>Libraries</span>
-              {% if is_admin %}
-              <button type="button" class="btn btn-sm btn-primary" id="lib-check-btn"
+            <div class="row g-4">
+
+              <div class="col-lg-6">
+                <div class="fw-card-header px-0 pt-0 pb-1">
+                  <span class="fw-card-title" style="font-size:13px;"><i class="bi bi-cpu me-2 text-accent"></i>This installation</span>
+                </div>
+                <table class="table table-sm mb-0" style="font-size:13px;">
+                  <tbody>
+                    <tr><td class="text-muted" style="width:46%;">Application</td><td>{{ settings.app_name }}</td></tr>
+                    <tr><td class="text-muted">Version</td><td><span class="fw-badge fw-badge-primary">v{{ app_version }}</span></td></tr>
+                    <tr><td class="text-muted">Default platform</td><td>{{ settings.default_kind }}</td></tr>
+                    <tr><td class="text-muted">Session lock</td><td>{{ settings.session_timeout }} min</td></tr>
+                    <tr><td class="text-muted">Status poll</td><td>{{ settings.poll_interval }} s</td></tr>
+                    <tr><td class="text-muted">Log levels</td><td>{{ settings.log_levels | join(', ') }}</td></tr>
+                    <tr><td class="text-muted">Timezone</td><td>{{ settings.timezone }}</td></tr>
+                    <tr><td class="text-muted">Log format</td><td>{{ settings.log_format }}</td></tr>
+                    <tr><td class="text-muted">Database</td><td>{{ system_info.database.engine }}{% if system_info.database.version and system_info.database.version != "unknown" %}&nbsp;<span class="fw-badge fw-badge-primary">{{ system_info.database.version }}</span>{% endif %}{% if system_info.database.target %}&nbsp;<code>{{ system_info.database.target }}</code>{% endif %}</td></tr>
+                    <tr><td class="text-muted">Settings store</td><td><code>app_settings</code> table</td></tr>
+                    <tr><td class="text-muted">Python</td><td>{{ system_info.python_impl }} {{ system_info.python }}</td></tr>
+                    <tr><td class="text-muted">Operating system</td><td>{{ system_info.os }} <span class="text-muted">({{ system_info.machine }})</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="col-lg-6">
+                <div class="fw-card-header px-0 pt-0 pb-1 d-flex justify-content-between align-items-center">
+                  <span class="fw-card-title" style="font-size:13px;"><i class="bi bi-boxes me-2 text-accent"></i>Libraries</span>
+                  {% if is_admin %}
+                  <button type="button" class="btn btn-sm btn-primary" id="lib-check-btn"
+                          style="font-size:12px;padding:2px 10px;">
+                    <i class="bi bi-arrow-repeat me-1"></i>Check for updates
+                  </button>
+                  {% endif %}
+                </div>
+                {% if is_admin %}
+                <div id="lib-updates-meta" class="text-muted mb-1" style="font-size:11px;display:none;"></div>
+                <div id="lib-node-note" class="text-muted mb-1" style="font-size:11px;display:none;"></div>
+                <div id="lib-peer-box" class="mb-1" style="font-size:11px;display:none;">
+                  <label class="d-inline-flex align-items-center gap-1 mb-0" for="lib-peer-apply">
+                    <input class="form-check-input mt-0" type="checkbox" id="lib-peer-apply">
+                    <span>Also apply on the peer node(s)</span>
+                  </label>
+                  <span class="text-muted ms-1" id="lib-peer-hint"></span>
+                </div>
+                {% endif %}
+                <table class="table table-sm mb-0" style="font-size:13px;">
+                  <tbody>
+                    {% for lib in system_info.libraries %}
+                    <tr data-lib="{{ lib.name }}"><td class="text-muted" style="width:46%;">{{ lib.name }}</td><td><code class="lib-version">{{ lib.version }}</code> <span class="lib-update-badge"></span> <span class="lib-actions"></span></td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+                {% if is_admin %}
+                <div id="lib-pip-out" class="mt-2" style="display:none;font-size:11px;">
+                  <div class="text-muted mb-1" id="lib-pip-title"></div>
+                  <pre id="lib-pip-pre" class="mb-0 p-2" style="max-height:220px;overflow:auto;background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:8px;white-space:pre-wrap;"></pre>
+                  <pre id="lib-peer-out" class="mb-0 mt-1 p-2" style="display:none;max-height:160px;overflow:auto;background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:8px;white-space:pre-wrap;"></pre>
+                </div>
+                <div id="lib-drift" class="mt-2" style="display:none;font-size:11px;">
+                  <div class="mb-1" id="lib-drift-title"></div>
+                  <table class="table table-sm mb-0" style="font-size:11px;">
+                    <thead id="lib-drift-head"></thead><tbody id="lib-drift-body"></tbody>
+                  </table>
+                </div>
+                {% endif %}
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SERVICE CONTROL  [SATOM-SERVICE-CONTROL-CARD] -->
+    <div class="row g-3 mt-1">
+      <div class="col-12">
+        <div class="fw-card">
+          <div class="fw-card-header d-flex justify-content-between align-items-center">
+            <span class="fw-card-title"><i class="bi bi-hdd-stack me-2 text-accent"></i>Services</span>
+            <span class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-sm btn-primary" id="svc-refresh"
                       style="font-size:12px;padding:2px 10px;">
-                <i class="bi bi-arrow-repeat me-1"></i>Check for updates
+                <i class="bi bi-arrow-repeat me-1"></i>Refresh
               </button>
-              {% endif %}
+            </span>
+          </div>
+          <div class="fw-card-body">
+            <div class="form-text mb-2">
+              <strong>One section per node.</strong> systemd is node-local, so an HA pair has no
+              single &ldquo;the services&rdquo; &mdash; each node has its own set in its own state.
+              A peer&rsquo;s buttons are applied by <em>that</em> node&rsquo;s privileged updater after
+              <em>that</em> node re-checks its own allowlist; only a unit name and an action ever
+              cross the wire. Start/stop are runtime-only: a unit stopped here comes back at the
+              next boot, and <em>At boot</em> shows what the node arms. The web worker never runs
+              <code>systemctl</code> itself.
             </div>
-            {% if is_admin %}
-            <div id="lib-updates-meta" class="text-muted mb-1" style="font-size:11px;display:none;"></div>
-            <div id="lib-node-note" class="text-muted mb-1" style="font-size:11px;display:none;"></div>
-            <div id="lib-peer-box" class="mb-1" style="font-size:11px;display:none;">
-              <label class="d-inline-flex align-items-center gap-1 mb-0" for="lib-peer-apply">
-                <input class="form-check-input mt-0" type="checkbox" id="lib-peer-apply">
-                <span>Also apply on the peer node(s)</span>
-              </label>
-              <span class="text-muted ms-1" id="lib-peer-hint"></span>
+
+            <div id="svc-local">
+              <div class="d-flex align-items-center gap-2 mb-1" style="padding:6px 10px;border-radius:8px;background:var(--fw-surface-alt);border:1px solid var(--fw-border);">
+                <span class="fw-badge fw-badge-primary">this node</span>
+                <strong id="svc-node" style="font-size:12.5px;"></strong>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0" style="font-size:12.5px;">
+                  <thead><tr><th style="width:26%;">Service</th><th style="width:14%;">State</th><th style="width:11%;">At boot</th><th>Notes</th><th style="width:22%;" class="text-end">Actions</th></tr></thead>
+                  <tbody id="svc-body">
+                    <tr><td colspan="5" class="text-muted">Loading&hellip;</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-            {% endif %}
-            <table class="table table-sm mb-0" style="font-size:13px;">
-              <tbody>
-                {% for lib in system_info.libraries %}
-                <tr data-lib="{{ lib.name }}"><td class="text-muted" style="width:50%;">{{ lib.name }}</td><td><code class="lib-version">{{ lib.version }}</code> <span class="lib-update-badge"></span> <span class="lib-actions"></span></td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
-            {% if is_admin %}
-            <div id="lib-pip-out" class="mt-2" style="display:none;font-size:11px;">
-              <div class="text-muted mb-1" id="lib-pip-title"></div>
-              <pre id="lib-pip-pre" class="mb-0 p-2" style="max-height:220px;overflow:auto;background:rgba(15,23,42,0.6);border:1px solid rgba(148,163,184,0.12);border-radius:8px;white-space:pre-wrap;"></pre>
-              <pre id="lib-peer-out" class="mb-0 mt-1 p-2" style="display:none;max-height:160px;overflow:auto;background:rgba(15,23,42,0.6);border:1px solid rgba(148,163,184,0.12);border-radius:8px;white-space:pre-wrap;"></pre>
+
+            <!-- Peer sections load from their OWN endpoint so a dead standby can
+                 never make a healthy primary's card look broken. -->
+            <div id="svc-peers"></div>
+
+            <div id="svc-log" class="mt-2" style="display:none;">
+              <div class="fw-card-header px-0 py-1">
+                <span class="fw-card-title" style="font-size:12px;">
+                  <i class="bi bi-terminal me-2 text-accent"></i><span id="svc-log-title"></span>
+                </span>
+              </div>
+              <pre id="svc-log-body" class="mb-0"
+                   style="font-size:11px;max-height:220px;overflow:auto;padding:8px;border-radius:6px;background:var(--fw-surface-alt);border:1px solid var(--fw-border);"></pre>
             </div>
-            <div id="lib-drift" class="mt-2" style="display:none;font-size:11px;">
-              <div class="mb-1" id="lib-drift-title"></div>
-              <table class="table table-sm mb-0" style="font-size:11px;">
-                <thead id="lib-drift-head"></thead><tbody id="lib-drift-body"></tbody>
-              </table>
-            </div>
-            {% endif %}
           </div>
         </div>
       </div>
@@ -4103,6 +4185,290 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
   {% endif %}
+})();
+</script>
+
+<script nonce="{{ csp_nonce }}">
+/* Services card  [SATOM-SERVICE-CONTROL-JS] [SATOM-SERVICE-PEER-JS] */
+(function () {
+  'use strict';
+  var body = document.getElementById('svc-body');
+  if (!body) return;                       // card not rendered (non-admin)
+  var m = document.querySelector('meta[name="csrf-token"]');
+  var CSRF = m ? m.content : '';
+  var peersBox = document.getElementById('svc-peers');
+  var logBox = document.getElementById('svc-log');
+  var logTitle = document.getElementById('svc-log-title');
+  var logBody = document.getElementById('svc-log-body');
+  var busy = false;
+  var LOCAL = '';
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+
+  /* A unit that is inactive BY DESIGN on this node must not render red: a card
+     that always complains is a card the operator learns to skip. Only `failed`
+     is red; a stopped unit is amber (worth seeing, not an emergency) and one
+     that is not installed here is neutral with no buttons at all. */
+  function badge(u) {
+    if (!u.installed) return ['fw-badge-secondary', 'not installed'];
+    var s = u.active || 'unknown';
+    if (s === 'active' || s === 'activating') {
+      return ['fw-badge-success', u.sub ? s + ' (' + u.sub + ')' : s];
+    }
+    if (s === 'failed') return ['fw-badge-danger', 'failed'];
+    return ['fw-badge-warning', s];
+  }
+
+  var LABEL = {start: 'Start', stop: 'Stop', restart: 'Restart'};
+  var ICON = {start: 'play-fill', stop: 'stop-fill', restart: 'arrow-clockwise'};
+  /* Colour carries the CONSEQUENCE, not the current state: green adds capacity,
+     red takes it away, amber interrupts and comes back. The state is already
+     said once, by the badge; saying it twice in a different visual language is
+     how a operator ends up reading the wrong one. */
+  var CLS = {start: 'btn-success', stop: 'btn-danger', restart: 'btn-warning'};
+
+  var EMPTY = '<tr><td colspan="5" class="text-muted">No controllable units on this node.</td></tr>';
+
+  function rows(units, node, isPeer) {
+    if (!units || !units.length) return EMPTY;
+    return units.map(function (u) {
+      var b = badge(u);
+      /* `available` is state-aware: a stopped unit offers Start (or Restart,
+         when Restart is its only permitted way back), a running one offers
+         Restart/Stop. `actions` stays the permitted set and stays the gate --
+         the server never refuses on live state, so losing the race against a
+         poll is a systemd no-op, not an error message. */
+      var acts = u.available || [];
+      var btns = acts.map(function (a) {
+        return '<button type="button" class="btn btn-sm ' + CLS[a] + ' ms-1"' +
+               ' data-svc-unit="' + esc(u.unit) + '" data-svc-action="' + a + '"' +
+               ' data-svc-node="' + esc(node) + '"' +
+               (isPeer ? ' data-svc-peer="1"' : '') +
+               ' style="font-size:11px;padding:1px 9px;">' +
+               '<i class="bi bi-' + ICON[a] + ' me-1"></i>' + LABEL[a] + '</button>';
+      }).join('');
+      return '<tr>' +
+        '<td><strong>' + esc(u.label) + '</strong><br>' +
+          '<code style="font-size:11px;">' + esc(u.unit) + '</code></td>' +
+        '<td><span class="fw-badge ' + b[0] + '">' + esc(b[1]) + '</span></td>' +
+        '<td class="text-muted">' + esc(u.enabled || '\u2014') + '</td>' +
+        '<td class="text-muted" style="font-size:11.5px;">' + esc(u.note) + '</td>' +
+        '<td class="text-end">' + (btns || '<span class="text-muted">\u2014</span>') + '</td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  function render(data) {
+    LOCAL = data.node || '';
+    var meta = document.getElementById('svc-node');
+    if (meta) meta.textContent = LOCAL ? (LOCAL + ' \u00b7 ' + (data.role || '?')) : '';
+    body.innerHTML = rows(data.units || [], LOCAL, false);
+  }
+
+  var HEAD_STYLE = 'padding:6px 10px;border-radius:8px;background:var(--fw-surface-alt);' +
+                   'border:1px solid var(--fw-border);';
+  var THEAD = '<thead><tr><th style="width:26%;">Service</th><th style="width:14%;">State</th>' +
+              '<th style="width:11%;">At boot</th><th>Notes</th>' +
+              '<th style="width:22%;" class="text-end">Actions</th></tr></thead>';
+
+  /* An unreachable peer is its own finding and is printed as one. It is never
+     drawn as an empty unit list, which would read as "nothing to worry about"
+     on the node we just failed to reach. */
+  function renderPeers(data) {
+    if (!peersBox) return;
+    var peers = (data && data.peers) || [];
+    if (!peers.length) { peersBox.innerHTML = ''; return; }
+    peersBox.innerHTML = peers.map(function (p) {
+      var head = '<div class="d-flex align-items-center gap-2 mb-1" style="' + HEAD_STYLE + '">' +
+        '<span class="fw-badge fw-badge-secondary">peer</span>' +
+        '<strong style="font-size:12.5px;">' + esc(p.node || '?') + '</strong>' +
+        '<span class="text-muted" style="font-size:11.5px;">' + esc(p.host || '') +
+          (p.role ? ' \u00b7 ' + esc(p.role) : '') +
+          (p.secure === false ? ' \u00b7 plaintext' : '') + '</span></div>';
+      if (!p.reachable) {
+        return '<div class="mt-3">' + head +
+          '<div class="fw-badge fw-badge-warning">unreachable</div> ' +
+          '<span class="text-muted" style="font-size:12px;">' + esc(p.error || 'no answer') +
+          ' \u2014 nothing is assumed about its services.</span></div>';
+      }
+      return '<div class="mt-3">' + head +
+        '<div class="table-responsive"><table class="table table-sm align-middle mb-0" ' +
+        'style="font-size:12.5px;">' + THEAD + '<tbody>' +
+        rows(p.units || [], p.node, true) + '</tbody></table></div></div>';
+    }).join('');
+  }
+
+  function load() {
+    return fetch('{{ url_for("settings.services_state") }}', {credentials: 'same-origin'})
+      .then(function (r) { return r.json(); })
+      .then(render)
+      .catch(function () {
+        body.innerHTML = '<tr><td colspan="5" class="text-danger">Could not read service state.</td></tr>';
+      });
+  }
+
+  /* Separate request on purpose: peers cost a network round trip with a
+     timeout, and a standby that is down must not delay or break the local
+     table on a perfectly healthy node. */
+  function loadPeers() {
+    if (!peersBox) return Promise.resolve();
+    return fetch('{{ url_for("settings.services_peers") }}', {credentials: 'same-origin'})
+      .then(function (r) { return r.json(); })
+      .then(renderPeers)
+      .catch(function () {
+        peersBox.innerHTML = '<div class="mt-3 text-muted" style="font-size:12px;">' +
+          'Could not read peer service state.</div>';
+      });
+  }
+
+  function loadAll() { load(); loadPeers(); }
+
+  function setBusy(on) {
+    busy = on;
+    document.querySelectorAll('button[data-svc-unit]').forEach(function (b) { b.disabled = on; });
+  }
+
+  function paintLog(st) {
+    var lines = (st.steps || []).map(function (s) {
+      return (s.ok ? '  ok  ' : ' FAIL ') + s.name + (s.detail ? '  \u2014 ' + s.detail : '');
+    });
+    lines.push('');
+    lines.push('state: ' + (st.state || '?') + (st.error ? '  (' + st.error + ')' : ''));
+    logBody.textContent = lines.join('\n');
+    logBody.scrollTop = logBody.scrollHeight;
+  }
+
+  function statusUrl(node, uid, isPeer) {
+    if (isPeer) {
+      return '{{ url_for("settings.services_peer_action_status", node="__NODE__", uid="__UID__") }}'
+        .replace('__NODE__', encodeURIComponent(node)).replace('__UID__', encodeURIComponent(uid));
+    }
+    return '{{ url_for("settings.services_action_status", uid="__UID__") }}'
+      .replace('__UID__', encodeURIComponent(uid));
+  }
+
+  /* The poll deliberately SWALLOWS network errors instead of giving up on the
+     first one. Restarting the web app or nginx makes these very requests fail
+     for a few seconds -- that is the expected middle of a successful restart,
+     not a failure. The status file is written by the ROOT runner (the peer's
+     own, for a peer action), so it keeps being updated while that node's web
+     is down and is there when we reconnect. */
+  function poll(ctx, tries) {
+    fetch(statusUrl(ctx.node, ctx.uid, ctx.peer), {credentials: 'same-origin'})
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (st) {
+        if (st && st.state && st.state !== 'polling') {
+          paintLog(st);
+          if (st.state !== 'queued' && st.state !== 'running') {
+            logTitle.textContent = ctx.title + ' \u2014 ' + st.state;
+            setBusy(false);
+            loadAll();
+            return;
+          }
+        }
+        next(ctx, tries);
+      })
+      .catch(function () { next(ctx, tries); });
+  }
+
+  function next(ctx, tries) {
+    if (tries <= 0) {
+      logTitle.textContent = ctx.title + ' \u2014 still running';
+      logBody.textContent += '\n\nStopped polling after 2 minutes. The runner on ' +
+                             ctx.node + ' keeps going; press Refresh to see the result.';
+      setBusy(false);
+      loadAll();
+      return;
+    }
+    setTimeout(function () { poll(ctx, tries - 1); }, 2000);
+  }
+
+  /* Every confirm names the node. "Which box did I just restart" is the one
+     question this card must never leave ambiguous, and it is the reason the
+     peer buttons are safe to offer at all. */
+  function confirmText(unit, action, node, isPeer) {
+    var where = isPeer ? 'the PEER node ' + node : 'this node (' + node + ')';
+    if (unit === 'satom.service') {
+      return 'Restart the web application on ' + where + '?\n\n' +
+             (isPeer
+               ? 'That node stops serving for a few seconds. This console is not affected. ' +
+                 'Its own privileged updater applies the restart and verifies health, and the ' +
+                 'log below reads the result back from it.'
+               : 'This console will stop responding for a few seconds and the page may ' +
+                 'briefly error. The action is applied by the privileged updater, so it ' +
+                 'completes even though the worker handling this click is killed \u2014 the ' +
+                 'log below reconnects and shows the result.');
+    }
+    if (unit === 'nginx.service') {
+      return 'Restart the TLS front on ' + where + '?\n\n' +
+             'Open connections drop. If nginx comes back unhealthy' +
+             (isPeer ? ' that node needs shell access to recover.'
+                     : ' this session ends and recovery needs shell access.');
+    }
+    if (unit === 'postgresql.service') {
+      return 'Restart PostgreSQL on ' + where + '?\n\n' +
+             'The cluster bounces, pooled connections die and replication reconnects. ' +
+             'The updater verifies app health afterwards and recycles the workers if the ' +
+             'pool did not recover.';
+    }
+    if (unit === 'satom-ha-datasync.timer' && action === 'stop') {
+      return 'Stop the HA data sync timer on ' + where + '?\n\n' +
+             'While it is stopped that node stops pulling data/ from the primary, so its ' +
+             'copy silently ages. It re-arms at the next boot.';
+    }
+    return LABEL[action] + ' ' + unit + ' on ' + where + '?';
+  }
+
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target.closest ? ev.target.closest('button[data-svc-unit]') : null;
+    if (!btn || busy) return;
+    var unit = btn.getAttribute('data-svc-unit');
+    var action = btn.getAttribute('data-svc-action');
+    var node = btn.getAttribute('data-svc-node') || LOCAL;
+    var isPeer = btn.getAttribute('data-svc-peer') === '1';
+    if (!window.confirm(confirmText(unit, action, node, isPeer))) return;
+
+    var title = LABEL[action] + ' ' + unit + ' on ' + node;
+    setBusy(true);
+    logBox.style.display = '';
+    logTitle.textContent = title + ' \u2014 queued';
+    logBody.textContent = 'Queued for the privileged updater on ' + node + '\u2026';
+
+    var url = isPeer ? '{{ url_for("settings.services_peer_action") }}'
+                     : '{{ url_for("settings.services_action") }}';
+    var payload = isPeer ? {node: node, unit: unit, action: action}
+                         : {unit: unit, action: action};
+
+    fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF},
+      body: JSON.stringify(payload)
+    }).then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
+      .then(function (res) {
+        if (!res.ok || !res.j.uid) {
+          logTitle.textContent = title + ' \u2014 ' + ((res.j && res.j.state) || 'rejected');
+          logBody.textContent = (res.j && res.j.error) || 'the request was refused';
+          setBusy(false);
+          return;
+        }
+        poll({uid: res.j.uid, title: title, node: node, peer: isPeer}, 60);
+      })
+      .catch(function (e) {
+        logTitle.textContent = title + ' \u2014 could not queue';
+        logBody.textContent = String(e);
+        setBusy(false);
+      });
+  });
+
+  var refresh = document.getElementById('svc-refresh');
+  if (refresh) refresh.addEventListener('click', function () { if (!busy) loadAll(); });
+
+  loadAll();
 })();
 </script>
 {% endblock %}

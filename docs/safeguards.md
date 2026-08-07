@@ -3597,7 +3597,186 @@ for precisely when they cannot get into the console another way. Grepping
 for the two known sites would not have found the third; the guard walks
 the AST of every `deploy/satom_cli/*.py`.
 
+## 33. A button that stops a service must not remove the way to start it
+
+The Settings -> General **Services** card lets a console admin start, stop and
+restart the units this node runs. The interesting risk is not a crash: it is a
+button that reaches a unit it was never meant to reach, or one that removes its
+own undo and still reports success.
+
+**The web worker never runs `systemctl` for a state change, and must not be
+granted it.** `/etc/sudoers.d/satom` carries exactly two commands. A generic
+`systemctl` grant would reach every unit on the box -- it IS root, spelled
+differently -- so this reuses the escalation path that already exists: the
+worker writes a JSON request, and the privileged runner
+(`satom-updater.path` -> `satom-updater.service`) applies it. Reads are the
+opposite: `systemctl show` answers any user, so rendering the card costs
+nothing and a page load opens no privileged path.
+
+Six rules:
+
+1. **The allowlist is a table, not a unit name.** A request names a unit AND an
+   action that must both appear in `POLICY`
+   (`app/services/service_control.py`). The runner keeps its own copy
+   (`_SERVICE_POLICY` in `deploy/self_update_runner.py`) and re-validates. The
+   duplicate is deliberate -- importing the Flask package into a root process
+   out of a tree the service account can write is the escalation the curated
+   pip allowlist was moved out of -- and it is only safe because
+   `tests/test_service_control.py` fails when the copies drift.
+
+2. **`satom-updater` is not controllable, and is denied twice.** It IS the
+   runner. Stopping it means no later request can be processed, *including the
+   one that would start it again*: the button would brick its own escalation
+   path and report success. It is absent from the table AND named in an
+   explicit `FORBIDDEN` deny, because the second one is what still holds if a
+   future edit adds it to the table.
+
+3. **No action removes its own undo.** `stop` is withheld from `satom.service`
+   (the console being clicked), `nginx.service` (the front serving it) and
+   `postgresql.service` (without it the app cannot even record what happened).
+   All three leave recovery possible only from a shell, and this card exists
+   for the operator who has the browser and not the shell. `restart` is offered
+   instead: same diagnostic value, lands back in a running state. Every unit
+   that can be stopped can also be started.
+
+4. **The self-restart is honest because the ROOT process writes the log.**
+   Restarting `satom.service` kills the worker handling the click, so the HTTP
+   response can never carry the outcome. The request is queued, the id returns
+   immediately, and the browser polls a status file the runner keeps writing
+   while the app is down. The poller swallows network errors on purpose -- a
+   few seconds of failed requests is the expected middle of a successful
+   restart, not a failure.
+
+5. **`systemctl` exit 0 means the job was accepted, not that the daemon came
+   up.** The runner re-reads `ActiveState` after a settle delay and, for the
+   three units that can take the console down, runs the health check. A
+   database restart that leaves the pool holding dead connections is recovered
+   by bouncing the workers, rather than handing the operator a 500 with no
+   obvious cause. `nginx` additionally gets a real `:443` handshake, because
+   `health_ok()` talks to gunicorn directly and stays green with the front
+   down.
+
+6. **Runtime-only, and every row names its node.** Nothing here enables or
+   disables a unit, so a unit stopped from the page comes back at the next boot
+   -- a stop that self-heals is the safer default, and the card prints the boot
+   state next to the live state so that is visible rather than surprising. What
+   a node arms at boot is a durable decision and stays with the installer and
+   the CLI. `systemctl` is node-local, so an HA pair has no single "the
+   services": the card renders one section PER NODE and a peer is reached the
+   only way a peer is ever reached (33b).
+
+7. **Offering an action and permitting one are different questions.** The
+   button set is derived from live state -- a stopped unit offers Start, a
+   running one Restart/Stop -- but the endpoint gate is NOT. `POLICY` is a
+   privilege decision and `available_actions()` is a presentation decision, and
+   collapsing them is the trap: state is polled, so a unit can change between
+   the render and the click, and an endpoint that also filtered on live state
+   would refuse a button that was legitimately on screen a second earlier. The
+   operator would read that as a broken console. Instead the lost race is a
+   systemd no-op, which lands them in the state they asked for. The rule that
+   carries weight is the one for a unit that is DOWN: restart-only units (the
+   console, PostgreSQL, because stopping them removes their own undo) must
+   still offer Restart when stopped -- `systemctl restart` starts a stopped
+   unit, and withholding it because the word sounds like "already running"
+   would leave a dead unit with no button at all, exactly when one is needed.
+
+A unit that is not installed on this node (`satom-ha-datasync.timer` on a
+primary or a standalone install) renders neutral with no buttons -- never as a
+red "stopped" the operator would try to fix. That is the same false positive
+that had to be removed from `get system health` twice.
+
+
+## 33b. A peer is asked, never commanded
+
+Controlling the standby's units from the primary is genuinely useful -- a
+standby whose web is wedged is the case where the operator has a browser on one
+node and nothing on the other -- and it is also the shape of request that most
+deserves suspicion, because it crosses a machine boundary carrying an
+instruction. Four rules keep it honest, and they are the same four the curated
+pip fan-out already uses; there is one inter-node auth scheme in this product
+and this is it.
+
+1. **The receiving node is the security boundary.** The primary does not run
+   anything on the peer and does not reach the peer's systemd. It POSTs a unit
+   name and an action to the peer's own `/settings/peer/service-action`, behind
+   the shared identity key (`X-FM-Node-Key`, HTTPS `:8443`). That endpoint calls
+   the same `request_service_action()` the peer's own button calls, so the
+   peer re-validates against the peer's OWN `POLICY` and the peer's OWN root
+   runner does the work. A peer holding a valid identity key still cannot reach
+   a unit that node does not list, and cannot reach `satom-updater` at all.
+   Nothing but a name and an action ever crosses the wire.
+
+2. **A host is resolved from the registry, never from the request.** The
+   browser names a NODE; `_peer_by_name()` looks the host up in
+   `data/ha_nodes.json`. Accepting a host from the payload would turn an
+   admin-only console into a way to aim authenticated POSTs at an arbitrary
+   address.
+
+3. **Unreachable is a state, not an outcome.** A peer that does not answer is
+   never folded into "queued" and never rendered as an empty unit list -- "I
+   could not read it" and "it has nothing running" are opposite findings about
+   the same node. A 2xx is not success either: only an id is, because a proxy
+   page or a login interstitial is also a 200. And a peer that answers 404 is
+   named as *probably on an older release*, which is the realistic cause during
+   a rolling upgrade and sends the operator to the version rather than to the
+   network.
+
+4. **A poll that fails mid-restart says "polling", never "failed".** Restarting
+   the peer's web makes the peer stop answering for a few seconds; that is the
+   expected middle of a *successful* restart. The status file is written by the
+   peer's ROOT runner, so it keeps being updated while the peer's web is down
+   and is there when the poll reconnects. Calling that window a failure would
+   teach the operator that a working button is broken.
+
+The mitigation for dropping "this node only" is that the node is unmissable:
+the section header, the confirm dialog and the audit line all name it. "Which
+box did I just restart" is the one question this card must never leave
+ambiguous. Peers also load from their own endpoint rather than as another key
+in `/services`, so a dead standby -- a network round trip with a timeout --
+can never make the local table on a healthy primary look broken.
+
+**Found while building this:** `self_update.update_status()` built a path as
+`STATUS_DIR / (uid + ".json")` from a URL segment with no validation, so a
+traversing id turned an admin status reader into "read any `.json` this account
+can read". The check now lives where the path is assembled, not in each caller
+-- validating per caller leaves the next caller to remember.
+
+
 ## Verifying the guards are armed
+
+### Service control: offering vs permitting, and the peer boundary (33, 33b)
+
+```bash
+# the endpoint gate must NOT consult live state (a lost poll race is a no-op,
+# not a refusal)
+python3 - <<'PY'
+import inspect, sys; sys.path.insert(0, ".")
+from app.services import service_control as svc
+src = inspect.getsource(svc.allowed)
+bad = [t for t in ("available_actions", "_show(", "ActiveState") if t in src]
+print("FAIL: allowed() depends on live state:", bad) if bad else print("ok: gate is state-free")
+PY
+
+# a stopped unit ALWAYS keeps a way back, including the restart-only ones
+python3 - <<'PY'
+import sys; sys.path.insert(0, ".")
+from app.services import service_control as svc
+for u in svc.POLICY:
+    for st in ("inactive", "failed"):
+        assert svc.available_actions(u, st), "%s/%s has no button" % (u, st)
+print("ok: every stopped unit keeps a way back")
+PY
+
+# all three receiving endpoints sit behind the node identity key
+for f in peer_services peer_service_action peer_service_status; do
+  awk "/def $f\(/,/^@bp.route|^def /" app/views/settings.py | grep -q '_peer_gate()' \
+    && echo "ok  $f" || echo "FAIL $f is not gated"
+done
+
+# the status reader refuses a traversing id
+python3 -c "import sys;sys.path.insert(0,'.');from app.services import self_update as su;\
+print('ok' if su.update_status('../secret') is None else 'FAIL')"
+```
 
 ### The AI Advisor write boundary (26)
 
@@ -4418,6 +4597,26 @@ satom diagnose recovery      # expect [ ok ] plus a 'sealed envelope' row
 # 4. The peer must have it, byte for byte, without anyone copying it by hand.
 md5sum /opt/satom/data/recovery/seal.json
 ```
+
+### Web service control (33)
+
+```bash
+# the two copies of the allowlist agree, and the updater is in neither
+satom_py -c "
+from app.services import service_control as s
+print(sorted(s.POLICY))
+print([u for u in s.POLICY if u.startswith('satom-updater')] or 'updater absent: ok')
+print('stop on the console units:',
+      [u for u in ('satom.service','nginx.service','postgresql.service')
+       if s.allowed(u,'stop')] or 'none: ok')"
+
+# reading state must never carry a systemctl verb
+grep -n 'subprocess.run' app/services/service_control.py    # only: systemctl show
+
+# the guards bite
+pytest tests/test_service_control.py -q
+```
+
 
 ## Related
 

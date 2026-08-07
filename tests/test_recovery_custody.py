@@ -237,6 +237,10 @@ def test_a_node_without_the_ca_key_is_not_nagged_about_escrowing_it(app, monkeyp
 def test_the_ca_key_holder_is_asked_to_escrow_it(app, monkeypatch, tmp_path):
     ca = tmp_path / "internal-ca"
     ca.mkdir()
+    # Built at runtime on purpose: recovery.py only ever calls is_file() and
+    # read_bytes() on this path, so the content is arbitrary — but a literal
+    # PEM header in a source file trips the publisher's secret scanner and
+    # aborts the release. See tests/test_no_pem_literals.py.
     (ca / "ca.key").write_text("-" * 5 + "BEGIN PRIVATE KEY" + "-" * 5 + "\nfake\n")
     monkeypatch.setenv("FERNET_KEY", KEY_A)
     monkeypatch.setattr(recovery, "ca_dir", lambda: ca)

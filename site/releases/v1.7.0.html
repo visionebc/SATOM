@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Version 1.7.0 — SATOM</title>
-<meta name="description" content="Released on 2026-08-07 — Added · Fixed · 15 entries.">
+<meta name="description" content="Released on 2026-08-07 — Added · Fixed · 16 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Version 1.7.0 <span class="rel-badge rel-now">current release</span></h1>
-  <p class="sub">Released on 2026-08-07 — Added · Fixed · 15 entries.</p>
+  <p class="sub">Released on 2026-08-07 — Added · Fixed · 16 entries.</p>
 </header>
 
 <section class="wrap">
@@ -64,8 +64,8 @@
       </a>
       <a class="rel-nav-item is-active" href="v1.7.0.html" data-rel-version="1.7.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.7.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
-        <span class="rel-nav-meta">2026-08-07 · Added · Fixed · 15 entries</span>
-        <ul class="rel-leads"><li>Sealed recovery custody</li><li>The seal passphrase is created at INSTALL, not at cluster join</li><li>Recovery custody for the two secrets no backup carries</li><li class="rel-more">… and 12 more</li></ul>
+        <span class="rel-nav-meta">2026-08-07 · Added · Fixed · 16 entries</span>
+        <ul class="rel-leads"><li>Sealed recovery custody</li><li>The seal passphrase is created at INSTALL, not at cluster join</li><li>Recovery custody for the two secrets no backup carries</li><li class="rel-more">… and 13 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.6.0.html" data-rel-version="1.6.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.6.0</span></span>
@@ -157,6 +157,13 @@
       <div class="mdx">
 <h3 id="added">Added</h3>
 <ul>
+<li><code>tests/test_no_pem_literals.py</code> - no source file may carry a literal PEM
+  private-key header. The publisher scans every blob of the sanitised mirror
+  and refuses to push when it finds one; it cannot tell a test fixture from a
+  real key, and must not learn to, because a scanner that skips headers
+  followed by the word "fake" is one a real key walks past. A fixture that
+  needs PEM-shaped bytes now builds the header at runtime. The rule costs a
+  failing test at commit time instead of an aborted release.</li>
 <li><strong>Sealed recovery custody.</strong> <code>FERNET_KEY</code> and the internal CA key are carried
   by no automatic copy — git excludes them, the HA datasync carries only
   <code>data/</code>, and the backup bundle leaves them out on purpose. The cost was that

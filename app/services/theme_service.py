@@ -198,6 +198,13 @@ def audit_contrast(overrides: "dict[str, str]") -> "list[dict]":
     operator may legitimately accept a low-contrast accent. What must never
     happen is applying an unreadable palette *without being told*, so the UI
     requires an explicit confirmation for anything below ``CONTRAST_FAIL``.
+
+    A colour the auditor cannot PARSE is reported too, as a ``fail`` with
+    ``unparseable`` set and ratio 0.0. Skipping it produced the identical empty
+    report a perfectly readable palette produces — "we could not check this"
+    silently rendered as "this is fine", which is the one outcome the paragraph
+    above rules out. ``validate_tokens`` regex-gates colours before they can be
+    stored, so this is the second layer, not the first.
     """
     eff = dict(DEFAULTS)
     eff.update(overrides or {})
@@ -206,8 +213,22 @@ def audit_contrast(overrides: "dict[str, str]") -> "list[dict]":
         bg_name = meta.get("on")
         if not bg_name:
             continue
-        ratio = contrast_ratio(eff[name], eff[bg_name])
-        if ratio is None or ratio >= CONTRAST_AA:
+        fg_val, bg_val = eff.get(name, ""), eff.get(bg_name, "")
+        ratio = contrast_ratio(fg_val, bg_val)
+        if ratio is None:
+            bad = fg_val if _parse_rgb(fg_val) is None else bg_val
+            out.append({
+                "token": name,
+                "label": meta["label"],
+                "group": meta["group"],
+                "against": TOKENS[bg_name]["label"],
+                "ratio": 0.0,
+                "level": "fail",
+                "unparseable": True,
+                "value": str(bad)[:120],
+            })
+            continue
+        if ratio >= CONTRAST_AA:
             continue
         out.append({
             "token": name,

@@ -129,10 +129,10 @@
         </tr>
         <tr>
           <td><strong>Config SoT</strong></td>
-          <td class="small">Gitea HTTPS</td>
-          <td><code>reports/&lt;device&gt;/_config.json</code> &mdash; versioned device config</td>
-          <td class="small">primary &rarr; Gitea</td>
-          <td class="small"><span class="text-success">HTTPS</span> &rarr; <code>git.example.net</code></td>
+          <td class="small">&mdash; local</td>
+          <td><code>data/sot/</code> &mdash; content&#8209;addressed device config versions (<code>data/reports/&lt;device&gt;/</code> holds the live harvest)</td>
+          <td class="small">rides the <strong>File sync</strong> row above</td>
+          <td class="small">no channel of its own &middot; replicated inside <code>data/</code>, and carried in the backup bundles</td>
         </tr>
         <tr class="text-muted">
           <td>Edge rollback</td>
@@ -150,7 +150,7 @@
       <li><strong>Database</strong> &mdash; Postgres streaming replication, configured in <code>postgresql.conf</code> + <code>pg_hba.conf</code>. Native DB mechanism, <em>not</em> app code; this is why the standby is read&#8209;only.</li>
       <li><strong>Files</strong> &mdash; <code>deploy/satom-ha-datasync.sh</code> (unit <code>satom-ha-datasync.timer</code>): the standby <strong>pulls</strong> <code>data/</code> over rsync/SSH every 5&nbsp;min (role&#8209;guarded, inert on the primary).</li>
       <li><strong>App / code</strong> &mdash; <code>app/services/reconciler.py</code> (<code>satom-reconciler.service</code>, both nodes): DB&#8209;free orchestration of the HA deploy mode (MANUAL/AUTO) and the staged code rollout. The <em>only</em> sync that is app code.</li>
-      <li><strong>Device SoT &rarr; git</strong> &mdash; <code>app/services/device_sync.py</code> harvests each appliance's config; <code>git_service.py</code> + <code>satom-git-publish.sh</code> (primary&#8209;only, hourly) publish it to Gitea over HTTPS.</li>
+      <li><strong>Device SoT</strong> &mdash; <code>app/services/device_sync.py</code> harvests each appliance's config into <code>data/reports/</code> and versions it in the content&#8209;addressed store under <code>data/sot/</code>. This is <em>not</em> a fourth replication mechanism: the store lives inside <code>data/</code>, so the file sync above carries it, as do the backup bundles. <span class="text-muted">(The hourly git publisher was retired on 2026&#8209;08&#8209;05 &mdash; the device SoT no longer lives in git.)</span></li>
       <li><strong>Inter&#8209;node auth</strong> &mdash; <code>app/services/node_security.py::peer_get()</code> signs the <code>:8443</code> probes with the shared identity key; the node cert is managed in <a href="{{ url_for('settings.index') }}#tab-nodetls">Settings &rarr; Node&nbsp;TLS</a>.</li>
     </ul>
   </div>

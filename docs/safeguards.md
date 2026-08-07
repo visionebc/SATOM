@@ -3160,6 +3160,278 @@ it by path precisely so the site can be built from a tree whose application
 code does not import.
 
 
+## 28. The two secrets no backup carries
+
+`app/services/recovery.py` · `app/services/system_backup.py` ·
+`satom diagnose recovery` · `satom execute export recovery-key`
+
+Two secrets gate recovery of an installation, and no mechanism replicates
+either one:
+
+| secret | where it lives | what it opens |
+|---|---|---|
+| `FERNET_KEY` | `.env`, node-local | every encrypted column in the database |
+| `pki/internal-ca/ca.key` | primary only | the sole issuer for replication mTLS |
+
+`.env` is gitignored, sits above `data/` so the datasync never reaches it, and
+is not in a bundle. The CA key is excluded from replication deliberately — the
+peer holds `ca.crt` only, because one issuer is the point. Between them that
+left a gap nobody could see: **a bundle restored onto a rebuilt node is a
+database of unreadable secrets**, and nothing anywhere said why.
+
+### The decision: the key stays out of the bundle
+
+The obvious fix — put `.env` in the bundle — was rejected, and the reason is
+worth keeping because it will be proposed again.
+
+A bundle is retained for weeks, mirrored to the peer, and pushed off-box over
+SFTP using a password that itself lives in an encrypted column. A bundle
+carrying the key that opens that password is not a backup of the estate; it
+*is* the estate, in one file, in three places, on a host outside the
+management network. Every property that makes a backup good — copies,
+retention, off-site — is exactly what you do not want for this one secret.
+
+So the bundle carries a **fingerprint** instead, and custody becomes an
+explicit, audited operator action.
+
+### The rules
+
+1. **A fingerprint identifies a key; it must never disclose one.** It is
+   SHA-256 over a domain tag, a separator byte, and the material, truncated to
+   64 bits. Domain separation is not decoration: without it the same bytes
+   under two roles collide, and a digest computed for one purpose could be
+   replayed as proof for another.
+
+2. **Absent material fingerprints to the empty string, never to a digest.**
+   `""` must not collide with a real key's digest, and must stay falsy so a
+   caller can tell "no material" from "material I hashed".
+
+3. **A manifest emits a line per kind even when the value is empty.** An empty
+   value and a missing line mean different things — *this node held no CA key*
+   versus *this bundle predates fingerprinting* — and collapsing them makes an
+   old bundle indistinguishable from a standby's.
+
+4. **A key mismatch is reported, never enforced.** `compare_manifest` cannot
+   raise and does not block. A restore is a recovery action; an operator
+   mid-outage holding the right key must not be stopped by the check that
+   exists to help them. It names both fingerprints and the remedy, and the
+   finding is *prepended* to the detail so it outranks every pg_restore
+   warning above it.
+
+5. **The escrow ledger records a fingerprint and a timestamp — never the
+   secret.** `app_settings` is dumped verbatim into every bundle, so a secret
+   recorded there would defeat the entire reason it was kept out.
+
+6. **Export returns; it never writes.** Choosing where a secret lands is the
+   operator's decision. A default destination is how an untracked second copy
+   gets created. `--out PATH` exists for when the operator wants that copy, and
+   opens the file `0600` *before* any bytes land — creating it `0644` and
+   chmod-ing after leaves a window where the key is world-readable.
+
+7. **A node that does not hold the CA key is not nagged about escrowing it.**
+   The standby holds `ca.crt` only, by design. Asking it to escrow an issuer it
+   must not have is the permanent-false-positive shape this repo has removed
+   three times; a check that fires on a healthy node is a check operators learn
+   to scroll past.
+
+8. **"I could not read `.env`" is not "there is no key."** `.env` is
+   `640 root:<service account>`, so an unprivileged caller has learned nothing
+   about custody. The CLI check exits 4 *cannot evaluate* rather than
+   fabricating a verdict — the same fail-open shape this catalogue exists to
+   remove.
+
+### What it changed in practice
+
+`satom diagnose recovery` on the primary reported, on the day it was written,
+that **neither secret had ever been exported** — the fleet's Fernet key and its
+sole CA issuer existed on exactly one disk each, and no bundle, no replica and
+no document recorded that. The `restore` runbook actively said the opposite
+("total loss is recovered from ... any one bundle copy"); it now says a bundle
+alone does not recover a total loss, and points at the two commands.
+
+### A test note that generalises
+
+The first version of the guard for rule 8 pointed its fixture at a nonexistent
+`app_dir`. The mutation *survived* — because a missing venv produces the same
+"cannot evaluate" message from a different branch, so the test could not tell
+which one answered. Fixing it meant substituting a double that **would** return
+a confident verdict if reached. A test that cannot distinguish the two paths
+proves nothing about either.
+
+## 29. A probe that could not answer is not a healthy answer
+
+This is the single defect this release exists to remove, found in nine places
+at once. The shape is always the same: a probe fails, the failure is swallowed,
+and the **default that replaces it is a value that means "fine"**.
+
+| where | on failure it said | which downstream read as |
+|---|---|---|
+| `product_scope.session_product` | `""` | Global console - show every product row |
+| `settings_store.get_json` (access rows) | `[]` | no restriction configured - admit everyone |
+| `git_service.git_info` | `ahead=0 behind=0 dirty=False` | repo clean and in sync |
+| `git_backup._out` | `""` | nothing ahead |
+| `self_update.ha_mode` | `standalone` | staged-rollout interlock not required |
+| `self_update_runner.preserve_local_commits` | `None` | nothing to preserve - proceed to a hard reset |
+| `hypervisors/base._ssl_context` | `True` | verified (public roots only, never the operator CA) |
+| `ssh_ops` known_hosts | empty pin set | first contact - accept any key |
+| `theme_service.audit_contrast` | no finding | palette is readable |
+
+None of these crash. None appear in a log. Each answers a *safety* question
+with the reassuring value, which is why they survived so long: the system
+reports health precisely when it has lost the ability to measure it.
+
+### The rules
+
+1. **Three states, not two.** Every probe that informs a safety decision
+   distinguishes *it is fine*, *it is not fine*, and **I could not tell**. The
+   third is not a variant of the first.
+
+2. **The permissive default is usually legitimate - that is why it must not be
+   reused.** `""` really does mean "Global console, show everything". An empty
+   allowlist really does mean "no restriction", and it is lockout-safe by
+   design. A genuinely single-node install really is standalone. Each of these
+   is correct, and each was the wrong answer to *I could not evaluate*. The fix
+   is never to make the empty case strict; it is to stop the failure case
+   borrowing its value.
+
+3. **Fail closed where the caller can recover, fail loud where it cannot.**
+   Scoping filters to zero rows. The access gate returns **503, not 403** - the
+   service could not evaluate policy, the user did not fail it - and admins are
+   answered above the gate so whoever must fix the row can still reach the UI.
+   A restore reports and continues, because blocking a recovery action during
+   an outage is worse than the thing it warns about.
+
+4. **A degraded fallback must announce itself.** `branding._refresh()`
+   substitutes a hardcoded five-ADOM literal on any registry failure and
+   returns it looking like a successful read - silently defeating the
+   derivation that replaced that same literal. `is_fallback()` is what lets a
+   caller tell an answer from a substitute.
+
+5. **A defaulting helper may exist, but nothing deciding safety may call it.**
+   `_git_out` still returns a default for display fields. `git_info` uses
+   `_git_try`, which reports whether git answered at all. Mixing them is how a
+   repository nobody could read reported itself clean.
+
+### Verified redundancy is not the same as an untested guard
+
+Several mutations here survive individually and bite in combination, because
+two probes independently detect the same fault (`rev-parse` and `status` both
+notice an unreadable repo). That is real redundancy and is recorded as such -
+after checking, not instead of checking. The distinction matters: an untested
+guard and a redundant one look identical in a mutation table until you remove
+both halves.
+
+## 30. Every SSH channel pins, and the rule has one implementation
+
+Three places open SSH from this app. Each had its own answer and two of them
+had none at all:
+
+| channel | carries | pinning before |
+|---|---|---|
+| `ssh_ops` (appliance CLI) | appliance admin credentials | a store, loaded inside a bare except |
+| `cert_service.autopull` | **the node TLS private key** | none |
+| `hypervisors/esxi_shell` | root shell on a hypervisor | none |
+
+`AutoAddPolicy` with no store is not weak pinning. It accepts whatever key
+answers, every time, forever, and can never notice the answer changed.
+
+This is not theoretical here. When this fleet recycled appliance IPs on
+2026-08-03, host-key verification was the only thing that stopped SATOM from
+presenting Fortinet admin credentials to an unrelated backup server - with an
+admin lockout threshold of 3 on those devices, the admin accounts would have
+been locked out permanently. The control worked on the one channel that had it.
+
+### The rules
+
+1. **An absent store is first contact - trust it and record the key. A store
+   that exists and cannot be read in full is a BROKEN control, not a missing
+   one - refuse, and name the file.** paramiko does not distinguish these:
+   `load_host_keys` silently **skips** every line it cannot parse, so four of
+   five pins can vanish while the load reports success. Every non-comment line
+   is parsed first and any failure is fatal.
+
+2. **An existing but empty store is refused.** A truncated store is not first
+   contact; treating it as one silently re-pins to whatever answers next.
+
+3. **Failing to persist a newly accepted key is fatal.** Swallowing it means
+   every subsequent connect is first contact again - a control that looks armed
+   and has never once been armed.
+
+4. **Pinning must not make a fresh host unusable.** An ESXi host key
+   legitimately changes on reinstall, which is why the original code chose
+   AutoAdd. Trust-on-first-use satisfies both: absent stays trusted. What is
+   refused is the case that reasoning did not consider - an unreadable store,
+   where accepting a new key discards a pin that was protecting the connection
+   yesterday.
+
+5. **One implementation.** `app/services/ssh_pinning.py` is the only copy;
+   `ssh_ops` delegates. A second copy of a security rule is a second copy that
+   rots, which is exactly how two of these three channels ended up with no
+   store at all.
+
+The guard is written per-file over everything that hands paramiko a
+missing-host-key policy, so it fails on the **fourth** channel somebody adds -
+the one nobody will think to check. Its first version searched the source text
+for `load_pins` and passed on a file whose only remaining mention was its own
+unused import; the mutation caught it, and it now matches a *call* in the AST.
+That is the thirteenth time a substring assertion in this repo has matched
+something that was not its subject.
+
+## 31. Shipping a file and distributing it are different problems
+
+A file can be in git, correct, reviewed, and still not be what the node runs.
+Three mechanisms move files here and each covers a different part of the tree:
+
+| mechanism | reaches | misses |
+|---|---|---|
+| git / self-update | the app tree | anything outside the app directory |
+| `satom-ha-datasync` | `data/` on the peer | everything above `data/` |
+| backup bundle | db + `reports/` + `sot/` + config | the rest of the filesystem |
+
+Everything in the gaps needs an explicit installer, invoked from every path
+that updates a node - or it silently keeps whatever it was given the day it was
+installed.
+
+### What was actually stale
+
+- **The out-of-tree `satom-ha-datasync.sh`** was three months behind its git
+  source. The only thing that had ever installed it was a one-shot migration
+  script. The running copy was missing the fix that separates *"I could not
+  evaluate the peer"* from *"there is no peer configured"* - so the replicator
+  itself could report SUCCESS while replicating nothing. That is this
+  catalogue section 29 applied to the mechanism that carries section 29 fixes.
+- **Four unit files were never refreshed** because `UNIT_FILES` was a
+  hand-typed tuple that had fallen behind `deploy/`. Three installed units
+  still declared a service account that no longer exists; they run only because
+  a drop-in overrides them, and that drop-in is regenerated only when an update
+  happens to run on that node.
+
+### The rules
+
+1. **Derive the list from the directory, never retype it.** `UNIT_FILES` and
+   `NONROOT_UNITS` are now computed from the unit templates in `deploy/`. A
+   hand-list is a copy, and this gap *is* what a rotted copy looks like.
+2. **Refreshing a unit file is not arming it.** Nothing changes enable state;
+   it is preserved. Cluster-only and retired units are named explicitly so the
+   drop-in keeps covering them without arming them.
+3. **Root-owned, outside the app tree, byte-verified.** The out-of-tree copies
+   are installed root-owned 0755 and checked with `cmp` against their source. A
+   sudo target writable by the service account is a root escalation - the
+   reason the runner was moved out of the tree in the first place.
+4. **A guard fails when `deploy/` ships a unit no mechanism distributes**, so
+   the next unit added cannot repeat this silently.
+
+### Retirement has to be finished, not just decided
+
+The hourly git publisher was retired on 2026-08-05, and four operator-facing
+surfaces still described it as live - including the install manual, which told
+the operator to arm it on a fresh node, and the **High Availability page**,
+which is precisely where someone goes to confirm their replication topology.
+The script it named had no source in the repository at all.
+
+A retired mechanism that still appears in the documentation is worse than one
+that was never built: it is a copy the operator believes they have.
+
 ## Verifying the guards are armed
 
 ### The AI Advisor write boundary (26)
@@ -3889,6 +4161,80 @@ git --no-optional-locks check-ignore -v --no-index \
 
 `--no-index` is required: git refuses to report a **tracked** path as ignored,
 so the assertion passes vacuously without it.
+
+### The two secrets no backup carries (28)
+
+```bash
+# Does anybody hold them? (exit 2 while either has never been exported)
+satom diagnose recovery
+
+# The fingerprint must identify the key without disclosing it.
+cd /opt/satom && set -a && . ./.env && set +a
+runuser -u satom -- venv/bin/python - <<'PY'
+import os
+from app import create_app
+from app.services import recovery
+with create_app().app_context():
+    lines = "\n".join(recovery.manifest_lines())
+    key = os.environ["FERNET_KEY"]
+    assert key not in lines, "THE MANIFEST IS LEAKING THE KEY"
+    assert recovery.compare_manifest(lines) == []            # matching key: silent
+    assert recovery.compare_manifest("label: x") == []       # old bundle: still restorable
+    print("fingerprints ok:", lines.replace(chr(10), " | "))
+PY
+
+# An unprivileged caller must say "cannot evaluate", never "no key".
+setpriv --reuid=65534 --regid=65534 --clear-groups satom diagnose recovery; echo "exit=$?"   # 4
+```
+
+The last one is the guard that matters most: `.env` is `640 root:<service
+account>`, so a caller who cannot read it has learned nothing. If that command
+ever reports a *finding* instead of refusing to conclude, the check has started
+fabricating verdicts about a key it never saw.
+
+### Fail-open sweep (29, 30, 31)
+
+```bash
+cd /opt/satom && set -a && . ./.env && set +a
+
+# A repo git cannot read must NOT report itself clean and in sync.
+runuser -u satom -- venv/bin/python - <<'PY'
+from pathlib import Path
+from app import create_app
+from app.services import git_service as gs, alerts
+with create_app().app_context():
+    assert gs.git_info()["unknown"] is False           # healthy: quiet
+    gs._repo_root = lambda: Path("/tmp")               # not a repo
+    assert gs.git_info()["unknown"] is True
+    assert "git.unreadable" in [f["key"] for f in alerts._check_git()]
+    print("git fail-open closed")
+PY
+
+# Every SSH channel pins. Fails on the FOURTH one somebody adds.
+runuser -u satom -- venv/bin/python - <<'PY'
+import ast, pathlib
+bad = []
+for f in pathlib.Path("app").rglob("*.py"):
+    t = f.read_text()
+    if "set_missing_host_key_policy" not in t:
+        continue
+    calls = {n.func.attr if isinstance(n.func, ast.Attribute) else
+             getattr(n.func, "id", "") for n in ast.walk(ast.parse(t))
+             if isinstance(n, ast.Call)}
+    if not calls & {"load_pins", "_load_pins"}:
+        bad.append(str(f))
+assert not bad, bad
+print("all SSH channels pinned")
+PY
+
+# Every unit template deploy/ ships is distributed by the update runner.
+runuser -u satom -- venv/bin/python -m pytest tests/test_unit_distribution.py -q >/dev/null
+echo "unit distribution exit=$?"
+```
+
+The SSH sweep is per-file on purpose. Asserting it for the three channels we
+know about would pass forever; asserting it for everything that hands paramiko
+a policy is what fails on the next one.
 
 ## Related
 

@@ -275,14 +275,9 @@ curated set.</p>
 <td>Uses the two sudo commands above</td>
 </tr>
 <tr>
-<td><code>satom-git-publish.service</code></td>
-<td><code>satom</code></td>
-<td>Pushes <code>reports/</code> SoT to Gitea</td>
-</tr>
-<tr>
 <td><code>satom-ha-datasync.service</code></td>
 <td><code>satom</code></td>
-<td>Pulls peer <code>data/</code> (standby only)</td>
+<td>Pulls peer <code>data/</code>. <strong>Cluster mode only</strong> — the installer writes this unit (and its timer) only when the node is joined to a pair, so a standalone node has no such unit at all; the script is additionally role-guarded and is a no-op on whichever node is currently primary</td>
 </tr>
 <tr>
 <td><strong><code>satom-updater.service</code></strong></td>
@@ -356,9 +351,12 @@ both nodes; before v1.2 it was installed only on the standby.</p>
 was learned the hard way.</strong> After the v1.2 migration the standby was found back
 on <code>User=root</code> for exactly three units: <code>satom.service</code>,
 <code>satom-scheduler.service</code> and <code>satom-reconciler.service</code>.</p>
-<p>Those three are precisely the ones that exist as templates in <code>deploy/</code>, and
-<code>deploy/self_update_runner.py</code> re-copies <code>deploy/&lt;unit&gt;</code> into
-<code>/etc/systemd/system/</code> on <strong>every</strong> update:</p>
+<p>Those three were, at the time, the only templates that <code>deploy/</code> shipped <em>and</em>
+that the runner re-copied. <code>UNIT_FILES</code> is now derived from the directory
+listing (2026-08-07 — the hand-written list had drifted to six names while
+<code>deploy/</code> shipped ten, so <code>satom-alerts.*</code> and <code>satom-cert-renew.*</code> were never
+refreshed at all), which means <strong>every</strong> template is re-copied on <strong>every</strong>
+update and the drop-in is the only thing keeping any of them de-privileged:</p>
 <pre><code class="language-python">for unit in UNIT_FILES:
     src = APP / &quot;deploy&quot; / unit
     if src.exists():
@@ -438,11 +436,15 @@ app account on legacy nodes.</p>
   already the highest-value artifact in the product.</li>
 <li><strong>Does it call <code>runuser</code> or <code>su</code>?</strong> Those only work as root. Any helper script
   that a v1.1 node ran as root and a v1.2 node runs as the service account must
-  branch on <code>id -u</code> (see <code>deploy/satom-git-publish.sh::as_app</code>). This is not
-  theoretical: <code>satom-git-publish.sh</code> kept <code>runuser -u satom -- git</code>, so
+  either branch on <code>id -u</code> or stop needing root at all — <code>deploy/satom-ha-datasync.sh</code>
+  is the worked example: its role probe replaced <code>runuser -u postgres -- psql</code>
+  with the app's own DB credentials from <code>.env</code>. This is not theoretical: the
+  hourly SoT publisher (retired 2026-08-05) kept <code>runuser -u satom -- git</code>, so
   after the de-privileging it failed every hour — and because the failure was
-  swallowed by <code>|| exit 0</code>, systemd reported SUCCESS while copy 3 of the backup
-  architecture silently stopped being published.</li>
+  swallowed by <code>|| exit 0</code>, systemd reported SUCCESS while a whole copy of the
+  backup architecture silently stopped being published.
+  <code>tests/test_deploy_scripts.py::test_deploy_scripts_do_not_call_runuser_without_a_root_guard</code>
+  enforces this.</li>
 <li><strong>Does it hardcode the service account or the database name?</strong> Derive the
   account from the tree owner (<code>stat -c %U /opt/satom</code>) and the database from
   <code>SQLALCHEMY_DATABASE_URI</code> in <code>.env</code>. A fresh install uses <code>satom</code> and a

@@ -158,21 +158,31 @@ class HypervisorClient:
         raise NotImplementedError
 
     # -- helpers --------------------------------------------------------
-    def _ssl_context(self) -> ssl.SSLContext | bool:
+    def _ssl_context(self) -> ssl.SSLContext | bool | str:
         """httpx ``verify=`` value. False only when the operator asked for it.
 
         A self-signed hypervisor certificate is the norm, so ``verify_ssl``
         defaults off — but it stays an explicit per-target setting rather than
         a hardcoded ``False``, so a site with an internal CA in the SATOM trust
         store can turn it on and have it mean something.
+
+        Until 2026-08-07 it did not. This imported ``trust_store.verify_target``
+        — a name that has never existed — inside a bare ``except`` that returned
+        ``True``. The ImportError fired on EVERY call and was swallowed, so a
+        target with ``verify_ssl=True`` was always checked against certifi's
+        public roots and never against the CAs the operator imported: the
+        sentence above described a feature that had never once run.
+
+        Nothing is wrapped here any more. :func:`app.services.trust_store.
+        verify_param` already absorbs its own transient failures and never
+        returns ``False``; anything that still escapes it is structural (a
+        renamed symbol, a broken import) and must break loudly at the first
+        verified request rather than quietly narrow the trust anchors.
         """
         if not self.verify_ssl:
             return False
-        try:
-            from ..trust_store import verify_target  # type: ignore
-            return verify_target()
-        except Exception:  # noqa: BLE001 — trust store optional at this layer
-            return True
+        from ..trust_store import verify_param
+        return verify_param()
 
     def __repr__(self) -> str:  # pragma: no cover — debugging aid
         return f"<{type(self).__name__} {self.username}@{self.host}>"

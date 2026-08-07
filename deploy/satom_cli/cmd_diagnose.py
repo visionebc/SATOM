@@ -324,6 +324,7 @@ def all_checks(ctx, args):
         ("time", o.system_time),
         ("timers", o.timer_status),
         ("git", k.git),
+        ("recovery", k.recovery),
         ("jobs", o.job_list),
         ("devices", o.device_status),
         ("monitors", o.monitor_status),

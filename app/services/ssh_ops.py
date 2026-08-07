@@ -15,7 +15,9 @@ Mechanism (verified on FortiWeb 7.6/8.0): the CLI is a restricted interactive
 shell, so we ``invoke_shell`` (not ``exec_command``), send ``command + \\n`` and
 read until the prompt goes idle, disabling the pager up front. The appliance's
 single admin secret (GUI/API/SSH share it) is reused — no separate SSH secret.
-Host keys are trust-on-first-use, persisted under ``data/known_hosts``.
+Host keys are trust-on-first-use, persisted under ``data/known_hosts``: TOFU on
+GENUINE first contact (no store yet), and a refusal to connect whenever a store
+that DOES exist cannot be read in full (see :func:`_load_pins`).
 
 Pure parsing helpers (``clean_output``/``assert_readonly``) are network-free and
 unit-testable; the session itself needs a live appliance.
@@ -46,13 +48,36 @@ class ReadOnlyViolation(Exception):
 
 
 def _data_dir() -> Path:
-    """``/opt/satom/data`` — beside the app package (parents[2])."""
+    """``/opt/satom/data`` — beside the app package (parents[2]).
+
+    An unusable data directory is FATAL, not a warning. The only thing SSH
+    keeps here is the host-key store; a directory that cannot be created means
+    an empty pin set, which ``AutoAddPolicy`` reads as first contact for every
+    appliance, forever. Swallowing the OSError made that state permanent and
+    silent — the one combination nobody ever notices.
+    """
     d = Path(__file__).resolve().parents[2] / "data"
     try:
         d.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        pass
+    except OSError as exc:
+        raise FortiSSHError(
+            f"SSH data directory {d} could not be created ({exc}); refusing to "
+            f"connect without a host-key store") from exc
     return d
+
+
+def _load_pins(cli, known: Path) -> None:
+    """Load ``known_hosts`` into ``cli`` — or refuse the connect, naming it.
+
+    The rule and its rationale live in :mod:`app.services.ssh_pinning`, which
+    is shared with the two other channels that open SSH from this app
+    (``cert_service`` autopull, which carries the node's TLS private key, and
+    the ESXi shell transport, which runs commands as root on a hypervisor).
+    Both of those had NO host-key store at all until this was unified; keeping
+    a second copy of the rule here is how they would drift apart again.
+    """
+    from .ssh_pinning import load_pins
+    load_pins(cli, known, FortiSSHError)
 
 
 def clean_output(raw: str, command: str) -> str:
@@ -141,11 +166,12 @@ class FortiWebReadonlySSH:
 
         known = _data_dir() / "known_hosts"
         cli = paramiko.SSHClient()
+        # ABSENT and BROKEN are not the same state. No store at all is genuine
+        # first contact and TOFU applies; a store that exists must load in FULL
+        # or _load_pins refuses the connect — this session carries the
+        # appliance admin secret.
         if known.exists():
-            try:
-                cli.load_host_keys(str(known))
-            except Exception:  # corrupt file shouldn't block a connect
-                pass
+            _load_pins(cli, known)
         cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # TOFU
         try:
             cli.connect(
@@ -159,12 +185,23 @@ class FortiWebReadonlySSH:
             )
         except paramiko.AuthenticationException as e:
             raise FortiSSHError(f"SSH auth failed for {self.appliance.name}") from e
+        except paramiko.BadHostKeyException as e:
+            raise FortiSSHError(
+                f"host key mismatch for {self.appliance.name} "
+                f"({self.appliance.host}): the key pinned in {known} is not the "
+                f"key this address offered. An address that moved to different "
+                f"hardware looks exactly like this — find out which box answers "
+                f"before clearing the pin; the admin secret was NOT sent") from e
         except Exception as e:  # noqa: BLE001 — uniform surface
             raise FortiSSHError(f"SSH connect failed: {e}") from e
         try:
             cli.save_host_keys(str(known))  # persist the TOFU key
-        except Exception:
-            pass
+        except OSError as e:
+            cli.close()
+            raise FortiSSHError(
+                f"host key store {known} could not be written ({e}); the key "
+                f"just accepted would not be pinned, so the next connect would "
+                f"trust on first use all over again") from e
         self._client = cli
         self._shell = cli.invoke_shell(width=220, height=2000)
         self._read(quiet=0.8, maxt=6)  # drain login banner

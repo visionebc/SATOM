@@ -588,7 +588,7 @@ check. <code>tests/test_docs_publication.py</code> fails the suite when this blo
 longer matches the console you are running.</p>
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-<p><em>94 commands in 33 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
+<p><em>96 commands in 34 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
 <h3 id="get"><code>get</code></h3>
 <p>Read state. Every command below works as <strong>any user</strong> — this is the half of the console that has to keep working when everything else does not.</p>
 <table>
@@ -959,6 +959,12 @@ longer matches the console you are running.</p>
 <td style="text-align: center;">—</td>
 <td>Integrity of the CLI install and the sudo boundary.</td>
 </tr>
+<tr>
+<td><code>satom diagnose recovery</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td>Does anyone hold the two secrets no backup carries?</td>
+</tr>
 </tbody>
 </table>
 <h3 id="execute"><code>execute</code></h3>
@@ -973,6 +979,12 @@ longer matches the console you are running.</p>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><code>satom execute export recovery-key [--out PATH] [--yes]</code></td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: center;">!</td>
+<td>Print FERNET_KEY + the internal CA key so a rebuild is possible.</td>
+</tr>
 <tr>
 <td><code>satom execute restart &lt;service&gt;</code></td>
 <td style="text-align: center;">yes</td>

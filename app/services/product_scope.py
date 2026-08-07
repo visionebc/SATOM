@@ -42,6 +42,23 @@ GLOBAL = "global"
 # The one product that also owns the unscoped rows (see module docstring).
 LEGACY_PRODUCT = FORTIWEB
 
+#: Returned by :func:`session_product` when the ADOM of the ACTIVE REQUEST
+#: could not be determined. Deliberately NOT '': '' is the legitimate "Global
+#: console / background worker — show everything", and reusing one value for
+#: both "everything, on purpose" and "I could not tell" is the whole bug. Every
+#: filter below maps this to ZERO rows and :func:`stamp` refuses to write it.
+#: :func:`product_keys` discards it, so no registry key can ever impersonate it.
+UNRESOLVED = "__unresolved__"
+
+
+class ProductScopeUnresolved(RuntimeError):
+    """Raised by :func:`stamp` when the ADOM of this request is unknown.
+
+    A new record has to land in an ADOM. Writing '' instead files it as
+    unscoped, and unscoped rows belong to the FortiWeb ADOM by construction —
+    a wrong ADOM the operator cannot see is worse than a failed save it can.
+    """
+
 # Offline fallback only — used when the ADOM registry cannot be read (CLI
 # import outside an app context, pre-migration boot). Never the primary source.
 _FALLBACK_KEYS = frozenset(
@@ -59,6 +76,7 @@ def product_keys() -> frozenset[str]:
         from ..branding import all_adoms
         keys = {str(r.get("key") or "").strip().lower() for r in all_adoms()}
         keys.discard("")
+        keys.discard(UNRESOLVED)   # no ADOM may impersonate the sentinel
         if keys:
             return frozenset(keys | {GLOBAL})
     except Exception:  # noqa: BLE001 — scoping must never break a caller
@@ -72,6 +90,23 @@ def concrete_products() -> frozenset[str]:
     return product_keys() - {GLOBAL}
 
 
+def registry_degraded() -> bool:
+    """True when the ADOM key set is the OFFLINE FALLBACK, not the registry.
+
+    :func:`app.branding.all_adoms` never raises: when the table cannot be read
+    it returns a hardcoded five-ADOM list. So the ``except`` in
+    :func:`product_keys` is NOT the path a degraded registry takes — the
+    fallback arrives looking like a successful answer, and a sixth ADOM an
+    operator declared is simply missing from it. A session holding that key
+    used to resolve to '' and see every product's rows.
+
+    The import is deliberately not wrapped: renaming ``is_fallback`` must fail
+    loudly here rather than quietly restore the fail-open default.
+    """
+    from ..branding import is_fallback
+    return bool(is_fallback())
+
+
 def session_product() -> str:
     """The EFFECTIVE product of the active request, '' outside a request
     context. Per-tab ADOM (2026-07-07): resolution order is ``g.product``
@@ -83,33 +118,66 @@ def session_product() -> str:
 
     Every source is validated against :func:`product_keys`. The session cookie
     used to be returned unchecked, which is how a key the filters below did not
-    recognise reached them."""
+    recognise reached them.
+
+    Three outcomes, and the middle one is new (2026-08-07):
+
+    * a recognised key — that ADOM;
+    * :data:`UNRESOLVED` — a request DID name an ADOM, it is not in the key
+      set, and :func:`registry_degraded` says the key set itself is the offline
+      fallback. We cannot prove the key is bogus, so we refuse to guess: every
+      filter below yields zero rows and :func:`stamp` raises. Failing closed is
+      recoverable; showing one ADOM another's fleet is not;
+    * '' — no ADOM was named at all (Global console, background worker, CLI).
+      That is a LEGITIMATE "show everything" and it stays exactly as it was.
+    """
     try:
-        if has_request_context():
-            from flask import g, request
-            valid = product_keys()
-            p = getattr(g, "product", None)
-            if p in valid:
-                return p
-            h = (request.headers.get("X-ADOM") or "").strip().lower()
-            if h in valid:
-                return h
-            s = (session.get("product") or "").strip().lower()
-            return s if s in valid else ""
+        in_request = has_request_context()
+    except Exception:  # noqa: BLE001 — no Flask at all (plain CLI import)
+        return ""
+    if not in_request:
+        return ""              # background worker / CLI — everything, by design
+    degraded = registry_degraded()
+    try:
+        from flask import g, request
+        valid = product_keys()
+        p = getattr(g, "product", None)
+        if p in valid:
+            return p
+        h = (request.headers.get("X-ADOM") or "").strip().lower()
+        if h in valid:
+            return h
+        s = (session.get("product") or "").strip().lower()
+        if s in valid:
+            return s
+        named = (p if isinstance(p, str) else "") or h or s
     except Exception:  # noqa: BLE001 — scoping must never break a caller
-        pass
+        return UNRESOLVED if degraded else ""
+    if named and degraded:
+        return UNRESOLVED
     return ""
 
 
 def stamp() -> str:
-    """Value to store on a record created now ('' = unscoped)."""
+    """Value to store on a record created now ('' = unscoped).
+
+    Raises :class:`ProductScopeUnresolved` when the ADOM could not be
+    determined — see :data:`UNRESOLVED`.
+    """
     p = session_product()
+    if p == UNRESOLVED:
+        raise ProductScopeUnresolved(
+            "the ADOM of this request could not be determined (the ADOM "
+            "registry is serving its offline fallback); refusing to stamp the "
+            "record unscoped, which would file it under the FortiWeb ADOM")
     return p if p in concrete_products() else ""
 
 
 def visible_product(record_product: str | None) -> bool:
     """Pure visibility check for file/JSON-backed records (the job store)."""
     p = session_product()
+    if p == UNRESOLVED:
+        return False       # ADOM unknown → show nothing, never everything
     if p not in concrete_products():
         return True
     rp = (record_product or "").strip().lower()
@@ -123,6 +191,9 @@ def scope_query(query, column):
     ``product`` column; NULL/'' rows count as unscoped (visible to FortiWeb
     and Global, hidden from every other ADOM)."""
     p = session_product()
+    if p == UNRESOLVED:
+        from sqlalchemy import false
+        return query.filter(false())   # ADOM unknown → zero rows, not all rows
     if p not in concrete_products():
         return query
     if p == LEGACY_PRODUCT:
@@ -173,6 +244,8 @@ def creatable_kinds() -> tuple[tuple[str, str], ...]:
     save. Global, which sees everything, gets the full roster."""
     everything = device_products()
     p = session_product()
+    if p == UNRESOLVED:
+        return ()          # nothing may be created into an unknown ADOM
     if p not in concrete_products():
         return everything
     mine = tuple(t for t in everything if t[0] == p)
@@ -197,6 +270,9 @@ def scope_appliance_query(query, kind_column):
     the Global ADOM only. That is deliberate — no product console can manage
     it — and Global is where it stays discoverable."""
     p = session_product()
+    if p == UNRESOLVED:
+        from sqlalchemy import false
+        return query.filter(false())   # ADOM unknown → zero rows, not all rows
     if p not in concrete_products():
         return query
     if p == LEGACY_PRODUCT:

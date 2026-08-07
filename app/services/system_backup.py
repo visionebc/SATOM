@@ -169,8 +169,16 @@ def create_backup(*, include_reports: bool = True, publish_git: bool = False,
                 shutil.copy2(src, stage / "config" / src.name)
             detail.append(f"config/ included ({len(cfgs)})")
 
+        # Recovery fingerprints, NOT the material. FERNET_KEY and the CA key
+        # stay out of the bundle on purpose (a bundle is retained, mirrored to
+        # the peer and pushed off-box over SFTP -- the one place the key that
+        # opens the SFTP password must never travel). The fingerprint costs
+        # nothing to carry and lets a restore NAME a key mismatch instead of
+        # producing a database of unreadable secrets and no explanation.
+        from . import recovery as _recovery
         manifest = (f"label: {label}\ncreated: {ts}\ndb: {conn['dbname']}\n"
-                    f"host: {conn['host']}\nreports: {include_reports}\n")
+                    f"host: {conn['host']}\nreports: {include_reports}\n"
+                    + "\n".join(_recovery.manifest_lines()) + "\n")
         (stage / "manifest.txt").write_text(manifest)
 
         name = f"fmw-backup-{ts}.tar.gz"
@@ -249,10 +257,21 @@ def restore_backup(name: str, *, conn: dict | None = None,
             tar.extractall(work, members=members)
         roots = list(work.glob("fmw-backup-*"))
         root = roots[0] if roots else work
+        # Read the recovery fingerprints BEFORE touching the database: a
+        # restore that fails halfway still leaves the operator needing to know
+        # the bundle was taken under a different key.
+        from . import recovery as _recovery
+        try:
+            _mtext = (root / "manifest.txt").read_text()
+        except OSError:
+            _mtext = ""
+        key_findings = _recovery.compare_manifest(_mtext)
         dump_path = root / "db.dump"
         if not dump_path.exists():
             return {"ok": False, "detail": "bundle missing db.dump",
-                    "safety": safety.get("name")}
+                    "safety": safety.get("name"),
+                    "key_findings": key_findings,
+                    "key_mismatch": bool(key_findings)}
         res = _run(pg_restore_cmd(conn, str(dump_path)), conn)
         # pg_restore can return non-zero on benign --clean DROP warnings; treat
         # a populated stderr without "error" as a warning.
@@ -273,7 +292,15 @@ def restore_backup(name: str, *, conn: dict | None = None,
             shutil.rmtree(dst, ignore_errors=True)
             shutil.copytree(root / "sot", dst)
             detail += "; sot restored"
+        if key_findings:
+            # Prepended, not appended: this outranks every pg_restore warning
+            # above it. A restore that "succeeded" into an unreadable
+            # credential store is the failure the operator must see first.
+            detail = ("; ".join(f["detail"] for f in key_findings)
+                      + " || " + detail)
         return {"ok": ok, "detail": detail, "safety": safety.get("name"),
+                "key_findings": key_findings,
+                "key_mismatch": bool(key_findings),
                 "stderr": (res.stderr or "")[:300]}
     finally:
         shutil.rmtree(work, ignore_errors=True)

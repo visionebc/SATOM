@@ -471,7 +471,9 @@ def process(req_path):
         try:
             for _script, _label in (("install-cli.sh", "operator CLI"),
                                     ("install-runner.sh",
-                                     "update runner + /usr/local/sbin helpers")):
+                                     "update runner + /usr/local/sbin helpers"),
+                                    ("install-metrics-store.sh",
+                                     "metrics store")):
                 _p = APP / "deploy" / _script
                 if _p.exists():
                     cr = subprocess.run(["bash", str(_p)], capture_output=True,
@@ -1025,7 +1027,8 @@ def package_change(req_path):
         # code update reaches them otherwise.
         for script, label in (("install-cli.sh", "operator CLI"),
                               ("install-runner.sh",
-                               "update runner + /usr/local/sbin helpers")):
+                               "update runner + /usr/local/sbin helpers"),
+                              ("install-metrics-store.sh", "metrics store")):
             sp = APP / "deploy" / script
             if sp.exists():
                 cr = subprocess.run(["bash", str(sp)], capture_output=True,

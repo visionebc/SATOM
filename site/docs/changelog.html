@@ -90,6 +90,32 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h3 id="added">Added</h3>
 <ul>
 <li>
+<p><strong>Every node re-asserts its own metrics store on every code update.</strong>
+  The store binary and its data directory live outside the app tree by
+  design — the data-sync replicates <code>data/</code> with <code>rsync --delete</code> and a
+  time-series database cannot be rsynced under a live process — so nothing
+  carried the store between nodes: not git, not the data-sync, not a
+  database dump. The installer wrote it once and nothing wrote it again, so
+  a node that joined the pair later, or was rebuilt, ran the analytics
+  pages, the collection schedule and the service entry the diagnostics
+  check with no store behind any of them; its panels returned a query
+  error, which reads as a interface bug rather than a missing subsystem.
+  New <code>deploy/install-metrics-store.sh</code>, called by the installer, by
+  <strong>both</strong> update paths in the privileged runner, and by
+  <code>satom execute reinstall metrics-store</code>. It is symmetric across an HA
+  pair without any node reaching across another: the standby's reconciler
+  enqueues rather than updating itself, so every node runs its own runner
+  and repairs its own node-local artefacts. It can never abort an update —
+  on an isolated network the download always fails, and making that fatal
+  would trade a missing optional subsystem for an un-updatable product —
+  and it arms the service only when the capability was genuinely absent, so
+  a deliberate stop from Settings → General is not undone by the next
+  update. <code>satom diagnose install</code> now grades the binary against its
+  anchored digest and prints the service's runtime state without grading
+  it. The digest gains a single home in <code>deploy/metrics-store.env</code>, pinned
+  by test to the four shell files that must keep literal copies.</p>
+</li>
+<li>
 <p><strong>Start, stop and restart this node's services from the console.</strong>
   Settings → General grows a <strong>Services</strong> card covering the web app, the
   scheduler, the reconciler, the metrics store, the alert / certificate /

@@ -239,6 +239,8 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
                run=e.reinstall_cli, needs_root=True),
             _n("runner", "Refresh the root-owned copy of the privileged update runner.",
                run=u.reinstall_runner, needs_root=True),
+            _n("metrics-store", "Install or re-assert the node-local metrics store (VictoriaMetrics).",
+               run=e.reinstall_metrics_store, needs_root=True),
         ),
         _group("trust", "Public keys this node accepts update packages from.",
             _n("add-key", "Install a signing public key into the trust store.",

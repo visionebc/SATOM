@@ -93,6 +93,32 @@
 
   function esc(s){ var d=document.createElement('div'); d.textContent = s==null?'':String(s); return d.innerHTML; }
 
+  function fmtMs(ms){
+    if (ms == null) return '';
+    return ms < 1000 ? (ms + ' ms') : ((ms/1000).toFixed(ms < 10000 ? 1 : 0) + ' s');
+  }
+  function fmtNum(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  // A reply's cost line. `total_tokens === null` means the PROVIDER did not
+  // report usage -- several OpenAI-compatible gateways omit it. That is said
+  // out loud rather than printed as "0 tokens", which would be a number this
+  // product never measured and would read as a bug in the counter.
+  function msgMeta(m){
+    var bits = [m.role === 'user' ? 'You' : 'Advisor'];
+    if (m.redacted) bits.push('redacted before sending');
+    if (m.role === 'assistant'){
+      if (m.duration_ms != null) bits.push(fmtMs(m.duration_ms));
+      if (m.total_tokens == null) bits.push('tokens not reported');
+      else bits.push(fmtNum(m.total_tokens) + ' tokens (' +
+                     fmtNum(m.prompt_tokens || 0) + ' in / ' +
+                     fmtNum(m.completion_tokens || 0) + ' out)');
+      var tc = (m.tool_calls || []).length;
+      if (tc) bits.push(tc + (tc === 1 ? ' tool call' : ' tool calls') + ': ' +
+                        (m.tool_calls || []).map(function(t){
+                          return t.tool + (t.ok === false ? ' (failed)' : ''); }).join(', '));
+    }
+    return bits.join(' · ');
+  }
+
   function renderThread(data){
     var thread = document.getElementById('adv-thread');
     thread.innerHTML = '';
@@ -105,7 +131,7 @@
       div.appendChild(bubble);
       var meta = document.createElement('div');
       meta.className = 'meta';
-      meta.textContent = (m.role === 'user' ? 'You' : 'Advisor') + (m.redacted ? ' · redacted before sending' : '');
+      meta.textContent = msgMeta(m);
       div.appendChild(meta);
       thread.appendChild(div);
     });

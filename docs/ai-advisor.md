@@ -104,6 +104,106 @@ globally"*. Two mitigations, both load-bearing:
    appliance without a human explicitly applying a validated draft through
    SATOM's own form.
 
+## Mode C in practice — the tool loop
+
+The catalog is not a menu the operator picks from. When tools are on, the
+model is told what exists and may ask for one mid-answer; SATOM runs it and
+hands back the result, and the model continues. That exchange is what turns
+"paste me the policy and I will look at it" into "which appliances do you
+have, and what is wrong with the one that is complaining".
+
+**How a call is expressed.** One fenced block, language `satom-tool`, holding
+`{"tool": ..., "args": {...}}` — or a list of them. This is a text protocol
+rather than each vendor's native function-calling API, and the reason is not
+laziness. The three provider kinds expose three different tool schemas and
+three different response shapes, which would fork a provider layer that is
+currently one dispatch function. Worse, the `openai` kind exists precisely to
+cover OpenAI-*compatible* gateways, and many of those do not implement tools
+at all — the feature would silently do nothing on the deployments it was
+generalised for. One fence behaves identically on all three.
+
+The cost is real and worth stating: a text fence is less reliable than a
+native tool API, because the model can malform it. That is contained rather
+than trusted. Anything that does not parse into the expected shape is treated
+as ordinary prose, so a bad block degrades into a normal reply.
+
+**The catalog** (all read-only, all served from the database and the harvest
+cache — a chat turn never touches an appliance, the same rule the rest of the
+product follows so answers still arrive with a device powered off):
+
+| tool | answers |
+|---|---|
+| `list_appliances` | what exists in this ADOM, with the `appliance_id` every other tool needs |
+| `list_server_policies` | the cached FortiWeb policies on one appliance |
+| `device_health` | the same four signals the Fleet health badge grades on |
+| `list_probes` | monitors on one appliance and their latest sample |
+| `recent_config_changes` | SoT versions for one device, newest first |
+| `sot_search` | substring search across the latest configuration snapshots |
+| `list_exceptions` | guided WAF/signature exceptions already authored |
+| `list_lua_scripts` | existing Lua scripts |
+
+`list_appliances` is not a convenience. Every other tool takes an
+`appliance_id` the model has no other way to learn, so without it the rest of
+the catalog is unreachable in practice.
+
+**Four rules make the loop safe.** Each is a way it could work and still be
+wrong:
+
+1. **A tool result is redacted before it can leave the LAN.** Redaction used
+   to cover the operator's own text and the attachments they chose. A tool
+   result is neither — the *model* asks for it and SATOM injects it. Without
+   this the model could pull hostnames and addresses out of the device cache
+   and hand them to a third party, walking around the preview the operator
+   approved. Measured on a real exchange: one `list_appliances` call carried
+   twelve internal identifiers that the redaction pass removed.
+2. **A tool result is untrusted input.** It is device data, and a policy or
+   exception name can carry text an attacker chose when they tripped the
+   block being investigated. It gets the same delimiter a pasted attachment
+   gets.
+3. **The loop is capped**, and an oversized result says so in band. A model
+   that keeps re-asking one tool would otherwise turn a single question into
+   unbounded spend on a shared GPU host; a silently clipped list is
+   indistinguishable from a short one, and the model would state a wrong
+   total with confidence.
+4. **Tools are advertised only when they are enabled.** Naming a tool that
+   `call_tool` would refuse trains the model to emit blocks that go nowhere,
+   and the operator reads a reply citing data the model never received.
+
+Which tools ran is recorded on the reply itself and shown under it, because
+an operator reading a claim about their fleet needs to know where it came
+from — including tools that *failed*, which are kept rather than dropped so
+the answer never looks better sourced than it was.
+
+## What a call costs, and the ledger
+
+Every reply carries its own response time and token count, and every provider
+call — local Ollama included, failures included — writes a row to
+`advisor_request_log`, readable at `/advisor/usage`.
+
+Three details are load-bearing:
+
+- **The duration covers the whole exchange**, tool round-trips included,
+  because that whole span is what the operator sat and waited for. Timing
+  only the final leg would report three seconds for a forty-second answer.
+- **Tokens are `NULL`, not `0`, when the provider did not report usage.**
+  Several OpenAI-compatible gateways omit the `usage` block entirely.
+  Printing a confident "0 tokens" for a real exchange publishes a number the
+  product never measured, and reads as a broken counter rather than a silent
+  provider. The interface says *tokens not reported*. When rounds disagree —
+  the realistic case behind a gateway — the reported ones are summed and the
+  silent ones contribute nothing.
+- **A failed call still leaves a row.** A provider timeout that vanishes is
+  the failure nobody finds: the operator sees an error and the ledger shows
+  the call never happened.
+
+The request log is deliberately a *second* table alongside the export log
+rather than a widened version of it. The export log answers a compliance
+question — did data leave the LAN? — and every row in it is an export. Fold
+local calls in and a reviewer scanning that table reads LAN-only traffic as
+exports, distinguishable only by a column they must remember to filter on.
+The export log stays the strict subset; the request log is the superset.
+Neither can drift, because both are written from the same measurement.
+
 ## The write boundary (mode D)
 
 This is the part that makes the rest of the design safe to relax about, and

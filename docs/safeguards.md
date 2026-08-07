@@ -831,6 +831,22 @@ Rule: an animation may change *how* content arrives, never *whether* it does.
 
 ### Verifying the guards are armed
 
+### The advisor tool loop (34, 34b)
+
+```sh
+# the loop must actually be reachable from the chat path, not just over HTTP
+grep -c 'extract_tool_calls' app/services/advisor.py     # >= 2: parser + caller
+
+# every guard, by mutation -- each of these must turn the suite red
+python3 -m pytest tests/test_advisor.py -q                # baseline: green
+```
+
+Redaction of tool output is the one to check by hand after any change to the
+send path: point a conversation at an external provider, ask a question that
+provokes a tool call, and confirm the request log's `redaction_count` is
+non-zero. A zero there on an exchange that ran tools means device data
+reached the provider verbatim.
+
 ### The installer does not reload nginx it just started
 
     grep -nE '^[[:space:]]*systemctl[[:space:]]+reload[[:space:]]+nginx' \
@@ -3823,6 +3839,54 @@ traversing id turned an admin status reader into "read any `.json` this account
 can read". The check now lives where the path is assembled, not in each caller
 -- validating per caller leaves the next caller to remember.
 
+
+## 34. A model that can fetch is a model that can exfiltrate
+
+The advisor's read-only tools shipped as a set of functions with nothing that
+invoked them: the catalog was reachable over HTTP and `call_tool` was never
+called from the chat path, so the model could not use a tool no matter what
+it emitted. Wiring the loop is what makes the mode real — and it moves the
+data boundary, because until then everything sent to a provider was chosen by
+a human.
+
+Once the *model* can pull data mid-conversation, three properties that used
+to be satisfied by the interface have to be enforced in the loop:
+
+- **Redaction follows the data, not the author.** Sanitising the operator's
+  message and their attachments is not sanitising the request when a third
+  path exists that neither of them controls. Tool output is redacted on the
+  same terms before it reaches an external provider.
+- **Untrusted stays untrusted through indirection.** Device data does not
+  become trustworthy by arriving via a tool call instead of a paste.
+- **Bounded by construction, not by good behaviour.** Round count and result
+  size are capped in the loop, and truncation is announced in band so a
+  clipped list is not read as a short one.
+
+And the capability is only advertised when it is switched on. A catalog
+offered to the model while `call_tool` would refuse it produces replies that
+cite data the model never received — worse than no tools, because the answer
+looks sourced.
+
+## 34b. Zero is a measurement; silence is not
+
+Response time and token cost are recorded per reply and per call. The rule
+that keeps them honest is that **"the provider did not report this" is stored
+as `NULL` and never as `0`**. Several OpenAI-compatible gateways omit the
+usage block; coercing that to zero puts a number on the operator's screen
+that nothing measured, and it reads as a broken counter rather than a silent
+provider. The distinction has to hold in both directions — a provider that
+genuinely reports zero must not be laundered into "not reported" — or it is
+decorative.
+
+Two corollaries:
+
+- **Every call is logged, not every export.** The export log answers a
+  compliance question and every row in it is an export; the request log
+  answers a cost question that a LAN-only deployment still has. They are
+  separate tables written from the same measurement, so neither can drift and
+  neither misrepresents the other.
+- **A failed call leaves a row.** A provider timeout with no trace is the
+  failure nobody finds.
 
 ## Verifying the guards are armed
 

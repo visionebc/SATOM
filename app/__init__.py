@@ -1255,6 +1255,15 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('reviewed_at', 'DATETIME'),
                 ('product', "VARCHAR(32) DEFAULT 'fortiweb'"),
             ],
+            # Advisor per-message telemetry. NULLABLE with NO default on
+            # purpose: every row that predates the feature keeps NULL, which
+            # reads as "never measured" rather than a fabricated 0 ms / 0
+            # tokens for exchanges the product never timed.
+            'advisor_messages': [
+                ('duration_ms', 'INTEGER'),
+                ('prompt_tokens', 'INTEGER'),
+                ('completion_tokens', 'INTEGER'),
+            ],
             'users': [
                 ('profile_id', 'INTEGER'),
                 ('auth_source', "VARCHAR(16) DEFAULT 'local'"),

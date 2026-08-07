@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 1.3.3 — SATOM</title>
-<meta name="description" content="Released on 2026-08-04 — nginx came up, then the installer killed it (openSUSE) · 5 entries.">
+<title>Version 1.7.1 — SATOM</title>
+<meta name="description" content="Released on 2026-08-07 — Fixed · Added · 5 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 1.3.3 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-08-04 — nginx came up, then the installer killed it (openSUSE) · 5 entries.</p>
+  <h1>Version 1.7.1 <span class="rel-badge rel-now">current release</span></h1>
+  <p class="sub">Released on 2026-08-07 — Fixed · Added · 5 entries.</p>
 </header>
 
 <section class="wrap">
@@ -62,7 +62,7 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
-      <a class="rel-nav-item" href="v1.7.1.html" data-rel-version="1.7.1">
+      <a class="rel-nav-item is-active" href="v1.7.1.html" data-rel-version="1.7.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.7.1</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
         <span class="rel-nav-meta">2026-08-07 · Fixed · Added · 5 entries</span>
         <ul class="rel-leads"><li>The sealed recovery envelope was unreachable by every mechanism that carries it</li><li>diagnose recovery could never report ok on a correctly sealed node</li><li>Two CLI commands crashed formatting their own success</li><li class="rel-more">… and 2 more</li></ul>
@@ -102,7 +102,7 @@
         <span class="rel-nav-meta">2026-08-04 · The offline bundles never carried git · 3 entries</span>
         <ul class="rel-leads"><li>git is now a required package on every family</li><li>satom diagnose git names the missing binary</li><li class="rel-more">… and 1 more</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v1.3.3.html" data-rel-version="1.3.3">
+      <a class="rel-nav-item" href="v1.3.3.html" data-rel-version="1.3.3">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.3.3</span></span>
         <span class="rel-nav-meta">2026-08-04 · nginx came up, then the installer killed it (openSUSE) · 5 entries</span>
         <ul class="rel-leads"><li>The installer reloaded nginx it had just started</li><li>The failure hid the one instruction that mattered</li><li>satom diagnose nginx warned forever on every standalone install</li><li class="rel-more">… and 2 more</li></ul>
@@ -160,52 +160,57 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="nginx-came-up-then-the-installer-killed-it-opensuse">nginx came up, then the installer killed it (openSUSE)</h3>
-<p>Found the way the last three installer defects were found: by installing on a
-blank machine. Two identical openSUSE Leap 15.6 nodes, same release, same
-answers -- the online one exited <strong>1</strong>, the offline one exited <strong>0</strong>. A 38 ms
-race, so v1.3.2 passing its own validation proved nothing. Rules in
-<a href="safeguards.html">safeguards</a> section 11.</p>
+<p>Recovery-custody fix. <strong>1.7.0 shipped the sealed envelope in a state that could
+not work</strong>: the seal was written by root and read by the service account, so it
+reached neither the peer nor any bundle while <code>diagnose recovery</code> reported the
+durability problem solved. Anyone who sealed on 1.7.0 should re-run
+<code>satom execute seal recovery</code> on the primary and confirm the check reports the
+envelope as reachable. 1.7.0 stays published; this entry is the public record
+that it carries the defect.</p>
+<h3 id="fixed">Fixed</h3>
 <ul>
-<li><strong>The installer reloaded nginx it had just started.</strong>
-  <code>systemctl enable --now nginx; systemctl reload nginx</code> on one line. openSUSE
-  ships <code>nginx.service</code> as <code>Type=simple</code> (<code>daemon off;</code>) with
-  <code>ExecReload=/bin/kill -s HUP $MAINPID</code>, so systemd reports the unit started
-  before nginx has written <code>/run/nginx.pid</code>; the reload resolved <code>$MAINPID</code> to
-  nothing, <code>kill</code> exited 2 and systemd tore down the whole service. Debian and
-  RHEL use forking units with <code>PIDFile=</code> and never see it. The reload is gone;
-  the start is now guarded with <code>|| die</code> and followed by a bounded poll on
-  <code>is-active</code> + a non-empty pid file + an accepted TCP connection.</li>
-<li><strong>The failure hid the one instruction that mattered.</strong> Being the last command
-  on the line, its non-zero status killed the script under <code>set -e</code> before step
-  7 -- so a correctly installed system reported failure and never printed the
-  banner telling the operator to run <code>satom execute seed actions</code>.</li>
-<li><strong><code>satom diagnose nginx</code> warned forever on every standalone install.</strong> It
-  probed the :8443 node-to-node channel unconditionally; a lone node has no
-  peer. The row is still printed as <code>n/a - no peer configured (standalone)</code>,
-  and a node that does have a peer is graded exactly as before. Same chronic
-  false positive already removed from <code>get system health</code> and from the CLI
-  status colouring.</li>
-<li><strong>A success line printed <code>command not found</code>.</strong> The installer runs with the
-  PATH it inherits from container boot -- <code>/sbin:/bin:/usr/sbin:/usr/bin</code>, with
-  no <code>/usr/local/bin</code>, which is where <code>lego</code> lands. <code>$(lego --version)</code> inside
-  the text of the success message expanded to
-  <code>install-satom.sh: line 1107: lego: command not found</code>, printed <em>inside</em> the
-  green-tick line, on an install where the binary was in fact present and its
-  sha256 verified. <code>command -v lego</code> failed for the same reason, so a reinstall
-  would not detect the existing binary and would download it again. The block
-  now resolves <code>$LEGO_BIN</code> as an absolute path. Cosmetic in effect, not in
-  consequence: a success message containing <code>command not found</code> teaches the
-  operator to ignore the messages, and then the one that matters is ignored too.</li>
-<li><strong><code>Context.role</code> could never return <code>standalone</code>, though its docstring said
-  it could.</strong> It comes from <code>pg_is_in_recovery()</code>, so a standalone node reports
-  <code>primary</code>. The first version of the fix above gated on that value and
-  therefore did nothing -- caught by installing, not by testing, because the
-  tests encoded the same wrong assumption. Probe selection now asks the
-  question it means (is a peer configured in <code>data/ha_nodes.json</code>?), and the
-  docstring no longer promises a value the property cannot produce.</li>
+<li><strong>The sealed recovery envelope was unreachable by every mechanism that
+  carries it.</strong> <code>satom execute seal recovery</code> runs as root and wrote
+  <code>data/recovery/</code> as <code>root:root</code>, while the HA datasync and the backup
+  writer both read as the service account: the envelope existed, was
+  cryptographically sound, and reached neither the peer nor any bundle —
+  and <code>diagnose recovery</code> reported the durability problem solved. Sealing
+  now hands the envelope to the tree owner (derived from the app root,
+  never a hardcoded account name) before publishing it, and reachability
+  is reported as its own fact. An unreachable envelope is a <strong>critical</strong>
+  finding, deliberately worse than an honest "not sealed".</li>
+<li><strong><code>diagnose recovery</code> could never report ok on a correctly sealed node.</strong>
+  A live, reachable, current seal now satisfies the "never exported"
+  finding for the kind it covers — a stale, unreachable, or unreadable
+  seal does not, and an unevaluable one stays noisy. The <code>sealed envelope</code>
+  row is printed next to the <code>exported</code> rows so a quiet check is not an
+  unexplained one.</li>
+<li><strong>Two CLI commands crashed formatting their own success.</strong>
+  <code>Result.rows()</code> takes the heading first; <code>seal recovery</code> wrote the
+  envelope and then printed <code>[FAIL]</code>, and the same unexploded bug sat in
+  <code>reset theme</code> — the anti-lockout command. A guard now walks the AST of
+  every CLI module rather than the two known call sites.</li>
 </ul>
-<p class="rel-prevnext"><a href="v1.3.4.html">← Version 1.3.4</a> · <a href="v1.3.2.html">Version 1.3.2 →</a></p>
+<h3 id="added">Added</h3>
+<ul>
+<li><strong>The operator manual now documents recovery custody.</strong> 1.7.0 shipped two CLI
+  verbs, a diagnostic and a passphrase the operator must store outside the fleet,
+  and <code>docs/user-guide.md</code> did not mention any of it. A capability nobody is told
+  about is a capability nobody uses; a passphrase nobody is told to write down is
+  one that is lost the first time it matters. §11 now states the fact that makes
+  the envelope necessary — a bundle restored onto a rebuilt node is a database of
+  unreadable secrets — plus where the passphrase comes from, why sealing belongs
+  on the primary, and the three verbs. §32 gains the unreachable-envelope symptom.</li>
+<li><strong><code>tests/test_manual_recovery.py</code></strong> — the manual must carry those facts, and
+  must not hand-type a CLI command count. §20 claimed "94 commands in 34 groups"
+  while the generated reference said 98 in 36: a number correct for exactly one
+  release, ageing the same way the footer carried <code>v1.0</code> through four. The fix is
+  not a better number but no number — the section points at <code>satom show tree</code> and
+  the generated <code>docs/cli.md</code>, neither of which can drift. A counterweight test
+  keeps the count in the generated document, so the rule cannot be satisfied by
+  deleting it everywhere.</li>
+</ul>
+<p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v1.7.0.html">Version 1.7.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

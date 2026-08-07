@@ -6,6 +6,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-08-07
+
+Recovery-custody fix. **1.7.0 shipped the sealed envelope in a state that could
+not work**: the seal was written by root and read by the service account, so it
+reached neither the peer nor any bundle while `diagnose recovery` reported the
+durability problem solved. Anyone who sealed on 1.7.0 should re-run
+`satom execute seal recovery` on the primary and confirm the check reports the
+envelope as reachable. 1.7.0 stays published; this entry is the public record
+that it carries the defect.
+
 ### Fixed
 
 - **The sealed recovery envelope was unreachable by every mechanism that
@@ -29,6 +39,24 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   envelope and then printed `[FAIL]`, and the same unexploded bug sat in
   `reset theme` — the anti-lockout command. A guard now walks the AST of
   every CLI module rather than the two known call sites.
+
+### Added
+- **The operator manual now documents recovery custody.** 1.7.0 shipped two CLI
+  verbs, a diagnostic and a passphrase the operator must store outside the fleet,
+  and `docs/user-guide.md` did not mention any of it. A capability nobody is told
+  about is a capability nobody uses; a passphrase nobody is told to write down is
+  one that is lost the first time it matters. §11 now states the fact that makes
+  the envelope necessary — a bundle restored onto a rebuilt node is a database of
+  unreadable secrets — plus where the passphrase comes from, why sealing belongs
+  on the primary, and the three verbs. §32 gains the unreachable-envelope symptom.
+- **`tests/test_manual_recovery.py`** — the manual must carry those facts, and
+  must not hand-type a CLI command count. §20 claimed "94 commands in 34 groups"
+  while the generated reference said 98 in 36: a number correct for exactly one
+  release, ageing the same way the footer carried `v1.0` through four. The fix is
+  not a better number but no number — the section points at `satom show tree` and
+  the generated `docs/cli.md`, neither of which can drift. A counterweight test
+  keeps the count in the generated document, so the rule cannot be satisfied by
+  deleting it everywhere.
 
 ## [1.7.0] - 2026-08-07
 

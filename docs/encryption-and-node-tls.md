@@ -25,15 +25,67 @@ per-channel in Monitoring.
 
 `/opt/satom/pki/` on each node:
 
-- `internal-ca/` — the internal CA (`ca.crt` + `ca.key`). **Only the primary holds
-  `ca.key`** — it is the sole issuer. The standby has `ca.crt` only.
+- `internal-ca/` — the internal CA (`ca.crt` + `ca.key`). **Both nodes are meant to
+  hold the full pair.** The installer's node-join step writes `ca.key` onto a
+  joining node from the **cluster join key** (`installers/install-satom.sh`), so a
+  correctly joined secondary is an issuer too.
 - `node/` — the node's inter-node leaf (`serverAuth`+`clientAuth`, signed by the
   internal CA). Reused as the Postgres server/client cert for replication mTLS.
-- `public/` — the cert nginx serves on `:8443` (`server.crt` [+chain] + `server.key`)
-  plus `meta.json` (`source`: `bootstrap` | `imported` | `issued`).
+  **Per node, forever.**
+- `public/` — the cert nginx serves on `:443`/`:8443` (`server.crt` [+chain] +
+  `server.key`) plus `meta.json` (`source`: `bootstrap` | `imported` | `issued`).
+  **Shared between nodes** when — and only when — it is `imported`, via
+  `data/pki-shared/` (below).
 
-`pki/` is outside `data/`, so `satom-ha-datasync` never replicates it (each node must
-serve its own hostname's cert).
+### Why these three do NOT share one rule
+
+This is the part that keeps rotting, so here is the reason for each, not just the
+rule. They differ because they answer three different questions:
+
+| Artefact | Answers | Rule | Why |
+|---|---|---|---|
+| `internal-ca/ca.{crt,key}` | "may I mint certificates?" | on **both** nodes, delivered by the operator-driven join key | Issuance must survive a promote. A node holding only `ca.crt` verifies fine and looks healthy, but cannot renew its own leaf and cannot take over as issuer. |
+| `node/leaf.{crt,key}` | "which node am I?" | **never leaves its node** | Its SAN is *this* hostname AND it is the Postgres replication **client** cert. Copying it to the peer breaks `clientcert=verify-ca` and produces a hostname mismatch — it is an identity, not a configuration. |
+| `public/server.{crt,key}` | "what do browsers see?" | **shared, if `imported`** | Both nodes answer for names under one public certificate (the fleet wildcard), so keeping two copies in sync by hand was pure toil. But a **CA-issued** cert is per node by construction — its SAN is that node's name — so sharing it would be the leaf mistake all over again. Hence: imported only. |
+
+`pki/` itself is outside `data/`, so `satom-ha-datasync` never replicates it and it
+is never in a git push. The **served** cert is shared through `data/` instead, which
+is exactly the tree the datasync (and the backup bundles) carry.
+
+### The shared slot — `data/pki-shared/`
+
+`cert_service.publish_shared_cert()` copies the currently-served
+`server.crt` / `server.key` / `meta.json` into `data/pki-shared/` (dir `0700`, key
+`0600`). `satom-ha-datasync` (standby pulls `data/` from the primary with
+`rsync --delete`) carries it to the peer, so publishing is meaningful on the node
+the sync reads **from**; running it on the other node is harmless but gets
+overwritten within the sync interval. `data/` is gitignored, so no private key
+reaches the repository.
+
+`cert_service.install_shared_cert()` runs on **either** node and adopts the slot.
+It is idempotent — a slot holding the bytes we already serve is a no-op with **no
+nginx reload** — and it refuses, with the reason, when:
+
+- the shared `meta.json` does not say `source: imported` (a `issued`/`bootstrap`
+  cert names one node; an unreadable meta is treated the same — fail closed);
+- the key does not match the certificate (same `validate_pem` check as import);
+- the certificate does **not cover this node's served names** (`node_hostname()`,
+  RFC 6125 matching — a `*.example` wildcard covers exactly one label). Installing
+  a non-matching certificate would make the node serve something every browser
+  rejects, immediately after the product reported the install as successful.
+
+Installation goes through the ordinary `_install()` path — `nginx -t`, automatic
+rollback to the previous cert/key if nginx refuses — so there is one, and only one,
+implementation of "activate a certificate safely".
+
+### CA custody — `cert_service.ca_custody()`
+
+Reports, per node: `has_ca_cert`, `has_ca_key`, `can_issue`, `healthy`, `state`
+(`issuer` | `trust-only` | `key-without-cert` | `absent`) and a `remedy` string.
+A node in `trust-only` is **not** reported healthy: it cannot self-renew and cannot
+become the issuer after a promote, and the remedy is to re-run the installer's
+node-join step with the cluster join key. **No code moves `ca.key` between hosts** —
+the join key is the sanctioned transport and it is operator-driven on purpose.
 
 ## The service certificate — Settings → **Node TLS** (admin)
 
@@ -45,13 +97,34 @@ serve its own hostname's cert).
   nginx is `-t`-tested and **rolled back automatically** if the new cert is bad.
   Import is *import-only* — expiry is tracked and alerted, but not auto-renewed
   (we didn't issue it).
-- **Issue from the internal CA** (primary only — it holds `ca.key`): mints a leaf
-  for the node hostname, installs it, `source=issued`.
+- **Issue from the internal CA** (any node that holds `ca.key` — see *CA custody*
+  above; that is meant to be both of them): mints a leaf for the node hostname,
+  installs it, `source=issued`. Issued certs are **per node** and are never
+  published to `data/pki-shared/`.
+- **Share** an imported cert with the peer: `publish_shared_cert()` on the node the
+  datasync reads from, `install_shared_cert()` on each node. Replaces the manual
+  copy that used to keep the fleet wildcard in sync.
 - **Renew**: CA-issued certs auto-renew via `satom-cert-renew.timer` →
   `flask cert-renew` → `cert_service.renew_if_needed()` (nightly 03:30, no-op
-  until within 30 days of expiry, no-op for imported/bootstrap). The standby
-  can't self-issue; give it a cert by **import** (or mint on the primary and
-  import on the standby — done for `satom-2`).
+  until within 30 days of expiry, no-op for imported/bootstrap). A node in
+  `trust-only` custody cannot self-issue at all: fix custody (join key), or give
+  it a cert by **import** / the shared slot.
+
+### Hazard: the public wildcard renews OFF these nodes
+
+The `imported` fleet wildcard is renewed on the **edge** host, not here — nothing
+in this application can re-mint it, and `renew_if_needed()` deliberately no-ops on
+`source != issued`. So on every edge renewal the new material must be brought back:
+either the `autopull` renewal mode (SFTP from the edge, host-key pinned) or a manual
+re-import — and then **`publish_shared_cert()` again**, or the peer keeps serving
+the old certificate until it expires. `meta.json` carries this warning in its `note`
+field on purpose. Two failure modes to expect:
+
+1. **Expiry passes unnoticed** because "it renews automatically" — it does, on the
+   edge. The alert engine's cert check (T-N days) is the only thing that catches it
+   on the node side; do not silence it.
+2. **Split expiry between the nodes** — one node re-imported, the peer not. The
+   shared slot exists to remove exactly this: publish once, both nodes converge.
 
 The web process runs as **root** on each node (verified in the unit), so it writes
 `pki/public/` and reloads nginx directly — no privileged-runner hop for certs.
@@ -117,6 +190,8 @@ tile (subject/issuer/expiry/source).
   STILL OPEN (deliberate): (a) gunicorn stays on `0.0.0.0:8000` so the **edge remains a
   rollback** through the validation window (feedback_migration_policy) — bind to
   `127.0.0.1` only after the `:443` path is user-confirmed; (b) the wildcard is **not
-  auto-renewable from the node** (it renews on the edge ~every 90d) — re-copy on renewal
-  or wire a node-side sync. Internal-CA issue/auto-renew still exists for a self-managed
-  cert if the fleet wildcard is ever not desired.
+  auto-renewable from the node** (it renews on the edge ~every 90d) — see *Hazard: the
+  public wildcard renews off these nodes* above. The node→node half of that copy is no
+  longer manual: `publish_shared_cert()` + `install_shared_cert()` via `data/pki-shared/`.
+  The edge→node half still needs `autopull` or a re-import. Internal-CA issue/auto-renew
+  still exists for a self-managed cert if the fleet wildcard is ever not desired.

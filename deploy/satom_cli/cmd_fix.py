@@ -902,6 +902,190 @@ def reset_theme(ctx, args):
     return r
 
 
+_SEAL_CODE = (
+    "import json, os\n"
+    "from app import create_app\n"
+    "from app.services import recovery_seal as rs\n"
+    "a=create_app()\n"
+    "with a.app_context():\n"
+    "    h = rs.seal(os.environ['SATOM_SEAL_PASSPHRASE'], by=%r)\n"
+    "    print(json.dumps({'header': h, 'state': rs.seal_state()}))\n"
+)
+
+_UNSEAL_CODE = (
+    "import json, os\n"
+    "from app import create_app\n"
+    "from app.services import recovery_seal as rs\n"
+    "a=create_app()\n"
+    "with a.app_context():\n"
+    "    print(json.dumps({'material': rs.unseal(os.environ['SATOM_SEAL_PASSPHRASE']),\n"
+    "                      'state': rs.seal_state()}))\n"
+)
+
+#: Env var an installer or automation uses to supply the passphrase. Read from
+#: the environment rather than an argument because a --passphrase flag lands in
+#: the shell history, in ps output and in the sudo log -- three copies of the
+#: one secret whose whole purpose is to have exactly one.
+SEAL_ENV = "SATOM_SEAL_PASSPHRASE"
+
+
+def seal_recovery(ctx, args):
+    """Seal FERNET_KEY and the internal CA into an envelope only a passphrase
+    opens, and put that envelope where every copy mechanism already goes.
+
+    ``execute export recovery-key`` hands the operator the raw secrets and asks
+    them to keep a copy somewhere safe. That works exactly as well as the
+    operator's filing, which is why ``diagnose recovery`` so often reports the
+    export has never happened.
+
+    This is the durable half. The envelope lands under ``data/`` -- the one
+    directory the HA datasync AND the backup bundle both carry -- so it reaches
+    the peer within five minutes and rides off-box in every bundle from then on.
+    That is only safe because it is sealed: whoever steals a bundle holds
+    ciphertext, while the operator holding a passphrase and nothing else can
+    rebuild the installation from ANY copy.
+
+    The passphrase is never stored, never logged, and never sent anywhere. If
+    it is lost the envelope is scrap -- which is the property that makes the
+    envelope safe to replicate in the first place.
+    """
+    supplied = os.environ.get(SEAL_ENV) or ""
+    if not _yes(args):
+        r = Result("warn", "seal recovery material", exit_code=2)
+        r.lines("would", [
+            "wrap FERNET_KEY and the internal CA key in an encrypted envelope",
+            "write it to data/recovery/seal.json (0600)",
+            "replicate it to the peer via satom-ha-datasync (<=5 min)",
+            "include it in every backup bundle from now on",
+            "",
+            ("use the passphrase from $%s" % SEAL_ENV) if supplied
+            else "GENERATE a passphrase and print it ONCE",
+            "",
+            "  sudo satom execute seal recovery --yes",
+        ])
+        r.note("Re-run this after rotating FERNET_KEY or re-issuing the CA: "
+               "'diagnose recovery' reports an envelope holding an old key as "
+               "stale, because restoring from it would not open this node.")
+        return r
+
+    generated = ""
+    passphrase = supplied
+    if not passphrase:
+        rc0, out0, err0 = _app_call(
+            ctx, "from app.services import recovery_seal as rs\n"
+                 "print(rs.generate_passphrase())\n", timeout=60)
+        if rc0 != 0:
+            r = Result("bad", "could not generate a passphrase", exit_code=4)
+            r.lines("error", (err0 or out0).splitlines()[-8:])
+            return r
+        generated = passphrase = (out0 or "").strip().splitlines()[-1].strip()
+
+    who = ""
+    try:
+        who = os.environ.get("SUDO_USER") or getpass.getuser()
+    except Exception:  # noqa: BLE001
+        who = "unknown"
+
+    # Environment, never argv: see _SEAL_CODE. Scoped to this process so it
+    # is inherited by the child and by nothing else.
+    os.environ[SEAL_ENV] = passphrase
+    try:
+        rc, out, err = _app_call(ctx, _SEAL_CODE % who, timeout=180)
+    finally:
+        os.environ.pop(SEAL_ENV, None)
+    if rc != 0:
+        r = Result("bad", "could not seal the recovery material", exit_code=4)
+        r.lines("error", (err or out).splitlines()[-12:])
+        return r
+    try:
+        res = json.loads(out.strip().splitlines()[-1])
+    except Exception:  # noqa: BLE001
+        r = Result("bad", "unexpected output from the app", exit_code=4)
+        r.lines("output", (out or err).splitlines()[-12:])
+        return r
+
+    st = res.get("state") or {}
+    r = Result("ok", "recovery material sealed (%s)"
+               % ", ".join(st.get("kinds") or []))
+    r.rows([("envelope", st.get("path", "")),
+            ("sealed at", st.get("at", "")),
+            ("by", st.get("by", ""))], keys="dim")
+    for kind, fpr in sorted((st.get("fingerprints") or {}).items()):
+        r.rows([("fingerprint %s" % kind, fpr)], keys="dim")
+    if generated:
+        r.lines("PASSPHRASE -- shown once, never stored, not recoverable", [
+            "", "    " + generated, "",
+            "Write it down NOW and keep it where you keep break-glass",
+            "credentials -- NOT beside the backups. Without it every copy of",
+            "this envelope is scrap, and that is exactly why the envelope is",
+            "safe to replicate to the peer and push off-box.",
+        ])
+    else:
+        r.note("Sealed with the passphrase from $%s." % SEAL_ENV)
+    r.note("The peer picks the envelope up on its next datasync (<=5 min).")
+    return r
+
+
+def unseal_recovery(ctx, args):
+    """Open the sealed envelope and print what it holds.
+
+    The disaster-recovery path: a rebuilt node whose ``.env`` has the wrong
+    FERNET_KEY restores a bundle full of columns nothing can read. The envelope
+    in that same bundle holds the right key; this is how it comes back out.
+
+    Prints. Does not write. Choosing where a secret lands stays the operator's
+    decision -- a default destination is how an uncontrolled second copy gets
+    made.
+    """
+    passphrase = os.environ.get(SEAL_ENV) or ""
+    if not _yes(args):
+        r = Result("warn", "unseal recovery material", exit_code=2)
+        r.lines("would", [
+            "open data/recovery/seal.json with the passphrase",
+            "print FERNET_KEY and the internal CA key it holds",
+            "",
+            "  %s='<passphrase>' sudo -E satom execute unseal recovery --yes"
+            % SEAL_ENV,
+        ])
+        r.note("Treat the output like a root password.")
+        return r
+    if not passphrase:
+        try:
+            passphrase = getpass.getpass("Seal passphrase: ")
+        except Exception:  # noqa: BLE001
+            passphrase = ""
+    if not passphrase:
+        r = Result("bad", "no passphrase supplied", exit_code=2)
+        r.note("Set $%s, or run this on a terminal so it can prompt."
+               % SEAL_ENV)
+        return r
+
+    os.environ[SEAL_ENV] = passphrase
+    try:
+        rc, out, err = _app_call(ctx, _UNSEAL_CODE, timeout=180)
+    finally:
+        os.environ.pop(SEAL_ENV, None)
+    if rc != 0:
+        r = Result("bad", "could not open the sealed envelope", exit_code=1)
+        r.lines("error", (err or out).splitlines()[-8:])
+        r.note("Wrong passphrase, or the envelope has been altered. These are "
+               "reported the same way on purpose.")
+        return r
+    try:
+        res = json.loads(out.strip().splitlines()[-1])
+    except Exception:  # noqa: BLE001
+        r = Result("bad", "unexpected output from the app", exit_code=4)
+        r.lines("output", (out or err).splitlines()[-12:])
+        return r
+    material = res.get("material") or {}
+    r = Result("ok", "envelope opened (%s)" % ", ".join(sorted(material)))
+    for kind in sorted(material):
+        r.lines(kind, str(material[kind]).splitlines() or [""])
+    r.note("Nothing was written. Put FERNET_KEY into .env and restart, or "
+           "place the CA under pki/internal-ca/, as the situation needs.")
+    return r
+
+
 _EXPORT_CODE = (
     "import json\n"
     "from app import create_app\n"

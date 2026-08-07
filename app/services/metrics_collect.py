@@ -23,12 +23,49 @@ Rules carried over from the probe subsystem's scars:
   carries the failures; the action must not stick permanently red.
 * Absence of data is never health: a failed collector writes
   ``satom_scrape_up 0``, it does not silently write nothing.
+
+Surviving a promote — optional peer dual-write
+----------------------------------------------
+The store is node-local and stays that way: it lives outside ``data/`` because
+satom-ha-datasync rsyncs data/ with ``--delete`` and a TSDB must never be
+rsynced under a live process, and it stays out of the backup bundle because
+~8 GB per bundle is not viable. Both of those are correct and neither is
+touched here. What they left behind was the real gap: the standby had no store
+and no collection, so a promote produced a primary with zero history AND zero
+ability to make new history.
+
+The fix is VictoriaMetrics' own HA shape — two independent single-node stores
+fed the SAME samples — implemented at the COLLECTION layer: when a peer is
+configured, every scrape is written to the local store and then mirrored to the
+peer's. Consequences that are deliberate, not incidental:
+
+* **OFF by default.** ``metrics.peer_dual_write`` must be switched on. A node
+  with no peer performs exactly the work it performed before, writes no state
+  file and raises no warning.
+* **The mirror never costs the original.** A failed peer write cannot turn a
+  good local scrape into a failed one. Local collection is the primary duty;
+  degrading it to keep a mirror in step would trade the thing that works for
+  the thing that is optional.
+* **But a failing mirror is loud.** Consecutive failures and the time of the
+  last success are journalled and surfaced. Silence here would recreate the bug
+  this product keeps hitting, where a probe that cannot answer looks healthy.
+* **The peer write is authenticated, never an open port.** It rides
+  ``node_security.peer_post`` (HTTPS :8443 + ``X-FM-Node-Key``). The store
+  itself has no authentication at all — the loopback bind is the only thing
+  protecting the whole fleet's telemetry — so it is never rebound, and nothing
+  here names its address.
+* **"no peer" and "peer down" are different facts** and never collapse into one
+  state; so does "the transport is not deployed on this node yet".
 """
 from __future__ import annotations
 
+import json
+import os
 import time
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from . import vm_store
 
@@ -743,6 +780,386 @@ assert set(_RUNNERS) == set(COLLECTORS), (
     "collector/runner mismatch: %s" % sorted(set(_RUNNERS) ^ set(COLLECTORS)))
 
 
+# ── HA: optional peer dual-write ─────────────────────────────────────────────
+
+#: Switch. Absent/empty means OFF — a single-node install must never opt in by
+#: accident, because a peer write it did not ask for is pure latency plus a
+#: permanent "degraded" badge.
+K_DUAL_WRITE = "metrics.peer_dual_write"
+#: Optional explicit peer address. Unset -> derived from the HA node registry,
+#: which is the same source ``infra_health`` and ``cluster`` already trust.
+K_PEER_HOST = "metrics.peer_host"
+
+#: Receiving endpoints on the OTHER node (both identity-key gated).
+PEER_INGEST_PATH = "/monitoring/collection/peer/ingest"
+PEER_STORE_PATH = "/monitoring/collection/peer/store"
+
+#: Short: a slow peer must not stretch the scrape window. The local write has
+#: already happened by the time we get here, so giving up early loses at most
+#: one sample on the mirror.
+PEER_TIMEOUT = 5.0
+PEER_PROBE_TIMEOUT = 2.5
+
+# Peer-write states. Every one of these is a DIFFERENT operator action, which
+# is precisely why they may not be folded into a boolean:
+PEER_OFF = "off"                    # not switched on — not a fault
+PEER_UNCONFIGURED = "unconfigured"  # switched on, but no peer address known
+PEER_UNAVAILABLE = "unavailable"    # node_security.peer_post missing HERE
+PEER_PENDING = "pending"            # configured, nothing attempted yet
+PEER_NOTHING = "nothing"            # attempted with an empty scrape
+PEER_UNREACHABLE = "unreachable"    # peer did not answer
+PEER_REJECTED = "rejected"          # peer answered, and said no
+PEER_OK = "ok"
+
+# Per-node store states for the Collection page.
+STORE_REACHABLE = "reachable"
+STORE_UNREACHABLE = "unreachable"
+STORE_NOT_CONFIGURED = "not-configured"
+STORE_UNAUTHORIZED = "unauthorized"
+STORE_ERROR = "error"
+
+_TRUE = ("1", "true", "on", "yes", "enabled")
+
+# Node-local, outside data/ — same reasoning as the renewal journal: the
+# standby's Postgres is read-only, so the node whose mirror is failing is
+# exactly the node that could not write a DB row about it, and anything under
+# data/ is erased by the rsync --delete datasync within five minutes.
+STATE_DIR = Path(os.environ.get("SATOM_STATE_DIR") or "/opt/satom/state")
+PEER_STATE_FILE = STATE_DIR / "metrics-peer.json"
+
+
+def _peer_post_fn():
+    """``node_security.peer_post`` if this node has it, else None.
+
+    Resolved at CALL time, never imported at module scope: the authenticated
+    POST channel is landing in node_security separately, and a module that
+    cannot be imported until it does would take local collection down with it
+    — the exact trade this whole feature refuses to make.
+    """
+    try:
+        from . import node_security as nsec
+    except Exception:  # noqa: BLE001 — a broken import is a missing transport
+        return None
+    fn = getattr(nsec, "peer_post", None)
+    return fn if callable(fn) else None
+
+
+def _setting(key: str, default: str = "") -> str:
+    try:
+        from . import settings_store as ss
+        return (ss.get_str(key, default) or "").strip()
+    except Exception:  # noqa: BLE001 — no app context (CLI, sidecar boot)
+        return default
+
+
+def _derived_peer_host():
+    """The other HA node's address from the node registry, or None."""
+    try:
+        from . import self_update as su
+        me = su.this_node_name()
+        for n in su.node_reports():
+            host = (n.get("host") or "").strip()
+            if n.get("name") == me or n.get("self") or not host:
+                continue
+            if host in ("127.0.0.1", "::1", "localhost"):
+                continue
+            return host
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _peer_node_name():
+    try:
+        from . import self_update as su
+        me = su.this_node_name()
+        for n in su.node_reports():
+            if n.get("name") and n.get("name") != me and not n.get("self"):
+                return n.get("name")
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def peer_config() -> dict:
+    """{enabled, host} — the two facts that decide whether a mirror exists."""
+    return {"enabled": _setting(K_DUAL_WRITE).lower() in _TRUE,
+            "host": _setting(K_PEER_HOST) or _derived_peer_host()}
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _read_state() -> dict:
+    try:
+        return json.loads(PEER_STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — absent or corrupt reads as "nothing yet"
+        return {}
+
+
+def _record(state: str, detail: str, status, host: str) -> dict:
+    """Journal ONE peer-write attempt. Never raises: a journal problem must not
+    turn a successful scrape into a failed one, nor mask the real error."""
+    ok = state == PEER_OK
+    prev = _read_state()
+    st = {
+        "state": state,
+        "status": status,
+        "detail": detail[:300],
+        "peer_host": host,
+        "last_attempt_at": _now(),
+        "last_success_at": _now() if ok else prev.get("last_success_at"),
+        "consecutive_failures": 0 if ok else int(prev.get("consecutive_failures") or 0) + 1,
+        "last_error": "" if ok else (detail[:300] or state),
+        "last_error_at": prev.get("last_error_at") if ok else _now(),
+    }
+    try:
+        PEER_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PEER_STATE_FILE.write_text(json.dumps(st), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+    return {"attempted": True, "ok": ok, "state": state, "status": status,
+            "detail": detail[:300]}
+
+
+def _status_of(res):
+    """peer_post's status code, tolerant of the shape it settles on.
+
+    ``peer_get`` returns ``(status, body, secure)``; this accepts that, a bare
+    status, or a dict — an assumption about a sibling module's return shape is
+    not worth failing a mirror over.
+    """
+    if res is None:
+        return None
+    if isinstance(res, (tuple, list)):
+        return res[0] if res else None
+    if isinstance(res, dict):
+        return res.get("status") or res.get("code")
+    if isinstance(res, int):
+        return res
+    return getattr(res, "status", None) or getattr(res, "code", None)
+
+
+def peer_write(lines) -> dict:
+    """Mirror ``lines`` into the PEER node's store. Never raises.
+
+    Returns ``{attempted, ok, state, status, detail}``. ``ok`` is None when
+    nothing was attempted — a mirror that was never asked to run is not a
+    mirror that failed, and the caller must be able to tell them apart.
+    """
+    cfg = peer_config()
+    if not cfg["enabled"]:
+        return {"attempted": False, "ok": None, "state": PEER_OFF,
+                "status": None, "detail": "dual-write disabled"}
+    host = cfg["host"]
+    if not host:
+        # Switched on with nowhere to write. NOT "unreachable": nobody is down,
+        # somebody has to type an address.
+        return {"attempted": False, "ok": None, "state": PEER_UNCONFIGURED,
+                "status": None,
+                "detail": "dual-write enabled but no peer host is configured"}
+    fn = _peer_post_fn()
+    if fn is None:
+        # The transport is missing on THIS node. Fixed by deploying code here,
+        # not by going to look at the other box.
+        return {"attempted": False, "ok": None, "state": PEER_UNAVAILABLE,
+                "status": None,
+                "detail": "node_security.peer_post is not available on this node"}
+    body = "\n".join(l for l in lines if l)
+    if not body:
+        return {"attempted": False, "ok": None, "state": PEER_NOTHING,
+                "status": None, "detail": "no samples to mirror"}
+    try:
+        res = fn(host, PEER_INGEST_PATH, body.encode("utf-8"),
+                 timeout=PEER_TIMEOUT)
+    except TypeError as exc:  # signature drift in node_security
+        return {"attempted": False, "ok": None, "state": PEER_UNAVAILABLE,
+                "status": None,
+                "detail": "peer_post signature mismatch: %s" % str(exc)[:200]}
+    except Exception as exc:  # noqa: BLE001 — a dead peer is a result
+        return _record(PEER_UNREACHABLE, str(exc)[:250], None, host)
+    status = _status_of(res)
+    if status is None:
+        return _record(PEER_UNREACHABLE, "peer did not answer", None, host)
+    try:
+        code = int(status)
+    except (TypeError, ValueError):
+        return _record(PEER_REJECTED, "unreadable status %r" % (status,), None, host)
+    if 200 <= code < 300:
+        return _record(PEER_OK, "", code, host)
+    return _record(PEER_REJECTED, "peer answered HTTP %d" % code, code, host)
+
+
+def peer_health() -> dict:
+    """Everything the Collection page needs to say whether this node's samples
+    exist in two places — and, when they do not, which of the four reasons.
+
+    ``redundant`` is True ONLY on a confirmed successful mirror. ``alarm`` is
+    True only when the node CLAIMS redundancy (dual-write on) and does not have
+    it: an off switch is not a fault, and a fresh, never-attempted mirror is not
+    a failure either.
+    """
+    cfg = peer_config()
+    st = _read_state()
+    dependency_ready = _peer_post_fn() is not None
+    if not cfg["enabled"]:
+        state = PEER_OFF
+    elif not cfg["host"]:
+        state = PEER_UNCONFIGURED
+    elif not dependency_ready:
+        state = PEER_UNAVAILABLE
+    else:
+        state = st.get("state") or PEER_PENDING
+    return {
+        "enabled": cfg["enabled"],
+        "host": cfg["host"],
+        "state": state,
+        "dependency_ready": dependency_ready,
+        "redundant": state == PEER_OK,
+        "alarm": bool(cfg["enabled"]) and state not in (PEER_OK, PEER_PENDING),
+        "consecutive_failures": int(st.get("consecutive_failures") or 0),
+        "last_success_at": st.get("last_success_at"),
+        "last_attempt_at": st.get("last_attempt_at"),
+        "last_error": st.get("last_error") or "",
+        "last_error_at": st.get("last_error_at"),
+        "detail": st.get("detail") or "",
+        "ingest_path": PEER_INGEST_PATH,
+    }
+
+
+# ── HA: per-node store report ────────────────────────────────────────────────
+
+def local_store_report() -> dict:
+    """This node's store, from the loopback client."""
+    h = vm_store.health()
+    return {"state": STORE_REACHABLE if h.get("up") else STORE_UNREACHABLE,
+            "up": bool(h.get("up")), "series": h.get("series"),
+            "url": h.get("url"), "detail": h.get("detail") or ""}
+
+
+def peer_store_report(host=None) -> dict:
+    """The PEER node's store, asked over the authenticated node channel.
+
+    ``not-configured`` (there is no second node) and ``unreachable`` (there is
+    one and it will not answer) are the two facts an operator most needs kept
+    apart here: rendered the same, a single-node install looks broken and a
+    broken pair looks single.
+    """
+    host = host or peer_config()["host"]
+    blank = {"up": False, "series": None, "url": None, "detail": "",
+             "host": host}
+    if not host:
+        return dict(blank, state=STORE_NOT_CONFIGURED,
+                    detail="no peer node is registered")
+    try:
+        from . import node_security as nsec
+        st, body, secure = nsec.peer_get(host, PEER_STORE_PATH,
+                                         timeout=PEER_PROBE_TIMEOUT)
+    except Exception as exc:  # noqa: BLE001
+        return dict(blank, state=STORE_UNREACHABLE, detail=str(exc)[:200])
+    if st is None:
+        return dict(blank, state=STORE_UNREACHABLE,
+                    detail="peer did not answer")
+    if st in (401, 403):
+        return dict(blank, state=STORE_UNAUTHORIZED,
+                    detail="peer rejected our identity key")
+    if st != 200:
+        return dict(blank, state=STORE_ERROR, detail="peer answered HTTP %s" % st)
+    try:
+        payload = json.loads(body.decode("utf-8", "replace")) or {}
+        store = payload.get("store") or {}
+    except Exception as exc:  # noqa: BLE001
+        return dict(blank, state=STORE_ERROR, detail=str(exc)[:200])
+    return {"state": STORE_REACHABLE if store.get("up") else STORE_UNREACHABLE,
+            "up": bool(store.get("up")), "series": store.get("series"),
+            "url": store.get("url"), "detail": store.get("detail") or "",
+            "host": host, "secure": secure}
+
+
+def _local_last_write():
+    """When this node last wrote a sample — from the scrape rows, not a new
+    file, so an unconfigured node still creates no state of its own."""
+    try:
+        from ..models_metrics import ScrapeTarget
+        rows = [t.last_run_at for t in ScrapeTarget.query.all() if t.last_run_at]
+        return max(rows).isoformat() if rows else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def stores_report() -> list:
+    """Per-node store state for the Collection page: is this pair ACTUALLY
+    redundant, or does it only claim to be. Does peer network I/O — serve it
+    from its own endpoint, never from a page render."""
+    try:
+        from . import self_update as su
+        me = su.this_node_name()
+    except Exception:  # noqa: BLE001
+        me = "this node"
+    host = peer_config()["host"]
+    return [
+        {"node": me, "host": None, "is_local": True,
+         "store": local_store_report(), "last_write_at": _local_last_write(),
+         "peer_write": peer_health()},
+        {"node": _peer_node_name() or "peer", "host": host, "is_local": False,
+         "store": peer_store_report(host), "last_write_at": None},
+    ]
+
+
+# ── HA: consistent hot snapshots ─────────────────────────────────────────────
+
+def _store_api(path: str, timeout: float = 60.0) -> dict:
+    """POST a VictoriaMetrics admin endpoint on the LOOPBACK store. The address
+    comes from ``vm_store.base_url()`` so this module never names it."""
+    req = urllib.request.Request(vm_store.base_url() + path, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310
+        return json.loads(r.read().decode("utf-8", "replace"))
+
+
+def snapshot_create() -> dict:
+    """Take a consistent hot snapshot of the local store (VM >= 1.148 supports
+    ``/snapshot/create``; it is a hardlink tree, so it is near-free in space
+    and instant). Never raises — a snapshot that could not be taken must SAY
+    so, because a silent 'ok' here is a backup that does not exist."""
+    try:
+        d = _store_api("/snapshot/create")
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "snapshot": None, "detail": str(exc)[:250]}
+    name = (d or {}).get("snapshot")
+    if (d or {}).get("status") == "ok" and name:
+        return {"ok": True, "snapshot": name, "detail": ""}
+    return {"ok": False, "snapshot": None, "detail": str(d)[:250]}
+
+
+def snapshot_list() -> dict:
+    """Existing snapshots. Reported, not just taken: the unit carries no
+    ``-snapshotsMaxAge``, so nothing expires them and an unwatched snapshot
+    directory is a slow disk leak."""
+    try:
+        d = _store_api("/snapshot/list")
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "snapshots": [], "detail": str(exc)[:250]}
+    return {"ok": (d or {}).get("status") == "ok",
+            "snapshots": (d or {}).get("snapshots") or [], "detail": ""}
+
+
+def snapshot_delete(name: str) -> dict:
+    """Drop one snapshot — the other half of ``snapshot_create``. Offering a
+    trigger with no way to reclaim the space would hand the operator a disk
+    leak dressed as a feature."""
+    import urllib.parse
+    if not name:
+        return {"ok": False, "detail": "no snapshot named"}
+    try:
+        d = _store_api("/snapshot/delete?" + urllib.parse.urlencode(
+            {"snapshot": name}))
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "detail": str(exc)[:250]}
+    ok = (d or {}).get("status") == "ok"
+    return {"ok": ok, "detail": "" if ok else str(d)[:250]}
+
+
 # ── execution ────────────────────────────────────────────────────────────────
 
 def run_target(target) -> dict:
@@ -768,6 +1185,16 @@ def run_target(target) -> dict:
     ing = vm_store.ingest(lines)
     if not ing["ok"]:
         ok, detail = False, (detail + " | ingest: " + ing["detail"]).strip(" |")
+    # The HA mirror. Deliberately AFTER the local write, deliberately unable to
+    # touch `ok` or `detail`, and deliberately wrapped: the peer store is the
+    # optional copy, this node's store is the duty. Its outcome is journalled
+    # and reported by peer_health() — not silently swallowed, and not allowed
+    # to mark a good scrape bad.
+    try:
+        peer = peer_write(lines)
+    except Exception as exc:  # noqa: BLE001 — belt and braces; peer_write is total
+        peer = {"attempted": True, "ok": False, "state": PEER_UNREACHABLE,
+                "status": None, "detail": str(exc)[:200]}
     ms = int((time.time() - t0) * 1000)
     target.last_run_at = datetime.utcnow()
     target.last_status = "ok" if ok else "error"
@@ -775,7 +1202,8 @@ def run_target(target) -> dict:
     target.last_series = max(0, len(lines) - 1)
     target.last_ms = ms
     db.session.commit()
-    return {"ok": ok, "series": target.last_series, "ms": ms, "detail": detail}
+    return {"ok": ok, "series": target.last_series, "ms": ms, "detail": detail,
+            "peer": peer}
 
 
 def sweep() -> dict:
@@ -808,7 +1236,12 @@ def sweep() -> dict:
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
             results = list(pool.map(_one, ids))
     n_ok = sum(1 for r in results if r["ok"])
+    # The mirror's state rides along with the sweep result so the scheduled
+    # action can report a silently-failing peer instead of a green sweep that
+    # is only half-written. Extra keys are harmless to the existing
+    # "%(ok)d/%(targets)d" summary formatting.
     return {"targets": len(due), "ok": n_ok,
             "errors": len(results) - n_ok, "created": created,
             "series": sum(r.get("series", 0) for r in results),
-            "ms": sum(r.get("ms", 0) for r in results)}
+            "ms": sum(r.get("ms", 0) for r in results),
+            "peer": peer_health()}

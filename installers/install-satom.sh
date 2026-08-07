@@ -43,7 +43,7 @@
 # ============================================================================
 set -euo pipefail
 
-VERSION="1.6.0"
+VERSION="1.7.0"
 APP_DIR="/opt/satom"
 ACME_WEBROOT="/var/www/acme"
 LEGO_VERSION="5.2.2"
@@ -1351,6 +1351,39 @@ chown root:"$APP_USER" "$APP_DIR/.env"
 chmod 640 "$APP_DIR/.env"
 ok ".env escrito (640 root:${APP_USER} — legible por los timers)"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# [SATOM-SEAL-PASSPHRASE] Custodia fuera del nodo, sellada.
+#
+# FERNET_KEY y la clave de la CA interna no las lleva NINGUNA copia automática:
+# git no (están fuera del árbol / en .gitignore), el datasync no (sólo lleva
+# data/) y el bundle no (a propósito: un bundle se retiene, se replica al peer
+# y se empuja por SFTP con una contraseña que vive en una columna que
+# FERNET_KEY abre — en claro ahí, un solo fichero robado es toda la finca).
+#
+# El sobre SELLADO invierte esa asimetría: viaja en data/, o sea lo llevan el
+# datasync Y el bundle, y quien robe una copia se lleva ciphertext. El operador,
+# con sólo una passphrase, reconstruye la instalación desde CUALQUIER copia.
+#
+# Se crea en la INSTALACIÓN, no sólo al unir el clúster: un nodo standalone
+# nunca hace join y es justamente el que no tiene ninguna otra copia.
+# El secondary la HEREDA por la join key para que los dos nodos abran el mismo
+# sobre. Eso no añade una clase de secreto nueva a la join key — ya lleva
+# fernet_key y ca_key EN CLARO, así que la join key sigue siendo el artefacto
+# más peligroso del proceso y por eso se borra en cuanto se usa.
+# ─────────────────────────────────────────────────────────────────────────────
+if [ "$ROLE" = "secondary" ]; then
+    SEAL_PASS=$(jget seal_passphrase)
+else
+    SEAL_PASS=$("$APP_DIR/venv/bin/python" -c \
+        "import sys; sys.path.insert(0,'$APP_DIR'); from app.services.recovery_seal import generate_passphrase; print(generate_passphrase())" \
+        2>>"$INSTALL_LOG") || SEAL_PASS=""
+fi
+if [ -n "$SEAL_PASS" ]; then
+    ok "Passphrase de sellado preparada (se muestra al final, no se guarda)"
+else
+    warn "No se pudo preparar la passphrase de sellado — sella a mano con: sudo satom execute seal recovery --yes"
+fi
+
 # ---- pg_hba: la conexion TCP local de la app ----------------------------
 # NO se puede confiar en el default de la distro: Debian trae scram-sha-256
 # para 127.0.0.1 pero openSUSE/SLES trae *ident*, que rechaza al usuario de
@@ -1860,6 +1893,21 @@ for i in $(seq 1 30); do
 done
 if [ "$HEALTH" = ok ]; then
     ok "healthz responde 200 — instalación COMPLETA"
+    # [SATOM-SEAL-AT-INSTALL] Sellar sólo con la app sana: sellar antes daría un
+    # sobre construido con una configuración que todavía no se ha demostrado
+    # que arranque, y un sobre que no abre nada es peor que no tener sobre.
+    if [ -n "$SEAL_PASS" ]; then
+        # stdout+stderr go to /dev/null, NOT to the install log. The log is a
+        # file that stays on disk beside the node; a traceback from this call
+        # is the one place a passphrase could land in it. The outcome is
+        # reported below either way, so nothing diagnostic is lost.
+        if SATOM_SEAL_PASSPHRASE="$SEAL_PASS" /usr/local/sbin/satom execute seal recovery --yes >/dev/null 2>&1; then
+            ok "Material de recuperación sellado en data/recovery/seal.json"
+        else
+            warn "El sellado falló — sella a mano: sudo satom execute seal recovery --yes"
+            SEAL_PASS=""
+        fi
+    fi
 else
     warn "healthz no respondió en 30 s — revisa: journalctl -u satom -n 50"
 fi
@@ -1892,6 +1940,10 @@ blob = {
     "repl_password": "${REPL_PASS}",
     "ca_crt": open("${PKI}/internal-ca/ca.crt").read(),
     "ca_key": open("${PKI}/internal-ca/ca.key").read(),
+    # La passphrase del sobre sellado. La join key YA lleva fernet_key y ca_key
+    # en claro, así que esto no añade una clase de secreto nueva — y sin ella
+    # el secondary no podría RE-sellar tras un promote con rotación de clave.
+    "seal_passphrase": "${SEAL_PASS}",
     # rsync_key ELIMINADO a propósito: la clave privada del datasync ya no
     # viaja en la join key. El secondary genera la suya localmente.
 }
@@ -1927,6 +1979,27 @@ if [ "$ROLE" = "secondary" ]; then
     echo "   • data/ se sincroniza cada 5 min (satom-ha-datasync.timer)"
     echo "   • Certificado TLS propio emitido por la CA del clúster"
     echo "   • El scheduler queda en espera (solo se activa si promueves este nodo)"
+fi
+
+# [SATOM-SEAL-BANNER] Se imprime UNA vez y no se guarda en ningún sitio: ni en
+# el log de instalación, ni en app_settings, ni junto al sobre. Un verificador
+# guardado al lado del ciphertext es un oráculo de crackeo offline, y "¿abre?"
+# es la única comprobación que hace falta de verdad.
+if [ -n "$SEAL_PASS" ] && [ "$ROLE" != "secondary" ]; then
+    echo ""
+    echo "${c_bold}════════ PASSPHRASE DE RECUPERACIÓN — ANÓTALA AHORA ════════${c_off}"
+    echo ""
+    echo "    ${SEAL_PASS}"
+    echo ""
+    echo "  Abre el sobre que lleva FERNET_KEY y la CA interna. Ese sobre SÍ"
+    echo "  viaja: al nodo peer y dentro de cada bundle de respaldo. Sin esta"
+    echo "  passphrase todas esas copias son chatarra — y es justo eso lo que"
+    echo "  hace que sea seguro replicarlas."
+    echo ""
+    echo "  ${c_ylw}Guárdala donde guardas credenciales break-glass, NO junto a"
+    echo "  los respaldos.${c_off} No se puede recuperar: no está escrita en"
+    echo "  ninguna parte de esta instalación."
+    echo "═══════════════════════════════════════════════════════════════════"
 fi
 
 # [SATOM-ARM-BANNER] Ninguna ScheduledAction se siembra: son datos y gana la

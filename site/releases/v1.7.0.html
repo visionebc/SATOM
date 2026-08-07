@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 1.2.2 — SATOM</title>
-<meta name="description" content="Released on 2026-07-27 — Fixed · Added · 2 entries.">
+<title>Version 1.7.0 — SATOM</title>
+<meta name="description" content="Released on 2026-08-07 — Added · Fixed · 15 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 1.2.2 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-07-27 — Fixed · Added · 2 entries.</p>
+  <h1>Version 1.7.0 <span class="rel-badge rel-now">current release</span></h1>
+  <p class="sub">Released on 2026-08-07 — Added · Fixed · 15 entries.</p>
 </header>
 
 <section class="wrap">
@@ -62,7 +62,7 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
-      <a class="rel-nav-item" href="v1.7.0.html" data-rel-version="1.7.0">
+      <a class="rel-nav-item is-active" href="v1.7.0.html" data-rel-version="1.7.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.7.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
         <span class="rel-nav-meta">2026-08-07 · Added · Fixed · 15 entries</span>
         <ul class="rel-leads"><li>Sealed recovery custody</li><li>The seal passphrase is created at INSTALL, not at cluster join</li><li>Recovery custody for the two secrets no backup carries</li><li class="rel-more">… and 12 more</li></ul>
@@ -117,7 +117,7 @@
         <span class="rel-nav-meta">2026-08-02 · Added · Changed · Fixed · 67 entries</span>
         <ul class="rel-leads"><li>The manual is reachable from the sign-in screen</li><li>The API manual is a destination on the public site, not a buried card</li><li>An offline bundle for openSUSE / SLES 15</li><li class="rel-more">… and 64 more</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v1.2.2.html" data-rel-version="1.2.2">
+      <a class="rel-nav-item" href="v1.2.2.html" data-rel-version="1.2.2">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.2.2</span></span>
         <span class="rel-nav-meta">2026-07-27 · Fixed · Added · 2 entries</span>
         <ul class="rel-leads"><li>app/services/cert_service.py did not parse</li><li>tests/test_every_module_imports.py</li></ul>
@@ -155,27 +155,136 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="fixed">Fixed</h3>
-<ul>
-<li><strong><code>app/services/cert_service.py</code> did not parse.</strong> An <code>import os</code> had been
-  placed above <code>from __future__ import annotations</code>, which is a hard
-  <code>SyntaxError</code>, so the module could not be imported at all. Introduced on
-  2026-07-26 with the privilege-model work and shipped in the 1.2 and 1.2.1
-  offline bundles. Consequences while it was live: the nightly
-  <code>satom-cert-renew</code> service failed on both nodes, the Node TLS settings and
-  Certificate Manager endpoints raised on import, and the cert alert degraded
-  to reporting the import error instead of the certificate's real state.</li>
-</ul>
 <h3 id="added">Added</h3>
 <ul>
-<li><strong><code>tests/test_every_module_imports.py</code></strong> — every shipped module under <code>app/</code>
-  and <code>deploy/</code> must compile, and the modules that callers import <em>lazily</em>
-  (inside functions) must actually import. The 757-test suite stayed green for
-  a full day with a module that could not be parsed, because nothing imported
-  it at collection time; the only signal was a timer failing where nobody
-  looks. Verified by reintroducing the fault: both checks fail.</li>
+<li><strong>Sealed recovery custody.</strong> <code>FERNET_KEY</code> and the internal CA key are carried
+  by no automatic copy — git excludes them, the HA datasync carries only
+  <code>data/</code>, and the backup bundle leaves them out on purpose. The cost was that
+  a bundle restored onto a rebuilt node is a database of unreadable secrets.
+  They are now wrapped in a scrypt+AES-GCM envelope written to
+  <code>data/recovery/seal.json</code>, which the datasync replicates to the peer within
+  five minutes and every bundle carries off-box from then on. That is only safe
+  because it is sealed: whoever steals a bundle holds ciphertext, while the
+  operator holding a passphrase and nothing else can rebuild the installation
+  from any copy. New verbs <code>satom execute seal recovery</code> and
+  <code>satom execute unseal recovery</code>; <code>satom diagnose recovery</code> now reports an
+  absent, unreadable or stale envelope.</li>
+<li><strong>The seal passphrase is created at INSTALL, not at cluster join.</strong> A
+  standalone node never joins and has no second copy of anything, so it needs
+  the envelope more than a pair does; a secondary inherits the passphrase
+  through the join key so both nodes open the same envelope. This adds no new
+  class of secret — the join key already carries <code>fernet_key</code> and <code>ca_key</code> in
+  the clear.</li>
+<li><strong>Recovery custody for the two secrets no backup carries</strong>
+  (<code>app/services/recovery.py</code>, <code>satom diagnose recovery</code>,
+  <code>satom execute export recovery-key</code>). <code>FERNET_KEY</code> opens every encrypted
+  column in the database and the internal CA key is the sole issuer for
+  replication mTLS; neither is replicated by git, by the HA datasync, or by a
+  backup bundle. The consequence was invisible and total: <strong>a bundle restored
+  onto a rebuilt node is a database of unreadable secrets</strong>, with nothing
+  anywhere explaining why. Putting the key into the bundle was rejected
+  deliberately - a bundle is retained, mirrored to the peer and pushed off-box
+  over SFTP using a password that itself lives in an encrypted column, so a
+  bundle carrying the key that opens it would collapse the estate into one
+  file in three places. Instead the manifest records a <strong>fingerprint</strong>
+  (domain-separated, truncated - identity without disclosure), a restore
+  compares it and <strong>names</strong> a key mismatch, and the operator gets an explicit
+  audited export path plus a check that reports when it has never been used.
+  On the primary this reported, the day it shipped, that <strong>neither secret had
+  ever been exported</strong>.</li>
+<li>
+<p><code>app/services/ssh_pinning.py</code> - one implementation of SSH host-key pinning
+  for all three channels that open SSH, replacing one weak copy and two
+  channels that had no host-key store at all.</p>
+</li>
+<li>
+<p><strong>AI Advisor</strong> — a read-only chat assistant (Settings \u2192 AI Advisor,
+  <code>/advisor</code>) for WAF false-positive triage, Lua-script drafting, and
+  searching the device configuration source of truth. Local Ollama by
+  default (no data leaves the LAN); OpenAI-compatible and Anthropic
+  providers are opt-in behind an explicit "allow external providers" flag,
+  redact known internal identifiers before sending, and show the operator a
+  pre-send preview of exactly what will leave the LAN. Untrusted device data
+  (WAF logs, policy content) is delimited in the prompt against injection.
+  The model <strong>never writes anywhere</strong>: a proposed WAF exception or Lua
+  script is a schema-validated, pending <code>AdvisorProposal</code> that becomes a
+  DRAFT row in the same tables (<code>WppException</code>, <code>LuaScript</code>) and behind the
+  same permission (<code>config_write</code> / <code>studio.lua_studio</code>) the manual forms
+  already require. Two new granular permissions, <code>advisor.use</code> and
+  <code>advisor.configure</code>. See <code>docs/ai-advisor.md</code>.</p>
+</li>
 </ul>
-<p class="rel-prevnext"><a href="v1.3.html">← Version 1.3</a> · <a href="v1.2.1.html">Version 1.2.1 →</a></p>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li><strong>Nine probes answered "I could not tell" with a value that means "fine".</strong>
+  Scoping resolved to the Global console and showed every product; a malformed
+  access-control row read as <em>no restriction configured</em>; a repository git
+  could not read reported itself clean and in sync; the HA interlock derived
+  <em>standalone</em> and let the primary skip standby validation; the pre-reset guard
+  reported <em>nothing to preserve</em> and proceeded to a hard reset; hypervisor TLS
+  reported <em>verified</em> while never once consulting the operator CA; an
+  unreadable host-key store read as first contact; an unparseable colour
+  produced no contrast finding. None crashed, none logged, and each answered a
+  safety question with the reassuring default - so the system reported health
+  precisely when it had lost the ability to measure it. Each now distinguishes
+  a third state, and the permissive default that was legitimate in each case is
+  preserved rather than tightened.</li>
+<li><strong><code>hypervisors/base._ssl_context</code> imported a function that has never
+  existed</strong> (<code>trust_store.verify_target</code>; the real entry point is
+  <code>verify_param</code>). The <code>ImportError</code> was swallowed on every call, so a
+  hypervisor with <code>verify_ssl=True</code> was always checked against public roots
+  only and never against an imported CA. The feature had not worked once.</li>
+<li><strong>Two SSH channels had no host-key store at all</strong> - the certificate autopull,
+  which carries the node TLS private key, and the ESXi shell transport, which
+  runs commands as root on a hypervisor. Both accepted any key, every time.
+  Trust-on-first-use is preserved for a genuinely fresh host; what is refused
+  is a store that exists and cannot be read in full.</li>
+<li><strong>Four unit templates were never refreshed by the update runner</strong> because the
+  list was hand-typed and had fallen behind <code>deploy/</code>; three installed units
+  still declared a service account that no longer exists, and ran only because
+  a drop-in overrode them. The list is now derived from the directory.</li>
+<li><strong>The out-of-tree helper scripts had no installer.</strong> The replicator itself
+  was three months behind its source, missing the fix that separates <em>"I could
+  not evaluate the peer"</em> from <em>"there is no peer"</em> - so it could report
+  success while replicating nothing.</li>
+<li><strong>A retired mechanism was still documented as live on four operator-facing
+  surfaces</strong>, including the install manual, which instructed the operator to
+  arm it on a fresh node, and the High Availability page. The script it named
+  had no source in the repository. The System Backup page also claimed a
+  specific hypervisor topology that had since changed, and told the operator
+  the surviving copy was the one that is in fact co-located with the others;
+  it now states the invariant to check instead of asserting an estate fact the
+  product cannot know.</li>
+<li>
+<p>The <code>restore</code> runbook claimed total loss was recoverable from a bundle. It is
+  not: the key that decrypts it is deliberately not in it.</p>
+</li>
+<li>
+<p><strong>The site-rules overlay was replicated by nothing.</strong> It is untracked on
+  purpose — it names the estate — but it also sat beside the application
+  rather than inside <code>data/</code>, which is the only directory the HA datasync
+  carries. git ignored it by design, the datasync never saw it, and the backup
+  bundle did not package it: three mechanisms, and the file fell between all
+  three. The standby ran for days on a copy whose device rule predated half
+  the registered appliances. It now lives in <code>data/publication-rules.local.json</code>
+  (still ignored, by <code>/data/</code>), so the datasync replicates it and the bundle
+  carries it. The old path is still read so that updating to this commit does
+  not brick a node that has not been migrated yet.</p>
+</li>
+<li><strong>The overlay loader answered "absent", "malformed" and "one bad regex" with
+  the same value</strong> — an empty rule table, which every caller reads as <em>nothing
+  to redact</em>. The comment above it promised the opposite ("a node that loses it
+  fails loudly instead of quietly redacting less"); that promise was kept only
+  by a test asserting the file exists at collection time. Malformed JSON and
+  unusable entries now raise. A missing overlay raises <strong>on a deployment</strong> and
+  still loads generic rules on a bare checkout — the published mirror has no
+  overlay and must not have one, so absence alone could never be the signal;
+  the presence of <code>.env</code> distinguishes the two.</li>
+<li>Backup bundles now carry node-local config, and a restore places it only
+  where the node has none — the live copy is likelier to be current than one
+  frozen into an old bundle.</li>
+</ul>
+<p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v1.6.0.html">Version 1.6.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

@@ -379,6 +379,20 @@ def create_app(config_override: object | None = None) -> Flask:
         if current_user.can(Permission.USER_MANAGE):
             return None  # admins are exempt
         from .services import settings_store as _store
+        # An UNREADABLE allowlist is not an empty one. Both lists decode to []
+        # on a parse failure, and [] is the most permissive value here — a
+        # restored backup, a replica mid-write or a hand-edited psql row would
+        # otherwise admit every non-admin from every source IP, silently,
+        # because the ACCESS_DENY lines below are the only telemetry there is.
+        # Refuse to serve instead: 503, not 403 — this is the service being
+        # unable to evaluate the policy, not the user failing it. Admins
+        # returned above, so whoever must fix the row can still reach the UI.
+        _cfg_err = _store.access_config_error()
+        if _cfg_err:
+            app.logger.error('ACCESS_DENY reason=access_config_unreadable '
+                             'user=%s ip=%s endpoint=%s detail=%s',
+                             current_user.username, _client_ip(), ep, _cfg_err)
+            abort(503)
         allowed = _store.allowed_users()
         if allowed and current_user.username not in allowed:
             app.logger.warning('ACCESS_DENY reason=user_not_allowed user=%s '

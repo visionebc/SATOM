@@ -900,3 +900,106 @@ def reset_theme(ctx, args):
     r.rows([("was", res["before"]), ("now", res["after"])], keys="dim")
     r.note("Workers pick this up within 15 seconds; no restart needed.")
     return r
+
+
+_EXPORT_CODE = (
+    "import json\n"
+    "from app import create_app\n"
+    "from app.services import recovery\n"
+    "a=create_app()\n"
+    "with a.app_context():\n"
+    "    mat = recovery.export_material()\n"
+    "    recs = {k: recovery.record_escrow(k, by=%r) for k in mat}\n"
+    "    print(json.dumps({'material': mat, 'recorded': recs,\n"
+    "                      'fpr': recovery.current_fingerprints()}))\n"
+)
+
+
+def export_recovery_key(ctx, args):
+    """Print the two secrets no backup carries, so somebody can hold a copy.
+
+    FERNET_KEY opens every encrypted column in the database; the internal CA
+    key is the sole issuer for replication mTLS. Both are deliberately absent
+    from backup bundles -- a bundle is retained, mirrored to the peer and
+    pushed off-box over SFTP, and one carrying the key that opens the SFTP
+    password would turn every bundle into a total compromise.
+
+    The cost of that decision is that a bundle restored onto a rebuilt node is
+    a database of unreadable secrets unless somebody kept the key. This is how
+    they keep it.
+
+    Prints by default rather than writing a file: the fewest copies that can
+    accomplish the job is one, and choosing where a secret lands is the
+    operator's decision, not a default. ``--out PATH`` is available when the
+    operator wants that second copy, and creates it 0600.
+    """
+    if not _yes(args):
+        r = Result("warn", "recovery material export", exit_code=2)
+        r.lines("would", [
+            "print FERNET_KEY (opens every encrypted column in the database)",
+            "print the internal CA private key, if this node holds it",
+            "record the export in app_settings (fingerprint + time only)",
+            "",
+            "  sudo satom execute export recovery-key --yes",
+        ])
+        r.note("Treat the output like a root password. Store it where you "
+               "store break-glass credentials, NOT beside the backups — the "
+               "whole point is that it is not in the bundle.")
+        return r
+    dest = None
+    if "--out" in args:
+        try:
+            dest = Path(args[args.index("--out") + 1])
+        except IndexError:
+            return Result("bad", "--out needs a path", exit_code=2)
+    who = ""
+    try:
+        who = os.environ.get("SUDO_USER") or getpass.getuser()
+    except Exception:  # noqa: BLE001
+        who = "unknown"
+    rc, out, err = _app_call(ctx, _EXPORT_CODE % who, timeout=120)
+    if rc != 0:
+        r = Result("bad", "could not read the recovery material", exit_code=4)
+        r.lines("error", (err or out).splitlines()[-12:])
+        return r
+    try:
+        res = json.loads(out.strip().splitlines()[-1])
+    except Exception:  # noqa: BLE001
+        r = Result("bad", "unexpected output from the app", exit_code=4)
+        r.lines("output", (out or err).splitlines()[-12:])
+        return r
+    material = res.get("material") or {}
+    if not material:
+        r = Result("bad", "this node holds no recovery material", exit_code=1)
+        r.note("No FERNET_KEY in the environment and no internal CA key on "
+               "disk. On a standby the CA key is absent BY DESIGN, but a "
+               "missing FERNET_KEY means the app could not have started.")
+        return r
+    fpr = res.get("fpr") or {}
+    blob = []
+    if "fernet" in material:
+        blob.append("FERNET_KEY=%s" % material["fernet"])
+    if "ca" in material:
+        blob.append(material["ca"].rstrip("\n"))
+    text = "\n".join(blob) + "\n"
+
+    if dest is not None:
+        # Create 0600 BEFORE any bytes land: opening 0644 and chmod-ing after
+        # leaves a window where the key is world-readable.
+        fd = os.open(str(dest), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(text)
+        r = Result("ok", "recovery material written to %s" % dest)
+        r.rows("fingerprints", [(k, v) for k, v in sorted(fpr.items()) if v],
+               keys="dim")
+        r.note("Mode 0600, owner root. This is now a SECOND uncontrolled copy "
+               "— move it off this host and shred the original.")
+        return r
+
+    r = Result("ok", "recovery material (%d item(s))" % len(material))
+    r.lines("material", text.splitlines())
+    r.rows("fingerprints", [(k, v) for k, v in sorted(fpr.items()) if v],
+           keys="dim")
+    r.note("Store this where you store break-glass credentials, NOT beside "
+           "the backups. Verify later with: satom diagnose recovery")
+    return r

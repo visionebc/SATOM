@@ -70,12 +70,31 @@ def _git(*args: str, timeout: int = 900) -> subprocess.CompletedProcess:
     )
 
 
-def _out(*args: str, default: str = "") -> str:
+def _out(*args: str) -> "str | None":
+    """Stripped stdout, or ``None`` when git could not answer.
+
+    ``None`` and ``""`` are DIFFERENT answers. ``""`` means git ran and had
+    nothing to say (a clean tree, no unpushed commits) — which is exactly what
+    a healthy repo looks like. ``None`` means the command never produced an
+    answer at all (git missing, repo corrupt, safe.directory refusal, an
+    index.lock, a timeout). Folding the second into the first is what let
+    ``unpushed_state`` report ``ahead: 0`` for a repo it could not read, and a
+    zero is the one value that keeps the alert engine quiet.
+    """
     try:
         r = _git(*args, timeout=30)
     except Exception:  # noqa: BLE001
-        return default
-    return (r.stdout or "").strip() if r.returncode == 0 else default
+        return None
+    if r.returncode != 0:
+        return None
+    return (r.stdout or "").strip()
+
+
+def _out_or(default: str, *args: str) -> str:
+    """:func:`_out` for the callers where a failure genuinely is "nothing to
+    show" (a ref listing, a branch name for a metadata sidecar)."""
+    v = _out(*args)
+    return default if v is None else v
 
 
 def _sha256(path: Path) -> str:
@@ -130,22 +149,53 @@ def unpushed_state() -> dict:
     stranded. ``ahead>0, behind==0`` is the exact signature of a Gitea outage
     and it is the one combination the old alert rules did not cover.
 
-    Never raises: a repo with no upstream returns zeros."""
-    up = _out("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
-    out = {"upstream": up, "ahead": 0, "behind": 0, "oldest_iso": "",
-           "oldest_age_h": 0.0, "dirty": bool(_out("status", "--porcelain")),
-           "head": _out("rev-parse", "HEAD")[:12]}
-    if not up:
+    Never raises: a repo with no upstream returns zeros.
+
+    ``unknown`` is the third answer, and the important one. Zeros mean "asked
+    and answered: nothing is stranded". ``unknown=True`` means the probe itself
+    failed, so the zeros carry no information — a caller that treats it as a
+    healthy repo is reading a measurement that was never taken. ``error`` says
+    which probe gave up.
+    """
+    out = {"upstream": "", "ahead": 0, "behind": 0, "oldest_iso": "",
+           "oldest_age_h": 0.0, "dirty": False, "head": "",
+           "unknown": False, "error": ""}
+
+    # Discriminator: `@{upstream}` exits non-zero BOTH when no upstream is
+    # configured (a normal first-run repo) and when git cannot read the repo at
+    # all. Ask something that must succeed for any readable checkout first, so
+    # those two do not share an answer.
+    if _out("rev-parse", "--git-dir") is None:
+        out["unknown"] = True
+        out["error"] = "git could not read the repository"
         return out
+
+    out["dirty"] = bool(_out_or("", "status", "--porcelain"))
+    out["head"] = _out_or("", "rev-parse", "HEAD")[:12]
+    up = _out("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+    if not up:
+        return out                      # genuinely no upstream: nothing to be behind
+    out["upstream"] = up
     counts = _out("rev-list", "--left-right", "--count", "%s...HEAD" % up)
-    if "\t" in counts:
-        b, a = counts.split("\t", 1)
-        try:
-            out["behind"], out["ahead"] = int(b), int(a)
-        except ValueError:
-            pass
+    if counts is None or "\t" not in counts:
+        out["unknown"] = True
+        out["error"] = "ahead/behind probe failed against %s" % up
+        return out
+    b, a = counts.split("\t", 1)
+    try:
+        out["behind"], out["ahead"] = int(b), int(a)
+    except ValueError:
+        out["unknown"] = True
+        out["error"] = "unreadable rev-list output %r" % counts
+        return out
     if out["ahead"] > 0:
         first = _out("log", "--reverse", "--format=%cI", "%s..HEAD" % up)
+        if first is None:
+            # AGE is what the alert thresholds on, so an unmeasured age is as
+            # silencing as an unmeasured count.
+            out["unknown"] = True
+            out["error"] = "oldest-unpushed-commit probe failed"
+            return out
         oldest = first.splitlines()[0] if first else ""
         out["oldest_iso"] = oldest
         if oldest:
@@ -156,7 +206,11 @@ def unpushed_state() -> dict:
                 delta = datetime.now(timezone.utc) - dt
                 out["oldest_age_h"] = round(delta.total_seconds() / 3600.0, 1)
             except ValueError:
-                pass
+                out["unknown"] = True
+                out["error"] = "unreadable commit date %r" % oldest
+        else:
+            out["unknown"] = True
+            out["error"] = "no commit date for the oldest unpushed commit"
     return out
 
 
@@ -165,8 +219,9 @@ def safety_refs() -> list[dict]:
     ``reset --hard`` would have discarded them. Visible in the UI so an
     operator knows there is something to recover (and can see it is captured
     in the bundles, which are ``--all``)."""
-    raw = _out("for-each-ref", "--format=%(refname)|%(objectname:short)|%(creatordate:iso8601)",
-               "refs/backup/")
+    raw = _out_or("", "for-each-ref",
+                  "--format=%(refname)|%(objectname:short)|%(creatordate:iso8601)",
+                  "refs/backup/")
     rows = []
     for line in raw.splitlines():
         parts = line.split("|", 2)
@@ -296,12 +351,14 @@ def create_bundle(*, label: str = "manual", push_server: bool | None = None,
             os.chmod(final, 0o640)
         except OSError:
             pass
-        refs = len([ln for ln in _out("for-each-ref", "--format=%(refname)").splitlines() if ln])
+        refs = len([ln for ln in
+                    _out_or("", "for-each-ref", "--format=%(refname)").splitlines()
+                    if ln])
         meta = {
             "name": name, "created": ts, "label": label, "by": by,
             "sha256": sha, "size": size,
             "head": state.get("head", ""),
-            "branch": _out("rev-parse", "--abbrev-ref", "HEAD"),
+            "branch": _out_or("", "rev-parse", "--abbrev-ref", "HEAD"),
             "refs": refs,
             "unpushed": state.get("ahead", 0),
             "node": _node_name(),

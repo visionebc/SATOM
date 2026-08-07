@@ -110,6 +110,12 @@ _TTL = 15.0          # seconds; edits become visible fleet-wide within this
 _cache_active: "dict[str, dict] | None" = None   # active only, ordered
 _cache_all: "list[dict] | None" = None           # every row (admin console)
 _cache_ts: float = 0.0
+#: True while the caches above hold :data:`_FALLBACK` instead of the ``adoms``
+#: table. Nothing raises when the registry cannot be read — the fallback is a
+#: COMPLETE-LOOKING five-ADOM answer, so no caller can tell it apart from a
+#: successful read by inspecting the rows. Anything that fails OPEN on an
+#: unrecognised key (``services.product_scope``) has to be able to ask.
+_cache_degraded: bool = True
 
 
 def _fallback_active() -> dict:
@@ -128,7 +134,7 @@ def _fallback_all() -> list[dict]:
 def _refresh() -> None:
     """(Re)load the registry from the DB into the module cache. Falls back to
     ``_FALLBACK`` on any failure (no app context, table missing, DB down)."""
-    global _cache_active, _cache_all, _cache_ts
+    global _cache_active, _cache_all, _cache_ts, _cache_degraded
     try:
         from .models_adom import Adom
         rows = Adom.query.order_by(Adom.sort_order, Adom.key).all()
@@ -137,9 +143,11 @@ def _refresh() -> None:
         alld = [r.to_branding() for r in rows]
         _cache_all = alld
         _cache_active = {r["key"]: r for r in alld if r.get("active", True)}
+        _cache_degraded = False
     except Exception:
         _cache_all = _fallback_all()
         _cache_active = _fallback_active()
+        _cache_degraded = True
     _cache_ts = time.monotonic()
 
 
@@ -157,6 +165,19 @@ def invalidate() -> None:
 def _active() -> "dict[str, dict]":
     _ensure_fresh()
     return _cache_active or _fallback_active()
+
+
+def is_fallback() -> bool:
+    """True when the answers above come from :data:`_FALLBACK`, not the table.
+
+    The fallback exists so the app still boots pre-migration or outside an app
+    context, and that is right. What is NOT right is that it is indistinguishable
+    from a real answer: a sixth ADOM an operator declared is simply absent from
+    it, and a caller that treats "not in the registry" as "unscoped" then shows
+    that session everything. Scoping asks this before it decides.
+    """
+    _ensure_fresh()
+    return bool(_cache_degraded)
 
 
 def all_adoms() -> list[dict]:

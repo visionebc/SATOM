@@ -526,8 +526,9 @@
 
     <h6>Failover notes</h6>
     <ul class="mb-0">
-      <li>After a promote, <code>satom-ha-datasync</code> on the new primary becomes a no-op automatically (role guard) and <code>satom-git-publish</code> activates there (same guard, inverted) — no unit reconfiguration needed.</li>
-      <li>Gitea (192.0.2.53) and the standby live on the same Proxmox host (hypervisor03): if hypervisor03 dies, copies 2 and 3 are both offline until it returns — copy 1 (primary, hypervisor06) remains. Bundles downloaded via the button above are the operator-held fourth copy.</li>
+      <li>After a promote, <code>satom-ha-datasync</code> on the new primary becomes a no-op automatically (role guard) — no unit reconfiguration needed. (The hourly <code>satom-git-publish</code> that used to activate here was retired on 2026-08-05 with the git SoT; the source of truth is now <code>data/sot/</code>, which the datasync already carries.)</li>
+      <li><strong>Check that your copies are not all on one hypervisor.</strong> The three automatic copies — this node, the standby via <code>satom-ha-datasync</code>, and the external backup server — are only three copies if they fail independently. Two nodes and a backup host that share a hypervisor are one copy wearing three hats, and nothing in this page can detect that: SATOM sees three reachable destinations either way. Verify it where the guests actually live, not here. Bundles downloaded via the button above are the operator-held copy that is definitionally elsewhere.</li>
+      <li>A bundle alone does not recover a total loss: <code>FERNET_KEY</code> is not in it, deliberately. Run <code>satom diagnose recovery</code> to check somebody holds it.</li>
       <li>This page probes the peer over HTTP (<code>/healthz/backups</code>) — no SSH between nodes is required to verify the off-box copy.</li>
     </ul>
   </div></div>

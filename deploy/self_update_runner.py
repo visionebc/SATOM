@@ -47,21 +47,62 @@ def _app_user_from_tree():
 APP_USER = os.environ.get("FM_APP_USER") or _app_user_from_tree()
 HEALTH_URL = os.environ.get("FM_HEALTH_URL", "http://127.0.0.1:8000/healthz")
 HEALTH_TIMEOUT = int(os.environ.get("FM_HEALTH_TIMEOUT", "90"))
-UNIT_FILES = (
-    "satom.service", "satom-scheduler.service",
-    "satom-updater.service", "satom-updater.path",
-    "satom-reconciler.service", "satom-metrics.service",
-)
 
+
+def _unit_templates():
+    """Toda plantilla de unidad que deploy/ envía, LEÍDA DEL DIRECTORIO.
+
+    Esto era una lista escrita a mano de seis nombres mientras deploy/ enviaba
+    diez: satom-alerts.{service,timer} y satom-cert-renew.{service,timer} no se
+    refrescaban NUNCA, así que la copia instalada seguía declarando
+    User=fortinet — una cuenta que ya no existe en el nodo. Sólo arrancaban
+    porque el drop-in las tapaba, y a ese drop-in no lo replica nada: un
+    `systemctl revert` (o un nodo restaurado de una imagen anterior) convierte
+    la renovación de certificado en status=217/USER, en silencio, que es
+    exactamente lo que la señal cert.renew_failed existe para evitar.
+
+    Una lista escrita a mano ES una copia del listado del directorio, y las
+    copias se pudren: derivarla es la única forma de que la próxima unidad
+    añadida a deploy/ no repita esto sin que nadie se entere.
+
+    OJO — refrescar el FICHERO de una unidad NO es armarla. Aquí no se llama a
+    `systemctl enable` en ningún caso, así que el estado enabled/disabled del
+    nodo se conserva tal cual. Y sólo entra lo que deploy/ envía: por eso
+    quedan fuera satom-ha-datasync.* (la escribe el instalador en línea y sólo
+    en modo cluster) y satom-git-publish.* (RETIRADA el 2026-08-05).
+    """
+    names = set()
+    for pat in ("*.service", "*.timer", "*.path"):
+        try:
+            names.update(p.name for p in (APP / "deploy").glob(pat))
+        except OSError:
+            pass
+    return tuple(sorted(names))
+
+
+UNIT_FILES = _unit_templates()
+
+# Unidades que pueden existir INSTALADAS en un nodo pero que no son plantillas
+# de deploy/: el instalador escribe satom-ha-datasync.{service,timer} en línea
+# (sólo en modo cluster) y satom-git-publish.* quedó retirada el 2026-08-05. No
+# se distribuyen ni se arman desde aquí; se listan sólo para que el drop-in de
+# cuenta de servicio las siga cubriendo SI están instaladas — sin él, una
+# unidad heredada que aún declare un usuario inexistente muere con
+# status=217/USER.
+LEGACY_NONROOT_UNITS = (
+    "satom-ha-datasync.service",
+    "satom-git-publish.service",
+)
 
 # Unidades que DEBEN correr como la cuenta de servicio. satom-updater.{service,
-# path} está deliberadamente fuera: ES el runner privilegiado.
-NONROOT_UNITS = (
-    "satom.service", "satom-scheduler.service", "satom-reconciler.service",
-    "satom-alerts.service", "satom-cert-renew.service",
-    "satom-git-publish.service", "satom-ha-datasync.service",
-    "satom-metrics.service",
-)
+# path} está deliberadamente fuera: ES el runner privilegiado. Derivada por el
+# mismo motivo que UNIT_FILES: las plantillas declaran User=root y cada update
+# las recopia, así que una plantilla nueva que se olvidara aquí volvería a root
+# en el siguiente update sin que nada avisara.
+NONROOT_UNITS = tuple(sorted(
+    ({u for u in UNIT_FILES if u.endswith(".service")}
+     - {"satom-updater.service"})
+    | set(LEGACY_NONROOT_UNITS)))
 
 UNIT_DROPIN = """# Generado por SATOM (instalador / migrate-deprivilege.sh / self_update_runner).
 # Vive en un drop-in y no en la unidad porque las plantillas de deploy/ declaran
@@ -224,26 +265,48 @@ def preserve_local_commits(target, snapshot, st):
     before a destructive reset, plus any uncommitted worktree state.
 
     Returns True when something was preserved, None when there was nothing to
-    preserve, and False when preservation was needed but FAILED (the caller
-    aborts the update in that case).
+    preserve, and False when preservation was needed but FAILED **or could not
+    be evaluated** (the caller aborts the update in that case).
+
+    That second clause is the fix of 2026-08-07. A ``git rev-list`` that FAILED
+    (bad ref, a held index.lock, a timeout, a safe.directory refusal) left
+    ``n == 0``, which is byte-for-byte the same answer as "there is nothing
+    here to preserve": this returned None, ``None is not False``, and the
+    caller walked straight into ``git reset --hard``. docs/safeguards.md
+    promises that a guard which cannot do its job aborts the operation — and a
+    guard that cannot even determine whether it was NEEDED has not done its
+    job. Same for ``git status``: a failure yielded empty output and therefore
+    ``dirty = False``, declaring uncommitted work absent.
 
     Uncommitted changes go through ``git stash create``, which builds a commit
     object without touching the index or the worktree — so this guard has zero
     effect on the update path that follows."""
-    n = 0
     c = git("rev-list", "--count", "%s..HEAD" % target, timeout=60)
-    if c.returncode == 0:
-        try:
-            n = int((c.stdout or "0").strip() or 0)
-        except ValueError:
-            n = 0
+    if c.returncode != 0:
+        st.step("count local commits", False,
+                "git rev-list failed (rc=%d) — cannot tell whether there is "
+                "anything to preserve: %s"
+                % (c.returncode, (c.stderr or "")[:200]))
+        return False
+    try:
+        n = int((c.stdout or "0").strip() or 0)
+    except ValueError:
+        st.step("count local commits", False,
+                "git rev-list returned an uncountable answer: %r"
+                % ((c.stdout or "")[:200],))
+        return False
     # --untracked-files=no ON PURPOSE. `git reset --hard` does not touch
     # untracked files, so they never needed parking -- and `git stash create`
     # does not include them either, so it returns empty and this step reported
     # FAIL on every run where the only local state was untracked. A guard that
     # always complains is a guard operators learn to scroll past.
-    dirty = bool((git("status", "--porcelain", "--untracked-files=no",
-                     timeout=60).stdout or "").strip())
+    s = git("status", "--porcelain", "--untracked-files=no", timeout=60)
+    if s.returncode != 0:
+        st.step("detect uncommitted changes", False,
+                "git status failed (rc=%d) — cannot tell whether the worktree "
+                "is dirty: %s" % (s.returncode, (s.stderr or "")[:200]))
+        return False
+    dirty = bool((s.stdout or "").strip())
     if not n and not dirty:
         return None
 
@@ -394,14 +457,21 @@ def process(req_path):
         # privilegio en cada update si no fuera por el drop-in.
         enforce_unit_user(APP_USER)
         subprocess.run(["systemctl", "daemon-reload"])
-        # Refresh the ROOT-OWNED copy of the operator CLI. It lives outside the
-        # app tree on purpose (a sudo target writable by the service account is
-        # a root escalation), which means a code update does NOT reach it -- so
-        # it must be re-installed here or the console tool silently ages behind
-        # the app it is meant to repair.
+        # Refresh the ROOT-OWNED copies that live OUTSIDE the app tree: the
+        # operator CLI, the update runner, and the /usr/local/sbin helper
+        # scripts (install-runner.sh installs those last -- see
+        # [SATOM-SBIN-ROOT-COPY]). They are outside on purpose (a sudo/root
+        # target writable by the service account is a root escalation), which
+        # means a code update does NOT reach them -- so they must be
+        # re-installed here or they silently age behind the app. That is not
+        # hypothetical: /usr/local/sbin/satom-ha-datasync.sh sat 11 days and
+        # two bug-fixes behind git because its only installer was a one-shot
+        # migration, and the replicator reported SUCCESS while replicating
+        # nothing.
         try:
             for _script, _label in (("install-cli.sh", "operator CLI"),
-                                    ("install-runner.sh", "update runner")):
+                                    ("install-runner.sh",
+                                     "update runner + /usr/local/sbin helpers")):
                 _p = APP / "deploy" / _script
                 if _p.exists():
                     cr = subprocess.run(["bash", str(_p)], capture_output=True,
@@ -950,8 +1020,12 @@ def package_change(req_path):
                 subprocess.run(["cp", str(src), "/etc/systemd/system/" + unit])
         enforce_unit_user(APP_USER)
         subprocess.run(["systemctl", "daemon-reload"])
+        # install-runner.sh also re-installs the /usr/local/sbin helper
+        # scripts ([SATOM-SBIN-ROOT-COPY]); they live outside the tree and no
+        # code update reaches them otherwise.
         for script, label in (("install-cli.sh", "operator CLI"),
-                              ("install-runner.sh", "update runner")):
+                              ("install-runner.sh",
+                               "update runner + /usr/local/sbin helpers")):
             sp = APP / "deploy" / script
             if sp.exists():
                 cr = subprocess.run(["bash", str(sp)], capture_output=True,

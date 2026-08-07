@@ -113,6 +113,15 @@ def ha_mode() -> str:
             return v
     except Exception:
         pass
+    # Deriving the mode is only sound when the registry can actually be READ.
+    # ``_nodes_raw()`` answers [] both for "no peers" and for "this file is
+    # garbage", and deriving 'standalone' from the second disarms the
+    # staged-rollout interlock in can_apply_to_primary() — the PRIMARY would
+    # then take a revision no STANDBY ever validated. An unreadable registry is
+    # not evidence of a single-node deployment; keep the interlock ARMED and
+    # let the admin either fix the file or set the mode explicitly.
+    if nodes_registry_state() == "unreadable":
+        return "ha"
     others = [n for n in _nodes_raw() if n.get("name") != this_node_name()]
     return "ha" if others else "standalone"
 
@@ -137,9 +146,31 @@ def load_nodes() -> list[dict]:
     return [{"name": this_node_name(), "host": "127.0.0.1", "self": True}]
 
 
+def nodes_registry_state() -> str:
+    """``absent`` | ``ok`` | ``unreadable`` for ``data/ha_nodes.json``.
+
+    ``_nodes_raw()`` and ``load_nodes()`` both answer a missing file and a
+    corrupt one identically, which is fine for listing peers and fatal for
+    deriving HA mode from the result. This is the fact those two throw away:
+    absent is a legitimate single-node deployment, unreadable is a broken
+    registry and must not be mistaken for one.
+    """
+    try:
+        if not NODES_FILE.exists():
+            return "absent"
+        data = json.loads(NODES_FILE.read_text())
+    except Exception:  # noqa: BLE001 — unreadable file, bad JSON, bad perms
+        return "unreadable"
+    return "ok" if isinstance(data, list) else "unreadable"
+
+
 def _nodes_raw() -> list[dict]:
     """The literal ha_nodes.json list (empty if absent) — unlike load_nodes(),
-    it does NOT substitute a synthetic self entry, so writers don't persist it."""
+    it does NOT substitute a synthetic self entry, so writers don't persist it.
+
+    Callers that make a SAFETY decision from the emptiness of this list must
+    consult :func:`nodes_registry_state` first: [] here means "no peers" and
+    "the file is garbage" alike."""
     try:
         data = json.loads(NODES_FILE.read_text())
         if isinstance(data, list):

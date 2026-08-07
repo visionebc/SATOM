@@ -449,7 +449,21 @@ def _autopull(by: str = "autopull-timer", force: bool = False) -> dict:
     except Exception as exc:  # noqa: BLE001
         return {"pulled": False, "reason": f"paramiko unavailable: {exc}"}
 
+    # This connection carries the node's TLS certificate AND PRIVATE KEY back
+    # over SFTP. It had no host-key store at all: AutoAdd with nothing to
+    # compare against accepts whatever key answers, every time, and never
+    # notices when the answer changes.
+    from . import ssh_pinning
+    known = Path(__file__).resolve().parents[2] / "data" / "known_hosts"
+
+    class _PinError(RuntimeError):
+        pass
+
     client = paramiko.SSHClient()
+    try:
+        ssh_pinning.load_pins(client, known, _PinError)
+    except _PinError as exc:
+        return {"pulled": False, "reason": str(exc)}
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     connect_kw = {"hostname": cfg["ssh_host"], "port": cfg["ssh_port"],
                   "username": cfg["ssh_user"], "timeout": 15, "allow_agent": False,
@@ -462,6 +476,7 @@ def _autopull(by: str = "autopull-timer", force: bool = False) -> dict:
         connect_kw["look_for_keys"] = True
     try:
         client.connect(**connect_kw)
+        ssh_pinning.persist(client, known, _PinError)
         sftp = client.open_sftp()
         try:
             with sftp.open(cfg["remote_cert"], "rb") as fh:

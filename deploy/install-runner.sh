@@ -20,6 +20,10 @@
 # cannot replace. A drop-in (not an edit to the unit) because self_update_runner
 # re-copies deploy/<unit> on every update — an edited unit never survives.
 #
+# It also installs the root-owned copies of the /usr/local/sbin helper scripts
+# ([SATOM-SBIN-ROOT-COPY] below) — same problem, same three call sites, and
+# until 2026-08-07 they had no distribution path whatsoever.
+#
 # Idempotent. Run as root. Called from four places so the copy cannot drift:
 #   * installers/install-satom.sh          (fresh install)
 #   * deploy/migrate-deprivilege.sh        (existing nodes)
@@ -36,6 +40,23 @@ TRUST_DIR="/etc/satom/update-keys"
 # Every file root executes or reads as a trust input. update_package.py is here
 # for the same reason as the runner: it IS the signature verifier.
 FILES="self_update_runner.py update_package.py"
+
+# [SATOM-SBIN-ROOT-COPY]
+# Helper scripts that the units execute from /usr/local/sbin rather than from
+# the app tree. They had NO distribution path at all: the installer copied them
+# once at install time and deploy/migrate-deprivilege.sh once at migration, and
+# nothing ever refreshed them, so the RUNNING copy drifted from git and stayed
+# drifted. /usr/local/sbin/satom-ha-datasync.sh was 5297 bytes dated Jul 26
+# while deploy/satom-ha-datasync.sh was 5943 bytes dated Aug 4, missing both of
+# its fixes: the venv interpreter (openSUSE has no /usr/bin/python3) and a peer
+# probe that exits non-zero when it cannot be evaluated instead of pretending
+# "no peer configured". The replicator was reporting SUCCESS while replicating
+# nothing -- the same overlay bug, applied to the sync mechanism itself.
+#
+# Kept in sync with the loop in installers/install-satom.sh that seeds them;
+# tests/test_unit_distribution.py reads that loop and fails if the two diverge.
+SBIN_DIR="/usr/local/sbin"
+SBIN_FILES="satom-ha-datasync.sh satom-promote.sh satom-ha-rsync-shell"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "install-runner.sh: must run as root (it writes ${LIB_DIR})." >&2
@@ -127,6 +148,19 @@ mkdir -p "$TRUST_DIR"
 chown root:root /etc/satom "$TRUST_DIR"
 chmod 0755 /etc/satom "$TRUST_DIR"
 
+# ---- root-owned copies of the /usr/local/sbin helpers --------------------
+# [SATOM-SBIN-ROOT-COPY] root:root 0755 for the same reason as ${LIB_DIR}: a
+# script the service account can rewrite is a script the service account can
+# make root (or the peer's app account) run. Missing sources are skipped rather
+# than fatal -- satom-ha-rsync-shell only ships on some branches -- but a
+# source that IS present and fails to install is a hard failure below.
+for f in $SBIN_FILES; do
+  src="${APP_DIR}/deploy/${f}"
+  if [ -f "$src" ]; then
+    install -o root -g root -m 0755 "$src" "${SBIN_DIR}/${f}"
+  fi
+done
+
 systemctl daemon-reload 2>/dev/null || true
 
 # ---- verify rather than assume ------------------------------------------
@@ -142,6 +176,19 @@ for f in $FILES; do
   owner="$(stat -c %U "${LIB_DIR}/${f}")"
   [ "$owner" = root ] || { echo "install-runner.sh: ${LIB_DIR}/${f} is ${owner}" >&2; fail=1; }
 done
+for f in $SBIN_FILES; do
+  src="${APP_DIR}/deploy/${f}"; dst="${SBIN_DIR}/${f}"
+  [ -f "$src" ] || continue
+  owner="$(stat -c %U "$dst" 2>/dev/null || echo MISSING)"
+  mode="$(stat -c %a "$dst" 2>/dev/null || echo -)"
+  case "$owner:$mode" in
+    root:755|root:0755) ;;
+    *) echo "install-runner.sh: ${dst} is ${owner} mode ${mode} — expected root 755" >&2; fail=1 ;;
+  esac
+  # Byte-identical, not merely present: "installed once, years ago" is exactly
+  # the state this section exists to end.
+  cmp -s "$src" "$dst" || { echo "install-runner.sh: ${dst} differs from ${src}" >&2; fail=1; }
+done
 ACTUAL="$(systemctl show -p ExecStart --value "$UNIT" 2>/dev/null || true)"
 case "$ACTUAL" in
   *"${LIB_DIR}/self_update_runner.py"*) ;;
@@ -152,4 +199,5 @@ esac
 echo "SATOM update runner hardened:"
 echo "  code       : ${LIB_DIR} (root:root, system python ${RUN_PY})"
 echo "  trust store: ${TRUST_DIR} ($(ls -1 "$TRUST_DIR"/*.pub 2>/dev/null | wc -l) key(s))"
+echo "  sbin       : ${SBIN_DIR} ($(for f in $SBIN_FILES; do [ -f "${APP_DIR}/deploy/${f}" ] && printf '%s ' "$f"; done))"
 echo "  verify     : satom diagnose privilege"

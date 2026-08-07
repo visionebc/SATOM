@@ -785,12 +785,12 @@ funciona, calcula sus señales y no avisa a nadie. Hay que armarlo a mano:</p>
 <tr>
 <td><code>device_sync</code></td>
 <td>horaria</td>
-<td>refresca el SoT de cada appliance en <code>reports/</code></td>
+<td>refresca el SoT de cada appliance en <code>data/reports/</code> + <code>data/sot/</code></td>
 </tr>
 <tr>
 <td><code>device_inspect</code></td>
 <td>02:45</td>
-<td>inspección nocturna + publicación del SoT en git</td>
+<td>inspección nocturna profunda; su resultado se versiona también en <code>data/sot/</code></td>
 </tr>
 <tr>
 <td><code>system_backup</code></td>
@@ -809,10 +809,16 @@ funciona, calcula sus señales y no avisa a nadie. Hay que armarlo a mano:</p>
    instalación.
 3. <strong>Servidor de respaldo externo</strong> — Settings → SoT &amp; Backup. Sin él, todas las
    copias viven dentro del mismo par de nodos.
-4. <strong>Publicación del SoT en git</strong> — comprobar que <code>satom-git-publish.timer</code> está
-   <code>enabled --now</code> <strong>en los dos nodos</strong>, y <code>satom-updater.path</code> también: si el
-   <code>.path</code> está parado, las actualizaciones encoladas se quedan en <code>queued</code> para
-   siempre.</p>
+4. <strong>Cola de actualizaciones</strong> — comprobar que <code>satom-updater.path</code> está armado
+   <strong>en los dos nodos</strong>: si el <code>.path</code> está parado, las actualizaciones
+   encoladas se quedan en <code>queued</code> para siempre.</p>
+<blockquote>
+<p>Aquí había una instrucción para armar el publicador horario del SoT en
+git. Se retiró el 2026-08-05 junto con el propio mecanismo: el SoT de
+dispositivos vive en <code>data/sot/</code>, lo replica <code>satom-ha-datasync</code> y viaja
+en los bundles de respaldo. Armarlo en un nodo nuevo ponía en verde una
+unidad que no publicaba nada.</p>
+</blockquote>
 <p>Cómo verificar que quedaron armadas, comando a comando:
 <a href="safeguards.html"><code>safeguards.md</code></a> § <em>Verifying the guards are armed</em>.</p>
 <h3 id="desinstalar-revertir">Desinstalar / revertir</h3>

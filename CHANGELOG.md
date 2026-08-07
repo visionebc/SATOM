@@ -7,6 +7,47 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Fixed
+- **Nine probes answered "I could not tell" with a value that means "fine".**
+  Scoping resolved to the Global console and showed every product; a malformed
+  access-control row read as *no restriction configured*; a repository git
+  could not read reported itself clean and in sync; the HA interlock derived
+  *standalone* and let the primary skip standby validation; the pre-reset guard
+  reported *nothing to preserve* and proceeded to a hard reset; hypervisor TLS
+  reported *verified* while never once consulting the operator CA; an
+  unreadable host-key store read as first contact; an unparseable colour
+  produced no contrast finding. None crashed, none logged, and each answered a
+  safety question with the reassuring default - so the system reported health
+  precisely when it had lost the ability to measure it. Each now distinguishes
+  a third state, and the permissive default that was legitimate in each case is
+  preserved rather than tightened.
+- **`hypervisors/base._ssl_context` imported a function that has never
+  existed** (`trust_store.verify_target`; the real entry point is
+  `verify_param`). The `ImportError` was swallowed on every call, so a
+  hypervisor with `verify_ssl=True` was always checked against public roots
+  only and never against an imported CA. The feature had not worked once.
+- **Two SSH channels had no host-key store at all** - the certificate autopull,
+  which carries the node TLS private key, and the ESXi shell transport, which
+  runs commands as root on a hypervisor. Both accepted any key, every time.
+  Trust-on-first-use is preserved for a genuinely fresh host; what is refused
+  is a store that exists and cannot be read in full.
+- **Four unit templates were never refreshed by the update runner** because the
+  list was hand-typed and had fallen behind `deploy/`; three installed units
+  still declared a service account that no longer exists, and ran only because
+  a drop-in overrode them. The list is now derived from the directory.
+- **The out-of-tree helper scripts had no installer.** The replicator itself
+  was three months behind its source, missing the fix that separates *"I could
+  not evaluate the peer"* from *"there is no peer"* - so it could report
+  success while replicating nothing.
+- **A retired mechanism was still documented as live on four operator-facing
+  surfaces**, including the install manual, which instructed the operator to
+  arm it on a fresh node, and the High Availability page. The script it named
+  had no source in the repository. The System Backup page also claimed a
+  specific hypervisor topology that had since changed, and told the operator
+  the surviving copy was the one that is in fact co-located with the others;
+  it now states the invariant to check instead of asserting an estate fact the
+  product cannot know.
+- The `restore` runbook claimed total loss was recoverable from a bundle. It is
+  not: the key that decrypts it is deliberately not in it.
 
 - **The site-rules overlay was replicated by nothing.** It is untracked on
   purpose — it names the estate — but it also sat beside the application
@@ -32,6 +73,26 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   frozen into an old bundle.
 
 ### Added
+- **Recovery custody for the two secrets no backup carries**
+  (`app/services/recovery.py`, `satom diagnose recovery`,
+  `satom execute export recovery-key`). `FERNET_KEY` opens every encrypted
+  column in the database and the internal CA key is the sole issuer for
+  replication mTLS; neither is replicated by git, by the HA datasync, or by a
+  backup bundle. The consequence was invisible and total: **a bundle restored
+  onto a rebuilt node is a database of unreadable secrets**, with nothing
+  anywhere explaining why. Putting the key into the bundle was rejected
+  deliberately - a bundle is retained, mirrored to the peer and pushed off-box
+  over SFTP using a password that itself lives in an encrypted column, so a
+  bundle carrying the key that opens it would collapse the estate into one
+  file in three places. Instead the manifest records a **fingerprint**
+  (domain-separated, truncated - identity without disclosure), a restore
+  compares it and **names** a key mismatch, and the operator gets an explicit
+  audited export path plus a check that reports when it has never been used.
+  On the primary this reported, the day it shipped, that **neither secret had
+  ever been exported**.
+- `app/services/ssh_pinning.py` - one implementation of SSH host-key pinning
+  for all three channels that open SSH, replacing one weak copy and two
+  channels that had no host-key store at all.
 
 - **AI Advisor** — a read-only chat assistant (Settings \u2192 AI Advisor,
   `/advisor`) for WAF false-positive triage, Lua-script drafting, and

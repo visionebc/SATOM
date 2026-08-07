@@ -977,3 +977,94 @@ def install(ctx, args):
             "every signal is computed on schedule and delivered to nobody.",
         ])
     return r
+
+
+# --------------------------------------------------------------------------
+# recovery custody
+# --------------------------------------------------------------------------
+
+def _app_json(ctx, code, timeout=60):
+    """Run a snippet in the app venv and parse its last line as JSON."""
+    venv = ctx.app_dir / "venv" / "bin" / "python3"
+    if not venv.exists():
+        return None, "venv missing at %s" % venv
+    env = dict(os.environ)
+    for k, v in ctx.env.items():
+        env.setdefault(k, v)
+    rc, out, err = run([str(venv), "-c", code], timeout=timeout,
+                       cwd=str(ctx.app_dir), env=env)
+    if rc != 0:
+        return None, (err or out or "exit %d" % rc).strip().splitlines()[-1:][0]
+    try:
+        return json.loads((out or "").strip().splitlines()[-1]), ""
+    except Exception as exc:  # noqa: BLE001
+        return None, "unparseable output (%s)" % type(exc).__name__
+
+
+_RECOVERY_CODE = (
+    "import json\n"
+    "from app import create_app\n"
+    "from app.services import recovery\n"
+    "a=create_app()\n"
+    "with a.app_context():\n"
+    "    print(json.dumps({'findings': recovery.check(),\n"
+    "                      'fpr': recovery.current_fingerprints(),\n"
+    "                      'escrow': recovery.escrow_state(),\n"
+    "                      'holds_ca': recovery.holds_ca_key()}))\n"
+)
+
+
+def recovery(ctx, args):
+    """Is the material that no backup carries actually recoverable?
+
+    Two secrets gate recovery of this installation and neither is replicated:
+    FERNET_KEY opens every encrypted column, and the internal CA key is the
+    sole issuer for replication mTLS. They are kept out of backup bundles on
+    purpose -- a bundle is retained, mirrored to the peer and pushed off-box
+    over SFTP, so one carrying the key that opens the SFTP password would
+    collapse the estate into a single file.
+
+    That decision is only safe if somebody actually holds a copy. This reports
+    whether anybody does.
+    """
+    if not ctx.env_readable:
+        # .env is 640 root:<service account>. Unreadable means "I could not
+        # evaluate", NOT "there is no key" -- reporting the latter would be the
+        # exact fail-open shape this check exists to find.
+        r = Result("warn", "cannot evaluate recovery custody", exit_code=4)
+        r.note(".env is unreadable as %s, so the live key fingerprint cannot "
+               "be computed. Re-run with sudo." % ctx.user)
+        return r
+    data, err = _app_json(ctx, _RECOVERY_CODE)
+    if data is None:
+        r = Result("warn", "cannot evaluate recovery custody", exit_code=4)
+        r.note(err)
+        return r
+    findings = data.get("findings") or []
+    fpr = data.get("fpr") or {}
+    escrow = data.get("escrow") or {}
+    rows = [("FERNET_KEY", fpr.get("fernet") or "(none)"),
+            ("internal CA key",
+             fpr.get("ca") or ("(not on this node)" if not data.get("holds_ca")
+                               else "(unreadable)"))]
+    for kind in ("fernet", "ca"):
+        rec = escrow.get(kind)
+        rows.append(("%s exported" % kind,
+                     "%s by %s" % (rec.get("at"), rec.get("by")) if rec
+                     else "never"))
+    worst = "ok"
+    for f in findings:
+        if f.get("severity") == "critical":
+            worst = "bad"
+            break
+        worst = "warn"
+    title = ("recovery custody: %d finding(s)" % len(findings) if findings
+             else "recovery custody: both secrets accounted for")
+    r = Result(worst, title, exit_code=1 if worst == "bad" else
+               (2 if worst == "warn" else 0))
+    r.rows("material", rows, keys="dim")
+    if findings:
+        r.lines("findings", ["%s: %s" % (f["kind"], f["detail"])
+                             for f in findings])
+        r.note("Export with: sudo satom execute export recovery-key --yes")
+    return r

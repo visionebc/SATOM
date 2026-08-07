@@ -295,6 +295,15 @@ def _check_git() -> list[dict]:
         return [{"key": "git.error", "severity": SEV_WARNING,
                  "title": "Git status unreadable",
                  "detail": f"git_info() failed: {exc}"}]
+    if info.get("unknown"):
+        # Reached before ahead/behind are read, because on this path they are
+        # both 0 — and 0/0 is the answer that means "healthy". Every finding
+        # below was structurally unreachable on a repo git could not read.
+        return [{"key": "git.unreadable", "severity": SEV_WARNING,
+                 "title": f"Git status unreadable on {_node()}",
+                 "detail": ("The repository could not be probed, so 'ahead', "
+                            "'behind' and 'clean' below are not measurements — "
+                            "they are defaults. " + (info.get("error") or ""))}]
     ahead, behind = int(info.get("ahead") or 0), int(info.get("behind") or 0)
     # True divergence: local has commits the upstream doesn't AND is behind it →
     # the branches forked and a fast-forward is impossible. This is the dangerous
@@ -307,8 +316,9 @@ def _check_git() -> list[dict]:
                             f"fast-forward. Reconcile before the nodes disagree.")}]
     # ahead>0 with behind==0 is the signature of an unreachable remote (Gitea
     # down, token expired, DNS): the hourly reports/ publisher keeps committing
-    # locally and the push silently fails — `satom-git-publish.timer` still
-    # exits 0, so nothing else notices. Those local-only commits are the off-box
+    # locally and the push silently fails, and nothing else notices. (The hourly
+    # publisher named here was retired 2026-08-05 with the git SoT; the
+    # exposure is the same for any local-only commit.) Those local-only commits are the off-box
     # copy of the device source of truth, and the update runner's reset would
     # discard them (it parks them under refs/backup/ now, but recovering a ref
     # is not the same as having published). Age, not count, is the signal: one
@@ -316,6 +326,13 @@ def _check_git() -> list[dict]:
     if ahead > 0:
         from . import git_backup
         state = git_backup.unpushed_state()
+        if state.get("unknown"):
+            return [{"key": "git.unreadable", "severity": SEV_WARNING,
+                     "title": f"Git push state unreadable on {_node()}",
+                     "detail": ("There are unpushed commits but their age "
+                                "could not be measured, so the threshold below "
+                                "cannot be applied. "
+                                + (state.get("error") or ""))}]
         age = float(state.get("oldest_age_h") or 0.0)
         max_h = _int(K_GIT_AHEAD_MAX_H, 6)
         if age >= max_h:

@@ -42,6 +42,8 @@ rather than assuming success — see :meth:`EsxiShell.probe`.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import posixpath
 import re
 import shlex
@@ -131,9 +133,23 @@ class EsxiShell:
                 "paramiko is not installed; the ESXi shell transport is "
                 "unavailable", detail=str(exc)) from exc
         cli = paramiko.SSHClient()
-        # ESXi presents a self-signed host key that changes on reinstall.
-        # AutoAdd is the pragmatic choice here and is called out in the docs;
-        # the alternative is an unusable feature on every fresh host.
+        # This channel runs shell commands as root on a hypervisor, so "trust
+        # whatever answers" is not a pragmatic default -- it is no
+        # authentication of the peer at all.
+        #
+        # The original comment was right that an ESXi host key changes on
+        # reinstall, and that pinning must not make the feature unusable on a
+        # fresh host. Trust-on-first-use satisfies both: an ABSENT store is
+        # still first contact and still just works. What is refused is the
+        # case that comment did not consider -- a store that exists and cannot
+        # be read, where accepting a new key silently discards a pin that was
+        # protecting this connection yesterday.
+        from ..ssh_pinning import load_pins, persist
+        known = (Path(__file__).resolve().parents[3] / "data" / "known_hosts")
+        try:
+            load_pins(cli, known, HypervisorError)
+        except HypervisorError:
+            raise
         cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         try:
             cli.connect(self.host, port=self.port, username=self.username,
@@ -143,6 +159,7 @@ class EsxiShell:
             raise HypervisorError(
                 f"SSH to the ESXi host failed: {exc}",
                 detail=self.ENABLE_HINT, retryable=True) from exc
+        persist(cli, known, HypervisorError)
         self._client = cli
         return cli
 

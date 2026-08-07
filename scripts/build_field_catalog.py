@@ -23,8 +23,27 @@ import os
 from app.services import field_catalog as fc
 from app.services import provisioning as prov
 
-# (line, appliance-name) reference sources. Add rows for new lines/products.
-SOURCES = {"fortiweb": [("8.0", "fw1"), ("7.6", "fw2")]}
+# (line, appliance-name) reference sources, read from the environment because a
+# reference appliance is an estate fact, not a property of the tool. Same rule as
+# FIRECRAWL below: no default, so a checkout carries no one's device roster and a
+# run against the wrong box is impossible rather than merely unlikely.
+#   SATOM_FIELD_CATALOG_SOURCES="fortiweb=8.0:<appliance>,7.6:<appliance>"
+def _sources_from_env() -> dict[str, list[tuple[str, str]]]:
+    raw = os.environ.get("SATOM_FIELD_CATALOG_SOURCES", "").strip()
+    out: dict[str, list[tuple[str, str]]] = {}
+    for chunk in filter(None, (c.strip() for c in raw.split(";"))):
+        product, _, rows = chunk.partition("=")
+        pairs = []
+        for row in filter(None, (r.strip() for r in rows.split(","))):
+            line, _, name = row.partition(":")
+            if line.strip() and name.strip():
+                pairs.append((line.strip(), name.strip()))
+        if product.strip() and pairs:
+            out[product.strip()] = pairs
+    return out
+
+
+SOURCES = _sources_from_env()
 
 # Firecrawl (optional, no auth). Enrichment is opt-in (gated) to keep the
 # harvest fast, and the endpoint has no default: set FIRECRAWL_URL to use it.
@@ -121,7 +140,12 @@ def build(product: str = "fortiweb", force: bool = False) -> None:
     reg = loader.load_registry()
     specs = prov.PROVISION_CATALOG
     default_written: set = set()
-    for line, appliance_name in SOURCES.get(product, []):
+    rows = SOURCES.get(product, [])
+    if not rows:
+        raise SystemExit(
+            "no reference appliance for %r: set SATOM_FIELD_CATALOG_SOURCES, e.g.\n"
+            '  SATOM_FIELD_CATALOG_SOURCES="%s=8.0:<appliance-name>"' % (product, product))
+    for line, appliance_name in rows:
         appliance = Appliance.query.filter_by(name=appliance_name).first()
         if appliance is None:
             print(f"! {appliance_name} not registered — skipping line {line}")

@@ -87,7 +87,7 @@ derived from.</p>
 is <code>name</code></strong>; every sub-table row's mkey is <code>id</code>. Sub-tables are <strong>by-parent</strong>
 (POST/PUT/DELETE carry the parent's <code>mkey</code>), they never have their own reference edge.</p>
 <blockquote>
-<p>⚠ <strong>Sub-table READ scoping (FortiWeb quirk, verified live on fw1 7.6.8).</strong> Read a
+<p>⚠ <strong>Sub-table READ scoping (FortiWeb quirk, verified live on {device} 7.6.8).</strong> Read a
 by-parent sub-table through the LOGICAL endpoint with <code>?mkey=&lt;parent&gt;</code>
 (<code>get_object</code>), NOT the path-style <code>get_raw('/parent/&lt;key&gt;/&lt;sub-list&gt;')</code>. When the
 sub-table is empty (or the path form doesn't apply) FortiWeb <strong>echoes the whole
@@ -571,9 +571,9 @@ and the before/after</em> — never appliance secrets (those live in the OS keyr
 <h2 id="8-coverage-cross-validation-official-docs-2026-06-20">8. Coverage &amp; cross-validation (official docs, 2026-06-20)</h2>
 <p>The SDK-derived tree was cross-validated against the <strong>official FortiWeb 7.6
 admin guide</strong> (docs.fortinet.com — JS SPA, scraped via the internal Firecrawl,
-[[internal-firecrawl-lan]]; 559 pages, 163 relevant) and <strong>probed live on fw1
+[[internal-firecrawl-lan]]; 559 pages, 163 relevant) and <strong>probed live on {device}
 (7.6.8)</strong>. The core graph (§3) is sound. The sweep closed these gaps:</p>
-<p><strong>Added to the registry + tree (confirmed live on fw1, absent from the SDK):</strong>
+<p><strong>Added to the registry + tree (confirmed live on {device}, absent from the SDK):</strong>
 - <code>ztna-profile</code> (policy <code>ztna-profile</code>), <code>traffic-mirror</code> (policy
   <code>traffic-mirror-profile</code>), <code>certificate.intermediate-certificate-group</code> (policy
   <code>intermediate-certificate-group</code>), <code>advanced-bot-protection</code> (WPP
@@ -597,7 +597,7 @@ so the editor walks the full depth. Wired: <code>json-validation.rule</code>,
 <code>file-upload-custom-file-type</code>, <code>machine-learning.url-replacer-policy</code>/<code>-rule</code>, and the
 bot leaf sub-tables (known-bots lists, bot-deception/biometric url-lists,
 bot-mitigation-exception element-list, http-constraints-exceptions).</p>
-<p><strong>Documented but NOT present on fw1 7.6.8</strong> (do not add as endpoints — 404 on
+<p><strong>Documented but NOT present on {device} 7.6.8</strong> (do not add as endpoints — 404 on
 probe): <code>ftp-protection-profile</code>, <code>site-publish-helper</code>/<code>site-publish.policy</code>,
 <code>dos-exception-policy</code>, <code>ip-reputation</code> (a <code>system/global</code> toggle, not a cmdb
 object), <code>graphql-validation-rule</code> (only the policy exists), <code>certificate.ocsp</code>

@@ -2817,7 +2817,7 @@ ADOMs, plus a structural test that no template emits a hardcoded platform
 root store, which no privately-signed appliance can ever satisfy, or validate
 nothing. There was nowhere to put the company's own CA. So the fix in this
 project's history is always the same one — <code>verify_ssl=false</code> for fadc
-(2026-07-12), for {device} (2026-07-28), for fac01 (2026-08-05). That is not
+(2026-07-12), for {device} (2026-07-28), for {device} (2026-08-05). That is not
 a run of device quirks, it is a missing feature, and its cost is that TLS
 verification is off everywhere including where it would have worked.</p>
 <p><code>services/trust_store.py</code> holds the CAs this installation accepts. Four rules

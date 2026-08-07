@@ -245,6 +245,21 @@ def recent(appliance, limit: int = 20) -> list[dict[str, Any]]:
     return list(res.get('payload') or [])[:limit]
 
 
+#: The result-table columns: what an operator triages on before opening anything.
+#: One definition, used by BOTH the match table and the "recent entries" fallback
+#: — two column lists would let the fallback drift into describing a different
+#: thing than the table it stands in for.
+TABLE_COLUMNS = [
+    ('rel_time', 'Date/Time'),
+    ('msg_id', 'MSG ID'),
+    ('main_type', 'Attack Type'),
+    ('sub_type', 'Sub Type'),
+    ('policy', 'Policy'),
+    ('src', 'Source IP'),
+    ('dst', 'Destination IP'),
+    ('action', 'Action'),
+]
+
 #: Fields worth showing first in the detail view; the row carries ~80 keys and an
 #: undifferentiated dump of all of them is unreadable during an incident.
 PRIMARY_FIELDS = [

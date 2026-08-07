@@ -8,6 +8,31 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Every node re-asserts its own metrics store on every code update.**
+  The store binary and its data directory live outside the app tree by
+  design — the data-sync replicates `data/` with `rsync --delete` and a
+  time-series database cannot be rsynced under a live process — so nothing
+  carried the store between nodes: not git, not the data-sync, not a
+  database dump. The installer wrote it once and nothing wrote it again, so
+  a node that joined the pair later, or was rebuilt, ran the analytics
+  pages, the collection schedule and the service entry the diagnostics
+  check with no store behind any of them; its panels returned a query
+  error, which reads as a interface bug rather than a missing subsystem.
+  New `deploy/install-metrics-store.sh`, called by the installer, by
+  **both** update paths in the privileged runner, and by
+  `satom execute reinstall metrics-store`. It is symmetric across an HA
+  pair without any node reaching across another: the standby's reconciler
+  enqueues rather than updating itself, so every node runs its own runner
+  and repairs its own node-local artefacts. It can never abort an update —
+  on an isolated network the download always fails, and making that fatal
+  would trade a missing optional subsystem for an un-updatable product —
+  and it arms the service only when the capability was genuinely absent, so
+  a deliberate stop from Settings → General is not undone by the next
+  update. `satom diagnose install` now grades the binary against its
+  anchored digest and prints the service's runtime state without grading
+  it. The digest gains a single home in `deploy/metrics-store.env`, pinned
+  by test to the four shell files that must keep literal copies.
+
 - **Start, stop and restart this node's services from the console.**
   Settings → General grows a **Services** card covering the web app, the
   scheduler, the reconciler, the metrics store, the alert / certificate /

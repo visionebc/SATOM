@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 5 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 6 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 5 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 6 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · 5 entries</span>
-        <ul class="rel-leads"><li>Start, stop and restart this node&#x27;s services from the console</li><li>The standby&#x27;s services can be controlled from the primary</li><li>Service buttons are state-aware and colour-coded</li><li class="rel-more">… and 2 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · 6 entries</span>
+        <ul class="rel-leads"><li>Every node re-asserts its own metrics store on every code update</li><li>Start, stop and restart this node&#x27;s services from the console</li><li>The standby&#x27;s services can be controlled from the primary</li><li class="rel-more">… and 3 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.7.1.html" data-rel-version="1.7.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.7.1</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -162,6 +162,32 @@
       <div class="mdx">
 <h3 id="added">Added</h3>
 <ul>
+<li>
+<p><strong>Every node re-asserts its own metrics store on every code update.</strong>
+  The store binary and its data directory live outside the app tree by
+  design — the data-sync replicates <code>data/</code> with <code>rsync --delete</code> and a
+  time-series database cannot be rsynced under a live process — so nothing
+  carried the store between nodes: not git, not the data-sync, not a
+  database dump. The installer wrote it once and nothing wrote it again, so
+  a node that joined the pair later, or was rebuilt, ran the analytics
+  pages, the collection schedule and the service entry the diagnostics
+  check with no store behind any of them; its panels returned a query
+  error, which reads as a interface bug rather than a missing subsystem.
+  New <code>deploy/install-metrics-store.sh</code>, called by the installer, by
+  <strong>both</strong> update paths in the privileged runner, and by
+  <code>satom execute reinstall metrics-store</code>. It is symmetric across an HA
+  pair without any node reaching across another: the standby's reconciler
+  enqueues rather than updating itself, so every node runs its own runner
+  and repairs its own node-local artefacts. It can never abort an update —
+  on an isolated network the download always fails, and making that fatal
+  would trade a missing optional subsystem for an un-updatable product —
+  and it arms the service only when the capability was genuinely absent, so
+  a deliberate stop from Settings → General is not undone by the next
+  update. <code>satom diagnose install</code> now grades the binary against its
+  anchored digest and prints the service's runtime state without grading
+  it. The digest gains a single home in <code>deploy/metrics-store.env</code>, pinned
+  by test to the four shell files that must keep literal copies.</p>
+</li>
 <li>
 <p><strong>Start, stop and restart this node's services from the console.</strong>
   Settings → General grows a <strong>Services</strong> card covering the web app, the

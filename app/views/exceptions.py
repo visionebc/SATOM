@@ -17,6 +17,7 @@ from ..clients.fortiweb import FortiWebClient
 from ..services import wpp_exceptions as store
 from ..services.fortiweb_ops import FortiWebOps
 from ..services import exception_inject, exception_detect
+from ..services import wpp_clone_flow
 from ..services.audit import log_action
 
 bp = Blueprint('exceptions', __name__, url_prefix='/exceptions')
@@ -26,26 +27,10 @@ EP_POLICY = '/api/v2.0/cmdb/server-policy/policy'
 
 
 def _clone_suggestion(appliance, source, policies):
-    """The guided-clone offer (rule 3): derive the per-policy WPP clone name from
-    the Naming catalog (element ``wpp_exception``, default ``wpp-{name}`` where
-    {name} = the server policy) and check WPP headroom (rule 4) up front."""
-    from ..services import naming as naming_svc
-    from ..services import settings_store as sstore
-    from ..services import capacity
-    pol = next((p for p in (policies or []) if p), '')
-    new_name = ''
-    if pol:
-        scheme = naming_svc.effective_scheme(
-            sstore.naming_overrides(naming_svc.PRODUCT_FORTIWEB),
-            naming_svc.PRODUCT_FORTIWEB)
-        pattern = scheme.get('wpp_exception', 'wpp-{name}')
-        new_name = naming_svc.render_one(pattern, naming_svc.slugify(pol) or pol)
-    try:
-        allowed, msg = capacity.check_headroom(appliance, 'web_protection_profile', want=1)
-    except Exception:  # noqa: BLE001 — a capacity hiccup never blocks the offer UI
-        allowed, msg = True, ''
-    return {'source': source, 'policy': pol, 'new_name': new_name,
-            'headroom_ok': bool(allowed), 'headroom': msg}
+    """The guided-clone offer (rule 3). Delegates to ``wpp_clone_flow`` so this
+    page and the Attack-ID investigation page derive the SAME name and read the
+    SAME headroom — see that module's docstring for why it is not inlined."""
+    return wpp_clone_flow.suggestion(appliance, source, policies)
 
 
 def _device_lists(appliance):
@@ -185,82 +170,15 @@ def clone_for_policy(id):
     ``apply=true``."""
     appliance = visible_appliance_or_404(id)
     body = request.get_json(silent=True) or {}
-    source = (body.get('source') or '').strip()
-    policy = (body.get('server_policy') or '').strip()
-    new_name = (body.get('new_name') or '').strip()
-    do_apply = bool(body.get('apply'))
-    if not source or not policy:
-        return jsonify(ok=False, error='source WPP and server policy are required'), 400
-    if not new_name:
-        new_name = _clone_suggestion(appliance, source, [policy])['new_name']
-    if not new_name or new_name == source:
-        return jsonify(ok=False, error='could not derive a distinct clone name'), 400
-    if store.template_lock_error(new_name):
-        return jsonify(ok=False, error='"%s" is itself a template name — pick another'
-                       % new_name), 400
-
-    # Rule 4: never multiply WPPs past the model's capacity.
-    from ..services import capacity
-    allowed, hmsg = capacity.check_headroom(appliance, 'web_protection_profile', want=1)
-    if not allowed:
-        return jsonify(ok=False, error=hmsg), 409
-
-    from ..services import clone, objform
-    try:
-        client = FortiWebClient(appliance)
-        reader = clone.ClientReader(client)
-        planner = clone.ClonePlanner(reader, reader)
-        items = planner.plan(clone.ROOT_WPP, source, new_name=new_name)
-    except Exception as exc:  # noqa: BLE001
-        return jsonify(ok=False, error='device read failed: %s' % exc), 502
-    summary = clone.summarize(items)
-    if not do_apply:
-        return jsonify(ok=True, dry_run=True, new_name=new_name, summary=summary,
-                       headroom=hmsg, plan=clone.render_plan(items))
-
-    if any(it.status == 'create' for it in items):
-        ops = FortiWebOps(appliance)
-
-        def _write(item):
-            ep = objform.rest_path(item.urn)
-            mkey = item.parent_mkey if item.kind == 'subrow' else None
-            res = ops.create(ep, {'data': item.payload}, mkey=mkey, dry_run=False)
-            if not res.ok:
-                raise RuntimeError(res.get('error') or 'write failed')
-
-        clone.apply_clone(items, _write, dry_run=False)
-        failed = [it for it in items
-                  if (it.result or '').startswith('error')]
-        if failed:
-            return jsonify(ok=False,
-                           error='%d object(s) failed to clone — policy NOT re-bound'
-                                 % len(failed),
-                           plan=clone.render_plan(items)), 502
-    # else: the clone already exists on the box → just re-bind.
-
-    res = FortiWebOps(appliance).update(
-        EP_POLICY, policy, {'data': {'web-protection-profile': new_name}},
-        dry_run=False)
-    if not res.ok:
-        return jsonify(ok=False, new_name=new_name,
-                       error='clone "%s" is on the device but the policy re-bind '
-                             'failed: %s' % (new_name, res.get('error', ''))), 502
-    moved = store.retarget_for_policy(appliance.id, policy, source, new_name)
-    log_action('exceptions.clone_for_policy', target='%s/%s' % (appliance.name, policy),
-               appliance_id=appliance.id,
-               detail='wpp %s -> %s (re-pointed %d carve-out(s))'
-                      % (source, new_name, moved))
-    # Keep the DB-first pickers current (best-effort — the device write already
-    # succeeded; a refresh failure only delays the new name showing in lists).
-    try:
-        from ..services import device_sync
-        device_sync.sync_device(appliance, publish=False,
-                                user_label=getattr(current_user, 'username', None),
-                                trigger='exceptions.clone_for_policy')
-    except Exception:  # noqa: BLE001
-        pass
-    return jsonify(ok=True, new_name=new_name, rebound=True, moved=moved,
-                   summary=summary)
+    res = wpp_clone_flow.clone_and_rebind(
+        appliance,
+        source=(body.get('source') or ''),
+        policy=(body.get('server_policy') or ''),
+        new_name=(body.get('new_name') or ''),
+        apply=bool(body.get('apply')),
+        actor=getattr(current_user, 'username', None) or '')
+    code = res.pop('code', 200)
+    return jsonify(**res), code
 
 
 # --------------------------------------------------------------------------- #

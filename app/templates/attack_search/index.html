@@ -23,7 +23,7 @@
     <p class="text-muted mb-0" style="font-size:13px;">
       Paste the reference shown on the WAF block page
       (<code>id-&lt;device&gt;-&lt;number&gt;</code>) to pull up the attack-log entry
-      that produced it.
+      that produced it. Click a row for the full entry.
     </p>
   </div>
 </div>
@@ -78,48 +78,44 @@
   </div>
 {% endif %}
 
-{% for row in rows or [] %}
+{% if rows %}
 <div class="fw-card mb-3">
   <div class="fw-card-header d-flex justify-content-between align-items-center">
-    <span>
-      <i class="bi bi-shield-exclamation me-1"></i>
-      {{ row.get('main_type') or 'Attack' }}
-      {% if row.get('sub_type') and row.get('sub_type') != 'N/A' %} — {{ row.get('sub_type') }}{% endif %}
-    </span>
-    <span class="fw-badge {{ 'fw-badge-crit' if 'Deny' in (row.get('action') or '') else 'fw-badge-warn' }}">
-      {{ row.get('action') or 'unknown' }}
-    </span>
+    <span><i class="bi bi-shield-exclamation me-1"></i>Matching attack-log entries</span>
+    <span class="text-muted" style="font-size:12px;">Click a row to open the full entry</span>
   </div>
-  <div class="fw-card-body">
-    <table class="table table-sm mb-0">
+  <div class="table-responsive">
+    <table class="table fw-table table-sm mb-0" id="atk-results">
+      <thead>
+        <tr>
+          {% for key, label in table_columns %}<th>{{ label }}</th>{% endfor %}
+          <th style="width:1%"></th>
+        </tr>
+      </thead>
       <tbody>
-        {% for key, label in primary_fields %}
-          {% set val = row.get(key) %}
-          {% if val not in (None, '', 'N/A') %}
-          <tr>
-            <th style="width:200px;font-weight:600;">{{ label }}</th>
-            <td style="word-break:break-all;">{{ val }}</td>
-          </tr>
-          {% endif %}
+        {% for row in rows %}
+        <tr class="atk-row" data-atk-index="{{ loop.index0 }}" style="cursor:pointer;">
+          {% for key, label in table_columns %}
+            {% set val = row.get(key) %}
+            {% if key == 'action' %}
+              <td><span class="fw-badge {{ 'fw-badge-crit' if 'Deny' in (val or '') else 'fw-badge-warn' }}">{{ val or '—' }}</span></td>
+            {% else %}
+              <td style="word-break:break-word;">{{ val if val not in (None, '', 'N/A') else '—' }}</td>
+            {% endif %}
+          {% endfor %}
+          <td class="text-end">
+            <button type="button" class="btn btn-sm btn-fw-outline atk-open"
+                    data-atk-index="{{ loop.index0 }}" title="Open details">
+              <i class="bi bi-box-arrow-in-right"></i>
+            </button>
+          </td>
+        </tr>
         {% endfor %}
       </tbody>
     </table>
-    <details class="mt-2">
-      <summary style="cursor:pointer;font-size:13px;">All {{ row|length }} fields</summary>
-      <table class="table table-sm mt-2 mb-0">
-        <tbody>
-          {% for key in row.keys()|sort %}
-            {% if row.get(key) not in (None, '') %}
-            <tr><th style="width:200px;font-weight:600;">{{ key }}</th>
-                <td style="word-break:break-all;">{{ row.get(key) }}</td></tr>
-            {% endif %}
-          {% endfor %}
-        </tbody>
-      </table>
-    </details>
   </div>
 </div>
-{% endfor %}
+{% endif %}
 
 {% if rows is not none and not rows and not error %}
 <div class="fw-card">
@@ -130,24 +126,48 @@
       The feed is working — these are the newest rows this appliance holds. If the
       ID you searched is older than these, it has aged out of the log.
     </p>
-    <table class="table table-sm mb-0">
-      <thead><tr><th>MSG ID</th><th>Policy</th><th>Type</th><th>Action</th><th>URL</th></tr></thead>
-      <tbody>
-        {% for r in recent %}
-        <tr>
-          <td><a href="{{ url_for('attack_search.index', q=r.get('msg_id'), appliance_id=appliance.id) }}">{{ r.get('msg_id') }}</a></td>
-          <td>{{ r.get('policy') }}</td>
-          <td>{{ r.get('main_type') }}</td>
-          <td>{{ r.get('action') }}</td>
-          <td style="word-break:break-all;">{{ r.get('http_url') }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="table-responsive">
+      <table class="table fw-table table-sm mb-0">
+        <thead><tr>{% for key, label in table_columns %}<th>{{ label }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for r in recent %}
+          <tr>
+            {% for key, label in table_columns %}
+              {% set val = r.get(key) %}
+              {% if key == 'msg_id' %}
+                <td><a href="{{ url_for('attack_search.index', q=val, appliance_id=appliance.id) }}">{{ val }}</a></td>
+              {% else %}
+                <td style="word-break:break-word;">{{ val if val not in (None, '', 'N/A') else '—' }}</td>
+              {% endif %}
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
     {% else %}
     <p class="text-muted mb-0">This appliance holds no attack-log entries at all.</p>
     {% endif %}
   </div>
 </div>
 {% endif %}
+
+{# The panel renders from the rows already on the page: the detail view needs no
+   second round-trip, and what the operator inspects is exactly what the table
+   was built from. The AI path deliberately does NOT use this — it re-reads the
+   entry from the appliance server-side (see views/attack_search.analyze). #}
+{% if rows %}
+<script type="application/json" id="atk-rows-data">{{ rows|tojson }}</script>
+<script type="application/json" id="atk-page-data">{{ {
+  'appliance_id': appliance.id,
+  'appliance_name': appliance.name,
+  'ai_enabled': ai_enabled,
+  'primary_fields': primary_fields,
+  'analyze_url': url_for('attack_search.analyze'),
+}|tojson }}</script>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/attack_drawer.js') }}"></script>
 {% endblock %}

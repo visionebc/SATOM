@@ -144,20 +144,53 @@ def system_prompt() -> str:
     return SYSTEM_PROMPT + TOOLS_PROMPT + "\n".join(lines)
 
 
-def _extract_proposal_block(text: str) -> dict | None:
-    """Best-effort: pull the FIRST ```satom-proposal fenced JSON block out of
-    a model response. Returns None on anything that doesn't parse as a dict —
-    a malformed block never becomes a proposal; the chat reply is unaffected
-    either way."""
+def extract_proposal(text: str) -> dict | None:
+    """Pull the proposal object out of a model response.
+
+    The fenced ```satom-proposal block is the contract and is tried first. A
+    malformed block still returns None: fencing is an explicit statement of
+    intent, so garbage inside one is an error, not an invitation to go hunting.
+
+    The UNFENCED fallback exists because models drop the fence often enough to
+    matter and the resulting failure is invisible — the reply still describes a
+    carve-out in prose, no draft appears, and nothing on screen says why.
+    Observed live against qwen2.5-coder:32b on 2026-08-08: a complete, correct
+    proposal object emitted with no fence at all.
+
+    The fallback is deliberately narrow: the first top-level JSON object whose
+    ``kind`` is a known proposal kind and whose ``payload`` is an object.
+    Widening it buys nothing — and it cannot manufacture a change in any case,
+    because a proposal is a DRAFT that a human holding config_write must still
+    approve, and its payload is schema-validated before it becomes one.
+    """
     import re
-    m = re.search(r"```" + PROPOSAL_FENCE + r"\s*\n(.*?)```", text, re.DOTALL)
-    if not m:
-        return None
-    try:
-        data = json.loads(m.group(1).strip())
-    except (ValueError, TypeError):
-        return None
-    return data if isinstance(data, dict) else None
+    m = re.search(r"```" + PROPOSAL_FENCE + r"\s*\n(.*?)```", text or "", re.DOTALL)
+    if m:
+        try:
+            data = json.loads(m.group(1).strip())
+        except (ValueError, TypeError):
+            return None
+        return data if isinstance(data, dict) else None
+    return _scan_unfenced_proposal(text or "")
+
+
+def _scan_unfenced_proposal(text: str) -> dict | None:
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(text):
+        if ch != "{":
+            continue
+        try:
+            obj, _ = decoder.raw_decode(text, i)
+        except ValueError:
+            continue
+        if (isinstance(obj, dict) and obj.get("kind") in AdvisorProposal.KINDS
+                and isinstance(obj.get("payload"), dict)):
+            return obj
+    return None
+
+
+#: Kept as the historical name so existing callers and guards keep working.
+_extract_proposal_block = extract_proposal
 
 UNTRUSTED_OPEN = "<<<UNTRUSTED>>>\n"
 UNTRUSTED_CLOSE = "\n<<<END_UNTRUSTED>>>"
@@ -1045,6 +1078,16 @@ def apply_proposal(prop: AdvisorProposal, *, applied_by: str) -> str:
     if prop.kind == "waf_exception":
         from ..models import visible_appliance_or_404
         appliance = visible_appliance_or_404(prop.appliance_id)
+        # Team rule 2 holds on EVERY path to a carve-out, not just the one an
+        # operator types by hand. Without this, an AI proposal was the easier
+        # route to a carve-out on a template-managed profile than the manual
+        # form, which 403s and offers the guided clone instead. The caller is
+        # expected to resolve the lock first (clone + re-bind, then re-point
+        # ``wpp_mkey`` at the clone); refusing here is what makes that the only
+        # way through.
+        lock = wpp_exceptions.template_lock_error(payload.get("wpp_mkey", ""))
+        if lock:
+            raise ValueError(lock)
         fields = payload.get("fields") or {}
         clean = {k: v for k, v in fields.items() if v not in (None, "", [])}
         exc = wpp_exceptions.add(

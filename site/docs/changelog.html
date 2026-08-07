@@ -86,6 +86,30 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li><strong>The sealed recovery envelope was unreachable by every mechanism that
+  carries it.</strong> <code>satom execute seal recovery</code> runs as root and wrote
+  <code>data/recovery/</code> as <code>root:root</code>, while the HA datasync and the backup
+  writer both read as the service account: the envelope existed, was
+  cryptographically sound, and reached neither the peer nor any bundle —
+  and <code>diagnose recovery</code> reported the durability problem solved. Sealing
+  now hands the envelope to the tree owner (derived from the app root,
+  never a hardcoded account name) before publishing it, and reachability
+  is reported as its own fact. An unreachable envelope is a <strong>critical</strong>
+  finding, deliberately worse than an honest "not sealed".</li>
+<li><strong><code>diagnose recovery</code> could never report ok on a correctly sealed node.</strong>
+  A live, reachable, current seal now satisfies the "never exported"
+  finding for the kind it covers — a stale, unreachable, or unreadable
+  seal does not, and an unevaluable one stays noisy. The <code>sealed envelope</code>
+  row is printed next to the <code>exported</code> rows so a quiet check is not an
+  unexplained one.</li>
+<li><strong>Two CLI commands crashed formatting their own success.</strong>
+  <code>Result.rows()</code> takes the heading first; <code>seal recovery</code> wrote the
+  envelope and then printed <code>[FAIL]</code>, and the same unexploded bug sat in
+  <code>reset theme</code> — the anti-lockout command. A guard now walks the AST of
+  every CLI module rather than the two known call sites.</li>
+</ul>
 <h2 id="170-2026-08-07">[1.7.0] - 2026-08-07</h2>
 <h3 id="added">Added</h3>
 <ul>
@@ -153,7 +177,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   <code>advisor.configure</code>. See <code>docs/ai-advisor.md</code>.</p>
 </li>
 </ul>
-<h3 id="fixed">Fixed</h3>
+<h3 id="fixed_1">Fixed</h3>
 <ul>
 <li><strong>Nine probes answered "I could not tell" with a value that means "fine".</strong>
   Scoping resolved to the Global console and showed every product; a malformed
@@ -291,7 +315,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   its API, so the page listed zero targets and zero devices. A page that can
   only fail is worse than one that is not offered.</li>
 </ul>
-<h3 id="fixed_1">Fixed</h3>
+<h3 id="fixed_2">Fixed</h3>
 <ul>
 <li><strong>The publication redaction rule was a roster, not a shape.</strong> It enumerated
   the appliances that existed the day it was written, so every unit onboarded
@@ -578,7 +602,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   column holding anything else was left alone.</li>
 <li>Alert bodies now name the Thresholds scope that governs the finding.</li>
 </ul>
-<h3 id="fixed_2">Fixed</h3>
+<h3 id="fixed_3">Fixed</h3>
 <ul>
 <li><strong><code>satom diagnose code</code> now sees the artifact gunicorn actually caches.</strong> It
   compared the newest <code>.py</code> against each process start time, so a change that
@@ -778,7 +802,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   shadowing the tracked templates under <code>app/templates/backups/</code>.</li>
 </ul>
 <h2 id="141-2026-08-05">[1.4.1] - 2026-08-05</h2>
-<h3 id="fixed_3">Fixed</h3>
+<h3 id="fixed_4">Fixed</h3>
 <ul>
 <li>
 <p><strong>The installation page was answering a question about the appliances.</strong>
@@ -1085,7 +1109,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   [SATOM-LICENSE-TAGS]</p>
 </li>
 </ul>
-<h3 id="fixed_4">Fixed</h3>
+<h3 id="fixed_5">Fixed</h3>
 <ul>
 <li>
 <p><strong>A missing systemd unit is no longer reported as a failed one.</strong>
@@ -1830,7 +1854,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   does not render where it matters. The vendored copy was already in the tree
   and unused.</li>
 </ul>
-<h3 id="fixed_5">Fixed</h3>
+<h3 id="fixed_6">Fixed</h3>
 <ul>
 <li><strong><code>/docs/api</code> was public and served the document unredacted.</strong> The route
   needed no session and rendered <code>docs/api_v1.md</code> verbatim, so a management
@@ -2128,7 +2152,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   <code>Appliance</code>; the column is <code>maintenance</code>.</li>
 </ul>
 <h2 id="122-2026-07-27">[1.2.2] - 2026-07-27</h2>
-<h3 id="fixed_6">Fixed</h3>
+<h3 id="fixed_7">Fixed</h3>
 <ul>
 <li><strong><code>app/services/cert_service.py</code> did not parse.</strong> An <code>import os</code> had been
   placed above <code>from __future__ import annotations</code>, which is a hard
@@ -2179,7 +2203,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li><strong>Rule recorded in <code>docs/overview.md</code></strong>: a new safeguard lands in
   <code>docs/safeguards.md</code> in the same commit that introduces it.</li>
 </ul>
-<h3 id="fixed_7">Fixed</h3>
+<h3 id="fixed_8">Fixed</h3>
 <ul>
 <li>Offline bundle checksums used an absolute path, so <code>sha256sum -c</code> failed in
   the directory the file was downloaded to. Now basename-only, as the RHEL
@@ -2243,7 +2267,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   Manager</strong>. Vendor names (FortiWeb, FortiADC, FortiAnalyzer) are untouched:
   the product manages those appliances and has to name them.</li>
 </ul>
-<h3 id="fixed_8">Fixed</h3>
+<h3 id="fixed_9">Fixed</h3>
 <ul>
 <li><strong>Scheduler and git-publish were silently dead</strong> after the privilege drop:
   both guard scripts used <code>runuser</code>, which only works as root. The scheduler
@@ -2303,7 +2327,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   bundles), generic package-manager support, public site (GitHub Pages),
   package registry artifacts.</li>
 </ul>
-<h3 id="fixed_9">Fixed</h3>
+<h3 id="fixed_10">Fixed</h3>
 <ul>
 <li>Upgrade-event timestamps now render in local time (<code>| localtime</code>) instead
   of raw UTC.</li>

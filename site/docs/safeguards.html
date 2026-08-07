@@ -3875,6 +3875,62 @@ rebuilds the installation from <strong>any</strong> copy.</p>
 operator the raw secrets for a vault they control; this one guarantees a copy
 survives in places the fleet already replicates to. They fail differently, which
 is the point of having both.</p>
+<h2 id="32b-a-sealed-envelope-nothing-can-read-is-not-custody">32b. A sealed envelope nothing can read is not custody</h2>
+<p><code>satom execute seal recovery</code> needs root, because only root can read
+<code>.env</code> and the CA key. Every mechanism that carries the envelope off the
+disk — the HA datasync over SSH, the backup-bundle writer — runs as the
+<strong>service account</strong>. So the command that creates the envelope and the
+commands that copy it are two different users, and nothing in the seal
+path said so.</p>
+<p>On 2026-08-07 the first real seal produced <code>data/recovery/</code> as
+<code>drwx------ root root</code> with a 0600 file inside. The envelope was
+cryptographically perfect and structurally unreachable: the service
+account got Permission denied on both the directory and the file, so the
+datasync would have skipped it and the bundle writer would have logged
+<code>recovery-seal ABSENT</code>. Meanwhile <code>diagnose recovery</code> <strong>dropped</strong> the
+"no sealed envelope" finding and reported the durability problem solved.</p>
+<p>That is worse than no envelope. No envelope tells the truth.</p>
+<p><strong>The rules</strong></p>
+<ol>
+<li><strong>Ownership, never a wider mode.</strong> Reachability is bought by handing
+   the envelope to the tree owner, not by making it group- or
+   world-readable — that would "fix" the copy mechanisms by handing the
+   envelope to every account on the box, which is the opposite of sealing.</li>
+<li><strong>The owner is derived, never named.</strong> The service account is <code>satom</code>
+   on new installs and <code>fortinet</code> on nodes that adopted an existing tree.
+   <code>_tree_owner()</code> stats the app root. Hardcoding either name is how the
+   datasync broke once already.</li>
+<li><strong>Hand it over before publishing it.</strong> The chown lands on the temp
+   file, so <code>os.replace</code> publishes an already-correctly-owned inode. A
+   chown <em>after</em> the replace leaves a window in which a datasync would
+   copy an unreadable file and record a success.</li>
+<li><strong>Reachability is a stat comparison, not an open().</strong> Root opening the
+   envelope successfully is exactly how a root-owned envelope reported
+   itself as custody. The probe must give the same answer whoever asks.</li>
+<li><strong>An unreachable envelope is CRITICAL</strong>, and deliberately worse than
+   "not sealed at all" — because it makes the not-sealed finding go away.</li>
+<li><strong>A live seal answers the escrow question; a dead one does not.</strong>
+   Sealing and escrow answer the same question — does a copy survive
+   losing this disk — and sealing answers it better, so a sealed kind
+   stops producing the "never exported" warning. <code>diagnose recovery</code>
+   grades <strong>any</strong> finding as at-least-warn, so leaving it would mean a
+   correctly configured node can never report ok, and a check that always
+   complains is one operators learn to skip. Suppression requires all
+   three of: parses, <strong>reachable</strong>, and fingerprint matches the live key.
+   Cannot tell → stay noisy.</li>
+<li><strong>Suppressing a warning without showing what replaced it</strong> makes a
+   quiet check an unexplained one. <code>diagnose recovery</code> prints the
+   <code>sealed envelope</code> row next to the <code>exported</code> rows for exactly that
+   reason.</li>
+</ol>
+<p><strong>Related, same shape:</strong> <code>Result.rows(heading, rows)</code> takes the heading
+first, and a call that forgets it raises <code>TypeError</code> on the <strong>success</strong>
+path — after the command has already changed the system. It bit
+<code>seal recovery</code> (envelope written, <code>[FAIL]</code> printed) and was sitting
+unexploded in <code>reset theme</code>, the anti-lockout command an operator reaches
+for precisely when they cannot get into the console another way. Grepping
+for the two known sites would not have found the third; the guard walks
+the AST of every <code>deploy/satom_cli/*.py</code>.</p>
 <h2 id="verifying-the-guards-are-armed_5">Verifying the guards are armed</h2>
 <h3 id="the-ai-advisor-write-boundary-26">The AI Advisor write boundary (26)</h3>
 <pre><code class="language-bash"># applying a proposal never touches a device — it only ever inserts into
@@ -4530,6 +4586,21 @@ echo &quot;unit distribution exit=$?&quot;
 <p>The SSH sweep is per-file on purpose. Asserting it for the three channels we
 know about would pass forever; asserting it for everything that hands paramiko
 a policy is what fails on the next one.</p>
+<h3 id="a-sealed-envelope-is-actually-reachable-32b">A sealed envelope is actually reachable (32b)</h3>
+<pre><code class="language-bash"># 1. The envelope must belong to whoever owns the tree, not to root.
+stat -c '%U:%G %a' /opt/satom /opt/satom/data/recovery /opt/satom/data/recovery/seal.json
+
+# 2. The load-bearing check: the account that copies it must be able to
+#    read it. Root succeeding here proves nothing.
+runuser -u &quot;$(stat -c %U /opt/satom)&quot; -- head -c 1 \
+  /opt/satom/data/recovery/seal.json &gt;/dev/null &amp;&amp; echo reachable
+
+# 3. The node must agree, and must SAY why it is quiet.
+satom diagnose recovery      # expect [ ok ] plus a 'sealed envelope' row
+
+# 4. The peer must have it, byte for byte, without anyone copying it by hand.
+md5sum /opt/satom/data/recovery/seal.json
+</code></pre>
 <h2 id="related">Related</h2>
 <ul>
 <li><a href="privilege-model.html"><code>privilege-model.md</code></a> — accounts, sudo, the runner boundary, HA trust</li>

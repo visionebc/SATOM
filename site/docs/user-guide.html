@@ -93,6 +93,7 @@
       <a href="#30-the-endpoint-registry-the-api-explorer">30. The endpoint registry &amp; the API explorer</a>
       <a href="#31-release-notes-the-satom-changelog">31. Release notes &amp; the SATOM changelog</a>
       <a href="#32-troubleshooting">32. Troubleshooting</a>
+      <a href="#33-ai-advisor">33. AI Advisor</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="satom-user-guide">SATOM — User Guide</h1>
@@ -2673,6 +2674,79 @@ the authoritative answer to "what is new since we last updated".</p>
 <tr>
 <td>A registry endpoint you disabled came back after a restart</td>
 <td>It did not — disabling is a <strong>soft delete</strong> and the row survives exactly so the boot seeder cannot resurrect the name. If the name is live again, someone re-enabled it; the toggle is audited (30.2).</td>
+</tr>
+</tbody>
+</table>
+<h2 id="33-ai-advisor">33. AI Advisor</h2>
+<p>A chat assistant (<code>/advisor</code>, permission <code>advisor.use</code>) for three things:
+interpreting a WAF false positive and drafting the exception for it, drafting
+a Lua script, and searching the versioned device-configuration source of
+truth. Full design write-up: <code>docs/ai-advisor.md</code>.</p>
+<h3 id="331-turning-it-on">33.1 Turning it on</h3>
+<p><strong>Settings → AI Advisor</strong> (<code>advisor.configure</code>, admin-only) has three
+switches, all off on a fresh install: <strong>Enable AI Advisor</strong>, <strong>Allow
+read-only tool calls</strong>, and <strong>Allow external providers</strong>. A local Ollama
+provider (<code>ollama-local</code>) is seeded automatically the first time the page is
+opened — enabling the feature and leaving the other two switches off is
+enough to chat entirely within the LAN.</p>
+<h3 id="332-providers">33.2 Providers</h3>
+<p>Add a provider under the same tab: <code>ollama</code> (local, no key), <code>openai</code>
+(OpenAI itself or any OpenAI-compatible gateway — the field for a corporate
+LiteLLM/vLLM front door, not a personal login), or <code>anthropic</code>. <strong>Test
+connection</strong> fires one real call with the form's current values before you
+save anything. Delete a provider to revoke it instantly — its API key is
+Fernet-encrypted at rest and never re-displayed.</p>
+<h3 id="333-attaching-context-and-the-external-provider-preview">33.3 Attaching context and the external-provider preview</h3>
+<p>The paperclip menu attaches a concrete piece of SATOM data (an appliance's
+exception list, an existing Lua script) to the next message. If the active
+conversation's provider is external, clicking Send first shows exactly what
+will leave the LAN — the redacted text and how many internal identifiers were
+rewritten — before anything is sent. Nothing goes out until you confirm.
+Local Ollama has no such prompt: it never leaves the LAN, so there is nothing
+to preview.</p>
+<h3 id="334-proposals-how-a-chat-turns-into-a-change">33.4 Proposals — how a chat turns into a change</h3>
+<p>When the model suggests a concrete change, it appears as a card under the
+conversation with the exact JSON it proposed, <strong>Apply as draft</strong> and
+<strong>Dismiss</strong>. Apply requires the SAME permission the manual form already
+needs:</p>
+<ul>
+<li>A WAF/signature exception needs <code>config_write</code> and creates a row on the
+  <strong>Exceptions</strong> page for that appliance, in the state it would be in had you
+  filled the form in yourself. Pushing it to the device is still a separate,
+  later step on that page.</li>
+<li>A Lua script needs <code>studio.lua_studio</code> (super-admin) and creates a
+  <strong>draft</strong> script in Lua Studio, linted the same way a manually typed one is.</li>
+</ul>
+<p>Dismissing a proposal just marks it dismissed — nothing was ever written
+anywhere.</p>
+<h3 id="troubleshooting">Troubleshooting</h3>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>What's happening</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sending a message returns <em>"AI Advisor is disabled"</em></td>
+<td>The master switch in Settings → AI Advisor is off (33.1).</td>
+</tr>
+<tr>
+<td>Sending to a non-local provider returns <em>"external providers are disabled"</em></td>
+<td>A provider is configured but <strong>Allow external providers</strong> is off — two separate gates on purpose (33.1).</td>
+</tr>
+<tr>
+<td>A provider shows <em>"no route to host"</em> / times out on the first message</td>
+<td>If it's the local Ollama provider, a large model can take well over a minute to load into memory on a cold call — that is not a hang, wait for it (<code>docs/ai-advisor.md</code>).</td>
+</tr>
+<tr>
+<td>A chat reply mentions a proposal but no card appears</td>
+<td>The model's fenced <code>```satom-proposal</code> block did not parse as valid JSON against the schema — the chat reply still reached you, the malformed block was silently dropped rather than turned into something that only looks valid.</td>
+</tr>
+<tr>
+<td><strong>Apply as draft</strong> is refused (403)</td>
+<td>You don't hold the permission the MANUAL form for that kind requires (<code>config_write</code> for an exception, <code>studio.lua_studio</code> for Lua) — the AI path is never a shortcut around it (33.4).</td>
 </tr>
 </tbody>
 </table>

@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SATOM — System Automation & Task Orchestration Manager</title>
+<meta name="description" content="A multi-user web platform that manages fleets of Fortinet appliances — FortiWeb, FortiADC and FortiAnalyzer — over REST and SSH, with high availability, a git-versioned configuration source of truth, and full lifecycle automation.">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/site.css?v=72c63f9378">
+<script src="assets/site.js?v=bf3b55a92e" defer></script>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-inner">
+    <a class="brand" href="index.html"><img class="mark" src="assets/satom-mark.png" alt="SATOM"> <span class="wordmark">SA<b>TOM</b></span></a>
+    <button class="nav-toggle" id="nav-toggle" aria-label="Menu">☰</button>
+    <div class="nav-right">
+      <div class="nav-links">
+        <a href="index.html" class="active">Home</a>
+        <a href="features.html">Features</a>
+        <a href="architecture.html">Architecture</a>
+        <a href="safeguards.html">Safeguards</a>
+        <a href="docs.html">Docs</a>
+        <a href="releases.html">Releases</a>
+        <a href="docs/api.html">API</a>
+        <a href="install.html">Install</a>
+      </div>
+      <div class="theme-pick" role="group" aria-label="Colour theme">
+        <button type="button" class="sw sw-aurora" data-theme-set="aurora" aria-pressed="true" title="Aurora — default" aria-label="Aurora theme"></button>
+        <button type="button" class="sw sw-abyss" data-theme-set="abyss" aria-pressed="false" title="Abyss — dark" aria-label="Abyss dark theme"></button>
+        <button type="button" class="sw sw-classic" data-theme-set="classic" aria-pressed="false" title="Classic" aria-label="Classic theme"></button>
+      </div>
+      <a class="nav-cta" href="https://github.com/visionebc/SATOM">Source ↗</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero wrap">
+  <div class="pill"><span class="dot"></span> v1.8.0 · Production · 1,800+ automated tests</div>
+  <h1>Fleet management for<br><span class="grad">Fortinet appliances</span>, automated.</h1>
+  <p class="sub">
+    SATOM — the <b>System Automation & Task Orchestration Manager</b> — is a multi-user web
+    platform that manages FortiWeb, FortiADC and FortiAnalyzer fleets over their REST APIs
+    and SSH, keeping a local, queryable, <b>git-versioned copy of every device configuration</b>.
+  </p>
+  <div class="cta">
+    <a class="btn btn-primary" href="install.html">Get started</a>
+    <a class="btn btn-ghost" href="features.html">Explore features</a>
+  </div>
+  <div class="devchips">
+    <span class="devchip fweb"><img src="assets/fortiweb-mark.svg" alt=""> FortiWeb</span>
+    <span class="devchip fadc"><img src="assets/fortiadc-mark.svg" alt=""> FortiADC</span>
+    <span class="devchip faz"><img src="assets/fortianalyzer-mark.svg" alt=""> FortiAnalyzer</span>
+  </div>
+  <div class="stats">
+    <div class="stat"><b>800+</b><span>registry endpoints editable</span></div>
+    <div class="stat"><b>500+</b><span>application routes</span></div>
+    <div class="stat"><b>1,800+</b><span>unit &amp; integration tests</span></div>
+    <div class="stat"><b>96</b><span>operator console commands</span></div>
+    <div class="stat"><b>3</b><span>Fortinet product lines</span></div>
+  </div>
+</header>
+
+<section class="wrap reveal">
+  <div class="sec-head">
+    <span class="eyebrow">Why SATOM</span>
+    <h2>Everything the console does — plus what it can't</h2>
+    <p>The database, audit trail, git history and automation that the appliances themselves don't offer.</p>
+  </div>
+  <div class="grid">
+    <div class="card"><div class="ico">🗂️</div><h3>Git source of truth</h3>
+      <p>Every device's configuration is harvested on schedule and versioned in git — drift detection, A→B diff viewer and point-in-time restore included.</p></div>
+    <div class="card"><div class="ico">🔁</div><h3>HA by design</h3>
+      <p>Two-node active/standby clustering with TLS-enforced PostgreSQL streaming replication is built into the installer — the secondary joins with one pasted key.</p></div>
+    <div class="card"><div class="ico">🧩</div><h3>One editor, 800+ endpoints</h3>
+      <p>A spec-driven form engine edits any registry endpoint with stacked slide-over panels, create-references-in-place and dry-run previews on every write.</p></div>
+    <div class="card"><div class="ico">🧯</div><h3>Defense-in-depth backups</h3>
+      <p>Live database, portable bundles, git-versioned device configs and an external SFTP server — four independent copies across failure domains.</p></div>
+    <div class="card"><div class="ico">⏱️</div><h3>Change control</h3>
+      <p>Scheduled actions, Change Requests with maintenance-window approval gates, and background jobs with pause / resume / stop.</p></div>
+    <div class="card"><div class="ico">🔐</div><h3>Security first</h3>
+      <p>Two-factor login, role-based access, per-channel encryption monitoring and a hardened deployment profile out of the box.</p></div>
+    <div class="card"><div class="ico">📡</div><h3>Probes, not just pings</h3>
+      <p>Nine probe kinds — synthetic requests, interface drift, load, memory, the proxy daemon's process set, sessions, throughput and transactions — stored as time series with two years of roll-ups.</p></div>
+    <div class="card"><div class="ico">⌨️</div><h3>A console for the broken node</h3>
+      <p>96 commands that work when the web interface does not: 24 diagnostics behind one exit code, repair verbs, and every manual printable without a network.</p></div>
+    <div class="card"><div class="ico">🔔</div><h3>Silence means healthy</h3>
+      <p>Thirteen alert signals, including the two most commonly missing: a device whose port answers while its harvest has been failing for days, and a scheduler that is simply not running.</p></div>
+  </div>
+</section>
+
+<section class="wrap reveal">
+  <div class="sec-head">
+    <span class="eyebrow">The console</span>
+    <h2>See it in action</h2>
+    <p>A light enterprise console — navy chrome, per-ADOM color coding, one workspace per Fortinet product line.</p>
+  </div>
+  <div class="shots">
+    <figure class="shot">
+      <a class="frame" href="assets/shots/dashboard.png" data-lb>
+        <img data-shot src="assets/shots/dashboard.png" alt="SATOM dashboard" loading="lazy">
+        <span class="ph-label"><i>🖼️</i><b>Dashboard</b><small>screenshot pending</small></span>
+      </a>
+      <figcaption><b>Dashboard</b>Fleet health &amp; device status at a glance</figcaption>
+    </figure>
+    <figure class="shot">
+      <a class="frame" href="assets/shots/signatures.png" data-lb>
+        <img data-shot src="assets/shots/signatures.png" alt="FortiWeb signatures" loading="lazy">
+        <span class="ph-label"><i>🖼️</i><b>Signatures</b><small>screenshot pending</small></span>
+      </a>
+      <figcaption><b>Signatures</b>FortiWeb WAF signatures &amp; guided exceptions</figcaption>
+    </figure>
+    <figure class="shot">
+      <a class="frame" href="assets/shots/templates.png" data-lb>
+        <img data-shot src="assets/shots/templates.png" alt="Policy templates" loading="lazy">
+        <span class="ph-label"><i>🖼️</i><b>Templates</b><small>screenshot pending</small></span>
+      </a>
+      <figcaption><b>Templates</b>Reusable policy templates with locks &amp; clone/migrate</figcaption>
+    </figure>
+    <figure class="shot">
+      <a class="frame" href="assets/shots/object-editor.png" data-lb>
+        <img data-shot src="assets/shots/object-editor.png" alt="Object editor" loading="lazy">
+        <span class="ph-label"><i>🖼️</i><b>Object editor</b><small>screenshot pending</small></span>
+      </a>
+      <figcaption><b>Object editor</b>Spec-driven editing for ~500 registry endpoints</figcaption>
+    </figure>
+    <figure class="shot">
+      <a class="frame" href="assets/shots/device-sync.png" data-lb>
+        <img data-shot src="assets/shots/device-sync.png" alt="Device sync &amp; git history" loading="lazy">
+        <span class="ph-label"><i>🖼️</i><b>Device sync</b><small>screenshot pending</small></span>
+      </a>
+      <figcaption><b>Device sync</b>Scheduled harvest &amp; git-versioned source of truth</figcaption>
+    </figure>
+    <figure class="shot">
+      <a class="frame" href="assets/shots/backups.png" data-lb>
+        <img data-shot src="assets/shots/backups.png" alt="Backup coverage &amp; HA" loading="lazy">
+        <span class="ph-label"><i>🖼️</i><b>Backups &amp; HA</b><small>screenshot pending</small></span>
+      </a>
+      <figcaption><b>Backups &amp; HA</b>Four-copy backup coverage matrix &amp; cluster status</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="wrap reveal">
+  <div class="sec-head">
+    <span class="eyebrow">How it works</span>
+    <h2>The manager ↔ device sync, in five steps</h2>
+    <p>A read path that keeps the database and git in lock-step with the live appliances — and a minimal-diff write path back.</p>
+  </div>
+  <div class="flow">
+    <div class="step"><div class="n">1</div><h4>Schedule</h4><p>Hourly sync + nightly inspect, per product</p></div>
+    <div class="step"><div class="n">2</div><h4>Harvest</h4><p>REST API, SSH/CLI fallback</p></div>
+    <div class="step"><div class="n">3</div><h4>Normalize</h4><p>One snapshot shape per device</p></div>
+    <div class="step"><div class="n">4</div><h4>Cache</h4><p>PostgreSQL device store</p></div>
+    <div class="step"><div class="n">5</div><h4>Version</h4><p>JSON tree committed to git</p></div>
+  </div>
+  <div class="callout ok">
+    <span class="cico">↩️</span>
+    <p><b>Writes go the other way, minimally.</b> When you save an object, only the fields you changed are pushed to the device — with a dry-run preview and a full audit entry.</p>
+  </div>
+  <div class="cta"><a class="btn btn-ghost" href="features.html#sync">See the full sync model →</a></div>
+</section>
+
+<section class="wrap reveal">
+  <div class="sec-head">
+    <span class="eyebrow">Supported devices</span>
+    <h2>Three Fortinet product lines, one console</h2>
+  </div>
+  <div class="devgrid">
+    <div class="devcard fweb">
+      <div class="dhead"><img src="assets/fortiweb-mark.svg" alt=""><div><h3>FortiWeb</h3><span>Web Application Firewall</span></div></div>
+      <ul><li>Server policies, WAF signatures &amp; exceptions</li><li>166 curated Web Protection object kinds</li><li>Config backup over REST + SSH/CLI</li></ul>
+      <span class="proto">REST · SSH · tested on 7.6.x</span>
+    </div>
+    <div class="devcard fadc">
+      <div class="dhead"><img src="assets/fortiadc-mark.svg" alt=""><div><h3>FortiADC</h3><span>Application Delivery Controller</span></div></div>
+      <ul><li>Virtual servers, real-server pools, LB objects</li><li>Certificate deploy over REST</li><li>Harvested into the same git source of truth</li></ul>
+      <span class="proto">REST · self-signed aware</span>
+    </div>
+    <div class="devcard faz">
+      <div class="dhead"><img src="assets/fortianalyzer-mark.svg" alt=""><div><h3>FortiAnalyzer</h3><span>Logging &amp; Analytics</span></div></div>
+      <ul><li>Full JSON-RPC, both API dialects</li><li>Device Manager &amp; live registry menu</li><li>Config snapshot in git (~3.5k objects)</li></ul>
+      <span class="proto">JSON-RPC · tested on 7.6.7</span>
+    </div>
+  </div>
+</section>
+
+<section class="wrap reveal">
+  <div class="sec-head">
+    <span class="eyebrow">Deploy</span>
+    <h2>Run it anywhere Linux runs</h2>
+    <p>One interactive installer with online and air-gapped modes — and a preflight that reports every blocker before it touches the host.</p>
+  </div>
+  <div class="grid g2">
+    <div class="card">
+      <span class="tag tag-blue">Online</span><span class="tag tag-grn">Any distro family</span>
+      <h3>Connected install</h3>
+      <p>Detects apt, dnf/yum, zypper or pacman and maps package names per family. Prompts for IP, port, admin password and standalone / cluster mode.</p>
+      <div class="code"><span class="c"># check first — touches nothing</span><br>./install-satom.sh --preflight<br>./install-satom.sh</div>
+    </div>
+    <div class="card">
+      <span class="tag tag-vio">Offline</span><span class="tag tag-blue">Debian 12</span><span class="tag tag-vio">RHEL 9</span><span class="tag tag-grn">openSUSE 15</span>
+      <h3>Air-gapped install</h3>
+      <p>Self-contained bundles — OS packages, Python wheels and the application — for hosts with no internet access. Auto-detected when <code>bundle/</code> is present, and a bundle built for the wrong family is refused up front.</p>
+      <div class="code">tar xzf satom-offline-&lt;ver&gt;-&lt;family&gt;.tar.gz<br>cd satom-installer &amp;&amp; ./install-satom.sh</div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="fbrand"><img src="assets/visionebc-wordmark.png" alt="Vision EBC"></div>
+    <div class="flinks">
+      <a href="index.html">Home</a>
+      <a href="features.html">Features</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="safeguards.html">Safeguards</a>
+      <a href="docs.html">Docs</a>
+      <a href="releases.html">Releases</a>
+      <a href="docs/api.html">API</a>
+      <a href="install.html">Install</a>
+      <a href="https://github.com/visionebc/SATOM">Source</a>
+    </div>
+    <p class="addr">https://satom.visionebc.com</p>
+    <p style="margin-top:8px;"><b>SATOM</b> · System Automation & Task Orchestration Manager</p>
+    <p style="margin-top:6px;">© <span class="year">2026</span> Vision EBC · Licensed under the <a href="https://github.com/visionebc/SATOM/blob/main/LICENSE">Elastic License 2.0</a> · source-available, not OSI open source · provided AS IS, no warranty</p>
+    <p class="disclaimer" style="margin-top:8px;font-size:12px;opacity:.6;line-height:1.5;">SATOM is an independent source-available project, <b>not affiliated with or endorsed by Fortinet, Inc.</b> Fortinet, FortiWeb, FortiADC and FortiAnalyzer are trademarks of Fortinet, Inc., used here nominatively to describe interoperability. SATOM is <b>not</b> a FortiManager or FortiGate product.</p>
+  </div>
+</footer>
+
+<a id="top" href="#" aria-label="Back to top">↑</a>
+</body>
+</html>

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Install — SATOM</title>
+<meta name="description" content="Install SATOM on Linux: one interactive installer with an online mode for any major distro family and air-gapped offline bundles for Debian 12 and RHEL 9, standalone or two-node cluster.">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/site.css?v=72c63f9378">
+<script src="assets/site.js?v=bf3b55a92e" defer></script>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-inner">
+    <a class="brand" href="index.html"><img class="mark" src="assets/satom-mark.png" alt="SATOM"> <span class="wordmark">SA<b>TOM</b></span></a>
+    <button class="nav-toggle" id="nav-toggle" aria-label="Menu">☰</button>
+    <div class="nav-right">
+      <div class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="features.html">Features</a>
+        <a href="architecture.html">Architecture</a>
+        <a href="safeguards.html">Safeguards</a>
+        <a href="docs.html">Docs</a>
+        <a href="releases.html">Releases</a>
+        <a href="docs/api.html">API</a>
+        <a href="install.html" class="active">Install</a>
+      </div>
+      <div class="theme-pick" role="group" aria-label="Colour theme">
+        <button type="button" class="sw sw-aurora" data-theme-set="aurora" aria-pressed="true" title="Aurora — default" aria-label="Aurora theme"></button>
+        <button type="button" class="sw sw-abyss" data-theme-set="abyss" aria-pressed="false" title="Abyss — dark" aria-label="Abyss dark theme"></button>
+        <button type="button" class="sw sw-classic" data-theme-set="classic" aria-pressed="false" title="Classic" aria-label="Classic theme"></button>
+      </div>
+      <a class="nav-cta" href="https://github.com/visionebc/SATOM">Source ↗</a>
+    </div>
+  </div>
+</nav>
+
+<header class="page wrap">
+  <h1>Installation</h1>
+  <p class="sub">One interactive installer, two modes. It asks for IP, port, admin password and standalone / cluster — and handles everything else: packages, PostgreSQL, PKI, systemd, nginx TLS.</p>
+</header>
+
+<section class="wrap reveal">
+  <div class="grid g2">
+    <div class="card">
+      <span class="tag tag-blue">Online</span><span class="tag tag-grn">Any distro family</span>
+      <h3>Connected install</h3>
+      <p>Fetches OS packages and Python wheels as it goes. Detects <b>apt, dnf/yum, zypper or pacman</b> and maps package names per family; PostgreSQL paths are interrogated from the engine itself, so Debian, RHEL, SUSE and Arch layouts all work.</p>
+      <div class="code">
+        <span class="c"># step 0 — reports, changes nothing</span><br>
+        ./install-satom.sh --preflight<br>
+        <span class="c"># then, as root on a fresh host</span><br>
+        ./install-satom.sh
+      </div>
+      <ul class="checks">
+        <li>Checks required packages, installs what's missing, warns on outdated versions</li>
+        <li>Requires systemd and Python ≥ 3.10 (installed automatically where the default is older, e.g. RHEL 9)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="tag tag-vio">Offline</span><span class="tag tag-blue">Debian 12</span><span class="tag tag-vio">RHEL 9</span><span class="tag tag-blue">openSUSE 15</span>
+      <h3>Air-gapped install</h3>
+      <p>Self-contained bundles per family — OS packages, Python wheels and the application — for hosts with no internet access. The installer auto-detects <code>bundle/</code> and refuses a bundle built for the wrong family with a clear message.</p>
+      <div class="code">
+        <span class="c"># Debian 12</span><br>
+        tar xzf satom-offline-&lt;ver&gt;-debian12-amd64.tar.gz<br>
+        <span class="c"># RHEL / Rocky / AlmaLinux 9</span><br>
+        tar xzf satom-offline-&lt;ver&gt;-rhel9-x86_64.tar.gz<br>
+        <span class="c"># openSUSE Leap 15 / SLES 15</span><br>
+        tar xzf satom-offline-&lt;ver&gt;-suse15-x86_64.tar.gz<br>
+        cd satom-installer &amp;&amp; ./install-satom.sh
+      </div>
+      <ul class="checks">
+        <li>Debian bundle: full .deb dependency closure + wheels</li>
+        <li>RHEL bundle: a local dnf repository (with metadata) + wheels for Python 3.11 — dnf resolves only what the host actually needs</li>
+        <li>openSUSE bundle: a local zypper repository in a directory of its own. Both RPM bundles exist and are deliberately not interchangeable — different package names and base libraries — so the wrong one is refused up front instead of failing halfway through</li>
+        <li>Every bundle carries the ACME client and the privilege-escalation and SSH packages — a host with no network cannot fetch them mid-install</li>
+        <li>A bundle is a snapshot of the product at build time and records its own version — <a href="safeguards.html#install">what it ships armed</a> is the version it contains</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="wrap reveal">
+  <div class="sec-head">
+    <h2>Standalone or two-node cluster</h2>
+    <p>Cluster setup is part of the same installer run — no separate procedure.</p>
+  </div>
+  <div class="grid">
+    <div class="card"><div class="ico">1️⃣</div><h3>Install the primary</h3>
+      <p>Choose <b>cluster → primary</b>. At the end the installer prints a one-line <b>join key</b> that encodes everything the secondary needs.</p></div>
+    <div class="card"><div class="ico">2️⃣</div><h3>Join the secondary</h3>
+      <p>Run the same installer on the second host, choose <b>cluster → secondary</b>, and paste the key. Streaming replication, shared secrets and the data sync configure themselves.</p></div>
+    <div class="card"><div class="ico">3️⃣</div><h3>Certificates mint locally</h3>
+      <p>The secondary receives the internal CA through the join key and mints its <b>own</b> leaf certificate during installation — private keys never travel between nodes.</p></div>
+  </div>
+</section>
+
+<section class="wrap reveal">
+  <div class="sec-head">
+    <h2>What the installer sets up</h2>
+  </div>
+  <table class="cmp">
+    <tr><th>Component</th><th>Detail</th></tr>
+    <tr><td>Packages</td><td>Python ≥ 3.10, PostgreSQL, nginx, rsync, openssl — installed or upgraded per distro family</td></tr>
+    <tr><td>Application</td><td>Code deployed with a dedicated virtualenv; pinned dependencies from wheels (offline) or PyPI (online)</td></tr>
+    <tr><td>Database</td><td>PostgreSQL cluster initialized if needed; app database, roles and schema created; replication on clusters</td></tr>
+    <tr><td>PKI</td><td>Internal CA on the primary; per-node leaf certificates; nginx TLS on your chosen port</td></tr>
+    <tr><td>Services</td><td>systemd units for the web app, the scheduler sidecar, the reconciler, the alert, certificate-renewal and publication timers — enabled and health-checked (<code>/healthz</code>)</td></tr>
+    <tr><td>Accounts</td><td>A dedicated, shell-less service account owns the tree and runs every unit; a single root runner handles updates. The web application does not run as root.</td></tr>
+    <tr><td>Console</td><td>The <code>satom</code> operator console, installed as a root-owned copy outside the application tree and re-installed after every update</td></tr>
+    <tr><td>Hardening</td><td>SELinux and firewalld handled best-effort on RHEL/SUSE; a manual covers three separate sudo policies, hardening and uninstall</td></tr>
+  </table>
+  <ul class="checks" style="max-width:640px;margin:28px auto 0;">
+    <li>A sysadmin manual (<code>INSTALL.md</code>) ships inside every bundle — requirements, package lists per distribution family, permissions to request, sudo/sudoers options, hardening checklist</li>
+    <li>Idempotent re-runs: an existing installation is preserved and only dependencies are refreshed</li>
+  </ul>
+</section>
+
+<section class="wrap reveal">
+  <div class="sec-head">
+    <h2>Finishing the install: arm the protections</h2>
+    <p>The guards travel with the code. The <b>coverage</b> does not — and this is the most common way an installation ends up unprotected.</p>
+  </div>
+  <div class="grid g2">
+    <div class="card">
+      <span class="tag tag-vio">Required</span>
+      <h3>Nothing is scheduled on your behalf</h3>
+      <p>Schedules are database rows, seeds are insert-only and operator edits outrank them, so the product never invents recurring work against live appliances. A brand-new node therefore has <b>no scheduled actions and no alert recipient</b>: its signals are computed and delivered nowhere, its source of truth is never refreshed, and no backup is ever produced.</p>
+      <div class="code">
+        <span class="c"># show the gap, then close it</span><br>
+        satom diagnose install<br>
+        satom execute seed actions --yes
+      </div>
+      <ul class="checks">
+        <li>Prints the plan first; never touches a schedule that already exists</li>
+        <li>Set an alert recipient under Settings → Alerts — a computed signal with nowhere to go is not an alert</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="tag tag-blue">Recommended</span>
+      <h3>Grant the operator account, not root</h3>
+      <p>Day-to-day diagnosis and repair run through the console, which needs one entry in the sudo policy — a single binary at a fixed path, owned by root. The tool prints the rule itself, with no privilege required, so it can be handed to a systems team without shipping the repository.</p>
+      <div class="code">
+        <span class="c"># prints the rule; changes nothing</span><br>
+        satom show sudoers &lt;account&gt;<br>
+        <span class="c"># then verify the boundary is intact</span><br>
+        satom diagnose privilege
+      </div>
+      <ul class="checks">
+        <li>The path must be fixed and the file root-owned — a writable path makes the rule equivalent to unrestricted root</li>
+        <li>The check fails if the console was granted to the <i>service</i> account, which would be the same mistake</li>
+      </ul>
+    </div>
+  </div>
+  <div class="cta"><a class="btn btn-primary" href="features.html">Explore the feature catalog →</a> <a class="btn btn-ghost" href="safeguards.html">Read the safeguards →</a></div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="fbrand"><img src="assets/visionebc-wordmark.png" alt="Vision EBC"></div>
+    <div class="flinks">
+      <a href="index.html">Home</a>
+      <a href="features.html">Features</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="safeguards.html">Safeguards</a>
+      <a href="docs.html">Docs</a>
+      <a href="releases.html">Releases</a>
+      <a href="docs/api.html">API</a>
+      <a href="install.html">Install</a>
+      <a href="https://github.com/visionebc/SATOM">Source</a>
+    </div>
+    <p class="addr">https://satom.visionebc.com</p>
+    <p style="margin-top:8px;"><b>SATOM</b> · System Automation & Task Orchestration Manager</p>
+    <p style="margin-top:6px;">© <span class="year">2026</span> Vision EBC · Licensed under the <a href="https://github.com/visionebc/SATOM/blob/main/LICENSE">Elastic License 2.0</a> · source-available, not OSI open source · provided AS IS, no warranty</p>
+    <p class="disclaimer" style="margin-top:8px;font-size:12px;opacity:.6;line-height:1.5;">SATOM is an independent source-available project, <b>not affiliated with or endorsed by Fortinet, Inc.</b> Fortinet, FortiWeb, FortiADC and FortiAnalyzer are trademarks of Fortinet, Inc., used here nominatively to describe interoperability. SATOM is <b>not</b> a FortiManager or FortiGate product.</p>
+  </div>
+</footer>
+
+<a id="top" href="#" aria-label="Back to top">↑</a>
+</body>
+</html>

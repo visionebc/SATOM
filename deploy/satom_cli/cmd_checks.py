@@ -1054,6 +1054,19 @@ def recovery(ctx, args):
         rows.append(("%s exported" % kind,
                      "%s by %s" % (rec.get("at"), rec.get("by")) if rec
                      else "never"))
+    # The seal is why the escrow lines can read "never" with no finding
+    # attached. Suppressing a warning without showing what replaced it is how
+    # a quiet check becomes an unexplained one.
+    seal = data.get("seal") or {}
+    if not seal.get("sealed"):
+        rows.append(("sealed envelope", "none"))
+    elif not seal.get("reachable"):
+        rows.append(("sealed envelope", "UNREACHABLE -- carried by nothing"))
+    else:
+        rows.append(("sealed envelope",
+                     "%s by %s (%s)" % (seal.get("at") or "?",
+                                        seal.get("by") or "?",
+                                        ", ".join(seal.get("kinds") or []))))
     worst = "ok"
     for f in findings:
         if f.get("severity") == "critical":

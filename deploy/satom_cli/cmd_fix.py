@@ -897,7 +897,8 @@ def reset_theme(ctx, args):
     if res["before"] == res["after"]:
         return Result("ok", "already on the built-in theme (%s)" % res["after"])
     r = Result("ok", "theme reset to %s" % res["after"])
-    r.rows([("was", res["before"]), ("now", res["after"])], keys="dim")
+    r.rows("theme", [("was", res["before"]), ("now", res["after"])],
+           keys="dim")
     r.note("Workers pick this up within 15 seconds; no restart needed.")
     return r
 
@@ -1007,11 +1008,12 @@ def seal_recovery(ctx, args):
     st = res.get("state") or {}
     r = Result("ok", "recovery material sealed (%s)"
                % ", ".join(st.get("kinds") or []))
-    r.rows([("envelope", st.get("path", "")),
-            ("sealed at", st.get("at", "")),
-            ("by", st.get("by", ""))], keys="dim")
-    for kind, fpr in sorted((st.get("fingerprints") or {}).items()):
-        r.rows([("fingerprint %s" % kind, fpr)], keys="dim")
+    r.rows("envelope", [("path", st.get("path", "")),
+                        ("sealed at", st.get("at", "")),
+                        ("by", st.get("by", ""))], keys="dim")
+    fps = sorted((st.get("fingerprints") or {}).items())
+    if fps:
+        r.rows("fingerprints", fps, keys="dim")
     if generated:
         r.lines("PASSPHRASE -- shown once, never stored, not recoverable", [
             "", "    " + generated, "",

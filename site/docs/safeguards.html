@@ -3323,6 +3323,90 @@ Studio's own dry-run deploy, exactly as if the operator had typed it in.</p>
 public documentation site before it leaves the LAN, with the count and the
 exact text shown to the operator in a pre-send preview
 (<code>POST /advisor/&lt;id&gt;/preview</code>) before <code>/send</code> is ever called.</p>
+<h2 id="27-config-that-only-one-node-has-is-config-that-will-drift">27. Config that only one node has is config that will drift</h2>
+<p>Three mechanisms move state between nodes, and each covers exactly one thing:</p>
+<table>
+<thead>
+<tr>
+<th>mechanism</th>
+<th>what it carries</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>git</td>
+<td>the tracked source tree</td>
+</tr>
+<tr>
+<td>HA datasync</td>
+<td><code>${APP}/data/</code>, minus a list of volatile subdirectories</td>
+</tr>
+<tr>
+<td>backup bundle</td>
+<td><code>pg_dump</code> + <code>reports/</code> + the versioned SoT blobs + config</td>
+</tr>
+</tbody>
+</table>
+<p>Nothing else is carried by anything. A file that is untracked <em>and</em> outside
+<code>data/</code> is replicated by nothing at all, and no error says so — each mechanism
+is individually behaving correctly.</p>
+<p>That is how the site-rules overlay drifted. It is untracked on purpose: it
+names the estate this installation runs on, and shipping it to the public
+mirror would be the disclosure the file exists to prevent. But it also sat
+beside the application rather than inside <code>data/</code>, so the datasync never saw
+it. The standby ran for days on a copy written before half the appliances it
+was supposed to redact had been registered — and the primary, where the file
+had been fixed, gave every appearance that the fleet was covered.</p>
+<p><strong>The rule: state that must be identical on every node lives in <code>data/</code>.</strong>
+Untracked is a statement about git, not about replication. If the reason a
+file is untracked is that it is sensitive, <code>data/</code> is already ignored — the
+secrecy is preserved and the replication comes free.</p>
+<h3 id="absent-malformed-and-stale-are-three-different-answers">Absent, malformed and stale are three different answers</h3>
+<p>The loader gave all three the same one — an empty rule table — and an empty
+rule table reads to every caller as <em>nothing to redact</em>. Output still looks
+redacted. Nothing logs. The only thing that changes is which identifiers walk
+through.</p>
+<p>It gets narrower than a missing file: one unusable regex used to cost exactly
+one rule, skipped with <code>continue</code>, while every other rule kept working.</p>
+<ul>
+<li><strong>Malformed</strong> — a half-written or truncated file is never a legitimate empty
+  overlay. Raise.</li>
+<li><strong>One unusable entry</strong> — refuse the whole table rather than run a partial
+  one. A rule table you cannot enumerate is not a rule table.</li>
+<li><strong>Absent</strong> — this is the case that needs a signal, because the permissive
+  answer is genuinely correct somewhere.</li>
+</ul>
+<h3 id="why-absence-alone-cannot-be-the-alarm">Why absence alone cannot be the alarm</h3>
+<p>The published mirror has no overlay and <strong>must not have one</strong>, and there is
+nothing site-specific left in that tree to redact anyway. So "file missing"
+describes both the healthy mirror and the broken node. The code cannot pick a
+side without another fact.</p>
+<p>The fact it uses is <code>.env</code>: a mirror is a source tree, a deployment has
+secrets. Missing overlay on a tree with no <code>.env</code> loads the generic rules and
+proceeds. Missing overlay next to a live <code>.env</code> raises, and the process
+refuses to come up rather than serve pages it cannot certify.</p>
+<p>Refusing to boot over a config file is deliberate. This control has already
+published internal identifiers once. A node that will not start is an
+afternoon; a node that quietly redacts less is however long it takes someone
+to notice, and by then it is on a CDN.</p>
+<h3 id="the-compatibility-read-is-not-politeness">The compatibility read is not politeness</h3>
+<p>An existing node has the file at the old path. Without the fallback, merging
+the strict loader turns a routine code update into a boot failure on every
+node that has not been migrated — a self-inflicted outage delivered by the
+reconciler. The new location wins when both exist, because the copy the
+datasync maintains is the live one and the other is by definition the one that
+went stale.</p>
+<h3 id="guards">Guards</h3>
+<p><code>tests/test_publication_overlay.py</code> — the overlay resolves under <code>data/</code>; no
+datasync exclude shadows it; it is still ignored by git in its new home;
+malformed JSON, an unusable rule and an unusable scanner entry each raise; a
+deployment missing it raises; a bare checkout missing it does not; a
+well-formed overlay still loads (the counterweight — a guard that raises on
+everything is not a guard); the legacy path is still read and loses to the
+replicated copy; the bundle carries the file and a restore never overwrites a
+live one; and the module stays stdlib-only, because the site generator loads
+it by path precisely so the site can be built from a tree whose application
+code does not import.</p>
 <h2 id="verifying-the-guards-are-armed_5">Verifying the guards are armed</h2>
 <h3 id="the-ai-advisor-write-boundary-26">The AI Advisor write boundary (26)</h3>
 <pre><code class="language-bash"># applying a proposal never touches a device — it only ever inserts into
@@ -3884,6 +3968,34 @@ grep -n 'def _sel' -A6 app/services/monitor_reports.py
   tests/test_fac_analysis.py::test_no_builtin_board_offers_a_panel_the_adom_cannot_produce -q
 </code></pre>
 <p>A failure names the board, the panel and the ADOM that cannot fill it.</p>
+<h3 id="config-that-only-one-node-has-27">Config that only one node has (27)</h3>
+<p>The overlay must resolve inside <code>data/</code>, which is the only directory the
+datasync carries:</p>
+<pre><code class="language-bash">cd &quot;$APP&quot; &amp;&amp; venv/bin/python -c \
+  &quot;import app.services.doc_publication as p; print(p.OVERLAY_PATH.parent.name)&quot;
+# -&gt; data
+</code></pre>
+<p>The loader must refuse rather than degrade. Point it at a scratch tree that
+looks like a deployment and has no overlay:</p>
+<pre><code class="language-bash">t=$(mktemp -d); mkdir -p &quot;$t/data&quot;; : &gt; &quot;$t/.env&quot;
+cd &quot;$APP&quot; &amp;&amp; venv/bin/python -c &quot;
+import sys, app.services.doc_publication as p
+try:
+    p._load_overlay('$t'); print('FAIL: degraded silently')
+except p.OverlayError as e:
+    print('ok, refused:', str(e)[:60])
+&quot;
+rm -rf &quot;$t&quot;
+</code></pre>
+<p>Same tree without the <code>.env</code> marker must load the generic rules instead — that
+is the published mirror, and it is allowed to have no overlay.</p>
+<p>Confirm no datasync exclude shadows the file, and that it stayed ignored:</p>
+<pre><code class="language-bash">grep -o &quot;\-\-exclude '[^']*'&quot; /usr/local/sbin/satom-ha-datasync.sh
+git --no-optional-locks check-ignore -v --no-index \
+  data/publication-rules.local.json     # must report a rule
+</code></pre>
+<p><code>--no-index</code> is required: git refuses to report a <strong>tracked</strong> path as ignored,
+so the assertion passes vacuously without it.</p>
 <h2 id="related">Related</h2>
 <ul>
 <li><a href="privilege-model.html"><code>privilege-model.md</code></a> — accounts, sudo, the runner boundary, HA trust</li>

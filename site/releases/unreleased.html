@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · 1 entry.">
+<meta name="description" content="Merged and not yet cut into a release — Fixed · Added · 4 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · 1 entry.</p>
+  <p class="sub">Merged and not yet cut into a release — Fixed · Added · 4 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added · 1 entry</span>
-        <ul class="rel-leads"><li>AI Advisor</li></ul>
+        <span class="rel-nav-meta">unreleased · Fixed · Added · 4 entries</span>
+        <ul class="rel-leads"><li>The site-rules overlay was replicated by nothing</li><li>The overlay loader answered &quot;absent&quot;, &quot;malformed&quot; and &quot;one bad regex&quot; with the same value</li><li>AI Advisor</li><li class="rel-more">… and 1 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.6.0.html" data-rel-version="1.6.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.6.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -150,6 +150,31 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li><strong>The site-rules overlay was replicated by nothing.</strong> It is untracked on
+  purpose — it names the estate — but it also sat beside the application
+  rather than inside <code>data/</code>, which is the only directory the HA datasync
+  carries. git ignored it by design, the datasync never saw it, and the backup
+  bundle did not package it: three mechanisms, and the file fell between all
+  three. The standby ran for days on a copy whose device rule predated half
+  the registered appliances. It now lives in <code>data/publication-rules.local.json</code>
+  (still ignored, by <code>/data/</code>), so the datasync replicates it and the bundle
+  carries it. The old path is still read so that updating to this commit does
+  not brick a node that has not been migrated yet.</li>
+<li><strong>The overlay loader answered "absent", "malformed" and "one bad regex" with
+  the same value</strong> — an empty rule table, which every caller reads as <em>nothing
+  to redact</em>. The comment above it promised the opposite ("a node that loses it
+  fails loudly instead of quietly redacting less"); that promise was kept only
+  by a test asserting the file exists at collection time. Malformed JSON and
+  unusable entries now raise. A missing overlay raises <strong>on a deployment</strong> and
+  still loads generic rules on a bare checkout — the published mirror has no
+  overlay and must not have one, so absence alone could never be the signal;
+  the presence of <code>.env</code> distinguishes the two.</li>
+<li>Backup bundles now carry node-local config, and a restore places it only
+  where the node has none — the live copy is likelier to be current than one
+  frozen into an old bundle.</li>
+</ul>
 <h3 id="added">Added</h3>
 <ul>
 <li><strong>AI Advisor</strong> — a read-only chat assistant (Settings \u2192 AI Advisor,

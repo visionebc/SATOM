@@ -212,7 +212,7 @@ def create_app(config_override: object | None = None) -> Flask:
         # linked from BOTH product ADOMs — none of them are URL-scoped.
         fortiweb_scoped = {
             'workspace', 'objedit', 'regex_lab', 'server_objects',
-            'web_protection', 'exceptions', 'backups', 'logs',
+            'web_protection', 'exceptions', 'attack_search', 'backups', 'logs',
             'import_backup', 'section_config', 'section_catalog',
             'signatures', 'structure',
             'segments', 'scheduled_actions', 'change_requests',
@@ -1605,6 +1605,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.server_objects", "bp"),
         ("app.views.web_protection", "bp"),
         ("app.views.exceptions", "bp"),
+        ("app.views.attack_search", "bp"),
         ("app.views.architecture", "bp"),
         ("app.views.analysis", "bp"),
         ("app.views.backups", "bp"),

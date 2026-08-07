@@ -3090,6 +3090,11 @@ python3 - <<'PY'
 from app.services import advisor as svc
 assert not svc.external_allowed()  # off by default on a fresh install
 PY
+
+# the guards themselves, and proof they bite: seven mutations, seven kills
+# (write boundary, external switch, draft status, untrusted wrapping,
+#  validation, shipped-on defaults, preview honesty)
+venv/bin/python3 -m pytest tests/test_advisor.py -q
 ```
 
 ### Monitoring layers (25)

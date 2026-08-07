@@ -22,10 +22,14 @@ KINDS = ("ollama", "openai", "anthropic")
 
 @dataclass
 class ChatResult:
+    """``prompt_tokens``/``completion_tokens`` are ``None`` when the provider
+    did NOT report usage -- which is not the same statement as zero. Several
+    OpenAI-compatible gateways omit the ``usage`` block entirely; coercing that
+    to 0 would publish a token count the product never measured."""
     text: str
     raw: dict = field(default_factory=dict)
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
 
 
 class ProviderError(RuntimeError):
@@ -49,8 +53,8 @@ def chat_ollama(base_url: str, model: str, system: str, messages: list[dict],
     data = r.json()
     text = (data.get("message") or {}).get("content", "")
     return ChatResult(text=text, raw=data,
-                       prompt_tokens=data.get("prompt_eval_count", 0) or 0,
-                       completion_tokens=data.get("eval_count", 0) or 0)
+                       prompt_tokens=data.get("prompt_eval_count"),
+                       completion_tokens=data.get("eval_count"))
 
 
 def chat_openai_compatible(base_url: str, api_key: str, model: str, system: str,
@@ -75,8 +79,8 @@ def chat_openai_compatible(base_url: str, api_key: str, model: str, system: str,
     text = ((choice.get("message") or {}).get("content", "")) or ""
     usage = data.get("usage") or {}
     return ChatResult(text=text, raw=data,
-                       prompt_tokens=usage.get("prompt_tokens", 0) or 0,
-                       completion_tokens=usage.get("completion_tokens", 0) or 0)
+                       prompt_tokens=usage.get("prompt_tokens"),
+                       completion_tokens=usage.get("completion_tokens"))
 
 
 def chat_anthropic(base_url: str, api_key: str, model: str, system: str,
@@ -105,8 +109,8 @@ def chat_anthropic(base_url: str, api_key: str, model: str, system: str,
     text = "".join(p.get("text", "") for p in parts if isinstance(p, dict) and p.get("type") == "text")
     usage = data.get("usage") or {}
     return ChatResult(text=text, raw=data,
-                       prompt_tokens=usage.get("input_tokens", 0) or 0,
-                       completion_tokens=usage.get("output_tokens", 0) or 0)
+                       prompt_tokens=usage.get("input_tokens"),
+                       completion_tokens=usage.get("output_tokens"))
 
 
 def send(kind: str, *, base_url: str, api_key: str, model: str, system: str,

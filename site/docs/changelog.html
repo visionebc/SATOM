@@ -89,6 +89,36 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>The AI Advisor's read-only tools are now actually reachable by the
+  model.</strong> They shipped as a set of functions with nothing that invoked
+  them: the catalog was served over HTTP and <code>call_tool</code> was never called
+  from the chat path, so the model could not use a tool whatever it emitted.
+  The chat now runs a bounded tool loop, and the catalog grows from three
+  entries to eight — <code>list_appliances</code> (which every other tool depends on,
+  because they all take an <code>appliance_id</code> the model had no way to learn),
+  <code>list_server_policies</code>, <code>device_health</code>, <code>list_probes</code> and
+  <code>recent_config_changes</code>, alongside the existing SoT, exception and Lua
+  lookups. All read from the database and the harvest cache, so an answer
+  still arrives with the appliance powered off.</li>
+<li><strong>Tool output is redacted before it can leave the LAN.</strong> Redaction
+  previously covered the operator's message and the attachments they chose.
+  A tool result is neither — the model asks for it and SATOM injects it — so
+  the model could have pulled hostnames and addresses from the device cache
+  and handed them to an external provider, around the preview the operator
+  approved. Tool results are also wrapped as untrusted input, the loop is
+  capped, oversized results announce their truncation in band, and tools are
+  advertised to the model only while they are switched on.</li>
+<li>
+<p><strong>Response time and token cost, per reply and in a ledger.</strong> Every reply
+  shows how long it took and what it cost; every provider call — local
+  Ollama included, failures included — writes a row to the new
+  <code>advisor_request_log</code>, readable at <code>/advisor/usage</code>. The duration spans
+  the whole exchange including tool round-trips, which is what the operator
+  waited for. Unreported usage is stored as <code>NULL</code> and shown as <em>tokens not
+  reported</em>, never as <code>0</code>: several OpenAI-compatible gateways omit the usage
+  block, and a confident zero would be a number the product never measured.
+  A failed call still leaves a row, so a provider timeout cannot vanish.</p>
+</li>
 <li>
 <p><strong>Every node re-asserts its own metrics store on every code update.</strong>
   The store binary and its data directory live outside the app tree by

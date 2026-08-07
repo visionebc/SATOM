@@ -121,6 +121,9 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
      "the git-committed history."),
     ("git-backup-and-outage.md", "git-backup", "Git backup & surviving an outage", "\U0001f9ef",
      "The anti-reset guard, the unpushed-commit alert, repository bundles and the four-copy recovery runbook."),
+    ("ai-advisor.md", "ai-advisor", "AI Advisor", "\u2728",
+     "The read-only chat assistant: providers, redaction and the pre-send preview, "
+     "prompt-injection handling, and the structured-proposal write boundary."),
     ("encryption-and-node-tls.md", "encryption", "Encryption in transit & node TLS", "\U0001f512",
      "Service certificates, node-to-node encryption, enforced database TLS and the live encryption probes."),
     ("acme-certificate-manager.md", "acme", "ACME / Let's Encrypt certificates", "\U0001f4dc",
@@ -160,7 +163,7 @@ GROUPS: list[tuple[str, str, list[str]]] = [
      ["install", "cli", "privilege-model", "safeguards", "metrics-architecture",
       "provisioning-hypervisors", "git-backup", "offline-update-packages"]),
     ("Security", "Certificates, transport encryption and trust between nodes.",
-     ["encryption", "acme"]),
+     ["encryption", "acme", "ai-advisor"]),
     ("Build & integrate", "For developers extending the platform or driving it from outside.",
      ["api", "device-api", "fortiauthenticator", "engineering",
       "source-of-truth", "release-pipeline",

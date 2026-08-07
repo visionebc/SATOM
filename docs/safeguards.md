@@ -3042,7 +3042,55 @@ grep -n "clash = HypervisorTarget" -A3 app/views/settings.py
 sed -n '/fortiweb_scoped = {/,/}/p' app/__init__.py | grep -c device_provision
 ```
 
+## 26. A model proposing a change is not the same as a change
+
+The AI Advisor (`docs/ai-advisor.md`) can suggest a WAF exception or a Lua
+script. It cannot create either on a device, and it cannot write SATOM's own
+applied configuration. What it CAN do is emit a schema-validated
+`AdvisorProposal` row, and an operator with the SAME permission the manual
+form already requires can turn that into a DRAFT — a `WppException` row via
+the guided-exceptions store, or a `LuaScript` row in `status: draft` — never
+a device call. Applying still needs the guided flow (Exceptions page) or Lua
+Studio's own dry-run deploy, exactly as if the operator had typed it in.
+
+Two failure modes this guards against, both concrete:
+
+- **A softer gate than the manual form.** `apply_proposal` is called with the
+  SAME coarse/granular permission key the hand-typed endpoint checks
+  (`config_write` for exceptions, `studio.lua_studio` — super-admin only —
+  for Lua). Gating the AI path on anything looser would make it an easier
+  route to a Lua draft than typing one in.
+- **Untrusted device data steering the model.** A WAF log line is
+  attacker-influenced text. It is wrapped in an explicit delimiter
+  (`<<<UNTRUSTED>>> ... <<<END_UNTRUSTED>>>`) with a system-prompt
+  instruction never to follow directives found inside it — but the write
+  boundary above is what actually holds if that instruction is ignored: a
+  successfully-injected model still cannot reach a device, only propose a
+  draft a human reviews.
+
+An external provider call is gated TWICE past having a key configured:
+`ai.external_allowed` must be explicitly on, and the outbound text (message
++ attachments) is redacted with the SAME identifier table that protects the
+public documentation site before it leaves the LAN, with the count and the
+exact text shown to the operator in a pre-send preview
+(`POST /advisor/<id>/preview`) before `/send` is ever called.
+
+
 ## Verifying the guards are armed
+
+### The AI Advisor write boundary (26)
+
+```bash
+# applying a proposal never touches a device — it only ever inserts into
+# WppException or LuaScript, gated by the SAME permission the manual form uses
+grep -n "wpp_exceptions.add\|LuaScript(" app/services/advisor.py
+
+# external providers need BOTH a configured provider AND the explicit flag
+python3 - <<'PY'
+from app.services import advisor as svc
+assert not svc.external_allowed()  # off by default on a fresh install
+PY
+```
 
 ### Monitoring layers (25)
 

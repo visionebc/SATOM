@@ -2189,3 +2189,65 @@ Where to read it:
 | A template is stuck in **pending** and will not roll out to the fleet | Single-device apply works at any status; a **multi-device** rollout needs the template **approved** *and* the Run-operations permission. Approving is a separate permission (`operations.template_approve`) from authoring (29.1). |
 | A registry-driven page 404s on the device after a firmware upgrade | The firmware moved that URI. Fix it as a **registry edit** on that product's API console — the catalog is DB-first, the edit is audited, and it converges across workers within a minute. No code change or release is involved (30.1). |
 | A registry endpoint you disabled came back after a restart | It did not — disabling is a **soft delete** and the row survives exactly so the boot seeder cannot resurrect the name. If the name is live again, someone re-enabled it; the toggle is audited (30.2). |
+
+## 33. AI Advisor
+
+A chat assistant (`/advisor`, permission `advisor.use`) for three things:
+interpreting a WAF false positive and drafting the exception for it, drafting
+a Lua script, and searching the versioned device-configuration source of
+truth. Full design write-up: `docs/ai-advisor.md`.
+
+### 33.1 Turning it on
+
+**Settings → AI Advisor** (`advisor.configure`, admin-only) has three
+switches, all off on a fresh install: **Enable AI Advisor**, **Allow
+read-only tool calls**, and **Allow external providers**. A local Ollama
+provider (`ollama-local`) is seeded automatically the first time the page is
+opened — enabling the feature and leaving the other two switches off is
+enough to chat entirely within the LAN.
+
+### 33.2 Providers
+
+Add a provider under the same tab: `ollama` (local, no key), `openai`
+(OpenAI itself or any OpenAI-compatible gateway — the field for a corporate
+LiteLLM/vLLM front door, not a personal login), or `anthropic`. **Test
+connection** fires one real call with the form's current values before you
+save anything. Delete a provider to revoke it instantly — its API key is
+Fernet-encrypted at rest and never re-displayed.
+
+### 33.3 Attaching context and the external-provider preview
+
+The paperclip menu attaches a concrete piece of SATOM data (an appliance's
+exception list, an existing Lua script) to the next message. If the active
+conversation's provider is external, clicking Send first shows exactly what
+will leave the LAN — the redacted text and how many internal identifiers were
+rewritten — before anything is sent. Nothing goes out until you confirm.
+Local Ollama has no such prompt: it never leaves the LAN, so there is nothing
+to preview.
+
+### 33.4 Proposals — how a chat turns into a change
+
+When the model suggests a concrete change, it appears as a card under the
+conversation with the exact JSON it proposed, **Apply as draft** and
+**Dismiss**. Apply requires the SAME permission the manual form already
+needs:
+
+- A WAF/signature exception needs `config_write` and creates a row on the
+  **Exceptions** page for that appliance, in the state it would be in had you
+  filled the form in yourself. Pushing it to the device is still a separate,
+  later step on that page.
+- A Lua script needs `studio.lua_studio` (super-admin) and creates a
+  **draft** script in Lua Studio, linted the same way a manually typed one is.
+
+Dismissing a proposal just marks it dismissed — nothing was ever written
+anywhere.
+
+### Troubleshooting
+
+| Symptom | What's happening |
+|---|---|
+| Sending a message returns *"AI Advisor is disabled"* | The master switch in Settings → AI Advisor is off (33.1). |
+| Sending to a non-local provider returns *"external providers are disabled"* | A provider is configured but **Allow external providers** is off — two separate gates on purpose (33.1). |
+| A provider shows *"no route to host"* / times out on the first message | If it's the local Ollama provider, a large model can take well over a minute to load into memory on a cold call — that is not a hang, wait for it (`docs/ai-advisor.md`). |
+| A chat reply mentions a proposal but no card appears | The model's fenced `` ```satom-proposal `` block did not parse as valid JSON against the schema — the chat reply still reached you, the malformed block was silently dropped rather than turned into something that only looks valid. |
+| **Apply as draft** is refused (403) | You don't hold the permission the MANUAL form for that kind requires (`config_write` for an exception, `studio.lua_studio` for Lua) — the AI path is never a shortcut around it (33.4). |

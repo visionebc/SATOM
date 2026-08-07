@@ -72,7 +72,12 @@
     </button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-nodetls" type="button">
+    {% if current_user.can('advisor.configure') %}
+  <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-ai" type="button" id="ai-settings-tab-btn">
+    <i class="bi bi-stars me-1"></i>AI Advisor
+  </button>
+  {% endif %}
+<button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-nodetls" type="button">
       <i class="bi bi-shield-lock-fill me-1"></i>Node TLS
     </button>
   </li>
@@ -1465,7 +1470,12 @@
     </div>
   </div>
   <!-- DNS LOOKUP TAB -->
-  <div class="tab-pane fade" id="tab-nodetls">
+  {% if current_user.can('advisor.configure') %}
+  <div class="tab-pane fade" id="tab-ai">
+    {% include "settings/_ai.html" %}
+  </div>
+  {% endif %}
+<div class="tab-pane fade" id="tab-nodetls">
     <div class="row g-4">
       <div class="col-12" data-mark="fm-ha-arch-doc">
         <div class="fw-card">

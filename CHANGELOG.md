@@ -6,6 +6,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **AI Advisor** — a read-only chat assistant (Settings \u2192 AI Advisor,
+  `/advisor`) for WAF false-positive triage, Lua-script drafting, and
+  searching the device configuration source of truth. Local Ollama by
+  default (no data leaves the LAN); OpenAI-compatible and Anthropic
+  providers are opt-in behind an explicit "allow external providers" flag,
+  redact known internal identifiers before sending, and show the operator a
+  pre-send preview of exactly what will leave the LAN. Untrusted device data
+  (WAF logs, policy content) is delimited in the prompt against injection.
+  The model **never writes anywhere**: a proposed WAF exception or Lua
+  script is a schema-validated, pending `AdvisorProposal` that becomes a
+  DRAFT row in the same tables (`WppException`, `LuaScript`) and behind the
+  same permission (`config_write` / `studio.lua_studio`) the manual forms
+  already require. Two new granular permissions, `advisor.use` and
+  `advisor.configure`. See `docs/ai-advisor.md`.
+
 ## [1.6.0] - 2026-08-07
 
 ### Added

@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changes · 0 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 5 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changes · 0 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 5 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
-        <ul class="rel-leads"></ul>
+        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · 5 entries</span>
+        <ul class="rel-leads"><li>Start, stop and restart this node&#x27;s services from the console</li><li>The standby&#x27;s services can be controlled from the primary</li><li>Service buttons are state-aware and colour-coded</li><li class="rel-more">… and 2 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.7.1.html" data-rel-version="1.7.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.7.1</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -160,7 +160,78 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-
+<h3 id="added">Added</h3>
+<ul>
+<li>
+<p><strong>Start, stop and restart this node's services from the console.</strong>
+  Settings → General grows a <strong>Services</strong> card covering the web app, the
+  scheduler, the reconciler, the metrics store, the alert / certificate /
+  data-sync timers, nginx and PostgreSQL. The web worker never runs
+  <code>systemctl</code> itself and is not granted it — a generic <code>sudo systemctl</code>
+  reaches every unit on the box, so it is root spelled differently. Each
+  action is queued for the privileged updater, which applies it, re-reads
+  the unit's state (an exit code of 0 means the job was accepted, not that
+  the daemon came up) and health-checks the three units that can take the
+  console down. What a console admin can reach is a table, duplicated into
+  the root runner and kept honest by a test that fails when the copies
+  drift. <code>satom-updater</code> is not in it and is denied by name: stopping the
+  runner means no later request can be processed, including the one that
+  would start it again. <code>stop</code> is withheld from the web app, nginx and the
+  database — each would leave recovery possible only from a shell, which is
+  exactly what the operator using this page does not have. Runtime-only:
+  nothing is enabled or disabled, and the card prints the boot state next
+  to the live state. See <code>docs/safeguards.md</code> §33.</p>
+</li>
+<li>
+<p><strong>The standby's services can be controlled from the primary.</strong> The card
+  renders one section per node, because systemd is node-local and an HA
+  pair has no single "the services". A peer is <em>asked</em>, never commanded:
+  the primary POSTs a unit name and an action to the peer's own endpoint
+  behind the shared node identity key, and the peer re-validates against
+  its OWN allowlist before its OWN root runner does the work — a peer
+  holding a valid key still cannot reach a unit that node does not permit,
+  or the updater at all. Hosts are resolved from the node registry by name,
+  never taken from the request. Unreachable is reported as unreachable and
+  never as "queued" or as an empty unit list, a 2xx without an id is not
+  success, a peer answering 404 is named as probably running an older
+  release, and a poll that fails mid-restart says <em>polling</em> — that is the
+  expected middle of a successful restart, not a failure. Peers load from
+  their own endpoint so a dead standby cannot make a healthy primary's card
+  look broken. See <code>docs/safeguards.md</code> §33b.</p>
+</li>
+</ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li>
+<p><strong>Service buttons are state-aware and colour-coded.</strong> A stopped unit
+  offers only Start, a running one only Restart and Stop, and colour
+  carries the consequence: green adds capacity, red takes it away, amber
+  interrupts and returns. What is <em>offered</em> is derived from live state;
+  what is <em>permitted</em> is not — the endpoint gate stays a fixed table, so
+  clicking a button that a poll invalidated a second earlier is a systemd
+  no-op instead of a refusal the operator would read as a broken console.
+  Units that may only be restarted (the web app, PostgreSQL) still offer
+  Restart while they are stopped: <code>systemctl restart</code> starts a stopped
+  unit, and withholding it would leave a dead unit with no button at all.</p>
+</li>
+<li>
+<p><strong>The General settings tab is laid out in two columns</strong>, and <strong>System
+  Information is a full-width card split in two</strong> — the facts and the
+  library inventory used to be stacked in a narrow side column, which made
+  it the tallest thing on the page. Side by side the card is about half as
+  tall and neither table wraps.</p>
+</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li><strong><code>update_status()</code> built a filesystem path out of an unvalidated URL
+  segment</strong>, so a traversing request id turned an admin-only status reader
+  into "read any <code>.json</code> the service account can read". Request ids are
+  minted in one place and always match <code>[A-Za-z0-9_-]+</code>; the check now
+  lives where the path is assembled rather than in each caller, because
+  validating per caller leaves the next caller to remember. Found while
+  wiring the peer status poll.</li>
+</ul>
 <p class="rel-prevnext"><a href="v1.7.1.html">Version 1.7.1 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">

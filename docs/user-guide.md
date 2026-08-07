@@ -404,6 +404,34 @@ lives on this node. Two settings decide what leaves it:
 How the local source of truth is versioned and what it does and does not hold:
 [source-of-truth-spec.md](source-of-truth-spec.md).
 
+**Recovery custody — the sealed envelope.** A bundle holds a `pg_dump` in which
+every appliance credential, the node identity key and the backup-server password
+are Fernet ciphertext. The key that opens them is `FERNET_KEY` in `.env`, and the
+internal CA key lives in `pki/` — **neither is in git, in the HA datasync or in
+any bundle**, on purpose. The consequence is the part worth remembering: *a
+bundle restored onto a rebuilt node is a database of unreadable secrets.*
+
+SATOM closes that without putting the key in the backup. Both secrets are wrapped
+in a scrypt+AES-GCM envelope at `data/recovery/seal.json`, which the datasync
+replicates to the peer within five minutes and every bundle carries off-box from
+then on. Whoever steals a bundle holds ciphertext; you, holding a passphrase and
+nothing else, can rebuild the installation from any copy.
+
+- **The passphrase is minted at install**, shown once, and never stored by the
+  product. A secondary node inherits it through the join key, so both nodes open
+  the same envelope. **Write it down somewhere that is not the cluster** — if it
+  lives on the same disk as the node, you have three copies of a box you cannot
+  open.
+- **Seal on the primary, not the standby.** Only the primary holds the internal
+  CA key, so a standby seal would produce an envelope that cannot re-issue the
+  replication mTLS; and the standby's `data/` is overwritten from the primary
+  every five minutes, so the file would not survive anyway.
+- Verbs: `satom execute seal recovery` (re-run at any time; it replaces rather
+  than accumulates), `satom execute unseal recovery`, and
+  `satom diagnose recovery`, which reports an absent, stale, unreadable or
+  **unreachable** envelope. A node with no envelope is noisy on purpose.
+
+
 Its two nav siblings under **Operations** — Log Collection and Import Backup —
 are §27. Neither is a backup: one collects read-only diagnostics over SSH, the
 other parses a config file entirely offline.
@@ -1074,7 +1102,7 @@ Full reference: [docs/theming.md](theming.md).
 
 Some failures cannot be fixed from the web interface, because the web interface
 is the thing that failed. Every node ships a local command-line tool, `satom`,
-with **94 commands in 34 groups** across four verbs — `get` (state), `show`
+with a command tree across four verbs — `get` (state), `show`
 (reference), `diagnose` (checks) and `execute` (actions). `satom show tree` prints
 the whole tree; `satom show tree --commands` flattens it to one runnable command
 per line, with the root-only and destructive ones marked.
@@ -1082,10 +1110,14 @@ per line, with the root-only and destructive ones marked.
 The three you will use most:
 
 ```bash
-satom diagnose all        # 24 checks, one exit code
+satom diagnose all        # every check, one exit code
 satom diagnose install    # infrastructure vs. protections — what is not armed
 satom show docs           # print any manual, no network needed
 ```
+
+The exact command count is deliberately not repeated here: `satom show tree`
+prints the live tree, and [docs/cli.md](cli.md) is generated from it, so neither
+can drift from the console you are running. A number typed into prose can.
 
 Read verbs work as any user; state-changing verbs require root and refuse with
 an explanation rather than a traceback. Ask your systems team for the operator
@@ -2189,6 +2221,8 @@ Where to read it:
 | Log Collection returns 403, or refuses the whole run | The page is `config_write`-gated even though it writes nothing to the device (27.1). A run refused with a read-only violation means one command — battery or custom — could mutate configuration; the whole run is refused rather than the offending line skipped. |
 | A template is stuck in **pending** and will not roll out to the fleet | Single-device apply works at any status; a **multi-device** rollout needs the template **approved** *and* the Run-operations permission. Approving is a separate permission (`operations.template_approve`) from authoring (29.1). |
 | A registry-driven page 404s on the device after a firmware upgrade | The firmware moved that URI. Fix it as a **registry edit** on that product's API console — the catalog is DB-first, the edit is audited, and it converges across workers within a minute. No code change or release is involved (30.1). |
+| `diagnose recovery` says the sealed envelope is **unreachable** | The envelope is on disk but not owned by the account that carries it, so the HA datasync skips it and the bundle writer records it absent. Re-run `satom execute seal recovery` on the primary — sealing hands the file to the tree owner. This is reported as **critical**, deliberately worse than an honest "not sealed": an unreadable envelope looks like durability and is not (11). |
+| `satom execute seal recovery` printed the passphrase and I lost it | Re-run it. Sealing is idempotent and replaces the envelope, so a new passphrase is fine as long as **every** copy is re-sealed from the primary — the peer and the next bundle pick it up automatically. An old bundle stays locked to the old passphrase, which is why the copy you keep off-box needs the passphrase that matches it (11). |
 | A registry endpoint you disabled came back after a restart | It did not — disabling is a **soft delete** and the row survives exactly so the boot seeder cannot resurrect the name. If the name is live again, someone re-enabled it; the toggle is audited (30.2). |
 
 ## 33. AI Advisor

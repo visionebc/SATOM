@@ -251,13 +251,53 @@ Two granular keys in `app/permissions.py` (area `advisor`):
 - **`advisor.configure`** — providers, API keys, and the three feature flags.
   Admin-only.
 
+## Watching the reply arrive, and stopping it
+
+The chat streams. `POST /advisor/<id>/send-stream` answers `text/event-stream`
+and emits four kinds of frame: `status` (thinking, or which tool is running),
+`delta` (a piece of the reply), `heartbeat`, and one terminal `done` carrying
+the persisted message with its duration and token counts. The blocking
+`POST /advisor/<id>/send` still exists and is unchanged — both run the *same*
+engine, `_run_exchange`, and differ only in transport. Two copies of the tool
+loop would drift the first time either changed.
+
+Three parts of this are load-bearing:
+
+**`X-Accel-Buffering: no`.** nginx buffers proxied responses by default, and
+this product's vhost is written by the installer rather than carried in git —
+so a directive in the vhost would never reach an installation that already
+exists. Sent as a response header it travels with the feature. Without it the
+whole reply arrives in one lump at the end, which looks exactly like the frozen
+page streaming was added to fix.
+
+**The heartbeat.** During a cold model load there is nothing to send for up to
+a minute and a half. The beat every couple of seconds does three jobs at once:
+it keeps a reverse proxy's read timeout from closing a healthy exchange, it
+gives the operator a moving clock instead of a dead page, and — because writing
+to a closed socket is how this process discovers the browser went away — it is
+what makes **Stop** take effect within a beat instead of at the next token.
+
+**Stop is real.** Pressing it aborts the request, which closes the socket,
+which closes SATOM's connection to the model: generation ends, it does not
+carry on invisibly. Whatever had been generated is **kept**, marked
+`stopped`, and the call is written to the ledger as a failure with the reason.
+Throwing the partial away would discard tokens that were genuinely spent and
+leave the next page load showing nothing — which reads as "it lost my answer",
+not as "I cancelled it". A cancelled reply usually shows `tokens not reported`,
+because the provider sends its usage in the final chunk that never arrived;
+that is the honest answer, not zero.
+
+The worker timeout must stay **above** `advisor_providers.DEFAULT_TIMEOUT`
+(`deploy/satom.service` sets `--timeout 600`). Inverted, a slow model has its
+gunicorn worker killed first and the operator gets a dropped connection instead
+of the provider's own "timed out" — the diagnosable error replaced by the
+opaque one.
+
 ## What this explicitly does not do (yet)
 
-- No streaming responses — request/response only, which is why the default
-  timeout is generous (see below).
 - Tool calling (mode C) is a fixed, hand-written catalog
-  (`sot_search`, `list_exceptions`, `list_lua_scripts`) — not open-ended
-  function calling against arbitrary SATOM APIs.
+  (`sot_search`, `list_exceptions`, `list_lua_scripts`, and the device/probe
+  readers) — not open-ended function calling against arbitrary SATOM APIs.
 - Attachable context is a curated picker (exceptions, Lua scripts, a SoT
   search), not "attach any page."
 
@@ -269,3 +309,7 @@ one-word reply. `advisor_providers.DEFAULT_TIMEOUT` is 180s, not the
 framework-typical 30–60s, specifically because of this — a shorter timeout
 would fail every first message after the model has been idled out of memory,
 which reads exactly like a broken feature.
+
+Streaming does not shorten that load; it makes it *visible*. The heartbeat and
+the elapsed clock turn ninety silent seconds into ninety seconds the operator
+can see, and can cancel.

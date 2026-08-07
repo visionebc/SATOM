@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 9 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Fixed · Added · Changed · 13 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 9 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Fixed · Added · Changed · 13 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · 9 entries</span>
-        <ul class="rel-leads"><li>The AI Advisor&#x27;s read-only tools are now actually reachable by the model</li><li>Tool output is redacted before it can leave the LAN</li><li>Response time and token cost, per reply and in a ledger</li><li class="rel-more">… and 6 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Fixed · Added · Changed · 13 entries</span>
+        <ul class="rel-leads"><li>The AI Advisor&#x27;s replies were saved and never shown</li><li>update_status() built a filesystem path out of an unvalidated URL segment</li><li>The chat streams, shows that it is working, and can be stopped</li><li class="rel-more">… and 10 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.7.1.html" data-rel-version="1.7.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.7.1</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -160,9 +160,64 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li>
+<p><strong>The AI Advisor's replies were saved and never shown.</strong> After Send, the
+  page sat silent and the answer only appeared on a reload — with no cost
+  figures, because those are drawn with the reply. The cause was one
+  identifier: a nested callback assigned to <code>input</code>, a variable that belonged
+  to a sibling function's scope. JavaScript resolves that to nothing, so the
+  callback threw on that line and never reached the next one, which was the
+  call that redraws the thread. Every server-side test passed, because the
+  server was right the whole time. Fixed at the root rather than patched: all
+  DOM handles are now declared once at the top of the script and the send path
+  takes what it needs as arguments, so the cross-scope reference is no longer
+  writable. Guards enforce the convention, including one that fails when the
+  script calls a function it never defines.</p>
+</li>
+<li>
+<p><strong><code>update_status()</code> built a filesystem path out of an unvalidated URL
+  segment</strong>, so a traversing request id turned an admin-only status reader
+  into "read any <code>.json</code> the service account can read". Request ids are
+  minted in one place and always match <code>[A-Za-z0-9_-]+</code>; the check now
+  lives where the path is assembled rather than in each caller, because
+  validating per caller leaves the next caller to remember. Found while
+  wiring the peer status poll.</p>
+</li>
+</ul>
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>The AI Advisor's read-only tools are now actually reachable by the
+<li><strong>The chat streams, shows that it is working, and can be stopped.</strong> The
+  reply now appears as it is generated, with an animated indicator, a live
+  elapsed clock, and a chip per tool call while the model is using one. A
+  <strong>Stop</strong> button cancels: aborting the request closes the socket, which closes
+  SATOM's connection to the model, so generation genuinely ends rather than
+  continuing invisibly and billing for it. Whatever was produced is kept,
+  marked as stopped, and written to the ledger as a cancelled call — throwing
+  it away would discard tokens that were really spent and leave the next page
+  load blank. A heartbeat keeps the connection alive through a cold model load
+  (up to ~90 silent seconds on a 32B local model) and is what lets Stop take
+  effect within a couple of seconds instead of at the next token. The response
+  carries <code>X-Accel-Buffering: no</code>, because nginx buffers proxied responses by
+  default and this product's vhost is written by the installer rather than
+  carried in git — a directive there would never reach an existing install.
+  The blocking <code>POST /advisor/&lt;id&gt;/send</code> is unchanged; both paths run the same
+  engine, so the tool loop, redaction and ledger cannot drift apart.</li>
+<li>Errors now render in place of the reply instead of an alert box, and the
+  composer keeps what was typed when an external-provider preview is declined.</li>
+</ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li>
+<p><code>deploy/satom.service</code> raises the gunicorn worker timeout to 600s. It was
+  120s while the provider timeout is 180s — inverted, so a slow model had its
+  worker killed before the provider could report a timeout, and a diagnosable
+  error arrived as an opaque dropped connection. A test now fails if the
+  ordering is ever reversed.</p>
+</li>
+<li>
+<p><strong>The AI Advisor's read-only tools are now actually reachable by the
   model.</strong> They shipped as a set of functions with nothing that invoked
   them: the catalog was served over HTTP and <code>call_tool</code> was never called
   from the chat path, so the model could not use a tool whatever it emitted.
@@ -172,7 +227,8 @@
   <code>list_server_policies</code>, <code>device_health</code>, <code>list_probes</code> and
   <code>recent_config_changes</code>, alongside the existing SoT, exception and Lua
   lookups. All read from the database and the harvest cache, so an answer
-  still arrives with the appliance powered off.</li>
+  still arrives with the appliance powered off.</p>
+</li>
 <li><strong>Tool output is redacted before it can leave the LAN.</strong> Redaction
   previously covered the operator's message and the attachments they chose.
   A tool result is neither — the model asks for it and SATOM injects it — so
@@ -255,9 +311,6 @@
   their own endpoint so a dead standby cannot make a healthy primary's card
   look broken. See <code>docs/safeguards.md</code> §33b.</p>
 </li>
-</ul>
-<h3 id="changed">Changed</h3>
-<ul>
 <li>
 <p><strong>Service buttons are state-aware and colour-coded.</strong> A stopped unit
   offers only Start, a running one only Restart and Stop, and colour
@@ -277,16 +330,6 @@
   it the tallest thing on the page. Side by side the card is about half as
   tall and neither table wraps.</p>
 </li>
-</ul>
-<h3 id="fixed">Fixed</h3>
-<ul>
-<li><strong><code>update_status()</code> built a filesystem path out of an unvalidated URL
-  segment</strong>, so a traversing request id turned an admin-only status reader
-  into "read any <code>.json</code> the service account can read". Request ids are
-  minted in one place and always match <code>[A-Za-z0-9_-]+</code>; the check now
-  lives where the path is assembled rather than in each caller, because
-  validating per caller leaves the next caller to remember. Found while
-  wiring the peer status poll.</li>
 </ul>
 <p class="rel-prevnext"><a href="v1.7.1.html">Version 1.7.1 →</a></p>
       </div>

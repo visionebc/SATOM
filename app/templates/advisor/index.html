@@ -55,7 +55,8 @@
             <ul class="dropdown-menu" id="adv-attach-menu"></ul>
           </div>
           <textarea id="adv-input" class="form-control" rows="2" placeholder="Ask about a WAF block, a Lua script, or search the reports…"></textarea>
-          <button type="button" class="btn btn-fw-primary" id="adv-send" style="white-space:nowrap"><i class="bi bi-send me-1"></i>Send</button>
+          <button type="button" class="btn btn-fw-primary" id="adv-send" data-act="send" style="white-space:nowrap"><i class="bi bi-send me-1"></i>Send</button>
+          <button type="button" class="btn btn-fw-outline d-none" id="adv-stop" data-act="stop" style="white-space:nowrap" title="Stop generating"><i class="bi bi-stop-circle me-1"></i>Stop</button>
         </div>
         <div class="text-secondary mt-1" style="font-size:11px" id="adv-provider-note"></div>
       </div>
@@ -75,38 +76,77 @@
 .adv-msg .meta{font-size:10.5px;color:var(--fw-text-muted);margin-top:2px}
 .adv-attach-chip{background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:16px;padding:3px 10px;font-size:11.5px;display:inline-flex;align-items:center;gap:6px}
 .adv-proposal-card{border:1px solid var(--fw-border);border-radius:10px;padding:10px 12px;margin:8px 0;background:var(--fw-surface)}
+.adv-msg .bubble.is-error{background:color-mix(in srgb, var(--fw-danger, #8B1C2A) 10%, transparent);border-color:var(--fw-danger, #8B1C2A)}
+.adv-tools{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.adv-tool-chip{font-size:11px;border-radius:14px;padding:2px 9px;border:1px solid var(--fw-border);background:var(--fw-surface);display:inline-flex;align-items:center;gap:5px}
+.adv-dots{display:inline-flex;gap:3px;vertical-align:middle;margin-left:2px}
+.adv-dots i{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.35;animation:advBlink 1.2s infinite}
+.adv-dots i:nth-child(2){animation-delay:.2s}
+.adv-dots i:nth-child(3){animation-delay:.4s}
+@keyframes advBlink{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-2px)}}
+@media (prefers-reduced-motion: reduce){.adv-dots i{animation:none;opacity:.6}}
+.adv-cursor{display:inline-block;width:7px;margin-left:1px;animation:advBlink 1s infinite}
 </style>
 
 <script nonce="{{ csp_nonce }}">
 (function(){
   var root = document.getElementById('adv-root');
   if (!root) return;
-  var csrf = (document.querySelector('meta[name=csrf-token]')||{}).content || '';
+
+  // Every DOM handle and every piece of mutable state is declared HERE, once.
+  // The previous version reached from one function into a variable that only
+  // existed inside a sibling's scope; that threw at runtime, killed the
+  // callback halfway, and the line it never reached was the one that redraws
+  // the thread -- so replies were saved and stayed invisible until a reload.
+  // Declaring the handles in one place is what stops that from recurring.
+  var elThread    = document.getElementById('adv-thread');
+  var elProposals = document.getElementById('adv-proposals');
+  var elInput     = document.getElementById('adv-input');
+  var elSend      = document.getElementById('adv-send');
+  var elStop      = document.getElementById('adv-stop');
+  var elAttachBox = document.getElementById('adv-attach-preview');
+  var elAttachMenu= document.getElementById('adv-attach-menu');
+  var csrf = (document.querySelector('meta[name=csrf-token]') || {}).content || '';
+
   var attachments = [];
   var attachableCache = null;
+  var inflight = null;      // AbortController while a reply is in progress
+  var pending  = null;      // {wrap, bubble, meta, tools, started, timer, text[]}
 
   function api(url, opts){
     opts = opts || {};
-    opts.headers = Object.assign({'X-CSRFToken': csrf, 'Content-Type':'application/json'}, opts.headers||{});
-    return fetch(url, opts).then(function(r){ return r.json().then(function(d){ d.__status = r.status; return d; }); });
+    opts.headers = Object.assign({'X-CSRFToken': csrf, 'Content-Type':'application/json'},
+                                 opts.headers || {});
+    return fetch(url, opts).then(function(r){
+      return r.json().then(function(d){ d.__status = r.status; return d; });
+    });
   }
 
-  function esc(s){ var d=document.createElement('div'); d.textContent = s==null?'':String(s); return d.innerHTML; }
-
+  function esc(s){ var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+  function fmtNum(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
   function fmtMs(ms){
     if (ms == null) return '';
-    return ms < 1000 ? (ms + ' ms') : ((ms/1000).toFixed(ms < 10000 ? 1 : 0) + ' s');
+    return ms < 1000 ? (ms + ' ms') : ((ms / 1000).toFixed(ms < 10000 ? 1 : 0) + ' s');
   }
-  function fmtNum(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
-  // A reply's cost line. `total_tokens === null` means the PROVIDER did not
-  // report usage -- several OpenAI-compatible gateways omit it. That is said
-  // out loud rather than printed as "0 tokens", which would be a number this
-  // product never measured and would read as a bug in the counter.
+
+  // The model's tool call is machinery, not prose: it is shown as chips, so
+  // leaving the raw fence in the bubble would say the same thing twice in its
+  // ugliest form. A ```satom-proposal block is deliberately NOT stripped --
+  // an invalid one is skipped server-side, and hiding it too would make a
+  // rejected proposal vanish with no trace for the operator to look at.
+  function stripToolFence(s){
+    return String(s == null ? '' : s).replace(/```satom-tool\s*\n[\s\S]*?```\s*/g, '').trim();
+  }
+
   function msgMeta(m){
     var bits = [m.role === 'user' ? 'You' : 'Advisor'];
+    if (m.stopped) bits.push('stopped by you');
     if (m.redacted) bits.push('redacted before sending');
     if (m.role === 'assistant'){
       if (m.duration_ms != null) bits.push(fmtMs(m.duration_ms));
+      // `total_tokens === null` means the PROVIDER did not report usage --
+      // several OpenAI-compatible gateways omit it. Said out loud rather than
+      // printed as "0 tokens", which would be a number nothing measured.
       if (m.total_tokens == null) bits.push('tokens not reported');
       else bits.push(fmtNum(m.total_tokens) + ' tokens (' +
                      fmtNum(m.prompt_tokens || 0) + ' in / ' +
@@ -120,28 +160,26 @@
   }
 
   function renderThread(data){
-    var thread = document.getElementById('adv-thread');
-    thread.innerHTML = '';
-    (data.messages||[]).forEach(function(m){
+    elThread.innerHTML = '';
+    (data.messages || []).forEach(function(m){
       var div = document.createElement('div');
       div.className = 'adv-msg role-' + m.role;
       var bubble = document.createElement('div');
       bubble.className = 'bubble';
-      bubble.textContent = m.content;
+      bubble.textContent = m.role === 'assistant' ? stripToolFence(m.content) : m.content;
       div.appendChild(bubble);
       var meta = document.createElement('div');
       meta.className = 'meta';
       meta.textContent = msgMeta(m);
       div.appendChild(meta);
-      thread.appendChild(div);
+      elThread.appendChild(div);
     });
-    thread.scrollTop = thread.scrollHeight;
+    elThread.scrollTop = elThread.scrollHeight;
     renderProposals(data.proposals || []);
   }
 
   function renderProposals(props){
-    var box = document.getElementById('adv-proposals');
-    box.innerHTML = '';
+    elProposals.innerHTML = '';
     props.filter(function(p){ return p.status === 'pending'; }).forEach(function(p){
       var card = document.createElement('div');
       card.className = 'adv-proposal-card';
@@ -154,76 +192,262 @@
         '<button type="button" class="btn btn-sm btn-fw-outline" data-act="dismiss-proposal" data-pid="' + p.id + '">Dismiss</button>' +
         '</div></div>' +
         '<pre style="font-size:11px;margin-top:8px;white-space:pre-wrap">' + esc(JSON.stringify(p.payload, null, 2)) + '</pre>';
-      box.appendChild(card);
+      elProposals.appendChild(card);
     });
   }
 
   function loadConversation(cid){
-    if (!cid) { renderThread({messages:[], proposals:[]}); return; }
-    api('/advisor/' + cid + '/messages').then(renderThread);
+    if (!cid) { renderThread({messages: [], proposals: []}); return Promise.resolve(); }
+    return api('/advisor/' + cid + '/messages').then(renderThread);
   }
 
   function currentCid(){ return root.getAttribute('data-cid') || ''; }
 
-  document.addEventListener('click', function(ev){
-    var t = ev.target.closest('[data-act]');
-    if (!t) return;
-    var act = t.getAttribute('data-act');
+  // ---------------------------------------------------------------- pending
+  // The reply-in-progress bubble. It exists so the page is never silent: an
+  // exchange here can spend a minute loading a model before the first token,
+  // and a Send button that just goes quiet is indistinguishable from one that
+  // is broken -- which is exactly how this feature was read before.
+  function beginPending(){
+    var wrap = document.createElement('div');
+    wrap.className = 'adv-msg role-assistant';
+    var tools = document.createElement('div');
+    tools.className = 'adv-tools';
+    var bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.innerHTML = '<span class="adv-phase">Thinking</span>' +
+                       '<span class="adv-dots"><i></i><i></i><i></i></span>';
+    var meta = document.createElement('div');
+    meta.className = 'meta';
+    wrap.appendChild(tools); wrap.appendChild(bubble); wrap.appendChild(meta);
+    elThread.appendChild(wrap);
+    elThread.scrollTop = elThread.scrollHeight;
 
-    if (act === 'new-conv') {
-      api('/advisor/new', {method:'POST', body: JSON.stringify({})}).then(function(d){
-        if (d.ok) window.location = '/advisor/' + d.id;
+    pending = {wrap: wrap, bubble: bubble, meta: meta, tools: tools,
+               started: Date.now(), text: [], timer: null, phase: 'Thinking'};
+    pending.timer = setInterval(tickPending, 200);
+    tickPending();
+    return pending;
+  }
+
+  function tickPending(){
+    if (!pending) return;
+    pending.meta.textContent = 'Advisor · ' + fmtMs(Date.now() - pending.started) +
+                               ' · press Stop to cancel';
+  }
+
+  function setPhase(label){
+    if (!pending) return;
+    pending.phase = label;
+    if (pending.text.length) return;   // once text is flowing, the label is noise
+    pending.bubble.innerHTML = '<span class="adv-phase">' + esc(label) + '</span>' +
+                               '<span class="adv-dots"><i></i><i></i><i></i></span>';
+  }
+
+  function toolChip(name, state, ok){
+    if (!pending) return;
+    var id = 'tool-' + name.replace(/[^a-z0-9_]/gi, '');
+    var chip = pending.tools.querySelector('[data-chip="' + id + '"]');
+    if (!chip){
+      chip = document.createElement('span');
+      chip.className = 'adv-tool-chip';
+      chip.setAttribute('data-chip', id);
+      pending.tools.appendChild(chip);
+    }
+    var icon = state === 'running' ? 'bi-arrow-repeat'
+             : (ok === false ? 'bi-x-circle' : 'bi-check2');
+    chip.innerHTML = '<i class="bi ' + icon + '"></i>' + esc(name);
+  }
+
+  function appendDelta(txt){
+    if (!pending) return;
+    pending.text.push(txt);
+    var visible = stripToolFence(pending.text.join(''));
+    pending.bubble.textContent = visible;
+    if (!visible) {
+      pending.bubble.innerHTML = '<span class="adv-phase">' + esc(pending.phase) + '</span>' +
+                                 '<span class="adv-dots"><i></i><i></i><i></i></span>';
+    }
+    elThread.scrollTop = elThread.scrollHeight;
+  }
+
+  function endPending(){
+    if (!pending) return;
+    if (pending.timer) clearInterval(pending.timer);
+    if (pending.wrap && pending.wrap.parentNode) pending.wrap.parentNode.removeChild(pending.wrap);
+    pending = null;
+  }
+
+  function pendingError(message){
+    if (!pending){ beginPending(); }
+    if (pending.timer) clearInterval(pending.timer);
+    pending.timer = null;
+    pending.bubble.className = 'bubble is-error';
+    pending.bubble.textContent = message;
+    pending.meta.textContent = 'Advisor · failed after ' + fmtMs(Date.now() - pending.started);
+    pending = null;                      // leave it on screen as the record
+    elThread.scrollTop = elThread.scrollHeight;
+  }
+
+  function setBusy(on){
+    elSend.disabled = !!on;
+    if (elStop) elStop.classList.toggle('d-none', !on);
+  }
+
+  // ------------------------------------------------------------------- SSE
+  function parseFrame(raw){
+    var ev = 'message', data = '';
+    raw.split('\n').forEach(function(line){
+      if (!line || line.charAt(0) === ':') return;            // ": open" keepalive
+      if (line.indexOf('event:') === 0) ev = line.slice(6).trim();
+      else if (line.indexOf('data:') === 0) data += line.slice(5).trim();
+    });
+    if (!data) return null;
+    try { return {event: ev, data: JSON.parse(data)}; } catch (e) { return null; }
+  }
+
+  function readStream(resp, onFrame){
+    var reader = resp.body.getReader();
+    var dec = new TextDecoder();
+    var buf = '';
+    function step(){
+      return reader.read().then(function(r){
+        if (r.done){ if (buf.trim()) onFrame(buf); return; }
+        buf += dec.decode(r.value, {stream: true});
+        var i;
+        while ((i = buf.indexOf('\n\n')) >= 0){
+          var raw = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          if (raw.trim()) onFrame(raw);
+        }
+        return step();
       });
     }
+    return step();
+  }
 
-    if (act === 'apply-proposal' || act === 'dismiss-proposal') {
-      var pid = t.getAttribute('data-pid');
-      var cid = currentCid();
-      var verb = act === 'apply-proposal' ? 'apply' : 'dismiss';
-      api('/advisor/' + cid + '/proposal/' + pid + '/' + verb, {method:'POST', body: JSON.stringify({})}).then(function(d){
-        if (d.ok) { loadConversation(cid); }
-        else { alert(d.error || 'could not ' + verb); }
-      });
+  var lastDone = null;
+
+  function handleEvent(ev, data){
+    if (ev === 'delta')      appendDelta(data.text || '');
+    else if (ev === 'status'){
+      if (data.phase === 'tool') toolChip(data.tool || 'tool', data.state, data.ok);
+      else if (data.phase === 'thinking')
+        setPhase(data.round > 1 ? ('Thinking (round ' + data.round + ')') : 'Thinking');
     }
+    else if (ev === 'done')  lastDone = data.message || null;
+    else if (ev === 'error') pendingError(data.error || 'the provider call failed');
+    // 'heartbeat' needs no handling: its whole job is to be a byte on the
+    // wire. The elapsed clock is driven locally so it keeps moving either way.
+  }
 
-    if (t.matches('.adv-conv-item')) {
-      // let the normal navigation happen (full page load keeps things simple
-      // and matches how the rest of this app links between records)
-    }
+  // Everything the send needs arrives as an argument. Nothing in here reads a
+  // variable that belongs to another function's scope.
+  function sendFlow(cid, text, atts){
+    beginPending();
+    setBusy(true);
+    lastDone = null;
+    var ctrl = new AbortController();
+    inflight = ctrl;
+    var aborted = false;
 
-    if (t.matches('#adv-attach-menu [data-attach]')) {
-      ev.preventDefault();
-      var kind = t.getAttribute('data-attach');
-      var payload = t.getAttribute('data-payload') || '';
-      if (kind === 'exceptions') {
-        api('/advisor/attach/exceptions/' + payload).then(function(d){
-          addAttachment('exceptions:' + payload, 'Exceptions on appliance ' + payload, JSON.stringify(d.content));
+    return fetch('/advisor/' + cid + '/send-stream', {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrf, 'Content-Type': 'application/json'},
+        body: JSON.stringify({text: text, attachments: atts}),
+        signal: ctrl.signal
+      })
+      .then(function(resp){
+        var ct = resp.headers.get('content-type') || '';
+        if (!resp.ok || ct.indexOf('text/event-stream') < 0){
+          return resp.json().catch(function(){ return {}; }).then(function(d){
+            throw new Error(d.error || ('the server answered HTTP ' + resp.status));
+          });
+        }
+        return readStream(resp, function(raw){
+          var f = parseFrame(raw);
+          if (f) handleEvent(f.event, f.data);
         });
-      } else if (kind === 'lua') {
-        addAttachment('lua:' + payload, 'Lua script ' + payload, payload);
-      }
-    }
-  });
+      })
+      .catch(function(err){
+        if (err && err.name === 'AbortError'){ aborted = true; return; }
+        pendingError((err && err.message) || 'the request failed');
+      })
+      .then(function(){
+        inflight = null;
+        setBusy(false);
+        if (pending) endPending();
+        // Redraw from the server rather than from `lastDone`: the reload also
+        // brings back any proposal the reply produced, so the screen has one
+        // source of truth instead of two that can disagree.
+        // On a stop the partial is written by the server as it unwinds, so
+        // give that a beat before asking for it.
+        if (aborted) setTimeout(function(){ loadConversation(cid); }, 600);
+        else if (lastDone) loadConversation(cid);
+      });
+  }
 
+  function beginSend(){
+    var text = elInput.value.trim();
+    var atts = attachments.slice();
+    if (!text && atts.length === 0) return;
+    if (inflight) return;
+
+    var ready = currentCid()
+      ? Promise.resolve(currentCid())
+      : api('/advisor/new', {method: 'POST', body: JSON.stringify({})}).then(function(d){
+          if (!d.ok) throw new Error(d.error || 'could not start a conversation');
+          history.replaceState(null, '', '/advisor/' + d.id);
+          root.setAttribute('data-cid', d.id);
+          return d.id;
+        });
+
+    ready.then(function(cid){
+      return api('/advisor/' + cid + '/preview',
+                 {method: 'POST', body: JSON.stringify({text: text, attachments: atts})})
+        .then(function(prev){
+          if (prev.ok && prev.is_external){
+            var msg = 'This will be sent to an EXTERNAL provider (' + prev.provider_key + ').\n' +
+              (prev.redaction_count > 0
+                 ? (prev.redaction_count + ' internal identifier(s) will be redacted first.\n\n')
+                 : 'No known internal identifiers were found to redact.\n\n') +
+              'Outbound text:\n' + prev.outbound_text.slice(0, 600) +
+              (prev.outbound_text.length > 600 ? '\n…(truncated)' : '') + '\n\nSend?';
+            if (!confirm(msg)) return;
+          }
+          // Clear the composer only once the send is actually starting, so a
+          // refused preview does not eat what the operator typed.
+          elInput.value = '';
+          attachments = [];
+          renderAttachChips();
+          return sendFlow(cid, text, atts);
+        });
+    }).catch(function(err){
+      pendingError((err && err.message) || 'could not send');
+      setBusy(false);
+      inflight = null;
+    });
+  }
+
+  // ------------------------------------------------------------ attachments
   function addAttachment(id, label, content){
     attachments.push({id: id, label: label, content: content});
     renderAttachChips();
   }
 
   function renderAttachChips(){
-    var box = document.getElementById('adv-attach-preview');
-    box.innerHTML = '';
+    elAttachBox.innerHTML = '';
     attachments.forEach(function(a, i){
       var chip = document.createElement('span');
       chip.className = 'adv-attach-chip';
       chip.innerHTML = '<i class="bi bi-paperclip"></i>' + esc(a.label) +
-        ' <a href="#" data-idx="' + i + '" style="color:inherit">&times;</a>';
+                       ' <a href="#" data-idx="' + i + '" style="color:inherit">&times;</a>';
       chip.querySelector('a').addEventListener('click', function(ev){
         ev.preventDefault();
         attachments.splice(i, 1);
         renderAttachChips();
       });
-      box.appendChild(chip);
+      elAttachBox.appendChild(chip);
     });
   }
 
@@ -231,67 +455,66 @@
     if (attachableCache) return Promise.resolve(attachableCache);
     return api('/advisor/attachable').then(function(d){
       attachableCache = d;
-      var menu = document.getElementById('adv-attach-menu');
-      menu.innerHTML = '';
-      (d.appliances||[]).forEach(function(a){
+      elAttachMenu.innerHTML = '';
+      (d.appliances || []).forEach(function(a){
         var li = document.createElement('li');
-        li.innerHTML = '<a class="dropdown-item" href="#" data-attach="exceptions" data-payload="' + a.id + '">Exceptions — ' + esc(a.name) + '</a>';
-        menu.appendChild(li);
+        li.innerHTML = '<a class="dropdown-item" href="#" data-attach="exceptions" data-payload="' +
+                       a.id + '">Exceptions — ' + esc(a.name) + '</a>';
+        elAttachMenu.appendChild(li);
       });
       return d;
     });
   }
-  populateAttachMenu();
 
-  function doSend(cid, text){
-    var send = function(cid){
-      var btn = document.getElementById('adv-send');
-      btn.disabled = true;
-      api('/advisor/' + cid + '/send', {method:'POST', body: JSON.stringify({text: text, attachments: attachments})})
-        .then(function(d){
-          btn.disabled = false;
-          if (!d.ok) { alert(d.error || 'send failed'); return; }
-          input.value = '';
-          attachments = [];
-          renderAttachChips();
-          loadConversation(cid);
+  // ---------------------------------------------------------------- events
+  document.addEventListener('click', function(ev){
+    var t = ev.target.closest('[data-act], [data-attach]');
+    if (!t) return;
+
+    var attach = t.getAttribute('data-attach');
+    if (attach){
+      ev.preventDefault();
+      var payload = t.getAttribute('data-payload') || '';
+      if (attach === 'exceptions'){
+        api('/advisor/attach/exceptions/' + payload).then(function(d){
+          addAttachment('exceptions:' + payload, 'Exceptions on appliance ' + payload,
+                        JSON.stringify(d.content));
         });
-    };
-    if (!cid) {
-      api('/advisor/new', {method:'POST', body: JSON.stringify({})}).then(function(d){
-        if (d.ok) { history.replaceState(null, '', '/advisor/' + d.id); root.setAttribute('data-cid', d.id); send(d.id); }
-      });
-    } else {
-      send(cid);
+      } else if (attach === 'lua'){
+        addAttachment('lua:' + payload, 'Lua script ' + payload, payload);
+      }
+      return;
     }
-  }
 
-  document.getElementById('adv-send').addEventListener('click', function(){
-    var input = document.getElementById('adv-input');
-    var text = input.value.trim();
-    if (!text && attachments.length === 0) return;
-    var cid = currentCid();
-    var previewOn = cid ? Promise.resolve(cid) : api('/advisor/new', {method:'POST', body: JSON.stringify({})})
-      .then(function(d){ history.replaceState(null, '', '/advisor/' + d.id); root.setAttribute('data-cid', d.id); return d.id; });
-    previewOn.then(function(useCid){
-      api('/advisor/' + useCid + '/preview', {method:'POST', body: JSON.stringify({text: text, attachments: attachments})})
-        .then(function(prev){
-          if (prev.ok && prev.is_external) {
-            var msg = 'This will be sent to an EXTERNAL provider (' + prev.provider_key + ').\n' +
-              (prev.redaction_count > 0 ? (prev.redaction_count + ' internal identifier(s) will be redacted first.\n\n') : 'No known internal identifiers were found to redact.\n\n') +
-              'Outbound text:\n' + prev.outbound_text.slice(0, 600) + (prev.outbound_text.length > 600 ? '\n…(truncated)' : '') +
-              '\n\nSend?';
-            if (!confirm(msg)) return;
-          }
-          doSend(useCid, text);
-        });
-    });
+    var act = t.getAttribute('data-act');
+    if (act === 'new-conv'){
+      api('/advisor/new', {method: 'POST', body: JSON.stringify({})}).then(function(d){
+        if (d.ok) window.location = '/advisor/' + d.id;
+      });
+    } else if (act === 'send'){
+      beginSend();
+    } else if (act === 'stop'){
+      // Aborting the fetch closes the socket, which is what the server is
+      // waiting on to stop pulling from the model -- so this stops generation,
+      // not just the waiting.
+      if (inflight) inflight.abort();
+    } else if (act === 'apply-proposal' || act === 'dismiss-proposal'){
+      var pid = t.getAttribute('data-pid');
+      var cid = currentCid();
+      var verb = act === 'apply-proposal' ? 'apply' : 'dismiss';
+      api('/advisor/' + cid + '/proposal/' + pid + '/' + verb,
+          {method: 'POST', body: JSON.stringify({})}).then(function(d){
+        if (d.ok) loadConversation(cid);
+        else pendingError(d.error || ('could not ' + verb + ' the proposal'));
+      });
+    }
   });
 
-  document.getElementById('adv-input').addEventListener('keydown', function(ev){
-    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); document.getElementById('adv-send').click(); }
+  elInput.addEventListener('keydown', function(ev){
+    if (ev.key === 'Enter' && !ev.shiftKey){ ev.preventDefault(); beginSend(); }
   });
 
+  populateAttachMenu();
   loadConversation(currentCid());
 })();
 </script>

@@ -10,7 +10,10 @@ page uses.
 """
 from __future__ import annotations
 
-from flask import Blueprint, render_template, request, jsonify, abort
+import json
+
+from flask import (Blueprint, render_template, request, jsonify, abort, current_app,
+                   Response, stream_with_context)
 from flask_login import login_required, current_user
 
 from ..auth.decorators import require_permission
@@ -105,6 +108,77 @@ def send(cid):
     except ProviderError as exc:
         return jsonify(ok=False, error=str(exc)), 502
     return jsonify(ok=True, message=msg.to_dict())
+
+
+def _sse(event: str, payload: dict) -> str:
+    """One SSE frame. ``json.dumps`` escapes newlines, so a multi-line reply
+    can never split into two frames."""
+    return "event: %s\ndata: %s\n\n" % (event, json.dumps(payload, default=str))
+
+
+@bp.route("/<int:cid>/send-stream", methods=["POST"])
+@login_required
+@require_permission('advisor.use')
+def send_stream(cid):
+    """The chat's own send path: the reply as it is generated.
+
+    Two things here are load-bearing and easy to lose:
+
+    ``X-Accel-Buffering: no`` -- nginx buffers proxied responses by default,
+    and this product's vhost is written by the installer rather than kept in
+    git, so a directive in the vhost would not reach installations that
+    already exist. Sent per-response, it travels with the feature. Without it
+    the whole stream arrives at once at the end, which is indistinguishable
+    from the frozen page this endpoint exists to fix.
+
+    Readiness is checked BEFORE the response starts. Once a stream is open the
+    status is already 200, so a misconfigured provider could only be reported
+    as an error frame -- a failure every client would have to remember to
+    handle. Failing here makes it an ordinary HTTP error.
+    """
+    if not svc.enabled():
+        return jsonify(ok=False, error="AI Advisor is disabled — enable it in "
+                        "Settings → AI Advisor"), 409
+    conv = _conv_or_404(cid)
+    body = request.get_json(silent=True) or {}
+    text = (body.get("text") or "").strip()
+    attachments = body.get("attachments") or []
+    if not text and not attachments:
+        return jsonify(ok=False, error="message is empty"), 400
+    try:
+        svc.check_ready(conv)
+    except ProviderError as exc:
+        return jsonify(ok=False, error=str(exc)), 502
+
+    # Both resolved before the generator starts: it runs after this view has
+    # returned, when the request-bound objects are gone.
+    username = current_user.username
+    app_obj = current_app._get_current_object()
+    conv_id = conv.id
+
+    def generate():
+        # An immediate comment frame so headers reach the browser now rather
+        # than with the first token -- which may be a cold model load away.
+        yield ": open\n\n"
+        try:
+            for kind, val in svc.stream_message(app_obj, conv_id, username, text, attachments):
+                if kind == "done":
+                    yield _sse("done", {"message": val.to_dict()})
+                elif kind == "delta":
+                    yield _sse("delta", {"text": val})
+                elif kind == "status":
+                    yield _sse("status", val or {})
+                elif kind == "heartbeat":
+                    yield _sse("heartbeat", {})
+                elif kind == "error":
+                    yield _sse("error", val or {"error": "provider call failed"})
+        except ProviderError as exc:
+            yield _sse("error", {"error": str(exc)})
+
+    resp = Response(stream_with_context(generate()), mimetype="text/event-stream")
+    resp.headers["Cache-Control"] = "no-cache, no-transform"
+    resp.headers["X-Accel-Buffering"] = "no"
+    return resp
 
 
 @bp.route("/attachable")

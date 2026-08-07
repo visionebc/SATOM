@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#170-2026-08-07">[1.7.0] - 2026-08-07</a>
       <a href="#160-2026-08-07">[1.6.0] - 2026-08-07</a>
       <a href="#150-2026-08-06">[1.5.0] - 2026-08-06</a>
       <a href="#141-2026-08-05">[1.4.1] - 2026-08-05</a>
@@ -85,6 +86,66 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="170-2026-08-07">[1.7.0] - 2026-08-07</h2>
+<h3 id="added">Added</h3>
+<ul>
+<li><strong>Sealed recovery custody.</strong> <code>FERNET_KEY</code> and the internal CA key are carried
+  by no automatic copy — git excludes them, the HA datasync carries only
+  <code>data/</code>, and the backup bundle leaves them out on purpose. The cost was that
+  a bundle restored onto a rebuilt node is a database of unreadable secrets.
+  They are now wrapped in a scrypt+AES-GCM envelope written to
+  <code>data/recovery/seal.json</code>, which the datasync replicates to the peer within
+  five minutes and every bundle carries off-box from then on. That is only safe
+  because it is sealed: whoever steals a bundle holds ciphertext, while the
+  operator holding a passphrase and nothing else can rebuild the installation
+  from any copy. New verbs <code>satom execute seal recovery</code> and
+  <code>satom execute unseal recovery</code>; <code>satom diagnose recovery</code> now reports an
+  absent, unreadable or stale envelope.</li>
+<li><strong>The seal passphrase is created at INSTALL, not at cluster join.</strong> A
+  standalone node never joins and has no second copy of anything, so it needs
+  the envelope more than a pair does; a secondary inherits the passphrase
+  through the join key so both nodes open the same envelope. This adds no new
+  class of secret — the join key already carries <code>fernet_key</code> and <code>ca_key</code> in
+  the clear.</li>
+<li><strong>Recovery custody for the two secrets no backup carries</strong>
+  (<code>app/services/recovery.py</code>, <code>satom diagnose recovery</code>,
+  <code>satom execute export recovery-key</code>). <code>FERNET_KEY</code> opens every encrypted
+  column in the database and the internal CA key is the sole issuer for
+  replication mTLS; neither is replicated by git, by the HA datasync, or by a
+  backup bundle. The consequence was invisible and total: <strong>a bundle restored
+  onto a rebuilt node is a database of unreadable secrets</strong>, with nothing
+  anywhere explaining why. Putting the key into the bundle was rejected
+  deliberately - a bundle is retained, mirrored to the peer and pushed off-box
+  over SFTP using a password that itself lives in an encrypted column, so a
+  bundle carrying the key that opens it would collapse the estate into one
+  file in three places. Instead the manifest records a <strong>fingerprint</strong>
+  (domain-separated, truncated - identity without disclosure), a restore
+  compares it and <strong>names</strong> a key mismatch, and the operator gets an explicit
+  audited export path plus a check that reports when it has never been used.
+  On the primary this reported, the day it shipped, that <strong>neither secret had
+  ever been exported</strong>.</li>
+<li>
+<p><code>app/services/ssh_pinning.py</code> - one implementation of SSH host-key pinning
+  for all three channels that open SSH, replacing one weak copy and two
+  channels that had no host-key store at all.</p>
+</li>
+<li>
+<p><strong>AI Advisor</strong> — a read-only chat assistant (Settings \u2192 AI Advisor,
+  <code>/advisor</code>) for WAF false-positive triage, Lua-script drafting, and
+  searching the device configuration source of truth. Local Ollama by
+  default (no data leaves the LAN); OpenAI-compatible and Anthropic
+  providers are opt-in behind an explicit "allow external providers" flag,
+  redact known internal identifiers before sending, and show the operator a
+  pre-send preview of exactly what will leave the LAN. Untrusted device data
+  (WAF logs, policy content) is delimited in the prompt against injection.
+  The model <strong>never writes anywhere</strong>: a proposed WAF exception or Lua
+  script is a schema-validated, pending <code>AdvisorProposal</code> that becomes a
+  DRAFT row in the same tables (<code>WppException</code>, <code>LuaScript</code>) and behind the
+  same permission (<code>config_write</code> / <code>studio.lua_studio</code>) the manual forms
+  already require. Two new granular permissions, <code>advisor.use</code> and
+  <code>advisor.configure</code>. See <code>docs/ai-advisor.md</code>.</p>
+</li>
+</ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
 <li><strong>Nine probes answered "I could not tell" with a value that means "fine".</strong>
@@ -154,47 +215,6 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <li>Backup bundles now carry node-local config, and a restore places it only
   where the node has none — the live copy is likelier to be current than one
   frozen into an old bundle.</li>
-</ul>
-<h3 id="added">Added</h3>
-<ul>
-<li><strong>Recovery custody for the two secrets no backup carries</strong>
-  (<code>app/services/recovery.py</code>, <code>satom diagnose recovery</code>,
-  <code>satom execute export recovery-key</code>). <code>FERNET_KEY</code> opens every encrypted
-  column in the database and the internal CA key is the sole issuer for
-  replication mTLS; neither is replicated by git, by the HA datasync, or by a
-  backup bundle. The consequence was invisible and total: <strong>a bundle restored
-  onto a rebuilt node is a database of unreadable secrets</strong>, with nothing
-  anywhere explaining why. Putting the key into the bundle was rejected
-  deliberately - a bundle is retained, mirrored to the peer and pushed off-box
-  over SFTP using a password that itself lives in an encrypted column, so a
-  bundle carrying the key that opens it would collapse the estate into one
-  file in three places. Instead the manifest records a <strong>fingerprint</strong>
-  (domain-separated, truncated - identity without disclosure), a restore
-  compares it and <strong>names</strong> a key mismatch, and the operator gets an explicit
-  audited export path plus a check that reports when it has never been used.
-  On the primary this reported, the day it shipped, that <strong>neither secret had
-  ever been exported</strong>.</li>
-<li>
-<p><code>app/services/ssh_pinning.py</code> - one implementation of SSH host-key pinning
-  for all three channels that open SSH, replacing one weak copy and two
-  channels that had no host-key store at all.</p>
-</li>
-<li>
-<p><strong>AI Advisor</strong> — a read-only chat assistant (Settings \u2192 AI Advisor,
-  <code>/advisor</code>) for WAF false-positive triage, Lua-script drafting, and
-  searching the device configuration source of truth. Local Ollama by
-  default (no data leaves the LAN); OpenAI-compatible and Anthropic
-  providers are opt-in behind an explicit "allow external providers" flag,
-  redact known internal identifiers before sending, and show the operator a
-  pre-send preview of exactly what will leave the LAN. Untrusted device data
-  (WAF logs, policy content) is delimited in the prompt against injection.
-  The model <strong>never writes anywhere</strong>: a proposed WAF exception or Lua
-  script is a schema-validated, pending <code>AdvisorProposal</code> that becomes a
-  DRAFT row in the same tables (<code>WppException</code>, <code>LuaScript</code>) and behind the
-  same permission (<code>config_write</code> / <code>studio.lua_studio</code>) the manual forms
-  already require. Two new granular permissions, <code>advisor.use</code> and
-  <code>advisor.configure</code>. See <code>docs/ai-advisor.md</code>.</p>
-</li>
 </ul>
 <h2 id="160-2026-08-07">[1.6.0] - 2026-08-07</h2>
 <h3 id="added_1">Added</h3>

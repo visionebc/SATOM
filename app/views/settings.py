@@ -26,6 +26,7 @@ from flask import (Blueprint, render_template, request, flash, redirect, url_for
 from flask_login import login_required, current_user
 
 from ..auth.decorators import require_permission
+from ..extensions import csrf
 from ..models import db, Permission, User, Role, Profile, Appliance
 from ..services import naming, settings_store as store
 from ..services import email_service as email
@@ -269,17 +270,39 @@ def library_pip():
     package = (payload.get('package') or '').strip()
     version = (payload.get('version') or '').strip()
     action = (payload.get('action') or 'upgrade').strip()
+    # OPT-IN, never the default: staging a risky upgrade on ONE node and
+    # watching it before touching the other is a legitimate and common
+    # workflow, and quietly changing both nodes would take that away.
+    also_peer = bool(payload.get('also_peer'))
+    who = getattr(current_user, 'username', '?')
     try:
-        uid = su.request_pip_change(package, version,
-                                    by=getattr(current_user, 'username', '?'),
-                                    action=action)
+        uid = su.request_pip_change(package, version, by=who, action=action)
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     except Exception as exc:  # noqa: BLE001
         return jsonify({'error': 'could not queue: %s' % exc}), 500
+    # The local change is queued at this point. A peer that refuses or cannot
+    # be reached is REPORTED, not rolled back into the local result: undoing a
+    # good local change because the other node is down is worse than the drift
+    # it would be trying to prevent. The operator sees the partial state.
+    peers = []
+    if also_peer:
+        try:
+            peers = su.request_pip_change_on_peers(package, version, by=who,
+                                                   action=action)
+        except Exception as exc:  # noqa: BLE001
+            peers = [{'node': '?', 'host': '', 'uid': None,
+                      'state': 'unreachable', 'error': str(exc)}]
+    partial = bool(also_peer and any(p.get('state') != 'queued' for p in peers))
+    peer_note = ''
+    if also_peer:
+        peer_note = ' (+peers: %s)' % (', '.join(
+            '%s=%s' % (p.get('node'), p.get('state')) for p in peers) or 'none registered')
     log_action('settings.library_pip',
-               detail='%s %s==%s on %s' % (action, package, version, su.this_node_name()))
-    return jsonify({'uid': uid, 'node': su.this_node_name()})
+               detail='%s %s==%s on %s%s' % (action, package, version,
+                                             su.this_node_name(), peer_note))
+    return jsonify({'uid': uid, 'node': su.this_node_name(),
+                    'also_peer': also_peer, 'peers': peers, 'partial': partial})
 
 
 @bp.route('/library-pip/status/<uid>')
@@ -292,6 +315,95 @@ def library_pip_status(uid):
     if st is None:
         return jsonify({'state': 'unknown'}), 404
     return jsonify(st)
+
+
+@bp.route('/library-pip/drift')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def library_pip_drift():
+    """Per-node installed versions of the curated libraries + a level verdict.
+
+    The venv is node-local, so this is the only place an operator can SEE
+    whether the HA pair is actually level. A peer that did not answer is
+    reported unreachable, never as agreeing.
+    """
+    from ..services import self_update as su
+    return jsonify(su.lib_version_drift())
+
+
+# --- node-to-node endpoints (identity key, NOT a user session) -------------
+# These are the receiving half of the peer fan-out. They are deliberately not
+# @login_required: the caller is the other NODE, authenticated by the shared
+# identity key that already secures every peer probe. There is one inter-node
+# auth scheme and this is it.
+def _peer_gate():
+    """None when the caller is the trusted peer, else a ready-made response.
+
+    Same shape and same convention as ``metrics_admin._peer_gate`` — there is
+    one inter-node auth scheme and one way to refuse. ``verify_request``
+    answers None when no key is configured at all: that is "the feature is
+    off", NOT "permission granted", so it FAILS CLOSED with 503 (a distinct,
+    diagnosable state) rather than being folded into a wrong-key 403.
+    """
+    from ..services import node_security as nsec
+    try:
+        verdict = nsec.verify_request(request.headers)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'identity check failed: %s' % exc}), 403
+    if verdict is None:
+        return jsonify({'error': 'node identity key not configured'}), 503
+    if not verdict:
+        return jsonify({'error': 'bad node key'}), 403
+    return None
+
+
+@bp.route('/peer/libraries')
+@csrf.exempt
+def peer_libraries():
+    """THIS node's installed curated library versions, for the peer's drift
+    view. Read-only, and only what the Libraries card already shows."""
+    denied = _peer_gate()
+    if denied is not None:
+        return denied
+    from ..services import self_update as su
+    return jsonify({'node': su.this_node_name(), 'role': su.node_role(),
+                    'libraries': su.local_lib_versions()})
+
+
+@bp.route('/peer/library-pip', methods=['POST'])
+@csrf.exempt
+def peer_library_pip():
+    """Enqueue a curated pip change on THIS node, asked for by the peer.
+
+    Writes exactly the request the local button writes, so THIS node's own
+    privileged runner does the install, the import smoke test, the restart and
+    the auto-rollback. Nothing is executed here and no package crosses the
+    wire — only a package NAME and a VERSION, both re-validated against THIS
+    node's own allowlist and regexes inside ``request_pip_change``. The caller
+    is never trusted: a peer with a valid identity key still cannot install
+    something that is not curated here.
+    """
+    denied = _peer_gate()
+    if denied is not None:
+        return denied
+    from ..services import self_update as su
+    payload = request.get_json(silent=True) or {}
+    package = (payload.get('package') or '').strip()
+    version = (payload.get('version') or '').strip()
+    action = (payload.get('action') or 'upgrade').strip()
+    by = '%s@%s' % ((str(payload.get('requested_by') or 'peer').strip() or 'peer')[:40],
+                    (str(payload.get('origin_node') or 'peer').strip() or 'peer')[:40])
+    try:
+        uid = su.request_pip_change(package, version, by=by, action=action,
+                                    origin='peer-push')
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': 'could not queue: %s' % exc}), 500
+    log_action('settings.library_pip.peer',
+               detail='%s %s==%s enqueued on %s for %s'
+                      % (action, package, version, su.this_node_name(), by))
+    return jsonify({'uid': uid, 'node': su.this_node_name()})
 
 
 # NOTE: the read-only Database browser (schema + relational model + SQL console)

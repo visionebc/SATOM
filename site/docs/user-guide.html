@@ -508,6 +508,32 @@ lives on this node. Two settings decide what leaves it:</p>
 </ul>
 <p>How the local source of truth is versioned and what it does and does not hold:
 <a href="source-of-truth.html">source-of-truth-spec.md</a>.</p>
+<p><strong>Recovery custody — the sealed envelope.</strong> A bundle holds a <code>pg_dump</code> in which
+every appliance credential, the node identity key and the backup-server password
+are Fernet ciphertext. The key that opens them is <code>FERNET_KEY</code> in <code>.env</code>, and the
+internal CA key lives in <code>pki/</code> — <strong>neither is in git, in the HA datasync or in
+any bundle</strong>, on purpose. The consequence is the part worth remembering: <em>a
+bundle restored onto a rebuilt node is a database of unreadable secrets.</em></p>
+<p>SATOM closes that without putting the key in the backup. Both secrets are wrapped
+in a scrypt+AES-GCM envelope at <code>data/recovery/seal.json</code>, which the datasync
+replicates to the peer within five minutes and every bundle carries off-box from
+then on. Whoever steals a bundle holds ciphertext; you, holding a passphrase and
+nothing else, can rebuild the installation from any copy.</p>
+<ul>
+<li><strong>The passphrase is minted at install</strong>, shown once, and never stored by the
+  product. A secondary node inherits it through the join key, so both nodes open
+  the same envelope. <strong>Write it down somewhere that is not the cluster</strong> — if it
+  lives on the same disk as the node, you have three copies of a box you cannot
+  open.</li>
+<li><strong>Seal on the primary, not the standby.</strong> Only the primary holds the internal
+  CA key, so a standby seal would produce an envelope that cannot re-issue the
+  replication mTLS; and the standby's <code>data/</code> is overwritten from the primary
+  every five minutes, so the file would not survive anyway.</li>
+<li>Verbs: <code>satom execute seal recovery</code> (re-run at any time; it replaces rather
+  than accumulates), <code>satom execute unseal recovery</code>, and
+  <code>satom diagnose recovery</code>, which reports an absent, stale, unreadable or
+  <strong>unreachable</strong> envelope. A node with no envelope is noisy on purpose.</li>
+</ul>
 <p>Its two nav siblings under <strong>Operations</strong> — Log Collection and Import Backup —
 are §27. Neither is a backup: one collects read-only diagnostics over SSH, the
 other parses a config file entirely offline.</p>
@@ -1300,15 +1326,18 @@ are parsed structurally.</p>
 <h2 id="20-the-operator-console">20. The operator console</h2>
 <p>Some failures cannot be fixed from the web interface, because the web interface
 is the thing that failed. Every node ships a local command-line tool, <code>satom</code>,
-with <strong>94 commands in 34 groups</strong> across four verbs — <code>get</code> (state), <code>show</code>
+with a command tree across four verbs — <code>get</code> (state), <code>show</code>
 (reference), <code>diagnose</code> (checks) and <code>execute</code> (actions). <code>satom show tree</code> prints
 the whole tree; <code>satom show tree --commands</code> flattens it to one runnable command
 per line, with the root-only and destructive ones marked.</p>
 <p>The three you will use most:</p>
-<pre><code class="language-bash">satom diagnose all        # 24 checks, one exit code
+<pre><code class="language-bash">satom diagnose all        # every check, one exit code
 satom diagnose install    # infrastructure vs. protections — what is not armed
 satom show docs           # print any manual, no network needed
 </code></pre>
+<p>The exact command count is deliberately not repeated here: <code>satom show tree</code>
+prints the live tree, and <a href="cli.html">docs/cli.md</a> is generated from it, so neither
+can drift from the console you are running. A number typed into prose can.</p>
 <p>Read verbs work as any user; state-changing verbs require root and refuse with
 an explanation rather than a traceback. Ask your systems team for the operator
 rule the tool prints itself:</p>
@@ -2671,6 +2700,14 @@ the authoritative answer to "what is new since we last updated".</p>
 <tr>
 <td>A registry-driven page 404s on the device after a firmware upgrade</td>
 <td>The firmware moved that URI. Fix it as a <strong>registry edit</strong> on that product's API console — the catalog is DB-first, the edit is audited, and it converges across workers within a minute. No code change or release is involved (30.1).</td>
+</tr>
+<tr>
+<td><code>diagnose recovery</code> says the sealed envelope is <strong>unreachable</strong></td>
+<td>The envelope is on disk but not owned by the account that carries it, so the HA datasync skips it and the bundle writer records it absent. Re-run <code>satom execute seal recovery</code> on the primary — sealing hands the file to the tree owner. This is reported as <strong>critical</strong>, deliberately worse than an honest "not sealed": an unreadable envelope looks like durability and is not (11).</td>
+</tr>
+<tr>
+<td><code>satom execute seal recovery</code> printed the passphrase and I lost it</td>
+<td>Re-run it. Sealing is idempotent and replaces the envelope, so a new passphrase is fine as long as <strong>every</strong> copy is re-sealed from the primary — the peer and the next bundle pick it up automatically. An old bundle stays locked to the old passphrase, which is why the copy you keep off-box needs the passphrase that matches it (11).</td>
 </tr>
 <tr>
 <td>A registry endpoint you disabled came back after a restart</td>

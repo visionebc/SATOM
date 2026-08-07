@@ -975,6 +975,66 @@ def create_app(config_override: object | None = None) -> Flask:
                         error='%s: %s' % (type(exc).__name__, exc), by='timer')
             print('cert-autopull error:', exc)
 
+        # [SATOM-SHARED-CERT] The served cert is the one PKI artefact both
+        # nodes legitimately share: a fleet wildcard covers every node name, is
+        # renewed OFF these nodes, and until now was copied to each one by
+        # hand. Hand-copying is why the pair drifts -- and the wildcard on this
+        # estate expires without any automatic path to replace it.
+        #
+        # Publish then install, in that order and on EVERY node: publish puts
+        # this node's served cert into data/pki-shared/ (which the datasync
+        # carries), install picks up a cert a peer published. Running both
+        # everywhere is self-correcting rather than role-gated -- the standby
+        # pulls data/ from the primary with --delete, so the primary's copy is
+        # authoritative within one sync interval no matter who wrote last.
+        #
+        # Both calls are gated inside cert_service on source == "imported" and
+        # on the cert actually covering this node's served names. A CA-ISSUED
+        # cert is per-node by construction (its SAN is this node's hostname),
+        # and sharing one would hand every node a certificate that names
+        # somebody else -- the same class of bug as sharing the node leaf.
+        try:
+            pub = _cs.publish_shared_cert()
+            if pub.get('published'):
+                print('cert-share publish:', pub.get('reason', 'ok'))
+            ins = _cs.install_shared_cert()
+            if ins.get('installed'):
+                print('cert-share install:', ins.get('reason', 'ok'))
+        except Exception as exc:  # noqa: BLE001
+            # Never let cert sharing break the nightly pass that renews the
+            # node's OWN certificate -- that one is load-bearing, this is
+            # convenience. But say so: a share that silently stops working
+            # leaves the pair drifting with both nodes reporting healthy.
+            _jrn.record(_jrn.CH_TIMER, _jrn.OK_ERROR, 'nightly cert-share aborted',
+                        error='%s: %s' % (type(exc).__name__, exc), by='timer')
+            print('cert-share error:', exc)
+
+        # [SATOM-RENEW-ARCHIVE] Pull the peer's renewal journal into a
+        # primary-owned archive under data/.
+        #
+        # The journal is node-local for a reason that has not changed: the
+        # standby's database is a read-only replica, so the node that fails to
+        # renew is exactly the node that cannot write a row about its own
+        # failure, and data/ is no good for the standby either because the
+        # datasync pulls it with --delete. What that leaves is a journal with
+        # no copy anywhere -- and on this estate the usual consolation ("the
+        # other node still has it") is false, because both nodes and the
+        # external backup host share a hypervisor.
+        #
+        # Direction is what makes this work: the standby pulls data/ FROM the
+        # primary, so a file the PRIMARY writes propagates instead of being
+        # deleted. archive_refresh() is inert on a standby by design.
+        #
+        # Wired here rather than left to a page render: an archive that only
+        # updates when somebody opens the Renewals page is an archive that is
+        # empty on the day the node it protects is gone.
+        try:
+            arch = _jrn.archive_refresh()
+            if arch:
+                print('cert-renew archive:', arch)
+        except Exception as exc:  # noqa: BLE001
+            print('cert-renew archive error:', exc)
+
     @app.cli.command('cert-autopull')
     def cert_autopull_cmd():
         """Force a one-off autopull of the imported cert from the configured

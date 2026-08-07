@@ -305,7 +305,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*96 commands in 34 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*98 commands in 36 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -390,6 +390,8 @@ Everything that changes state. **Root required.** Without it each command refuse
 
 | Command | Root | ! | What it does |
 |---|:--:|:--:|---|
+| `satom execute seal recovery [--yes]` | yes | ! | Seal FERNET_KEY + internal CA into data/ so the peer and every bundle carry them. Passphrase shown once, never stored. |
+| `satom execute unseal recovery [--yes]` | yes | ! | Print FERNET_KEY + internal CA from the sealed envelope. |
 | `satom execute export recovery-key [--out PATH] [--yes]` | yes | ! | Print FERNET_KEY + the internal CA key so a rebuild is possible. |
 | `satom execute restart <service>` | yes | — | Restart a service and VERIFY it actually came back. |
 | `satom execute restart-all` | yes | — | Restart the whole stack in order, then verify /healthz. |

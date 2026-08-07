@@ -16,8 +16,25 @@ Two ways to put a cert here, exactly as the operator asked:
 Installing = write ``pki/public/server.{crt,key}``, ``nginx -t`` (roll back on a
 bad config), then reload nginx. The web process runs as root on this node, so it
 performs the install + reload directly; there is no separate privileged runner
-hop for cert changes. Node-local by design — each node serves its OWN hostname's
-cert, so this is NEVER replicated (pki/ is outside ``data/``).
+hop for cert changes.
+
+``pki/`` itself is node-local (outside ``data/``, gitignored), but the three
+things under it do NOT share one rule — see ``docs/encryption-and-node-tls.md``:
+
+* ``internal-ca/`` — BOTH nodes are meant to hold it; the installer places
+  ``ca.key`` on a joining node from the cluster join key. ``ca_custody()``
+  reports whether THIS node can actually issue, because a node with ``ca.crt``
+  and no ``ca.key`` cannot self-renew and cannot take over issuance after a
+  promote. Nothing here moves ``ca.key`` between hosts: the join key is the
+  sanctioned transport and it is operator-driven.
+* ``node/leaf.*`` — per node, forever. It names this node in its SAN and is also
+  the Postgres replication CLIENT cert, so a copy breaks ``clientcert=verify-ca``
+  on the peer. This module never reads or writes it.
+* ``public/server.*`` — the served cert. Shareable via ``data/pki-shared/``
+  (``publish_shared_cert`` / ``install_shared_cert``), because ``data/`` is what
+  the HA datasync replicates. Only an **imported** cert may be shared — a
+  CA-issued leaf carries one node's name and sharing it is the leaf bug again —
+  and a shared cert is installed only on a node whose served names it covers.
 """
 from __future__ import annotations
 
@@ -39,6 +56,14 @@ KEY = PUB / "server.key"
 META = PUB / "meta.json"
 RENEW_THRESHOLD_DAYS = 30
 ISSUE_DAYS = 825
+
+# The one slot both nodes can see. data/ is what satom-ha-datasync replicates
+# (and what the backup bundles carry); pki/ is not, which is why the served
+# cert used to be copied between nodes BY HAND. Gitignored like the rest of
+# data/, so no private key reaches the repository.
+SHARED_DIR = Path(__file__).resolve().parents[2] / "data" / "pki-shared"
+SHARED_SOURCE = "imported"   # the ONLY origin that may be shared — see below
+CH_SHARED = "shared"         # renewal-journal channel for the shared slot
 
 
 # ---------------------------------------------------------------------------
@@ -75,8 +100,71 @@ def _write_meta(**kw) -> None:
 
 
 def can_issue_internal() -> bool:
-    """Only the CA-key holder (primary) can mint from the internal CA."""
+    """A node can mint from the internal CA only if it holds the CA KEY."""
     return (CA_DIR / "ca.key").exists() and (CA_DIR / "ca.crt").exists()
+
+
+# --- CA custody ------------------------------------------------------------
+# The installer's node-join step writes ca.key onto a joining node from the
+# cluster join key, so BOTH nodes are supposed to be issuers. A node that ended
+# up with ca.crt only (older install path) still looks fine everywhere else:
+# TLS verifies, the trust bundle is complete, the Monitoring cards are green.
+# What it cannot do is issue — so it cannot auto-renew its own leaf and cannot
+# take over issuance after a promote. That is a state with a remedy, not a
+# healthy state, and the remedy is operator-driven: re-run the join step. No
+# code path here copies ca.key over the network.
+CUSTODY_ISSUER = "issuer"            # ca.crt + ca.key — can issue and renew
+CUSTODY_TRUST_ONLY = "trust-only"    # ca.crt only — verifies, cannot issue
+CUSTODY_KEY_ONLY = "key-without-cert"  # ca.key only — unusable, half a CA
+CUSTODY_ABSENT = "absent"            # no internal CA on this node at all
+
+_CUSTODY_REMEDY = {
+    CUSTODY_TRUST_ONLY:
+        "This node holds the internal CA certificate but NOT its private key, so "
+        "it cannot mint or renew a leaf and cannot take over issuance after a "
+        "promote. Re-run the installer's node-join step with the cluster join key "
+        "(the sanctioned transport for ca.key) on this node. Do not copy the key "
+        "by hand, and do not let a service copy it for you.",
+    CUSTODY_KEY_ONLY:
+        "This node holds an internal CA private key with no matching certificate — "
+        "issuing is impossible and the trust bundle is incomplete. Re-run the "
+        "installer's node-join step to place a consistent CA pair.",
+    CUSTODY_ABSENT:
+        "No internal CA on this node. Bootstrap it on the first node with the "
+        "installer, then join this node with the cluster join key so it receives "
+        "the CA and can issue and renew on its own.",
+}
+
+
+def ca_custody() -> dict:
+    """Who holds what of the internal CA on THIS node, and can it issue?
+
+    Reportable state — a node that cannot issue is never reported healthy."""
+    has_crt = (CA_DIR / "ca.crt").exists()
+    has_key = (CA_DIR / "ca.key").exists()
+    if has_crt and has_key:
+        state = CUSTODY_ISSUER
+    elif has_crt:
+        state = CUSTODY_TRUST_ONLY
+    elif has_key:
+        state = CUSTODY_KEY_ONLY
+    else:
+        state = CUSTODY_ABSENT
+    can_issue = can_issue_internal()
+    return {
+        "state": state,
+        "has_ca_cert": has_crt,
+        "has_ca_key": has_key,
+        "can_issue": can_issue,
+        "healthy": state == CUSTODY_ISSUER,
+        "summary": {
+            CUSTODY_ISSUER: "internal CA present — this node can issue and auto-renew",
+            CUSTODY_TRUST_ONLY: "internal CA certificate only — this node CANNOT issue",
+            CUSTODY_KEY_ONLY: "internal CA key without its certificate — unusable",
+            CUSTODY_ABSENT: "no internal CA on this node",
+        }[state],
+        "remedy": _CUSTODY_REMEDY.get(state, ""),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -512,3 +600,224 @@ def _autopull(by: str = "autopull-timer", force: bool = False) -> dict:
                 "not_after": info.get("not_after")}
     except Exception as exc:  # noqa: BLE001 — import_pem already rolled nginx back
         return {"pulled": False, "reason": f"install rejected: {exc}"}
+
+
+# ---------------------------------------------------------------------------
+# The SHARED served certificate — data/pki-shared/
+#
+# The served cert is the ONE piece of pki/ that legitimately wants to be the
+# same on both nodes: `satom{,-2}` are two names under one wildcard, and the
+# operator was copying it across by hand. It goes through data/ because that is
+# the tree satom-ha-datasync replicates (primary -> standby, rsync --delete) and
+# the tree the backup bundles carry.
+#
+# Two hard gates, both enforced below rather than promised in prose:
+#
+#   1. source must be `imported`. A CA-ISSUED leaf is per-node BY CONSTRUCTION —
+#      its SAN is that node's hostname — so sharing it repeats exactly the bug
+#      that makes pki/node/leaf.* non-shareable. `bootstrap` (the self-signed
+#      cert minted for this node at install) is per-node for the same reason.
+#   2. the cert must cover THIS node's served names. Installing one that does
+#      not is worse than doing nothing: the node then serves a certificate the
+#      browser rejects, and the product reports it as freshly installed.
+#
+# Install reuses the ordinary _install() path — key/cert match check, nginx -t,
+# automatic rollback — so there is exactly one implementation of "activate a
+# certificate safely" in this module.
+# ---------------------------------------------------------------------------
+def _shared_paths() -> tuple[Path, Path, Path]:
+    return (SHARED_DIR / "server.crt", SHARED_DIR / "server.key",
+            SHARED_DIR / "meta.json")
+
+
+def _write_private(path: Path, data: bytes) -> None:
+    """Create/replace a private key file that is never briefly world-readable."""
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(data)
+    os.chmod(path, 0o600)
+
+
+def cert_dns_names(cert_pem: bytes) -> list[str]:
+    """DNS names a certificate presents (SAN, falling back to CN)."""
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+
+    cert = x509.load_pem_x509_certificate(cert_pem)
+    names: list[str] = []
+    try:
+        san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+        names = list(san.value.get_values_for_type(x509.DNSName))
+    except x509.ExtensionNotFound:
+        names = []
+    if not names:
+        names = [a.value for a in cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)]
+    return [str(n).strip().rstrip(".").lower() for n in names if n]
+
+
+def _name_matches(presented: str, wanted: str) -> bool:
+    """RFC 6125 host matching: a wildcard covers exactly ONE leftmost label."""
+    presented = (presented or "").strip().rstrip(".").lower()
+    wanted = (wanted or "").strip().rstrip(".").lower()
+    if not presented or not wanted:
+        return False
+    if not presented.startswith("*."):
+        return presented == wanted
+    head, _, rest = wanted.partition(".")
+    return bool(head) and rest == presented[2:]
+
+
+def served_names() -> list[str]:
+    """The names this node must be able to answer for on :443/:8443."""
+    return [n for n in (node_hostname(),) if n]
+
+
+def cert_covers_served_names(cert_pem: bytes) -> tuple[bool, list[str], list[str]]:
+    """(covers?, names NOT covered, names the cert presents)."""
+    presented = cert_dns_names(cert_pem)
+    missing = [w for w in served_names()
+               if not any(_name_matches(p, w) for p in presented)]
+    return (not missing), missing, presented
+
+
+def shared_cert_status() -> dict:
+    """What is in the shared slot and whether THIS node could take it."""
+    crt_p, key_p, meta_p = _shared_paths()
+    out = {"present": False, "source": None, "names": [], "not_after": None,
+           "covers_this_node": None, "missing_names": [], "differs": None,
+           "shareable": None, "error": None}
+    if not (crt_p.exists() and key_p.exists()):
+        return out
+    out["present"] = True
+    try:
+        smeta = json.loads(meta_p.read_text())
+    except Exception:  # noqa: BLE001 — an unreadable meta is a refusal, not a crash
+        smeta = {}
+    out["source"] = smeta.get("source")
+    out["published_at"] = smeta.get("published_at")
+    out["published_by"] = smeta.get("published_by")
+    out["shareable"] = (out["source"] or "").strip().lower() == SHARED_SOURCE
+    try:
+        cert_pem = crt_p.read_bytes()
+        covers, missing, names = cert_covers_served_names(cert_pem)
+        out["names"] = names
+        out["covers_this_node"] = covers
+        out["missing_names"] = missing
+        out["not_after"] = validate_pem(cert_pem, key_p.read_bytes())["not_after"]
+        out["differs"] = not (CRT.exists()
+                              and CRT.read_bytes().strip() == cert_pem.strip())
+    except Exception as exc:  # noqa: BLE001
+        out["error"] = "%s: %s" % (type(exc).__name__, exc)
+    return out
+
+
+def publish_shared_cert(by: str = "publish") -> dict:
+    """Copy the cert this node SERVES into data/pki-shared/ so the peer gets it.
+
+    Refuses anything the peer must not receive. Never raises."""
+    from . import cert_renew_log as jrn
+
+    def _refuse(reason: str) -> dict:
+        jrn.record(CH_SHARED, jrn.OK_SKIPPED, "publish refused: " + reason, by=by)
+        return {"published": False, "reason": reason}
+
+    if not (CRT.exists() and KEY.exists()):
+        return _refuse("no certificate is served on this node yet")
+    src = (_meta().get("source") or "").strip().lower()
+    if src != SHARED_SOURCE:
+        return _refuse(
+            "the served certificate's source is %r, and only an %r certificate may "
+            "be shared: a %s certificate names THIS node in its SAN, so the peer "
+            "would serve a certificate for somebody else's hostname"
+            % (src or "unknown", SHARED_SOURCE, src or "node-local"))
+    cert_pem, key_pem = CRT.read_bytes(), KEY.read_bytes()
+    try:
+        info = validate_pem(cert_pem, key_pem)
+    except ValueError as exc:
+        return _refuse("the served cert/key pair does not validate: %s" % exc)
+
+    crt_p, key_p, meta_p = _shared_paths()
+    try:
+        SHARED_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(SHARED_DIR, 0o700)
+        except OSError:
+            pass
+        crt_p.write_bytes(cert_pem)
+        _write_private(key_p, key_pem)
+        names = cert_dns_names(cert_pem)
+        meta_p.write_text(json.dumps({
+            "source": SHARED_SOURCE,
+            "subject": info["subject"],
+            "not_after": info["not_after"],
+            "names": names,
+            "published_at": datetime.now(timezone.utc).isoformat(),
+            "published_by": by,
+            "published_from": node_hostname(),
+            "note": "Served certificate shared with the peer node via the HA data "
+                    "sync. Only imported certs land here; the internal CA key and "
+                    "the per-node leaf never do.",
+        }, indent=2))
+    except Exception as exc:  # noqa: BLE001
+        return _refuse("could not write the shared slot: %s: %s"
+                       % (type(exc).__name__, exc))
+    jrn.record(CH_SHARED, jrn.OK_RENEWED, "published the served certificate to the "
+               "shared slot", by=by, days_left=info.get("days_left"),
+               not_after=info.get("not_after"))
+    return {"published": True, "reason": "", "names": names,
+            "not_after": info["not_after"], "days_left": info["days_left"]}
+
+
+def install_shared_cert(by: str = "ha-shared") -> dict:
+    """Adopt the shared certificate on THIS node, if it is one we may serve.
+
+    Idempotent and safe to run on either node: a slot holding what we already
+    serve is a no-op (no nginx reload), and anything we must not serve is
+    refused with the reason. Never raises."""
+    from . import cert_renew_log as jrn
+
+    def _refuse(reason: str) -> dict:
+        jrn.record(CH_SHARED, jrn.OK_ERROR, "shared certificate refused",
+                   error=reason, by=by)
+        return {"installed": False, "reason": reason}
+
+    crt_p, key_p, meta_p = _shared_paths()
+    if not (crt_p.exists() and key_p.exists()):
+        # Steady state on a pair that never published — not journalled, or the
+        # nightly timer would write one row per node per night forever.
+        return {"installed": False, "reason": "no shared certificate published"}
+    try:
+        smeta = json.loads(meta_p.read_text())
+    except Exception:  # noqa: BLE001
+        smeta = {}
+    src = (smeta.get("source") or "").strip().lower()
+    if src != SHARED_SOURCE:
+        return _refuse(
+            "the shared certificate declares source %r; only an %r certificate may "
+            "be shared between nodes (a CA-issued or bootstrap cert is minted for "
+            "ONE node's name)" % (src or "unknown", SHARED_SOURCE))
+
+    cert_pem, key_pem = crt_p.read_bytes(), key_p.read_bytes()
+    if CRT.exists() and CRT.read_bytes().strip() == cert_pem.strip():
+        return {"installed": False, "reason": "already up to date (identical cert)",
+                "days_left": current().get("days_left")}
+    try:
+        validate_pem(cert_pem, key_pem)
+    except ValueError as exc:
+        return _refuse("the shared cert/key pair does not validate: %s" % exc)
+    covers, missing, presented = cert_covers_served_names(cert_pem)
+    if not covers:
+        return _refuse(
+            "the shared certificate does not cover this node's served name(s) %s — "
+            "it presents %s. Installing it would serve a certificate every browser "
+            "rejects, so it is NOT installed."
+            % (", ".join(missing), ", ".join(presented) or "no DNS name"))
+    try:
+        # Same install path as import/issue: nginx -t, automatic rollback.
+        info = _install(cert_pem, key_pem, None, source=SHARED_SOURCE, by=by)
+    except Exception as exc:  # noqa: BLE001 — _install already rolled nginx back
+        return _refuse("install rejected: %s: %s" % (type(exc).__name__, exc))
+    jrn.record(CH_SHARED, jrn.OK_RENEWED, "installed the shared certificate", by=by,
+               days_left=info.get("days_left"), not_after=info.get("not_after"))
+    return {"installed": True, "reason": "", "names": presented,
+            "days_left": info.get("days_left"), "not_after": info.get("not_after")}

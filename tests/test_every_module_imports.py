@@ -67,6 +67,13 @@ LAZY_MODULES = [
     "app.services.library_updates",
     "app.services.encryption_health",
     "app.services.node_security",
+    # Custody: both are imported INSIDE functions (system_backup, the CLI
+    # snippets), so nothing touches them at collection time. That is exactly
+    # how a syntactically broken cert_service.py rode inside releases 1.2 and
+    # 1.2.1 while the app booted, /healthz returned 200 and the suite stayed
+    # green -- the only symptom was a nightly timer failing where nobody looked.
+    "app.services.recovery",
+    "app.services.recovery_seal",
 ]
 
 

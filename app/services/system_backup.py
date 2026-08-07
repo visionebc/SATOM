@@ -162,6 +162,28 @@ def create_backup(*, include_reports: bool = True, publish_git: bool = False,
             shutil.copytree(sot_dir(), stage / "sot")
             detail.append("sot/ included")
 
+        # The SEALED recovery envelope travels with the bundle -- and only
+        # because it is sealed. The material inside (FERNET_KEY, the internal
+        # CA key) must never ride here in the clear: a bundle is retained,
+        # mirrored to the peer and pushed off-box over SFTP whose password
+        # lives in a column FERNET_KEY opens, so plaintext would collapse the
+        # whole scheme into one file. Ciphertext inverts that -- whoever steals
+        # a bundle holds ciphertext, and the operator holding only a passphrase
+        # can rebuild the installation from ANY copy. That is the difference
+        # between a bundle that restores and a database of unreadable secrets.
+        try:
+            from . import recovery_seal as _seal
+            if _seal.seal_path().exists():
+                shutil.copy2(_seal.seal_path(), stage / "recovery-seal.json")
+                detail.append("recovery-seal included")
+            else:
+                detail.append("recovery-seal ABSENT (no off-node custody)")
+        except Exception as exc:  # noqa: BLE001
+            # Never fail a backup over custody packaging -- but say so, because
+            # a bundle silently missing the envelope is a bundle that cannot
+            # rebuild anything, and it looks identical to one that can.
+            detail.append("recovery-seal error: %s" % type(exc).__name__)
+
         cfgs = config_files()
         if cfgs:
             (stage / "config").mkdir(exist_ok=True)
@@ -282,6 +304,25 @@ def restore_backup(name: str, *, conn: dict | None = None,
             shutil.rmtree(dst, ignore_errors=True)
             shutil.copytree(root / "reports", dst)
             detail += "; reports restored"
+        _sealed = root / "recovery-seal.json"
+        if _sealed.exists():
+            # Placed ONLY when the node has none, exactly like config_files():
+            # a live node is the authority on its own custody, and the envelope
+            # frozen into an old bundle is by definition the older one.
+            # Overwriting would swap the passphrase the operator actually holds
+            # for one they may have rotated away from.
+            try:
+                from . import recovery_seal as _seal
+                if not _seal.seal_path().exists():
+                    _seal.seal_path().parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(_sealed, _seal.seal_path())
+                    os.chmod(_seal.seal_path(), 0o600)
+                    detail += "; recovery-seal placed"
+                else:
+                    detail += "; recovery-seal kept (node already sealed)"
+            except Exception as exc:  # noqa: BLE001
+                detail += "; recovery-seal restore error: %s" % type(exc).__name__
+
         if (root / "config").exists():
             names = restore_config_files(root / "config",
                                          _pubdoc_root())

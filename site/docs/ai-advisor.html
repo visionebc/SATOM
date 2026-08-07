@@ -70,6 +70,7 @@
       <a href="#what-a-call-costs-and-the-ledger">What a call costs, and the ledger</a>
       <a href="#the-write-boundary-mode-d">The write boundary (mode D)</a>
       <a href="#permissions">Permissions</a>
+      <a href="#watching-the-reply-arrive-and-stopping-it">Watching the reply arrive, and stopping it</a>
       <a href="#what-this-explicitly-does-not-do-yet">What this explicitly does not do (yet)</a>
       <a href="#an-infrastructure-fact-that-shaped-the-timeout-found-by-running-it">An infrastructure fact that shaped the timeout, found by running it</a>
     </aside>
@@ -355,13 +356,46 @@ gets coerced into looking valid.</p>
 <li><strong><code>advisor.configure</code></strong> — providers, API keys, and the three feature flags.
   Admin-only.</li>
 </ul>
+<h2 id="watching-the-reply-arrive-and-stopping-it">Watching the reply arrive, and stopping it</h2>
+<p>The chat streams. <code>POST /advisor/&lt;id&gt;/send-stream</code> answers <code>text/event-stream</code>
+and emits four kinds of frame: <code>status</code> (thinking, or which tool is running),
+<code>delta</code> (a piece of the reply), <code>heartbeat</code>, and one terminal <code>done</code> carrying
+the persisted message with its duration and token counts. The blocking
+<code>POST /advisor/&lt;id&gt;/send</code> still exists and is unchanged — both run the <em>same</em>
+engine, <code>_run_exchange</code>, and differ only in transport. Two copies of the tool
+loop would drift the first time either changed.</p>
+<p>Three parts of this are load-bearing:</p>
+<p><strong><code>X-Accel-Buffering: no</code>.</strong> nginx buffers proxied responses by default, and
+this product's vhost is written by the installer rather than carried in git —
+so a directive in the vhost would never reach an installation that already
+exists. Sent as a response header it travels with the feature. Without it the
+whole reply arrives in one lump at the end, which looks exactly like the frozen
+page streaming was added to fix.</p>
+<p><strong>The heartbeat.</strong> During a cold model load there is nothing to send for up to
+a minute and a half. The beat every couple of seconds does three jobs at once:
+it keeps a reverse proxy's read timeout from closing a healthy exchange, it
+gives the operator a moving clock instead of a dead page, and — because writing
+to a closed socket is how this process discovers the browser went away — it is
+what makes <strong>Stop</strong> take effect within a beat instead of at the next token.</p>
+<p><strong>Stop is real.</strong> Pressing it aborts the request, which closes the socket,
+which closes SATOM's connection to the model: generation ends, it does not
+carry on invisibly. Whatever had been generated is <strong>kept</strong>, marked
+<code>stopped</code>, and the call is written to the ledger as a failure with the reason.
+Throwing the partial away would discard tokens that were genuinely spent and
+leave the next page load showing nothing — which reads as "it lost my answer",
+not as "I cancelled it". A cancelled reply usually shows <code>tokens not reported</code>,
+because the provider sends its usage in the final chunk that never arrived;
+that is the honest answer, not zero.</p>
+<p>The worker timeout must stay <strong>above</strong> <code>advisor_providers.DEFAULT_TIMEOUT</code>
+(<code>deploy/satom.service</code> sets <code>--timeout 600</code>). Inverted, a slow model has its
+gunicorn worker killed first and the operator gets a dropped connection instead
+of the provider's own "timed out" — the diagnosable error replaced by the
+opaque one.</p>
 <h2 id="what-this-explicitly-does-not-do-yet">What this explicitly does not do (yet)</h2>
 <ul>
-<li>No streaming responses — request/response only, which is why the default
-  timeout is generous (see below).</li>
 <li>Tool calling (mode C) is a fixed, hand-written catalog
-  (<code>sot_search</code>, <code>list_exceptions</code>, <code>list_lua_scripts</code>) — not open-ended
-  function calling against arbitrary SATOM APIs.</li>
+  (<code>sot_search</code>, <code>list_exceptions</code>, <code>list_lua_scripts</code>, and the device/probe
+  readers) — not open-ended function calling against arbitrary SATOM APIs.</li>
 <li>Attachable context is a curated picker (exceptions, Lua scripts, a SoT
   search), not "attach any page."</li>
 </ul>
@@ -372,6 +406,9 @@ one-word reply. <code>advisor_providers.DEFAULT_TIMEOUT</code> is 180s, not the
 framework-typical 30–60s, specifically because of this — a shorter timeout
 would fail every first message after the model has been idled out of memory,
 which reads exactly like a broken feature.</p>
+<p>Streaming does not shorten that load; it makes it <em>visible</em>. The heartbeat and
+the elapsed clock turn ninety silent seconds into ninety seconds the operator
+can see, and can cancel.</p>
     </div>
   </div>
 </section>

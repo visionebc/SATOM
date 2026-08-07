@@ -2023,6 +2023,46 @@ deliberately not merged. Practical notes:</p>
   prints which node you are on, and you repeat the change on the other one (§22.2).</li>
 <li>A queued change is polled live and its steps are written by the runner.</li>
 </ul>
+<h3 id="261b-services-starting-stopping-and-restarting-this-nodes-units">26.1b Services — starting, stopping and restarting this node's units</h3>
+<p>The <strong>Services</strong> card at the bottom of the tab controls the units this node
+runs: the web app, the scheduler, the reconciler, the metrics store, the alert /
+certificate-renewal / data-sync timers, nginx and PostgreSQL. It is the same
+mechanism as Libraries above — the web worker never runs <code>systemctl</code> itself, and
+is deliberately not granted it, because a general <code>systemctl</code> permission reaches
+every unit on the machine and is therefore root by another name. Each click is
+queued for the privileged updater, which applies it and then re-reads the unit's
+state: a zero exit code from <code>systemctl</code> means <em>the job was accepted</em>, not that
+the daemon came up.</p>
+<p>What you can do to each unit is a fixed table, and three restrictions in it are
+deliberate:</p>
+<ul>
+<li><strong>The updater itself is not listed.</strong> It is the component that applies these
+  requests. Stopping it would mean no later request could be processed —
+  including the one that would start it again.</li>
+<li><strong>The web app, nginx and PostgreSQL cannot be stopped from here</strong>, only
+  restarted. Stopping any of them leaves recovery possible only from a shell,
+  and this page exists for the operator who has the browser and not the shell.</li>
+<li><strong>Nothing is enabled or disabled.</strong> Start and stop are runtime-only, so a unit
+  you stop here comes back at the next boot. The <strong>At boot</strong> column shows what
+  the node arms, so that is visible rather than surprising. Changing it is a
+  durable decision and stays with the installer and the CLI (§20).</li>
+</ul>
+<p>Three practical notes:</p>
+<ul>
+<li><strong>Restarting the web app is safe to click.</strong> It kills the worker handling your
+  click, so the page cannot report the result directly — instead the privileged
+  runner keeps writing the log while the app is down, and the panel reconnects
+  and shows you how it ended, health check included. Expect a few seconds where
+  the console is unresponsive.</li>
+<li><strong>Restarting PostgreSQL</strong> bounces the cluster; a standby reconnects its
+  replication stream on its own. If the app is left holding dead pooled
+  connections the runner recycles the workers for you rather than leaving you a
+  500 with no obvious cause.</li>
+<li><strong>It acts on this node only.</strong> systemd is node-local; a peer is never touched
+  from here. The card prints which node and role you are on. A unit that is not
+  installed on this node — <code>satom-ha-datasync.timer</code> on a primary or a
+  standalone install — is shown greyed with no buttons, not as a failure.</li>
+</ul>
 <h3 id="262-access-control-who-may-reach-the-app-at-all">26.2 Access Control — who may reach the app at all</h3>
 <p>Two independent gates, and <strong>both are empty-means-everything</strong>:</p>
 <ul>

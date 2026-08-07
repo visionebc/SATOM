@@ -597,7 +597,20 @@ def lib_version_drift() -> dict:
             "level": bool(all_reachable and all(x["level"] for x in packages))}
 
 
+#: Request ids are minted here and nowhere else, always as
+#: ``%Y%m%d-%H%M%S-<6 hex>`` -- digits, dashes and hex. Anything outside that
+#: class is not an id we ever wrote.  [SATOM-UID-SAFE]
+UID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
 def update_status(uid: str) -> dict | None:
+    # The id reaches here from a URL segment, so it is untrusted input used to
+    # build a filesystem path. Validating in each caller would leave the next
+    # caller to remember; the check belongs where the path is assembled. A
+    # traversing id turned this reader into "read any .json this account can
+    # read" -- narrow by construction is cheaper than narrow by discipline.
+    if not uid or not UID_RE.match(uid):
+        return None
     p = STATUS_DIR / (uid + ".json")
     if not p.exists():
         return None

@@ -6,6 +6,72 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **Start, stop and restart this node's services from the console.**
+  Settings → General grows a **Services** card covering the web app, the
+  scheduler, the reconciler, the metrics store, the alert / certificate /
+  data-sync timers, nginx and PostgreSQL. The web worker never runs
+  `systemctl` itself and is not granted it — a generic `sudo systemctl`
+  reaches every unit on the box, so it is root spelled differently. Each
+  action is queued for the privileged updater, which applies it, re-reads
+  the unit's state (an exit code of 0 means the job was accepted, not that
+  the daemon came up) and health-checks the three units that can take the
+  console down. What a console admin can reach is a table, duplicated into
+  the root runner and kept honest by a test that fails when the copies
+  drift. `satom-updater` is not in it and is denied by name: stopping the
+  runner means no later request can be processed, including the one that
+  would start it again. `stop` is withheld from the web app, nginx and the
+  database — each would leave recovery possible only from a shell, which is
+  exactly what the operator using this page does not have. Runtime-only:
+  nothing is enabled or disabled, and the card prints the boot state next
+  to the live state. See `docs/safeguards.md` §33.
+
+- **The standby's services can be controlled from the primary.** The card
+  renders one section per node, because systemd is node-local and an HA
+  pair has no single "the services". A peer is *asked*, never commanded:
+  the primary POSTs a unit name and an action to the peer's own endpoint
+  behind the shared node identity key, and the peer re-validates against
+  its OWN allowlist before its OWN root runner does the work — a peer
+  holding a valid key still cannot reach a unit that node does not permit,
+  or the updater at all. Hosts are resolved from the node registry by name,
+  never taken from the request. Unreachable is reported as unreachable and
+  never as "queued" or as an empty unit list, a 2xx without an id is not
+  success, a peer answering 404 is named as probably running an older
+  release, and a poll that fails mid-restart says *polling* — that is the
+  expected middle of a successful restart, not a failure. Peers load from
+  their own endpoint so a dead standby cannot make a healthy primary's card
+  look broken. See `docs/safeguards.md` §33b.
+
+### Changed
+
+- **Service buttons are state-aware and colour-coded.** A stopped unit
+  offers only Start, a running one only Restart and Stop, and colour
+  carries the consequence: green adds capacity, red takes it away, amber
+  interrupts and returns. What is *offered* is derived from live state;
+  what is *permitted* is not — the endpoint gate stays a fixed table, so
+  clicking a button that a poll invalidated a second earlier is a systemd
+  no-op instead of a refusal the operator would read as a broken console.
+  Units that may only be restarted (the web app, PostgreSQL) still offer
+  Restart while they are stopped: `systemctl restart` starts a stopped
+  unit, and withholding it would leave a dead unit with no button at all.
+
+- **The General settings tab is laid out in two columns**, and **System
+  Information is a full-width card split in two** — the facts and the
+  library inventory used to be stacked in a narrow side column, which made
+  it the tallest thing on the page. Side by side the card is about half as
+  tall and neither table wraps.
+
+### Fixed
+
+- **`update_status()` built a filesystem path out of an unvalidated URL
+  segment**, so a traversing request id turned an admin-only status reader
+  into "read any `.json` the service account can read". Request ids are
+  minted in one place and always match `[A-Za-z0-9_-]+`; the check now
+  lives where the path is assembled rather than in each caller, because
+  validating per caller leaves the next caller to remember. Found while
+  wiring the peer status poll.
+
 ## [1.7.1] - 2026-08-07
 
 Recovery-custody fix. **1.7.0 shipped the sealed envelope in a state that could

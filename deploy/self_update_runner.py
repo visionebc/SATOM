@@ -1150,6 +1150,193 @@ def promote(req_path):
                   error=(r.stderr or "promotion did not complete")[-300:])
 
 
+# ---------------------------------------------------------------------------
+# systemd service control (kind: "service")   [SATOM-SERVICE-CONTROL]
+# ---------------------------------------------------------------------------
+# The unprivileged web worker cannot run systemctl and must not be granted it:
+# a generic `sudo systemctl` reaches every unit on the box, so it IS root, just
+# spelled differently. It enqueues a request; this applies it.
+#
+# The allowlist is duplicated from app/services/service_control.py ON PURPOSE.
+# Importing that module would execute the Flask package as root out of a tree
+# the service account can write -- the exact escalation the curated pip
+# allowlist was moved out of. tests/test_service_control.py fails if the two
+# copies drift, which is what keeps a duplicate honest.
+_SVC_UNIT_RE = re.compile(r"^[A-Za-z0-9@:._-]+\.(service|timer|path)$")
+_SVC_ACTIONS = ("start", "stop", "restart")
+
+# Denied even if a future edit lists them: satom-updater IS this runner.
+# Stopping it means no later request can ever be processed -- including the one
+# that would start it again -- so the button would brick its own escalation
+# path while reporting success. Restarting it kills the operation in flight.
+_SVC_FORBIDDEN = ("satom-updater.service", "satom-updater.path")
+
+_SERVICE_POLICY = {
+    "satom.service": ("restart",),
+    "satom-scheduler.service": ("start", "stop", "restart"),
+    "satom-reconciler.service": ("start", "stop", "restart"),
+    "satom-metrics.service": ("start", "stop", "restart"),
+    "satom-alerts.timer": ("start", "stop", "restart"),
+    "satom-cert-renew.timer": ("start", "stop", "restart"),
+    "satom-ha-datasync.timer": ("start", "stop", "restart"),
+    "nginx.service": ("start", "restart"),
+    "postgresql.service": ("restart",),
+}
+
+# Units whose action can take the console down. Anything else is verified by
+# its own state alone -- running health_ok() after stopping the alert timer
+# would pass trivially and teach nobody anything.
+_SVC_HEALTH_CRITICAL = ("satom.service", "nginx.service", "postgresql.service")
+
+
+def _svc_prop(unit, prop):
+    try:
+        r = subprocess.run(["systemctl", "show", "-p", prop, "--value", unit],
+                           capture_output=True, text=True, timeout=10)
+        return (r.stdout or "").strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _svc_active(unit):
+    return _svc_prop(unit, "ActiveState") or "unknown"
+
+
+def front_ok(timeout=25):
+    """The TLS front answers on :443.
+
+    health_ok() talks to gunicorn on :8000 directly, so it stays GREEN with
+    nginx down -- nginx is the one unit whose failure the existing check cannot
+    see. Certificate validity is irrelevant here (a node may serve an internal
+    CA leaf), so the handshake is deliberately unverified: this asks 'is the
+    front answering', not 'is the front trusted'.
+    """
+    import ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen("https://127.0.0.1/healthz",
+                                        timeout=5, context=ctx) as r:
+                if getattr(r, "status", r.getcode()) == 200:
+                    return True
+        except Exception:  # noqa: BLE001
+            pass
+        time.sleep(3)
+    return False
+
+
+def service_action(req_path):
+    """Apply an allowlisted start/stop/restart (root-triggered, table-bounded).
+
+    Validates unit AND action against the table above before touching systemd,
+    so a forged request can never become `systemctl <anything> <anything>`.
+    Verifies the unit actually reached the state that was asked for -- a
+    systemctl exit code of 0 means 'the job was accepted', not 'the daemon came
+    up', and a service that exits three seconds later would otherwise be
+    reported as a success.
+    """
+    req = json.loads(Path(req_path).read_text())
+    uid = req.get("id") or Path(req_path).stem
+    st = Status(uid, req)
+    try:
+        os.remove(req_path)  # dequeue so the .path unit stops re-firing
+    except OSError:
+        pass
+
+    unit = (req.get("unit") or "").strip()
+    action = (req.get("action") or "").strip().lower()
+    st.d["unit"] = unit
+    st.d["action"] = action
+    st.d["kind"] = "service"
+    st.flush()
+
+    # ---- hard guardrails (defence in depth; the web side validates too) ----
+    if unit in _SVC_FORBIDDEN:
+        st.step("validate unit", False,
+                "%s is the privileged runner itself and is never controllable "
+                "from the console" % unit)
+        st.finish("failed", error="unit forbidden")
+        return
+    if not _SVC_UNIT_RE.match(unit) or unit not in _SERVICE_POLICY:
+        st.step("validate unit", False, "%r is not an allowlisted unit" % unit)
+        st.finish("failed", error="unit not allowed")
+        return
+    if action not in _SVC_ACTIONS or action not in _SERVICE_POLICY[unit]:
+        st.step("validate action", False,
+                "%r is not permitted on %s (allowed: %s)"
+                % (action, unit, ", ".join(_SERVICE_POLICY[unit])))
+        st.finish("failed", error="action not allowed")
+        return
+    if _svc_prop(unit, "LoadState") == "not-found":
+        st.step("validate unit", False, "%s is not installed on this node" % unit)
+        st.finish("failed", error="unit not installed")
+        return
+    st.step("validate", True, "%s %s (requested by %s)"
+            % (action, unit, req.get("requested_by") or "?"))
+
+    before = _svc_active(unit)
+    st.step("state before", True, "%s is %s" % (unit, before))
+
+    try:
+        p = subprocess.run(["systemctl", action, unit],
+                           capture_output=True, text=True, timeout=180)
+        detail = (p.stderr or p.stdout or "").strip()[-400:]
+        st.step("systemctl %s %s" % (action, unit), p.returncode == 0,
+                detail or "accepted")
+        if p.returncode != 0:
+            raise RuntimeError("systemctl exited %s: %s" % (p.returncode, detail))
+
+        # systemd returns as soon as the job is queued; give a restarted daemon
+        # a moment to either settle or die before believing its state.
+        time.sleep(2)
+        after = _svc_active(unit)
+        if action == "stop":
+            reached = after not in ("active", "activating")
+        else:
+            reached = after in ("active", "activating")
+        st.step("state after", reached, "%s is %s" % (unit, after))
+        if not reached:
+            raise RuntimeError("%s is %s after %s" % (unit, after, action))
+
+        # ---- did the console survive it? ----
+        if unit in _SVC_HEALTH_CRITICAL:
+            ok = health_ok()
+            st.step("app health check", ok,
+                    "healthz 200" if ok else
+                    "healthz did not answer 200 within %ds" % HEALTH_TIMEOUT)
+            if not ok and unit == "postgresql.service":
+                # A recycled cluster leaves the app holding dead pooled
+                # connections. Bouncing the workers is the actual fix and it is
+                # cheap; leaving it would hand the operator a 500 they did not
+                # ask for and no obvious cause.
+                subprocess.run(["systemctl", "restart", SERVICE], timeout=180)
+                ok = health_ok()
+                st.step("recycle app connection pool", ok,
+                        "restarted %s after the database bounce" % SERVICE)
+            if not ok:
+                raise RuntimeError("the app is not answering after %s %s"
+                                   % (action, unit))
+            if unit == "nginx.service":
+                fok = front_ok()
+                st.step("TLS front check", fok,
+                        "https://127.0.0.1/healthz 200" if fok else
+                        "the front did not answer on :443")
+                if not fok:
+                    raise RuntimeError("nginx is running but not serving")
+
+        st.finish("success", unit=unit, action=action,
+                  state_before=before, state_after=after)
+        return
+
+    except Exception as e:  # noqa: BLE001
+        st.step("ERROR", False, str(e))
+        st.finish("failed", unit=unit, action=action, state_before=before,
+                  state_after=_svc_active(unit), error=str(e))
+
+
 def main():
     for rp in sorted(glob.glob(str(REQ / "*.json"))):
         try:
@@ -1164,6 +1351,8 @@ def main():
                 pip_change(rp)
             elif kind == "package":
                 package_change(rp)
+            elif kind == "service":
+                service_action(rp)
             else:
                 process(rp)
         except Exception:

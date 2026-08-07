@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-08-07
+
 ### Fixed
 
 - **The AI Advisor's replies were saved and never shown.** After Send, the

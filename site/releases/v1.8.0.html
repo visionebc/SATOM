@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 1.3.5 — SATOM</title>
-<meta name="description" content="Released on 2026-08-04 — The node was never told which names it answers to · 5 entries.">
+<title>Version 1.8.0 — SATOM</title>
+<meta name="description" content="Released on 2026-08-07 — Fixed · Added · Changed · 13 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 1.3.5 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-08-04 — The node was never told which names it answers to · 5 entries.</p>
+  <h1>Version 1.8.0 <span class="rel-badge rel-now">current release</span></h1>
+  <p class="sub">Released on 2026-08-07 — Fixed · Added · Changed · 13 entries.</p>
 </header>
 
 <section class="wrap">
@@ -62,7 +62,7 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
-      <a class="rel-nav-item" href="v1.8.0.html" data-rel-version="1.8.0">
+      <a class="rel-nav-item is-active" href="v1.8.0.html" data-rel-version="1.8.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.8.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
         <span class="rel-nav-meta">2026-08-07 · Fixed · Added · Changed · 13 entries</span>
         <ul class="rel-leads"><li>The AI Advisor&#x27;s replies were saved and never shown</li><li>update_status() built a filesystem path out of an unvalidated URL segment</li><li>The chat streams, shows that it is working, and can be stopped</li><li class="rel-more">… and 10 more</li></ul>
@@ -97,7 +97,7 @@
         <span class="rel-nav-meta">2026-08-05 · Added · Changed · Fixed · 27 entries</span>
         <ul class="rel-leads"><li>SATOM health and Device health are two pages</li><li>satom-metrics is a monitored unit</li><li>Device HA posture, derived from the harvest</li><li class="rel-more">… and 24 more</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v1.3.5.html" data-rel-version="1.3.5">
+      <a class="rel-nav-item" href="v1.3.5.html" data-rel-version="1.3.5">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.3.5</span></span>
         <span class="rel-nav-meta">2026-08-04 · The node was never told which names it answers to · 5 entries</span>
         <ul class="rel-leads"><li>proxy_set_header Host $host dropped the port</li><li>server_name and the node certificate&#x27;s SAN were both the short hostname</li><li class="rel-more">… and 3 more</li></ul>
@@ -165,33 +165,178 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="the-node-was-never-told-which-names-it-answers-to">The node was never told which names it answers to</h3>
-<p>Two defects, one root cause -- the installer guessed the served names from
-<code>hostname</code> (the short name) and minted two artefacts from that guess.</p>
+<h3 id="fixed">Fixed</h3>
 <ul>
-<li><strong><code>proxy_set_header Host $host</code> dropped the port.</strong> Flask-WTF compares the
-  browser's <code>Referer</code> -- port included -- against the origin the app believes it
-  is on, so behind a NAT or a proxy on a non-standard port <strong>every POST,
-  including the login, failed CSRF</strong> and reported an expired session. Invisible
-  on <code>:443</code>, where browsers omit the default port. Now <code>$http_host</code>, in the
-  installer and in <code>deploy/nginx-vhost.conf</code>.</li>
-<li><strong><code>server_name</code> and the node certificate's SAN were both the short hostname.</strong>
-  A node reached by FQDN answered only because the vhost also claimed
-  <code>default_server</code>, and its freshly issued certificate had no SAN for the name
-  the browser used. The installer now asks for the served DNS names in step 1
-  (default <code>hostname -f</code>, override <code>SATOM_SERVED_NAMES</code>) and feeds them to both.</li>
-<li><code>satom diagnose nginx</code> gains two verifications: any proxying vhost passing
-  <code>$host</code> is a failure, and the served certificate must cover every FQDN in
-  <code>server_name</code> (RFC 6125 wildcard matching -- one label, no bare apex).</li>
-<li>New <code>satom execute repair nginx [--yes]</code> brings an already-installed node to
-  the corrected shape, with backups, <code>nginx -t</code> and automatic rollback. The
-  vhost is not in git, so a code update alone could never carry the fix.</li>
-<li>The HTTPS redirect no longer pins an explicit <code>:443</code>.</li>
+<li>
+<p><strong>The AI Advisor's replies were saved and never shown.</strong> After Send, the
+  page sat silent and the answer only appeared on a reload — with no cost
+  figures, because those are drawn with the reply. The cause was one
+  identifier: a nested callback assigned to <code>input</code>, a variable that belonged
+  to a sibling function's scope. JavaScript resolves that to nothing, so the
+  callback threw on that line and never reached the next one, which was the
+  call that redraws the thread. Every server-side test passed, because the
+  server was right the whole time. Fixed at the root rather than patched: all
+  DOM handles are now declared once at the top of the script and the send path
+  takes what it needs as arguments, so the cross-scope reference is no longer
+  writable. Guards enforce the convention, including one that fails when the
+  script calls a function it never defines.</p>
+</li>
+<li>
+<p><strong><code>update_status()</code> built a filesystem path out of an unvalidated URL
+  segment</strong>, so a traversing request id turned an admin-only status reader
+  into "read any <code>.json</code> the service account can read". Request ids are
+  minted in one place and always match <code>[A-Za-z0-9_-]+</code>; the check now
+  lives where the path is assembled rather than in each caller, because
+  validating per caller leaves the next caller to remember. Found while
+  wiring the peer status poll.</p>
+</li>
 </ul>
-<p>The vhost is not in git, so an update alone cannot carry this fix to an
-installed node: run <code>satom execute repair nginx --yes</code>, or reinstall from
-this release. Releases 1.3 through 1.3.4 all emit the defective vhost.</p>
-<p class="rel-prevnext"><a href="v1.4.0.html">← Version 1.4.0</a> · <a href="v1.3.4.html">Version 1.3.4 →</a></p>
+<h3 id="added">Added</h3>
+<ul>
+<li><strong>The chat streams, shows that it is working, and can be stopped.</strong> The
+  reply now appears as it is generated, with an animated indicator, a live
+  elapsed clock, and a chip per tool call while the model is using one. A
+  <strong>Stop</strong> button cancels: aborting the request closes the socket, which closes
+  SATOM's connection to the model, so generation genuinely ends rather than
+  continuing invisibly and billing for it. Whatever was produced is kept,
+  marked as stopped, and written to the ledger as a cancelled call — throwing
+  it away would discard tokens that were really spent and leave the next page
+  load blank. A heartbeat keeps the connection alive through a cold model load
+  (up to ~90 silent seconds on a 32B local model) and is what lets Stop take
+  effect within a couple of seconds instead of at the next token. The response
+  carries <code>X-Accel-Buffering: no</code>, because nginx buffers proxied responses by
+  default and this product's vhost is written by the installer rather than
+  carried in git — a directive there would never reach an existing install.
+  The blocking <code>POST /advisor/&lt;id&gt;/send</code> is unchanged; both paths run the same
+  engine, so the tool loop, redaction and ledger cannot drift apart.</li>
+<li>Errors now render in place of the reply instead of an alert box, and the
+  composer keeps what was typed when an external-provider preview is declined.</li>
+</ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li>
+<p><code>deploy/satom.service</code> raises the gunicorn worker timeout to 600s. It was
+  120s while the provider timeout is 180s — inverted, so a slow model had its
+  worker killed before the provider could report a timeout, and a diagnosable
+  error arrived as an opaque dropped connection. A test now fails if the
+  ordering is ever reversed.</p>
+</li>
+<li>
+<p><strong>The AI Advisor's read-only tools are now actually reachable by the
+  model.</strong> They shipped as a set of functions with nothing that invoked
+  them: the catalog was served over HTTP and <code>call_tool</code> was never called
+  from the chat path, so the model could not use a tool whatever it emitted.
+  The chat now runs a bounded tool loop, and the catalog grows from three
+  entries to eight — <code>list_appliances</code> (which every other tool depends on,
+  because they all take an <code>appliance_id</code> the model had no way to learn),
+  <code>list_server_policies</code>, <code>device_health</code>, <code>list_probes</code> and
+  <code>recent_config_changes</code>, alongside the existing SoT, exception and Lua
+  lookups. All read from the database and the harvest cache, so an answer
+  still arrives with the appliance powered off.</p>
+</li>
+<li><strong>Tool output is redacted before it can leave the LAN.</strong> Redaction
+  previously covered the operator's message and the attachments they chose.
+  A tool result is neither — the model asks for it and SATOM injects it — so
+  the model could have pulled hostnames and addresses from the device cache
+  and handed them to an external provider, around the preview the operator
+  approved. Tool results are also wrapped as untrusted input, the loop is
+  capped, oversized results announce their truncation in band, and tools are
+  advertised to the model only while they are switched on.</li>
+<li>
+<p><strong>Response time and token cost, per reply and in a ledger.</strong> Every reply
+  shows how long it took and what it cost; every provider call — local
+  Ollama included, failures included — writes a row to the new
+  <code>advisor_request_log</code>, readable at <code>/advisor/usage</code>. The duration spans
+  the whole exchange including tool round-trips, which is what the operator
+  waited for. Unreported usage is stored as <code>NULL</code> and shown as <em>tokens not
+  reported</em>, never as <code>0</code>: several OpenAI-compatible gateways omit the usage
+  block, and a confident zero would be a number the product never measured.
+  A failed call still leaves a row, so a provider timeout cannot vanish.</p>
+</li>
+<li>
+<p><strong>Every node re-asserts its own metrics store on every code update.</strong>
+  The store binary and its data directory live outside the app tree by
+  design — the data-sync replicates <code>data/</code> with <code>rsync --delete</code> and a
+  time-series database cannot be rsynced under a live process — so nothing
+  carried the store between nodes: not git, not the data-sync, not a
+  database dump. The installer wrote it once and nothing wrote it again, so
+  a node that joined the pair later, or was rebuilt, ran the analytics
+  pages, the collection schedule and the service entry the diagnostics
+  check with no store behind any of them; its panels returned a query
+  error, which reads as a interface bug rather than a missing subsystem.
+  New <code>deploy/install-metrics-store.sh</code>, called by the installer, by
+  <strong>both</strong> update paths in the privileged runner, and by
+  <code>satom execute reinstall metrics-store</code>. It is symmetric across an HA
+  pair without any node reaching across another: the standby's reconciler
+  enqueues rather than updating itself, so every node runs its own runner
+  and repairs its own node-local artefacts. It can never abort an update —
+  on an isolated network the download always fails, and making that fatal
+  would trade a missing optional subsystem for an un-updatable product —
+  and it arms the service only when the capability was genuinely absent, so
+  a deliberate stop from Settings → General is not undone by the next
+  update. <code>satom diagnose install</code> now grades the binary against its
+  anchored digest and prints the service's runtime state without grading
+  it. The digest gains a single home in <code>deploy/metrics-store.env</code>, pinned
+  by test to the four shell files that must keep literal copies.</p>
+</li>
+<li>
+<p><strong>Start, stop and restart this node's services from the console.</strong>
+  Settings → General grows a <strong>Services</strong> card covering the web app, the
+  scheduler, the reconciler, the metrics store, the alert / certificate /
+  data-sync timers, nginx and PostgreSQL. The web worker never runs
+  <code>systemctl</code> itself and is not granted it — a generic <code>sudo systemctl</code>
+  reaches every unit on the box, so it is root spelled differently. Each
+  action is queued for the privileged updater, which applies it, re-reads
+  the unit's state (an exit code of 0 means the job was accepted, not that
+  the daemon came up) and health-checks the three units that can take the
+  console down. What a console admin can reach is a table, duplicated into
+  the root runner and kept honest by a test that fails when the copies
+  drift. <code>satom-updater</code> is not in it and is denied by name: stopping the
+  runner means no later request can be processed, including the one that
+  would start it again. <code>stop</code> is withheld from the web app, nginx and the
+  database — each would leave recovery possible only from a shell, which is
+  exactly what the operator using this page does not have. Runtime-only:
+  nothing is enabled or disabled, and the card prints the boot state next
+  to the live state. See <code>docs/safeguards.md</code> §33.</p>
+</li>
+<li>
+<p><strong>The standby's services can be controlled from the primary.</strong> The card
+  renders one section per node, because systemd is node-local and an HA
+  pair has no single "the services". A peer is <em>asked</em>, never commanded:
+  the primary POSTs a unit name and an action to the peer's own endpoint
+  behind the shared node identity key, and the peer re-validates against
+  its OWN allowlist before its OWN root runner does the work — a peer
+  holding a valid key still cannot reach a unit that node does not permit,
+  or the updater at all. Hosts are resolved from the node registry by name,
+  never taken from the request. Unreachable is reported as unreachable and
+  never as "queued" or as an empty unit list, a 2xx without an id is not
+  success, a peer answering 404 is named as probably running an older
+  release, and a poll that fails mid-restart says <em>polling</em> — that is the
+  expected middle of a successful restart, not a failure. Peers load from
+  their own endpoint so a dead standby cannot make a healthy primary's card
+  look broken. See <code>docs/safeguards.md</code> §33b.</p>
+</li>
+<li>
+<p><strong>Service buttons are state-aware and colour-coded.</strong> A stopped unit
+  offers only Start, a running one only Restart and Stop, and colour
+  carries the consequence: green adds capacity, red takes it away, amber
+  interrupts and returns. What is <em>offered</em> is derived from live state;
+  what is <em>permitted</em> is not — the endpoint gate stays a fixed table, so
+  clicking a button that a poll invalidated a second earlier is a systemd
+  no-op instead of a refusal the operator would read as a broken console.
+  Units that may only be restarted (the web app, PostgreSQL) still offer
+  Restart while they are stopped: <code>systemctl restart</code> starts a stopped
+  unit, and withholding it would leave a dead unit with no button at all.</p>
+</li>
+<li>
+<p><strong>The General settings tab is laid out in two columns</strong>, and <strong>System
+  Information is a full-width card split in two</strong> — the facts and the
+  library inventory used to be stacked in a narrow side column, which made
+  it the tallest thing on the page. Side by side the card is about half as
+  tall and neither table wraps.</p>
+</li>
+</ul>
+<p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v1.7.1.html">Version 1.7.1 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

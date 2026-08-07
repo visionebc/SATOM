@@ -75,6 +75,11 @@ class AdvisorMessage(db.Model):
     duration_ms = db.Column(db.Integer, nullable=True)
     prompt_tokens = db.Column(db.Integer, nullable=True)
     completion_tokens = db.Column(db.Integer, nullable=True)
+    # Set when the operator pressed Stop (or closed the tab) mid-reply. The
+    # partial IS kept: throwing it away would discard tokens that were really
+    # spent and leave the next page load showing nothing, which reads as "the
+    # feature lost my answer" rather than "I cancelled it".
+    stopped = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     def attachments_list(self) -> list:
@@ -101,6 +106,7 @@ class AdvisorMessage(db.Model):
             "redaction_count": self.redaction_count,
             "tool_calls": self.tool_calls_list(),
             "duration_ms": self.duration_ms,
+            "stopped": bool(self.stopped),
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
             "total_tokens": (

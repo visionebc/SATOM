@@ -32,7 +32,9 @@ See ``docs/ai-advisor.md`` for the full design write-up.
 from __future__ import annotations
 
 import json
+import queue
 import re
+import threading
 import time
 from datetime import datetime
 
@@ -49,7 +51,9 @@ from . import lua_studio as lua_svc
 from . import sot_store
 from .doc_publication import REDACTIONS as _REDACTIONS
 from .product_scope import stamp as _stamp, scope_query as _scope_query
-from .advisor_providers import send as _provider_send, ProviderError
+from .advisor_providers import (
+    send as _provider_send, stream as _provider_stream, ProviderError,
+)
 
 # ---------------------------------------------------------------------------
 # settings keys (app_settings, JSON where noted)
@@ -76,6 +80,12 @@ MAX_TOOL_ROUNDS = 4
 # the model knows it is reasoning about a partial list instead of concluding
 # the list is short.
 MAX_TOOL_RESULT_BYTES = 8000
+
+# How long the exchange may go silent before it writes something. Sized
+# well under a reverse proxy's default read timeout, because during a cold
+# model load this beat is the ONLY traffic on the connection.
+HEARTBEAT_SECONDS = 2.0
+_STREAM_QUEUE_MAX = 512
 
 SYSTEM_PROMPT = (
     "You are the SATOM AI Advisor, embedded in a Fortinet fleet-management "
@@ -625,20 +635,131 @@ def _log_request(*, conv, message_id, username, provider, is_external,
         db.session.rollback()
 
 
-def send_message(conv: AdvisorConversation, username: str, text: str,
-                  attachments: list[dict] | None = None) -> AdvisorMessage:
-    from .audit import log_action
+def _resolve_provider(conv: AdvisorConversation) -> tuple[dict, bool]:
+    """Pick the provider and decide whether this exchange leaves the LAN.
 
-    attachments = attachments or []
+    Split out of the exchange so a caller can fail BEFORE committing to a
+    response body. The streaming endpoint needs exactly that: a misconfigured
+    provider has to come back as an HTTP error, not as an error frame inside a
+    200 stream that every client would then have to special-case."""
     provider = get_provider(conv.provider_key) or get_provider(default_provider_key())
     if not provider:
         raise ProviderError("no AI provider configured -- add one in Settings -> AI Advisor")
-
     is_external = provider["kind"] != "ollama"
     if is_external and not external_allowed():
         raise ProviderError(
             "external providers are disabled -- turn on \"Allow external providers\" "
             "in Settings -> AI Advisor first")
+    return provider, is_external
+
+
+def check_ready(conv: AdvisorConversation) -> None:
+    """Raise :class:`ProviderError` if this conversation cannot send."""
+    _resolve_provider(conv)
+
+
+def _pump_stream(make_iter, q: "queue.Queue", stop_evt: "threading.Event") -> None:
+    """Drain a provider stream into ``q`` from a worker thread.
+
+    The thread touches httpx and the queue only -- never Flask, never the
+    session. Everything that needs an app context stays on the generator side,
+    so cancellation cannot land a half-written row from a thread that outlived
+    the request."""
+    try:
+        for item in make_iter():
+            if stop_evt.is_set():
+                break
+            try:
+                q.put(item, timeout=30)
+            except queue.Full:
+                break
+    except BaseException as exc:  # noqa: BLE001 - forwarded verbatim below
+        try:
+            q.put(("__error__", exc), timeout=5)
+        except queue.Full:
+            pass
+    finally:
+        try:
+            q.put(("__end__", None), timeout=5)
+        except queue.Full:
+            pass
+
+
+def _one_round(provider: dict, sys_prompt: str, history: list[dict], *, streaming: bool):
+    """One provider call. Yields ``("delta", str)`` / ``("heartbeat", None)``
+    and finally ``("done", ChatResult)``.
+
+    The non-streaming branch yields the whole reply as a single delta, so the
+    orchestration above it -- tool loop, redaction, persistence, logging -- has
+    exactly one shape to handle. Two transports, one code path; the alternative
+    was a second copy of the loop that would drift the moment either changed.
+    """
+    secret = _provider_secret(provider["key"])
+    if not streaming:
+        result = _provider_send(
+            provider["kind"], base_url=provider["base_url"], api_key=secret,
+            model=provider["model"], system=sys_prompt, messages=history)
+        if result.text:
+            yield ("delta", result.text)
+        yield ("done", result)
+        return
+
+    q: queue.Queue = queue.Queue(maxsize=_STREAM_QUEUE_MAX)
+    stop_evt = threading.Event()
+
+    def make_iter():
+        return _provider_stream(
+            provider["kind"], base_url=provider["base_url"], api_key=secret,
+            model=provider["model"], system=sys_prompt, messages=history)
+
+    th = threading.Thread(target=_pump_stream, args=(make_iter, q, stop_evt), daemon=True)
+    th.start()
+    try:
+        while True:
+            try:
+                kind, val = q.get(timeout=HEARTBEAT_SECONDS)
+            except queue.Empty:
+                # A heartbeat is not decoration. It is the only write during a
+                # cold model load, and it does three jobs: keeps the reverse
+                # proxy's read timeout from closing an exchange that is still
+                # healthy, gives the operator a clock instead of a frozen page,
+                # and -- because writing to a closed socket is how this process
+                # learns the browser went away -- makes Stop take effect within
+                # one beat instead of at the next token.
+                yield ("heartbeat", None)
+                continue
+            if kind == "__end__":
+                return
+            if kind == "__error__":
+                raise val if isinstance(val, ProviderError) else ProviderError(
+                    str(val) or val.__class__.__name__)
+            yield (kind, val)
+    finally:
+        stop_evt.set()
+
+
+def _run_exchange(conv_id: int, username: str, text: str,
+                   attachments: list[dict] | None = None, *, streaming: bool = False):
+    """The exchange, as an event stream.
+
+    Yields ``("status", dict)``, ``("delta", str)``, ``("heartbeat", None)``
+    and exactly one terminal ``("done", AdvisorMessage)``.
+
+    Cancellation is a first-class outcome, not an error: whatever the model
+    produced before the operator pressed Stop is persisted and marked, and the
+    ledger still records the call. Discarding a stopped reply would throw away
+    tokens that were really spent and leave the operator's next page load
+    showing nothing at all -- a silent loss, which is the failure mode this
+    codebase treats as worse than a loud one.
+    """
+    from .audit import log_action
+
+    attachments = attachments or []
+    conv = AdvisorConversation.query.get(conv_id)
+    if conv is None:
+        yield ("error", {"error": "conversation not found"})
+        return
+    provider, is_external = _resolve_provider(conv)
 
     total_redactions = 0
     out_text = text or ""
@@ -679,24 +800,107 @@ def send_message(conv: AdvisorConversation, username: str, text: str,
     executed: list[dict] = []
     sys_prompt = system_prompt()
     bytes_sent = len(full_text.encode())
-    result = None
+    final_text = ""
+    current_parts: list[str] = []
+    persisted: dict = {}
 
+    def _persist(stopped: bool):
+        """Write the assistant row + ledger exactly once.
+
+        Reads nothing from the enclosing ORM objects except ``conv_id`` so it
+        stays correct when it runs from the cancellation path, where the only
+        guarantee is that this function is called -- not which session or
+        context it is called under."""
+        if persisted:
+            return persisted.get("msg")
+        content = final_text if final_text else "".join(current_parts)
+        duration_ms = int((time.monotonic() - started) * 1000)
+        msg = AdvisorMessage(
+            conversation_id=conv_id, role="assistant", content=content,
+            tool_calls=json.dumps(executed), duration_ms=duration_ms,
+            prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+            stopped=bool(stopped))
+        db.session.add(msg)
+        row = AdvisorConversation.query.get(conv_id)
+        if row is not None:
+            row.updated_at = datetime.utcnow()
+            if row.title in ("", "New conversation") and text:
+                row.title = text.strip()[:80]
+        db.session.commit()
+        persisted["msg"] = msg
+
+        if not stopped:
+            block = _extract_proposal_block(content)
+            if block:
+                try:
+                    create_proposal(
+                        row, kind=block.get("kind", ""),
+                        appliance_id=block.get("appliance_id"),
+                        title=str(block.get("title") or ""),
+                        payload=block.get("payload") or {},
+                        rationale=str(block.get("rationale") or ""),
+                        created_by="ai:" + (provider.get("key") or ""))
+                except (ValueError, TypeError):
+                    # A malformed or invalid proposal is silently skipped, never
+                    # coerced into something that only LOOKS valid -- the chat reply
+                    # itself already reached the operator unaffected.
+                    pass
+
+        try:
+            log_action("advisor.send", target=provider["key"],
+                       extra={"conversation_id": conv_id, "external": is_external,
+                              "redactions": total_redactions, "duration_ms": duration_ms,
+                              "tool_calls": len(executed), "stopped": bool(stopped)})
+        except Exception:  # noqa: BLE001 - auditing must not sink a good reply
+            db.session.rollback()
+
+        if is_external:
+            try:
+                db.session.add(AdvisorExportLog(
+                    conversation_id=conv_id, username=username,
+                    provider_key=provider["key"], provider_kind=provider["kind"],
+                    destination_host=provider["base_url"], bytes_sent=bytes_sent,
+                    redaction_count=total_redactions, summary=(text or "")[:280]))
+                db.session.commit()
+            except Exception:  # noqa: BLE001
+                db.session.rollback()
+
+        _log_request(conv=row, message_id=msg.id, username=username,
+                      provider=provider, is_external=is_external, started=started,
+                      result_prompt=prompt_tokens, result_completion=completion_tokens,
+                      rounds=rounds, ncalls=len(executed), ok=not stopped,
+                      error="stopped by the operator" if stopped else "",
+                      bytes_sent=bytes_sent, redactions=total_redactions)
+        return msg
+
+    stopped_by_operator = False
     try:
         while True:
-            result = _provider_send(
-                provider["kind"], base_url=provider["base_url"],
-                api_key=_provider_secret(provider["key"]), model=provider["model"],
-                system=sys_prompt, messages=history)
+            yield ("status", {"phase": "thinking", "round": rounds + 1})
+            current_parts = []
+            result = None
+            for kind, val in _one_round(provider, sys_prompt, history, streaming=streaming):
+                if kind == "delta":
+                    current_parts.append(val)
+                    yield ("delta", val)
+                elif kind == "heartbeat":
+                    yield ("heartbeat", None)
+                elif kind == "done":
+                    result = val
+            if result is None:
+                raise ProviderError("provider returned no reply")
+            final_text = result.text or "".join(current_parts)
             prompt_tokens = _add_tokens(prompt_tokens, result.prompt_tokens)
             completion_tokens = _add_tokens(completion_tokens, result.completion_tokens)
 
-            calls = extract_tool_calls(result.text) if tools_enabled() else []
+            calls = extract_tool_calls(final_text) if tools_enabled() else []
             if not calls or rounds >= MAX_TOOL_ROUNDS:
                 break
             rounds += 1
 
             blocks = []
             for c in calls:
+                yield ("status", {"phase": "tool", "tool": c["tool"], "state": "running"})
                 payload = call_tool(c["tool"], c["args"])
                 body = _tool_result_text(c["tool"], c["args"], payload)
                 # Tool output is DEVICE data, so both rules that apply to an
@@ -711,14 +915,17 @@ def send_message(conv: AdvisorConversation, username: str, text: str,
                     body, n = redact_with_count(body)
                     total_redactions += n
                 blocks.append(wrap_untrusted(f"tool result: {c['tool']}", body))
+                ok = "error" not in payload
                 executed.append({"tool": c["tool"], "args": c["args"],
-                                  "ok": "error" not in payload,
-                                  "error": payload.get("error", "")})
+                                  "ok": ok, "error": payload.get("error", "")})
+                yield ("status", {"phase": "tool", "tool": c["tool"],
+                                  "state": "done", "ok": ok})
 
             joined = "\n\n".join(blocks)
             bytes_sent += len(joined.encode())
-            history.append({"role": "assistant", "content": result.text})
+            history.append({"role": "assistant", "content": final_text})
             history.append({"role": "user", "content": joined})
+            final_text = ""
     except ProviderError as exc:
         db.session.rollback()
         # A provider timeout that leaves no trace is the failure nobody finds.
@@ -727,56 +934,59 @@ def send_message(conv: AdvisorConversation, username: str, text: str,
                       result_prompt=prompt_tokens, result_completion=completion_tokens,
                       rounds=rounds, ncalls=len(executed), ok=False, error=str(exc),
                       bytes_sent=bytes_sent, redactions=total_redactions)
+        yield ("error", {"error": str(exc)})
+        return
+    except GeneratorExit:
+        # The browser went away -- the operator pressed Stop, or closed the
+        # tab. Both mean the same thing here.
+        stopped_by_operator = True
         raise
+    finally:
+        if stopped_by_operator:
+            try:
+                _persist(True)
+            except Exception:  # noqa: BLE001 - never mask GeneratorExit
+                db.session.rollback()
 
-    duration_ms = int((time.monotonic() - started) * 1000)
+    yield ("done", _persist(False))
 
-    assistant_msg = AdvisorMessage(
-        conversation_id=conv.id, role="assistant", content=result.text,
-        tool_calls=json.dumps(executed), duration_ms=duration_ms,
-        prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
-    db.session.add(assistant_msg)
-    conv.updated_at = datetime.utcnow()
-    if conv.title in ("", "New conversation") and text:
-        conv.title = text.strip()[:80]
-    db.session.commit()
 
-    block = _extract_proposal_block(result.text)
-    if block:
-        try:
-            create_proposal(
-                conv, kind=block.get("kind", ""),
-                appliance_id=block.get("appliance_id"),
-                title=str(block.get("title") or ""),
-                payload=block.get("payload") or {},
-                rationale=str(block.get("rationale") or ""),
-                created_by="ai:" + (provider.get("key") or ""))
-        except (ValueError, TypeError):
-            # A malformed or invalid proposal is silently skipped, never
-            # coerced into something that only LOOKS valid -- the chat reply
-            # itself already reached the operator unaffected.
-            pass
+def stream_message(app, conv_id: int, username: str, text: str,
+                    attachments: list[dict] | None = None):
+    """Event stream for the chat UI. See :func:`_run_exchange`.
 
-    log_action("advisor.send", target=provider["key"],
-               extra={"conversation_id": conv.id, "external": is_external,
-                      "redactions": total_redactions, "duration_ms": duration_ms,
-                      "tool_calls": len(executed)})
-    if is_external:
-        export = AdvisorExportLog(
-            conversation_id=conv.id, username=username, provider_key=provider["key"],
-            provider_kind=provider["kind"], destination_host=provider["base_url"],
-            bytes_sent=bytes_sent, redaction_count=total_redactions,
-            summary=(text or "")[:280])
-        db.session.add(export)
-        db.session.commit()
+    Takes an ``app`` and an id rather than the ORM object, and owns its own
+    application context, because a streamed body is produced AFTER the view
+    returned: by the time the first token is pulled, anything loaded during the
+    request has been detached by the session teardown. Found the hard way --
+    the first version passed the conversation in and died on
+    ``DetachedInstanceError`` at the first lazy load.
 
-    _log_request(conv=conv, message_id=assistant_msg.id, username=username,
-                  provider=provider, is_external=is_external, started=started,
-                  result_prompt=prompt_tokens, result_completion=completion_tokens,
-                  rounds=rounds, ncalls=len(executed), ok=True, error="",
-                  bytes_sent=bytes_sent, redactions=total_redactions)
+    ``yield from`` rather than a for-loop on purpose: it delegates ``close()``
+    to the inner generator, so cancelling the stream runs the persist path
+    while this context is still pushed. A for-loop would leave that to the
+    garbage collector, i.e. to luck.
+    """
+    with app.app_context():
+        yield from _run_exchange(conv_id, username, text, attachments, streaming=True)
 
-    return assistant_msg
+
+def send_message(conv: AdvisorConversation, username: str, text: str,
+                  attachments: list[dict] | None = None) -> AdvisorMessage:
+    """Blocking façade over the same engine, for callers that want one reply.
+
+    Kept as a real, tested API surface rather than deleted in favour of the
+    stream: it is the programmatic path, and it is the version whose failure
+    mode is a plain exception."""
+    msg = None
+    for kind, val in _run_exchange(conv.id, username, text, attachments, streaming=False):
+        if kind == "done":
+            msg = val
+        elif kind == "error":
+            raise ProviderError(val.get("error") or "provider call failed")
+    if msg is None:
+        raise ProviderError("provider returned no reply")
+    return msg
 
 
 # ---------------------------------------------------------------------------

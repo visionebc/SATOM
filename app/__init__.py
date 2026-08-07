@@ -1263,6 +1263,7 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('duration_ms', 'INTEGER'),
                 ('prompt_tokens', 'INTEGER'),
                 ('completion_tokens', 'INTEGER'),
+                ('stopped', 'BOOLEAN DEFAULT FALSE'),
             ],
             'users': [
                 ('profile_id', 'INTEGER'),

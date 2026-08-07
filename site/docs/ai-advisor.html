@@ -66,6 +66,8 @@
       <a href="#two-extra-gates-before-anything-leaves-the-lan">Two extra gates before anything leaves the LAN</a>
       <a href="#redaction-and-the-pre-send-preview">Redaction and the pre-send preview</a>
       <a href="#prompt-injection-the-risk-this-feature-invites-by-design">Prompt injection — the risk this feature invites by design</a>
+      <a href="#mode-c-in-practice-the-tool-loop">Mode C in practice — the tool loop</a>
+      <a href="#what-a-call-costs-and-the-ledger">What a call costs, and the ledger</a>
       <a href="#the-write-boundary-mode-d">The write boundary (mode D)</a>
       <a href="#permissions">Permissions</a>
       <a href="#what-this-explicitly-does-not-do-yet">What this explicitly does not do (yet)</a>
@@ -190,6 +192,127 @@ globally"</em>. Two mitigations, both load-bearing:</p>
    appliance without a human explicitly applying a validated draft through
    SATOM's own form.</li>
 </ol>
+<h2 id="mode-c-in-practice-the-tool-loop">Mode C in practice — the tool loop</h2>
+<p>The catalog is not a menu the operator picks from. When tools are on, the
+model is told what exists and may ask for one mid-answer; SATOM runs it and
+hands back the result, and the model continues. That exchange is what turns
+"paste me the policy and I will look at it" into "which appliances do you
+have, and what is wrong with the one that is complaining".</p>
+<p><strong>How a call is expressed.</strong> One fenced block, language <code>satom-tool</code>, holding
+<code>{"tool": ..., "args": {...}}</code> — or a list of them. This is a text protocol
+rather than each vendor's native function-calling API, and the reason is not
+laziness. The three provider kinds expose three different tool schemas and
+three different response shapes, which would fork a provider layer that is
+currently one dispatch function. Worse, the <code>openai</code> kind exists precisely to
+cover OpenAI-<em>compatible</em> gateways, and many of those do not implement tools
+at all — the feature would silently do nothing on the deployments it was
+generalised for. One fence behaves identically on all three.</p>
+<p>The cost is real and worth stating: a text fence is less reliable than a
+native tool API, because the model can malform it. That is contained rather
+than trusted. Anything that does not parse into the expected shape is treated
+as ordinary prose, so a bad block degrades into a normal reply.</p>
+<p><strong>The catalog</strong> (all read-only, all served from the database and the harvest
+cache — a chat turn never touches an appliance, the same rule the rest of the
+product follows so answers still arrive with a device powered off):</p>
+<table>
+<thead>
+<tr>
+<th>tool</th>
+<th>answers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>list_appliances</code></td>
+<td>what exists in this ADOM, with the <code>appliance_id</code> every other tool needs</td>
+</tr>
+<tr>
+<td><code>list_server_policies</code></td>
+<td>the cached FortiWeb policies on one appliance</td>
+</tr>
+<tr>
+<td><code>device_health</code></td>
+<td>the same four signals the Fleet health badge grades on</td>
+</tr>
+<tr>
+<td><code>list_probes</code></td>
+<td>monitors on one appliance and their latest sample</td>
+</tr>
+<tr>
+<td><code>recent_config_changes</code></td>
+<td>SoT versions for one device, newest first</td>
+</tr>
+<tr>
+<td><code>sot_search</code></td>
+<td>substring search across the latest configuration snapshots</td>
+</tr>
+<tr>
+<td><code>list_exceptions</code></td>
+<td>guided WAF/signature exceptions already authored</td>
+</tr>
+<tr>
+<td><code>list_lua_scripts</code></td>
+<td>existing Lua scripts</td>
+</tr>
+</tbody>
+</table>
+<p><code>list_appliances</code> is not a convenience. Every other tool takes an
+<code>appliance_id</code> the model has no other way to learn, so without it the rest of
+the catalog is unreachable in practice.</p>
+<p><strong>Four rules make the loop safe.</strong> Each is a way it could work and still be
+wrong:</p>
+<ol>
+<li><strong>A tool result is redacted before it can leave the LAN.</strong> Redaction used
+   to cover the operator's own text and the attachments they chose. A tool
+   result is neither — the <em>model</em> asks for it and SATOM injects it. Without
+   this the model could pull hostnames and addresses out of the device cache
+   and hand them to a third party, walking around the preview the operator
+   approved. Measured on a real exchange: one <code>list_appliances</code> call carried
+   twelve internal identifiers that the redaction pass removed.</li>
+<li><strong>A tool result is untrusted input.</strong> It is device data, and a policy or
+   exception name can carry text an attacker chose when they tripped the
+   block being investigated. It gets the same delimiter a pasted attachment
+   gets.</li>
+<li><strong>The loop is capped</strong>, and an oversized result says so in band. A model
+   that keeps re-asking one tool would otherwise turn a single question into
+   unbounded spend on a shared GPU host; a silently clipped list is
+   indistinguishable from a short one, and the model would state a wrong
+   total with confidence.</li>
+<li><strong>Tools are advertised only when they are enabled.</strong> Naming a tool that
+   <code>call_tool</code> would refuse trains the model to emit blocks that go nowhere,
+   and the operator reads a reply citing data the model never received.</li>
+</ol>
+<p>Which tools ran is recorded on the reply itself and shown under it, because
+an operator reading a claim about their fleet needs to know where it came
+from — including tools that <em>failed</em>, which are kept rather than dropped so
+the answer never looks better sourced than it was.</p>
+<h2 id="what-a-call-costs-and-the-ledger">What a call costs, and the ledger</h2>
+<p>Every reply carries its own response time and token count, and every provider
+call — local Ollama included, failures included — writes a row to
+<code>advisor_request_log</code>, readable at <code>/advisor/usage</code>.</p>
+<p>Three details are load-bearing:</p>
+<ul>
+<li><strong>The duration covers the whole exchange</strong>, tool round-trips included,
+  because that whole span is what the operator sat and waited for. Timing
+  only the final leg would report three seconds for a forty-second answer.</li>
+<li><strong>Tokens are <code>NULL</code>, not <code>0</code>, when the provider did not report usage.</strong>
+  Several OpenAI-compatible gateways omit the <code>usage</code> block entirely.
+  Printing a confident "0 tokens" for a real exchange publishes a number the
+  product never measured, and reads as a broken counter rather than a silent
+  provider. The interface says <em>tokens not reported</em>. When rounds disagree —
+  the realistic case behind a gateway — the reported ones are summed and the
+  silent ones contribute nothing.</li>
+<li><strong>A failed call still leaves a row.</strong> A provider timeout that vanishes is
+  the failure nobody finds: the operator sees an error and the ledger shows
+  the call never happened.</li>
+</ul>
+<p>The request log is deliberately a <em>second</em> table alongside the export log
+rather than a widened version of it. The export log answers a compliance
+question — did data leave the LAN? — and every row in it is an export. Fold
+local calls in and a reviewer scanning that table reads LAN-only traffic as
+exports, distinguishable only by a column they must remember to filter on.
+The export log stays the strict subset; the request log is the superset.
+Neither can drift, because both are written from the same measurement.</p>
 <h2 id="the-write-boundary-mode-d">The write boundary (mode D)</h2>
 <p>This is the part that makes the rest of the design safe to relax about, and
 it is a fact about what code exists, not a prompt instruction:</p>

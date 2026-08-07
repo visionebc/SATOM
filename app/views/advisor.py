@@ -15,7 +15,9 @@ from flask_login import login_required, current_user
 
 from ..auth.decorators import require_permission
 from ..models import Permission, Appliance, LuaScript, visible_appliances
-from ..models_advisor import AdvisorConversation, AdvisorProposal
+from ..models_advisor import (
+    AdvisorConversation, AdvisorProposal, AdvisorRequestLog,
+)
 from ..services import advisor as svc
 from ..services.advisor_providers import ProviderError
 
@@ -133,6 +135,39 @@ def attach_exceptions(appliance_id):
 def attach_sot_search():
     q = request.args.get("q", "")
     return jsonify(ok=True, content=svc.tool_sot_search(q))
+
+
+@bp.route("/usage")
+@login_required
+@require_permission('advisor.use')
+def usage():
+    """The request ledger: every provider call, local and external, successes
+    and failures.
+
+    Scoped like the conversations themselves -- an operator sees their own
+    calls; a user administrator sees everyone's. A per-user ledger that
+    silently showed only your own rows to an admin would understate fleet-wide
+    AI spend, which is one of the two questions this page exists to answer.
+    """
+    q = AdvisorRequestLog.query
+    if not current_user.can(Permission.USER_MANAGE):
+        q = q.filter_by(username=current_user.username)
+    rows = q.order_by(AdvisorRequestLog.id.desc()).limit(200).all()
+
+    reported = [r for r in rows if r.total_tokens() is not None]
+    totals = {
+        "calls": len(rows),
+        "failed": sum(1 for r in rows if not r.ok),
+        "external": sum(1 for r in rows if r.external),
+        "tool_calls": sum(r.tool_calls for r in rows),
+        # Averaged over the calls that HAVE a duration, and token totals over
+        # the calls that actually reported usage -- mixing in unreported rows
+        # as zero would drag both averages toward a number nothing measured.
+        "avg_ms": (round(sum(r.duration_ms for r in rows) / len(rows)) if rows else 0),
+        "tokens": sum(r.total_tokens() for r in reported),
+        "tokens_from": len(reported),
+    }
+    return jsonify(ok=True, totals=totals, rows=[r.to_dict() for r in rows])
 
 
 @bp.route("/tools")

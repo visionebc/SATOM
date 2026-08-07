@@ -1219,6 +1219,18 @@ published-content test passed, because the defect lived entirely in presentation
 </ul>
 <p>Rule: an animation may change <em>how</em> content arrives, never <em>whether</em> it does.</p>
 <h3 id="verifying-the-guards-are-armed">Verifying the guards are armed</h3>
+<h3 id="the-advisor-tool-loop-34-34b">The advisor tool loop (34, 34b)</h3>
+<pre><code class="language-sh"># the loop must actually be reachable from the chat path, not just over HTTP
+grep -c 'extract_tool_calls' app/services/advisor.py     # &gt;= 2: parser + caller
+
+# every guard, by mutation -- each of these must turn the suite red
+python3 -m pytest tests/test_advisor.py -q                # baseline: green
+</code></pre>
+<p>Redaction of tool output is the one to check by hand after any change to the
+send path: point a conversation at an external provider, ask a question that
+provokes a tool call, and confirm the request log's <code>redaction_count</code> is
+non-zero. A zero there on an exchange that ran tools means device data
+reached the provider verbatim.</p>
 <h3 id="the-installer-does-not-reload-nginx-it-just-started">The installer does not reload nginx it just started</h3>
 <pre><code>grep -nE '^[[:space:]]*systemctl[[:space:]]+reload[[:space:]]+nginx' \
     installers/install-satom.sh     # must print nothing
@@ -4153,6 +4165,49 @@ can never make the local table on a healthy primary look broken.</p>
 traversing id turned an admin status reader into "read any <code>.json</code> this account
 can read". The check now lives where the path is assembled, not in each caller
 -- validating per caller leaves the next caller to remember.</p>
+<h2 id="34-a-model-that-can-fetch-is-a-model-that-can-exfiltrate">34. A model that can fetch is a model that can exfiltrate</h2>
+<p>The advisor's read-only tools shipped as a set of functions with nothing that
+invoked them: the catalog was reachable over HTTP and <code>call_tool</code> was never
+called from the chat path, so the model could not use a tool no matter what
+it emitted. Wiring the loop is what makes the mode real — and it moves the
+data boundary, because until then everything sent to a provider was chosen by
+a human.</p>
+<p>Once the <em>model</em> can pull data mid-conversation, three properties that used
+to be satisfied by the interface have to be enforced in the loop:</p>
+<ul>
+<li><strong>Redaction follows the data, not the author.</strong> Sanitising the operator's
+  message and their attachments is not sanitising the request when a third
+  path exists that neither of them controls. Tool output is redacted on the
+  same terms before it reaches an external provider.</li>
+<li><strong>Untrusted stays untrusted through indirection.</strong> Device data does not
+  become trustworthy by arriving via a tool call instead of a paste.</li>
+<li><strong>Bounded by construction, not by good behaviour.</strong> Round count and result
+  size are capped in the loop, and truncation is announced in band so a
+  clipped list is not read as a short one.</li>
+</ul>
+<p>And the capability is only advertised when it is switched on. A catalog
+offered to the model while <code>call_tool</code> would refuse it produces replies that
+cite data the model never received — worse than no tools, because the answer
+looks sourced.</p>
+<h2 id="34b-zero-is-a-measurement-silence-is-not">34b. Zero is a measurement; silence is not</h2>
+<p>Response time and token cost are recorded per reply and per call. The rule
+that keeps them honest is that <strong>"the provider did not report this" is stored
+as <code>NULL</code> and never as <code>0</code></strong>. Several OpenAI-compatible gateways omit the
+usage block; coercing that to zero puts a number on the operator's screen
+that nothing measured, and it reads as a broken counter rather than a silent
+provider. The distinction has to hold in both directions — a provider that
+genuinely reports zero must not be laundered into "not reported" — or it is
+decorative.</p>
+<p>Two corollaries:</p>
+<ul>
+<li><strong>Every call is logged, not every export.</strong> The export log answers a
+  compliance question and every row in it is an export; the request log
+  answers a cost question that a LAN-only deployment still has. They are
+  separate tables written from the same measurement, so neither can drift and
+  neither misrepresents the other.</li>
+<li><strong>A failed call leaves a row.</strong> A provider timeout with no trace is the
+  failure nobody finds.</li>
+</ul>
 <h2 id="verifying-the-guards-are-armed_5">Verifying the guards are armed</h2>
 <h3 id="service-control-offering-vs-permitting-and-the-peer-boundary-33-33b">Service control: offering vs permitting, and the peer boundary (33, 33b)</h3>
 <pre><code class="language-bash"># the endpoint gate must NOT consult live state (a lost poll race is a no-op,

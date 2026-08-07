@@ -74,6 +74,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **The publication redaction rule was a roster, not a shape.** It enumerated
+  the appliances that existed the day it was written, so every unit onboarded
+  afterwards silently stopped being redacted — and the leak scanner, which
+  carries its own copy of the same list, could not catch what the redactor had
+  missed. Twelve appliance names were live on the public site. The rule now
+  matches a product prefix followed by digits, so the next device is covered
+  the day it is racked; bare ADOM keys (`fadc`, `faz`) and URL segments like
+  `/fadc/api/` still pass through untouched, because the product has to remain
+  nameable.
+- **A reference-appliance roster was hardcoded in the field-catalog
+  harvester.** `SOURCES` named two boxes of this estate, so a checkout carried
+  someone else's device names and a run elsewhere would have harvested from
+  hosts that do not exist. It reads `SATOM_FIELD_CATALOG_SOURCES` now, with no
+  default and a refusal that names the variable — the same rule the Firecrawl
+  endpoint in that file already followed.
+
 - Dashboard variable values were escaped with `re.escape`, which escapes a
   hyphen as `\-`. RE2 — the engine VictoriaMetrics uses — rejects that as an
   invalid escape and answered **HTTP 422**. Every device and policy name in

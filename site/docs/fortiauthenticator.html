@@ -269,7 +269,7 @@ reasoning as <code>_FAZ_SOT_EXCLUDE</code>.</p>
 sync with unchanged config creates <strong>no new SoT version</strong>.</p>
 <h2 id="7-two-traps-when-registering-an-appliance">7. Two traps when registering an appliance</h2>
 <ol>
-<li><strong><code>verify_ssl</code> must be off.</strong> fac01 presents a self-signed certificate; with
+<li><strong><code>verify_ssl</code> must be off.</strong> {device} presents a self-signed certificate; with
    verification on, <code>CERTIFICATE_VERIFY_FAILED</code> kills every call <em>before it
    authenticates</em>, and the appliance sits at <code>last_status=unknown</code> forever. This
    is the same failure that stalled <code>fadc</code> (2026-07-12) and <code>{device}</code>

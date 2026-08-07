@@ -155,6 +155,23 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><strong>The publication redaction rule was a roster, not a shape.</strong> It enumerated
+  the appliances that existed the day it was written, so every unit onboarded
+  afterwards silently stopped being redacted — and the leak scanner, which
+  carries its own copy of the same list, could not catch what the redactor had
+  missed. Twelve appliance names were live on the public site. The rule now
+  matches a product prefix followed by digits, so the next device is covered
+  the day it is racked; bare ADOM keys (<code>fadc</code>, <code>faz</code>) and URL segments like
+  <code>/fadc/api/</code> still pass through untouched, because the product has to remain
+  nameable.</li>
+<li>
+<p><strong>A reference-appliance roster was hardcoded in the field-catalog
+  harvester.</strong> <code>SOURCES</code> named two boxes of this estate, so a checkout carried
+  someone else's device names and a run elsewhere would have harvested from
+  hosts that do not exist. It reads <code>SATOM_FIELD_CATALOG_SOURCES</code> now, with no
+  default and a refusal that names the variable — the same rule the Firecrawl
+  endpoint in that file already followed.</p>
+</li>
 <li>
 <p>Dashboard variable values were escaped with <code>re.escape</code>, which escapes a
   hyphen as <code>\-</code>. RE2 — the engine VictoriaMetrics uses — rejects that as an

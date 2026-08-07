@@ -9,6 +9,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [1.7.0] - 2026-08-07
 
 ### Added
+- `tests/test_no_pem_literals.py` - no source file may carry a literal PEM
+  private-key header. The publisher scans every blob of the sanitised mirror
+  and refuses to push when it finds one; it cannot tell a test fixture from a
+  real key, and must not learn to, because a scanner that skips headers
+  followed by the word "fake" is one a real key walks past. A fixture that
+  needs PEM-shaped bytes now builds the header at runtime. The rule costs a
+  failing test at commit time instead of an aborted release.
 - **Sealed recovery custody.** `FERNET_KEY` and the internal CA key are carried
   by no automatic copy — git excludes them, the HA datasync carries only
   `data/`, and the backup bundle leaves them out on purpose. The cost was that

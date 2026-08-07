@@ -38,6 +38,8 @@ from ..services import dns_tool as dns_tool_svc
 from ..services import dns_providers
 from ..services import acme_providers
 from ..services import policy_links as policy_links_svc
+from ..services import advisor as ai_advisor
+from ..services.advisor_providers import ProviderError as _AiProviderError
 from ..services import clone_rules as clone_rules_svc
 from ..services import faz_menu
 from ..services import alerts as alerts_svc
@@ -2086,3 +2088,92 @@ def hypervisor_delete(target_id: int):
     db.session.commit()
     log_action('settings.hypervisor.delete', detail='name=%s' % name)
     return jsonify({'ok': True})
+
+
+# ---------------------------------------------------------------------------
+# AI Advisor — provider registry + feature flags. Self-contained JSON API,
+# does not touch the main index() context (see settings/_ai.html).
+# ---------------------------------------------------------------------------
+
+@bp.route("/ai/state")
+@login_required
+@require_permission('advisor.configure')
+def ai_state():
+    return jsonify(
+        ok=True, enabled=ai_advisor.enabled(), tools_on=ai_advisor.tools_enabled(),
+        external_on=ai_advisor.external_allowed(), providers=ai_advisor.list_providers(),
+        default_provider_key=ai_advisor.default_provider_key())
+
+
+@bp.route("/ai/flags", methods=["POST"])
+@login_required
+@require_permission('advisor.configure')
+def ai_flags():
+    body = request.get_json(silent=True) or {}
+    kwargs = {}
+    if "enabled" in body:
+        kwargs["enabled_"] = bool(body["enabled"])
+    if "tools" in body:
+        kwargs["tools"] = bool(body["tools"])
+    if "external" in body:
+        kwargs["external"] = bool(body["external"])
+    ai_advisor.set_flags(**kwargs)
+    return jsonify(ok=True)
+
+
+@bp.route("/ai/provider/save", methods=["POST"])
+@login_required
+@require_permission('advisor.configure')
+def ai_provider_save():
+    body = request.get_json(silent=True) or {}
+    key = (body.get("key") or "").strip()
+    if not key:
+        return jsonify(ok=False, error="a provider key is required"), 400
+    try:
+        ai_advisor.save_provider(
+            key=key, kind=body.get("kind", ""), label=body.get("label", ""),
+            base_url=body.get("base_url", ""), model=body.get("model", ""),
+            api_key=body.get("api_key") or None)
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    return jsonify(ok=True)
+
+
+@bp.route("/ai/provider/<key>/delete", methods=["POST"])
+@login_required
+@require_permission('advisor.configure')
+def ai_provider_delete(key):
+    ai_advisor.delete_provider(key)
+    return jsonify(ok=True)
+
+
+@bp.route("/ai/default", methods=["POST"])
+@login_required
+@require_permission('advisor.configure')
+def ai_default():
+    body = request.get_json(silent=True) or {}
+    store.set_str(ai_advisor.K_DEFAULT_PROVIDER, (body.get("key") or "").strip())
+    return jsonify(ok=True)
+
+
+@bp.route("/ai/test", methods=["POST"])
+@login_required
+@require_permission('advisor.configure')
+def ai_test():
+    """Fire one trivial chat call against the form's current values (which
+    may not be saved yet) so the operator can validate before committing a
+    provider row. Never persisted, never logged to the export log."""
+    from ..services.advisor_providers import send as provider_send
+    body = request.get_json(silent=True) or {}
+    kind = body.get("kind", "")
+    api_key = body.get("api_key") or ""
+    if not api_key and body.get("key"):
+        api_key = ai_advisor._provider_secret(body.get("key"))  # noqa: SLF001 — same-module test helper
+    try:
+        result = provider_send(
+            kind, base_url=body.get("base_url", ""), api_key=api_key,
+            model=body.get("model", ""), system="Reply with exactly one word: ready.",
+            messages=[{"role": "user", "content": "ping"}], timeout=20.0)
+    except _AiProviderError as exc:
+        return jsonify(ok=False, error=str(exc)), 502
+    return jsonify(ok=True, reply=result.text[:200])

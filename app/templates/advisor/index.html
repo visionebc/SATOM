@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+{% block title %}AI Advisor{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-stars me-2 text-accent"></i>AI Advisor</h1>
+    <p class="fw-page-sub">A read-only chat assistant for WAF false-positive triage, Lua drafting, and searching device
+      configuration reports. It never changes SATOM or an appliance directly — a proposed change becomes a draft you
+      review and apply yourself. <a href="{{ docs_url() }}/docs/ai-advisor.html" target="_blank" rel="noopener">How this works</a>.</p>
+  </div>
+  <div class="d-flex gap-2">
+    {% if current_user.can('advisor.configure') %}
+    <a class="btn btn-fw-outline" href="{{ url_for('settings.index') }}#tab-ai"><i class="bi bi-gear me-1"></i>Configure</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if not enabled %}
+<div class="fw-card"><div class="fw-card-body">
+  <span class="fw-badge fw-badge-warning">Disabled</span>
+  AI Advisor is turned off. {% if current_user.can('advisor.configure') %}<a href="{{ url_for('settings.index') }}#tab-ai">Enable it in Settings</a>{% else %}Ask an administrator to enable it in Settings &rarr; AI Advisor.{% endif %}
+</div></div>
+{% elif not providers %}
+<div class="fw-card"><div class="fw-card-body">
+  <span class="fw-badge fw-badge-warning">No provider</span>
+  No AI provider is configured yet. {% if current_user.can('advisor.configure') %}<a href="{{ url_for('settings.index') }}#tab-ai">Add one in Settings</a>{% endif %}
+</div></div>
+{% endif %}
+
+<div class="fw-card" id="adv-root" data-cid="{{ active.id if active else '' }}">
+  <div class="fw-card-body" style="display:grid; grid-template-columns:260px 1fr; gap:16px; min-height:520px;">
+    <div style="border-right:1px solid var(--fw-border); padding-right:14px;">
+      <button type="button" class="btn btn-fw-primary w-100 mb-2" data-act="new-conv"><i class="bi bi-plus-lg me-1"></i>New conversation</button>
+      <div id="adv-conv-list">
+        {% for c in conversations %}
+        <a class="adv-conv-item {{ 'active' if active and active.id == c.id }}" href="{{ url_for('advisor.open_conversation', cid=c.id) }}" data-cid="{{ c.id }}">
+          <div class="fw-semibold" style="font-size:13px">{{ c.title or 'New conversation' }}</div>
+          <div class="text-secondary" style="font-size:11px">{{ c.updated_at.strftime('%Y-%m-%d %H:%M') if c.updated_at }}</div>
+        </a>
+        {% else %}
+        <div class="text-secondary" style="font-size:12px">No conversations yet.</div>
+        {% endfor %}
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; min-height:500px;">
+      <div id="adv-thread" style="flex:1; overflow-y:auto; padding-right:6px;"></div>
+      <div id="adv-proposals"></div>
+      <div style="border-top:1px solid var(--fw-border); padding-top:10px; margin-top:10px;">
+        <div id="adv-attach-preview" class="d-flex flex-wrap gap-2 mb-2"></div>
+        <div class="d-flex gap-2 align-items-start">
+          <div class="dropdown">
+            <button class="btn btn-sm btn-fw-outline dropdown-toggle" type="button" data-bs-toggle="dropdown" title="Attach context">
+              <i class="bi bi-paperclip"></i>
+            </button>
+            <ul class="dropdown-menu" id="adv-attach-menu"></ul>
+          </div>
+          <textarea id="adv-input" class="form-control" rows="2" placeholder="Ask about a WAF block, a Lua script, or search the reports…"></textarea>
+          <button type="button" class="btn btn-fw-primary" id="adv-send" style="white-space:nowrap"><i class="bi bi-send me-1"></i>Send</button>
+        </div>
+        <div class="text-secondary mt-1" style="font-size:11px" id="adv-provider-note"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style nonce="{{ csp_nonce }}">
+.adv-conv-item{display:block;padding:8px 10px;border-radius:8px;text-decoration:none;color:inherit;margin-bottom:4px}
+.adv-conv-item:hover{background:var(--fw-surface-alt)}
+.adv-conv-item.active{background:color-mix(in srgb, var(--fw-accent) 12%, transparent)}
+.adv-msg{margin-bottom:14px;max-width:85%}
+.adv-msg.role-user{margin-left:auto;text-align:right}
+.adv-msg .bubble{display:inline-block;padding:10px 12px;border-radius:10px;font-size:13.5px;white-space:pre-wrap;text-align:left}
+.adv-msg.role-user .bubble{background:var(--fw-accent);color:#fff}
+.adv-msg.role-assistant .bubble{background:var(--fw-surface-alt);border:1px solid var(--fw-border)}
+.adv-msg .meta{font-size:10.5px;color:var(--fw-text-muted);margin-top:2px}
+.adv-attach-chip{background:var(--fw-surface-alt);border:1px solid var(--fw-border);border-radius:16px;padding:3px 10px;font-size:11.5px;display:inline-flex;align-items:center;gap:6px}
+.adv-proposal-card{border:1px solid var(--fw-border);border-radius:10px;padding:10px 12px;margin:8px 0;background:var(--fw-surface)}
+</style>
+
+<script nonce="{{ csp_nonce }}">
+(function(){
+  var root = document.getElementById('adv-root');
+  if (!root) return;
+  var csrf = (document.querySelector('meta[name=csrf-token]')||{}).content || '';
+  var attachments = [];
+  var attachableCache = null;
+
+  function api(url, opts){
+    opts = opts || {};
+    opts.headers = Object.assign({'X-CSRFToken': csrf, 'Content-Type':'application/json'}, opts.headers||{});
+    return fetch(url, opts).then(function(r){ return r.json().then(function(d){ d.__status = r.status; return d; }); });
+  }
+
+  function esc(s){ var d=document.createElement('div'); d.textContent = s==null?'':String(s); return d.innerHTML; }
+
+  function renderThread(data){
+    var thread = document.getElementById('adv-thread');
+    thread.innerHTML = '';
+    (data.messages||[]).forEach(function(m){
+      var div = document.createElement('div');
+      div.className = 'adv-msg role-' + m.role;
+      var bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.textContent = m.content;
+      div.appendChild(bubble);
+      var meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = (m.role === 'user' ? 'You' : 'Advisor') + (m.redacted ? ' · redacted before sending' : '');
+      div.appendChild(meta);
+      thread.appendChild(div);
+    });
+    thread.scrollTop = thread.scrollHeight;
+    renderProposals(data.proposals || []);
+  }
+
+  function renderProposals(props){
+    var box = document.getElementById('adv-proposals');
+    box.innerHTML = '';
+    props.filter(function(p){ return p.status === 'pending'; }).forEach(function(p){
+      var card = document.createElement('div');
+      card.className = 'adv-proposal-card';
+      card.innerHTML =
+        '<div class="d-flex justify-content-between align-items-start">' +
+        '<div><span class="fw-badge fw-badge-secondary">' + esc(p.kind) + '</span> <strong>' + esc(p.title) + '</strong>' +
+        '<div class="text-secondary" style="font-size:12px">' + esc(p.rationale) + '</div></div>' +
+        '<div class="d-flex gap-2">' +
+        '<button type="button" class="btn btn-sm btn-fw-primary" data-act="apply-proposal" data-pid="' + p.id + '">Apply as draft</button>' +
+        '<button type="button" class="btn btn-sm btn-fw-outline" data-act="dismiss-proposal" data-pid="' + p.id + '">Dismiss</button>' +
+        '</div></div>' +
+        '<pre style="font-size:11px;margin-top:8px;white-space:pre-wrap">' + esc(JSON.stringify(p.payload, null, 2)) + '</pre>';
+      box.appendChild(card);
+    });
+  }
+
+  function loadConversation(cid){
+    if (!cid) { renderThread({messages:[], proposals:[]}); return; }
+    api('/advisor/' + cid + '/messages').then(renderThread);
+  }
+
+  function currentCid(){ return root.getAttribute('data-cid') || ''; }
+
+  document.addEventListener('click', function(ev){
+    var t = ev.target.closest('[data-act]');
+    if (!t) return;
+    var act = t.getAttribute('data-act');
+
+    if (act === 'new-conv') {
+      api('/advisor/new', {method:'POST', body: JSON.stringify({})}).then(function(d){
+        if (d.ok) window.location = '/advisor/' + d.id;
+      });
+    }
+
+    if (act === 'apply-proposal' || act === 'dismiss-proposal') {
+      var pid = t.getAttribute('data-pid');
+      var cid = currentCid();
+      var verb = act === 'apply-proposal' ? 'apply' : 'dismiss';
+      api('/advisor/' + cid + '/proposal/' + pid + '/' + verb, {method:'POST', body: JSON.stringify({})}).then(function(d){
+        if (d.ok) { loadConversation(cid); }
+        else { alert(d.error || 'could not ' + verb); }
+      });
+    }
+
+    if (t.matches('.adv-conv-item')) {
+      // let the normal navigation happen (full page load keeps things simple
+      // and matches how the rest of this app links between records)
+    }
+
+    if (t.matches('#adv-attach-menu [data-attach]')) {
+      ev.preventDefault();
+      var kind = t.getAttribute('data-attach');
+      var payload = t.getAttribute('data-payload') || '';
+      if (kind === 'exceptions') {
+        api('/advisor/attach/exceptions/' + payload).then(function(d){
+          addAttachment('exceptions:' + payload, 'Exceptions on appliance ' + payload, JSON.stringify(d.content));
+        });
+      } else if (kind === 'lua') {
+        addAttachment('lua:' + payload, 'Lua script ' + payload, payload);
+      }
+    }
+  });
+
+  function addAttachment(id, label, content){
+    attachments.push({id: id, label: label, content: content});
+    renderAttachChips();
+  }
+
+  function renderAttachChips(){
+    var box = document.getElementById('adv-attach-preview');
+    box.innerHTML = '';
+    attachments.forEach(function(a, i){
+      var chip = document.createElement('span');
+      chip.className = 'adv-attach-chip';
+      chip.innerHTML = '<i class="bi bi-paperclip"></i>' + esc(a.label) +
+        ' <a href="#" data-idx="' + i + '" style="color:inherit">&times;</a>';
+      chip.querySelector('a').addEventListener('click', function(ev){
+        ev.preventDefault();
+        attachments.splice(i, 1);
+        renderAttachChips();
+      });
+      box.appendChild(chip);
+    });
+  }
+
+  function populateAttachMenu(){
+    if (attachableCache) return Promise.resolve(attachableCache);
+    return api('/advisor/attachable').then(function(d){
+      attachableCache = d;
+      var menu = document.getElementById('adv-attach-menu');
+      menu.innerHTML = '';
+      (d.appliances||[]).forEach(function(a){
+        var li = document.createElement('li');
+        li.innerHTML = '<a class="dropdown-item" href="#" data-attach="exceptions" data-payload="' + a.id + '">Exceptions — ' + esc(a.name) + '</a>';
+        menu.appendChild(li);
+      });
+      return d;
+    });
+  }
+  populateAttachMenu();
+
+  function doSend(cid, text){
+    var send = function(cid){
+      var btn = document.getElementById('adv-send');
+      btn.disabled = true;
+      api('/advisor/' + cid + '/send', {method:'POST', body: JSON.stringify({text: text, attachments: attachments})})
+        .then(function(d){
+          btn.disabled = false;
+          if (!d.ok) { alert(d.error || 'send failed'); return; }
+          input.value = '';
+          attachments = [];
+          renderAttachChips();
+          loadConversation(cid);
+        });
+    };
+    if (!cid) {
+      api('/advisor/new', {method:'POST', body: JSON.stringify({})}).then(function(d){
+        if (d.ok) { history.replaceState(null, '', '/advisor/' + d.id); root.setAttribute('data-cid', d.id); send(d.id); }
+      });
+    } else {
+      send(cid);
+    }
+  }
+
+  document.getElementById('adv-send').addEventListener('click', function(){
+    var input = document.getElementById('adv-input');
+    var text = input.value.trim();
+    if (!text && attachments.length === 0) return;
+    var cid = currentCid();
+    var previewOn = cid ? Promise.resolve(cid) : api('/advisor/new', {method:'POST', body: JSON.stringify({})})
+      .then(function(d){ history.replaceState(null, '', '/advisor/' + d.id); root.setAttribute('data-cid', d.id); return d.id; });
+    previewOn.then(function(useCid){
+      api('/advisor/' + useCid + '/preview', {method:'POST', body: JSON.stringify({text: text, attachments: attachments})})
+        .then(function(prev){
+          if (prev.ok && prev.is_external) {
+            var msg = 'This will be sent to an EXTERNAL provider (' + prev.provider_key + ').\n' +
+              (prev.redaction_count > 0 ? (prev.redaction_count + ' internal identifier(s) will be redacted first.\n\n') : 'No known internal identifiers were found to redact.\n\n') +
+              'Outbound text:\n' + prev.outbound_text.slice(0, 600) + (prev.outbound_text.length > 600 ? '\n…(truncated)' : '') +
+              '\n\nSend?';
+            if (!confirm(msg)) return;
+          }
+          doSend(useCid, text);
+        });
+    });
+  });
+
+  document.getElementById('adv-input').addEventListener('keydown', function(ev){
+    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); document.getElementById('adv-send').click(); }
+  });
+
+  loadConversation(currentCid());
+})();
+</script>
+{% endblock %}

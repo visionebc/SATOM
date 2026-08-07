@@ -1,0 +1,15 @@
+{# ============================================================================
+   AI Advisor — ONE definition, five call sites (Global + the four product
+   ADOMs), same pattern as nav_monitoring.html/nav_collection.html: an entry
+   added here appears everywhere in the same commit, never in Global only.
+
+   Gated on the ``advisor.use`` permission (not just login) — a readonly user with
+   no AI access should not see a dead link. Scoping of what the page can SEE
+   (attachable policies, exceptions, Lua scripts) happens inside the advisor
+   views via visible_appliances()/product_scope, exactly like every other
+   multi-product page; nothing extra is needed here.
+   ========================================================================= #}
+{% if current_user.is_authenticated and current_user.can('advisor.use') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'advisor' else '' }}" href="{{ url_for('advisor.index', _adom=product.key) }}">
+  <i class="bi bi-stars fw-nav-icon"></i><span>AI Advisor</span></a>
+{% endif %}

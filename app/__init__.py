@@ -1431,6 +1431,7 @@ def create_app(config_override: object | None = None) -> Flask:
             # code, create_all() never makes the tables, and the feature 500s
             # the first time an operator opens it.
             from . import models_provision  # noqa: F401
+            from . import models_advisor  # noqa: F401
             db.create_all()
             _ensure_columns()
             # After the additive pass: a column that already existed may be
@@ -1567,6 +1568,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.api_v1", "bp"),
         ("app.views.api_tokens", "bp"),
         ("app.views.appids", "bp"),
+        ("app.views.advisor", "bp"),
     ]
 
     # FortiWeb-scoped areas live under the /web ADOM prefix (2026-07-07).

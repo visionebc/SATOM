@@ -305,7 +305,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*94 commands in 33 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*96 commands in 34 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -382,6 +382,7 @@ Active probes that reach out — sockets, database handshakes, compilers, peers.
 | `satom diagnose git` | — | — | Repository integrity, including the root-owned-files trap. |
 | `satom diagnose updates` | — | — | Can this node accept a signed offline package, and is that safe? |
 | `satom diagnose privilege` | — | — | Integrity of the CLI install and the sudo boundary. |
+| `satom diagnose recovery` | — | — | Does anyone hold the two secrets no backup carries? |
 
 ### `execute`
 
@@ -389,6 +390,7 @@ Everything that changes state. **Root required.** Without it each command refuse
 
 | Command | Root | ! | What it does |
 |---|:--:|:--:|---|
+| `satom execute export recovery-key [--out PATH] [--yes]` | yes | ! | Print FERNET_KEY + the internal CA key so a rebuild is possible. |
 | `satom execute restart <service>` | yes | — | Restart a service and VERIFY it actually came back. |
 | `satom execute restart-all` | yes | — | Restart the whole stack in order, then verify /healthz. |
 | `satom execute start <service>` | yes | — | Start a service. |

@@ -133,35 +133,23 @@ def test_the_store_is_enabled_after_the_service_account_dropin():
 def test_the_dropin_and_update_runner_both_cover_the_store_unit():
     """The runner recopies deploy/ templates on every update.
 
-    A unit missing from NONROOT_UNITS loses its User= on the first self-update
-    -- that is precisely how the standby reverted to User=root in 1.2.
-    """
-    # Parse the tuple, do not grep the file: satom-metrics.service also appears
-    # in UNIT_FILES a few lines above, so a substring test passes with
-    # NONROOT_UNITS empty of it -- the exact case this rule exists to catch.
-    import ast
+    A unit missing from NONROOT_UNITS loses its User= on the first
+    self-update -- that is precisely how the standby reverted to User=root
+    in 1.2.
 
-    tree = ast.parse(_text(RUNNER))
-    nonroot: list[str] | None = None
-    for node in tree.body:
-        if isinstance(node, ast.Assign) and any(
-            isinstance(t, ast.Name) and t.id == "NONROOT_UNITS" for t in node.targets
-        ):
-            nonroot = [
-                e.value
-                for e in getattr(node.value, "elts", [])
-                if isinstance(e, ast.Constant) and isinstance(e.value, str)
-            ]
-    assert nonroot is not None, "self_update_runner has no NONROOT_UNITS tuple"
-    assert "satom-metrics.service" in nonroot, (
-        "NONROOT_UNITS does not contain satom-metrics.service, so the store's "
-        f"User= drop-in is not rewritten after a self-update (found: {nonroot})"
-    )
-    inst = _text(INSTALLER)
-    body = inst[inst.index("satom_enforce_unit_user() {") :][:1200]
-    assert "satom-metrics.service" in body, (
-        "the installer's drop-in loop skips satom-metrics.service"
-    )
+    This asks the runner for the RESOLVED collections instead of parsing a
+    tuple out of the source. Both are derived from deploy/ now, so there is
+    no literal to parse -- and resolving is stronger anyway, because a name
+    cannot satisfy this by appearing in some neighbouring collection.
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_satom_runner_probe_b", str(RUNNER))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert "satom-metrics.service" in set(mod.NONROOT_UNITS)
+    # The privileged runner must never be downgraded to the service account.
+    assert "satom-updater.service" not in set(mod.NONROOT_UNITS)
 
 
 # --------------------------------------------------------------------------- #

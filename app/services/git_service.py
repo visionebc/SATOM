@@ -17,15 +17,32 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parent.parent.parent  # app/services → app → root
 
 
-def _git_out(root: Path, *args: str, default: str = "") -> str:
+def _git_try(root: Path, *args: str):
+    """(ok, output). ``ok`` is False when git could not answer at all.
+
+    The distinction this restores: ``_git_out`` collapses "git failed" and
+    "git said nothing" into the same empty string, and every caller below
+    reads that as a *fact about the repository*. A repo git cannot read
+    therefore reported 0 commits ahead, 0 behind and a CLEAN working tree —
+    the exact three answers that mean "nothing to worry about".
+    """
     try:
         r = subprocess.run(
             ["git", "-C", str(root), *args],
             capture_output=True, text=True, timeout=20,
         )
-    except Exception:
-        return default
-    return (r.stdout or "").strip() if r.returncode == 0 else default
+    except Exception:  # noqa: BLE001
+        return False, ""
+    if r.returncode != 0:
+        return False, (r.stderr or "").strip()
+    return True, (r.stdout or "").strip()
+
+
+def _git_out(root: Path, *args: str, default: str = "") -> str:
+    """Display-only convenience. Callers that make a SAFETY decision must use
+    :func:`_git_try` — a default here is indistinguishable from an answer."""
+    ok, out = _git_try(root, *args)
+    return out if ok else default
 
 
 def _run_git(root: Path, args: tuple, lines: list, redact: tuple = ()) -> int:
@@ -92,16 +109,36 @@ def git_info() -> dict:
     branch = out("rev-parse", "--abbrev-ref", "HEAD")
     commit = out("log", "-1", "--format=%h %cs %s")
     commit_iso = out("log", "-1", "--format=%cI", default="")
-    dirty_raw = out("status", "--porcelain", default="")
-    dirty = bool(dirty_raw.strip())
-    ahead_behind = out("rev-list", "--left-right", "--count", "@{upstream}...HEAD", default="")
+    # A repository probe that FAILED must not be reported as a repository that
+    # is clean and in sync. `unknown` is the third state those callers lacked.
+    unknown = False
+    errors = []
+    repo_ok, repo_err = _git_try(root, "rev-parse", "--git-dir")
+    if not repo_ok:
+        unknown = True
+        errors.append("rev-parse --git-dir: %s" % (repo_err or "failed"))
+
+    dirty_ok, dirty_raw = _git_try(root, "status", "--porcelain")
+    if not dirty_ok:
+        unknown = True
+        errors.append("status: %s" % (dirty_raw or "failed"))
+    dirty = bool(dirty_raw.strip()) if dirty_ok else False
+
+    ab_ok, ahead_behind = _git_try(
+        root, "rev-list", "--left-right", "--count", "@{upstream}...HEAD")
     ahead = behind = 0
-    if ahead_behind and "\t" in ahead_behind:
+    if ab_ok and "\t" in ahead_behind:
         b, a = ahead_behind.split("\t", 1)
         try:
             behind, ahead = int(b), int(a)
         except ValueError:
-            pass
+            unknown = True
+            errors.append("rev-list gave an uncountable answer")
+    elif not ab_ok and repo_ok:
+        # No upstream configured is normal on a fresh clone and is NOT
+        # unknown; an unreadable repo already set the flag above.
+        pass
+    ahead_behind = ahead_behind if ab_ok else ""
     recent = []
     log_raw = out("log", "-8", "--format=%h|%cs|%s", default="")
     for line in log_raw.splitlines():
@@ -110,6 +147,8 @@ def git_info() -> dict:
             recent.append({"hash": parts[0], "date": parts[1], "subject": parts[2]})
 
     return {
+        "unknown": unknown,
+        "error": "; ".join(errors),
         "remote": remote or "—",
         "branch": branch,
         "commit": commit,

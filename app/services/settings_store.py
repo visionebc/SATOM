@@ -86,6 +86,44 @@ def get_json(key: str, default: Any) -> Any:
         return default
 
 
+#: Returned by :func:`get_json_checked` when the row EXISTS but cannot be
+#: turned into the expected value. It is deliberately not ``[]``/``{}``/``None``
+#: so a caller cannot use it by accident: any comparison against a real value
+#: is False and any truthiness test on it is True.
+class _Malformed:
+    __slots__ = ()
+
+    def __repr__(self) -> str:      # pragma: no cover - debugging aid
+        return "<MALFORMED setting>"
+
+
+MALFORMED = _Malformed()
+
+
+def get_json_checked(key: str, default: Any, want: type | tuple = ()) -> Any:
+    """:func:`get_json` that does NOT hide a broken row behind the default.
+
+    ``get_json`` answers "unset", "empty" and "unparseable" with the same
+    value. For a *preference* that is fine. For anything a security decision
+    reads it is not: a half-written or hand-edited row then looks exactly like
+    an operator who never configured the feature.
+
+    Returns ``default`` for an absent/blank row, :data:`MALFORMED` when the row
+    is present but is not valid JSON (or, when *want* is given, decodes to the
+    wrong type), and the decoded value otherwise.
+    """
+    raw = AppSetting.get(key)
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        val = json.loads(raw)
+    except (ValueError, TypeError):
+        return MALFORMED
+    if want and not isinstance(val, want):
+        return MALFORMED
+    return val
+
+
 def set_json(key: str, value: Any) -> None:
     AppSetting.set(key, json.dumps(value))
 
@@ -240,9 +278,22 @@ def save_segments(rows: list[dict[str, str]]) -> None:
 
 
 # ---- Access control (IP whitelist + allowed users) ------------------------
+# These two feed ``app.__init__._access_gate``, which treats an EMPTY list as
+# "no restriction configured" — lockout-safe and the shipped default. That
+# makes "empty" the most permissive answer in the app, so it must never be
+# what a broken row decodes to. ``access_config_error()`` is the separate
+# signal the gate uses to refuse service instead of admitting everyone.
+def _access_rows(key: str) -> Any:
+    """Raw list for an access-control key, or :data:`MALFORMED`."""
+    return get_json_checked(key, [], want=list)
+
+
 def ip_whitelist() -> list[dict[str, str]]:
+    rows = _access_rows(K_IP_WHITELIST)
+    if rows is MALFORMED:
+        return []          # never a partial/garbled list — see access_config_error()
     out: list[dict[str, str]] = []
-    for row in get_json(K_IP_WHITELIST, []):
+    for row in rows:
         if isinstance(row, dict) and (row.get("ip") or "").strip():
             out.append({"ip": str(row.get("ip", "")).strip(),
                         "note": str(row.get("note", "") or "").strip()})
@@ -262,7 +313,30 @@ def save_ip_whitelist(rows: list[dict[str, str]]) -> None:
 
 
 def allowed_users() -> list[str]:
-    return [str(u).strip() for u in get_json(K_ALLOWED_USERS, []) if str(u).strip()]
+    rows = _access_rows(K_ALLOWED_USERS)
+    if rows is MALFORMED:
+        # A bare JSON string would otherwise iterate CHARACTER by character and
+        # hand the gate a phantom allowlist of single letters.
+        return []
+    return [str(u).strip() for u in rows if str(u).strip()]
+
+
+def access_config_error() -> str:
+    """``""`` when both access-control settings can be read, else a message
+    naming the key(s) that cannot.
+
+    The gate calls this BEFORE it looks at the contents. Unset and empty are
+    not errors — they are the shipped "no restriction" default and denying on
+    them would lock every operator out of every existing install. An
+    unparseable row is a different fact and gets a different answer.
+    """
+    broken = [k for k in (K_ALLOWED_USERS, K_IP_WHITELIST)
+              if _access_rows(k) is MALFORMED]
+    if not broken:
+        return ""
+    return ("access-control settings are unreadable: %s — the stored value is "
+            "not a JSON list. Fix or clear the row(s) before non-admin access "
+            "can be evaluated." % ", ".join(broken))
 
 
 def save_allowed_users(usernames: list[str]) -> None:

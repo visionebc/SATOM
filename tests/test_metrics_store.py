@@ -350,8 +350,14 @@ def test_metrics_unit_binds_loopback_only():
 
 def test_metrics_unit_is_refreshed_by_updates():
     """A unit absent from UNIT_FILES is a unit that ages behind its own repo."""
-    src = (REPO / "deploy" / "self_update_runner.py").read_text()
-    assert '"satom-metrics.service"' in src
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_satom_runner_probe_a", str(REPO / "deploy" / "self_update_runner.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    # Ask the runner what it covers rather than grepping for a literal: the
+    # list is DERIVED from deploy/ now, which is the fix this guard protects.
+    assert "satom-metrics.service" in set(mod.UNIT_FILES)
 
 
 def test_seed_and_checks_agree_about_metrics_scrape():

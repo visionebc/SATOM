@@ -594,8 +594,8 @@ funciona, calcula sus señales y no avisa a nadie. Hay que armarlo a mano:
 
    | Acción | Cadencia sugerida | Para qué |
    |---|---|---|
-   | `device_sync` | horaria | refresca el SoT de cada appliance en `reports/` |
-   | `device_inspect` | 02:45 | inspección nocturna + publicación del SoT en git |
+   | `device_sync` | horaria | refresca el SoT de cada appliance en `data/reports/` + `data/sot/` |
+   | `device_inspect` | 02:45 | inspección nocturna profunda; su resultado se versiona también en `data/sot/` |
    | `system_backup` | diaria | volcado de la base de datos (bundle) |
    | `git_bundle` | 03:15 | respaldo del repositorio (`git bundle --all`) |
 
@@ -604,10 +604,15 @@ funciona, calcula sus señales y no avisa a nadie. Hay que armarlo a mano:
    instalación.
 3. **Servidor de respaldo externo** — Settings → SoT & Backup. Sin él, todas las
    copias viven dentro del mismo par de nodos.
-4. **Publicación del SoT en git** — comprobar que `satom-git-publish.timer` está
-   `enabled --now` **en los dos nodos**, y `satom-updater.path` también: si el
-   `.path` está parado, las actualizaciones encoladas se quedan en `queued` para
-   siempre.
+4. **Cola de actualizaciones** — comprobar que `satom-updater.path` está armado
+   **en los dos nodos**: si el `.path` está parado, las actualizaciones
+   encoladas se quedan en `queued` para siempre.
+
+   > Aquí había una instrucción para armar el publicador horario del SoT en
+   > git. Se retiró el 2026-08-05 junto con el propio mecanismo: el SoT de
+   > dispositivos vive en `data/sot/`, lo replica `satom-ha-datasync` y viaja
+   > en los bundles de respaldo. Armarlo en un nodo nuevo ponía en verde una
+   > unidad que no publicaba nada.
 
 Cómo verificar que quedaron armadas, comando a comando:
 [`safeguards.md`](safeguards.md) § *Verifying the guards are armed*.

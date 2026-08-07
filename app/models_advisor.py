@@ -67,6 +67,14 @@ class AdvisorMessage(db.Model):
     redacted = db.Column(db.Boolean, nullable=False, default=False)
     redaction_count = db.Column(db.Integer, nullable=False, default=0)
     tool_calls = db.Column(db.Text, nullable=False, default="[]")    # JSON list
+    # Telemetry, assistant rows only. NULLABLE on purpose: NULL means "the
+    # provider did not report this", which is NOT the same claim as 0. Some
+    # OpenAI-COMPATIBLE gateways omit the ``usage`` block entirely, and
+    # rendering a confident "0 tokens" for them would be a measurement the
+    # product never made.
+    duration_ms = db.Column(db.Integer, nullable=True)
+    prompt_tokens = db.Column(db.Integer, nullable=True)
+    completion_tokens = db.Column(db.Integer, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     def attachments_list(self) -> list:
@@ -92,6 +100,12 @@ class AdvisorMessage(db.Model):
             "redacted": bool(self.redacted),
             "redaction_count": self.redaction_count,
             "tool_calls": self.tool_calls_list(),
+            "duration_ms": self.duration_ms,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": (
+                None if self.prompt_tokens is None and self.completion_tokens is None
+                else (self.prompt_tokens or 0) + (self.completion_tokens or 0)),
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -113,6 +127,80 @@ class AdvisorExportLog(db.Model):
     redaction_count = db.Column(db.Integer, nullable=False, default=0)
     summary = db.Column(db.String(300), nullable=False, default="")
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class AdvisorRequestLog(db.Model):
+    """One row for EVERY provider call — local Ollama included, failures
+    included. This is the operations ledger: what was asked, how long it
+    took, what it cost in tokens.
+
+    Deliberately a SECOND table alongside ``AdvisorExportLog`` rather than a
+    widened version of it. The export log answers a compliance question —
+    "did data leave the LAN?" — and every row in it is an export. If local
+    calls were folded in, a reviewer scanning that table would read LAN-only
+    traffic as exports, and the only way to tell them apart would be a column
+    they have to remember to filter on. The export log stays the strict
+    subset; this table is the superset. Neither can drift, because
+    ``send_message`` writes both from the same measurement.
+
+    A FAILED call is a row here too. A provider timeout that leaves no trace
+    is the failure mode this product has been bitten by repeatedly — see
+    ``docs/safeguards.md`` on failures that exit 0.
+    """
+    __tablename__ = "advisor_request_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    conversation_id = db.Column(db.Integer, nullable=True, index=True)
+    message_id = db.Column(db.Integer, nullable=True)   # NULL when the call failed
+    username = db.Column(db.String(64), nullable=False, default="")
+    provider_key = db.Column(db.String(64), nullable=False, default="")
+    provider_kind = db.Column(db.String(32), nullable=False, default="")
+    model = db.Column(db.String(120), nullable=False, default="")
+    destination_host = db.Column(db.String(200), nullable=False, default="")
+    external = db.Column(db.Boolean, nullable=False, default=False, index=True)
+
+    duration_ms = db.Column(db.Integer, nullable=False, default=0)
+    # See AdvisorMessage: NULL means "not reported by the provider", not zero.
+    prompt_tokens = db.Column(db.Integer, nullable=True)
+    completion_tokens = db.Column(db.Integer, nullable=True)
+
+    tool_rounds = db.Column(db.Integer, nullable=False, default=0)
+    tool_calls = db.Column(db.Integer, nullable=False, default=0)
+
+    ok = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    error = db.Column(db.String(400), nullable=False, default="")
+
+    bytes_sent = db.Column(db.Integer, nullable=False, default=0)
+    redaction_count = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    def total_tokens(self):
+        if self.prompt_tokens is None and self.completion_tokens is None:
+            return None
+        return (self.prompt_tokens or 0) + (self.completion_tokens or 0)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "conversation_id": self.conversation_id,
+            "username": self.username,
+            "provider_key": self.provider_key,
+            "provider_kind": self.provider_kind,
+            "model": self.model,
+            "destination_host": self.destination_host,
+            "external": bool(self.external),
+            "duration_ms": self.duration_ms,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.total_tokens(),
+            "tool_rounds": self.tool_rounds,
+            "tool_calls": self.tool_calls,
+            "ok": bool(self.ok),
+            "error": self.error,
+            "bytes_sent": self.bytes_sent,
+            "redaction_count": self.redaction_count,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 class AdvisorProposal(db.Model):

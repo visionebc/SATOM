@@ -8,6 +8,35 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **The AI Advisor's read-only tools are now actually reachable by the
+  model.** They shipped as a set of functions with nothing that invoked
+  them: the catalog was served over HTTP and `call_tool` was never called
+  from the chat path, so the model could not use a tool whatever it emitted.
+  The chat now runs a bounded tool loop, and the catalog grows from three
+  entries to eight — `list_appliances` (which every other tool depends on,
+  because they all take an `appliance_id` the model had no way to learn),
+  `list_server_policies`, `device_health`, `list_probes` and
+  `recent_config_changes`, alongside the existing SoT, exception and Lua
+  lookups. All read from the database and the harvest cache, so an answer
+  still arrives with the appliance powered off.
+- **Tool output is redacted before it can leave the LAN.** Redaction
+  previously covered the operator's message and the attachments they chose.
+  A tool result is neither — the model asks for it and SATOM injects it — so
+  the model could have pulled hostnames and addresses from the device cache
+  and handed them to an external provider, around the preview the operator
+  approved. Tool results are also wrapped as untrusted input, the loop is
+  capped, oversized results announce their truncation in band, and tools are
+  advertised to the model only while they are switched on.
+- **Response time and token cost, per reply and in a ledger.** Every reply
+  shows how long it took and what it cost; every provider call — local
+  Ollama included, failures included — writes a row to the new
+  `advisor_request_log`, readable at `/advisor/usage`. The duration spans
+  the whole exchange including tool round-trips, which is what the operator
+  waited for. Unreported usage is stored as `NULL` and shown as *tokens not
+  reported*, never as `0`: several OpenAI-compatible gateways omit the usage
+  block, and a confident zero would be a number the product never measured.
+  A failed call still leaves a row, so a provider timeout cannot vanish.
+
 - **Every node re-asserts its own metrics store on every code update.**
   The store binary and its data directory live outside the app tree by
   design — the data-sync replicates `data/` with `rsync --delete` and a

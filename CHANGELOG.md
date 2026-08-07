@@ -6,6 +6,30 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The sealed recovery envelope was unreachable by every mechanism that
+  carries it.** `satom execute seal recovery` runs as root and wrote
+  `data/recovery/` as `root:root`, while the HA datasync and the backup
+  writer both read as the service account: the envelope existed, was
+  cryptographically sound, and reached neither the peer nor any bundle —
+  and `diagnose recovery` reported the durability problem solved. Sealing
+  now hands the envelope to the tree owner (derived from the app root,
+  never a hardcoded account name) before publishing it, and reachability
+  is reported as its own fact. An unreachable envelope is a **critical**
+  finding, deliberately worse than an honest "not sealed".
+- **`diagnose recovery` could never report ok on a correctly sealed node.**
+  A live, reachable, current seal now satisfies the "never exported"
+  finding for the kind it covers — a stale, unreachable, or unreadable
+  seal does not, and an unevaluable one stays noisy. The `sealed envelope`
+  row is printed next to the `exported` rows so a quiet check is not an
+  unexplained one.
+- **Two CLI commands crashed formatting their own success.**
+  `Result.rows()` takes the heading first; `seal recovery` wrote the
+  envelope and then printed `[FAIL]`, and the same unexploded bug sat in
+  `reset theme` — the anti-lockout command. A guard now walks the AST of
+  every CLI module rather than the two known call sites.
+
 ## [1.7.0] - 2026-08-07
 
 ### Added

@@ -236,18 +236,52 @@ def compare_manifest(text: str) -> list:
 # diagnose
 # --------------------------------------------------------------------------
 
+def _sealed_kinds() -> set:
+    """Kinds a sealed envelope actually carries off this node.
+
+    Escrow ('the operator printed it and filed it somewhere') and sealing
+    ('an encrypted envelope rides the datasync and every bundle') answer the
+    SAME question -- does a copy of this material survive losing the disk --
+    and sealing answers it better, because it does not depend on the
+    operator's filing.
+
+    So a kind under a live seal must stop producing the escrow finding.
+    ``diagnose recovery`` grades ANY finding as at-least-warn, so leaving it
+    would mean a correctly configured node can never report ok, and a check
+    that always complains is one operators learn to skip. This repo has had
+    to unlearn that three times.
+
+    Three conditions, all required, none of which the escrow path can fake:
+    the envelope parses, the copy mechanisms can READ it (a root-owned
+    envelope is carried by nothing), and its fingerprint is the key this node
+    actually uses (a stale envelope opens a different installation).
+    """
+    try:
+        from . import recovery_seal            # local: recovery_seal imports us
+        st = recovery_seal.seal_state()
+    except Exception:                          # noqa: BLE001
+        return set()                           # cannot tell -> stay noisy
+    if not st.get("sealed") or not st.get("reachable"):
+        return set()
+    stale = set(st.get("stale") or [])
+    live = current_fingerprints()
+    return {k for k, fp in (st.get("fingerprints") or {}).items()
+            if k not in stale and fp and fp == live.get(k)}
+
+
 def check() -> list:
     """Findings about recovery custody, worst first."""
     findings = []
     state = escrow_state()
     live = current_fingerprints()
+    sealed = _sealed_kinds()
 
     if not live.get(FERNET):
         findings.append({"kind": FERNET, "severity": "critical",
                          "detail": "no FERNET_KEY in this process"})
     else:
         rec = state.get(FERNET)
-        if not rec:
+        if not rec and FERNET not in sealed:
             findings.append({
                 "kind": FERNET, "severity": "warning",
                 "detail": ("FERNET_KEY (%s) has never been exported. It is in "
@@ -255,7 +289,7 @@ def check() -> list:
                            "disk makes every bundle's encrypted columns "
                            "unreadable. Run: satom execute export "
                            "recovery-key" % live[FERNET])})
-        elif rec.get("fingerprint") and rec["fingerprint"] != live[FERNET]:
+        elif rec and rec.get("fingerprint") and rec["fingerprint"] != live[FERNET]:
             findings.append({
                 "kind": FERNET, "severity": "warning",
                 "detail": ("the exported FERNET_KEY (%s) is not the one in use "
@@ -265,7 +299,7 @@ def check() -> list:
 
     if holds_ca_key():
         rec = state.get(CA)
-        if not rec:
+        if not rec and CA not in sealed:
             findings.append({
                 "kind": CA, "severity": "warning",
                 "detail": ("the internal CA key (%s) has never been exported. "
@@ -274,7 +308,7 @@ def check() -> list:
                            "issue and re-establish replication mTLS. Run: "
                            "satom execute export recovery-key"
                            % live.get(CA, "?"))})
-        elif rec.get("fingerprint") and rec["fingerprint"] != live.get(CA):
+        elif rec and rec.get("fingerprint") and rec["fingerprint"] != live.get(CA):
             findings.append({
                 "kind": CA, "severity": "warning",
                 "detail": ("the exported CA key (%s) is not the one on disk "

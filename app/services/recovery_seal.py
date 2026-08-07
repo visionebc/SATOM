@@ -48,6 +48,7 @@ import json
 import logging
 import os
 import secrets
+import stat as _stat
 from datetime import datetime
 from pathlib import Path
 
@@ -107,6 +108,76 @@ def _seal_dir() -> Path:
 
 def seal_path() -> Path:
     return _seal_dir() / "seal.json"
+
+
+def _tree_owner() -> tuple:
+    """(uid, gid) of whoever owns the app tree.
+
+    DERIVED, never named. The service account is ``satom`` on new installs and
+    ``fortinet`` on the nodes that adopted an existing tree, and hardcoding
+    either is how the datasync broke once already. The tree itself is the only
+    statement of the answer that cannot go stale.
+    """
+    st = Path(__file__).resolve().parents[2].stat()
+    return st.st_uid, st.st_gid
+
+
+def _hand_over(path: Path) -> None:
+    """Give *path* to the tree owner when we are root.
+
+    ``satom execute seal recovery`` needs root to read the material, so the
+    envelope is born root-owned -- and EVERY mechanism that carries it off
+    this disk (the HA datasync over SSH, the backup bundle writer) runs as the
+    service account. Without this the envelope is cryptographically perfect
+    and structurally unreachable, which is the failure mode this file's own
+    docstrings are about.
+    """
+    if os.geteuid() != 0:
+        return                                        # already the right user
+    uid, gid = _tree_owner()
+    try:
+        os.chown(path, uid, gid)
+    except OSError:                                   # pragma: no cover
+        # Losing the handover must not lose a good envelope; seal_state()
+        # reports the unreachability, so this fails loudly one layer up.
+        logger.warning("could not hand %s to uid %d", path, uid)
+
+
+def _readable_by(st, uid: int, gid: int, want: int) -> bool:
+    """Would a process running as (uid, gid) get *want* on this stat?
+
+    ``want`` is the octal permission triad: 4 for a file we must read, 5 for a
+    directory we must read and traverse.
+    """
+    if st.st_uid == uid:
+        return st.st_mode & (want << 6) == (want << 6)
+    if st.st_gid == gid:
+        return st.st_mode & (want << 3) == (want << 3)
+    return st.st_mode & want == want
+
+
+def _reachable() -> tuple:
+    """Can the copy mechanisms actually read the envelope? -> (ok, why_not).
+
+    Asked as a stat comparison rather than by opening the file, so the answer
+    does not depend on WHO is asking. Root opening it successfully is exactly
+    how a root-owned envelope reported itself as custody.
+    """
+    uid, gid = _tree_owner()
+    for path, want, what in ((_seal_dir(), 0o5, "directory"),
+                             (seal_path(), 0o4, "envelope")):
+        try:
+            st = path.stat()
+        except OSError as exc:
+            return False, "cannot stat the %s: %s" % (what, exc)
+        if not _readable_by(st, uid, gid, want):
+            return False, (
+                "the %s is %s:%s mode %o, which uid %d cannot read -- the HA "
+                "datasync and the backup writer both run as that account, so "
+                "nothing is carrying this envelope off the node"
+                % (what, st.st_uid, st.st_gid,
+                   _stat.S_IMODE(st.st_mode), uid))
+    return True, ""
 
 
 # ---------------------------------------------------------------------------
@@ -181,9 +252,14 @@ def seal(passphrase: str, by: str = "", kinds=recovery.KINDS) -> dict:
         os.chmod(d, 0o700)
     except OSError:                                   # pragma: no cover
         pass
+    _hand_over(d)
     tmp = seal_path().with_suffix(".tmp")
     tmp.write_text(json.dumps(doc, indent=2))
     os.chmod(tmp, 0o600)
+    # Ownership, never a wider mode. Making the envelope group- or
+    # world-readable would buy reachability by handing it to every account on
+    # the box, which is the opposite of what sealing is for.
+    _hand_over(tmp)
     # Replace, never append: two envelopes are two passphrases, and the
     # operator holds one. os.replace is atomic, so a crash mid-write cannot
     # leave a truncated envelope where a working one used to be.
@@ -257,8 +333,12 @@ def seal_state() -> dict:
     must never render as fine, which is the failure this product keeps hitting:
     a probe that cannot answer whose default value reads as healthy.
     """
+    # ``reachable`` means "no reachability problem to report", so an absent
+    # envelope is True: it has a different, larger problem and stacking a
+    # second finding on it would bury the one that matters.
     out = {"sealed": False, "fingerprints": {}, "kinds": [], "stale": [],
-           "at": "", "by": "", "error": "", "path": str(seal_path())}
+           "at": "", "by": "", "error": "", "path": str(seal_path()),
+           "reachable": True, "reach_error": ""}
     try:
         doc = _read()
     except (OSError, ValueError) as exc:
@@ -275,6 +355,9 @@ def seal_state() -> dict:
     out.update(sealed=True, fingerprints=fps,
                kinds=list(doc.get("kinds") or sorted(fps)),
                at=doc.get("at", ""), by=doc.get("by", ""))
+
+    ok, why = _reachable()
+    out["reachable"], out["reach_error"] = ok, why
 
     live = recovery.current_fingerprints()
     # A key present in the envelope but rotated on the node is stale. A key the
@@ -311,6 +394,18 @@ def check() -> list:
                            "satom execute seal recovery"),
             })
         return findings
+
+    if not st["reachable"]:
+        # CRITICAL, not a warning, and deliberately worse than "not sealed at
+        # all": an unreachable envelope makes the no-envelope finding go away,
+        # so the node reports the durability problem as solved while nothing
+        # durable happened. An honest "not sealed" at least sends someone to
+        # fix it.
+        findings.append({
+            "kind": "seal", "severity": "critical",
+            "detail": ("The sealed envelope exists but %s. Re-seal with: "
+                       "satom execute seal recovery" % st["reach_error"]),
+        })
 
     for kind in st["stale"]:
         findings.append({

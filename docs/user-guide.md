@@ -42,6 +42,7 @@
 30. [The endpoint registry & the API explorer](#30-the-endpoint-registry--the-api-explorer)
 31. [Release notes & the SATOM changelog](#31-release-notes--the-satom-changelog)
 32. [Troubleshooting](#32-troubleshooting)
+33. [AI Advisor](#33-ai-advisor)
 
 ---
 

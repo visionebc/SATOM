@@ -6,7 +6,58 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The AI Advisor's replies were saved and never shown.** After Send, the
+  page sat silent and the answer only appeared on a reload — with no cost
+  figures, because those are drawn with the reply. The cause was one
+  identifier: a nested callback assigned to `input`, a variable that belonged
+  to a sibling function's scope. JavaScript resolves that to nothing, so the
+  callback threw on that line and never reached the next one, which was the
+  call that redraws the thread. Every server-side test passed, because the
+  server was right the whole time. Fixed at the root rather than patched: all
+  DOM handles are now declared once at the top of the script and the send path
+  takes what it needs as arguments, so the cross-scope reference is no longer
+  writable. Guards enforce the convention, including one that fails when the
+  script calls a function it never defines.
+
+
+- **`update_status()` built a filesystem path out of an unvalidated URL
+  segment**, so a traversing request id turned an admin-only status reader
+  into "read any `.json` the service account can read". Request ids are
+  minted in one place and always match `[A-Za-z0-9_-]+`; the check now
+  lives where the path is assembled rather than in each caller, because
+  validating per caller leaves the next caller to remember. Found while
+  wiring the peer status poll.
+
 ### Added
+
+- **The chat streams, shows that it is working, and can be stopped.** The
+  reply now appears as it is generated, with an animated indicator, a live
+  elapsed clock, and a chip per tool call while the model is using one. A
+  **Stop** button cancels: aborting the request closes the socket, which closes
+  SATOM's connection to the model, so generation genuinely ends rather than
+  continuing invisibly and billing for it. Whatever was produced is kept,
+  marked as stopped, and written to the ledger as a cancelled call — throwing
+  it away would discard tokens that were really spent and leave the next page
+  load blank. A heartbeat keeps the connection alive through a cold model load
+  (up to ~90 silent seconds on a 32B local model) and is what lets Stop take
+  effect within a couple of seconds instead of at the next token. The response
+  carries `X-Accel-Buffering: no`, because nginx buffers proxied responses by
+  default and this product's vhost is written by the installer rather than
+  carried in git — a directive there would never reach an existing install.
+  The blocking `POST /advisor/<id>/send` is unchanged; both paths run the same
+  engine, so the tool loop, redaction and ledger cannot drift apart.
+- Errors now render in place of the reply instead of an alert box, and the
+  composer keeps what was typed when an external-provider preview is declined.
+
+### Changed
+
+- `deploy/satom.service` raises the gunicorn worker timeout to 600s. It was
+  120s while the provider timeout is 180s — inverted, so a slow model had its
+  worker killed before the provider could report a timeout, and a diagnosable
+  error arrived as an opaque dropped connection. A test now fails if the
+  ordering is ever reversed.
 
 - **The AI Advisor's read-only tools are now actually reachable by the
   model.** They shipped as a set of functions with nothing that invoked
@@ -97,7 +148,6 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   their own endpoint so a dead standby cannot make a healthy primary's card
   look broken. See `docs/safeguards.md` §33b.
 
-### Changed
 
 - **Service buttons are state-aware and colour-coded.** A stopped unit
   offers only Start, a running one only Restart and Stop, and colour
@@ -116,15 +166,6 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   it the tallest thing on the page. Side by side the card is about half as
   tall and neither table wraps.
 
-### Fixed
-
-- **`update_status()` built a filesystem path out of an unvalidated URL
-  segment**, so a traversing request id turned an admin-only status reader
-  into "read any `.json` the service account can read". Request ids are
-  minted in one place and always match `[A-Za-z0-9_-]+`; the check now
-  lives where the path is assembled rather than in each caller, because
-  validating per caller leaves the next caller to remember. Found while
-  wiring the peer status poll.
 
 ## [1.7.1] - 2026-08-07
 

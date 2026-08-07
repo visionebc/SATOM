@@ -3888,6 +3888,56 @@ Two corollaries:
 - **A failed call leaves a row.** A provider timeout with no trace is the
   failure nobody finds.
 
+## 35. A control the operator can see must actually control something
+
+Streaming the advisor's reply exists for the cancel button as much as for the
+typing effect. Aborting the browser request closes the socket, which closes
+SATOM's connection to the model, which ends generation. A Stop that only
+stopped the *waiting* would leave the model running, the tokens billed and the
+reply landing on the next page load — the same class of lie as a progress toast
+offering Stop for work that was never dispatched (§9k). If a control cannot
+reach the thing it names, it should not be drawn.
+
+Three rules hold it up:
+
+* **A cancelled reply is kept.** The partial is persisted with `stopped` set
+  and the call is written to the ledger as a failure with its reason.
+  Discarding it would throw away tokens that were really spent and leave the
+  operator's next page load blank — a silent loss, which this codebase treats
+  as worse than a loud one.
+* **The heartbeat is not decoration.** During a cold model load it is the only
+  traffic on the connection: it keeps a reverse proxy's read timeout from
+  closing a healthy exchange, and it is how the process learns the browser is
+  gone. Without it, Stop cannot be noticed until the next token.
+* **The worker timeout stays above the provider timeout.** Inverted, the worker
+  is killed first and a diagnosable "the provider timed out" becomes an opaque
+  dropped connection.
+
+## 35b. An endpoint test cannot prove a page
+
+The advisor shipped with its API verified and its screen broken. `/send`
+returned the reply correctly the entire time; one undefined identifier in the
+browser threw inside a callback, on the line immediately before the one that
+redraws the thread. Replies were saved and stayed invisible until a reload.
+Every server-side test passed, because every server-side test was right.
+
+So: **UI work is verified in a browser, driven, not rendered.** Loading the
+page proves markup; clicking the button proves behaviour. Where a browser
+cannot be driven in the suite, the guards are structural and enforce a
+convention that makes the mistake unwritable —
+
+* every DOM handle is an `el`-prefixed variable declared once at the top of the
+  script, so a bare `input` / `btn` is a violation by shape rather than by
+  luck;
+* every function the script calls must be defined in the script — the general
+  form of the same bug;
+* the analyser that checks this strips comments and literals in ONE pass. A
+  first version stripped literals then comments, an apostrophe inside a comment
+  opened a string that swallowed thousands of characters, and the script
+  collapsed from 17,950 bytes to 168 — every guard built on it passing
+  vacuously. There is now a tripwire asserting the extractor did not eat the
+  script, because a negative assertion over an empty input always holds.
+
 ## Verifying the guards are armed
 
 ### Service control: offering vs permitting, and the peer boundary (33, 33b)
@@ -4763,6 +4813,29 @@ grep -n 'subprocess.run' app/services/service_control.py    # only: systemctl sh
 pytest tests/test_service_control.py -q
 ```
 
+
+### A control that controls something (35), and a page proven in a browser (35b)
+
+```bash
+# the stream must be incremental and must tell a proxy not to buffer
+curl -sk -N -X POST "https://$NODE/advisor/$CID/send-stream" \
+     -H "X-CSRFToken: $TOK" -H 'Content-Type: application/json' \
+     -H "Referer: https://$NODE/advisor/" -b "session=$SESSION" \
+     -d '{"text":"hello","attachments":[]}' -D- | head -40
+#   expect: Content-Type: text/event-stream, and `event: delta` frames
+#   arriving over time rather than all at once at the end.
+#   X-Accel-Buffering is CONSUMED by nginx, so its absence at the client is
+#   the header working, not missing -- check it on the origin (:8000) instead.
+
+# a stopped reply is kept, and the ledger says so
+psql "$URI" -tAc "select stopped, length(content) from advisor_messages
+                  where role='assistant' order by id desc limit 1"
+psql "$URI" -tAc "select ok, error from advisor_request_log order by id desc limit 1"
+#   expect: stopped = t with a non-zero length, and ok = f / 'stopped by the operator'
+
+# the wiring guards
+pytest tests/test_advisor_stream.py -q
+```
 
 ## Related
 

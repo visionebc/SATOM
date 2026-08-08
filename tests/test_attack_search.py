@@ -174,6 +174,7 @@ def test_every_function_the_panel_calls_is_defined_in_it():
         "JSON", "Object", "Array", "String", "Number", "Boolean", "Math", "Date",
         "parseInt", "parseFloat", "setTimeout", "setInterval", "clearInterval",
         "fetch", "Promise", "requestAnimationFrame", "KeyboardEvent", "Event",
+        "encodeURIComponent", "decodeURIComponent",
     }
     missing = {n for n in called - defined - builtin if n[0].islower()}
     assert not missing, missing
@@ -218,10 +219,44 @@ def test_analysis_reads_the_entry_from_the_device_not_the_request():
     accused."""
     src = _code_only_py(_read(VIEW))
     assert "attack_log.search_by_msg_id(appliance,msg_id)" in _flat(src)
-    body_keys = re.findall(r"body\.get\('([a-z_]+)'\)", src)
-    assert set(body_keys) <= {"appliance_id", "msg_id", "payload", "clone_wpp",
-                              "new_name"}, body_keys
+    body_keys = set(re.findall(r"body\.get\('([a-z_]+)'\)", src))
+    # Control keys only — things that say WHICH entry and WHAT to do with it.
+    assert body_keys <= {
+        "appliance_id", "msg_id", "payload", "clone_wpp", "new_name",
+        "field", "resolve_ptr", "exc_type", "fields", "verdict", "risk",
+        "justification", "target", "apply", "create_container",
+    }, sorted(body_keys)
     assert "row" not in body_keys
+
+
+def test_no_endpoint_takes_a_log_field_value_from_the_browser():
+    """The allowlist above is the shape of the rule; this is the rule.
+
+    Every carve-out path re-reads the entry from the appliance, so no route may
+    take a field of that entry from the request body — a client that supplies
+    the URL, the signature id or the source address is a client authoring the
+    exception SATOM would then attribute to the device's own evidence.
+
+    Stated over the field names rather than over a fixed allowlist because the
+    allowlist grows with every new control key, and the day someone adds
+    ``body.get('http_url')`` it would grow to cover that too.
+    """
+    from app.services import attack_log as al
+    src = _code_only_py(_read(VIEW))
+    body_keys = set(re.findall(r"body\.get\('([a-z_]+)'\)", src))
+    row_fields = {k for k, _ in al.PRIMARY_FIELDS} | {k for k, _ in al.TABLE_COLUMNS}
+    # ``msg_id`` is the exception that proves it: it names WHICH entry to read,
+    # and is validated as digits before it is used as a lookup key.
+    leaked = (body_keys & row_fields) - {"msg_id"}
+    assert leaked == set(), leaked
+
+
+def test_selected_scope_fields_are_names_not_values():
+    """``body['fields']`` carries field NAMES the operator ticked; the values
+    behind them come from the device-read row. Feeding the browser's own values
+    into the payload would reintroduce exactly the hole the re-read closes."""
+    src = _code_only_py(_read(VIEW))
+    assert "attack_carveout.build(row,exc_type,fields)" in _flat(src)
 
 
 def _code_only_py(src: str) -> str:

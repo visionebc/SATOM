@@ -6,6 +6,55 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An exception could be authored on a Web Protection Profile that several
+  Server Policies share, with nothing said about it.** SATOM refused a
+  carve-out on a *template-managed* profile and asked no other question — but a
+  WPP applies its exceptions to every Server Policy that binds it, and FortiWeb
+  records nothing about which policy one was authored for. An ordinary,
+  unlocked profile bound by four sites took the carve-out in silence and
+  applied it to all four. `wpp_scope` now reads the bindings off the device and
+  refuses a shared profile the same way it refuses a template, naming the other
+  policies in the refusal and offering the same guided clone. A policy that
+  already owns its profile outright gets no clone — there is nothing to protect
+  it from. A device that cannot be read answers *unknown*, never *no one*.
+  Enforced hardest at the push, which is where the leak physically happens.
+
+### Added
+
+- **Field-by-field investigation in the attack-entry panel.** Every field now
+  explains what it is, what this value classifies as, and what to check next:
+  address scope (RFC1918 / CGNAT / documentation range / public) with the
+  reminder that a private source means the real client is in X-Forwarded-For,
+  percent-decoded URLs with the decoded form judged rather than the raw one,
+  query parameters broken out, port and method semantics, user-agent
+  classification, signature-class decomposition, and how often the same value
+  appears across the last 100 entries on that appliance. All computed locally —
+  no WHOIS, geolocation or threat-feed lookup, and the panel says so.
+- **Build an exception from the fields you tick, whatever the Advisor
+  concluded.** The Advisor drafts one only for a false positive at acceptable
+  risk, which left no route for the commonest real case: a genuine attack
+  pattern that one known caller must still be allowed to send. Tick the fields
+  the exception must be scoped to, pick the kind, and SATOM assembles a
+  FortiWeb-valid payload from the entry **as the device reported it**. A
+  carve-out that contradicts the Advisor is allowed and requires a written
+  justification, stored with the rule and in the audit trail.
+- **SATOM says which kind of exception the block actually calls for.** A
+  protocol-constraint block is not fixed by a signature exception, and the log
+  row does not say so in those words. The candidate types are ranked for the
+  entry, each with its reason, narrowest first.
+- **Drafts are reviewed as a description, not as JSON.** Where the rule lands
+  (Server Policy → profile → module → type, and which FortiWeb object holds
+  it), how wide it reaches, what stops being inspected and what stays enforced
+  — with the raw payload still one click away for editing. Breadth is computed
+  from the payload, not the type: a per-signature exception with no element to
+  match is reported as wider than its type suggests, because it is.
+- **Insert the exception into the appliance from this page.** Two calls: a
+  preview that returns the exact method, endpoint and body and writes nothing,
+  then the write. The page previously stopped at the draft and sent the
+  operator to another screen to push it.
+
 ## [1.8.0] - 2026-08-07
 
 ### Fixed

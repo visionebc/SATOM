@@ -19,7 +19,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 
 from . import bp
 from ..models import User, Permission
-from ..extensions import db, limiter
+from ..extensions import db, limiter, real_client_ip
 from ..services.audit import log_action
 from ..services import settings_store as store
 from ..services import user_settings_store as user_store
@@ -82,7 +82,7 @@ def login():
         if user and user.locked_until and user.locked_until > now:
             current_app.logger.warning(
                 'SECURITY: LOCKED account login attempt user=%s ip=%s',
-                username, request.remote_addr)
+                username, real_client_ip())
             log_action('login.locked_attempt', target=username)
             flash('Too many failed attempts — account temporarily locked. '
                   'Try again later.', 'danger')
@@ -114,7 +114,7 @@ def login():
                     user.failed_logins = 0
                     current_app.logger.warning(
                         'SECURITY: account LOCKED user=%s ip=%s (%d failures)',
-                        username, request.remote_addr, LOCKOUT_THRESHOLD)
+                        username, real_client_ip(), LOCKOUT_THRESHOLD)
                     log_action('login.lockout', target=username)
                 _commit_quiet()
             flash('Invalid username or password.', 'danger')

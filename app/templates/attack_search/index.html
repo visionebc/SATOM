@@ -2,6 +2,30 @@
 
 {% block title %}Search Attack ID{% endblock %}
 
+{#- The derived Web Protection Profile cell. ONE macro, used by the matches
+    table and the "recent entries" fallback, because the fallback exists to
+    stand in for the table it replaces — two renderings would let it describe
+    the appliance differently from the table it is standing in for.
+    ``shared`` is a warning, not decoration: it is the state that turns saving
+    an exception into cloning a profile and re-binding a Server Policy. -#}
+{% macro wpp_cell(c) -%}
+  {%- set c = c or {} -%}
+  <td style="word-break:break-word;" title="{{ c.detail or '' }}">
+    {%- if c.state == 'shared' %}
+      <span class="fw-badge fw-badge-warning">{{ c.wpp }}</span>
+      <div class="text-muted" style="font-size:11px;">shared with {{ c.shared_with|join(', ') }}</div>
+    {%- elif c.state == 'exclusive' %}
+      <span class="fw-badge fw-badge-success">{{ c.wpp }}</span>
+    {%- elif c.state == 'unknown' %}
+      <span class="fw-badge fw-badge-secondary">unknown</span>
+    {%- elif c.state == 'missing' %}
+      <span class="fw-badge fw-badge-danger">policy not on device</span>
+    {%- else %}
+      <span class="text-muted">—</span>
+    {%- endif %}
+  </td>
+{%- endmacro %}
+
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
   <a href="/">Home</a>
@@ -30,7 +54,15 @@
 
 <div class="fw-card mb-3">
   <div class="fw-card-body">
-    <form method="get" action="{{ url_for('attack_search.index') }}" class="row g-2 align-items-end">
+    {# Aligned from the TOP, not the bottom. `align-items-end` pinned each
+       column's LAST element to a common baseline, and the Attack ID column ends
+       in a help line the other two do not have — so its input sat one line
+       higher than the appliance picker while its label sat one line higher than
+       "Appliance". Aligning the tops lines up both labels and both controls,
+       and lets the help text hang below where it belongs. The button carries a
+       blank label of its own so it lands on the control row rather than the
+       label row (only where the row is actually horizontal). #}
+    <form method="get" action="{{ url_for('attack_search.index') }}" class="row g-2 align-items-start">
       <div class="col-lg-7">
         <label class="form-label" for="q">Attack ID</label>
         <input type="text" class="form-control" id="q" name="q" value="{{ query }}"
@@ -49,6 +81,7 @@
         </select>
       </div>
       <div class="col-lg-2">
+        <span class="form-label d-none d-lg-block" aria-hidden="true">&nbsp;</span>
         <button type="submit" class="btn btn-primary w-100">
           <i class="bi bi-search me-1"></i>Search
         </button>
@@ -68,11 +101,11 @@
   <div class="fw-card mb-3">
     <div class="fw-card-body">
       <span class="fw-badge fw-badge-info">MSG ID {{ ref.msg_id }}</span>
-      <span class="fw-badge fw-badge-neutral">{{ appliance.name }}</span>
+      <span class="fw-badge fw-badge-secondary">{{ appliance.name }}</span>
       {% if rows %}
-        <span class="fw-badge fw-badge-ok">{{ rows|length }} match{{ '' if rows|length == 1 else 'es' }}</span>
+        <span class="fw-badge fw-badge-success">{{ rows|length }} match{{ '' if rows|length == 1 else 'es' }}</span>
       {% else %}
-        <span class="fw-badge fw-badge-warn">no match</span>
+        <span class="fw-badge fw-badge-warning">no match</span>
       {% endif %}
     </div>
   </div>
@@ -94,18 +127,27 @@
       </thead>
       <tbody>
         {% for row in rows %}
-        <tr class="atk-row" data-atk-index="{{ loop.index0 }}" style="cursor:pointer;">
+        {% set ridx = loop.index0 %}
+        <tr class="atk-row" data-atk-index="{{ ridx }}" style="cursor:pointer;">
           {% for key, label in table_columns %}
             {% set val = row.get(key) %}
-            {% if key == 'action' %}
-              <td><span class="fw-badge {{ 'fw-badge-crit' if 'Deny' in (val or '') else 'fw-badge-warn' }}">{{ val or '—' }}</span></td>
+            {% if key == wpp_field %}
+              {# Derived: the value is not in the row, it is the binding the
+                 appliance holds right now. #}
+              {{ wpp_cell(row_wpps[ridx]) }}
+            {% elif key == 'action' %}
+              <td><span class="fw-badge {{ 'fw-badge-danger' if 'Deny' in (val or '') else 'fw-badge-warning' }}">{{ val or '—' }}</span></td>
+            {% elif key == time_field %}
+              {# The raw field is Unix epoch seconds. Rendered as-is it was a
+                 ten-digit number in a column headed "Date/Time". #}
+              <td style="white-space:nowrap;">{{ row_times[ridx] or '—' }}</td>
             {% else %}
               <td style="word-break:break-word;">{{ val if val not in (None, '', 'N/A') else '—' }}</td>
             {% endif %}
           {% endfor %}
           <td class="text-end">
             <button type="button" class="btn btn-sm btn-fw-outline atk-open"
-                    data-atk-index="{{ loop.index0 }}" title="Open details">
+                    data-atk-index="{{ ridx }}" title="Open details">
               <i class="bi bi-box-arrow-in-right"></i>
             </button>
           </td>
@@ -131,11 +173,16 @@
         <thead><tr>{% for key, label in table_columns %}<th>{{ label }}</th>{% endfor %}</tr></thead>
         <tbody>
           {% for r in recent %}
+          {% set ridx = loop.index0 %}
           <tr>
             {% for key, label in table_columns %}
               {% set val = r.get(key) %}
-              {% if key == 'msg_id' %}
+              {% if key == wpp_field %}
+                {{ wpp_cell(recent_wpps[ridx]) }}
+              {% elif key == 'msg_id' %}
                 <td><a href="{{ url_for('attack_search.index', q=val, appliance_id=appliance.id) }}">{{ val }}</a></td>
+              {% elif key == time_field %}
+                <td style="white-space:nowrap;">{{ recent_times[ridx] or '—' }}</td>
               {% else %}
                 <td style="word-break:break-word;">{{ val if val not in (None, '', 'N/A') else '—' }}</td>
               {% endif %}
@@ -167,10 +214,13 @@
 <script type="application/json" id="atk-page-data">{{ {
   'appliance_id': appliance.id,
   'appliance_name': appliance.name,
+  'row_times': row_times,
+  'time_field': time_field,
   'ai_enabled': ai_enabled,
   'primary_fields': primary_fields,
   'analyze_url': url_for('attack_search.analyze'),
   'field_intel_url': url_for('attack_search.field_intel'),
+  'ask_field_url': url_for('attack_search.ask_field'),
   'options_url': url_for('attack_search.carveout_options'),
   'build_url': url_for('attack_search.build_carveout'),
   'carveout_url': url_for('attack_search.save_carveout'),

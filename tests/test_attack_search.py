@@ -26,6 +26,7 @@ import re
 import pytest
 
 from conftest import admin_user_id, login
+from _js_guard import undefined_calls
 from test_advisor_stream import _code_only
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -164,19 +165,13 @@ def test_js_is_not_vacuously_empty():
 def test_every_function_the_panel_calls_is_defined_in_it():
     """The general shape of the bug that shipped the chat broken: a call
     resolving to nothing, killing the callback at that line and taking the rest
-    of the flow with it."""
-    code = _code_only(_read(JS))
-    defined = set(re.findall(r"function\s+([A-Za-z_$][\w$]*)\s*\(", code))
-    defined |= set(re.findall(r"(?:var|let|const)\s+([A-Za-z_$][\w$]*)\s*=\s*function", code))
-    called = set(re.findall(r"(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(", code))
-    builtin = {
-        "function", "if", "for", "while", "switch", "catch", "return", "typeof",
-        "JSON", "Object", "Array", "String", "Number", "Boolean", "Math", "Date",
-        "parseInt", "parseFloat", "setTimeout", "setInterval", "clearInterval",
-        "fetch", "Promise", "requestAnimationFrame", "KeyboardEvent", "Event",
-        "encodeURIComponent", "decodeURIComponent",
-    }
-    missing = {n for n in called - defined - builtin if n[0].islower()}
+    of the flow with it.
+
+    The checker lives in ``tests/_js_guard.py`` — one implementation, because
+    the two copies this file and ``test_attack_ask_field`` used to carry drifted
+    together out of step with the script and both failed against correct code.
+    """
+    missing = undefined_calls(_code_only(_read(JS)))
     assert not missing, missing
 
 
@@ -225,6 +220,10 @@ def test_analysis_reads_the_entry_from_the_device_not_the_request():
         "appliance_id", "msg_id", "payload", "clone_wpp", "new_name",
         "field", "resolve_ptr", "exc_type", "fields", "verdict", "risk",
         "justification", "target", "apply", "create_container",
+        # /ask-field: the operator's own question and the thread it continues.
+        # Both are control keys — neither is a field OF the entry, which is
+        # what the guard below actually forbids.
+        "question", "conversation_id",
     }, sorted(body_keys)
     assert "row" not in body_keys
 
@@ -436,3 +435,164 @@ def test_analyze_requires_advisor_use():
     src = _read(VIEW)
     m = re.search(r"@bp\.route\('/analyze'.*?\ndef ", src, re.DOTALL)
     assert m and "require_permission('advisor.use')" in m.group(0)
+
+
+# --------------------------------------------------------------------------- #
+#  6. timestamps and form layout                                                #
+# --------------------------------------------------------------------------- #
+def _no_comments_tpl(src: str) -> str:
+    """Template source with Jinja ``{# #}`` and HTML ``<!-- -->`` comments gone.
+
+    Same reason as the two strippers above, for the third language in this
+    feature: the guards below name the very attribute values they forbid, and
+    the template comments that EXPLAIN the fix name them too. A raw grep would
+    match the explanation and report a regression that is not there.
+    """
+    out = re.sub(r"\{#.*?#\}", " ", src, flags=re.S)
+    return re.sub(r"<!--.*?-->", " ", out, flags=re.S)
+
+
+def test_the_template_comment_stripper_is_not_vacuous():
+    """Anti-vacuity tripwire for the stripper the layout guards depend on. Every
+    one of them is a negative assertion, and a negative assertion over an empty
+    string passes while proving nothing."""
+    stripped = _no_comments_tpl(_read(TPL))
+    assert len(stripped) > 3000, len(stripped)
+    assert "align-items" in stripped, "the stripper ate the markup, not just the prose"
+    assert "{# " not in stripped and "-->" not in stripped
+
+
+def test_rel_time_is_epoch_seconds_not_a_date():
+    """The premise the formatter rests on. FortiWeb sends ``rel_time`` as Unix
+    epoch seconds in a STRING; if a firmware ever starts sending a formatted
+    date there, ``local_time`` falls through to the raw value and this guard is
+    the note explaining why the column stopped converting."""
+    from app.services import attack_log
+    assert attack_log.TIME_FIELD == "rel_time"
+    assert attack_log.local_time({"rel_time": "1786181039"}).startswith("2026-08-08")
+
+
+def test_epoch_is_localized_through_the_configured_timezone(app, monkeypatch):
+    """The whole point: the column shows the admin's timezone, not UTC and not
+    the appliance's. ``rel_time`` used to be printed raw — a ten-digit number
+    under a heading that says Date/Time."""
+    from app.services import attack_log, settings_store
+
+    with app.app_context():
+        base = dict(settings_store.general())
+        monkeypatch.setattr(settings_store, "general",
+                            lambda: dict(base, timezone="Europe/Zurich"))
+        assert attack_log.local_time({"rel_time": "1786181039"}) == \
+            "2026-08-08 11:23:59 CEST"
+
+
+def test_the_timezone_is_read_not_hardcoded(app, monkeypatch):
+    """Two different settings must produce two different strings. A formatter
+    that hardcodes one zone passes every single-timezone assertion above."""
+    from app.services import attack_log, settings_store
+
+    with app.app_context():
+        base = dict(settings_store.general())
+        seen = {}
+        for tz in ("UTC", "Europe/Zurich", "America/Mexico_City"):
+            monkeypatch.setattr(settings_store, "general",
+                                lambda tz=tz: dict(base, timezone=tz))
+            seen[tz] = attack_log.local_time({"rel_time": "1786181039"})
+        assert len(set(seen.values())) == 3, seen
+        assert seen["UTC"].startswith("2026-08-08 09:23:59")
+
+
+def test_a_value_that_is_not_an_epoch_is_shown_as_is(app):
+    """Degrade to the device's own answer rather than invent a date for it. A
+    formatter that raises takes the whole result table down with it."""
+    from app.services import attack_log
+
+    with app.app_context():
+        assert attack_log.local_time({"rel_time": "not-a-time"}) == "not-a-time"
+        assert attack_log.local_time({"rel_time": "1786181039553648710"}) == \
+            "1786181039553648710"          # nanoseconds, not seconds
+        assert attack_log.local_time({}) == ""
+        assert attack_log.local_time({"rel_time": "N/A"}) == ""
+
+
+def _epoch_row():
+    return {"msg_id": "000000031305", "policy": "pol-x", "main_type": "Allow Method",
+            "sub_type": "N/A", "src": "192.0.2.1", "dst": "192.0.2.2",
+            "action": "Alert_Deny", "rel_time": "1786181039"}
+
+
+def _appliance(app):
+    from app.extensions import db
+    from app.models import Appliance
+    with app.app_context():
+        a = Appliance(name="fw-tz", host="192.0.2.13", port=443, username="u")
+        a.password = "p"
+        db.session.add(a)
+        db.session.commit()
+        return a.id
+
+
+def test_the_table_never_prints_the_raw_epoch(app, client, monkeypatch):
+    """End-to-end over the rendered page, because the defect lived between a
+    correct service and a correct template: both halves were right and the
+    column still showed a number."""
+    from app.services import attack_log
+
+    aid = _appliance(app)
+    monkeypatch.setattr(attack_log, "search_by_msg_id", lambda ap, m: [_epoch_row()])
+    login(client, admin_user_id(app))
+    html = client.get("/waf/attack-search/?q=000000031305&appliance_id=%d" % aid) \
+                 .get_data(as_text=True)
+    body = re.search(r'id="atk-results">.*?</table>', html, re.S).group(0)
+    assert "1786181039" not in body, "the epoch reached the Date/Time column"
+    assert "2026-08-08" in body
+
+
+def test_the_panel_is_handed_the_same_strings_as_the_table(app, client, monkeypatch):
+    """One localization, two consumers. Formatting again in the browser is how
+    a panel comes to disagree with the row it was opened from."""
+    from app.services import attack_log
+
+    aid = _appliance(app)
+    monkeypatch.setattr(attack_log, "search_by_msg_id", lambda ap, m: [_epoch_row()])
+    login(client, admin_user_id(app))
+    html = client.get("/waf/attack-search/?q=000000031305&appliance_id=%d" % aid) \
+                 .get_data(as_text=True)
+    page = json.loads(re.search(r'id="atk-page-data">(.*?)</script>', html, re.S).group(1))
+    body = re.search(r'id="atk-results">.*?</table>', html, re.S).group(0)
+    assert page["row_times"], "the panel was left to format the epoch itself"
+    assert page["time_field"] == "rel_time"
+    assert page["row_times"][0] in body, "table and panel show different times"
+
+
+def test_the_panel_does_not_localize_in_the_browser():
+    """No second notion of 'what time is it' in JS. The timezone is a server-side
+    setting; a browser-side conversion would follow the OPERATOR's machine and
+    quietly disagree with every other timestamp in the product."""
+    code = _code_only(_read(JS))
+    for banned in ("toLocaleString", "toLocaleDateString", "toLocaleTimeString",
+                   "Intl.DateTimeFormat", "getTimezoneOffset"):
+        assert banned not in code, banned
+
+
+def test_the_time_column_name_has_one_definition():
+    """``attack_log.TIME_FIELD`` decides which column is the timestamp. A second
+    copy of the literal in the template or the panel is a rename waiting to
+    half-apply."""
+    assert "rel_time" not in _no_comments_tpl(_read(TPL))
+    assert "rel_time" not in _no_comments_js(_read(JS))
+
+
+def test_the_search_form_aligns_from_the_top():
+    """Labels and controls on one line. ``align-items-end`` pinned each column's
+    last element to a shared baseline, and only the Attack ID column ends in a
+    help line — so its label and its input both sat a line above the appliance
+    picker's."""
+    tpl = _no_comments_tpl(_read(TPL))
+    form = re.search(r"<form method=\"get\".*?</form>", tpl, re.S).group(0)
+    assert "align-items-start" in form
+    assert "align-items-end" not in form
+    # The submit column needs its own blank label or it rides up to the label row.
+    submit_col = form[form.index('<button type="submit"') - 400:]
+    assert "form-label" in submit_col[:400], (
+        "the Search button has no label-height spacer above it")

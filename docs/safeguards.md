@@ -4947,6 +4947,67 @@ a client IP cannot mean "both": the highest-precision one is used and the rest a
 reported as needing their own entry. Silently keeping the first selection would
 produce a carve-out narrower than the operator believes it to be.
 
+## 36f. A carve-out that cannot do its job is a lie in the config
+
+An Allow Method exception whose `allow-request` is empty is **stored by FortiWeb
+and applies to nothing**: the request stays blocked, the config shows an
+exception, and the two never meet. That is worse than a rejection, because a
+rejection is visible. `allow-request` is a required field for the type wherever
+it can be authored — the carve-out builder, the AI path and the manual
+Exceptions form all run the same validator.
+
+The method is the **subject** of that carve-out, not a narrowing of it, so it is
+taken from the entry every time: the appliance already recorded which method it
+rejected, and asking the operator to re-supply a fact SATOM is holding is how a
+correct selection turns into an error message. `SUBJECTS` in
+`attack_carveout` is that distinction, and the panel states it (*taken from the
+entry*) — silence there reads as *SATOM ignored the method*.
+
+## 36g. A required scope is declared as required, and a missing key names the box
+
+FortiWeb keys Allow Method and HTTP-constraint exceptions on a URL pattern.
+Offering that URL under *tick any of these to narrow it* and then failing with
+`'request-file' is required for this carve-out type` is a device field name the
+operator never typed, on a screen that told them the field was optional. Scopers
+carry `required`, the panel says *not optional* and badges them, and
+`_explain_errors` rewrites each missing key as the box that supplies it.
+
+**The remedy is derived, never tabulated.** It is found by re-running the real
+assembly (`_assemble`) with one more box ticked and seeing whether the missing
+key fills. A hand-written device-key → log-field map would agree with the
+assembler on the day it was written and drift at the first schema change — and
+the copy that drifts is the one printed in the error. Keys no tick can supply
+(`allow-request` on an entry with no method) say so instead of sending the
+operator round a loop. Remedies are grouped: one URL fills two device keys, and
+printing the same instruction twice reads as two problems.
+
+## 36h. A badge that names a colour nobody defined is a severity nobody can read
+
+`.fw-badge` on its own sets no background and no colour. A modifier that does
+not exist in `fortiweb.css` is therefore not a graceful fallback — it renders
+`true-attack` and `false-positive` identically. The Attack ID pages shipped
+asking for `fw-badge-ok` / `-warn` / `-crit` / `-neutral`, none of which exist;
+the calibrated set is `-success` / `-warning` / `-danger` / `-info` /
+`-primary` / `-secondary` (§9m). The guard is **repo-wide**: every
+`fw-badge-*` occurrence in any template or JS file must be defined in the
+stylesheet. It is repo-wide because the whole product had exactly one offender
+and it was the newest page — a guard scoped to that page would not have caught
+the next one.
+
+## 36i. The panel binds its delegated handlers where the element is created
+
+`open()` refills `.atk-body` but never replaces it. Wiring delegated listeners
+from the per-open path therefore *accumulates* them, and an even number of
+handlers toggles a row open and shut inside one click — indistinguishable from
+no handler at all. "Explain this field" worked on the first entry opened, was
+dead on the second and worked on the third; every endpoint test passed
+throughout, because the defect lived entirely in the browser (§35b).
+
+The guard is the general form, not the instance: the per-open wiring function
+may not bind anything to the persistent body. The click reads `ROWS[current]`
+at event time rather than capturing a row, which is what makes a single binding
+correct.
+
 ### Verifying these guards are armed
 
 ```bash
@@ -4986,6 +5047,90 @@ runuser -u satom -- venv/bin/python -m pytest \
 
 # 4. the guards bite: 18/18
 /opt/satom/venv/bin/python /tmp/mutate.py | tail -3
+
+# 5. an Allow Method carve-out carries the method, and cannot be saved without
+#    one  (expect: get / then a complaint naming allow-request)
+runuser -u satom -- venv/bin/python -c "
+from app import create_app
+from app.services import attack_carveout as cv
+app=create_app()
+with app.app_context():
+    R={'http_url':'/','http_host':'192.0.2.92','http_method':'GET'}
+    print(cv.build(R,'allow_method_exception_item',['http_url'])['payload'])
+    print(cv.build(dict(R,http_method=''),'allow_method_exception_item',['http_url'])['errors'])
+    print(cv.build(R,'allow_method_exception_item',[])['errors'])"
+
+# 6. no badge class is used that the stylesheet does not define
+#    (expect one line: {})
+runuser -u satom -- venv/bin/python -c "
+import re,glob
+d=set(re.findall(r'\.(fw-badge-[a-z0-9-]+)',open('app/static/css/fortiweb.css').read()))
+u={}
+for p in glob.glob('app/templates/**/*.html',recursive=True)+glob.glob('app/static/js/**/*.js',recursive=True):
+    for n in re.findall(r'fw-badge-[a-z0-9-]+',open(p,encoding='utf-8').read()): u.setdefault(n,set()).add(p)
+print({k:sorted(v) for k,v in u.items() if k not in d})"
+
+# 7. the per-open wiring binds nothing to the body that outlives it
+#    (expect: 0 in wireBody, >0 in ensureChrome)
+runuser -u satom -- venv/bin/python -m pytest tests/test_attack_allow_method.py -q
+```
+
+## 36j. Asking the AI about a field cannot become authoring an exception
+
+`/waf/attack-search/ask-field` answers questions. It must never become a
+second, quieter door into the carve-out store, which has a scope gate, a
+justification box, an audit record and a two-step device write in front of it.
+
+Three things hold that line, and losing any one of them opens the door:
+
+1. the prompt tells the model not to emit a proposal block;
+2. the response carries no proposal, so no Accept button can exist;
+3. `_quarantine_stray_proposals` dismisses anything the model drafted anyway.
+
+(3) is the one that is easy to think redundant. The chat engine turns a
+well-formed proposal block into a `pending` row wherever it appears, and a
+pending row this page never renders is *worse* than a visible one: it is
+reachable from the Advisor page, approved by nobody, and indistinguishable
+from a draft an operator asked for. It is dismissed, not deleted — the model
+did emit it, and that is a fact worth keeping.
+
+This is also why the ask thread is titled *"… — field questions"* and is never
+the conversation `analyze` opened. If the two shared a thread the sweep in (3)
+would dismiss the carve-out `analyze` drafted, and the operator's Accept button
+would go dead for no visible reason.
+
+```bash
+# no pending proposal may survive in an ask thread
+psql -Atc "select count(*) from advisor_proposals p
+           join advisor_conversations c on c.id=p.conversation_id
+           where c.title like '%field questions%' and p.status='pending'"   # 0
+```
+
+## 36k. One cost chip, and a missing token count is not zero
+
+Every analysis the panel renders — the AI judgement, the local field
+explanation and each answer in a field thread — is stamped by the SAME
+`costChip()`: an icon, an elapsed time and a token count. Not three copies.
+This page already grew two clock implementations before anyone noticed; two
+cost formatters would diverge on the first change to either, and then two
+places on one screen would disagree about what a missing token count means.
+
+The distinction that must survive:
+
+* **`no tokens`** — the local path. It really did spend none.
+* **`tokens not reported`** — the provider omitted the usage block. A
+  confident `0 tokens` there is a measurement the product never made.
+* A **real** zero from a provider that did report is printed as `0 tokens`,
+  which is why the check is `!= null` and not a truthiness test.
+
+Failures are stamped too. A refused or dropped exchange still shows its elapsed
+time; the tokens come back unreported because the chunk carrying them never
+arrived, and that is the honest answer rather than zero.
+
+```bash
+# exactly one place formats an elapsed-seconds cost string
+grep -c "toFixed(1) + ' s'" app/static/js/attack_drawer.js      # 1
+grep -c "tokens not reported" app/static/js/attack_drawer.js    # 1
 ```
 
 ## Related
@@ -5066,3 +5211,260 @@ curl -sk -o /dev/null -w '%{http_code}\n' -H 'X-ADOM: fortiweb' https://$NODE/mo
 # 4. every Administrator group offers Collection -- 4 means all of them
 grep -c 'partials/nav_collection.html' app/templates/base.html
 ```
+
+## 36l. The click is the question, and it is asked exactly once
+
+**Rule.** Opening the AI thread on a field sends the exchange. The browser
+sends no question text of its own; the server's `ASK_DEFAULT_QUESTION` is what
+reaches the provider and what the audit row records. The automatic exchange
+fires at most once per field per opened entry, whether it produced an answer or
+an error, and the state flag is claimed *before* the request goes out.
+
+**Why.** Three separate failures hide here and none of them is visible in a
+screenshot:
+
+* A browser-side default writes a question into `audit_logs` that the provider
+  never received. The two copies agree on the day they are written.
+* Claiming the flag after the response returns lets two clicks landing while
+  the first request is in flight both pass the guard — the same question, paid
+  for twice.
+* An automatic retry after a failure re-bills the provider every time the
+  operator collapses and reopens the row, to reproduce an error already on
+  screen.
+
+**How it is held.** `openAsk` calls `sendAsk` and returns; `askFor` seeds
+`asked: false`; `sendAsk` is the *only* call site of `PAGE.ask_field_url`, so
+the automatic answer cannot arrive by a path that skips the clock, the token
+count and the `items` list. Six guards in `tests/test_attack_ask_field.py`
+(§8) hold each clause, and the button and placeholder below flip to *Reply*
+once an answer exists — identical wording before and after would tell the
+operator the panel is still waiting for a question it has already answered.
+
+**Checking it.** Mutate any one clause — drop the `sendAsk` call, move
+`asked = true` after it, replace `!st.asked` with `true`, drop `asked: false`
+from the seed, add a question literal to `openAsk`, add a second call site,
+freeze `replying` to false — and exactly one guard fails. Seven mutations,
+seven kills.
+
+## 36m. A required scope is ticked by the panel, and the panel says what is ticked
+
+§36g made the requirement *legible*: the scope list marks the field FortiWeb
+keys the exception on, and a missing device key is rewritten as the box that
+supplies it. That is the whole distance the page could travel while still
+refusing — and an operator who did not find a 14-pixel checkbox among
+twenty-two rows in the card above got the same refusal every time, in schema
+keys they never typed.
+
+**The rule.** When a carve-out type declares a required scoper and the entry
+carries a value for it, the panel ticks it.
+
+**Why this default and not the reverse.** Every scoper NARROWS: it can only
+reduce what the exception matches. Pre-ticking one therefore cannot widen a
+carve-out, which is the only property that makes doing it unasked defensible.
+The mirror image — a default that pre-filled something *widening* — would need
+the operator's hand and no argument here would supply it.
+
+**Three clauses, each load-bearing.**
+
+* **The tick is made in the table as well as in `sel`.** `sel` is what gets
+  posted; the checkbox is what the operator reads before authorising a rule.
+  A page that posts a field it draws as unticked has told them something untrue
+  about a change they are about to approve.
+* **The hint reports what IS ticked**, read from `sel` at render time — not
+  from "the builder ticked it". Those two agree until something goes wrong,
+  which is exactly when someone is reading the sentence. Unticking flips the
+  claim back to the remedy in the same gesture.
+* **A required field the entry cannot fill is reported as absent**, never as
+  something to tick. No value means no row in the table above, so "tick it"
+  sends the operator hunting for a checkbox that was never drawn — the same
+  dead end, entered from the other side.
+
+**Ordering, not taste.** The redraw goes through the one handler that owns the
+write to `sel` (`onPick`, reset per open). A `change` listener registered by
+the builder would sit on a descendant of the body and therefore run BEFORE the
+writer — rendering the selection as it stood one click ago — and would stack
+one more listener per `open()` on a node `open()` never replaces, which is the
+fault §36i already records.
+
+**Checking it.** 23 guards in `tests/test_attack_autotick.py`. Mutate any
+clause — drop the pre-tick, drop it from the type-change handler, tick a
+valueless field, tick every scoper, make it non-idempotent, tick the state but
+not the box or the box but not the state, let it untick, call the redraw before
+the write, leak the hook across entries, drop the hook, claim a tick
+unconditionally, silence the absent-field report, hard-wire the chip,
+compute `miss` without reading `sel`, un-require the URL server-side, or drop
+the remedy wording — and exactly one guard fails each time. 19 mutations, 19
+kills.
+
+## 36n. boot() binds the result table once per render
+
+`attack_drawer.js` registers its boot on `DOMContentLoaded`; `turbo-boot.js`
+remaps every such registration to `turbo:load`; and the file registers
+`turbo:load` directly as well, because Turbo's body swap kills the panel nodes.
+On a first load **both** fire, `boot()` runs twice, and the result table ends
+up with two click handlers.
+
+That was invisible for as long as nothing outlived a render: one click simply
+read the entry off the appliance twice and rendered the builder twice. It stops
+being invisible the moment anything keeps a handle to a rendered node — the
+redraw hook of §36m pointed at whichever of the two renders lost the race, and
+the hint on screen never updated while every test of the underlying state
+passed.
+
+**The flag lives on the table, not on `window`.** Turbo replaces the body on
+every visit, so a fresh table binds again while a second `boot()` inside one
+load finds the flag and stops. A window flag would bind once per browser
+session and leave every visit after the first with a dead result table.
+
+**Checking it.** `table.addEventListener('click'` appears exactly once and sits
+behind the flag; two mutations (remove the guard, move the flag to `window`)
+each fail a guard.
+
+## 36o. A bookkeeping label cannot be allowed to kill the work it describes
+
+Authoring an exception against a Server Policy whose Web Protection Profile is
+shared did exactly what §36 says it should: it cloned the profile, re-bound the
+policy, and wrote both to the appliance. Then it answered **"An unexpected
+error occurred"** and threw away the operator's draft. The device had changed;
+the screen said nothing had.
+
+Nothing was wrong with the clone. The cache refresh that runs after it recorded
+a `SyncRun` labelled `exceptions.clone_for_policy` — 27 characters into
+`sync_runs.trigger`, a `varchar(24)`. That raises `StringDataRightTruncation`
+**on the flush**, which leaves the SQLAlchemy session in a failed transaction.
+The refresh sat inside `except Exception: pass`, so the error vanished and the
+broken session did not, and the caller's next write — the carve-out — died with
+`PendingRollbackError`.
+
+Three independent things had to hold for a three-character overrun to produce
+that, so three are guarded:
+
+* **No literal overflows the column.** `tests/test_sync_trigger_width.py` walks
+  the AST of everything under `app/` and compares every `trigger=` string
+  against `SyncRun.trigger.type.length`. Parsed, not grepped: a regex also
+  matches the word in a comment, and a guard that produces false positives is a
+  guard that gets weakened.
+* **A label that overflows anyway is clipped, not raised.** `device_sync._fit`
+  reads the width off the model — hard-coding 24 would silently stop protecting
+  anything the day the column is widened while still looking like a guard.
+  Losing three characters of a diagnostic beats losing the transaction.
+* **A swallowed exception rolls the session back.** This is the load-bearing
+  one. The overflow was merely what tripped it first; a dead appliance, a
+  timeout or any constraint would have done the same. *Best effort* may mean
+  the caller carries on. It may not mean the caller inherits a dead transaction.
+
+**Checking it.** Four mutations — restore the 27-char label, drop the rollback,
+make `_fit` a pass-through, hard-code the width — each fail a guard. The
+historic value is kept in the test file so the guard can prove it would have
+caught the real defect; a guard that cannot fail against the outage it was
+written for is not evidence.
+
+## 36p. Every logged address is the client's, and no client picks which one
+
+SATOM is always behind a reverse proxy, so `request.remote_addr` is the proxy.
+The audit log recorded it verbatim: on a live node, **193 of the last 200 rows
+said `127.0.0.1`**. An audit trail that cannot tell two operators apart is not
+an audit trail, and this product's whole job is authorising changes to a WAF.
+
+`extensions.real_client_ip` had solved this from the start and had exactly one
+caller — the rate limiter, because that is the one place the collapse was
+noticed (every user in one bucket, five failures locking out the fleet).
+Everything else grew its own answer. `audit.py` and `api_v1/auth.py` took the
+peer. `errors.py` parsed `X-Forwarded-For` **without checking the peer was a
+trusted proxy**, so on the one log line whose purpose is attributing a probe,
+the prober chose the address.
+
+Two properties, and the first is worthless without the second:
+
+* the forwarded address is used **when the peer is a configured proxy**, and
+* it is **not** used when the peer is not — the header is client-supplied, and
+  honouring it unconditionally does not fix attribution, it delegates it.
+
+The proxy-appended (last) hop is the one taken, because nginx appends rather
+than replaces: a client that pre-fills the header produces `<forged>, <real>`.
+
+**Historical rows are left wrong.** They are, and rewriting an audit trail so it
+reads correctly is a worse failure than leaving it legible.
+
+**Checking it.** Four behavioural guards (proxy hop honoured, forged header from
+an untrusted peer ignored, appended hop wins, no request context still writes)
+plus a source scan asserting no module outside the resolver reads
+`remote_addr` or parses the header. Four mutations each fail one.
+
+## 36q. The scope is pre-selected, and every box says why it is in that state
+
+The field picker opened with nothing ticked, which asks the operator the single
+question they came to the page unable to answer: which of twenty-two fields
+scope *this* kind of exception. Everything needed to answer it was already
+declared in `SCOPERS` — which fields exist, which are required, which order is
+most precise — so `attack_carveout.recommend` derives the default from the same
+table the picker renders, rather than from a second list that would drift.
+
+The rules, in order:
+
+* A field the **entry does not carry** is never picked. It cannot narrow
+  anything, whatever the type allows.
+* A **required** field with a value is always picked: without it FortiWeb has no
+  exception to key on (§36g).
+* A **single-element** type (a signature exception) picks exactly ONE, the most
+  precise present. FortiWeb matches one element per row; ticking several does
+  not narrow it further, so a default that ticked several would be recommending
+  a selection the device cannot honour.
+* The **source address is held back** while the request can be described by URL
+  or host. A carve-out says which traffic is legitimate; the address in one log
+  entry is one observation of one caller, and an exception scoped to it stops
+  applying when that integration is re-addressed — which reads to the operator
+  as the exception having done nothing. It is one click away, and the skip is
+  **reported**: a default that quietly declines to use evidence the entry
+  carries looks like SATOM having missed it. Where `src` is the only scoper (a
+  geo-IP carve-out) it is picked, because the rule is *prefer a request-shaped
+  element*, not *never use the caller*.
+
+**Safe by direction.** Every scoper NARROWS, so pre-ticking can only make the
+exception match less. That is the whole argument for doing it unasked, and it
+would not survive a default that widened anything.
+
+**Proved by running the real assembly.** `recommend` is handed to `/options`
+together with `build(row, exc_type, picked)`, so a default selection that does
+not validate says so on arrival. Discovering it at Preview teaches the operator
+that the pre-selection is not to be trusted, which costs more than the error it
+hid.
+
+**The panel reads the recommendation; it does not re-derive it.** The browser
+used to decide the ticks itself ("every required scoper with a value"), which is
+a second implementation of the rule — the day the server started preferring one
+element, or holding back the caller, the panel would still have been ticking by
+the old rule while its own reasons panel described the new one. What the panel
+*does* keep is a floor: a required scoper with a value is ticked locally too, so
+a regressed server recommendation leaves the panel slightly wide rather than
+invalid.
+
+## 36r. The profile is on the table, and an unreadable device is not a blank cell
+
+Whether a Server Policy's Web Protection Profile is **shared** decides whether
+authoring an exception here is one click or a profile clone and a re-bind of
+live traffic (§36). The page always knew — it reads the bindings to run the
+scope gate — and said nothing until after the operator had committed to a
+carve-out.
+
+The column is derived from ONE `wpp_scope.bindings` call per table, whatever the
+row count; per-row lookups would open a session per match against a production
+WAF to render a table.
+
+**It is carried beside the rows, never written into them.** A row is the
+evidence the appliance reported. A derived field mixed into it reaches the AI
+prompt, the detail panel and the audit trail dressed up as something the device
+said. This is the pattern `row_times` already uses.
+
+**An unreadable device renders `unknown`.** `bindings()` returns `(map, error)`
+precisely because `({}, "")` and `({}, "reason")` are the same dict and mean
+opposite things (§36). "SATOM could not ask the appliance" and "this policy
+binds no profile" are opposite facts, and a blank cell is exactly how the
+harmless one looks. A policy the device does not have is a third state again —
+renamed or deleted is not the same as unbound.
+
+**Checking it.** Ten guards over the cell builder and the template, including
+one asserting the whole table costs one read and one asserting the entry dict is
+unmodified. Both tables render through a single macro: the "recent entries"
+table exists to stand in for the matches table, and two renderings would let the
+stand-in describe the appliance differently from the table it replaces.

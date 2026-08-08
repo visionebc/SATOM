@@ -4837,6 +4837,157 @@ psql "$URI" -tAc "select ok, error from advisor_request_log order by id desc lim
 pytest tests/test_advisor_stream.py -q
 ```
 
+
+## 36. A profile with more than one policy behind it is not yours to carve
+
+Team rule 2 has always refused a carve-out on a **template-managed** Web
+Protection Profile. Until 2026-08-08 that was the only question SATOM asked, and
+it is not the dangerous one.
+
+A WPP applies its exceptions to **every Server Policy that binds it**, and
+FortiWeb records nothing about which policy an exception was authored for. So an
+ordinary profile — no template, no lock, nothing special about it — bound by four
+sites accepted a carve-out in silence and applied it to all four. On the lab box
+this was not hypothetical: `wpp-full-lab` is bound by `pol-full-api`,
+`pol-full-cr` and `pol-full-web`, and is not template-managed.
+
+`app/services/wpp_scope.py` asks the second question. Three rules, in this order:
+
+1. **Template-managed → clone.** Unchanged.
+2. **Shared → clone.** Bound by any Server Policy other than this one. The
+   refusal names the other policies, because "this profile is shared" without
+   "with what" cannot be acted on.
+3. **Exclusive → author directly, no clone.** A policy that already owns its
+   profile has nothing to be protected from, and manufacturing a second profile
+   for it is churn that makes the next audit harder.
+
+**Unknown is not safe.** The binding map is read off the live device. When the
+box cannot be read, `state` is `unknown` and `needs_clone` is **True** — a
+carve-out that leaks and a carve-out nobody could prove doesn't leak are the same
+risk to the policies behind that profile, and only one of them is honest to
+render. `bindings()` returns `(map, error)` for exactly this reason: `({}, "")`
+and `({}, "reason")` are the same dict and mean opposite things.
+
+### Where the gate is, and where it deliberately is not
+
+| path | behaviour | why |
+|---|---|---|
+| Exceptions → save | banner, **not** a refusal | authoring a draft leaks nothing, and that page is device-free by construction — it must keep working against a dead box |
+| Attack ID → accept / save | **409** with the clone offer | both already hold a live device and are one click from a push |
+| `insert` (either page) | **403** | this is where the leak physically happens: the row is live for every policy on the profile the moment it lands |
+
+The clone is a real device write, so it is never implicit — without `clone_wpp`
+in that same call, the refusal returns the offer and changes nothing.
+
+## 36b. A verdict advises; the operator authorises
+
+The Advisor drafts an exception only for a false positive at low or medium risk.
+That is the right default and it left **no route at all** for the case operators
+meet most: a genuine attack pattern that one known caller must nevertheless be
+allowed to send. Before this the panel offered a button or nothing.
+
+`save_carveout` is therefore independent of the verdict. A carve-out that
+contradicts the model requires a written justification, which is stored on the
+rule and in `audit_logs` — it is not refused. Refusing it would not prevent the
+exception; it would move it to the CLI, where nothing records why.
+
+## 36c. Every carve-out path re-reads the entry from the device
+
+`/analyze`, `/field-intel`, `/options`, `/build` and `/carve-out` are sent an
+appliance id and a MSG ID. Nothing else about the entry is taken from the
+request. A client that could supply the row could fabricate an attack and have a
+rule carved out from it — evidence supplied by the accused.
+
+`body['fields']` is the one thing that looks like an exception and is not: it
+carries the field **names** the operator ticked. The values behind them come from
+the device-read row.
+
+The guard is stated over `attack_log.PRIMARY_FIELDS` rather than as a fixed
+allowlist of body keys, because the allowlist grows with every new control key —
+and the day someone adds `body.get('http_url')` it would grow to cover that too.
+
+## 36d. Local analysis only, and it says so on screen
+
+`attack_field_intel` performs no WHOIS, no geolocation and no threat-feed lookup.
+Two reasons, both firm:
+
+* Those are a **data export**. The customer's own attacker addresses, hostnames
+  and URLs would leave the appliance for a third party, from a page whose whole
+  job is deciding what to trust — walking straight around the redaction boundary
+  and export log the AI path already has.
+* This product ships onto isolated management networks. An enrichment that only
+  works with internet access is missing exactly where the WAF is most locked
+  down, and it fails *slowly*, inside a panel opened to move fast.
+
+The one network call is an optional reverse-DNS lookup against this host's own
+resolver, capped at 1.5 s on a worker thread — `gethostbyaddr` ignores socket
+timeouts on glibc, so without the thread an unreachable resolver stalls the whole
+panel for the system timeout.
+
+**Trap that made a guard pass vacuously:** Python's `ipaddress` reports the
+documentation ranges (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) as
+`is_private`. A bare `is_private` branch therefore labelled TEST-NET traffic
+"private (RFC1918)" and told the operator to go looking for a reverse proxy that
+does not exist — *and* it meant `test_ptr_lookup_is_skippable`, whose sample
+address was 203.0.113.44, never reached the PTR branch it claimed to test. The
+classifier now checks the real RFC1918 ranges explicitly, and that test asserts
+its sample classifies as `public` before asserting anything about PTR.
+
+## 36e. Breadth is read off the payload, not off the type
+
+A per-signature exception is the narrowest carve-out on the menu **when it names
+an element to match**. With `match-target` left empty it skips that signature for
+every request on the profile — a disabled signature by another name. Reporting
+the type's usual breadth would tell the reviewer the opposite of the truth, so
+`exception_explain.breadth()` widens `narrow` to `moderate` when none of the
+type's scoping fields are filled in, and says which fields those were.
+
+FortiWeb matches **one** element per signature-exception row. Selecting a URL and
+a client IP cannot mean "both": the highest-precision one is used and the rest are
+reported as needing their own entry. Silently keeping the first selection would
+produce a carve-out narrower than the operator believes it to be.
+
+### Verifying these guards are armed
+
+```bash
+NODE=192.0.2.248
+cd /opt/satom
+
+# 1. the sharing gate is real on this box: at least one profile has >1 policy
+runuser -u satom -- venv/bin/python - <<'PY'
+from app import create_app
+from app.models import Appliance
+from app.services import wpp_scope
+app = create_app()
+with app.app_context():
+    a = Appliance.query.filter_by(name='fortiweb08').first()
+    m, err = wpp_scope.bindings(a)
+    assert not err, err
+    from collections import Counter
+    shared = [w for w, n in Counter(m.values()).items() if w and n > 1]
+    print('shared profiles:', shared)
+    for pol, wpp in m.items():
+        v = wpp_scope.check(a, wpp, pol, binding_map=m)
+        print(pol, wpp, v.state, v.needs_clone)
+PY
+
+# 2. unknown must never render as exclusive  (expect: unknown True)
+runuser -u satom -- venv/bin/python -c "
+from app import create_app
+from app.services import wpp_scope as s
+app=create_app()
+with app.app_context():
+    v=s.check(None,'W','p',binding_map={},device_error='timeout')
+    print(v.state, v.needs_clone); assert v.needs_clone"
+
+# 3. no endpoint reads a log field off the request body — expect one line: set()
+runuser -u satom -- venv/bin/python -m pytest \
+  tests/test_attack_search.py::test_no_endpoint_takes_a_log_field_value_from_the_browser -q
+
+# 4. the guards bite: 18/18
+/opt/satom/venv/bin/python /tmp/mutate.py | tail -3
+```
+
 ## Related
 
 * [`privilege-model.md`](privilege-model.md) — accounts, sudo, the runner boundary, HA trust

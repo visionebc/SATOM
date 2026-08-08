@@ -152,10 +152,16 @@
 </div>
 {% endif %}
 
-{# The panel renders from the rows already on the page: the detail view needs no
-   second round-trip, and what the operator inspects is exactly what the table
-   was built from. The AI path deliberately does NOT use this — it re-reads the
-   entry from the appliance server-side (see views/attack_search.analyze). #}
+{# The panel renders its VALUES from the rows already on the page: the detail
+   view needs no second round-trip, and what the operator inspects is exactly
+   what the table was built from.
+
+   Every endpoint below deliberately does the opposite — it is sent only the
+   appliance id and the MSG ID, and re-reads the entry off the device. A browser
+   that could post the row could fabricate an attack and have a rule carved out
+   from it. Routes are emitted here rather than built in JS so a blueprint
+   rename breaks the page loudly at render time instead of producing 404s at
+   click time. #}
 {% if rows %}
 <script type="application/json" id="atk-rows-data">{{ rows|tojson }}</script>
 <script type="application/json" id="atk-page-data">{{ {
@@ -164,6 +170,18 @@
   'ai_enabled': ai_enabled,
   'primary_fields': primary_fields,
   'analyze_url': url_for('attack_search.analyze'),
+  'field_intel_url': url_for('attack_search.field_intel'),
+  'options_url': url_for('attack_search.carveout_options'),
+  'build_url': url_for('attack_search.build_carveout'),
+  'carveout_url': url_for('attack_search.save_carveout'),
+  'proposal_apply_url': url_for('attack_search.apply_proposal', pid=999999)
+                        |replace('999999', '__PID__'),
+  'proposal_dismiss_url': url_for('attack_search.dismiss_proposal', pid=999999)
+                          |replace('999999', '__PID__'),
+  'targets_url': url_for('attack_search.inject_targets', exc_id=999999)
+                 |replace('999999', '__ID__'),
+  'insert_url': url_for('attack_search.insert_exception', exc_id=999999)
+                |replace('999999', '__ID__'),
 }|tojson }}</script>
 {% endif %}
 {% endblock %}

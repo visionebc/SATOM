@@ -88,8 +88,57 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
-<h2 id="180-2026-08-07">[1.8.0] - 2026-08-07</h2>
 <h3 id="fixed">Fixed</h3>
+<ul>
+<li><strong>An exception could be authored on a Web Protection Profile that several
+  Server Policies share, with nothing said about it.</strong> SATOM refused a
+  carve-out on a <em>template-managed</em> profile and asked no other question — but a
+  WPP applies its exceptions to every Server Policy that binds it, and FortiWeb
+  records nothing about which policy one was authored for. An ordinary,
+  unlocked profile bound by four sites took the carve-out in silence and
+  applied it to all four. <code>wpp_scope</code> now reads the bindings off the device and
+  refuses a shared profile the same way it refuses a template, naming the other
+  policies in the refusal and offering the same guided clone. A policy that
+  already owns its profile outright gets no clone — there is nothing to protect
+  it from. A device that cannot be read answers <em>unknown</em>, never <em>no one</em>.
+  Enforced hardest at the push, which is where the leak physically happens.</li>
+</ul>
+<h3 id="added">Added</h3>
+<ul>
+<li><strong>Field-by-field investigation in the attack-entry panel.</strong> Every field now
+  explains what it is, what this value classifies as, and what to check next:
+  address scope (RFC1918 / CGNAT / documentation range / public) with the
+  reminder that a private source means the real client is in X-Forwarded-For,
+  percent-decoded URLs with the decoded form judged rather than the raw one,
+  query parameters broken out, port and method semantics, user-agent
+  classification, signature-class decomposition, and how often the same value
+  appears across the last 100 entries on that appliance. All computed locally —
+  no WHOIS, geolocation or threat-feed lookup, and the panel says so.</li>
+<li><strong>Build an exception from the fields you tick, whatever the Advisor
+  concluded.</strong> The Advisor drafts one only for a false positive at acceptable
+  risk, which left no route for the commonest real case: a genuine attack
+  pattern that one known caller must still be allowed to send. Tick the fields
+  the exception must be scoped to, pick the kind, and SATOM assembles a
+  FortiWeb-valid payload from the entry <strong>as the device reported it</strong>. A
+  carve-out that contradicts the Advisor is allowed and requires a written
+  justification, stored with the rule and in the audit trail.</li>
+<li><strong>SATOM says which kind of exception the block actually calls for.</strong> A
+  protocol-constraint block is not fixed by a signature exception, and the log
+  row does not say so in those words. The candidate types are ranked for the
+  entry, each with its reason, narrowest first.</li>
+<li><strong>Drafts are reviewed as a description, not as JSON.</strong> Where the rule lands
+  (Server Policy → profile → module → type, and which FortiWeb object holds
+  it), how wide it reaches, what stops being inspected and what stays enforced
+  — with the raw payload still one click away for editing. Breadth is computed
+  from the payload, not the type: a per-signature exception with no element to
+  match is reported as wider than its type suggests, because it is.</li>
+<li><strong>Insert the exception into the appliance from this page.</strong> Two calls: a
+  preview that returns the exact method, endpoint and body and writes nothing,
+  then the write. The page previously stopped at the draft and sent the
+  operator to another screen to push it.</li>
+</ul>
+<h2 id="180-2026-08-07">[1.8.0] - 2026-08-07</h2>
+<h3 id="fixed_1">Fixed</h3>
 <ul>
 <li>
 <p><strong>The AI Advisor's replies were saved and never shown.</strong> After Send, the
@@ -115,7 +164,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   wiring the peer status poll.</p>
 </li>
 </ul>
-<h3 id="added">Added</h3>
+<h3 id="added_1">Added</h3>
 <ul>
 <li><strong>The chat streams, shows that it is working, and can be stopped.</strong> The
   reply now appears as it is generated, with an animated indicator, a live
@@ -268,7 +317,7 @@ durability problem solved. Anyone who sealed on 1.7.0 should re-run
 <code>satom execute seal recovery</code> on the primary and confirm the check reports the
 envelope as reachable. 1.7.0 stays published; this entry is the public record
 that it carries the defect.</p>
-<h3 id="fixed_1">Fixed</h3>
+<h3 id="fixed_2">Fixed</h3>
 <ul>
 <li><strong>The sealed recovery envelope was unreachable by every mechanism that
   carries it.</strong> <code>satom execute seal recovery</code> runs as root and wrote
@@ -292,7 +341,7 @@ that it carries the defect.</p>
   <code>reset theme</code> — the anti-lockout command. A guard now walks the AST of
   every CLI module rather than the two known call sites.</li>
 </ul>
-<h3 id="added_1">Added</h3>
+<h3 id="added_2">Added</h3>
 <ul>
 <li><strong>The operator manual now documents recovery custody.</strong> 1.7.0 shipped two CLI
   verbs, a diagnostic and a passphrase the operator must store outside the fleet,
@@ -312,7 +361,7 @@ that it carries the defect.</p>
   deleting it everywhere.</li>
 </ul>
 <h2 id="170-2026-08-07">[1.7.0] - 2026-08-07</h2>
-<h3 id="added_2">Added</h3>
+<h3 id="added_3">Added</h3>
 <ul>
 <li><code>tests/test_no_pem_literals.py</code> - no source file may carry a literal PEM
   private-key header. The publisher scans every blob of the sanitised mirror
@@ -378,7 +427,7 @@ that it carries the defect.</p>
   <code>advisor.configure</code>. See <code>docs/ai-advisor.md</code>.</p>
 </li>
 </ul>
-<h3 id="fixed_2">Fixed</h3>
+<h3 id="fixed_3">Fixed</h3>
 <ul>
 <li><strong>Nine probes answered "I could not tell" with a value that means "fine".</strong>
   Scoping resolved to the Global console and showed every product; a malformed
@@ -449,7 +498,7 @@ that it carries the defect.</p>
   frozen into an old bundle.</li>
 </ul>
 <h2 id="160-2026-08-07">[1.6.0] - 2026-08-07</h2>
-<h3 id="added_3">Added</h3>
+<h3 id="added_4">Added</h3>
 <ul>
 <li>Monitoring is provisioned from <strong>one seam</strong>. Saving an appliance now creates
   both its scrape targets and its threshold probes; until now <code>ensure_baseline</code>
@@ -516,7 +565,7 @@ that it carries the defect.</p>
   its API, so the page listed zero targets and zero devices. A page that can
   only fail is worse than one that is not offered.</li>
 </ul>
-<h3 id="fixed_3">Fixed</h3>
+<h3 id="fixed_4">Fixed</h3>
 <ul>
 <li><strong>The publication redaction rule was a roster, not a shape.</strong> It enumerated
   the appliances that existed the day it was written, so every unit onboarded
@@ -609,7 +658,7 @@ that it carries the defect.</p>
 </li>
 </ul>
 <h2 id="150-2026-08-06">[1.5.0] - 2026-08-06</h2>
-<h3 id="added_4">Added</h3>
+<h3 id="added_5">Added</h3>
 <ul>
 <li><strong>Settings &gt; Thresholds</strong> — a 22nd tab, and the first place in this product
   where a limit can be stated once instead of once per probe. Six scopes: the
@@ -803,7 +852,7 @@ that it carries the defect.</p>
   column holding anything else was left alone.</li>
 <li>Alert bodies now name the Thresholds scope that governs the finding.</li>
 </ul>
-<h3 id="fixed_4">Fixed</h3>
+<h3 id="fixed_5">Fixed</h3>
 <ul>
 <li><strong><code>satom diagnose code</code> now sees the artifact gunicorn actually caches.</strong> It
   compared the newest <code>.py</code> against each process start time, so a change that
@@ -1003,7 +1052,7 @@ that it carries the defect.</p>
   shadowing the tracked templates under <code>app/templates/backups/</code>.</li>
 </ul>
 <h2 id="141-2026-08-05">[1.4.1] - 2026-08-05</h2>
-<h3 id="fixed_5">Fixed</h3>
+<h3 id="fixed_6">Fixed</h3>
 <ul>
 <li>
 <p><strong>The installation page was answering a question about the appliances.</strong>
@@ -1038,7 +1087,7 @@ that it carries the defect.</p>
   column, which nothing else writes and which was empty on the whole fleet.</li>
 </ul>
 <h2 id="140-2026-08-05">[1.4.0] - 2026-08-05</h2>
-<h3 id="added_5">Added</h3>
+<h3 id="added_6">Added</h3>
 <ul>
 <li>
 <p><strong>SATOM health and Device health are two pages.</strong> Fleet health carried the
@@ -1310,7 +1359,7 @@ that it carries the defect.</p>
   [SATOM-LICENSE-TAGS]</p>
 </li>
 </ul>
-<h3 id="fixed_6">Fixed</h3>
+<h3 id="fixed_7">Fixed</h3>
 <ul>
 <li>
 <p><strong>A missing systemd unit is no longer reported as a failed one.</strong>
@@ -1677,7 +1726,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   published copy.</li>
 </ul>
 <h2 id="13-2026-08-02">[1.3] - 2026-08-02</h2>
-<h3 id="added_6">Added</h3>
+<h3 id="added_7">Added</h3>
 <ul>
 <li><strong>The manual is reachable from the sign-in screen.</strong> The login page offered a
   link to the API manual and nothing else. The person who cannot get in is
@@ -2055,7 +2104,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   does not render where it matters. The vendored copy was already in the tree
   and unused.</li>
 </ul>
-<h3 id="fixed_7">Fixed</h3>
+<h3 id="fixed_8">Fixed</h3>
 <ul>
 <li><strong><code>/docs/api</code> was public and served the document unredacted.</strong> The route
   needed no session and rendered <code>docs/api_v1.md</code> verbatim, so a management
@@ -2353,7 +2402,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   <code>Appliance</code>; the column is <code>maintenance</code>.</li>
 </ul>
 <h2 id="122-2026-07-27">[1.2.2] - 2026-07-27</h2>
-<h3 id="fixed_8">Fixed</h3>
+<h3 id="fixed_9">Fixed</h3>
 <ul>
 <li><strong><code>app/services/cert_service.py</code> did not parse.</strong> An <code>import os</code> had been
   placed above <code>from __future__ import annotations</code>, which is a hard
@@ -2364,7 +2413,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   Certificate Manager endpoints raised on import, and the cert alert degraded
   to reporting the import error instead of the certificate's real state.</li>
 </ul>
-<h3 id="added_7">Added</h3>
+<h3 id="added_8">Added</h3>
 <ul>
 <li><strong><code>tests/test_every_module_imports.py</code></strong> — every shipped module under <code>app/</code>
   and <code>deploy/</code> must compile, and the modules that callers import <em>lazily</em>
@@ -2376,7 +2425,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
 <h2 id="121-2026-07-27">[1.2.1] - 2026-07-27</h2>
 <p>Documentation release. No application code changed; the offline bundles were
 rebuilt so that the shipped tree matches the documentation set.</p>
-<h3 id="added_8">Added</h3>
+<h3 id="added_9">Added</h3>
 <ul>
 <li><strong><code>docs/safeguards.md</code></strong> — single catalog of every protection in the product:
   what it prevents, where it lives, and <strong>how to verify it is armed</strong>. Covers
@@ -2404,7 +2453,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li><strong>Rule recorded in <code>docs/overview.md</code></strong>: a new safeguard lands in
   <code>docs/safeguards.md</code> in the same commit that introduces it.</li>
 </ul>
-<h3 id="fixed_9">Fixed</h3>
+<h3 id="fixed_10">Fixed</h3>
 <ul>
 <li>Offline bundle checksums used an absolute path, so <code>sha256sum -c</code> failed in
   the directory the file was downloaded to. Now basename-only, as the RHEL
@@ -2442,7 +2491,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   with <code>from=</code>, <code>restrict</code> and a forced command that can only serve
   <code>rsync --sender</code> over the data directory.</li>
 </ul>
-<h3 id="added_9">Added</h3>
+<h3 id="added_10">Added</h3>
 <ul>
 <li><strong>ACME / Let's Encrypt certificate issuance</strong> with a DNS-provider catalog
   (30 providers seeded as data, editable by the operator) and per-provider
@@ -2468,7 +2517,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   Manager</strong>. Vendor names (FortiWeb, FortiADC, FortiAnalyzer) are untouched:
   the product manages those appliances and has to name them.</li>
 </ul>
-<h3 id="fixed_10">Fixed</h3>
+<h3 id="fixed_11">Fixed</h3>
 <ul>
 <li><strong>Scheduler and git-publish were silently dead</strong> after the privilege drop:
   both guard scripts used <code>runuser</code>, which only works as root. The scheduler
@@ -2510,7 +2559,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   server (appliance-side push config points at it), and <code>FM_*</code> env var names.</li>
 </ul>
 <h2 id="10-2026-07-14">[1.0] - 2026-07-14</h2>
-<h3 id="added_10">Added</h3>
+<h3 id="added_11">Added</h3>
 <ul>
 <li><strong>DNS Records management (IPAM/DDI)</strong>: "+DNS Records" CRUD in the DNS &amp; LB
   lookup tool, backed by pluggable providers (EfficientIP SOLIDserver,
@@ -2528,20 +2577,20 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   bundles), generic package-manager support, public site (GitHub Pages),
   package registry artifacts.</li>
 </ul>
-<h3 id="fixed_11">Fixed</h3>
+<h3 id="fixed_12">Fixed</h3>
 <ul>
 <li>Upgrade-event timestamps now render in local time (<code>| localtime</code>) instead
   of raw UTC.</li>
 </ul>
 <h2 id="09-2026-07-13">[0.9] - 2026-07-13</h2>
-<h3 id="added_11">Added</h3>
+<h3 id="added_12">Added</h3>
 <ul>
 <li><strong>Node TLS + node-to-node encryption</strong>: internal CA, per-node leaf certs,
   mutually-authenticated Postgres replication, HTTPS peer probes, and
   "encryption in transit" monitoring cards (every badge backed by a live probe).</li>
 </ul>
 <h2 id="08-2026-07-12">[0.8] - 2026-07-12</h2>
-<h3 id="added_12">Added</h3>
+<h3 id="added_13">Added</h3>
 <ul>
 <li><strong>FortiAnalyzer</strong> integration (JSON-RPC, dual dialect) as a full ADOM, with
   its endpoints in the DB registry and a git source-of-truth harvest.</li>

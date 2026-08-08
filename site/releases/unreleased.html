@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changed · Fixed · Added · 20 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changes · 0 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changed · Fixed · Added · 20 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changes · 0 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,11 +59,16 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changed · Fixed · Added · 20 entries</span>
+        <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
+        <ul class="rel-leads"></ul>
+      </a>
+      <a class="rel-nav-item" href="v1.9.0.html" data-rel-version="1.9.0">
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 1.9.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+        <span class="rel-nav-meta">2026-08-08 · Changed · Fixed · Added · 20 entries</span>
         <ul class="rel-leads"><li>The required scope is ticked, not demanded</li><li>Asking the AI about a field now answers on the click</li><li>A carve-out on a shared profile reported failure for a change it had already made</li><li class="rel-more">… and 17 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.8.0.html" data-rel-version="1.8.0">
-        <span class="rel-nav-head"><span class="rel-nav-v">Version 1.8.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 1.8.0</span></span>
         <span class="rel-nav-meta">2026-08-07 · Fixed · Added · Changed · 13 entries</span>
         <ul class="rel-leads"><li>The AI Advisor&#x27;s replies were saved and never shown</li><li>update_status() built a filesystem path out of an unvalidated URL segment</li><li>The chat streams, shows that it is working, and can be stopped</li><li class="rel-more">… and 10 more</li></ul>
       </a>
@@ -165,228 +170,8 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="changed">Changed</h3>
-<ul>
-<li>
-<p><strong>The required scope is ticked, not demanded.</strong> An Allow Method or
-  HTTP-constraint exception is keyed by FortiWeb on a URL pattern, and the
-  panel knew all three of the things that follow from that: which field it is,
-  that the entry carried a value for it, and that leaving it unticked produces
-  no exception at all — only a refusal naming <code>request-type</code> and <code>request-file</code>,
-  keys the operator never typed. It spent them on an instruction pointing at an
-  unlabelled checkbox in a twenty-two row table in the card above. The panel now
-  ticks that box itself, in the table where it can be seen as well as in the
-  state that gets posted, and the scope list reports what is actually ticked
-  rather than what it meant to tick. Only fields that NARROW are ever
-  pre-ticked, so the default cannot widen a carve-out; unticking is still
-  allowed and immediately restores the explanation of what is missing. A
-  required field the entry does not carry is reported as absent instead of as
-  something to go and tick, because no row is drawn for a field with no value
-  and there would be no checkbox to find.</p>
-</li>
-<li>
-<p><strong>Asking the AI about a field now answers on the click.</strong> The chat icon on
-  each element of an attack-log entry used to open an empty box and wait for
-  the operator to compose a question — a second gesture to get the thing they
-  had just asked for. It now sends the exchange immediately and renders the
-  Advisor's answer under the local explanation of that element, keeping the box
-  below it for the reply. The question itself is still left empty by the
-  browser so the server supplies its default text: that is the string the audit
-  row records, and a browser-side default would put a question in the log that
-  the provider was never sent. The automatic exchange fires at most once per
-  field per opened entry — after an answer <em>or</em> an error — because an automatic
-  retry against a provider that just failed spends tokens to reproduce a
-  failure already on screen. Time and tokens are stamped on it by the same
-  single cost chip every other analysis on the page uses.</p>
-</li>
-</ul>
-<h3 id="fixed">Fixed</h3>
-<ul>
-<li>
-<p><strong>A carve-out on a shared profile reported failure for a change it had
-  already made.</strong> Authoring an exception against a Server Policy whose Web
-  Protection Profile is shared correctly cloned the profile and re-bound the
-  policy — both written to the appliance — and then answered <em>"An unexpected
-  error occurred"</em> and discarded the draft. The clone was never the problem.
-  The cache refresh that runs afterwards recorded its <code>SyncRun</code> under a
-  27-character label in a <code>varchar(24)</code> column; Postgres raised on the flush,
-  which leaves the SQLAlchemy session in a failed transaction, and the
-  best-effort <code>except</code> swallowed the error without clearing it — so the next
-  write, the operator's own carve-out, died with <code>PendingRollbackError</code>. All
-  three links are closed: the label fits, an overlong one is now clipped rather
-  than raised, and a swallowed best-effort failure rolls the session back so a
-  caller can never inherit a dead transaction. A new guard fails the build for
-  any <code>trigger=</code> literal that does not fit the column, which is where this
-  should have been caught: nothing about a bookkeeping label was ever supposed
-  to be able to kill the work it describes.</p>
-</li>
-<li>
-<p><strong>Every audited action was attributed to the reverse proxy.</strong> SATOM is always
-  served through nginx, so <code>request.remote_addr</code> is the proxy — and the audit
-  log recorded it verbatim, leaving 193 of the last 200 rows on a live node
-  stamped <code>127.0.0.1</code>. An audit trail that cannot tell two operators apart is
-  not an audit trail, on a product whose entire job is authorising changes to a
-  WAF. The helper that resolves this correctly had existed all along and had
-  exactly one caller, the rate limiter. Audit rows, API-token last-used stamps,
-  500 correlation records and the account-lockout log lines all use it now.
-  Historical rows are left as they are: they are wrong, and rewriting an audit
-  trail to make it look right is worse than leaving it legible.</p>
-</li>
-<li>
-<p><strong>The <code>FORBIDDEN</code> log line let the prober choose which address it blamed.</strong>
-  It read <code>X-Forwarded-For</code> directly, with no check that the peer was a trusted
-  proxy, so any client could set the header and be recorded as someone else on
-  the one line whose purpose is attributing a probe. It now resolves the
-  address through the same helper, which honours the header only when the
-  direct peer is a configured proxy and takes the proxy-appended hop.</p>
-</li>
-<li>
-<p><strong>Every attack-log entry was opened twice.</strong> The panel registered its boot on
-  <code>DOMContentLoaded</code>, which Turbo remaps to <code>turbo:load</code>, and registered
-  <code>turbo:load</code> as well so it survives the body swap — so both fired on a first
-  load and the result table carried two click handlers. One click read the
-  entry off the appliance twice, rendered the builder twice, and left anything
-  holding a handle to a rendered node pointing at whichever render lost the
-  race. The table is now bound once per render, flagged on the table itself so
-  a real navigation still binds.</p>
-</li>
-<li><strong>An Allow Method exception could not carry the method it was supposed to
-  allow.</strong> <code>allow-request</code> is the allow list itself, and the carve-out builder
-  never set it. Ticking <em>Method</em> — the obvious move on an entry blocked by the
-  Allow Method check — was answered with "FortiWeb has nowhere to put it", and
-  the payload that did pass validation held a URL and no allow list at all: a
-  row FortiWeb stores, applies, and which allows nothing, leaving the request
-  blocked with nothing on screen to say why. The method is now taken from the
-  entry itself (the appliance already recorded which one it rejected) and the
-  allow list is a required field for this type everywhere it can be authored,
-  including the manual Exceptions form.</li>
-<li><strong>"Explain this field" did nothing.</strong> The attack-entry panel bound its
-  delegated handlers each time an entry was opened, to an element the panel
-  refills but never replaces. Every open added one more handler to the same
-  node, so from the second entry onwards a click toggled the explanation open
-  and shut within itself and nothing appeared. The handlers are now bound once,
-  where the element is created.</li>
-<li><strong>A required scope was offered as an optional narrowing.</strong> FortiWeb keys
-  Allow Method and HTTP-constraint exceptions on a URL pattern, but the panel
-  listed the URL under <em>tick any of these to narrow it</em> and then failed with
-  <code>'request-file' is required for this carve-out type</code> — a device field name
-  the operator never typed. Required scopes are now marked as such up front,
-  and a missing key names the box that supplies it, worked out by re-running
-  the real assembly rather than from a second table that could drift from it.</li>
-<li><strong>Every status badge in the Attack ID pages was unstyled.</strong> The verdict, risk,
-  breadth and action badges asked for <code>fw-badge-ok</code> / <code>-warn</code> / <code>-crit</code> /
-  <code>-neutral</code>, which are not classes the stylesheet defines; the base <code>.fw-badge</code>
-  sets no colour, so <code>true-attack</code> and <code>false-positive</code> rendered identically.
-  They now use the calibrated <code>-success</code> / <code>-warning</code> / <code>-danger</code> / <code>-secondary</code>
-  set, and a guard fails the build if any badge class used anywhere is not
-  defined in the stylesheet.</li>
-<li><strong>An exception could be authored on a Web Protection Profile that several
-  Server Policies share, with nothing said about it.</strong> SATOM refused a
-  carve-out on a <em>template-managed</em> profile and asked no other question — but a
-  WPP applies its exceptions to every Server Policy that binds it, and FortiWeb
-  records nothing about which policy one was authored for. An ordinary,
-  unlocked profile bound by four sites took the carve-out in silence and
-  applied it to all four. <code>wpp_scope</code> now reads the bindings off the device and
-  refuses a shared profile the same way it refuses a template, naming the other
-  policies in the refusal and offering the same guided clone. A policy that
-  already owns its profile outright gets no clone — there is nothing to protect
-  it from. A device that cannot be read answers <em>unknown</em>, never <em>no one</em>.
-  Enforced hardest at the push, which is where the leak physically happens.</li>
-</ul>
-<h3 id="added">Added</h3>
-<ul>
-<li>
-<p><strong>The results table shows the Web Protection Profile behind each policy, and
-  whether it is shared.</strong> Whether the profile is exclusive to this Server Policy
-  decides whether authoring an exception is one click or a profile clone and a
-  re-bind of live traffic — and the page already knew, because it reads the
-  bindings to run the scope gate. It just never said so until after the operator
-  had committed. Shared profiles name the other policies; a profile that cannot
-  be read renders as <code>unknown</code> rather than blank, because "SATOM could not ask
-  the appliance" and "this policy binds nothing" are opposite facts and an empty
-  cell is how the harmless one looks. One device read per table, whatever the
-  row count, and the derived value is kept beside the entries rather than
-  written into them — a row is evidence the appliance reported, and a derived
-  field mixed into it would reach the AI prompt and the audit trail dressed up
-  as something the device said.</p>
-</li>
-<li>
-<p><strong>The field picker opens with the scope already chosen, and says why for each
-  box.</strong> It used to open empty, which asks the operator the one question they
-  came here unable to answer: which of twenty-two fields scope <em>this</em> kind of
-  exception. Everything needed to answer it was already declared — which fields
-  exist, which are required, which order is most precise — so the
-  recommendation is derived from the same table the picker renders. Required
-  fields are always taken. A signature exception takes exactly one element, the
-  most precise the entry carries, because FortiWeb matches one per row and
-  ticking more would recommend a selection the device cannot honour. The source
-  address is held back while the request can be described by URL or host — it
-  identifies the caller, not the traffic, so an exception scoped to it stops
-  applying the moment that integration is re-addressed — but it is one click
-  away, and the reason it was left off is on screen rather than implied. The
-  selection is proved by running the real assembly, so a default that would not
-  validate says so on arrival instead of at Preview. Everything remains
-  editable; this is a starting point, not a decision.</p>
-</li>
-<li>
-<p><strong>Ask the AI about one field, and read the answer where the field is
-  explained.</strong> Each row of the attack entry now carries a second icon beside
-  the explain one. It opens a conversation about that single element, directly
-  under its local explanation rather than in another page: leave the box empty
-  for a general reading, or type the question in your own words and press
-  Ctrl+Enter. Follow-ups continue the same thread, so a second question does
-  not mean restating the entry. SATOM sends only which entry and which field —
-  the value is re-read from the appliance, exactly as every other acting path
-  on this page does, because a browser that can supply the evidence can invent
-  it. This path explains and cannot author: it is told not to draft a
-  carve-out, returns none to the screen, and any the model drafts anyway is
-  dismissed rather than left sitting as an unreviewed pending draft. Every
-  search, question and answer is recorded, with the question verbatim.</p>
-</li>
-<li>
-<p><strong>Every analysis on the panel now states what it cost.</strong> One line under each
-  result: which engine produced it, how long it took, and how many tokens it
-  spent — including the failures, because a provider that burned forty seconds
-  and then errored spent them. The local field explanation reports "no tokens",
-  which is a fact; a reply whose provider omitted the usage block reports
-  "tokens not reported", which is not the same claim as zero and is never
-  rendered as one. While a call is in flight the wait carries a running clock.</p>
-</li>
-<li>
-<p><strong>Field-by-field investigation in the attack-entry panel.</strong> Every field now
-  explains what it is, what this value classifies as, and what to check next:
-  address scope (RFC1918 / CGNAT / documentation range / public) with the
-  reminder that a private source means the real client is in X-Forwarded-For,
-  percent-decoded URLs with the decoded form judged rather than the raw one,
-  query parameters broken out, port and method semantics, user-agent
-  classification, signature-class decomposition, and how often the same value
-  appears across the last 100 entries on that appliance. All computed locally —
-  no WHOIS, geolocation or threat-feed lookup, and the panel says so.</p>
-</li>
-<li><strong>Build an exception from the fields you tick, whatever the Advisor
-  concluded.</strong> The Advisor drafts one only for a false positive at acceptable
-  risk, which left no route for the commonest real case: a genuine attack
-  pattern that one known caller must still be allowed to send. Tick the fields
-  the exception must be scoped to, pick the kind, and SATOM assembles a
-  FortiWeb-valid payload from the entry <strong>as the device reported it</strong>. A
-  carve-out that contradicts the Advisor is allowed and requires a written
-  justification, stored with the rule and in the audit trail.</li>
-<li><strong>SATOM says which kind of exception the block actually calls for.</strong> A
-  protocol-constraint block is not fixed by a signature exception, and the log
-  row does not say so in those words. The candidate types are ranked for the
-  entry, each with its reason, narrowest first.</li>
-<li><strong>Drafts are reviewed as a description, not as JSON.</strong> Where the rule lands
-  (Server Policy → profile → module → type, and which FortiWeb object holds
-  it), how wide it reaches, what stops being inspected and what stays enforced
-  — with the raw payload still one click away for editing. Breadth is computed
-  from the payload, not the type: a per-signature exception with no element to
-  match is reported as wider than its type suggests, because it is.</li>
-<li><strong>Insert the exception into the appliance from this page.</strong> Two calls: a
-  preview that returns the exact method, endpoint and body and writes nothing,
-  then the write. The page previously stopped at the draft and sent the
-  operator to another screen to push it.</li>
-</ul>
-<p class="rel-prevnext"><a href="v1.8.0.html">Version 1.8.0 →</a></p>
+
+<p class="rel-prevnext"><a href="v1.9.0.html">Version 1.9.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

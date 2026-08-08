@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-08-08
+
 ### Changed
 
 - **The required scope is ticked, not demanded.** An Allow Method or

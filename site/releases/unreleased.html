@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changes · 0 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Fixed · Added · 6 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changes · 0 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Fixed · Added · 6 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
-        <ul class="rel-leads"></ul>
+        <span class="rel-nav-meta">unreleased · Fixed · Added · 6 entries</span>
+        <ul class="rel-leads"><li>An exception could be authored on a Web Protection Profile that several Server Policies share, with nothing said about it</li><li>Field-by-field investigation in the attack-entry panel</li><li>Build an exception from the fields you tick, whatever the Advisor concluded</li><li class="rel-more">… and 3 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.8.0.html" data-rel-version="1.8.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.8.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -165,7 +165,55 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li><strong>An exception could be authored on a Web Protection Profile that several
+  Server Policies share, with nothing said about it.</strong> SATOM refused a
+  carve-out on a <em>template-managed</em> profile and asked no other question — but a
+  WPP applies its exceptions to every Server Policy that binds it, and FortiWeb
+  records nothing about which policy one was authored for. An ordinary,
+  unlocked profile bound by four sites took the carve-out in silence and
+  applied it to all four. <code>wpp_scope</code> now reads the bindings off the device and
+  refuses a shared profile the same way it refuses a template, naming the other
+  policies in the refusal and offering the same guided clone. A policy that
+  already owns its profile outright gets no clone — there is nothing to protect
+  it from. A device that cannot be read answers <em>unknown</em>, never <em>no one</em>.
+  Enforced hardest at the push, which is where the leak physically happens.</li>
+</ul>
+<h3 id="added">Added</h3>
+<ul>
+<li><strong>Field-by-field investigation in the attack-entry panel.</strong> Every field now
+  explains what it is, what this value classifies as, and what to check next:
+  address scope (RFC1918 / CGNAT / documentation range / public) with the
+  reminder that a private source means the real client is in X-Forwarded-For,
+  percent-decoded URLs with the decoded form judged rather than the raw one,
+  query parameters broken out, port and method semantics, user-agent
+  classification, signature-class decomposition, and how often the same value
+  appears across the last 100 entries on that appliance. All computed locally —
+  no WHOIS, geolocation or threat-feed lookup, and the panel says so.</li>
+<li><strong>Build an exception from the fields you tick, whatever the Advisor
+  concluded.</strong> The Advisor drafts one only for a false positive at acceptable
+  risk, which left no route for the commonest real case: a genuine attack
+  pattern that one known caller must still be allowed to send. Tick the fields
+  the exception must be scoped to, pick the kind, and SATOM assembles a
+  FortiWeb-valid payload from the entry <strong>as the device reported it</strong>. A
+  carve-out that contradicts the Advisor is allowed and requires a written
+  justification, stored with the rule and in the audit trail.</li>
+<li><strong>SATOM says which kind of exception the block actually calls for.</strong> A
+  protocol-constraint block is not fixed by a signature exception, and the log
+  row does not say so in those words. The candidate types are ranked for the
+  entry, each with its reason, narrowest first.</li>
+<li><strong>Drafts are reviewed as a description, not as JSON.</strong> Where the rule lands
+  (Server Policy → profile → module → type, and which FortiWeb object holds
+  it), how wide it reaches, what stops being inspected and what stays enforced
+  — with the raw payload still one click away for editing. Breadth is computed
+  from the payload, not the type: a per-signature exception with no element to
+  match is reported as wider than its type suggests, because it is.</li>
+<li><strong>Insert the exception into the appliance from this page.</strong> Two calls: a
+  preview that returns the exact method, endpoint and body and writes nothing,
+  then the write. The page previously stopped at the draft and sent the
+  operator to another screen to push it.</li>
+</ul>
 <p class="rel-prevnext"><a href="v1.8.0.html">Version 1.8.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">

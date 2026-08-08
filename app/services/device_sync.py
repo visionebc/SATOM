@@ -303,6 +303,26 @@ def snapshot_for(appliance, *, timeout: float = 20.0) -> dict:
     return snapshot_from_device(appliance, timeout=timeout)
 
 
+def _fit(value, column):
+    """Clamp a SyncRun label to the width its column actually declares.
+
+    These are diagnostic labels. Overrunning one used to raise
+    StringDataRightTruncation *on the flush*, which poisons the whole session —
+    so a 3-character overrun in a bookkeeping field killed the caller's real
+    work (2026-08-08: a WPP clone that had already been written to the
+    appliance). A clipped label loses three characters of a diagnostic; the
+    exception loses the transaction. The length is read off the model so this
+    cannot drift if the column is ever widened, and
+    ``tests/test_sync_trigger_width.py`` still fails the build for any literal
+    that needs clipping — this is the backstop, not the guard.
+    """
+    if value is None:
+        return None
+    limit = getattr(getattr(column, "type", None), "length", None)
+    text = str(value)
+    return text[:limit] if limit else text
+
+
 def persist_snapshot(appliance, snapshot: dict, *, source: str = "live",
                      trigger: str = "manual", user_label: str | None = None,
                      publish: bool = False, session=None):
@@ -314,7 +334,8 @@ def persist_snapshot(appliance, snapshot: dict, *, source: str = "live",
 
     session = session or db.session
     run = SyncRun(appliance_id=getattr(appliance, "id", None), section="_all",
-                  trigger=trigger, user_label=user_label, status="ok")
+                  trigger=_fit(trigger, SyncRun.trigger),
+                  user_label=_fit(user_label, SyncRun.user_label), status="ok")
     session.add(run)
     session.flush()
     try:
@@ -365,7 +386,9 @@ def sync_device(appliance, *, publish: bool = False, user_label: str | None = No
         session = session or db.session
         errs = snapshot.get("errors") or [{"error": "device returned no objects"}]
         run = SyncRun(appliance_id=getattr(appliance, "id", None), section="_all",
-                      trigger=trigger, user_label=user_label, status="error",
+                      trigger=_fit(trigger, SyncRun.trigger),
+                      user_label=_fit(user_label, SyncRun.user_label),
+                      status="error",
                       detail=(f"device refused the sweep ({len(errs)} endpoints "
                               f"failed, 0 objects) — cache kept. First error: "
                               f"{errs[0].get('error', '')}")[:240])
@@ -451,7 +474,8 @@ def persist_deep_snapshot(appliance, snapshot: dict, *, trigger: str = "deep",
     from . import device_store
     session = session or db.session
     run = SyncRun(appliance_id=getattr(appliance, "id", None), section="_deep",
-                  trigger=trigger, user_label=user_label, status="ok")
+                  trigger=_fit(trigger, SyncRun.trigger),
+                  user_label=_fit(user_label, SyncRun.user_label), status="ok")
     session.add(run)
     session.flush()
     try:

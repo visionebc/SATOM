@@ -20,6 +20,18 @@ from __future__ import annotations
 
 EP_POLICY = '/api/v2.0/cmdb/server-policy/policy'
 
+#: Label recorded on the ``SyncRun`` this flow triggers.
+#:
+#: ``sync_runs.trigger`` is ``varchar(24)`` — a short enum-ish label
+#: (manual|scheduled|write_through|backfill), not a place for a dotted function
+#: path. Naming it after the function it was extracted from
+#: (``exceptions.clone_for_policy``, 27 chars) overflowed the column and took
+#: down the request that had just written to the appliance. Anything assigned
+#: here must fit; ``tests/test_sync_trigger_width.py`` enforces that for every
+#: ``trigger=`` literal in the tree, so the next one fails a test instead of a
+#: production write.
+SYNC_TRIGGER = 'wpp.clone_rebind'
+
 
 def derive_name(policy: str) -> str:
     """The per-policy clone name the Naming catalog dictates.
@@ -139,11 +151,27 @@ def clone_and_rebind(appliance, *, source: str, policy: str, new_name: str = '',
                       % (source, new_name, moved))
     # Keep the DB-first pickers current (best-effort — the device write already
     # succeeded; a refresh failure only delays the new name showing in lists).
+    #
+    # The rollback is the load-bearing line, not the `except`. A refresh that
+    # dies mid-flush leaves the SQLAlchemy session in a failed transaction, and
+    # swallowing the exception without clearing it hands the CALLER a session
+    # that raises PendingRollbackError on its next write. That is not
+    # hypothetical: on 2026-08-08 a 27-char ``trigger`` overflowed
+    # ``sync_runs.trigger`` (varchar 24), this block swallowed it, and
+    # ``save_carveout`` then died on ``store.add`` — so the operator was shown
+    # "An unexpected error occurred" for a clone that had ALREADY been written
+    # to the appliance and re-bound, and lost the draft they were authoring.
+    # Best-effort means the CALLER carries on; it cannot mean the caller
+    # inherits a poisoned transaction.
     try:
         from . import device_sync
         device_sync.sync_device(appliance, publish=False, user_label=actor or None,
-                                trigger='exceptions.clone_for_policy')
+                                trigger=SYNC_TRIGGER)
     except Exception:  # noqa: BLE001
-        pass
+        try:
+            from ..extensions import db
+            db.session.rollback()
+        except Exception:  # noqa: BLE001 — nothing left to salvage
+            pass
     return {'ok': True, 'code': 200, 'dry_run': False, 'new_name': new_name,
             'rebound': True, 'moved': moved, 'summary': summary}

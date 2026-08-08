@@ -40,8 +40,9 @@ def _touch(tok) -> None:
     if tok.last_used_at is not None and (now - tok.last_used_at) < _LAST_USED_THROTTLE:
         return
     try:
+        from ..extensions import real_client_ip
         tok.last_used_at = now
-        tok.last_used_ip = request.remote_addr
+        tok.last_used_ip = real_client_ip()
         db.session.commit()
     except Exception:  # noqa: BLE001 — a stamp must never break the call
         db.session.rollback()

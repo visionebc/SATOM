@@ -5468,3 +5468,37 @@ one asserting the whole table costs one read and one asserting the entry dict is
 unmodified. Both tables render through a single macro: the "recent entries"
 table exists to stand in for the matches table, and two renderings would let the
 stand-in describe the appliance differently from the table it replaces.
+
+## 36s. One checker for "every function the panel calls is defined in it"
+
+`attack_drawer.js` never runs during a server-side test, so a call that resolves
+to nothing is invisible to everything else in the suite — which is how the
+Advisor chat once shipped broken, one undefined identifier in a callback, on the
+line before the redraw. The structural check for it is worth keeping. Two copies
+of it were not.
+
+`test_attack_search` and `test_attack_ask_field` each carried the same regexes.
+They never disagreed with each other; they disagreed with the **script**. The
+panel grew a callback slot — declared `null`, assigned a real function later,
+called through an `if` guard — that neither copy could see, and both failed
+against correct code in the same run. Two authors of one rule is the failure
+mode §7f and §9j already describe; here it also doubled the cost of correcting
+the rule at exactly the moment it was wrong.
+
+The checker now lives once, in `tests/_js_guard.py`, and both modules call it.
+
+**What counts as defined:** a declared function at any nesting depth; a variable
+initialised with a function expression or an arrow; and a **callback slot** —
+declared empty and assigned a function elsewhere in the file, because the call
+site then resolves to that function.
+
+**What deliberately does not:** a slot that is declared and never assigned. A
+call that can only ever reach `null` is precisely the dead call this guard
+exists to catch, so accepting bare declarations would have widened the rule to
+let through the thing it is for. That distinction is the guard, not an
+implementation detail of it.
+
+**Checking it.** Three mutations, each of which must fail the check: remove the
+assignment that fills the slot, rename a helper the script calls, and add a slot
+that is declared, called and never assigned. The last one is the one that proves
+the rule was not simply relaxed until it stopped complaining.

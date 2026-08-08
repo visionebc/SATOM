@@ -65,7 +65,8 @@ def _audit_error(error_id: str, exc: BaseException, where: str) -> None:
         except Exception:  # noqa: BLE001
             user_id, username = None, "system"
         try:
-            ip = request.remote_addr if has_request_context() else None
+            from .extensions import real_client_ip
+            ip = real_client_ip() if has_request_context() else None
         except Exception:  # noqa: BLE001
             ip = None
 
@@ -258,8 +259,12 @@ def register_error_handlers(app: Flask) -> None:
         try:
             from flask_login import current_user
             who = getattr(current_user, "username", None) or "anonymous"
-            ip = (request.headers.get("X-Forwarded-For", "").split(",")[-1].strip()
-                  or request.remote_addr or "-")
+            # This used to read X-Forwarded-For directly, with no check that the
+            # peer was a trusted proxy — so any client could set the header and
+            # choose which address the FORBIDDEN line blamed, on the one log
+            # line whose whole purpose is attributing a probe.
+            from .extensions import real_client_ip
+            ip = real_client_ip() or "-"
             logger.warning("FORBIDDEN user=%s ip=%s %s", who, ip, _request_context())
         except Exception:  # noqa: BLE001 — logging must never turn a 403 into a 500
             pass

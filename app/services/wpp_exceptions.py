@@ -203,7 +203,12 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
     "signature_subclass_disable_item": ["sub_class_id"],
     "signature_class_action": ["main_class_id", "action"],
     "http_constraint_exception_item": ["request-type", "request-file"],
-    "allow_method_exception_item": ["request-type", "request-file"],
+    # 'allow-request' is the allow list itself. FortiWeb accepts a row without
+    # one, stores it, and allows nothing — the request stays blocked and the
+    # exception looks applied. A carve-out that cannot do its job is not a
+    # narrower carve-out, it is a lie in the config.
+    "allow_method_exception_item": ["request-type", "request-file",
+                                    "allow-request"],
     "geo_ip_exception_member_item": ["ip"],
     "syntax_exception_item": ["match-target", "operator"],
     "bot_exception_element_item": ["match-target", "operator"],

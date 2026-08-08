@@ -6,8 +6,113 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed
+
+- **The required scope is ticked, not demanded.** An Allow Method or
+  HTTP-constraint exception is keyed by FortiWeb on a URL pattern, and the
+  panel knew all three of the things that follow from that: which field it is,
+  that the entry carried a value for it, and that leaving it unticked produces
+  no exception at all — only a refusal naming `request-type` and `request-file`,
+  keys the operator never typed. It spent them on an instruction pointing at an
+  unlabelled checkbox in a twenty-two row table in the card above. The panel now
+  ticks that box itself, in the table where it can be seen as well as in the
+  state that gets posted, and the scope list reports what is actually ticked
+  rather than what it meant to tick. Only fields that NARROW are ever
+  pre-ticked, so the default cannot widen a carve-out; unticking is still
+  allowed and immediately restores the explanation of what is missing. A
+  required field the entry does not carry is reported as absent instead of as
+  something to go and tick, because no row is drawn for a field with no value
+  and there would be no checkbox to find.
+
+- **Asking the AI about a field now answers on the click.** The chat icon on
+  each element of an attack-log entry used to open an empty box and wait for
+  the operator to compose a question — a second gesture to get the thing they
+  had just asked for. It now sends the exchange immediately and renders the
+  Advisor's answer under the local explanation of that element, keeping the box
+  below it for the reply. The question itself is still left empty by the
+  browser so the server supplies its default text: that is the string the audit
+  row records, and a browser-side default would put a question in the log that
+  the provider was never sent. The automatic exchange fires at most once per
+  field per opened entry — after an answer *or* an error — because an automatic
+  retry against a provider that just failed spends tokens to reproduce a
+  failure already on screen. Time and tokens are stamped on it by the same
+  single cost chip every other analysis on the page uses.
+
 ### Fixed
 
+- **A carve-out on a shared profile reported failure for a change it had
+  already made.** Authoring an exception against a Server Policy whose Web
+  Protection Profile is shared correctly cloned the profile and re-bound the
+  policy — both written to the appliance — and then answered *"An unexpected
+  error occurred"* and discarded the draft. The clone was never the problem.
+  The cache refresh that runs afterwards recorded its `SyncRun` under a
+  27-character label in a `varchar(24)` column; Postgres raised on the flush,
+  which leaves the SQLAlchemy session in a failed transaction, and the
+  best-effort `except` swallowed the error without clearing it — so the next
+  write, the operator's own carve-out, died with `PendingRollbackError`. All
+  three links are closed: the label fits, an overlong one is now clipped rather
+  than raised, and a swallowed best-effort failure rolls the session back so a
+  caller can never inherit a dead transaction. A new guard fails the build for
+  any `trigger=` literal that does not fit the column, which is where this
+  should have been caught: nothing about a bookkeeping label was ever supposed
+  to be able to kill the work it describes.
+
+- **Every audited action was attributed to the reverse proxy.** SATOM is always
+  served through nginx, so `request.remote_addr` is the proxy — and the audit
+  log recorded it verbatim, leaving 193 of the last 200 rows on a live node
+  stamped `127.0.0.1`. An audit trail that cannot tell two operators apart is
+  not an audit trail, on a product whose entire job is authorising changes to a
+  WAF. The helper that resolves this correctly had existed all along and had
+  exactly one caller, the rate limiter. Audit rows, API-token last-used stamps,
+  500 correlation records and the account-lockout log lines all use it now.
+  Historical rows are left as they are: they are wrong, and rewriting an audit
+  trail to make it look right is worse than leaving it legible.
+
+- **The `FORBIDDEN` log line let the prober choose which address it blamed.**
+  It read `X-Forwarded-For` directly, with no check that the peer was a trusted
+  proxy, so any client could set the header and be recorded as someone else on
+  the one line whose purpose is attributing a probe. It now resolves the
+  address through the same helper, which honours the header only when the
+  direct peer is a configured proxy and takes the proxy-appended hop.
+
+- **Every attack-log entry was opened twice.** The panel registered its boot on
+  `DOMContentLoaded`, which Turbo remaps to `turbo:load`, and registered
+  `turbo:load` as well so it survives the body swap — so both fired on a first
+  load and the result table carried two click handlers. One click read the
+  entry off the appliance twice, rendered the builder twice, and left anything
+  holding a handle to a rendered node pointing at whichever render lost the
+  race. The table is now bound once per render, flagged on the table itself so
+  a real navigation still binds.
+- **An Allow Method exception could not carry the method it was supposed to
+  allow.** `allow-request` is the allow list itself, and the carve-out builder
+  never set it. Ticking *Method* — the obvious move on an entry blocked by the
+  Allow Method check — was answered with "FortiWeb has nowhere to put it", and
+  the payload that did pass validation held a URL and no allow list at all: a
+  row FortiWeb stores, applies, and which allows nothing, leaving the request
+  blocked with nothing on screen to say why. The method is now taken from the
+  entry itself (the appliance already recorded which one it rejected) and the
+  allow list is a required field for this type everywhere it can be authored,
+  including the manual Exceptions form.
+- **"Explain this field" did nothing.** The attack-entry panel bound its
+  delegated handlers each time an entry was opened, to an element the panel
+  refills but never replaces. Every open added one more handler to the same
+  node, so from the second entry onwards a click toggled the explanation open
+  and shut within itself and nothing appeared. The handlers are now bound once,
+  where the element is created.
+- **A required scope was offered as an optional narrowing.** FortiWeb keys
+  Allow Method and HTTP-constraint exceptions on a URL pattern, but the panel
+  listed the URL under *tick any of these to narrow it* and then failed with
+  `'request-file' is required for this carve-out type` — a device field name
+  the operator never typed. Required scopes are now marked as such up front,
+  and a missing key names the box that supplies it, worked out by re-running
+  the real assembly rather than from a second table that could drift from it.
+- **Every status badge in the Attack ID pages was unstyled.** The verdict, risk,
+  breadth and action badges asked for `fw-badge-ok` / `-warn` / `-crit` /
+  `-neutral`, which are not classes the stylesheet defines; the base `.fw-badge`
+  sets no colour, so `true-attack` and `false-positive` rendered identically.
+  They now use the calibrated `-success` / `-warning` / `-danger` / `-secondary`
+  set, and a guard fails the build if any badge class used anywhere is not
+  defined in the stylesheet.
 - **An exception could be authored on a Web Protection Profile that several
   Server Policies share, with nothing said about it.** SATOM refused a
   carve-out on a *template-managed* profile and asked no other question — but a
@@ -22,6 +127,58 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   Enforced hardest at the push, which is where the leak physically happens.
 
 ### Added
+
+- **The results table shows the Web Protection Profile behind each policy, and
+  whether it is shared.** Whether the profile is exclusive to this Server Policy
+  decides whether authoring an exception is one click or a profile clone and a
+  re-bind of live traffic — and the page already knew, because it reads the
+  bindings to run the scope gate. It just never said so until after the operator
+  had committed. Shared profiles name the other policies; a profile that cannot
+  be read renders as `unknown` rather than blank, because "SATOM could not ask
+  the appliance" and "this policy binds nothing" are opposite facts and an empty
+  cell is how the harmless one looks. One device read per table, whatever the
+  row count, and the derived value is kept beside the entries rather than
+  written into them — a row is evidence the appliance reported, and a derived
+  field mixed into it would reach the AI prompt and the audit trail dressed up
+  as something the device said.
+
+- **The field picker opens with the scope already chosen, and says why for each
+  box.** It used to open empty, which asks the operator the one question they
+  came here unable to answer: which of twenty-two fields scope *this* kind of
+  exception. Everything needed to answer it was already declared — which fields
+  exist, which are required, which order is most precise — so the
+  recommendation is derived from the same table the picker renders. Required
+  fields are always taken. A signature exception takes exactly one element, the
+  most precise the entry carries, because FortiWeb matches one per row and
+  ticking more would recommend a selection the device cannot honour. The source
+  address is held back while the request can be described by URL or host — it
+  identifies the caller, not the traffic, so an exception scoped to it stops
+  applying the moment that integration is re-addressed — but it is one click
+  away, and the reason it was left off is on screen rather than implied. The
+  selection is proved by running the real assembly, so a default that would not
+  validate says so on arrival instead of at Preview. Everything remains
+  editable; this is a starting point, not a decision.
+
+- **Ask the AI about one field, and read the answer where the field is
+  explained.** Each row of the attack entry now carries a second icon beside
+  the explain one. It opens a conversation about that single element, directly
+  under its local explanation rather than in another page: leave the box empty
+  for a general reading, or type the question in your own words and press
+  Ctrl+Enter. Follow-ups continue the same thread, so a second question does
+  not mean restating the entry. SATOM sends only which entry and which field —
+  the value is re-read from the appliance, exactly as every other acting path
+  on this page does, because a browser that can supply the evidence can invent
+  it. This path explains and cannot author: it is told not to draft a
+  carve-out, returns none to the screen, and any the model drafts anyway is
+  dismissed rather than left sitting as an unreviewed pending draft. Every
+  search, question and answer is recorded, with the question verbatim.
+- **Every analysis on the panel now states what it cost.** One line under each
+  result: which engine produced it, how long it took, and how many tokens it
+  spent — including the failures, because a provider that burned forty seconds
+  and then errored spent them. The local field explanation reports "no tokens",
+  which is a fact; a reply whose provider omitted the usage block reports
+  "tokens not reported", which is not the same claim as zero and is never
+  rendered as one. While a call is in flight the wait carries a running clock.
 
 - **Field-by-field investigation in the attack-entry panel.** Every field now
   explains what it is, what this value classifies as, and what to check next:

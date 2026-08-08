@@ -255,6 +255,12 @@ TABLE_COLUMNS = [
     ('main_type', 'Attack Type'),
     ('sub_type', 'Sub Type'),
     ('policy', 'Policy'),
+    # DERIVED, not a log field: the profile the policy binds is read off the
+    # appliance and carried beside the rows (see ``WPP_FIELD``). It belongs in
+    # this list anyway, because this list is what drives BOTH the match table
+    # and the miss fallback — a column hard-coded into one of them is how the
+    # two drift apart.
+    ('wpp', 'Web Protection Profile'),
     ('src', 'Source IP'),
     ('dst', 'Destination IP'),
     ('action', 'Action'),
@@ -275,3 +281,58 @@ PRIMARY_FIELDS = [
     ('server_pool_name', 'Server Pool'), ('backend_service', 'Backend Service'),
     ('monitor_status', 'Monitor Mode'), ('msg', 'Message'),
 ]
+
+
+#: The column whose value is a timestamp. Named once so the formatter, the
+#: table and the detail panel cannot disagree about which field that is.
+TIME_FIELD = 'rel_time'
+
+#: The column naming the Server Policy — the key the profile is looked up by.
+POLICY_FIELD = 'policy'
+
+#: The DERIVED column. Named once for the same reason as ``TIME_FIELD``: its
+#: value does not come from ``row[key]`` like every other column, so the
+#: template has to be told which one it is rather than hard-coding a second
+#: copy of the name. Deliberately a key no attack-log entry carries — the
+#: profile is read from the appliance, never from anything a caller sent.
+WPP_FIELD = 'wpp'
+
+#: How a localized attack-log timestamp is written. Seconds are kept: triage
+#: correlates a block against an access-log line, and two entries one second
+#: apart are routinely a different request.
+TIME_FORMAT = '%Y-%m-%d %H:%M:%S %Z'
+
+
+def local_time(row: dict[str, Any], fmt: str = TIME_FORMAT) -> str:
+    """The entry's timestamp, in the timezone chosen in Settings.
+
+    ``rel_time`` arrives as **Unix epoch seconds in a string** (e.g.
+    ``"1786181039"``) — rendered raw it is not a date at all, which is what the
+    result table used to show. The device also sends ``date``/``time``, but in
+    the APPLIANCE's timezone (``timezone`` carries a label such as
+    ``(GMT-8:00)Pacific Time(US&Canada)``), so those two fields disagree with
+    every other timestamp in SATOM and with the operator's own clock.
+
+    The epoch is therefore the only unambiguous field, and it is converted
+    through :func:`settings_store.to_local` — the one conversion path the
+    ``localtime`` filter and every server-side formatter already share, reading
+    ``general.timezone`` from ``app_settings``. A value that is not an epoch is
+    returned untouched: showing the raw field beats inventing a date for it.
+    """
+    raw = (row or {}).get(TIME_FIELD)
+    if raw in (None, '', 'N/A'):
+        return ''
+    try:
+        epoch = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return str(raw)
+    from datetime import datetime, timezone as _tz
+    from .settings_store import to_local
+    try:
+        return to_local(datetime.fromtimestamp(epoch, tz=_tz.utc), fmt)
+    except (OverflowError, OSError, ValueError):
+        # A device answering milliseconds or nanoseconds lands here — an epoch
+        # in seconds is 10 digits until 2286, and anything longer is out of
+        # range for datetime. An explicit digit-count guard ahead of this would
+        # be dead code: it can only reject values this clause already rejects.
+        return str(raw)

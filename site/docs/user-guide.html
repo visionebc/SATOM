@@ -397,6 +397,156 @@ app enforces:</p>
 <li><strong>Alignment report</strong> — device → policy → profile → exceptions, with stale
   detection; exportable.</li>
 </ul>
+<h3 id="91-search-attack-id-from-a-block-page-to-a-reviewed-carve-out">9.1 Search Attack ID — from a block page to a reviewed carve-out</h3>
+<p>When FortiWeb blocks a request it shows the caller a block page carrying an
+<strong>Attack ID</strong> (<code>000000004106</code>). That number is the only thing the person who
+was blocked can give you, and on its own it says nothing. FortiWeb ADOM →
+<strong>WAF → Search Attack ID</strong> resolves it: pick the appliance, paste the ID, and
+SATOM finds the attack-log entry it refers to and puts the whole triage on one
+page — what was blocked, why, whether it should have been, and the exception
+that would let it through if it should not.</p>
+<p>Everything on this page <strong>reads</strong>. Nothing is pushed to an appliance until you
+explicitly ask for it in §9.6, and no draft leaves the page approved.</p>
+<p><strong>The results table</strong> lists date, MSG ID, type, subtype, policy, source and
+destination address, and action. If the ID matches nothing — a stale block
+page, the log rotated, the wrong appliance — you get the most recent entries
+instead, in the same columns, so the page never answers with an empty box you
+cannot act on.</p>
+<p>One extra column matters before you touch anything: the <strong>Web Protection
+Profile</strong> behind each policy, and whether it is shared. A profile that only
+this Server Policy binds takes an exception in one click. A profile that four
+sites share does not — see §9.5. The column names the other policies when it is
+shared, and reads <code>unknown</code> when SATOM could not read the bindings off the
+device, because "could not ask" and "binds nothing" are opposite facts.</p>
+<h3 id="92-the-entry-panel-explaining-one-element-at-a-time">9.2 The entry panel: explaining one element at a time</h3>
+<p>Click any row and a panel slides in from the right with the full entry — around
+twenty-two fields, each on its own line. Two icons sit beside every one:</p>
+<ul>
+<li><strong>ⓘ Explain this field.</strong> Opens a short local reading directly under the
+  field: what the element is, what <em>this</em> value classifies as, and what to look
+  at next. It is computed on this node from the value alone. There is no WHOIS,
+  no geolocation and no threat-feed call — your client's addresses, hosts and
+  URLs are not sent anywhere, and the page still works on an isolated
+  management network. The single exception is a reverse-DNS lookup against this
+  host's own resolver, hard-capped at 1.5 seconds.</li>
+<li><strong>💬 Ask the AI about this field.</strong> Sends the question on the click and
+  renders the Advisor's answer underneath that same explanation. Leave it there
+  for a general reading, or type your own question in the box below and press
+  <strong>Ctrl+Enter</strong> (⌘+Enter on a Mac); follow-ups continue the same thread, so a
+  second question does not mean restating the entry. This icon is drawn only
+  when the AI Advisor is enabled (§33) — a button that could only ever refuse
+  teaches you to distrust the buttons.</li>
+</ul>
+<p>This path explains and <strong>cannot author</strong>: it is told not to draft a carve-out,
+  none is returned to the screen, and one drafted anyway is dismissed rather
+  than left waiting as an unreviewed proposal.</p>
+<p>Every analysis on the page — local or AI — is stamped with the same line:
+engine, elapsed time, and tokens. <code>no tokens</code> means it was computed locally and
+spent none; <code>tokens not reported</code> means the provider did not say, which is not
+the same claim as zero. Failures are stamped too: a provider that burned forty
+seconds and then failed still burned them.</p>
+<h3 id="93-building-the-exception">9.3 Building the exception</h3>
+<p>Below the entry sits the carve-out builder. It opens with a proposed <strong>kind of
+exception</strong> and the scope already ticked, and tells you why for each box.</p>
+<ul>
+<li>The kind is derived from what actually blocked the request. A block by HTTP
+  Protocol Constraints is not fixed by a signature exception, and the log line
+  does not say so in those words.</li>
+<li><strong>Required fields are always taken.</strong> FortiWeb keys an Allow Method or
+  HTTP-constraint exception on a URL pattern; leaving it out produces no
+  exception at all, so it is marked required up front rather than offered as an
+  optional narrowing.</li>
+<li><strong>A signature exception takes exactly one element</strong> — the most precise the
+  entry carries. FortiWeb matches one element per row, so ticking URL <em>and</em>
+  source address cannot mean "both"; SATOM uses the more precise one and says
+  which of your ticks it could not honour.</li>
+<li><strong>The source address is held back</strong> while the request can be described by URL
+  or host. It identifies the caller, not the traffic, so an exception scoped to
+  it stops applying the moment that integration is re-addressed. It is one
+  click away and the reason it was left off is on screen.</li>
+</ul>
+<p>Everything stays editable — this is a starting point, not a decision. Only
+fields that <em>narrow</em> are ever pre-ticked, so the default cannot widen a
+carve-out, and unticking immediately restores the explanation of what is now
+missing.</p>
+<p><strong>Preview</strong> assembles the payload on the server from the row the appliance
+returned, and shows you the route (policy → profile → module → type), the
+<strong>breadth</strong> — what stops being inspected and what still applies — and the exact
+body. Breadth is computed from the payload, not from the type: a signature
+exception is the narrowest thing there is <em>only if it names an element.</em></p>
+<h3 id="94-asking-the-ai-to-judge-the-entry">9.4 Asking the AI to judge the entry</h3>
+<p><strong>Analyze</strong> sends the entry to the Advisor and returns a verdict
+(<code>false-positive</code>, <code>true-attack</code>, or <code>uncertain</code>), a risk level, and — when
+it judges the block a false positive at low or medium risk — a drafted
+exception you can <strong>accept, adapt, or reject</strong>.</p>
+<ul>
+<li>SATOM never sends the row your browser is holding. It sends <em>which</em> entry and
+  <em>which</em> appliance, and re-reads the entry from the device. A browser that can
+  supply the evidence can invent it.</li>
+<li>Verdict and risk are read from the model's own declared lines. If they are
+  missing they stay empty — "the model would not judge" and "the model judged
+  it harmless" cannot look the same on a screen that authorises an exception.</li>
+<li>If the model drafts a proposal that contradicts its own verdict, the page
+  says so in red instead of offering an ordinary Accept.</li>
+<li><strong>Accept saves a draft.</strong> It does not push anything to the appliance.</li>
+</ul>
+<p><strong>The verdict advises; you authorise.</strong> You can author a carve-out the Advisor
+did not recommend — the common case is a real attack pattern that a known
+caller must be allowed to send — but contradicting the verdict (a <code>true-attack</code>
+reading, or a high/unacceptable risk) requires a written justification of at
+least twenty characters, stored on the rule and in the audit log. Refusing it
+outright would not prevent the exception; it would move it to the CLI, where
+nothing records why.</p>
+<h3 id="95-shared-and-template-profiles">9.5 Shared and template profiles</h3>
+<p>An exception lives on the Web Protection Profile, and FortiWeb records nothing
+about which Server Policy it was authored for. So a carve-out on a profile that
+four sites share applies to all four.</p>
+<p>SATOM reads the bindings off the device and resolves one of four states:</p>
+<table>
+<thead>
+<tr>
+<th>state</th>
+<th>what happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>exclusive</strong> — this policy owns the profile</td>
+<td>authored directly; no clone, because there is nothing to protect it from</td>
+</tr>
+<tr>
+<td><strong>shared</strong> — other policies bind it too</td>
+<td>refused, naming the other policies, with the guided clone offered</td>
+</tr>
+<tr>
+<td><strong>template-managed</strong></td>
+<td>refused the same way (team rule 1, §9)</td>
+</tr>
+<tr>
+<td><strong>unknown</strong> — the device could not be read</td>
+<td>treated as shared. Unknown is never assumed safe</td>
+</tr>
+</tbody>
+</table>
+<p>The guided clone derives a policy-specific profile, re-binds the Server Policy
+to it, and authorises the exception there. <strong>The clone is a real write to the
+appliance and is never implicit</strong> — it happens only when you ask for it in the
+same action.</p>
+<p>Saving a draft on the Exceptions page (§9) warns rather than refuses: a draft
+in the database lets nothing through. The Attack ID page refuses, because it is
+one click from a push. The push itself refuses hardest — that is where the leak
+physically happens.</p>
+<h3 id="96-putting-the-rule-on-the-appliance">9.6 Putting the rule on the appliance</h3>
+<p><strong>Insert</strong> is two steps on purpose. The first returns the exact method,
+endpoint and body SATOM would send, and writes nothing. The second sends it.
+Approving a rule and approving a specific POST against a production WAF are
+different acts. It uses the same planner as the Exceptions page.</p>
+<h3 id="97-what-is-recorded">9.7 What is recorded</h3>
+<p>Every search, every field question with its question text verbatim, every
+analysis, and every decision goes to the audit log. Accepting a proposal
+records <strong>both</strong> the payload the model proposed and the one you approved —
+those are different facts and an auditor needs both. Rejecting one is recorded
+too, not erased.</p>
 <h2 id="10-certificate-manager">10. Certificate Manager</h2>
 <p>Global ADOM → <strong>Certificate Manager</strong> (product-scoped: in the FortiWeb ADOM
 you see FortiWeb material, in ADC the ADC material).</p>

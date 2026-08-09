@@ -71,6 +71,7 @@ class ActionSpec:
       forced_schedule_kind lock the schedule to one kind ('' = any; upgrade='once')
       products             appliance kinds this action fires against (target set)
       summary              short English description (optional, for the UI)
+      requires_change_request  refuses to run unless bound to an approved CR
     """
 
     key: str
@@ -82,6 +83,36 @@ class ActionSpec:
     forced_schedule_kind: str = ""
     products: tuple[str, ...] = ("fortiweb",)
     summary: str = ""
+    requires_change_request: bool = False
+
+
+@dataclass(frozen=True)
+class RebootTransport:
+    """How ONE product is rebooted, and where that knowledge came from.
+
+    A reboot URN is not guessable and a wrong guess is not a 404: on FortiWeb the
+    neighbouring maintenance op (``backuprestorefirmwareboot``) reboots the box
+    EVEN ON GET. So every entry records its provenance, and a product with no
+    entry is refused BY NAME rather than probed live on a production appliance.
+    """
+
+    endpoint: str
+    reason_key: str        # body key carrying the operator's reason ('' = no body)
+    reason_max: int
+    provenance: str
+
+
+REBOOT_TRANSPORT: dict[str, RebootTransport] = {
+    "fortiweb": RebootTransport(
+        "/api/v2.0/system/status.systemoperationreboot", "reason", 100,
+        "VERIFIED 2026-08-09 by reading fortiweb08's OWN GUI bundle "
+        "(main.js: REBOOT_URL = '/system/status.systemoperationreboot', posted "
+        "with {reason}, REASON_MAX_LENGTH=100) - not taken from documentation.",
+    ),
+    # fortiadc / fortianalyzer / fortiauthenticator: deliberately absent. Their
+    # reboot URN has NOT been verified against a live device of that product, and
+    # a guessed one aimed at a load balancer is an outage, not a failed call.
+}
 
 
 # Admin maintenance automations (read-/file-writers + the gated firmware flow).
@@ -194,7 +225,7 @@ ADMIN_ACTIONS: list[ActionSpec] = [
     ),
     ActionSpec(
         "upgrade_prep", "Upgrade preparation (backup + health)", "admin",
-        needs_targets=True, danger=True,
+        needs_targets=True, danger=True, products=("fortiweb", "fortiadc"),
         summary="Pre-upgrade snapshot: a config backup AND a health read per "
                 "device, so a maintenance window starts from a known-good "
                 "baseline. Does NOT flash firmware.",
@@ -205,6 +236,18 @@ ADMIN_ACTIONS: list[ActionSpec] = [
         summary="Run the firmware upgrade at a FIXED date/time. DESTRUCTIVE. "
                 "Authorized by an approved Change Request inside its maintenance "
                 "window (change_requests.cr_runnable).",
+    ),
+    ActionSpec(
+        "reboot", "Reboot the appliance (DESTRUCTIVE)", "admin",
+        needs_targets=True, danger=True, forced_schedule_kind="once",
+        products=("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator"),
+        requires_change_request=True,
+        summary="Reboot each target appliance at a FIXED date/time. DESTRUCTIVE: "
+                "the box stops serving until it comes back. Runs ONLY bound to an "
+                "approved Change Request inside its maintenance window - it "
+                "refuses to fire unbound. The reboot URN is per product and is "
+                "sent only where it has been verified against that product's own "
+                "device; an unverified product is refused by name, never guessed.",
     ),
     ActionSpec(
         "health_check", "Health check (system status)", "admin",
@@ -250,7 +293,7 @@ ADMIN_ACTIONS: list[ActionSpec] = [
     ),
     ActionSpec(
         "cert_lifecycle", "Cert Manager — lifecycle sweep (revoke + cleanup)",
-        "admin", needs_targets=True,
+        "admin", needs_targets=True, danger=True,
         summary="Enforce the certificate lifecycle policy (Settings → Certificate "
                 "Manager): revoke superseded certs past the grace window at the CA "
                 "and DELETE revoked/superseded/expired unbound certificate material "
@@ -489,6 +532,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_upgrade_prep(appliance, dry_run)
         if key == "upgrade":
             return _do_upgrade(appliance, params, dry_run)
+        if key == "reboot":
+            return _do_reboot(appliance, params, dry_run)
         if key == "health_check":
             return _do_health_check(appliance, dry_run)
         if key == "ha_check":
@@ -695,6 +740,59 @@ def _do_upgrade_prep(appliance, dry_run: bool) -> dict:
     return {"ok": True,
             "summary": f"{appliance.name}: pre-upgrade snapshot ready (backup + health).",
             "log": "\n".join(lines)[:_LOG_MAX]}
+
+
+def _do_reboot(appliance, params: dict, dry_run: bool) -> dict:
+    """Reboot ONE appliance over its product's verified reboot URN.
+
+    Refuses - by name, with the product in the message - for any product whose
+    URN is not in :data:`REBOOT_TRANSPORT`. Returning ok=False there is the whole
+    point: the alternative is sending a plausible-looking path to a live load
+    balancer to find out what it does.
+    """
+    if appliance is None:
+        return {"ok": False, "summary": "reboot needs a target device.", "log": ""}
+    name = getattr(appliance, "name", "device")
+    kind = (getattr(appliance, "kind", "") or "fortiweb").strip().lower()
+    transport = REBOOT_TRANSPORT.get(kind)
+    if transport is None:
+        return {
+            "ok": False,
+            "summary": (f"{name}: reboot is not implemented for {kind} - no reboot "
+                        "endpoint has been verified against a live device of this "
+                        "product. NOTHING was sent to the appliance."),
+            "log": f"no REBOOT_TRANSPORT entry for kind {kind!r}; "
+                   f"known: {', '.join(sorted(REBOOT_TRANSPORT))}",
+        }
+    reason = str(params.get("reason") or "").strip() or \
+        "Scheduled maintenance (SATOM change request)"
+    reason = reason[:transport.reason_max]
+    if dry_run:
+        return {
+            "ok": True,
+            "summary": (f"[dry-run] would POST {transport.endpoint} to {name} "
+                        f"({kind}) and REBOOT it. Nothing was sent."),
+            "log": f"reason={reason!r}",
+        }
+    client = appliance.build_client()
+    body = {transport.reason_key: reason} if transport.reason_key else None
+    resp = client.api_call("POST", transport.endpoint, body)
+    code = getattr(resp, "status_code", 0)
+    text = (getattr(resp, "text", "") or "")[:400]
+    if not (200 <= int(code or 0) < 300):
+        return {"ok": False,
+                "summary": f"{name}: reboot refused (HTTP {code}).",
+                "log": text}
+    # A 2xx means the box ACCEPTED the reboot, not that it came back. Recovery is
+    # watched by the change window's own post-checks; claiming "rebooted" here
+    # would report a state nobody observed.
+    return {
+        "ok": True,
+        "summary": (f"{name}: reboot accepted (HTTP {code}) - the appliance is "
+                    "going down now. Return to service is NOT confirmed by this "
+                    "call."),
+        "log": text,
+    }
 
 
 def _do_upgrade(appliance, params: dict, dry_run: bool) -> dict:
@@ -1074,6 +1172,17 @@ def execute_and_record(action_row, *, trigger: str = "schedule"):
             # restore, reboot...) fire unapproved and outside its window - the
             # exact thing the gate exists to stop.
             cr_bound_id = _as_int(params.get("change_request_id"))
+            # (3a) A spec that declares requires_change_request is unrunnable
+            # unbound. The declaration lives on the SPEC, not in an action-name
+            # check here, so a newly registered dangerous action arrives gated
+            # instead of arriving free - which is how 'upgrade_prep' once shipped
+            # destructive and ungated while the gate watched only 'upgrade'.
+            if cr_bound_id is None and spec.requires_change_request:
+                status = "skipped"
+                summary = (f"{spec.label}: refused - this action runs only bound "
+                           "to an approved change request inside its window.")
+                log_lines.append(summary)
+                gated = True
             if cr_bound_id is not None:
                 from . import change_requests  # local import: avoid any import cycle
                 cr = db.session.get(ChangeRequest, cr_bound_id)

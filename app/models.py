@@ -1124,6 +1124,22 @@ class ChangeRequest(db.Model):
     mw_ref = db.Column(db.String(512), nullable=True, default="")
     mw_state = db.Column(db.String(16), nullable=False, default="none")
     integration_log = db.Column(db.Text, nullable=True, default="")
+    # --- formal change document (CR-YYYY-NNNN, DE/EN) -------------------
+    # ``ref`` is the human change id printed on the document and quoted in
+    # tickets. It is stamped ONCE at creation and never recomputed: deriving
+    # it from the row id at print time would silently renumber every past
+    # document the day the id sequence is reseeded from a restore.
+    ref = db.Column(db.String(32), nullable=True, default="")
+    owner = db.Column(db.String(64), nullable=True, default="")
+    doc_lang = db.Column(db.String(8), nullable=False, default="en")
+    # --- frozen evidence ------------------------------------------------
+    # policies (above) holds the affected-service inventory as it was WHEN THE
+    # CHANGE WAS RAISED; inventory_at says when that photograph was taken and
+    # prep_id points at the pre-upgrade run that justified the change. A
+    # document that re-read the devices at print time would describe a fleet
+    # the approver never saw.
+    inventory_at = db.Column(db.DateTime, nullable=True)
+    prep_id = db.Column(db.Integer, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -1146,6 +1162,59 @@ class ChangeRequest(db.Model):
 
     def __repr__(self) -> str:
         return f"<ChangeRequest {self.title!r} {self.status}>"
+
+
+class UpgradePrep(db.Model):
+    """A persisted pre-upgrade run — the evidence a change request rests on.
+
+    Until this table existed the pre-flight was a fire-and-forget REST call:
+    ``upgrade.prepare()`` ran, its result was painted into the browser, and it
+    was gone the moment the tab closed. That made the chain the operator
+    actually wants — *pre-upgrade passed, therefore raise the change* —
+    impossible to build, because by the time somebody filled in the change
+    form there was nothing left to attach.
+
+    Deliberately append-only: a re-run creates a NEW row rather than editing
+    the last one. The prerequisites section of an approved change document
+    cites a specific run, and a run that can be overwritten in place is not
+    evidence.
+    """
+    __tablename__ = "upgrade_prep"
+
+    id = db.Column(db.Integer, primary_key=True)
+    appliance_id = db.Column(
+        db.Integer, db.ForeignKey("appliances.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_by = db.Column(db.String(64), nullable=True, default="")
+    firmware = db.Column(db.String(64), nullable=True, default="")
+    # ok is the OVERALL verdict, computed once at write time from the sections
+    # that ran. Recomputing it on read would let a later change to the scoring
+    # rule silently re-grade a run somebody already approved a change against.
+    ok = db.Column(db.Boolean, nullable=False, default=False)
+    summary = db.Column(db.String(255), nullable=True, default="")
+    result = db.Column(db.Text, nullable=False, default="{}")      # prepare() dict
+    inventory = db.Column(db.Text, nullable=False, default="[]")   # affected SPO/VS
+    cr_id = db.Column(db.Integer, nullable=True)                   # raised change, if any
+
+    @property
+    def result_dict(self) -> dict[str, Any]:
+        try:
+            v = json.loads(self.result or "{}")
+            return v if isinstance(v, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+
+    @property
+    def inventory_list(self) -> list:
+        try:
+            v = json.loads(self.inventory or "[]")
+            return v if isinstance(v, list) else []
+        except (ValueError, TypeError):
+            return []
+
+    def __repr__(self) -> str:
+        return f"<UpgradePrep {self.id} appliance={self.appliance_id} ok={self.ok}>"
 
 
 class ChangeRequestEvent(db.Model):

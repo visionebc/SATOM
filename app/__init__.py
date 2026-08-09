@@ -1372,6 +1372,15 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('mw_ref', 'VARCHAR(512)'),
                 ('mw_state', "VARCHAR(16) DEFAULT 'none'"),
                 ('integration_log', 'TEXT'),
+                # --- formal change document + frozen evidence (2026-08-09) ---
+                # ref/owner/doc_lang are NULLABLE with no backfill: a CR raised
+                # before the document existed has no change-id of record, and
+                # inventing one now would print a reference nobody can look up.
+                ('ref', 'VARCHAR(32)'),
+                ('owner', 'VARCHAR(64)'),
+                ('doc_lang', "VARCHAR(8) DEFAULT 'en'"),
+                ('inventory_at', 'TIMESTAMP'),
+                ('prep_id', 'INTEGER'),
             ],
         }
         insp = inspect(db.engine)

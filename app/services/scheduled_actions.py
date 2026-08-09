@@ -39,6 +39,16 @@ from . import backup, scheduler, signature_catalog
 from .fortiweb_ops import FortiWebOps
 from ..registry.loader import load_registry
 
+
+def _configured_tz() -> str:
+    """IANA name for the wall-clock schedule kinds, read here and passed DOWN
+    into the pure schedule math (``services/scheduler`` stays DB-free)."""
+    from . import settings_store
+    try:
+        return settings_store.tz_name()
+    except Exception:  # noqa: BLE001 - a settings read must never strand a lease
+        return "UTC"
+
 # REST endpoints for the user-scope object ops (FortiWeb v2.0 cmdb).
 SERVER_POLICY_EP = "/api/v2.0/cmdb/server-policy/policy"
 SERVER_POOL_MEMBER_EP = "/api/v2.0/cmdb/server-policy/server-pool/pserver-list"
@@ -1209,7 +1219,8 @@ def execute_and_record(action_row, *, trigger: str = "schedule"):
             next_run = (
                 None if action_row.schedule_kind == "once"
                 else scheduler.compute_next_run(
-                    action_row.schedule_kind, action_row.schedule_dict)
+                    action_row.schedule_kind, action_row.schedule_dict,
+                    tz=_configured_tz())
             )
         except Exception:  # noqa: BLE001 - a bad spec must not strand the lease
             next_run = None

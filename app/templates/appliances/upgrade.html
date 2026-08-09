@@ -13,6 +13,33 @@
   first. Leave <b>Dry run</b> checked to validate without sending anything.
 </div>
 
+{# --- CHANGE CONTROL: a live flash needs an approved, open window --- #}
+<div class="fw-alert fw-alert-{{ 'success' if cr_ok else 'warning' }} mt-2">
+  <i class="bi bi-{{ 'shield-check' if cr_ok else 'shield-exclamation' }} me-1"></i>
+  {% if cr_ok %}
+    <b>Authorised by {{ cr.ref or ('CR #' ~ cr.id) }}</b> &mdash; &ldquo;{{ cr.title }}&rdquo;,
+    window {{ cr.window_start|localtime('%Y-%m-%d %H:%M %Z') }}{% if cr.window_end %} &rarr; {{ cr.window_end|localtime('%Y-%m-%d %H:%M %Z') }}{% endif %}.
+    A live push will move that change to <i>in&nbsp;progress</i> and close it with the real outcome.
+  {% else %}
+    <b>Live upgrade is blocked.</b> {{ cr_reason }}.
+    Dry runs still work &mdash; they send nothing to the appliance.
+    {% if cr %}
+      <a class="alert-link" href="{{ url_for('change_requests.detail', id=cr.id) }}">Open {{ cr.ref or ('CR #' ~ cr.id) }}</a>.
+    {% else %}
+      Run <a class="alert-link" href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}">Upgrade Preparation</a>,
+      raise a change request from that run, and get it approved.
+    {% endif %}
+  {% endif %}
+  {% if prep %}
+  <div class="small mt-1">
+    Latest pre-flight: #{{ prep.id }} on {{ prep.created_at|localtime }} &mdash;
+    {{ 'passed' if prep.ok else 'NOT clean' }} ({{ prep.summary }}).
+  </div>
+  {% else %}
+  <div class="small mt-1 text-muted">No pre-flight has ever been recorded for this appliance.</div>
+  {% endif %}
+</div>
+
 {% if result %}
 <div class="card shadow-sm mb-3">
   <div class="card-header fw-card-header">Result — {{ 'DRY RUN' if result.dry_run else 'LIVE PUSH' }}</div>

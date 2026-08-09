@@ -8,6 +8,7 @@
 <title>Changelog — SATOM</title>
 <meta name="description" content="Every release and every change, newest first — the same file that ships in the repository and is readable inside the application.">
 <link rel="icon" href="../favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="../assets/satom-mark.svg">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,7 +21,7 @@
 
 <nav>
   <div class="wrap nav-inner">
-    <a class="brand" href="../index.html"><img class="mark" src="../assets/satom-mark.png" alt="SATOM"> <span class="wordmark">SA<b>TOM</b></span></a>
+    <a class="brand" href="../index.html"><img class="mark" src="../assets/satom-mark.svg" alt="SATOM"> <span class="wordmark">SA<b>TOM</b></span></a>
     <button class="nav-toggle" id="nav-toggle" aria-label="Menu">☰</button>
     <div class="nav-right">
       <div class="nav-links">
@@ -228,6 +229,20 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
+<li><strong>One SATOM mark, filed under the product's name.</strong> The console, the repo
+  site and the product site each drew a different brand: an emblem that reads as
+  a "G", and — on the product site — the CHARACTER <code>S</code> in a gradient box, a
+  placeholder that outlived its excuse. The only real vector the product owned
+  was filed as <code>assets/favicon.svg</code>, so the mark was named after ONE OF ITS
+  USES and nothing called "logo" or "mark" existed to find. It is now
+  <code>satom-mark.svg</code> on every surface, carries <code>&lt;title&gt;SATOM&lt;/title&gt;</code> and
+  <code>aria-label="SATOM"</code> so an assistive reader announces the product rather than
+  "image", and <code>satom-mark.png</code> / <code>favicon.png</code> / <code>favicon.ico</code> /
+  <code>apple-touch-icon.png</code> are RENDERS of that one vector instead of independent
+  files. <code>tests/test_brand_mark.py</code> holds the surfaces together: the copies must
+  be byte-identical, every <code>site/</code> page with a <code>class="brand"</code> must show the
+  mark, and the generator template must stamp the same string the pages carry —
+  a page fixed by hand is reverted by the next regeneration.</li>
 <li><strong>A live firmware upgrade requires an approved, open change window.</strong> This was
   the hole: the headless executor had refused to flash outside a window since
   the gate was generalised, but the button a human actually clicks went straight

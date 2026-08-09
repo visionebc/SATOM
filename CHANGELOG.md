@@ -7,6 +7,28 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **Recorded pre-flight runs can be read back** (`GET /appliances/<id>/upgrade/
+  prep/<prep_id>.json`, "View result" on every row of the runs table). The runs
+  were already stored, listed and citable by a change request — and not
+  readable. The table said *passed, 12 services*; the health battery, the backup
+  filename and the per-policy baseline that produced that verdict sat in the row
+  with no way out. Evidence you cannot open is a receipt, not evidence. A stored
+  run is painted by the SAME renderer as a live one, from the same payload
+  shape, because a second renderer for one payload drifts silently — both would
+  still paint, and nothing on screen would say which description of the evidence
+  is true. It is also LABELLED as recorded, with the run number, its timestamp
+  and who ran it: the panel is the same panel, and a two-day-old health battery
+  looks exactly like one taken thirty seconds ago. The appliance is part of the
+  lookup key, so a run belonging to another device is a 404 rather than a
+  pre-flight rendered under the wrong box's heading.
+- **The frozen inventory is visible with its run.** The published services a
+  window takes offline were captured with every pre-flight and only ever shown
+  as a count; the list a change request actually cites is now on the page. Its
+  column headings come from `prep_store.FIELDS`, the same catalog the CSV and
+  XLSX exports are built from, so the screen and the signed sheet cannot name
+  one column two ways. The three probe states stay three: *not probed* is not
+  *unreachable* — collapsing unknown into down invents an outage, collapsing it
+  into up hides one.
 - **Change requests run on the operator's clock.** Window start/end are read in
   the timezone configured under Settings → General (`general.timezone`) through
   a new `settings_store.parse_local` — the exact inverse of the `to_local` every

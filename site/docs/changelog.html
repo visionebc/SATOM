@@ -93,6 +93,28 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>Recorded pre-flight runs can be read back</strong> (<code>GET /appliances/&lt;id&gt;/upgrade/
+  prep/&lt;prep_id&gt;.json</code>, "View result" on every row of the runs table). The runs
+  were already stored, listed and citable by a change request — and not
+  readable. The table said <em>passed, 12 services</em>; the health battery, the backup
+  filename and the per-policy baseline that produced that verdict sat in the row
+  with no way out. Evidence you cannot open is a receipt, not evidence. A stored
+  run is painted by the SAME renderer as a live one, from the same payload
+  shape, because a second renderer for one payload drifts silently — both would
+  still paint, and nothing on screen would say which description of the evidence
+  is true. It is also LABELLED as recorded, with the run number, its timestamp
+  and who ran it: the panel is the same panel, and a two-day-old health battery
+  looks exactly like one taken thirty seconds ago. The appliance is part of the
+  lookup key, so a run belonging to another device is a 404 rather than a
+  pre-flight rendered under the wrong box's heading.</li>
+<li><strong>The frozen inventory is visible with its run.</strong> The published services a
+  window takes offline were captured with every pre-flight and only ever shown
+  as a count; the list a change request actually cites is now on the page. Its
+  column headings come from <code>prep_store.FIELDS</code>, the same catalog the CSV and
+  XLSX exports are built from, so the screen and the signed sheet cannot name
+  one column two ways. The three probe states stay three: <em>not probed</em> is not
+  <em>unreachable</em> — collapsing unknown into down invents an outage, collapsing it
+  into up hides one.</li>
 <li><strong>Change requests run on the operator's clock.</strong> Window start/end are read in
   the timezone configured under Settings → General (<code>general.timezone</code>) through
   a new <code>settings_store.parse_local</code> — the exact inverse of the <code>to_local</code> every

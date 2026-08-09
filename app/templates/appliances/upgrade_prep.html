@@ -60,10 +60,26 @@
     </div>
     <div class="fw-card-body"><pre id="r-health" class="fw-pre">—</pre></div>
   </div>
+
+  {# The frozen inventory: the published services this window takes offline.
+     It is stored WITH the run and never re-read, because the approver signed
+     the list as it was at approval time. Showing it here is the only way to
+     see what a change request is actually citing. #}
+  <div class="fw-card">
+    <div class="fw-card-header">
+      <h6 class="fw-card-title">Affected services captured with this run</h6>
+      <span id="r-inv-count" class="fw-badge fw-badge-secondary">—</span>
+    </div>
+    <div id="r-inventory"></div>
+  </div>
 </div>
 
 <div class="fw-card">
-  <div class="fw-card-header"><h6 class="fw-card-title">Recorded pre-flight runs</h6></div>
+  <div class="fw-card-header">
+    <h6 class="fw-card-title">Recorded pre-flight runs</h6>
+    <span class="fw-badge fw-badge-secondary">10 most recent</span>
+    <span id="prep-runs-stale" class="fw-badge fw-badge-warning d-none">reload to list the run you just made</span>
+  </div>
   {% if runs %}
   <div class="fw-table-wrapper" style="border:0; box-shadow:none; border-radius:0;">
     <table class="fw-table">
@@ -83,7 +99,11 @@
             {% if r.cr_id %}<a href="{{ url_for('change_requests.detail', id=r.cr_id) }}">CR #{{ r.cr_id }}</a>
             {% else %}<span class="text-muted">none</span>{% endif %}
           </td>
-          <td class="text-end">
+          <td class="text-end text-nowrap">
+            <button type="button" class="btn btn-sm fw-btn-secondary prep-view"
+                    data-prep="{{ r.id }}">
+              <i class="bi bi-eye me-1"></i>View result
+            </button>
             {% if not r.cr_id %}
             <a class="btn btn-sm fw-btn-secondary text-nowrap"
                href="{{ url_for('change_requests.new', prep_id=r.id, action='upgrade') }}">
@@ -138,6 +158,119 @@
     }
     return h + '</tbody></table></div>';
   }
+  // The frozen inventory rows. probe_ok carries THREE states and they must not
+  // read alike: '' was never probed, false was probed and failed. Collapsing
+  // "unknown" into "down" invents an outage; collapsing it into "up" hides one.
+  // The column headings come from prep_store.FIELDS, the same catalog the CSV
+  // and XLSX exports are built from. Typing them here would give one column two
+  // names -- and the operator comparing the screen against the exported sheet
+  // has no way to know which one the change request was signed against.
+  const INV_COLS = ['policy', 'vserver', 'service', 'status', 'url'];
+  function invTable(rows, fields) {
+    if (!rows || !rows.length) return '<div class="fw-card-body text-muted small">No published services were captured with this run.</div>';
+    const label = {};
+    (fields || []).forEach((f) => { label[f.key] = f.label; });
+    let h = '<div class="fw-table-wrapper" style="border:0; box-shadow:none; border-radius:0;">'
+          + '<table class="fw-table"><thead><tr>'
+          + INV_COLS.map((k) => '<th>' + esc(label[k] || k) + '</th>').join('')
+          + '<th>Baseline</th></tr></thead><tbody>';
+    for (const r of rows) {
+      let base;
+      if (r.probe_ok === '' || r.probe_ok === null || r.probe_ok === undefined) {
+        base = '<span class="fw-badge fw-badge-secondary">not probed</span>';
+      } else if (r.probe_ok) {
+        base = '<span class="fw-badge fw-badge-success">' + esc(r.http_status || 'up') + '</span>';
+      } else {
+        base = '<span class="fw-badge fw-badge-danger">unreachable</span>';
+      }
+      h += `<tr><td class="fw-cell-break"><b>${esc(r.policy)}</b></td>`
+         + `<td class="fw-cell-break">${esc(r.vserver) || '—'}</td>`
+         + `<td class="fw-cell-break">${esc(r.service) || '—'}</td>`
+         + `<td>${esc(r.status) || '—'}</td>`
+         + `<td class="fw-cell-break fw-cell-mono">${esc(r.url) || '—'}</td>`
+         + `<td class="text-nowrap">${base}</td></tr>`;
+    }
+    return h + '</tbody></table></div>';
+  }
+  // ONE renderer for both a run that just happened and a run read back from
+  // the store. A second renderer for the same payload drifts silently -- both
+  // would still paint, and nothing would say which one told the truth.
+  function paint(j) {
+    const d = j.result || {};
+    out.classList.remove('d-none');
+    document.getElementById('r-fw').textContent = d.firmware || '—';
+    document.getElementById('r-perm').innerHTML = (d.permission === null || d.permission === undefined) ? '<span class="fw-badge fw-badge-secondary">unknown</span>' : pill(d.permission, d.permission ? 'granted' : 'denied');
+    // A 50-character backup filename inside a pill wraps into a two-line
+    // lozenge. The verdict is the badge; the filename is evidence, so it
+    // gets its own mono sub-line that can break where it likes.
+    const bk = d.backup;
+    document.getElementById('r-backup').innerHTML = !bk
+      ? '<span class="fw-badge fw-badge-secondary">skipped</span>'
+      : (bk.ok
+          ? '<span class="fw-badge fw-badge-success">taken</span>'
+            + '<div class="fw-fact-sub">' + esc(bk.name || 'unnamed') + '</div>'
+          : '<span class="fw-badge fw-badge-danger">failed</span>');
+    const probes = (d.services && d.services.probes) || [];
+    document.getElementById('r-svc-count').textContent = probes.length || (d.services && d.services.ok ? 0 : '—');
+    document.getElementById('r-services').innerHTML = (d.services && d.services.ok) ? svcTable(probes) : ('<div class="fw-card-body"><span class="fw-badge fw-badge-danger">'+esc((d.services&&d.services.error)||'skipped')+'</span></div>');
+    document.getElementById('r-health').textContent = (d.health && d.health.ok) ? (d.health.text || '(empty)') : ('SSH health unavailable: ' + ((d.health&&d.health.error)||'skipped'));
+    const inv = j.inventory || [];
+    document.getElementById('r-inv-count').textContent = inv.length + ' captured';
+    document.getElementById('r-inventory').innerHTML = invTable(inv, j.inventory_fields);
+    const crBox = document.getElementById('prep-cr');
+    crBox.classList.remove('d-none', 'fw-alert-success', 'fw-alert-warning', 'fw-alert-info');
+    if (!j.prep_id) {
+      crBox.classList.add('fw-alert-info');
+      crBox.textContent = 'This run was NOT stored, so no change request can cite it. '
+        + 'The pre-flight itself completed — the results above are real.';
+      return;
+    }
+    crBox.classList.add(j.prep_ok ? 'fw-alert-success' : 'fw-alert-warning');
+    // A recorded run has to SAY it is recorded. The panel is the same panel,
+    // and a two-day-old health battery looks exactly like one taken thirty
+    // seconds ago -- that is how a box gets upgraded on a pre-flight that
+    // predates the fault it was supposed to catch.
+    const head = j.stored
+      ? 'Showing <b>recorded pre-flight #' + esc(j.prep_id) + '</b>, run '
+        + esc(j.created_at) + (j.created_by ? ' by ' + esc(j.created_by) : '')
+        + ' — nothing was contacted to display it. Verdict '
+      : 'Recorded as <b>pre-flight #' + esc(j.prep_id) + '</b> — verdict ';
+    crBox.innerHTML = head
+      + (j.prep_ok ? 'passed' : 'NOT clean') + ': ' + esc(j.prep_summary || '')
+      + '. Inventory of <b>' + esc(j.inventory_count) + '</b> published service(s) captured.'
+      + (j.cr_url
+          ? ' <a class="btn btn-sm fw-btn-primary ms-2" href="' + esc(j.cr_url) + '">Raise change request</a>'
+          : (j.cr_id ? ' Cited by <a href="' + esc(crUrl(j.cr_id)) + '">CR #' + esc(j.cr_id) + '</a>.' : ''));
+  }
+  function crUrl(id) { return '{{ url_for("change_requests.detail", id=0) }}'.replace(/0$/, String(id)); }
+
+  // Read back one stored run. Same renderer, same panel, explicit label.
+  document.querySelectorAll('.prep-view').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const prev = b.innerHTML;
+      b.disabled = true; b.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+      try {
+        const r = await fetch('{{ url_for("appliances.upgrade_prep_show", id=appliance.id, prep_id=0) }}'.replace(/0\.json$/, b.dataset.prep + '.json'));
+        const j = await r.json();
+        if (!j.ok) {
+          const box = document.getElementById('prep-cr');
+          box.classList.remove('d-none', 'fw-alert-success', 'fw-alert-warning');
+          box.classList.add('fw-alert-info');
+          box.textContent = 'Could not load pre-flight #' + b.dataset.prep + ': ' + (j.error || r.status);
+          return;
+        }
+        paint(j);
+        document.getElementById('prep-cr').scrollIntoView({behavior: 'smooth', block: 'start'});
+      } catch (e) {
+        const box = document.getElementById('prep-cr');
+        box.classList.remove('d-none'); box.classList.add('fw-alert-info');
+        box.textContent = 'ERROR: ' + e.message;
+      } finally {
+        b.disabled = false; b.innerHTML = prev;
+      }
+    });
+  });
+
   btn.addEventListener('click', async () => {
     btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Running…';
     try {
@@ -152,37 +285,11 @@
       });
       const j = await r.json();
       if (!j.ok) { out.classList.remove('d-none'); document.getElementById('r-health').textContent = 'ERROR: ' + j.error; return; }
-      const d = j.result;
-      out.classList.remove('d-none');
-      document.getElementById('r-fw').textContent = d.firmware || '—';
-      document.getElementById('r-perm').innerHTML = d.permission === null ? '<span class="fw-badge fw-badge-secondary">unknown</span>' : pill(d.permission, d.permission ? 'granted' : 'denied');
-      // A 50-character backup filename inside a pill wraps into a two-line
-      // lozenge. The verdict is the badge; the filename is evidence, so it
-      // gets its own mono sub-line that can break where it likes.
-      const bk = d.backup;
-      document.getElementById('r-backup').innerHTML = !bk
-        ? '<span class="fw-badge fw-badge-secondary">skipped</span>'
-        : (bk.ok
-            ? '<span class="fw-badge fw-badge-success">taken</span>'
-              + '<div class="fw-fact-sub">' + esc(bk.name || 'unnamed') + '</div>'
-            : '<span class="fw-badge fw-badge-danger">failed</span>');
-      const probes = (d.services && d.services.probes) || [];
-      document.getElementById('r-svc-count').textContent = probes.length || (d.services && d.services.ok ? 0 : '—');
-      document.getElementById('r-services').innerHTML = (d.services && d.services.ok) ? svcTable(probes) : ('<div class="fw-card-body"><span class="fw-badge fw-badge-danger">'+esc((d.services&&d.services.error)||'skipped')+'</span></div>');
-      document.getElementById('r-health').textContent = (d.health && d.health.ok) ? (d.health.text || '(empty)') : ('SSH health unavailable: ' + ((d.health&&d.health.error)||'skipped'));
-      const crBox = document.getElementById('prep-cr');
-      crBox.classList.remove('d-none', 'fw-alert-success', 'fw-alert-warning', 'fw-alert-info');
-      if (j.prep_id) {
-        crBox.classList.add(j.prep_ok ? 'fw-alert-success' : 'fw-alert-warning');
-        crBox.innerHTML = 'Recorded as <b>pre-flight #' + esc(j.prep_id) + '</b> — '
-          + (j.prep_ok ? 'verdict passed' : 'verdict NOT clean') + ': ' + esc(j.prep_summary || '')
-          + '. Inventory of <b>' + esc(j.inventory_count) + '</b> published service(s) captured.'
-          + ' <a class="btn btn-sm fw-btn-primary ms-2" href="' + esc(j.cr_url) + '">Raise change request</a>';
-      } else {
-        crBox.classList.add('fw-alert-info');
-        crBox.textContent = 'This run was NOT stored, so no change request can cite it. '
-          + 'The pre-flight itself completed — the results above are real.';
-      }
+      paint(j);
+      // A fresh run adds a row to the recorded table below; that table is
+      // server-rendered, so it only tells the truth after a reload.
+      const tbl = document.getElementById('prep-runs-stale');
+      if (tbl) tbl.classList.remove('d-none');
     } catch (e) {
       out.classList.remove('d-none'); document.getElementById('r-health').textContent = 'ERROR: ' + e.message;
     } finally {

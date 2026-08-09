@@ -1,0 +1,65 @@
+change control: the operator's clock, frozen evidence, a formal document, and a gate on the button people actually press
+
+Four defects, none of which ever raised an exception.
+
+1. The maintenance window was stored in the wrong timezone. Every timestamp was
+   DISPLAYED through settings_store.to_local while every form value was STORED
+   as if the operator had typed UTC. A window entered as 22:00 on a
+   Europe/Zurich console opened at midnight local - two hours after the customer
+   had been told the outage would start. The schedule and the notice agreed with
+   each other and both disagreed with the human. settings_store.parse_local is
+   the missing inverse; the load-bearing guard asserts the ROUND TRIP, because a
+   conversion wrong in both directions is perfectly self-consistent.
+
+   Wall-clock schedules had the same bug at fleet scale: "every night at 02:00"
+   computed in UTC fired at 03:00 in winter and 04:00 in summer. compute_next_run
+   now takes tz for daily/weekly/monthly - passed DOWN, so services/scheduler
+   stays pure schedule math (guarded: no settings_store, no models, no db there,
+   and an AST guard that every caller passes tz=). interval is a duration and
+   once is already an absolute instant; converting either would double-apply.
+
+2. The pre-upgrade left no evidence. upgrade.prepare() painted its result into
+   the browser and vanished with the tab, so "pre-upgrade passed, therefore
+   raise the change" had nothing to attach. Runs are persisted (UpgradePrep) and
+   append-only: an approved change cites a specific run, and a row that can be
+   overwritten in place is not evidence. The verdict grades only the sections
+   that were REQUESTED, and an unreachable published service is a BASELINE, not
+   a failure - finding a policy already down before the change is the most
+   valuable thing the pre-flight produces, and grading it red would train people
+   to re-run until it turns green.
+
+3. The affected-service inventory was read live at render time, so an approved
+   change and the change that ran could describe different customers. It is
+   frozen onto the change when raised; drift against the devices now is
+   REPORTED, never merged.
+
+4. Change control only bound the unused code path. The headless executor had
+   refused to flash outside a window since the gate was generalised, but the
+   button a human clicks went straight to push_firmware with nothing but
+   CONFIG_WRITE and a typed device name. A live flash now needs an approved,
+   open window; the refusal names the closest candidate and why. Dry runs are
+   never gated - they send nothing, and gating them would push operators to skip
+   validation. The change is opened and closed through ONE seam, not by stamping
+   the worker's six terminal paths, because that is how one gets missed.
+
+Also: a formal 13-section change document in English or German. The German text
+describes what a Fortinet upgrade actually is - a firmware image uploaded by
+REST, then a reboot into the target partition - and never operating-system
+patching, guarded by a forbidden-phrase list: a document describing work that
+does not happen is worse than none, because the approver signs the wrong thing.
+custom_rest prints the literal call and refuses to estimate an impact it cannot
+know. Section 12 prints the one approval SATOM records and leaves the other
+roles blank rather than fabricating them.
+
+The inventory exports to .xlsx or .csv with chosen columns, in fixed catalog
+order so two exports of one change are comparable. The xlsx writer is pure
+standard library: the product ships offline bundles, and a binary dependency is
+a cost every installation pays forever.
+
+Verified: targeted tests only (no full suite, per standing instruction) -
+test_cr_timezone_evidence (53), test_cr_document (148), test_xlsx_writer (33)
+plus the CR, appliance, scheduler, docs and site neighbours, all rc=0. 22
+mutations, 22 bite - the first pass left the upgrade gate's own decision
+function untested (neutering it broke nothing) and that hole is now closed with
+ten behavioural guards. 56 live checks against a1's real database and a real
+admin session, 0 failures, no appliance contacted, throwaway rows removed.

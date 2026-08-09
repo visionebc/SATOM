@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}{{ cr.ref or ('CR #' ~ cr.id) }} — change document — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">Home</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('change_requests.index') }}">Change Requests</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('change_requests.detail', id=cr.id) }}">{{ cr.ref or ('#' ~ cr.id) }}</a>
+  <span class="separator">/</span>
+  <span>Document</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-file-earmark-text me-2 text-accent"></i>Change document</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ cr.ref or ('CR #' ~ cr.id) }} &mdash; {{ cr.title }}. Rendered from the stored
+      record and the frozen inventory only; nothing here re-reads a device.
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    {% for code, label in langs %}
+    <a class="btn btn-sm {{ 'btn-fw-primary' if code == lang else 'btn-fw-outline' }}"
+       href="{{ url_for('change_requests.document', id=cr.id, lang=code) }}">{{ label }}</a>
+    {% endfor %}
+    <a class="btn btn-sm btn-fw-outline"
+       href="{{ url_for('change_requests.document', id=cr.id, lang=lang, download=1) }}">
+      <i class="bi bi-download me-1"></i>Download .md
+    </a>
+    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('change_requests.detail', id=cr.id) }}">
+      <i class="bi bi-chevron-left me-1"></i>Back
+    </a>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-card-text me-2 text-accent"></i>Markdown source</span>
+    <button type="button" class="btn btn-sm btn-fw-outline" id="cr-doc-copy">
+      <i class="bi bi-clipboard me-1"></i>Copy
+    </button>
+  </div>
+  <div class="fw-card-body">
+    {# Rendered as pre/text, never as HTML: the document embeds operator-authored
+       reason/rollback text and device names, and turning that into markup is how
+       a change request becomes a stored-XSS vector on the approval page. #}
+    <pre id="cr-doc-text" class="fw-pre" style="white-space:pre-wrap; font-size:12.5px; margin:0;">{{ text }}</pre>
+  </div>
+</div>
+
+<script>
+document.getElementById('cr-doc-copy').addEventListener('click', function () {
+  var el = document.getElementById('cr-doc-text');
+  navigator.clipboard.writeText(el.textContent).then(function () {
+    var b = document.getElementById('cr-doc-copy');
+    var old = b.innerHTML;
+    b.innerHTML = '<i class="bi bi-check-lg me-1"></i>Copied';
+    setTimeout(function () { b.innerHTML = old; }, 1500);
+  });
+});
+</script>
+{% endblock %}

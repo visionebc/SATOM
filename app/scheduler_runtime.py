@@ -24,6 +24,17 @@ from app import create_app
 from app.models import db
 from app.services import scheduled_actions, scheduler
 
+def _configured_tz() -> str:
+    """Wall-clock schedules ("daily at 02:00") are LOCAL times. The sidecar runs
+    in UTC, so it has to be told which clock the operator meant — otherwise a
+    nightly job drifts an hour twice a year with nothing in any log to show it."""
+    from app.services import settings_store
+    try:
+        return settings_store.tz_name()
+    except Exception:  # noqa: BLE001 - never stop the loop over a settings read
+        return "UTC"
+
+
 TICK_SECONDS = 45
 _stop = False
 
@@ -41,7 +52,8 @@ def tick(app) -> None:
             if (not action.catch_up
                     and scheduler.is_missed_fire(action.schedule_kind, spec, action.next_run, now)):
                 # Overdue + no catch-up → roll forward, do not run.
-                action.next_run = scheduler.compute_next_run(action.schedule_kind, spec, now)
+                action.next_run = scheduler.compute_next_run(
+                    action.schedule_kind, spec, now, tz=_configured_tz())
                 action.last_status = "missed"
                 db.session.commit()
                 continue

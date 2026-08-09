@@ -7,6 +7,71 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **Change requests run on the operator's clock.** Window start/end are read in
+  the timezone configured under Settings → General (`general.timezone`) through
+  a new `settings_store.parse_local` — the exact inverse of the `to_local` every
+  screen already displayed through. Before this the two halves were asymmetric:
+  every timestamp was SHOWN in local time while every form value was STORED as
+  if the operator had typed UTC, so a window entered as 22:00 on a Europe/Zurich
+  console opened at midnight local — two hours after the customer had been told
+  the outage would start. Nothing errored, and the schedule and the maintenance
+  notice agreed with each other while both disagreed with the human. The window
+  fields now NAME their timezone: a `datetime-local` input carries none of its
+  own, so the label is the only thing that says which clock you are typing in.
+- **Wall-clock schedules honour that timezone too.** `scheduler.compute_next_run`
+  takes a `tz` argument for the `daily` / `weekly` / `monthly` kinds — passed
+  DOWN by the callers, never read from the DB inside, so the schedule math stays
+  pure. "Back up every night at 02:00" is a statement about local night; computed
+  in UTC on a Zurich fleet it fired at 03:00 in winter and 04:00 in summer, and
+  nothing logged the move. `interval` is untouched (a duration is not a
+  wall-clock time) and so is `once` (already an absolute instant).
+- **Formal change document, English or German** (`services/cr_document`, new
+  route `/change-requests/<id>/document`, viewable or downloadable as Markdown).
+  Thirteen numbered sections — general information, purpose, affected systems,
+  justification, impact, risk, rollback, prerequisites, work to be performed,
+  post-change validation, communication plan, approvals, outcome — with §2, §5,
+  §6, §9 and §10 varying per action across all nine change-controlled actions.
+  The German text describes what a Fortinet upgrade actually is (a firmware
+  image uploaded by REST, then a reboot into the target partition) and never
+  operating-system patching, which is guarded by an explicit forbidden-phrase
+  list: a document that describes work which does not happen is worse than no
+  document, because the approver signs the wrong thing. `custom_rest` prints the
+  literal method/URN/body and refuses to estimate an impact it cannot know.
+  §12 prints the ONE approval SATOM actually records and leaves the other roles
+  blank for manual signature rather than fabricating them.
+- **`ChangeRequest.ref` / `.owner` / `.doc_lang`** — the human change id
+  (`CR-2026-0042`) is stamped once at creation and never recomputed, so a
+  restore that reseeds the id sequence cannot renumber documents already in
+  circulation.
+- **The pre-upgrade is persisted** (`models.UpgradePrep`, `services/prep_store`).
+  It used to be a fire-and-forget REST call: `upgrade.prepare()` ran, its result
+  was painted into the browser, and it vanished with the tab — so the chain the
+  operator wants (pre-upgrade passed → therefore raise the change) had nothing
+  to attach. Runs are **append-only**: an approved change cites a specific run,
+  and evidence that can be overwritten in place is not evidence. The verdict
+  grades only the sections that were REQUESTED, and an unreachable published
+  service is recorded as a **baseline**, not as a failure — discovering that a
+  policy is already down before the change is the most valuable thing the
+  pre-flight produces, and grading it red would train operators to re-run until
+  it turns green.
+- **The affected-service inventory is FROZEN onto the change** when it is
+  raised (`ChangeRequest.inventory_at`), and the detail page, the document and
+  the export all read that snapshot. A live read at render time would let the
+  fleet drift between approval and execution, so the document somebody signed
+  and the document describing what ran would not be the same document. Drift
+  against the devices right now is available on request and is REPORTED, never
+  silently merged.
+- **Export the inventory with chosen columns**, `.xlsx` or `.csv`. Column
+  *order* is fixed regardless of tick order so two exports of the same change
+  are comparable, and ticking nothing exports the default five columns rather
+  than producing a zero-column file. The `.xlsx` writer (`services/xlsx_writer`)
+  is pure standard library — no `openpyxl`, no `xlsxwriter` — because the
+  product ships offline bundles and a new binary dependency is a cost every
+  installation pays forever.
+- **"Upgrade preparation" now leads to a change request.** A finished run offers
+  *Raise change request* with the appliance, the action and the run itself
+  pre-selected, and every stored run is listed on the page with its verdict.
+
 - **Change Requests cover every Forti product, not just FortiWeb.** The device
   picker was hard-filtered to `kind='fortiweb'` and the page itself was pinned
   to the FortiWeb ADOM by the product gate, so a FortiADC, FortiAnalyzer or
@@ -71,6 +136,83 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   default is now `readonly` and why the approval gate exists.
 
 ### Changed
+- **A live firmware upgrade requires an approved, open change window.** This was
+  the hole: the headless executor had refused to flash outside a window since
+  the gate was generalised, but the button a human actually clicks went straight
+  to `push_firmware` with nothing but `CONFIG_WRITE` and a typed device name —
+  the path that works had no gate and the path with the gate was a stub. Change
+  control that only binds the unused code path is decoration. Dry runs are NOT
+  gated: they send nothing to the appliance, and gating them would push
+  operators to skip validation entirely. An authorised flash moves its change to
+  `in_progress` and closes it with the real outcome through a single seam, so no
+  exit path can leave a change parked at `in_progress` forever.
+- Scheduling a firmware upgrade from the appliance page reads its date/time in
+  the configured timezone as well; it used to store the raw `datetime-local`
+  value as UTC.
+
+- **Change Requests cover every Forti product, not just FortiWeb.** The device
+  picker was hard-filtered to `kind='fortiweb'` and the page itself was pinned
+  to the FortiWeb ADOM by the product gate, so a FortiADC, FortiAnalyzer or
+  FortiAuthenticator could never be named in a change window. The page is now
+  reachable from every ADOM and rows are scoped by the devices they name
+  (by-id routes included), instead of by which console you opened.
+- **`reboot` action** (danger, one-shot, `requires_change_request`): reboots a
+  target appliance inside an approved window. The FortiWeb URN
+  (`/api/v2.0/system/status.systemoperationreboot`, body `{reason}`, 100-char
+  cap) was read off fortiweb08's own GUI bundle; products without a URN
+  verified against their own hardware are refused BY NAME, never guessed at.
+- `ActionSpec.requires_change_request`: an action can declare that it only runs
+  bound to an approved CR. The executor honours the flag, so a newly registered
+  dangerous action arrives gated instead of arriving free.
+
+
+- **Import directory users before their first sign-in, on RADIUS too.** The
+  user importer (Settings → Authentication → *Sync directory users*) used to
+  refuse anything that was not AD/LDAP, which left the FortiAuthenticator /
+  RADIUS backend with no roster at all. It has one now. Said plainly because it
+  is the whole design: **RADIUS cannot be enumerated** — an Access-Request is a
+  yes/no question about one credential, and the protocol has no verb for
+  "list the members of this group". So the roster is read over a *second*
+  channel, the FortiAuthenticator REST API, using the API key of a FAC already
+  registered under Appliances; no new secret is stored and **sign-in keeps going
+  over RADIUS**. Pick the appliance and the group under the RADIUS section.
+  The roster comes from `/api/v1/localgroup-memberships/`, not
+  `/api/v1/localusers/`: on FortiAuthenticator 8.0.3 the latter **under-reports**
+  (it returned 1 of 3 local users, hiding accounts that plainly exist), so
+  trusting it would silently import a partial group. Naming a group the
+  appliance does not have is reported as an error listing the groups it does
+  have — importing nobody and calling it success hides a typo forever.
+- **An approval gate for directory users** (Settings → Authentication, applies
+  to every external backend). With it on, a first-time directory sign-in creates
+  the account **disabled** and refuses entry until an admin enables and profiles
+  it under Users — the same state the importer produces, so import-then-approve
+  and sign-in-then-approve converge instead of racing. The refusal says
+  *awaiting administrator approval*, never *invalid password*: the bind
+  succeeded, and blaming the credential sends the user to reset one that was
+  correct. Existing accounts are never re-gated.
+- **More than one sign-in source at a time, in an explicit order.** The setting
+  used to hold one string, so Active Directory *or* LDAP *or* RADIUS. It now
+  holds an ordered list and sign-in walks it, first acceptance wins. The local
+  database is not on the list because it is not optional: it is the anti-lockout
+  floor, always live, and a local account is never handed to a directory. Order
+  is not cosmetic and the page says so — an unreachable source burns its whole
+  timeout before the next is tried, and every source ahead of the winner counts
+  a wrong password against its own lockout policy. A source list that cannot be
+  parsed disables external sign-in rather than falling back to the value it
+  replaced: local still works, so nobody is locked out, and no directory is
+  consulted on the strength of a policy nobody can read.
+- **Several import groups per source, each with its own profile.** "Import
+  `grp_ops` as operator and `grp_ro` as readonly" is now one configuration
+  instead of two passes. A user listed by two groups keeps the first row's
+  profile, and a blank profile inherits the global default. One group name the
+  appliance does not have **fails the whole import** and names the groups it
+  does have — a partial roster reported as success is how a typo becomes
+  permanent. The per-group profile is an *import-time* concept on purpose: a
+  RADIUS Access-Accept carries no group, and resolving one would put a REST
+  round-trip to the FortiAuthenticator on the critical path of every first
+  sign-in. Just-in-time users get the global default instead, which is why that
+  default is now `readonly` and why the approval gate exists.
+
 - **New directory accounts default to `readonly`, not `operator`.** Least
   privilege: an account nobody has looked at yet gets the profile that cannot
   change anything, and elevation is an explicit admin action. An unknown profile
@@ -90,20 +232,6 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   every ADC in a window look like it had no clients at all.
 
 ### Removed
-- **The vendor mark, as a file** (`app/static/img/favicon.svg`). A previous
-  round stopped every live template from *referencing* Fortinet's registered
-  glyph in `#ee3124`, but left the artwork in the tree — so `GET
-  /static/img/favicon.svg` still answered **200** from SATOM's own origin.
-  Under Elastic License 2.0 this product is sold, which makes a vendor mark on
-  our static path a trademark surface rather than a stale asset. The
-  appliance-type marks (`fortiweb-mark.svg`, `fortiadc-mark.svg`,
-  `fortianalyzer-mark.svg`, `fortiauthenticator-mark.svg`) **stay**: they label
-  which kind of box a row is about, which is nominative use, and none of them
-  uses the corporate red. Deleting a file is the change where *nothing* fails,
-  so the guards are assertions of absence — one of them over HTTP, because "not
-  in the repo" and "not served" are different claims — plus a sweep that would
-  catch the same artwork under a different filename, which is how this one
-  survived three project renames in the first place.
 - **The per-username allowlist** (`Settings → Access Control → Allowed Users`).
   It was a fourth gate stacked behind the directory group filter, the approval
   gate and the profile, and it enforced nothing the three of them did not —
@@ -118,6 +246,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   Access Control page — and offered a button to clear the dead row, because
   removing a gate silently is how an install gets wider without anybody
   noticing.
+
+- **The vendor mark, as a file** (`app/static/img/favicon.svg`). A previous
+  round stopped every live template from *referencing* Fortinet's registered
+  glyph in `#ee3124`, but left the artwork in the tree — so `GET
+  /static/img/favicon.svg` still answered **200** from SATOM's own origin.
+  Under Elastic License 2.0 this product is sold, which makes a vendor mark on
+  our static path a trademark surface rather than a stale asset. The
+  appliance-type marks (`fortiweb-mark.svg`, `fortiadc-mark.svg`,
+  `fortianalyzer-mark.svg`, `fortiauthenticator-mark.svg`) **stay**: they label
+  which kind of box a row is about, which is nominative use, and none of them
+  uses the corporate red. Deleting a file is the change where *nothing* fails,
+  so the guards are assertions of absence — one of them over HTTP, because "not
+  in the repo" and "not served" are different claims — plus a sweep that would
+  catch the same artwork under a different filename, which is how this one
+  survived three project renames in the first place.
 
 ### Fixed
 - `Appliance._own_client()` returned a **FortiWeb** client for a
@@ -243,7 +386,6 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `upgrade_prep`, so that one fired with no approval and outside its window —
   the one thing the gate exists to prevent. Any action bound to a change request
   is now gated by it.
-
 
 ## [1.9.2] - 2026-08-09
 

@@ -215,13 +215,24 @@ def cr_runnable(cr, now: datetime | None = None) -> tuple[bool, str]:
 #  Client maintenance notice (pure text)                                        #
 # --------------------------------------------------------------------------- #
 def _fmt_window(dt) -> str:
-    """Format a stored (naive UTC) window datetime for display."""
+    """Format a stored (naive UTC) window datetime for a human.
+
+    Renders in the admin-configured timezone via the ONE conversion path
+    (:func:`app.services.settings_store.to_local`) and always prints the zone
+    abbreviation. This text goes into the CUSTOMER's maintenance notice: a bare
+    UTC time told a Zurich customer to expect an outage two hours after the one
+    the operator scheduled, and neither of them could see the mismatch because
+    the number on the screen and the number in the mail agreed."""
     if dt is None:
         return "(time TBD)"
     try:
-        return dt.strftime("%Y-%m-%d %H:%M UTC")
+        from . import settings_store
+        return settings_store.to_local(dt, "%Y-%m-%d %H:%M %Z")
     except Exception:  # noqa: BLE001
-        return str(dt)
+        try:
+            return dt.strftime("%Y-%m-%d %H:%M UTC")
+        except Exception:  # noqa: BLE001
+            return str(dt)
 
 
 def _policies(cr) -> list:
@@ -231,6 +242,15 @@ def _policies(cr) -> list:
         return value if isinstance(value, list) else []
     except (ValueError, TypeError):
         return []
+
+
+def frozen_policies(cr) -> list:
+    """The affected-service inventory STORED on this change request.
+
+    Public because the views render the change document and the export from it:
+    reading the fleet live at render time is what would let an approved change
+    and the change that ran describe different systems."""
+    return _policies(cr)
 
 
 def maintenance_notice(cr) -> str:
@@ -482,4 +502,5 @@ __all__ = [
     "recipients_for",
     "notify_outcome",
     "affected_policies",
+    "frozen_policies",
 ]

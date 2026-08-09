@@ -596,7 +596,9 @@ def upgrade_prep(id):
     appliance = _managed_or_404(id)
     if appliance is None:
         return redirect(url_for('appliances.detail', id=id))
-    return render_template('appliances/upgrade_prep.html', appliance=appliance)
+    from ..services import prep_store
+    return render_template('appliances/upgrade_prep.html', appliance=appliance,
+                           runs=prep_store.recent(appliance.id, 10))
 
 
 @bp.route('/<int:id>/upgrade/prep/run', methods=['POST'])
@@ -606,7 +608,7 @@ def upgrade_prep_run(id):
     appliance = _managed_or_404(id)
     if appliance is None:
         return jsonify({'ok': False, 'error': 'unsupported appliance kind'}), 400
-    from ..services import upgrade
+    from ..services import change_requests as crsvc, prep_store, upgrade
     opts = request.json or {}
     try:
         result = upgrade.prepare(
@@ -615,14 +617,75 @@ def upgrade_prep_run(id):
             do_health=opts.get('health', True),
             do_services=opts.get('services', True),
         )
-        log_action('appliance.upgrade_prep', target=appliance.name)
-        return jsonify({'ok': True, 'result': result})
+        # PERSIST the run and the inventory of published services it covers.
+        # Until this existed the pre-flight vanished with the browser tab, so
+        # the chain the operator actually wants - pre-upgrade passed, therefore
+        # raise the change - had nothing to attach. A storage failure must not
+        # discard a pre-flight that already ran against the device.
+        prep = None
+        try:
+            inventory = crsvc.affected_policies([appliance.id], timeout=6.0)
+            prep = prep_store.record(appliance, result, inventory=inventory,
+                                     created_by=getattr(current_user, 'username', '') or '')
+        except Exception as exc:  # noqa: BLE001
+            log_exception(exc, context='appliances.upgrade_prep_store')
+        log_action('appliance.upgrade_prep', target=appliance.name,
+                   detail=(f'prep #{prep.id} ok={prep.ok}' if prep else 'not stored'))
+        return jsonify({'ok': True, 'result': result,
+                        'prep_id': (prep.id if prep else None),
+                        'prep_ok': (prep.ok if prep else None),
+                        'prep_summary': (prep.summary if prep else ''),
+                        'inventory_count': (len(prep.inventory_list) if prep else 0),
+                        'cr_url': (url_for('change_requests.new', prep_id=prep.id,
+                                           action='upgrade') if prep else '')})
     except Exception as exc:
         eid = log_exception(exc, context='appliances.upgrade_prep_run')
         return jsonify({'ok': False, 'error': f'{type(exc).__name__}: {exc}', 'error_id': eid})
 
 
 # -- 5. Upgrade (firmware push from the repository — WRITE, dry-run default) --
+def _upgrade_authorization(appliance):
+    """``(cr, ok, reason)`` — the approved change request that authorizes a LIVE
+    flash of this appliance right now.
+
+    This page was the hole. The headless executor has refused to flash outside
+    an approved window since the gate was generalised, but the button a human
+    actually clicks went straight to ``push_firmware`` with nothing but
+    ``CONFIG_WRITE`` and a typed device name: the path that works had no gate
+    and the path with the gate was a stub. A change-control regime that only
+    binds the unused code path is decoration.
+
+    Picks the SOONEST-STARTING runnable candidate rather than the newest row,
+    so an operator who raised two changes does not silently consume the wrong
+    window. A dry run is never gated — validating an image changes nothing.
+    """
+    from datetime import datetime
+    from ..models import ChangeRequest
+    from ..services import change_requests as crsvc
+    candidates = [cr for cr in
+                  ChangeRequest.query.filter(
+                      ChangeRequest.action == 'upgrade',
+                      ChangeRequest.status.in_(('approved', 'scheduled',
+                                                'in_progress'))).all()
+                  if appliance.id in cr.device_ids_list]
+    if not candidates:
+        return None, False, ('no approved change request names this appliance '
+                             'for a firmware upgrade')
+    reasons: list[str] = []
+    runnable = []
+    for cr in candidates:
+        ok, why = crsvc.cr_runnable(cr)
+        if ok:
+            runnable.append(cr)
+        else:
+            reasons.append(f'{cr.ref or ("CR #%d" % cr.id)}: {why}')
+    if not runnable:
+        # Name the closest one and WHY it does not authorize, never just "no".
+        return candidates[0], False, '; '.join(reasons[:3])
+    runnable.sort(key=lambda c: (c.window_start or datetime.max))
+    return runnable[0], True, 'inside an approved maintenance window'
+
+
 def _selected_compatible_image(appliance, image_id):
     """Resolve a posted image_id to a FirmwareImage that is actually compatible
     with this appliance (defence against a tampered / stale form). Returns the
@@ -653,8 +716,12 @@ def upgrade(id):
         fw = ''
     _persist_firmware(appliance, fw)
     images = upg.compatible_images(appliance)
+    from ..services import prep_store
+    cr, cr_ok, cr_reason = _upgrade_authorization(appliance)
     return render_template('appliances/upgrade.html', appliance=appliance,
-                           firmware=fw, images=images)
+                           firmware=fw, images=images,
+                           cr=cr, cr_ok=cr_ok, cr_reason=cr_reason,
+                           prep=prep_store.latest_for(appliance.id))
 
 
 @bp.route('/<int:id>/upgrade', methods=['POST'])
@@ -674,8 +741,28 @@ def upgrade_push(id):
     dry_run = request.form.get('dry_run') == 'on'
     confirm_maturity = request.form.get('confirm_maturity') == 'on'
 
+    # CHANGE CONTROL. A live flash needs an approved change request naming this
+    # appliance whose maintenance window is open right now. A dry run does not:
+    # it sends nothing to the device, and gating it would push operators to skip
+    # the validation step entirely.
+    cr = None
+    if not dry_run:
+        cr, cr_ok, cr_reason = _upgrade_authorization(appliance)
+        if not cr_ok:
+            msg = ('Live upgrade refused — change control: ' + cr_reason
+                   + '. Run the upgrade preparation, raise a change request '
+                     'from it, get it approved, and flash inside its window.')
+            log_action('appliance.upgrade_refused', target=appliance.name,
+                       detail=cr_reason)
+            if _wants_json():
+                return jsonify({'ok': False, 'error': msg,
+                                'needs_change_request': True}), 403
+            flash(msg, 'danger')
+            return redirect(url_for('appliances.upgrade', id=id))
+
     if _wants_json():
-        return _spawn_flash_job(appliance, image, 'upgrade', dry_run, confirm_maturity)
+        return _spawn_flash_job(appliance, image, 'upgrade', dry_run,
+                                confirm_maturity, cr=cr)
 
     # A live push requires typing the exact appliance name (defence against a
     # mis-click rebooting the wrong box).
@@ -689,14 +776,24 @@ def upgrade_push(id):
         flash(f'Firmware file problem: {type(exc).__name__}: {exc}', 'danger')
         return redirect(url_for('appliances.upgrade', id=id))
 
+    from ..services import change_requests as crsvc
+    if cr is not None:
+        crsvc.start(cr, by=getattr(current_user, 'username', '') or 'operator',
+                    detail=f'Synchronous flash of {image.filename}')
     try:
         result = upg.push_firmware(
             appliance, image_bytes, image.filename,
             dry_run=dry_run, confirm_maturity=confirm_maturity,
         )
     except Exception as exc:
+        if cr is not None:
+            crsvc.finish(cr, 'error', by='operator',
+                         summary=f'{type(exc).__name__}: {exc}'[:2000])
         flash(f'Upgrade failed: {type(exc).__name__}: {exc}', 'danger')
         return redirect(url_for('appliances.upgrade', id=id))
+    if cr is not None:
+        crsvc.finish(cr, 'ok' if result.get('ok') else 'error', by='operator',
+                     summary=(result.get('message') or '')[:2000])
 
     images = upg.compatible_images(appliance)
     return render_template('appliances/upgrade.html', appliance=appliance,
@@ -730,10 +827,17 @@ def upgrade_schedule(id):
     if not when:
         flash('Pick a date and time for the scheduled upgrade.', 'danger')
         return redirect(url_for('appliances.upgrade', id=id))
-    schedule = {"at": when}
+    # Same clock as every other window field in the product: the operator types
+    # local time, the scheduler stores UTC. Storing the raw datetime-local value
+    # booked the flash in whatever offset the console happened to be in.
+    when_utc = store.parse_local(when)
+    if when_utc is None:
+        flash('That is not a valid date and time.', 'danger')
+        return redirect(url_for('appliances.upgrade', id=id))
+    schedule = {"at": when_utc.isoformat()}
     next_run = compute_next_run('once', schedule)
     if next_run is None:
-        flash('The scheduled time must be in the future (interpreted as UTC).', 'danger')
+        flash(f'The scheduled time must be in the future ({store.tz_name()}).', 'danger')
         return redirect(url_for('appliances.upgrade', id=id))
 
     confirm_maturity = request.form.get('confirm_maturity') == 'on'
@@ -755,7 +859,8 @@ def upgrade_schedule(id):
     db.session.commit()
     log_action('appliance.upgrade_schedule', target=appliance.name,
                extra={"image_id": image.id, "version": image.version, "at": when})
-    flash(f'Scheduled upgrade of {appliance.name} to {image.version} at {when} (UTC). '
+    flash(f'Scheduled upgrade of {appliance.name} to {image.version} at {when} '
+          f'({store.tz_name()}). '
           'Unattended flashing is gated — review it under Scheduled Actions.', 'success')
     return redirect(url_for('appliances.upgrade', id=id))
 
@@ -820,10 +925,53 @@ def flash_reports():
                            reports=reports, focus=focus)
 
 
+def _flash_under_change(app, job_id, cr_id, run):
+    """Run a live flash INSIDE its change request and close that change with the
+    real outcome.
+
+    One seam instead of instrumenting every exit of the worker. The worker has
+    six terminal paths (rejected image, no recovery, silent no-op flash,
+    success, and two exception funnels); stamping the change at each of them is
+    how one of them eventually gets missed and leaves a change parked at
+    ``in_progress`` forever — the precise stall the terminal transitions were
+    added to remove. The job's own final status is the authority: it is what the
+    operator sees, so grading the change from anything else would let the two
+    records disagree.
+    """
+    from ..services import change_requests as crsvc, jobs as jobsvc
+    if not cr_id:
+        run()
+        return
+    with app.app_context():
+        try:
+            crsvc.start(cr_id, by='firmware-job',
+                        detail=f'Firmware flash job {job_id} started')
+        except Exception as exc:  # noqa: BLE001 - never block an authorized flash
+            log_exception(exc, context='appliances.flash_cr_start')
+    try:
+        run()
+    finally:
+        with app.app_context():
+            try:
+                job = jobsvc.get_job(job_id) or {}
+                status = job.get('status')
+                outcome = 'ok' if status == jobsvc.SUCCESS else (status or 'unknown')
+                summary = (job.get('error') or job.get('message') or '')[:2000]
+                crsvc.finish(cr_id, outcome, by='firmware-job',
+                             summary=summary or f'firmware job {status}')
+            except Exception as exc:  # noqa: BLE001
+                log_exception(exc, context='appliances.flash_cr_finish')
+
+
 def _flash_worker(app, job_id, appliance_id, image_id, filename,
-                  dry_run, confirm_maturity, kind, user_id, link):
+                  dry_run, confirm_maturity, kind, user_id, link, cr_id=None):
     """Background firmware flash: read image \u2192 push \u2192 monitor reboot/recovery
-    \u2192 basic health checks \u2192 bell notification. kind \u2208 'upgrade' | 'downgrade'."""
+    \u2192 basic health checks \u2192 bell notification. kind \u2208 'upgrade' | 'downgrade'.
+
+    ``cr_id`` is the change request that authorized a live flash. Every exit
+    from this worker closes it with the real outcome; a change left at
+    'in_progress' because the box never came back is a stall this product has
+    already paid for once."""
     from ..models_firmware import FirmwareImage
     from ..services import upgrade as upg, jobs as jobsvc
     from ..services import notifications as notify
@@ -1022,9 +1170,14 @@ def _flash_worker(app, job_id, appliance_id, image_id, filename,
     return None
 
 
-def _spawn_flash_job(appliance, image, kind, dry_run, confirm_maturity):
+def _spawn_flash_job(appliance, image, kind, dry_run, confirm_maturity, cr=None):
     """Create the background flash job and return {job_id} JSON (the toast then
-    polls /jobs/<id>). Name-confirm is enforced here for the AJAX path."""
+    polls /jobs/<id>). Name-confirm is enforced here for the AJAX path.
+
+    ``cr`` is the change request that authorized a LIVE flash (None for a dry
+    run or a downgrade). It is carried into the job meta so the worker can move
+    the change to in_progress and close it with the real outcome: a flash that
+    ran outside its own change record is a change nobody can audit."""
     from ..services import jobs as jobsvc
     verb = 'Downgrade' if kind == 'downgrade' else 'Upgrade'
     if not dry_run and (request.form.get('confirm_name', '') or '').strip() != appliance.name:
@@ -1037,11 +1190,16 @@ def _spawn_flash_job(appliance, image, kind, dry_run, confirm_maturity):
     job = jobsvc.create_job(f'firmware_{kind}', title, cancelable=False,
                             by=getattr(current_user, 'username', '') or '',
                             meta={"appliance_id": appliance.id, "image_id": image.id,
-                                  "dry_run": dry_run})
+                                  "dry_run": dry_run,
+                                  "change_request_id": (cr.id if cr is not None else None)})
+    cr_id = cr.id if cr is not None else None
     jobsvc.run_async(
         current_app._get_current_object(), job["id"],
-        lambda app, jid: _flash_worker(app, jid, appliance.id, image.id, image.filename,
-                                       dry_run, confirm_maturity, kind, user_id, link))
+        lambda app, jid: _flash_under_change(
+            app, jid, cr_id,
+            lambda: _flash_worker(app, jid, appliance.id, image.id, image.filename,
+                                  dry_run, confirm_maturity, kind, user_id, link,
+                                  cr_id)))
     return jsonify({"job_id": job["id"]})
 
 

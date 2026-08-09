@@ -18,6 +18,8 @@
   </div>
 </div>
 
+<div id="prep-cr" class="alert d-none mb-3"></div>
+
 <div id="prep-out" class="d-none">
   <div class="row g-3 mb-3">
     <div class="col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="text-muted small">Firmware</div><div id="r-fw" class="h5 mb-0">—</div></div></div></div>
@@ -27,6 +29,49 @@
   </div>
   <div class="card shadow-sm mb-3"><div class="card-header fw-card-header">Service validation</div><div class="card-body p-0"><div id="r-services" class="p-3"></div></div></div>
   <div class="card shadow-sm"><div class="card-header fw-card-header">Health battery (SSH)</div><div class="card-body"><pre id="r-health" class="fw-pre mb-0">—</pre></div></div>
+</div>
+
+<div class="card shadow-sm mt-3">
+  <div class="card-header fw-card-header">Recorded pre-flight runs</div>
+  <div class="card-body p-0">
+    {% if runs %}
+    <table class="table table-sm fw-table mb-0">
+      <thead><tr><th>When</th><th>By</th><th>Firmware</th><th>Verdict</th><th>Services</th><th>Change</th><th></th></tr></thead>
+      <tbody>
+        {% for r in runs %}
+        <tr>
+          <td class="small">{{ r.created_at|localtime }}</td>
+          <td class="small">{{ r.created_by or '—' }}</td>
+          <td class="small">{{ r.firmware or '—' }}</td>
+          <td class="small">
+            <span class="badge bg-{{ 'success' if r.ok else 'warning' }}">{{ 'passed' if r.ok else 'not clean' }}</span>
+            <span class="text-muted">{{ r.summary }}</span>
+          </td>
+          <td class="small">{{ r.inventory_list|length }}</td>
+          <td class="small">
+            {% if r.cr_id %}<a href="{{ url_for('change_requests.detail', id=r.cr_id) }}">CR #{{ r.cr_id }}</a>
+            {% else %}<span class="text-muted">none</span>{% endif %}
+          </td>
+          <td class="text-end">
+            {% if not r.cr_id %}
+            <a class="btn btn-sm fw-btn-secondary"
+               href="{{ url_for('change_requests.new', prep_id=r.id, action='upgrade') }}">
+              Raise change request
+            </a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="p-3 text-muted small">
+      No pre-flight has been recorded for this appliance yet. Every run is stored
+      &mdash; append-only, never overwritten &mdash; because an approved change cites a
+      specific run, and evidence that can be edited in place is not evidence.
+    </div>
+    {% endif %}
+  </div>
 </div>
 
 <script nonce="{{ csp_nonce }}">
@@ -68,6 +113,19 @@
       document.getElementById('r-svc-count').textContent = probes.length || (d.services && d.services.ok ? 0 : '—');
       document.getElementById('r-services').innerHTML = (d.services && d.services.ok) ? svcTable(probes) : ('<div class="text-danger">'+((d.services&&d.services.error)||'skipped')+'</div>');
       document.getElementById('r-health').textContent = (d.health && d.health.ok) ? (d.health.text || '(empty)') : ('SSH health unavailable: ' + ((d.health&&d.health.error)||'skipped'));
+      const crBox = document.getElementById('prep-cr');
+      crBox.classList.remove('d-none', 'alert-success', 'alert-warning', 'alert-secondary');
+      if (j.prep_id) {
+        crBox.classList.add(j.prep_ok ? 'alert-success' : 'alert-warning');
+        crBox.innerHTML = 'Recorded as <b>pre-flight #' + j.prep_id + '</b> \u2014 '
+          + (j.prep_ok ? 'verdict passed' : 'verdict NOT clean') + ': ' + (j.prep_summary || '')
+          + '. Inventory of <b>' + j.inventory_count + '</b> published service(s) captured.'
+          + ' <a class="btn btn-sm fw-btn-primary ms-2" href="' + j.cr_url + '">Raise change request</a>';
+      } else {
+        crBox.classList.add('alert-secondary');
+        crBox.textContent = 'This run was NOT stored, so no change request can cite it. '
+          + 'The pre-flight itself completed \u2014 the results above are real.';
+      }
     } catch (e) {
       out.classList.remove('d-none'); document.getElementById('r-health').textContent = 'ERROR: ' + e.message;
     } finally {

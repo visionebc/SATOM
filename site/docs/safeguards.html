@@ -6338,6 +6338,118 @@ chain, keep asking after an acceptance, revive the legacy row on a corrupt list,
 drop the per-group profile, skip a bad group, fall back to <code>admin</code>, ignore the
 order field, wipe the scope from a form without group fields, restore
 <code>allowed_users</code>. Each one must turn the run red.</p>
+<h2 id="50-a-form-value-in-the-wrong-timezone-is-wrong-in-both-directions-at-once">§50. A form value in the wrong timezone is wrong in both directions at once</h2>
+<p>Every timestamp in SATOM was <em>displayed</em> through <code>settings_store.to_local</code>
+(the one DB-backed conversion path). Every form value was <em>stored</em> raw, i.e. as
+if the operator had typed UTC. That asymmetry is the whole defect, and it is
+invisible from inside the product: a window entered as <code>22:00</code> on a
+Europe/Zurich console was stored as 22:00 UTC and then displayed back as
+<code>00:00 CEST</code>. The schedule and the customer notice agreed with each other and
+both disagreed with the human who set them. Nothing raised.</p>
+<ul>
+<li><strong><code>settings_store.parse_local</code> is the inverse of <code>to_local</code>.</strong> They are a
+  pair, and the load-bearing guard asserts the ROUND TRIP across several zones,
+  not either half. A conversion that is wrong in both directions is perfectly
+  self-consistent; only the round trip against the string the operator typed
+  can see it.</li>
+<li><strong>A <code>datetime-local</code> input carries no timezone.</strong> The label naming the zone is
+  therefore part of the correctness of the field, not decoration. Guarded: the
+  change form must render the configured zone name and must not say <code>(UTC)</code>.</li>
+<li><strong>A value that already carries an offset is honoured as given.</strong> It is an
+  explicit statement about an instant; re-reading it in the console's zone would
+  overrule the caller.</li>
+<li><strong>Wall-clock schedules are local; durations are not.</strong> <code>daily</code> / <code>weekly</code> /
+  <code>monthly</code> take a <code>tz</code> in <code>compute_next_run</code> — "every night at 02:00" is a
+  statement about local night, and computed in UTC on a Zurich fleet it fires at
+  03:00 in winter and 04:00 in summer with nothing in any log to show the move.
+  <code>interval</code> is a duration and <code>once</code> is already an absolute instant; converting
+  either would double-apply an offset. Guarded per kind.</li>
+<li><strong>The timezone is passed DOWN into <code>services/scheduler</code>, never read inside
+  it.</strong> That module is pure schedule math with no DB and no Flask; a settings
+  read there would couple the sidecar's hot loop to a query and make the maths
+  untestable. There is a guard that the module contains no <code>settings_store</code>,
+  no <code>..models</code> and no <code>db.session</code>, and an AST guard that every caller passes
+  <code>tz=</code>. A caller that forgets silently reverts to the bug for its schedules.</li>
+<li><strong>A corrupt timezone degrades to UTC rather than raising.</strong> A bad settings
+  value must not stop the fleet from scheduling.</li>
+</ul>
+<p><strong>Recipe.</strong> <code>venv/bin/python -m pytest tests/test_cr_timezone_evidence.py -q</code>,
+then mutate: return the naive value unconverted, ignore an explicit offset,
+compute <code>daily</code> from <code>now</code> instead of the local clock, make <code>_from_local</code> a
+no-op (half the conversion — the sneakiest one), shift <code>interval</code>, and put
+<code>(UTC)</code> back on the form label. Each must turn the run red.</p>
+<h2 id="51-evidence-that-can-change-under-an-approval-is-not-evidence">§51. Evidence that can change under an approval is not evidence</h2>
+<p>Two separate defects with one shape: the record an approver signed was not the
+record that survived to execution.</p>
+<ul>
+<li><strong>The pre-upgrade left nothing behind.</strong> <code>upgrade.prepare()</code> painted its
+  result into the browser and vanished with the tab. The chain the operator
+  actually wants — <em>pre-upgrade passed, therefore raise the change</em> — had
+  nothing to attach, so "the pre-flight passed" was a claim with no record.
+  Runs are now stored (<code>models.UpgradePrep</code>) and are <strong>append-only</strong>: a re-run
+  INSERTs. An approved change cites a specific run, and a row that can be
+  overwritten in place is not evidence.</li>
+<li><strong>The affected-service inventory was read LIVE at render time.</strong> The list of
+  customer services in an approved change would quietly become a different list
+  by the time the change ran. It is now frozen onto the change when it is raised
+  (<code>ChangeRequest.inventory_at</code>), and the detail page, the document and the
+  export all read that snapshot. Drift against the devices as they are now is
+  available on request and is REPORTED — never silently merged, because merging
+  it would substitute a list nobody approved for the one they did.</li>
+<li><strong>The document is a pure function of the stored record.</strong> <code>cr_document.render</code>
+  touches no DB, contacts no device and imports no Flask; there is a guard on
+  its own import graph. Printing an approved change twice yields the same
+  document twice.</li>
+<li><strong>The change reference is stamped once.</strong> <code>CR-YYYY-NNNN</code> is derived from the
+  row id at creation and stored. Deriving it at print time would renumber every
+  document already in circulation the day a restore reseeds the id sequence.</li>
+<li><strong>A pre-flight may only be cited by a change that targets ITS appliance.</strong>
+  Otherwise a green run from another box can be attached as the evidence for
+  this one: a document that reads correct and certifies the wrong machine.</li>
+</ul>
+<p><strong>Grading rules that earn their guards.</strong> The verdict grades only the sections
+that were REQUESTED — <code>do_backup=False</code> is a decision, not a defect, and
+grading absent sections red would mark every deliberately narrow pre-flight as
+failed and train people to ignore the verdict. An <strong>unreachable published
+service is a baseline, not a failure</strong>: finding that a policy is already down
+before the change is the most valuable output of the whole pre-flight, and a red
+verdict would push operators to re-run until it turns green. A failed probe
+<em>sweep</em> (could not enumerate at all) IS a failure — that is a missing baseline.</p>
+<p><strong>Export rules.</strong> Column order is fixed by the catalog regardless of tick order,
+so two exports of the same change are comparable; ticking nothing exports the
+default columns rather than producing a zero-column file, which is a corrupt
+spreadsheet and not an expression of intent. The <code>.xlsx</code> writer is pure standard
+library on purpose: the product ships offline bundles, and a new binary
+dependency is a cost every installation pays forever.</p>
+<h2 id="52-change-control-that-only-binds-the-unused-code-path-is-decoration">§52. Change control that only binds the unused code path is decoration</h2>
+<p>The headless executor had refused to flash outside an approved window since the
+gate was generalised (§41). Meanwhile the button a human actually clicks —
+<code>POST /appliances/&lt;id&gt;/upgrade</code> — went straight to <code>push_firmware</code> with nothing
+but <code>CONFIG_WRITE</code> and a typed device name. <strong>The path that worked had no gate
+and the path with the gate was a stub.</strong></p>
+<ul>
+<li>A LIVE flash now requires an approved change request naming this appliance
+  whose window is open right now. The refusal NAMES the closest candidate and
+  why it does not authorise, never just "no" — an operator who cannot see which
+  change is blocking them routes around the gate.</li>
+<li><strong>A dry run is never gated.</strong> It sends nothing to the appliance, and gating it
+  would push operators to skip validation entirely.</li>
+<li>Among several runnable candidates the <strong>soonest-starting</strong> one is consumed,
+  not the newest row, so an operator with two open changes does not silently
+  burn the wrong window.</li>
+<li>The change is moved to <code>in_progress</code> and closed with the real outcome through
+  <strong>one seam</strong> (<code>_flash_under_change</code>), not by instrumenting each of the
+  worker's six terminal paths. Stamping six exits is how one of them eventually
+  gets missed and leaves a change parked at <code>in_progress</code> forever — precisely
+  the stall §41 exists to remove. The job's own final status is the authority,
+  because that is what the operator sees.</li>
+</ul>
+<p><strong>Recipe.</strong> <code>venv/bin/python -m pytest tests/test_cr_timezone_evidence.py
+tests/test_cr_document.py tests/test_change_request_lifecycle.py
+tests/test_cr_action_catalog.py -q</code>, then mutate: make the authorisation always
+return ok, remove the gate from the live push, stop freezing the inventory, read
+the fleet live in <code>detail</code>, let any appliance's pre-flight be cited, and derive
+the document's owner from the requester. Each must turn the run red.</p>
     </div>
   </div>
 </section>

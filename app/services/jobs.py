@@ -383,7 +383,7 @@ class Rollback:
         rb = Rollback()
         r = ops.create(ep, data, mkey=name, dry_run=False)
         if r.ok:
-            rb.add(lambda: ops.delete(ep, name, dry_run=False),
+            rb.add(lambda: ops.delete(ep, name, dry_run=False, check_refs=False),
                    label=f"delete {ep}/{name}")
 
     On cancel/failure ``rb.run()`` replays them **in reverse** (LIFO — undo the

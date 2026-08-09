@@ -73,7 +73,9 @@ def _replace_set(ops, coll, desired, *, dry_run):
     # Wipe: a single ``?mkey=<any id>`` delete clears the whole table.
     if current:
         any_id = current[0].get("id", current[0].get("_id", ""))
-        ops.delete(path, str(any_id), dry_run=False)
+        # Rebuilding this table, not retiring the rows: the refcount guard
+        # would refuse a wipe whose rows are re-added two lines below.
+        ops.delete(path, str(any_id), dry_run=False, check_refs=False)
     for p in desired_payloads:
         res = ops.create(path, {"data": p}, dry_run=False)
         if not res.ok:
@@ -81,7 +83,8 @@ def _replace_set(ops, coll, desired, *, dry_run):
             try:
                 cur2 = ops.client._safe_list(path) or []
                 if cur2:
-                    ops.delete(path, str(cur2[0].get("id", "")), dry_run=False)
+                    ops.delete(path, str(cur2[0].get("id", "")), dry_run=False,
+                               check_refs=False)
                 for o in originals:
                     ops.create(path, {"data": o}, dry_run=False)
             except Exception:  # noqa: BLE001
@@ -676,11 +679,13 @@ def delete_object(appliance_id):
     lock = _template_lock_error(coll, mkey)
     if lock:
         return jsonify(ok=False, error=lock), 403
-    res = FortiWebOps(appl).delete(objform.rest_path(coll), mkey, dry_run=not do_apply)
+    res = FortiWebOps(appl).delete(objform.rest_path(coll), mkey,
+                                   dry_run=not do_apply,
+                                   force=bool(body.get('force')))
     if do_apply and res.ok:
         _writethrough(appliance_id, coll, mkey, {}, 'delete')
     return jsonify(ok=res.ok, dry_run=res.get('dry_run'), request=res.get('request'),
-                   error=res.get('error', ''))
+                   error=res.get('error', ''), blocked=res.get('blocked'))
 
 
 @bp.route('/<int:appliance_id>/clone-object', methods=['POST'])

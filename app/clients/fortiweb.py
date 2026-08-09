@@ -281,6 +281,58 @@ class FortiWebClient(BaseClient):
         """
         return self.cmdb_names_checked(endpoint)[0]
 
+    def cmdb_refcount(self, endpoint: str, mkey: str):
+        """(count, holders, status, error) — how many objects name ONE object.
+
+        FortiWeb keeps its own reference bookkeeping on every cmdb row: ``q_ref``
+        is the number of objects that reference this one and ``q_ref_string``,
+        where present, names them one per line
+        (``url-rewrite-policy(urw-full) --> rule(1)``).
+
+        status is one of:
+          ``ok``          - ``count`` is the device's own answer.
+          ``unsupported`` - the row came back WITHOUT ``q_ref``: this firmware
+                            does not report a refcount here. That is a missing
+                            capability, not a missing answer.
+          ``error``       - the object could not be read at all (transport,
+                            auth, or it is not there).
+
+        ``unsupported`` and ``error`` are never collapsed: a caller that refuses
+        on "we could not ask" must not also refuse on "this firmware never
+        answers that question", or every delete on such a collection would be
+        impossible. Verified live on fortiweb08 (8.0.x): ``q_ref`` present on 10
+        of 10 collections sampled, ``q_ref_string`` on 4 of 10.
+        """
+        path = (endpoint if endpoint.startswith('/api/')
+                else '/api/v2.0/cmdb/' + (endpoint or '').lstrip('/'))
+        sep = '&' if '?' in path else '?'
+        try:
+            resp = self.get('%s%smkey=%s' % (path, sep, quote(str(mkey), safe='')))
+        except Exception as exc:  # noqa: BLE001 - transport-level failure
+            return 0, [], 'error', str(exc)
+        code = self._errcode(resp)
+        if code is not None or resp.status_code >= 400:
+            return 0, [], 'error', ('device error %s'
+                                    % (code if code is not None
+                                       else 'HTTP %s' % resp.status_code))
+        try:
+            rows = self._results_list(resp.json())
+        except Exception as exc:  # noqa: BLE001 - non-JSON body
+            return 0, [], 'error', str(exc)
+        row = rows[0] if rows and isinstance(rows[0], dict) else None
+        if not isinstance(row, dict):
+            return 0, [], 'error', 'object not found'
+        if 'q_ref' not in row:
+            return 0, [], 'unsupported', ''
+        try:
+            count = int(row.get('q_ref') or 0)
+        except (TypeError, ValueError):
+            # A refcount we cannot read as a number is not a refcount of zero.
+            return 0, [], 'unsupported', ''
+        holders = [ln.strip() for ln in
+                   str(row.get('q_ref_string') or '').splitlines() if ln.strip()]
+        return count, holders, 'ok', ''
+
     def interface_ip(self, name: str):
         """Resolve a system interface's configured IP (CIDR), cached per client.
         Returns '' for unset (0.0.0.0/0) or unknown interfaces."""

@@ -27,7 +27,7 @@ from flask_login import login_required, current_user
 
 from ..auth.decorators import require_permission
 from ..extensions import csrf
-from ..models import db, Permission, User, Role, Profile, Appliance
+from ..models import db, Permission, User, Profile, Appliance
 from ..services import naming, settings_store as store
 from ..services import email_service as email
 from ..services import auth_store
@@ -100,14 +100,6 @@ def _acme_creds_state() -> dict:
 @login_required
 def index():
     scheme = naming.effective_scheme(store.naming_overrides())
-    all_users = []
-    if _is_admin():
-        for u in User.query.order_by(User.username).all():
-            all_users.append({
-                'username': u.username,
-                'is_admin': u.role == Role.admin.value,
-                'is_active': bool(u.is_active),
-            })
     return render_template(
         'settings/index.html',
         settings=store.general(),
@@ -119,8 +111,7 @@ def index():
         classification=store.all_classification(),
         segments=store.segments(),
         ip_whitelist=store.ip_whitelist(),
-        allowed_users=store.allowed_users(),
-        all_users=all_users,
+        stale_allowed_users=(store.stale_allowed_users() if _is_admin() else []),
         users=(User.query.order_by(User.username).all() if _is_admin() else []),
         profiles=(Profile.query.order_by(Profile.is_system.desc(), Profile.name).all() if _is_admin() else []),
         profiles_counts=({p.id: User.query.filter_by(profile_id=p.id).count()
@@ -863,17 +854,25 @@ def save_access():
         rows.append({'ip': ip, 'note': notes[i] if i < len(notes) else ''})
     store.save_ip_whitelist(rows)
 
-    # Allowed users — only persist usernames that actually exist and are non-admin
-    # (admins are always allowed and never restricted).
-    chosen = set(request.form.getlist('allowed_users[]'))
-    valid = {u.username for u in User.query.filter(User.role != Role.admin.value).all()}
-    store.save_allowed_users(sorted(chosen & valid))
-
-    log_action('settings.access',
-               detail=f'{len(rows)} whitelisted IP(s), {len(chosen & valid)} allowed user(s)')
+    log_action('settings.access', detail=f'{len(rows)} whitelisted IP(s)')
     if bad:
         flash(f"Skipped invalid IP/CIDR(s): {', '.join(bad)}", 'warning')
     flash('Access control saved.', 'success')
+    return redirect(url_for('settings.index') + '#tab-access')
+
+
+@bp.route('/access/clear-legacy-allowlist', methods=['POST'])
+@login_required
+def clear_legacy_allowlist():
+    """Drop the dead ``access.allowed_users`` row (the gate it fed is gone)."""
+    if not _is_admin():
+        abort(403)
+    dropped = len(store.stale_allowed_users())
+    store.clear_stale_allowed_users()
+    log_action('settings.access.clear_legacy_allowlist',
+               detail=f'{dropped} leftover username(s) removed')
+    flash(f'Cleared {dropped} leftover username(s) from the removed allowlist.',
+          'success')
     return redirect(url_for('settings.index') + '#tab-access')
 
 
@@ -1280,7 +1279,8 @@ def test_email():
 def save_auth():
     try:
         auth_store.save_config(request.form)
-        log_action('settings.auth', detail=f'backend={auth_store.backend()}')
+        log_action('settings.auth',
+                   detail='sources=' + (','.join(auth_store.backends()) or 'local'))
         flash('Authentication settings saved.', 'success')
     except Exception as exc:  # noqa: BLE001
         flash(f'Failed to save authentication settings: {exc}', 'danger')

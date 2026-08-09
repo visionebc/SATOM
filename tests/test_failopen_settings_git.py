@@ -53,7 +53,7 @@ _MALFORMED = [
 
 
 @pytest.mark.parametrize("raw", _MALFORMED)
-@pytest.mark.parametrize("key", [store.K_ALLOWED_USERS, store.K_IP_WHITELIST])
+@pytest.mark.parametrize("key", [store.K_IP_WHITELIST])
 def test_a_malformed_access_row_is_reported_not_silently_emptied(app, key, raw):
     with app.app_context():
         store.set_str(key, raw)
@@ -63,14 +63,14 @@ def test_a_malformed_access_row_is_reported_not_silently_emptied(app, key, raw):
         assert key in err, "the error must name the broken key, got %r" % err
 
 
-@pytest.mark.parametrize("key", [store.K_ALLOWED_USERS, store.K_IP_WHITELIST])
+@pytest.mark.parametrize("key", [store.K_IP_WHITELIST])
 def test_an_unset_access_row_is_not_an_error(app, key):
     """The shipped default. Denying here would lock out every install."""
     with app.app_context():
         assert store.access_config_error() == ""
 
 
-@pytest.mark.parametrize("key", [store.K_ALLOWED_USERS, store.K_IP_WHITELIST])
+@pytest.mark.parametrize("key", [store.K_IP_WHITELIST])
 def test_a_genuinely_empty_access_row_is_not_an_error(app, key):
     with app.app_context():
         store.set_str(key, "[]")
@@ -81,20 +81,17 @@ def test_a_genuinely_empty_access_row_is_not_an_error(app, key):
 
 def test_a_populated_access_row_is_not_an_error(app):
     with app.app_context():
-        store.save_allowed_users(["alice"])
         store.save_ip_whitelist([{"ip": "10.0.0.0/8", "note": "lan"}])
         assert store.access_config_error() == ""
-        assert store.allowed_users() == ["alice"]
         assert [r["ip"] for r in store.ip_whitelist()] == ["10.0.0.0/8"]
 
 
-@pytest.mark.parametrize("key", [store.K_ALLOWED_USERS, store.K_IP_WHITELIST])
+@pytest.mark.parametrize("key", [store.K_IP_WHITELIST])
 def test_a_malformed_access_row_never_yields_phantom_entries(app, key):
-    """`allowed_users()` iterating a str would hand back one entry per CHARACTER
-    and `ip_whitelist()` would iterate dict KEYS. Neither may reach the gate."""
+    """`ip_whitelist()` iterating a bare JSON string would hand the gate one
+    entry per CHARACTER, and a dict would give it KEYS. Neither may reach it."""
     with app.app_context():
         store.set_str(key, '"admin"')
-        assert store.allowed_users() == []
         assert store.ip_whitelist() == []
 
 
@@ -107,7 +104,7 @@ def _readonly_client(app):
     return c
 
 
-@pytest.mark.parametrize("key", [store.K_ALLOWED_USERS, store.K_IP_WHITELIST])
+@pytest.mark.parametrize("key", [store.K_IP_WHITELIST])
 def test_the_gate_refuses_to_serve_a_non_admin_when_access_config_is_corrupt(app, key):
     c = _readonly_client(app)
     with app.app_context():
@@ -127,11 +124,20 @@ def test_the_gate_still_admits_a_non_admin_when_nothing_is_configured(app):
         % r.status_code)
 
 
-def test_the_gate_still_denies_a_user_outside_a_valid_allowlist(app):
+def test_the_gate_still_denies_a_user_outside_a_valid_ip_whitelist(app):
+    """The per-username allowlist that used to be tested here was REMOVED (it
+    duplicated the directory group filter, the approval gate and the profile,
+    and went stale on every import). The IP whitelist is the half that stayed,
+    because it answers a question none of those do: WHERE a session may come
+    from. Its removal-proof counterpart lives in test_auth_multi_source.py."""
     c = _readonly_client(app)
     with app.app_context():
-        store.save_allowed_users(["somebody-else"])
-    r = c.get("/", follow_redirects=False)
+        store.save_ip_whitelist([{"ip": "203.0.113.0/24", "note": "elsewhere"}])
+    # NOT from loopback: 127.0.0.1 is exempt by design so a typo cannot lock the
+    # box out of its own console, and a test that forgets this passes for the
+    # wrong reason.
+    r = c.get("/", follow_redirects=False,
+              environ_base={"REMOTE_ADDR": "198.51.100.7"})
     assert r.status_code == 403
 
 
@@ -140,7 +146,7 @@ def test_the_gate_never_restricts_an_admin_even_with_a_corrupt_config(app):
     c = app.test_client()
     login(c, admin_user_id(app))
     with app.app_context():
-        store.set_str(store.K_ALLOWED_USERS, '{"broken')
+        store.set_str(store.K_IP_WHITELIST, '{"broken')
     r = c.get("/", follow_redirects=False)
     assert r.status_code not in (403, 503)
 

@@ -6236,6 +6236,80 @@ claim a return to service nobody observed.</p>
 reads the flag — it does not test for the string <code>"reboot"</code>. Cabling a gate to
 an action name is the defect this replaces; a guard asserts the executor
 contains no such literal.</p>
+<h2 id="48-removing-a-gate-is-the-change-nothing-fails-on">§48. Removing a gate is the change nothing fails on</h2>
+<p>A gate that is deleted does not raise, does not log and does not fail a test —
+the code path simply stops running, and everyone it used to stop walks through.
+That is the whole risk of dropping the per-username allowlist, and it is why the
+guards for it are written as <em>absence</em> assertions rather than as a deleted test
+file.</p>
+<p><strong>What was removed and why.</strong> <code>access.allowed_users</code> sat behind three gates that
+already answered the question: the directory group filter (who may authenticate
+at all), the approval gate (a first-time directory user lands disabled), and the
+profile (what they may do once inside). It added a fourth list of names that
+nothing kept in step with the other three — import a user, approve them, enable
+them, and they still take a blanket <code>403</code> on every page, traced only by
+<code>ACCESS_DENY reason=user_not_allowed</code>. It also exempted admins, so the only
+accounts it could restrict were the ones that could do the least damage. The IP
+whitelist on the same card stayed: it answers <em>where</em> a session may come from,
+which no profile does.</p>
+<p><strong>Guards</strong> (<code>tests/test_auth_multi_source.py</code>):</p>
+<ul>
+<li><code>settings_store</code> exposes neither <code>allowed_users</code> nor <code>save_allowed_users</code>. If
+  a reader comes back the gate comes back with it, by accident.</li>
+<li>A leftover row full of other people's names does not <code>403</code> a <code>readonly</code> user.</li>
+<li>A <em>corrupt</em> leftover row does not <code>503</code> the application. It was policy input
+  once; inert data must not be able to take the service down.</li>
+<li>The settings page renders no <code>allowed_users[]</code> control, and <em>does</em> render the
+  leftover names with the word "no longer" when a row survives — the removal is
+  announced to the person who configured it, at boot in the log and on the page.</li>
+<li>The IP whitelist still <code>403</code>s. Its test drives the request from
+  <code>198.51.100.7</code>, because <strong>loopback is exempt by design</strong> and a test that
+  forgets that passes without the gate ever running.</li>
+</ul>
+<h2 id="49-several-sign-in-sources-order-is-behaviour-and-corrupt-is-not-empty">§49. Several sign-in sources: order is behaviour, and corrupt is not empty</h2>
+<p>One string became an ordered list, and every widening of that shape has a silent
+failure mode. None of them raise; they authenticate the wrong set of people.</p>
+<ul>
+<li><strong>Order is the configured order.</strong> A chain walked in reverse still signs the
+  right people in, so nothing looks wrong — but the wrong directory is asked
+  first, which decides latency (an unreachable source burns its full timeout
+  before the next) and which directories see a wrong password (every source
+  ahead of the winner counts it against its own lockout policy). Guarded by
+  recording the calls, not by checking the result.</li>
+<li><strong>A source after the winner is never asked.</strong> Same reason: each extra bind is
+  a failed-password event on a directory that did not need to see it.</li>
+<li><strong>A failed chain reports every reason.</strong> Three sources failing for three
+  reasons is not one reason, and collapsing them leaves an operator debugging
+  the wrong box.</li>
+<li><strong>A corrupt source list falls CLOSED</strong>, to local-only — it does not fall back
+  to the legacy single value it replaced. Reviving a directory the admin turned
+  off, because a row could not be parsed, is worse than refusing: local sign-in
+  still works, so nobody is locked out. <code>UNREADABLE</code> is a distinct sentinel from
+  "absent" for exactly this reason; folding them together is the bug the first
+  draft shipped and the guard caught.</li>
+<li><strong><code>local</code> is not a member of the list.</strong> It is the always-on floor, and a
+  local account is checked against its local password and never falls through to
+  a directory. An unknown name in the list is dropped rather than dispatched.</li>
+</ul>
+<p><strong>Group scopes.</strong> Each source carries <code>[{group, profile}]</code>. Two rules earn their
+guards: a form that never mentioned groups must LEAVE THEM ALONE (treating "no
+rows posted" as "delete every row" would let any other form wipe the scope), and
+clearing every row deliberately IS an instruction and must persist as an empty
+list. The two are told apart by an explicit <code>groups_submitted</code> marker, never by
+counting rows. One group the appliance does not have fails the whole import.</p>
+<p><strong>Per-group profiles are import-time only.</strong> A RADIUS Access-Accept carries no
+group. Resolving one at sign-in would mean a REST round-trip to the
+FortiAuthenticator on the critical path of every first login, and a privilege
+decision made from a best-effort call. Just-in-time users get the global
+default, which is <code>readonly</code>, and an unknown profile name falls back <em>down</em> the
+chain — never up.</p>
+<p><strong>Verification recipe.</strong> <code>venv/bin/python -m pytest tests/test_auth_multi_source.py
+tests/test_auth_directory.py tests/test_directory_import.py
+tests/test_failopen_settings_git.py -q</code>, then the mutation set: reverse the
+chain, keep asking after an acceptance, revive the legacy row on a corrupt list,
+drop the per-group profile, skip a bad group, fall back to <code>admin</code>, ignore the
+order field, wipe the scope from a form without group fields, restore
+<code>allowed_users</code>. Each one must turn the run red.</p>
     </div>
   </div>
 </section>

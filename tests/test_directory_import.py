@@ -410,6 +410,6 @@ def test_approval_gate_is_saved_from_the_ldap_half_too(app):
 def test_settings_page_renders_the_import_controls(app, client):
     login(client, admin_user_id(app))
     body = client.get('/settings/', follow_redirects=True).get_data(as_text=True)
-    assert 'radius_sync_group' in body
+    assert 'radius_group[]' in body
     assert 'radius_sync_appliance_id' in body
     assert 'require_approval' in body

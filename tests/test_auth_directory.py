@@ -87,7 +87,9 @@ def test_auth_store_defaults(app):
     with app.app_context():
         assert auth_store.backend() == "local"
         assert auth_store.is_enabled() is False
-        assert auth_store.default_profile_name() == "operator"
+        # Least privilege: an unreviewed directory user gets the profile
+        # that cannot change anything. Elevation is an admin action.
+        assert auth_store.default_profile_name() == "readonly"
         cfg = auth_store.config()
         assert cfg["backend"] == "local"
         assert cfg["ldap"]["has_bind_password"] is False
@@ -155,17 +157,17 @@ def test_authenticate_external_dispatch_ldap(app, monkeypatch):
         assert auth_store.authenticate_external("alice", "good")["source"] == "ad"
 
 
-def test_provision_external_creates_operator(app):
+def test_provision_external_creates_the_default_profile(app):
     from app.services import auth_store
     from app.models import User
     with app.app_context():
         u = auth_store.provision_external_user("newldapuser", "ldap")
         assert u.auth_source == "ldap"
         assert u.is_external is True
-        assert u.profile is not None and u.profile.name == "operator"
+        assert u.profile is not None and u.profile.name == "readonly"
         # unusable local password
         assert u.check_password("") is False
-        # idempotent — second call returns same row, stays operator
+        # idempotent — second call returns same row, keeps its profile
         u2 = auth_store.provision_external_user("newldapuser", "ldap")
         assert u2.id == u.id
 
@@ -222,7 +224,7 @@ def test_login_external_jit_provisions(client, app, monkeypatch):
     with app.app_context():
         u = User.query.filter_by(username="fromdir").first()
         assert u is not None and u.auth_source == "ldap"
-        assert u.profile.name == "operator"
+        assert u.profile.name == "readonly"
 
 
 def test_login_2fa_challenge_gate(client, app):

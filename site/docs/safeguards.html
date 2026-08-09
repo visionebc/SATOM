@@ -6513,6 +6513,56 @@ tests/test_theme.py -q</code>, then mutate — drift the site copy, restore the
 substitute vector, point a template at it, blank one page's mark, revert the
 generator, put the vendor-named preset back, and re-add the vendor comment to
 <code>base.html</code>. Each must turn the run red.</p>
+<h2 id="54-output-can-be-rendered-complete-and-invisible">§54. Output can be rendered, complete, and invisible</h2>
+<p><code>tests/test_upgrade_prep_chrome.py</code> — 12 guards, 11 mutations, all 11 bite.</p>
+<p>Reported 2026-08-10 on <code>/appliances/&lt;id&gt;/upgrade/prep</code>: the result text ran past
+the cards, the sizing did not match the product, and the device CLI output
+"no se ve por los colores". Three defects, none of which can raise, because a
+page that renders is not a page that reads.</p>
+<p><strong>1. <code>.fw-pre</code> was a dark-theme leftover.</strong> <code>rgba(0,0,0,0.30)</code> over a WHITE card
+composites to a light-grey slab, and <code>#94a3b8</code> on that slab is about <strong>1.3:1</strong>.
+The health battery was fetched, parsed, injected and unreadable. Same defect
+class as the status pills of 2026-07-28 (§9m) — and worse in reach, because
+<code>.fw-pre</code> is shared by <strong>five other templates</strong>: the inspector's JSON dump, the
+three git consoles in Settings, and the formal change-request document. One of
+those had already been hand-patched with an inline <code>white-space:pre-wrap</code>, which
+is the tell that somebody hit this and treated the symptom.
+The panel now paints from <code>--fw-surface-alt</code> / <code>--fw-text-primary</code> / <code>--fw-border</code>,
+and uses <code>white-space: pre</code> with <code>overflow: auto</code>: device output is
+column-aligned, wrapping shreds the columns, and the scroll is what keeps a long
+line inside the card instead of widening it.</p>
+<p><strong>2. Device strings were sized as headlines.</strong> The four result tiles put a
+firmware build and a backup filename in a <code>.h5</code> inside a quarter-width column.
+Long unbroken tokens do not wrap by default, so they overflowed. <code>.fw-fact-*</code> is
+the tile for a <em>string</em> (a stat card holds a NUMBER: 28px, one line, never
+wraps): 14px, <code>overflow-wrap: anywhere</code>, <code>min-width: 0</code> so the tile can shrink
+below its content inside its grid column. The backup filename moved out of the
+badge into its own <code>.fw-fact-sub</code> line — the badge carries the VERDICT, the
+filename is evidence, and a 50-character filename inside a pill wraps into a
+two-line lozenge.</p>
+<p><strong>3. The page was built out of raw Bootstrap.</strong> <code>.card</code> has <strong>no</strong> override in
+<code>fortiweb.css</code>, so this page rendered with different corners, borders and header
+padding from every other page; <code>badge bg-*</code> and <code>text-success</code>/<code>text-danger</code> are
+not the palettes calibrated against white (<code>.fw-badge-*</code>, 4.5:1+). Guarded by
+absence: <code>class="card"</code>, <code>badge bg-</code>, <code>alert-success</code> and the bare text-colour
+utilities must not come back.</p>
+<p>Traps this round, all previously documented and all repeated:</p>
+<ul>
+<li><code>\balert-(success|...)</code> matches inside <code>fw-alert-success</code> — the <strong>ninth</strong>
+  substring assertion in this repo to match its own right answer. Needs <code>(?&lt;!fw-)</code>.</li>
+<li>Scanning the WHOLE rendered document for dark values fails against <strong>correct</strong>
+  chrome: <code>base.html</code>'s sidebar legitimately paints slate icons on the dark-blue
+  rail. Scope the sweep to the page's own block (<code>html[html.index("fw-page-header"):]</code>).</li>
+<li><code>/tmp/&lt;shared dir&gt;</code> on the node is owned by another session — the dump ran as
+  <code>satom</code> and could not write. Use an own directory or widen the mode.</li>
+</ul>
+<p><strong>OPEN, reported not fixed (needs a decision — product-wide blast radius):</strong>
+<code>fw-btn-primary</code> (46 uses) and <code>fw-btn-secondary</code> (51 uses) are <strong>defined
+nowhere</strong> in <code>app/static/css/</code>. Verified against the CSS served by the live node,
+not just the tree. Every one of those 97 buttons falls back to bare Bootstrap
+<code>.btn</code>: padding and cursor, no background, no border. The primary call to action
+on this page — "Run preparation" — renders as plain text. Preexisting; fixing it
+changes the appearance of every page in the product, so it is a separate ask.</p>
     </div>
   </div>
 </section>

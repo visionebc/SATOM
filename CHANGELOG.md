@@ -413,6 +413,26 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `upgrade_prep`, so that one fired with no approval and outside its window —
   the one thing the gate exists to prevent. Any action bound to a change request
   is now gated by it.
+- **Device output was rendered, complete, and invisible.** `.fw-pre` — the panel
+  the SSH health battery, the inspector's JSON dump, the three git consoles in
+  Settings and the formal change document all print into — was a dark-theme
+  leftover: `rgba(0,0,0,0.30)` over a white card composites to a light-grey slab
+  and its `#94a3b8` text sits at about 1.3:1 on it. Nothing failed; the text was
+  simply not readable. The panel now paints from the product tokens, and keeps
+  `white-space: pre` with its own scroll so column-aligned CLI output stays
+  aligned and a long line can never widen the card that holds it.
+- **Upgrade-preparation results no longer overflow their tiles.** A firmware
+  build string and a timestamped backup filename were rendered as `.h5` headings
+  inside quarter-width columns, where long unbroken tokens do not wrap. They now
+  use a tile built for strings rather than for counts, and the backup filename
+  has moved out of its badge onto its own line: the badge states the verdict,
+  the filename is the evidence.
+- **The page uses the product's chrome.** It was assembled from raw Bootstrap
+  cards, badges and alerts; `.card` has no override in the product stylesheet, so
+  it rendered unlike every other page, and the Bootstrap status colours are not
+  the ones calibrated against white. Values read off the appliance are now
+  HTML-escaped before reaching `innerHTML` — a policy name carrying `<` silently
+  ate the rest of its row, which looks exactly like missing data.
 
 ## [1.9.2] - 2026-08-09
 

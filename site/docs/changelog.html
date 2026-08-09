@@ -93,7 +93,53 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>NetBox is now the maintenance window.</strong> Settings → Integrations wires SATOM
+<li><strong>Import directory users before their first sign-in, on RADIUS too.</strong> The
+  user importer (Settings → Authentication → <em>Sync directory users</em>) used to
+  refuse anything that was not AD/LDAP, which left the FortiAuthenticator /
+  RADIUS backend with no roster at all. It has one now. Said plainly because it
+  is the whole design: <strong>RADIUS cannot be enumerated</strong> — an Access-Request is a
+  yes/no question about one credential, and the protocol has no verb for
+  "list the members of this group". So the roster is read over a <em>second</em>
+  channel, the FortiAuthenticator REST API, using the API key of a FAC already
+  registered under Appliances; no new secret is stored and <strong>sign-in keeps going
+  over RADIUS</strong>. Pick the appliance and the group under the RADIUS section.
+  The roster comes from <code>/api/v1/localgroup-memberships/</code>, not
+  <code>/api/v1/localusers/</code>: on FortiAuthenticator 8.0.3 the latter <strong>under-reports</strong>
+  (it returned 1 of 3 local users, hiding accounts that plainly exist), so
+  trusting it would silently import a partial group. Naming a group the
+  appliance does not have is reported as an error listing the groups it does
+  have — importing nobody and calling it success hides a typo forever.</li>
+<li><strong>An approval gate for directory users</strong> (Settings → Authentication, applies
+  to every external backend). With it on, a first-time directory sign-in creates
+  the account <strong>disabled</strong> and refuses entry until an admin enables and profiles
+  it under Users — the same state the importer produces, so import-then-approve
+  and sign-in-then-approve converge instead of racing. The refusal says
+  <em>awaiting administrator approval</em>, never <em>invalid password</em>: the bind
+  succeeded, and blaming the credential sends the user to reset one that was
+  correct. Existing accounts are never re-gated.</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li><strong>The login page was rate-limited as if viewing it were a login attempt.</strong>
+  <code>/auth/login</code> carried a flat <code>5 per minute</code>, counting <code>GET</code> and <code>POST</code> alike,
+  so five <em>renders</em> in a minute — a logout redirect, a couple of reloads, one
+  failed attempt — answered <code>429 Too Many Requests</code> on the <strong>form</strong>, locking the
+  operator out without a single password having been guessed. The limit now
+  applies to <code>POST</code> only, which is the verb that carries a credential; the
+  per-account lockout still covers the distributed case. Verified live: 12
+  consecutive page loads all <code>200</code>, the 6th POST still <code>429</code>, and the page stays
+  reachable <em>while</em> POSTs are being refused — a user who is being throttled has
+  to be able to read the screen telling them so.</li>
+<li>
+<p><strong>Signing in could sign you straight back out.</strong> Requesting <code>/auth/logout</code>
+  without a session redirects through <code>@login_required</code> to
+  <code>/auth/login?next=/auth/logout</code>, and the login view honoured that <code>next</code> — so
+  a successful sign-in immediately hit logout. <code>next</code> is now refused when it
+  resolves to the logout endpoint, matched on the resolved path rather than on
+  the substring <code>logout</code>, which a legitimate page may well contain.</p>
+</li>
+<li>
+<p><strong>NetBox is now the maintenance window.</strong> Settings → Integrations wires SATOM
   to a NetBox instance (URL, encrypted token, TLS verification, a hard timeout
   and a per-appliance device mapping) and opens a real maintenance window when a
   change request starts running, closing it from the outcome when the run ends.
@@ -105,7 +151,8 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   SATOM stores naive UTC, and a naive timestamp handed to another system is read
   in <em>that</em> system's timezone. That is not theoretical — against NetBox 4.6.7 a
   naive value round-trips with no <code>Z</code>, i.e. it was taken in the server's own
-  zone, which is how a window silently moves by hours.</li>
+  zone, which is how a window silently moves by hours.</p>
+</li>
 <li><strong>Integration hooks — your own Python, run out of process.</strong> A hook is a small
   script SATOM runs when it emits an event (<code>change.requested</code>,
   <code>change.approved</code>, <code>window.opening</code>, <code>window.closing</code>, <code>upgrade.finished</code>,
@@ -146,9 +193,6 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   upgrade that worked worked whether or not the SMTP server answered. A failed
   send records no delivery timestamp, so the notice stays retryable.</p>
 </li>
-</ul>
-<h3 id="fixed">Fixed</h3>
-<ul>
 <li>
 <p><strong>The hardened runner sandbox silently broke its own queue.</strong> The
   integration-hooks unit granted four separate <code>ReadWritePaths=</code>, and systemd

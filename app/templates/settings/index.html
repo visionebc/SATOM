@@ -949,6 +949,13 @@
                 <input type="text" name="default_profile" class="form-control fw-form-control" value="{{ auth_config.default_profile }}" placeholder="operator">
                 <div class="form-text">A directory user is created on first sign-in with this profile; an admin can elevate them later under Users.</div>
               </div>
+              <div class="mb-3 form-check">
+                <input class="form-check-input" type="checkbox" name="require_approval" id="auth-require-approval" {{ 'checked' if auth_config.require_approval else '' }}>
+                <label class="form-check-label" for="auth-require-approval"><strong>Require administrator approval for new directory users</strong></label>
+                <div class="form-text">ON: a first-time directory sign-in creates the account <strong>disabled</strong> and refuses entry until an admin enables it under
+                  <a href="{{ url_for('users.index') }}">Users</a> &mdash; the same state the importer produces. OFF: the account is created active with the default
+                  profile above, so anyone the directory accepts can sign in immediately.</div>
+              </div>
 
               <div id="auth-ldap-block" class="auth-ext">
                 <hr class="my-3">
@@ -997,6 +1004,25 @@
                   <div class="col-5"><label class="fw-form-label">NAS identifier</label>
                     <input type="text" name="radius_nas_id" class="form-control fw-form-control" value="{{ auth_config.radius.nas_id }}" placeholder="satom"></div>
                 </div>
+                <div class="alert fw-alert-info py-2 px-3 mb-3" style="font-size:12px;">
+                  <i class="bi bi-info-circle me-1"></i><strong>Importing users needs a second channel.</strong>
+                  RADIUS answers &quot;is this password right?&quot; and nothing else &mdash; it cannot list a group.
+                  The roster below is read from the FortiAuthenticator&rsquo;s REST API using the API key of an
+                  appliance you already registered. <strong>Sign-in keeps going over RADIUS.</strong>
+                </div>
+                <div class="row g-3 mb-3">
+                  <div class="col-7"><label class="fw-form-label">Roster source <span class="text-muted">(registered FortiAuthenticator)</span></label>
+                    <select name="radius_sync_appliance_id" class="form-select fw-form-control">
+                      <option value="0">Auto &mdash; the only registered FortiAuthenticator</option>
+                      {% for a in fac_appliances %}
+                      <option value="{{ a.id }}" {{ 'selected' if auth_config.radius.sync_appliance_id == a.id else '' }}>{{ a.name }} ({{ a.host }})</option>
+                      {% endfor %}
+                    </select>
+                    {% if not fac_appliances %}<div class="form-text text-danger">No FortiAuthenticator registered under Appliances &mdash; import will refuse.</div>{% endif %}</div>
+                  <div class="col-5"><label class="fw-form-label">Import group</label>
+                    <input type="text" name="radius_sync_group" class="form-control fw-form-control font-monospace" value="{{ auth_config.radius.sync_group }}" placeholder="fweb_users">
+                    <div class="form-text">Blank = every user the appliance exposes.</div></div>
+                </div>
               </div>
 
               <button type="submit" class="btn btn-sm fw-btn-primary"><i class="bi bi-save me-1"></i>Save authentication settings</button>
@@ -1022,7 +1048,9 @@
             <p class="text-muted mb-0" style="font-size:12px;"><i class="bi bi-info-circle me-1"></i>Directory users get the <strong>{{ auth_config.default_profile }}</strong> profile on first sign-in and do MFA at the directory. Local accounts can enable app 2FA in the Security tab.</p>
             <div id="auth-sync-block" class="auth-ext">
               <hr class="my-3">
-              <p class="text-muted mb-2" style="font-size:12px;"><i class="bi bi-people me-1"></i>Import the directory users (scoped to the <strong>Sync group / OU DN</strong> above &mdash; blank = everyone under the base DN) into the local user list, so you can assign profiles or block them <strong>before</strong> they ever sign in. New users are imported <strong>disabled (pending approval)</strong>; already-known users are left untouched. Save the settings first.</p>
+              <p class="text-muted mb-2" style="font-size:12px;"><i class="bi bi-people me-1"></i>Import the directory users into the local user list so you can assign profiles or block them <strong>before</strong> they ever sign in.
+                Scope: <strong>Sync group / OU DN</strong> for AD&nbsp;/&nbsp;LDAP, <strong>Import group</strong> for FortiAuthenticator&nbsp;/&nbsp;RADIUS (blank = everything in scope).
+                New users are imported <strong>disabled (pending approval)</strong>; already-known users are left untouched. Save the settings first.</p>
               <form method="POST" action="{{ url_for('settings.sync_auth') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-sm fw-btn-primary"><i class="bi bi-arrow-repeat me-1"></i>Sync directory users</button>
@@ -4058,7 +4086,9 @@ function authToggle() {
   var rad = document.getElementById('auth-radius-block');
   if (ldap) ldap.style.display = (b === 'ad' || b === 'ldap') ? '' : 'none';
   if (rad) rad.style.display = (b === 'radius') ? '' : 'none';
-  var sync = document.getElementById('auth-sync-block'); if (sync) sync.style.display = (b === 'ad' || b === 'ldap') ? '' : 'none';
+  // The importer now covers RADIUS too (roster via the FortiAuthenticator API),
+  // so the panel follows "is an external backend selected", not a hardcoded pair.
+  var sync = document.getElementById('auth-sync-block'); if (sync) sync.style.display = (b === 'local') ? 'none' : '';
 }
 function authTest() {
   var btn = document.getElementById('auth-test-btn');

@@ -49,6 +49,14 @@ K_R_PORT = "auth.radius.port"
 K_R_SECRET = "auth.radius.secret_enc"         # Fernet token
 K_R_NASID = "auth.radius.nas_id"
 K_R_TIMEOUT = "auth.radius.timeout"
+# RADIUS cannot be enumerated (an Access-Request is a yes/no question about one
+# credential). The roster for "import users" therefore comes from the FAC's REST
+# API via an appliance ALREADY registered in the inventory - no second secret.
+K_R_SYNC_APPLIANCE = "auth.radius.sync_appliance_id"
+K_R_SYNC_GROUP = "auth.radius.sync_group"
+
+# Approval gate (applies to EVERY external backend, not just RADIUS).
+K_REQUIRE_APPROVAL = "auth.require_approval"   # "1"/"0"
 
 BACKENDS = ("local", "ad", "ldap", "radius")
 
@@ -64,6 +72,7 @@ DEFAULTS = {
     K_L_TIMEOUT: "8",
     K_R_PORT: "1812",
     K_R_TIMEOUT: "8",
+    K_REQUIRE_APPROVAL: "0",
 }
 
 
@@ -104,6 +113,24 @@ def default_profile_name() -> str:
     return (_get(K_DEFAULT_PROFILE) or "operator").strip() or "operator"
 
 
+def require_approval() -> bool:
+    """True when a first-time directory user must be approved by an admin.
+
+    The bind still happens at the directory - this gates ACCESS, not identity.
+    A gated user is created DISABLED and reported at login as pending approval,
+    never as a bad password (blaming the credential for an authorisation
+    decision sends the user to reset a password that was correct)."""
+    return _get(K_REQUIRE_APPROVAL) == "1"
+
+
+def fac_sync_appliance_id() -> int:
+    return _to_int(_get(K_R_SYNC_APPLIANCE), 0)
+
+
+def fac_sync_group() -> str:
+    return (_get(K_R_SYNC_GROUP) or "").strip()
+
+
 # ---- config (read) --------------------------------------------------------
 def config(*, reveal_secrets: bool = False) -> dict:
     """Full auth config for the Settings template. Secrets are exposed as
@@ -112,6 +139,7 @@ def config(*, reveal_secrets: bool = False) -> dict:
     cfg = {
         "backend": b,
         "default_profile": default_profile_name(),
+        "require_approval": require_approval(),
         "ldap": {
             "kind": b if b in ("ad", "ldap") else "ldap",
             "host": _get(K_L_HOST),
@@ -134,6 +162,8 @@ def config(*, reveal_secrets: bool = False) -> dict:
             "nas_id": _get(K_R_NASID),
             "timeout": _to_int(_get(K_R_TIMEOUT), 8),
             "has_secret": bool(AppSetting.get(K_R_SECRET)),
+            "sync_appliance_id": fac_sync_appliance_id(),
+            "sync_group": fac_sync_group(),
         },
     }
     if reveal_secrets:
@@ -164,6 +194,10 @@ def save_config(form) -> None:
     b = b if b in BACKENDS else "local"
     AppSetting.set(K_BACKEND, b)
     AppSetting.set(K_DEFAULT_PROFILE, g("default_profile") or "operator")
+    # Saved for EVERY backend: the gate must not silently switch off just
+    # because the admin was editing the LDAP half of the form.
+    AppSetting.set(K_REQUIRE_APPROVAL,
+                   "1" if form.get("require_approval") in ("1", "on", "true") else "0")
 
     # LDAP / AD section (saved whenever the chosen backend is ad/ldap).
     if b in ("ad", "ldap"):
@@ -189,6 +223,8 @@ def save_config(form) -> None:
         AppSetting.set(K_R_PORT, str(_to_int(g("radius_port"), 1812)))
         AppSetting.set(K_R_NASID, g("radius_nas_id") or "satom")
         AppSetting.set(K_R_TIMEOUT, str(max(2, min(60, _to_int(g("radius_timeout"), 8)))))
+        AppSetting.set(K_R_SYNC_APPLIANCE, str(_to_int(g("radius_sync_appliance_id"), 0)))
+        AppSetting.set(K_R_SYNC_GROUP, g("radius_sync_group"))
         new_secret = form.get("radius_secret", "")
         if new_secret:
             AppSetting.set(K_R_SECRET, encryption.encrypt(new_secret))
@@ -282,7 +318,11 @@ def provision_external_user(username: str, source: str):
 
     prof = (Profile.query.filter_by(name=default_profile_name()).first()
             or Profile.query.filter_by(name="operator").first())
-    user = User(username=username, auth_source=source, is_active=True)
+    # Approval gate: a brand-new directory user lands DISABLED so an admin can
+    # assign the right profile BEFORE the account can do anything. Existing rows
+    # are never touched by this (see the early return above).
+    user = User(username=username, auth_source=source,
+                is_active=not require_approval())
     # External users authenticate at the directory — give them an unusable
     # local password so check_password() can never succeed locally.
     user.set_password(_secrets.token_urlsafe(48))
@@ -294,14 +334,64 @@ def provision_external_user(username: str, source: str):
     return user
 
 
+# ---- FortiAuthenticator roster feed ---------------------------------------
+def fac_client():
+    """``(client, detail)`` for the appliance configured as the roster source.
+
+    Resolution is explicit-first: the configured id wins; with none set, fall
+    back to the single registered FortiAuthenticator. Two of them and no choice
+    made is an ERROR, not a coin flip - importing the wrong appliance's users
+    would look like it worked."""
+    from ..models import Appliance
+    from ..clients.fortiauthenticator import FortiAuthenticatorClient
+
+    want = fac_sync_appliance_id()
+    if want:
+        appliance = Appliance.query.filter_by(id=want).first()
+        if appliance is None:
+            return None, f"Appliance id {want} is not in the inventory any more."
+        if (appliance.kind or "") != "fortiauthenticator":
+            return None, (f"Appliance {appliance.name!r} is a "
+                          f"{appliance.kind!r}, not a FortiAuthenticator.")
+        return FortiAuthenticatorClient(appliance), ""
+
+    found = Appliance.query.filter_by(kind="fortiauthenticator").all()
+    if not found:
+        return None, ("No FortiAuthenticator registered. Add the FAC under "
+                      "Appliances (its API key is reused for the roster).")
+    if len(found) > 1:
+        names = ", ".join(a.name for a in found)
+        return None, (f"{len(found)} FortiAuthenticators registered ({names}) - "
+                      f"pick one in Settings -> Authentication.")
+    return FortiAuthenticatorClient(found[0]), ""
+
+
+def _list_fac_users(limit: int = 500) -> dict:
+    """Roster from the FAC REST API. Logins keep going over RADIUS."""
+    from . import fac_directory
+
+    client, detail = fac_client()
+    if client is None:
+        return {"ok": False, "users": [], "detail": detail}
+    group = fac_sync_group()
+    ok, res = fac_directory.list_group_members(client, group, limit=limit)
+    if not ok:
+        return {"ok": False, "users": [], "detail": str(res)}
+    scope = f"group {group!r}" if group else "all groups"
+    return {"ok": True, "users": res, "detail": f"{len(res)} user(s) found in {scope}."}
+
+
 # ---- directory sync (admin action) ----------------------------------------
 def list_directory_users(limit: int = 500) -> dict:
     """Enumerate the active AD/LDAP backend's users (scoped to the configured
     sync group/OU). ``{ok, users, detail}``. Not supported on RADIUS/local."""
     b = backend()
+    if b == "radius":
+        return _list_fac_users(limit=limit)
     if b not in ("ad", "ldap"):
         return {"ok": False, "users": [],
-                "detail": "Directory sync needs an Active Directory or LDAP backend."}
+                "detail": "Directory sync needs an Active Directory, LDAP or "
+                          "FortiAuthenticator backend."}
     cfg = _resolved_ldap_cfg()
     ok, res = directory_auth.ldap_list_users(cfg, group_dn=_get(K_L_SYNCGROUP), limit=limit)
     if not ok:
@@ -353,7 +443,8 @@ def sync_directory_users(default_active: bool = False, limit: int = 500) -> dict
 
 __all__ = [
     "BACKENDS", "backend", "is_enabled", "default_profile_name",
-    "config", "save_config", "test_connection",
+    "config", "save_config", "test_connection", "require_approval",
+    "fac_client", "fac_sync_group", "fac_sync_appliance_id",
     "authenticate_external", "provision_external_user",
     "list_directory_users", "sync_directory_users",
 ]

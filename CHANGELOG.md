@@ -8,6 +8,50 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Import directory users before their first sign-in, on RADIUS too.** The
+  user importer (Settings → Authentication → *Sync directory users*) used to
+  refuse anything that was not AD/LDAP, which left the FortiAuthenticator /
+  RADIUS backend with no roster at all. It has one now. Said plainly because it
+  is the whole design: **RADIUS cannot be enumerated** — an Access-Request is a
+  yes/no question about one credential, and the protocol has no verb for
+  "list the members of this group". So the roster is read over a *second*
+  channel, the FortiAuthenticator REST API, using the API key of a FAC already
+  registered under Appliances; no new secret is stored and **sign-in keeps going
+  over RADIUS**. Pick the appliance and the group under the RADIUS section.
+  The roster comes from `/api/v1/localgroup-memberships/`, not
+  `/api/v1/localusers/`: on FortiAuthenticator 8.0.3 the latter **under-reports**
+  (it returned 1 of 3 local users, hiding accounts that plainly exist), so
+  trusting it would silently import a partial group. Naming a group the
+  appliance does not have is reported as an error listing the groups it does
+  have — importing nobody and calling it success hides a typo forever.
+- **An approval gate for directory users** (Settings → Authentication, applies
+  to every external backend). With it on, a first-time directory sign-in creates
+  the account **disabled** and refuses entry until an admin enables and profiles
+  it under Users — the same state the importer produces, so import-then-approve
+  and sign-in-then-approve converge instead of racing. The refusal says
+  *awaiting administrator approval*, never *invalid password*: the bind
+  succeeded, and blaming the credential sends the user to reset one that was
+  correct. Existing accounts are never re-gated.
+
+### Fixed
+
+- **The login page was rate-limited as if viewing it were a login attempt.**
+  `/auth/login` carried a flat `5 per minute`, counting `GET` and `POST` alike,
+  so five *renders* in a minute — a logout redirect, a couple of reloads, one
+  failed attempt — answered `429 Too Many Requests` on the **form**, locking the
+  operator out without a single password having been guessed. The limit now
+  applies to `POST` only, which is the verb that carries a credential; the
+  per-account lockout still covers the distributed case. Verified live: 12
+  consecutive page loads all `200`, the 6th POST still `429`, and the page stays
+  reachable *while* POSTs are being refused — a user who is being throttled has
+  to be able to read the screen telling them so.
+- **Signing in could sign you straight back out.** Requesting `/auth/logout`
+  without a session redirects through `@login_required` to
+  `/auth/login?next=/auth/logout`, and the login view honoured that `next` — so
+  a successful sign-in immediately hit logout. `next` is now refused when it
+  resolves to the logout endpoint, matched on the resolved path rather than on
+  the substring `logout`, which a legitimate page may well contain.
+
 - **NetBox is now the maintenance window.** Settings → Integrations wires SATOM
   to a NetBox instance (URL, encrypted token, TLS verification, a hard timeout
   and a per-appliance device mapping) and opens a real maintenance window when a
@@ -60,7 +104,6 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   upgrade that worked worked whether or not the SMTP server answered. A failed
   send records no delivery timestamp, so the notice stays retryable.
 
-### Fixed
 
 - **The hardened runner sandbox silently broke its own queue.** The
   integration-hooks unit granted four separate `ReadWritePaths=`, and systemd

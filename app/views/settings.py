@@ -136,6 +136,8 @@ def index():
         alerts_config=alerts_svc.config(),
         auth_config=(auth_store.config() if _is_admin() else None),
         auth_backends=auth_store.BACKENDS,
+        fac_appliances=(Appliance.query.filter_by(kind='fortiauthenticator')
+                        .order_by(Appliance.name).all() if _is_admin() else []),
         twofa_status={
             'enabled': bool(getattr(current_user, 'totp_enabled', False)),
             'is_local': bool(getattr(current_user, 'is_local', True)),

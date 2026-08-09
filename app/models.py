@@ -99,6 +99,18 @@ class User(db.Model, UserMixin):
         return not self.is_local
 
     @property
+    def is_pending_approval(self) -> bool:
+        """A directory account that is disabled and has NEVER signed in.
+
+        That is the exact shape the import / approval gate produces, and it is
+        distinguishable from an admin-disabled account, which by definition has
+        a ``last_login`` (an account nobody ever used could not have been
+        "revoked"). The distinction matters at the login screen: pending is a
+        WAITING state, disabled is a REFUSAL, and telling a user the wrong one
+        sends them to the wrong person for help."""
+        return self.is_external and not self.is_active and self.last_login is None
+
+    @property
     def effective_permissions(self) -> set[str]:
         """The authoritative permission set for this user.
 

@@ -760,6 +760,39 @@ Guards: `tests/test_favicon.py`. Verified by mutation -- reverting the chooser,
 deleting the route, flattening the `.ico` to one size, dropping the link from a
 page, or reverting the generator each fails a test.
 
+### The file itself, not just the references (2026-08-09)
+
+Guarding "no live template references it" is only half the job, and the other
+half stayed open for a week: `app/static/img/favicon.svg` was still in the tree
+and still **served** -- `GET /static/img/favicon.svg` answered `200` with the
+vendor glyph, from this product's own origin. SATOM is sold under Elastic
+License 2.0, so that is a trademark surface, not a leftover.
+
+The file is gone. Three rules now, all ABSENCE assertions, because deleting
+something is the change where nothing fails on its own:
+
+- **The file must not exist.** A reference guard cannot see an unreferenced
+  file.
+- **`/static/img/favicon.svg` must 404**, asserted over HTTP. Untracked and
+  unserved are different claims: a deployed node can keep a file the repo has
+  dropped.
+- **No shipped vector under `app/static/` or `site/` may carry `#ee3124`.**
+  This is the one that matters: the original survived three project renames
+  because no sweep for "fortinet" matches a filename that says neither, and a
+  renamed copy would slip past both guards above.
+
+The appliance-type marks (`fortiweb-mark.svg` and siblings) are deliberately in
+scope and pass: they identify which kind of box a row describes -- nominative
+use -- and none of them uses the corporate red.
+
+Verified by mutation: restoring the file fails all three; dropping a renamed
+copy into `app/static/img/` or into `site/assets/` fails the red sweep alone.
+
+Still open, and a separate decision: `settings_store.LOGIN_BG_PRESETS` ships a
+login background named **"Fortinet"** built on the same `#ee3124`. It is not the
+mark, and removing it would change the look of any install that selected it, so
+it was left alone rather than folded into a removal nobody asked for.
+
 ## 8e. Brand gradients, and assets a browser cannot keep stale
 
 Two guards added together, because they failed together: the console could not

@@ -5582,6 +5582,199 @@ implementation detail of it.</p>
 assignment that fills the slot, rename a helper the script calls, and add a slot
 that is declared, called and never assigned. The last one is the one that proves
 the rule was not simply relaxed until it stopped complaining.</p>
+<h2 id="37-a-same-device-clone-shares-everything-unless-it-is-made-to-copy">37. A same-device clone shares everything unless it is made to copy</h2>
+<p><code>tests/test_wpp_deep_clone.py</code> · <code>app/services/clone_scope.py</code> ·
+<code>app/services/clone.py</code></p>
+<p><strong>The bug was a correct rule read in the wrong direction.</strong> <code>ClonePlanner</code>
+classifies every object against the DESTINATION and skips whatever is already
+there. Across two appliances that is exactly right and is why
+<code>tests/test_clone.py</code> passes. <code>wpp_clone_flow.clone_and_rebind</code> builds the
+planner with <code>src is dst</code>, and on one appliance every sub-object of the source
+profile is already "at the destination" — so all forty of them were classified
+<code>exists</code>, nothing was created, and the clone was a rename of the root.</p>
+<p>Nothing failed. There was no error to notice, no partial write to reconcile;
+the plan reported <code>exists</code> for every child and that report was true. The damage
+showed up only on the box: <code>wpp-pol-shop-cms</code>, cloned for one Server Policy,
+still named <code>am-std</code>, which three other profiles also named, so a carve-out
+written "for pol-shop-cms" was live for five policies.</p>
+<p><strong>What the guards fix in place</strong></p>
+<ol>
+<li><code>deep_suffix</code> is opt-in, so the cross-appliance contract does not move. A
+   plan without it behaves exactly as before —
+   <code>test_without_deep_suffix_the_old_shared_behaviour_is_unchanged</code>.</li>
+<li>Every copied object is re-pointed by its <strong>dependency field</strong>, derived from
+   <code>registry/dependencies.py</code> rather than restated. Rewriting "any string equal
+   to the old name" would edit comments, host headers and rule bodies that
+   merely mention it — <code>test_only_dependency_fields_are_rewritten</code>.</li>
+<li><strong>A child may only be copied when every object naming it is being copied.</strong>
+   Re-pointing a reference is a WRITE TO THE PARENT: duplicating a child under
+   a parent that stays shared pushes the new name into an object other profiles
+   read, which is the same leak one level up. The referrer set is recorded even
+   for objects the walk has already visited, because the SECOND referrer is
+   precisely the one that makes the re-point unsafe and <code>visited</code> would hide it
+   — <code>test_an_object_named_by_two_parents_is_only_copied_if_both_are</code>.</li>
+<li>Predefined objects are detected from <strong><code>can_view</code></strong>, not <code>is_default</code>.
+   Verified on {device} 7.6.8: <code>is_default</code> came back <code>None</code> for every
+   object, vendor and user alike, so keying on it would have classified the
+   whole tree as user-made and cloned FortiGuard's baselines. <code>can_view == 1</code>
+   is already what the Web Protection overview badges as "Default".</li>
+<li>Template governance is matched <strong>per collection</strong>. The first version of
+   <code>managed_names_by_collection</code> walked every approved template through
+   <code>config_template_collection</code>, which attributes a body by reading its first
+   sub-object — right for a single-object config template, wrong for a
+   multi-object one. An approved WPP template resolved to collection
+   <code>signature</code>, so a signature policy sharing that name would have been refused
+   as template-managed. Found by printing the live map, not by reasoning.</li>
+<li>A derived name truncates the BASE, never the suffix. The suffix is what
+   makes the name unique per policy; trimming it is how two policies end up
+   sharing a "private" object again.</li>
+<li>An object the operator chose to copy with <code>clone_anyway</code> is no longer a
+   question. It keeps its <code>factory</code>/<code>template</code> verdict — that is what it IS —
+   but listing it would ask them to decide something they just decided, and
+   would keep the "N objects would stay shared" gate closed on a plan that
+   shares none.</li>
+</ol>
+<p><strong>Checking it:</strong> <code>tests/test_wpp_deep_clone.py</code> drives a synthetic
+WPP → allow-method-policy → exception-container tree with in-memory readers, so
+it needs neither Flask nor a device. Twenty-two mutations were run against the
+three files; twenty-one are killed. The survivor — dropping the <code>_is_named_ref</code>
+guard in <code>via_field_index</code> — is an EQUIVALENT mutant, confirmed by enumerating
+every <code>via</code> in the real tree: the only one containing <code>=</code> is
+<code>deployment-mode = http-content-routing</code>, and the token filter rejects it
+anyway.</p>
+<h2 id="37a-5-means-already-there-which-is-the-state-that-was-wanted">37a. <code>-5</code> means "already there", which is the state that was wanted</h2>
+<p><code>tests/test_inject_duplicate.py</code> · <code>app/services/exception_inject.py</code></p>
+<p><code>apply_injection</code> writes a container and then a row, and returned
+<code>ok = all(steps)</code>. The container step POSTed unconditionally even though its
+own checkbox reads <em>create the container if it does not exist</em>, so on a box
+where the container existed it ALWAYS returned <code>errcode -5</code> — and that dragged
+down a second step that had just written the exception. The screen said the
+appliance had rejected the write for a carve-out that was live. The operator
+retried, and the retry's <code>-5</code> — this time the honest one, on the entry — looked
+identical.</p>
+<p>Three separate things had to be true, and each has a guard:</p>
+<ul>
+<li>the container is <strong>probed</strong> before it is created, which is what the option
+  always claimed to do (<code>test_an_existing_container_is_not_posted_at_all</code>);</li>
+<li>a <code>-5</code> is recognised as the DESIRED state, not a refusal
+  (<code>test_a_duplicate_container_does_not_sink_a_successful_entry</code>);</li>
+<li>"already there" is still told apart from "I wrote it", or an idempotent retry
+  cannot be distinguished from a real change
+  (<code>test_a_duplicate_entry_is_reported_as_already_present_not_rejected</code>).</li>
+</ul>
+<p>Two things the guards deliberately hold still: a non-duplicate error is still a
+failure (<code>test_a_real_rejection_is_still_a_failure</code>), and the probe runs on the
+REAL path only — <code>FortiWebOps.preview</code> is contractually device-free and a probe
+smuggled into the dry-run would break that guarantee for every other caller
+(<code>test_dry_run_never_touches_the_device</code>). The code is matched, never the
+message: <code>errcode_of</code> parses <code>-5</code> out of both renderings <code>fortiweb_ops</code>
+produces, and matching the English sentence is a mutation that gets killed.</p>
+<h2 id="37b-a-capacity-check-that-skips-most-of-the-plan-reads-as-verified">37b. A capacity check that skips most of the plan reads as "verified"</h2>
+<p><code>tests/test_capacity_plan.py</code> · <code>app/services/capacity.py</code></p>
+<p><code>check_headroom(appliance, 'web_protection_profile', want=1)</code> was the whole
+capacity story for a WPP clone, and it was sufficient for exactly as long as
+the clone created one object. A deep clone creates dozens across roughly
+fifteen types, and the failure it must prevent is not a rejected POST: it is a
+clone that dies HALF-written, at which point <code>clone_and_rebind</code> refuses to
+re-bind the policy — correctly — and leaves orphans to be found by hand.</p>
+<p><code>check_plan_headroom</code> sums the plan <strong>per capped type</strong> before the first write
+(inline and offline profiles share one cap; checking them separately would pass
+two <code>+1</code>s against a ceiling with room for one), and returns everything with no
+configured limit in <code>unchecked</code>. Reporting nothing about fifteen of sixteen
+types while returning <code>allowed</code> would read as coverage that was never
+attempted.</p>
+<h2 id="38-a-sub-table-nobody-wrote-down-is-config-that-migrates-as-an-empty-shell">38. A sub-table nobody wrote down is config that migrates as an empty shell</h2>
+<p><code>tests/test_clone_subtables.py</code> · <code>app/registry/dependencies.py</code> ·
+<code>app/services/clone.py</code></p>
+<p>The clone planner walks <code>node.children</code> and nothing else, so the dependency map
+is not a description of a FortiWeb config — it <em>is</em> the definition of what gets
+copied. An object declared without its by-parent sub-tables clones as a name
+with no content, and every counter in the job says success: the object was
+created, so it is <code>created</code>; the rows were never read, so they are not missing
+from anything. <code>car-ratelimit</code> migrated between two appliances that way, losing
+the URL filter and the rate limit that were the entire rule.</p>
+<p>The guard is a cross-check, not a list to maintain by hand: for every object
+node in the tree, every collection in <code>endpoints.yaml</code> one level below its urn
+must be declared as a child. Adding an endpoint without wiring it fails the
+build. Objects that are deliberately not expanded are named in
+<code>_INTENTIONALLY_NOT_EXPANDED</code> <strong>with the reason</strong> — today only
+<code>system/replacemsg</code>, whose pages are a global catalog rather than per-policy
+content — and two further tests keep that list honest: an entry must still
+match a node in the tree, and must still have registry sub-tables. A stale
+exemption would otherwise hide the next hole under a renamed urn. The sweep
+found exactly two holes in 222 object nodes, which is the reason to run it in
+CI rather than by eye.</p>
+<h3 id="38a-completeness-is-unsafe-without-the-echo-guard">38a. Completeness is unsafe without the echo guard</h3>
+<p>FortiWeb does not 404 a sub-table path it does not implement: it returns the
+PARENT OBJECT. Verified on a live appliance — <code>custom-access.rule/&lt;anything&gt;</code>
+with <code>mkey=car-ratelimit</code> returns the <code>car-ratelimit</code> rule, and an invented
+path is indistinguishable from a real one by status code. So every name added
+to the map is a liability on any firmware that lacks it, and the fix for
+under-declaring would have created a new way to write garbage.</p>
+<p><code>clone.subtable_rows</code> drops a row whose <code>name</code> is its parent's mkey. The
+discriminator was chosen by sweeping the whole live server-policy tree, not by
+reasoning: across 57 objects and 30 sub-rows, no legitimate row collides, and
+only one sub-row carries a <code>name</code> at all (<code>x-frame-options</code> under <code>hhs-full</code>,
+which differs from its parent). An absent sub-table therefore contributes
+nothing, which is what it means.</p>
+<p>Two things this guard must NOT do, both pinned:</p>
+<ul>
+<li>it must not be wired into <code>scoped_rows</code>, which also serves the <strong>object</strong>
+  read — there <code>name == mkey</code> is exactly correct, and the guard would empty
+  every object in the tree;</li>
+<li>it must not be skipped on the <strong>destination</strong>. <code>_subrow_exists_at_dst</code>
+  matches by content, so a parent echo is a row that a subset-shaped source row
+  matches — classifying a genuinely missing row as <code>exists</code> and never creating
+  it. That is the same silent skip in a second place, and it is the half that
+  reads as working.</li>
+</ul>
+<p>Thirteen mutations, thirteen killed — including the two "obviously equivalent"
+ones (compare <code>id</code> instead of <code>name</code>; let the destination read bypass the
+guard).</p>
+<h2 id="39-an-identifier-nobody-can-see-is-not-an-identifier">39. An identifier nobody can see is not an identifier</h2>
+<p><code>tests/test_audit_entry_id.py</code></p>
+<p>The audit table has always had a primary key and never showed it. That is not a
+cosmetic gap: asked <em>"which entry do you mean?"</em>, an operator could only answer
+with a timestamp, and a timestamp is not unique — one apply writes several rows
+inside the same second. The compliance page could not name its own contents.</p>
+<p>The three halves are guarded <strong>together</strong>, because each one alone is dead weight:</p>
+<ol>
+<li><strong>Rendered.</strong> The <code>ID</code> header exists, every row prints <code>#&lt;id&gt;</code>, and the cell
+   carries the copy hook. A label nobody can see is not an identifier.</li>
+<li><strong>Findable.</strong> <code>parse_entry_id</code> accepts the three shapes the ID reaches the
+   server in — <code>4821</code>, <code>#4821</code>, <code>AUD-004821</code> — and the id term is <strong>OR-ed into</strong>
+   the text search. An ID you can copy and then cannot look up is a decoration.
+   The <code>None</code> branch carries as much weight as the parse: without it an ordinary
+   search for a username or a target path is silently reinterpreted as a
+   primary-key lookup. And the id lookup runs inside the ADOM-scoped query, so
+   the handle is not a bypass — guessing a number from another product's console
+   returns nothing.</li>
+<li><strong>Totally ordered.</strong> Without an <code>id</code> tiebreak the listing is only partially
+   ordered, so the same row can land on two pages or on none — which is exactly
+   the confusion the ID exists to end.</li>
+</ol>
+<p><strong>Two traps this file paid for.</strong></p>
+<p><em>The behavioural ordering test could not fail.</em> SQLite happens to return
+same-timestamp rows newest-first on its own, so deleting the tiebreak left every
+row-order assertion green — the mutation SURVIVED. The tiebreak is a property of
+the <strong>query</strong>, not of one database's luck, so the guard asserts on the SQL the
+page actually emitted (captured with a <code>before_cursor_execute</code> listener):
+<code>ORDER BY audit_logs.timestamp DESC, audit_logs.id DESC</code>. The behavioural test
+stays — it kills an <em>inverted</em> tiebreak, which the SQL guard would also catch but
+which is worth stating twice.</p>
+<p><em>The tenth assert-by-substring that matched its own comment.</em> <code>'Entry ID' in
+html</code> passed against a panel with the block deleted, because the code above it
+opens with <code>// Entry ID first: ...</code>. The guard now matches the rendered label
+(<code>&gt;Entry ID&lt;/div&gt;</code>). This is the same failure mode as §36k and §7f — a needle
+that the explanation of the needle satisfies.</p>
+<p>Also guarded, because both were live regressions in adjacent code: the empty-state
+<code>colspan</code> must equal the header count (a column added without it renders straight
+with data and skewed without), and the drawer's copy binding must still cover the
+pre-existing <strong>error-reference</strong> button — widening one <code>querySelectorAll</code> to serve
+two buttons is exactly how one of them ends up looking clickable and doing nothing.
+No inline <code>on*</code> attributes: CSP sets <code>script-src-attr 'none'</code>, so an <code>onclick</code>
+here is refused by the browser rather than reported.</p>
+<p>Fourteen mutations, fourteen killed.</p>
     </div>
   </div>
 </section>

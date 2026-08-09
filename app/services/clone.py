@@ -38,7 +38,7 @@ from ..registry.dependencies import (
 )
 from ..registry.loader import load_registry
 from .fortiweb_ops import sanitize_payload as clean_for_write
-from . import objform
+from . import clone_scope, objform
 
 # WPP root urns — splice the FULL profile subtree in wherever a parent only
 # *points* at a profile by name.
@@ -165,6 +165,14 @@ class CloneItem:
     applied: bool = False
     result: str = ""
     verified: str = ""   # after a real clone: present | missing | unverifiable
+    #: FortiWeb PREDEFINED marker, read off the RAW payload before
+    #: ``clean_for_write`` strips it. See :func:`clone_scope.is_factory`.
+    factory: bool = False
+    #: Same-device clonability verdict (:mod:`clone_scope`); "" until classified.
+    scope: str = ""
+    scope_reason: str = ""
+    #: Set by :func:`deep_rename` — the source object this copy was derived from.
+    renamed_from: str = ""
 
     @property
     def will_create(self) -> bool:
@@ -176,6 +184,8 @@ class CloneItem:
             "mkey": self.mkey, "parent_mkey": self.parent_mkey, "kind": self.kind,
             "depth": self.depth, "status": self.status, "note": self.note,
             "result": self.result, "verified": self.verified,
+            "factory": bool(self.factory), "scope": self.scope,
+            "scope_reason": self.scope_reason, "renamed_from": self.renamed_from,
         }
 
 
@@ -252,6 +262,36 @@ def scoped_rows(reader: Any, urn: str, logical: str | None, parent_mkey: str) ->
     return reader.get_raw(urn, parent_mkey)
 
 
+def subtable_rows(reader: Any, urn: str, logical: str | None,
+                  parent_mkey: str) -> list[dict]:
+    """:func:`scoped_rows` for a BY-PARENT sub-table, with the parent echo dropped.
+
+    FortiWeb does **not** 404 a sub-table path it doesn't implement: it answers
+    with the PARENT OBJECT itself. Verified on fortiweb08 — GET
+    ``cmdb/waf/custom-access.rule/<anything>?mkey=car-ratelimit`` returns the
+    ``car-ratelimit`` rule. Handed to the planner that reads as one sub-table
+    row, so the clone would POST the rule back into itself as a filter.
+
+    That is why the dependency tree can't be widened safely without this guard:
+    every sub-table declared for an object is one more path that may be absent on
+    an older firmware, and each absent one would manufacture a bogus row.
+
+    The discriminator is the row's own ``name``: a by-parent row is keyed by its
+    auto-assigned ``id``, so a row whose ``name`` IS the parent's mkey is the
+    parent coming back. Swept over the whole live fortiweb08 server-policy tree
+    (57 objects / 30 sub-rows): zero legitimate rows collide, and only one
+    sub-row carries a ``name`` field at all (``x-frame-options`` under
+    ``hhs-full``, which differs from its parent).
+
+    An absent sub-table therefore contributes nothing, which is what it means.
+    """
+    rows = scoped_rows(reader, urn, logical, parent_mkey)
+    if not parent_mkey:
+        return rows
+    return [r for r in rows
+            if not (isinstance(r, dict) and str(r.get("name", "")) == str(parent_mkey))]
+
+
 def _rich(node: DepNode) -> DepNode:
     """Splice the FULL WPP subtree wherever a node only names a profile."""
     if node.urn == _WPP_INLINE and not node.children:
@@ -270,6 +310,11 @@ class ClonePlanner:
         self.dst = dst
         self.urn_index = registry_urn_index()  # collection -> logical
         self._follow_wpp = True  # set per-plan; False prunes the WPP subtree
+        #: ``{(urn, mkey): {(parent_urn, parent_mkey), …}}`` — WHO names each
+        #: collected object. A same-device clone needs it because re-pointing a
+        #: reference is a write to the PARENT: a child may only be duplicated
+        #: when every object that names it is itself being created.
+        self._refs: dict[tuple[str, str], set[tuple[str, str]]] = {}
 
     def _lg(self, urn: str) -> str | None:
         """Logical name for a urn, matched on the normalised collection so a
@@ -300,6 +345,10 @@ class ClonePlanner:
                 if not self._follow_wpp and child.urn in _WPP_URNS:
                     continue  # "don't copy the WPP" — prune the whole subtree
                 for ref in referenced_names(obj, child.via):
+                    # Recorded even when the child was already visited: the
+                    # SECOND parent is exactly the one that makes a re-point
+                    # unsafe, and ``visited`` would hide it.
+                    self._refs.setdefault((child.urn, ref), set()).add((node.urn, mkey))
                     self._visit(_rich(child), ref, depth + 1, items, visited)
 
         # 2) THIS object
@@ -308,18 +357,23 @@ class ClonePlanner:
             logical=self._lg(node.urn), mkey=mkey,
             parent_mkey="", kind="object", depth=depth,
             payload=clean_for_write(obj) if obj else {},
+            factory=clone_scope.is_factory(obj),
         ))
 
         # 3) child sub-tables (by_parent), created AFTER this object.
         for child in node.children:
             if _is_named_ref(child) or not child.urn:
                 continue
-            for row in scoped_rows(self.src, child.urn, self._lg(child.urn), mkey) or []:
+            for row in subtable_rows(self.src, child.urn, self._lg(child.urn), mkey) or []:
                 for g in child.children:
                     if _is_named_ref(g):
                         if not self._follow_wpp and g.urn in _WPP_URNS:
                             continue  # content-routing rows can name a WPP too
                         for ref in referenced_names(row, g.via):
+                            # The referrer is the ENCLOSING object, not the row:
+                            # the row is created with its parent, so the parent
+                            # is what has to be created for a re-point to be safe.
+                            self._refs.setdefault((g.urn, ref), set()).add((node.urn, mkey))
                             self._visit(_rich(g), ref, depth + 2, items, visited)
                 items.append(CloneItem(
                     label="%s · %s" % (node.fortiweb, child.fortiweb), urn=child.urn,
@@ -342,7 +396,7 @@ class ClonePlanner:
         key = (urn, parent_mkey)
         if key not in cache:
             try:
-                cache[key] = scoped_rows(self.dst, urn, logical, parent_mkey)
+                cache[key] = subtable_rows(self.dst, urn, logical, parent_mkey)
             except Exception:  # noqa: BLE001 — unreadable dst ⇒ assume present
                 cache[key] = None
         return cache[key]
@@ -364,6 +418,7 @@ class ClonePlanner:
         LIVE PAYLOAD, deepest-first, WITHOUT destination classification."""
         items: list[CloneItem] = []
         self._follow_wpp = follow_wpp
+        self._refs = {}
         try:
             self._visit(_rich(root), mkey, 0, items, set())
         finally:
@@ -385,7 +440,9 @@ class ClonePlanner:
 
     def plan(self, root: DepNode, mkey: str, *, new_name: str = "",
              follow_wpp: bool = True, wpp_new_name: str = "",
-             wpp_suffix: str = "") -> list[CloneItem]:
+             wpp_suffix: str = "", deep_suffix: str = "",
+             managed: dict | None = None,
+             clone_anyway: Iterable[str] = ()) -> list[CloneItem]:
         """Walk the source tree and classify each item vs the destination.
 
         ``follow_wpp=False`` prunes the Web Protection Profile subtree (the copy
@@ -394,7 +451,13 @@ class ClonePlanner:
         policy's reference) so a differing same-name profile on the destination
         is never silently reused; ``wpp_suffix`` does the same per-profile
         (``<wpp>-suffix``) — the bulk form, where one fixed name would collide
-        across policies binding different profiles."""
+        across policies binding different profiles.
+
+        ``deep_suffix`` switches on the SAME-DEVICE mode: every sub-object the
+        root may legitimately own is copied under ``<name>-<deep_suffix>`` and
+        the references are re-pointed, instead of being classified ``exists``
+        and left pointing at the original's objects. Without it a same-device
+        clone shares its whole subtree — see :mod:`clone_scope`."""
         items = self.collect(root, mkey, new_name=new_name, follow_wpp=follow_wpp)
         self._subrow_cache = {}
         if follow_wpp and (wpp_new_name or wpp_suffix):
@@ -402,6 +465,14 @@ class ClonePlanner:
                         if it.urn in _WPP_URNS and it.kind == "object"), None)
             if wpp is not None:
                 rename_wpp(items, wpp_new_name or (wpp.mkey + wpp_suffix))
+        self.renames: list[dict] = []
+        if deep_suffix:
+            classify_scope(items, managed)
+            created = resolve_shared(items, self._refs, root_mkey=mkey,
+                                     clone_anyway=clone_anyway)
+            self.renames = deep_rename(items, deep_suffix, created,
+                                       exists=self._exists_at_dst,
+                                       index=via_field_index(_rich(root)))
         existing_parents: set[str] = set()
         created_parents: set[str] = set()
         for it in items:
@@ -559,6 +630,204 @@ def rename_wpp(items: list[CloneItem], new_name: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
+#  Same-device deep clone                                                       #
+# --------------------------------------------------------------------------- #
+_VIA_INDEX: dict[str, set[str]] | None = None
+
+
+def via_field_index(root: DepNode | None = None) -> dict[str, set[str]]:
+    """``{parent field name: {collection it can name}}`` from the dependency map.
+
+    A reference re-point must rewrite the FIELD that names the object, and only
+    that field. Matching on "any string equal to the old name" would rewrite a
+    description, a host header, or a rule that happens to carry the same text.
+    The dependency map already records every such field as a ``via`` edge, so
+    the index is derived from it rather than restated — a restated copy is the
+    kind that stops agreeing with the map on the next FortiWeb release.
+
+    ``root`` scopes the index to ONE tree (what a plan actually walked); the
+    no-arg form spans both roots and is cached.
+    """
+    global _VIA_INDEX
+    if root is None and _VIA_INDEX is not None:
+        return _VIA_INDEX
+    index: dict[str, set[str]] = {}
+
+    def walk(node: DepNode, seen: set[int]) -> None:
+        if id(node) in seen:
+            return
+        seen.add(id(node))
+        for child in node.children:
+            if _is_named_ref(child) and child.urn:
+                coll = objform.collection_of(child.urn)
+                for token in child.via.split("/"):
+                    token = token.strip()
+                    if token and "=" not in token and " " not in token:
+                        index.setdefault(token, set()).add(coll)
+            walk(child, seen)
+
+    if root is not None:
+        walk(root, set())
+        return index
+    for node in (SERVER_POLICY, WEB_PROTECTION_PROFILE):
+        walk(node, set())
+    _VIA_INDEX = index
+    return index
+
+
+def classify_scope(items: list[CloneItem], managed: dict | None = None) -> None:
+    """Stamp every collected item with its :mod:`clone_scope` verdict."""
+    for it in items:
+        if it.kind != "object":
+            continue
+        it.scope, it.scope_reason = clone_scope.classify(it, managed)
+
+
+def resolve_shared(items: list[CloneItem], refs: dict, *, root_mkey: str,
+                   clone_anyway: Iterable[str] = ()) -> set[tuple[str, str]]:
+    """Which objects this same-device clone may actually duplicate.
+
+    Clonability is not a property of an object on its own: **re-pointing a
+    reference writes to the PARENT**, so duplicating a child whose parent stays
+    shared would push the new name into an object other profiles still read.
+    That is the leak the clone exists to close, one level up. So the answer is a
+    reachability computation from the root: an object may be created only when
+    every object that names it is being created too.
+
+    Returns the ``{(urn, mkey)}`` that will be duplicated, and annotates the
+    rest with :data:`clone_scope.BLOCKED_BY_PARENT` so the operator is told what
+    is being left shared and why.
+    """
+    forced = {str(r) for r in (clone_anyway or ())}
+    objs = [it for it in items if it.kind == "object"]
+    created: set[tuple[str, str]] = {
+        (it.urn, root_mkey) for it in objs if it.depth == 0}
+
+    def allowed(it: CloneItem) -> bool:
+        if it.scope == clone_scope.CLONABLE:
+            return True
+        return (it.scope in clone_scope.OVERRIDABLE
+                and "%s|%s" % (it.urn, it.mkey) in forced)
+
+    changed = True
+    while changed:
+        changed = False
+        for it in objs:
+            if it.depth == 0 or not it.payload:
+                continue
+            key = (it.urn, it.mkey)
+            if key in created or not allowed(it):
+                continue
+            parents = refs.get(key) or set()
+            if parents and parents <= created:
+                created.add(key)
+                changed = True
+
+    for it in objs:
+        if it.depth == 0 or not it.payload:
+            continue
+        key = (it.urn, it.mkey)
+        if key in created:
+            if it.scope in clone_scope.OVERRIDABLE:
+                it.scope_reason = (it.scope_reason
+                                   + " Cloning anyway at the operator's request.")
+            continue
+        if it.scope == clone_scope.CLONABLE:
+            blockers = sorted({p for _u, p in (refs.get(key) or set())}
+                              - {root_mkey})
+            it.scope = clone_scope.BLOCKED_BY_PARENT
+            it.scope_reason = (
+                '"%s" stays shared because %s is not being copied — re-pointing '
+                "it would write the new name into an object other profiles still "
+                "read." % (it.mkey,
+                           ", ".join('"%s"' % b for b in blockers[:4])
+                           or "its parent"))
+    return created
+
+
+def deep_rename(items: list[CloneItem], suffix: str,
+                created: set[tuple[str, str]], *,
+                exists: Callable[[str, str], bool] | None = None,
+                index: dict[str, set[str]] | None = None) -> list[dict]:
+    """Give every duplicated object its OWN name and re-point every reference.
+
+    ``ClonePlanner`` classifies against the destination, and on a same-device
+    clone the destination is the source: leave the names alone and every child
+    resolves to the original's object, which is how a "cloned" profile ended up
+    sharing all ~40 of its sub-policies. Renaming is therefore not cosmetic — it
+    is the entire isolation.
+
+    Returns one ``{label, urn, old, new}`` row per copy, for the plan the
+    operator reads before authorising the write.
+    """
+    index = via_field_index() if index is None else index
+    renames: list[dict] = []
+    by_coll: dict[str, dict[str, str]] = {}
+    used: set[str] = set()
+
+    for it in items:
+        if it.kind != "object" or it.depth == 0 or not it.payload:
+            continue
+        if (it.urn, it.mkey) not in created:
+            continue
+        old = it.mkey
+
+        def _taken(name: str, urn: str = it.urn) -> bool:
+            return name in used or bool(exists and exists(urn, name))
+
+        new = clone_scope.derive_name(old, suffix, _taken)
+        if not new or new == old:
+            it.scope = clone_scope.BLOCKED_BY_PARENT
+            it.scope_reason = (
+                'no free name could be derived for "%s" within FortiWeb\'s %d-'
+                "character limit, so it stays shared."
+                % (old, clone_scope.MAX_NAME))
+            continue
+        used.add(new)
+        it.renamed_from = old
+        it.mkey = new
+        it.payload = {**it.payload, "name": new}
+        by_coll.setdefault(objform.collection_of(it.urn), {})[old] = new
+        renames.append({"label": it.label, "urn": it.urn, "old": old, "new": new})
+        prefix = it.urn + "/"
+        for sub in items:
+            if (sub.kind == "subrow" and sub.parent_mkey == old
+                    and sub.urn.startswith(prefix)):
+                sub.parent_mkey = new
+
+    if not by_coll:
+        return renames
+
+    for it in items:
+        if not isinstance(it.payload, dict):
+            continue
+        patched: dict | None = None
+        for k, v in it.payload.items():
+            if not isinstance(v, str) or not v:
+                continue
+            for coll in index.get(k, ()):
+                new = by_coll.get(coll, {}).get(v)
+                if new:
+                    patched = patched if patched is not None else dict(it.payload)
+                    patched[k] = new
+                    break
+        if patched is not None:
+            it.payload = patched
+    return renames
+
+
+def wants_by_logical(items: list[CloneItem]) -> dict[str, int]:
+    """``{registry logical: how many objects this plan will CREATE}`` — the
+    input to the per-type capacity check. Sub-table rows are excluded: they are
+    rows inside an object, not objects the model counts."""
+    wants: dict[str, int] = {}
+    for it in items:
+        if it.kind == "object" and it.status == "create" and it.logical:
+            wants[it.logical] = wants.get(it.logical, 0) + 1
+    return wants
+
+
+# --------------------------------------------------------------------------- #
 #  Summary helpers                                                              #
 # --------------------------------------------------------------------------- #
 _STATUS_LABELS = {
@@ -675,4 +944,6 @@ __all__ = [
     "disable_root", "template_body", "registry_urn_index",
     "outcome", "verify_created",
     "ROOT_SERVER_POLICY", "ROOT_WPP", "validate_completeness",
+    "via_field_index", "classify_scope", "resolve_shared", "deep_rename",
+    "wants_by_logical",
 ]

@@ -172,6 +172,48 @@ def check_headroom(appliance, object_type: str, want: int = 1) -> tuple[bool, st
                    f"(hard max {h.hard_max}).")
 
 
+def object_type_for_logical(logical: str) -> str | None:
+    """The capped object type a registry LOGICAL name counts towards."""
+    for otype, spec in OBJECT_TYPES.items():
+        if logical in spec["count_logicals"]:
+            return otype
+    return None
+
+
+def check_plan_headroom(appliance, wants: dict[str, int]
+                        ) -> tuple[bool, list[str], list[str]]:
+    """The guardrail for a plan that creates MANY objects of MANY types.
+
+    ``check_headroom`` answers "is there room for one more Web Protection
+    Profile?", which was the whole question while a WPP clone renamed the root
+    and created nothing else. A deep same-device clone creates dozens of objects
+    across ~15 types, and the failure it has to prevent is not a rejected POST —
+    it is a clone that dies HALF-WRITTEN, because ``clone_and_rebind`` then
+    refuses to re-bind and the operator is left with orphans to find by hand.
+
+    Returns ``(allowed, messages, unchecked)``. ``unchecked`` lists the logical
+    names with no capped type at all: a plan that silently skipped them would
+    read as "capacity verified" when most of it was never looked at.
+    """
+    messages: list[str] = []
+    unchecked: list[str] = []
+    per_type: dict[str, int] = {}
+    for logical, n in (wants or {}).items():
+        otype = object_type_for_logical(logical)
+        if otype is None:
+            unchecked.append(logical)
+            continue
+        per_type[otype] = per_type.get(otype, 0) + int(n)
+
+    allowed = True
+    for otype in sorted(per_type):
+        ok, msg = check_headroom(appliance, otype, want=per_type[otype])
+        messages.append(msg)
+        if not ok:
+            allowed = False
+    return allowed, messages, sorted(set(unchecked))
+
+
 # ---------------------------------------------------------------------------
 # Admin plumbing — ensure editable rows, seed
 # ---------------------------------------------------------------------------

@@ -687,15 +687,15 @@
           {% set _wp_active = request.view_args.get('item_key') if request.endpoint == 'web_protection.menu_page'
                               else ('signatures' if request.endpoint == 'web_protection.signature_policy'
                               else ('__profile__' if request.endpoint in ['web_protection.overview', 'web_protection.wpp_detail'] else '')) %}
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'attack_search' else '' }}" href="{{ url_for('attack_search.index') }}">
+            <i class="bi bi-search fw-nav-icon"></i><span>Search Attack ID</span></a>
+          <a class="fw-nav-item" href="{{ url_for('exceptions.index') }}">
+            <i class="bi bi-slash-circle fw-nav-icon"></i><span>Exceptions &amp; Signature</span></a>
           {% if current_appliance %}
           <a class="fw-nav-item {{ 'active' if _wp_active == '__profile__' else '' }}"
              href="{{ url_for('web_protection.overview', id=current_appliance.id) }}">
             <i class="bi bi-shield-fill-check fw-nav-icon"></i><span>Web Protection Profile</span></a>
           {% endif %}
-          <a class="fw-nav-item" href="{{ url_for('exceptions.index') }}">
-            <i class="bi bi-slash-circle fw-nav-icon"></i><span>Exceptions &amp; Signature</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'attack_search' else '' }}" href="{{ url_for('attack_search.index') }}">
-            <i class="bi bi-search fw-nav-icon"></i><span>Search Attack ID</span></a>
           <details class="fw-so-parent" {{ 'open' if request.blueprint == 'web_protection' and _wp_active != '__profile__' }}>
             <summary class="fw-nav-item fw-so-parent-head">
               <i class="bi bi-shield-exclamation fw-nav-icon"></i><span>Web Protection</span>

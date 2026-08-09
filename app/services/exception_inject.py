@@ -22,11 +22,20 @@ the whole thing is headless-testable; mirrors the desktop ``exception_inject``.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 from ..registry import loader
 from . import objform
+
+#: FortiWeb's "A duplicate entry has already existed." Matched on the CODE, not
+#: on the sentence: the message is the localisable half of the answer and the
+#: code is the stable one.
+DUPLICATE_ERRCODE = "-5"
+
+_ERRCODE_RE = re.compile(r"errcode\s+(-?\d+)")
 
 
 @dataclass(frozen=True)
@@ -156,9 +165,65 @@ def plan_injection(exc_type: str, payload: dict, target: str) -> dict:
 # --------------------------------------------------------------------------- #
 #  Apply (duck-typed on FortiWebOps; dry-run default)                          #
 # --------------------------------------------------------------------------- #
-def _step(name: str, res) -> dict:
-    return {"step": name, "ok": bool(getattr(res, "ok", res.get("ok"))),
+def errcode_of(error: Any) -> str:
+    """The FortiWeb ``errcode`` inside an ``OpResult`` error string, or ``''``.
+
+    ``fortiweb_ops`` renders it two ways — ``"errcode -5: …"`` on an HTTP 200
+    logical error and ``"HTTP 500 — errcode -5: …"`` when the box also sets a
+    status — so both have to parse to the same code.
+    """
+    m = _ERRCODE_RE.search(str(error or ""))
+    return m.group(1) if m else ""
+
+
+def is_duplicate(res) -> bool:
+    """Did this write fail ONLY because the object/row is already there?"""
+    if getattr(res, "ok", None) or (isinstance(res, dict) and res.get("ok")):
+        return False
+    return errcode_of(res.get("error", "") if hasattr(res, "get") else "") \
+        == DUPLICATE_ERRCODE
+
+
+def _step(name: str, res, *, note: str = "") -> dict:
+    """One write in the plan, with duplicates told apart from rejections.
+
+    A ``-5`` is the box saying "this already exists", which is the DESIRED state
+    — not a refusal. Reporting it as a failed write is what put "The appliance
+    rejected the write" on screen for a carve-out that had just landed, and sent
+    the operator back to press the button again (2026-08-08, allow-method
+    exception on fortiweb08: the container step ``-5``'d on the first try
+    because ``am-exc`` already existed, ``ok = all(steps)`` dragged the whole
+    result down with it, and the entry it had genuinely just created was
+    reported as rejected).
+    """
+    ok = bool(getattr(res, "ok", res.get("ok")))
+    dup = not ok and is_duplicate(res)
+    if dup:
+        ok, note = True, note or "already-present"
+    return {"step": name, "ok": ok, "duplicate": dup, "note": note,
             "request": res.get("request"), "error": res.get("error", "")}
+
+
+def container_exists(ops, pcoll: str, target: str) -> bool | None:
+    """Is the named container already on the box? ``None`` = could not tell.
+
+    The checkbox says "create the container if it does not exist" and the code
+    POSTed unconditionally, so the answer was always the device's ``-5``. Three
+    states, not two: an unreadable box must not be reported as "absent", because
+    that turns a read failure into a create attempt.
+    """
+    try:
+        rows = ops.client.get(objform.rest_path(pcoll)
+                              + "?mkey=%s" % quote(str(target), safe="")).json()
+    except Exception:  # noqa: BLE001 — unreadable box is not "absent"
+        return None
+    res = rows.get("results") if isinstance(rows, dict) else None
+    if isinstance(res, dict):
+        return res.get("errcode") in (None, 0)
+    if isinstance(res, list):
+        return any(isinstance(r, dict) and str(r.get("name", "")) == str(target)
+                   for r in res)
+    return None
 
 
 def apply_injection(ops, *, exc_type: str, payload: dict, target: str,
@@ -166,12 +231,21 @@ def apply_injection(ops, *, exc_type: str, payload: dict, target: str,
     """Push one carve-out via *ops* (a :class:`FortiWebOps`). Dry-run by default.
 
     Optionally creates the named container first (``create_container``) for the
-    dedicated-container types. Never raises — a non-``ready`` plan returns
-    ``ok=False`` with no writes.
+    dedicated-container types — and only when it is genuinely missing, which is
+    what the option has always claimed to do. The probe runs on the REAL path
+    only: ``dry_run`` is contractually device-free in ``FortiWebOps``, and a
+    preview that quietly opened a session would break that guarantee for every
+    other caller.
+
+    Never raises — a non-``ready`` plan returns ``ok=False`` with no writes.
+    ``already_present`` is True when the box reported the entry was already
+    there, so a caller can say "nothing to do" instead of either "created" or
+    "rejected", both of which would be false.
     """
     plan = plan_injection(exc_type, payload, target)
     if plan["status"] != "ready":
-        return {"ok": False, "plan": plan, "steps": [], "dry_run": dry_run}
+        return {"ok": False, "plan": plan, "steps": [], "dry_run": dry_run,
+                "already_present": False}
 
     rest = EXCEPTION_REST[exc_type]
     steps: list[dict] = []
@@ -179,9 +253,14 @@ def apply_injection(ops, *, exc_type: str, payload: dict, target: str,
     if create_container and not rest.inline and rest.parent_logical not in _NO_CONTAINER:
         pcoll = resolve_collection(rest.parent_logical)
         if pcoll:
-            cres = ops.create(objform.rest_path(pcoll), {"data": {"name": target}},
-                              dry_run=dry_run)
-            steps.append(_step("container", cres))
+            present = None if dry_run else container_exists(ops, pcoll, target)
+            if present is True:
+                steps.append({"step": "container", "ok": True, "duplicate": False,
+                              "note": "already-present", "request": None, "error": ""})
+            else:
+                cres = ops.create(objform.rest_path(pcoll), {"data": {"name": target}},
+                                  dry_run=dry_run)
+                steps.append(_step("container", cres))
 
     body = plan["body"]
     if plan["method"] == "PUT":
@@ -190,8 +269,10 @@ def apply_injection(ops, *, exc_type: str, payload: dict, target: str,
         wres = ops.create(plan["endpoint"], body, dry_run=dry_run)
     steps.append(_step("entry", wres))
 
+    entry = steps[-1]
     return {"ok": all(s["ok"] for s in steps), "plan": plan, "steps": steps,
-            "dry_run": dry_run}
+            "dry_run": dry_run,
+            "already_present": bool(entry.get("duplicate"))}
 
 
 # --------------------------------------------------------------------------- #
@@ -219,4 +300,5 @@ def candidate_targets(client, exc_type: str) -> list[str]:
 __all__ = [
     "ExcRest", "EXCEPTION_REST", "rest_for", "resolve_collection",
     "supports_auto_bind", "plan_injection", "apply_injection", "candidate_targets",
+    "DUPLICATE_ERRCODE", "errcode_of", "is_duplicate", "container_exists",
 ]

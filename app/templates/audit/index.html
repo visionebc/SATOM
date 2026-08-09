@@ -95,11 +95,18 @@
   </div>
 </div>
 
+<style nonce="{{ csp_nonce }}">
+.audit-id { font-family:'Consolas','Monaco',monospace; font-size:12px;
+  color:var(--fw-text-secondary); cursor:pointer; white-space:nowrap; }
+.audit-id:hover { color:var(--fw-accent); text-decoration:underline; }
+</style>
+
 <!-- Audit Table -->
 <div class="fw-table-wrapper">
   <table class="fw-table" id="auditTable">
     <thead>
       <tr>
+        <th style="width:92px;">ID</th>
         <th>Timestamp</th>
         <th>User</th>
         <th>Action</th>
@@ -113,12 +120,17 @@
       {% if entries %}
         {% for e in entries %}
         <tr class="audit-row" style="cursor:pointer;"
+            data-id="{{ e.id }}"
             data-ts="{{ e.timestamp | localtime }}"
             data-user="{{ e.username or '—' }}"
             data-action="{{ e.action or '—' }}"
             data-target="{{ e.target or '' }}"
             data-ip="{{ e.ip_address or '' }}"
             data-extra="{{ e.extra or '' }}">
+          <td>
+            <span class="audit-id" data-js="copy-id" data-id="{{ e.id }}"
+                  title="Click to copy this entry ID">#{{ e.id }}</span>
+          </td>
           <td class="text-nowrap mono" style="font-size:12px;">
             {{ e.timestamp | localtime }}
           </td>
@@ -150,7 +162,7 @@
         {% endfor %}
       {% else %}
         <tr>
-          <td colspan="7">
+          <td colspan="8">
             <div class="fw-empty-state">
               <div class="fw-empty-state-icon"><i class="bi bi-clipboard"></i></div>
               <div class="fw-empty-state-title">No audit entries</div>
@@ -258,6 +270,18 @@ function openAuditDetail(rowEl) {
     '</div>';
   }
 
+  // Entry ID first: it is the handle for everything else on this panel.
+  html += '<div style="margin-bottom:16px;">' +
+    '<div style="text-transform:uppercase;letter-spacing:.04em;font-size:10px;color:#7e8aa3;margin-bottom:4px;">Entry ID</div>' +
+    '<div style="display:flex;align-items:center;gap:10px;">' +
+      '<span style="font-family:ui-monospace,Menlo,monospace;font-size:16px;font-weight:700;color:#eaf0fb;letter-spacing:.04em;">#' + _esc(d.id) + '</span>' +
+      '<button type="button" data-js="copy-entryid" data-eid="' + _esc(d.id) + '" ' +
+        'style="background:rgba(148,163,184,.14);border:1px solid rgba(148,163,184,.22);color:#cdd7ea;' +
+        'border-radius:7px;padding:3px 9px;font-size:11px;cursor:pointer;"><i class="bi bi-clipboard me-1"></i>Copy</button>' +
+    '</div>' +
+    '<div style="font-size:11px;color:#9aa6bd;margin-top:7px;">Paste it in the search box to pull this entry back up on any page.</div>' +
+  '</div>';
+
   html += _row('Timestamp', d.ts, true);
   html += _row('User', d.user, false);
   html += _row('Action', d.action, false);
@@ -275,10 +299,9 @@ function openAuditDetail(rowEl) {
   var body = document.getElementById('auditDetailBody');
   body.innerHTML = html;
   // CSP (script-src-attr 'none') forbids on* attributes even in JS-built markup — bind after insert.
-  var copyBtn = body.querySelector('[data-js="copy-errid"]');
-  if (copyBtn) {
-    copyBtn.addEventListener('click', function (event) { copyErrId(this, this.dataset.eid); });
-  }
+  body.querySelectorAll('[data-js="copy-errid"],[data-js="copy-entryid"]').forEach(function (b) {
+    b.addEventListener('click', function (event) { copyErrId(this, this.dataset.eid); });
+  });
   document.getElementById('auditDetailBackdrop').style.opacity = '1';
   document.getElementById('auditDetailBackdrop').style.visibility = 'visible';
   document.getElementById('auditDetailPanel').style.transform = 'translateX(0)';
@@ -288,6 +311,14 @@ function closeAuditDetail() {
   document.getElementById('auditDetailBackdrop').style.opacity = '0';
   document.getElementById('auditDetailBackdrop').style.visibility = 'hidden';
   document.getElementById('auditDetailPanel').style.transform = 'translateX(100%)';
+}
+
+function copyEntryId(el, id) {
+  navigator.clipboard.writeText(id).then(function () {
+    var old = el.textContent;
+    el.textContent = 'copied \u2713';
+    setTimeout(function () { el.textContent = old; }, 900);
+  });
 }
 
 function copyErrId(btn, eid) {
@@ -311,6 +342,14 @@ document.addEventListener('keydown', function (ev) {
   });
   document.querySelectorAll('#auditTable tbody tr.audit-row').forEach(function (row) {
     row.addEventListener('click', function (event) { openAuditDetail(this); });
+  });
+  document.querySelectorAll('#auditTable .audit-id').forEach(function (el) {
+    el.addEventListener('click', function (ev) {
+      // The row opens the drawer. Copying the ID must not also open it, or the
+      // one gesture whose whole point is "give me the handle" buries it.
+      ev.stopPropagation();
+      copyEntryId(this, this.dataset.id);
+    });
   });
   document.getElementById('auditDetailBackdrop').addEventListener('click', function (event) {
     closeAuditDetail();

@@ -26,7 +26,7 @@ K_NAMING = "naming.scheme"                          # JSON dict of overrides
 K_CLS_PREFIX = "classification."                    # + zones|lines|departments -> JSON list
 K_SEGMENTS = "network.segments"                     # JSON list of dicts
 K_IP_WHITELIST = "access.ip_whitelist"              # JSON list of {ip, note}
-K_ALLOWED_USERS = "access.allowed_users"            # JSON list of usernames
+K_ALLOWED_USERS_LEGACY = "access.allowed_users"     # REMOVED gate; see below
 K_TIMEZONE = "general.timezone"                     # IANA tz name, e.g. Europe/Zurich
 K_LOG_FORMAT = "general.log_format"                 # plain | detailed | json
 K_ENV_MODE = "general.env_mode"                     # production | development
@@ -312,17 +312,8 @@ def save_ip_whitelist(rows: list[dict[str, str]]) -> None:
     set_json(K_IP_WHITELIST, clean)
 
 
-def allowed_users() -> list[str]:
-    rows = _access_rows(K_ALLOWED_USERS)
-    if rows is MALFORMED:
-        # A bare JSON string would otherwise iterate CHARACTER by character and
-        # hand the gate a phantom allowlist of single letters.
-        return []
-    return [str(u).strip() for u in rows if str(u).strip()]
-
-
 def access_config_error() -> str:
-    """``""`` when both access-control settings can be read, else a message
+    """``""`` when the access-control settings can be read, else a message
     naming the key(s) that cannot.
 
     The gate calls this BEFORE it looks at the contents. Unset and empty are
@@ -330,7 +321,7 @@ def access_config_error() -> str:
     them would lock every operator out of every existing install. An
     unparseable row is a different fact and gets a different answer.
     """
-    broken = [k for k in (K_ALLOWED_USERS, K_IP_WHITELIST)
+    broken = [k for k in (K_IP_WHITELIST,)
               if _access_rows(k) is MALFORMED]
     if not broken:
         return ""
@@ -339,13 +330,23 @@ def access_config_error() -> str:
             "can be evaluated." % ", ".join(broken))
 
 
-def save_allowed_users(usernames: list[str]) -> None:
-    seen: list[str] = []
-    for u in usernames:
-        u = (u or "").strip()
-        if u and u not in seen:
-            seen.append(u)
-    set_json(K_ALLOWED_USERS, seen)
+# ---- REMOVED: per-username allowlist --------------------------------------
+# The allowlist was a fourth access gate stacked behind the directory group
+# filter, the approval gate and the profile, and it enforced nothing they did
+# not — while silently expiring on every import. Nothing reads it as policy any
+# more. The two helpers below exist for exactly one reason: an upgraded install
+# whose stored list just stopped applying deserves to be told, and to be able to
+# clear the dead row instead of finding it in a database dump years later.
+def stale_allowed_users() -> list[str]:
+    """Leftover usernames from the removed allowlist. NOT a policy read."""
+    rows = _access_rows(K_ALLOWED_USERS_LEGACY)
+    if rows is MALFORMED:
+        return []
+    return [str(u).strip() for u in rows if str(u).strip()]
+
+
+def clear_stale_allowed_users() -> None:
+    set_json(K_ALLOWED_USERS_LEGACY, [])
 
 
 # ---- Branding / Banner templates -----------------------------------------

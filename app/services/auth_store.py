@@ -1,17 +1,28 @@
-"""Authentication backend configuration + external-auth dispatcher.
+"""Authentication source configuration + external-auth dispatcher.
 
-The admin picks ONE active source of truth for sign-in (Settings → Authentication):
+``local`` is NOT one of the configurable sources: the local database is always
+live and is the anti-lockout floor. On top of it the admin enables ANY NUMBER of
+external directories, in an explicit order (Settings -> Authentication):
 
-* ``local``  — local DB accounts only (always available; the anti-lockout floor).
 * ``ad``     — Active Directory (LDAP under the hood, UPN simple bind).
 * ``ldap``   — generic LDAP (service-account search + user re-bind).
 * ``radius`` — FortiAuthenticator / any RADIUS server (FortiToken-friendly).
 
-At most ONE external backend is enabled at a time — the safest model against
-lockout (local always works; you can't misconfigure two directories into a
-deadlock). New directory users are just-in-time provisioned as local rows with
-``auth_source`` set and the **operator** profile by default; an admin elevates
-them afterwards from Settings → Users.
+Sign-in walks the enabled sources IN ORDER and the FIRST one that accepts the
+credential wins; the account is stamped with that source. **Order is not
+cosmetic.** It decides latency (a dead directory burns its whole timeout before
+the next one is tried) and which directories see a wrong password — every source
+ahead of the winner does, so every source ahead of it counts that failure
+against its own lockout policy.
+
+Each source carries a LIST of sync groups, and each group its own profile, so
+"import group X as readonly and group Y as operator" is one configuration
+instead of two passes. The per-group profile is applied by the IMPORTER only: a
+RADIUS Access-Accept carries no group, and resolving one at sign-in would put a
+REST round-trip to the FortiAuthenticator on the critical path of every first
+login. Just-in-time users therefore get the GLOBAL default profile — which is
+why that default is ``readonly`` (least privilege) and why the approval gate
+exists.
 
 Persistence + secret handling mirror ``email_service``: everything in the
 ``app_settings`` table, the bind password / RADIUS secret Fernet-encrypted, a
@@ -19,13 +30,18 @@ blank secret field on save KEEPS the stored one (blank-keeps-existing).
 """
 from __future__ import annotations
 
+import json
+import logging
 import secrets as _secrets
 
 from ..models import AppSetting
 from . import directory_auth, encryption
 
+log = logging.getLogger(__name__)
+
 # ---- keys -----------------------------------------------------------------
-K_BACKEND = "auth.backend"                    # local | ad | ldap | radius
+K_BACKENDS = "auth.backends"                  # AUTHORITATIVE: JSON ordered list
+K_BACKEND = "auth.backend"                    # legacy mirror: the first source
 K_DEFAULT_PROFILE = "auth.default_profile"    # profile name for new external users
 
 # LDAP / AD
@@ -40,7 +56,8 @@ K_L_BINDDN = "auth.ldap.bind_dn"
 K_L_BINDPW = "auth.ldap.bind_password_enc"    # Fernet token
 K_L_DOMAIN = "auth.ldap.ad_domain"
 K_L_FILTER = "auth.ldap.user_filter"
-K_L_SYNCGROUP = "auth.ldap.sync_group_dn"    # optional group/OU DN to scope Sync
+K_L_SYNCGROUP = "auth.ldap.sync_group_dn"     # legacy single scope (mirror)
+K_L_SYNCGROUPS = "auth.ldap.sync_groups"      # JSON [{group, profile}]
 K_L_TIMEOUT = "auth.ldap.timeout"
 
 # RADIUS
@@ -53,16 +70,22 @@ K_R_TIMEOUT = "auth.radius.timeout"
 # credential). The roster for "import users" therefore comes from the FAC's REST
 # API via an appliance ALREADY registered in the inventory - no second secret.
 K_R_SYNC_APPLIANCE = "auth.radius.sync_appliance_id"
-K_R_SYNC_GROUP = "auth.radius.sync_group"
+K_R_SYNC_GROUP = "auth.radius.sync_group"     # legacy single scope (mirror)
+K_R_SYNC_GROUPS = "auth.radius.sync_groups"   # JSON [{group, profile}]
 
-# Approval gate (applies to EVERY external backend, not just RADIUS).
+# Approval gate (applies to EVERY external source, not just RADIUS).
 K_REQUIRE_APPROVAL = "auth.require_approval"   # "1"/"0"
 
-BACKENDS = ("local", "ad", "ldap", "radius")
+EXTERNAL_BACKENDS = ("ad", "ldap", "radius")
+BACKENDS = ("local",) + EXTERNAL_BACKENDS
+
+# Least privilege: a directory user nobody has looked at yet gets the profile
+# that cannot change anything. Elevation is an explicit admin action.
+DEFAULT_PROFILE_FALLBACK = "readonly"
 
 DEFAULTS = {
     K_BACKEND: "local",
-    K_DEFAULT_PROFILE: "operator",
+    K_DEFAULT_PROFILE: DEFAULT_PROFILE_FALLBACK,
     K_L_PORT: "389",
     K_L_SSL: "0",
     K_L_STARTTLS: "0",
@@ -98,19 +121,62 @@ def _dec(token: str) -> str:
         return ""
 
 
+#: An unreadable row. NOT the same as an absent one: absent falls back to the
+#: legacy single-value key, unreadable must NOT — silently reviving a value the
+#: admin replaced is how a directory nobody enabled starts authenticating again.
+UNREADABLE = object()
+
+
+def _json_list(key: str):
+    """Stored JSON list, ``None`` when the row is absent, :data:`UNREADABLE`
+    when it cannot be parsed as a list."""
+    raw = AppSetting.get(key)
+    if not raw:
+        return None
+    try:
+        val = json.loads(raw)
+    except (TypeError, ValueError):
+        log.warning("auth: %s is not valid JSON — ignoring the row", key)
+        return UNREADABLE
+    if not isinstance(val, list):
+        log.warning("auth: %s is not a JSON list — ignoring the row", key)
+        return UNREADABLE
+    return val
+
+
 # ---- public state ---------------------------------------------------------
+def backends() -> list[str]:
+    """Enabled EXTERNAL sources, in sign-in order. ``[]`` = local only."""
+    vals = _json_list(K_BACKENDS)
+    if vals is UNREADABLE:
+        # Fail CLOSED: local sign-in still works (nobody is locked out) and no
+        # directory is consulted on the strength of a policy nobody can read.
+        return []
+    if vals is None:
+        legacy = (_get(K_BACKEND) or "").strip()
+        return [legacy] if legacy in EXTERNAL_BACKENDS else []
+    out: list[str] = []
+    for v in vals:
+        v = str(v or "").strip()
+        if v in EXTERNAL_BACKENDS and v not in out:
+            out.append(v)
+    return out
+
+
 def backend() -> str:
-    val = _get(K_BACKEND)
-    return val if val in BACKENDS else "local"
+    """Single-value view kept for callers/logs that predate multi-source: the
+    FIRST enabled source, or ``local`` when none is."""
+    order = backends()
+    return order[0] if order else "local"
 
 
 def is_enabled() -> bool:
-    """True when an EXTERNAL backend is active (i.e. not plain local)."""
-    return backend() != "local"
+    """True when at least one EXTERNAL source is active."""
+    return bool(backends())
 
 
 def default_profile_name() -> str:
-    return (_get(K_DEFAULT_PROFILE) or "operator").strip() or "operator"
+    return (_get(K_DEFAULT_PROFILE) or "").strip() or DEFAULT_PROFILE_FALLBACK
 
 
 def require_approval() -> bool:
@@ -127,16 +193,56 @@ def fac_sync_appliance_id() -> int:
     return _to_int(_get(K_R_SYNC_APPLIANCE), 0)
 
 
+def _group_rows(key_list: str, key_legacy: str) -> list[dict]:
+    rows = _json_list(key_list)
+    if rows is UNREADABLE:
+        return []
+    if rows is None:
+        legacy = (AppSetting.get(key_legacy) or "").strip()
+        return [{"group": legacy, "profile": ""}] if legacy else []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for row in rows:
+        if isinstance(row, dict):
+            grp = str(row.get("group", "") or "").strip()
+            prof = str(row.get("profile", "") or "").strip()
+        else:
+            grp, prof = str(row or "").strip(), ""
+        if not grp or grp.lower() in seen:
+            continue
+        seen.add(grp.lower())
+        out.append({"group": grp, "profile": prof})
+    return out
+
+
+def sync_groups(source: str) -> list[dict]:
+    """``[{group, profile}]`` for *source*, in order. Empty = no group filter.
+
+    ``profile`` blank means "use the global default"; it is NOT normalised to
+    the default here so the UI can keep showing "inherit"."""
+    if source == "radius":
+        return _group_rows(K_R_SYNC_GROUPS, K_R_SYNC_GROUP)
+    if source in ("ad", "ldap"):
+        return _group_rows(K_L_SYNCGROUPS, K_L_SYNCGROUP)
+    return []
+
+
 def fac_sync_group() -> str:
-    return (_get(K_R_SYNC_GROUP) or "").strip()
+    """First RADIUS/FAC import group (back-compat single-value view)."""
+    rows = sync_groups("radius")
+    return rows[0]["group"] if rows else ""
 
 
 # ---- config (read) --------------------------------------------------------
 def config(*, reveal_secrets: bool = False) -> dict:
     """Full auth config for the Settings template. Secrets are exposed as
     ``has_*`` flags only, unless ``reveal_secrets`` (used by the dispatcher)."""
-    b = backend()
+    order = backends()
+    b = order[0] if order else "local"
+    l_groups = sync_groups("ldap")
+    r_groups = sync_groups("radius")
     cfg = {
+        "backends": order,
         "backend": b,
         "default_profile": default_profile_name(),
         "require_approval": require_approval(),
@@ -152,7 +258,8 @@ def config(*, reveal_secrets: bool = False) -> dict:
             "bind_dn": _get(K_L_BINDDN),
             "ad_domain": _get(K_L_DOMAIN),
             "user_filter": _get(K_L_FILTER),
-            "sync_group_dn": _get(K_L_SYNCGROUP),
+            "sync_groups": l_groups,
+            "sync_group_dn": l_groups[0]["group"] if l_groups else "",
             "timeout": _to_int(_get(K_L_TIMEOUT), 8),
             "has_bind_password": bool(AppSetting.get(K_L_BINDPW)),
         },
@@ -163,7 +270,8 @@ def config(*, reveal_secrets: bool = False) -> dict:
             "timeout": _to_int(_get(K_R_TIMEOUT), 8),
             "has_secret": bool(AppSetting.get(K_R_SECRET)),
             "sync_appliance_id": fac_sync_appliance_id(),
-            "sync_group": fac_sync_group(),
+            "sync_groups": r_groups,
+            "sync_group": r_groups[0]["group"] if r_groups else "",
         },
     }
     if reveal_secrets:
@@ -172,35 +280,88 @@ def config(*, reveal_secrets: bool = False) -> dict:
     return cfg
 
 
-def _resolved_ldap_cfg(reveal: bool = True) -> dict:
-    """An ``ldap``-section dict with sensible per-kind defaults filled in, ready
-    for ``directory_auth``."""
+def _resolved_ldap_cfg(kind: str = "", reveal: bool = True) -> dict:
+    """An ``ldap``-section dict with per-kind defaults filled in, ready for
+    ``directory_auth``. *kind* names WHICH bind style is being attempted — with
+    both ``ad`` and ``ldap`` enabled the same server is tried twice, once per
+    style, so the caller must say which one it wants."""
     cfg = config(reveal_secrets=reveal)["ldap"]
-    kind = cfg["kind"]
+    if kind in ("ad", "ldap"):
+        cfg["kind"] = kind
     if not cfg.get("user_attr"):
-        cfg["user_attr"] = "sAMAccountName" if kind == "ad" else "uid"
+        cfg["user_attr"] = "sAMAccountName" if cfg["kind"] == "ad" else "uid"
     return cfg
 
 
 # ---- config (write) -------------------------------------------------------
+def _submitted_backends(form) -> list[str]:
+    """Ordered external sources from the form.
+
+    New UI posts ``backends[]`` plus a numeric ``backend_order_<name>``. The
+    legacy single ``backend`` field is still honoured so an older form (and the
+    existing tests) keep working unchanged."""
+    getlist = getattr(form, "getlist", None)
+    raw = getlist("backends[]") if callable(getlist) else form.get("backends") or []
+    if isinstance(raw, str):
+        raw = [raw]
+    chosen = []
+    for val in raw:
+        val = str(val or "").strip()
+        if val in EXTERNAL_BACKENDS and val not in chosen:
+            chosen.append(val)
+    if not chosen:
+        legacy = str(form.get("backend", "") or "").strip()
+        return [legacy] if legacy in EXTERNAL_BACKENDS else []
+    # Stable sort: an unset/garbage order field keeps the submitted position
+    # instead of jumping to the front and silently re-ordering the chain.
+    return sorted(chosen, key=lambda b: _to_int(form.get("backend_order_" + b), 99))
+
+
+def _submitted_groups(form, prefix: str) -> list[dict] | None:
+    """``[{group, profile}]`` from ``<prefix>_group[]`` / ``<prefix>_group_profile[]``.
+
+    ``None`` unless the form declares ``groups_submitted=1`` — the caller then
+    leaves the stored scope ALONE. Deleting every row is a real instruction ("no
+    group filter") and posts an EMPTY list, which is why "no rows" cannot be the
+    signal for "this form did not mention groups": an older form, or the test
+    harness, would otherwise wipe the configured scope by omission."""
+    getlist = getattr(form, "getlist", None)
+    if not callable(getlist) or str(form.get("groups_submitted") or "") != "1":
+        return None
+    names = getlist(prefix + "_group[]")
+    profs = getlist(prefix + "_group_profile[]")
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for i, grp in enumerate(names):
+        grp = (grp or "").strip()
+        if not grp or grp.lower() in seen:
+            continue
+        seen.add(grp.lower())
+        rows.append({"group": grp,
+                     "profile": (profs[i] if i < len(profs) else "").strip()})
+    return rows
+
+
 def save_config(form) -> None:
     """Persist from a Flask ``request.form`` (or mapping). Secrets: blank field
-    keeps the stored value; switching away from a backend leaves its config
-    intact (so toggling back doesn't lose settings)."""
+    keeps the stored value; disabling a source leaves its config intact (so
+    toggling it back doesn't lose settings)."""
     def g(key, default=""):
         return (form.get(key, default) or "").strip()
 
-    b = g("backend", "local")
-    b = b if b in BACKENDS else "local"
-    AppSetting.set(K_BACKEND, b)
-    AppSetting.set(K_DEFAULT_PROFILE, g("default_profile") or "operator")
-    # Saved for EVERY backend: the gate must not silently switch off just
+    chosen = _submitted_backends(form)
+    AppSetting.set(K_BACKENDS, json.dumps(chosen))
+    # Mirror, kept in sync on every write so a DB dump never shows two rows that
+    # disagree and a rollback to pre-multi-source code still finds a source.
+    AppSetting.set(K_BACKEND, chosen[0] if chosen else "local")
+    AppSetting.set(K_DEFAULT_PROFILE, g("default_profile") or DEFAULT_PROFILE_FALLBACK)
+    # Saved for EVERY source: the gate must not silently switch off just
     # because the admin was editing the LDAP half of the form.
     AppSetting.set(K_REQUIRE_APPROVAL,
                    "1" if form.get("require_approval") in ("1", "on", "true") else "0")
 
-    # LDAP / AD section (saved whenever the chosen backend is ad/ldap).
-    if b in ("ad", "ldap"):
+    # LDAP / AD section (saved whenever either LDAP bind style is enabled).
+    if "ad" in chosen or "ldap" in chosen:
         AppSetting.set(K_L_HOST, g("ldap_host"))
         AppSetting.set(K_L_PORT, str(_to_int(g("ldap_port"), 636 if form.get("ldap_use_ssl") in ("1", "on", "true") else 389)))
         AppSetting.set(K_L_SSL, "1" if form.get("ldap_use_ssl") in ("1", "on", "true") else "0")
@@ -211,20 +372,32 @@ def save_config(form) -> None:
         AppSetting.set(K_L_BINDDN, g("ldap_bind_dn"))
         AppSetting.set(K_L_DOMAIN, g("ldap_ad_domain"))
         AppSetting.set(K_L_FILTER, g("ldap_user_filter"))
-        AppSetting.set(K_L_SYNCGROUP, g("ldap_sync_group_dn"))
         AppSetting.set(K_L_TIMEOUT, str(max(2, min(60, _to_int(g("ldap_timeout"), 8)))))
+        rows = _submitted_groups(form, "ldap")
+        if rows is None and form.get("ldap_sync_group_dn") is not None:
+            legacy = g("ldap_sync_group_dn")          # older single-field form, clearing included
+            rows = [{"group": legacy, "profile": ""}] if legacy else []
+        if rows is not None:          # neither field present => stored scope stands
+            AppSetting.set(K_L_SYNCGROUPS, json.dumps(rows))
+            AppSetting.set(K_L_SYNCGROUP, rows[0]["group"] if rows else "")
         new_pw = form.get("ldap_bind_password", "")
         if new_pw:
             AppSetting.set(K_L_BINDPW, encryption.encrypt(new_pw))
 
     # RADIUS section.
-    if b == "radius":
+    if "radius" in chosen:
         AppSetting.set(K_R_HOST, g("radius_host"))
         AppSetting.set(K_R_PORT, str(_to_int(g("radius_port"), 1812)))
         AppSetting.set(K_R_NASID, g("radius_nas_id") or "satom")
         AppSetting.set(K_R_TIMEOUT, str(max(2, min(60, _to_int(g("radius_timeout"), 8)))))
         AppSetting.set(K_R_SYNC_APPLIANCE, str(_to_int(g("radius_sync_appliance_id"), 0)))
-        AppSetting.set(K_R_SYNC_GROUP, g("radius_sync_group"))
+        rows = _submitted_groups(form, "radius")
+        if rows is None and form.get("radius_sync_group") is not None:
+            legacy = g("radius_sync_group")          # older single-field form, clearing included
+            rows = [{"group": legacy, "profile": ""}] if legacy else []
+        if rows is not None:          # neither field present => stored scope stands
+            AppSetting.set(K_R_SYNC_GROUPS, json.dumps(rows))
+            AppSetting.set(K_R_SYNC_GROUP, rows[0]["group"] if rows else "")
         new_secret = form.get("radius_secret", "")
         if new_secret:
             AppSetting.set(K_R_SECRET, encryption.encrypt(new_secret))
@@ -233,8 +406,15 @@ def save_config(form) -> None:
 # ---- test connection ------------------------------------------------------
 def test_connection(form) -> dict:
     """Test the SUBMITTED config (so the admin can verify BEFORE saving). Falls
-    back to the stored secret when the secret field is left blank."""
-    b = (form.get("backend") or "local").strip()
+    back to the stored secret when the secret field is left blank.
+
+    With several sources enabled the admin must say WHICH one to test
+    (``test_backend``); testing "all of them" would report a green tick for a
+    chain in which the source they were editing is broken."""
+    b = (form.get("test_backend") or form.get("backend") or "").strip()
+    if b not in BACKENDS:
+        submitted = _submitted_backends(form)
+        b = submitted[0] if submitted else "local"
     test_user = (form.get("test_username") or "").strip()
     test_pw = form.get("test_password") or ""
 
@@ -275,34 +455,65 @@ def test_connection(form) -> dict:
 
 
 # ---- dispatch (login time) ------------------------------------------------
-def authenticate_external(username: str, password: str) -> dict:
-    """Bind *username*/*password* against the active external backend.
+def _bind_one(source: str, username: str, password: str):
+    if source in ("ad", "ldap"):
+        return directory_auth.ldap_authenticate(_resolved_ldap_cfg(source), username, password)
+    if source == "radius":
+        return directory_auth.radius_authenticate(
+            config(reveal_secrets=True)["radius"], username, password)
+    return False, f"Unknown backend {source!r}."
 
-    Returns ``{ok, source, detail}``. ``source`` is the backend name so the
-    JIT provisioner can stamp ``auth_source``."""
-    b = backend()
-    if b == "local":
-        return {"ok": False, "source": "local", "detail": "No external backend configured."}
-    if b in ("ad", "ldap"):
-        ok, detail = directory_auth.ldap_authenticate(_resolved_ldap_cfg(), username, password)
-        return {"ok": ok, "source": b, "detail": detail}
-    if b == "radius":
-        cfg = config(reveal_secrets=True)["radius"]
-        ok, detail = directory_auth.radius_authenticate(cfg, username, password)
-        return {"ok": ok, "source": "radius", "detail": detail}
-    return {"ok": False, "source": b, "detail": f"Unknown backend {b!r}."}
+
+def authenticate_external(username: str, password: str) -> dict:
+    """Bind *username*/*password* against each enabled source, IN ORDER.
+
+    Returns ``{ok, source, detail, tried}``. ``source`` is the source that
+    accepted (so the JIT provisioner can stamp ``auth_source``); on failure it
+    is the first configured one, and ``detail`` carries EVERY source's reason —
+    a chain that fails for three different reasons must not be reported as one."""
+    order = backends()
+    if not order:
+        return {"ok": False, "source": "local", "tried": [],
+                "detail": "No external backend configured."}
+
+    details = []
+    for idx, source in enumerate(order):
+        ok, detail = _bind_one(source, username, password)
+        if ok:
+            return {"ok": True, "source": source, "detail": detail,
+                    "tried": order[:idx + 1]}
+        details.append(f"{source}: {detail}")
+    return {"ok": False, "source": order[0], "tried": order,
+            "detail": " | ".join(details)}
 
 
 # ---- JIT provisioning -----------------------------------------------------
+def _profile_for(name: str):
+    """Named profile, else the configured default, else the readonly floor.
+
+    Never returns a profile more privileged than the caller asked for: an
+    unknown name falls back DOWN the chain, never up."""
+    from ..models import Profile
+    for candidate in (name, default_profile_name(), DEFAULT_PROFILE_FALLBACK):
+        candidate = (candidate or "").strip()
+        if not candidate:
+            continue
+        prof = Profile.query.filter_by(name=candidate).first()
+        if prof is not None:
+            return prof
+    return None
+
+
 def provision_external_user(username: str, source: str):
     """Create (or refresh) the local row for an authenticated directory user.
 
-    NEW user → ``auth_source=source`` + the configured default profile
-    (operator). EXISTING user → never downgraded (keeps the admin-assigned
-    profile); a still-``local`` row is NOT flipped to external (protects the
-    seed admin)."""
+    NEW user → ``auth_source=source`` + the GLOBAL default profile (readonly).
+    Per-group profiles are an IMPORT-time concept: at sign-in the accepted bind
+    tells us nothing about group membership. EXISTING user → never downgraded
+    (keeps the admin-assigned profile); a still-``local`` row is NOT flipped to
+    external (protects the seed admin)."""
     from ..extensions import db
-    from ..models import Profile, User
+    from ..models import User
 
     user = User.query.filter_by(username=username).first()
     if user is not None:
@@ -316,8 +527,7 @@ def provision_external_user(username: str, source: str):
         db.session.commit()
         return user
 
-    prof = (Profile.query.filter_by(name=default_profile_name()).first()
-            or Profile.query.filter_by(name="operator").first())
+    prof = _profile_for(default_profile_name())
     # Approval gate: a brand-new directory user lands DISABLED so an admin can
     # assign the right profile BEFORE the account can do anything. Existing rows
     # are never touched by this (see the early return above).
@@ -366,6 +576,12 @@ def fac_client():
     return FortiAuthenticatorClient(found[0]), ""
 
 
+def _scopes(source: str) -> list[dict]:
+    """Group scopes to enumerate for *source*; no configured group means one
+    unfiltered pass over everything the directory exposes."""
+    return sync_groups(source) or [{"group": "", "profile": ""}]
+
+
 def _list_fac_users(limit: int = 500) -> dict:
     """Roster from the FAC REST API. Logins keep going over RADIUS."""
     from . import fac_directory
@@ -373,51 +589,104 @@ def _list_fac_users(limit: int = 500) -> dict:
     client, detail = fac_client()
     if client is None:
         return {"ok": False, "users": [], "detail": detail}
-    group = fac_sync_group()
-    ok, res = fac_directory.list_group_members(client, group, limit=limit)
-    if not ok:
-        return {"ok": False, "users": [], "detail": str(res)}
-    scope = f"group {group!r}" if group else "all groups"
-    return {"ok": True, "users": res, "detail": f"{len(res)} user(s) found in {scope}."}
+
+    users: list[dict] = []
+    seen: set[str] = set()
+    scopes = []
+    for scope in _scopes("radius"):
+        ok, res = fac_directory.list_group_members(client, scope["group"], limit=limit)
+        if not ok:
+            # One bad group name fails the WHOLE import. A partial roster that
+            # reports success is how a typo becomes permanent.
+            return {"ok": False, "users": [],
+                    "detail": f"group {scope['group']!r}: {res}" if scope["group"] else str(res)}
+        for entry in res:
+            uname = (entry.get("username") or "").strip()
+            if not uname or uname.lower() in seen:
+                continue
+            seen.add(uname.lower())
+            users.append({**entry, "source": "radius",
+                          "source_group": scope["group"],
+                          "profile": scope["profile"]})
+        scopes.append(f"{scope['group'] or 'all groups'} ({len(res)})")
+    return {"ok": True, "users": users[:max(1, int(limit))],
+            "detail": f"{len(users)} user(s) found in {', '.join(scopes)}."}
+
+
+def _list_ldap_users(source: str, limit: int = 500) -> dict:
+    cfg = _resolved_ldap_cfg(source)
+    users: list[dict] = []
+    seen: set[str] = set()
+    for scope in _scopes(source):
+        ok, res = directory_auth.ldap_list_users(cfg, group_dn=scope["group"], limit=limit)
+        if not ok:
+            return {"ok": False, "users": [],
+                    "detail": f"{source}: {res}"}
+        for entry in res:
+            uname = (entry.get("username") or "").strip()
+            if not uname or uname.lower() in seen:
+                continue
+            seen.add(uname.lower())
+            users.append({**entry, "source": source,
+                          "source_group": scope["group"],
+                          "profile": scope["profile"]})
+    return {"ok": True, "users": users[:max(1, int(limit))],
+            "detail": f"{len(users)} user(s) found."}
 
 
 # ---- directory sync (admin action) ----------------------------------------
 def list_directory_users(limit: int = 500) -> dict:
-    """Enumerate the active AD/LDAP backend's users (scoped to the configured
-    sync group/OU). ``{ok, users, detail}``. Not supported on RADIUS/local."""
-    b = backend()
-    if b == "radius":
-        return _list_fac_users(limit=limit)
-    if b not in ("ad", "ldap"):
+    """Enumerate EVERY enabled source, scoped to its configured groups.
+
+    ``{ok, users, detail}``. Each user carries ``source``, ``source_group`` and
+    the group's ``profile`` (blank = global default). A username seen in more
+    than one scope keeps the FIRST one, so source/group order decides the
+    profile — the same order that decides sign-in."""
+    order = backends()
+    if not order:
         return {"ok": False, "users": [],
-                "detail": "Directory sync needs an Active Directory, LDAP or "
-                          "FortiAuthenticator backend."}
-    cfg = _resolved_ldap_cfg()
-    ok, res = directory_auth.ldap_list_users(cfg, group_dn=_get(K_L_SYNCGROUP), limit=limit)
-    if not ok:
-        return {"ok": False, "users": [], "detail": str(res)}
-    return {"ok": True, "users": res, "detail": f"{len(res)} user(s) found."}
+                "detail": "Directory sync needs at least one external "
+                          "authentication source (AD, LDAP or FortiAuthenticator)."}
+
+    users: list[dict] = []
+    seen: set[str] = set()
+    notes = []
+    for source in order:
+        res = _list_fac_users(limit=limit) if source == "radius" \
+            else _list_ldap_users(source, limit=limit)
+        if not res["ok"]:
+            return res
+        for entry in res["users"]:
+            uname = (entry.get("username") or "").strip()
+            if not uname or uname.lower() in seen:
+                continue
+            seen.add(uname.lower())
+            users.append(entry)
+        # Carry each source's OWN detail through: which groups were read, and
+        # how many each yielded. A bare total hides an empty group inside a
+        # healthy-looking number.
+        notes.append(f"{source}: {res['detail']}")
+    return {"ok": True, "users": users[:max(1, int(limit))],
+            "detail": " | ".join(notes)}
 
 
 def sync_directory_users(default_active: bool = False, limit: int = 500) -> dict:
     """Provision local rows for every directory user (see ``list_directory_users``).
 
-    NEW rows: ``auth_source`` = active backend, the default profile, an unusable
-    local password, ``is_active=default_active`` (default DISABLED / pending —
-    the admin enables + refines from Settings -> Users). EXISTING rows are NEVER
-    touched. ``{ok, created, existing, total, detail}``."""
+    NEW rows: ``auth_source`` = the source that listed them, the group's profile
+    (or the global default), an unusable local password, ``is_active=default_active``
+    (default DISABLED / pending — the admin enables + refines from Settings ->
+    Users). EXISTING rows are NEVER touched.
+    ``{ok, created, existing, total, detail}``."""
     listing = list_directory_users(limit=limit)
     if not listing["ok"]:
         return {"ok": False, "created": 0, "existing": 0, "total": 0,
                 "detail": listing["detail"]}
 
     from ..extensions import db
-    from ..models import Profile, User
+    from ..models import User
 
-    source = backend()
-    prof = (Profile.query.filter_by(name=default_profile_name()).first()
-            or Profile.query.filter_by(name="operator").first())
-
+    fallback_source = backend()
     created = existing = 0
     for entry in listing["users"]:
         uname = (entry.get("username") or "").strip()
@@ -426,7 +695,10 @@ def sync_directory_users(default_active: bool = False, limit: int = 500) -> dict
         if User.query.filter_by(username=uname).first() is not None:
             existing += 1
             continue
-        user = User(username=uname, auth_source=source, is_active=bool(default_active))
+        prof = _profile_for(entry.get("profile") or "")
+        user = User(username=uname,
+                    auth_source=entry.get("source") or fallback_source,
+                    is_active=bool(default_active))
         user.set_password(_secrets.token_urlsafe(48))
         if prof is not None:
             user.profile = prof
@@ -442,9 +714,10 @@ def sync_directory_users(default_active: bool = False, limit: int = 500) -> dict
 
 
 __all__ = [
-    "BACKENDS", "backend", "is_enabled", "default_profile_name",
+    "BACKENDS", "EXTERNAL_BACKENDS", "DEFAULT_PROFILE_FALLBACK",
+    "backend", "backends", "is_enabled", "default_profile_name",
     "config", "save_config", "test_connection", "require_approval",
-    "fac_client", "fac_sync_group", "fac_sync_appliance_id",
+    "fac_client", "fac_sync_group", "fac_sync_appliance_id", "sync_groups",
     "authenticate_external", "provision_external_user",
     "list_directory_users", "sync_directory_users",
 ]

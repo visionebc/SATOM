@@ -47,8 +47,34 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   *awaiting administrator approval*, never *invalid password*: the bind
   succeeded, and blaming the credential sends the user to reset one that was
   correct. Existing accounts are never re-gated.
+- **More than one sign-in source at a time, in an explicit order.** The setting
+  used to hold one string, so Active Directory *or* LDAP *or* RADIUS. It now
+  holds an ordered list and sign-in walks it, first acceptance wins. The local
+  database is not on the list because it is not optional: it is the anti-lockout
+  floor, always live, and a local account is never handed to a directory. Order
+  is not cosmetic and the page says so — an unreachable source burns its whole
+  timeout before the next is tried, and every source ahead of the winner counts
+  a wrong password against its own lockout policy. A source list that cannot be
+  parsed disables external sign-in rather than falling back to the value it
+  replaced: local still works, so nobody is locked out, and no directory is
+  consulted on the strength of a policy nobody can read.
+- **Several import groups per source, each with its own profile.** "Import
+  `grp_ops` as operator and `grp_ro` as readonly" is now one configuration
+  instead of two passes. A user listed by two groups keeps the first row's
+  profile, and a blank profile inherits the global default. One group name the
+  appliance does not have **fails the whole import** and names the groups it
+  does have — a partial roster reported as success is how a typo becomes
+  permanent. The per-group profile is an *import-time* concept on purpose: a
+  RADIUS Access-Accept carries no group, and resolving one would put a REST
+  round-trip to the FortiAuthenticator on the critical path of every first
+  sign-in. Just-in-time users get the global default instead, which is why that
+  default is now `readonly` and why the approval gate exists.
 
 ### Changed
+- **New directory accounts default to `readonly`, not `operator`.** Least
+  privilege: an account nobody has looked at yet gets the profile that cannot
+  change anything, and elevation is an explicit admin action. An unknown profile
+  name anywhere in the chain falls back *down* it, never up.
 - The CR action menu is DERIVED from the automation catalog (every targeted
   action that is `danger` or user-scope) instead of a hand-written pair. This
   puts `policy_set_status`, `backend_set_status`, `backend_set_config`,
@@ -62,6 +88,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - The "clients affected by this window" read is per product: FortiWeb server
   policies, FortiADC virtual servers. Reading only the FortiWeb shape made
   every ADC in a window look like it had no clients at all.
+
+### Removed
+- **The per-username allowlist** (`Settings → Access Control → Allowed Users`).
+  It was a fourth gate stacked behind the directory group filter, the approval
+  gate and the profile, and it enforced nothing the three of them did not —
+  while going stale on every import: a user could be imported, approved, enabled
+  and still take a blanket `403` on every page, whose only trace was one log
+  line. It also protected the wrong people, since admins were exempt by design,
+  so it only ever restricted `readonly` and `operator` accounts. **Profiles
+  decide what a user may do; the directory group decides who may authenticate.**
+  The IP whitelist on the same card stays, because it answers a question none of
+  the others do: *where* a session may come from.
+  An install that stored a list is told so — at boot in the log and on the
+  Access Control page — and offered a button to clear the dead row, because
+  removing a gate silently is how an install gets wider without anybody
+  noticing.
 
 ### Fixed
 - `Appliance._own_client()` returned a **FortiWeb** client for a

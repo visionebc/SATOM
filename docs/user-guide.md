@@ -67,9 +67,10 @@
   users** into local rows so an admin can assign a profile *before* first
   sign-in — synced accounts are created **disabled**, pending approval.
 - **Who can reach the app at all** is a separate question from who can sign in:
-  `Settings → Access Control` (§26.2) carries an **IP whitelist** and an
-  **allowed-users** list. Both mean *everything* when left empty, and loopback
-  and admins are always allowed so neither can lock you out.
+  `Settings → Access Control` (§26.2) carries an **IP whitelist**. It means
+  *everywhere* when left empty, and loopback and admins are always allowed so it
+  cannot lock you out. There is no per-username allowlist any more — the
+  directory group, the approval gate and the profile already decide that.
 - **Roles.** Three effective profiles ship, and they gate what you can do:
   - *readonly* — see everything, change nothing;
   - *operator* — day-to-day changes (`config_write`): policies, objects,
@@ -1929,16 +1930,26 @@ Three practical notes:
 
 ### 26.2 Access Control — who may reach the app at all
 
-Two independent gates, and **both are empty-means-everything**:
+One gate here, and it is **empty-means-everywhere**:
 
 - **IP whitelist** — only these source addresses or CIDRs may reach the app.
   Leave it empty to allow all. Each entry is validated as an IP or CIDR on save
   and an invalid one is skipped with a warning rather than silently stored.
-- **Allowed users** — only the ticked users may sign in. Tick none to allow all.
 
 **Loopback and admins are always allowed**, on purpose: this page is exactly
 where a typo would otherwise lock everybody — including you — out of a running
-appliance. Only non-admin accounts are even offered in the list.
+appliance.
+
+**There is no per-username allowlist.** It was removed: three gates already
+answer "who may sign in", each in the place that owns the decision — the
+directory group filter (who may authenticate at all, §26.7), *Require
+administrator approval* (a first-time directory user lands disabled), and the
+**profile** (what they may do once inside, §26.3). A fourth list of names
+enforced nothing the other three did not and went stale on every import: an
+approved, enabled user still took a blanket `403` on every page. The IP
+whitelist stays because it answers a different question — *where* a session may
+come from, not who. If your install stored a list, the page shows it, says it is
+no longer enforced, and offers a button to clear the dead row.
 
 > The per-user **top-bar banner** picker is *not* here and is not a login
 > banner: it is a personal appearance preference, saved against your account, on
@@ -2022,17 +2033,47 @@ policy (what happens then), and the two are kept apart deliberately.
   including the resolved recipient list, **without sending anything**. This is the
   right first move when a device is red and no mail arrived.
 
-### 26.7 Authentication — LDAP / RADIUS and directory sync
+### 26.7 Authentication — sign-in sources and directory import
 
-Choose the backend and configure it; local accounts keep working alongside it.
+**Sign-in sources.** Tick as many as you need — Active Directory, LDAP,
+FortiAuthenticator/RADIUS — and give each an order. Sign-in walks them in that
+order and the **first source that accepts the password wins**. The **local
+database is always on** and is not in the list: it is the anti-lockout floor, and
+a local account is checked against its local password and never falls through to
+a directory.
+
+Order is not cosmetic. An unreachable source burns its **whole timeout** before
+the next one is tried, so a dead directory first in the chain makes every login
+slow; and every source ahead of the winner sees the failed attempt, which counts
+against **that** directory's lockout policy. Put the source most of your people
+use first.
+
+Active Directory and LDAP share **one** server connection — they are two bind
+styles (UPN simple bind vs service-account search + re-bind), so ticking both
+just tries both against the same server.
 
 - **Test** validates the connection using the values **in the form**, unsaved, so
-  you can iterate without committing a broken configuration.
-- **Sync directory users** imports the accounts in the configured sync group/OU
-  as local rows, so an admin can assign a profile and decide access **before the
-  user's first sign-in**. Imported rows are created **disabled** — pending
-  approval — and you land on the Users page to act on them. Nothing about this
-  grants access on its own.
+  you can iterate without committing a broken configuration. You pick **which
+  source** to test: a green tick for "the chain" would hide the one you were
+  editing being broken.
+- **Groups to import.** Each source takes a list of groups, and each row a
+  **profile its members get on import** — so "import `grp_ops` as operator and
+  `grp_ro` as readonly" is one configuration. Leave the profile blank to inherit
+  the default above. No rows at all means everything the directory exposes. A
+  user listed by two groups keeps the **first** row's profile.
+  A group name the appliance does not have **fails the whole import** and lists
+  the groups it does have — importing a partial roster and reporting success is
+  how a typo survives forever.
+- **Sync directory users** imports those accounts as local rows, so an admin can
+  assign a profile and decide access **before the user's first sign-in**.
+  Imported rows are created **disabled** — pending approval — and you land on the
+  Users page to act on them. Nothing about this grants access on its own.
+
+The per-group profile applies to the **importer**. A user who signs in without
+having been imported gets the **default profile** (`readonly` as shipped),
+because a RADIUS Access-Accept carries no group and asking the appliance for one
+would put a REST call on the critical path of every first login. That is the
+other half of why the approval gate exists.
 
 Directory accounts manage their own password and MFA at the directory; the
 Security tab says so rather than offering controls that would not work.

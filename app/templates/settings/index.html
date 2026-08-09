@@ -451,31 +451,42 @@
           </div>
         </div>
 
-        <!-- Allowed users -->
+        <!-- Per-user access: handled by profiles, not by a list here -->
         <div class="col-lg-5">
           <div class="fw-card">
             <div class="fw-card-header">
-              <span class="fw-card-title"><i class="bi bi-people-fill me-2 text-accent"></i>Allowed Users</span>
+              <span class="fw-card-title"><i class="bi bi-people-fill me-2 text-accent"></i>Who may sign in</span>
             </div>
             <div class="fw-card-body">
               <p class="text-muted" style="font-size:13px;">
-                Only the checked users may sign in. <strong>Check none to allow all.</strong>
-                Admins are always allowed.
+                There is no per-username allowlist here any more. Three gates already decide this,
+                each in the place that owns the decision:
               </p>
-              <div class="d-flex flex-column gap-2">
-                {% for u in all_users %}
-                <label class="d-flex align-items-center gap-2" style="font-size:14px;">
-                  <input type="checkbox" class="form-check-input mt-0" name="allowed_users[]" value="{{ u.username }}"
-                         {{ 'checked' if u.username in allowed_users else '' }}
-                         {{ 'disabled title="admins are always allowed"' | safe if u.is_admin else '' }}>
-                  <span>{{ u.username }}</span>
-                  {% if u.is_admin %}<span class="fw-badge fw-badge-primary">admin</span>{% endif %}
-                  {% if not u.is_active %}<span class="fw-badge" style="opacity:.6;">disabled</span>{% endif %}
-                </label>
-                {% else %}
-                <span class="text-muted">— no users —</span>
-                {% endfor %}
+              <ol class="text-muted" style="font-size:13px;">
+                <li><strong>The directory group filter</strong> — decides who can authenticate at all
+                    (the Authentication Profile on the FortiAuthenticator, or the sync group on AD/LDAP).</li>
+                <li><strong>Require administrator approval</strong> — a first-time directory user lands
+                    <em>disabled</em> until you enable them
+                    (<a href="{{ url_for('settings.index') }}#tab-auth">Authentication</a>).</li>
+                <li><strong>The profile</strong> — decides what they can do once inside
+                    (<a href="{{ url_for('users.index') }}">Users</a>).</li>
+              </ol>
+              <p class="text-muted mb-0" style="font-size:13px;">
+                A fourth list of names enforced nothing the three above did not, and went stale on every
+                import: an approved, enabled user still took a blanket 403 that showed up only in the log.
+                The <strong>IP whitelist</strong> stays because it answers a different question — <em>where</em>
+                a session may come from, not who.
+              </p>
+              {% if stale_allowed_users %}
+              <div class="alert fw-alert-warning py-2 px-3 mt-3 mb-0" style="font-size:13px;">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                This install still stores <strong>{{ stale_allowed_users|length }}</strong> name(s) from the
+                removed allowlist ({{ stale_allowed_users|join(', ') }}). <strong>They are no longer
+                enforced</strong> — those users can reach every page their profile allows.
+                <button type="submit" form="clear-allowlist-form" class="btn btn-sm btn-outline-danger mt-2">
+                  <i class="bi bi-trash me-1"></i>Clear the leftover list</button>
               </div>
+              {% endif %}
             </div>
           </div>
         </div>
@@ -485,6 +496,11 @@
         <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save Access Control</button>
       </div>
     </form>
+    {% if stale_allowed_users %}
+    <form id="clear-allowlist-form" method="POST" action="{{ url_for('settings.clear_legacy_allowlist') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    </form>
+    {% endif %}
   </div>
 
   {% endif %}
@@ -934,15 +950,42 @@
           <div class="fw-card-body">
             <form method="POST" action="{{ url_for('settings.save_auth') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="groups_submitted" value="1">
+              {% set auth_sources = [
+                   {'key': 'ad',     'label': 'Active Directory',
+                    'hint': 'UPN simple bind against the LDAP connection below.'},
+                   {'key': 'ldap',   'label': 'LDAP (generic)',
+                    'hint': 'Service-account search + user re-bind. Shares ONE server connection with Active Directory — enabling both just tries both bind styles.'},
+                   {'key': 'radius', 'label': 'FortiAuthenticator / RADIUS',
+                    'hint': 'FortiToken-friendly. Cannot be enumerated: the import roster comes from the FAC REST API instead.'}] %}
               <div class="mb-3">
-                <label class="fw-form-label">Sign-in backend</label>
-                <select name="backend" id="auth-backend" class="form-select fw-form-control">
-                  <option value="local" {{ 'selected' if auth_config.backend == 'local' else '' }}>Local database only</option>
-                  <option value="ad" {{ 'selected' if auth_config.backend == 'ad' else '' }}>Active Directory</option>
-                  <option value="ldap" {{ 'selected' if auth_config.backend == 'ldap' else '' }}>LDAP (generic)</option>
-                  <option value="radius" {{ 'selected' if auth_config.backend == 'radius' else '' }}>FortiAuthenticator / RADIUS</option>
-                </select>
-                <div class="form-text">Local accounts always work. At most one external backend is active at a time (safest against lockout).</div>
+                <label class="fw-form-label">Sign-in sources</label>
+                <div class="fw-table-wrapper">
+                  <table class="fw-table">
+                    <thead><tr><th style="width:80px;">Enabled</th><th>Source</th><th style="width:90px;">Order</th></tr></thead>
+                    <tbody>
+                      <tr>
+                        <td><input class="form-check-input" type="checkbox" checked disabled></td>
+                        <td><strong>Local database</strong> <span class="fw-badge fw-badge-primary ms-1">always on</span>
+                          <div class="form-text mb-0">The anti-lockout floor. A local account is checked against its local password and never falls through to a directory.</div></td>
+                        <td class="text-muted">—</td>
+                      </tr>
+                      {% for src in auth_sources %}
+                      <tr>
+                        <td><input class="form-check-input" type="checkbox" name="backends[]" value="{{ src.key }}"
+                                   id="auth-src-{{ src.key }}" {{ 'checked' if src.key in auth_config.backends else '' }}></td>
+                        <td><label class="mb-0" for="auth-src-{{ src.key }}"><strong>{{ src.label }}</strong></label>
+                          <div class="form-text mb-0">{{ src.hint }}</div></td>
+                        <td><input type="number" min="1" max="9" class="form-control form-control-sm" name="backend_order_{{ src.key }}"
+                                   value="{{ auth_config.backends.index(src.key) + 1 if src.key in auth_config.backends else loop.index }}"></td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+                <div class="form-text">Enable as many as you need. Sign-in walks them <strong>in order</strong> and the first one that accepts the password wins.
+                  Order is not cosmetic: an unreachable source burns its whole timeout before the next is tried, and every source ahead of the winner
+                  counts a wrong password against its own lockout policy.</div>
               </div>
               <div class="mb-3">
                 <label class="fw-form-label">Default profile for new directory users</label>
@@ -981,8 +1024,35 @@
                 </div>
                 <div class="mb-3"><label class="fw-form-label">User filter <span class="text-muted">(LDAP, optional)</span></label>
                   <input type="text" name="ldap_user_filter" class="form-control fw-form-control font-monospace" value="{{ auth_config.ldap.user_filter }}" placeholder="(uid={username})"></div>
-                <div class="mb-3"><label class="fw-form-label">Sync group / OU DN <span class="text-muted">(optional, for user sync)</span></label>
-                  <input type="text" name="ldap_sync_group_dn" class="form-control fw-form-control font-monospace" value="{{ auth_config.ldap.sync_group_dn }}" placeholder="cn=fortiweb-admins,ou=groups,dc=example,dc=com"></div>
+                <div class="mb-3">
+                  <label class="fw-form-label">Sync groups / OU DNs <span class="text-muted">(optional, for user import)</span></label>
+                  <div class="fw-table-wrapper">
+                    <table class="fw-table">
+                      <thead><tr><th>Group / OU DN</th><th style="width:200px;">Profile on import</th><th style="width:44px;"></th></tr></thead>
+                      <tbody id="ldapgrp-body">
+                        {% for row in auth_config.ldap.sync_groups %}
+                        <tr>
+                          <td><input class="form-control form-control-sm font-monospace" name="ldap_group[]" value="{{ row.group }}" placeholder="cn=fortiweb-admins,ou=groups,dc=example,dc=com"></td>
+                          <td><input class="form-control form-control-sm" name="ldap_group_profile[]" value="{{ row.profile }}" placeholder="inherit default" list="auth-profile-names"></td>
+                          <td><button type="button" class="btn btn-sm btn-outline-danger" data-js="remove-row"><i class="bi bi-trash"></i></button></td>
+                        </tr>
+                        {% else %}
+                        {# One blank row when nothing is configured: an empty
+                           table would render no input at all, so the admin
+                           would have to discover the "Add group" button before
+                           the form could carry a scope. #}
+                        <tr>
+                          <td><input class="form-control form-control-sm font-monospace" name="ldap_group[]" value="" placeholder="cn=fortiweb-admins,ou=groups,dc=example,dc=com"></td>
+                          <td><input class="form-control form-control-sm" name="ldap_group_profile[]" value="" placeholder="inherit default" list="auth-profile-names"></td>
+                          <td><button type="button" class="btn btn-sm btn-outline-danger" data-js="remove-row"><i class="bi bi-trash"></i></button></td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-outline-secondary mt-2" data-js="add-auth-group" data-target="ldapgrp-body" data-prefix="ldap"><i class="bi bi-plus-lg me-1"></i>Add group</button>
+                  <div class="form-text">No rows = every user the directory exposes. Blank profile = the default above.</div>
+                </div>
                 <div class="row g-3 mb-2 ms-1 align-items-center">
                   <div class="col-auto form-check"><input class="form-check-input" type="checkbox" name="ldap_use_ssl" id="ldap-ssl" {{ 'checked' if auth_config.ldap.use_ssl else '' }}><label class="form-check-label" for="ldap-ssl">LDAPS (SSL)</label></div>
                   <div class="col-auto form-check"><input class="form-check-input" type="checkbox" name="ldap_start_tls" id="ldap-starttls" {{ 'checked' if auth_config.ldap.start_tls else '' }}><label class="form-check-label" for="ldap-starttls">StartTLS</label></div>
@@ -1019,10 +1089,42 @@
                       {% endfor %}
                     </select>
                     {% if not fac_appliances %}<div class="form-text text-danger">No FortiAuthenticator registered under Appliances &mdash; import will refuse.</div>{% endif %}</div>
-                  <div class="col-5"><label class="fw-form-label">Import group</label>
-                    <input type="text" name="radius_sync_group" class="form-control fw-form-control font-monospace" value="{{ auth_config.radius.sync_group }}" placeholder="fweb_users">
-                    <div class="form-text">Blank = every user the appliance exposes.</div></div>
+                  <div class="col-5"><label class="fw-form-label">Groups to import</label>
+                    <div class="form-text mb-0">One row per FortiAuthenticator group, each with the profile its members get.</div></div>
                 </div>
+                <div class="mb-3">
+                  <div class="fw-table-wrapper">
+                    <table class="fw-table">
+                      <thead><tr><th>FortiAuthenticator group</th><th style="width:200px;">Profile on import</th><th style="width:44px;"></th></tr></thead>
+                      <tbody id="radgrp-body">
+                        {% for row in auth_config.radius.sync_groups %}
+                        <tr>
+                          <td><input class="form-control form-control-sm font-monospace" name="radius_group[]" value="{{ row.group }}" placeholder="fweb_users"></td>
+                          <td><input class="form-control form-control-sm" name="radius_group_profile[]" value="{{ row.profile }}" placeholder="inherit default" list="auth-profile-names"></td>
+                          <td><button type="button" class="btn btn-sm btn-outline-danger" data-js="remove-row"><i class="bi bi-trash"></i></button></td>
+                        </tr>
+                        {% else %}
+                        {# One blank row when nothing is configured: an empty
+                           table would render no input at all, so the admin
+                           would have to discover the "Add group" button before
+                           the form could carry a scope. #}
+                        <tr>
+                          <td><input class="form-control form-control-sm font-monospace" name="radius_group[]" value="" placeholder="fweb_users"></td>
+                          <td><input class="form-control form-control-sm" name="radius_group_profile[]" value="" placeholder="inherit default" list="auth-profile-names"></td>
+                          <td><button type="button" class="btn btn-sm btn-outline-danger" data-js="remove-row"><i class="bi bi-trash"></i></button></td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-outline-secondary mt-2" data-js="add-auth-group" data-target="radgrp-body" data-prefix="radius"><i class="bi bi-plus-lg me-1"></i>Add group</button>
+                  <div class="form-text">No rows = every user the appliance exposes. A group name the appliance does not have
+                    <strong>fails the whole import</strong> and names the groups it does have — a partial roster reported as success is how a typo becomes permanent.
+                    A user listed by two groups keeps the FIRST row's profile.</div>
+                </div>
+                <datalist id="auth-profile-names">
+                  {% for p in profiles %}<option value="{{ p.name }}"></option>{% endfor %}
+                </datalist>
               </div>
 
               <button type="submit" class="btn btn-sm fw-btn-primary"><i class="bi bi-save me-1"></i>Save authentication settings</button>
@@ -1038,6 +1140,16 @@
           </div>
           <div class="fw-card-body">
             <p class="text-muted mb-3" style="font-size:13px;">Tests the values CURRENTLY IN THE FORM (no need to save first). Add a test user + password to fully verify a bind.</p>
+            <div class="mb-2">
+              <label class="fw-form-label">Source to test</label>
+              <select id="auth-test-backend" class="form-select fw-form-control">
+                <option value="local">Local database</option>
+                <option value="ad">Active Directory</option>
+                <option value="ldap">LDAP (generic)</option>
+                <option value="radius">FortiAuthenticator / RADIUS</option>
+              </select>
+              <div class="form-text">One source at a time. A green tick for "the chain" would hide the one you are editing being broken.</div>
+            </div>
             <div class="row g-2 mb-2">
               <div class="col-6"><input type="text" id="auth-test-user" class="form-control fw-form-control" placeholder="test username"></div>
               <div class="col-6"><input type="password" id="auth-test-pass" class="form-control fw-form-control" autocomplete="new-password" placeholder="test password"></div>
@@ -4080,15 +4192,35 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // --- Authentication tab ---
+function authSrcOn(key) {
+  var el = document.getElementById('auth-src-' + key);
+  return !!(el && el.checked);
+}
 function authToggle() {
-  var b = document.getElementById('auth-backend').value;
-  var ldap = document.getElementById('auth-ldap-block');
-  var rad = document.getElementById('auth-radius-block');
-  if (ldap) ldap.style.display = (b === 'ad' || b === 'ldap') ? '' : 'none';
-  if (rad) rad.style.display = (b === 'radius') ? '' : 'none';
-  // The importer now covers RADIUS too (roster via the FortiAuthenticator API),
-  // so the panel follows "is an external backend selected", not a hardcoded pair.
-  var sync = document.getElementById('auth-sync-block'); if (sync) sync.style.display = (b === 'local') ? 'none' : '';
+  // Several sources can be on at once, so each block follows ITS OWN source -
+  // not "the selected one". AD and LDAP share the same connection block.
+  var anyLdap = authSrcOn('ad') || authSrcOn('ldap');
+  var rad = authSrcOn('radius');
+  var ldapBlock = document.getElementById('auth-ldap-block');
+  var radBlock = document.getElementById('auth-radius-block');
+  if (ldapBlock) ldapBlock.style.display = anyLdap ? '' : 'none';
+  if (radBlock) radBlock.style.display = rad ? '' : 'none';
+  var sync = document.getElementById('auth-sync-block');
+  if (sync) sync.style.display = (anyLdap || rad) ? '' : 'none';
+  var test = document.getElementById('auth-test-backend');
+  if (test && test.dataset.touched !== '1') {
+    test.value = authSrcOn('ad') ? 'ad' : (authSrcOn('ldap') ? 'ldap' : (rad ? 'radius' : 'local'));
+  }
+}
+function addAuthGroupRow(bodyId, prefix) {
+  var body = document.getElementById(bodyId);
+  if (!body) return;
+  var tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td><input class="form-control form-control-sm font-monospace" name="' + prefix + '_group[]" placeholder="group name / DN"></td>' +
+    '<td><input class="form-control form-control-sm" name="' + prefix + '_group_profile[]" placeholder="inherit default" list="auth-profile-names"></td>' +
+    '<td><button type="button" class="btn btn-sm btn-outline-danger" data-js="remove-row"><i class="bi bi-trash"></i></button></td>';
+  body.appendChild(tr);
 }
 function authTest() {
   var btn = document.getElementById('auth-test-btn');
@@ -4100,6 +4232,7 @@ function authTest() {
   var fd = new FormData(form);
   fd.set('test_username', (document.getElementById('auth-test-user') || {}).value || '');
   fd.set('test_password', (document.getElementById('auth-test-pass') || {}).value || '');
+  fd.set('test_backend', (document.getElementById('auth-test-backend') || {}).value || '');
   var csrfMeta = document.querySelector('meta[name=csrf-token]');
   var csrf = csrfMeta ? csrfMeta.content : '';
   fetch('/settings/auth/test', {method: 'POST', headers: {'X-CSRFToken': csrf}, body: fd})
@@ -4130,7 +4263,7 @@ function tfSetup() {
     .catch(function(e){ alert('Error: ' + e.message); btn.disabled = false; btn.innerHTML = '<i class="bi bi-qr-code me-1"></i>Set up 2FA'; });
 }
 document.addEventListener('DOMContentLoaded', function() {
-  if (document.getElementById('auth-backend')) { authToggle(); }
+  if (document.getElementById('auth-src-radius')) { authToggle(); }
 });
 
 // --- CSP-safe event bindings (replaces inline on* attributes) ---
@@ -4145,7 +4278,8 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
   // Delegated row-delete: covers server-rendered rows and rows added later
-  ['ipwl-body', 'segments-body', 'policylinks-body'].forEach(function (id) {
+  ['ipwl-body', 'segments-body', 'policylinks-body',
+   'ldapgrp-body', 'radgrp-body'].forEach(function (id) {
     var body = document.getElementById(id);
     if (!body) return;
     body.addEventListener('click', function (event) {
@@ -4163,7 +4297,14 @@ document.addEventListener('DOMContentLoaded', function() {
   on('em-auth', 'change', function (event) { emailToggleAuth(); });
   on('em-test-btn', 'click', function (event) { emailTest(); });
   on('al-preview-btn', 'click', function (event) { alertsPreview(); });
-  on('auth-backend', 'change', function (event) { authToggle(); });
+  ['ad', 'ldap', 'radius'].forEach(function (k) {
+    on('auth-src-' + k, 'change', function (event) { authToggle(); });
+  });
+  on('auth-test-backend', 'change', function (event) { event.target.dataset.touched = '1'; });
+  onJs('add-auth-group', 'click', function (event) {
+    var btn = event.currentTarget;
+    addAuthGroupRow(btn.dataset.target, btn.dataset.prefix);
+  });
   on('auth-test-btn', 'click', function (event) { authTest(); });
   on('tf-setup-btn', 'click', function (event) { tfSetup(); });
   onJs('twofa-disable-form', 'submit', function (event) {

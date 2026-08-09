@@ -404,12 +404,13 @@ def create_app(config_override: object | None = None) -> Flask:
                              'user=%s ip=%s endpoint=%s detail=%s',
                              current_user.username, _client_ip(), ep, _cfg_err)
             abort(503)
-        allowed = _store.allowed_users()
-        if allowed and current_user.username not in allowed:
-            app.logger.warning('ACCESS_DENY reason=user_not_allowed user=%s '
-                               'ip=%s endpoint=%s', current_user.username,
-                               _client_ip(), ep)
-            abort(403)
+        # The per-username allowlist that used to sit here is GONE. It was a
+        # fourth gate behind the directory group filter, the approval gate and
+        # the profile, and it decided nothing they did not - while going stale
+        # on every import: a user could be imported, approved and enabled and
+        # still take a blanket 403 whose only trace was the log line below.
+        # What remains is the IP whitelist, which answers a question no other
+        # gate does: WHERE a session may come from.
         wl = _store.ip_whitelist()
         if wl and not _ip_allowed(_client_ip(), wl):
             app.logger.warning('ACCESS_DENY reason=ip_not_whitelisted user=%s '
@@ -1558,6 +1559,21 @@ def create_app(config_override: object | None = None) -> Flask:
             _assign_missing_profiles()
             _seed_registry()
             _seed_acme_providers()
+            # A stored allowlist from before the feature was removed is no
+            # longer enforced. Say so once, loudly: an install that relied on
+            # it just got wider and silence would be the only warning.
+            try:
+                from .services import settings_store as _ss
+                _stale = _ss.stale_allowed_users()
+                if _stale:
+                    app.logger.warning(
+                        'ACCESS: %d stored allowed-user(s) (%s) are NO LONGER '
+                        'ENFORCED - the per-username allowlist was removed. '
+                        'Use profiles / the directory group filter instead; '
+                        'clear the leftover list in Settings -> Access Control.',
+                        len(_stale), ', '.join(_stale[:10]))
+            except Exception:  # noqa: BLE001 - a notice must never block boot
+                pass
             _seed_adoms()
             _seed_themes()
             _seed_analytics_boards()

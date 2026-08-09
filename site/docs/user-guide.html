@@ -166,9 +166,10 @@ codebase is assumed. For architecture and internals see the
   users</strong> into local rows so an admin can assign a profile <em>before</em> first
   sign-in — synced accounts are created <strong>disabled</strong>, pending approval.</li>
 <li><strong>Who can reach the app at all</strong> is a separate question from who can sign in:
-  <code>Settings → Access Control</code> (§26.2) carries an <strong>IP whitelist</strong> and an
-  <strong>allowed-users</strong> list. Both mean <em>everything</em> when left empty, and loopback
-  and admins are always allowed so neither can lock you out.</li>
+  <code>Settings → Access Control</code> (§26.2) carries an <strong>IP whitelist</strong>. It means
+  <em>everywhere</em> when left empty, and loopback and admins are always allowed so it
+  cannot lock you out. There is no per-username allowlist any more — the
+  directory group, the approval gate and the profile already decide that.</li>
 <li><strong>Roles.</strong> Three effective profiles ship, and they gate what you can do:</li>
 <li><em>readonly</em> — see everything, change nothing;</li>
 <li><em>operator</em> — day-to-day changes (<code>config_write</code>): policies, objects,
@@ -2328,16 +2329,25 @@ deliberate:</p>
   standalone install — is shown greyed with no buttons, not as a failure.</li>
 </ul>
 <h3 id="262-access-control-who-may-reach-the-app-at-all">26.2 Access Control — who may reach the app at all</h3>
-<p>Two independent gates, and <strong>both are empty-means-everything</strong>:</p>
+<p>One gate here, and it is <strong>empty-means-everywhere</strong>:</p>
 <ul>
 <li><strong>IP whitelist</strong> — only these source addresses or CIDRs may reach the app.
   Leave it empty to allow all. Each entry is validated as an IP or CIDR on save
   and an invalid one is skipped with a warning rather than silently stored.</li>
-<li><strong>Allowed users</strong> — only the ticked users may sign in. Tick none to allow all.</li>
 </ul>
 <p><strong>Loopback and admins are always allowed</strong>, on purpose: this page is exactly
 where a typo would otherwise lock everybody — including you — out of a running
-appliance. Only non-admin accounts are even offered in the list.</p>
+appliance.</p>
+<p><strong>There is no per-username allowlist.</strong> It was removed: three gates already
+answer "who may sign in", each in the place that owns the decision — the
+directory group filter (who may authenticate at all, §26.7), <em>Require
+administrator approval</em> (a first-time directory user lands disabled), and the
+<strong>profile</strong> (what they may do once inside, §26.3). A fourth list of names
+enforced nothing the other three did not and went stale on every import: an
+approved, enabled user still took a blanket <code>403</code> on every page. The IP
+whitelist stays because it answers a different question — <em>where</em> a session may
+come from, not who. If your install stored a list, the page shows it, says it is
+no longer enforced, and offers a button to clear the dead row.</p>
 <blockquote>
 <p>The per-user <strong>top-bar banner</strong> picker is <em>not</em> here and is not a login
 banner: it is a personal appearance preference, saved against your account, on
@@ -2413,17 +2423,44 @@ policy (what happens then), and the two are kept apart deliberately.</p>
   including the resolved recipient list, <strong>without sending anything</strong>. This is the
   right first move when a device is red and no mail arrived.</li>
 </ul>
-<h3 id="267-authentication-ldap-radius-and-directory-sync">26.7 Authentication — LDAP / RADIUS and directory sync</h3>
-<p>Choose the backend and configure it; local accounts keep working alongside it.</p>
+<h3 id="267-authentication-sign-in-sources-and-directory-import">26.7 Authentication — sign-in sources and directory import</h3>
+<p><strong>Sign-in sources.</strong> Tick as many as you need — Active Directory, LDAP,
+FortiAuthenticator/RADIUS — and give each an order. Sign-in walks them in that
+order and the <strong>first source that accepts the password wins</strong>. The <strong>local
+database is always on</strong> and is not in the list: it is the anti-lockout floor, and
+a local account is checked against its local password and never falls through to
+a directory.</p>
+<p>Order is not cosmetic. An unreachable source burns its <strong>whole timeout</strong> before
+the next one is tried, so a dead directory first in the chain makes every login
+slow; and every source ahead of the winner sees the failed attempt, which counts
+against <strong>that</strong> directory's lockout policy. Put the source most of your people
+use first.</p>
+<p>Active Directory and LDAP share <strong>one</strong> server connection — they are two bind
+styles (UPN simple bind vs service-account search + re-bind), so ticking both
+just tries both against the same server.</p>
 <ul>
 <li><strong>Test</strong> validates the connection using the values <strong>in the form</strong>, unsaved, so
-  you can iterate without committing a broken configuration.</li>
-<li><strong>Sync directory users</strong> imports the accounts in the configured sync group/OU
-  as local rows, so an admin can assign a profile and decide access <strong>before the
-  user's first sign-in</strong>. Imported rows are created <strong>disabled</strong> — pending
-  approval — and you land on the Users page to act on them. Nothing about this
-  grants access on its own.</li>
+  you can iterate without committing a broken configuration. You pick <strong>which
+  source</strong> to test: a green tick for "the chain" would hide the one you were
+  editing being broken.</li>
+<li><strong>Groups to import.</strong> Each source takes a list of groups, and each row a
+  <strong>profile its members get on import</strong> — so "import <code>grp_ops</code> as operator and
+  <code>grp_ro</code> as readonly" is one configuration. Leave the profile blank to inherit
+  the default above. No rows at all means everything the directory exposes. A
+  user listed by two groups keeps the <strong>first</strong> row's profile.
+  A group name the appliance does not have <strong>fails the whole import</strong> and lists
+  the groups it does have — importing a partial roster and reporting success is
+  how a typo survives forever.</li>
+<li><strong>Sync directory users</strong> imports those accounts as local rows, so an admin can
+  assign a profile and decide access <strong>before the user's first sign-in</strong>.
+  Imported rows are created <strong>disabled</strong> — pending approval — and you land on the
+  Users page to act on them. Nothing about this grants access on its own.</li>
 </ul>
+<p>The per-group profile applies to the <strong>importer</strong>. A user who signs in without
+having been imported gets the <strong>default profile</strong> (<code>readonly</code> as shipped),
+because a RADIUS Access-Accept carries no group and asking the appliance for one
+would put a REST call on the critical path of every first login. That is the
+other half of why the approval gate exists.</p>
 <p>Directory accounts manage their own password and MFA at the directory; the
 Security tab says so rather than offering controls that would not work.</p>
 <h3 id="268-node-tls-the-certificate-satom-itself-presents">26.8 Node TLS — the certificate <em>SATOM itself</em> presents</h3>

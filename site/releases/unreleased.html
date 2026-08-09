@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changes · 0 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Fixed · 9 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changes · 0 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Fixed · 9 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
-        <ul class="rel-leads"></ul>
+        <span class="rel-nav-meta">unreleased · Added · Fixed · 9 entries</span>
+        <ul class="rel-leads"><li>NetBox is now the maintenance window</li><li>Integration hooks — your own Python, run out of process</li><li>Fail-closed external approval</li><li class="rel-more">… and 6 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.9.2.html" data-rel-version="1.9.2">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.9.2</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -180,7 +180,108 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-
+<h3 id="added">Added</h3>
+<ul>
+<li><strong>NetBox is now the maintenance window.</strong> Settings → Integrations wires SATOM
+  to a NetBox instance (URL, encrypted token, TLS verification, a hard timeout
+  and a per-appliance device mapping) and opens a real maintenance window when a
+  change request starts running, closing it from the outcome when the run ends.
+  Stated plainly because it decides how this works: <strong>NetBox core has no
+  maintenance-window object</strong> — that lives in third-party plugins — so SATOM
+  records the window using core models only (a journal entry, a device tag, or
+  device custom fields, selectable) and therefore works against any NetBox, with
+  or without plugins. Every window time carries an explicit <code>+00:00</code> offset:
+  SATOM stores naive UTC, and a naive timestamp handed to another system is read
+  in <em>that</em> system's timezone. That is not theoretical — against NetBox 4.6.7 a
+  naive value round-trips with no <code>Z</code>, i.e. it was taken in the server's own
+  zone, which is how a window silently moves by hours.</li>
+<li><strong>Integration hooks — your own Python, run out of process.</strong> A hook is a small
+  script SATOM runs when it emits an event (<code>change.requested</code>,
+  <code>change.approved</code>, <code>window.opening</code>, <code>window.closing</code>, <code>upgrade.finished</code>,
+  <code>upgrade.failed</code>) — for example, opening a change ticket in your own CRM and
+  handing the reference back to the change request. Hooks <strong>never execute inside
+  the web application</strong>: saving one only writes it to disk, and a privileged
+  runner (<code>satom-integrations.service</code>, watching a queue directory exactly like
+  <code>satom-updater</code>) executes it as an unprivileged user, in its own process
+  group, with a hard timeout, and with only the secrets the hook declared. A
+  syntax error is refused at save time with its message rather than discovered
+  at 03:00 inside a maintenance window; captured output is truncated and any
+  declared secret's value is redacted before it is stored. A hook returns its
+  result through a dedicated channel, not by printing JSON — otherwise a script
+  could fake its own verdict.</li>
+<li><strong>Fail-closed external approval.</strong> A change request can be bound to an
+  external change authority (Approval → <em>External</em>); it is then runnable only
+  once that authority explicitly approved it. Unreachable, slow, ambiguous and
+  never-asked all land on the same side of that line — the entire reason to
+  route approval through a change-management system is that silence means no.
+  Withdrawing an approval clears the record, so it cannot still open a window.
+  Change requests that predate this default to <em>Manual</em> and behave exactly as
+  before.</li>
+<li>
+<p>The change-request page now shows the external ticket reference and link, the
+  window's state in NetBox, and an integration log. That state distinguishes
+  <strong>“none requested”</strong> from <strong>“error”</strong> — collapsing them would let an
+  integration outage read as a deliberate decision and hide that NetBox may
+  still show a device in maintenance.</p>
+</li>
+<li>
+<p><strong>The affected users are emailed when the window closes</strong>, on success and on
+  failure, with the reason attached. Recipients come from the change request's
+  own <em>Notify on completion</em> list, falling back to the default recipients in
+  Settings → Email; when neither is set nothing is sent and the request records
+  why — SATOM never guesses an address. The notice is sent once, is deliberately
+  not the pre-window warning (that one tells a customer to brace for an outage
+  that is already over), and a send failure never re-grades the change: an
+  upgrade that worked worked whether or not the SMTP server answered. A failed
+  send records no delivery timestamp, so the notice stays retryable.</p>
+</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li>
+<p><strong>The hardened runner sandbox silently broke its own queue.</strong> The
+  integration-hooks unit granted four separate <code>ReadWritePaths=</code>, and systemd
+  makes each one its own bind-mount: the runner's claim step is a <code>rename(2)</code>
+  between two of those directories, which across mounts is <code>EXDEV</code>. The runner
+  reads that error as “another runner claimed it first”, so the request was
+  never executed, nothing was logged, the status stayed <code>queued</code>, and because
+  the watch is level-triggered the unit re-fired until systemd hit its start
+  limit. The queue now lives under one parent with a single grant — narrow
+  enough that a hook still cannot reach <code>data/sot/</code> or <code>data/jobs/</code> — and a
+  guard asserts both halves so a future tidy-up cannot reintroduce it.</p>
+</li>
+<li>
+<p><strong>Deleting an object other objects still point at is refused.</strong> SATOM sent a
+  <code>DELETE</code> for any object the operator named and let the appliance decide.
+  FortiWeb does not reliably refuse a referenced object, and when it does not,
+  nothing fails: the holders keep naming something that no longer resolves and
+  the first symptom is broken traffic. Every delete now reads the device's own
+  <code>q_ref</code> bookkeeping first and refuses while the count is non-zero, <strong>naming
+  the holders</strong> when the collection reports them
+  (<code>inline-protection(wpp-full-lab)</code>). The check runs on the <strong>Preview</strong> too,
+  so the refusal appears before the confirmation prompt rather than after it.
+  An object whose refcount could not be read is <strong>not</strong> deleted; a firmware
+  that does not report refcounts at all is not blocked, because a missing
+  capability is not a missing answer. <code>force: true</code> on the delete endpoint
+  overrides a refcount the firmware got wrong and is stamped in the audit
+  detail as <code>ref_check=forced</code>.</p>
+</li>
+<li><strong>A Change Request can now end.</strong> The lifecycle declared seven states and only
+  three had anything that wrote them: <code>approved</code>, <code>cancelled</code> and <code>scheduled</code>.
+  Nothing ever assigned <code>in_progress</code>, <code>completed</code> or <code>failed</code>, so a change
+  request that fired its upgrade stayed at <code>scheduled</code> for good — the bound
+  action is a one-shot, so nothing was ever coming back to close it. Nothing
+  failed while that was true; the record simply stopped describing reality. The
+  executor now moves the request to <code>in_progress</code> when the window authorizes the
+  fire and closes it from the outcome afterwards. A run that skipped is graded
+  <strong>failed</strong>, not left open: a window that elapsed without the change happening
+  did not succeed, and the operator has to see the reason.</li>
+<li><strong>The maintenance-window gate applied to one action name.</strong> It was keyed off
+  <code>action == "upgrade"</code> while the change-request form already offered
+  <code>upgrade_prep</code>, so that one fired with no approval and outside its window —
+  the one thing the gate exists to prevent. Any action bound to a change request
+  is now gated by it.</li>
+</ul>
 <p class="rel-prevnext"><a href="v1.9.2.html">Version 1.9.2 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">

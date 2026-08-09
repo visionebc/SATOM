@@ -1,0 +1,23 @@
+# Watches the integration-hook queue. When the web app (unprivileged) drops a
+# request JSON into data/integrations/queue/, this fires the runner.
+# DirectoryNotEmpty re-fires if the runner leaves anything queued (it drains at
+# most MAX_DRAIN per invocation), so requests are handled one batch after
+# another. The enqueue side writes ".<id>.json.tmp" and os.replace()s it into
+# place, so this unit never fires on a half-written request.
+#
+# MUST be `systemctl enable --now satom-integrations.path` on BOTH HA NODES.
+# Precedent: satom-updater.path was left disabled on the standby, and every
+# update enqueued there sat in `queued` forever while the UI showed a job that
+# was, as far as systemd was concerned, never requested. A hook queue fails the
+# same way and even quieter — nobody watches for a CRM ticket that was never
+# opened. Whichever node serves the request enqueues locally; only a runner on
+# THAT node will ever drain it.
+[Unit]
+Description=Watch for SATOM integration-hook requests
+
+[Path]
+DirectoryNotEmpty=/opt/satom/data/integrations/queue
+Unit=satom-integrations.service
+
+[Install]
+WantedBy=multi-user.target

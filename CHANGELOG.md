@@ -6,6 +6,103 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **NetBox is now the maintenance window.** Settings → Integrations wires SATOM
+  to a NetBox instance (URL, encrypted token, TLS verification, a hard timeout
+  and a per-appliance device mapping) and opens a real maintenance window when a
+  change request starts running, closing it from the outcome when the run ends.
+  Stated plainly because it decides how this works: **NetBox core has no
+  maintenance-window object** — that lives in third-party plugins — so SATOM
+  records the window using core models only (a journal entry, a device tag, or
+  device custom fields, selectable) and therefore works against any NetBox, with
+  or without plugins. Every window time carries an explicit `+00:00` offset:
+  SATOM stores naive UTC, and a naive timestamp handed to another system is read
+  in *that* system's timezone. That is not theoretical — against NetBox 4.6.7 a
+  naive value round-trips with no `Z`, i.e. it was taken in the server's own
+  zone, which is how a window silently moves by hours.
+- **Integration hooks — your own Python, run out of process.** A hook is a small
+  script SATOM runs when it emits an event (`change.requested`,
+  `change.approved`, `window.opening`, `window.closing`, `upgrade.finished`,
+  `upgrade.failed`) — for example, opening a change ticket in your own CRM and
+  handing the reference back to the change request. Hooks **never execute inside
+  the web application**: saving one only writes it to disk, and a privileged
+  runner (`satom-integrations.service`, watching a queue directory exactly like
+  `satom-updater`) executes it as an unprivileged user, in its own process
+  group, with a hard timeout, and with only the secrets the hook declared. A
+  syntax error is refused at save time with its message rather than discovered
+  at 03:00 inside a maintenance window; captured output is truncated and any
+  declared secret's value is redacted before it is stored. A hook returns its
+  result through a dedicated channel, not by printing JSON — otherwise a script
+  could fake its own verdict.
+- **Fail-closed external approval.** A change request can be bound to an
+  external change authority (Approval → *External*); it is then runnable only
+  once that authority explicitly approved it. Unreachable, slow, ambiguous and
+  never-asked all land on the same side of that line — the entire reason to
+  route approval through a change-management system is that silence means no.
+  Withdrawing an approval clears the record, so it cannot still open a window.
+  Change requests that predate this default to *Manual* and behave exactly as
+  before.
+- The change-request page now shows the external ticket reference and link, the
+  window's state in NetBox, and an integration log. That state distinguishes
+  **“none requested”** from **“error”** — collapsing them would let an
+  integration outage read as a deliberate decision and hide that NetBox may
+  still show a device in maintenance.
+
+
+- **The affected users are emailed when the window closes**, on success and on
+  failure, with the reason attached. Recipients come from the change request's
+  own *Notify on completion* list, falling back to the default recipients in
+  Settings → Email; when neither is set nothing is sent and the request records
+  why — SATOM never guesses an address. The notice is sent once, is deliberately
+  not the pre-window warning (that one tells a customer to brace for an outage
+  that is already over), and a send failure never re-grades the change: an
+  upgrade that worked worked whether or not the SMTP server answered. A failed
+  send records no delivery timestamp, so the notice stays retryable.
+
+### Fixed
+
+- **The hardened runner sandbox silently broke its own queue.** The
+  integration-hooks unit granted four separate `ReadWritePaths=`, and systemd
+  makes each one its own bind-mount: the runner's claim step is a `rename(2)`
+  between two of those directories, which across mounts is `EXDEV`. The runner
+  reads that error as “another runner claimed it first”, so the request was
+  never executed, nothing was logged, the status stayed `queued`, and because
+  the watch is level-triggered the unit re-fired until systemd hit its start
+  limit. The queue now lives under one parent with a single grant — narrow
+  enough that a hook still cannot reach `data/sot/` or `data/jobs/` — and a
+  guard asserts both halves so a future tidy-up cannot reintroduce it.
+
+- **Deleting an object other objects still point at is refused.** SATOM sent a
+  `DELETE` for any object the operator named and let the appliance decide.
+  FortiWeb does not reliably refuse a referenced object, and when it does not,
+  nothing fails: the holders keep naming something that no longer resolves and
+  the first symptom is broken traffic. Every delete now reads the device's own
+  `q_ref` bookkeeping first and refuses while the count is non-zero, **naming
+  the holders** when the collection reports them
+  (`inline-protection(wpp-full-lab)`). The check runs on the **Preview** too,
+  so the refusal appears before the confirmation prompt rather than after it.
+  An object whose refcount could not be read is **not** deleted; a firmware
+  that does not report refcounts at all is not blocked, because a missing
+  capability is not a missing answer. `force: true` on the delete endpoint
+  overrides a refcount the firmware got wrong and is stamped in the audit
+  detail as `ref_check=forced`.
+- **A Change Request can now end.** The lifecycle declared seven states and only
+  three had anything that wrote them: `approved`, `cancelled` and `scheduled`.
+  Nothing ever assigned `in_progress`, `completed` or `failed`, so a change
+  request that fired its upgrade stayed at `scheduled` for good — the bound
+  action is a one-shot, so nothing was ever coming back to close it. Nothing
+  failed while that was true; the record simply stopped describing reality. The
+  executor now moves the request to `in_progress` when the window authorizes the
+  fire and closes it from the outcome afterwards. A run that skipped is graded
+  **failed**, not left open: a window that elapsed without the change happening
+  did not succeed, and the operator has to see the reason.
+- **The maintenance-window gate applied to one action name.** It was keyed off
+  `action == "upgrade"` while the change-request form already offered
+  `upgrade_prep`, so that one fired with no approval and outside its window —
+  the one thing the gate exists to prevent. Any action bound to a change request
+  is now gated by it.
+
 ## [1.9.2] - 2026-08-09
 
 ### Fixed

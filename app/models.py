@@ -1078,8 +1078,32 @@ class ChangeRequest(db.Model):
     approved_at = db.Column(db.DateTime, nullable=True)
     notify_status = db.Column(db.String(16), nullable=False, default="none")  # none|drafted|sent
     notify_log = db.Column(db.Text, nullable=True, default="")
+    # End-of-window notification, kept SEPARATE from notify_status (which tracks
+    # the PRE-window warning): "we told them it is scheduled" and "we told them
+    # it is done" are different facts and one field cannot carry both.
+    # final_notified_at is NULLABLE with no default, so every CR that predates
+    # the feature reads as "never notified" instead of a fabricated timestamp.
+    notify_to = db.Column(db.Text, nullable=True, default="")
+    final_notified_at = db.Column(db.DateTime, nullable=True)
     scheduled_action_id = db.Column(db.Integer, nullable=True)
     result_summary = db.Column(db.Text, nullable=True, default="")
+    # --- cross-system orchestration (NetBox window + external CRQ) ------
+    # approval_mode 'external' makes this CR fail-closed: it is runnable
+    # only once an external approver stamped external_approved_at. The
+    # default stays 'manual' so every pre-existing CR keeps behaving
+    # exactly as it did - a migration must not retroactively gate work
+    # nobody bound to a CRM.
+    approval_mode = db.Column(db.String(16), nullable=False, default="manual")
+    external_approved_at = db.Column(db.DateTime, nullable=True)
+    external_approved_by = db.Column(db.String(64), nullable=True, default="")
+    crq_ref = db.Column(db.String(128), nullable=True, default="")
+    crq_url = db.Column(db.String(512), nullable=True, default="")
+    # mw_state distinguishes 'we never asked NetBox' (none) from 'we asked
+    # and it failed' (error). Collapsing them would let a silent
+    # integration outage read as a deliberate decision not to use one.
+    mw_ref = db.Column(db.String(512), nullable=True, default="")
+    mw_state = db.Column(db.String(16), nullable=False, default="none")
+    integration_log = db.Column(db.Text, nullable=True, default="")
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

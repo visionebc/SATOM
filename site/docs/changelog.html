@@ -180,6 +180,20 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 </ul>
 <h3 id="removed">Removed</h3>
 <ul>
+<li><strong>The vendor mark, as a file</strong> (<code>app/static/img/favicon.svg</code>). A previous
+  round stopped every live template from <em>referencing</em> Fortinet's registered
+  glyph in <code>#ee3124</code>, but left the artwork in the tree — so <code>GET
+  /static/img/favicon.svg</code> still answered <strong>200</strong> from SATOM's own origin.
+  Under Elastic License 2.0 this product is sold, which makes a vendor mark on
+  our static path a trademark surface rather than a stale asset. The
+  appliance-type marks (<code>fortiweb-mark.svg</code>, <code>fortiadc-mark.svg</code>,
+  <code>fortianalyzer-mark.svg</code>, <code>fortiauthenticator-mark.svg</code>) <strong>stay</strong>: they label
+  which kind of box a row is about, which is nominative use, and none of them
+  uses the corporate red. Deleting a file is the change where <em>nothing</em> fails,
+  so the guards are assertions of absence — one of them over HTTP, because "not
+  in the repo" and "not served" are different claims — plus a sweep that would
+  catch the same artwork under a different filename, which is how this one
+  survived three project renames in the first place.</li>
 <li><strong>The per-username allowlist</strong> (<code>Settings → Access Control → Allowed Users</code>).
   It was a fourth gate stacked behind the directory group filter, the approval
   gate and the profile, and it enforced nothing the three of them did not —

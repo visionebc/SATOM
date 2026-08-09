@@ -88,3 +88,49 @@ def test_generator_emits_the_ico_link():
     over self-documenting source has produced three false passes in this repo."""
     src = (ROOT / "deploy" / "gen_site_docs.py").read_text()
     assert '<link rel="icon" href="{up}favicon.ico" sizes="any">' in src
+
+
+# --- Removal of the vendor mark (2026-08-09) --------------------------------
+#
+# Guarding "no live template references it" left the artwork itself on disk AND
+# reachable: ``GET /static/img/favicon.svg`` answered 200 with Fortinet's
+# registered glyph in ``#ee3124``, served from SATOM's own static path. Under
+# Elastic License 2.0 this product is sold, so a vendor mark on our origin is a
+# trademark surface, not a stale asset. Deleting a file is the change where
+# NOTHING fails -- the code path simply stops existing -- so these are
+# assertions of ABSENCE, and one of them speaks HTTP, because "not in the repo"
+# and "not served" are different claims.
+
+VENDOR_RED = "ee3124"
+
+
+def test_the_vendor_mark_is_not_shipped_at_all():
+    assert not (ROOT / "app" / "static" / "img" / "favicon.svg").is_file(), (
+        "app/static/img/favicon.svg is back; that file is the Fortinet mark")
+
+
+def test_the_vendor_mark_is_not_reachable_over_http(client):
+    """A file can be untracked and still sit on a deployed node."""
+    r = client.get("/static/img/favicon.svg")
+    assert r.status_code == 404, (
+        "/static/img/favicon.svg answered %s; the vendor mark is still served"
+        % r.status_code)
+
+
+def test_no_shipped_vector_asset_carries_the_vendor_red():
+    """Catches a RENAMED copy, which is the failure mode that let this file
+    survive three project renames: no sweep for "fortinet" matches a filename
+    that says neither. The appliance-type marks (fortiweb/fortiadc/...) are
+    nominative use and are deliberately in scope -- none of them uses the
+    corporate red, and if one starts to, that is worth a look."""
+    offenders = []
+    for base in ("app/static", "site"):
+        root = ROOT / base
+        if not root.is_dir():
+            continue
+        for svg in root.rglob("*.svg"):
+            if VENDOR_RED in svg.read_text(errors="ignore").lower():
+                offenders.append(str(svg.relative_to(ROOT)))
+    assert offenders == [], (
+        "these shipped vectors carry the vendor red #%s: %s"
+        % (VENDOR_RED, offenders))

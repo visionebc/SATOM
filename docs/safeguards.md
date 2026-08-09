@@ -6615,3 +6615,63 @@ not just the tree. Every one of those 97 buttons falls back to bare Bootstrap
 on this page — "Run preparation" — renders as plain text. Preexisting; fixing it
 changes the appearance of every page in the product, so it is a separate ask.
 
+## §55. Evidence you cannot open is a receipt
+
+`tests/test_upgrade_prep_chrome.py` (recorded-run half) — 2026-08-10.
+
+The pre-upgrade runs had been persisted since §51: appended, never overwritten,
+citable by a change request. The page listed them with a verdict, a firmware
+build and a service count. **And there was no way to open one.** The health
+battery, the backup filename and the per-policy baseline that produced the
+verdict were inside the row, in JSON, unreachable from the UI.
+
+Nothing failed. The page rendered, the row rendered, the count was right, the
+change document cited the right run id. What was missing had no failure mode of
+its own — the same shape as §53 (a brand never fails) and §54 (output can be
+rendered and invisible). **The claim was true and useless.**
+
+What the guards fix, and why each one:
+
+1. **A stored run and a live run share ONE renderer.** Both endpoints answer
+   with the same payload shape and the page paints both with `paint(j)`. Two
+   renderers for one payload drift silently: both keep painting, and nothing on
+   screen says which description of the evidence is the true one. The guard
+   asserts the run handler owns no private copy of the painting code.
+2. **A recorded run must ANNOUNCE that it is recorded** (`stored`, `created_at`,
+   `created_by`). The panel is the same panel. A two-day-old health battery
+   looks exactly like one taken thirty seconds ago, and that is how a box gets
+   upgraded on a pre-flight that predates the fault it was meant to catch.
+3. **The appliance is part of the lookup key.** A prep id from another device
+   would otherwise render under this device's heading — evidence about a box
+   nobody checked, which is worse than no evidence.
+4. **Column headings come from `prep_store.FIELDS`**, the catalog the CSV/XLSX
+   exports are built from. Hand-typed headings give one column two names, and
+   the operator comparing the screen against the signed sheet has nothing to
+   tell him which one the approval covers. (Same failure as the footer string in
+   §53: two authors of one phrase.)
+5. **Three probe states stay three.** `''` never probed, `false` probed and
+   failed, `true` reachable. Collapsing unknown into down invents an outage;
+   collapsing it into up hides one. `prep_store.build_inventory` writes all
+   three deliberately and the table must not flatten them.
+6. **The list says it is capped.** Ten rows, labelled ten; a fresh run does not
+   appear in a server-rendered table until reload, so the page says so. A
+   truncated list that looks complete is a false statement.
+
+### The assertion that passed with the gate deleted
+
+`test_recorded_run_requires_the_same_permission_as_running_one` first asserted
+that an anonymous caller is refused. It passed with `@require_permission`
+**removed** — `login_required` alone produces the same redirect. The mutation
+run caught it; the assertion proved authentication and claimed authorisation.
+Only a logged-in **readonly** user separates the two gates. This is the tenth
+assertion in this repo to match something it never meant.
+
+### Recipe
+
+    venv/bin/python -m pytest tests/test_upgrade_prep_chrome.py -q     # 22, RC=0
+    venv/bin/python /root/mutate_prep.py                               # 12/12 killed
+
+Mutation verdicts are read from the **return code** (`rc==1` is a failure;
+`rc==4` is a usage error and `pytest` prints `FAILED` in upper case), and the
+browser pass is not optional: the defect class here lives between the template
+and the stylesheet, where no test can see it.

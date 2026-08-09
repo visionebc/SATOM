@@ -6563,6 +6563,59 @@ not just the tree. Every one of those 97 buttons falls back to bare Bootstrap
 <code>.btn</code>: padding and cursor, no background, no border. The primary call to action
 on this page — "Run preparation" — renders as plain text. Preexisting; fixing it
 changes the appearance of every page in the product, so it is a separate ask.</p>
+<h2 id="55-evidence-you-cannot-open-is-a-receipt">§55. Evidence you cannot open is a receipt</h2>
+<p><code>tests/test_upgrade_prep_chrome.py</code> (recorded-run half) — 2026-08-10.</p>
+<p>The pre-upgrade runs had been persisted since §51: appended, never overwritten,
+citable by a change request. The page listed them with a verdict, a firmware
+build and a service count. <strong>And there was no way to open one.</strong> The health
+battery, the backup filename and the per-policy baseline that produced the
+verdict were inside the row, in JSON, unreachable from the UI.</p>
+<p>Nothing failed. The page rendered, the row rendered, the count was right, the
+change document cited the right run id. What was missing had no failure mode of
+its own — the same shape as §53 (a brand never fails) and §54 (output can be
+rendered and invisible). <strong>The claim was true and useless.</strong></p>
+<p>What the guards fix, and why each one:</p>
+<ol>
+<li><strong>A stored run and a live run share ONE renderer.</strong> Both endpoints answer
+   with the same payload shape and the page paints both with <code>paint(j)</code>. Two
+   renderers for one payload drift silently: both keep painting, and nothing on
+   screen says which description of the evidence is the true one. The guard
+   asserts the run handler owns no private copy of the painting code.</li>
+<li><strong>A recorded run must ANNOUNCE that it is recorded</strong> (<code>stored</code>, <code>created_at</code>,
+   <code>created_by</code>). The panel is the same panel. A two-day-old health battery
+   looks exactly like one taken thirty seconds ago, and that is how a box gets
+   upgraded on a pre-flight that predates the fault it was meant to catch.</li>
+<li><strong>The appliance is part of the lookup key.</strong> A prep id from another device
+   would otherwise render under this device's heading — evidence about a box
+   nobody checked, which is worse than no evidence.</li>
+<li><strong>Column headings come from <code>prep_store.FIELDS</code></strong>, the catalog the CSV/XLSX
+   exports are built from. Hand-typed headings give one column two names, and
+   the operator comparing the screen against the signed sheet has nothing to
+   tell him which one the approval covers. (Same failure as the footer string in
+   §53: two authors of one phrase.)</li>
+<li><strong>Three probe states stay three.</strong> <code>''</code> never probed, <code>false</code> probed and
+   failed, <code>true</code> reachable. Collapsing unknown into down invents an outage;
+   collapsing it into up hides one. <code>prep_store.build_inventory</code> writes all
+   three deliberately and the table must not flatten them.</li>
+<li><strong>The list says it is capped.</strong> Ten rows, labelled ten; a fresh run does not
+   appear in a server-rendered table until reload, so the page says so. A
+   truncated list that looks complete is a false statement.</li>
+</ol>
+<h3 id="the-assertion-that-passed-with-the-gate-deleted">The assertion that passed with the gate deleted</h3>
+<p><code>test_recorded_run_requires_the_same_permission_as_running_one</code> first asserted
+that an anonymous caller is refused. It passed with <code>@require_permission</code>
+<strong>removed</strong> — <code>login_required</code> alone produces the same redirect. The mutation
+run caught it; the assertion proved authentication and claimed authorisation.
+Only a logged-in <strong>readonly</strong> user separates the two gates. This is the tenth
+assertion in this repo to match something it never meant.</p>
+<h3 id="recipe">Recipe</h3>
+<pre><code>venv/bin/python -m pytest tests/test_upgrade_prep_chrome.py -q     # 22, RC=0
+venv/bin/python /root/mutate_prep.py                               # 12/12 killed
+</code></pre>
+<p>Mutation verdicts are read from the <strong>return code</strong> (<code>rc==1</code> is a failure;
+<code>rc==4</code> is a usage error and <code>pytest</code> prints <code>FAILED</code> in upper case), and the
+browser pass is not optional: the defect class here lives between the template
+and the stylesheet, where no test can see it.</p>
     </div>
   </div>
 </section>

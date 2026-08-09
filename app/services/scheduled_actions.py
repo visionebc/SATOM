@@ -1019,13 +1019,17 @@ def execute_and_record(action_row, *, trigger: str = "schedule"):
        AND running_at IS NULL``. If it updates 0 rows the action is already running
        (another process / a concurrent Run-now), so we return ``None``.
     2. open a ``ScheduledActionRun`` (status 'running').
-    3. for an ``upgrade`` bound to a Change Request, re-check
+    3. for ANY action bound to a Change Request, re-check
        ``change_requests.cr_runnable`` at fire time; if not runnable -> 'skipped',
-       no device write.
+       no device write, and the CR is left UNTOUCHED (a window that never opened
+       must not record a change that started).
     4. run the action against each target (``targets_list``; ``[]`` = the whole
        FortiWeb fleet; a no-target action runs once).
     5. finalize the run, roll ``next_run`` ('once' -> ``None``), and ALWAYS clear
        ``running_at`` (a ``finally`` lease release, even on error).
+    6. close the bound CR from the outcome ('ok' -> completed, anything else ->
+       failed) and mail the end-of-window notice - isolated so a bookkeeping or
+       SMTP failure can never roll back (5) nor strand the lease.
 
     Returns the ``ScheduledActionRun`` row, or ``None`` if the claim was lost.
     """
@@ -1051,6 +1055,10 @@ def execute_and_record(action_row, *, trigger: str = "schedule"):
     status = "failed"
     summary = ""
     log_lines: list[str] = []
+    # Bound-CR bookkeeping, initialised OUTSIDE the try so the closing block can
+    # still read them when the try dies on its very first statement.
+    cr_bound_id = None
+    cr_gated = False
     try:
         spec = get_spec(action_row.action)
         if spec is None:
@@ -1059,17 +1067,25 @@ def execute_and_record(action_row, *, trigger: str = "schedule"):
         else:
             params = action_row.params_dict
             gated = False
-            # (3) Upgrade authorized by a Change Request: re-check at fire time.
-            if action_row.action == "upgrade" and params.get("change_request_id"):
+            # (3) ANY action bound to a Change Request is authorized by that CR,
+            # not just 'upgrade'. The binding is written into the action params
+            # by change_requests.schedule_change_request, so honouring it for a
+            # single action name let every OTHER windowed change (config push,
+            # restore, reboot...) fire unapproved and outside its window - the
+            # exact thing the gate exists to stop.
+            cr_bound_id = _as_int(params.get("change_request_id"))
+            if cr_bound_id is not None:
                 from . import change_requests  # local import: avoid any import cycle
-                cr = db.session.get(
-                    ChangeRequest, _as_int(params.get("change_request_id")))
+                cr = db.session.get(ChangeRequest, cr_bound_id)
                 ok, reason = change_requests.cr_runnable(cr)
                 if not ok:
                     status = "skipped"
                     summary = f"change request: {reason}"
                     log_lines.append(summary)
                     gated = True
+                    cr_gated = True
+                else:
+                    change_requests.start(cr, by=f"scheduler:{trigger}"[:64])
             # (4) Run per target.
             if not gated:
                 status, summary, log_lines = _run_targets(
@@ -1108,6 +1124,23 @@ def execute_and_record(action_row, *, trigger: str = "schedule"):
                 db.session.commit()
             except Exception:  # noqa: BLE001
                 db.session.rollback()
+    # (6) Close the bound CR from this run's outcome and mail the end-of-window
+    # notice. Isolated on purpose: a bookkeeping or SMTP failure here must never
+    # roll back the run row nor strand the lease - that is precisely how an
+    # over-long label once killed a WPP clone already written to the device.
+    if cr_bound_id is not None and not cr_gated:
+        try:
+            from . import change_requests
+            # finish() now closes the NetBox window, dispatches the outcome
+            # hooks and mails the notice (cr_orchestrator.on_finish). The
+            # explicit notify_outcome call that used to live here would be a
+            # SECOND caller of the same step - and two callers of one step is
+            # how a product ends up with two implementations of it.
+            change_requests.finish(
+                cr_bound_id, status, by=f"scheduler:{trigger}"[:64],
+                summary=summary or status)
+        except Exception:  # noqa: BLE001 - notification must not re-grade a run
+            db.session.rollback()
     return run
 
 

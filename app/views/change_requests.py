@@ -118,7 +118,14 @@ def new():
             window_end=_parse_dt(request.form.get('window_end')),
             risk=risk,
             rollback=(request.form.get('rollback') or '').strip(),
+            notify_to=(request.form.get('notify_to') or '').strip(),
             requested_by=current_user.username,
+            # An unrecognised value falls back to 'manual', NOT to 'external':
+            # a form glitch must not silently bind a change to an approver
+            # nobody configured, which would strand it un-runnable forever.
+            approval_mode=('external'
+                           if (request.form.get('approval_mode') or '').strip()
+                           == 'external' else 'manual'),
         )
         db.session.add(cr)
         db.session.commit()
@@ -247,6 +254,33 @@ def mark_notified(id):
         db.session.commit()
         log_action('change_request.notified', target=cr.title)
         flash('Notice marked as sent. Configure Settings -> Email to deliver it automatically.', 'info')
+    return redirect(url_for('change_requests.detail', id=id))
+
+
+@bp.route('/<int:id>/request-crq', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def request_crq(id):
+    """Raise the external change ticket by queueing the ``change.requested``
+    hooks.
+
+    Returns immediately with a count of what was QUEUED, never with a ticket id:
+    hooks run out of process, so the CRM's answer arrives later. Blocking this
+    request until somebody else's CRM replies would hand a third party the
+    ability to hang the console."""
+    from ..services import cr_orchestrator as orch
+    cr = ChangeRequest.query.get_or_404(id)
+    result = orch.request_crq(cr, by=current_user.username)
+    log_action('change_request.crq_requested', target=cr.title,
+               detail=f"dispatched={result.get('dispatched', 0)}")
+    if result.get('dispatched'):
+        flash(f"Queued {result['dispatched']} integration hook(s). The ticket "
+              f"reference appears here once your system answers.", 'success')
+    else:
+        # An enabled-but-unbound integration silently doing nothing is the
+        # failure mode this message exists to prevent.
+        flash('No enabled hook is bound to change.requested — nothing was sent.',
+              'warning')
     return redirect(url_for('change_requests.detail', id=id))
 
 

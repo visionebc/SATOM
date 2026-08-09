@@ -5869,6 +5869,262 @@ the guard, machine-composed does not.</p>
 <code>subresource-integrity-policy=admin</code>) to <code>/objedit/&lt;id&gt;/save-object</code> <strong>without</strong>
 <code>apply</code>. It must answer <strong>400</strong> naming <code>subresource-integrity-policy</code>, and the
 same POST minus that field must preview a PUT.</p>
+<h2 id="42-a-delete-the-device-accepts-can-still-be-the-wrong-delete">42. A delete the device accepts can still be the wrong delete</h2>
+<p><code>ref_validate</code> (§40) and the delete guard are mirror images, and their policies
+are <strong>opposite on both axes</strong>. That is why they are separate modules: a single
+one would invite reusing the wrong half.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>ref_validate</code> (pre-write)</th>
+<th><code>delete_guard</code> (pre-delete)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>runs at</td>
+<td>the operator-facing edit views</td>
+<td><code>FortiWebOps.delete</code> itself</td>
+</tr>
+<tr>
+<td>"we could not ask"</td>
+<td>proceeds</td>
+<td><strong>refuses</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The asymmetry is not a preference. A write that names a missing object is
+refused <strong>by the device</strong> with <code>errcode -651</code>, so a failed pre-check costs
+nothing and blocking would make the editor unusable on a flaky box. A delete
+has no second authority: FortiWeb does not reliably refuse deleting a
+referenced object, and when it does not, <strong>nothing fails</strong>. The holders keep
+pointing at a name that no longer resolves; the operator learns about it from
+traffic, not from SATOM.</p>
+<h3 id="what-the-device-already-knew">What the device already knew</h3>
+<p>Every cmdb row carries FortiWeb's own bookkeeping — <code>q_ref</code> counts the objects
+that name this one, <code>q_ref_string</code> names them one per line. Measured live on
+{device} (8.0.x) across ten collections: <strong><code>q_ref</code> on 10 of 10,
+<code>q_ref_string</code> on 4 of 10</strong>. So a refusal may always <em>count</em> the holders and
+may only sometimes <em>name</em> them, and the message says which it is doing rather
+than printing an empty list that would read as "referenced by nothing".</p>
+<h3 id="three-states-and-the-two-that-must-never-merge">Three states, and the two that must never merge</h3>
+<p><code>FortiWebClient.cmdb_refcount</code> returns <code>ok</code> / <code>unsupported</code> / <code>error</code>:</p>
+<ul>
+<li><code>unsupported</code> — the row came back with no <code>q_ref</code>. A missing <strong>capability</strong>,
+  not a missing answer. Blocking here would make every delete on that
+  collection impossible, permanently. Does <strong>not</strong> block.</li>
+<li><code>error</code> — the object could not be read at all. Does block.</li>
+</ul>
+<p>Collapsing them either way is a real failure: merged into <code>error</code>, a whole
+collection becomes undeletable; merged into <code>ok</code>, a firmware that reports
+nothing reads as "referenced by nothing" — which is the silent pass the whole
+section exists to prevent. A <code>q_ref</code> that will not parse as a number is
+<code>unsupported</code>, never <code>0</code>.</p>
+<h3 id="the-wording-is-load-bearing">The wording is load-bearing</h3>
+<p><code>policy_graph._is_in_use_error()</code> decides whether a cascade child that would
+not delete is <code>kept_shared</code> (benign — another policy still claims it) or
+<code>failed</code> (an alarm) by <strong>matching phrases in the error text</strong>. So:</p>
+<ul>
+<li>the <em>referenced</em> refusal must match it, or a shared dependency starts
+  reporting as a cascade failure;</li>
+<li>the <em>unverified</em> refusal must <strong>not</strong> match it, or a transport error is
+  filed as "safe to leave".</li>
+</ul>
+<p>Both directions are pinned in <code>tests/test_delete_guard.py</code>. This is an
+accidental coupling through prose, and the test is what makes it survive the
+next rewording.</p>
+<h3 id="the-guard-runs-on-the-dry-run">The guard runs on the dry-run</h3>
+<p>Every delete surface in the app previews first and applies only after the
+operator confirms. Checking only the apply would show a clean <em>would delete</em>
+and then fail the action the operator just confirmed — the same rule as §40.</p>
+<h3 id="opt-out-is-a-call-site-decision-not-a-runtime-one">Opt-out is a call-site decision, not a runtime one</h3>
+<p><code>check_refs=False</code> exists for writers that delete what they just created or are
+rebuilding in the same batch: the singleton sub-table replace-set (whose rows
+are re-added two lines later) and the <code>jobs.Rollback</code> compensation example.
+Because the guard is opt-<strong>out</strong>, it can be switched off silently one call site
+at a time, so <code>test_check_refs_is_disabled_only_at_the_reviewed_call_sites</code>
+fails the build for a new one until it is justified. <code>force</code> is the separate,
+operator-facing override and is stamped <code>ref_check=forced</code> in the audit detail —
+an override that leaves no trace is indistinguishable from an object that was
+genuinely unreferenced.</p>
+<h3 id="verification">Verification</h3>
+<p><strong>42 guards, 20 mutations, 20 bite.</strong> Reproduced live against {device} with
+<strong>zero writes</strong>: <code>urw-r1</code> refused naming <code>url-rewrite-policy(urw-full)</code>,
+<code>urw-full</code> refused naming both <code>wpp-full-lab</code> and <code>wpp-pol-shop-cms</code>,
+<code>pol-shop-main</code> (<code>q_ref=0</code>) allowed, an unreadable object refused, and
+<code>check_refs=False</code> / <code>force=True</code> allowed without asking the device.</p>
+<p>Two guard bugs found while writing them, both the familiar shapes: a
+<code>[^)]*</code> regex truncated <code>ops.delete(path, str(any_id), check_refs=False)</code> at
+the paren inside <code>str(...)</code> and failed against <strong>correct</strong> code, and the
+audit-stamp tests tried to <code>monkeypatch.setattr</code> a read-only <code>property</code>.</p>
+<h2 id="41-a-lifecycle-state-nobody-writes-is-a-state-the-product-cannot-reach">41. A lifecycle state nobody writes is a state the product cannot reach</h2>
+<p><code>ChangeRequest.STATUSES</code> declared seven states. Three had a writer. The badge
+map in the view had a colour for all seven, the model docstring drew the full
+arrow chain <code>draft -&gt; approved -&gt; scheduled -&gt; in_progress -&gt; completed|failed</code>,
+and <code>cr_runnable</code> already listed <code>in_progress</code> among the states allowed to fire
+— every surface agreed the lifecycle existed. Nothing did.</p>
+<p>Nothing failed. That is the whole point: a dead enum member raises nothing,
+renders nothing, and logs nothing. It only makes every consumer of the record
+wrong, quietly, and it took an audit to find because the code that would have
+been wrong was the code that was never written.</p>
+<p>The guard is in <code>tests/test_change_request_lifecycle.py</code>
+(<code>test_every_declared_status_has_something_that_writes_it</code>): every member of
+<code>STATUSES</code> must be assigned somewhere in <code>app/services/change_requests.py</code>,
+<code>draft</code> excepted because it is the column default rather than a transition. It
+reads the assignments off the <strong>AST</strong>, not the source text — an assertion made
+against raw text is satisfied by the comment that explains it, which this repo
+has now been bitten by nine times.</p>
+<h3 id="41a-skipped-is-a-failure-and-saying-otherwise-re-creates-the-stall">41a. <code>skipped</code> is a failure, and saying otherwise re-creates the stall</h3>
+<p>The executor grades a run <code>ok | failed | skipped</code>. Mapping <code>skipped</code> to
+"completed" is obviously wrong; mapping it to "leave the request alone" is the
+subtle one, and it puts the bug back. The bound action is a one-shot, so its
+<code>next_run</code> is cleared after the fire: a request left <code>in_progress</code> because
+nothing ran can never close by itself. <code>finish()</code> therefore closes on anything
+that is not <code>ok</code>, and carries the executor's reason into <code>result_summary</code>.</p>
+<p>The one case that must NOT touch the request is a <strong>gated</strong> fire — the window
+had not opened, so no change started. Recording <code>in_progress</code>/<code>failed</code> there
+would make an un-run change indistinguishable from a broken one, and would burn
+the request (terminal) so a later legitimate fire could never run it.</p>
+<h3 id="41b-a-bookkeeping-step-must-not-be-able-to-kill-the-work-it-describes">41b. A bookkeeping step must not be able to kill the work it describes</h3>
+<p>The change-request close and its notification run in their own <code>try</code> with a
+<code>db.session.rollback()</code>, <em>after</em> the run row has been finalized and the action
+lease released. This is §-for-§ the <code>e122dd9</code> lesson: a best-effort step that
+shares the caller's transaction and swallows its own exception hands the caller
+a dead session. The names it reads (<code>cr_bound_id</code>, <code>cr_gated</code>) are initialised
+<strong>before</strong> the <code>try</code>, or the first statement that raises turns the closing block
+into a <code>NameError</code>.</p>
+<h3 id="41c-a-delivery-timestamp-is-a-claim-and-it-is-also-the-retry-flag">41c. A delivery timestamp is a claim, and it is also the retry flag</h3>
+<p><code>final_notified_at</code> does two jobs: it tells the operator the customer was told,
+and it is what makes the notice idempotent. Stamping it on a <strong>failed</strong> send
+therefore lies on the detail page <em>and</em> suppresses the retry permanently — in
+the one case where a retry is the entire point. This survived seventeen
+mutations minus one: the first pass killed 16/17 and the survivor was exactly
+this. The guard is <code>test_a_failed_send_never_records_a_delivery</code>, which asserts
+both halves — no stamp, and the next attempt actually reaches the mailer.</p>
+<p><code>notify_status</code> (the PRE-window warning) and <code>final_notified_at</code> (the
+end-of-window notice) are separate columns on purpose. "We told them it is
+scheduled" and "we told them it is done" are different facts and one field
+cannot carry both.</p>
+<h3 id="41d-mutate-a-copy-of-the-tree-never-the-tree">41d. Mutate a COPY of the tree, never the tree</h3>
+<p>The first mutation run was launched against <code>/opt/satom</code> while another session
+was running the full suite over the same files. Their results were worthless and
+so were mine. The harness now rsyncs the tree to <code>/tmp/satom-mut</code> (owned by
+<code>satom</code>, excluding <code>venv/.git/data/site/reports</code>) and mutates only there, so a
+parallel session cannot be poisoned by it and vice versa.</p>
+<p>Two harness bugs found in the same session, both of which reported <strong>green on a
+command that never ran</strong>:</p>
+<ul>
+<li>piping pytest to <code>tail</code> makes <code>subprocess</code> return <strong>tail's</strong> exit code — the
+  baseline read <code>rc=0</code> while the interpreter path did not even exist, and all 17
+  mutations "survived";</li>
+<li>this repo's pytest config prints <strong>no <code>N passed</code> summary line</strong>, so a
+  baseline check that greps for <code>passed</code> fails against a perfectly green run.
+  Grade on the return code, and only <code>rc == 1</code> is a test failure (<code>rc == 4</code> is a
+  usage error).</li>
+</ul>
+<hr>
+<h2 id="43-a-change-that-leaves-this-product-must-not-be-able-to-lie-about-itself">§43. A change that leaves this product must not be able to lie about itself</h2>
+<p><code>tests/test_cr_orchestration.py</code>, <code>tests/test_netbox_client.py</code>,
+<code>tests/test_integration_hooks.py</code>, <code>tests/test_hook_queue_layout.py</code>.</p>
+<p>A change request now reaches outside SATOM: an external authority approves it,
+NetBox holds its maintenance window, and the operator's own Python talks to
+their CRM. Every failure in that direction is silent by nature — the change
+still happens, the record just stops being true — so each property below is
+guarded rather than reviewed.</p>
+<h3 id="43a-fail-closed-external-approval">§43a — Fail-closed external approval</h3>
+<p><code>approval_mode="external"</code> makes a CR runnable only once <code>external_approved_at</code>
+is stamped. Unreachable, slow, ambiguous and never-asked all land on the
+un-runnable side of <code>cr_orchestrator.external_gate</code>, and an <strong>unrecognised</strong>
+mode fails closed too — a typo in a config field must not silently downgrade a
+gate.</p>
+<p>The gate is reached through <code>change_requests.cr_runnable</code>, the one function the
+executor calls. Guarded behaviourally <em>and</em> structurally: a reordering that
+dropped the call could otherwise pass the behavioural test for an unrelated
+reason.</p>
+<p>Withdrawing an approval <strong>clears</strong> the timestamp. Leaving it would let a revoked
+approval still open a window. Existing CRs default to <code>manual</code>: a migration must
+never retroactively gate work nobody bound to an approver.</p>
+<h3 id="43b-none-and-error-are-different-facts">§43b — <code>none</code> and <code>error</code> are different facts</h3>
+<p><code>mw_state</code> separates <em>we never asked NetBox</em> from <em>we asked and it refused or
+never answered</em>. Collapsing them makes an integration outage read as a
+deliberate decision and hides that a device may still be shown in maintenance.
+A second <code>open_window</code> on an open CR is a no-op, so a retried fire cannot litter
+NetBox with duplicate windows. <code>close_window(ok=…)</code> takes the outcome of <strong>the
+change</strong>, not of the call: a failed upgrade still closes its window, carrying
+the failure.</p>
+<h3 id="43c-nothing-external-re-grades-the-change">§43c — Nothing external re-grades the change</h3>
+<p>NetBox down, a hook raising, SMTP refusing: recorded on the CR, never able to
+turn a completed upgrade into a failed one. <code>on_start</code> swallows and logs, so a
+ticket system being down cannot abort an upgrade the operator already approved.
+Order is guarded too — <code>close</code> before <code>notify</code>, because nobody may be told
+service is restored before the window covering the outage is closed.</p>
+<h3 id="43d-naive-utc-is-how-a-window-moves-by-hours">§43d — Naive UTC is how a window moves by hours</h3>
+<p>SATOM stores naive UTC; NetBox reads ISO-8601 and interprets a naive string in
+its own zone — confirmed on the wire against 4.6.7, where a naive datetime
+round-trips without a <code>Z</code>. <code>_iso()</code> emits an explicit <code>+00:00</code>, <code>_iso(None)</code> is
+<code>None</code> (never today's date), and a structural guard forbids a bare
+<code>.isoformat()</code> anywhere in the orchestrator.</p>
+<h3 id="43e-hooks-never-execute-in-the-web-worker">§43e — Hooks never execute in the web worker</h3>
+<p>Saving a hook writes it to disk and compiles it (a syntax error is refused at
+save, with its message). <code>dispatch()</code> only enqueues; the runner executes, as an
+unprivileged user, in its own process group, with a hard timeout, receiving only
+the declared secrets. Output is redacted <strong>then</strong> truncated — truncating first
+can bisect a token and leave its first characters permanently visible. A hook
+returns through a dedicated fd, so printing JSON-shaped text cannot fake a
+verdict. The runner unit must be <code>enabled --now</code> on <strong>both</strong> HA nodes; the
+<code>satom-updater.path</code>-on-standby incident applies verbatim.</p>
+<h3 id="43f-one-writable-tree-and-the-reason-travels-with-it">§43f — One writable tree, and the reason travels with it</h3>
+<p>This is the defect that hardening introduced. Four <code>ReadWritePaths=</code> are four
+bind-mounts; the claim step is a <code>rename(2)</code> between two of them, which is
+<code>EXDEV</code> — and <code>process_request_file</code> cannot tell <code>EXDEV</code> apart from “already
+claimed”, so it returned <code>None</code>. The request was never run, nothing was logged,
+the status stayed <code>queued</code>, and the level-triggered <code>.path</code> unit re-fired until
+the start limit. Every symptom pointed at the runner; the cause was one line of
+unit file.</p>
+<p><code>tests/test_hook_queue_layout.py</code> guards both halves — the four directories
+share a parent, and the unit declares exactly one grant which IS that parent —
+plus that the grant is not all of <code>data/</code> (a hook inherits the runner's
+namespace) and that the unit still records <em>why</em>. The unit guard in
+<code>test_integration_hooks.py</code> was changed to assert against <code>IH.REQ_DIR</code> instead
+of a literal path: it had hardcoded the old directory and so failed against a
+CORRECT tree, which is how guards get deleted.</p>
+<h3 id="43g-the-token-stays-a-secret">§43g — The token stays a secret</h3>
+<p>The NetBox API token is stored encrypted, never returned by <code>config()</code> without
+an explicit reveal, never placed in a <code>detail</code> string or exception, and the live
+check asserts it is absent from the CR's integration log. A blank token field on
+save <strong>keeps</strong> the existing token rather than clearing it.</p>
+<h3 id="43h-the-emitter-must-send-what-the-contract-promises">§43h — The emitter must send what the contract promises</h3>
+<p><code>tests/test_event_contract.py</code>. A hook is written by reading the payload
+documentation in the editor. If the emitter sends a different key set the hook
+does not crash — it reads <code>None</code> and opens a ticket with an empty title, or
+skips a device list it believes is empty. Nothing fails; the integration is just
+quietly wrong, which is this subsystem's characteristic failure.</p>
+<p>The guard asserts that, for every event <code>cr_orchestrator</code> emits, each documented
+key <strong>not marked optional</strong> is actually present. It caught two real defects on
+its first run:</p>
+<ol>
+<li><code>upgrade.finished</code> documented <code>to_version</code> and <code>duration_ms</code>, and the
+   change-request close cannot know either — only the firmware executor watched
+   the box come back. The fix was <strong>not</strong> to send nulls: a null there reports a
+   measurement nobody took (same rule as advisor token counts, where "not
+   reported" and "0" mean opposite things). Those two keys are marked optional
+   in the contract, and a companion guard asserts they are <strong>omitted</strong>, not
+   nulled.</li>
+<li><strong><code>change.approved</code> was documented with no emitter at all.</strong> That is the
+   "lifecycle state nobody writes" defect (§41) wearing a different costume: the
+   editor offers the event, an operator binds a script to it, and the script
+   simply never runs. It is now fired from BOTH approval paths — the in-product
+   <code>approve()</code> and an external authority's verdict — because they are the same
+   fact arriving through two doors and a hook must not have to know which.</li>
+</ol>
+<p>A third guard asserts every name in <code>EVENTS</code> appears in the orchestrator, so a
+newly documented event cannot ship without something firing it.</p>
+<p><code>upgrade.finished</code> / <code>upgrade.failed</code> are emitted <strong>per appliance</strong>, matching a
+contract keyed on one device — one event carrying a list is not something a hook
+written from these docs could read. That test seeds two appliances explicitly;
+its first version created one and asked for "the first two", so it passed its
+own bug instead of testing the code's.</p>
     </div>
   </div>
 </section>

@@ -32,6 +32,10 @@ RISKS = ("low", "medium", "high")
 # A CR may fire only from one of these live states (terminal/draft cannot run).
 _RUNNABLE_STATES = ("approved", "scheduled", "in_progress")
 
+# Cap for the stored outcome blurb (result_summary is TEXT; this only stops an
+# executor traceback from being pasted whole into the record).
+_RESULT_MAX = 4000
+
 
 # --------------------------------------------------------------------------- #
 #  Status workflow (every transition stamps a timeline event)                   #
@@ -54,6 +58,11 @@ def approve(cr_id: int, by: str) -> ChangeRequest:
         raise ValueError("change request not found")
     _transition(cr, "approved", by=by, detail="Change request approved",
                 approved_by=by, approved_at=datetime.utcnow())
+    # Tell the integrations the gate is passed. Best-effort by contract: an
+    # approval is a decision a human made in this product, and a downstream
+    # system being unreachable must not be able to un-make it.
+    from . import cr_orchestrator
+    cr_orchestrator.announce_approved(cr, by=by)
     return cr
 
 
@@ -116,6 +125,63 @@ def schedule_change_request(cr_id: int, by: str) -> int:
     return action.id
 
 
+# --------------------------------------------------------------------------- #
+#  Execution transitions (written by the EXECUTOR, never by a human)            #
+# --------------------------------------------------------------------------- #
+def _resolve(cr_or_id):
+    """Accept a ``ChangeRequest`` row or its id - the executor only holds the id
+    it read out of the action params."""
+    if isinstance(cr_or_id, ChangeRequest):
+        return cr_or_id
+    return db.session.get(ChangeRequest, _as_int(cr_or_id))
+
+
+def start(cr_or_id, by: str = "scheduler", detail: str = ""):
+    """Move a firing CR to ``in_progress``.
+
+    Called by the executor only AFTER :func:`cr_runnable` authorized this fire,
+    so a gated (skipped) fire never touches the CR: a window that never opened
+    must not leave a record that looks like a change that started. Idempotent
+    and terminal-safe - a CR already closed is returned untouched."""
+    cr = _resolve(cr_or_id)
+    if cr is None or cr.status in ChangeRequest.TERMINAL:
+        return cr
+    if cr.status == "in_progress":
+        return cr
+    _transition(cr, "in_progress", by=by, detail=detail or "Execution started")
+    # Open the external maintenance window HERE rather than in the executor:
+    # a caller that forgets is a device changed with no window on record,
+    # and this transition is the one place every authorized fire passes
+    # through. Best-effort by contract - see cr_orchestrator.
+    from . import cr_orchestrator
+    cr_orchestrator.on_start(cr, by=by)
+    return cr
+
+
+def finish(cr_or_id, outcome: str, by: str = "scheduler", summary: str = ""):
+    """Close a CR from an executor outcome: ``ok`` -> ``completed``, ANYTHING
+    ELSE -> ``failed``, with the reason kept in ``result_summary``.
+
+    ``skipped`` maps to **failed** on purpose. The bound action is a one-shot:
+    its ``next_run`` is cleared after the fire, so a CR left open because
+    nothing ran can never close by itself - which is exactly the stall these
+    transitions exist to remove. A change whose window elapsed without the
+    change happening did not succeed, and the operator has to see that with the
+    reason attached rather than find a CR parked at ``scheduled`` forever."""
+    cr = _resolve(cr_or_id)
+    if cr is None or cr.status in ChangeRequest.TERMINAL:
+        return cr
+    status = "completed" if outcome == "ok" else "failed"
+    _transition(cr, status, by=by, detail=(summary or f"run {outcome}")[:_RESULT_MAX],
+                result_summary=(summary or outcome)[:_RESULT_MAX])
+    # Close the window, tell the hooks, mail the affected clients - in that
+    # order, so nobody is told service is restored before the window that
+    # covered the outage is closed. Never re-grades the outcome above.
+    from . import cr_orchestrator
+    cr_orchestrator.on_finish(cr, outcome, summary=summary, by=by)
+    return cr
+
+
 def cr_runnable(cr, now: datetime | None = None) -> tuple[bool, str]:
     """``(ok, reason)`` - may the bound action run NOW? Ok only if the CR is
     approved/scheduled/in_progress AND the clock is inside the window
@@ -128,6 +194,14 @@ def cr_runnable(cr, now: datetime | None = None) -> tuple[bool, str]:
         return False, f"change request is {cr.status}"
     if cr.status not in _RUNNABLE_STATES:
         return False, "change request is not approved"
+    # Fail-closed external approval. A CR routed through an external change
+    # authority is authorized by THAT authority saying yes, never by it
+    # failing to say no: unreachable, slow and ambiguous all land on the
+    # un-runnable side of this line.
+    from . import cr_orchestrator
+    ext_ok, ext_reason = cr_orchestrator.external_gate(cr, now)
+    if not ext_ok:
+        return False, ext_reason
     if cr.window_start is None:
         return False, "no maintenance window"
     if now < cr.window_start:
@@ -206,6 +280,109 @@ def maintenance_notice(cr) -> str:
     return "\n".join(lines)
 
 
+def recipients_for(cr) -> list[str]:
+    """Who this CR mails: its own ``notify_to`` list, else the Email settings
+    default list. ``[]`` means nobody is configured - an empty list is a REFUSAL
+    to guess an address, not an error, and the caller records that as the
+    reason nothing was sent."""
+    from . import email_service as email
+    explicit = email.parse_recipients(getattr(cr, "notify_to", "") or "")
+    if explicit:
+        return explicit
+    return email.parse_recipients(email.config().get("default_to", ""))
+
+
+def outcome_notice(cr, status: str | None = None) -> tuple[str, str]:
+    """``(subject, body)`` for the END of the window - what the affected clients
+    are told once the change is over.
+
+    Deliberately NOT :func:`maintenance_notice` again: that one warns service
+    *may* be interrupted. Re-sending it at the end would tell a customer to
+    brace for an outage that already finished."""
+    status = status or cr.status
+    ok = status == "completed"
+    when = _fmt_window(cr.window_start)
+    head = ("Maintenance completed - service restored" if ok else
+            "Maintenance window closed - change NOT completed")
+    lines = [f"Subject: {head}", "", "Dear customer,", ""]
+    if ok:
+        lines.append(f"The scheduled maintenance that began {when} is complete "
+                     "and the affected services are back in normal operation.")
+    else:
+        lines.append(f"The maintenance window that began {when} has closed "
+                     "WITHOUT the planned change being applied. Services were "
+                     "left in their previous state.")
+    if cr.reason:
+        lines += ["", f"Change: {cr.reason}"]
+    policies = _policies(cr)
+    if policies:
+        lines += ["", "Services covered by this window:"]
+        seen = set()
+        for p in policies:
+            if not isinstance(p, dict):
+                continue
+            dedupe = (p.get("device"), p.get("policy"))
+            if dedupe in seen:
+                continue
+            seen.add(dedupe)
+            host = f" ({p['vserver']})" if p.get("vserver") else ""
+            lines.append(f"  - {p.get('policy', 'service')}{host} on "
+                         f"{p.get('device', '')}")
+    if not ok and cr.result_summary:
+        lines += ["", f"Outcome: {cr.result_summary}"]
+    lines += ["", "Thank you for your patience.", "", "- Operations team"]
+    body = "\n".join(lines[1:]).lstrip("\n")
+    return head, body
+
+
+def notify_outcome(cr, *, by: str = "scheduler") -> dict:
+    """Mail the end-of-window notice ONCE. Returns
+    ``{sent: bool, detail: str, recipients: [...]}``.
+
+    Best-effort BY CONTRACT: the caller records what happened but must never let
+    it change the CR outcome. An upgrade that worked worked whether or not the
+    SMTP server answered, and letting a mail failure re-grade the change would
+    make the record lie about the device.
+
+    Idempotent via ``final_notified_at`` - a second call after a successful send
+    is a no-op, so a retried/duplicated fire cannot mail the customer twice."""
+    from . import email_service as email
+    if cr is None:
+        return {"sent": False, "detail": "no change request", "recipients": []}
+    if getattr(cr, "final_notified_at", None):
+        return {"sent": False, "detail": "already notified", "recipients": []}
+
+    stamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+
+    def _log(text_line: str) -> None:
+        cr.notify_log = ((cr.notify_log or "") + f"\n[{stamp}] {text_line}")[-8000:]
+        db.session.commit()
+
+    if not email.is_configured():
+        _log("outcome notice NOT sent: email is not configured")
+        return {"sent": False, "detail": "email not configured", "recipients": []}
+    recipients = recipients_for(cr)
+    if not recipients:
+        _log("outcome notice NOT sent: no recipients configured")
+        return {"sent": False, "detail": "no recipients", "recipients": []}
+
+    subject, body = outcome_notice(cr)
+    result = email.send_email(recipients, subject, body)
+    if result.get("ok"):
+        cr.final_notified_at = datetime.utcnow()
+        _log(f"outcome notice sent to {', '.join(recipients)}")
+        db.session.add(ChangeRequestEvent(
+            cr_id=cr.id, kind="notified", by=by,
+            detail=f"outcome notice to {len(recipients)} recipient(s)",
+            ts=datetime.utcnow()))
+        db.session.commit()
+        return {"sent": True, "detail": result.get("detail", ""),
+                "recipients": recipients}
+    _log(f"outcome notice FAILED: {result.get('detail', '')}")
+    return {"sent": False, "detail": result.get("detail", ""),
+            "recipients": recipients}
+
+
 # --------------------------------------------------------------------------- #
 #  Affected-policy discovery (best-effort live read - the clients to warn)       #
 # --------------------------------------------------------------------------- #
@@ -260,7 +437,12 @@ __all__ = [
     "approve",
     "cancel",
     "schedule_change_request",
+    "start",
+    "finish",
     "cr_runnable",
     "maintenance_notice",
+    "outcome_notice",
+    "recipients_for",
+    "notify_outcome",
     "affected_policies",
 ]

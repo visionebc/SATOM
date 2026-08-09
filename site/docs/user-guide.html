@@ -95,6 +95,7 @@
       <a href="#32-troubleshooting">32. Troubleshooting</a>
       <a href="#33-ai-advisor">33. AI Advisor</a>
       <a href="#34-the-audit-log">34. The Audit Log</a>
+      <a href="#35-integrations-netbox-change-tickets-and-your-own-python">35. Integrations: NetBox, change tickets and your own Python</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="satom-user-guide">SATOM — User Guide</h1>
@@ -142,6 +143,7 @@ codebase is assumed. For architecture and internals see the
 <li><a href="#32-troubleshooting">Troubleshooting</a></li>
 <li><a href="#33-ai-advisor">AI Advisor</a></li>
 <li><a href="#34-the-audit-log">The Audit Log</a></li>
+<li><a href="#35-integrations-netbox-change-tickets-and-your-own-python">Integrations: NetBox, change tickets and your own Python</a></li>
 </ol>
 <hr>
 <h2 id="1-signing-in-accounts">1. Signing in &amp; accounts</h2>
@@ -387,6 +389,37 @@ has no configured objects on this device, so there is nothing
 appliance treats as selects still render as text because the collection they
 draw from could not be confirmed on this firmware — those are passed to the
 device unchecked, exactly as before.</p>
+<h3 id="72-deleting-an-object-that-something-else-uses">7.2 Deleting an object that something else uses</h3>
+<p><strong>Delete</strong> refuses while another object still names the one you are removing.
+The appliance keeps its own count of references, and SATOM reads it before
+sending anything:</p>
+<blockquote>
+<p><code>refusing to delete "urw-full": it is referenced by 2 object(s) —
+inline-protection(wpp-full-lab), inline-protection(wpp-pol-shop-cms). Remove
+those references first, then delete it.</code></p>
+</blockquote>
+<p>Why this exists: FortiWeb does <strong>not</strong> reliably refuse deleting an object that
+is in use. When it accepts one, nothing fails — the profiles and policies that
+named it keep pointing at a name that no longer resolves, and you find out when
+traffic breaks.</p>
+<p>What to expect:</p>
+<ul>
+<li>The check runs on the <strong>pre-check</strong>, before the confirmation prompt. You see
+  the refusal instead of confirming a delete that should not happen.</li>
+<li>Some collections report <em>how many</em> references there are but not <em>which</em>. The
+  message says so rather than showing an empty list.</li>
+<li>If the object cannot be read back from the appliance, it is <strong>not</strong> deleted —
+  there is no way to tell an unreferenced object from an unreadable one.</li>
+<li>If this firmware does not report a reference count for that collection at
+  all, the delete proceeds as before. A capability the device lacks is not
+  treated as a refusal.</li>
+<li>Deleting a <strong>row inside</strong> an object (a sub-table entry) is not affected: the
+  parent's reference count says nothing about one of its rows.</li>
+</ul>
+<p>To remove an object that is genuinely referenced, clear the references first —
+the message names where to look. If you are certain the appliance's count is
+wrong, the delete endpoint accepts <code>force: true</code>; forced deletes are recorded
+in the audit log as <code>ref_check=forced</code>.</p>
 <h2 id="8-web-protection-waf">8. Web Protection (WAF)</h2>
 <p>FortiWeb ADOM → <strong>Web Protection</strong> reproduces the FortiWeb 7.6 Web Protection
 menu tree exactly: Known Attacks (Signatures / Custom Signature), Protocol,
@@ -3084,6 +3117,102 @@ with a red <strong>Error reference</strong> — an eight-character code you can 
 <code>data/logs/satom.log</code> for the full traceback. That is a different identifier from
 the entry ID and answers a different question: the entry ID names <em>the record</em>,
 the error ID names <em>the crash</em>.</p>
+<hr>
+<h2 id="35-integrations-netbox-change-tickets-and-your-own-python">35. Integrations: NetBox, change tickets and your own Python</h2>
+<p><strong>Settings → Integrations</strong> (admin only) is where SATOM is wired to systems it
+does not own. Everything here is optional: with all of it off, change requests
+and upgrades work exactly as they did.</p>
+<h3 id="351-netbox">35.1 NetBox</h3>
+<p>Fill in the base URL and an API token, pick a timeout, and press <strong>Test
+connection</strong> — it reports the NetBox version and how many milliseconds the round
+trip took. A green tick with no numbers behind it is not evidence.</p>
+<p>The token is stored encrypted. Leaving the token box blank when you save
+<strong>keeps</strong> the token you already have; it never clears it.</p>
+<p><strong>Maintenance-window backend.</strong> NetBox core has no maintenance-window object —
+that lives in third-party plugins — so SATOM records windows with core models
+only, and works against any NetBox:</p>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>What it writes</th>
+<th>Trade-off</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Journal entry</strong> (default)</td>
+<td>A journal entry on the device with the change-request id, window and reason; closing posts a <em>second</em> entry</td>
+<td>Full history, but journal entries are not filterable in the NetBox UI</td>
+</tr>
+<tr>
+<td><strong>Device tag</strong></td>
+<td>Adds <code>maint-window</code> to the device, removes it on close</td>
+<td>Queryable from NetBox, but records <em>that</em> a window exists, not which one or when it started</td>
+</tr>
+<tr>
+<td><strong>Device custom fields</strong></td>
+<td>Sets <code>maint_window_start</code> / <code>_end</code> on the device</td>
+<td>Structured, but the custom fields must already be defined — SATOM tells you by name if they are not, rather than quietly doing nothing</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Device mapping</strong> binds each SATOM appliance to a NetBox device id. Leave a row
+blank and SATOM falls back to an exact <em>name</em> match — that works right up until
+somebody renames a device on either side, which is why the page shows you which
+devices rely on the fallback.</p>
+<h3 id="352-integration-hooks">35.2 Integration hooks</h3>
+<p>A hook is a small Python script SATOM runs when it emits an event. The usual use
+is opening a change ticket in your own CRM and handing the reference back.</p>
+<p>Events: <code>change.requested</code>, <code>change.approved</code>, <code>window.opening</code>,
+<code>window.closing</code>, <code>upgrade.finished</code>, <code>upgrade.failed</code>. The editor lists the
+exact payload each one carries.</p>
+<p><strong>Hooks never run inside the web application.</strong> Saving one writes it to disk;
+<code>satom-integrations.service</code> — a separate, unprivileged runner — executes it, in
+its own process group, with a hard timeout. A hook that hangs on somebody else's
+CRM cannot hang this console.</p>
+<p>What that buys you, and what it costs:</p>
+<ul>
+<li>A syntax error is refused <strong>when you save</strong>, with the message. You do not find
+  out at 03:00 inside a window.</li>
+<li>A hook receives only the secrets it declares, by name, through
+  <code>ctx.secret("NAME")</code>. One it did not declare is not in its environment to
+  leak. Never paste a token into the script itself.</li>
+<li>Captured output is redacted (declared secret values are masked) and then
+  truncated before it is stored.</li>
+<li>The result comes back through <code>ctx.result(ok, data)</code>, not from what the script
+  prints — so a hook cannot fake its own verdict by printing JSON.</li>
+<li><strong>Dry run</strong> queues the hook against the event's sample payload through the
+  same runner. It reports <em>queued</em>, not <em>ran</em>, because that is what happened;
+  the outcome appears in the runs table a moment later. A dry run will queue a
+  hook that is switched off — testing before enabling is the point.</li>
+</ul>
+<p>Keys SATOM understands in a <code>change.requested</code> result: <code>crq_ref</code> and <code>crq_url</code>,
+which are written onto the change request so the ticket is one click away.</p>
+<blockquote>
+<p><strong>HA:</strong> <code>satom-integrations.path</code> must be enabled on <strong>both</strong> nodes. A standby
+whose watcher is disabled accepts queued work and never runs it — silently.</p>
+</blockquote>
+<h3 id="353-what-this-changes-on-a-change-request">35.3 What this changes on a change request</h3>
+<p>Create the change request as usual and set <strong>Approval</strong>:</p>
+<ul>
+<li><strong>Manual</strong> — approved here in SATOM, exactly as before.</li>
+<li><strong>External</strong> — an integration must approve it. This is <strong>fail-closed</strong>: the
+  change cannot run until your system explicitly approves. Unreachable, slow and
+  no answer all count as <em>not approved</em>. Withdrawing an approval makes it
+  un-runnable again.</li>
+</ul>
+<p>Once the window opens and the change starts running, SATOM opens the NetBox
+window, runs the change, closes the window from the outcome, fires the hooks,
+and emails the affected customers (§9). The <strong>External change record</strong> card on
+the change request shows the ticket, the window state and the integration log.</p>
+<p>The window state distinguishes <strong>none requested</strong> from <strong>error</strong>. <em>Error</em> means
+SATOM asked NetBox and it refused or never answered — a device may still be
+shown in maintenance there, and you have to know that.</p>
+<p>If the change fails, the window still closes (it is over either way) but it
+closes carrying the failure, and the customer notice says the change did not
+happen. Nothing external — NetBox down, a hook erroring, SMTP refusing — can
+change the recorded outcome of the change itself.</p>
     </div>
   </div>
 </section>

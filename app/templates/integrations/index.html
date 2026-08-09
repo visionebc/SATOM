@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}Integrations — Settings{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <h4 class="mb-1"><i class="bi bi-plug me-2"></i>Integrations</h4>
+  <p class="text-muted mb-0" style="font-size:13px;">
+    Outbound links to systems SATOM does not own: NetBox for maintenance windows, and your own Python hooks for
+    everything else (CRM, ticketing, chat). Every integration here is optional — with all of them off, change
+    requests and upgrades work exactly as before. Nothing on this page is contacted while the page renders.
+  </p>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong><i class="bi bi-diagram-3 me-1"></i>NetBox</strong>
+    <span class="small text-muted">Source of truth for the maintenance window</span>
+  </div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('integrations.save_netbox') }}" class="row g-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-3">
+        <div class="form-check form-switch mt-4">
+          <input class="form-check-input" type="checkbox" id="nb_enabled" name="enabled" {% if netbox.enabled %}checked{% endif %}>
+          <label class="form-check-label" for="nb_enabled">Enabled</label>
+        </div>
+      </div>
+      <div class="col-md-5">
+        <label class="form-label small">Base URL</label>
+        <input class="form-control form-control-sm" name="url" value="{{ netbox.url }}" placeholder="https://netbox.example.com">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small">API token</label>
+        <input class="form-control form-control-sm" name="token" type="password" autocomplete="new-password"
+               placeholder="{% if netbox.has_token %}•••••••• (leave blank to keep){% else %}paste token{% endif %}">
+        <div class="form-text">Stored encrypted. Leaving this blank keeps the existing token — it never clears it.</div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">Timeout (s)</label>
+        <input class="form-control form-control-sm" name="timeout" type="number" min="1" max="60" value="{{ netbox.timeout }}">
+        <div class="form-text">Hard cap. In an isolated management network everything external must fail fast.</div>
+      </div>
+      <div class="col-md-3">
+        <div class="form-check form-switch mt-4">
+          <input class="form-check-input" type="checkbox" id="nb_tls" name="verify_tls" {% if netbox.verify_tls %}checked{% endif %}>
+          <label class="form-check-label" for="nb_tls">Verify TLS</label>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label small">Maintenance-window backend</label>
+        <select class="form-select form-select-sm" name="mw_backend">
+          {% for slug, label in mw_backends %}
+            <option value="{{ slug }}" {% if netbox.mw_backend == slug %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">
+          NetBox <strong>core has no maintenance-window object</strong> — that lives in third-party plugins. These
+          backends use core models only, so they work against any NetBox. Pick the one your NetBox conventions match.
+        </div>
+      </div>
+      <div class="col-12 d-flex gap-2">
+        <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>Save</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="nb-test">
+          <i class="bi bi-broadcast me-1"></i>Test connection
+        </button>
+        <span id="nb-test-result" class="small align-self-center"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><strong><i class="bi bi-link-45deg me-1"></i>Device mapping</strong></div>
+  <div class="card-body">
+    <p class="small text-muted">
+      Which NetBox device each appliance is. Leave blank to fall back to an exact <em>name</em> match — that works
+      until somebody renames a device on either side, which is why the fallback is shown rather than assumed.
+    </p>
+    <form method="post" action="{{ url_for('integrations.save_map') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <table class="table table-sm align-middle mb-2">
+        <thead><tr><th>Appliance</th><th>Host</th><th style="width:220px;">NetBox device id</th><th>Resolution</th></tr></thead>
+        <tbody>
+        {% for a in appliances %}
+          <tr>
+            <td><strong>{{ a.name }}</strong></td>
+            <td><code class="small">{{ a.host }}</code></td>
+            <td><input class="form-control form-control-sm" name="map_{{ a.id }}" value="{{ device_map.get(a.id|string, '') }}" placeholder="—"></td>
+            <td>
+              {% if device_map.get(a.id|string) %}
+                <span class="fw-badge fw-badge-ok">mapped</span>
+              {% else %}
+                <span class="fw-badge fw-badge-info">by name</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="text-muted small">No appliances registered.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>Save mapping</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong><i class="bi bi-code-square me-1"></i>Integration hooks (your Python)</strong>
+    <a class="btn btn-fw-primary btn-sm" href="{{ url_for('integrations.hook_detail', slug='new') }}">
+      <i class="bi bi-plus-lg me-1"></i>New hook
+    </a>
+  </div>
+  <div class="card-body">
+    {% if hooks_error %}
+      <div class="alert alert-warning small mb-0">Hooks subsystem unavailable: <code>{{ hooks_error }}</code></div>
+    {% else %}
+    <p class="small text-muted">
+      A hook is a small Python script SATOM runs when it emits an event — for example, opening a CRQ in your own CRM
+      when a change is requested. Hooks never execute inside the web application: saving one only writes it to disk,
+      and a privileged runner (<code>satom-integrations.service</code>) executes it out of process, as an unprivileged
+      user, with a hard timeout and only the secrets the hook declared.
+    </p>
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Hook</th><th>Event</th><th>Enabled</th><th>Timeout</th><th>Secrets</th><th>Updated</th><th></th></tr></thead>
+      <tbody>
+      {% for h in hooks %}
+        <tr>
+          <td><a href="{{ url_for('integrations.hook_detail', slug=h.slug) }}"><strong>{{ h.name or h.slug }}</strong></a>
+              <div class="small text-muted"><code>{{ h.slug }}</code></div></td>
+          <td><code class="small">{{ h.event }}</code></td>
+          <td>{% if h.enabled %}<span class="fw-badge fw-badge-ok">on</span>{% else %}<span class="fw-badge fw-badge-muted">off</span>{% endif %}</td>
+          <td class="small">{{ h.timeout }}s</td>
+          <td class="small">{{ h.secrets|join(', ') or '—' }}</td>
+          <td class="small text-muted">{{ h.updated_at or '' }}</td>
+          <td class="text-end"><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('integrations.hook_detail', slug=h.slug) }}">Open</a></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="text-muted small">No hooks yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    <h6 class="mt-3">Events SATOM emits</h6>
+    <ul class="small text-muted mb-3">
+      {% for name, doc in events.items() %}<li><code>{{ name }}</code> — {{ doc }}</li>{% endfor %}
+    </ul>
+
+    <h6>Recent hook runs</h6>
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>When</th><th>Hook</th><th>Event</th><th>Status</th><th>ms</th><th>Detail</th></tr></thead>
+      <tbody>
+      {% for r in recent %}
+        <tr>
+          <td class="small text-muted">{{ r.started_at or r.queued_at or '' }}</td>
+          <td class="small"><code>{{ r.slug }}</code></td>
+          <td class="small"><code>{{ r.event }}</code></td>
+          <td>
+            {% if r.status == 'ok' %}<span class="fw-badge fw-badge-ok">ok</span>
+            {% elif r.status in ('failed', 'timeout') %}<span class="fw-badge fw-badge-crit">{{ r.status }}</span>
+            {% elif r.status == 'running' %}<span class="fw-badge fw-badge-info">running</span>
+            {% else %}<span class="fw-badge fw-badge-muted">{{ r.status }}</span>{% endif %}
+          </td>
+          <td class="small">{{ r.duration_ms if r.duration_ms is not none else '—' }}</td>
+          <td class="small text-muted">{{ (r.error or r.detail or '')[:160] }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="text-muted small">No runs recorded.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var btn = document.getElementById('nb-test');
+  var out = document.getElementById('nb-test-result');
+  if (!btn || !out) { return; }
+  var tok = document.querySelector('input[name="csrf_token"]');
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    out.textContent = 'testing…';
+    out.className = 'small align-self-center text-muted';
+    fetch({{ url_for('integrations.test_netbox')|tojson }}, {
+      method: 'POST',
+      headers: {'X-CSRFToken': tok ? tok.value : ''}
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      btn.disabled = false;
+      if (d.ok) {
+        out.className = 'small align-self-center text-success';
+        out.textContent = 'NetBox ' + (d.version || '?') + ' · ' + d.elapsed_ms + ' ms'
+          + (d.plugins && d.plugins.length ? ' · plugins: ' + d.plugins.join(', ') : ' · no plugins');
+      } else {
+        // A failed probe still reports its elapsed time: a connector that
+        // burned 8 seconds before failing spent them, and hiding that hides
+        // the difference between "refused" and "never answered".
+        out.className = 'small align-self-center text-danger';
+        out.textContent = (d.detail || 'failed') + (d.elapsed_ms != null ? ' · ' + d.elapsed_ms + ' ms' : '');
+      }
+    }).catch(function (e) {
+      btn.disabled = false;
+      out.className = 'small align-self-center text-danger';
+      out.textContent = 'request failed: ' + e;
+    });
+  });
+})();
+</script>
+{% endblock %}

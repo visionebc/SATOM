@@ -1342,6 +1342,25 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('capabilities', "TEXT DEFAULT '[]'"),
                 ('app_ids', "TEXT DEFAULT '[]'"),
             ],
+            # Change-request end-of-window notification (2026-08-09). NULLABLE
+            # with no default: a CR created before the feature reads as "never
+            # notified" rather than claiming a send that never happened.
+            'change_request': [
+                ('notify_to', 'TEXT'),
+                ('final_notified_at', 'TIMESTAMP'),
+                # --- cross-system orchestration (NetBox window + CRQ hooks) ---
+                # approval_mode defaults to 'manual' so a CR that predates the
+                # feature is NOT retroactively gated on an external approver it
+                # never had - that would strand every existing change request.
+                ('approval_mode', "VARCHAR(16) DEFAULT 'manual'"),
+                ('external_approved_at', 'TIMESTAMP'),
+                ('external_approved_by', 'VARCHAR(64)'),
+                ('crq_ref', 'VARCHAR(128)'),
+                ('crq_url', 'VARCHAR(512)'),
+                ('mw_ref', 'VARCHAR(512)'),
+                ('mw_state', "VARCHAR(16) DEFAULT 'none'"),
+                ('integration_log', 'TEXT'),
+            ],
         }
         insp = inspect(db.engine)
         added: set[tuple[str, str]] = set()
@@ -1641,6 +1660,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.section_config", "bp"),
         ("app.views.section_catalog", "bp"),
         ("app.views.settings", "bp"),
+        ("app.views.integrations", "bp"),
         ("app.views.reports", "bp"),
         ("app.views.locks", "bp"),
         ("app.views.database", "bp"),

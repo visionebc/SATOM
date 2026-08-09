@@ -68,9 +68,32 @@
           </div>
 
           <div class="mb-1 mt-3">
+            <label class="fw-form-label">Approval</label>
+            <select class="form-select" name="approval_mode">
+              <option value="manual" selected>Manual — approved here in SATOM</option>
+              <option value="external">External — an integration must approve it</option>
+            </select>
+            <div class="form-text">
+              <strong>External</strong> is fail-closed: this change cannot run until your change-management system
+              explicitly approves it. Unreachable, slow and no-answer all count as <em>not approved</em> — that is the
+              whole point of routing approval through it.
+            </div>
+          </div>
+
+          <div class="mb-1 mt-3">
             <label class="fw-form-label">Rollback plan</label>
             <textarea class="form-control" name="rollback" rows="3"
                       placeholder="How will the change be reverted if it fails?"></textarea>
+          </div>
+
+          <div class="mb-1 mt-3">
+            <label class="fw-form-label">Notify on completion</label>
+            <input type="text" class="form-control" name="notify_to"
+                   placeholder="ops@example.com, customer@example.com">
+            <div class="form-text">Who is emailed when the window closes
+              (completed or failed). Leave blank to use the default recipients
+              from Settings &rarr; Email. Blank in both places means no mail is
+              sent &mdash; SATOM never guesses an address.</div>
           </div>
         </div>
       </div>

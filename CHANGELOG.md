@@ -136,6 +136,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   default is now `readonly` and why the approval gate exists.
 
 ### Changed
+- **One SATOM mark, filed under the product's name.** The console, the repo
+  site and the product site each drew a different brand: an emblem that reads as
+  a "G", and — on the product site — the CHARACTER `S` in a gradient box, a
+  placeholder that outlived its excuse. The only real vector the product owned
+  was filed as `assets/favicon.svg`, so the mark was named after ONE OF ITS
+  USES and nothing called "logo" or "mark" existed to find. It is now
+  `satom-mark.svg` on every surface, carries `<title>SATOM</title>` and
+  `aria-label="SATOM"` so an assistive reader announces the product rather than
+  "image", and `satom-mark.png` / `favicon.png` / `favicon.ico` /
+  `apple-touch-icon.png` are RENDERS of that one vector instead of independent
+  files. `tests/test_brand_mark.py` holds the surfaces together: the copies must
+  be byte-identical, every `site/` page with a `class="brand"` must show the
+  mark, and the generator template must stamp the same string the pages carry —
+  a page fixed by hand is reverted by the next regeneration.
 - **A live firmware upgrade requires an approved, open change window.** This was
   the hole: the headless executor had refused to flash outside a window since
   the gate was generalised, but the button a human actually clicks went straight

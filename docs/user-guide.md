@@ -45,6 +45,7 @@
 33. [AI Advisor](#33-ai-advisor)
 34. [The Audit Log](#34-the-audit-log)
 35. [Integrations: NetBox, change tickets and your own Python](#35-integrations-netbox-change-tickets-and-your-own-python)
+36. [Putting any appliance under change control](#36-putting-any-appliance-under-change-control)
 
 ---
 
@@ -2708,3 +2709,32 @@ If the change fails, the window still closes (it is over either way) but it
 closes carrying the failure, and the customer notice says the change did not
 happen. Nothing external — NetBox down, a hook erroring, SMTP refusing — can
 change the recorded outcome of the change itself.
+
+
+## 36. Putting any appliance under change control
+
+A Change Request now covers **FortiWeb, FortiADC, FortiAnalyzer and
+FortiAuthenticator**. Open **Change Requests** from any ADOM; the device list
+shows the appliances that ADOM can see (the Global console sees all four
+products), and each device is labelled with its product.
+
+**Choosing the action.** The Action dropdown lists every automation that
+touches a device and is either destructive or object-mutating — firmware
+upgrade and its preparation, the new **Reboot**, enabling/disabling a server
+policy or a backend, repointing a backend, swapping a certificate, the
+certificate lifecycle sweep and a custom REST call. If an action does not
+support the product of a device you picked, the form says so and refuses to
+save rather than creating a change that would quietly do nothing.
+
+**Reboot.** Destructive and one-shot: it runs **only** while bound to an
+approved change request inside its window, and refuses to fire otherwise. It is
+implemented for FortiWeb today; on another product it fails with a message
+naming the product rather than sending an unverified command to your appliance.
+A successful call means the box **accepted** the reboot — return to service is
+confirmed by the window's own post-checks, not by that call.
+
+**What the maintenance notice covers.** The affected-clients list is read in
+each product's own shape: server policies on FortiWeb, virtual servers on
+FortiADC. FortiAnalyzer and FortiAuthenticator publish no such object, so they
+contribute no client rows — that is a fact about the product, not a failed
+read.

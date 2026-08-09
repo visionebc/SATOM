@@ -215,7 +215,15 @@ def create_app(config_override: object | None = None) -> Flask:
             'web_protection', 'exceptions', 'attack_search', 'backups', 'logs',
             'import_backup', 'section_config', 'section_catalog',
             'signatures', 'structure',
-            'segments', 'scheduled_actions', 'change_requests',
+            'segments', 'scheduled_actions',
+            # 'change_requests' left this set on 2026-08-09. Pinning it to the
+            # FortiWeb ADOM meant a change window could only ever name a
+            # FortiWeb: the FortiADC/FAZ/FAC consoles bounced off the page, and
+            # even the Global console was re-pinned to 'fortiweb' by this very
+            # branch, so its device picker showed FortiWebs only. A maintenance
+            # window is a property of the DEVICE. Rows are scoped instead — a
+            # CR is visible in an ADOM when it names a device that ADOM can see
+            # (views.change_requests._cr_in_scope), by-id routes included.
             'provisioning', 'registry', 'api_explorer',
         }
         hdr = (request.headers.get('X-ADOM') or '').strip().lower()
@@ -308,7 +316,8 @@ def create_app(config_override: object | None = None) -> Flask:
                        # (corpus filtered by g.product); reached from the
                        # ADC ADOM top-banner modal (2026-07-12).
                        'release_notes',
-                       'templates', 'naming', 'capacity', 'api_tokens', 'api_v1'}
+                       'templates', 'naming', 'capacity', 'api_tokens', 'api_v1',
+                       'change_requests'}
             adc_eps = {'product.fortiadc_home'}
             if bp_name not in adc_bps and ep not in adc_eps:
                 return redirect(url_for('adc.index'))
@@ -331,6 +340,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        'metrics_admin',
                        'release_notes', 'templates', 'naming', 'capacity',
                        'api_tokens', 'api_explorer', 'api_v1',
+                       'change_requests',
                        'plugins', 'lua_studio'}
             if bp_name not in faz_bps:
                 return redirect(url_for('faz.index'))
@@ -356,6 +366,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        # none) and LuaScript.TARGETS therefore cannot list it.
                        # Letting the ADOM reach the studio only produced an
                        # editor with zero valid targets.
+                       'change_requests',
                        'plugins'}
             if bp_name not in fac_bps:
                 return redirect(url_for('fac.index'))

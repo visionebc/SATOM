@@ -109,14 +109,17 @@
             <label class="fw-form-label">Affected devices</label>
             <select class="form-select" name="device_ids" multiple size="6">
               {% for ap in appliances %}
-              <option value="{{ ap.id }}">{{ ap.name }}{% if ap.host %} ({{ ap.host }}){% endif %}</option>
+              <option value="{{ ap.id }}" data-kind="{{ ap.kind }}">{{ ap.name }} [{{ ap.kind }}]{% if ap.host %} ({{ ap.host }}){% endif %}</option>
               {% endfor %}
             </select>
             <div class="form-text">
               {% if appliances %}
                 Hold Ctrl/Cmd to select several. These define the clients to warn.
+                The selected action must support each device's product — the form
+                rejects a mismatch rather than saving a change that would resolve
+                to no targets.
               {% else %}
-                No FortiWeb appliances yet — add devices to populate this list.
+                No appliances yet — add devices to populate this list.
               {% endif %}
             </div>
           </div>

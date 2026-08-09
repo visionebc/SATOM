@@ -26,16 +26,43 @@ from ..auth.decorators import require_permission
 from ..models import Appliance, ChangeRequest, ChangeRequestEvent, Permission, db
 from ..models import visible_appliances, visible_appliance_or_404
 from ..services import change_requests as svc
+from ..services import scheduled_actions as sa
 from ..services.audit import log_action
 
 bp = Blueprint('change_requests', __name__, url_prefix='/change-requests')
 
-# The actions a CR may carry (the gated firmware flow + its safe prep).
-CR_ACTIONS = [
-    ("upgrade", "Firmware upgrade (gated, flashes + reboots)"),
-    ("upgrade_prep", "Upgrade preparation (backup + health)"),
-]
-_CR_ACTION_KEYS = {a for a, _ in CR_ACTIONS}
+# The actions a CR may carry are DERIVED from the automation catalog, never
+# re-listed here by hand. A hand-kept list is exactly how 'upgrade_prep' came to
+# be offered by this form while the executor's gate honoured only 'upgrade': the
+# destructive action was on the menu and ungated. Eligible = it touches a device
+# AND it is destructive (danger) or mutates objects (user scope) - so a newly
+# registered dangerous action appears here the day it is registered.
+def _cr_specs() -> list:
+    return [s for s in sa.ALL_ACTIONS.values()
+            if s.needs_targets and (s.danger or s.scope == 'user')]
+
+
+def cr_actions() -> list[tuple[str, str]]:
+    """[(key, label)] for the form's Action dropdown."""
+    return [(s.key, s.label) for s in _cr_specs()]
+
+
+def cr_action_keys() -> set[str]:
+    return {s.key for s in _cr_specs()}
+
+
+def cr_kinds() -> tuple[str, ...]:
+    """Appliance kinds a CR may target: the union of the eligible actions'
+    products. A maintenance window is a property of the DEVICE, not of one
+    product - FortiWeb, FortiADC, FortiAnalyzer and FortiAuthenticator are all
+    first-class here, and this form used to show only FortiWeb.
+    """
+    kinds: list[str] = []
+    for spec in _cr_specs():
+        for kind in spec.products:
+            if kind not in kinds:
+                kinds.append(kind)
+    return tuple(kinds)
 
 # Bootstrap-ish badge class per status for the list / detail header.
 _STATUS_BADGE = {
@@ -68,13 +95,51 @@ def _parse_dt(value: str | None):
 # --------------------------------------------------------------------------- #
 #  Routes                                                                       #
 # --------------------------------------------------------------------------- #
+def _visible_appliance_ids() -> set[int]:
+    """Appliance ids the ACTIVE ADOM may see."""
+    return {row[0] for row in
+            visible_appliances().with_entities(Appliance.id).all()}
+
+
+def _cr_in_scope(cr, visible: set[int] | None = None) -> bool:
+    """Is this change visible in the active ADOM?
+
+    A CR is scoped by the devices it NAMES: the ADOM that owns a box owns the
+    window that takes it down, and a change naming boxes in two products is
+    legitimately visible in both. A CR naming NO device belongs to no product
+    and stays visible everywhere - hiding it would make it unreachable from any
+    console at all.
+    """
+    ids = cr.device_ids_list
+    if not ids:
+        return True
+    vis = _visible_appliance_ids() if visible is None else visible
+    return any(i in vis for i in ids)
+
+
+def _cr_in_scope_or_404(id):
+    """Load one CR by id, honouring the same scope as the list.
+
+    Filtering the LIST while the by-id routes read the table raw is not scoping,
+    it is decoration - the exact hole closed fleet-wide for appliances on
+    2026-08-06. 404, never 403: do not confirm the row exists.
+    """
+    from flask import abort
+    row = ChangeRequest.query.get_or_404(id)
+    if not _cr_in_scope(row):
+        abort(404)
+    return row
+
+
 @bp.route('/')
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def index():
-    crs = (ChangeRequest.query
-           .order_by(ChangeRequest.created_at.desc())
-           .all())
+    visible = _visible_appliance_ids()
+    crs = [c for c in (ChangeRequest.query
+                       .order_by(ChangeRequest.created_at.desc())
+                       .all())
+           if _cr_in_scope(c, visible)]
     # Group by status, in the canonical lifecycle order, dropping empty buckets.
     groups = []
     for status in ChangeRequest.STATUSES:
@@ -98,15 +163,45 @@ def new():
             flash('A title is required.', 'danger')
             return redirect(url_for('change_requests.new'))
 
-        action = (request.form.get('action') or 'upgrade').strip()
-        if action not in _CR_ACTION_KEYS:
-            action = 'upgrade'
+        action = (request.form.get('action') or '').strip()
+        spec = sa.get_spec(action)
+        # An unrecognised action is REJECTED, never coerced. The old fallback
+        # silently rewrote a glitched form into 'upgrade' - the most destructive
+        # entry on the menu - which is the opposite of what a fallback is for.
+        if spec is None or action not in cr_action_keys():
+            flash(f'{action or "(none)"} is not a change-controlled action.',
+                  'danger')
+            return redirect(url_for('change_requests.new'))
         risk = (request.form.get('risk') or 'medium').strip()
         if risk not in svc.RISKS:
             risk = 'medium'
         device_ids = [n for n in
                       ((_to_int(x)) for x in request.form.getlist('device_ids'))
                       if n is not None]
+
+        # The devices must exist, be visible to this user, and be a product the
+        # chosen action actually runs against. Without this last check the CR
+        # saves happily and the SCHEDULED RUN resolves to zero targets (targets
+        # are filtered by spec.products), reporting 'skipped' - which closes the
+        # change as failed long after anyone could act on it.
+        picked = (visible_appliances().filter(Appliance.id.in_(device_ids)).all()
+                  if device_ids else [])
+        if len(picked) != len(set(device_ids)):
+            flash('One or more selected devices do not exist or are not visible '
+                  'to you.', 'danger')
+            return redirect(url_for('change_requests.new'))
+        wrong = [d for d in picked
+                 if (d.kind or 'fortiweb') not in spec.products]
+        if wrong:
+            flash(f'{spec.label} does not run against '
+                  + ', '.join(sorted({(d.kind or "?") for d in wrong}))
+                  + ' (' + ', '.join(d.name for d in wrong) + '). It supports: '
+                  + ', '.join(spec.products) + '.', 'danger')
+            return redirect(url_for('change_requests.new'))
+        if spec.single_target and len(device_ids) > 1:
+            flash(f'{spec.label} acts on exactly one appliance; '
+                  f'{len(device_ids)} were selected.', 'danger')
+            return redirect(url_for('change_requests.new'))
 
         cr = ChangeRequest(
             title=title[:200],
@@ -135,12 +230,14 @@ def new():
         return redirect(url_for('change_requests.detail', id=cr.id))
 
     appliances = (visible_appliances()
-                  .filter_by(kind='fortiweb')
-                  .order_by(Appliance.name)
+                  .filter(Appliance.kind.in_(cr_kinds()))
+                  .order_by(Appliance.kind, Appliance.name)
                   .all())
     return render_template('change_requests/form.html',
                            appliances=appliances,
-                           cr_actions=CR_ACTIONS,
+                           cr_actions=cr_actions(),
+                           action_products={s.key: list(s.products)
+                                            for s in _cr_specs()},
                            risks=svc.RISKS)
 
 
@@ -148,7 +245,7 @@ def new():
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def detail(id):
-    cr = ChangeRequest.query.get_or_404(id)
+    cr = _cr_in_scope_or_404(id)
     events = (ChangeRequestEvent.query
               .filter_by(cr_id=cr.id)
               .order_by(ChangeRequestEvent.ts.asc())
@@ -177,6 +274,7 @@ def detail(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def approve(id):
+    _cr_in_scope_or_404(id)
     try:
         cr = svc.approve(id, current_user.username)
         log_action('change_request.approve', target=cr.title)
@@ -190,6 +288,7 @@ def approve(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def schedule(id):
+    _cr_in_scope_or_404(id)
     try:
         action_id = svc.schedule_change_request(id, current_user.username)
         log_action('change_request.schedule', target=str(id),
@@ -204,6 +303,7 @@ def schedule(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def cancel(id):
+    _cr_in_scope_or_404(id)
     reason = (request.form.get('reason') or '').strip()
     try:
         cr = svc.cancel(id, current_user.username, reason)
@@ -222,7 +322,7 @@ def mark_notified(id):
     (Settings -> Email); otherwise just record it as sent. Best-effort: a send
     failure is reported and logged, never a 500."""
     from ..services import email_service as email
-    cr = ChangeRequest.query.get_or_404(id)
+    cr = _cr_in_scope_or_404(id)
     recipients = (request.form.get('recipients') or '').strip()
     stamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
 
@@ -269,7 +369,7 @@ def request_crq(id):
     request until somebody else's CRM replies would hand a third party the
     ability to hang the console."""
     from ..services import cr_orchestrator as orch
-    cr = ChangeRequest.query.get_or_404(id)
+    cr = _cr_in_scope_or_404(id)
     result = orch.request_crq(cr, by=current_user.username)
     log_action('change_request.crq_requested', target=cr.title,
                detail=f"dispatched={result.get('dispatched', 0)}")

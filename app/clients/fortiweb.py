@@ -195,21 +195,91 @@ class FortiWebClient(BaseClient):
         return self.get('/api/v2.0/cmdb/waf/web-protection-profile.inline-protection').json()
 
     # --- reference-option + interface helpers (for the editable workspace) ----
-    def cmdb_names(self, endpoint: str):
-        """Object names from one or more cmdb collections ('a|b' = merged),
-        for populating a reference <select>. Never raises (returns [])."""
+    # errcode the device returns for a cmdb path that does not exist on THIS
+    # firmware. _BENIGN_ERRCODES deliberately swallows it for reads (the object
+    # registry is a cross-firmware superset), but a *validator* must tell
+    # "collection absent" apart from "collection empty" -- both answer with zero
+    # rows and they mean opposite things. Verified live on fortiweb08 (8.0.x):
+    # an absent path answers HTTP 500 + errcode -20001, an empty one HTTP 200
+    # with no errcode.
+    _ABSENT_ERRCODES = {'-20001', '-3'}
+
+    def cmdb_names_checked(self, endpoint: str):
+        """(names, status, error) for one or more cmdb collections ('a|b').
+
+        status is one of:
+          ``ok``      - at least one source answered; ``names`` is authoritative
+                        (an EMPTY list then means the collection has no objects)
+          ``absent``  - every source reports the path does not exist here
+          ``error``   - every source failed to answer (transport, auth, license)
+
+        The three are never collapsed: only ``ok`` licenses a caller to reject a
+        value for not being in ``names``.
+        """
         seen, out = set(), []
+        any_ok, any_absent, errs = False, False, []
         for ep in (endpoint or '').split('|'):
             ep = ep.strip()
             if not ep:
                 continue
             path = ep if ep.startswith('/api/') else '/api/v2.0/cmdb/' + ep.lstrip('/')
-            for o in self._safe_list(path):
+            try:
+                resp = self.get(path)
+            except Exception as exc:  # noqa: BLE001 - transport-level failure
+                errs.append(str(exc))
+                continue
+            code = self._errcode(resp)
+            if code is not None and str(code) in self._ABSENT_ERRCODES:
+                any_absent = True
+                continue
+            if code is not None or resp.status_code >= 400:
+                errs.append('device error %s' % (code if code is not None
+                                                 else 'HTTP %s' % resp.status_code))
+                continue
+            try:
+                rows = self._results_list(resp.json())
+            except Exception as exc:  # noqa: BLE001
+                errs.append(str(exc))
+                continue
+            any_ok = True
+            for o in rows:
                 n = o.get('name') if isinstance(o, dict) else None
                 if n and n not in seen:
                     seen.add(n)
                     out.append(n)
-        return out
+        if any_ok:
+            return out, 'ok', ''
+        if any_absent:
+            return [], 'absent', ''
+        return [], 'error', '; '.join(errs) or 'no source answered'
+
+    @staticmethod
+    def _errcode(resp):
+        """The device's errcode for a response, or None when it reported none.
+
+        Unlike _device_error this does NOT whitelist anything -- the caller
+        decides what a given code means.
+        """
+        try:
+            j = resp.json()
+        except Exception:  # noqa: BLE001 - non-JSON body
+            return None
+        body = j if isinstance(j, dict) else {}
+        res = body.get('results')
+        if isinstance(res, dict) and res.get('errcode') not in (None, 0, '0'):
+            body = res
+        code = body.get('errcode')
+        return None if code in (None, 0, '0') else code
+
+    def cmdb_names(self, endpoint: str):
+        """Object names from one or more cmdb collections ('a|b' = merged),
+        for populating a reference <select>. Never raises (returns []).
+
+        Thin wrapper over cmdb_names_checked so there is exactly ONE reader of a
+        reference collection: a second implementation is how the dropdown and
+        the pre-write validator would come to disagree about what exists.
+        """
+        return self.cmdb_names_checked(endpoint)[0]
 
     def interface_ip(self, name: str):
         """Resolve a system interface's configured IP (CIDR), cached per client.

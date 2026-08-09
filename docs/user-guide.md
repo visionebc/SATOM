@@ -249,6 +249,37 @@ used by the Configuration sections and the WAF area:
   with an info banner; fields stay editable and Save still targets the device.
 - Every save previews as a dry-run diff before applying.
 
+### 7.1 Reference fields are checked before the write
+
+A **reference field** does not take free text: it names an object that must
+already exist on the appliance (a URL-rewrite policy, a user-tracking policy, a
+certificate…). If you save a name the device does not have, FortiWeb refuses the
+**whole** save with `errcode -651: Invalid input value.` — a message that names
+neither the field nor the value, and that also discards the correct fields you
+changed in the same save.
+
+SATOM asks the appliance first. When a value is not there you get a refusal that
+says which field, which value, which collection, and which names do exist:
+
+> `subresource-integrity-policy: "admin" — "waf/subresource-integrity-policy"
+> has no configured objects on this device, so there is nothing
+> "subresource-integrity-policy" can name yet`
+
+Three things worth knowing:
+
+- The check runs on **Preview** as well as on **Apply**. A preview that hid a
+  certain refusal would have you approve a plan the device will reject.
+- **Nothing is written** when a reference is refused — not even the fields that
+  were fine. Fix the value and save again.
+- If the appliance cannot be reached for the check, the save is **not** blocked.
+  The response lists the fields it could not verify (`unverified_refs`); the
+  device remains the authority and will still answer -651 if the value is wrong.
+
+A field that offers a **dropdown** is a reference field. A few fields that the
+appliance treats as selects still render as text because the collection they
+draw from could not be confirmed on this firmware — those are passed to the
+device unchecked, exactly as before.
+
 ## 8. Web Protection (WAF)
 
 FortiWeb ADOM → **Web Protection** reproduces the FortiWeb 7.6 Web Protection

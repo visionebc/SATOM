@@ -6,6 +6,100 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-08-09
+
+### Fixed
+
+- **A migrated Custom Access Rule now carries the conditions it matches on.**
+  A rule was declared in the dependency map as a leaf, so a clone or a
+  cross-appliance migrate copied its NAME and none of the per-rule filter
+  sub-tables that hold its whole meaning — which URL, which source IP, which
+  rate limit. The job reported success, the GUI showed the rule on the
+  destination, and the rule enforced nothing. Found on a real migration:
+  `car-ratelimit` moved from one appliance to another with its URL filter
+  (`^/api/`) and its rate limit (100) dropped, leaving a rule that looked
+  migrated and matched no traffic. All seventeen filter sub-tables the endpoint
+  registry knows about are now walked with the rule.
+
+  Widening the map is only safe because of the second half of this fix.
+  FortiWeb does not answer an unimplemented sub-table path with a 404 — it
+  echoes the PARENT OBJECT back, so every name added to the map is a path that,
+  on a firmware that lacks it, would have manufactured a filter row built out
+  of the rule itself. By-parent reads now drop that echo, on the source and on
+  the destination. The destination half is the quieter one: the echo is matched
+  against the source row by content, so a row whose fields are a subset of the
+  parent's was classified *already present* and silently never created.
+
+- **A cloned Web Protection Profile now owns its whole tree.** The guided clone
+  runs the tree engine with the SAME appliance as source and destination, and
+  that engine's central verdict — *already at the destination, do not copy* —
+  is correct across two boxes and inverts its meaning on one: every sub-object
+  of the source profile already existed, so the "clone" was the root profile
+  renamed with roughly forty sub-policies still shared with the original.
+  Nothing failed and nothing warned; the plan said `exists` for every child,
+  which was true. The consequence was found on a live appliance: a profile
+  cloned for one Server Policy still named the original's allow-method policy,
+  so an allow-list authored for that one site went live for five. The clone now
+  recreates every sub-object the new profile may own under this policy's own
+  name and re-points the references, and the re-point rewrites only the
+  dependency field that names the object — never any string that happens to
+  match it.
+
+- **A duplicate is no longer reported as a refusal.** Pushing a carve-out
+  writes in two steps, and the first — create the named container — POSTed
+  unconditionally despite an option that says *create the container if it does
+  not exist*. On any appliance where the container was already there it always
+  came back `errcode -5`, and because the result was the AND of both steps it
+  dragged down a second step that had just written the exception successfully.
+  The operator was told the appliance had rejected a carve-out that was live,
+  and pressed the button again. The container is now probed before it is
+  created, a `-5` is recognised as "already there" rather than a rejection, and
+  a carve-out already on the box is reported as such — never as *created*, and
+  never as *rejected*. Errors that are not duplicates still fail, and the code
+  is matched, not the sentence, which is the localisable half of the answer.
+
+- **The audit listing is now totally ordered.** It sorted by timestamp alone, so
+  rows written in the same second came back in whatever order the database chose
+  — which it is free to change between two queries, letting one row appear on two
+  pages or on none. `id` is now the tiebreak. The new ID column is also what makes
+  such a duplicate visible at all.
+
+### Added
+
+- **The clone says what it cannot copy, before it writes.** Three things are
+  never duplicated silently: FortiWeb's own predefined objects (detected from
+  the `can_view` marker the appliance sets, verified against a live 7.6.8 box),
+  objects an approved template governs, and anything whose parent stays shared
+  — re-pointing a reference is a write to the parent, so copying a child under
+  a shared parent would leak the change to every profile behind it. The
+  Exceptions page now previews the clone before authorising it, listing what
+  will be copied and what will stay shared with the source; the first two can
+  be overridden object by object, the third is a consequence and is not offered
+  as a choice. Applying a plan that leaves anything shared requires an explicit
+  acknowledgement.
+
+- **Capacity is checked per object type, for the whole plan.** The clone used
+  to ask one question — is there room for one more Web Protection Profile? —
+  which was the whole story while it created one object. It now sums the plan
+  per capped type before the first write, because the failure to prevent is not
+  a rejected POST but a clone that dies half-written and is never re-bound.
+  Object types with no configured limit are reported as unchecked rather than
+  skipped in silence.
+
+- **Every audit entry now shows the ID it always had.** `audit_logs` rows have
+  carried a primary key since the table existed, and nothing ever displayed it —
+  so the only way to point at one entry was to quote its timestamp, which is not
+  unique: a single apply writes several rows inside the same second. The listing
+  gained a leading **ID** column (click it to copy, without opening the drawer),
+  the detail panel opens with the ID and its own copy control, and the search box
+  resolves an ID back to its row — bare (`4821`), as the table prints it
+  (`#4821`) or as a ticket tends to quote it (`AUD-004821`).
+
+  The ID search is **OR-ed into** the existing text search, never substituted for
+  it: a numeric query like `8443` still matches the targets and payloads that
+  contain it. And it is not a way around ADOM scoping — a FortiWeb session that
+  guesses a FortiADC row's number still gets nothing.
+
 ## [1.9.0] - 2026-08-08
 
 ### Changed
@@ -737,7 +831,6 @@ that it carries the defect.
   a full filesystem stops Postgres writing WAL.
 
 
-
 - **Settings > Hypervisors** — register the Proxmox and/or ESXi endpoints SATOM
   may build machines on, more than one of each. Credentials are Fernet-encrypted
   and never returned to the browser; a blank secret on edit keeps the stored
@@ -918,9 +1011,6 @@ that it carries the defect.
 - The chart threshold lines were drawn from the raw probe column, so a probe that
   inherits its levels would have shown no threshold line at all while still being
   graded against one.
-
-
-
 
 
 - **"New appliance" could not add a FortiAuthenticator.** The platform roster

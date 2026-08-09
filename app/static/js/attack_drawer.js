@@ -793,8 +793,13 @@
       var cloneOk = out.querySelector('.atk-clone-ok');
       accept.disabled = reject.disabled = true;
       box.innerHTML = spinner('Applying…');
+      var applyBody = {payload: payload,
+                       clone_wpp: !!(cloneOk && cloneOk.checked)};
+      sendApply({});
+      function sendApply(extra) {
+      if (extra) { for (var k in extra) { applyBody[k] = extra[k]; } }
       post(PAGE.proposal_apply_url.replace('__PID__', accept.dataset.atkPid),
-           {payload: payload, clone_wpp: !!(cloneOk && cloneOk.checked)})
+           applyBody)
         .then(function (r) {
           if (r.ok) {
             draftId = r.exc_id || null;
@@ -809,6 +814,14 @@
             return;
           }
           accept.disabled = reject.disabled = false;
+          if (r.questions && r.questions.length) {
+            box.innerHTML = sharedHtml(r);
+            wireShared(box, function (extra) {
+              box.innerHTML = spinner('Applying…');
+              sendApply(extra);
+            });
+            return;
+          }
           if (r.scope && r.scope.needs_clone) {
             box.innerHTML = scopeHtml(r.scope) +
               '<div class="text-muted" style="font-size:12.5px;">Tick the box ' +
@@ -817,6 +830,7 @@
           }
           box.innerHTML = alertBox('danger', esc(r.error || 'Apply failed.'));
         });
+      }
     });
 
     reject.addEventListener('click', function () {
@@ -1043,7 +1057,7 @@
       var cloneOk = panel.querySelector('.atk-builder .atk-clone-ok');
       save.disabled = true;
       sout.innerHTML = spinner('Saving…');
-      post(PAGE.carveout_url, {
+      var saveBody = {
         appliance_id: PAGE.appliance_id, msg_id: row.msg_id,
         exc_type: built.explain ? built.explain.type_key : '',
         fields: Object.keys(sel).filter(function (k) { return sel[k]; }),
@@ -1051,9 +1065,21 @@
         verdict: judged.verdict, risk: judged.risk,
         justification: just ? just.value : '',
         clone_wpp: !!(cloneOk && cloneOk.checked)
-      }).then(function (r) {
+      };
+      sendSave({});
+      function sendSave(extra) {
+      if (extra) { for (var sk in extra) { saveBody[sk] = extra[sk]; } }
+      post(PAGE.carveout_url, saveBody).then(function (r) {
         save.disabled = false;
         if (!r.ok) {
+          if (r.questions && r.questions.length) {
+            sout.innerHTML = sharedHtml(r);
+            wireShared(sout, function (extra) {
+              sout.innerHTML = spinner('Saving…');
+              sendSave(extra);
+            });
+            return;
+          }
           if (r.scope && r.scope.needs_clone) {
             sout.innerHTML = scopeHtml(r.scope) +
               '<div class="text-muted" style="font-size:12.5px;">Tick the box, ' +
@@ -1073,6 +1099,57 @@
           '<div class="atk-insert mt-2"></div>';
         startInsert(sout.querySelector('.atk-insert'), draftId);
       });
+      }
+    });
+  }
+
+
+  // ── sub-objects the clone cannot copy ─────────────────────────────────────
+  //
+  // A same-device clone gives the new profile its OWN copy of every sub-policy
+  // it may own; whatever it cannot copy stays SHARED with the source, which is
+  // precisely the leak the clone was asked to close. The server refuses such a
+  // plan (409) and hands back the list rather than applying a partial answer,
+  // because "isolated" that is isolated in most places is not a state anyone
+  // can reason about later. Predefined and template-governed objects can be
+  // overridden one by one; an object blocked by a shared PARENT cannot, because
+  // copying it would mean writing the new name into that shared parent.
+  function sharedHtml(r) {
+    var qs = (r && r.questions) || [];
+    if (!qs.length) return '';
+    var rows = qs.map(function (q, i) {
+      var id = 'atk-shq-' + i;
+      var ctl = q.overridable
+        ? '<input class="form-check-input atk-shq" type="checkbox" id="' + id +
+          '" value="' + esc(q.ref) + '">'
+        : '<i class="bi bi-lock text-muted" title="not an operator choice"></i>';
+      return '<li class="mb-2">' + ctl + ' <label class="ms-1" for="' + id +
+        '"><code>' + esc(q.mkey) + '</code> <span class="fw-badge ' +
+        'fw-badge-secondary">' + esc(q.verdict) + '</span></label>' +
+        '<div class="text-muted" style="font-size:12px;">' + esc(q.reason) +
+        '</div></li>';
+    }).join('');
+    return alertBox('warning',
+      '<i class="bi bi-exclamation-triangle me-1"></i>' + esc(r.error || '') +
+      '<div class="mt-2" style="font-size:12.5px;">The clone copies <strong>' +
+      ((r.renames || []).length) + '</strong> sub-object(s) under this policy\u2019s ' +
+      'own names. The following stay <strong>shared with the source profile</strong>, ' +
+      'so anything written into them still applies to every policy behind ' +
+      'them:</div><ul class="list-unstyled mt-2 mb-2">' + rows + '</ul>' +
+      '<button class="btn btn-sm btn-outline-warning atk-shq-go">' +
+      'Continue \u2014 I accept what stays shared</button>');
+  }
+
+  function wireShared(box, resend) {
+    var go = box.querySelector('.atk-shq-go');
+    if (!go) return;
+    go.addEventListener('click', function () {
+      var refs = [];
+      Array.prototype.forEach.call(box.querySelectorAll('.atk-shq'), function (c) {
+        if (c.checked) refs.push(c.value);
+      });
+      go.disabled = true;
+      resend({acknowledge: true, clone_anyway: refs});
     });
   }
 

@@ -220,6 +220,10 @@ def test_analysis_reads_the_entry_from_the_device_not_the_request():
         "appliance_id", "msg_id", "payload", "clone_wpp", "new_name",
         "field", "resolve_ptr", "exc_type", "fields", "verdict", "risk",
         "justification", "target", "apply", "create_container",
+        # deep-clone controls (1.9.1): which blocked children to clone anyway
+        # and the operator's acknowledgement of a partial clone. Both say WHAT
+        # TO DO, not what the entry contained.
+        "clone_anyway", "acknowledge",
         # /ask-field: the operator's own question and the thread it continues.
         # Both are control keys — neither is a field OF the entry, which is
         # what the guard below actually forbids.

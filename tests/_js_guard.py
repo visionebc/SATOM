@@ -20,7 +20,19 @@ What counts as a definition:
   site to ``refresh``, so it is defined. A slot that is declared and never
   assigned is deliberately NOT defined: a call that can only ever reach ``null``
   is precisely the dead call this guard exists to catch, and accepting bare
-  declarations would let it through.
+  declarations would let it through;
+* a **function parameter**. ``function wireShared(box, resend) { … resend(…) }``
+  calls something this file never declares, and that is not a defect — the
+  callable arrives from the call site. This is the third time a legitimate way
+  of holding a function has failed the guard against correct code (after the
+  callback slot, and after the closure ``startClock`` used to return), so the
+  rule is stated once here rather than patched at each call site.
+
+  Parameters are accepted file-wide rather than per-scope: the checker is
+  regex-based and has never been scope-aware — a nested function's name already
+  counts everywhere. The trade is deliberate and narrow. A misspelt call is only
+  missed if the typo exactly matches some parameter name in the file, whereas
+  the false positives it removes are real code the guard was blocking.
 """
 from __future__ import annotations
 
@@ -56,6 +68,30 @@ def _callback_slots(code: str, defined: set) -> set:
     return out
 
 
+def _parameters(code: str) -> set:
+    """Every parameter name of every function in the file.
+
+    A parameter is bound at runtime, so calling one is not a dangling call; the
+    guard flagged ``resend`` in ``function wireShared(box, resend)`` purely
+    because it looks for declarations. Covers declarations, function
+    expressions and parenthesised arrows. Destructuring and defaults are
+    skipped rather than half-parsed — a name this misses is reported as
+    undefined, which is the safe direction for a guard to be wrong in.
+    """
+    out: set = set()
+    heads = re.findall(r"function\s*[A-Za-z_$][\w$]*\s*\(([^()]*)\)", code)
+    heads += re.findall(r"function\s*\(([^()]*)\)", code)
+    heads += re.findall(r"\(([^()]*)\)\s*=>", code)
+    for head in heads:
+        for part in head.split(","):
+            part = part.strip()
+            if re.fullmatch(r"[A-Za-z_$][\w$]*", part):
+                out.add(part)
+    # A single-identifier arrow parameter: `x => …`
+    out |= set(re.findall(r"(?<![.\w$])([A-Za-z_$][\w$]*)\s*=>", code))
+    return out
+
+
 def defined_names(code: str) -> set:
     """Every name this script binds to something callable."""
     defined = set(re.findall(r"function\s+" + _NAME + r"\s*\(", code))
@@ -65,6 +101,7 @@ def defined_names(code: str) -> set:
         _DECL + _NAME + r"\s*=\s*(?:async\s*)?\([^()]*\)\s*=>", code))
     defined |= set(re.findall(_DECL + _NAME + r"\s*=\s*[A-Za-z_$][\w$]*\s*=>",
                               code))
+    defined |= _parameters(code)
     defined |= _callback_slots(code, defined)
     return defined
 

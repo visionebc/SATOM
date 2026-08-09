@@ -51,6 +51,21 @@ def derive_name(policy: str) -> str:
     return naming_svc.render_one(pattern, naming_svc.slugify(policy) or policy)
 
 
+def derive_suffix(policy: str) -> str:
+    """The per-policy token every COPIED sub-object is named with.
+
+    The root profile gets the Naming catalog's pattern (``wpp-{name}``); its
+    children get ``<original>-<suffix>``, because a child named by the root's
+    pattern would read as a second profile. One suffix for the whole subtree is
+    also what makes the copy legible on the box: every object belonging to this
+    policy ends the same way.
+    """
+    if not policy:
+        return ''
+    from . import naming as naming_svc
+    return naming_svc.slugify(policy) or policy
+
+
 def suggestion(appliance, source, policies) -> dict:
     """The guided-clone offer (rule 3): the derived name plus WPP headroom
     (rule 4) checked UP FRONT, so the operator learns the box is full before
@@ -67,9 +82,30 @@ def suggestion(appliance, source, policies) -> dict:
 
 
 def clone_and_rebind(appliance, *, source: str, policy: str, new_name: str = '',
-                     apply: bool = False, actor: str = '') -> dict:
+                     apply: bool = False, actor: str = '',
+                     clone_anyway=(), acknowledge: bool = False) -> dict:
     """Deep-clone ``source`` as ``new_name``, re-bind ``policy`` to it, re-point
     carve-outs. Dry-run unless ``apply``.
+
+    **The clone is deep on purpose, and it did not used to be.** ``ClonePlanner``
+    classifies each object against the DESTINATION and skips what already exists
+    there; with source and destination being the same appliance that skipped
+    everything, so the "clone" was the root profile renamed and ~40 sub-policies
+    still shared with the original. A carve-out on the copy then landed in an
+    object the original still pointed at. ``deep_suffix`` is what closes that:
+    every sub-object the new profile may own is COPIED under
+    ``<original>-<policy>`` and the references re-pointed.
+
+    Three things are NOT copied, and the operator is told about each rather than
+    finding out later (see :mod:`clone_scope`): FortiWeb **predefined** objects,
+    objects an approved **template** governs, and anything whose parent stays
+    shared — re-pointing a reference is a write to the parent, so duplicating a
+    child under a shared parent would leak the change to every profile behind
+    it. ``clone_anyway`` (a list of ``"<urn>|<name>"``) overrides the first two;
+    the third is a consequence, not a choice. ``acknowledge=True`` is required
+    to apply a plan that leaves anything shared — the whole point of the flow is
+    that "isolated" means isolated, so a partial answer has to be an explicit
+    decision.
 
     Returns a dict carrying its own HTTP-ish ``code`` so both callers report the
     same failure with the same status. ``ok=False`` never leaves the device
@@ -78,7 +114,7 @@ def clone_and_rebind(appliance, *, source: str, policy: str, new_name: str = '',
     is strictly worse than a policy still pointing at the shared one.
     """
     from . import wpp_exceptions as store
-    from . import capacity, clone, objform
+    from . import capacity, clone, clone_scope, objform
     from ..clients.fortiweb import FortiWebClient
     from .fortiweb_ops import FortiWebOps
     from .audit import log_action
@@ -103,19 +139,64 @@ def clone_and_rebind(appliance, *, source: str, policy: str, new_name: str = '',
     if not allowed:
         return {'ok': False, 'code': 409, 'error': hmsg}
 
+    # Template governance decides which sub-objects may be copied, so a failure
+    # to read it is not "nothing is templated" — it is not knowing. Guessing
+    # here would take a Server Policy out of a template without a decision.
+    try:
+        managed = clone_scope.managed_names_by_collection()
+    except Exception as exc:  # noqa: BLE001
+        return {'ok': False, 'code': 500,
+                'error': 'could not read template governance, so SATOM cannot '
+                         'tell which sub-objects are template-managed: %s' % exc}
+
+    suffix = derive_suffix(policy)
+    if not suffix:
+        return {'ok': False, 'code': 400,
+                'error': 'could not derive a per-policy name suffix from "%s"'
+                         % policy}
+
     try:
         client = FortiWebClient(appliance)
         reader = clone.ClientReader(client)
         planner = clone.ClonePlanner(reader, reader)
-        items = planner.plan(clone.ROOT_WPP, source, new_name=new_name)
+        items = planner.plan(clone.ROOT_WPP, source, new_name=new_name,
+                             deep_suffix=suffix, managed=managed,
+                             clone_anyway=clone_anyway)
     except Exception as exc:  # noqa: BLE001
         return {'ok': False, 'code': 502, 'error': 'device read failed: %s' % exc}
 
     summary = clone.summarize(items)
+    renames = list(getattr(planner, 'renames', []))
+    questions = clone_scope.questions(items)
+
+    # Rule 4, once per object TYPE. The single web_protection_profile check
+    # above was the whole story while the clone created exactly one object; a
+    # deep clone creates dozens across ~15 types, and the failure to prevent is
+    # not a rejected POST but a clone that dies HALF-written — at which point
+    # this function refuses to re-bind and the orphans are found by hand.
+    wants = clone.wants_by_logical(items)
+    cap_ok, cap_msgs, cap_unchecked = capacity.check_plan_headroom(appliance, wants)
+
+    common = {'new_name': new_name, 'summary': summary, 'renames': renames,
+              'questions': questions, 'headroom': hmsg,
+              'capacity': cap_msgs, 'capacity_unchecked': cap_unchecked,
+              'creates': sum(1 for it in items if it.status == 'create')}
+
     if not apply:
-        return {'ok': True, 'code': 200, 'dry_run': True, 'new_name': new_name,
-                'summary': summary, 'headroom': hmsg,
-                'plan': clone.render_plan(items)}
+        return dict(common, ok=True, code=200, dry_run=True,
+                    plan=clone.render_plan(items))
+
+    if not cap_ok:
+        return dict(common, ok=False, code=409,
+                    error='the plan does not fit the appliance: %s'
+                          % ' '.join(m for m in cap_msgs if m.startswith('Capacity')))
+
+    if questions and not acknowledge:
+        return dict(common, ok=False, code=409,
+                    plan=clone.render_plan(items),
+                    error='%d object(s) cannot be copied and would stay shared '
+                          'with "%s". Review them and confirm before applying.'
+                          % (len(questions), source))
 
     if any(it.status == 'create' for it in items):
         ops = FortiWebOps(appliance)
@@ -130,25 +211,26 @@ def clone_and_rebind(appliance, *, source: str, policy: str, new_name: str = '',
         clone.apply_clone(items, _write, dry_run=False)
         failed = [it for it in items if (it.result or '').startswith('error')]
         if failed:
-            return {'ok': False, 'code': 502,
-                    'error': '%d object(s) failed to clone — policy NOT re-bound'
-                             % len(failed),
-                    'plan': clone.render_plan(items)}
+            return dict(common, ok=False, code=502,
+                        error='%d object(s) failed to clone — policy NOT re-bound'
+                              % len(failed),
+                        plan=clone.render_plan(items))
     # else: the clone already exists on the box → just re-bind.
 
     res = FortiWebOps(appliance).update(
         EP_POLICY, policy, {'data': {'web-protection-profile': new_name}},
         dry_run=False)
     if not res.ok:
-        return {'ok': False, 'code': 502, 'new_name': new_name,
-                'error': 'clone "%s" is on the device but the policy re-bind '
-                         'failed: %s' % (new_name, res.get('error', ''))}
+        return dict(common, ok=False, code=502,
+                    error='clone "%s" is on the device but the policy re-bind '
+                          'failed: %s' % (new_name, res.get('error', '')))
 
     moved = store.retarget_for_policy(appliance.id, policy, source, new_name)
     log_action('exceptions.clone_for_policy', target='%s/%s' % (appliance.name, policy),
                appliance_id=appliance.id,
-               detail='wpp %s -> %s (re-pointed %d carve-out(s))'
-                      % (source, new_name, moved))
+               detail='wpp %s -> %s (re-pointed %d carve-out(s); '
+                      'copied %d sub-object(s); %d left shared)'
+                      % (source, new_name, moved, len(renames), len(questions)))
     # Keep the DB-first pickers current (best-effort — the device write already
     # succeeded; a refresh failure only delays the new name showing in lists).
     #
@@ -173,5 +255,5 @@ def clone_and_rebind(appliance, *, source: str, policy: str, new_name: str = '',
             db.session.rollback()
         except Exception:  # noqa: BLE001 — nothing left to salvage
             pass
-    return {'ok': True, 'code': 200, 'dry_run': False, 'new_name': new_name,
-            'rebound': True, 'moved': moved, 'summary': summary}
+    return dict(common, ok=True, code=200, dry_run=False,
+                rebound=True, moved=moved)

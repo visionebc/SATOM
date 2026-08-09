@@ -94,6 +94,7 @@
       <a href="#31-release-notes-the-satom-changelog">31. Release notes &amp; the SATOM changelog</a>
       <a href="#32-troubleshooting">32. Troubleshooting</a>
       <a href="#33-ai-advisor">33. AI Advisor</a>
+      <a href="#34-the-audit-log">34. The Audit Log</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="satom-user-guide">SATOM — User Guide</h1>
@@ -140,6 +141,7 @@ codebase is assumed. For architecture and internals see the
 <li><a href="#31-release-notes--the-satom-changelog">Release notes &amp; the SATOM changelog</a></li>
 <li><a href="#32-troubleshooting">Troubleshooting</a></li>
 <li><a href="#33-ai-advisor">AI Advisor</a></li>
+<li><a href="#34-the-audit-log">The Audit Log</a></li>
 </ol>
 <hr>
 <h2 id="1-signing-in-accounts">1. Signing in &amp; accounts</h2>
@@ -331,6 +333,13 @@ optionally the full WAF profile) on the same or another FortiWeb.</p>
   profile under a new name.</li>
 <li>Objects that already exist on the destination are <strong>validated and skipped</strong>,
   never overwritten. The clone lands <strong>disabled</strong> for a manual cutover.</li>
+<li><strong>Rule content travels with the rule.</strong> Objects whose meaning lives in
+  per-rule sub-tables — a Custom Access Rule's URL / source-IP / rate-limit
+  filters, a URL Access Rule's match conditions — are copied with those rows,
+  not as a bare name. A rule copied without them would appear on the
+  destination and match no traffic, and nothing in the job result would say so.
+  If a sub-table does not exist on the destination's firmware it contributes
+  nothing rather than being invented.</li>
 </ul>
 <h2 id="7-server-objects-the-generic-object-editor">7. Server Objects &amp; the generic object editor</h2>
 <p>FortiWeb ADOM → <strong>Server Objects</strong> mirrors the appliance's Server Objects
@@ -532,6 +541,48 @@ four sites share applies to all four.</p>
 to it, and authorises the exception there. <strong>The clone is a real write to the
 appliance and is never implicit</strong> — it happens only when you ask for it in the
 same action.</p>
+<p>The copy is <strong>deep</strong>. A profile is not one object: it names roughly forty
+sub-policies, and a carve-out physically lands inside one of them. A profile
+that shares its sub-policies therefore shares every carve-out written into
+them, and a clone that copied only the top object would look isolated while
+leaking exactly as before. So every sub-object the new profile may own is
+recreated under this policy's own name — <code>am-shop</code> becomes
+<code>am-shop-pol-shop-cms</code> — and the references are re-pointed to the copies.</p>
+<p>Three things are <strong>not</strong> copied, and SATOM says so before it writes anything:</p>
+<table>
+<thead>
+<tr>
+<th>left shared</th>
+<th>why</th>
+<th>can you override it?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>predefined</strong> objects (<code>Standard Protection</code>, <code>Predefined - Known Bots</code>…)</td>
+<td>a copy stops receiving FortiGuard updates</td>
+<td>yes, object by object</td>
+</tr>
+<tr>
+<td>objects an <strong>approved template</strong> governs</td>
+<td>copying takes this policy out of the template without anyone deciding to</td>
+<td>yes, object by object</td>
+</tr>
+<tr>
+<td>anything whose <strong>parent stays shared</strong></td>
+<td>re-pointing a reference is a write to the parent, so the copy would push the new name into an object other profiles still read</td>
+<td>no — it is a consequence, not a choice</td>
+</tr>
+</tbody>
+</table>
+<p>The Exceptions page previews the clone first: what will be copied, what will
+stay shared, and the reason for each. Applying a plan that leaves anything
+shared takes an explicit confirmation, because a profile that is isolated in
+most places is not a state you can reason about three months later.</p>
+<p>Capacity is checked for the whole plan, per object type, before the first
+write — a clone that dies half-way is not re-bound, and its orphans have to be
+found by hand. Object types with no configured limit are listed as unchecked
+rather than passed over quietly.</p>
 <p>Saving a draft on the Exceptions page (§9) warns rather than refuses: a draft
 in the database lets nothing through. The Attack ID page refuses, because it is
 one click from a push. The push itself refuses hardest — that is where the leak
@@ -2978,6 +3029,33 @@ anywhere.</p>
 </tr>
 </tbody>
 </table>
+<hr>
+<h2 id="34-the-audit-log">34. The Audit Log</h2>
+<p>Every write SATOM makes is recorded here: who, when, from which address, against
+which target, with the payload. It is the page a compliance question ends on, so
+it is read-only by construction — there is no edit or delete control, for anyone.</p>
+<p><strong>Each entry has an ID, and it is the handle for everything else.</strong> The first
+column shows it as <code>#4821</code>. Click the ID to copy it — that click does <em>not</em> open
+the detail panel, so copying the handle never buries it. Clicking anywhere else
+in the row opens the panel, which repeats the ID at the top with its own <strong>Copy</strong>
+button.</p>
+<p><strong>Finding an entry again.</strong> Paste the ID into the search box at the top of the
+page. All three shapes resolve to the same row: <code>4821</code>, <code>#4821</code>, and the
+zero-padded <code>AUD-004821</code> form that tends to end up in a ticket. The ID is
+searched <em>in addition to</em> the text fields, so an ordinary numeric query — a port,
+an appliance number — keeps matching the targets and payloads that contain it.</p>
+<p><strong>The ID is a handle, not a key to another workspace.</strong> The lookup runs inside
+the same ADOM scoping as the rest of the page: a FortiWeb session cannot pull up
+a FortiADC row by guessing its number.</p>
+<p><strong>Why a timestamp was not enough.</strong> One apply writes several rows inside the same
+second, so "the 12:04:31 entry" can name three different things. The ID names
+exactly one — and it is also what makes the listing's ordering checkable, since a
+row that appeared twice would now be visibly the same row.</p>
+<p><strong>Errors carry a second ID.</strong> When an entry records a failure, the panel opens
+with a red <strong>Error reference</strong> — an eight-character code you can <code>grep</code> in
+<code>data/logs/satom.log</code> for the full traceback. That is a different identifier from
+the entry ID and answers a different question: the entry ID names <em>the record</em>,
+the error ID names <em>the crash</em>.</p>
     </div>
   </div>
 </section>

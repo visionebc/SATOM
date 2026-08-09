@@ -328,10 +328,18 @@ class Appliance(db.Model):
         from .clients.fortiweb import FortiWebClient
         from .clients.fortiadc import FortiADCClient
         from .clients.fortianalyzer import FortiAnalyzerClient
+        from .clients.fortiauthenticator import FortiAuthenticatorClient
         if self.kind == "fortiadc":
             return FortiADCClient(self, timeout=timeout)
         if self.kind == "fortianalyzer":
             return FortiAnalyzerClient(self, timeout=timeout)
+        # FortiAuthenticator used to fall through to the FortiWeb client, so
+        # every GENERIC caller spoke the wrong dialect to a FAC: probe_status()
+        # reported fac01 OFFLINE (measured 2026-08-09) while its own client
+        # answered fine. Callers that knew about it hand-built the right client;
+        # the ones that did not just got a wrong answer, quietly.
+        if self.kind == "fortiauthenticator":
+            return FortiAuthenticatorClient(self, timeout=timeout)
         return FortiWebClient(self, timeout=timeout)
 
     def build_client(self, timeout: float = 30.0):

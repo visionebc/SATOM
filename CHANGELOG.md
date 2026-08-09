@@ -7,6 +7,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **Change Requests cover every Forti product, not just FortiWeb.** The device
+  picker was hard-filtered to `kind='fortiweb'` and the page itself was pinned
+  to the FortiWeb ADOM by the product gate, so a FortiADC, FortiAnalyzer or
+  FortiAuthenticator could never be named in a change window. The page is now
+  reachable from every ADOM and rows are scoped by the devices they name
+  (by-id routes included), instead of by which console you opened.
+- **`reboot` action** (danger, one-shot, `requires_change_request`): reboots a
+  target appliance inside an approved window. The FortiWeb URN
+  (`/api/v2.0/system/status.systemoperationreboot`, body `{reason}`, 100-char
+  cap) was read off fortiweb08's own GUI bundle; products without a URN
+  verified against their own hardware are refused BY NAME, never guessed at.
+- `ActionSpec.requires_change_request`: an action can declare that it only runs
+  bound to an approved CR. The executor honours the flag, so a newly registered
+  dangerous action arrives gated instead of arriving free.
+
 
 - **Import directory users before their first sign-in, on RADIUS too.** The
   user importer (Settings → Authentication → *Sync directory users*) used to
@@ -33,7 +48,34 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   succeeded, and blaming the credential sends the user to reset one that was
   correct. Existing accounts are never re-gated.
 
+### Changed
+- The CR action menu is DERIVED from the automation catalog (every targeted
+  action that is `danger` or user-scope) instead of a hand-written pair. This
+  puts `policy_set_status`, `backend_set_status`, `backend_set_config`,
+  `swap_certificate`, `cert_lifecycle` and `custom_rest` under change control
+  for the first time.
+- `upgrade_prep` now declares `products=("fortiweb", "fortiadc")`, matching the
+  ADC branch `upgrade.prepare()` has had all along.
+- `cert_lifecycle` is flagged `danger`. It revokes superseded certificates and
+  DELETES certificate material off the appliance; the flag was missing, so the
+  UI did not warn and the sweep was not eligible for change control.
+- The "clients affected by this window" read is per product: FortiWeb server
+  policies, FortiADC virtual servers. Reading only the FortiWeb shape made
+  every ADC in a window look like it had no clients at all.
+
 ### Fixed
+- `Appliance._own_client()` returned a **FortiWeb** client for a
+  FortiAuthenticator, so every generic caller spoke the wrong dialect to a FAC:
+  `probe_status()` reported `fac01` OFFLINE (measured) while its own client
+  answered fine.
+- The new-CR form coerced an unrecognised action to `upgrade` — the most
+  destructive entry on the menu. It is now rejected.
+- The form now refuses a device whose product the chosen action does not
+  support, and refuses several devices for a `single_target` action. Both used
+  to save happily and then resolve to zero (or one) targets at fire time,
+  reporting `skipped` — which the lifecycle grades as failed, hours later.
+
+
 
 - **The login page was rate-limited as if viewing it were a login attempt.**
   `/auth/login` carried a flat `5 per minute`, counting `GET` and `POST` alike,
@@ -145,6 +187,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `upgrade_prep`, so that one fired with no approval and outside its window —
   the one thing the gate exists to prevent. Any action bound to a change request
   is now gated by it.
+
 
 ## [1.9.2] - 2026-08-09
 

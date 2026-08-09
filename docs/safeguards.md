@@ -6187,3 +6187,66 @@ contract keyed on one device — one event carrying a list is not something a ho
 written from these docs could read. That test seeds two appliances explicitly;
 its first version created one and asked for "the first two", so it passed its
 own bug instead of testing the code's.
+
+
+## §47. A change window belongs to the DEVICE, not to one product
+
+`tests/test_cr_action_catalog.py`
+
+Two independent narrowings, neither of which failed anything:
+
+* `views/change_requests.new()` hard-filtered the picker to `kind='fortiweb'`;
+* `change_requests` sat in the product gate's `fortiweb_scoped` set, so the
+  FortiADC/FAZ/FAC consoles bounced off the page **and the Global console was
+  re-pinned to `fortiweb`** — meaning even Global showed FortiWebs only.
+
+### §47a. The action menu is derived, never re-listed
+
+`CR_ACTIONS` was two hand-written entries while the catalog registered six more
+device-mutating operations. A hand-kept second list is exactly how
+`upgrade_prep` came to be on the menu while the executor's gate honoured only
+`upgrade`: destructive, offered, ungated. `_cr_specs()` reads
+`scheduled_actions.ALL_ACTIONS` and the guard fails if any targeted
+`danger`/user-scope action is missing from it.
+
+### §47b. Reject, never coerce
+
+An unrecognised action used to be rewritten to `'upgrade'`. A fallback that
+picks the most destructive option is not a fallback.
+
+### §47c. The pairing check is the only place that can still say no
+
+Targets are resolved by `spec.products`. A CR naming a FortiADC for a
+FortiWeb-only action saves fine and then resolves to **zero targets** at fire
+time, reporting `skipped` — which the lifecycle correctly grades as failed,
+hours after anyone could act. Same for a `single_target` action with three
+devices selected: it would silently run on the first. Both are refused at the
+form.
+
+### §47d. Opening the page did not open the fleet
+
+Rows stay ADOM-scoped: a CR is visible where it names a device that ADOM can
+see, **by-id routes included** (`_cr_in_scope_or_404`). Filtering the list
+while the by-id routes read the table raw is not scoping, it is decoration —
+the hole closed fleet-wide for appliances on 2026-08-06.
+
+### §47e. A reboot URN is not guessable
+
+On FortiWeb the neighbouring maintenance op (`backuprestorefirmwareboot`)
+reboots the box **even on GET**, so a wrong guess is an outage, not a 404.
+`REBOOT_TRANSPORT` therefore records each URN **with its provenance**
+(FortiWeb's was read from that device's own GUI bundle: `REBOOT_URL`, posted
+with `{reason}`, `REASON_MAX_LENGTH=100`) and a product with no verified entry
+is refused **by name, without building a client**. A guard asserts the table
+still holds exactly the verified products, so adding a plausible-looking URN
+has to be a deliberate edit.
+
+A 2xx means the box **accepted** the reboot. The summary says so and does not
+claim a return to service nobody observed.
+
+### §47f. The CR requirement is declared on the spec
+
+`requires_change_request` lives on the `ActionSpec`, and `execute_and_record`
+reads the flag — it does not test for the string `"reboot"`. Cabling a gate to
+an action name is the defect this replaces; a guard asserts the executor
+contains no such literal.

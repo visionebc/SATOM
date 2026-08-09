@@ -96,6 +96,7 @@
       <a href="#33-ai-advisor">33. AI Advisor</a>
       <a href="#34-the-audit-log">34. The Audit Log</a>
       <a href="#35-integrations-netbox-change-tickets-and-your-own-python">35. Integrations: NetBox, change tickets and your own Python</a>
+      <a href="#36-putting-any-appliance-under-change-control">36. Putting any appliance under change control</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="satom-user-guide">SATOM — User Guide</h1>
@@ -144,6 +145,7 @@ codebase is assumed. For architecture and internals see the
 <li><a href="#33-ai-advisor">AI Advisor</a></li>
 <li><a href="#34-the-audit-log">The Audit Log</a></li>
 <li><a href="#35-integrations-netbox-change-tickets-and-your-own-python">Integrations: NetBox, change tickets and your own Python</a></li>
+<li><a href="#36-putting-any-appliance-under-change-control">Putting any appliance under change control</a></li>
 </ol>
 <hr>
 <h2 id="1-signing-in-accounts">1. Signing in &amp; accounts</h2>
@@ -3213,6 +3215,29 @@ shown in maintenance there, and you have to know that.</p>
 closes carrying the failure, and the customer notice says the change did not
 happen. Nothing external — NetBox down, a hook erroring, SMTP refusing — can
 change the recorded outcome of the change itself.</p>
+<h2 id="36-putting-any-appliance-under-change-control">36. Putting any appliance under change control</h2>
+<p>A Change Request now covers <strong>FortiWeb, FortiADC, FortiAnalyzer and
+FortiAuthenticator</strong>. Open <strong>Change Requests</strong> from any ADOM; the device list
+shows the appliances that ADOM can see (the Global console sees all four
+products), and each device is labelled with its product.</p>
+<p><strong>Choosing the action.</strong> The Action dropdown lists every automation that
+touches a device and is either destructive or object-mutating — firmware
+upgrade and its preparation, the new <strong>Reboot</strong>, enabling/disabling a server
+policy or a backend, repointing a backend, swapping a certificate, the
+certificate lifecycle sweep and a custom REST call. If an action does not
+support the product of a device you picked, the form says so and refuses to
+save rather than creating a change that would quietly do nothing.</p>
+<p><strong>Reboot.</strong> Destructive and one-shot: it runs <strong>only</strong> while bound to an
+approved change request inside its window, and refuses to fire otherwise. It is
+implemented for FortiWeb today; on another product it fails with a message
+naming the product rather than sending an unverified command to your appliance.
+A successful call means the box <strong>accepted</strong> the reboot — return to service is
+confirmed by the window's own post-checks, not by that call.</p>
+<p><strong>What the maintenance notice covers.</strong> The affected-clients list is read in
+each product's own shape: server policies on FortiWeb, virtual servers on
+FortiADC. FortiAnalyzer and FortiAuthenticator publish no such object, so they
+contribute no client rows — that is a fact about the product, not a failed
+read.</p>
     </div>
   </div>
 </section>

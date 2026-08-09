@@ -93,7 +93,24 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>Import directory users before their first sign-in, on RADIUS too.</strong> The
+<li><strong>Change Requests cover every Forti product, not just FortiWeb.</strong> The device
+  picker was hard-filtered to <code>kind='fortiweb'</code> and the page itself was pinned
+  to the FortiWeb ADOM by the product gate, so a FortiADC, FortiAnalyzer or
+  FortiAuthenticator could never be named in a change window. The page is now
+  reachable from every ADOM and rows are scoped by the devices they name
+  (by-id routes included), instead of by which console you opened.</li>
+<li><strong><code>reboot</code> action</strong> (danger, one-shot, <code>requires_change_request</code>): reboots a
+  target appliance inside an approved window. The FortiWeb URN
+  (<code>/api/v2.0/system/status.systemoperationreboot</code>, body <code>{reason}</code>, 100-char
+  cap) was read off {device}'s own GUI bundle; products without a URN
+  verified against their own hardware are refused BY NAME, never guessed at.</li>
+<li>
+<p><code>ActionSpec.requires_change_request</code>: an action can declare that it only runs
+  bound to an approved CR. The executor honours the flag, so a newly registered
+  dangerous action arrives gated instead of arriving free.</p>
+</li>
+<li>
+<p><strong>Import directory users before their first sign-in, on RADIUS too.</strong> The
   user importer (Settings → Authentication → <em>Sync directory users</em>) used to
   refuse anything that was not AD/LDAP, which left the FortiAuthenticator /
   RADIUS backend with no roster at all. It has one now. Said plainly because it
@@ -108,7 +125,8 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   (it returned 1 of 3 local users, hiding accounts that plainly exist), so
   trusting it would silently import a partial group. Naming a group the
   appliance does not have is reported as an error listing the groups it does
-  have — importing nobody and calling it success hides a typo forever.</li>
+  have — importing nobody and calling it success hides a typo forever.</p>
+</li>
 <li><strong>An approval gate for directory users</strong> (Settings → Authentication, applies
   to every external backend). With it on, a first-time directory sign-in creates
   the account <strong>disabled</strong> and refuses entry until an admin enables and profiles
@@ -118,9 +136,38 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   succeeded, and blaming the credential sends the user to reset one that was
   correct. Existing accounts are never re-gated.</li>
 </ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li>The CR action menu is DERIVED from the automation catalog (every targeted
+  action that is <code>danger</code> or user-scope) instead of a hand-written pair. This
+  puts <code>policy_set_status</code>, <code>backend_set_status</code>, <code>backend_set_config</code>,
+  <code>swap_certificate</code>, <code>cert_lifecycle</code> and <code>custom_rest</code> under change control
+  for the first time.</li>
+<li><code>upgrade_prep</code> now declares <code>products=("fortiweb", "fortiadc")</code>, matching the
+  ADC branch <code>upgrade.prepare()</code> has had all along.</li>
+<li><code>cert_lifecycle</code> is flagged <code>danger</code>. It revokes superseded certificates and
+  DELETES certificate material off the appliance; the flag was missing, so the
+  UI did not warn and the sweep was not eligible for change control.</li>
+<li>The "clients affected by this window" read is per product: FortiWeb server
+  policies, FortiADC virtual servers. Reading only the FortiWeb shape made
+  every ADC in a window look like it had no clients at all.</li>
+</ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
-<li><strong>The login page was rate-limited as if viewing it were a login attempt.</strong>
+<li><code>Appliance._own_client()</code> returned a <strong>FortiWeb</strong> client for a
+  FortiAuthenticator, so every generic caller spoke the wrong dialect to a FAC:
+  <code>probe_status()</code> reported <code>{device}</code> OFFLINE (measured) while its own client
+  answered fine.</li>
+<li>The new-CR form coerced an unrecognised action to <code>upgrade</code> — the most
+  destructive entry on the menu. It is now rejected.</li>
+<li>
+<p>The form now refuses a device whose product the chosen action does not
+  support, and refuses several devices for a <code>single_target</code> action. Both used
+  to save happily and then resolve to zero (or one) targets at fire time,
+  reporting <code>skipped</code> — which the lifecycle grades as failed, hours later.</p>
+</li>
+<li>
+<p><strong>The login page was rate-limited as if viewing it were a login attempt.</strong>
   <code>/auth/login</code> carried a flat <code>5 per minute</code>, counting <code>GET</code> and <code>POST</code> alike,
   so five <em>renders</em> in a minute — a logout redirect, a couple of reloads, one
   failed attempt — answered <code>429 Too Many Requests</code> on the <strong>form</strong>, locking the
@@ -129,7 +176,8 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   per-account lockout still covers the distributed case. Verified live: 12
   consecutive page loads all <code>200</code>, the 6th POST still <code>429</code>, and the page stays
   reachable <em>while</em> POSTs are being refused — a user who is being throttled has
-  to be able to read the screen telling them so.</li>
+  to be able to read the screen telling them so.</p>
+</li>
 <li>
 <p><strong>Signing in could sign you straight back out.</strong> Requesting <code>/auth/logout</code>
   without a session redirects through <code>@login_required</code> to
@@ -365,7 +413,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   contain it. And it is not a way around ADOM scoping — a FortiWeb session that
   guesses a FortiADC row's number still gets nothing.</p>
 <h2 id="190-2026-08-08">[1.9.0] - 2026-08-08</h2>
-<h3 id="changed">Changed</h3>
+<h3 id="changed_1">Changed</h3>
 <ul>
 <li>
 <p><strong>The required scope is ticked, not demanded.</strong> An Allow Method or
@@ -634,7 +682,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <li>Errors now render in place of the reply instead of an alert box, and the
   composer keeps what was typed when an external-provider preview is declined.</li>
 </ul>
-<h3 id="changed_1">Changed</h3>
+<h3 id="changed_2">Changed</h3>
 <ul>
 <li>
 <p><code>deploy/satom.service</code> raises the gunicorn worker timeout to 600s. It was
@@ -993,7 +1041,7 @@ that it carries the defect.</p>
   manual went from 23 sections to 32 and now says where to read what changed
   in a version — it had never mentioned the changelog.</li>
 </ul>
-<h3 id="changed_2">Changed</h3>
+<h3 id="changed_3">Changed</h3>
 <ul>
 <li><strong>The release notes are a rail and a panel, not a wall of cards.</strong> Versions
   on the left, that version's changes on the right, newest first, opening on
@@ -1280,7 +1328,7 @@ that it carries the defect.</p>
   mode was previously told where each one stops but not what it costs, which
   is the half of the decision that matters.</li>
 </ul>
-<h3 id="changed_3">Changed</h3>
+<h3 id="changed_4">Changed</h3>
 <ul>
 <li><strong>Analysis moved into the Monitoring submenu.</strong> It was a bare Fleet item
   written out five times in <code>base.html</code>, once per ADOM block — the exact drift
@@ -1527,7 +1575,7 @@ that it carries the defect.</p>
   count nodes is <code>unknown</code>, never <code>standalone</code>. Split-brain is its own badge.</p>
 </li>
 </ul>
-<h3 id="changed_4">Changed</h3>
+<h3 id="changed_5">Changed</h3>
 <ul>
 <li>The HA pill on both pages uses the product's own <code>fw-badge</code> set instead of a
   local palette, so cluster state reads like every other status in the console.</li>
@@ -1664,7 +1712,7 @@ that it carries the defect.</p>
   states that their terms are not superseded.</p>
 </li>
 </ul>
-<h3 id="changed_5">Changed</h3>
+<h3 id="changed_6">Changed</h3>
 <ul>
 <li>
 <p><strong>Collection moved from Monitoring to Administrator.</strong> The other six
@@ -2423,7 +2471,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   reported back in <code>source</code>, and the UI prints which one it drew: an hourly
   average and a five-minute reading are not the same claim about the device.</li>
 </ul>
-<h3 id="changed_6">Changed</h3>
+<h3 id="changed_7">Changed</h3>
 <ul>
 <li><strong>The last <code>fortinet</code> identifiers are gone from the platform itself.</strong> The
   database, the PostgreSQL role, the Linux service account and the PostgreSQL
@@ -2894,7 +2942,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li>Public site: <code>site/safeguards.html</code> (linked from the nav and footer of every
   page) and the matching notes on <code>site/install.html</code>.</li>
 </ul>
-<h3 id="changed_7">Changed</h3>
+<h3 id="changed_8">Changed</h3>
 <ul>
 <li>In-app <strong>Documentation</strong> index now curates a title, order and description for
   all 18 manuals; half of them previously fell through to an auto-generated

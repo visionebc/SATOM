@@ -6189,6 +6189,53 @@ contract keyed on one device — one event carrying a list is not something a ho
 written from these docs could read. That test seeds two appliances explicitly;
 its first version created one and asked for "the first two", so it passed its
 own bug instead of testing the code's.</p>
+<h2 id="47-a-change-window-belongs-to-the-device-not-to-one-product">§47. A change window belongs to the DEVICE, not to one product</h2>
+<p><code>tests/test_cr_action_catalog.py</code></p>
+<p>Two independent narrowings, neither of which failed anything:</p>
+<ul>
+<li><code>views/change_requests.new()</code> hard-filtered the picker to <code>kind='fortiweb'</code>;</li>
+<li><code>change_requests</code> sat in the product gate's <code>fortiweb_scoped</code> set, so the
+  FortiADC/FAZ/FAC consoles bounced off the page <strong>and the Global console was
+  re-pinned to <code>fortiweb</code></strong> — meaning even Global showed FortiWebs only.</li>
+</ul>
+<h3 id="47a-the-action-menu-is-derived-never-re-listed">§47a. The action menu is derived, never re-listed</h3>
+<p><code>CR_ACTIONS</code> was two hand-written entries while the catalog registered six more
+device-mutating operations. A hand-kept second list is exactly how
+<code>upgrade_prep</code> came to be on the menu while the executor's gate honoured only
+<code>upgrade</code>: destructive, offered, ungated. <code>_cr_specs()</code> reads
+<code>scheduled_actions.ALL_ACTIONS</code> and the guard fails if any targeted
+<code>danger</code>/user-scope action is missing from it.</p>
+<h3 id="47b-reject-never-coerce">§47b. Reject, never coerce</h3>
+<p>An unrecognised action used to be rewritten to <code>'upgrade'</code>. A fallback that
+picks the most destructive option is not a fallback.</p>
+<h3 id="47c-the-pairing-check-is-the-only-place-that-can-still-say-no">§47c. The pairing check is the only place that can still say no</h3>
+<p>Targets are resolved by <code>spec.products</code>. A CR naming a FortiADC for a
+FortiWeb-only action saves fine and then resolves to <strong>zero targets</strong> at fire
+time, reporting <code>skipped</code> — which the lifecycle correctly grades as failed,
+hours after anyone could act. Same for a <code>single_target</code> action with three
+devices selected: it would silently run on the first. Both are refused at the
+form.</p>
+<h3 id="47d-opening-the-page-did-not-open-the-fleet">§47d. Opening the page did not open the fleet</h3>
+<p>Rows stay ADOM-scoped: a CR is visible where it names a device that ADOM can
+see, <strong>by-id routes included</strong> (<code>_cr_in_scope_or_404</code>). Filtering the list
+while the by-id routes read the table raw is not scoping, it is decoration —
+the hole closed fleet-wide for appliances on 2026-08-06.</p>
+<h3 id="47e-a-reboot-urn-is-not-guessable">§47e. A reboot URN is not guessable</h3>
+<p>On FortiWeb the neighbouring maintenance op (<code>backuprestorefirmwareboot</code>)
+reboots the box <strong>even on GET</strong>, so a wrong guess is an outage, not a 404.
+<code>REBOOT_TRANSPORT</code> therefore records each URN <strong>with its provenance</strong>
+(FortiWeb's was read from that device's own GUI bundle: <code>REBOOT_URL</code>, posted
+with <code>{reason}</code>, <code>REASON_MAX_LENGTH=100</code>) and a product with no verified entry
+is refused <strong>by name, without building a client</strong>. A guard asserts the table
+still holds exactly the verified products, so adding a plausible-looking URN
+has to be a deliberate edit.</p>
+<p>A 2xx means the box <strong>accepted</strong> the reboot. The summary says so and does not
+claim a return to service nobody observed.</p>
+<h3 id="47f-the-cr-requirement-is-declared-on-the-spec">§47f. The CR requirement is declared on the spec</h3>
+<p><code>requires_change_request</code> lives on the <code>ActionSpec</code>, and <code>execute_and_record</code>
+reads the flag — it does not test for the string <code>"reboot"</code>. Cabling a gate to
+an action name is the defect this replaces; a guard asserts the executor
+contains no such literal.</p>
     </div>
   </div>
 </section>

@@ -386,6 +386,53 @@ def notify_outcome(cr, *, by: str = "scheduler") -> dict:
 # --------------------------------------------------------------------------- #
 #  Affected-policy discovery (best-effort live read - the clients to warn)       #
 # --------------------------------------------------------------------------- #
+def _published_frontends(appliance, *, timeout: float) -> list[dict]:
+    """The front-ends a window takes offline, read in THIS product's shape.
+
+    FortiWeb publishes server POLICIES; FortiADC publishes VIRTUAL SERVERS.
+    Reading only the FortiWeb shape made every FortiADC in a window come back
+    with nothing - a maintenance notice that silently under-states the outage.
+    FortiAnalyzer and FortiAuthenticator publish no equivalent object, so an
+    empty list there is a fact about the product, not a failed read.
+    """
+    kind = (getattr(appliance, "kind", "") or "fortiweb").strip().lower()
+    out: list[dict] = []
+    if kind not in ("fortiweb", "fortiadc"):
+        return out          # no front-end object for this product: do not connect
+    client = appliance.build_client(timeout=timeout)
+    if kind == "fortiweb":
+        raw = client.list_server_policies()
+        rows = raw.get("results", raw) if isinstance(raw, dict) else raw
+        for r in rows or []:
+            if not isinstance(r, dict):
+                continue
+            out.append({
+                "policy": r.get("name", ""),
+                "vserver": r.get("vserver", ""),
+                "service": (r.get("https-service") or r.get("http-service")
+                            or r.get("service") or ""),
+                "status": r.get("status", ""),
+            })
+        return out
+    if kind == "fortiadc":
+        raw = client.list_virtual_servers()
+        rows = raw.get("payload", raw) if isinstance(raw, dict) else raw
+        if isinstance(rows, dict):          # single object reads come back keyed
+            rows = list(rows.values())
+        for r in rows or []:
+            if not isinstance(r, dict):
+                continue
+            out.append({
+                "policy": r.get("mkey") or r.get("name", ""),
+                "vserver": r.get("interface", ""),
+                "service": str(r.get("port") or r.get("port-range") or ""),
+                "status": r.get("status", ""),
+            })
+        return out
+    # No published-service object is modelled for this product.
+    return out
+
+
 def affected_policies(device_ids, *, timeout: float = 8.0) -> list[dict]:
     """Every server policy on the targeted devices -> the clients impacted by the
     window. Each row is ``{device, device_id, policy, vserver, service, status}``.
@@ -405,23 +452,13 @@ def affected_policies(device_ids, *, timeout: float = 8.0) -> list[dict]:
         if appliance is None:
             continue
         try:
-            raw = appliance.build_client(timeout=timeout).list_server_policies()
+            rows = _published_frontends(appliance, timeout=timeout)
         except Exception:  # noqa: BLE001 - connectivity miss must not break planning
             continue
-        rows = raw.get("results", raw) if isinstance(raw, dict) else raw
-        for r in rows or []:
-            if not isinstance(r, dict):
-                continue
-            service = (r.get("https-service") or r.get("http-service")
-                       or r.get("service") or "")
-            out.append({
-                "device": appliance.name,
-                "device_id": dev_id,
-                "policy": r.get("name", ""),
-                "vserver": r.get("vserver", ""),
-                "service": service,
-                "status": r.get("status", ""),
-            })
+        for row in rows:
+            row["device"] = appliance.name
+            row["device_id"] = dev_id
+            out.append(row)
     return out
 
 

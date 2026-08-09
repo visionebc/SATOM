@@ -18,6 +18,7 @@ from typing import Any
 
 from ..clients.fortiweb import FortiWebClient
 from ..models import ChangeHistory, db
+from . import delete_guard
 from .audit import log_action
 
 # Server-managed / read-only keys stripped from any payload before a write.
@@ -130,7 +131,8 @@ class FortiWebOps:
         )
 
     # -- real apply (device contact + snapshot + audit) -------------------
-    def _record(self, action, endpoint, mkey, before, after, dry_run, error=""):
+    def _record(self, action, endpoint, mkey, before, after, dry_run, error="",
+                forced=False):
         try:
             db.session.add(ChangeHistory(
                 appliance_id=getattr(self.appliance, "id", None),
@@ -144,7 +146,8 @@ class FortiWebOps:
             db.session.rollback()
         log_action(f"config.{action}", target=endpoint or "",
                    appliance_id=getattr(self.appliance, "id", None),
-                   detail=f"mkey={mkey} dry_run={dry_run} error={error}")
+                   detail=(f"mkey={mkey} dry_run={dry_run} error={error}"
+                           + (" ref_check=forced" if forced else "")))
 
     @staticmethod
     def _response_ok(resp):
@@ -186,7 +189,7 @@ class FortiWebOps:
             return False, ("errcode %s: %s" % (code, holder.get("message", ""))).strip()
         return True, ""
 
-    def _apply(self, action, endpoint, mkey, data, sub_mkey=None) -> OpResult:
+    def _apply(self, action, endpoint, mkey, data, sub_mkey=None, forced=False) -> OpResult:
         method = _METHOD.get(action, "POST")
         payload = None if action == "delete" else sanitize_payload(data)
         path = _path(endpoint, mkey, sub_mkey)
@@ -200,7 +203,8 @@ class FortiWebOps:
         try:
             resp = self.client.api_call(method, path, payload)
             ok, err = self._response_ok(resp)
-            self._record(action, endpoint, mkey, before, payload, False, err)
+            self._record(action, endpoint, mkey, before, payload, False, err,
+                         forced=forced)
             return OpResult(ok=ok, action=action, endpoint=endpoint, mkey=mkey,
                             dry_run=False, request=req, before=before, after=payload, error=err)
         except Exception as exc:  # noqa: BLE001
@@ -215,6 +219,41 @@ class FortiWebOps:
         return (self.preview("update", endpoint, mkey, data, sub_mkey) if dry_run
                 else self._apply("update", endpoint, mkey, data, sub_mkey))
 
-    def delete(self, endpoint, mkey, *, dry_run=True, sub_mkey=None) -> OpResult:
+    def delete(self, endpoint, mkey, *, dry_run=True, sub_mkey=None,
+               check_refs=True, force=False) -> OpResult:
+        """Delete ``mkey``, refusing by default while other objects still name it.
+
+        The guard runs on the DRY-RUN too, on purpose. Every delete surface in
+        the app previews first and applies only after the operator confirms, so
+        checking only the apply would show a clean "would delete" and then fail
+        the confirmed action -- a preview that hides a certain refusal is worse
+        than no preview.
+
+        ``check_refs=False`` is for writers that legitimately delete what they
+        just created or are rebuilding in the same batch (sub-table replace-set,
+        job rollback); it is a call-site decision so it stays reviewable.
+        ``force`` is the operator's override for a refcount the firmware got
+        wrong -- it is recorded in the audit detail like any other apply.
+        """
+        blocked = ''
+        if check_refs and not force and mkey and not sub_mkey:
+            try:
+                client = self.client
+            except Exception:  # noqa: BLE001 - no client: nothing verified
+                client = None
+            blocked, info = delete_guard.check(client, endpoint, mkey)
+            if blocked:
+                if not dry_run:
+                    # A confirmed destructive action that was stopped belongs in
+                    # the audit trail; a preview does not (nothing was asked of
+                    # the device yet).
+                    self._record("delete", endpoint, mkey, None, None, False, blocked)
+                return OpResult(
+                    ok=False, action="delete", endpoint=endpoint, mkey=mkey,
+                    dry_run=dry_run, request={"method": "DELETE",
+                                              "path": _path(endpoint, mkey, sub_mkey),
+                                              "body": None},
+                    before=None, after=None, error=blocked, blocked=info)
         return (self.preview("delete", endpoint, mkey, None, sub_mkey) if dry_run
-                else self._apply("delete", endpoint, mkey, None, sub_mkey))
+                else self._apply("delete", endpoint, mkey, None, sub_mkey,
+                                 forced=bool(force and check_refs)))

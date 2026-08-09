@@ -198,3 +198,199 @@ def test_prep_page_renders_the_light_chrome(app, client):
     for dark in ("rgba(30,41,59,", "rgba(15,23,42,", "rgba(0,0,0,0.3)",
                  "backdrop-filter", "#94a3b8", "#cbd5e1"):
         assert dark not in body, "dark-theme value %s leaked into the page" % dark
+
+
+# =========================================================================== #
+#  Reading BACK a recorded run (2026-08-10)                                    #
+# =========================================================================== #
+# The runs were already stored, listed and citable -- and not readable. The
+# table said "passed, 12 services"; the health battery, the backup filename and
+# the per-policy baseline that produced that verdict were in the row with no way
+# out. None of that raises either: the page rendered, the row rendered, the
+# count was right. What was missing had no failure mode of its own.
+
+RESULT_FIXTURE = {
+    "firmware": "FortiWeb-VM 7.6.8,build1234",
+    "permission": True,
+    "backup": {"ok": True, "name": "prepbox-20260810-004500.conf"},
+    "health": {"ok": True, "text": "CPU 4%   MEM 51%\nHA  standalone"},
+    "services": {"ok": True, "probes": [
+        {"target": {"policy": "www_prod", "url": "https://shop.example.com/",
+                    "backends": ["192.0.2.5:443"], "note": ""},
+         "result": {"ok": True, "status": 200, "elapsed_ms": 41}},
+    ]},
+}
+INVENTORY_FIXTURE = [
+    {"device": "prepbox", "policy": "www_prod", "vserver": "vs_ext",
+     "service": "HTTPS", "status": "enable", "url": "https://shop.example.com/",
+     "probe_ok": True, "http_status": 200},
+    # never probed -- the third state that must not read like a failure
+    {"device": "prepbox", "policy": "api_prod", "vserver": "vs_ext",
+     "service": "HTTPS", "status": "enable", "url": "",
+     "probe_ok": "", "http_status": ""},
+]
+
+
+def _appliance_with_prep(app, *, ok=True):
+    """An appliance plus one recorded run. Returns ``(appliance_id, prep_id)``."""
+    import json as _json
+
+    from app.models import UpgradePrep
+    with app.app_context():
+        a = Appliance(name="prepbox2", host="192.0.2.98", port=443,
+                      kind="fortiweb", username="admin")
+        a.password = "pw"
+        db.session.add(a)
+        db.session.commit()
+        prep = UpgradePrep(
+            appliance_id=a.id, created_by="operator", ok=ok,
+            firmware=RESULT_FIXTURE["firmware"],
+            summary="backup ok, health ok, services 1/1 reachable",
+            result=_json.dumps(RESULT_FIXTURE),
+            inventory=_json.dumps(INVENTORY_FIXTURE))
+        db.session.add(prep)
+        db.session.commit()
+        return a.id, prep.id
+
+
+def test_recorded_run_can_be_opened_at_all(app, client):
+    """The whole point: the stored evidence has a way out of the row."""
+    aid, pid = _appliance_with_prep(app)
+    login(client, admin_user_id(app))
+    r = client.get("/appliances/%d/upgrade/prep/%d.json" % (aid, pid))
+    assert r.status_code == 200, "recorded runs are unreadable again"
+    j = r.get_json()
+    assert j["ok"] is True
+    # The parts that were trapped in the row, not just the verdict:
+    assert j["result"]["health"]["text"].startswith("CPU 4%")
+    assert j["result"]["backup"]["name"] == "prepbox-20260810-004500.conf"
+    assert j["result"]["services"]["probes"][0]["target"]["policy"] == "www_prod"
+    assert len(j["inventory"]) == 2
+
+
+def test_recorded_run_announces_that_it_is_recorded(app, client):
+    """Same panel, same renderer -- so the payload has to carry the label.
+
+    A two-day-old health battery looks exactly like one taken thirty seconds
+    ago. Without ``stored`` there is nothing on screen to tell them apart.
+    """
+    aid, pid = _appliance_with_prep(app)
+    login(client, admin_user_id(app))
+    j = client.get("/appliances/%d/upgrade/prep/%d.json" % (aid, pid)).get_json()
+    assert j["stored"] is True
+    assert j["created_at"], "a recorded run with no timestamp cannot be dated"
+    assert j["created_by"] == "operator"
+
+
+def test_a_prep_from_another_appliance_is_not_served_here(app, client):
+    """The appliance is part of the lookup key, not decoration.
+
+    A pre-flight rendered under the wrong device's heading is worse than no
+    pre-flight: it is evidence about a box nobody checked.
+    """
+    aid_a, pid_a = _appliance_with_prep(app)
+    with app.app_context():
+        b = Appliance(name="otherbox", host="192.0.2.97", port=443,
+                      kind="fortiweb", username="admin")
+        b.password = "pw"
+        db.session.add(b)
+        db.session.commit()
+        bid = b.id
+    login(client, admin_user_id(app))
+    r = client.get("/appliances/%d/upgrade/prep/%d.json" % (bid, pid_a))
+    assert r.status_code == 404
+    assert r.get_json()["ok"] is False
+
+
+def test_recorded_run_is_not_public(app, client):
+    """No session, no evidence."""
+    aid, pid = _appliance_with_prep(app)
+    r = client.get("/appliances/%d/upgrade/prep/%d.json" % (aid, pid))
+    assert r.status_code in (302, 401, 403), "recorded pre-flights are public"
+
+
+def test_recorded_run_requires_the_same_permission_as_running_one(app, client):
+    """Reading the evidence back is not a lesser act than producing it.
+
+    Asserting "an anonymous caller is refused" proves ``login_required`` and
+    NOTHING about the permission -- it passed with ``@require_permission``
+    deleted. The mutation caught it. A logged-in READONLY user is the only
+    caller that separates the two gates.
+    """
+    from tests.conftest import make_user
+    aid, pid = _appliance_with_prep(app)
+    login(client, make_user(app, username="ro_prep", role="readonly"))
+    r = client.get("/appliances/%d/upgrade/prep/%d.json" % (aid, pid))
+    assert r.status_code in (302, 401, 403), \
+        "a readonly account can read pre-flight evidence (permission gate gone)"
+
+
+def test_live_and_recorded_runs_share_one_renderer(tpl):
+    """Two renderers for one payload drift silently -- BOTH still paint.
+
+    The live path must not keep a private copy of the painting code: that is
+    exactly how two descriptions of one fact end up disagreeing with nothing to
+    say which is true.
+    """
+    assert "function paint(j)" in tpl
+    # both entry points end in paint()
+    assert tpl.count("paint(j);") >= 2
+    # the old inline copy in the run handler must not come back
+    run_block = tpl[tpl.index("btn.addEventListener"):]
+    for owned in ("r-fw').textContent", "r-health').textContent = (d.health",
+                  "svcTable(probes)"):
+        assert owned not in run_block, \
+            "the run handler paints its own copy again: %s" % owned
+
+
+def test_the_three_probe_states_do_not_collapse(tpl):
+    """'' never probed, false probed-and-failed, true reachable.
+
+    Collapsing unknown into down invents an outage; collapsing it into up hides
+    one. ``prep_store.build_inventory`` writes all three on purpose.
+    """
+    assert "not probed" in tpl
+    assert re.search(r"r\.probe_ok\s*===\s*''", tpl), \
+        "the 'never probed' state is gone -- unknown now reads as a verdict"
+    assert "unreachable" in tpl
+
+
+def test_recorded_inventory_values_are_escaped_before_innerhtml(tpl):
+    """Frozen rows are still device data: a policy name with '<' eats the row."""
+    for field in ("r.policy", "r.url", "r.vserver", "r.service"):
+        assert re.search(r"esc\(\s*" + re.escape(field), tpl), \
+            "%s reaches innerHTML unescaped" % field
+
+
+def test_the_runs_table_does_not_silently_omit(tpl):
+    """It shows ten. A capped list that looks complete is a false statement,
+    and a fresh run does not appear in a server-rendered table until reload."""
+    assert "10 most recent" in tpl
+    assert "prep-runs-stale" in tpl
+
+
+def test_inventory_columns_are_named_by_the_export_catalog(app, client, tpl):
+    """One column, one name.
+
+    The same rows leave this product twice — on screen and as the CSV/XLSX a
+    change request is signed against. Hand-typed headings give one column two
+    names, and the operator comparing the two has nothing to tell him which
+    sheet the approval covers.
+    """
+    from app.services import prep_store
+    aid, pid = _appliance_with_prep(app)
+    login(client, admin_user_id(app))
+    j = client.get("/appliances/%d/upgrade/prep/%d.json" % (aid, pid)).get_json()
+    catalog = {f["key"]: f["label"] for f in j["inventory_fields"]}
+    assert catalog == dict(prep_store.FIELDS), \
+        "the page is served a different field catalog than the exports use"
+    assert "label[k]" in tpl, "the headings are hand-typed again"
+    for hardcoded in ("<th>Policy / virtual server</th>", "<th>Admin status</th>"):
+        assert hardcoded not in tpl
+
+
+def test_each_recorded_row_offers_its_result(tpl):
+    """A row that can only be cited, never opened, is a receipt."""
+    assert 'class="btn btn-sm fw-btn-secondary prep-view"' in tpl
+    assert 'data-prep="{{ r.id }}"' in tpl
+    assert "upgrade_prep_show" in tpl

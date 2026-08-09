@@ -631,16 +631,84 @@ def upgrade_prep_run(id):
             log_exception(exc, context='appliances.upgrade_prep_store')
         log_action('appliance.upgrade_prep', target=appliance.name,
                    detail=(f'prep #{prep.id} ok={prep.ok}' if prep else 'not stored'))
+        # 'result' is passed through from the live call, not re-read from the
+        # row: a storage failure must still paint what actually ran.
         return jsonify({'ok': True, 'result': result,
-                        'prep_id': (prep.id if prep else None),
-                        'prep_ok': (prep.ok if prep else None),
-                        'prep_summary': (prep.summary if prep else ''),
-                        'inventory_count': (len(prep.inventory_list) if prep else 0),
-                        'cr_url': (url_for('change_requests.new', prep_id=prep.id,
-                                           action='upgrade') if prep else '')})
+                        **_prep_payload(prep, result=result, stored=False)})
     except Exception as exc:
         eid = log_exception(exc, context='appliances.upgrade_prep_run')
         return jsonify({'ok': False, 'error': f'{type(exc).__name__}: {exc}', 'error_id': eid})
+
+
+def _prep_payload(prep, *, result=None, stored=True) -> dict:
+    """The wire form of ONE pre-flight, live or recorded.
+
+    Both endpoints answer with this and the page paints both with the same
+    renderer. A recorded run rendered by a second, parallel renderer would drift
+    from the live one silently — both would still render, and the operator would
+    have no way to tell which description of the evidence is the true one.
+
+    ``stored`` is not cosmetic. The panel is the same panel, so a run read back
+    from the database MUST announce itself; a two-day-old health battery that
+    looks exactly like one taken thirty seconds ago is how somebody upgrades a
+    box on the strength of a pre-flight that predates the fault.
+    """
+    from ..services import prep_store, settings_store
+    if prep is None:
+        # The pre-flight ran but could not be stored. It still has to be shown:
+        # the numbers on screen were measured against the device.
+        return {'stored': False, 'prep_id': None, 'prep_ok': None,
+                'prep_summary': '', 'inventory': [], 'inventory_count': 0,
+                'created_at': '', 'created_by': '', 'cr_id': None, 'cr_url': ''}
+    rows = prep.inventory_list
+    return {
+        'stored': bool(stored),
+        'prep_id': prep.id,
+        'prep_ok': prep.ok,
+        'prep_summary': prep.summary or '',
+        'result': (result if result is not None else prep.result_dict),
+        'inventory': rows,
+        'inventory_count': len(rows),
+        'inventory_fields': [{'key': k, 'label': v} for k, v in prep_store.FIELDS],
+        # One timezone conversion path for the whole product (settings_store),
+        # and the SAME format string the ``localtime`` filter defaults to — the
+        # banner and the table row it was opened from name the same instant, so
+        # they must not spell it two ways.
+        'created_at': settings_store.to_local(prep.created_at,
+                                              '%Y-%m-%d %H:%M:%S'),
+        'created_by': prep.created_by or '',
+        'cr_id': prep.cr_id,
+        'cr_url': ('' if prep.cr_id else
+                   url_for('change_requests.new', prep_id=prep.id,
+                           action='upgrade')),
+    }
+
+
+@bp.route('/<int:id>/upgrade/prep/<int:prep_id>.json')
+@login_required
+@require_permission(Permission.BACKUP)
+def upgrade_prep_show(id, prep_id):
+    """Read back one RECORDED pre-flight run.
+
+    Until this existed the runs were stored, listed and citable — but not
+    readable. The table said "passed, 12 services"; the health battery, the
+    backup filename and the per-policy probe baseline that produced that verdict
+    were in the row and had no way out. Evidence you cannot open is a receipt,
+    not evidence.
+
+    The appliance is part of the lookup key rather than decoration: a prep id
+    belonging to another device would otherwise render under THIS device's
+    heading, and a pre-flight attributed to the wrong box is worse than none.
+    """
+    appliance = _managed_or_404(id)
+    if appliance is None:
+        return jsonify({'ok': False, 'error': 'unsupported appliance kind'}), 400
+    from ..services import prep_store
+    prep = prep_store.get(prep_id)
+    if prep is None or prep.appliance_id != appliance.id:
+        return jsonify({'ok': False,
+                        'error': 'no such recorded pre-flight for this appliance'}), 404
+    return jsonify({'ok': True, **_prep_payload(prep, stored=True)})
 
 
 # -- 5. Upgrade (firmware push from the repository — WRITE, dry-run default) --

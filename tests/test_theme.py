@@ -561,8 +561,9 @@ def test_the_gradient_pattern_alone_rejects_every_escape():
 # the header meant one thing under a theme with a logo asset and another thing
 # without one. The brand slot is the PRODUCT's identity; the ADOM has its own
 # pill, its own sidebar caption and its own switcher entries.
-BRAND_FALLBACK = "img/satom-mark.svg"   # 2026-08-10: the mark is a vector now;
-# the raster stays shipped as the derivative used for favicons and apple-touch.
+BRAND_FALLBACK = "img/satom-mark.png"   # 2026-08-10 (2nd pass): the emblem
+# raster is the product mark again - the substitute vector of the first pass
+# was reverted, see tests/test_brand_mark.py.
 
 
 def _brand_templates():

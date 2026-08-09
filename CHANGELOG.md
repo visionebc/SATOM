@@ -136,20 +136,35 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   default is now `readonly` and why the approval gate exists.
 
 ### Changed
-- **One SATOM mark, filed under the product's name.** The console, the repo
-  site and the product site each drew a different brand: an emblem that reads as
-  a "G", and — on the product site — the CHARACTER `S` in a gradient box, a
-  placeholder that outlived its excuse. The only real vector the product owned
-  was filed as `assets/favicon.svg`, so the mark was named after ONE OF ITS
-  USES and nothing called "logo" or "mark" existed to find. It is now
-  `satom-mark.svg` on every surface, carries `<title>SATOM</title>` and
-  `aria-label="SATOM"` so an assistive reader announces the product rather than
-  "image", and `satom-mark.png` / `favicon.png` / `favicon.ico` /
-  `apple-touch-icon.png` are RENDERS of that one vector instead of independent
-  files. `tests/test_brand_mark.py` holds the surfaces together: the copies must
-  be byte-identical, every `site/` page with a `class="brand"` must show the
-  mark, and the generator template must stamp the same string the pages carry —
-  a page fixed by hand is reverted by the next regeneration.
+- **One SATOM mark on every surface — the emblem the product already had.**
+  The console, the repo site and the product site each drew something different:
+  the emblem, and — on the product site — the CHARACTER `S` in a gradient box, a
+  placeholder that outlived its excuse. All three now ship the same emblem
+  (`satom-mark.png`, byte-identical across `app/static/img/` and
+  `site/assets/`), with `favicon.png` / `favicon.ico` / `apple-touch-icon.png`
+  as its icon sizes. A first pass replaced the artwork with an invented
+  rounded-square mark; that was a misreading and is reverted. Replacing a
+  product's identity is a change where nothing fails — every page renders, every
+  asset answers 200, the tab shows *an* icon — so `tests/test_brand_mark.py` now
+  pins WHICH mark is canonical, in both directions: the copies must be
+  byte-identical, the substitute mark may not return as a file or as a
+  reference, every `site/` page with a `class="brand"` must show the mark, and
+  the generator template must stamp the same string the pages carry — a page
+  fixed by hand is reverted by the next regeneration.
+
+### Removed
+- **The appearance preset named after the vendor.** `LOGIN_BG_PRESETS` shipped
+  an entry keyed `fortinet`, labelled "Fortinet", in the vendor's corporate red
+  `#ee3124` — a choice offered in SATOM's own settings menu under someone else's
+  name, next to an "Ember Red" that already covered the same taste. The
+  constant is read nowhere, so no installation's appearance changes. Nominative
+  use stays exactly where it was: the appliance-type marks, the capacity
+  ceilings attributed to the vendor's datasheet, and every sentence describing
+  what the vendor's own firmware does are facts about their product, not us
+  wearing their name. The `<!-- Favicon (Fortinet) -->` comment in `base.html`
+  went with it: a comment is not served, but it is what the next reader believes
+  the asset IS, and that belief is how the vendor glyph kept its seat through
+  three project renames (§8d).
 - **A live firmware upgrade requires an approved, open change window.** This was
   the hole: the headless executor had refused to flash outside a window since
   the gate was generalised, but the button a human actually clicks went straight
@@ -244,8 +259,6 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - The "clients affected by this window" read is per product: FortiWeb server
   policies, FortiADC virtual servers. Reading only the FortiWeb shape made
   every ADC in a window look like it had no clients at all.
-
-### Removed
 - **The per-username allowlist** (`Settings → Access Control → Allowed Users`).
   It was a fourth gate stacked behind the directory group filter, the approval
   gate and the profile, and it enforced nothing the three of them did not —

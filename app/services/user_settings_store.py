@@ -24,7 +24,8 @@ PRODUCTS = _g.BANNER_PRODUCTS
 def banner_template(user_id: int, product: str) -> str:
     """The user's chosen template id for ``product`` (DB), else the global /
     default template."""
-    val = UserSetting.get(user_id, K_BANNER_PREFIX + product)
+    val = _g.resolve_banner_template(
+        UserSetting.get(user_id, K_BANNER_PREFIX + product))
     if val in _g.BANNER_TEMPLATES:
         return val
     return _g.banner_template(product)

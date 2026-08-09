@@ -2779,3 +2779,129 @@ each product's own shape: server policies on FortiWeb, virtual servers on
 FortiADC. FortiAnalyzer and FortiAuthenticator publish no such object, so they
 contribute no client rows — that is a fact about the product, not a failed
 read.
+
+### 36.1 The maintenance window is in *your* timezone
+
+Window start and end are read in the timezone set under **Settings → General**,
+and every field that asks for one says which zone it is in. That label matters:
+a browser date-and-time field carries no timezone of its own, so without it the
+number you type is a guess the server silently overrules.
+
+Before this, the two halves disagreed. Times were *displayed* in your timezone
+but *stored* as though you had typed UTC — a window entered as `22:00` on a
+Europe/Zurich console opened at **midnight local**, two hours after the customer
+had been told the outage would begin. Nothing errored, and the schedule and the
+notice agreed with each other while both disagreed with you.
+
+The same now applies to scheduled actions: `daily`, `weekly` and `monthly` times
+are local times, so "every night at 02:00" stays at 02:00 through a daylight-
+saving change instead of drifting an hour twice a year. An `interval` schedule
+("every 30 minutes") is a duration and is unaffected, and a one-shot is already
+an absolute moment.
+
+If you paste a time that already carries an offset (`2026-08-10T22:00+00:00`),
+SATOM takes it exactly as written — that is an explicit statement about an
+instant, and re-reading it in the console's zone would overrule you.
+
+### 36.2 From pre-upgrade to change request
+
+**Appliances → *(a device)* → Upgrade Preparation** now *records* every run. The
+page lists past runs with who ran them, the firmware at the time, the verdict
+and how many published services were captured. A finished run offers **Raise
+change request**, which opens the change form with the appliance, the action and
+that run already selected.
+
+Two grading rules are worth knowing, because they are deliberate:
+
+* A section you did not tick cannot fail the run. Skipping the backup is a
+  decision, not a defect.
+* A published service that does not answer is recorded as a **baseline**, not as
+  a failure. Finding out that a policy is already down *before* you change
+  anything is the most useful thing the pre-flight produces; marking the run red
+  for it would only teach people to re-run until it turns green. What *does*
+  fail the run is not being able to enumerate the services at all — that is a
+  missing baseline — plus a failed backup, a failed health capture, or an account
+  without maintenance permission.
+
+Runs are never overwritten. A re-run is a new record, because an approved change
+cites a specific run and evidence you can edit in place is not evidence.
+
+### 36.3 The affected-service list is frozen
+
+When you raise a change, the published services it will take offline are
+photographed onto it. The detail page, the document and the export all read that
+photograph — not the appliances as they are right now.
+
+That is on purpose. If the list were re-read at print time, the change your
+manager approved on Monday and the change that runs on Thursday could describe
+different customers, and the approval would be for the wrong one. Use **Compare
+against the devices now** on the detail page to see drift; it is *reported*,
+never merged into the record.
+
+### 36.4 Exporting the affected services
+
+Under the frozen list, tick the columns you want and export **.xlsx** or
+**.csv**. Fourteen columns are available — device, product, management host,
+policy, virtual server, service/port, admin status, probed URL, reachability,
+HTTP status, response time, server pool, backends and note — with the first five
+ticked by default.
+
+Column *order* is fixed by SATOM regardless of the order you tick, so two
+exports of the same change line up side by side. Ticking nothing exports the
+default five rather than producing an empty file.
+
+### 36.5 The formal change document (English or German)
+
+Every change request can print a **13-section change document**: general
+information, purpose, affected systems, justification, impact, risk analysis,
+rollback plan, prerequisites, work to be performed, post-change validation,
+communication plan, approvals, and outcome. Choose **English** or **Deutsch** on
+the detail page; either can be viewed in the browser or downloaded as Markdown,
+and the language you picked on the form is only the default.
+
+Sections 2, 5, 6, 9 and 10 change with the action, so a reboot document does not
+claim a firmware image is being installed. Points worth stating plainly:
+
+* The upgrade text describes what a Fortinet upgrade **actually is** — a
+  complete firmware image uploaded over the API, then a reboot into the target
+  partition. It deliberately does not talk about operating-system updates or
+  package installs. A document describing work that does not happen is worse
+  than no document, because the approver signs the wrong thing.
+* A **custom REST** change prints the literal method, endpoint and body and
+  states that its impact is unknown by definition. Anything else would be
+  invented.
+* §8 (prerequisites) is filled from the linked pre-upgrade run when there is
+  one: backup taken, health captured, services validated *n*/*n*.
+* §12 prints the one approval SATOM actually recorded and leaves the other roles
+  (system administrator, service owner, change manager, CAB) as blank rows for
+  signature. SATOM will not fabricate approvals it never took.
+* §13 is filled in once the window closes, from the real outcome.
+* Anything missing prints an explicit *not recorded* / *nicht erfasst*, never a
+  blank that reads as "nothing to report".
+
+The change carries a reference of the form **CR-2026-0042**, stamped when it is
+created and never recalculated, so a document already in circulation cannot be
+renumbered later.
+
+### 36.6 A live upgrade now needs an approved window
+
+**Appliances → *(a device)* → Upgrade** refuses a live firmware push unless an
+approved change request names that appliance and its window is open right now.
+The page states which change authorises it, or names the closest candidate and
+exactly why it does not — "before the maintenance window", "not approved",
+"waiting for external approval".
+
+**Dry runs are not gated.** They send nothing to the appliance, so validating an
+image never needs a window.
+
+When an authorised push starts, its change moves to *in progress*; when it
+finishes — successfully or not — the change is closed with the real outcome and
+the end-of-window notice goes out. You no longer have to close it by hand.
+
+The order to work in:
+
+1. **Upgrade Preparation** → run it → *Raise change request*.
+2. Fill in the window (in your timezone) and the rollback plan, save the draft.
+3. Print the change document, circulate it, collect the approvals.
+4. **Approve**, then **Schedule** — or flash by hand from the Upgrade page
+   inside the window.

@@ -26,8 +26,21 @@
   </a>
 </div>
 
+{% if prep %}
+<div class="fw-alert {{ 'fw-alert-success' if prep.ok else 'fw-alert-warning' }} mb-3">
+  <i class="bi bi-clipboard2-check me-2"></i>
+  Raised from <strong>upgrade preparation #{{ prep.id }}</strong>
+  ({{ prep.created_at|localtime }}) &mdash;
+  verdict <strong>{{ 'passed' if prep.ok else 'NOT clean' }}</strong>: {{ prep.summary }}.
+  Its inventory of <strong>{{ prep.inventory_list|length }}</strong> published service(s)
+  is frozen onto this change, so the document you circulate describes the fleet as it
+  was when the pre-flight ran &mdash; not as it happens to be when somebody prints it.
+</div>
+{% endif %}
+
 <form method="POST" action="{{ url_for('change_requests.new') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% if prep %}<input type="hidden" name="prep_id" value="{{ prep.id }}">{% endif %}
 
   <div class="row g-3">
     <div class="col-lg-7">
@@ -53,7 +66,7 @@
               <label class="fw-form-label">Action</label>
               <select class="form-select" name="action">
                 {% for key, label in cr_actions %}
-                <option value="{{ key }}">{{ label }}</option>
+                <option value="{{ key }}" {{ 'selected' if key == preset_action else '' }}>{{ label }}</option>
                 {% endfor %}
               </select>
             </div>
@@ -95,6 +108,27 @@
               from Settings &rarr; Email. Blank in both places means no mail is
               sent &mdash; SATOM never guesses an address.</div>
           </div>
+
+          <div class="row g-3 mt-1">
+            <div class="col-md-7">
+              <label class="fw-form-label">Change owner (Verantwortlicher)</label>
+              <input type="text" class="form-control" name="owner"
+                     placeholder="Who is accountable for this change">
+              <div class="form-text">Printed in &sect;1 of the change document.
+                Left blank it prints as <em>not recorded</em> &mdash; never as
+                the person who happened to open the form.</div>
+            </div>
+            <div class="col-md-5">
+              <label class="fw-form-label">Document language</label>
+              <select class="form-select" name="doc_lang">
+                {% for code, label in langs %}
+                <option value="{{ code }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text">Language of the formal change document
+                (&sect;1&ndash;&sect;13). Either can be produced later.</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -109,7 +143,8 @@
             <label class="fw-form-label">Affected devices</label>
             <select class="form-select" name="device_ids" multiple size="6">
               {% for ap in appliances %}
-              <option value="{{ ap.id }}" data-kind="{{ ap.kind }}">{{ ap.name }} [{{ ap.kind }}]{% if ap.host %} ({{ ap.host }}){% endif %}</option>
+              <option value="{{ ap.id }}" data-kind="{{ ap.kind }}"
+                      {{ 'selected' if prep and ap.id == prep.appliance_id else '' }}>{{ ap.name }} [{{ ap.kind }}]{% if ap.host %} ({{ ap.host }}){% endif %}</option>
               {% endfor %}
             </select>
             <div class="form-text">
@@ -125,12 +160,18 @@
           </div>
 
           <div class="mb-3">
-            <label class="fw-form-label">Window start (UTC)</label>
+            <label class="fw-form-label">Window start <span class="text-muted">({{ tz_name }})</span></label>
             <input type="datetime-local" class="form-control" name="window_start">
           </div>
           <div class="mb-1">
-            <label class="fw-form-label">Window end (UTC)</label>
+            <label class="fw-form-label">Window end <span class="text-muted">({{ tz_name }})</span></label>
             <input type="datetime-local" class="form-control" name="window_end">
+            <div class="form-text">
+              Both times are read in <strong>{{ tz_name }}</strong> &mdash; the timezone set under
+              Settings &rarr; General &mdash; and stored as UTC. A browser field carries no
+              timezone of its own, so this label is the only thing that says which clock
+              you are typing in.
+            </div>
           </div>
         </div>
       </div>

@@ -6364,3 +6364,125 @@ chain, keep asking after an acceptance, revive the legacy row on a corrupt list,
 drop the per-group profile, skip a bad group, fall back to `admin`, ignore the
 order field, wipe the scope from a form without group fields, restore
 `allowed_users`. Each one must turn the run red.
+
+
+## §50. A form value in the wrong timezone is wrong in both directions at once
+
+Every timestamp in SATOM was *displayed* through `settings_store.to_local`
+(the one DB-backed conversion path). Every form value was *stored* raw, i.e. as
+if the operator had typed UTC. That asymmetry is the whole defect, and it is
+invisible from inside the product: a window entered as `22:00` on a
+Europe/Zurich console was stored as 22:00 UTC and then displayed back as
+`00:00 CEST`. The schedule and the customer notice agreed with each other and
+both disagreed with the human who set them. Nothing raised.
+
+- **`settings_store.parse_local` is the inverse of `to_local`.** They are a
+  pair, and the load-bearing guard asserts the ROUND TRIP across several zones,
+  not either half. A conversion that is wrong in both directions is perfectly
+  self-consistent; only the round trip against the string the operator typed
+  can see it.
+- **A `datetime-local` input carries no timezone.** The label naming the zone is
+  therefore part of the correctness of the field, not decoration. Guarded: the
+  change form must render the configured zone name and must not say `(UTC)`.
+- **A value that already carries an offset is honoured as given.** It is an
+  explicit statement about an instant; re-reading it in the console's zone would
+  overrule the caller.
+- **Wall-clock schedules are local; durations are not.** `daily` / `weekly` /
+  `monthly` take a `tz` in `compute_next_run` — "every night at 02:00" is a
+  statement about local night, and computed in UTC on a Zurich fleet it fires at
+  03:00 in winter and 04:00 in summer with nothing in any log to show the move.
+  `interval` is a duration and `once` is already an absolute instant; converting
+  either would double-apply an offset. Guarded per kind.
+- **The timezone is passed DOWN into `services/scheduler`, never read inside
+  it.** That module is pure schedule math with no DB and no Flask; a settings
+  read there would couple the sidecar's hot loop to a query and make the maths
+  untestable. There is a guard that the module contains no `settings_store`,
+  no `..models` and no `db.session`, and an AST guard that every caller passes
+  `tz=`. A caller that forgets silently reverts to the bug for its schedules.
+- **A corrupt timezone degrades to UTC rather than raising.** A bad settings
+  value must not stop the fleet from scheduling.
+
+**Recipe.** `venv/bin/python -m pytest tests/test_cr_timezone_evidence.py -q`,
+then mutate: return the naive value unconverted, ignore an explicit offset,
+compute `daily` from `now` instead of the local clock, make `_from_local` a
+no-op (half the conversion — the sneakiest one), shift `interval`, and put
+`(UTC)` back on the form label. Each must turn the run red.
+
+
+## §51. Evidence that can change under an approval is not evidence
+
+Two separate defects with one shape: the record an approver signed was not the
+record that survived to execution.
+
+- **The pre-upgrade left nothing behind.** `upgrade.prepare()` painted its
+  result into the browser and vanished with the tab. The chain the operator
+  actually wants — *pre-upgrade passed, therefore raise the change* — had
+  nothing to attach, so "the pre-flight passed" was a claim with no record.
+  Runs are now stored (`models.UpgradePrep`) and are **append-only**: a re-run
+  INSERTs. An approved change cites a specific run, and a row that can be
+  overwritten in place is not evidence.
+- **The affected-service inventory was read LIVE at render time.** The list of
+  customer services in an approved change would quietly become a different list
+  by the time the change ran. It is now frozen onto the change when it is raised
+  (`ChangeRequest.inventory_at`), and the detail page, the document and the
+  export all read that snapshot. Drift against the devices as they are now is
+  available on request and is REPORTED — never silently merged, because merging
+  it would substitute a list nobody approved for the one they did.
+- **The document is a pure function of the stored record.** `cr_document.render`
+  touches no DB, contacts no device and imports no Flask; there is a guard on
+  its own import graph. Printing an approved change twice yields the same
+  document twice.
+- **The change reference is stamped once.** `CR-YYYY-NNNN` is derived from the
+  row id at creation and stored. Deriving it at print time would renumber every
+  document already in circulation the day a restore reseeds the id sequence.
+- **A pre-flight may only be cited by a change that targets ITS appliance.**
+  Otherwise a green run from another box can be attached as the evidence for
+  this one: a document that reads correct and certifies the wrong machine.
+
+**Grading rules that earn their guards.** The verdict grades only the sections
+that were REQUESTED — `do_backup=False` is a decision, not a defect, and
+grading absent sections red would mark every deliberately narrow pre-flight as
+failed and train people to ignore the verdict. An **unreachable published
+service is a baseline, not a failure**: finding that a policy is already down
+before the change is the most valuable output of the whole pre-flight, and a red
+verdict would push operators to re-run until it turns green. A failed probe
+*sweep* (could not enumerate at all) IS a failure — that is a missing baseline.
+
+**Export rules.** Column order is fixed by the catalog regardless of tick order,
+so two exports of the same change are comparable; ticking nothing exports the
+default columns rather than producing a zero-column file, which is a corrupt
+spreadsheet and not an expression of intent. The `.xlsx` writer is pure standard
+library on purpose: the product ships offline bundles, and a new binary
+dependency is a cost every installation pays forever.
+
+
+## §52. Change control that only binds the unused code path is decoration
+
+The headless executor had refused to flash outside an approved window since the
+gate was generalised (§41). Meanwhile the button a human actually clicks —
+`POST /appliances/<id>/upgrade` — went straight to `push_firmware` with nothing
+but `CONFIG_WRITE` and a typed device name. **The path that worked had no gate
+and the path with the gate was a stub.**
+
+- A LIVE flash now requires an approved change request naming this appliance
+  whose window is open right now. The refusal NAMES the closest candidate and
+  why it does not authorise, never just "no" — an operator who cannot see which
+  change is blocking them routes around the gate.
+- **A dry run is never gated.** It sends nothing to the appliance, and gating it
+  would push operators to skip validation entirely.
+- Among several runnable candidates the **soonest-starting** one is consumed,
+  not the newest row, so an operator with two open changes does not silently
+  burn the wrong window.
+- The change is moved to `in_progress` and closed with the real outcome through
+  **one seam** (`_flash_under_change`), not by instrumenting each of the
+  worker's six terminal paths. Stamping six exits is how one of them eventually
+  gets missed and leaves a change parked at `in_progress` forever — precisely
+  the stall §41 exists to remove. The job's own final status is the authority,
+  because that is what the operator sees.
+
+**Recipe.** `venv/bin/python -m pytest tests/test_cr_timezone_evidence.py
+tests/test_cr_document.py tests/test_change_request_lifecycle.py
+tests/test_cr_action_catalog.py -q`, then mutate: make the authorisation always
+return ok, remove the gate from the live push, stop freezing the inventory, read
+the fleet live in `detail`, let any appliance's pre-flight be cited, and derive
+the document's owner from the requester. Each must turn the run red.

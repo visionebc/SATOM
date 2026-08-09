@@ -197,6 +197,50 @@ def to_local(value: Any, fmt: str = "%Y-%m-%d %H:%M %Z") -> str:
             return str(value)
 
 
+def tz_name() -> str:
+    """The admin-configured IANA timezone name (validated, never blank).
+
+    Exposed so a template can TELL the operator which clock a form field is in.
+    A ``datetime-local`` input carries no zone, so an unlabelled field is a
+    guess the operator makes and the server silently overrules."""
+    return _valid_tz(get_str(K_TIMEZONE))
+
+
+def parse_local(value: Any) -> Any:
+    """The INVERSE of :func:`to_local`: an HTML ``datetime-local`` value (or any
+    naive ISO-8601 string) is read **in the configured timezone** and returned
+    as a naive **UTC** datetime for storage. Returns ``None`` for blank/invalid.
+
+    This exists because the two halves were asymmetric: every timestamp was
+    DISPLAYED through :func:`to_local` while every form value was STORED as if
+    the operator had typed UTC. Typing ``22:00`` in a Europe/Zurich console
+    booked a maintenance window that opened at 22:00 UTC — midnight local, two
+    hours after the customer was told the outage would start. Nothing failed;
+    the change simply ran at the wrong time.
+
+    A value that already carries an offset is honoured as given and merely
+    converted — that is an explicit statement about the instant, and rewriting
+    it into the console's zone would be overruling the caller.
+    """
+    if value is None:
+        return None
+    try:
+        from datetime import datetime, timezone as _utc
+        from zoneinfo import ZoneInfo
+        dt = (datetime.fromisoformat(str(value).strip())
+              if not hasattr(value, "year") else value)
+    except (ValueError, TypeError):
+        return None
+    if dt is None:
+        return None
+    try:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ZoneInfo(tz_name()))
+        return dt.astimezone(_utc.utc).replace(tzinfo=None)
+    except Exception:  # noqa: BLE001 — an unusable tz db must not lose the value
+        return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
+
+
 def save_general(app_name: str, default_kind: str, session_timeout: Any,
                  poll_interval: Any, show_raw_config: bool,
                  log_levels: list[str], timezone: str = "",

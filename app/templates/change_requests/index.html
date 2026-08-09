@@ -62,8 +62,8 @@
             </td>
             <td style="font-size:13px;">
               {% if cr.window_start %}
-                {{ cr.window_start.strftime('%Y-%m-%d %H:%M') }}
-                {% if cr.window_end %}<span class="text-muted">→ {{ cr.window_end.strftime('%H:%M') }}</span>{% endif %}
+                {{ cr.window_start|localtime('%Y-%m-%d %H:%M %Z') }}
+                {% if cr.window_end %}<span class="text-muted">→ {{ cr.window_end|localtime('%H:%M') }}</span>{% endif %}
                 <span class="text-muted">UTC</span>
               {% else %}
                 <span class="text-muted">— not set —</span>

@@ -29,6 +29,18 @@ from ..registry.loader import get_all_endpoints
 
 bp = Blueprint('scheduled_actions', __name__, url_prefix='/scheduled-actions')
 
+def _tz() -> str:
+    """The timezone the wall-clock schedule fields on this page are expressed in.
+
+    Read here and passed DOWN into the pure schedule math, never read inside it:
+    ``services/scheduler`` is deliberately DB-free and stays testable."""
+    from ..services import settings_store
+    try:
+        return settings_store.tz_name()
+    except Exception:  # noqa: BLE001
+        return "UTC"
+
+
 # Mon=0 .. Sun=6 (matches scheduler.compute_next_run's weekday convention).
 WEEKDAYS = [
     (0, "Monday"), (1, "Tuesday"), (2, "Wednesday"), (3, "Thursday"),
@@ -174,7 +186,7 @@ def _apply_form(action: ScheduledAction) -> bool:
     action.schedule = json.dumps(schedule)
     action.enabled = bool(request.form.get('enabled'))
     action.catch_up = bool(request.form.get('catch_up'))
-    action.next_run = compute_next_run(kind, schedule)
+    action.next_run = compute_next_run(kind, schedule, tz=_tz())
     return True
 
 
@@ -268,7 +280,8 @@ def toggle(id):
     action.enabled = not action.enabled
     if action.enabled:
         # Re-arm: a freshly enabled action gets a fresh next_run from now.
-        action.next_run = compute_next_run(action.schedule_kind, action.schedule_dict)
+        action.next_run = compute_next_run(action.schedule_kind,
+                                           action.schedule_dict, tz=_tz())
     db.session.commit()
     state = 'enabled' if action.enabled else 'disabled'
     log_action('scheduled_action.toggle', target=action.name, detail=state)

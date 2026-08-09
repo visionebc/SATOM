@@ -6556,3 +6556,62 @@ tests/test_theme.py -q`, then mutate — drift the site copy, restore the
 substitute vector, point a template at it, blank one page's mark, revert the
 generator, put the vendor-named preset back, and re-add the vendor comment to
 `base.html`. Each must turn the run red.
+
+
+## §54. Output can be rendered, complete, and invisible
+
+`tests/test_upgrade_prep_chrome.py` — 12 guards, 11 mutations, all 11 bite.
+
+Reported 2026-08-10 on `/appliances/<id>/upgrade/prep`: the result text ran past
+the cards, the sizing did not match the product, and the device CLI output
+"no se ve por los colores". Three defects, none of which can raise, because a
+page that renders is not a page that reads.
+
+**1. `.fw-pre` was a dark-theme leftover.** `rgba(0,0,0,0.30)` over a WHITE card
+composites to a light-grey slab, and `#94a3b8` on that slab is about **1.3:1**.
+The health battery was fetched, parsed, injected and unreadable. Same defect
+class as the status pills of 2026-07-28 (§9m) — and worse in reach, because
+`.fw-pre` is shared by **five other templates**: the inspector's JSON dump, the
+three git consoles in Settings, and the formal change-request document. One of
+those had already been hand-patched with an inline `white-space:pre-wrap`, which
+is the tell that somebody hit this and treated the symptom.
+The panel now paints from `--fw-surface-alt` / `--fw-text-primary` / `--fw-border`,
+and uses `white-space: pre` with `overflow: auto`: device output is
+column-aligned, wrapping shreds the columns, and the scroll is what keeps a long
+line inside the card instead of widening it.
+
+**2. Device strings were sized as headlines.** The four result tiles put a
+firmware build and a backup filename in a `.h5` inside a quarter-width column.
+Long unbroken tokens do not wrap by default, so they overflowed. `.fw-fact-*` is
+the tile for a *string* (a stat card holds a NUMBER: 28px, one line, never
+wraps): 14px, `overflow-wrap: anywhere`, `min-width: 0` so the tile can shrink
+below its content inside its grid column. The backup filename moved out of the
+badge into its own `.fw-fact-sub` line — the badge carries the VERDICT, the
+filename is evidence, and a 50-character filename inside a pill wraps into a
+two-line lozenge.
+
+**3. The page was built out of raw Bootstrap.** `.card` has **no** override in
+`fortiweb.css`, so this page rendered with different corners, borders and header
+padding from every other page; `badge bg-*` and `text-success`/`text-danger` are
+not the palettes calibrated against white (`.fw-badge-*`, 4.5:1+). Guarded by
+absence: `class="card"`, `badge bg-`, `alert-success` and the bare text-colour
+utilities must not come back.
+
+Traps this round, all previously documented and all repeated:
+
+- `\balert-(success|...)` matches inside `fw-alert-success` — the **ninth**
+  substring assertion in this repo to match its own right answer. Needs `(?<!fw-)`.
+- Scanning the WHOLE rendered document for dark values fails against **correct**
+  chrome: `base.html`'s sidebar legitimately paints slate icons on the dark-blue
+  rail. Scope the sweep to the page's own block (`html[html.index("fw-page-header"):]`).
+- `/tmp/<shared dir>` on the node is owned by another session — the dump ran as
+  `satom` and could not write. Use an own directory or widen the mode.
+
+**OPEN, reported not fixed (needs a decision — product-wide blast radius):**
+`fw-btn-primary` (46 uses) and `fw-btn-secondary` (51 uses) are **defined
+nowhere** in `app/static/css/`. Verified against the CSS served by the live node,
+not just the tree. Every one of those 97 buttons falls back to bare Bootstrap
+`.btn`: padding and cursor, no background, no border. The primary call to action
+on this page — "Run preparation" — renders as plain text. Preexisting; fixing it
+changes the appearance of every page in the product, so it is a separate ask.
+

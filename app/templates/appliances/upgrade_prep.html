@@ -7,8 +7,8 @@
 </div>
 <p class="text-muted">A read-only pre-flight before a firmware upgrade: take a config backup, capture the SSH health battery, check maintenance permission, and HTTP-validate every published service. Nothing is changed.</p>
 
-<div class="card shadow-sm mb-3">
-  <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+<div class="fw-card">
+  <div class="fw-card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
     <div class="d-flex gap-3 flex-wrap">
       <label class="form-check"><input class="form-check-input" type="checkbox" id="opt-backup" checked> <span class="form-check-label">Config backup</span></label>
       <label class="form-check"><input class="form-check-input" type="checkbox" id="opt-health" checked> <span class="form-check-label">Health battery (SSH)</span></label>
@@ -18,43 +18,74 @@
   </div>
 </div>
 
-<div id="prep-cr" class="alert d-none mb-3"></div>
+<div id="prep-cr" class="fw-alert d-none"></div>
 
 <div id="prep-out" class="d-none">
   <div class="row g-3 mb-3">
-    <div class="col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="text-muted small">Firmware</div><div id="r-fw" class="h5 mb-0">—</div></div></div></div>
-    <div class="col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="text-muted small">Maintenance permission</div><div id="r-perm" class="h5 mb-0">—</div></div></div></div>
-    <div class="col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="text-muted small">Backup</div><div id="r-backup" class="h5 mb-0">—</div></div></div></div>
-    <div class="col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="text-muted small">Services validated</div><div id="r-svc-count" class="h5 mb-0">—</div></div></div></div>
+    <div class="col-6 col-lg-3">
+      <div class="fw-fact">
+        <div class="fw-fact-label">Firmware</div>
+        <div id="r-fw" class="fw-fact-value is-mono">—</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="fw-fact">
+        <div class="fw-fact-label">Maintenance permission</div>
+        <div id="r-perm" class="fw-fact-value">—</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="fw-fact">
+        <div class="fw-fact-label">Backup</div>
+        <div id="r-backup" class="fw-fact-value is-mono">—</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="fw-fact">
+        <div class="fw-fact-label">Services validated</div>
+        <div id="r-svc-count" class="fw-fact-value">—</div>
+      </div>
+    </div>
   </div>
-  <div class="card shadow-sm mb-3"><div class="card-header fw-card-header">Service validation</div><div class="card-body p-0"><div id="r-services" class="p-3"></div></div></div>
-  <div class="card shadow-sm"><div class="card-header fw-card-header">Health battery (SSH)</div><div class="card-body"><pre id="r-health" class="fw-pre mb-0">—</pre></div></div>
+
+  <div class="fw-card">
+    <div class="fw-card-header"><h6 class="fw-card-title">Service validation</h6></div>
+    <div id="r-services"></div>
+  </div>
+
+  <div class="fw-card">
+    <div class="fw-card-header">
+      <h6 class="fw-card-title">Health battery (SSH)</h6>
+      <span class="fw-badge fw-badge-secondary">device CLI output</span>
+    </div>
+    <div class="fw-card-body"><pre id="r-health" class="fw-pre">—</pre></div>
+  </div>
 </div>
 
-<div class="card shadow-sm mt-3">
-  <div class="card-header fw-card-header">Recorded pre-flight runs</div>
-  <div class="card-body p-0">
-    {% if runs %}
-    <table class="table table-sm fw-table mb-0">
-      <thead><tr><th>When</th><th>By</th><th>Firmware</th><th>Verdict</th><th>Services</th><th>Change</th><th></th></tr></thead>
+<div class="fw-card">
+  <div class="fw-card-header"><h6 class="fw-card-title">Recorded pre-flight runs</h6></div>
+  {% if runs %}
+  <div class="fw-table-wrapper" style="border:0; box-shadow:none; border-radius:0;">
+    <table class="fw-table">
+      <thead><tr><th>When</th><th>By</th><th>Firmware</th><th>Verdict</th><th class="text-end">Services</th><th>Change</th><th></th></tr></thead>
       <tbody>
         {% for r in runs %}
         <tr>
-          <td class="small">{{ r.created_at|localtime }}</td>
-          <td class="small">{{ r.created_by or '—' }}</td>
-          <td class="small">{{ r.firmware or '—' }}</td>
-          <td class="small">
-            <span class="badge bg-{{ 'success' if r.ok else 'warning' }}">{{ 'passed' if r.ok else 'not clean' }}</span>
-            <span class="text-muted">{{ r.summary }}</span>
+          <td class="text-nowrap">{{ r.created_at|localtime }}</td>
+          <td>{{ r.created_by or '—' }}</td>
+          <td class="fw-cell-mono">{{ r.firmware or '—' }}</td>
+          <td>
+            <span class="fw-badge fw-badge-{{ 'success' if r.ok else 'warning' }}">{{ 'passed' if r.ok else 'not clean' }}</span>
+            <div class="fw-cell-note">{{ r.summary }}</div>
           </td>
-          <td class="small">{{ r.inventory_list|length }}</td>
-          <td class="small">
+          <td class="text-end">{{ r.inventory_list|length }}</td>
+          <td>
             {% if r.cr_id %}<a href="{{ url_for('change_requests.detail', id=r.cr_id) }}">CR #{{ r.cr_id }}</a>
             {% else %}<span class="text-muted">none</span>{% endif %}
           </td>
           <td class="text-end">
             {% if not r.cr_id %}
-            <a class="btn btn-sm fw-btn-secondary"
+            <a class="btn btn-sm fw-btn-secondary text-nowrap"
                href="{{ url_for('change_requests.new', prep_id=r.id, action='upgrade') }}">
               Raise change request
             </a>
@@ -64,14 +95,14 @@
         {% endfor %}
       </tbody>
     </table>
-    {% else %}
-    <div class="p-3 text-muted small">
-      No pre-flight has been recorded for this appliance yet. Every run is stored
-      &mdash; append-only, never overwritten &mdash; because an approved change cites a
-      specific run, and evidence that can be edited in place is not evidence.
-    </div>
-    {% endif %}
   </div>
+  {% else %}
+  <div class="fw-card-body text-muted small">
+    No pre-flight has been recorded for this appliance yet. Every run is stored
+    &mdash; append-only, never overwritten &mdash; because an approved change cites a
+    specific run, and evidence that can be edited in place is not evidence.
+  </div>
+  {% endif %}
 </div>
 
 <script nonce="{{ csp_nonce }}">
@@ -79,16 +110,33 @@
   const token = document.querySelector('meta[name="csrf-token"]').content;
   const btn = document.getElementById('prep-run');
   const out = document.getElementById('prep-out');
-  function pill(ok, t) { return `<span class="badge bg-${ok ? 'success' : 'danger'}">${t}</span>`; }
+  // Every value below this line comes from the appliance. Interpolating it raw
+  // into innerHTML let a policy name carrying '<' silently eat the rest of the
+  // row -- a layout defect that looks exactly like missing data.
+  function esc(v) {
+    return String(v === null || v === undefined ? '' : v)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function pill(ok, t) { return `<span class="fw-badge fw-badge-${ok ? 'success' : 'danger'}">${esc(t)}</span>`; }
   function svcTable(probes) {
-    if (!probes || !probes.length) return '<div class="text-muted">No services resolved.</div>';
-    let h = '<table class="table table-sm fw-table mb-0"><thead><tr><th>Policy</th><th>URL</th><th>Back-end</th><th>Result</th></tr></thead><tbody>';
+    if (!probes || !probes.length) return '<div class="fw-card-body text-muted small">No services resolved.</div>';
+    let h = '<div class="fw-table-wrapper" style="border:0; box-shadow:none; border-radius:0;">'
+          + '<table class="fw-table"><thead><tr><th>Policy</th><th>URL</th><th>Back-end</th><th>Result</th></tr></thead><tbody>';
     for (const p of probes) {
       const t = p.target, r = p.result;
-      const res = r.ok ? `<span class="text-success">${r.status} ${r.reason || ''}</span>` : `<span class="text-danger">unreachable</span>`;
-      h += `<tr><td><b>${t.policy}</b></td><td class="small">${t.url || '<span class=text-muted>'+(t.note||'—')+'</span>'}</td><td class="small">${(t.backends||[]).join(', ')||'—'}</td><td>${res}</td></tr>`;
+      const res = r.ok
+        ? `<span class="fw-badge fw-badge-success">${esc(r.status)}${r.reason ? ' ' + esc(r.reason) : ''}</span>`
+        : '<span class="fw-badge fw-badge-danger">unreachable</span>';
+      const url = t.url
+        ? `<span class="fw-cell-mono">${esc(t.url)}</span>`
+        : `<span class="text-muted">${esc(t.note || '—')}</span>`;
+      h += `<tr><td class="fw-cell-break"><b>${esc(t.policy)}</b></td>`
+         + `<td class="fw-cell-break">${url}</td>`
+         + `<td class="fw-cell-break fw-cell-mono">${esc((t.backends || []).join(', ')) || '—'}</td>`
+         + `<td class="text-nowrap">${res}</td></tr>`;
     }
-    return h + '</tbody></table>';
+    return h + '</tbody></table></div>';
   }
   btn.addEventListener('click', async () => {
     btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Running…';
@@ -107,24 +155,33 @@
       const d = j.result;
       out.classList.remove('d-none');
       document.getElementById('r-fw').textContent = d.firmware || '—';
-      document.getElementById('r-perm').innerHTML = d.permission === null ? '<span class="text-muted">unknown</span>' : pill(d.permission, d.permission ? 'granted' : 'denied');
-      document.getElementById('r-backup').innerHTML = d.backup ? pill(d.backup.ok, d.backup.ok ? (d.backup.name||'ok') : 'failed') : '<span class="text-muted">skipped</span>';
+      document.getElementById('r-perm').innerHTML = d.permission === null ? '<span class="fw-badge fw-badge-secondary">unknown</span>' : pill(d.permission, d.permission ? 'granted' : 'denied');
+      // A 50-character backup filename inside a pill wraps into a two-line
+      // lozenge. The verdict is the badge; the filename is evidence, so it
+      // gets its own mono sub-line that can break where it likes.
+      const bk = d.backup;
+      document.getElementById('r-backup').innerHTML = !bk
+        ? '<span class="fw-badge fw-badge-secondary">skipped</span>'
+        : (bk.ok
+            ? '<span class="fw-badge fw-badge-success">taken</span>'
+              + '<div class="fw-fact-sub">' + esc(bk.name || 'unnamed') + '</div>'
+            : '<span class="fw-badge fw-badge-danger">failed</span>');
       const probes = (d.services && d.services.probes) || [];
       document.getElementById('r-svc-count').textContent = probes.length || (d.services && d.services.ok ? 0 : '—');
-      document.getElementById('r-services').innerHTML = (d.services && d.services.ok) ? svcTable(probes) : ('<div class="text-danger">'+((d.services&&d.services.error)||'skipped')+'</div>');
+      document.getElementById('r-services').innerHTML = (d.services && d.services.ok) ? svcTable(probes) : ('<div class="fw-card-body"><span class="fw-badge fw-badge-danger">'+esc((d.services&&d.services.error)||'skipped')+'</span></div>');
       document.getElementById('r-health').textContent = (d.health && d.health.ok) ? (d.health.text || '(empty)') : ('SSH health unavailable: ' + ((d.health&&d.health.error)||'skipped'));
       const crBox = document.getElementById('prep-cr');
-      crBox.classList.remove('d-none', 'alert-success', 'alert-warning', 'alert-secondary');
+      crBox.classList.remove('d-none', 'fw-alert-success', 'fw-alert-warning', 'fw-alert-info');
       if (j.prep_id) {
-        crBox.classList.add(j.prep_ok ? 'alert-success' : 'alert-warning');
-        crBox.innerHTML = 'Recorded as <b>pre-flight #' + j.prep_id + '</b> \u2014 '
-          + (j.prep_ok ? 'verdict passed' : 'verdict NOT clean') + ': ' + (j.prep_summary || '')
-          + '. Inventory of <b>' + j.inventory_count + '</b> published service(s) captured.'
-          + ' <a class="btn btn-sm fw-btn-primary ms-2" href="' + j.cr_url + '">Raise change request</a>';
+        crBox.classList.add(j.prep_ok ? 'fw-alert-success' : 'fw-alert-warning');
+        crBox.innerHTML = 'Recorded as <b>pre-flight #' + esc(j.prep_id) + '</b> — '
+          + (j.prep_ok ? 'verdict passed' : 'verdict NOT clean') + ': ' + esc(j.prep_summary || '')
+          + '. Inventory of <b>' + esc(j.inventory_count) + '</b> published service(s) captured.'
+          + ' <a class="btn btn-sm fw-btn-primary ms-2" href="' + esc(j.cr_url) + '">Raise change request</a>';
       } else {
-        crBox.classList.add('alert-secondary');
+        crBox.classList.add('fw-alert-info');
         crBox.textContent = 'This run was NOT stored, so no change request can cite it. '
-          + 'The pre-flight itself completed \u2014 the results above are real.';
+          + 'The pre-flight itself completed — the results above are real.';
       }
     } catch (e) {
       out.classList.remove('d-none'); document.getElementById('r-health').textContent = 'ERROR: ' + e.message;

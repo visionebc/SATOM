@@ -51,15 +51,38 @@ def _post_login(user: User, remember: bool):
                extra={'source': user.auth_source or 'local'})
 
 
+#: Endpoints a post-login redirect must never land on. ``logout`` gets here on
+#: its own: hitting /auth/logout when the session is already gone bounces
+#: through ``@login_required`` to /auth/login?next=/auth/logout, so honouring
+#: ``next`` would sign the user out the instant they signed in - an infinite
+#: door. Blocked by RESOLVED PATH, not by substring: a path that merely
+#: contains "logout" may be a perfectly good page.
+_NEXT_DENY_ENDPOINTS = ('auth.logout',)
+
+
+def _inactive_message(user) -> str:
+    if user.is_pending_approval:
+        return ('Your account was imported from the directory but is still '
+                'awaiting administrator approval.')
+    return 'This account is disabled.'
+
+
 def _safe_next() -> str:
     nxt = request.args.get('next') or request.form.get('next')
     if nxt and nxt.startswith('/') and not nxt.startswith('//'):
-        return nxt
+        denied = {url_for(ep) for ep in _NEXT_DENY_ENDPOINTS}
+        if nxt.split('?', 1)[0].rstrip('/') not in {d.rstrip('/') for d in denied}:
+            return nxt
     return url_for('index')
 
 
 @bp.route('/login', methods=['GET', 'POST'])
-@limiter.limit('5 per minute')
+# POST ONLY. Counting GETs rate-limited the *login page itself*: five renders a
+# minute - a logout redirect, a couple of reloads, a failed attempt - and the
+# user was locked out of the FORM, having guessed no password at all. Brute
+# force is POST; the credential guard belongs on the verb that carries a
+# credential. Per-account lockout below covers the distributed case.
+@limiter.limit('5 per minute', methods=['POST'])
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('index'))
@@ -72,7 +95,7 @@ def login():
         user = User.query.filter_by(username=username).first()
 
         if user and not user.is_active:
-            flash('This account is disabled.', 'danger')
+            flash(_inactive_message(user), 'warning' if user.is_pending_approval else 'danger')
             return render_template('auth/login.html')
 
         # Per-account lockout: after LOCKOUT_THRESHOLD consecutive failures the
@@ -99,7 +122,12 @@ def login():
             if result.get('ok'):
                 user = auth_store.provision_external_user(username, result.get('source', 'ldap'))
                 if user and not user.is_active:
-                    flash('This account is disabled.', 'danger')
+                    # The bind SUCCEEDED - this is an authorisation stop, so it
+                    # is logged as such and never as a credential failure.
+                    log_action('login.pending_approval' if user.is_pending_approval
+                               else 'login.disabled', target=username)
+                    flash(_inactive_message(user),
+                          'warning' if user.is_pending_approval else 'danger')
                     return render_template('auth/login.html')
                 authed = bool(user)
             else:

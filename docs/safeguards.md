@@ -5984,6 +5984,85 @@ command that never ran**:
 
 ---
 
+## §44. A rate limit on the wrong verb locks out the innocent
+
+`/auth/login` answers two different questions with one URL: `GET` asks "show me
+the form", `POST` asks "is this credential correct". Only the second is an
+attack surface, and only the second may be rationed. The shipped decorator
+rationed both, so five page views a minute — trivially reached by one logout
+redirect plus a reload — returned `429` on the **form**. The victim of that
+limiter is never the attacker: an attacker scripts `POST` and never loads the
+page, while the operator loads the page and is turned away.
+
+**Guard** (`tests/test_directory_import.py`): ten `GET`s all `200`; the `POST`
+budget survives a `GET` flood untouched; the sixth `POST` is still `429`; and a
+`GET` served *during* the `POST` throttle still returns `200`. That last one is
+the human requirement — someone being throttled must be able to read the screen
+that says so.
+
+The shared test fixture sets `RATELIMIT_ENABLED = False`, so these tests build
+their own app with the limiter on. A limiter test against a fixture that
+disables the limiter passes for the wrong reason, which is worse than no test.
+
+**Related:** a redirect target that points back at `/auth/logout` is the same
+class of self-inflicted door. Hitting logout without a session lands on
+`/auth/login?next=/auth/logout`; honour that `next` and a successful sign-in
+signs you out. It is refused by **resolved path** (`url_for('auth.logout')`),
+never by testing whether the string contains `logout` — a real page may.
+
+**Verification recipe.** Against a live node, with a cookiejar and a real CSRF
+token (`curl` without one gets a 302 from the CSRF handler and proves nothing
+about the limiter): 12 `GET`s → all `200`; 8 `POST`s → `200 ×5` then `429 ×3`;
+one final `GET` → `200`.
+
+## §45. RADIUS has no roster, so importing users needs a second channel
+
+You cannot enumerate RADIUS. An Access-Request asks about **one** credential and
+returns yes or no; there is no "list this group" verb, and no amount of
+configuration adds one. So "import the users of group X" under a RADIUS backend
+is not a RADIUS feature at all — it is a read against the directory's *own* API,
+running alongside an authentication path that stays on RADIUS. Conflating the
+two would mean switching sign-in to LDAP to get a user list, quietly trading
+away FortiToken/push at the directory to buy a roster.
+
+The roster source is a FortiAuthenticator **already registered under
+Appliances**, reusing its Fernet-encrypted API key. A second copy of that
+credential in the auth config would be a second thing to rotate.
+
+**Measured on the device, not assumed:** `/api/v1/localusers/` **under-reports**.
+On fac01 (v8.0.3) it returned `meta.total_count: 1` for a FAC whose GUI showed
+three local users, omitting `admin` and `ebc`; `/api/v1/localgroup-memberships/`
+returned both members of the group, each with its `username`. Memberships are
+therefore the authoritative roster and `localusers` is only ever enrichment. A
+roster built on `localusers` would import a partial group and look successful.
+
+**Guards:** the roster includes a member `localusers` hides; a group name the
+appliance does not know is an error naming the groups it does know (not an empty
+success); a device refusal is an error, not an empty group; a `localusers`
+failure does not take the roster down with it; two registered FACs with no
+choice made refuse rather than guess; a configured appliance of the wrong
+`kind` is rejected by name.
+
+## §46. Pending approval is not "disabled", and neither is a bad password
+
+Three different refusals used to render as one message. An imported account
+awaiting approval, an account an admin revoked, and a wrong password are three
+different problems with three different owners — and telling a user "invalid
+username or password" after their **bind succeeded** sends them to reset a
+credential that was correct.
+
+`User.is_pending_approval` is derived, not stored: *external, inactive, and
+`last_login is None`*. An account an admin revoked has by definition been used,
+so it carries a `last_login`; one nobody ever signed into could not have been
+revoked. Deriving it means there is no new column to keep in sync with the
+truth, and no way for the flag and the state to disagree.
+
+The gate itself (`auth.require_approval`) is **global, not per-backend**, and is
+saved from every section of the Settings form. Scoping the save to the RADIUS
+branch would silently switch the gate off whenever an admin saved the LDAP half
+of the same page — a security control that turns itself off is worse than none.
+Existing accounts are never re-gated: the approval decision is made once.
+
 ## §43. A change that leaves this product must not be able to lie about itself
 
 `tests/test_cr_orchestration.py`, `tests/test_netbox_client.py`,

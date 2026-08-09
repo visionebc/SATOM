@@ -53,6 +53,7 @@ publication-rules.local.json
 
 # Retired git SoT (2026-08-05): the live tree moved to data/reports; the
 # old repo-root path survives only as an untracked compat symlink.
+/reports
 /reports/
 
 # Root-level hidden scratch: .patch_a.py, .smoke1.py, .runsuite.sh, .suite.log...

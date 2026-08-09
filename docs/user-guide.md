@@ -43,6 +43,7 @@
 31. [Release notes & the SATOM changelog](#31-release-notes--the-satom-changelog)
 32. [Troubleshooting](#32-troubleshooting)
 33. [AI Advisor](#33-ai-advisor)
+34. [The Audit Log](#34-the-audit-log)
 
 ---
 
@@ -221,6 +222,13 @@ What the guided dialog does for you:
   profile under a new name.
 - Objects that already exist on the destination are **validated and skipped**,
   never overwritten. The clone lands **disabled** for a manual cutover.
+- **Rule content travels with the rule.** Objects whose meaning lives in
+  per-rule sub-tables — a Custom Access Rule's URL / source-IP / rate-limit
+  filters, a URL Access Rule's match conditions — are copied with those rows,
+  not as a bare name. A rule copied without them would appear on the
+  destination and match no traffic, and nothing in the job result would say so.
+  If a sub-table does not exist on the destination's firmware it contributes
+  nothing rather than being invented.
 
 ## 7. Server Objects & the generic object editor
 
@@ -422,6 +430,32 @@ The guided clone derives a policy-specific profile, re-binds the Server Policy
 to it, and authorises the exception there. **The clone is a real write to the
 appliance and is never implicit** — it happens only when you ask for it in the
 same action.
+
+The copy is **deep**. A profile is not one object: it names roughly forty
+sub-policies, and a carve-out physically lands inside one of them. A profile
+that shares its sub-policies therefore shares every carve-out written into
+them, and a clone that copied only the top object would look isolated while
+leaking exactly as before. So every sub-object the new profile may own is
+recreated under this policy's own name — `am-shop` becomes
+`am-shop-pol-shop-cms` — and the references are re-pointed to the copies.
+
+Three things are **not** copied, and SATOM says so before it writes anything:
+
+| left shared | why | can you override it? |
+|---|---|---|
+| **predefined** objects (`Standard Protection`, `Predefined - Known Bots`…) | a copy stops receiving FortiGuard updates | yes, object by object |
+| objects an **approved template** governs | copying takes this policy out of the template without anyone deciding to | yes, object by object |
+| anything whose **parent stays shared** | re-pointing a reference is a write to the parent, so the copy would push the new name into an object other profiles still read | no — it is a consequence, not a choice |
+
+The Exceptions page previews the clone first: what will be copied, what will
+stay shared, and the reason for each. Applying a plan that leaves anything
+shared takes an explicit confirmation, because a profile that is isolated in
+most places is not a state you can reason about three months later.
+
+Capacity is checked for the whole plan, per object type, before the first
+write — a clone that dies half-way is not re-bound, and its orphans have to be
+found by hand. Object types with no configured limit are listed as unchecked
+rather than passed over quietly.
 
 Saving a draft on the Exceptions page (§9) warns rather than refuses: a draft
 in the database lets nothing through. The Attack ID page refuses, because it is
@@ -2481,3 +2515,38 @@ anywhere.
 | A provider shows *"no route to host"* / times out on the first message | If it's the local Ollama provider, a large model can take well over a minute to load into memory on a cold call — that is not a hang, wait for it (`docs/ai-advisor.md`). |
 | A chat reply mentions a proposal but no card appears | The model's fenced `` ```satom-proposal `` block did not parse as valid JSON against the schema — the chat reply still reached you, the malformed block was silently dropped rather than turned into something that only looks valid. |
 | **Apply as draft** is refused (403) | You don't hold the permission the MANUAL form for that kind requires (`config_write` for an exception, `studio.lua_studio` for Lua) — the AI path is never a shortcut around it (33.4). |
+
+---
+
+## 34. The Audit Log
+
+Every write SATOM makes is recorded here: who, when, from which address, against
+which target, with the payload. It is the page a compliance question ends on, so
+it is read-only by construction — there is no edit or delete control, for anyone.
+
+**Each entry has an ID, and it is the handle for everything else.** The first
+column shows it as `#4821`. Click the ID to copy it — that click does *not* open
+the detail panel, so copying the handle never buries it. Clicking anywhere else
+in the row opens the panel, which repeats the ID at the top with its own **Copy**
+button.
+
+**Finding an entry again.** Paste the ID into the search box at the top of the
+page. All three shapes resolve to the same row: `4821`, `#4821`, and the
+zero-padded `AUD-004821` form that tends to end up in a ticket. The ID is
+searched *in addition to* the text fields, so an ordinary numeric query — a port,
+an appliance number — keeps matching the targets and payloads that contain it.
+
+**The ID is a handle, not a key to another workspace.** The lookup runs inside
+the same ADOM scoping as the rest of the page: a FortiWeb session cannot pull up
+a FortiADC row by guessing its number.
+
+**Why a timestamp was not enough.** One apply writes several rows inside the same
+second, so "the 12:04:31 entry" can name three different things. The ID names
+exactly one — and it is also what makes the listing's ordering checkable, since a
+row that appeared twice would now be visibly the same row.
+
+**Errors carry a second ID.** When an entry records a failure, the panel opens
+with a red **Error reference** — an eight-character code you can `grep` in
+`data/logs/satom.log` for the full traceback. That is a different identifier from
+the entry ID and answers a different question: the entry ID names *the record*,
+the error ID names *the crash*.

@@ -545,10 +545,19 @@ def _resolve_scope_or_clone(appliance, wpp: str, policy: str, body: dict):
     res = wpp_clone_flow.clone_and_rebind(
         appliance, source=wpp, policy=policy,
         new_name=(body.get('new_name') or ''), apply=True,
+        clone_anyway=body.get('clone_anyway') or (),
+        acknowledge=bool(body.get('acknowledge')),
         actor=getattr(current_user, 'username', None) or '')
     if not res.get('ok'):
+        # ``questions`` rides along on the refusal: a clone that would leave
+        # sub-objects shared is stopped HERE, and the operator cannot decide
+        # about objects the error message never named.
         return '', scope, (jsonify(ok=False, error=res.get('error') or 'clone failed',
-                                   scope=scope.to_dict()), res.get('code', 502))
+                                   scope=scope.to_dict(),
+                                   questions=res.get('questions') or [],
+                                   renames=res.get('renames') or [],
+                                   capacity=res.get('capacity') or []),
+                           res.get('code', 502))
     return (res.get('new_name') or ''), scope, None
 
 

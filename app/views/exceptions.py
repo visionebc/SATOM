@@ -164,10 +164,16 @@ def purge(id):
 @bp.route('/<int:id>/clone-for-policy', methods=['POST'])
 @require_permission('config_write')
 def clone_for_policy(id):
-    """Rule 3 — the guided flow: deep-clone a (template-managed) WPP under the
-    Naming-derived per-policy name, re-bind the Server Policy to the clone, and
-    re-point any authored carve-outs. Headroom-checked (rule 4). Dry-run unless
-    ``apply=true``."""
+    """Rule 3 — the guided flow: deep-clone a (template-managed or shared) WPP
+    under the Naming-derived per-policy name, re-bind the Server Policy to the
+    clone, and re-point any authored carve-outs. Headroom-checked per object
+    TYPE (rule 4). Dry-run unless ``apply=true``.
+
+    The clone copies the WHOLE subtree, so the response carries ``renames`` (the
+    sub-objects it will duplicate) and ``questions`` (the ones it cannot, with
+    the reason). Applying a plan that leaves anything shared needs
+    ``acknowledge=true``; ``clone_anyway`` overrides the predefined/template
+    refusals object by object."""
     appliance = visible_appliance_or_404(id)
     body = request.get_json(silent=True) or {}
     res = wpp_clone_flow.clone_and_rebind(
@@ -176,6 +182,8 @@ def clone_for_policy(id):
         policy=(body.get('server_policy') or ''),
         new_name=(body.get('new_name') or ''),
         apply=bool(body.get('apply')),
+        clone_anyway=body.get('clone_anyway') or (),
+        acknowledge=bool(body.get('acknowledge')),
         actor=getattr(current_user, 'username', None) or '')
     code = res.pop('code', 200)
     return jsonify(**res), code

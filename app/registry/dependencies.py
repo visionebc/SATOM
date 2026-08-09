@@ -102,6 +102,38 @@ _BOT_EXCEPTION_REF: DepNode = _n(
                  "cmdb/waf/bot-mitigation-exception/exception-element-list")],
 )
 
+# Every FILTER sub-table of a Custom Access Rule (waf/custom-access.rule/*), taken
+# verbatim from the endpoint registry. These are by-parent rows, not referenced
+# objects, so they clone with the rule itself.
+#
+# CAUTION when editing: FortiWeb answers a sub-table path it does not implement
+# by returning the PARENT OBJECT, so a typo here yields a "row" that is really
+# the rule itself and would be POSTed back as a bogus filter. ``subtable_rows``
+# in services/clone.py drops that echo, and tests/test_clone_subtables.py pins
+# both halves. Keep these names in sync with endpoints.yaml.
+_CUSTOM_ACCESS_RULE_FILTERS: tuple[DepNode, ...] = tuple(
+    _n(label, "cmdb/waf/custom-access.rule/" + coll)
+    for label, coll in (
+        ("Source IP Filter", "source-ip-filter"),
+        ("Geo Filter", "geo-filter"),
+        ("Time Range Filter", "time-range-filter"),
+        ("Method Filter", "method"),
+        ("URL Filter", "url-filter"),
+        ("HTTP Header Filter", "http-header-filter"),
+        ("Parameter Filter", "parameter"),
+        ("User Filter", "user-filter"),
+        ("Access Limit Filter", "access-limit-filter"),
+        ("HTTP Transaction Filter", "http-transaction"),
+        ("Response Code Filter", "response-code"),
+        ("Content Type Filter", "content-type"),
+        ("Packet Interval Filter", "packet-interval"),
+        ("Main Class Filter", "main-class"),
+        ("Sub Class Filter", "sub-class"),
+        ("Custom Signature Filter", "custom-signature"),
+        ("Occurrence Filter", "occurrence"),
+    )
+)
+
 # An API rule names an api-user-group by `allow-user-group` at BOTH the rule level
 # AND inside each `sub-url-setting` row (verified vs the 8.0 CLI ref) — wire the
 # same full group subtree (-> user-list -> api-users -> referer/ip lists) at both.
@@ -185,11 +217,21 @@ WEB_PROTECTION_PROFILE: DepNode = _n(
                                      "url-access-rule-name",
                                      children=[_n("Match Conditions",
                                                   "cmdb/waf/url-access.url-access-rule/match-condition")])])]),
+        # A Custom Access Rule is NOT a leaf: its whole meaning lives in the
+        # per-rule FILTER sub-tables (which URL, which source IP, which rate
+        # limit…). Declaring the rule without them cloned the rule's NAME and
+        # dropped every condition it matched on — a rule that looks migrated in
+        # the GUI and enforces nothing. Verified on fortiweb08: car-ratelimit
+        # carried url-filter(^/api/) + access-limit-filter(100) and migrated to
+        # fortiweb09 with both empty. The 17 names below are the registry's
+        # (endpoints.yaml), NOT guesses: an invented sub-table path does not 404
+        # on FortiWeb — it ECHOES THE PARENT OBJECT back (see clone.subtable_rows).
         _n("Custom Access Policy", "cmdb/waf/custom-access.policy", "custom-access-policy",
            "Standard Protection",
            children=[_n("Custom Policy Rules", "cmdb/waf/custom-access.policy/rule",
                         children=[_n("Custom Access Rule", "cmdb/waf/custom-access.rule",
-                                     "rule-name")])]),
+                                     "rule-name",
+                                     children=_CUSTOM_ACCESS_RULE_FILTERS)])]),
         # DoS Prevention bundles four SEPARATE rule objects, each named by a field
         # on the policy (these are NOT by-parent sub-tables) — so the clone must
         # walk into them via that field and create them FIRST, or the policy POST

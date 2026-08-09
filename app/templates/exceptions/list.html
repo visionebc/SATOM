@@ -141,7 +141,10 @@
       <strong id="clone-src"></strong> is governed by an approved template and stays clean
       (no exceptions). The manager will <strong>deep-clone</strong> it for
       <strong id="clone-policy"></strong>, <strong>re-bind that Server Policy</strong> to the
-      clone, and save your carve-out on the clone — one step, nothing manual.
+      clone, and save your carve-out on the clone. The copy is <strong>deep</strong>:
+      every sub-policy the new profile may own is recreated under this policy's own
+      name, because a profile that shares its sub-policies shares every carve-out
+      written into them.
       <a id="clone-view-src" href="#" target="_blank" rel="noopener" class="ms-1">
         <i class="bi bi-search"></i> View the profile's contents</a>
       <span class="text-muted">(what the clone will carry)</span>
@@ -155,9 +158,10 @@
         <div id="clone-headroom" class="small text-muted"></div>
       </div>
     </div>
+    <div id="clone-plan" class="mt-3 small d-none"></div>
     <div class="mt-2">
       <button class="btn btn-sm btn-fw-primary" data-js="clone-rebind">
-        <i class="bi bi-diagram-3 me-1"></i>Clone, re-bind &amp; save carve-out</button>
+        <i class="bi bi-diagram-3 me-1"></i>Preview the clone</button>
       <span id="clone-msg" class="ms-2 small text-danger"></span>
     </div>
   </div>
@@ -392,21 +396,106 @@ function showClonePanel(s, err){
     s.headroom_ok ? '' : 'WPP capacity limit reached — free capacity first (see /capacity).';
   p.scrollIntoView({behavior:'smooth'});
 }
-function hideClonePanel(){ document.getElementById('clone-panel').classList.add('d-none'); }
-function cloneRebind(){
-  const btn = document.querySelector('#clone-panel [data-js="clone-rebind"]');
-  const msg = document.getElementById('clone-msg');
-  btn.disabled = true; msg.textContent = 'Cloning on the device…'; msg.className = 'ms-2 small text-muted';
-  fwPost('/exceptions/'+EXC_AID+'/clone-for-policy', {
+function hideClonePanel(){
+  document.getElementById('clone-panel').classList.add('d-none');
+  CLONE_PLANNED = false;
+  const p = document.getElementById('clone-plan');
+  p.classList.add('d-none'); p.innerHTML = '';
+  const b = document.querySelector('#clone-panel [data-js="clone-rebind"]');
+  if (b) b.innerHTML = '<i class="bi bi-diagram-3 me-1"></i>Preview the clone';
+}
+// The clone is a real, multi-object device write, so it is authorised in two
+// steps: PREVIEW reads the appliance and shows what will be copied and — the
+// part that matters — what cannot be and therefore stays SHARED with the source
+// profile. A sub-policy left shared carries every carve-out written into it to
+// every Server Policy behind it, which is the leak this whole flow exists to
+// close; discovering it after the write is discovering it too late.
+let CLONE_PLANNED = false;
+function cloneBody(){
+  return {
     source: document.getElementById('clone-src').textContent,
     server_policy: document.getElementById('clone-policy').textContent,
     new_name: document.getElementById('clone-newname').value.trim(),
-    apply: true,
-  }).then(function(j){
+  };
+}
+function cloneAnywayRefs(){
+  return Array.prototype.filter.call(
+    document.querySelectorAll('#clone-plan .clone-q'), function(c){ return c.checked; })
+    .map(function(c){ return c.value; });
+}
+function renderClonePlan(j){
+  const host = document.getElementById('clone-plan');
+  const copies = j.renames || [], qs = j.questions || [];
+  let html = '<div class="mb-1"><strong>' + copies.length +
+    '</strong> sub-object(s) will be copied under this policy\u2019s own names.</div>';
+  if (copies.length){
+    html += '<ul class="list-unstyled ms-2 mb-2 text-muted">' +
+      copies.slice(0,40).map(function(r){
+        return '<li><code>'+esc(r.old)+'</code> \u2192 <code>'+esc(r.new)+'</code>' +
+               ' <span class="text-muted">'+esc(r.label)+'</span></li>'; }).join('') +
+      (copies.length > 40 ? '<li>\u2026 and '+(copies.length-40)+' more</li>' : '') +
+      '</ul>';
+  }
+  if (qs.length){
+    html += '<div class="text-danger mb-1"><strong>' + qs.length +
+      '</strong> object(s) cannot be copied and will stay <strong>shared with ' +
+      esc(j.source || document.getElementById('clone-src').textContent) +
+      '</strong>. Anything written into them applies to every policy behind them.</div>' +
+      '<ul class="list-unstyled ms-2 mb-2">' + qs.map(function(q,i){
+        const id = 'clone-q-'+i;
+        const ctl = q.overridable
+          ? '<input class="form-check-input clone-q" type="checkbox" id="'+id+
+            '" value="'+esc(q.ref)+'">'
+          : '<i class="bi bi-lock text-muted" title="not an operator choice"></i>';
+        return '<li class="mb-1">'+ctl+' <label class="ms-1" for="'+id+'"><code>'+
+          esc(q.mkey)+'</code> <span class="fw-badge fw-badge-secondary">'+
+          esc(q.verdict)+'</span></label><div class="text-muted" style="font-size:12px;">'+
+          esc(q.reason)+'</div></li>'; }).join('') + '</ul>' +
+      '<div class="text-muted" style="font-size:12px;">Tick the ones you want ' +
+      'copied anyway. Locked rows are not a choice: copying them would mean ' +
+      'writing the new name into an object other profiles still read.</div>';
+  }
+  const unchecked = j.capacity_unchecked || [];
+  if ((j.capacity || []).length || unchecked.length){
+    html += '<div class="mt-2 text-muted" style="font-size:12px;">Capacity: ' +
+      ((j.capacity||[]).map(esc).join(' ') || 'no capped type in this plan') +
+      (unchecked.length ? ' \u00b7 ' + unchecked.length +
+        ' object type(s) have no configured limit and were not checked.' : '') +
+      '</div>';
+  }
+  host.innerHTML = html;
+  host.classList.remove('d-none');
+}
+function cloneRebind(){
+  const btn = document.querySelector('#clone-panel [data-js="clone-rebind"]');
+  const msg = document.getElementById('clone-msg');
+  if (!CLONE_PLANNED){
+    btn.disabled = true;
+    msg.className = 'ms-2 small text-muted';
+    msg.textContent = 'Reading the appliance\u2026';
+    fwPost('/exceptions/'+EXC_AID+'/clone-for-policy',
+           Object.assign({apply:false}, cloneBody())).then(function(j){
+      btn.disabled = false;
+      msg.textContent = j.ok ? '' : (j.error || 'could not plan the clone');
+      msg.className = 'ms-2 small ' + (j.ok ? 'text-muted' : 'text-danger');
+      if (!j.ok) return;
+      renderClonePlan(j);
+      CLONE_PLANNED = true;
+      btn.innerHTML = '<i class="bi bi-diagram-3 me-1"></i>Apply \u2014 copy ' +
+        ((j.renames||[]).length) + ' object(s), re-bind &amp; save';
+    });
+    return;
+  }
+  btn.disabled = true; msg.textContent = 'Cloning on the device\u2026'; msg.className = 'ms-2 small text-muted';
+  fwPost('/exceptions/'+EXC_AID+'/clone-for-policy',
+         Object.assign({apply:true, acknowledge:true,
+                        clone_anyway: cloneAnywayRefs()}, cloneBody())
+  ).then(function(j){
     btn.disabled = false;
     if (!j.ok){
       msg.className = 'ms-2 small text-danger';
       msg.textContent = j.error || 'clone failed';
+      if (j.questions) renderClonePlan(j);
       if (window.FW) FW.toast(j.error||'Clone failed','danger');
       return;
     }

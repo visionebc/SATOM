@@ -5502,3 +5502,225 @@ implementation detail of it.
 assignment that fills the slot, rename a helper the script calls, and add a slot
 that is declared, called and never assigned. The last one is the one that proves
 the rule was not simply relaxed until it stopped complaining.
+
+## 37. A same-device clone shares everything unless it is made to copy
+
+`tests/test_wpp_deep_clone.py` · `app/services/clone_scope.py` ·
+`app/services/clone.py`
+
+**The bug was a correct rule read in the wrong direction.** `ClonePlanner`
+classifies every object against the DESTINATION and skips whatever is already
+there. Across two appliances that is exactly right and is why
+`tests/test_clone.py` passes. `wpp_clone_flow.clone_and_rebind` builds the
+planner with `src is dst`, and on one appliance every sub-object of the source
+profile is already "at the destination" — so all forty of them were classified
+`exists`, nothing was created, and the clone was a rename of the root.
+
+Nothing failed. There was no error to notice, no partial write to reconcile;
+the plan reported `exists` for every child and that report was true. The damage
+showed up only on the box: `wpp-pol-shop-cms`, cloned for one Server Policy,
+still named `am-std`, which three other profiles also named, so a carve-out
+written "for pol-shop-cms" was live for five policies.
+
+**What the guards fix in place**
+
+1. `deep_suffix` is opt-in, so the cross-appliance contract does not move. A
+   plan without it behaves exactly as before —
+   `test_without_deep_suffix_the_old_shared_behaviour_is_unchanged`.
+2. Every copied object is re-pointed by its **dependency field**, derived from
+   `registry/dependencies.py` rather than restated. Rewriting "any string equal
+   to the old name" would edit comments, host headers and rule bodies that
+   merely mention it — `test_only_dependency_fields_are_rewritten`.
+3. **A child may only be copied when every object naming it is being copied.**
+   Re-pointing a reference is a WRITE TO THE PARENT: duplicating a child under
+   a parent that stays shared pushes the new name into an object other profiles
+   read, which is the same leak one level up. The referrer set is recorded even
+   for objects the walk has already visited, because the SECOND referrer is
+   precisely the one that makes the re-point unsafe and `visited` would hide it
+   — `test_an_object_named_by_two_parents_is_only_copied_if_both_are`.
+4. Predefined objects are detected from **`can_view`**, not `is_default`.
+   Verified on fortiweb08 7.6.8: `is_default` came back `None` for every
+   object, vendor and user alike, so keying on it would have classified the
+   whole tree as user-made and cloned FortiGuard's baselines. `can_view == 1`
+   is already what the Web Protection overview badges as "Default".
+5. Template governance is matched **per collection**. The first version of
+   `managed_names_by_collection` walked every approved template through
+   `config_template_collection`, which attributes a body by reading its first
+   sub-object — right for a single-object config template, wrong for a
+   multi-object one. An approved WPP template resolved to collection
+   `signature`, so a signature policy sharing that name would have been refused
+   as template-managed. Found by printing the live map, not by reasoning.
+6. A derived name truncates the BASE, never the suffix. The suffix is what
+   makes the name unique per policy; trimming it is how two policies end up
+   sharing a "private" object again.
+7. An object the operator chose to copy with `clone_anyway` is no longer a
+   question. It keeps its `factory`/`template` verdict — that is what it IS —
+   but listing it would ask them to decide something they just decided, and
+   would keep the "N objects would stay shared" gate closed on a plan that
+   shares none.
+
+**Checking it:** `tests/test_wpp_deep_clone.py` drives a synthetic
+WPP → allow-method-policy → exception-container tree with in-memory readers, so
+it needs neither Flask nor a device. Twenty-two mutations were run against the
+three files; twenty-one are killed. The survivor — dropping the `_is_named_ref`
+guard in `via_field_index` — is an EQUIVALENT mutant, confirmed by enumerating
+every `via` in the real tree: the only one containing `=` is
+`deployment-mode = http-content-routing`, and the token filter rejects it
+anyway.
+
+## 37a. `-5` means "already there", which is the state that was wanted
+
+`tests/test_inject_duplicate.py` · `app/services/exception_inject.py`
+
+`apply_injection` writes a container and then a row, and returned
+`ok = all(steps)`. The container step POSTed unconditionally even though its
+own checkbox reads *create the container if it does not exist*, so on a box
+where the container existed it ALWAYS returned `errcode -5` — and that dragged
+down a second step that had just written the exception. The screen said the
+appliance had rejected the write for a carve-out that was live. The operator
+retried, and the retry's `-5` — this time the honest one, on the entry — looked
+identical.
+
+Three separate things had to be true, and each has a guard:
+
+* the container is **probed** before it is created, which is what the option
+  always claimed to do (`test_an_existing_container_is_not_posted_at_all`);
+* a `-5` is recognised as the DESIRED state, not a refusal
+  (`test_a_duplicate_container_does_not_sink_a_successful_entry`);
+* "already there" is still told apart from "I wrote it", or an idempotent retry
+  cannot be distinguished from a real change
+  (`test_a_duplicate_entry_is_reported_as_already_present_not_rejected`).
+
+Two things the guards deliberately hold still: a non-duplicate error is still a
+failure (`test_a_real_rejection_is_still_a_failure`), and the probe runs on the
+REAL path only — `FortiWebOps.preview` is contractually device-free and a probe
+smuggled into the dry-run would break that guarantee for every other caller
+(`test_dry_run_never_touches_the_device`). The code is matched, never the
+message: `errcode_of` parses `-5` out of both renderings `fortiweb_ops`
+produces, and matching the English sentence is a mutation that gets killed.
+
+## 37b. A capacity check that skips most of the plan reads as "verified"
+
+`tests/test_capacity_plan.py` · `app/services/capacity.py`
+
+`check_headroom(appliance, 'web_protection_profile', want=1)` was the whole
+capacity story for a WPP clone, and it was sufficient for exactly as long as
+the clone created one object. A deep clone creates dozens across roughly
+fifteen types, and the failure it must prevent is not a rejected POST: it is a
+clone that dies HALF-written, at which point `clone_and_rebind` refuses to
+re-bind the policy — correctly — and leaves orphans to be found by hand.
+
+`check_plan_headroom` sums the plan **per capped type** before the first write
+(inline and offline profiles share one cap; checking them separately would pass
+two `+1`s against a ceiling with room for one), and returns everything with no
+configured limit in `unchecked`. Reporting nothing about fifteen of sixteen
+types while returning `allowed` would read as coverage that was never
+attempted.
+
+## 38. A sub-table nobody wrote down is config that migrates as an empty shell
+
+`tests/test_clone_subtables.py` · `app/registry/dependencies.py` ·
+`app/services/clone.py`
+
+The clone planner walks `node.children` and nothing else, so the dependency map
+is not a description of a FortiWeb config — it *is* the definition of what gets
+copied. An object declared without its by-parent sub-tables clones as a name
+with no content, and every counter in the job says success: the object was
+created, so it is `created`; the rows were never read, so they are not missing
+from anything. `car-ratelimit` migrated between two appliances that way, losing
+the URL filter and the rate limit that were the entire rule.
+
+The guard is a cross-check, not a list to maintain by hand: for every object
+node in the tree, every collection in `endpoints.yaml` one level below its urn
+must be declared as a child. Adding an endpoint without wiring it fails the
+build. Objects that are deliberately not expanded are named in
+`_INTENTIONALLY_NOT_EXPANDED` **with the reason** — today only
+`system/replacemsg`, whose pages are a global catalog rather than per-policy
+content — and two further tests keep that list honest: an entry must still
+match a node in the tree, and must still have registry sub-tables. A stale
+exemption would otherwise hide the next hole under a renamed urn. The sweep
+found exactly two holes in 222 object nodes, which is the reason to run it in
+CI rather than by eye.
+
+### 38a. Completeness is unsafe without the echo guard
+
+FortiWeb does not 404 a sub-table path it does not implement: it returns the
+PARENT OBJECT. Verified on a live appliance — `custom-access.rule/<anything>`
+with `mkey=car-ratelimit` returns the `car-ratelimit` rule, and an invented
+path is indistinguishable from a real one by status code. So every name added
+to the map is a liability on any firmware that lacks it, and the fix for
+under-declaring would have created a new way to write garbage.
+
+`clone.subtable_rows` drops a row whose `name` is its parent's mkey. The
+discriminator was chosen by sweeping the whole live server-policy tree, not by
+reasoning: across 57 objects and 30 sub-rows, no legitimate row collides, and
+only one sub-row carries a `name` at all (`x-frame-options` under `hhs-full`,
+which differs from its parent). An absent sub-table therefore contributes
+nothing, which is what it means.
+
+Two things this guard must NOT do, both pinned:
+
+* it must not be wired into `scoped_rows`, which also serves the **object**
+  read — there `name == mkey` is exactly correct, and the guard would empty
+  every object in the tree;
+* it must not be skipped on the **destination**. `_subrow_exists_at_dst`
+  matches by content, so a parent echo is a row that a subset-shaped source row
+  matches — classifying a genuinely missing row as `exists` and never creating
+  it. That is the same silent skip in a second place, and it is the half that
+  reads as working.
+
+Thirteen mutations, thirteen killed — including the two "obviously equivalent"
+ones (compare `id` instead of `name`; let the destination read bypass the
+guard).
+
+## 39. An identifier nobody can see is not an identifier
+
+`tests/test_audit_entry_id.py`
+
+The audit table has always had a primary key and never showed it. That is not a
+cosmetic gap: asked *"which entry do you mean?"*, an operator could only answer
+with a timestamp, and a timestamp is not unique — one apply writes several rows
+inside the same second. The compliance page could not name its own contents.
+
+The three halves are guarded **together**, because each one alone is dead weight:
+
+1. **Rendered.** The `ID` header exists, every row prints `#<id>`, and the cell
+   carries the copy hook. A label nobody can see is not an identifier.
+2. **Findable.** `parse_entry_id` accepts the three shapes the ID reaches the
+   server in — `4821`, `#4821`, `AUD-004821` — and the id term is **OR-ed into**
+   the text search. An ID you can copy and then cannot look up is a decoration.
+   The `None` branch carries as much weight as the parse: without it an ordinary
+   search for a username or a target path is silently reinterpreted as a
+   primary-key lookup. And the id lookup runs inside the ADOM-scoped query, so
+   the handle is not a bypass — guessing a number from another product's console
+   returns nothing.
+3. **Totally ordered.** Without an `id` tiebreak the listing is only partially
+   ordered, so the same row can land on two pages or on none — which is exactly
+   the confusion the ID exists to end.
+
+**Two traps this file paid for.**
+
+*The behavioural ordering test could not fail.* SQLite happens to return
+same-timestamp rows newest-first on its own, so deleting the tiebreak left every
+row-order assertion green — the mutation SURVIVED. The tiebreak is a property of
+the **query**, not of one database's luck, so the guard asserts on the SQL the
+page actually emitted (captured with a `before_cursor_execute` listener):
+`ORDER BY audit_logs.timestamp DESC, audit_logs.id DESC`. The behavioural test
+stays — it kills an *inverted* tiebreak, which the SQL guard would also catch but
+which is worth stating twice.
+
+*The tenth assert-by-substring that matched its own comment.* `'Entry ID' in
+html` passed against a panel with the block deleted, because the code above it
+opens with `// Entry ID first: ...`. The guard now matches the rendered label
+(`>Entry ID</div>`). This is the same failure mode as §36k and §7f — a needle
+that the explanation of the needle satisfies.
+
+Also guarded, because both were live regressions in adjacent code: the empty-state
+`colspan` must equal the header count (a column added without it renders straight
+with data and skewed without), and the drawer's copy binding must still cover the
+pre-existing **error-reference** button — widening one `querySelectorAll` to serve
+two buttons is exactly how one of them ends up looking clickable and doing nothing.
+No inline `on*` attributes: CSP sets `script-src-attr 'none'`, so an `onclick`
+here is refused by the browser rather than reported.
+
+Fourteen mutations, fourteen killed.

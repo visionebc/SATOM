@@ -823,6 +823,61 @@ div.fw-nav-section.fw-nav-context-label {
 .fw-stat-delta.up { color: var(--fw-success); }
 .fw-stat-delta.down { color: var(--fw-danger); }
 
+/* ------------------------------------------------------------------
+   Fact tiles.
+   A stat card holds a NUMBER: 28px, one line, never wraps. These hold
+   strings read off the device -- a firmware build, a backup filename --
+   which are long and unbroken, so at .h5 in a quarter-width column they
+   ran straight past the card edge. Same tile, text sizing, and the value
+   breaks anywhere rather than overflowing.
+   ------------------------------------------------------------------ */
+.fw-fact {
+  background: var(--fw-surface);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  box-shadow: var(--fw-card-shadow);
+  padding: 14px 16px;
+  height: 100%;
+  min-width: 0;
+}
+.fw-fact-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--fw-text-secondary);
+  margin-bottom: 6px;
+}
+.fw-fact-value {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--fw-text-primary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.fw-fact-sub {
+  font-family: Menlo, Monaco, Consolas, monospace;
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--fw-text-secondary);
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.fw-fact-value.is-mono {
+  font-family: Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+/* Table cells holding device strings (URLs, back-end lists, summaries). */
+.fw-cell-break { overflow-wrap: anywhere; word-break: break-word; max-width: 340px; }
+.fw-cell-mono { font-family: Menlo, Monaco, Consolas, monospace; font-size: 12px; }
+.fw-cell-note { color: var(--fw-text-secondary); font-size: 12px; margin-top: 3px;
+                overflow-wrap: anywhere; max-width: 420px; }
+
 /* ============================================================
    Appliance / Workspace Cards
    ============================================================ */
@@ -1058,18 +1113,28 @@ div.fw-nav-section.fw-nav-context-label {
 }
 
 /* Git tab pre output */
+/* Device / command output panel.
+   This was a dark-theme leftover: rgba(0,0,0,0.30) over a WHITE card renders as
+   a light-grey slab, and #94a3b8 text on that slab is about 1.3:1 -- the output
+   was present and unreadable. SATOM is a light product with no dark mode (see
+   safeguards Sec. 9m), so the panel is light and the text is the body colour.
+   white-space:pre (not pre-wrap) because CLI output is column-aligned and
+   wrapping shreds the columns; the overflow scrolls INSIDE the box, so a long
+   line can never push past the card edge. */
 .fw-pre {
-  background: rgba(0,0,0,0.3);
-  border: 1px solid rgba(148,163,184,0.15);
-  border-radius: 6px;
+  background: var(--fw-surface-alt);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius);
   padding: 12px 14px;
-  font-size: 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
   font-family: Menlo, Monaco, Consolas, monospace;
-  color: #94a3b8;
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 320px;
-  overflow-y: auto;
+  color: var(--fw-text-primary);
+  white-space: pre;
+  tab-size: 4;
+  max-height: 420px;
+  overflow: auto;
+  overscroll-behavior: contain;
   margin: 0;
 }
 

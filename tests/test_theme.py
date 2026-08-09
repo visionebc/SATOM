@@ -561,7 +561,8 @@ def test_the_gradient_pattern_alone_rejects_every_escape():
 # the header meant one thing under a theme with a logo asset and another thing
 # without one. The brand slot is the PRODUCT's identity; the ADOM has its own
 # pill, its own sidebar caption and its own switcher entries.
-BRAND_FALLBACK = "img/satom-mark.png"
+BRAND_FALLBACK = "img/satom-mark.svg"   # 2026-08-10: the mark is a vector now;
+# the raster stays shipped as the derivative used for favicons and apple-touch.
 
 
 def _brand_templates():
@@ -606,6 +607,12 @@ def test_topbar_brand_is_never_an_adom_mark(app, client, adom):
                   html, re.S)
     assert m, "topbar brand image not rendered in the %s ADOM" % adom
     src = m.group(1)
-    assert "-mark.svg" not in src, (
+    # Match the ADOM MARKS BY NAME, never by the "-mark.svg" suffix: the
+    # product's own mark is a vector too since 2026-08-10, and a suffix rule
+    # would reject the very asset this guard exists to require.
+    adom_marks = ("fortiweb-mark.svg", "fortiadc-mark.svg", "global-mark.svg",
+                  "fortianalyzer-mark.svg", "adom-fortianalyzer-mark.svg",
+                  "fortiauthenticator-mark.svg")
+    assert not any(m in src for m in adom_marks), (
         "the %s ADOM icon is standing in for the product logo: %s" % (adom, src))
     assert src.endswith(BRAND_FALLBACK) or "/appearance/asset/" in src, src

@@ -114,6 +114,7 @@ def head(title: str, description: str, up: str, active: str,
 <title>{html.escape(title)} — SATOM</title>
 <meta name="description" content="{html.escape(description)}">
 <link rel="icon" href="{up}favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="{up}assets/satom-mark.svg">
 <link rel="icon" type="image/png" href="{up}assets/favicon.png">
 <link rel="apple-touch-icon" href="{up}assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -126,7 +127,7 @@ def head(title: str, description: str, up: str, active: str,
 
 <nav>
   <div class="wrap nav-inner">
-    <a class="brand" href="{up}index.html"><img class="mark" src="{up}assets/satom-mark.png" alt="SATOM"> <span class="wordmark">SA<b>TOM</b></span></a>
+    <a class="brand" href="{up}index.html"><img class="mark" src="{up}assets/satom-mark.svg" alt="SATOM"> <span class="wordmark">SA<b>TOM</b></span></a>
     <button class="nav-toggle" id="nav-toggle" aria-label="Menu">☰</button>
     <div class="nav-right">
       <div class="nav-links">

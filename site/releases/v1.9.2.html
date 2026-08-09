@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 1.9.1 — SATOM</title>
-<meta name="description" content="Released on 2026-08-09 — Fixed · Added · 7 entries.">
+<title>Version 1.9.2 — SATOM</title>
+<meta name="description" content="Released on 2026-08-09 — Fixed · Added · 2 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 1.9.1 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-08-09 — Fixed · Added · 7 entries.</p>
+  <h1>Version 1.9.2 <span class="rel-badge rel-now">current release</span></h1>
+  <p class="sub">Released on 2026-08-09 — Fixed · Added · 2 entries.</p>
 </header>
 
 <section class="wrap">
@@ -62,12 +62,12 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
-      <a class="rel-nav-item" href="v1.9.2.html" data-rel-version="1.9.2">
+      <a class="rel-nav-item is-active" href="v1.9.2.html" data-rel-version="1.9.2">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.9.2</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
         <span class="rel-nav-meta">2026-08-09 · Fixed · Added · 2 entries</span>
         <ul class="rel-leads"><li>The object editor no longer offers a free text box for a field that only accepts the name of an existing object</li><li>Reference fields are checked against the appliance before the write</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v1.9.1.html" data-rel-version="1.9.1">
+      <a class="rel-nav-item" href="v1.9.1.html" data-rel-version="1.9.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.9.1</span></span>
         <span class="rel-nav-meta">2026-08-09 · Fixed · Added · 7 entries</span>
         <ul class="rel-leads"><li>A migrated Custom Access Rule now carries the conditions it matches on</li><li>A cloned Web Protection Profile now owns its whole tree</li><li>A duplicate is no longer reported as a refusal</li><li class="rel-more">… and 4 more</li></ul>
@@ -182,104 +182,31 @@
       <div class="mdx">
 <h3 id="fixed">Fixed</h3>
 <ul>
-<li><strong>A migrated Custom Access Rule now carries the conditions it matches on.</strong>
-  A rule was declared in the dependency map as a leaf, so a clone or a
-  cross-appliance migrate copied its NAME and none of the per-rule filter
-  sub-tables that hold its whole meaning — which URL, which source IP, which
-  rate limit. The job reported success, the GUI showed the rule on the
-  destination, and the rule enforced nothing. Found on a real migration:
-  <code>car-ratelimit</code> moved from one appliance to another with its URL filter
-  (<code>^/api/</code>) and its rate limit (100) dropped, leaving a rule that looked
-  migrated and matched no traffic. All seventeen filter sub-tables the endpoint
-  registry knows about are now walked with the rule.</li>
-</ul>
-<p>Widening the map is only safe because of the second half of this fix.
-  FortiWeb does not answer an unimplemented sub-table path with a 404 — it
-  echoes the PARENT OBJECT back, so every name added to the map is a path that,
-  on a firmware that lacks it, would have manufactured a filter row built out
-  of the rule itself. By-parent reads now drop that echo, on the source and on
-  the destination. The destination half is the quieter one: the echo is matched
-  against the source row by content, so a row whose fields are a subset of the
-  parent's was classified <em>already present</em> and silently never created.</p>
-<ul>
-<li>
-<p><strong>A cloned Web Protection Profile now owns its whole tree.</strong> The guided clone
-  runs the tree engine with the SAME appliance as source and destination, and
-  that engine's central verdict — <em>already at the destination, do not copy</em> —
-  is correct across two boxes and inverts its meaning on one: every sub-object
-  of the source profile already existed, so the "clone" was the root profile
-  renamed with roughly forty sub-policies still shared with the original.
-  Nothing failed and nothing warned; the plan said <code>exists</code> for every child,
-  which was true. The consequence was found on a live appliance: a profile
-  cloned for one Server Policy still named the original's allow-method policy,
-  so an allow-list authored for that one site went live for five. The clone now
-  recreates every sub-object the new profile may own under this policy's own
-  name and re-points the references, and the re-point rewrites only the
-  dependency field that names the object — never any string that happens to
-  match it.</p>
-</li>
-<li>
-<p><strong>A duplicate is no longer reported as a refusal.</strong> Pushing a carve-out
-  writes in two steps, and the first — create the named container — POSTed
-  unconditionally despite an option that says <em>create the container if it does
-  not exist</em>. On any appliance where the container was already there it always
-  came back <code>errcode -5</code>, and because the result was the AND of both steps it
-  dragged down a second step that had just written the exception successfully.
-  The operator was told the appliance had rejected a carve-out that was live,
-  and pressed the button again. The container is now probed before it is
-  created, a <code>-5</code> is recognised as "already there" rather than a rejection, and
-  a carve-out already on the box is reported as such — never as <em>created</em>, and
-  never as <em>rejected</em>. Errors that are not duplicates still fail, and the code
-  is matched, not the sentence, which is the localisable half of the answer.</p>
-</li>
-<li>
-<p><strong>The audit listing is now totally ordered.</strong> It sorted by timestamp alone, so
-  rows written in the same second came back in whatever order the database chose
-  — which it is free to change between two queries, letting one row appear on two
-  pages or on none. <code>id</code> is now the tiebreak. The new ID column is also what makes
-  such a duplicate visible at all.</p>
-</li>
+<li><strong>The object editor no longer offers a free text box for a field that only
+  accepts the name of an existing object.</strong> Twenty reference fields — eighteen
+  on the Web Protection Profile, two on the Server Policy — had no entry in the
+  schema's reference map, so they fell through to a plain text input while
+  their neighbours were dropdowns. A value typed there went to the appliance and
+  came back as <code>errcode -651: Invalid input value.</code>, which names neither the
+  field nor the value; FortiWeb refuses the whole write, so the good fields in
+  the same save were discarded with it. Each of the twenty collections was
+  probed on a live appliance before it was mapped, and the ones whose collection
+  could not be proven were deliberately left unmapped — a wrong mapping would
+  populate the dropdown from the wrong collection and reject valid values.</li>
 </ul>
 <h3 id="added">Added</h3>
 <ul>
-<li>
-<p><strong>The clone says what it cannot copy, before it writes.</strong> Three things are
-  never duplicated silently: FortiWeb's own predefined objects (detected from
-  the <code>can_view</code> marker the appliance sets, verified against a live 7.6.8 box),
-  objects an approved template governs, and anything whose parent stays shared
-  — re-pointing a reference is a write to the parent, so copying a child under
-  a shared parent would leak the change to every profile behind it. The
-  Exceptions page now previews the clone before authorising it, listing what
-  will be copied and what will stay shared with the source; the first two can
-  be overridden object by object, the third is a consequence and is not offered
-  as a choice. Applying a plan that leaves anything shared requires an explicit
-  acknowledgement.</p>
-</li>
-<li>
-<p><strong>Capacity is checked per object type, for the whole plan.</strong> The clone used
-  to ask one question — is there room for one more Web Protection Profile? —
-  which was the whole story while it created one object. It now sums the plan
-  per capped type before the first write, because the failure to prevent is not
-  a rejected POST but a clone that dies half-written and is never re-bound.
-  Object types with no configured limit are reported as unchecked rather than
-  skipped in silence.</p>
-</li>
-<li>
-<p><strong>Every audit entry now shows the ID it always had.</strong> <code>audit_logs</code> rows have
-  carried a primary key since the table existed, and nothing ever displayed it —
-  so the only way to point at one entry was to quote its timestamp, which is not
-  unique: a single apply writes several rows inside the same second. The listing
-  gained a leading <strong>ID</strong> column (click it to copy, without opening the drawer),
-  the detail panel opens with the ID and its own copy control, and the search box
-  resolves an ID back to its row — bare (<code>4821</code>), as the table prints it
-  (<code>#4821</code>) or as a ticket tends to quote it (<code>AUD-004821</code>).</p>
-</li>
+<li><strong>Reference fields are checked against the appliance before the write.</strong> Every
+  operator-facing save and create resolves each submitted field to the cmdb
+  collection it selects from and asks the device whether the value is there,
+  on the preview path as well as on apply. The refusal names the field, the
+  value, the collection and the names that do exist. "Collection empty",
+  "collection absent on this firmware" and "could not ask the device" are kept
+  apart — all three answer with zero names and they mean opposite things, and
+  only the first two justify refusing. A device that cannot be read never
+  blocks a save; the affected fields come back as <code>unverified_refs</code>.</li>
 </ul>
-<p>The ID search is <strong>OR-ed into</strong> the existing text search, never substituted for
-  it: a numeric query like <code>8443</code> still matches the targets and payloads that
-  contain it. And it is not a way around ADOM scoping — a FortiWeb session that
-  guesses a FortiADC row's number still gets nothing.</p>
-<p class="rel-prevnext"><a href="v1.9.2.html">← Version 1.9.2</a> · <a href="v1.9.0.html">Version 1.9.0 →</a></p>
+<p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v1.9.1.html">Version 1.9.1 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

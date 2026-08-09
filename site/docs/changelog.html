@@ -91,8 +91,110 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
-<h2 id="192-2026-08-09">[1.9.2] - 2026-08-09</h2>
+<h3 id="added">Added</h3>
+<ul>
+<li><strong>NetBox is now the maintenance window.</strong> Settings → Integrations wires SATOM
+  to a NetBox instance (URL, encrypted token, TLS verification, a hard timeout
+  and a per-appliance device mapping) and opens a real maintenance window when a
+  change request starts running, closing it from the outcome when the run ends.
+  Stated plainly because it decides how this works: <strong>NetBox core has no
+  maintenance-window object</strong> — that lives in third-party plugins — so SATOM
+  records the window using core models only (a journal entry, a device tag, or
+  device custom fields, selectable) and therefore works against any NetBox, with
+  or without plugins. Every window time carries an explicit <code>+00:00</code> offset:
+  SATOM stores naive UTC, and a naive timestamp handed to another system is read
+  in <em>that</em> system's timezone. That is not theoretical — against NetBox 4.6.7 a
+  naive value round-trips with no <code>Z</code>, i.e. it was taken in the server's own
+  zone, which is how a window silently moves by hours.</li>
+<li><strong>Integration hooks — your own Python, run out of process.</strong> A hook is a small
+  script SATOM runs when it emits an event (<code>change.requested</code>,
+  <code>change.approved</code>, <code>window.opening</code>, <code>window.closing</code>, <code>upgrade.finished</code>,
+  <code>upgrade.failed</code>) — for example, opening a change ticket in your own CRM and
+  handing the reference back to the change request. Hooks <strong>never execute inside
+  the web application</strong>: saving one only writes it to disk, and a privileged
+  runner (<code>satom-integrations.service</code>, watching a queue directory exactly like
+  <code>satom-updater</code>) executes it as an unprivileged user, in its own process
+  group, with a hard timeout, and with only the secrets the hook declared. A
+  syntax error is refused at save time with its message rather than discovered
+  at 03:00 inside a maintenance window; captured output is truncated and any
+  declared secret's value is redacted before it is stored. A hook returns its
+  result through a dedicated channel, not by printing JSON — otherwise a script
+  could fake its own verdict.</li>
+<li><strong>Fail-closed external approval.</strong> A change request can be bound to an
+  external change authority (Approval → <em>External</em>); it is then runnable only
+  once that authority explicitly approved it. Unreachable, slow, ambiguous and
+  never-asked all land on the same side of that line — the entire reason to
+  route approval through a change-management system is that silence means no.
+  Withdrawing an approval clears the record, so it cannot still open a window.
+  Change requests that predate this default to <em>Manual</em> and behave exactly as
+  before.</li>
+<li>
+<p>The change-request page now shows the external ticket reference and link, the
+  window's state in NetBox, and an integration log. That state distinguishes
+  <strong>“none requested”</strong> from <strong>“error”</strong> — collapsing them would let an
+  integration outage read as a deliberate decision and hide that NetBox may
+  still show a device in maintenance.</p>
+</li>
+<li>
+<p><strong>The affected users are emailed when the window closes</strong>, on success and on
+  failure, with the reason attached. Recipients come from the change request's
+  own <em>Notify on completion</em> list, falling back to the default recipients in
+  Settings → Email; when neither is set nothing is sent and the request records
+  why — SATOM never guesses an address. The notice is sent once, is deliberately
+  not the pre-window warning (that one tells a customer to brace for an outage
+  that is already over), and a send failure never re-grades the change: an
+  upgrade that worked worked whether or not the SMTP server answered. A failed
+  send records no delivery timestamp, so the notice stays retryable.</p>
+</li>
+</ul>
 <h3 id="fixed">Fixed</h3>
+<ul>
+<li>
+<p><strong>The hardened runner sandbox silently broke its own queue.</strong> The
+  integration-hooks unit granted four separate <code>ReadWritePaths=</code>, and systemd
+  makes each one its own bind-mount: the runner's claim step is a <code>rename(2)</code>
+  between two of those directories, which across mounts is <code>EXDEV</code>. The runner
+  reads that error as “another runner claimed it first”, so the request was
+  never executed, nothing was logged, the status stayed <code>queued</code>, and because
+  the watch is level-triggered the unit re-fired until systemd hit its start
+  limit. The queue now lives under one parent with a single grant — narrow
+  enough that a hook still cannot reach <code>data/sot/</code> or <code>data/jobs/</code> — and a
+  guard asserts both halves so a future tidy-up cannot reintroduce it.</p>
+</li>
+<li>
+<p><strong>Deleting an object other objects still point at is refused.</strong> SATOM sent a
+  <code>DELETE</code> for any object the operator named and let the appliance decide.
+  FortiWeb does not reliably refuse a referenced object, and when it does not,
+  nothing fails: the holders keep naming something that no longer resolves and
+  the first symptom is broken traffic. Every delete now reads the device's own
+  <code>q_ref</code> bookkeeping first and refuses while the count is non-zero, <strong>naming
+  the holders</strong> when the collection reports them
+  (<code>inline-protection(wpp-full-lab)</code>). The check runs on the <strong>Preview</strong> too,
+  so the refusal appears before the confirmation prompt rather than after it.
+  An object whose refcount could not be read is <strong>not</strong> deleted; a firmware
+  that does not report refcounts at all is not blocked, because a missing
+  capability is not a missing answer. <code>force: true</code> on the delete endpoint
+  overrides a refcount the firmware got wrong and is stamped in the audit
+  detail as <code>ref_check=forced</code>.</p>
+</li>
+<li><strong>A Change Request can now end.</strong> The lifecycle declared seven states and only
+  three had anything that wrote them: <code>approved</code>, <code>cancelled</code> and <code>scheduled</code>.
+  Nothing ever assigned <code>in_progress</code>, <code>completed</code> or <code>failed</code>, so a change
+  request that fired its upgrade stayed at <code>scheduled</code> for good — the bound
+  action is a one-shot, so nothing was ever coming back to close it. Nothing
+  failed while that was true; the record simply stopped describing reality. The
+  executor now moves the request to <code>in_progress</code> when the window authorizes the
+  fire and closes it from the outcome afterwards. A run that skipped is graded
+  <strong>failed</strong>, not left open: a window that elapsed without the change happening
+  did not succeed, and the operator has to see the reason.</li>
+<li><strong>The maintenance-window gate applied to one action name.</strong> It was keyed off
+  <code>action == "upgrade"</code> while the change-request form already offered
+  <code>upgrade_prep</code>, so that one fired with no approval and outside its window —
+  the one thing the gate exists to prevent. Any action bound to a change request
+  is now gated by it.</li>
+</ul>
+<h2 id="192-2026-08-09">[1.9.2] - 2026-08-09</h2>
+<h3 id="fixed_1">Fixed</h3>
 <ul>
 <li><strong>The object editor no longer offers a free text box for a field that only
   accepts the name of an existing object.</strong> Twenty reference fields — eighteen
@@ -106,7 +208,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   could not be proven were deliberately left unmapped — a wrong mapping would
   populate the dropdown from the wrong collection and reject valid values.</li>
 </ul>
-<h3 id="added">Added</h3>
+<h3 id="added_1">Added</h3>
 <ul>
 <li><strong>Reference fields are checked against the appliance before the write.</strong> Every
   operator-facing save and create resolves each submitted field to the cmdb
@@ -119,7 +221,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   blocks a save; the affected fields come back as <code>unverified_refs</code>.</li>
 </ul>
 <h2 id="191-2026-08-09">[1.9.1] - 2026-08-09</h2>
-<h3 id="fixed_1">Fixed</h3>
+<h3 id="fixed_2">Fixed</h3>
 <ul>
 <li><strong>A migrated Custom Access Rule now carries the conditions it matches on.</strong>
   A rule was declared in the dependency map as a leaf, so a clone or a
@@ -179,7 +281,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   such a duplicate visible at all.</p>
 </li>
 </ul>
-<h3 id="added_1">Added</h3>
+<h3 id="added_2">Added</h3>
 <ul>
 <li>
 <p><strong>The clone says what it cannot copy, before it writes.</strong> Three things are
@@ -254,7 +356,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   single cost chip every other analysis on the page uses.</p>
 </li>
 </ul>
-<h3 id="fixed_2">Fixed</h3>
+<h3 id="fixed_3">Fixed</h3>
 <ul>
 <li>
 <p><strong>A carve-out on a shared profile reported failure for a change it had
@@ -347,7 +449,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   it from. A device that cannot be read answers <em>unknown</em>, never <em>no one</em>.
   Enforced hardest at the push, which is where the leak physically happens.</li>
 </ul>
-<h3 id="added_2">Added</h3>
+<h3 id="added_3">Added</h3>
 <ul>
 <li>
 <p><strong>The results table shows the Web Protection Profile behind each policy, and
@@ -441,7 +543,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   operator to another screen to push it.</li>
 </ul>
 <h2 id="180-2026-08-07">[1.8.0] - 2026-08-07</h2>
-<h3 id="fixed_3">Fixed</h3>
+<h3 id="fixed_4">Fixed</h3>
 <ul>
 <li>
 <p><strong>The AI Advisor's replies were saved and never shown.</strong> After Send, the
@@ -467,7 +569,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   wiring the peer status poll.</p>
 </li>
 </ul>
-<h3 id="added_3">Added</h3>
+<h3 id="added_4">Added</h3>
 <ul>
 <li><strong>The chat streams, shows that it is working, and can be stopped.</strong> The
   reply now appears as it is generated, with an animated indicator, a live
@@ -620,7 +722,7 @@ durability problem solved. Anyone who sealed on 1.7.0 should re-run
 <code>satom execute seal recovery</code> on the primary and confirm the check reports the
 envelope as reachable. 1.7.0 stays published; this entry is the public record
 that it carries the defect.</p>
-<h3 id="fixed_4">Fixed</h3>
+<h3 id="fixed_5">Fixed</h3>
 <ul>
 <li><strong>The sealed recovery envelope was unreachable by every mechanism that
   carries it.</strong> <code>satom execute seal recovery</code> runs as root and wrote
@@ -644,7 +746,7 @@ that it carries the defect.</p>
   <code>reset theme</code> — the anti-lockout command. A guard now walks the AST of
   every CLI module rather than the two known call sites.</li>
 </ul>
-<h3 id="added_4">Added</h3>
+<h3 id="added_5">Added</h3>
 <ul>
 <li><strong>The operator manual now documents recovery custody.</strong> 1.7.0 shipped two CLI
   verbs, a diagnostic and a passphrase the operator must store outside the fleet,
@@ -664,7 +766,7 @@ that it carries the defect.</p>
   deleting it everywhere.</li>
 </ul>
 <h2 id="170-2026-08-07">[1.7.0] - 2026-08-07</h2>
-<h3 id="added_5">Added</h3>
+<h3 id="added_6">Added</h3>
 <ul>
 <li><code>tests/test_no_pem_literals.py</code> - no source file may carry a literal PEM
   private-key header. The publisher scans every blob of the sanitised mirror
@@ -730,7 +832,7 @@ that it carries the defect.</p>
   <code>advisor.configure</code>. See <code>docs/ai-advisor.md</code>.</p>
 </li>
 </ul>
-<h3 id="fixed_5">Fixed</h3>
+<h3 id="fixed_6">Fixed</h3>
 <ul>
 <li><strong>Nine probes answered "I could not tell" with a value that means "fine".</strong>
   Scoping resolved to the Global console and showed every product; a malformed
@@ -801,7 +903,7 @@ that it carries the defect.</p>
   frozen into an old bundle.</li>
 </ul>
 <h2 id="160-2026-08-07">[1.6.0] - 2026-08-07</h2>
-<h3 id="added_6">Added</h3>
+<h3 id="added_7">Added</h3>
 <ul>
 <li>Monitoring is provisioned from <strong>one seam</strong>. Saving an appliance now creates
   both its scrape targets and its threshold probes; until now <code>ensure_baseline</code>
@@ -868,7 +970,7 @@ that it carries the defect.</p>
   its API, so the page listed zero targets and zero devices. A page that can
   only fail is worse than one that is not offered.</li>
 </ul>
-<h3 id="fixed_6">Fixed</h3>
+<h3 id="fixed_7">Fixed</h3>
 <ul>
 <li><strong>The publication redaction rule was a roster, not a shape.</strong> It enumerated
   the appliances that existed the day it was written, so every unit onboarded
@@ -961,7 +1063,7 @@ that it carries the defect.</p>
 </li>
 </ul>
 <h2 id="150-2026-08-06">[1.5.0] - 2026-08-06</h2>
-<h3 id="added_7">Added</h3>
+<h3 id="added_8">Added</h3>
 <ul>
 <li><strong>Settings &gt; Thresholds</strong> — a 22nd tab, and the first place in this product
   where a limit can be stated once instead of once per probe. Six scopes: the
@@ -1155,7 +1257,7 @@ that it carries the defect.</p>
   column holding anything else was left alone.</li>
 <li>Alert bodies now name the Thresholds scope that governs the finding.</li>
 </ul>
-<h3 id="fixed_7">Fixed</h3>
+<h3 id="fixed_8">Fixed</h3>
 <ul>
 <li><strong><code>satom diagnose code</code> now sees the artifact gunicorn actually caches.</strong> It
   compared the newest <code>.py</code> against each process start time, so a change that
@@ -1355,7 +1457,7 @@ that it carries the defect.</p>
   shadowing the tracked templates under <code>app/templates/backups/</code>.</li>
 </ul>
 <h2 id="141-2026-08-05">[1.4.1] - 2026-08-05</h2>
-<h3 id="fixed_8">Fixed</h3>
+<h3 id="fixed_9">Fixed</h3>
 <ul>
 <li>
 <p><strong>The installation page was answering a question about the appliances.</strong>
@@ -1390,7 +1492,7 @@ that it carries the defect.</p>
   column, which nothing else writes and which was empty on the whole fleet.</li>
 </ul>
 <h2 id="140-2026-08-05">[1.4.0] - 2026-08-05</h2>
-<h3 id="added_8">Added</h3>
+<h3 id="added_9">Added</h3>
 <ul>
 <li>
 <p><strong>SATOM health and Device health are two pages.</strong> Fleet health carried the
@@ -1662,7 +1764,7 @@ that it carries the defect.</p>
   [SATOM-LICENSE-TAGS]</p>
 </li>
 </ul>
-<h3 id="fixed_9">Fixed</h3>
+<h3 id="fixed_10">Fixed</h3>
 <ul>
 <li>
 <p><strong>A missing systemd unit is no longer reported as a failed one.</strong>
@@ -2029,7 +2131,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   published copy.</li>
 </ul>
 <h2 id="13-2026-08-02">[1.3] - 2026-08-02</h2>
-<h3 id="added_9">Added</h3>
+<h3 id="added_10">Added</h3>
 <ul>
 <li><strong>The manual is reachable from the sign-in screen.</strong> The login page offered a
   link to the API manual and nothing else. The person who cannot get in is
@@ -2407,7 +2509,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   does not render where it matters. The vendored copy was already in the tree
   and unused.</li>
 </ul>
-<h3 id="fixed_10">Fixed</h3>
+<h3 id="fixed_11">Fixed</h3>
 <ul>
 <li><strong><code>/docs/api</code> was public and served the document unredacted.</strong> The route
   needed no session and rendered <code>docs/api_v1.md</code> verbatim, so a management
@@ -2705,7 +2807,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   <code>Appliance</code>; the column is <code>maintenance</code>.</li>
 </ul>
 <h2 id="122-2026-07-27">[1.2.2] - 2026-07-27</h2>
-<h3 id="fixed_11">Fixed</h3>
+<h3 id="fixed_12">Fixed</h3>
 <ul>
 <li><strong><code>app/services/cert_service.py</code> did not parse.</strong> An <code>import os</code> had been
   placed above <code>from __future__ import annotations</code>, which is a hard
@@ -2716,7 +2818,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   Certificate Manager endpoints raised on import, and the cert alert degraded
   to reporting the import error instead of the certificate's real state.</li>
 </ul>
-<h3 id="added_10">Added</h3>
+<h3 id="added_11">Added</h3>
 <ul>
 <li><strong><code>tests/test_every_module_imports.py</code></strong> — every shipped module under <code>app/</code>
   and <code>deploy/</code> must compile, and the modules that callers import <em>lazily</em>
@@ -2728,7 +2830,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
 <h2 id="121-2026-07-27">[1.2.1] - 2026-07-27</h2>
 <p>Documentation release. No application code changed; the offline bundles were
 rebuilt so that the shipped tree matches the documentation set.</p>
-<h3 id="added_11">Added</h3>
+<h3 id="added_12">Added</h3>
 <ul>
 <li><strong><code>docs/safeguards.md</code></strong> — single catalog of every protection in the product:
   what it prevents, where it lives, and <strong>how to verify it is armed</strong>. Covers
@@ -2756,7 +2858,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li><strong>Rule recorded in <code>docs/overview.md</code></strong>: a new safeguard lands in
   <code>docs/safeguards.md</code> in the same commit that introduces it.</li>
 </ul>
-<h3 id="fixed_12">Fixed</h3>
+<h3 id="fixed_13">Fixed</h3>
 <ul>
 <li>Offline bundle checksums used an absolute path, so <code>sha256sum -c</code> failed in
   the directory the file was downloaded to. Now basename-only, as the RHEL
@@ -2794,7 +2896,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   with <code>from=</code>, <code>restrict</code> and a forced command that can only serve
   <code>rsync --sender</code> over the data directory.</li>
 </ul>
-<h3 id="added_12">Added</h3>
+<h3 id="added_13">Added</h3>
 <ul>
 <li><strong>ACME / Let's Encrypt certificate issuance</strong> with a DNS-provider catalog
   (30 providers seeded as data, editable by the operator) and per-provider
@@ -2820,7 +2922,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   Manager</strong>. Vendor names (FortiWeb, FortiADC, FortiAnalyzer) are untouched:
   the product manages those appliances and has to name them.</li>
 </ul>
-<h3 id="fixed_13">Fixed</h3>
+<h3 id="fixed_14">Fixed</h3>
 <ul>
 <li><strong>Scheduler and git-publish were silently dead</strong> after the privilege drop:
   both guard scripts used <code>runuser</code>, which only works as root. The scheduler
@@ -2862,7 +2964,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   server (appliance-side push config points at it), and <code>FM_*</code> env var names.</li>
 </ul>
 <h2 id="10-2026-07-14">[1.0] - 2026-07-14</h2>
-<h3 id="added_13">Added</h3>
+<h3 id="added_14">Added</h3>
 <ul>
 <li><strong>DNS Records management (IPAM/DDI)</strong>: "+DNS Records" CRUD in the DNS &amp; LB
   lookup tool, backed by pluggable providers (EfficientIP SOLIDserver,
@@ -2880,20 +2982,20 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   bundles), generic package-manager support, public site (GitHub Pages),
   package registry artifacts.</li>
 </ul>
-<h3 id="fixed_14">Fixed</h3>
+<h3 id="fixed_15">Fixed</h3>
 <ul>
 <li>Upgrade-event timestamps now render in local time (<code>| localtime</code>) instead
   of raw UTC.</li>
 </ul>
 <h2 id="09-2026-07-13">[0.9] - 2026-07-13</h2>
-<h3 id="added_14">Added</h3>
+<h3 id="added_15">Added</h3>
 <ul>
 <li><strong>Node TLS + node-to-node encryption</strong>: internal CA, per-node leaf certs,
   mutually-authenticated Postgres replication, HTTPS peer probes, and
   "encryption in transit" monitoring cards (every badge backed by a live probe).</li>
 </ul>
 <h2 id="08-2026-07-12">[0.8] - 2026-07-12</h2>
-<h3 id="added_15">Added</h3>
+<h3 id="added_16">Added</h3>
 <ul>
 <li><strong>FortiAnalyzer</strong> integration (JSON-RPC, dual dialect) as a full ADOM, with
   its endpoints in the DB registry and a git source-of-truth harvest.</li>

@@ -5814,3 +5814,297 @@ Reproduce the original failure without writing: POST the 1128/1129 payload
 `apply`. It must answer **400** naming `subresource-integrity-policy`, and the
 same POST minus that field must preview a PUT.
 
+## 42. A delete the device accepts can still be the wrong delete
+
+`ref_validate` (§40) and the delete guard are mirror images, and their policies
+are **opposite on both axes**. That is why they are separate modules: a single
+one would invite reusing the wrong half.
+
+|                          | `ref_validate` (pre-write)      | `delete_guard` (pre-delete)   |
+| ------------------------ | ------------------------------- | ----------------------------- |
+| runs at                  | the operator-facing edit views  | `FortiWebOps.delete` itself   |
+| "we could not ask"       | proceeds                        | **refuses**                   |
+
+The asymmetry is not a preference. A write that names a missing object is
+refused **by the device** with `errcode -651`, so a failed pre-check costs
+nothing and blocking would make the editor unusable on a flaky box. A delete
+has no second authority: FortiWeb does not reliably refuse deleting a
+referenced object, and when it does not, **nothing fails**. The holders keep
+pointing at a name that no longer resolves; the operator learns about it from
+traffic, not from SATOM.
+
+### What the device already knew
+
+Every cmdb row carries FortiWeb's own bookkeeping — `q_ref` counts the objects
+that name this one, `q_ref_string` names them one per line. Measured live on
+fortiweb08 (8.0.x) across ten collections: **`q_ref` on 10 of 10,
+`q_ref_string` on 4 of 10**. So a refusal may always *count* the holders and
+may only sometimes *name* them, and the message says which it is doing rather
+than printing an empty list that would read as "referenced by nothing".
+
+### Three states, and the two that must never merge
+
+`FortiWebClient.cmdb_refcount` returns `ok` / `unsupported` / `error`:
+
+- `unsupported` — the row came back with no `q_ref`. A missing **capability**,
+  not a missing answer. Blocking here would make every delete on that
+  collection impossible, permanently. Does **not** block.
+- `error` — the object could not be read at all. Does block.
+
+Collapsing them either way is a real failure: merged into `error`, a whole
+collection becomes undeletable; merged into `ok`, a firmware that reports
+nothing reads as "referenced by nothing" — which is the silent pass the whole
+section exists to prevent. A `q_ref` that will not parse as a number is
+`unsupported`, never `0`.
+
+### The wording is load-bearing
+
+`policy_graph._is_in_use_error()` decides whether a cascade child that would
+not delete is `kept_shared` (benign — another policy still claims it) or
+`failed` (an alarm) by **matching phrases in the error text**. So:
+
+- the *referenced* refusal must match it, or a shared dependency starts
+  reporting as a cascade failure;
+- the *unverified* refusal must **not** match it, or a transport error is
+  filed as "safe to leave".
+
+Both directions are pinned in `tests/test_delete_guard.py`. This is an
+accidental coupling through prose, and the test is what makes it survive the
+next rewording.
+
+### The guard runs on the dry-run
+
+Every delete surface in the app previews first and applies only after the
+operator confirms. Checking only the apply would show a clean *would delete*
+and then fail the action the operator just confirmed — the same rule as §40.
+
+### Opt-out is a call-site decision, not a runtime one
+
+`check_refs=False` exists for writers that delete what they just created or are
+rebuilding in the same batch: the singleton sub-table replace-set (whose rows
+are re-added two lines later) and the `jobs.Rollback` compensation example.
+Because the guard is opt-**out**, it can be switched off silently one call site
+at a time, so `test_check_refs_is_disabled_only_at_the_reviewed_call_sites`
+fails the build for a new one until it is justified. `force` is the separate,
+operator-facing override and is stamped `ref_check=forced` in the audit detail —
+an override that leaves no trace is indistinguishable from an object that was
+genuinely unreferenced.
+
+### Verification
+
+**42 guards, 20 mutations, 20 bite.** Reproduced live against fortiweb08 with
+**zero writes**: `urw-r1` refused naming `url-rewrite-policy(urw-full)`,
+`urw-full` refused naming both `wpp-full-lab` and `wpp-pol-shop-cms`,
+`pol-shop-main` (`q_ref=0`) allowed, an unreadable object refused, and
+`check_refs=False` / `force=True` allowed without asking the device.
+
+Two guard bugs found while writing them, both the familiar shapes: a
+`[^)]*` regex truncated `ops.delete(path, str(any_id), check_refs=False)` at
+the paren inside `str(...)` and failed against **correct** code, and the
+audit-stamp tests tried to `monkeypatch.setattr` a read-only `property`.
+
+## 41. A lifecycle state nobody writes is a state the product cannot reach
+
+`ChangeRequest.STATUSES` declared seven states. Three had a writer. The badge
+map in the view had a colour for all seven, the model docstring drew the full
+arrow chain `draft -> approved -> scheduled -> in_progress -> completed|failed`,
+and `cr_runnable` already listed `in_progress` among the states allowed to fire
+— every surface agreed the lifecycle existed. Nothing did.
+
+Nothing failed. That is the whole point: a dead enum member raises nothing,
+renders nothing, and logs nothing. It only makes every consumer of the record
+wrong, quietly, and it took an audit to find because the code that would have
+been wrong was the code that was never written.
+
+The guard is in `tests/test_change_request_lifecycle.py`
+(`test_every_declared_status_has_something_that_writes_it`): every member of
+`STATUSES` must be assigned somewhere in `app/services/change_requests.py`,
+`draft` excepted because it is the column default rather than a transition. It
+reads the assignments off the **AST**, not the source text — an assertion made
+against raw text is satisfied by the comment that explains it, which this repo
+has now been bitten by nine times.
+
+### 41a. `skipped` is a failure, and saying otherwise re-creates the stall
+
+The executor grades a run `ok | failed | skipped`. Mapping `skipped` to
+"completed" is obviously wrong; mapping it to "leave the request alone" is the
+subtle one, and it puts the bug back. The bound action is a one-shot, so its
+`next_run` is cleared after the fire: a request left `in_progress` because
+nothing ran can never close by itself. `finish()` therefore closes on anything
+that is not `ok`, and carries the executor's reason into `result_summary`.
+
+The one case that must NOT touch the request is a **gated** fire — the window
+had not opened, so no change started. Recording `in_progress`/`failed` there
+would make an un-run change indistinguishable from a broken one, and would burn
+the request (terminal) so a later legitimate fire could never run it.
+
+### 41b. A bookkeeping step must not be able to kill the work it describes
+
+The change-request close and its notification run in their own `try` with a
+`db.session.rollback()`, *after* the run row has been finalized and the action
+lease released. This is §-for-§ the `e122dd9` lesson: a best-effort step that
+shares the caller's transaction and swallows its own exception hands the caller
+a dead session. The names it reads (`cr_bound_id`, `cr_gated`) are initialised
+**before** the `try`, or the first statement that raises turns the closing block
+into a `NameError`.
+
+### 41c. A delivery timestamp is a claim, and it is also the retry flag
+
+`final_notified_at` does two jobs: it tells the operator the customer was told,
+and it is what makes the notice idempotent. Stamping it on a **failed** send
+therefore lies on the detail page *and* suppresses the retry permanently — in
+the one case where a retry is the entire point. This survived seventeen
+mutations minus one: the first pass killed 16/17 and the survivor was exactly
+this. The guard is `test_a_failed_send_never_records_a_delivery`, which asserts
+both halves — no stamp, and the next attempt actually reaches the mailer.
+
+`notify_status` (the PRE-window warning) and `final_notified_at` (the
+end-of-window notice) are separate columns on purpose. "We told them it is
+scheduled" and "we told them it is done" are different facts and one field
+cannot carry both.
+
+### 41d. Mutate a COPY of the tree, never the tree
+
+The first mutation run was launched against `/opt/satom` while another session
+was running the full suite over the same files. Their results were worthless and
+so were mine. The harness now rsyncs the tree to `/tmp/satom-mut` (owned by
+`satom`, excluding `venv/.git/data/site/reports`) and mutates only there, so a
+parallel session cannot be poisoned by it and vice versa.
+
+Two harness bugs found in the same session, both of which reported **green on a
+command that never ran**:
+
+* piping pytest to `tail` makes `subprocess` return **tail's** exit code — the
+  baseline read `rc=0` while the interpreter path did not even exist, and all 17
+  mutations "survived";
+* this repo's pytest config prints **no `N passed` summary line**, so a
+  baseline check that greps for `passed` fails against a perfectly green run.
+  Grade on the return code, and only `rc == 1` is a test failure (`rc == 4` is a
+  usage error).
+
+---
+
+## §43. A change that leaves this product must not be able to lie about itself
+
+`tests/test_cr_orchestration.py`, `tests/test_netbox_client.py`,
+`tests/test_integration_hooks.py`, `tests/test_hook_queue_layout.py`.
+
+A change request now reaches outside SATOM: an external authority approves it,
+NetBox holds its maintenance window, and the operator's own Python talks to
+their CRM. Every failure in that direction is silent by nature — the change
+still happens, the record just stops being true — so each property below is
+guarded rather than reviewed.
+
+### §43a — Fail-closed external approval
+
+`approval_mode="external"` makes a CR runnable only once `external_approved_at`
+is stamped. Unreachable, slow, ambiguous and never-asked all land on the
+un-runnable side of `cr_orchestrator.external_gate`, and an **unrecognised**
+mode fails closed too — a typo in a config field must not silently downgrade a
+gate.
+
+The gate is reached through `change_requests.cr_runnable`, the one function the
+executor calls. Guarded behaviourally *and* structurally: a reordering that
+dropped the call could otherwise pass the behavioural test for an unrelated
+reason.
+
+Withdrawing an approval **clears** the timestamp. Leaving it would let a revoked
+approval still open a window. Existing CRs default to `manual`: a migration must
+never retroactively gate work nobody bound to an approver.
+
+### §43b — `none` and `error` are different facts
+
+`mw_state` separates *we never asked NetBox* from *we asked and it refused or
+never answered*. Collapsing them makes an integration outage read as a
+deliberate decision and hides that a device may still be shown in maintenance.
+A second `open_window` on an open CR is a no-op, so a retried fire cannot litter
+NetBox with duplicate windows. `close_window(ok=…)` takes the outcome of **the
+change**, not of the call: a failed upgrade still closes its window, carrying
+the failure.
+
+### §43c — Nothing external re-grades the change
+
+NetBox down, a hook raising, SMTP refusing: recorded on the CR, never able to
+turn a completed upgrade into a failed one. `on_start` swallows and logs, so a
+ticket system being down cannot abort an upgrade the operator already approved.
+Order is guarded too — `close` before `notify`, because nobody may be told
+service is restored before the window covering the outage is closed.
+
+### §43d — Naive UTC is how a window moves by hours
+
+SATOM stores naive UTC; NetBox reads ISO-8601 and interprets a naive string in
+its own zone — confirmed on the wire against 4.6.7, where a naive datetime
+round-trips without a `Z`. `_iso()` emits an explicit `+00:00`, `_iso(None)` is
+`None` (never today's date), and a structural guard forbids a bare
+`.isoformat()` anywhere in the orchestrator.
+
+### §43e — Hooks never execute in the web worker
+
+Saving a hook writes it to disk and compiles it (a syntax error is refused at
+save, with its message). `dispatch()` only enqueues; the runner executes, as an
+unprivileged user, in its own process group, with a hard timeout, receiving only
+the declared secrets. Output is redacted **then** truncated — truncating first
+can bisect a token and leave its first characters permanently visible. A hook
+returns through a dedicated fd, so printing JSON-shaped text cannot fake a
+verdict. The runner unit must be `enabled --now` on **both** HA nodes; the
+`satom-updater.path`-on-standby incident applies verbatim.
+
+### §43f — One writable tree, and the reason travels with it
+
+This is the defect that hardening introduced. Four `ReadWritePaths=` are four
+bind-mounts; the claim step is a `rename(2)` between two of them, which is
+`EXDEV` — and `process_request_file` cannot tell `EXDEV` apart from “already
+claimed”, so it returned `None`. The request was never run, nothing was logged,
+the status stayed `queued`, and the level-triggered `.path` unit re-fired until
+the start limit. Every symptom pointed at the runner; the cause was one line of
+unit file.
+
+`tests/test_hook_queue_layout.py` guards both halves — the four directories
+share a parent, and the unit declares exactly one grant which IS that parent —
+plus that the grant is not all of `data/` (a hook inherits the runner's
+namespace) and that the unit still records *why*. The unit guard in
+`test_integration_hooks.py` was changed to assert against `IH.REQ_DIR` instead
+of a literal path: it had hardcoded the old directory and so failed against a
+CORRECT tree, which is how guards get deleted.
+
+### §43g — The token stays a secret
+
+The NetBox API token is stored encrypted, never returned by `config()` without
+an explicit reveal, never placed in a `detail` string or exception, and the live
+check asserts it is absent from the CR's integration log. A blank token field on
+save **keeps** the existing token rather than clearing it.
+
+### §43h — The emitter must send what the contract promises
+
+`tests/test_event_contract.py`. A hook is written by reading the payload
+documentation in the editor. If the emitter sends a different key set the hook
+does not crash — it reads `None` and opens a ticket with an empty title, or
+skips a device list it believes is empty. Nothing fails; the integration is just
+quietly wrong, which is this subsystem's characteristic failure.
+
+The guard asserts that, for every event `cr_orchestrator` emits, each documented
+key **not marked optional** is actually present. It caught two real defects on
+its first run:
+
+1. `upgrade.finished` documented `to_version` and `duration_ms`, and the
+   change-request close cannot know either — only the firmware executor watched
+   the box come back. The fix was **not** to send nulls: a null there reports a
+   measurement nobody took (same rule as advisor token counts, where "not
+   reported" and "0" mean opposite things). Those two keys are marked optional
+   in the contract, and a companion guard asserts they are **omitted**, not
+   nulled.
+2. **`change.approved` was documented with no emitter at all.** That is the
+   "lifecycle state nobody writes" defect (§41) wearing a different costume: the
+   editor offers the event, an operator binds a script to it, and the script
+   simply never runs. It is now fired from BOTH approval paths — the in-product
+   `approve()` and an external authority's verdict — because they are the same
+   fact arriving through two doors and a hook must not have to know which.
+
+A third guard asserts every name in `EVENTS` appears in the orchestrator, so a
+newly documented event cannot ship without something firing it.
+
+`upgrade.finished` / `upgrade.failed` are emitted **per appliance**, matching a
+contract keyed on one device — one event carrying a list is not something a hook
+written from these docs could read. That test seeds two appliances explicitly;
+its first version created one and asked for "the first two", so it passed its
+own bug instead of testing the code's.

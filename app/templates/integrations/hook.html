@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}{{ hook.name or hook.slug }} — Integration hook{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <h4 class="mb-1"><i class="bi bi-code-square me-2"></i>{{ hook.name or hook.slug }}</h4>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Runs out of process, as an unprivileged user, with a hard timeout. It receives only the secrets it declares
+      below, and its output is truncated and redacted before it is stored.
+    </p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('integrations.index') }}">
+    <i class="bi bi-arrow-left me-1"></i>Back
+  </a>
+</div>
+
+<form method="post" action="{{ url_for('integrations.hook_save') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="card mb-3">
+    <div class="card-body row g-3">
+      <div class="col-md-3">
+        <label class="form-label small">Slug</label>
+        <input class="form-control form-control-sm" name="slug" value="{{ hook.slug if hook.slug != 'new' else '' }}"
+               {% if hook.slug and hook.slug != 'new' %}readonly{% endif %} placeholder="crm-crq">
+        <div class="form-text">Lowercase, digits and dashes. It is the directory name.</div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">Name</label>
+        <input class="form-control form-control-sm" name="name" value="{{ hook.name or '' }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">Event</label>
+        <select class="form-select form-select-sm" name="event">
+          {% for name, doc in events.items() %}
+            <option value="{{ name }}" {% if hook.event == name %}selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">Timeout (s)</label>
+        <input class="form-control form-control-sm" name="timeout" type="number" min="1" max="300"
+               value="{{ hook.timeout or 30 }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label small">Secrets this hook may read (comma separated)</label>
+        <input class="form-control form-control-sm" name="secrets" value="{{ hook.secrets|join(', ') if hook.secrets else '' }}"
+               placeholder="CRM_TOKEN">
+        <div class="form-text">
+          Only these are injected into its environment. A secret it did not declare is not there to leak.
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="form-check form-switch mt-4">
+          <input class="form-check-input" type="checkbox" id="h_enabled" name="enabled" {% if hook.enabled %}checked{% endif %}>
+          <label class="form-check-label" for="h_enabled">Enabled</label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><strong>hook.py</strong></div>
+    <div class="card-body">
+      <textarea class="form-control font-monospace" name="source" rows="22" spellcheck="false"
+                style="font-size:12.5px;">{{ hook.source or default_source or '' }}</textarea>
+      <div class="form-text">
+        Saving compiles the source first — a syntax error is refused here, with its message, rather than discovered
+        at 03:00 inside a maintenance window.
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex gap-2 mb-3">
+    <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>Save</button>
+    {% if hook.slug and hook.slug != 'new' %}
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="dry-run">
+        <i class="bi bi-play me-1"></i>Dry run with sample payload
+      </button>
+      <span id="dry-result" class="small align-self-center"></span>
+    {% endif %}
+  </div>
+</form>
+
+{% if hook.slug and hook.slug != 'new' %}
+<div class="card">
+  <div class="card-header"><strong>Recent runs</strong></div>
+  <div class="card-body">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>When</th><th>Status</th><th>ms</th><th>Exit</th><th>Output / error</th></tr></thead>
+      <tbody>
+      {% for r in recent %}
+        <tr>
+          <td class="small text-muted">{{ r.started_at or r.queued_at or '' }}</td>
+          <td>{% if r.status == 'ok' %}<span class="fw-badge fw-badge-ok">ok</span>
+              {% elif r.status in ('failed', 'timeout') %}<span class="fw-badge fw-badge-crit">{{ r.status }}</span>
+              {% else %}<span class="fw-badge fw-badge-muted">{{ r.status }}</span>{% endif %}</td>
+          <td class="small">{{ r.duration_ms if r.duration_ms is not none else '—' }}</td>
+          <td class="small">{{ r.exit_code if r.exit_code is not none else '—' }}</td>
+          <td><pre class="small mb-0" style="white-space:pre-wrap;">{{ (r.error or r.stdout or '')[:1500] }}</pre></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="text-muted small">No runs yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var btn = document.getElementById('dry-run');
+  var out = document.getElementById('dry-result');
+  if (!btn || !out) { return; }
+  var tok = document.querySelector('input[name="csrf_token"]');
+  var url = {{ (url_for('integrations.hook_dry_run', slug=hook.slug) if hook.slug and hook.slug != 'new' else '')|tojson }};
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    out.className = 'small align-self-center text-muted';
+    out.textContent = 'queued…';
+    fetch(url, {method: 'POST', headers: {'X-CSRFToken': tok ? tok.value : ''}})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        btn.disabled = false;
+        // Queued is NOT ran. The runner picks it up out of process, so the
+        // honest report here is "queued", and the result appears in the table
+        // below once it actually executed.
+        out.className = d.ok ? 'small align-self-center text-success'
+                             : 'small align-self-center text-danger';
+        out.textContent = d.ok ? ('queued as ' + (d.request_id || '?') + ' — reload for the result')
+                               : (d.detail || 'failed');
+      })
+      .catch(function (e) {
+        btn.disabled = false;
+        out.className = 'small align-self-center text-danger';
+        out.textContent = 'request failed: ' + e;
+      });
+  });
+})();
+</script>
+{% endblock %}

@@ -126,6 +126,17 @@
               </td>
             </tr>
             <tr>
+              <td class="text-muted">Notify on completion</td>
+              <td>
+                {% if cr.notify_to %}<code>{{ cr.notify_to }}</code>
+                {% else %}<span class="text-muted">Settings &rarr; Email default</span>{% endif %}
+                {% if cr.final_notified_at %}
+                  <span class="fw-badge fw-badge-success ms-1">sent
+                    {{ cr.final_notified_at.strftime('%Y-%m-%d %H:%M UTC') }}</span>
+                {% endif %}
+              </td>
+            </tr>
+            <tr>
               <td class="text-muted">Notify status</td>
               <td>
                 {% if cr.notify_status == 'sent' %}
@@ -192,8 +203,71 @@
     </div>
   </div>
 
-  <!-- RIGHT: timeline + notice -->
+  <!-- RIGHT: integrations + timeline + notice -->
   <div class="col-lg-6">
+    <div class="fw-card mb-3">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-plug me-2 text-accent"></i>External change record</span>
+      </div>
+      <div class="fw-card-body">
+        <dl class="row mb-0 small">
+          <dt class="col-sm-4">Approval</dt>
+          <dd class="col-sm-8">
+            {% if cr.approval_mode == 'external' %}
+              {% if cr.external_approved_at %}
+                <span class="fw-badge fw-badge-ok">external approval on record</span>
+                <div class="text-muted">{{ cr.external_approved_by }} · {{ cr.external_approved_at.strftime('%Y-%m-%d %H:%M UTC') }}</div>
+              {% else %}
+                <span class="fw-badge fw-badge-warn">waiting for external approval</span>
+                <div class="text-muted">This change cannot run until the external authority approves it. No answer is not an approval.</div>
+              {% endif %}
+            {% else %}
+              <span class="fw-badge fw-badge-secondary">manual (approved in SATOM)</span>
+            {% endif %}
+          </dd>
+
+          <dt class="col-sm-4">Change ticket</dt>
+          <dd class="col-sm-8">
+            {% if cr.crq_ref %}
+              {% if cr.crq_url %}<a href="{{ cr.crq_url }}" target="_blank" rel="noopener"><code>{{ cr.crq_ref }}</code></a>
+              {% else %}<code>{{ cr.crq_ref }}</code>{% endif %}
+            {% else %}<span class="text-muted">none recorded</span>{% endif %}
+          </dd>
+
+          <dt class="col-sm-4">NetBox window</dt>
+          <dd class="col-sm-8">
+            {% if cr.mw_state == 'open' %}<span class="fw-badge fw-badge-warn">open</span>
+            {% elif cr.mw_state == 'closed' %}<span class="fw-badge fw-badge-ok">closed</span>
+            {% elif cr.mw_state == 'error' %}<span class="fw-badge fw-badge-crit">error</span>
+            {% else %}<span class="fw-badge fw-badge-secondary">none requested</span>{% endif %}
+            {% if cr.mw_ref %}<div class="text-muted"><code>{{ cr.mw_ref }}</code></div>{% endif %}
+            {% if cr.mw_state == 'error' %}
+              <div class="text-muted">SATOM asked NetBox and it refused or never answered — a device may still be
+              shown in maintenance there. This is deliberately not the same as “no window requested”.</div>
+            {% endif %}
+          </dd>
+        </dl>
+
+        {% if not terminal and cr.status in ('draft', 'approved') %}
+        <form method="post" action="{{ url_for('change_requests.request_crq', id=cr.id) }}" class="mt-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-send me-1"></i>Raise change ticket via integration hooks
+          </button>
+          <div class="form-text">Queues the <code>change.requested</code> hooks. The ticket id arrives back
+          asynchronously — hooks run out of process, so nothing here waits on your CRM.</div>
+        </form>
+        {% endif %}
+
+        {% if cr.integration_log %}
+        <details class="mt-3">
+          <summary class="small">Integration log</summary>
+          <pre class="small mb-0 mt-2" style="white-space:pre-wrap;">{{ cr.integration_log }}</pre>
+        </details>
+        {% endif %}
+      </div>
+    </div>
+
     <div class="fw-card mb-3">
       <div class="fw-card-header">
         <span class="fw-card-title"><i class="bi bi-clock me-2 text-accent"></i>Timeline</span>

@@ -44,6 +44,7 @@
 32. [Troubleshooting](#32-troubleshooting)
 33. [AI Advisor](#33-ai-advisor)
 34. [The Audit Log](#34-the-audit-log)
+35. [Integrations: NetBox, change tickets and your own Python](#35-integrations-netbox-change-tickets-and-your-own-python)
 
 ---
 
@@ -279,6 +280,40 @@ A field that offers a **dropdown** is a reference field. A few fields that the
 appliance treats as selects still render as text because the collection they
 draw from could not be confirmed on this firmware — those are passed to the
 device unchecked, exactly as before.
+
+### 7.2 Deleting an object that something else uses
+
+**Delete** refuses while another object still names the one you are removing.
+The appliance keeps its own count of references, and SATOM reads it before
+sending anything:
+
+> `refusing to delete "urw-full": it is referenced by 2 object(s) —
+> inline-protection(wpp-full-lab), inline-protection(wpp-pol-shop-cms). Remove
+> those references first, then delete it.`
+
+Why this exists: FortiWeb does **not** reliably refuse deleting an object that
+is in use. When it accepts one, nothing fails — the profiles and policies that
+named it keep pointing at a name that no longer resolves, and you find out when
+traffic breaks.
+
+What to expect:
+
+- The check runs on the **pre-check**, before the confirmation prompt. You see
+  the refusal instead of confirming a delete that should not happen.
+- Some collections report *how many* references there are but not *which*. The
+  message says so rather than showing an empty list.
+- If the object cannot be read back from the appliance, it is **not** deleted —
+  there is no way to tell an unreferenced object from an unreadable one.
+- If this firmware does not report a reference count for that collection at
+  all, the delete proceeds as before. A capability the device lacks is not
+  treated as a refusal.
+- Deleting a **row inside** an object (a sub-table entry) is not affected: the
+  parent's reference count says nothing about one of its rows.
+
+To remove an object that is genuinely referenced, clear the references first —
+the message names where to look. If you are certain the appliance's count is
+wrong, the delete endpoint accepts `force: true`; forced deletes are recorded
+in the audit log as `ref_check=forced`.
 
 ## 8. Web Protection (WAF)
 
@@ -2581,3 +2616,95 @@ with a red **Error reference** — an eight-character code you can `grep` in
 `data/logs/satom.log` for the full traceback. That is a different identifier from
 the entry ID and answers a different question: the entry ID names *the record*,
 the error ID names *the crash*.
+
+---
+
+## 35. Integrations: NetBox, change tickets and your own Python
+
+**Settings → Integrations** (admin only) is where SATOM is wired to systems it
+does not own. Everything here is optional: with all of it off, change requests
+and upgrades work exactly as they did.
+
+### 35.1 NetBox
+
+Fill in the base URL and an API token, pick a timeout, and press **Test
+connection** — it reports the NetBox version and how many milliseconds the round
+trip took. A green tick with no numbers behind it is not evidence.
+
+The token is stored encrypted. Leaving the token box blank when you save
+**keeps** the token you already have; it never clears it.
+
+**Maintenance-window backend.** NetBox core has no maintenance-window object —
+that lives in third-party plugins — so SATOM records windows with core models
+only, and works against any NetBox:
+
+| Backend | What it writes | Trade-off |
+|---|---|---|
+| **Journal entry** (default) | A journal entry on the device with the change-request id, window and reason; closing posts a *second* entry | Full history, but journal entries are not filterable in the NetBox UI |
+| **Device tag** | Adds `maint-window` to the device, removes it on close | Queryable from NetBox, but records *that* a window exists, not which one or when it started |
+| **Device custom fields** | Sets `maint_window_start` / `_end` on the device | Structured, but the custom fields must already be defined — SATOM tells you by name if they are not, rather than quietly doing nothing |
+
+**Device mapping** binds each SATOM appliance to a NetBox device id. Leave a row
+blank and SATOM falls back to an exact *name* match — that works right up until
+somebody renames a device on either side, which is why the page shows you which
+devices rely on the fallback.
+
+### 35.2 Integration hooks
+
+A hook is a small Python script SATOM runs when it emits an event. The usual use
+is opening a change ticket in your own CRM and handing the reference back.
+
+Events: `change.requested`, `change.approved`, `window.opening`,
+`window.closing`, `upgrade.finished`, `upgrade.failed`. The editor lists the
+exact payload each one carries.
+
+**Hooks never run inside the web application.** Saving one writes it to disk;
+`satom-integrations.service` — a separate, unprivileged runner — executes it, in
+its own process group, with a hard timeout. A hook that hangs on somebody else's
+CRM cannot hang this console.
+
+What that buys you, and what it costs:
+
+- A syntax error is refused **when you save**, with the message. You do not find
+  out at 03:00 inside a window.
+- A hook receives only the secrets it declares, by name, through
+  `ctx.secret("NAME")`. One it did not declare is not in its environment to
+  leak. Never paste a token into the script itself.
+- Captured output is redacted (declared secret values are masked) and then
+  truncated before it is stored.
+- The result comes back through `ctx.result(ok, data)`, not from what the script
+  prints — so a hook cannot fake its own verdict by printing JSON.
+- **Dry run** queues the hook against the event's sample payload through the
+  same runner. It reports *queued*, not *ran*, because that is what happened;
+  the outcome appears in the runs table a moment later. A dry run will queue a
+  hook that is switched off — testing before enabling is the point.
+
+Keys SATOM understands in a `change.requested` result: `crq_ref` and `crq_url`,
+which are written onto the change request so the ticket is one click away.
+
+> **HA:** `satom-integrations.path` must be enabled on **both** nodes. A standby
+> whose watcher is disabled accepts queued work and never runs it — silently.
+
+### 35.3 What this changes on a change request
+
+Create the change request as usual and set **Approval**:
+
+- **Manual** — approved here in SATOM, exactly as before.
+- **External** — an integration must approve it. This is **fail-closed**: the
+  change cannot run until your system explicitly approves. Unreachable, slow and
+  no answer all count as *not approved*. Withdrawing an approval makes it
+  un-runnable again.
+
+Once the window opens and the change starts running, SATOM opens the NetBox
+window, runs the change, closes the window from the outcome, fires the hooks,
+and emails the affected customers (§9). The **External change record** card on
+the change request shows the ticket, the window state and the integration log.
+
+The window state distinguishes **none requested** from **error**. *Error* means
+SATOM asked NetBox and it refused or never answered — a device may still be
+shown in maintenance there, and you have to know that.
+
+If the change fails, the window still closes (it is over either way) but it
+closes carrying the failure, and the customer notice says the change did not
+happen. Nothing external — NetBox down, a hook erroring, SMTP refusing — can
+change the recorded outcome of the change itself.

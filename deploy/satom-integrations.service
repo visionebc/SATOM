@@ -1,0 +1,58 @@
+# Integration-hooks runner. Triggered by satom-integrations.path when
+# data/integration-requests/ becomes non-empty. Same shape as
+# satom-updater.service (oneshot, WorkingDirectory=/opt/satom, ExecStart through
+# the app venv) with ONE deliberate inversion: satom-updater runs as root
+# because it installs unit files and restarts services; THIS unit executes
+# Python somebody typed into a textarea, so it runs as the unprivileged service
+# account and is hardened further than the web app, not less.
+#
+# NOTE (self_update_runner.py): add "satom-integrations.service" and
+# "satom-integrations.path" to UNIT_FILES so an app update refreshes them, and
+# to NONROOT_UNITS so the User=/Group= drop-in is enforced there too. The
+# User=/Group= below is the belt; that drop-in is the braces.
+[Unit]
+Description=SATOM integration-hooks runner (unprivileged, oneshot)
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+User=satom
+Group=satom
+WorkingDirectory=/opt/satom
+# The vault (app_settings + FERNET_KEY) lives behind Postgres; without this the
+# runner still works but every declared secret resolves as "not configured".
+EnvironmentFile=/opt/satom/.env
+ExecStart=/opt/satom/venv/bin/python -m app.services.hook_runner
+# Bounded: MAX_DRAIN requests per invocation x MAX_TIMEOUT (120s) each, plus
+# slack. Anything left over re-fires through the .path unit.
+TimeoutStartSec=900
+
+# --- containment -----------------------------------------------------------
+# This unit's whole job is running untrusted code, so the sandbox is the
+# feature. NoNewPrivileges also means no setuid binary a hook shells out to can
+# gain anything. PrivateTmp keeps every hook's temp working directory (and the
+# result-channel file) out of the shared /tmp.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+# Only the queue, the claims, the status dir and the hook sources are writable.
+# The app tree itself is not: a hook must not be able to rewrite the product,
+# and NOT /opt/satom/data either — a hook would inherit this namespace and could
+# scribble into data/sot/ or data/jobs/.
+# Each path is "-" prefixed so a node where they do not exist yet still STARTS
+# the unit instead of failing namespace setup. The installer must create them:
+#   install -d -o satom -g satom -m 0750 /opt/satom/data/integrations \
+#          /opt/satom/data/integrations/{hooks,queue,claimed,status}
+# EXACTLY ONE ReadWritePaths for the whole queue: systemd makes each one its
+# own bind-mount, and the runner's claim is a rename() between two of these
+# directories - across two mounts that is EXDEV (errno 18), which the runner
+# reads as 'already claimed', so the request silently never runs and this
+# unit re-fires until the start limit. Proven on a1 before it was fixed.
+ReadWritePaths=-/opt/satom/data/integrations

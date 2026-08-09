@@ -1610,7 +1610,8 @@ for unit in satom.service satom-scheduler.service \
             satom-updater.path satom-updater.service \
             satom-cert-renew.service satom-cert-renew.timer \
             satom-reconciler.service \
-            satom-alerts.service satom-alerts.timer; do
+            satom-alerts.service satom-alerts.timer \
+            satom-integrations.path satom-integrations.service; do
     [ -f "$APP_DIR/deploy/$unit" ] && cp "$APP_DIR/deploy/$unit" /etc/systemd/system/
 done
 # gunicorn SOLO en loopback: nginx termina TLS en ${WEB_PORT}
@@ -1680,6 +1681,21 @@ systemctl enable --now satom.service satom-scheduler.service >>"$INSTALL_LOG" 2>
 # failed" mientras /healthz sigue dando 200 (no toca la BD).
 systemctl restart satom.service satom-scheduler.service >>"$INSTALL_LOG" 2>&1 || true
 systemctl enable --now satom-updater.path >>"$INSTALL_LOG" 2>&1 || true
+# Integration-hooks queue. ONE parent directory on purpose: the runner claims a
+# request with rename(2) and satom-integrations.service grants exactly one
+# ReadWritePaths= - each grant is its own bind-mount, and a rename across two of
+# them is EXDEV, which the runner cannot tell apart from "already claimed". The
+# request then never runs and the .path unit re-fires until the start limit.
+install -d -o "$APP_USER" -g "$APP_USER" -m 0750 \
+    "$APP_DIR/data/integrations" \
+    "$APP_DIR/data/integrations/hooks" \
+    "$APP_DIR/data/integrations/queue" \
+    "$APP_DIR/data/integrations/claimed" \
+    "$APP_DIR/data/integrations/status" >>"$INSTALL_LOG" 2>&1 || true
+# MUST be enabled on BOTH HA nodes: a standby whose .path unit is disabled
+# accepts enqueued work and never runs it (this happened to satom-updater.path
+# on 249 on 2026-07-12 and the queue sat there silently).
+systemctl enable --now satom-integrations.path >>"$INSTALL_LOG" 2>&1 || true
 systemctl enable --now satom-cert-renew.timer >>"$INSTALL_LOG" 2>&1 || true
 # Ambos timers llevan guarda de rol interna (primary-only), así que se
 # habilitan en los dos nodos: tras un promote el nodo nuevo ya está listo.

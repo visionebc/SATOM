@@ -417,8 +417,22 @@ BANNER_TEMPLATES = {
     "rose":     {"name": "Rose",            "bg": "linear-gradient(135deg, #2c0d1c 0%, #e11d48 100%)"},
     "steel":    {"name": "Steel",           "bg": "linear-gradient(135deg, #1a2230 0%, #475569 100%)"},
     "aurora":   {"name": "Aurora",          "bg": "linear-gradient(135deg, #0b2545 0%, #1d63b0 45%, #10b981 100%)"},
-    "fortinet": {"name": "Fortinet",        "bg": "linear-gradient(135deg, #14233a 0%, #ee3124 100%)"},
+    "crimson":  {"name": "Crimson",         "bg": "linear-gradient(135deg, #14233a 0%, #ee3124 100%)"},
 }
+
+# Renamed template ids. A stored id MUST keep rendering the same colour:
+# dropping a key outright makes ``banner_template`` fall through to "slate",
+# so any ADOM (or user) that had chosen it is silently repainted with no
+# trace anywhere. "crimson" used to be named after the vendor; the colour is
+# unchanged, only our label for it.
+BANNER_TEMPLATE_ALIASES = {"fortinet": "crimson"}
+
+
+def resolve_banner_template(val):
+    """Map a stored (possibly renamed) template id to its current id."""
+    return BANNER_TEMPLATE_ALIASES.get(val, val)
+
+
 # ADOMs that carry a personal top-bar banner. Derived LIVE from the ADOM
 # registry (``cap_banner``) — adding/removing a banner ADOM is now a Settings →
 # ADOMs edit, not a code change. Kept as a module name so ``store.BANNER_PRODUCTS``
@@ -430,13 +444,14 @@ BANNER_PRODUCTS = _live_products("banner")
 
 
 def banner_template(product: str) -> str:
-    val = get_str(K_BANNER_PREFIX + product)
+    val = resolve_banner_template(get_str(K_BANNER_PREFIX + product))
     if val in BANNER_TEMPLATES:
         return val
     # Per-ADOM default now lives on the registry row (``banner_default``).
     try:
         from ..branding import get_product
-        default = get_product(product).get("banner_default")
+        default = resolve_banner_template(
+            get_product(product).get("banner_default"))
         if default in BANNER_TEMPLATES:
             return default
     except Exception:

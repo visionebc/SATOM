@@ -8,7 +8,6 @@
 <title>Safeguards — full catalog — SATOM</title>
 <meta name="description" content="Every protection: what it prevents, where it lives, and the command that proves it is armed.">
 <link rel="icon" href="../favicon.ico" sizes="any">
-<link rel="icon" type="image/svg+xml" href="../assets/satom-mark.svg">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -21,7 +20,7 @@
 
 <nav>
   <div class="wrap nav-inner">
-    <a class="brand" href="../index.html"><img class="mark" src="../assets/satom-mark.svg" alt="SATOM"> <span class="wordmark">SA<b>TOM</b></span></a>
+    <a class="brand" href="../index.html"><img class="mark" src="../assets/satom-mark.png" alt="SATOM"> <span class="wordmark">SA<b>TOM</b></span></a>
     <button class="nav-toggle" id="nav-toggle" aria-label="Menu">☰</button>
     <div class="nav-right">
       <div class="nav-links">
@@ -6456,52 +6455,64 @@ the document's owner from the requester. Each must turn the run red.</p>
 <strong>three</strong>, in two different ways, and neither way could break anything.</p>
 <ul>
 <li>The product site's header mark was the <strong>character <code>S</code></strong> in a gradient box.
-  Not a small logo — <em>no</em> logo. The only real vector the product owned was
-  filed as <code>assets/favicon.svg</code>: the mark had been named after <strong>one of its
-  uses</strong>, so nothing called "logo" or "mark" existed for anyone to find.</li>
-<li>The console and the repo site drew a raster emblem that reads as a <strong>"G"</strong>,
-  shipped as three independent files (<code>app/static/img/satom-mark.png</code>,
+  Not a small logo — <em>no</em> logo.</li>
+<li>The console and the repo site drew the product emblem from <strong>three
+  independent files</strong> (<code>app/static/img/satom-mark.png</code>,
   <code>site/assets/satom-mark.png</code>, and an uploaded theme override under
   <code>data/branding/</code>) that nothing forced to agree.</li>
 </ul>
-<p>Both defects are invisible to every functional test: the page renders, the
-asset returns 200, the tab shows <em>an</em> icon. What is wrong is the <strong>claim</strong>, and
-a claim has no exit code. So <code>tests/test_brand_mark.py</code> asserts identity and
-absence rather than behaviour:</p>
+<p><strong>The first pass got the instruction wrong, and that is the lesson worth
+keeping.</strong> "Change the name of the logo" was read as "replace the artwork", so
+an invented rounded-square mark went out to five nodes at once. The artwork was
+never the defect — the <strong>vendor name attached to it</strong> was. Replacing a product's
+identity is the change where <em>nothing</em> fails: every page renders, every asset
+answers 200, the tab shows <em>an</em> icon. Only a guard that pins <strong>which</strong> mark is
+canonical can catch it, which is why the guards below now run in both
+directions.</p>
+<p><code>tests/test_brand_mark.py</code> asserts identity and absence, never behaviour:</p>
 <ol>
-<li><code>satom-mark.svg</code> <strong>exists under the product's name</strong> on both surfaces —
-   the guard against re-filing a brand under a use.</li>
-<li>It carries <strong><code>&lt;title&gt;SATOM&lt;/title&gt;</code> and <code>aria-label="SATOM"</code></strong>. A logo an
-   assistive reader announces as "image" has no name at all.</li>
-<li>Every shipped copy of the vector is <strong>byte-identical</strong>, and the two rasters
-   are byte-identical to each other, 256×256 and RGBA. This is the guard that
-   would have caught the three-way drift.</li>
-<li><strong>No live template and no <code>site/</code> page may request <code>satom-mark.png</code></strong> — the
-   raster is a derivative for favicons, never the header.</li>
-<li>Every <code>site/</code> page that renders a <code>class="brand"</code> <strong>must show the mark</strong>.
-   The placeholder state must not come back one page at a time.</li>
+<li><code>satom-mark.png</code> <strong>exists under the product's name</strong> on both surfaces — the
+   guard against re-filing a brand under one of its uses (<code>favicon</code>, <code>icon</code>).</li>
+<li>Every shipped copy is <strong>byte-identical</strong>, 256×256, RGBA. This is the guard
+   that would have caught the original three-way drift; the alpha check matters
+   because a mark that loses it grows an opaque square that fights every header.</li>
+<li>The <strong>substitute vector may not come back</strong> — not as
+   <code>app/static/img/satom-mark.svg</code>, not as <code>site/assets/satom-mark.svg</code>, and not
+   as a reference from any template or any page's chrome.</li>
+<li>All three console brand surfaces (<code>base.html</code>, <code>auth/login.html</code>,
+   <code>product/select.html</code>) <strong>fall back to the same mark</strong>. When <code>base.html</code> fell
+   back to <code>product.mark</code> the header drew the ADOM globe instead of the product —
+   a defect visible in one configuration out of two.</li>
+<li>Every <code>site/</code> page that renders a <code>class="brand"</code> <strong>must show the mark</strong>. The
+   placeholder state must not come back one page at a time.</li>
 <li>The <strong>generator template must stamp the same string the pages carry</strong>. Two
-   authors of one string is how <code>index.html</code> lost its Docs link: a page fixed
-   by hand is reverted by the next regeneration.</li>
-<li><strong>Colour sweep for the vendor red</strong> inside the mark. The vendor glyph
-   survived three project renames because no sweep for its <em>name</em> can match a
-   file that does not say it (§8d) — a renamed copy would pass 1–6.</li>
+   authors of one string is how <code>index.html</code> lost its Docs link: a page fixed by
+   hand is reverted by the next regeneration.</li>
+<li><strong>Nothing we name may carry the vendor's name.</strong> <code>LOGIN_BG_PRESETS</code> is swept
+   for <code>/forti/i</code>, and so are the comments in the console <code>&lt;head&gt;</code>'s own brand
+   chrome. Nominative use is deliberately out of scope: a row that says which
+   kind of appliance it describes, or a ceiling attributed to the vendor's
+   datasheet, is a fact about someone else's product.</li>
 </ol>
-<p><strong>Trap this round, in an existing guard.</strong> <code>test_theme.py</code> asserted the topbar
-brand was not an ADOM icon with <code>"-mark.svg" not in src</code>. The product's own
-mark became a vector, so the rule rejected <strong>the very asset it exists to
-require</strong> — the eighth substring assertion in this file to match something it
-never meant. It now matches the ADOM marks <strong>by name</strong>.</p>
-<p><strong>The console's visible logo does not live in the repo.</strong> <code>base.html</code> falls
-back to <code>img/satom-mark.svg</code> only when the active theme carries no upload;
-<code>satom-aurora</code> carried one, so replacing the repo asset alone would have
-changed nothing an operator sees. The overrides in <code>data/branding/</code> are
-re-rendered from the same vector.</p>
+<p>The colour sweep for the vendor red (§8d, <code>tests/test_favicon.py</code>) still covers
+a <strong>renamed copy</strong> of the vendor glyph, which is the failure mode no sweep for
+a <em>name</em> can catch. It is not duplicated here.</p>
+<p><strong>Scanning a whole page is wrong.</strong> The generated CHANGELOG and safeguards
+pages NAME these files in prose while linking the right one, so a full-page
+sweep calls correct pages a regression — the eighth substring assertion in this
+file to match something it never meant. The guards read only the <strong>chrome</strong>:
+the <code>&lt;a class="brand"&gt;</code>, the <code>&lt;img class="mark"&gt;</code> and the <code>&lt;link rel=icon&gt;</code>s.</p>
+<p><strong>The console's visible logo does not live in the repo.</strong> <code>base.html</code> falls back
+to <code>img/satom-mark.png</code> only when the active theme carries no upload;
+<code>satom-aurora</code> carries one, so touching the repo asset alone changes nothing an
+operator sees. <code>data/branding/theme-&lt;id&gt;-logo.png</code> and <code>-favicon.png</code> must be
+re-rendered too, and the check is on what <code>/settings/appearance/asset/&lt;id&gt;/logo</code>
+actually serves.</p>
 <p>Verify: <code>pytest tests/test_brand_mark.py tests/test_favicon.py
-tests/test_theme.py -q</code>, then mutate — delete the vector, drift the site copy,
-strip the <code>&lt;title&gt;</code>, point a template back at the raster, blank one page's
-mark, revert the generator, paint the vendor red into the mark, and desync the
-two rasters. Each must turn the run red.</p>
+tests/test_theme.py -q</code>, then mutate — drift the site copy, restore the
+substitute vector, point a template at it, blank one page's mark, revert the
+generator, put the vendor-named preset back, and re-add the vendor comment to
+<code>base.html</code>. Each must turn the run red.</p>
     </div>
   </div>
 </section>

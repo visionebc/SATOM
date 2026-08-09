@@ -90,6 +90,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   every ADC in a window look like it had no clients at all.
 
 ### Removed
+- **The vendor mark, as a file** (`app/static/img/favicon.svg`). A previous
+  round stopped every live template from *referencing* Fortinet's registered
+  glyph in `#ee3124`, but left the artwork in the tree — so `GET
+  /static/img/favicon.svg` still answered **200** from SATOM's own origin.
+  Under Elastic License 2.0 this product is sold, which makes a vendor mark on
+  our static path a trademark surface rather than a stale asset. The
+  appliance-type marks (`fortiweb-mark.svg`, `fortiadc-mark.svg`,
+  `fortianalyzer-mark.svg`, `fortiauthenticator-mark.svg`) **stay**: they label
+  which kind of box a row is about, which is nominative use, and none of them
+  uses the corporate red. Deleting a file is the change where *nothing* fails,
+  so the guards are assertions of absence — one of them over HTTP, because "not
+  in the repo" and "not served" are different claims — plus a sweep that would
+  catch the same artwork under a different filename, which is how this one
+  survived three project renames in the first place.
 - **The per-username allowlist** (`Settings → Access Control → Allowed Users`).
   It was a fourth gate stacked behind the directory group filter, the approval
   gate and the profile, and it enforced nothing the three of them did not —

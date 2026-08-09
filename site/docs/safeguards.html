@@ -1157,6 +1157,34 @@ this needs guards rather than a sweep:</p>
 <p>Guards: <code>tests/test_favicon.py</code>. Verified by mutation -- reverting the chooser,
 deleting the route, flattening the <code>.ico</code> to one size, dropping the link from a
 page, or reverting the generator each fails a test.</p>
+<h3 id="the-file-itself-not-just-the-references-2026-08-09">The file itself, not just the references (2026-08-09)</h3>
+<p>Guarding "no live template references it" is only half the job, and the other
+half stayed open for a week: <code>app/static/img/favicon.svg</code> was still in the tree
+and still <strong>served</strong> -- <code>GET /static/img/favicon.svg</code> answered <code>200</code> with the
+vendor glyph, from this product's own origin. SATOM is sold under Elastic
+License 2.0, so that is a trademark surface, not a leftover.</p>
+<p>The file is gone. Three rules now, all ABSENCE assertions, because deleting
+something is the change where nothing fails on its own:</p>
+<ul>
+<li><strong>The file must not exist.</strong> A reference guard cannot see an unreferenced
+  file.</li>
+<li><strong><code>/static/img/favicon.svg</code> must 404</strong>, asserted over HTTP. Untracked and
+  unserved are different claims: a deployed node can keep a file the repo has
+  dropped.</li>
+<li><strong>No shipped vector under <code>app/static/</code> or <code>site/</code> may carry <code>#ee3124</code>.</strong>
+  This is the one that matters: the original survived three project renames
+  because no sweep for "fortinet" matches a filename that says neither, and a
+  renamed copy would slip past both guards above.</li>
+</ul>
+<p>The appliance-type marks (<code>fortiweb-mark.svg</code> and siblings) are deliberately in
+scope and pass: they identify which kind of box a row describes -- nominative
+use -- and none of them uses the corporate red.</p>
+<p>Verified by mutation: restoring the file fails all three; dropping a renamed
+copy into <code>app/static/img/</code> or into <code>site/assets/</code> fails the red sweep alone.</p>
+<p>Still open, and a separate decision: <code>settings_store.LOGIN_BG_PRESETS</code> ships a
+login background named <strong>"Fortinet"</strong> built on the same <code>#ee3124</code>. It is not the
+mark, and removing it would change the look of any install that selected it, so
+it was left alone rather than folded into a removal nobody asked for.</p>
 <h2 id="8e-brand-gradients-and-assets-a-browser-cannot-keep-stale">8e. Brand gradients, and assets a browser cannot keep stale</h2>
 <p>Two guards added together, because they failed together: the console could not
 express a gradient at all, and the public site could serve a stale script that

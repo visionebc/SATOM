@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.9.2] - 2026-08-09
+
 ### Fixed
 
 - **The object editor no longer offers a free text box for a field that only

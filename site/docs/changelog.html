@@ -8,7 +8,6 @@
 <title>Changelog — SATOM</title>
 <meta name="description" content="Every release and every change, newest first — the same file that ships in the repository and is readable inside the application.">
 <link rel="icon" href="../favicon.ico" sizes="any">
-<link rel="icon" type="image/svg+xml" href="../assets/satom-mark.svg">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -21,7 +20,7 @@
 
 <nav>
   <div class="wrap nav-inner">
-    <a class="brand" href="../index.html"><img class="mark" src="../assets/satom-mark.svg" alt="SATOM"> <span class="wordmark">SA<b>TOM</b></span></a>
+    <a class="brand" href="../index.html"><img class="mark" src="../assets/satom-mark.png" alt="SATOM"> <span class="wordmark">SA<b>TOM</b></span></a>
     <button class="nav-toggle" id="nav-toggle" aria-label="Menu">☰</button>
     <div class="nav-right">
       <div class="nav-links">
@@ -229,20 +228,36 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
-<li><strong>One SATOM mark, filed under the product's name.</strong> The console, the repo
-  site and the product site each drew a different brand: an emblem that reads as
-  a "G", and — on the product site — the CHARACTER <code>S</code> in a gradient box, a
-  placeholder that outlived its excuse. The only real vector the product owned
-  was filed as <code>assets/favicon.svg</code>, so the mark was named after ONE OF ITS
-  USES and nothing called "logo" or "mark" existed to find. It is now
-  <code>satom-mark.svg</code> on every surface, carries <code>&lt;title&gt;SATOM&lt;/title&gt;</code> and
-  <code>aria-label="SATOM"</code> so an assistive reader announces the product rather than
-  "image", and <code>satom-mark.png</code> / <code>favicon.png</code> / <code>favicon.ico</code> /
-  <code>apple-touch-icon.png</code> are RENDERS of that one vector instead of independent
-  files. <code>tests/test_brand_mark.py</code> holds the surfaces together: the copies must
-  be byte-identical, every <code>site/</code> page with a <code>class="brand"</code> must show the
-  mark, and the generator template must stamp the same string the pages carry —
-  a page fixed by hand is reverted by the next regeneration.</li>
+<li><strong>One SATOM mark on every surface — the emblem the product already had.</strong>
+  The console, the repo site and the product site each drew something different:
+  the emblem, and — on the product site — the CHARACTER <code>S</code> in a gradient box, a
+  placeholder that outlived its excuse. All three now ship the same emblem
+  (<code>satom-mark.png</code>, byte-identical across <code>app/static/img/</code> and
+  <code>site/assets/</code>), with <code>favicon.png</code> / <code>favicon.ico</code> / <code>apple-touch-icon.png</code>
+  as its icon sizes. A first pass replaced the artwork with an invented
+  rounded-square mark; that was a misreading and is reverted. Replacing a
+  product's identity is a change where nothing fails — every page renders, every
+  asset answers 200, the tab shows <em>an</em> icon — so <code>tests/test_brand_mark.py</code> now
+  pins WHICH mark is canonical, in both directions: the copies must be
+  byte-identical, the substitute mark may not return as a file or as a
+  reference, every <code>site/</code> page with a <code>class="brand"</code> must show the mark, and
+  the generator template must stamp the same string the pages carry — a page
+  fixed by hand is reverted by the next regeneration.</li>
+</ul>
+<h3 id="removed">Removed</h3>
+<ul>
+<li><strong>The appearance preset named after the vendor.</strong> <code>LOGIN_BG_PRESETS</code> shipped
+  an entry keyed <code>fortinet</code>, labelled "Fortinet", in the vendor's corporate red
+  <code>#ee3124</code> — a choice offered in SATOM's own settings menu under someone else's
+  name, next to an "Ember Red" that already covered the same taste. The
+  constant is read nowhere, so no installation's appearance changes. Nominative
+  use stays exactly where it was: the appliance-type marks, the capacity
+  ceilings attributed to the vendor's datasheet, and every sentence describing
+  what the vendor's own firmware does are facts about their product, not us
+  wearing their name. The <code>&lt;!-- Favicon (Fortinet) --&gt;</code> comment in <code>base.html</code>
+  went with it: a comment is not served, but it is what the next reader believes
+  the asset IS, and that belief is how the vendor glyph kept its seat through
+  three project renames (§8d).</li>
 <li><strong>A live firmware upgrade requires an approved, open change window.</strong> This was
   the hole: the headless executor had refused to flash outside a window since
   the gate was generalised, but the button a human actually clicks went straight
@@ -345,9 +360,6 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <li>The "clients affected by this window" read is per product: FortiWeb server
   policies, FortiADC virtual servers. Reading only the FortiWeb shape made
   every ADC in a window look like it had no clients at all.</li>
-</ul>
-<h3 id="removed">Removed</h3>
-<ul>
 <li>
 <p><strong>The per-username allowlist</strong> (<code>Settings → Access Control → Allowed Users</code>).
   It was a fourth gate stacked behind the directory group filter, the approval

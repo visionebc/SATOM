@@ -5724,3 +5724,93 @@ No inline `on*` attributes: CSP sets `script-src-attr 'none'`, so an `onclick`
 here is refused by the browser rather than reported.
 
 Fourteen mutations, fourteen killed.
+
+
+## 40. A field the device treats as a select must never be a free text box
+
+`waf/web-protection-profile.inline-protection` has **twenty-one** keys that
+FortiWeb marks as selects (it ships a companion `<key>_val` for each) and only
+three of them were mapped in `REF_ENDPOINTS`. `descriptor()` falls through to
+`widget = "text"` for anything it cannot populate — deliberately, so an
+unknown field stays editable rather than rendering a dead dropdown — so the
+unmapped ones rendered as **free text next to dropdowns**, which reads as
+"type anything here" for a field that accepts exactly one vocabulary: the names
+of existing objects.
+
+What that costs is not cosmetic. FortiWeb answers a bad reference with
+`HTTP 500 / errcode -651: Invalid input value.` and the message names **neither
+the field nor the value**, and the PUT is refused **entirely**, so the correct
+fields in the same save are discarded too. Audit entries 1128 and 1129 on
+fortiweb08 are the same refusal seven seconds apart: between the two attempts
+the operator changed a *different* field, because nothing pointed anywhere.
+
+### 40a. "Empty", "absent" and "could not ask" are three states, not one
+
+`cmdb_names()` returns `[]` for all three, and they mean opposite things:
+
+| state | what it means | may we refuse the value? |
+|---|---|---|
+| `ok` with names | authoritative list | yes, if the value is not in it |
+| `ok`, empty | the collection exists and holds nothing | **yes** — this is the -651 case |
+| `absent` | the path does not exist on this firmware | yes, and say so |
+| `error` | transport / auth / license lock | **no** |
+
+`FortiWebClient.cmdb_names_checked()` returns `(names, status, error)` and is the
+only reader; `cmdb_names()` delegates to it. A second reader is how the dropdown
+and the validator would come to disagree about what exists.
+
+`error` never blocks. Refusing a legitimate change because a GET failed would
+make the editor unusable on a flaky box, and the device is still the authority —
+it answers -651 if the value really is wrong. The unchecked fields come back as
+`unverified_refs` so the weaker preview is visible instead of silent.
+
+### 40b. `-20001` is benign for a read and decisive for a validator
+
+`_BENIGN_ERRCODES` swallows `-20001` on purpose: the object registry is a
+cross-firmware superset, so a path missing here is not an error to a *browser*.
+A *validator* needs the opposite reading, which is why `_ABSENT_ERRCODES` exists
+separately. Verified live on fortiweb08 (8.0.x): an absent path answers
+HTTP 500 + `-20001`; an empty one answers HTTP 200 with no errcode. Probing with
+the benign-swallowing reader made **every** candidate path look valid — twenty-two
+of twenty-two, including `waf/definitely-not-a-collection`.
+
+### 40c. An unproven mapping is worse than no mapping
+
+Eight device-declared selects stay unmapped (`custom-response`, `grpc-policy`,
+`mitb-protection`, `ftp-protection-profile`, `adfs-certificate-service`,
+`certificate-group`, `urlcert-group`, `traffic-mirror-type`): every candidate
+path answered `-20001`, or the only plausible collection was a rename we could
+not prove. Mapping them would look more complete and would populate the dropdown
+from the wrong collection **and** make the validator reject values FortiWeb
+accepts. `test_unproven_collections_are_not_guessed_into_the_map` fails the build for anyone
+who adds one back without a live probe.
+
+### 40d. The check runs on the dry-run path too
+
+A preview that hides a certain refusal is worse than no preview: the operator
+approves a plan the device will reject. `_ref_guard` sits above the
+`FortiWebOps` call in `save_object`, `create_object`, `save_row` and
+`workspace.save`, and a guard asserts the *position*, not merely the presence,
+of the call in each — with docstrings and comments stripped first, because
+`workspace.save`'s own docstring says "FortiWebOps" above the check and made a
+correct function look like it validated after it wrote.
+
+### 40e. Where the check deliberately does NOT run
+
+Machine-driven writers — clone, migrate, exception injection, the new-policy
+wizard — legitimately bind objects they are creating in the same batch. A
+pre-write check there would reject a half-built tree that is correct by the time
+it lands. The rule is per **origin of the value**: operator-typed goes through
+the guard, machine-composed does not.
+
+### Verifying 40
+
+```
+pytest tests/test_ref_validate.py -q          # 47 guards
+```
+Reproduce the original failure without writing: POST the 1128/1129 payload
+(`url-rewrite-policy=test`, `user-tracking-policy=trk-shop`,
+`subresource-integrity-policy=admin`) to `/objedit/<id>/save-object` **without**
+`apply`. It must answer **400** naming `subresource-integrity-policy`, and the
+same POST minus that field must preview a PUT.
+

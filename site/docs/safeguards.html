@@ -5775,6 +5775,100 @@ two buttons is exactly how one of them ends up looking clickable and doing nothi
 No inline <code>on*</code> attributes: CSP sets <code>script-src-attr 'none'</code>, so an <code>onclick</code>
 here is refused by the browser rather than reported.</p>
 <p>Fourteen mutations, fourteen killed.</p>
+<h2 id="40-a-field-the-device-treats-as-a-select-must-never-be-a-free-text-box">40. A field the device treats as a select must never be a free text box</h2>
+<p><code>waf/web-protection-profile.inline-protection</code> has <strong>twenty-one</strong> keys that
+FortiWeb marks as selects (it ships a companion <code>&lt;key&gt;_val</code> for each) and only
+three of them were mapped in <code>REF_ENDPOINTS</code>. <code>descriptor()</code> falls through to
+<code>widget = "text"</code> for anything it cannot populate — deliberately, so an
+unknown field stays editable rather than rendering a dead dropdown — so the
+unmapped ones rendered as <strong>free text next to dropdowns</strong>, which reads as
+"type anything here" for a field that accepts exactly one vocabulary: the names
+of existing objects.</p>
+<p>What that costs is not cosmetic. FortiWeb answers a bad reference with
+<code>HTTP 500 / errcode -651: Invalid input value.</code> and the message names <strong>neither
+the field nor the value</strong>, and the PUT is refused <strong>entirely</strong>, so the correct
+fields in the same save are discarded too. Audit entries 1128 and 1129 on
+{device} are the same refusal seven seconds apart: between the two attempts
+the operator changed a <em>different</em> field, because nothing pointed anywhere.</p>
+<h3 id="40a-empty-absent-and-could-not-ask-are-three-states-not-one">40a. "Empty", "absent" and "could not ask" are three states, not one</h3>
+<p><code>cmdb_names()</code> returns <code>[]</code> for all three, and they mean opposite things:</p>
+<table>
+<thead>
+<tr>
+<th>state</th>
+<th>what it means</th>
+<th>may we refuse the value?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ok</code> with names</td>
+<td>authoritative list</td>
+<td>yes, if the value is not in it</td>
+</tr>
+<tr>
+<td><code>ok</code>, empty</td>
+<td>the collection exists and holds nothing</td>
+<td><strong>yes</strong> — this is the -651 case</td>
+</tr>
+<tr>
+<td><code>absent</code></td>
+<td>the path does not exist on this firmware</td>
+<td>yes, and say so</td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td>transport / auth / license lock</td>
+<td><strong>no</strong></td>
+</tr>
+</tbody>
+</table>
+<p><code>FortiWebClient.cmdb_names_checked()</code> returns <code>(names, status, error)</code> and is the
+only reader; <code>cmdb_names()</code> delegates to it. A second reader is how the dropdown
+and the validator would come to disagree about what exists.</p>
+<p><code>error</code> never blocks. Refusing a legitimate change because a GET failed would
+make the editor unusable on a flaky box, and the device is still the authority —
+it answers -651 if the value really is wrong. The unchecked fields come back as
+<code>unverified_refs</code> so the weaker preview is visible instead of silent.</p>
+<h3 id="40b-20001-is-benign-for-a-read-and-decisive-for-a-validator">40b. <code>-20001</code> is benign for a read and decisive for a validator</h3>
+<p><code>_BENIGN_ERRCODES</code> swallows <code>-20001</code> on purpose: the object registry is a
+cross-firmware superset, so a path missing here is not an error to a <em>browser</em>.
+A <em>validator</em> needs the opposite reading, which is why <code>_ABSENT_ERRCODES</code> exists
+separately. Verified live on {device} (8.0.x): an absent path answers
+HTTP 500 + <code>-20001</code>; an empty one answers HTTP 200 with no errcode. Probing with
+the benign-swallowing reader made <strong>every</strong> candidate path look valid — twenty-two
+of twenty-two, including <code>waf/definitely-not-a-collection</code>.</p>
+<h3 id="40c-an-unproven-mapping-is-worse-than-no-mapping">40c. An unproven mapping is worse than no mapping</h3>
+<p>Eight device-declared selects stay unmapped (<code>custom-response</code>, <code>grpc-policy</code>,
+<code>mitb-protection</code>, <code>ftp-protection-profile</code>, <code>adfs-certificate-service</code>,
+<code>certificate-group</code>, <code>urlcert-group</code>, <code>traffic-mirror-type</code>): every candidate
+path answered <code>-20001</code>, or the only plausible collection was a rename we could
+not prove. Mapping them would look more complete and would populate the dropdown
+from the wrong collection <strong>and</strong> make the validator reject values FortiWeb
+accepts. <code>test_unproven_collections_are_not_guessed_into_the_map</code> fails the build for anyone
+who adds one back without a live probe.</p>
+<h3 id="40d-the-check-runs-on-the-dry-run-path-too">40d. The check runs on the dry-run path too</h3>
+<p>A preview that hides a certain refusal is worse than no preview: the operator
+approves a plan the device will reject. <code>_ref_guard</code> sits above the
+<code>FortiWebOps</code> call in <code>save_object</code>, <code>create_object</code>, <code>save_row</code> and
+<code>workspace.save</code>, and a guard asserts the <em>position</em>, not merely the presence,
+of the call in each — with docstrings and comments stripped first, because
+<code>workspace.save</code>'s own docstring says "FortiWebOps" above the check and made a
+correct function look like it validated after it wrote.</p>
+<h3 id="40e-where-the-check-deliberately-does-not-run">40e. Where the check deliberately does NOT run</h3>
+<p>Machine-driven writers — clone, migrate, exception injection, the new-policy
+wizard — legitimately bind objects they are creating in the same batch. A
+pre-write check there would reject a half-built tree that is correct by the time
+it lands. The rule is per <strong>origin of the value</strong>: operator-typed goes through
+the guard, machine-composed does not.</p>
+<h3 id="verifying-40">Verifying 40</h3>
+<pre><code>pytest tests/test_ref_validate.py -q          # 47 guards
+</code></pre>
+<p>Reproduce the original failure without writing: POST the 1128/1129 payload
+(<code>url-rewrite-policy=test</code>, <code>user-tracking-policy=trk-shop</code>,
+<code>subresource-integrity-policy=admin</code>) to <code>/objedit/&lt;id&gt;/save-object</code> <strong>without</strong>
+<code>apply</code>. It must answer <strong>400</strong> naming <code>subresource-integrity-policy</code>, and the
+same POST minus that field must preview a PUT.</p>
     </div>
   </div>
 </section>

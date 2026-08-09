@@ -490,6 +490,15 @@ def save(appliance_id):
         ep = '%s%ssub_mkey=%s' % (endpoint, '&' if '?' in endpoint else '?', child_id)
     payload = {'data': dict(fields)}   # FortiWeb cmdb writes are {"data": {...}}
 
+    # Same pre-write reference check as the object editor: a value naming an
+    # object the device does not have is refused HERE, with the field name,
+    # instead of coming back as a mute -651 that also discards the good fields.
+    from ..services import ref_validate
+    problems, unverified = ref_validate.check(appl, fields)
+    if problems:
+        return jsonify(ok=False, error=ref_validate.message(problems),
+                       invalid_refs=problems), 400
+
     try:
         res = FortiWebOps(appl).update(ep, mkey, payload, dry_run=not do_apply)
     except Exception as exc:
@@ -512,7 +521,7 @@ def save(appliance_id):
     return jsonify(
         ok=res.ok, dry_run=res.get('dry_run'),
         request=res.get('request'), error=res.get('error', ''),
-        stale_carveouts=stale_marked,
+        stale_carveouts=stale_marked, unverified_refs=unverified,
     )
 
 

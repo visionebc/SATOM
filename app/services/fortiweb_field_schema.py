@@ -119,6 +119,37 @@ REF_ENDPOINTS: dict[str, str] = {
     "http-header-security": "waf/http-header-security",
     "cors-protection-policy": "waf/cors-protection-policy",
     "padding-oracle": "waf/padding-oracle",
+    # -- 2026-08-09: the WPP fields FortiWeb declares as selects (companion
+    # ``<key>_val``) but that had NO mapping here, so the editor rendered a free
+    # TEXT BOX for a field that only accepts the name of an existing object and
+    # the device answered a mute ``errcode -651 Invalid input value`` that never
+    # names the offending field (audit 1128/1129 on fortiweb08).
+    # Every collection below was probed live on fortiweb08 8.0.x: HTTP 200 with
+    # no errcode = the path exists (rows may be zero). Paths that answered
+    # HTTP 500 + errcode -20001 (absent on this firmware) are deliberately NOT
+    # mapped -- a wrong mapping is worse than none, because it would populate
+    # the dropdown from the wrong collection and reject valid values.
+    "advanced-bot-protection": "waf/advanced-bot-protection",
+    "application-layer-dos-prevention": "waf/application-layer-dos-prevention",
+    "client-side-protection-policy": "waf/client-side-protection-policy",
+    "dlp-policy": "waf/dlp.policy",
+    "file-compress-rule": "waf/file-compress-rule",
+    "file-exception-policy": "waf/file-exception-policy",
+    "graphql-validation-policy": "waf/graphql-validation.policy",
+    "http-authen-policy": "waf/http-authen.http-authen-policy",
+    "link-cloaking-policy": "waf/link-cloaking.link-cloaking-policy",
+    "mobile-api-protection": "waf/mobile-api-protection.mobile-api-protection-policy",
+    "quarantined-ip-trigger": "log/trigger-policy",
+    "site-publish-helper": "waf/site-publish-helper.policy",
+    "subresource-integrity-policy": "waf/subresource-integrity-policy",
+    "syntax-based-attack-detection": "waf/syntax-based-attack-detection",
+    "url-encryption-policy": "waf/url-encryption.url-encryption-policy",
+    "waiting-room-policy": "waf/waiting-room-policy",
+    "webshell-detection-policy": "waf/webshell-detection-policy",
+    "websocket-security-policy": "waf/websocket-security.policy",
+    # server policy
+    "acceleration-policy": "server-policy/acceleration.policy",
+    "trigger": "log/trigger-policy",
 }
 
 # References that offer "＋ Create New" (mirrors the FortiWeb GUI dropdown +).

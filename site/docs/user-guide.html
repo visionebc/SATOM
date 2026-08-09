@@ -359,6 +359,34 @@ used by the Configuration sections and the WAF area:</p>
   with an info banner; fields stay editable and Save still targets the device.</li>
 <li>Every save previews as a dry-run diff before applying.</li>
 </ul>
+<h3 id="71-reference-fields-are-checked-before-the-write">7.1 Reference fields are checked before the write</h3>
+<p>A <strong>reference field</strong> does not take free text: it names an object that must
+already exist on the appliance (a URL-rewrite policy, a user-tracking policy, a
+certificate…). If you save a name the device does not have, FortiWeb refuses the
+<strong>whole</strong> save with <code>errcode -651: Invalid input value.</code> — a message that names
+neither the field nor the value, and that also discards the correct fields you
+changed in the same save.</p>
+<p>SATOM asks the appliance first. When a value is not there you get a refusal that
+says which field, which value, which collection, and which names do exist:</p>
+<blockquote>
+<p><code>subresource-integrity-policy: "admin" — "waf/subresource-integrity-policy"
+has no configured objects on this device, so there is nothing
+"subresource-integrity-policy" can name yet</code></p>
+</blockquote>
+<p>Three things worth knowing:</p>
+<ul>
+<li>The check runs on <strong>Preview</strong> as well as on <strong>Apply</strong>. A preview that hid a
+  certain refusal would have you approve a plan the device will reject.</li>
+<li><strong>Nothing is written</strong> when a reference is refused — not even the fields that
+  were fine. Fix the value and save again.</li>
+<li>If the appliance cannot be reached for the check, the save is <strong>not</strong> blocked.
+  The response lists the fields it could not verify (<code>unverified_refs</code>); the
+  device remains the authority and will still answer -651 if the value is wrong.</li>
+</ul>
+<p>A field that offers a <strong>dropdown</strong> is a reference field. A few fields that the
+appliance treats as selects still render as text because the collection they
+draw from could not be confirmed on this firmware — those are passed to the
+device unchecked, exactly as before.</p>
 <h2 id="8-web-protection-waf">8. Web Protection (WAF)</h2>
 <p>FortiWeb ADOM → <strong>Web Protection</strong> reproduces the FortiWeb 7.6 Web Protection
 menu tree exactly: Known Attacks (Signatures / Custom Signature), Protocol,

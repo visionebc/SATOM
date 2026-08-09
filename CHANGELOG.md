@@ -6,6 +6,32 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The object editor no longer offers a free text box for a field that only
+  accepts the name of an existing object.** Twenty reference fields — eighteen
+  on the Web Protection Profile, two on the Server Policy — had no entry in the
+  schema's reference map, so they fell through to a plain text input while
+  their neighbours were dropdowns. A value typed there went to the appliance and
+  came back as `errcode -651: Invalid input value.`, which names neither the
+  field nor the value; FortiWeb refuses the whole write, so the good fields in
+  the same save were discarded with it. Each of the twenty collections was
+  probed on a live appliance before it was mapped, and the ones whose collection
+  could not be proven were deliberately left unmapped — a wrong mapping would
+  populate the dropdown from the wrong collection and reject valid values.
+
+### Added
+
+- **Reference fields are checked against the appliance before the write.** Every
+  operator-facing save and create resolves each submitted field to the cmdb
+  collection it selects from and asks the device whether the value is there,
+  on the preview path as well as on apply. The refusal names the field, the
+  value, the collection and the names that do exist. "Collection empty",
+  "collection absent on this firmware" and "could not ask the device" are kept
+  apart — all three answer with zero names and they mean opposite things, and
+  only the first two justify refusing. A device that cannot be read never
+  blocks a save; the affected fields come back as `unverified_refs`.
+
 ## [1.9.1] - 2026-08-09
 
 ### Fixed

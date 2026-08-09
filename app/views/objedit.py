@@ -431,6 +431,27 @@ def _template_lock_error(coll, name):
     return ''
 
 
+def _ref_guard(appl, fields, kind=''):
+    """``(refusal, unverified)`` for the reference fields in ``fields``.
+
+    ``refusal`` is a ready Flask ``(response, 400)`` when a submitted value
+    names an object the device does not have -- else None. ``unverified`` lists
+    the fields we could not check (the box did not answer); those never block.
+
+    FortiWeb refuses the WHOLE write with ``errcode -651: Invalid input value``
+    and names neither the field nor the value, so one bad reference also
+    discards the good fields in the same PUT and the operator has to find the
+    culprit by elimination. Runs on the DRY-RUN path too: a preview that hides a
+    certain refusal is worse than no preview.
+    """
+    from ..services import ref_validate
+    problems, unverified = ref_validate.check(appl, fields, kind)
+    if problems:
+        return (jsonify(ok=False, error=ref_validate.message(problems),
+                        invalid_refs=problems), 400), []
+    return None, unverified
+
+
 def _writethrough(appliance_id, coll, mkey, fields, op):
     """Phase 5: after an APPROVED apply, keep the local source of truth
     consistent (no full re-sweep) and release the edit lease. Best-effort."""
@@ -462,6 +483,9 @@ def save_object(appliance_id):
     lock = _template_lock_error(coll, mkey)
     if lock:
         return jsonify(ok=False, error=lock), 403
+    refusal, unverified = _ref_guard(appl, fields)
+    if refusal:
+        return refusal
     res = FortiWebOps(appl).update(objform.rest_path(coll), mkey, {'data': fields},
                                    dry_run=not do_apply)
     diff = None
@@ -484,7 +508,8 @@ def save_object(appliance_id):
         from ..services import write_through as _wt
         diff = _wt.diff_object(appliance_id, coll, mkey, fields)
     return jsonify(ok=res.ok, dry_run=res.get('dry_run'), request=res.get('request'),
-                   diff=diff, error=res.get('error', ''))
+                   diff=diff, error=res.get('error', ''),
+                   unverified_refs=unverified)
 
 
 @bp.route('/<int:appliance_id>/create-object', methods=['POST'])
@@ -521,10 +546,13 @@ def create_object(appliance_id):
         return jsonify(ok=False, error=lock), 403
     data = {k: v for k, v in fields.items() if v not in (None, '', [])}
     data['name'] = name
+    refusal, unverified = _ref_guard(appl, data)
+    if refusal:
+        return refusal
     res = FortiWebOps(appl).create(objform.rest_path(coll), {'data': data},
                                    dry_run=not do_apply)
     return jsonify(ok=res.ok, dry_run=res.get('dry_run'), request=res.get('request'),
-                   error=res.get('error', ''))
+                   error=res.get('error', ''), unverified_refs=unverified)
 
 
 @bp.route('/<int:appliance_id>/save-row', methods=['POST'])
@@ -549,6 +577,9 @@ def save_row(appliance_id):
     lock = _template_lock_error(coll, parent)
     if lock:
         return jsonify(ok=False, error=lock), 403
+    refusal, _unverified = _ref_guard(appl, fields)
+    if refusal:
+        return refusal
 
     ops = FortiWebOps(appl)
 

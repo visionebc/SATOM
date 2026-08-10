@@ -6677,6 +6677,64 @@ they cannot execute it. The behaviour itself is verified by rendering the page
 in a browser, which is also the only way to see that a hidden step is actually
 hidden — <code>.row</code> and <code>.fw-card</code> set <code>display</code>, and a class beats the UA
 stylesheet's <code>[hidden]</code> rule on equal specificity.</p>
+<h2 id="57-a-menu-present-in-one-adom-is-a-feature-the-other-four-do-not-have">§57. A menu present in one ADOM is a feature the other four do not have</h2>
+<p><strong>The defect class.</strong> Navigation is a claim about what the product can do, and
+an incomplete menu makes that claim false without failing. Until 2026-08-10 the
+Automation group was written into exactly ONE branch of <code>base.html</code> — FortiWeb.
+Scheduled Actions, Device Provisioning and Change Requests answered fine by URL
+from the Global, FortiADC, FortiAnalyzer and FortiAuthenticator consoles; there
+was simply no link. Nothing logged, nothing 500'd, and the four consoles looked
+complete. It is §53's shape (a brand never fails) applied to a menu, and it is
+how the Monitoring group drifted before it became <code>partials/nav_monitoring.html</code>.</p>
+<p><strong>Three layers have to agree, and each fails silently on its own.</strong></p>
+<ol>
+<li><strong>The menu.</strong> One author per group. Five copies of a <code>&lt;div&gt;</code> is five places
+   to forget the next entry — the state this section exists to end.</li>
+<li><strong>The router.</strong> <code>app/__init__.py</code> keeps <code>fortiweb_scoped</code> plus a per-ADOM
+   blueprint allowlist. A blueprint missing from an allowlist does not 403; it
+   <strong>redirects to the ADOM home</strong>. Rendering a link the router refuses produces
+   a live-looking entry that goes nowhere. <code>scheduled_actions</code> had to leave
+   <code>fortiweb_scoped</code> and join <code>adc_bps</code> / <code>faz_bps</code> / <code>fac_bps</code> — the same move
+   <code>change_requests</code> made on 2026-08-09, for the same reason.</li>
+<li><strong>The rows.</strong> Widening a page's audience turns every unscoped by-id route
+   into a cross-ADOM write. <code>scheduled_actions</code> had five (edit / toggle /
+   delete / run-now / history) reading <code>query.get_or_404(id)</code> straight off the
+   table while the list was scoped. Harmless while one ADOM could reach the
+   page; five holes the moment five can. Filtering the list and not the URL is
+   decoration, not scoping (§ the appliance fix of 2026-08-06).</li>
+</ol>
+<p><strong>A form is a hint; the server is the rule.</strong> The editor's action catalog is cut
+to <code>spec.products ∩ this ADOM</code>, and the POST re-checks both the action key and
+every selected target's kind. Without the second check the posted <code>action</code> field
+is a one-field ADOM jump, and in the Global console — which legitimately lists
+every product's boxes — aiming a FortiWeb-only action at a FortiAnalyzer is one
+click away. It would not raise: it would build a job with no transport for its
+own target and report success.</p>
+<p><strong>An empty roster is worse than a missing page.</strong> The editor's device picker was
+<code>visible_appliances().filter_by(kind='fortiweb')</code>. In any other ADOM that is an
+empty <code>&lt;select&gt;</code> — no error, no message, a form that cannot target anything and
+does not say so.</p>
+<p><strong>Not everything belongs everywhere, and the absence must be asserted.</strong> System
+Provisioning composes FortiWeb <code>cmdb</code> objects out of a registry stamped
+<code>product='fortiweb'</code>. Offering it in the FortiAnalyzer ADOM would fill the
+picker with objects the target does not have. Its absence is a guard in
+<code>tests/test_automation_adom_nav.py</code>, not an omission — otherwise the next person
+"completes" the menu and turns a missing entry into an outage.</p>
+<p><strong>Verification recipe.</strong></p>
+<pre><code># the group renders in EVERY ADOM (keys derived from the registry, never typed)
+pytest tests/test_automation_adom_nav.py -q
+# no second author:
+grep -c 'data-nav-group=&quot;Automation&quot;' app/templates/base.html        # -&gt; 0
+grep -c &quot;partials/nav_automation.html&quot; app/templates/base.html       # -&gt; 6
+# every link pins its ADOM (a hard navigation carries no X-ADOM header)
+grep -c &quot;_adom=product.key&quot; app/templates/partials/nav_automation.html
+</code></pre>
+<p><strong>The fixture that proved nothing.</strong> The first refusal test posted
+<code>action=config_sync</code> — not a catalog key. It passed with the ADOM guard
+DELETED, because <code>_apply_form</code> rejects an unknown key on the line above the one
+under test. That is the assert-by-substring family arriving through the
+<em>fixture</em> instead of the assertion, and it is now pinned by a test asserting the
+fixture keys are real and have exactly the product sets the file claims.</p>
     </div>
   </div>
 </section>

@@ -6737,3 +6737,69 @@ in a browser, which is also the only way to see that a hidden step is actually
 hidden — `.row` and `.fw-card` set `display`, and a class beats the UA
 stylesheet's `[hidden]` rule on equal specificity.
 
+## §57. A menu present in one ADOM is a feature the other four do not have
+
+**The defect class.** Navigation is a claim about what the product can do, and
+an incomplete menu makes that claim false without failing. Until 2026-08-10 the
+Automation group was written into exactly ONE branch of `base.html` — FortiWeb.
+Scheduled Actions, Device Provisioning and Change Requests answered fine by URL
+from the Global, FortiADC, FortiAnalyzer and FortiAuthenticator consoles; there
+was simply no link. Nothing logged, nothing 500'd, and the four consoles looked
+complete. It is §53's shape (a brand never fails) applied to a menu, and it is
+how the Monitoring group drifted before it became `partials/nav_monitoring.html`.
+
+**Three layers have to agree, and each fails silently on its own.**
+
+1. **The menu.** One author per group. Five copies of a `<div>` is five places
+   to forget the next entry — the state this section exists to end.
+2. **The router.** `app/__init__.py` keeps `fortiweb_scoped` plus a per-ADOM
+   blueprint allowlist. A blueprint missing from an allowlist does not 403; it
+   **redirects to the ADOM home**. Rendering a link the router refuses produces
+   a live-looking entry that goes nowhere. `scheduled_actions` had to leave
+   `fortiweb_scoped` and join `adc_bps` / `faz_bps` / `fac_bps` — the same move
+   `change_requests` made on 2026-08-09, for the same reason.
+3. **The rows.** Widening a page's audience turns every unscoped by-id route
+   into a cross-ADOM write. `scheduled_actions` had five (edit / toggle /
+   delete / run-now / history) reading `query.get_or_404(id)` straight off the
+   table while the list was scoped. Harmless while one ADOM could reach the
+   page; five holes the moment five can. Filtering the list and not the URL is
+   decoration, not scoping (§ the appliance fix of 2026-08-06).
+
+**A form is a hint; the server is the rule.** The editor's action catalog is cut
+to `spec.products ∩ this ADOM`, and the POST re-checks both the action key and
+every selected target's kind. Without the second check the posted `action` field
+is a one-field ADOM jump, and in the Global console — which legitimately lists
+every product's boxes — aiming a FortiWeb-only action at a FortiAnalyzer is one
+click away. It would not raise: it would build a job with no transport for its
+own target and report success.
+
+**An empty roster is worse than a missing page.** The editor's device picker was
+`visible_appliances().filter_by(kind='fortiweb')`. In any other ADOM that is an
+empty `<select>` — no error, no message, a form that cannot target anything and
+does not say so.
+
+**Not everything belongs everywhere, and the absence must be asserted.** System
+Provisioning composes FortiWeb `cmdb` objects out of a registry stamped
+`product='fortiweb'`. Offering it in the FortiAnalyzer ADOM would fill the
+picker with objects the target does not have. Its absence is a guard in
+`tests/test_automation_adom_nav.py`, not an omission — otherwise the next person
+"completes" the menu and turns a missing entry into an outage.
+
+**Verification recipe.**
+
+```
+# the group renders in EVERY ADOM (keys derived from the registry, never typed)
+pytest tests/test_automation_adom_nav.py -q
+# no second author:
+grep -c 'data-nav-group="Automation"' app/templates/base.html        # -> 0
+grep -c "partials/nav_automation.html" app/templates/base.html       # -> 6
+# every link pins its ADOM (a hard navigation carries no X-ADOM header)
+grep -c "_adom=product.key" app/templates/partials/nav_automation.html
+```
+
+**The fixture that proved nothing.** The first refusal test posted
+`action=config_sync` — not a catalog key. It passed with the ADOM guard
+DELETED, because `_apply_form` rejects an unknown key on the line above the one
+under test. That is the assert-by-substring family arriving through the
+*fixture* instead of the assertion, and it is now pinned by a test asserting the
+fixture keys are real and have exactly the product sets the file claims.

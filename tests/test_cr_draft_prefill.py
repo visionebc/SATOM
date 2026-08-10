@@ -364,3 +364,106 @@ def test_creating_a_change_still_stores_the_submitted_wording(app, client):
         assert cr.rollback == "Zurueck auf Partition 1."
         assert cr.owner == "operator"
         assert cr.notify_to == "ops@example.com"
+
+
+# --------------------------------------------------------------------------- #
+#  Question 2 has to be ANSWERABLE                                              #
+# --------------------------------------------------------------------------- #
+def _strip_js_comments(text: str) -> str:
+    """Line comments removed before asserting. Nine assertions in this repo have
+    matched the comment that EXPLAINS them (safeguards 7f); a comment naming the
+    construct a guard forbids is the tenth waiting to happen."""
+    return re.sub(r"^\s*//.*$", "", text, flags=re.M)
+
+
+def test_the_picker_opens_on_a_question_not_on_an_action(app, client):
+    """The dead end this closes, reproduced in a browser: with a real action
+    pre-selected, choosing THAT action fires no `change` event -- so an operator
+    arriving directly and wanting the first entry on the list clicked their
+    answer and watched nothing happen. No step 3, no proposed wording, no way
+    forward. Nothing failed; the page simply never learned the question had been
+    answered."""
+    login(client, admin_user_id(app))
+    html = client.get("/change-requests/new").get_data(as_text=True)
+    sel = html[html.index('id="cr-action"'):]
+    sel = sel[:sel.index("</select>")]
+    options = re.findall(r"<option[^>]*>", sel)
+    assert options, "the change-type picker lost its options"
+    # The opening entry carries no value: it is a question, not an answer.
+    assert 'value=""' in options[0] and "selected" in options[0], \
+        "the picker opens on a real action, which cannot be chosen"
+    # ...and no real action is pre-selected behind it.
+    for opt in options[1:]:
+        assert "selected" not in opt, "a change type is pre-selected: %s" % opt
+
+
+def test_a_cited_run_still_arrives_with_its_type_chosen(app, client):
+    """Coming from an appliance's pre-flight the type is decided by the link.
+    The question must NOT be re-asked there -- and the un-answerable entry must
+    not be sitting in front of the answer the link already gave."""
+    aid, pid = _appliance_with_prep(app)
+    login(client, admin_user_id(app))
+    html = client.get("/change-requests/new?prep_id=%d&action=upgrade" % pid
+                      ).get_data(as_text=True)
+    sel = html[html.index('id="cr-action"'):]
+    sel = sel[:sel.index("</select>")]
+    assert 'value=""' not in sel, "the prompt is offered on top of a chosen type"
+    m = re.search(r'<option value="upgrade"[^>]*>', sel)
+    assert m and "selected" in m.group(0), "the linked type is not selected"
+
+
+def test_the_question_is_not_a_submittable_change_type(app, client):
+    """An empty action reaching the executor would be a change request bound to
+    no action at all -- it saves, it prints, and it resolves to nothing when the
+    window opens, long after anyone could act on it."""
+    from app.models import ChangeRequest
+    login(client, admin_user_id(app))
+    with app.app_context():
+        before = ChangeRequest.query.count()
+    r = client.post("/change-requests/new", data={
+        "title": "No type at all", "action": "", "risk": "medium",
+        "doc_lang": "en"}, follow_redirects=True)
+    assert r.status_code == 200
+    with app.app_context():
+        assert ChangeRequest.query.count() == before, "an actionless change saved"
+    html = client.get("/change-requests/new").get_data(as_text=True)
+    m = re.search(r"<select[^>]*id=\"cr-action\"[^>]*>", html)
+    assert m and "required" in m.group(0), "the browser would submit the question"
+
+
+def test_the_question_is_asked_in_the_chosen_language(app, client, tpl):
+    """A German form whose picker still says "Choose the type of change" is the
+    same defect class as German prose in an English draft: it renders, it is
+    read, and only a human notices."""
+    login(client, admin_user_id(app))
+    html = client.get("/change-requests/new").get_data(as_text=True)
+    m = re.search(r"var PROMPT = (\{.*?\});\n", html, re.S)
+    assert m, "the prompt payload is gone from the page"
+    prompt = json.loads(m.group(1))
+    assert set(prompt) == set(LANG_CODES)
+    for code, text in prompt.items():
+        assert text.strip(), code
+        assert text == doc.action_placeholder(code)
+    assert len(set(prompt.values())) == len(LANG_CODES), \
+        "the two languages ask the question with the same words"
+    # Distinct is not the same as translated: two different English strings pass
+    # a distinctness check and leave a German form asking in English.
+    assert "\u00c4nderung" in prompt["de"], "the German prompt is not German"
+    assert "change" in prompt["en"].lower()
+    assert "change" not in prompt["de"].lower()
+    # The re-labeller has to handle the entry that has no catalogue label, or it
+    # silently leaves it in the language it was rendered in.
+    body = _strip_js_comments(
+        tpl[tpl.index("function relabelActions("):tpl.index("function grow(")])
+    assert "if (!opt.value)" in body and "PROMPT[code]" in body
+
+
+def test_answering_is_read_from_the_control_never_asserted(tpl):
+    """`actionAnswered = true` is the bug in one line: it makes returning to the
+    opening entry leave step 3 open over a proposal that describes no change at
+    all -- three filled-in fields for a change type nobody has chosen."""
+    body = _strip_js_comments(tpl[tpl.index("actionSel.addEventListener('change'"):])
+    body = body[:body.index("}")]
+    assert "actionAnswered = !!actionSel.value;" in body
+    assert "actionAnswered = true" not in _strip_js_comments(tpl), \
+        "the answer is asserted somewhere instead of read from the picker"

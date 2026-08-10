@@ -342,6 +342,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   survived three project renames in the first place.
 
 ### Fixed
+- **The change-type picker could not be answered with its own first entry.**
+  On `/change-requests/new` reached directly — no pre-flight run to cite — the
+  picker opened with the first change-controlled action *already selected*, and
+  the page only learned the question had been answered from a `change` event.
+  Choosing the entry that was already selected fires no such event, so an
+  operator who wanted that type clicked their answer and watched nothing happen:
+  step 3 never appeared and no wording was ever proposed. Nothing failed; the
+  page simply never heard the answer. It is the identical trap the language
+  radios were fixed for, left standing on the select beside them. The picker now
+  opens on a **question** (`— Choose the type of change — / — Art der Änderung
+  wählen —`, following the chosen language like every other proposed string),
+  carrying no value and marked `required`: every real choice is a change of
+  value, so it always fires. Returning to that entry closes step 3 again rather
+  than leaving three filled-in fields describing a change type nobody chose.
+  Arriving from an appliance's pre-flight page is unaffected — the link already
+  answers question 2, and the question is not re-asked in front of its answer.
 - `Appliance._own_client()` returned a **FortiWeb** client for a
   FortiAuthenticator, so every generic caller spoke the wrong dialect to a FAC:
   `probe_status()` reported `fac01` OFFLINE (measured) while its own client

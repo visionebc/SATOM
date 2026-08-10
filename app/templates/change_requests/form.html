@@ -82,13 +82,18 @@
       <div class="row g-3">
         <div class="col-md-8">
           <label class="fw-form-label">Change type <span class="text-danger">*</span></label>
-          <select class="form-select" name="action" id="cr-action">
+          <select class="form-select" name="action" id="cr-action" required>
+            {% if not preset_action %}
+            <option value="" id="cr-action-prompt" selected>{{ action_prompt['en'] }}</option>
+            {% endif %}
             {% for key, label in cr_actions %}
             <option value="{{ key }}" {{ 'selected' if key == preset_action else '' }}>{{ label }}</option>
             {% endfor %}
           </select>
-          <div class="form-text">Only change-controlled actions appear here. The executor
-            refuses to run any of them outside an approved window.</div>
+          <div class="form-text">Nothing is pre-selected: the first entry on the list is not
+            a default, and picking an entry that was already selected would answer the
+            question without the page ever hearing it. Only change-controlled actions appear
+            here, and the executor refuses to run any of them outside an approved window.</div>
         </div>
         <div class="col-md-4">
           <label class="fw-form-label">Risk</label>
@@ -264,6 +269,7 @@
   var LABELS = {{ action_labels|tojson }};
   var TOKEN = {{ devices_token|tojson }};
   var NONE = {{ devices_none|tojson }};
+  var PROMPT = {{ action_prompt|tojson }};
   var DEFAULTS = {{ defaults|tojson }};
 
   var form = document.getElementById('cr-form');
@@ -338,6 +344,9 @@
     if (!actionSel) { return; }
     var code = lang();
     Array.prototype.forEach.call(actionSel.options, function (opt) {
+      // The opening entry is a question, not an action: it has no label in the
+      // catalogue and would otherwise stay in English inside a German form.
+      if (!opt.value) { opt.textContent = PROMPT[code] || opt.textContent; return; }
       var per = LABELS[opt.value];
       if (per && per[code]) { opt.textContent = per[code]; }
     });
@@ -395,7 +404,10 @@
 
   if (actionSel) {
     actionSel.addEventListener('change', function () {
-      actionAnswered = true;
+      // Derived from the value, never set to a literal: going back to the
+      // opening entry un-answers the question, and step 3 must not stay open
+      // over a proposal that describes no change at all.
+      actionAnswered = !!actionSel.value;
       paint(false);
       reveal();
     });
@@ -428,7 +440,9 @@
   // Arriving from an appliance's pre-flight page the change type is already
   // decided by the link, so question 2 is answered on load - but question 1
   // still has to be asked, which is the whole point of asking it first.
-  {% if preset_action %}actionAnswered = true;{% endif %}
+  // Read from the control rather than from the template: a browser restoring a
+  // previous selection on reload answers question 2 just as the link does.
+  actionAnswered = !!(actionSel && actionSel.value);
   markLang();
   relabelActions();
   paint(false);

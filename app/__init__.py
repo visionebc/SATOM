@@ -1583,6 +1583,10 @@ def create_app(config_override: object | None = None) -> Flask:
             # the first time an operator opens it.
             from . import models_provision  # noqa: F401
             from . import models_advisor  # noqa: F401
+            # Translation catalogue + the ledger of what producing
+            # it cost. Without this import create_all() never makes
+            # the tables and the first save 500s.
+            from . import models_i18n  # noqa: F401
             db.create_all()
             _ensure_columns()
             # After the additive pass: a column that already existed may be

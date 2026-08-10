@@ -6895,3 +6895,61 @@ the guard names the literal the guard forbids). And the first mutation run
 found a real survivor: `answerLang()` still assigned `langAnswered = true`
 while the load path derived it — two authors of the same fact, one of which
 cannot be wrong and one of which can.
+
+
+## §60. A translation is a second author who cannot be asked what they meant
+
+Three defects in this area, and not one of them raises anything.
+
+**The reader that never read.** `translator.translate()` took the reply off the
+provider result with `getattr(res, "content", "")`. The field is `text`. The
+default turned a typo into an empty string, and the empty string was reported as
+*"the provider returned an empty translation"* — a sentence that sends the
+operator to look at the model. Attribute access is now direct, so a renamed
+field raises here instead of degrading into a plausible provider fault.
+
+The reason it survived review is worth more than the fix: the guard that
+covered this path built its **own** result object, and named the attribute the
+same wrong way. A test double for a provider result must BE the provider result.
+`test_the_provider_double_is_the_production_class` asserts `ChatResult` has no
+`.content`.
+
+**Tokens are not preserved by asking.** A small multilingual model translates
+the word inside a placeholder: `{devices}` → `{dispositivos}`, `{action}` →
+`{azione}`, `` `approved_by` `` → `` `aprobado_por` ``. The renderer then either
+prints `{dispositivos}` verbatim (`_Keep.__missing__`) or silently omits the
+appliance list. Both survive into a signed document. So the tokens are **masked**
+to `[[n]]` before the call and restored after; what remains is checked, retried
+once, and refused rather than stored.
+
+Isolate each branch when testing this. The realistic sample
+(`` `fortiweb08` `` → `` `{fortiweb08}` ``) trips the invented-placeholder AND the
+altered-literal check, so deleting either one still fails the test — and the
+mutation reads as covered. Two mutations survived here until the cases were
+split.
+
+**A fence is matched by shape, then judged against the source.** The model
+returns the untrusted-input delimiter, translated, in shapes that keep
+changing: on its own line, inline with the first words, with a broken closer
+(`>>/>>`), with an added full stop, as `<<(...)>>`. A line-anchored matcher
+caught the tidy case and let the rest into the catalogue. Both ends are now
+stripped by shape; anything left is residue **if the source did not contain it**
+— enumerating known shapes is a race that runs one shape behind.
+
+Do not `strip("`")` on the way out: a reply that is one whole ``` block has to
+reach the code-fence branch, and eating its backticks first left the language
+tag inside the stored text.
+
+**Completeness is measured, not declared.** `cr_document.LANGS` was a
+module-level tuple, so it could only ever describe the languages authored in
+Python — every picker reading it was blind to the catalogue. It is gone;
+`document_langs()` is the one answer, and it asks `cr_i18n.coverage()` whether
+all 292 units exist, are not stale, and carry no delimiter residue. A polluted
+row is not a translation: counting it reports a language COMPLETE while the
+document prints the delimiter.
+
+**Recipe.** `venv/bin/python -m pytest tests/test_cr_doc_i18n.py
+tests/test_i18n_foundation.py tests/test_cr_document.py -q` (rc, not the tail of
+the output). Mutation harnesses: `/root/mutate_crdoc_i18n.py` (25) and
+`/root/mutate_crdoc_i18n_2.py` (4 line-anchored). Both restore the file with
+`shutil.move`, which leaves it **root-owned** — `chown satom:satom` afterwards.

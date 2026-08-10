@@ -7,6 +7,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+
+- **Change documents are produced in five languages, and a language is offered
+  only when it can actually be produced.** Spanish, French and Italian join
+  English and German. The prose is not a fourth and fifth copy of the action
+  profiles in Python — it lives in the translation catalogue and is overlaid on
+  the authored English at render time, so the original stays the single author
+  of every sentence.
+  The gate is now **measured, not declared**. The picker previously read a
+  hardcoded set of authored languages; it now asks whether every one of the 292
+  strings a document can print exists for that language and is not stale. One
+  missing or outdated unit withdraws the whole language, because the failure it
+  prevents is a document half in Spanish and half in English *under an
+  approver's signature line* — which raises nothing and looks finished.
 - **Your language is a profile preference, and the change document stops
   guessing it.** **Profile → Language** stores the language you work in against
   your account in the database — not a cookie, and not shared with other users —
@@ -439,6 +452,27 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   survived three project renames in the first place.
 
 ### Fixed
+
+- **The translation layer had never produced a single translation.** It read
+  `.content` off the provider result, whose field is `.text`, through a
+  `getattr` with a default — so every call returned an empty string and was
+  reported to the operator as *"the provider returned an empty translation"*,
+  blaming the model for a reader bug. The test that covered it built its own
+  stand-in object carrying the misspelled attribute, so the test and the defect
+  agreed with each other. The double is now the production class.
+- **A translated string can no longer corrupt the document it is written into.**
+  Placeholders (`{devices}`, `{action}`, `%s`) and backticked identifiers are
+  hidden from the model behind markers rather than requested back: asked to
+  preserve them, the model translated the words inside them — `{devices}` came
+  back as `{dispositivos}`, `` `approved_by` `` as `` `aprobado_por` ``. A reply
+  that still drops, invents or alters one gets a single corrective retry and is
+  then refused, never stored.
+- **Echoed delimiters no longer reach the catalogue.** The model translates the
+  untrusted-input fence it is told to ignore, in shapes that keep changing
+  (`<<<FIN NO CONFIABLE>>>`, `<<<NON FIDATO>>/>>`, `<<(fin de UNTRUSTED)>>`).
+  Both ends of a reply are now stripped by shape, and anything left is judged
+  against the source rather than against a list of known shapes — enumerating
+  them is a race that always runs one shape behind.
 - **The change-type picker could not be answered with its own first entry.**
   On `/change-requests/new` reached directly — no pre-flight run to cite — the
   picker opened with the first change-controlled action *already selected*, and

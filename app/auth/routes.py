@@ -318,7 +318,7 @@ def profile():
         # the product cannot honour yet must SAY so on the page where it is
         # set, not fail to appear later on a form the operator is mid-way
         # through.
-        doc_langs=[code for code, _label in cr_document.LANGS],
+        doc_langs=[code for code, _label in cr_document.document_langs()],
         settings=store.general(),
         banner_templates=store.BANNER_TEMPLATES,
         banners=user_store.all_banners(current_user.id),

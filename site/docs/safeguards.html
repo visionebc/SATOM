@@ -6825,6 +6825,53 @@ the guard names the literal the guard forbids). And the first mutation run
 found a real survivor: <code>answerLang()</code> still assigned <code>langAnswered = true</code>
 while the load path derived it — two authors of the same fact, one of which
 cannot be wrong and one of which can.</p>
+<h2 id="60-a-translation-is-a-second-author-who-cannot-be-asked-what-they-meant">§60. A translation is a second author who cannot be asked what they meant</h2>
+<p>Three defects in this area, and not one of them raises anything.</p>
+<p><strong>The reader that never read.</strong> <code>translator.translate()</code> took the reply off the
+provider result with <code>getattr(res, "content", "")</code>. The field is <code>text</code>. The
+default turned a typo into an empty string, and the empty string was reported as
+<em>"the provider returned an empty translation"</em> — a sentence that sends the
+operator to look at the model. Attribute access is now direct, so a renamed
+field raises here instead of degrading into a plausible provider fault.</p>
+<p>The reason it survived review is worth more than the fix: the guard that
+covered this path built its <strong>own</strong> result object, and named the attribute the
+same wrong way. A test double for a provider result must BE the provider result.
+<code>test_the_provider_double_is_the_production_class</code> asserts <code>ChatResult</code> has no
+<code>.content</code>.</p>
+<p><strong>Tokens are not preserved by asking.</strong> A small multilingual model translates
+the word inside a placeholder: <code>{devices}</code> → <code>{dispositivos}</code>, <code>{action}</code> →
+<code>{azione}</code>, <code>`approved_by`</code> → <code>`aprobado_por`</code>. The renderer then either
+prints <code>{dispositivos}</code> verbatim (<code>_Keep.__missing__</code>) or silently omits the
+appliance list. Both survive into a signed document. So the tokens are <strong>masked</strong>
+to <code>[[n]]</code> before the call and restored after; what remains is checked, retried
+once, and refused rather than stored.</p>
+<p>Isolate each branch when testing this. The realistic sample
+(<code>`{device}`</code> → <code>`{{device}}`</code>) trips the invented-placeholder AND the
+altered-literal check, so deleting either one still fails the test — and the
+mutation reads as covered. Two mutations survived here until the cases were
+split.</p>
+<p><strong>A fence is matched by shape, then judged against the source.</strong> The model
+returns the untrusted-input delimiter, translated, in shapes that keep
+changing: on its own line, inline with the first words, with a broken closer
+(<code>&gt;&gt;/&gt;&gt;</code>), with an added full stop, as <code>&lt;&lt;(...)&gt;&gt;</code>. A line-anchored matcher
+caught the tidy case and let the rest into the catalogue. Both ends are now
+stripped by shape; anything left is residue <strong>if the source did not contain it</strong>
+— enumerating known shapes is a race that runs one shape behind.</p>
+<p>Do not <code>strip("</code>")` on the way out: a reply that is one whole ``` block has to
+reach the code-fence branch, and eating its backticks first left the language
+tag inside the stored text.</p>
+<p><strong>Completeness is measured, not declared.</strong> <code>cr_document.LANGS</code> was a
+module-level tuple, so it could only ever describe the languages authored in
+Python — every picker reading it was blind to the catalogue. It is gone;
+<code>document_langs()</code> is the one answer, and it asks <code>cr_i18n.coverage()</code> whether
+all 292 units exist, are not stale, and carry no delimiter residue. A polluted
+row is not a translation: counting it reports a language COMPLETE while the
+document prints the delimiter.</p>
+<p><strong>Recipe.</strong> <code>venv/bin/python -m pytest tests/test_cr_doc_i18n.py
+tests/test_i18n_foundation.py tests/test_cr_document.py -q</code> (rc, not the tail of
+the output). Mutation harnesses: <code>/root/mutate_crdoc_i18n.py</code> (25) and
+<code>/root/mutate_crdoc_i18n_2.py</code> (4 line-anchored). Both restore the file with
+<code>shutil.move</code>, which leaves it <strong>root-owned</strong> — <code>chown satom:satom</code> afterwards.</p>
     </div>
   </div>
 </section>

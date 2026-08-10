@@ -313,6 +313,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   reference, every `site/` page with a `class="brand"` must show the mark, and
   the generator template must stamp the same string the pages carry — a page
   fixed by hand is reverted by the next regeneration.
+- **The installation manual is in English.** `docs/INSTALL.md` was the only
+  document in the manual written in Spanish — and it is the one handed to a
+  systems team alongside the privilege request, so its reader is the one least
+  likely to share the author's language. Nothing failed: the page rendered, the
+  public site published it, every cross-reference resolved. It simply could not
+  be acted on by the people it is addressed to. Section numbering, every command
+  block and every path are unchanged, so the `§` citations from `README.md`,
+  `cli.md`, `safeguards.md` and this changelog still land where they did.
 
 ### Removed
 - **The appearance preset named after the vendor.** `LOGIN_BG_PRESETS` shipped

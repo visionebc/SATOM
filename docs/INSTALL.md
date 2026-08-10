@@ -1,198 +1,201 @@
-# SATOM — Manual de instalación
+# SATOM — Installation manual
 
-**Producto:** SATOM (System Automation & Task Orchestration Manager) — consola web de
-gestión/automatización para FortiWeb, FortiADC y FortiAnalyzer.
-**Versión del manual:** 1.2 · **Destino:** Debian 12 (bookworm) amd64 de referencia;
-también RHEL/Rocky/Alma 9, openSUSE y Arch (ver §1.4).
+**Product:** SATOM (System Automation & Task Orchestration Manager) — web console for
+managing and automating FortiWeb, FortiADC and FortiAnalyzer.
+**Manual version:** 1.2 · **Target:** Debian 12 (bookworm) amd64 as the reference;
+also RHEL/Rocky/Alma 9, openSUSE and Arch (see §1.4).
 
-Este documento está pensado para entregarse al **equipo de sistemas** junto con la
-solicitud de permisos. Contiene todo lo que el instalador hace, qué necesita y cómo
-revertirlo.
+This document is meant to be handed to the **systems team** together with the
+privilege request. It contains everything the installer does, what it needs and how
+to undo it.
 
 ---
 
-## 1. Requisitos
+## 1. Requirements
 
-### 1.1 Hardware mínimo (por nodo)
-| Recurso | Mínimo | Recomendado |
+### 1.1 Minimum hardware (per node)
+| Resource | Minimum | Recommended |
 |---|---|---|
 | CPU | 2 vCPU | 4 vCPU |
 | RAM | 2 GB | 4 GB |
-| Disco | 15 GB | 30 GB (crece con backups/reportes) |
+| Disk | 15 GB | 30 GB (grows with backups/reports) |
 
 ### 1.2 Software
-- Distribución con **systemd como PID 1** (Alpine/musl no está soportado).
-  Referencia: Debian 12 amd64. Soportadas también RHEL/Rocky/Alma 9, openSUSE
-  y Arch — el instalador detecta el gestor de paquetes.
-- **Una cuenta con `sudo` acotado al instalador** durante la ventana de
-  instalación — **no hace falta entregar la contraseña de root** (§5 trae la
-  regla `sudoers` lista para copiar). Los pasos privilegiados se siguen
-  ejecutando como root, porque crear cuentas, instalar paquetes y escribir
-  unidades de systemd *es* root; lo que se evita es una sesión root
-  interactiva y anónima. El instalador comprueba antes de nada que **puede
-  escribir de verdad** en `/opt`, `/etc`, `/etc/systemd/system`, `/var/log` y
-  `/usr/local/sbin`: en un contenedor no privilegiado o con `/` en sólo
-  lectura, ser uid 0 no basta.
-- **La aplicación instalada NO corre como root**: usa una cuenta de servicio
-  sin shell y una allowlist de dos comandos `sudo` (§5 y
+- A distribution with **systemd as PID 1** (Alpine/musl is not supported).
+  Reference: Debian 12 amd64. RHEL/Rocky/Alma 9, openSUSE and Arch are also
+  supported — the installer detects the package manager.
+- **An account with `sudo` scoped to the installer** for the duration of the
+  installation window — **the root password does not have to be handed over**
+  (§5 ships the `sudoers` rule ready to copy). The privileged steps still run
+  as root, because creating accounts, installing packages and writing systemd
+  units *is* root; what is avoided is an interactive, anonymous root session.
+  Before anything else the installer checks that it **can really write** to
+  `/opt`, `/etc`, `/etc/systemd/system`, `/var/log` and `/usr/local/sbin`: in an
+  unprivileged container, or with `/` mounted read-only, being uid 0 is not
+  enough.
+- **The installed application does NOT run as root**: it uses a shell-less
+  service account and a two-command `sudo` allowlist (§5 and
   [`privilege-model.md`](privilege-model.md)).
-- Python **>= 3.10** (lo exigen las dependencias pinneadas). Si no está, el
-  instalador instala el de la distribución.
-- **Online:** salida HTTPS a los mirrors de la distro + PyPI + el repositorio
-  git del producto.
-- **Offline:** ninguna salida a Internet — el bundle trae todo.
+- Python **>= 3.10** (required by the pinned dependencies). If it is missing,
+  the installer installs the distribution's own.
+- **Online:** HTTPS egress to the distribution mirrors + PyPI + the product's
+  git repository.
+- **Offline:** no Internet egress at all — the bundle carries everything.
 
-> Comprueba la máquina **sin instalar nada** con
-> `sudo bash install-satom.sh --preflight` (ver §1.6).
+> Check the machine **without installing anything** with
+> `sudo bash install-satom.sh --preflight` (see §1.6).
 
-### 1.3 Red / puertos
-| Puerto | Uso | Quién debe alcanzarlo |
+### 1.3 Network / ports
+| Port | Use | Who must reach it |
 |---|---|---|
-| `<puerto elegido>` (defecto 443) | Consola web HTTPS | operadores |
-| 80/tcp | Redirección a HTTPS + challenge ACME (`/.well-known/acme-challenge/`) | operadores y, si se usa ACME público, la CA |
-| 8443/tcp | Sondas de salud entre nodos (TLS + clave de identidad compartida) | el otro nodo (solo cluster) |
-| 5432/tcp | Réplica Postgres (solo cluster, TLS `verify-ca` forzado) | el otro nodo |
-| 22/tcp | Sync de `data/` por rsync/SSH (solo cluster) | el otro nodo |
-| salida hacia los Fortinet | HTTPS/SSH de gestión | este nodo → appliances |
+| `<chosen port>` (default 443) | HTTPS web console | operators |
+| 80/tcp | Redirect to HTTPS + ACME challenge (`/.well-known/acme-challenge/`) | operators and, if public ACME is used, the CA |
+| 8443/tcp | Node-to-node health probes (TLS + shared identity key) | the other node (cluster only) |
+| 5432/tcp | Postgres replication (cluster only, TLS `verify-ca` enforced) | the other node |
+| 22/tcp | `data/` sync over rsync/SSH (cluster only) | the other node |
+| egress to the Fortinet devices | management HTTPS/SSH | this node → appliances |
 
-Los puertos 80 y 8443 son **fijos**; el de la consola se elige en la
-instalación. El preflight avisa si alguno está ya ocupado y por qué proceso.
+Ports 80 and 8443 are **fixed**; the console port is chosen at installation
+time. The preflight warns if any of them is already taken, and by which process.
 
-### 1.4 Paquetería que se instala (para aprobación previa de sistemas)
+### 1.4 Packages that get installed (for prior approval by the systems team)
 
-El instalador **no compila nada** y sólo usa los repositorios oficiales de la
-distribución. Esta es la lista completa y exacta — el mismo contenido que las
-listas `REQUIRED_PKGS` del script:
+The installer **compiles nothing** and only uses the distribution's official
+repositories. This is the complete and exact list — the same content as the
+script's `REQUIRED_PKGS` lists:
 
-| Concepto | Debian / Ubuntu (`apt`) | RHEL / Rocky / Alma 9 (`dnf`,`yum`) | openSUSE (`zypper`) | Arch (`pacman`) | Para qué |
+| Concept | Debian / Ubuntu (`apt`) | RHEL / Rocky / Alma 9 (`dnf`,`yum`) | openSUSE (`zypper`) | Arch (`pacman`) | What for |
 |---|---|---|---|---|---|
-| Python >= 3.10 | `python3` `python3-venv` `python3-pip` | `python3.11` `python3.11-pip` | `python311` `python311-pip` | `python` `python-pip` | ejecutar la app en su propio venv |
-| Base de datos | `postgresql` | `postgresql-server` `postgresql` | `postgresql-server` `postgresql` | `postgresql` | fuente de verdad (BD `satom`) |
-| Servidor web | `nginx` | `nginx` | `nginx` | `nginx` | TLS y proxy inverso hacia gunicorn |
-| Sincronización | `rsync` | `rsync` | `rsync` | `rsync` | copia de `data/` entre nodos |
-| Criptografía | `openssl` `ca-certificates` | `openssl` `ca-certificates` | `openssl` `ca-certificates` | `openssl` `ca-certificates` | PKI interna, CSR, validación TLS |
-| Descargas | `curl` | `curl` | `curl` | `curl` | cliente ACME, sondas HTTP |
-| Privilegios | `sudo` | `sudo` | `sudo` | `sudo` | allowlist de **dos** comandos del runtime (§5) |
-| Código — solo **ONLINE** | `git` | `git` | `git` | `git` | clonar el repositorio de producción |
-| SSH — solo **CLUSTER** | `openssh-client` `openssh-server` | `openssh-clients` `openssh-server` | `openssh` | `openssh` | canal rsync/SSH entre nodos |
+| Python >= 3.10 | `python3` `python3-venv` `python3-pip` | `python3.11` `python3.11-pip` | `python311` `python311-pip` | `python` `python-pip` | run the app in its own venv |
+| Database | `postgresql` | `postgresql-server` `postgresql` | `postgresql-server` `postgresql` | `postgresql` | source of truth (database `satom`) |
+| Web server | `nginx` | `nginx` | `nginx` | `nginx` | TLS and reverse proxy to gunicorn |
+| Synchronisation | `rsync` | `rsync` | `rsync` | `rsync` | copy of `data/` between nodes |
+| Cryptography | `openssl` `ca-certificates` | `openssl` `ca-certificates` | `openssl` `ca-certificates` | `openssl` `ca-certificates` | internal PKI, CSR, TLS validation |
+| Downloads | `curl` | `curl` | `curl` | `curl` | ACME client, HTTP probes |
+| Privileges | `sudo` | `sudo` | `sudo` | `sudo` | the runtime's **two**-command allowlist (§5) |
+| Code — **ONLINE** only | `git` | `git` | `git` | `git` | clone the production repository |
+| SSH — **CLUSTER** only | `openssh-client` `openssh-server` | `openssh-clients` `openssh-server` | `openssh` | `openssh` | rsync/SSH channel between nodes |
 
-Notas que sistemas suele preguntar:
+Notes the systems team usually asks about:
 
-- **En modo OFFLINE no se descarga ninguno**: el bundle trae el cierre completo
-  de dependencias (`.deb`, o un repositorio `dnf` local para EL9) y las `wheels`.
-- Las dependencias de Python **no se instalan a nivel de sistema**: viven en
-  `/opt/satom/venv`. `pip` nunca toca el Python del sistema.
-- Un nodo **standalone no recibe `openssh-server`**: sólo se instala si eliges
-  modo cluster, porque el standby sincroniza `data/` tirando por SSH del primary.
-- **`lego`** (cliente ACME, opcional) no es un paquete de la distribución: es un
-  binario estático que va a `/usr/local/bin/lego`, con `sha256` verificado, o se
-  copia de `bundle/lego/` en modo offline.
-- Al desinstalar **los paquetes se dejan instalados** a propósito (§6).
+- **In OFFLINE mode none of them is downloaded**: the bundle carries the full
+  dependency closure (`.deb`, or a local `dnf` repository for EL9) and the
+  `wheels`.
+- Python dependencies are **not installed system-wide**: they live in
+  `/opt/satom/venv`. `pip` never touches the system Python.
+- A **standalone node does not get `openssh-server`**: it is only installed if
+  you pick cluster mode, because the standby syncs `data/` by pulling from the
+  primary over SSH.
+- **`lego`** (the ACME client, optional) is not a distribution package: it is a
+  static binary that goes to `/usr/local/bin/lego`, with a verified `sha256`, or
+  is copied from `bundle/lego/` in offline mode.
+- On uninstall **the packages are deliberately left installed** (§6).
 
-### 1.5 Lo que debe traer la imagen base (el instalador NO lo instala)
+### 1.5 What the base image must already provide (the installer does NOT install it)
 
-Si alguno falta, la imagen es demasiado mínima y el preflight lo dice por su
-nombre en lugar de morir a mitad de instalación:
+If any of these is missing, the image is too minimal and the preflight names it
+instead of dying halfway through the installation:
 
-| Utilidad | Paquete habitual | Uso |
+| Utility | Usual package | Use |
 |---|---|---|
-| `useradd` `usermod` `passwd` | `shadow` / `passwd` | crear la cuenta de servicio sin shell |
-| `runuser` | `util-linux` | operaciones como `postgres` y como la cuenta de servicio |
-| `install` `df` `tar` | `coreutils`, `tar` | despliegue de ficheros y comprobación de espacio |
-| `awk` `sed` `grep` `hostname` | `gawk`/`busybox`, `sed`, `grep`, `hostname` | scripting del instalador |
-| `ss` *(opcional)* | `iproute2` | comprobar puertos ocupados; sin él sólo se avisa |
-| systemd como **PID 1** | — | todo el ciclo de vida de servicios |
+| `useradd` `usermod` `passwd` | `shadow` / `passwd` | create the shell-less service account |
+| `runuser` | `util-linux` | operations as `postgres` and as the service account |
+| `install` `df` `tar` | `coreutils`, `tar` | file deployment and free-space check |
+| `awk` `sed` `grep` `hostname` | `gawk`/`busybox`, `sed`, `grep`, `hostname` | installer scripting |
+| `ss` *(optional)* | `iproute2` | check for busy ports; without it you only get a warning |
+| systemd as **PID 1** | — | the whole service lifecycle |
 
-### 1.5b Notas por distribución (validadas en instalación real)
+### 1.5b Per-distribution notes (validated on real installations)
 
-**openSUSE Leap 15.6 / SLES 15** — la familia `zypper` funciona, con dos
-salvedades que NO son de SATOM sino de la imagen base:
+**openSUSE Leap 15.6 / SLES 15** — the `zypper` family works, with two caveats
+that are NOT SATOM's but the base image's:
 
-- **`libexpat` desactualizado rompe la creación del venv.** El `python311` de
-  los mirrors actuales está compilado contra `libexpat` 2.7.x; una imagen del
-  template trae 2.4.4 y `zypper install python311` **no actualiza una
-  dependencia que ya está instalada**. Síntoma:
+- **An outdated `libexpat` breaks venv creation.** The `python311` on the
+  current mirrors is built against `libexpat` 2.7.x; a template image ships
+  2.4.4 and `zypper install python311` **does not upgrade a dependency that is
+  already installed**. Symptom:
   `pyexpat.cpython-311.so: undefined symbol: XML_SetAllocTrackerActivationThreshold`
-  y `python3.11 -m venv` aborta en `ensurepip`. Remedio previo a instalar:
+  and `python3.11 -m venv` aborting in `ensurepip`. Fix before installing:
   ```bash
   sudo zypper --non-interactive update libexpat1
   ```
-- **No existe `/usr/bin/python3`.** El binario es `python3.11`. El instalador
-  lo resuelve con `pick_python()` y usa `$PYBIN` en todas partes; sólo importa
-  si se ejecutan a mano fragmentos del manual.
-- **El vhost va a `/etc/nginx/vhosts.d/`**, no a `conf.d/`: el `nginx.conf` de
-  fábrica de openSUSE incluye `conf.d/*.conf` **dos veces** (todo lo que se
-  deje ahí se parsea duplicado) y trae un `server` propio en el puerto 80 que
-  choca con el `default_server` de SATOM. El instalador elige `vhosts.d`
-  automáticamente y neutraliza el bloque de fábrica.
-- **`sshd` no viene activo** en el template LXC de openSUSE. El instalador lo
-  habilita él mismo en modo **cluster** (el standby hace *pull* de `data/` por
-  SSH y sin eso la réplica de ficheros no existe); en **standalone** no lo
-  toca, así que si la máquina se administra por SSH hay que habilitarlo a mano.
+- **There is no `/usr/bin/python3`.** The binary is `python3.11`. The installer
+  resolves it with `pick_python()` and uses `$PYBIN` everywhere; it only matters
+  if you run fragments of this manual by hand.
+- **The vhost goes to `/etc/nginx/vhosts.d/`**, not to `conf.d/`: openSUSE's
+  factory `nginx.conf` includes `conf.d/*.conf` **twice** (anything left there
+  is parsed in duplicate) and ships its own `server` on port 80 that collides
+  with SATOM's `default_server`. The installer picks `vhosts.d` automatically
+  and neutralises the factory block.
+- **`sshd` is not active** on the openSUSE LXC template. The installer enables
+  it itself in **cluster** mode (the standby *pulls* `data/` over SSH and
+  without it there is no file replication at all); in **standalone** it does not
+  touch it, so if the machine is administered over SSH you have to enable it by
+  hand.
 
-**Cuenta de servicio:** openSUSE trae `USERGROUPS_ENAB no` en `login.defs`, así
-que un `useradd --system` sin más dejaría la cuenta en el grupo compartido
-`users` (gid 100) junto a los usuarios interactivos. El instalador pasa
-`--user-group` para forzar grupo privado en todas las familias.
+**Service account:** openSUSE ships `USERGROUPS_ENAB no` in `login.defs`, so a
+plain `useradd --system` would leave the account in the shared `users` group
+(gid 100) alongside the interactive users. The installer passes `--user-group`
+to force a private group on every family.
 
-**PostgreSQL:** el `pg_hba.conf` por defecto de openSUSE usa **`ident`** para
-`127.0.0.1/32` (Debian usa `scram-sha-256`). El instalador inserta su propia
-regla **al principio** del fichero — `pg_hba` es *first-match*, así que añadirla
-al final no serviría de nada.
+**PostgreSQL:** openSUSE's default `pg_hba.conf` uses **`ident`** for
+`127.0.0.1/32` (Debian uses `scram-sha-256`). The installer inserts its own rule
+**at the top** of the file — `pg_hba` is *first-match*, so appending it at the
+end would achieve nothing.
 
-### 1.6 Comprobación previa sin instalar nada (`--preflight`)
+### 1.6 Checking beforehand without installing anything (`--preflight`)
 
 ```bash
 sudo bash install-satom.sh --preflight     # alias: --check
 ```
 
-No pregunta nada, no modifica nada y **devuelve 0 si la máquina está lista** o
-1 con la lista completa de bloqueadores. Acumula todos los problemas y los
-reporta juntos, para que una petición de ventana de cambio lleve la lista
-entera y no el primer fallo. Comprueba:
+It asks nothing, modifies nothing and **returns 0 if the machine is ready**, or
+1 with the complete list of blockers. It accumulates every problem and reports
+them together, so that a change-window request carries the whole list rather
+than the first failure. It checks:
 
-1. **Privilegios reales** — uid 0 *y* escritura efectiva en `/opt`, `/etc`,
+1. **Real privileges** — uid 0 *and* effective write access to `/opt`, `/etc`,
    `/etc/systemd/system`, `/var/log`, `/usr/local/sbin`.
-2. **systemd como PID 1** (no basta que exista el binario `systemctl`).
-3. **Gestor de paquetes** soportado y modo online/offline detectado.
-4. **Utilidades base** de §1.5.
-5. **Python >= 3.10** presente, o aviso de que se instalará.
-6. **Disco y memoria** — bloquea con menos de 4 GB libres en `/opt`, avisa por
-   debajo de los 15 GB recomendados o de 2 GB de RAM.
-7. **Instalación previa** — si `satom.service` está **activo**, es un
-   **bloqueador**: reinstalar encima reescribe `.env` y las unidades. Para
-   actualizar se usa la página *Software Update*; para forzar,
-   `SATOM_ALLOW_REINSTALL=1`.
-8. **Puertos 80 y 8443** libres (o quién los ocupa).
-9. **Reloj sincronizado por NTP** — con desviación fallan TLS, el challenge
-   ACME y la réplica `verify-ca`.
-10. **Salida a Internet** en modo online (PyPI y el repositorio de código).
-    Sin PyPI es bloqueador; usa el bundle offline.
-11. **SELinux** (informativo; el instalador aplica booleanos y puertos).
+2. **systemd as PID 1** (having the `systemctl` binary is not enough).
+3. **Package manager** supported, and online/offline mode detected.
+4. **Base utilities** from §1.5.
+5. **Python >= 3.10** present, or a warning that it will be installed.
+6. **Disk and memory** — blocks below 4 GB free in `/opt`, warns below the
+   recommended 15 GB or below 2 GB of RAM.
+7. **Previous installation** — if `satom.service` is **active**, that is a
+   **blocker**: reinstalling on top rewrites `.env` and the units. To upgrade,
+   use the *Software Update* page; to force it, `SATOM_ALLOW_REINSTALL=1`.
+8. **Ports 80 and 8443** free (or who is holding them).
+9. **Clock synchronised by NTP** — with drift, TLS, the ACME challenge and
+   `verify-ca` replication all fail.
+10. **Internet egress** in online mode (PyPI and the code repository). No PyPI
+    is a blocker; use the offline bundle instead.
+11. **SELinux** (informational; the installer applies booleans and ports).
 
-En modo cluster, al elegir el modo se ejecuta una segunda comprobación:
-cliente SSH (`ssh`, `ssh-keygen`, `ssh-keyscan`) y `rsync` disponibles, y si el
-servidor SSH está instalado y activo — obligatorio en el **primary**.
+In cluster mode, a second check runs once the mode is chosen: SSH client
+(`ssh`, `ssh-keygen`, `ssh-keyscan`) and `rsync` available, and whether the SSH
+server is installed and active — mandatory on the **primary**.
 
 ---
 
-## 2. Formas de instalar
+## 2. Ways to install
 
-### 2.1 Online (con red)
+### 2.1 Online (with network)
 ```bash
 sudo bash install-satom.sh
 ```
-Descarga paquetes de los mirrors y clona el repo de producción
-(`https://git.example.net/satom-prod/SATOM.git`, configurable en el prompt).
+Downloads packages from the mirrors and clones the production repository
+(`https://git.example.net/satom-prod/SATOM.git`, configurable at the prompt).
 
-> **El repositorio es privado.** `git clone` pedirá credenciales; si se ejecuta
-> de forma desatendida hay que dar la URL con token
-> (`https://<usuario>:<token>@git.example.net/...`) o apuntar a un espejo
-> accesible. Un `401` en este punto detiene la instalación antes de tocar nada.
-> **Borrar la credencial del checkout al terminar:**
+> **The repository is private.** `git clone` will ask for credentials; if it is
+> run unattended you have to supply the URL with a token
+> (`https://<user>:<token>@git.example.net/...`) or point it at a reachable
+> mirror. A `401` at this point stops the installation before anything is
+> touched.
+> **Wipe the credential from the checkout when you are done:**
 > `git -C /opt/satom remote set-url origin https://git.example.net/satom-prod/SATOM.git`
 
-### 2.2 Offline (sin red)
+### 2.2 Offline (no network)
 ```bash
 # Debian 12
 tar xzf satom-offline-<ver>-debian12-amd64.tar.gz
@@ -202,159 +205,166 @@ tar xzf satom-offline-<ver>-rhel9-x86_64.tar.gz
 tar xzf satom-offline-<ver>-suse15-x86_64.tar.gz
 
 cd satom-installer
-sudo bash install-satom.sh        # detecta bundle/ y no toca la red
+sudo bash install-satom.sh        # detects bundle/ and never touches the network
 ```
-Hay bundle para **Debian 12**, **RHEL/Rocky/Alma 9** y, desde **1.3**,
-**openSUSE Leap 15 / SLES 15**. **Arch sólo tiene camino ONLINE** — ahí el
-instalador necesita salida a los mirrors de la distro y a PyPI.
+There is a bundle for **Debian 12**, **RHEL/Rocky/Alma 9** and, since **1.3**,
+**openSUSE Leap 15 / SLES 15**. **Arch only has an ONLINE path** — there the
+installer needs egress to the distribution mirrors and to PyPI.
 
-Hay un bundle POR FAMILIA de distro — el instalador rechaza un bundle de la
-familia equivocada con un mensaje claro:
-- **Debian 12**: cierre completo de dependencias `.deb` + `wheels/` + `app.tar.gz`.
-- **RHEL 9**: `bundle/rpms/` es un repositorio dnf local (con metadatos) — dnf
-  resuelve solo lo que la máquina necesita; incluye `python3.11` (los pines de
-  la app exigen Python >= 3.10 y el python3 del sistema en EL9 es 3.9) y las
-  `wheels/` correspondientes (cp311).
-- **openSUSE / SLES 15**: `bundle/rpms-suse/` — también `.rpm`, también con
-  metadatos, pero **directorio distinto a propósito**. Los dos bundles RPM no
-  son intercambiables: los nombres de paquete difieren (`python311` frente a
-  `python3.11`), las versiones de las librerías base difieren, y zypper y dnf
-  no leen los repos igual. Separarlos convierte «bundle equivocado» en un error
-  explícito antes de tocar nada, en lugar de una resolución de dependencias que
-  revienta a mitad de instalación. En el destino, zypper recibe un directorio
-  de repos propio (`--reposd-dir`) que contiene únicamente el bundle: resuelve
-  sin red, sin tocar los repos del sistema, y sin dejar un repo dado de alta.
+There is one bundle PER distribution FAMILY — the installer rejects a bundle
+from the wrong family with a clear message:
+- **Debian 12**: full `.deb` dependency closure + `wheels/` + `app.tar.gz`.
+- **RHEL 9**: `bundle/rpms/` is a local dnf repository (with metadata) — dnf
+  resolves only what the machine actually needs; it includes `python3.11` (the
+  app's pins require Python >= 3.10 and the system python3 on EL9 is 3.9) and
+  the matching `wheels/` (cp311).
+- **openSUSE / SLES 15**: `bundle/rpms-suse/` — also `.rpm`, also with metadata,
+  but **a deliberately different directory**. The two RPM bundles are not
+  interchangeable: the package names differ (`python311` versus `python3.11`),
+  the base library versions differ, and zypper and dnf do not read repositories
+  the same way. Keeping them apart turns "wrong bundle" into an explicit error
+  before anything is touched, instead of a dependency resolution that blows up
+  halfway through the installation. On the target, zypper is given its own
+  repository directory (`--reposd-dir`) containing only the bundle: it resolves
+  with no network, without touching the system repositories, and without
+  leaving a repository registered behind.
 
-**Qué trae el bundle**, además del cierre de dependencias: el árbol completo de la
-aplicación, los manuales de `docs/` — legibles sin red desde la consola con
-`satom show docs`, porque la aplicación **ya no sirve documentación**: la copia
-publicada vive en el sitio público, al que una red de gestión aislada no llega
-a propósito — y el cliente ACME `lego` en `bundle/lego/`. Desde **1.2** los
-bundles incluyen además `sudo` y `openssh-*`: sin ellos una imagen mínima sin red
-fallaba a mitad de instalación, ya con la cuenta de servicio creada. Los bundles
-1.1 y anteriores no llevaban ni eso ni `lego` en la variante RHEL.
+**What the bundle carries**, besides the dependency closure: the complete
+application tree, the manuals under `docs/` — readable without a network from
+the console with `satom show docs`, because the application **no longer serves
+documentation**: the published copy lives on the public site, which an isolated
+management network deliberately cannot reach — and the ACME client `lego` in
+`bundle/lego/`. Since **1.2** the bundles also include `sudo` and `openssh-*`:
+without them a minimal image with no network failed halfway through the
+installation, with the service account already created. Bundles 1.1 and earlier
+carried neither those nor `lego` in the RHEL variant.
 
-El bundle es una **foto del repositorio en el momento de construirlo**: las
-guardias que contiene son las que existían entonces. Para saber exactamente qué
-versión llevas antes de instalar:
+The bundle is a **snapshot of the repository at build time**: the guards it
+contains are the ones that existed then. To know exactly which version you have
+before installing:
 
 ```bash
 tar xzOf satom-offline-<ver>-*.tar.gz --wildcards '*/bundle/app.tar.gz' | tar xzO VERSION
 ```
 
-Verifica la integridad con el `.sha256` que acompaña a cada tarball.
-Los bundles se generan con `installers/build-offline-bundle.sh` (en un Debian 12
-con red), `installers/build-offline-bundle-rhel.sh` (en una máquina o contenedor
-`rockylinux:9` con red) y `installers/build-offline-bundle-suse.sh` (en
-`opensuse/leap:15.6` con red).
+Verify integrity with the `.sha256` that accompanies each tarball.
+The bundles are produced by `installers/build-offline-bundle.sh` (on a Debian 12
+with network), `installers/build-offline-bundle-rhel.sh` (on a `rockylinux:9`
+machine or container with network) and `installers/build-offline-bundle-suse.sh`
+(on `opensuse/leap:15.6` with network).
 
-El builder de SUSE descarga contra una **raíz vacía** (`zypper --root`). zypper
-sólo baja lo que le falta a la máquina donde corre, así que un `--download-only`
-normal produciría un bundle que sólo sirve en un destino idéntico al build host.
-Con una raíz vacía zypper cree que no hay nada instalado y resuelve el cierre
-completo — el equivalente de `dnf download --resolve --alldeps`. Esa raíz
-necesita una copia de `/etc/os-release`: los `.repo` usan `$releasever` y zypper
-lo deriva del `os-release` **de la raíz**. Sin él las URLs quedan mal formadas,
-el refresh parece funcionar, y todos los paquetes se reportan como *not found in
-package names* — un fallo que se lee como «esta distribución no tiene
-python311».
-
----
-
-## 3. Qué pregunta el instalador (en este orden)
-
-**Paso 0 — preflight.** Antes de la primera pregunta se verifica que la máquina
-cumple todo lo de §1.6. Si algo falla, aborta sin haber tocado nada.
-
-1. **IP de la máquina** — se autodetecta; se usa en el certificado TLS y en la
-   configuración del clúster.
-2. **Puerto HTTPS** de la consola (defecto 443).
-3. **¿Standalone o cluster?**
-4. Si cluster: **¿primary o secondary?**
-   - *secondary*: pide **pegar la clave de unión** generada por el primary
-     (formato `SATOMJOIN1.…`; se sigue aceptando el heredado `OFMJOIN1.…`).
-     Se valida ANTES de instalar nada.
-   - *primary*: pregunta la IP prevista del secondary (Enter = permite la subred).
-5. **Clave del usuario `admin`** de la consola (solo standalone/primary; el
-   secondary la hereda por la réplica de la base de datos).
-6. Resumen y confirmación. **Hasta aquí no se ha modificado nada del sistema.**
-
-Después ejecuta, en orden: paquetes → código+venv → PostgreSQL → PKI/certificados →
-configuración+servicios → comprobación de salud.
-
-- Si un paquete falta, **lo instala**; si hay una versión vieja (p. ej. Python < 3.9),
-  **avisa que la actualizará** a la del repositorio antes de tocarla.
+The SUSE builder downloads against an **empty root** (`zypper --root`). zypper
+only fetches what is missing on the machine it runs on, so a normal
+`--download-only` would produce a bundle that only works on a target identical
+to the build host. With an empty root zypper believes nothing is installed and
+resolves the full closure — the equivalent of `dnf download --resolve
+--alldeps`. That root needs a copy of `/etc/os-release`: the `.repo` files use
+`$releasever` and zypper derives it from the `os-release` **of the root**.
+Without it the URLs come out malformed, the refresh appears to work, and every
+package is reported as *not found in package names* — a failure that reads as
+"this distribution does not have python311".
 
 ---
 
-## 4. Modo cluster — cómo funciona la unión
+## 3. What the installer asks (in this order)
 
-1. Instala el **primary** (`cluster` → `primary`). Al final imprime la
-   **CLAVE DE UNIÓN** (`SATOMJOIN1.` + blob base64). El prefijo heredado
-   `OFMJOIN1.` se sigue aceptando en el secondary.
-2. Instala el **secondary** en la otra máquina, elige `cluster` → `secondary` y
-   **pega la clave**. Automáticamente:
-   - hereda las claves de cifrado de la aplicación (`FERNET_KEY`/`SECRET_KEY`);
-   - recibe la **CA interna** del clúster y **emite su PROPIO certificado
-     localmente** (la llave privada del nodo nunca viaja por la red);
-   - clona la base de datos con `pg_basebackup` y queda como **réplica
-     streaming** con TLS `verify-ca` + certificado de cliente;
-   - **genera localmente su propia llave SSH** para la sincronización de
-     `data/` y muestra su parte **pública** con el comando exacto a ejecutar
-     en el primary para autorizarla:
+**Step 0 — preflight.** Before the first question it verifies that the machine
+meets everything in §1.6. If anything fails, it aborts without having touched
+a thing.
+
+1. **The machine's IP** — auto-detected; used in the TLS certificate and in the
+   cluster configuration.
+2. **HTTPS port** of the console (default 443).
+3. **Standalone or cluster?**
+4. If cluster: **primary or secondary?**
+   - *secondary*: asks you to **paste the join key** generated by the primary
+     (format `SATOMJOIN1.…`; the legacy `OFMJOIN1.…` is still accepted). It is
+     validated BEFORE anything gets installed.
+   - *primary*: asks for the intended IP of the secondary (Enter = allow the
+     whole subnet).
+5. **Password for the console's `admin` user** (standalone/primary only; the
+   secondary inherits it through database replication).
+6. Summary and confirmation. **Up to this point nothing on the system has been
+   modified.**
+
+It then runs, in order: packages → code+venv → PostgreSQL → PKI/certificates →
+configuration+services → health check.
+
+- If a package is missing, **it installs it**; if there is an old version
+  (e.g. Python < 3.9), **it warns that it will upgrade it** to the
+  repository's before touching it.
+
+---
+
+## 4. Cluster mode — how joining works
+
+1. Install the **primary** (`cluster` → `primary`). At the end it prints the
+   **JOIN KEY** (`SATOMJOIN1.` + a base64 blob). The legacy `OFMJOIN1.` prefix
+   is still accepted on the secondary.
+2. Install the **secondary** on the other machine, choose `cluster` →
+   `secondary` and **paste the key**. Automatically it:
+   - inherits the application's encryption keys (`FERNET_KEY`/`SECRET_KEY`);
+   - receives the cluster's **internal CA** and **issues its OWN certificate
+     locally** (the node's private key never travels over the network);
+   - clones the database with `pg_basebackup` and becomes a **streaming
+     replica** with TLS `verify-ca` + a client certificate;
+   - **generates its own SSH key locally** for the `data/` synchronisation and
+     prints its **public** half together with the exact command to run on the
+     primary to authorise it:
 
      ```bash
-     sudo ./install-satom.sh --authorize-peer <ip-del-standby> "ssh-ed25519 AAAA..."
+     sudo ./install-satom.sh --authorize-peer <standby-ip> "ssh-ed25519 AAAA..."
      ```
 
-     Hasta que ejecutes ese comando, Postgres YA replica pero la
-     sincronización de `data/` falla. Es intencionado: la llave privada
-     nunca viaja, así que alguien tiene que aprobar la pública;
-   - su scheduler queda **en espera**: solo se activa si el nodo se promueve
-     (`deploy/satom-promote.sh`), de modo que dos nodos jamás disparan acciones
-     a la vez.
+     Until you run that command, Postgres IS already replicating but the
+     `data/` synchronisation fails. That is on purpose: the private key never
+     travels, so somebody has to approve the public one;
+   - its scheduler stays **on hold**: it only activates if the node is promoted
+     (`deploy/satom-promote.sh`), so that two nodes never fire actions at the
+     same time.
 
-> ⚠️ **La clave de unión es un secreto de alto valor**: contiene la clave
-> privada de la CA interna, `FERNET_KEY`, `SECRET_KEY` y las contraseñas de
-> base de datos. Pásala por un canal seguro, úsala una vez y bórrala.
+> ⚠️ **The join key is a high-value secret**: it contains the internal CA's
+> private key, `FERNET_KEY`, `SECRET_KEY` and the database passwords. Move it
+> over a secure channel, use it once and delete it.
 >
-> Desde v1.2 **ya no contiene la llave privada del datasync** — el secondary
-> genera la suya y sólo su parte pública se autoriza en el primary, acotada con
-> `from=`, `restrict` y un `command=` que sólo permite un rsync de **sólo
-> lectura** de `data/`. Antes esa llave daba shell de root desde cualquier IP.
+> Since v1.2 it **no longer contains the datasync private key** — the secondary
+> generates its own and only its public half is authorised on the primary,
+> constrained with `from=`, `restrict` and a `command=` that only allows a
+> **read-only** rsync of `data/`. That key used to grant a root shell from any
+> IP.
 
 ---
 
-## 5. Permisos que hay que solicitar a sistemas
+## 5. Permissions to request from the systems team
 
-Hay **dos cuentas distintas** en juego y conviene no mezclarlas:
+There are **two distinct accounts** in play, and it pays not to mix them up:
 
-| | cuenta | cuándo | privilegio |
+| | account | when | privilege |
 |---|---|---|---|
-| **Instalación** | `satominstall` (nominal, del operador) | sólo la ventana de instalación, ~10–20 min por nodo | `sudo` a **un binario en una ruta fija** |
-| **Runtime** | `satom` (cuenta de servicio, sin shell) | permanente | `sudo` a **dos comandos** (`nginx -t`, `systemctl reload nginx`) |
+| **Installation** | `satominstall` (named, the operator's) | only the installation window, ~10–20 min per node | `sudo` to **one binary at a fixed path** |
+| **Runtime** | `satom` (service account, no shell) | permanent | `sudo` to **two commands** (`nginx -t`, `systemctl reload nginx`) |
 
-**Opción A (recomendada): cuenta instaladora nominal con regla `sudoers`.**
-No se entrega la contraseña de root a nadie y queda traza de quién instaló y
-cuándo. El fichero está en el repo
-([`deploy/satom-installer.sudoers`](../deploy/satom-installer.sudoers)) y el
-propio instalador lo emite, así que se puede entregar a sistemas sin mandarles
-el repositorio entero:
+**Option A (recommended): a named installer account with a `sudoers` rule.**
+The root password is handed to nobody and there is a trace of who installed and
+when. The file lives in the repository
+([`deploy/satom-installer.sudoers`](../deploy/satom-installer.sudoers)) and the
+installer itself emits it, so it can be handed to the systems team without
+sending them the whole repository:
 
 ```bash
-bash install-satom.sh --print-sudoers            # usuario por defecto: satominstall
-bash install-satom.sh --print-sudoers opsuser    # o el nombre que use sistemas
+bash install-satom.sh --print-sudoers            # default user: satominstall
+bash install-satom.sh --print-sudoers opsuser    # or whatever name the systems team uses
 ```
 
-(`--print-sudoers` no requiere root y no toca nada.)
+(`--print-sudoers` does not require root and touches nothing.)
 
 ```bash
 useradd -m -s /bin/bash satominstall
 install -d -m 0755 /opt/staging
 install -m 0755 install-satom.sh /opt/staging/install-satom.sh
-chown root:root /opt/staging/install-satom.sh     # el operador NO puede editarlo
+chown root:root /opt/staging/install-satom.sh     # the operator CANNOT edit it
 install -m 0440 deploy/satom-installer.sudoers /etc/sudoers.d/satom-installer
-visudo -c                                          # validar antes de salir
+visudo -c                                          # validate before logging out
 ```
 
 ```
@@ -366,258 +376,259 @@ Cmnd_Alias SATOM_INSTALL = /usr/bin/bash /opt/staging/install-satom.sh, \
 satominstall ALL=(root) NOPASSWD: SATOM_INSTALL
 ```
 
-Luego, como `satominstall` y sin ser root en ningún momento:
+Then, as `satominstall` and without ever being root:
 ```bash
-sudo /usr/bin/bash /opt/staging/install-satom.sh --preflight   # no toca nada
-sudo /usr/bin/bash /opt/staging/install-satom.sh               # instala
+sudo /usr/bin/bash /opt/staging/install-satom.sh --preflight   # touches nothing
+sudo /usr/bin/bash /opt/staging/install-satom.sh               # installs
 ```
 
-> ⚠️ **La ruta tiene que ser fija y el fichero pertenecer a `root`.** Si el
-> operador pudiera escribir en `/opt/staging/install-satom.sh`, la regla
-> equivaldría a `NOPASSWD: ALL`. Retirar `/etc/sudoers.d/satom-installer` al
-> cerrar la ventana de instalación.
+> ⚠️ **The path has to be fixed and the file has to be owned by `root`.** If the
+> operator could write to `/opt/staging/install-satom.sh`, the rule would be
+> equivalent to `NOPASSWD: ALL`. Remove `/etc/sudoers.d/satom-installer` when
+> the installation window closes.
 
-**Opción B: sesión root/sudo completa**, si sistemas prefiere no gestionar la
-regla:
+**Option B: a full root/sudo session**, if the systems team would rather not
+manage the rule:
 ```bash
 sudo bash install-satom.sh
 ```
 
-### Por qué el instalador no puede correr con menos que esto
+### Why the installer cannot run with any less than this
 
-No existe un subconjunto honesto: crear cuentas, instalar paquetes de la
-distribución, escribir unidades de systemd y reconfigurar Postgres y nginx
-**son** root. Una regla que concediera `apt-get install` sería equivalente a
-root de todas formas — un `.deb` ejecuta sus propios scripts de mantenedor como
-root. La reducción real de riesgo está en (1) acotar el privilegio a **un
-binario concreto**, (2) que sea **temporal**, y (3) que lo que queda corriendo
-después **no** sea root. Eso es lo que hacen la Opción A y el modelo de runtime
-de aquí abajo.
+There is no honest subset: creating accounts, installing distribution packages,
+writing systemd units and reconfiguring Postgres and nginx **are** root. A rule
+granting `apt-get install` would be equivalent to root anyway — a `.deb` runs
+its own maintainer scripts as root. The real risk reduction lies in (1) scoping
+the privilege to **one specific binary**, (2) making it **temporary**, and (3)
+making sure what keeps running afterwards is **not** root. That is exactly what
+Option A and the runtime model below do.
 
-Estas son las familias de comandos que el instalador ejecuta como root:
+These are the families of commands the installer runs as root:
 
 ```
-apt-get update / apt-get install / dpkg -i          (paquetería)
-git clone | tar -x                                   (código en /opt/satom)
-python3 -m venv | pip install                        (dentro de /opt/satom)
-runuser -u postgres -- psql|createdb|pg_basebackup   (base de datos)
-openssl req|x509 | ssh-keygen                        (certificados y llaves)
-cp a /etc/systemd/system + systemctl daemon-reload/enable/start
-escritura de /etc/nginx/sites-available/satom.conf + nginx -t + reload
-escritura de /etc/postgresql/<v>/main/conf.d + pg_hba.conf (solo cluster)
+apt-get update / apt-get install / dpkg -i          (packaging)
+git clone | tar -x                                   (code in /opt/satom)
+python3 -m venv | pip install                        (inside /opt/satom)
+runuser -u postgres -- psql|createdb|pg_basebackup   (database)
+openssl req|x509 | ssh-keygen                        (certificates and keys)
+copy into /etc/systemd/system + systemctl daemon-reload/enable/start
+write /etc/nginx/sites-available/satom.conf + nginx -t + reload
+write /etc/postgresql/<v>/main/conf.d + pg_hba.conf (cluster only)
 ```
 
-Auditoría de la ventana de instalación: `journalctl _COMM=sudo` registra cada
-invocación con el usuario nominal, y el instalador escribe siempre
+Auditing the installation window: `journalctl _COMM=sudo` records every
+invocation with the named user, and the installer always writes
 `/var/log/satom-install.log`.
 
-### Lo que la aplicación necesita en RUNTIME (cuenta `satom`)
+### What the application needs at RUNTIME (the `satom` account)
 
-**La aplicación NO corre como root.** El instalador crea la cuenta de servicio,
-le da la propiedad del árbol y fija `User=` en un **drop-in** de systemd, así que
-no hay ningún camino por el que el proceso web acabe siendo root.
+**The application does NOT run as root.** The installer creates the service
+account, gives it ownership of the tree and sets `User=` in a systemd
+**drop-in**, so there is no path by which the web process ends up being root.
 
-Detalle completo y justificación en [`privilege-model.md`](privilege-model.md).
-Resumen:
+Full detail and rationale in [`privilege-model.md`](privilege-model.md).
+Summary:
 
-* Cuenta de servicio sin shell interactivo (`satom` por defecto; una
-  instalación heredada puede conservar `satom` con `SATOM_APP_USER`). Posee
-  `/opt/satom` y `/var/log/satom`.
-* `sudo` acotado a **exactamente dos comandos**, en `/etc/sudoers.d/satom`:
+* A service account with no interactive shell (`satom` by default; a legacy
+  installation may keep `satom` via `SATOM_APP_USER`). It owns `/opt/satom` and
+  `/var/log/satom`.
+* `sudo` scoped to **exactly two commands**, in `/etc/sudoers.d/satom`:
 
   ```
   Cmnd_Alias SATOM_CERT_RELOAD = /usr/sbin/nginx -t, /usr/bin/systemctl reload nginx
   satom ALL=(root) NOPASSWD: SATOM_CERT_RELOAD
   ```
 
-  Son los que necesita el gestor de certificados para validar y activar un
-  cert nuevo. **No se concede instalación de paquetes ni `systemctl` genérico**:
-  ambos son equivalentes a root (un `.deb` ejecuta sus propios scripts como
-  root), no un subconjunto de él.
-* Todo lo que sí requiere root —instalar unidades, `pip`, reiniciar el propio
-  servicio— pasa por `satom-updater.service`, un runner oneshot que corre como
-  root, se dispara por `satom-updater.path` y **re-valida** cada petición
-  contra su propia allowlist.
-* En cluster: rol de réplica `fm_repl`, y SSH entre nodos **de cuenta de
-  servicio a cuenta de servicio** (ya no root→root) con forced command.
+  Those are what the certificate manager needs to validate and activate a new
+  cert. **Package installation and generic `systemctl` are NOT granted**: both
+  are equivalent to root (a `.deb` runs its own scripts as root), not a subset
+  of it.
+* Everything that does require root — installing units, `pip`, restarting the
+  service itself — goes through `satom-updater.service`, a oneshot runner that
+  runs as root, is triggered by `satom-updater.path` and **re-validates** every
+  request against its own allowlist.
+* In a cluster: the `fm_repl` replication role, and node-to-node SSH **from
+  service account to service account** (no longer root→root) with a forced
+  command.
 
-Para migrar un nodo instalado con v1.1 o anterior, **un nodo a la vez y el
-standby primero**:
+To migrate a node installed with v1.1 or earlier, **one node at a time and the
+standby first**:
 
 ```bash
 sudo bash /opt/satom/deploy/migrate-deprivilege.sh
 ```
 
-### Cuenta de OPERADOR — el CLI de consola (`satom`)
+### The OPERATOR account — the console CLI (`satom`)
 
-SATOM instala `/usr/local/sbin/satom`, un CLI de consola para diagnosticar,
-controlar y **reconstruir** el nodo cuando la interfaz web no arranca (referencia
-completa en [`cli.md`](cli.md)). Esta es la tercera cuenta del sistema y hay que
-pedirla explícitamente, porque es distinta de las dos anteriores:
+SATOM installs `/usr/local/sbin/satom`, a console CLI to diagnose, control and
+**rebuild** the node when the web interface will not start (full reference in
+[`cli.md`](cli.md)). This is the system's third account and it has to be
+requested explicitly, because it is different from the previous two:
 
-| cuenta | vive | privilegio |
+| account | lives | privilege |
 |---|---|---|
-| instaladora (`satominstall`) | sólo durante la instalación | `sudo` a **un** binario, temporal |
-| servicio (`satom`) | permanente, es la que corre la app | `sudo` a **dos** comandos de nginx |
-| **operador (persona)** | permanente, humano en consola | `sudo` a **`/usr/local/sbin/satom`** |
+| installer (`satominstall`) | only during the installation | `sudo` to **one** binary, temporary |
+| service (`satom`) | permanent, it is the one running the app | `sudo` to **two** nginx commands |
+| **operator (a person)** | permanent, a human at the console | `sudo` to **`/usr/local/sbin/satom`** |
 
-**Regla a solicitar** (`/etc/sudoers.d/satom-operator`, `0440`, validado con
-`visudo -cf`). El propio CLI la imprime sin necesitar privilegio, para que se
-pueda generar desde la cuenta que todavía no lo tiene:
-
-```bash
-satom show sudoers <cuenta>
-```
-
-```
-<cuenta> ALL=(root) /usr/local/sbin/satom
-```
-
-**Qué concede:** control de servicios, reinstalación del venv y de las unidades,
-actualizaciones de código y de paquetes encoladas, `promote`, operaciones de
-certificado. **Qué NO concede:** una shell — el CLI no tiene ningún verbo de
-"ejecuta un comando arbitrario", y los cambios de paquetes van por la allowlist
-curada, nunca por un `pip install` libre.
-
-**Sin esa regla el CLI sigue siendo útil:** `get`, `show` y `diagnose` funcionan
-con **cualquier** usuario y son la mitad que rescata a un operador delante de un
-nodo caído. Sólo `execute` exige root, y lo rechaza con una explicación y el
-comando completo a repetir con `sudo` — nunca con un traceback.
-
-#### Dos cosas que NO se deben hacer
-
-1. **No conceder el CLI a la cuenta de servicio.** Un
-   `NOPASSWD: /usr/local/sbin/satom` para `satom`/`satom` equivale a
-   `NOPASSWD: ALL` y convertiría un worker web comprometido en root, deshaciendo
-   todo el modelo de privilegio. `satom diagnose privilege` falla en rojo si
-   encuentra esa línea.
-2. **No mover el binario ni relajar sus permisos.** La ruta tiene que ser fija y
-   el objetivo `root:root 0755`; el código vive en `/usr/local/lib/satom-cli/`
-   (también `root:root`) y **nunca** se ejecuta desde `/opt/satom`, porque ese
-   árbol es escribible por la cuenta de servicio. Es la misma trampa que la
-   regla de la cuenta instaladora (arriba, en esta misma sección): si el objetivo de `sudo` es
-   escribible por quien lo invoca, la regla es `NOPASSWD: ALL`.
-
-Comprobación después de instalar:
+**The rule to request** (`/etc/sudoers.d/satom-operator`, `0440`, validated with
+`visudo -cf`). The CLI prints it itself without needing privilege, so that it
+can be generated from the account that does not have it yet:
 
 ```bash
-satom diagnose privilege     # integridad del binario y de la frontera sudo
-satom diagnose all           # todo el nodo, un solo código de salida
+satom show sudoers <account>
+```
+
+```
+<account> ALL=(root) /usr/local/sbin/satom
+```
+
+**What it grants:** service control, reinstallation of the venv and of the
+units, queued code and package updates, `promote`, certificate operations.
+**What it does NOT grant:** a shell — the CLI has no "run an arbitrary command"
+verb at all, and package changes go through the curated allowlist, never
+through a free-form `pip install`.
+
+**Without that rule the CLI is still useful:** `get`, `show` and `diagnose`
+work for **any** user and are the half that rescues an operator standing in
+front of a dead node. Only `execute` requires root, and it refuses with an
+explanation and the full command to repeat with `sudo` — never with a
+traceback.
+
+#### Two things you must NOT do
+
+1. **Do not grant the CLI to the service account.** A
+   `NOPASSWD: /usr/local/sbin/satom` for `satom`/`satom` is equivalent to
+   `NOPASSWD: ALL` and would turn a compromised web worker into root, undoing
+   the whole privilege model. `satom diagnose privilege` fails in red if it
+   finds that line.
+2. **Do not move the binary or relax its permissions.** The path has to be
+   fixed and the target `root:root 0755`; the code lives in
+   `/usr/local/lib/satom-cli/` (also `root:root`) and is **never** run from
+   `/opt/satom`, because that tree is writable by the service account. It is
+   the same trap as the installer-account rule (above, in this very section):
+   if the target of `sudo` is writable by whoever invokes it, the rule is
+   `NOPASSWD: ALL`.
+
+Check after installing:
+
+```bash
+satom diagnose privilege     # integrity of the binary and of the sudo boundary
+satom diagnose all           # the whole node, a single exit code
 ```
 
 ---
 
-## 6. Después de instalar
+## 6. After installing
 
-- Consola: `https://<IP>:<puerto>/` — usuario `admin` + la clave elegida.
-- Salud: `curl -k https://<IP>:<puerto>/healthz` → `200`.
-- Servicios: `systemctl status satom satom-scheduler`.
-- Logs: `/var/log/satom/` y `journalctl -u satom`.
+- Console: `https://<IP>:<port>/` — user `admin` + the chosen password.
+- Health: `curl -k https://<IP>:<port>/healthz` → `200`.
+- Services: `systemctl status satom satom-scheduler`.
+- Logs: `/var/log/satom/` and `journalctl -u satom`.
 
-### Hardening obligatorio post-instalación
-1. **Retirar el permiso de instalación**: `rm /etc/sudoers.d/satom-installer`
-   (y la copia del script en `/opt/staging`). Si en vez de la Opción A se
-   entregó una clave de root temporal, cambiarla.
-2. Deshabilitar SSH por contraseña (`PasswordAuthentication no`) y dejar solo
-   llaves.
-3. Borrar la clave de unión de cualquier nota/chat.
-4. Restringir el puerto de la consola por firewall a las redes de operación.
-5. Comprobar que el modelo de privilegio quedó aplicado:
+### Mandatory post-installation hardening
+1. **Withdraw the installation permission**: `rm /etc/sudoers.d/satom-installer`
+   (and the copy of the script under `/opt/staging`). If a temporary root
+   password was handed over instead of using Option A, change it.
+2. Disable SSH password authentication (`PasswordAuthentication no`) and leave
+   keys only.
+3. Delete the join key from any note or chat.
+4. Restrict the console port by firewall to the operations networks.
+5. Check that the privilege model actually landed:
 
    ```bash
-   # el proceso web NO debe ser root
+   # the web process must NOT be root
    ps -o user= -p $(systemctl show satom.service -p MainPID --value)
 
-   # la allowlist permite dos cosas y nada más
-   sudo -u satom sudo -n nginx -t                  # permitido
-   sudo -u satom sudo -n apt-get install hello     # DEBE fallar
-   sudo -u satom sudo -n systemctl restart satom   # DEBE fallar
+   # the allowlist permits two things and nothing else
+   sudo -u satom sudo -n nginx -t                  # allowed
+   sudo -u satom sudo -n apt-get install hello     # MUST fail
+   sudo -u satom sudo -n systemctl restart satom   # MUST fail
    ```
-6. **Comprobar que el modelo sobrevive a un update.** La cuenta de servicio se
-   fija en un **drop-in** (`/etc/systemd/system/satom.service.d/10-app-user.conf`)
-   justamente porque las plantillas de `deploy/` declaran `User=root` y cada
-   actualización las recopia. Detalle en
+6. **Check that the model survives an update.** The service account is set in a
+   **drop-in** (`/etc/systemd/system/satom.service.d/10-app-user.conf`) exactly
+   because the templates under `deploy/` declare `User=root` and every update
+   copies them back. Detail in
    [`privilege-model.md`](privilege-model.md) §5b.
 
    ```bash
-   systemctl show satom.service -p User --value      # debe ser la cuenta de servicio
+   systemctl show satom.service -p User --value      # must be the service account
    cat /etc/systemd/system/satom.service.d/10-app-user.conf
    ```
 
-7. En cluster, comprobar que la llave del peer no da shell:
+7. In a cluster, check that the peer key does not grant a shell:
 
    ```bash
-   # desde el standby — debe ser RECHAZADO
-   sudo -u satom ssh -i /opt/satom/.ssh/id_ha_rsync satom@<ip-primary> id
+   # from the standby — must be REJECTED
+   sudo -u satom ssh -i /opt/satom/.ssh/id_ha_rsync satom@<primary-ip> id
    ```
 
-### Comprobación de día uno, con una sola orden
+### The day-one check, in a single command
 
 ```bash
-satom diagnose install      # ¿está ARMADO, o sólo instalado?
-satom diagnose all          # los 24 chequeos, un único código de salida
+satom diagnose install      # is it ARMED, or merely installed?
+satom diagnose all          # all 24 checks, one single exit code
 ```
 
-`diagnose install` separa dos cosas que se confunden siempre: la
-**infraestructura** (units, runner privilegiado, drop-ins de `User=`, sudoers,
-certificado, venv, CLI) y las **protecciones**, que son datos y que el
-instalador no crea. Lo segundo se arma con:
+`diagnose install` separates two things that always get confused: the
+**infrastructure** (units, privileged runner, `User=` drop-ins, sudoers,
+certificate, venv, CLI) and the **protections**, which are data and which the
+installer does not create. The latter are armed with:
 
 ```bash
-sudo satom execute seed actions          # imprime el plan, no cambia nada
-sudo satom execute seed actions --yes    # lo aplica
+sudo satom execute seed actions          # prints the plan, changes nothing
+sudo satom execute seed actions --yes    # applies it
 ```
 
-Es idempotente y **nunca toca una fila existente**: la edición del operador
-manda, esto sólo rellena huecos. Si algo falla más adelante, cada procedimiento
-de recuperación está dentro del propio binario — `satom show runbook` los lista,
-y funcionan sin interfaz web y sin salida a internet.
+It is idempotent and **never touches an existing row**: the operator's edit
+wins, this only fills the gaps. If something fails later on, every recovery
+procedure lives inside the binary itself — `satom show runbook` lists them, and
+they work with no web interface and no Internet egress.
 
-### Protecciones que hay que ARMAR (no vienen encendidas)
+### Protections you must arm (they do not ship enabled)
 
-El código de las guardias viaja en el instalador y queda activo por el simple
-hecho de existir: la guardia anti-`reset --hard` del historial, la allowlist de
-pip, el drop-in que fija la cuenta de servicio, el forced command de la llave del
-peer, el rollback de certificados. Da igual instalación online u offline.
+The guards' code travels in the installer and is live by the mere fact of
+existing: the anti-`reset --hard` history guard, the pip allowlist, the drop-in
+that pins the service account, the forced command on the peer key, the
+certificate rollback. Online or offline installation makes no difference.
 
-Lo que **no** nace armado es todo lo que vive en la base de datos, porque las
-semillas son INSERT-ONLY y la edición del operador manda. Una instalación nueva
-**no tiene ninguna acción programada ni destinatario de alertas**: el producto
-funciona, calcula sus señales y no avisa a nadie. Hay que armarlo a mano:
+What is **not** armed out of the box is everything that lives in the database,
+because the seeds are INSERT-ONLY and the operator's edit wins. A fresh
+installation has **no scheduled action and no alert recipient**: the product
+works, computes its signals and notifies nobody. It has to be armed by hand:
 
-1. **Alertas** — Settings → Alerts: activar, poner destinatario SMTP y revisar
-   umbrales. Entre ellos `git_ahead_max_hours` (6 h): avisa cuando un commit
-   lleva demasiado tiempo sin empujarse, que es la firma exacta de un servidor
-   git caído — un caso que antes no disparaba nada.
-2. **Acciones programadas** — Automation → Scheduled actions. No se siembra
-   ninguna. El juego mínimo recomendado:
+1. **Alerts** — Settings → Alerts: enable them, set the SMTP recipient and
+   review the thresholds. Among them `git_ahead_max_hours` (6 h): it warns when
+   a commit has gone too long without being pushed, which is the exact
+   signature of a git server that is down — a case that previously fired
+   nothing.
+2. **Scheduled actions** — Automation → Scheduled actions. None is seeded. The
+   recommended minimum set:
 
-   | Acción | Cadencia sugerida | Para qué |
+   | Action | Suggested cadence | What for |
    |---|---|---|
-   | `device_sync` | horaria | refresca el SoT de cada appliance en `data/reports/` + `data/sot/` |
-   | `device_inspect` | 02:45 | inspección nocturna profunda; su resultado se versiona también en `data/sot/` |
-   | `system_backup` | diaria | volcado de la base de datos (bundle) |
-   | `git_bundle` | 03:15 | respaldo del repositorio (`git bundle --all`) |
+   | `device_sync` | hourly | refreshes each appliance's SoT under `data/reports/` + `data/sot/` |
+   | `device_inspect` | 02:45 | deep nightly inspection; its result is versioned in `data/sot/` too |
+   | `system_backup` | daily | database dump (bundle) |
+   | `git_bundle` | 03:15 | repository backup (`git bundle --all`) |
 
-   Sin `git_bundle` no existe ninguna de las copias del repositorio; sin
-   `device_sync` el SoT de los equipos se queda congelado en el día de la
-   instalación.
-3. **Servidor de respaldo externo** — Settings → SoT & Backup. Sin él, todas las
-   copias viven dentro del mismo par de nodos.
-4. **Cola de actualizaciones** — comprobar que `satom-updater.path` está armado
-   **en los dos nodos**: si el `.path` está parado, las actualizaciones
-   encoladas se quedan en `queued` para siempre.
+   Without `git_bundle` none of the repository copies exists; without
+   `device_sync` the devices' SoT stays frozen at the day of the installation.
+3. **External backup server** — Settings → SoT & Backup. Without it, every copy
+   lives inside the same pair of nodes.
+4. **Update queue** — check that `satom-updater.path` is armed **on both
+   nodes**: if the `.path` is stopped, queued updates stay `queued` forever.
 
-   > Aquí había una instrucción para armar el publicador horario del SoT en
-   > git. Se retiró el 2026-08-05 junto con el propio mecanismo: el SoT de
-   > dispositivos vive en `data/sot/`, lo replica `satom-ha-datasync` y viaja
-   > en los bundles de respaldo. Armarlo en un nodo nuevo ponía en verde una
-   > unidad que no publicaba nada.
+   > There used to be an instruction here to arm the hourly git publisher for
+   > the SoT. It was withdrawn on 2026-08-05 along with the mechanism itself:
+   > the device SoT lives in `data/sot/`, is replicated by `satom-ha-datasync`
+   > and travels in the backup bundles. Arming it on a new node turned green a
+   > unit that published nothing.
 
-Cómo verificar que quedaron armadas, comando a comando:
+How to verify they ended up armed, command by command:
 [`safeguards.md`](safeguards.md) § *Verifying the guards are armed*.
 
-### Desinstalar / revertir
+### Uninstall / revert
 ```bash
 systemctl disable --now satom satom-scheduler \
   satom-updater.path satom-cert-renew.timer satom-ha-datasync.timer 2>/dev/null
@@ -627,15 +638,16 @@ systemctl daemon-reload && systemctl reload nginx
 runuser -u postgres -- dropdb satom; runuser -u postgres -- dropuser satom
 rm -rf /opt/satom /var/log/satom
 ```
-Los paquetes de sistema (postgres, nginx…) se dejan instalados a propósito;
-si hay que retirarlos lo decide sistemas (`apt-get remove`).
+The system packages (postgres, nginx…) are deliberately left installed; if they
+have to be removed, that is the systems team's call (`apt-get remove`).
 
 ---
 
-## 7. Soporte
+## 7. Support
 
-- Log de instalación: `/var/log/satom-install.log` (siempre se escribe).
-- Repositorio de producción: `satom-prod/SATOM` (Gitea interno).
-- El catálogo de aplicaciones (apps.example.net → SATOM → plataforma web)
-  publica este instalador y el bundle offline, y tiene los botones
-  **Sync Prod with Git/GitHub** para promover código de desarrollo a producción.
+- Installation log: `/var/log/satom-install.log` (always written).
+- Production repository: `satom-prod/SATOM` (internal Gitea).
+- The application catalogue (apps.example.net → SATOM → web platform)
+  publishes this installer and the offline bundle, and has the
+  **Sync Prod with Git/GitHub** buttons to promote development code to
+  production.

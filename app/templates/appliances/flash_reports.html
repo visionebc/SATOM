@@ -4,13 +4,13 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <a href="{{ url_for('appliances.index') }}">Appliances</a>
+  <a href="{{ url_for('appliances.index') }}">{{ _('Appliances') }}</a>
   <span class="separator">/</span>
-  {% if focus %}<a href="{{ url_for('appliances.flash_reports') }}">Firmware Reports</a>
+  {% if focus %}<a href="{{ url_for('appliances.flash_reports') }}">{{ _('Firmware Reports') }}</a>
   <span class="separator">/</span><span>{{ focus.name }}</span>
-  {% else %}<span>Firmware Reports</span>{% endif %}
+  {% else %}<span>{{ _('Firmware Reports') }}</span>{% endif %}
 </div>
 {% endblock %}
 
@@ -22,20 +22,20 @@
 
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-clipboard-data me-2 text-accent"></i>Firmware Reports</h1>
+    <h1 class="fw-page-title"><i class="bi bi-clipboard-data me-2 text-accent"></i>{{ _('Firmware Reports') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      Before / after validation for every firmware <b>upgrade</b> and <b>boot-partition</b> (rollback) flash
+      {{ _('Before / after validation for every firmware') }} <b>{{ _('upgrade') }}</b> {{ _('and') }} <b>{{ _('boot-partition') }}</b> (rollback) flash
       {% if focus %} — filtered to <b>{{ focus.name }}</b>{% endif %}.
     </p>
   </div>
   <div class="d-flex gap-2">
     {% if focus %}
     <a href="{{ url_for('appliances.flash_reports') }}" class="btn fw-btn-secondary">
-      <i class="bi bi-list-ul me-1"></i>All appliances
+      <i class="bi bi-list-ul me-1"></i>{{ _('All appliances') }}
     </a>
     {% endif %}
     <a href="{{ url_for('appliances.index') }}" class="btn fw-btn-secondary">
-      <i class="bi bi-server me-1"></i>Appliances
+      <i class="bi bi-server me-1"></i>{{ _('Appliances') }}
     </a>
   </div>
 </div>
@@ -45,26 +45,26 @@
   <div class="col-md-3 col-sm-6">
     <div class="fw-stat-card">
       <div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-clipboard-data"></i></div>
-      <div><div class="fw-stat-value">{{ total }}</div><div class="fw-stat-label">Total Reports</div></div>
+      <div><div class="fw-stat-value">{{ total }}</div><div class="fw-stat-label">{{ _('Total Reports') }}</div></div>
     </div>
   </div>
   <div class="col-md-3 col-sm-6">
     <div class="fw-stat-card">
       <div class="fw-stat-icon fw-stat-icon-info"><i class="bi bi-cloud-arrow-up"></i></div>
-      <div><div class="fw-stat-value">{{ n_up }}</div><div class="fw-stat-label">Upgrades</div></div>
+      <div><div class="fw-stat-value">{{ n_up }}</div><div class="fw-stat-label">{{ _('Upgrades') }}</div></div>
     </div>
   </div>
   <div class="col-md-3 col-sm-6">
     <div class="fw-stat-card">
       <div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-hdd-stack"></i></div>
-      <div><div class="fw-stat-value">{{ n_dn }}</div><div class="fw-stat-label">Boot Partition</div></div>
+      <div><div class="fw-stat-value">{{ n_dn }}</div><div class="fw-stat-label">{{ _('Boot Partition') }}</div></div>
     </div>
   </div>
   <div class="col-md-3 col-sm-6">
     <div class="fw-stat-card">
       <div class="fw-stat-icon {{ 'fw-stat-icon-danger' if n_att else 'fw-stat-icon-success' }}">
         <i class="bi {{ 'bi-exclamation-triangle' if n_att else 'bi-check-circle' }}"></i></div>
-      <div><div class="fw-stat-value">{{ n_att }}</div><div class="fw-stat-label">Need Attention</div></div>
+      <div><div class="fw-stat-value">{{ n_att }}</div><div class="fw-stat-label">{{ _('Need Attention') }}</div></div>
     </div>
   </div>
 </div>
@@ -74,12 +74,12 @@
   <div class="fw-card-body d-flex flex-wrap gap-2 align-items-center">
     <div class="input-group input-group-sm" style="max-width:320px;">
       <span class="input-group-text"><i class="bi bi-search"></i></span>
-      <input type="text" id="rptSearch" class="form-control" placeholder="Filter by machine, firmware, operator…">
+      <input type="text" id="rptSearch" class="form-control" placeholder="{{ _('Filter by machine, firmware, operator…') }}">
     </div>
     <div class="btn-group btn-group-sm" role="group" id="rptKind">
-      <button type="button" class="btn fw-btn-secondary active" data-kind="all">All</button>
-      <button type="button" class="btn fw-btn-secondary" data-kind="upgrade">Upgrades</button>
-      <button type="button" class="btn fw-btn-secondary" data-kind="downgrade">Boot Partition</button>
+      <button type="button" class="btn fw-btn-secondary active" data-kind="all">{{ _('All') }}</button>
+      <button type="button" class="btn fw-btn-secondary" data-kind="upgrade">{{ _('Upgrades') }}</button>
+      <button type="button" class="btn fw-btn-secondary" data-kind="downgrade">{{ _('Boot Partition') }}</button>
     </div>
     <span class="text-muted small ms-auto" id="rptCount"></span>
   </div>
@@ -92,15 +92,15 @@
       <table class="table fw-table mb-0" id="rptTable">
         <thead>
           <tr>
-            <th>Machine</th>
-            <th>Direction</th>
+            <th>{{ _('Machine') }}</th>
+            <th>{{ _('Direction') }}</th>
             <th>Firmware (before &rarr; after)</th>
-            <th>Verdict</th>
+            <th>{{ _('Verdict') }}</th>
             <th class="text-center">Services&nbsp;&Delta;</th>
-            <th>Downtime</th>
-            <th>When</th>
-            <th>Operator</th>
-            <th class="text-end">Report</th>
+            <th>{{ _('Downtime') }}</th>
+            <th>{{ _('When') }}</th>
+            <th>{{ _('Operator') }}</th>
+            <th class="text-end">{{ _('Report') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -118,9 +118,9 @@
             </td>
             <td>
               {% if r.kind == 'downgrade' %}
-                <span class="badge fw-badge-info"><i class="bi bi-hdd-stack me-1"></i>Boot Partition</span>
+                <span class="badge fw-badge-info"><i class="bi bi-hdd-stack me-1"></i>{{ _('Boot Partition') }}</span>
               {% else %}
-                <span class="badge fw-badge-warning"><i class="bi bi-cloud-arrow-up me-1"></i>Upgrade</span>
+                <span class="badge fw-badge-warning"><i class="bi bi-cloud-arrow-up me-1"></i>{{ _('Upgrade') }}</span>
               {% endif %}
             </td>
             <td class="mono small">
@@ -139,8 +139,8 @@
             <td class="text-end">
               {% if r.has_report %}
               <a href="{{ url_for('appliances.flash_report_view', job_id=r.job_id) }}" target="_blank" rel="noopener"
-                 class="btn fw-btn-primary btn-sm"><i class="bi bi-box-arrow-up-right me-1"></i>View</a>
-              {% else %}<span class="text-muted small">no page</span>{% endif %}
+                 class="btn fw-btn-primary btn-sm"><i class="bi bi-box-arrow-up-right me-1"></i>{{ _('View') }}</a>
+              {% else %}<span class="text-muted small">{{ _('no page') }}</span>{% endif %}
             </td>
           </tr>
           {% endfor %}
@@ -149,12 +149,12 @@
     </div>
     <div id="rptEmpty" class="text-center text-muted py-5 d-none">
       <i class="bi bi-search" style="font-size:2rem;opacity:.4;"></i>
-      <p class="mb-0 mt-2">No reports match the current filter.</p>
+      <p class="mb-0 mt-2">{{ _('No reports match the current filter.') }}</p>
     </div>
     {% else %}
     <div class="text-center text-muted py-5">
       <i class="bi bi-clipboard-x" style="font-size:2.4rem;opacity:.35;"></i>
-      <h5 class="mt-3 mb-1">No firmware reports yet</h5>
+      <h5 class="mt-3 mb-1">{{ _('No firmware reports yet') }}</h5>
       <p class="mb-0">A before/after report is generated automatically after each firmware
         upgrade or boot-partition flash{% if focus %} for <b>{{ focus.name }}</b>{% endif %}.</p>
     </div>

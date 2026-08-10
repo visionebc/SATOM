@@ -21,3 +21,4 @@ markdown==3.10.2
 reportlab==5.0.0
 pdfplumber==0.11.10
 setuptools==83.0.0
+Flask-Babel==4.0.0

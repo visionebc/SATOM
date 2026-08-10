@@ -8,9 +8,9 @@
 
 <div class="fw-alert fw-alert-danger d-flex align-items-center gap-2">
   <i class="bi bi-exclamation-octagon-fill"></i>
-  A live upgrade <b>reboots the appliance</b> and interrupts every service it fronts. Always run
-  <a href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}" class="alert-link">Upgrade Preparation</a>
-  first. Leave <b>Dry run</b> checked to validate without sending anything.
+  {{ _('A live upgrade') }} <b>{{ _('reboots the appliance') }}</b> {{ _('and interrupts every service it fronts. Always run') }}
+  <a href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}" class="alert-link">{{ _('Upgrade Preparation') }}</a>
+  {{ _('first. Leave') }} <b>{{ _('Dry run') }}</b> {{ _('checked to validate without sending anything.') }}
 </div>
 
 {# --- CHANGE CONTROL: a live flash needs an approved, open window --- #}
@@ -21,12 +21,12 @@
     window {{ cr.window_start|localtime('%Y-%m-%d %H:%M %Z') }}{% if cr.window_end %} &rarr; {{ cr.window_end|localtime('%Y-%m-%d %H:%M %Z') }}{% endif %}.
     A live push will move that change to <i>in&nbsp;progress</i> and close it with the real outcome.
   {% else %}
-    <b>Live upgrade is blocked.</b> {{ cr_reason }}.
+    <b>{{ _('Live upgrade is blocked.') }}</b> {{ cr_reason }}.
     Dry runs still work &mdash; they send nothing to the appliance.
     {% if cr %}
       <a class="alert-link" href="{{ url_for('change_requests.detail', id=cr.id) }}">Open {{ cr.ref or ('CR #' ~ cr.id) }}</a>.
     {% else %}
-      Run <a class="alert-link" href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}">Upgrade Preparation</a>,
+      Run <a class="alert-link" href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}">{{ _('Upgrade Preparation') }}</a>,
       raise a change request from that run, and get it approved.
     {% endif %}
   {% endif %}
@@ -36,7 +36,7 @@
     {{ 'passed' if prep.ok else 'NOT clean' }} ({{ prep.summary }}).
   </div>
   {% else %}
-  <div class="small mt-1 text-muted">No pre-flight has ever been recorded for this appliance.</div>
+  <div class="small mt-1 text-muted">{{ _('No pre-flight has ever been recorded for this appliance.') }}</div>
   {% endif %}
 </div>
 
@@ -46,11 +46,11 @@
   <div class="card-body">
     <div class="fw-alert fw-alert-{{ 'success' if result.ok else 'warning' }} mb-2">{{ result.message }}</div>
     <dl class="row mb-0 small">
-      <dt class="col-sm-3">Image</dt><dd class="col-sm-9">{{ result.image }} ({{ '{:,}'.format(result.size) }} bytes)</dd>
-      <dt class="col-sm-3">Firmware before</dt><dd class="col-sm-9">{{ result.firmware_before or '?' }}</dd>
-      <dt class="col-sm-3">Maintenance permission</dt><dd class="col-sm-9">{{ result.permitted if result.permitted is not none else 'unknown' }}</dd>
-      {% if result.maturity %}<dt class="col-sm-3 text-warning">Maturity prompt</dt><dd class="col-sm-9 text-warning">{{ result.maturity }} — re-submit with "Confirm maturity change" checked to install.</dd>{% endif %}
-      {% if result.warning %}<dt class="col-sm-3 text-warning">Warning</dt><dd class="col-sm-9 text-warning">{{ result.warning }}</dd>{% endif %}
+      <dt class="col-sm-3">{{ _('Image') }}</dt><dd class="col-sm-9">{{ result.image }} ({{ '{:,}'.format(result.size) }} bytes)</dd>
+      <dt class="col-sm-3">{{ _('Firmware before') }}</dt><dd class="col-sm-9">{{ result.firmware_before or '?' }}</dd>
+      <dt class="col-sm-3">{{ _('Maintenance permission') }}</dt><dd class="col-sm-9">{{ result.permitted if result.permitted is not none else 'unknown' }}</dd>
+      {% if result.maturity %}<dt class="col-sm-3 text-warning">{{ _('Maturity prompt') }}</dt><dd class="col-sm-9 text-warning">{{ result.maturity }} — re-submit with "Confirm maturity change" checked to install.</dd>{% endif %}
+      {% if result.warning %}<dt class="col-sm-3 text-warning">{{ _('Warning') }}</dt><dd class="col-sm-9 text-warning">{{ result.warning }}</dd>{% endif %}
     </dl>
   </div>
 </div>
@@ -59,13 +59,11 @@
 {% if not images %}
 <div class="card shadow-sm">
   <div class="card-body">
-    <p class="small text-muted mb-2">Current firmware: <b>{{ firmware or 'unknown' }}</b></p>
+    <p class="small text-muted mb-2">{{ _('Current firmware:') }} <b>{{ firmware or 'unknown' }}</b></p>
     <div class="fw-alert fw-alert-warning mb-0">
       <i class="bi bi-info-circle me-1"></i>
-      No firmware image in the repository matches this appliance
-      (<b>{{ appliance.kind }}</b>{% if appliance.model %} / {{ appliance.model }}{% endif %}).
-      Add one in the <a class="alert-link" href="{{ url_for('firmware.index') }}">Firmware repository</a> first —
-      images are no longer uploaded from this page.
+      {{ _('No firmware image in the repository matches this appliance (') }}<b>{{ appliance.kind }}</b>{% if appliance.model %} / {{ appliance.model }}{% endif %}).
+      Add one in the <a class="alert-link" href="{{ url_for('firmware.index') }}">{{ _('Firmware repository') }}</a> {{ _('first — images are no longer uploaded from this page.') }}
     </div>
   </div>
 </div>
@@ -73,7 +71,7 @@
 
 {# --- Shared image picker is rendered inside each form so the value posts. --- #}
 {% macro image_select(name) %}
-<label class="form-label">Firmware image (auto-detected from repository)</label>
+<label class="form-label">{{ _('Firmware image (auto-detected from repository)') }}</label>
 <select class="form-select" name="image_id" required>
   {% for img in images %}
   <option value="{{ img.id }}" {{ 'selected' if selected_id and selected_id == img.id else '' }}>
@@ -85,16 +83,15 @@
 {% endmacro %}
 
 <div class="card shadow-sm mb-3">
-  <div class="card-header fw-card-header"><i class="bi bi-check2-circle me-1"></i>Apply now</div>
+  <div class="card-header fw-card-header"><i class="bi bi-check2-circle me-1"></i>{{ _('Apply now') }}</div>
   <div class="card-body">
-    <p class="small text-muted mb-3">Current firmware: <b>{{ firmware or 'unknown' }}</b> — the matching image
-      is selected automatically below; just validate and accept.</p>
+    <p class="small text-muted mb-3">{{ _('Current firmware:') }} <b>{{ firmware or 'unknown' }}</b> {{ _('— the matching image is selected automatically below; just validate and accept.') }}</p>
     <form method="POST" action="{{ url_for('appliances.upgrade_push', id=appliance.id) }}" id="flash-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="mb-3">{{ image_select('image_id') }}</div>
       <div class="form-check mb-2">
         <input class="form-check-input" type="checkbox" name="dry_run" id="dry_run" checked>
-        <label class="form-check-label" for="dry_run">Dry run (validate the image only — nothing is sent)</label>
+        <label class="form-check-label" for="dry_run">{{ _('Dry run (validate the image only — nothing is sent)') }}</label>
       </div>
       <div id="live-fields" class="d-none border rounded p-3 mb-3" style="background:rgba(248,113,113,.06)">
         <div class="form-check mb-2">
@@ -104,19 +101,19 @@
         <label class="form-label small">Type the appliance name <code>{{ appliance.name }}</code> to authorise the live reboot:</label>
         <input class="form-control" type="text" name="confirm_name" autocomplete="off" placeholder="{{ appliance.name }}">
       </div>
-      <button class="btn fw-btn-primary" type="submit"><i class="bi bi-check2-circle me-1"></i>Validate / Accept</button>
+      <button class="btn fw-btn-primary" type="submit"><i class="bi bi-check2-circle me-1"></i>{{ _('Validate / Accept') }}</button>
     </form>
   </div>
 </div>
 
 <div class="card shadow-sm">
-  <div class="card-header fw-card-header"><i class="bi bi-calendar-event me-1"></i>Schedule for later</div>
+  <div class="card-header fw-card-header"><i class="bi bi-calendar-event me-1"></i>{{ _('Schedule for later') }}</div>
   <div class="card-body">
     <form method="POST" action="{{ url_for('appliances.upgrade_schedule', id=appliance.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="mb-3">{{ image_select('image_id') }}</div>
       <div class="mb-3">
-        <label class="form-label">Date &amp; time <span class="text-muted">(UTC)</span></label>
+        <label class="form-label">Date &amp; time <span class="text-muted">{{ _('(UTC)') }}</span></label>
         <input class="form-control" type="datetime-local" name="when" required>
       </div>
       <div class="form-check mb-3">
@@ -125,11 +122,9 @@
       </div>
       <div class="fw-alert fw-alert-info small mb-3">
         <i class="bi bi-info-circle me-1"></i>
-        The upgrade is recorded as a one-shot <b>Scheduled Action</b> with the validated image.
-        Unattended flashing is gated for safety (an approved Change Request / explicit operator
-        run); the schedule is created and visible under Scheduled Actions.
+        {{ _('The upgrade is recorded as a one-shot') }} <b>{{ _('Scheduled Action') }}</b> {{ _('with the validated image. Unattended flashing is gated for safety (an approved Change Request / explicit operator run); the schedule is created and visible under Scheduled Actions.') }}
       </div>
-      <button class="btn fw-btn-secondary" type="submit"><i class="bi bi-calendar-plus me-1"></i>Schedule upgrade</button>
+      <button class="btn fw-btn-secondary" type="submit"><i class="bi bi-calendar-plus me-1"></i>{{ _('Schedule upgrade') }}</button>
     </form>
   </div>
 </div>

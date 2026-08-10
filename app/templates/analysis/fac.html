@@ -27,22 +27,19 @@
 {% endblock %}
 
 {% block breadcrumb %}
-<nav class="fw-breadcrumb"><span>Analysis</span></nav>
+<nav class="fw-breadcrumb"><span>{{ _('Analysis') }}</span></nav>
 {% endblock %}
 
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1>Analysis — identity</h1>
-    <p class="fw-page-sub">Entitlement headroom, identity inventory and
-      authentication posture across every FortiAuthenticator in this ADOM.
-      Read entirely from the local cache and the metrics store — opening this
-      page never contacts an appliance.</p>
+    <h1>{{ _('Analysis — identity') }}</h1>
+    <p class="fw-page-sub">{{ _('Entitlement headroom, identity inventory and authentication posture across every FortiAuthenticator in this ADOM. Read entirely from the local cache and the metrics store — opening this page never contacts an appliance.') }}</p>
   </div>
 </div>
 
 {% if not data.devices %}
-  <div class="ana-empty">No FortiAuthenticator appliance is visible in this ADOM.</div>
+  <div class="ana-empty">{{ _('No FortiAuthenticator appliance is visible in this ADOM.') }}</div>
 {% else %}
 
 {# ---------------------------------------------------------------- headline #}
@@ -50,33 +47,32 @@
 <div class="ana-cards">
   <div class="ana-card">
     <div class="v">{{ data.devices|length }}</div>
-    <div class="k">Appliances</div>
+    <div class="k">{{ _('Appliances') }}</div>
   </div>
   <div class="ana-card">
     <div class="v">{{ data.inventory.endpoints_present }}<span style="font-size:.9rem;opacity:.5">/{{ data.inventory.endpoints_known }}</span></div>
-    <div class="k">Endpoints harvested</div>
-    <div class="s">registry-derived</div>
+    <div class="k">{{ _('Endpoints harvested') }}</div>
+    <div class="s">{{ _('registry-derived') }}</div>
   </div>
   <div class="ana-card">
     <div class="v">{{ data.posture.findings|selectattr('severity','equalto','warn')|list|length }}</div>
-    <div class="k">Posture warnings</div>
+    <div class="k">{{ _('Posture warnings') }}</div>
   </div>
   <div class="ana-card">
     <div class="v">{{ ent.rows|length if ent.available else '—' }}</div>
-    <div class="k">Capacity series</div>
+    <div class="k">{{ _('Capacity series') }}</div>
     <div class="s">{{ 'metrics store' if ent.available else 'store unavailable' }}</div>
   </div>
 </div>
 
 {# ------------------------------------------------------------- entitlement #}
-<div class="ana-sec">Entitlement — what this unit runs out of</div>
+<div class="ana-sec">{{ _('Entitlement — what this unit runs out of') }}</div>
 <div class="fac-note">
   An authenticator does not run out of bandwidth, it runs out of licence. These
   numbers come from the metrics store, not the configuration cache:
   <code>systeminfo</code> is excluded from the config harvest because it changes
   between two reads of an idle unit. Grading belongs to the licence/token
-  probes — a row with no probe is <strong>unmonitored</strong>, which is lost
-  coverage, not health.
+  probes — a row with no probe is <strong>{{ _('unmonitored') }}</strong>{{ _(', which is lost coverage, not health.') }}
 </div>
 <div class="ana-panel wide" style="margin-bottom:1.4rem">
 {% if not ent.available %}
@@ -88,11 +84,11 @@
 {% else %}
   <table class="ana-tbl">
     <thead><tr>
-      <th>Device</th><th>Resource</th><th>Kind</th>
-      <th style="text-align:right">Used</th>
-      <th style="text-align:right">Ceiling</th>
-      <th style="text-align:right">Free</th>
-      <th style="width:160px">Consumed</th><th>Probe</th>
+      <th>{{ _('Device') }}</th><th>{{ _('Resource') }}</th><th>{{ _('Kind') }}</th>
+      <th style="text-align:right">{{ _('Used') }}</th>
+      <th style="text-align:right">{{ _('Ceiling') }}</th>
+      <th style="text-align:right">{{ _('Free') }}</th>
+      <th style="width:160px">{{ _('Consumed') }}</th><th>{{ _('Probe') }}</th>
     </tr></thead>
     <tbody>
     {% for r in ent.rows %}
@@ -102,7 +98,7 @@
         <td><span class="fw-badge fw-badge-secondary">{{ 'licence' if r.family == 'licence' else 'token' }}</span></td>
         <td style="text-align:right">{{ r.used|int if r.used is not none else '—' }}</td>
         <td style="text-align:right">
-          {% if r.capped and r.total %}{{ r.total|int }}{% else %}<span class="fac-none">uncapped</span>{% endif %}
+          {% if r.capped and r.total %}{{ r.total|int }}{% else %}<span class="fac-none">{{ _('uncapped') }}</span>{% endif %}
         </td>
         <td style="text-align:right">{{ r.free|int if r.free is not none else '—' }}</td>
         <td>
@@ -110,20 +106,20 @@
             <div class="facbar"><span style="width:{{ r.pct|round(1) }}%"></span></div>
             <span style="font-size:.72rem;opacity:.7">{{ r.pct|round(1) }} %</span>
           {% else %}
-            <span class="fac-none">no ceiling — no percentage</span>
+            <span class="fac-none">{{ _('no ceiling — no percentage') }}</span>
           {% endif %}
         </td>
         <td>
           {% if r.probe_status == 'unmonitored' %}
-            <span class="fw-badge fw-badge-warning">unmonitored</span>
+            <span class="fw-badge fw-badge-warning">{{ _('unmonitored') }}</span>
           {% elif r.probe_status == 'disabled' %}
-            <span class="fw-badge fw-badge-warning">disabled</span>
+            <span class="fw-badge fw-badge-warning">{{ _('disabled') }}</span>
           {% elif r.probe_status in ('crit','error') %}
             <span class="fw-badge fw-badge-danger">{{ r.probe_status }}</span>
           {% elif r.probe_status == 'warn' %}
-            <span class="fw-badge fw-badge-warning">warn</span>
+            <span class="fw-badge fw-badge-warning">{{ _('warn') }}</span>
           {% elif r.probe_status == 'ok' %}
-            <span class="fw-badge fw-badge-success">ok</span>
+            <span class="fw-badge fw-badge-success">{{ _('ok') }}</span>
           {% else %}
             <span class="fw-badge fw-badge-secondary">{{ r.probe_status }}</span>
           {% endif %}
@@ -136,23 +132,22 @@
 </div>
 
 {# ----------------------------------------------------------------- posture #}
-<div class="ana-sec">Authentication posture</div>
+<div class="ana-sec">{{ _('Authentication posture') }}</div>
 <div class="ana-grid">
   <div class="ana-panel wide">
-    <h3>Findings</h3>
+    <h3>{{ _('Findings') }}</h3>
     {% if not data.posture.findings %}
-      <div class="ana-empty">Nothing to report — none of the settings this page
-        reads are present in the cache yet.</div>
+      <div class="ana-empty">{{ _('Nothing to report — none of the settings this page reads are present in the cache yet.') }}</div>
     {% else %}
       <table class="ana-tbl">
-        <thead><tr><th style="width:90px">Severity</th><th>Device</th><th>Finding</th><th>Detail</th><th>Source</th></tr></thead>
+        <thead><tr><th style="width:90px">{{ _('Severity') }}</th><th>{{ _('Device') }}</th><th>{{ _('Finding') }}</th><th>{{ _('Detail') }}</th><th>{{ _('Source') }}</th></tr></thead>
         <tbody>
         {% for f in data.posture.findings %}
           <tr>
             <td>
-              {% if f.severity == 'warn' %}<span class="fw-badge fw-badge-warning">warn</span>
-              {% elif f.severity == 'ok' %}<span class="fw-badge fw-badge-success">ok</span>
-              {% else %}<span class="fw-badge fw-badge-secondary">info</span>{% endif %}
+              {% if f.severity == 'warn' %}<span class="fw-badge fw-badge-warning">{{ _('warn') }}</span>
+              {% elif f.severity == 'ok' %}<span class="fw-badge fw-badge-success">{{ _('ok') }}</span>
+              {% else %}<span class="fw-badge fw-badge-secondary">{{ _('info') }}</span>{% endif %}
             </td>
             <td>{{ f.device }}</td>
             <td><strong>{{ f.title }}</strong></td>
@@ -175,14 +170,14 @@
 </div>
 
 {# --------------------------------------------------------------- inventory #}
-<div class="ana-sec">Identity inventory</div>
+<div class="ana-sec">{{ _('Identity inventory') }}</div>
 <div class="ana-panel wide" style="margin-bottom:1.4rem">
   <div class="ana-scroll">
   <table class="ana-tbl">
     <thead><tr>
-      <th>Section</th><th>Object</th>
+      <th>{{ _('Section') }}</th><th>{{ _('Object') }}</th>
       {% for d in data.devices %}<th style="text-align:right">{{ d.name }}</th>{% endfor %}
-      <th style="text-align:right">Total</th>
+      <th style="text-align:right">{{ _('Total') }}</th>
     </tr></thead>
     <tbody>
     {% for row in data.inventory.rows %}
@@ -192,7 +187,7 @@
             <code style="font-size:.7rem;opacity:.5;margin-left:.3rem">{{ row.endpoint }}</code></td>
         {% for p in row.devices %}
           <td style="text-align:right">
-            {% if p.harvested %}{{ p.count }}{% else %}<span class="fac-none" title="the sweep stored no rows for this endpoint">not harvested</span>{% endif %}
+            {% if p.harvested %}{{ p.count }}{% else %}<span class="fac-none" title="{{ _('the sweep stored no rows for this endpoint') }}">{{ _('not harvested') }}</span>{% endif %}
           </td>
         {% endfor %}
         <td style="text-align:right"><strong>{{ row.total }}</strong></td>
@@ -202,25 +197,23 @@
   </table>
   </div>
   <div class="ana-empty" style="margin-top:.5rem">
-    Rows are derived from the endpoint registry, so an endpoint added in a
-    later release appears here without a second edit. <em>not harvested</em> is
-    deliberately distinct from <em>0</em>: they demand opposite actions.
+    {{ _('Rows are derived from the endpoint registry, so an endpoint added in a later release appears here without a second edit.') }} <em>{{ _('not harvested') }}</em> {{ _('is deliberately distinct from') }} <em>0</em>{{ _(': they demand opposite actions.') }}
   </div>
 </div>
 
 {# -------------------------------------------------------------- freshness #}
-<div class="ana-sec">Cache freshness</div>
+<div class="ana-sec">{{ _('Cache freshness') }}</div>
 <div class="ana-panel wide">
   <table class="ana-tbl">
-    <thead><tr><th>Device</th><th>Host</th><th>Config cache</th><th>Age</th><th>State</th></tr></thead>
+    <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Host') }}</th><th>{{ _('Config cache') }}</th><th>{{ _('Age') }}</th><th>{{ _('State') }}</th></tr></thead>
     <tbody>
     {% for r in data.freshness.rows %}
       <tr>
         <td><strong>{{ r.device }}</strong></td>
         <td><code style="font-size:.75rem">{{ r.host }}</code></td>
-        <td>{% if r.cached %}{{ r.generated_at }}{% else %}<span class="fw-badge fw-badge-warning">never</span>{% endif %}</td>
+        <td>{% if r.cached %}{{ r.generated_at }}{% else %}<span class="fw-badge fw-badge-warning">{{ _('never') }}</span>{% endif %}</td>
         <td>{% if r.age_hours is not none %}{{ r.age_hours|round(1) }} h{% else %}—{% endif %}</td>
-        <td>{% if r.maintenance %}<span class="fw-badge fw-badge-secondary">maintenance</span>{% else %}<span class="fw-badge fw-badge-success">active</span>{% endif %}</td>
+        <td>{% if r.maintenance %}<span class="fw-badge fw-badge-secondary">{{ _('maintenance') }}</span>{% else %}<span class="fw-badge fw-badge-success">{{ _('active') }}</span>{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>

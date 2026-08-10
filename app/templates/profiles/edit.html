@@ -4,9 +4,9 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <a href="{{ url_for('profiles.index') }}">Profiles</a>
+  <a href="{{ url_for('profiles.index') }}">{{ _('Profiles') }}</a>
   <span class="separator">/</span>
   <span>{{ profile.name }}</span>
 </div>
@@ -17,7 +17,7 @@
   <div>
     <h1 class="fw-page-title">
       <i class="bi bi-person-badge me-2 text-accent"></i>{{ profile.name }}
-      {% if profile.is_system %}<span class="fw-badge fw-badge-info ms-2">System</span>{% endif %}
+      {% if profile.is_system %}<span class="fw-badge fw-badge-info ms-2">{{ _('System') }}</span>{% endif %}
     </h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       {% if profile.is_system %}
@@ -28,7 +28,7 @@
     </p>
   </div>
   <a class="btn btn-outline-secondary" href="{{ url_for('profiles.index') }}">
-    <i class="bi bi-arrow-left me-1"></i>Back
+    <i class="bi bi-arrow-left me-1"></i>{{ _('Back') }}
   </a>
 </div>
 
@@ -38,19 +38,19 @@
 
   <div class="row g-3 mb-3">
     <div class="col-md-4">
-      <label class="fw-form-label">Name</label>
+      <label class="fw-form-label">{{ _('Name') }}</label>
       <input type="text" class="form-control" name="name" value="{{ profile.name }}" {{ 'disabled' if disabled }}>
     </div>
     <div class="col-md-8">
-      <label class="fw-form-label">Description</label>
+      <label class="fw-form-label">{{ _('Description') }}</label>
       <input type="text" class="form-control" name="description" value="{{ profile.description or '' }}" {{ 'disabled' if disabled }}>
     </div>
   </div>
 
   {% if not disabled %}
   <div class="d-flex gap-2 mb-3">
-    <button type="button" class="btn btn-sm btn-outline-secondary" data-js="set-perms" data-perms="true"><i class="bi bi-check2-all me-1"></i>Select all</button>
-    <button type="button" class="btn btn-sm btn-outline-secondary" data-js="set-perms" data-perms="false"><i class="bi bi-x-lg me-1"></i>Clear all</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-js="set-perms" data-perms="true"><i class="bi bi-check2-all me-1"></i>{{ _('Select all') }}</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-js="set-perms" data-perms="false"><i class="bi bi-x-lg me-1"></i>{{ _('Clear all') }}</button>
   </div>
   {% endif %}
 
@@ -73,7 +73,7 @@
                    {{ 'checked' if perm.key in selected }} {{ 'disabled' if disabled }}>
             <label class="form-check-label" for="perm-{{ perm.key }}">
               {{ perm.label }}
-              {% if perm.admin_only %}<i class="bi bi-shield-lock-fill text-warning ms-1" title="Administrative capability"></i>{% endif %}
+              {% if perm.admin_only %}<i class="bi bi-shield-lock-fill text-warning ms-1" title="{{ _('Administrative capability') }}"></i>{% endif %}
               <div class="text-muted" style="font-size:11px;">{{ perm.desc }}</div>
             </label>
           </div>
@@ -87,8 +87,8 @@
 
   {% if not disabled %}
   <div class="mt-4 d-flex justify-content-end gap-2">
-    <a class="btn btn-secondary" href="{{ url_for('profiles.index') }}">Cancel</a>
-    <button type="submit" class="btn btn-fw-primary"><i class="bi bi-save me-1"></i>Save permissions</button>
+    <a class="btn btn-secondary" href="{{ url_for('profiles.index') }}">{{ _('Cancel') }}</a>
+    <button type="submit" class="btn btn-fw-primary"><i class="bi bi-save me-1"></i>{{ _('Save permissions') }}</button>
   </div>
   {% endif %}
 </form>

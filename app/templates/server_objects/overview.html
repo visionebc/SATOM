@@ -3,9 +3,9 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <a href="{{ url_for('server_objects.index') }}">Server Objects</a>
+  <a href="{{ url_for('server_objects.index') }}">{{ _('Server Objects') }}</a>
   <span class="separator">/</span>
   <span>{{ appliance.name }}</span>
   {% if selected %}<span class="separator">/</span><span>{{ selected.label }}</span>{% endif %}
@@ -15,13 +15,13 @@
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-hdd-stack me-2 text-accent"></i>Server Objects</h1>
+    <h1 class="fw-page-title"><i class="bi bi-hdd-stack me-2 text-accent"></i>{{ _('Server Objects') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       <strong>{{ appliance.name }}</strong> · {{ appliance.host }}:{{ appliance.port }}
     </p>
   </div>
   <a href="{{ url_for('server_objects.index') }}" class="btn btn-secondary btn-sm">
-    <i class="bi bi-chevron-left me-1"></i>Change Appliance
+    <i class="bi bi-chevron-left me-1"></i>{{ _('Change Appliance') }}
   </a>
 </div>
 
@@ -32,16 +32,16 @@
     {% if not selected %}
       <div class="fw-empty-state py-5">
         <div class="fw-empty-state-icon"><i class="bi bi-arrow-left-circle"></i></div>
-        <div class="fw-empty-state-title">Pick an object type from the sidebar</div>
-        <p class="text-muted">Expand <strong>Server Objects</strong> in the left menu — Server, Service, Certificates, SSL Ciphers, IP Group…</p>
+        <div class="fw-empty-state-title">{{ _('Pick an object type from the sidebar') }}</div>
+        <p class="text-muted">{{ _('Expand') }} <strong>{{ _('Server Objects') }}</strong> {{ _('in the left menu — Server, Service, Certificates, SSL Ciphers, IP Group…') }}</p>
       </div>
     {% else %}
       <div class="d-flex justify-content-between align-items-center mb-2">
         <div>
           <h4 class="mb-0"><i class="bi {{ selected.icon }} me-2 text-accent"></i>{{ selected.label }}</h4>
           <code class="small text-muted">{{ selected.collection }}</code>
-          {% if selected.has_children %}<span class="fw-badge fw-badge-info ms-1">has sub-tables</span>{% endif %}
-          {% if selected.read_only %}<span class="fw-badge fw-badge-secondary ms-1">read-only</span>{% endif %}
+          {% if selected.has_children %}<span class="fw-badge fw-badge-info ms-1">{{ _('has sub-tables') }}</span>{% endif %}
+          {% if selected.read_only %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('read-only') }}</span>{% endif %}
         </div>
         {% if not selected.read_only %}
         <a class="btn btn-fw-primary btn-sm"
@@ -61,11 +61,11 @@
         </div>
         <span class="text-muted small ms-2">{{ rows|length }} object(s)</span>
         {% if freshness %}
-        <span class="badge bg-dark border ms-2" title="Served from the local source of truth"><i class="bi bi-database me-1"></i>{{ freshness }}</span>
+        <span class="badge bg-dark border ms-2" title="{{ _('Served from the local source of truth') }}"><i class="bi bi-database me-1"></i>{{ freshness }}</span>
         <form method="post" action="{{ url_for('server_objects.refresh', id=appliance.id) }}" class="d-inline ms-1">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="type" value="{{ selected.logical }}">
-          <button type="submit" class="btn btn-outline-light btn-sm" title="Pull live config from the device"><i class="bi bi-arrow-clockwise"></i></button>
+          <button type="submit" class="btn btn-outline-light btn-sm" title="{{ _('Pull live config from the device') }}"><i class="bi bi-arrow-clockwise"></i></button>
         </form>
         {% endif %}
       </div>
@@ -73,7 +73,7 @@
       <div class="fw-table-wrapper">
         <table class="fw-table" id="so-table">
           <thead>
-            <tr><th>Name</th><th>Status</th><th>Details</th><th style="width:140px;">Actions</th></tr>
+            <tr><th>{{ _('Name') }}</th><th>{{ _('Status') }}</th><th>{{ _('Details') }}</th><th style="width:140px;">{{ _('Actions') }}</th></tr>
           </thead>
           <tbody>
             {% for r in rows %}
@@ -81,9 +81,9 @@
               <td><strong>{{ r.name }}</strong></td>
               <td>
                 {% if r.status == 'enable' %}
-                  <span class="fw-status fw-status-online" style="font-size:12px;"><span class="fw-status-dot"></span>Enabled</span>
+                  <span class="fw-status fw-status-online" style="font-size:12px;"><span class="fw-status-dot"></span>{{ _('Enabled') }}</span>
                 {% elif r.status == 'disable' %}
-                  <span class="fw-status fw-status-unknown" style="font-size:12px;"><span class="fw-status-dot"></span>Disabled</span>
+                  <span class="fw-status fw-status-unknown" style="font-size:12px;"><span class="fw-status-dot"></span>{{ _('Disabled') }}</span>
                 {% elif r.status %}
                   <span class="fw-badge fw-badge-secondary">{{ r.status }}</span>
                 {% else %}—{% endif %}

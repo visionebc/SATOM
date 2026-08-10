@@ -4,25 +4,25 @@
 {% block content %}
 <div class="fw-page-header d-flex align-items-center gap-3 mb-4">
   <img src="{{ url_for('static', filename='img/fortiauthenticator-mark.svg') }}"
-       alt="FortiAuthenticator" style="width:42px;height:42px;"
+       alt="{{ _('FortiAuthenticator') }}" style="width:42px;height:42px;"
        onerror="this.style.display='none'">
   <div>
-    <h1 class="h4 mb-0">SATOM</h1>
+    <h1 class="h4 mb-0">{{ _('SATOM') }}</h1>
     <div class="text-muted" style="font-size:13px;">Identity &amp; Access Management
       · {{ n_bound }} of {{ n_items }} sections bound to live endpoints
       across {{ groups|length }} areas</div>
   </div>
   <div class="ms-auto d-flex gap-2">
     <a href="{{ url_for('fac_api.index') }}" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-braces me-1"></i>API console</a>
+      <i class="bi bi-braces me-1"></i>{{ _('API console') }}</a>
     <a href="{{ url_for('product.switch') }}" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-arrow-left-right me-1"></i>Switch product</a>
+      <i class="bi bi-arrow-left-right me-1"></i>{{ _('Switch product') }}</a>
   </div>
 </div>
 
 {# ---- Device picker ---------------------------------------------------- #}
 <div class="fw-card mb-4" style="padding:18px 20px;">
-  <h2 class="h6 mb-3"><i class="bi bi-person-badge me-2 text-accent"></i>FortiAuthenticator devices</h2>
+  <h2 class="h6 mb-3"><i class="bi bi-person-badge me-2 text-accent"></i>{{ _('FortiAuthenticator devices') }}</h2>
   {% if fleet %}
   <div class="row g-3">
     {% for a in fleet %}
@@ -33,7 +33,7 @@
           <i class="bi bi-person-badge text-accent"></i>
           <strong>{{ a.name }}</strong>
           {% if current and current.id == a.id %}
-          <span class="fw-badge fw-badge-success ms-auto">selected</span>
+          <span class="fw-badge fw-badge-success ms-auto">{{ _('selected') }}</span>
           {% endif %}
         </div>
         <div class="text-muted mb-2" style="font-size:12px;">{{ a.host }}:{{ a.port }}</div>
@@ -47,11 +47,11 @@
   {% else %}
   <div class="fw-empty-state py-4">
     <i class="bi bi-person-badge"></i>
-    <p class="mb-1">No FortiAuthenticator appliance is registered yet.</p>
+    <p class="mb-1">{{ _('No FortiAuthenticator appliance is registered yet.') }}</p>
     <p class="text-muted mb-0" style="font-size:12px;">
       Add one under Administration → Appliances with kind
       <code>fortiauthenticator</code>. Its password field must hold the
-      <strong>per-user API key</strong>, not the login password — the device
+      <strong>{{ _('per-user API key') }}</strong>, not the login password — the device
       rejects the password with 401. Self-signed certificate: register it with
       <code>verify_ssl</code> disabled or every call fails before it
       authenticates.</p>
@@ -62,11 +62,11 @@
 {# ---- Live unit status -------------------------------------------------- #}
 {% if header_dev %}
 <div class="fw-card mb-4" style="padding:18px 20px;">
-  <h2 class="h6 mb-3"><i class="bi bi-speedometer2 me-2 text-accent"></i>Unit status
+  <h2 class="h6 mb-3"><i class="bi bi-speedometer2 me-2 text-accent"></i>{{ _('Unit status') }}
     <span class="text-muted fw-normal" style="font-size:12px;">— {{ header_dev.name }}</span></h2>
   {% if status_err %}
   <div class="alert alert-danger mb-0" style="font-size:13px;">
-    <strong>The device refused the status read.</strong>
+    <strong>{{ _('The device refused the status read.') }}</strong>
     <div class="mt-1"><code>{{ status_err }}</code></div>
   </div>
   {% elif status %}
@@ -97,7 +97,7 @@
     {% endfor %}
   </div>
   {% else %}
-  <div class="text-muted" style="font-size:13px;">No status returned.</div>
+  <div class="text-muted" style="font-size:13px;">{{ _('No status returned.') }}</div>
   {% endif %}
 </div>
 {% endif %}
@@ -117,7 +117,7 @@
           {% if it.logicals %}
           <span class="fw-badge fw-badge-info ms-auto">{{ it.logicals|length }} tab{{ '' if it.logicals|length == 1 else 's' }}</span>
           {% else %}
-          <span class="fw-badge fw-badge-secondary ms-auto">no endpoint</span>
+          <span class="fw-badge fw-badge-secondary ms-auto">{{ _('no endpoint') }}</span>
           {% endif %}
         </div>
         <div class="text-muted" style="font-size:12px;">{{ it.desc }}</div>

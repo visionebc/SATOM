@@ -6,63 +6,62 @@
     <h4 class="mb-1"><i class="bi bi-pencil-square me-2"></i><code>{{ key }}</code></h4>
     <p class="text-muted mb-0" style="font-size:13px;">
       {% if builtin %}
-        Built-in change type. Every box you leave <strong>empty keeps the wording that ships with the
-        product</strong> — including its future corrections. Fill one in only to override that one paragraph.
+        Built-in change type. Every box you leave <strong>{{ _('empty keeps the wording that ships with the product') }}</strong> — including its future corrections. Fill one in only to override that one paragraph.
       {% else %}
-        Change type of your own. It has <strong>no automation behind it</strong>: a change request using it
+        Change type of your own. It has <strong>{{ _('no automation behind it') }}</strong>: a change request using it
         is raised, approved and printed here, and the work is carried out by hand.
       {% endif %}
-      You are writing in <strong>{{ source_lang }}</strong>; the other languages are translated from it.
+      You are writing in <strong>{{ source_lang }}</strong>{{ _('; the other languages are translated from it.') }}
     </p>
   </div>
-  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('cr_types.index', _adom=product.key) }}">Back</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('cr_types.index', _adom=product.key) }}">{{ _('Back') }}</a>
 </div>
 
 <form method="post" action="{{ url_for('cr_types.save', key=key, _adom=product.key) }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
   <div class="card mb-3">
-    <div class="card-header"><strong><i class="bi bi-sliders me-1"></i>Settings</strong></div>
+    <div class="card-header"><strong><i class="bi bi-sliders me-1"></i>{{ _('Settings') }}</strong></div>
     <div class="card-body row g-3">
       <div class="col-md-3">
-        <label class="form-label small mb-1">Written in</label>
+        <label class="form-label small mb-1">{{ _('Written in') }}</label>
         <select class="form-select form-select-sm" name="source_lang">
           {% for code, name in langs %}
           <option value="{{ code }}" {{ 'selected' if code == source_lang }}>{{ name }}</option>{% endfor %}
         </select>
       </div>
       <div class="col-md-2">
-        <label class="form-label small mb-1">Order in the picker</label>
+        <label class="form-label small mb-1">{{ _('Order in the picker') }}</label>
         <input class="form-control form-control-sm" name="sort_order" type="number"
                value="{{ row.sort_order if row else 100 }}">
       </div>
       {% if not builtin %}
       <div class="col-md-3">
-        <label class="form-label small mb-1">Offered for</label>
+        <label class="form-label small mb-1">{{ _('Offered for') }}</label>
         <select class="form-select form-select-sm" name="products" multiple size="4">
           {% for k in kinds %}
           <option value="{{ k }}" {{ 'selected' if row and k in row.products_list }}>{{ k }}</option>{% endfor %}
         </select>
-        <div class="form-text" style="font-size:11px;">None selected = every product.</div>
+        <div class="form-text" style="font-size:11px;">{{ _('None selected = every product.') }}</div>
       </div>
       {% endif %}
       <div class="col-md-4">
         <div class="form-check mt-4">
           <input class="form-check-input" type="checkbox" name="enabled" id="enabled"
                  {{ 'checked' if (row.enabled if row else True) }}>
-          <label class="form-check-label small" for="enabled">Offer it in the Change Request form</label>
+          <label class="form-check-label small" for="enabled">{{ _('Offer it in the Change Request form') }}</label>
         </div>
         <div class="form-check mt-2">
           <input class="form-check-input" type="checkbox" name="translate" id="translate" checked>
           <label class="form-check-label small" for="translate">
-            Translate what I changed into the other languages when I save</label>
+            {{ _('Translate what I changed into the other languages when I save') }}</label>
         </div>
       </div>
     </div>
   </div>
 
   <div class="card mb-3">
-    <div class="card-header"><strong><i class="bi bi-card-text me-1"></i>Text</strong>
+    <div class="card-header"><strong><i class="bi bi-card-text me-1"></i>{{ _('Text') }}</strong>
       <span class="text-muted small ms-2">
         <code>{{ devices_token }}</code> is replaced with the devices the change names.</span></div>
     <div class="card-body">
@@ -79,7 +78,7 @@
         {% if builtin %}
           {% set shipped = stock_draft.get(draft_map[name]) if name in draft_map else stock.get(name) %}
           {% if shipped %}
-          <details class="mt-1"><summary class="small text-muted" style="cursor:pointer;">Shipped wording</summary>
+          <details class="mt-1"><summary class="small text-muted" style="cursor:pointer;">{{ _('Shipped wording') }}</summary>
             <pre class="fw-pre small mb-0 mt-1">{% if shipped is string %}{{ shipped }}{% else %}{% for line in shipped %}- {{ line }}
 {% endfor %}{% endif %}</pre>
           </details>
@@ -94,42 +93,40 @@
             {% if unit.origin == machine %}
               <span class="fw-badge fw-badge-info">machine · {{ unit.model or 'unknown model' }}</span>
               {% if unit.reviewed %}<span class="fw-badge fw-badge-success">reviewed by {{ unit.reviewed_by }}</span>
-              {% else %}<span class="fw-badge fw-badge-warning">unreviewed</span>{% endif %}
-            {% else %}<span class="fw-badge fw-badge-secondary">written by hand</span>{% endif %}
-            {% if unit.stale %}<span class="fw-badge fw-badge-danger">stale — source changed</span>{% endif %}
+              {% else %}<span class="fw-badge fw-badge-warning">{{ _('unreviewed') }}</span>{% endif %}
+            {% else %}<span class="fw-badge fw-badge-secondary">{{ _('written by hand') }}</span>{% endif %}
+            {% if unit.stale %}<span class="fw-badge fw-badge-danger">{{ _('stale — source changed') }}</span>{% endif %}
           </span>
           {% endif %}{% endfor %}
         </div>
         {% endif %}
       </div>
       {% endfor %}
-      <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>Save</button>
+      <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
     </div>
   </div>
 </form>
 
 <div class="card mb-3">
-  <div class="card-header"><strong><i class="bi bi-translate me-1"></i>Translations</strong></div>
+  <div class="card-header"><strong><i class="bi bi-translate me-1"></i>{{ _('Translations') }}</strong></div>
   <div class="card-body">
     <p class="small text-muted">
-      Machine translations are labelled as such <strong>permanently</strong>, with the model that wrote them.
-      Reviewing one records who accepted it; it does not turn it into text a person wrote. Text you typed
-      by hand in another language is never overwritten by a re-run.
+      {{ _('Machine translations are labelled as such') }} <strong>{{ _('permanently') }}</strong>{{ _(', with the model that wrote them. Reviewing one records who accepted it; it does not turn it into text a person wrote. Text you typed by hand in another language is never overwritten by a re-run.') }}
     </p>
     <div class="d-flex gap-2 mb-3">
       <form method="post" action="{{ url_for('cr_types.translate', key=key, _adom=product.key) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn btn-sm btn-outline-primary">Translate what is missing or stale</button>
+        <button class="btn btn-sm btn-outline-primary">{{ _('Translate what is missing or stale') }}</button>
       </form>
       <form method="post" action="{{ url_for('cr_types.translate', key=key, _adom=product.key) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="force" value="1">
-        <button class="btn btn-sm btn-outline-secondary">Re-translate everything (machine rows only)</button>
+        <button class="btn btn-sm btn-outline-secondary">{{ _('Re-translate everything (machine rows only)') }}</button>
       </form>
     </div>
     <div class="table-responsive">
       <table class="table table-sm align-middle mb-0">
-        <thead><tr><th>Field</th><th>Language</th><th>Text</th><th>Provenance</th><th></th></tr></thead>
+        <thead><tr><th>{{ _('Field') }}</th><th>{{ _('Language') }}</th><th>{{ _('Text') }}</th><th>{{ _('Provenance') }}</th><th></th></tr></thead>
         <tbody>
         {% for name, kind, help in fields %}{% for code, unit in (catalogue.get(name) or {}).items() %}
           {% if code != source_lang %}
@@ -139,7 +136,7 @@
             <td class="small" style="max-width:520px;">{{ unit.text|truncate(220) }}</td>
             <td class="small">
               {{ unit.origin }}{% if unit.model %} · {{ unit.model }}{% endif %}
-              {% if unit.stale %}<span class="fw-badge fw-badge-danger ms-1">stale</span>{% endif %}
+              {% if unit.stale %}<span class="fw-badge fw-badge-danger ms-1">{{ _('stale') }}</span>{% endif %}
               {% if unit.reviewed %}<span class="fw-badge fw-badge-success ms-1">reviewed by {{ unit.reviewed_by }}</span>{% endif %}
             </td>
             <td class="text-end">
@@ -148,7 +145,7 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="field" value="{{ name }}">
                 <input type="hidden" name="lang" value="{{ code }}">
-                <button class="btn btn-sm btn-outline-success">Mark reviewed</button>
+                <button class="btn btn-sm btn-outline-success">{{ _('Mark reviewed') }}</button>
               </form>
               {% endif %}
             </td>

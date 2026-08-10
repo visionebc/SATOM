@@ -3,18 +3,18 @@
 {% block content %}
 
 <div class="fw-breadcrumb">
-  <a href="{{ url_for('lua_studio.index') }}">Lua Studio</a>
+  <a href="{{ url_for('lua_studio.index') }}">{{ _('Lua Studio') }}</a>
   <span class="separator">/</span>{{ script.name if script else 'New Lua script' }}
 </div>
 
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-braces me-2 text-accent"></i>{{ script.name if script else 'New Lua script' }}</h1>
-    <p class="fw-page-sub">Target: <strong>{{ target }}</strong>. Lint runs <code>luac -p</code> (parse only — never executed). Deploy is dry-run unless you confirm.</p>
+    <p class="fw-page-sub">{{ _('Target:') }} <strong>{{ target }}</strong>. Lint runs <code>luac -p</code> (parse only — never executed). Deploy is dry-run unless you confirm.</p>
   </div>
   <div class="d-flex gap-2">
-    <button class="btn btn-fw-outline btn-sm" type="button" id="btn-examples"><i class="bi bi-collection me-1"></i>Browse examples</button>
-    <a class="btn btn-fw-secondary btn-sm" href="{{ url_for('lua_studio.index') }}"><i class="bi bi-arrow-left me-1"></i>All scripts</a>
+    <button class="btn btn-fw-outline btn-sm" type="button" id="btn-examples"><i class="bi bi-collection me-1"></i>{{ _('Browse examples') }}</button>
+    <a class="btn btn-fw-secondary btn-sm" href="{{ url_for('lua_studio.index') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('All scripts') }}</a>
   </div>
 </div>
 
@@ -22,7 +22,7 @@
 {% set steps = [('draft','Draft','bi-pencil'),('tested','Tested','bi-check2-circle'),('deployed','Deployed','bi-upload')] %}
 {% set order = {'draft':0,'tested':1,'deployed':2} %}
 <div class="fw-card">
-  <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>Lifecycle</h2>
+  <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('Lifecycle') }}</h2>
     <span class="fw-badge fw-badge-{{ {'draft':'secondary','tested':'warning','deployed':'success'}[script.status] }}">{{ script.status }}</span>
   </div>
   <div class="fw-card-body">
@@ -37,16 +37,16 @@
     <div class="lc-actions">
       <form method="post" action="{{ url_for('lua_studio.mark_tested', sid=script.id) }}" class="d-inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn btn-sm {{ 'btn-fw-primary' if script.status=='draft' else 'btn-fw-outline' }}"><i class="bi bi-check2-circle me-1"></i>Mark tested (lint gate)</button>
+        <button class="btn btn-sm {{ 'btn-fw-primary' if script.status=='draft' else 'btn-fw-outline' }}"><i class="bi bi-check2-circle me-1"></i>{{ _('Mark tested (lint gate)') }}</button>
       </form>
       {% if script.status != 'draft' %}
       <form method="post" action="{{ url_for('lua_studio.set_status', sid=script.id) }}" class="d-inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="status" value="draft">
-        <button class="btn btn-sm btn-fw-secondary"><i class="bi bi-arrow-left me-1"></i>Back to Draft</button>
+        <button class="btn btn-sm btn-fw-secondary"><i class="bi bi-arrow-left me-1"></i>{{ _('Back to Draft') }}</button>
       </form>
       {% endif %}
-      <span class="lc-hint"><strong>Deployed</strong> is reached only by a confirmed real push (below); dry-run never changes status. The fleet is license-locked, so deploy stays dry-run by default.</span>
+      <span class="lc-hint"><strong>{{ _('Deployed') }}</strong> {{ _('is reached only by a confirmed real push (below); dry-run never changes status. The fleet is license-locked, so deploy stays dry-run by default.') }}</span>
     </div>
   </div>
 </div>
@@ -57,29 +57,29 @@
   <input type="hidden" name="target" value="{{ target }}">
   <div class="ed-grid">
     <div class="fw-card">
-      <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-code-square me-2 text-accent"></i>Script</h2></div>
+      <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-code-square me-2 text-accent"></i>{{ _('Script') }}</h2></div>
       <div class="fw-card-body">
         <div class="row g-3 mb-3">
-          <div class="col-sm-5"><label class="fw-form-label">Name</label>
+          <div class="col-sm-5"><label class="fw-form-label">{{ _('Name') }}</label>
             <input class="form-control fw-form-control" name="name" id="fld-name" value="{{ script.name if script else '' }}" required></div>
-          <div class="col-sm-4"><label class="fw-form-label">Device</label>
+          <div class="col-sm-4"><label class="fw-form-label">{{ _('Device') }}</label>
             <select class="form-select fw-form-control" name="appliance_id">
-              <option value="">— none (author only) —</option>
+              <option value="">{{ _('— none (author only) —') }}</option>
               {% for a in appliances %}<option value="{{ a.id }}" {{ 'selected' if script and script.appliance_id==a.id }}>{{ a.name }}</option>{% endfor %}
             </select></div>
-          <div class="col-sm-3"><label class="fw-form-label">Scripting object</label>
-            <input class="form-control fw-form-control" name="deploy_object" value="{{ script.deploy_object if script else '' }}" placeholder="e.g. rewrite-legacy"></div>
+          <div class="col-sm-3"><label class="fw-form-label">{{ _('Scripting object') }}</label>
+            <input class="form-control fw-form-control" name="deploy_object" value="{{ script.deploy_object if script else '' }}" placeholder="{{ _('e.g. rewrite-legacy') }}"></div>
         </div>
-        <label class="fw-form-label">Lua code</label>
+        <label class="fw-form-label">{{ _('Lua code') }}</label>
         <textarea class="form-control fw-form-control font-monospace" name="code" id="fld-code" rows="20">{{ script.code if script else '-- ' ~ target ~ ' Lua\nlocal ua = get_request_header(\"User-Agent\")\nif ua == nil then\n  block()\nend' }}</textarea>
       </div>
       <div class="fw-card-footer d-flex gap-2 flex-wrap align-items-center">
-        <button class="btn btn-fw-primary" type="submit"><i class="bi bi-save me-1"></i>Save</button>
+        <button class="btn btn-fw-primary" type="submit"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
         <button class="btn btn-fw-outline" type="button" id="btn-analyze"><i class="bi bi-search me-1"></i>Lint &amp; analyse</button>
         {% if script %}
-        <button class="btn btn-fw-outline" type="button" id="btn-dryrun"><i class="bi bi-clipboard-check me-1"></i>Deploy (dry-run)</button>
-        <button class="btn btn-fw-danger" type="button" id="btn-deploy"><i class="bi bi-upload me-1"></i>Deploy for real</button>
-        <button class="btn btn-fw-danger ms-auto" type="button" id="btn-luadel"><i class="bi bi-trash me-1"></i>Delete</button>
+        <button class="btn btn-fw-outline" type="button" id="btn-dryrun"><i class="bi bi-clipboard-check me-1"></i>{{ _('Deploy (dry-run)') }}</button>
+        <button class="btn btn-fw-danger" type="button" id="btn-deploy"><i class="bi bi-upload me-1"></i>{{ _('Deploy for real') }}</button>
+        <button class="btn btn-fw-danger ms-auto" type="button" id="btn-luadel"><i class="bi bi-trash me-1"></i>{{ _('Delete') }}</button>
         <form method="post" action="{{ url_for('lua_studio.delete', sid=script.id) }}" id="lua-del" class="d-none">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
         {% endif %}

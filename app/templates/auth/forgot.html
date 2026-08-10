@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="{{ csrf_token() }}">
-  <title>Reset Password — SATOM</title>
+  <title>{{ _('Reset Password — SATOM') }}</title>
   {# Vendored, not a CDN: this product ships offline installers for isolated
      management networks, where an auth page that needs public internet to lay
      itself out is an auth page nobody can read. #}
@@ -32,8 +32,8 @@
   <div class="login-card">
     <div class="login-header">
       <div class="login-logo"><i class="bi bi-key"></i></div>
-      <p class="login-brand-text">Reset your password</p>
-      <p class="login-subtitle">We'll email a reset link to your recovery address</p>
+      <p class="login-brand-text">{{ _('Reset your password') }}</p>
+      <p class="login-subtitle">{{ _('We\'ll email a reset link to your recovery address') }}</p>
     </div>
     <div class="login-body">
       {% with messages = get_flashed_messages(with_categories=True) %}
@@ -43,21 +43,21 @@
       {% endwith %}
       {% if not email_configured %}
       <div class="alert alert-warning py-2" style="font-size:12.5px;">
-        Email is not configured on the server, so reset links cannot be sent. Ask an administrator to reset your password.
+        {{ _('Email is not configured on the server, so reset links cannot be sent. Ask an administrator to reset your password.') }}
       </div>
       {% endif %}
       <form method="POST" action="{{ url_for('auth.forgot_password') }}" novalidate>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="mb-4">
-          <label for="username" class="form-label">Username</label>
+          <label for="username" class="form-label">{{ _('Username') }}</label>
           <input type="text" class="form-control" id="username" name="username"
-                 placeholder="Your username" autocomplete="username" autofocus required>
-          <div class="form-text">A link is sent only if a recovery email is on file (local accounts).</div>
+                 placeholder="{{ _('Your username') }}" autocomplete="username" autofocus required>
+          <div class="form-text">{{ _('A link is sent only if a recovery email is on file (local accounts).') }}</div>
         </div>
-        <button type="submit" class="btn btn-login"><i class="bi bi-send me-1"></i>Send reset link</button>
+        <button type="submit" class="btn btn-login"><i class="bi bi-send me-1"></i>{{ _('Send reset link') }}</button>
       </form>
       <div class="text-center mt-3">
-        <a href="{{ url_for('auth.login') }}" style="font-size:13px;"><i class="bi bi-arrow-left me-1"></i>Back to sign in</a>
+        <a href="{{ url_for('auth.login') }}" style="font-size:13px;"><i class="bi bi-arrow-left me-1"></i>{{ _('Back to sign in') }}</a>
       </div>
     </div>
   </div>

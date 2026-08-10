@@ -3,18 +3,18 @@
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-grid-1x2 me-2 text-accent"></i>Custom Views</h1>
-    <p class="fw-page-sub">Published views for the <strong>{{ product.name if product else 'current' }}</strong> ADOM — built by super-admins in the Plugin Studio, rendered in a hard sandbox.</p>
+    <h1 class="fw-page-title"><i class="bi bi-grid-1x2 me-2 text-accent"></i>{{ _('Custom Views') }}</h1>
+    <p class="fw-page-sub">{{ _('Published views for the') }} <strong>{{ product.name if product else 'current' }}</strong> {{ _('ADOM — built by super-admins in the Plugin Studio, rendered in a hard sandbox.') }}</p>
   </div>
   {% if current_user.is_admin_capable %}
-  <div><a class="btn btn-fw-outline" href="{{ url_for('plugins.index') }}"><i class="bi bi-puzzle me-1"></i>Plugin Studio</a></div>
+  <div><a class="btn btn-fw-outline" href="{{ url_for('plugins.index') }}"><i class="bi bi-puzzle me-1"></i>{{ _('Plugin Studio') }}</a></div>
   {% endif %}
 </div>
 
 {% if not plugins %}
 <div class="fw-card"><div class="fw-card-body text-secondary">
   No published custom views in this ADOM yet.
-  {% if current_user.is_admin_capable %}Create one in the <a href="{{ url_for('plugins.index') }}">Plugin Studio</a>.{% endif %}
+  {% if current_user.is_admin_capable %}Create one in the <a href="{{ url_for('plugins.index') }}">{{ _('Plugin Studio') }}</a>.{% endif %}
 </div></div>
 {% else %}
 <div class="row g-3">

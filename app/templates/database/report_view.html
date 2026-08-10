@@ -8,15 +8,15 @@
       <span id="rpt-generated" class="ms-1"></span></p>
   </div>
   <div class="ms-auto d-flex gap-2">
-    <a href="{{ url_for('database.index') }}#tab-reports" class="btn btn-outline-light btn-sm"><i class="bi bi-arrow-left me-1"></i>Back</a>
-    <button id="rpt-refresh" class="btn btn-outline-light btn-sm"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
-    <a href="{{ url_for('database.report_edit', report_id=report.id) }}" class="btn btn-outline-light btn-sm"><i class="bi bi-pencil me-1"></i>Edit</a>
-    <a href="{{ url_for('database.report_pdf', report_id=report.id) }}" class="btn btn-fw-primary btn-sm"><i class="bi bi-file-earmark-pdf me-1"></i>Download PDF</a>
+    <a href="{{ url_for('database.index') }}#tab-reports" class="btn btn-outline-light btn-sm"><i class="bi bi-arrow-left me-1"></i>{{ _('Back') }}</a>
+    <button id="rpt-refresh" class="btn btn-outline-light btn-sm"><i class="bi bi-arrow-clockwise me-1"></i>{{ _('Refresh') }}</button>
+    <a href="{{ url_for('database.report_edit', report_id=report.id) }}" class="btn btn-outline-light btn-sm"><i class="bi bi-pencil me-1"></i>{{ _('Edit') }}</a>
+    <a href="{{ url_for('database.report_pdf', report_id=report.id) }}" class="btn btn-fw-primary btn-sm"><i class="bi bi-file-earmark-pdf me-1"></i>{{ _('Download PDF') }}</a>
   </div>
 </div>
 
 <div id="rpt-loading" class="text-center text-muted py-5">
-  <div class="spinner-border spinner-border-sm me-2"></div>Running queries…
+  <div class="spinner-border spinner-border-sm me-2"></div>{{ _('Running queries…') }}
 </div>
 <div id="rpt-grid" class="row g-3"></div>
 

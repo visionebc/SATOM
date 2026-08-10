@@ -6953,3 +6953,64 @@ tests/test_i18n_foundation.py tests/test_cr_document.py -q` (rc, not the tail of
 the output). Mutation harnesses: `/root/mutate_crdoc_i18n.py` (25) and
 `/root/mutate_crdoc_i18n_2.py` (4 line-anchored). Both restore the file with
 `shutil.move`, which leaves it **root-owned** — `chown satom:satom` afterwards.
+
+## §61. A translated string is data the product prints without ever reading it
+
+The chrome catalogues (`app/translations/<lang>/LC_MESSAGES/`) are filled by a
+machine translator and printed verbatim on every page. Nothing in that path ever
+looks at what it is printing, so every defect below shipped green and was found
+by **rendering**, never by a unit test.
+
+**What is guarded** (`tests/test_ui_locale.py`, 31 cases):
+
+1. **Selection order.** Saved profile preference → `Accept-Language` narrowed to
+   what we ship → English. A browser guess that can override an explicit choice
+   turns the profile into a suggestion box. `resolve()` must never raise: a
+   locale selector runs on *every* request including the error pages, so an
+   exception there replaces a recoverable failure with a blank page.
+2. **No invented `%`.** Jinja's `gettext` applies `rv % variables` to the
+   *translated* string unconditionally. A stray `%` raises
+   `ValueError: incomplete format` at render time, only on the pages carrying
+   that string. Such msgids are not extracted, and a translation that adds a `%`
+   the source lacks is rejected.
+3. **No translator sentinel.** Judged **against the source, never in the
+   absolute** — a msgid that legitimately contains `[[` may keep it; only residue
+   the translation *invented* is a defect. This includes the fence **after the
+   model has translated it**: `_MARKER_WORD` knows only the English `UNTRUSTED`,
+   so `„UNvertrauenswürdige Quelle“` walked past it into the German catalogue and
+   printed in the navigation. The rule is now trust vocabulary in the reply with
+   none in the source — which keeps `TLS trust store` →
+   `TLS-Vertrauensspeicher`, because that source *does* raise it.
+4. **The compiled copy is not older than its source.** The app reads the `.mo`;
+   humans and repair runs edit the `.po`. A fixed `.po` with a stale `.mo` is a
+   fix that was never delivered, and every text-level check passes while the
+   running product still shows the broken string. This one really happened: the
+   repair finished at 18:05 against catalogues compiled at 17:51.
+5. **`flask-babel` declared, not merely installed.** It lived in the venv and not
+   in `requirements.txt`; the installer rebuilds the venv, so the next
+   reinstallation removes a dependency the app cannot start without.
+
+**Two authors, deliberately.** The catalogue check in the test writes its own
+residue rule, and a separate pair of cases pins the *production* rule
+(`translator._sentinel_residue`) to the three German strings that actually
+shipped. Sharing one definition would let a weakened guard go blind in both
+places at once.
+
+**Recipe.** `venv/bin/python -m pytest tests/test_ui_locale.py
+tests/test_lang_preference.py tests/test_i18n_foundation.py
+tests/test_cr_doc_i18n.py tests/test_cr_types.py -q` — judged by **rc**, not by
+grepping the tail (pytest prints `FAILED` in upper case; a search for `failed`
+reports SURVIVES on mutations that bit). Mutation harness:
+`data/i18n_sweep/mut_final.py` (6). Catalogue audits:
+`data/i18n_sweep/count_residue.py` (production rule) and
+`data/i18n_sweep/audit.py` (coverage, `%` drift, placeholder drift). Render
+across the five languages: `data/i18n_sweep/render_check.py` — it saves and
+restores the user's preference, because a harness that leaves the row where the
+last case put it silently changes a real operator's language.
+
+**Refilling or repairing a catalogue** goes through
+`app.services.translator.translate`, never straight to Ollama: the placeholder
+masking, the residue rejection and the ledger row live there, and a second path
+to the same model is a second place for them to be missing. After any `.po`
+edit: `venv/bin/pybabel compile -d app/translations` **as `satom`**, then
+restart — root-owned catalogue files break the next run.

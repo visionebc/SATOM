@@ -3,13 +3,13 @@
    '__profile__' for the Web Protection Profile page). #}
 <div class="fw-card" style="position:sticky; top:12px;">
   <div class="fw-card-header">
-    <span class="fw-card-title"><i class="bi bi-shield-exclamation me-2 text-accent"></i>Web Protection</span>
+    <span class="fw-card-title"><i class="bi bi-shield-exclamation me-2 text-accent"></i>{{ _('Web Protection') }}</span>
   </div>
   <div class="fw-card-body p-2" style="font-size:13px;">
     <a href="{{ url_for('web_protection.overview', id=appliance.id) }}"
        class="d-flex align-items-center gap-2 px-2 py-2 rounded text-decoration-none wpm-link {{ 'wpm-active' if active_item == '__profile__' else '' }}">
       <i class="bi bi-shield-fill-check"></i>
-      <span>Web Protection Profile</span>
+      <span>{{ _('Web Protection Profile') }}</span>
     </a>
     <div class="text-muted px-2 mt-1" style="font-size:11px;">(Policy &gt; Web Protection Profile)</div>
     <hr class="my-2" style="opacity:.15;">

@@ -2,34 +2,30 @@
    so the 4 000-line index.html does not grow another 300 lines of markup for a
    panel whose shape is DATA (services/thresholds.py) rather than layout. #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><span><i class="bi bi-sliders me-2"></i>Alert thresholds</span></div>
+  <div class="fw-card-header"><span><i class="bi bi-sliders me-2"></i>{{ _('Alert thresholds') }}</span></div>
   <div class="fw-card-body">
     <p class="text-muted mb-3">
-      Declare a limit once and every probe that has not been given its own value
-      follows it. A probe keeps an explicit value only where somebody set one;
-      everything else says <em>inherited</em>, and the Monitoring pages print
-      which is which so a grade is never unexplained.
+      {{ _('Declare a limit once and every probe that has not been given its own value follows it. A probe keeps an explicit value only where somebody set one; everything else says') }} <em>{{ _('inherited') }}</em>{{ _(', and the Monitoring pages print which is which so a grade is never unexplained.') }}
     </p>
 
     <div class="d-flex flex-wrap gap-2 mb-3" id="th-scopes"></div>
 
     <form id="th-form" autocomplete="off">
       <input type="hidden" name="scope" id="th-scope">
-      <div id="th-body" class="text-muted">Loading…</div>
+      <div id="th-body" class="text-muted">{{ _('Loading…') }}</div>
 
       <div class="d-flex align-items-center gap-2 mt-3 pt-3 border-top">
         <button class="btn fw-btn-primary" type="submit">
-          <i class="bi bi-check2 me-1"></i>Save this scope
+          <i class="bi bi-check2 me-1"></i>{{ _('Save this scope') }}
         </button>
         <button class="btn fw-btn-secondary" type="button" id="th-reset">
-          <i class="bi bi-arrow-counterclockwise me-1"></i>Revert scope to shipped defaults
+          <i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Revert scope to shipped defaults') }}
         </button>
         <span id="th-msg" class="ms-2 small"></span>
       </div>
       <div class="form-text mt-2">
-        Leave a box <strong>empty</strong> to clear the override — the field falls
-        back to the shipped default and every probe inheriting it follows.
-        <strong>0</strong> is not the same answer: it switches that level off.
+        {{ _('Leave a box') }} <strong>{{ _('empty') }}</strong> {{ _('to clear the override — the field falls back to the shipped default and every probe inheriting it follows.') }}
+        <strong>0</strong> {{ _('is not the same answer: it switches that level off.') }}
       </div>
     </form>
   </div>

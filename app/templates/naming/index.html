@@ -4,9 +4,9 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <span>Naming</span>
+  <span>{{ _('Naming') }}</span>
   <span class="separator">/</span>
   <span>{{ product_label }}</span>
 </div>
@@ -16,7 +16,7 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title">
-      <i class="bi bi-tag me-2 text-accent"></i>Naming Scheme
+      <i class="bi bi-tag me-2 text-accent"></i>{{ _('Naming Scheme') }}
     </h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       Define the name pattern of each object. When creating a new object the operator only
@@ -32,7 +32,7 @@
   <div class="fw-card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
     <span class="fw-card-title"><i class="bi bi-tag me-2 text-accent"></i>Patterns — {{ product_label }}</span>
     <div class="d-flex align-items-center gap-2">
-      <label class="fw-form-label mb-0" for="naming-product" style="font-size:12px;">Product</label>
+      <label class="fw-form-label mb-0" for="naming-product" style="font-size:12px;">{{ _('Product') }}</label>
       <select id="naming-product" class="form-select fw-form-control form-select-sm" style="width:auto;"
               data-url="{{ url_for('naming.index') }}">
         {% for pkey, plabel in products %}
@@ -43,7 +43,7 @@
   </div>
   <div class="fw-card-body">
     <div class="row g-2 align-items-center mb-3" style="max-width:560px;">
-      <div class="col-auto"><label class="fw-form-label mb-0">Sample web address</label></div>
+      <div class="col-auto"><label class="fw-form-label mb-0">{{ _('Sample web address') }}</label></div>
       <div class="col">
         <input type="text" id="naming-sample" class="form-control fw-form-control" value="shop.example.com">
       </div>
@@ -73,8 +73,8 @@
       </div>
       {% endfor %}
       <div class="mt-3 d-flex gap-2">
-        <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save Naming</button>
-        <button type="submit" name="action" value="reset" class="btn btn-outline-secondary">Restore defaults</button>
+        <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save Naming') }}</button>
+        <button type="submit" name="action" value="reset" class="btn btn-outline-secondary">{{ _('Restore defaults') }}</button>
       </div>
     </form>
   </div>

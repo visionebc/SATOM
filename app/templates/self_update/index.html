@@ -3,24 +3,23 @@
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-arrow-repeat me-2 text-accent"></i>Software Update</h1>
+    <h1 class="fw-page-title"><i class="bi bi-arrow-repeat me-2 text-accent"></i>{{ _('Software Update') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      Update the manager's own code and Python dependencies from git — never OS packages.
-      Rolled out one node at a time: the <strong>standby</strong> first, and the
-      <strong>primary</strong> only after the standby passes its health check.</p>
+      {{ _('Update the manager\'s own code and Python dependencies from git — never OS packages. Rolled out one node at a time: the') }} <strong>{{ _('standby') }}</strong> {{ _('first, and the') }}
+      <strong>{{ _('primary') }}</strong> {{ _('only after the standby passes its health check.') }}</p>
   </div>
 </div>
 
 <div class="row g-3">
   <!-- Current version + this node -->
   <div class="col-lg-5">
-    <div class="card mb-3"><div class="card-header"><strong>This node</strong></div>
+    <div class="card mb-3"><div class="card-header"><strong>{{ _('This node') }}</strong></div>
       <div class="card-body">
-        <div class="mb-2"><span class="text-muted small">Host</span>
+        <div class="mb-2"><span class="text-muted small">{{ _('Host') }}</span>
           <div class="font-monospace">{{ this_node }}
-            {% if this_role == 'primary' %}<span class="badge bg-success">PRIMARY</span>
-            {% elif this_role == 'standby' %}<span class="badge bg-info text-dark">STANDBY</span>
-            {% else %}<span class="badge bg-secondary">role: unknown</span>{% endif %}
+            {% if this_role == 'primary' %}<span class="badge bg-success">{{ _('PRIMARY') }}</span>
+            {% elif this_role == 'standby' %}<span class="badge bg-info text-dark">{{ _('STANDBY') }}</span>
+            {% else %}<span class="badge bg-secondary">{{ _('role: unknown') }}</span>{% endif %}
           </div>
         </div>
         <div class="mb-2"><span class="text-muted small">Running revision ({{ branch }})</span>
@@ -28,7 +27,7 @@
           <div class="text-muted small">{{ current.date }}</div>
         </div>
         <button id="check-btn" class="btn btn-fw-primary btn-sm" data-js="check-updates" type="button">
-          <i class="bi bi-cloud-arrow-down me-1"></i>Check for updates</button>
+          <i class="bi bi-cloud-arrow-down me-1"></i>{{ _('Check for updates') }}</button>
         <span id="check-spin" class="ms-2 d-none"><span class="spinner-border spinner-border-sm"></span></span>
       </div>
     </div>
@@ -36,9 +35,9 @@
 
   <!-- Available update + apply -->
   <div class="col-lg-7">
-    <div class="card mb-3"><div class="card-header"><strong>Available update</strong></div>
+    <div class="card mb-3"><div class="card-header"><strong>{{ _('Available update') }}</strong></div>
       <div class="card-body">
-        <div id="update-info" class="text-muted small">Click <em>Check for updates</em> to query the git remote.</div>
+        <div id="update-info" class="text-muted small">{{ _('Click') }} <em>{{ _('Check for updates') }}</em> {{ _('to query the git remote.') }}</div>
 
         <form id="apply-form" method="post" action="{{ url_for('self_update.apply') }}" class="d-none mt-3">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -60,8 +59,7 @@
             Apply update to {{ 'PRIMARY' if is_primary else 'this node' }}</button>
           {% if is_primary and has_peers and not unlocked %}
             <div class="alert alert-warning small mt-2 mb-0"><i class="bi bi-shield-lock me-1"></i>
-              <strong>Safeguard active.</strong> This is the PRIMARY. Update the standby to the new
-              revision first; once it passes its health check, this button unlocks.</div>
+              <strong>{{ _('Safeguard active.') }}</strong> {{ _('This is the PRIMARY. Update the standby to the new revision first; once it passes its health check, this button unlocks.') }}</div>
           {% elif is_primary and has_peers and unlocked %}
             <div class="alert alert-success small mt-2 mb-0"><i class="bi bi-shield-check me-1"></i>
               Standby validated <code>{{ validated.target[:12] }}</code> — the primary is cleared to update.</div>
@@ -74,27 +72,27 @@
 
 <!-- Deploy automation (reconciler) -->
 <div class="card mb-3">
-  <div class="card-header"><strong><i class="bi bi-robot me-1"></i>Deploy automation</strong>
-    {% if deploy_mode == 'auto' %}<span class="badge bg-success ms-2">AUTO — reconciler drives</span>
-    {% else %}<span class="badge bg-secondary ms-2">MANUAL — observe only</span>{% endif %}
+  <div class="card-header"><strong><i class="bi bi-robot me-1"></i>{{ _('Deploy automation') }}</strong>
+    {% if deploy_mode == 'auto' %}<span class="badge bg-success ms-2">{{ _('AUTO — reconciler drives') }}</span>
+    {% else %}<span class="badge bg-secondary ms-2">{{ _('MANUAL — observe only') }}</span>{% endif %}
   </div>
   <div class="card-body">
     <form method="post" action="{{ url_for('self_update.set_deploy_mode') }}" class="row g-2 align-items-center">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="col-auto">
         <select name="mode" class="form-select form-select-sm">
-          <option value="manual" {% if deploy_mode != 'auto' %}selected{% endif %}>Manual — I apply updates by hand</option>
-          <option value="auto" {% if deploy_mode == 'auto' %}selected{% endif %}>Auto — reconciler deploys (standby first, then primary)</option>
+          <option value="manual" {% if deploy_mode != 'auto' %}selected{% endif %}>{{ _('Manual — I apply updates by hand') }}</option>
+          <option value="auto" {% if deploy_mode == 'auto' %}selected{% endif %}>{{ _('Auto — reconciler deploys (standby first, then primary)') }}</option>
         </select>
       </div>
       <div class="col-auto">
-        <button type="submit" class="btn btn-sm btn-outline-primary"{% if ha.this_role != 'primary' %} disabled title="Change automation on the PRIMARY node — this node's database is read-only"{% endif %}>Save</button>
+        <button type="submit" class="btn btn-sm btn-outline-primary"{% if ha.this_role != 'primary' %} disabled title="{{ _('Change automation on the PRIMARY node — this node\'s database is read-only') }}"{% endif %}>{{ _('Save') }}</button>
       </div>
       <div class="col-12 small text-muted">
-        <strong>Auto</strong>: the <code>satom-reconciler</code> service (both nodes) checks
+        <strong>{{ _('Auto') }}</strong>: the <code>satom-reconciler</code> service (both nodes) checks
         <code>origin/{{ branch }}</code> every 60s and, when behind, drives the staged rollout —
         the STANDBY updates and health-validates first, then the PRIMARY. A failed step auto-rolls-back
-        and the reconciler backs off. <strong>Manual</strong>: the reconciler only observes and logs the
+        and the reconciler backs off. <strong>{{ _('Manual') }}</strong>: the reconciler only observes and logs the
         drift; you apply with the buttons above. Every tick is written to
         <code>journalctl -u satom-reconciler</code>. Replicated setting — set it on the primary.
       </div>
@@ -102,46 +100,46 @@
     <hr class="my-2">
     {% if reconcile %}
     <div class="small">
-      <span class="text-muted">Reconciler last tick:</span>
+      <span class="text-muted">{{ _('Reconciler last tick:') }}</span>
       <span class="badge bg-info text-dark">{{ reconcile.decision }}</span>
-      on <span class="font-monospace">{{ reconcile.node }} ({{ reconcile.role }})</span>,
+      {{ _('on') }} <span class="font-monospace">{{ reconcile.node }} ({{ reconcile.role }})</span>,
       {{ reconcile.behind }} behind — <em>{{ reconcile.detail }}</em>
       <span class="text-muted">({{ reconcile.at | localtime }})</span>
     </div>
     {% else %}
-    <div class="small text-muted">Reconciler has not published a tick yet (the standby's state is probed live).</div>
+    <div class="small text-muted">{{ _('Reconciler has not published a tick yet (the standby\'s state is probed live).') }}</div>
     {% endif %}
   </div>
 </div>
 
 <!-- Live status of the running update -->
-<div id="live-panel" class="card mb-3 d-none"><div class="card-header"><strong>Update in progress</strong>
-  <span id="live-state" class="badge bg-secondary ms-2">queued</span></div>
+<div id="live-panel" class="card mb-3 d-none"><div class="card-header"><strong>{{ _('Update in progress') }}</strong>
+  <span id="live-state" class="badge bg-secondary ms-2">{{ _('queued') }}</span></div>
   <div class="card-body">
     <ol id="live-steps" class="small mb-0" style="list-style:decimal inside;"></ol>
   </div>
 </div>
 
 <!-- History -->
-<div class="card"><div class="card-header"><strong>Recent updates</strong></div>
+<div class="card"><div class="card-header"><strong>{{ _('Recent updates') }}</strong></div>
   <div class="card-body">
     {% if not history %}
-      <p class="text-muted small mb-0">No updates run yet.</p>
+      <p class="text-muted small mb-0">{{ _('No updates run yet.') }}</p>
     {% else %}
     <table class="table table-sm align-middle mb-0">
-      <thead><tr><th>When</th><th>By</th><th>Origin</th><th>Node</th><th>Target</th><th>Result</th><th>Log</th></tr></thead>
+      <thead><tr><th>{{ _('When') }}</th><th>{{ _('By') }}</th><th>{{ _('Origin') }}</th><th>{{ _('Node') }}</th><th>{{ _('Target') }}</th><th>{{ _('Result') }}</th><th>{{ _('Log') }}</th></tr></thead>
       <tbody>
       {% for h in history %}
         <tr>
           <td class="small">{{ (h.updated_at or h.started_at) | localtime }}</td>
           <td class="small">{{ h.requested_by }}</td>
-          <td>{% if h.origin == 'auto' %}<span class="badge bg-info text-dark">auto</span>{% else %}<span class="badge bg-light text-dark border">manual</span>{% endif %}</td>
+          <td>{% if h.origin == 'auto' %}<span class="badge bg-info text-dark">{{ _('auto') }}</span>{% else %}<span class="badge bg-light text-dark border">{{ _('manual') }}</span>{% endif %}</td>
           <td class="small font-monospace">{{ h.node }} ({{ h.role }})</td>
           <td class="small font-monospace">{{ (h.result_sha or h.target or '')[:12] }}</td>
           <td>
-            {% if h.state == 'success' %}<span class="badge bg-success">success</span>
+            {% if h.state == 'success' %}<span class="badge bg-success">{{ _('success') }}</span>
             {% elif h.state == 'failed' %}<span class="badge bg-danger">failed{% if h.rolled_back %} · rolled back{% endif %}</span>
-            {% elif h.state == 'running' %}<span class="badge bg-warning text-dark">running</span>
+            {% elif h.state == 'running' %}<span class="badge bg-warning text-dark">{{ _('running') }}</span>
             {% else %}<span class="badge bg-secondary">{{ h.state }}</span>{% endif %}
           </td>
           <td>
@@ -180,16 +178,12 @@
   <div class="col-12">
     <div class="card mb-3">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <strong><i class="bi bi-box-seam me-1"></i>Offline update package</strong>
-        <span class="text-muted small">for nodes with no route to the git remote</span>
+        <strong><i class="bi bi-box-seam me-1"></i>{{ _('Offline update package') }}</strong>
+        <span class="text-muted small">{{ _('for nodes with no route to the git remote') }}</span>
       </div>
       <div class="card-body">
         <p class="text-muted small">
-          Download a signed update package, upload it here, and apply it without any
-          network access. The package carries the application code and every pinned
-          Python wheel. <strong>Only packages signed by a key in this node's trust
-          store are accepted</strong> — the check is repeated by the privileged
-          runner as root, not just by this page.
+          {{ _('Download a signed update package, upload it here, and apply it without any network access. The package carries the application code and every pinned Python wheel.') }} <strong>{{ _('Only packages signed by a key in this node\'s trust store are accepted') }}</strong> {{ _('— the check is repeated by the privileged runner as root, not just by this page.') }}
         </p>
 
         <!-- trust store -->
@@ -199,8 +193,7 @@
           {% if trust.problem %}
             <div class="alert alert-danger py-2 mb-0 small">
               <i class="bi bi-shield-exclamation me-1"></i>{{ trust.problem }}<br>
-              No package can be applied until this is fixed. A trust store that is
-              not root-owned would let a compromised web worker install its own key.
+              {{ _('No package can be applied until this is fixed. A trust store that is not root-owned would let a compromised web worker install its own key.') }}
             </div>
           {% elif not trust.entries %}
             <div class="alert alert-warning py-2 mb-0 small">
@@ -235,7 +228,7 @@
 
             {% if uploads %}
             <div class="mt-3">
-              <div class="text-muted small mb-1">Staged on this node</div>
+              <div class="text-muted small mb-1">{{ _('Staged on this node') }}</div>
               <ul class="list-group list-group-flush" id="pkg-list">
                 {% for u in uploads %}
                 <li class="list-group-item px-0 py-1 d-flex justify-content-between align-items-center">
@@ -249,7 +242,7 @@
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <input type="hidden" name="name" value="{{ u.name }}">
                       <button class="btn btn-outline-secondary btn-sm py-0" type="submit"
-                              title="Remove from staging"><i class="bi bi-trash"></i></button>
+                              title="{{ _('Remove from staging') }}"><i class="bi bi-trash"></i></button>
                     </form>
                   </span>
                 </li>
@@ -261,7 +254,7 @@
 
           <!-- preflight -->
           <div class="col-lg-7">
-            <div class="text-muted small mb-1">Preflight</div>
+            <div class="text-muted small mb-1">{{ _('Preflight') }}</div>
             <div id="pkg-preflight" class="small text-muted">
               {% if uploads %}Select a staged package to check what applying it would do.
               {% else %}Upload a package to see the preflight report.{% endif %}
@@ -275,14 +268,11 @@
                 <input class="form-check-input" type="checkbox"
                        name="allow_downgrade" id="pkg-allow-downgrade">
                 <label class="form-check-label small text-danger" for="pkg-allow-downgrade">
-                  I understand this is a <strong>downgrade</strong>: database
-                  migrations are not reversed, and the backup taken below is the
-                  way back.</label>
+                  {{ _('I understand this is a') }} <strong>{{ _('downgrade') }}</strong>{{ _(': database migrations are not reversed, and the backup taken below is the way back.') }}</label>
               </div>
               <button type="submit" class="btn btn-danger btn-sm" id="pkg-apply-btn">
-                <i class="bi bi-box-arrow-in-down me-1"></i>Apply package to this node</button>
-              <div class="form-text">A database backup is taken first; the service
-                restarts; a failed health check rolls the node back automatically.</div>
+                <i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Apply package to this node') }}</button>
+              <div class="form-text">{{ _('A database backup is taken first; the service restarts; a failed health check rolls the node back automatically.') }}</div>
             </form>
           </div>
         </div>

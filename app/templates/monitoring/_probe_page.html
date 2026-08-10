@@ -168,11 +168,11 @@
     <span id="dpStamp" class="text-muted small"></span>
     {% if can_edit %}
     <button id="dpDiscoverBtn" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-magic me-1"></i>Discover from device</button>
+      <i class="bi bi-magic me-1"></i>{{ _('Discover from device') }}</button>
     <button id="dpAddBtn" class="btn btn-sm btn-outline-primary">
-      <i class="bi bi-plus-lg me-1"></i>Add probe</button>
+      <i class="bi bi-plus-lg me-1"></i>{{ _('Add probe') }}</button>
     <button id="dpRunBtn" class="btn btn-sm btn-primary">
-      <i class="bi bi-play-fill me-1"></i>Probe now</button>
+      <i class="bi bi-play-fill me-1"></i>{{ _('Probe now') }}</button>
     {% endif %}
     <button id="dpRefreshBtn" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-arrow-clockwise"></i></button>
@@ -190,25 +190,24 @@
     <div class="table-responsive">
       <table class="dp-tbl">
         <thead><tr>
-          <th style="width:26%">Probe</th>
-          <th style="width:9%">Type</th>
-          <th style="width:9%">Status</th>
-          <th style="width:14%">Trend</th>
-          <th>Last result</th>
-          <th style="width:12%">Checked</th>
+          <th style="width:26%">{{ _('Probe') }}</th>
+          <th style="width:9%">{{ _('Type') }}</th>
+          <th style="width:9%">{{ _('Status') }}</th>
+          <th style="width:14%">{{ _('Trend') }}</th>
+          <th>{{ _('Last result') }}</th>
+          <th style="width:12%">{{ _('Checked') }}</th>
           <th style="width:9%"></th>
         </tr></thead>
-        <tbody id="dpRows"><tr><td colspan="7" class="text-muted">Loading…</td></tr></tbody>
+        <tbody id="dpRows"><tr><td colspan="7" class="text-muted">{{ _('Loading…') }}</td></tr></tbody>
       </table>
     </div>
     <div class="dp-note">
       <i class="bi bi-info-circle me-1"></i>
-      A page load never contacts an appliance — every row is read from the stored samples.
-      Probing runs as a background job (<b>Probe now</b>) or on a schedule via the
+      {{ _('A page load never contacts an appliance — every row is read from the stored samples. Probing runs as a background job (') }}<b>{{ _('Probe now') }}</b>) or on a schedule via the
       <code>deep_monitor</code> scheduled action, which sweeps this page and
-      <b>Deep monitors</b>/<b>Service Monitor</b> alike every three minutes.
+      <b>{{ _('Deep monitors') }}</b>/<b>{{ _('Service Monitor') }}</b> alike every three minutes.
       {{ page.footnote|safe }}
-      <b>Click any sparkline</b> for 1&nbsp;h / 24&nbsp;h / 7&nbsp;d / 30&nbsp;d or a date
+      <b>{{ _('Click any sparkline') }}</b> for 1&nbsp;h / 24&nbsp;h / 7&nbsp;d / 30&nbsp;d or a date
       range. Raw samples are capped per probe; beyond that the chart is served from
       hourly buckets (90 days) and daily buckets (2 years), so depth costs kilobytes
       instead of gigabytes.
@@ -222,10 +221,10 @@
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="dpPolTitle">Server policy</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <h5 class="modal-title" id="dpPolTitle">{{ _('Server policy') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
       </div>
-      <div class="modal-body" id="dpPolBody"><span class="text-muted">Loading…</span></div>
+      <div class="modal-body" id="dpPolBody"><span class="text-muted">{{ _('Loading…') }}</span></div>
     </div>
   </div>
 </div>
@@ -236,24 +235,24 @@
     <div class="modal-content">
       <div class="modal-header">
         <div>
-          <h5 class="modal-title" id="dpChTitle">History</h5>
+          <h5 class="modal-title" id="dpChTitle">{{ _('History') }}</h5>
           <div class="dp-sub" id="dpChSub"></div>
         </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
       </div>
       <div class="modal-body">
         <div class="dp-ch-bar">
-          <div class="btn-group btn-group-sm" role="group" aria-label="Time range">
-            <button type="button" class="btn btn-outline-secondary dp-ch-r" data-range="1h">1 h</button>
-            <button type="button" class="btn btn-outline-secondary dp-ch-r active" data-range="24h">24 h</button>
-            <button type="button" class="btn btn-outline-secondary dp-ch-r" data-range="7d">7 days</button>
-            <button type="button" class="btn btn-outline-secondary dp-ch-r" data-range="30d">30 days</button>
+          <div class="btn-group btn-group-sm" role="group" aria-label="{{ _('Time range') }}">
+            <button type="button" class="btn btn-outline-secondary dp-ch-r" data-range="1h">{{ _('1 h') }}</button>
+            <button type="button" class="btn btn-outline-secondary dp-ch-r active" data-range="24h">{{ _('24 h') }}</button>
+            <button type="button" class="btn btn-outline-secondary dp-ch-r" data-range="7d">{{ _('7 days') }}</button>
+            <button type="button" class="btn btn-outline-secondary dp-ch-r" data-range="30d">{{ _('30 days') }}</button>
           </div>
           <div class="dp-ch-dates">
-            <input type="date" class="form-control form-control-sm" id="dpChFrom" aria-label="From date">
+            <input type="date" class="form-control form-control-sm" id="dpChFrom" aria-label="{{ _('From date') }}">
             <span class="dp-sub">&rarr;</span>
-            <input type="date" class="form-control form-control-sm" id="dpChTo" aria-label="To date">
-            <button type="button" class="btn btn-sm btn-primary" id="dpChApply">Apply</button>
+            <input type="date" class="form-control form-control-sm" id="dpChTo" aria-label="{{ _('To date') }}">
+            <button type="button" class="btn btn-sm btn-primary" id="dpChApply">{{ _('Apply') }}</button>
           </div>
         </div>
         <div class="dp-ch-kpis" id="dpChKpis"></div>
@@ -270,8 +269,8 @@
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="dpHistTitle">History</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <h5 class="modal-title" id="dpHistTitle">{{ _('History') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
       </div>
       <div class="modal-body dp-hist" id="dpHistBody"></div>
     </div>
@@ -285,24 +284,24 @@
     <div class="modal-content">
       <form id="dpForm">
         <div class="modal-header">
-          <h5 class="modal-title" id="dpEditTitle">Add probe</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <h5 class="modal-title" id="dpEditTitle">{{ _('Add probe') }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
         </div>
         <div class="modal-body">
           <input type="hidden" name="id" id="dpFid">
           <div class="mb-2">
-            <label class="form-label small">Type</label>
+            <label class="form-label small">{{ _('Type') }}</label>
             <select class="form-select form-select-sm" name="kind" id="dpFkind">
               {% for k in K %}<option value="{{ k }}">{{ page.labels[k] }}</option>
               {% endfor %}
             </select>
           </div>
           <div class="mb-2">
-            <label class="form-label small">Name</label>
-            <input class="form-control form-control-sm" name="name" id="dpFname" placeholder="fw6 · shop-policy">
+            <label class="form-label small">{{ _('Name') }}</label>
+            <input class="form-control form-control-sm" name="name" id="dpFname" placeholder="{{ _('fw6 · shop-policy') }}">
           </div>
           <div class="mb-2">
-            <label class="form-label small">Device</label>
+            <label class="form-label small">{{ _('Device') }}</label>
             <select class="form-select form-select-sm" name="appliance_id" id="dpFdev"></select>
             <div class="form-text small">
               {%- if 'https' in K %}Required for every kind except a bare URL probe.
@@ -312,27 +311,26 @@
           {% if 'https' in page.groups %}
           <div class="mb-2 dp-f-https">
             <label class="form-label small">URL</label>
-            <input class="form-control form-control-sm" name="url" id="dpFurl" placeholder="https://192.0.2.80:443/">
+            <input class="form-control form-control-sm" name="url" id="dpFurl" placeholder="{{ _('https://192.0.2.80:443/') }}">
           </div>
           <div class="row g-2 dp-f-https">
-            <div class="col-4"><label class="form-label small">Expect status</label>
+            <div class="col-4"><label class="form-label small">{{ _('Expect status') }}</label>
               <input type="number" class="form-control form-control-sm" name="expect_status" id="dpFexp" value="0">
               <div class="form-text small">0 = any &lt; 400</div></div>
-            <div class="col-4"><label class="form-label small">Slow above (ms)</label>
+            <div class="col-4"><label class="form-label small">{{ _('Slow above (ms)') }}</label>
               <input type="number" class="form-control form-control-sm" name="warn_ms" id="dpFms" value="2000"></div>
-            <div class="col-4"><label class="form-label small">TLS warn (days)</label>
+            <div class="col-4"><label class="form-label small">{{ _('TLS warn (days)') }}</label>
               <input type="number" class="form-control form-control-sm" name="tls_warn_days" id="dpFtls" value="21"></div>
           </div>
           {% endif %}
           {% if 'proxyd' in page.groups %}
           <div class="row g-2 dp-f-proxyd">
-            <div class="col-12"><label class="form-label small">Process</label>
+            <div class="col-12"><label class="form-label small">{{ _('Process') }}</label>
               <input class="form-control form-control-sm" name="process_name" id="dpFproc" value="proxyd">
               <div class="form-text small">Matched on the command basename, so
                 <code>proxyd</code> finds <code>/bin/proxyd</code>. This probe grades the
                 daemon alone &mdash; running, and whether its PID set changed &mdash; and
-                charts the memory <b>consumed</b> and <b>free</b> on the appliance. There is
-                no threshold here on purpose: box memory belongs to the <b>Memory usage</b>
+                charts the memory <b>{{ _('consumed') }}</b> {{ _('and') }} <b>{{ _('free') }}</b> {{ _('on the appliance. There is no threshold here on purpose: box memory belongs to the') }} <b>{{ _('Memory usage') }}</b>
                 probe, and the daemon's own <code>%VSZ</code> is virtual size, which sums
                 past 100&nbsp;% across processes.</div></div>
           </div>
@@ -350,79 +348,75 @@
           {% endif %}
           {% if 'interface' in page.groups %}
           <div class="mb-2 dp-f-interface">
-            <label class="form-label small">Ports to watch</label>
-            <div class="dp-ports" id="dpFports"><span class="dp-sub">pick a device first</span></div>
+            <label class="form-label small">{{ _('Ports to watch') }}</label>
+            <div class="dp-ports" id="dpFports"><span class="dp-sub">{{ _('pick a device first') }}</span></div>
             <div class="form-text small">
-              Nothing ticked = every port on the device, as one series.
-              Tick a subset to watch only those. For a series <em>per port</em> use
-              <b>Discover from device</b> → <i>one probe per interface</i>.
+              {{ _('Nothing ticked = every port on the device, as one series. Tick a subset to watch only those. For a series') }} <em>{{ _('per port') }}</em> {{ _('use') }}
+              <b>{{ _('Discover from device') }}</b> → <i>{{ _('one probe per interface') }}</i>.
             </div>
           </div>
           <div class="mb-2 dp-f-interface">
-            <label class="form-label small">Warn if the harvest is older than (hours)</label>
+            <label class="form-label small">{{ _('Warn if the harvest is older than (hours)') }}</label>
             <input type="number" class="form-control form-control-sm" name="stale_after_h" id="dpFstale" value="6">
           </div>
           {% endif %}
           {% if 'api' in page.groups %}
           <div class="mb-2 dp-f-api">
-            <label class="form-label small" id="dpFpolLabel">Server policy</label>
+            <label class="form-label small" id="dpFpolLabel">{{ _('Server policy') }}</label>
             <input class="form-control form-control-sm" name="target" id="dpFpol"
-                   list="dpPolList" placeholder="pol-shop-main" autocomplete="off">
+                   list="dpPolList" placeholder="{{ _('pol-shop-main') }}" autocomplete="off">
             <datalist id="dpPolList"></datalist>
             <datalist id="dpFtargetList"></datalist>
             <div class="form-text small" id="dpFpolHelp">
               The policy name exactly as the appliance reports it in
               <code>policy/policystatus</code> — pick the device above and the list fills
               itself from the LIVE box (not the harvest cache, which is empty on a
-              licence-locked appliance). For <b>HTTP throughput</b> you may instead use
+              licence-locked appliance). For <b>{{ _('HTTP throughput') }}</b> you may instead use
               the aggregate <code>Total HTTP Throughput</code>; leave it empty on a
-              <b>Concurrent sessions</b> probe, which is box-wide.
+              <b>{{ _('Concurrent sessions') }}</b> {{ _('probe, which is box-wide.') }}
             </div>
           </div>
           <div class="row g-2 dp-f-api">
-            <div class="col-6"><label class="form-label small">Warn at</label>
+            <div class="col-6"><label class="form-label small">{{ _('Warn at') }}</label>
               <input type="number" step="any" class="form-control form-control-sm"
                      name="warn_num" id="dpFwarnn" value="0"></div>
-            <div class="col-6"><label class="form-label small">Critical at</label>
+            <div class="col-6"><label class="form-label small">{{ _('Critical at') }}</label>
               <input type="number" step="any" class="form-control form-control-sm"
                      name="crit_num" id="dpFcritn" value="0"></div>
             <div class="col-12"><div class="form-text small" id="dpFnumUnit"></div></div>
           </div>
           <div class="mb-2 dp-f-api" id="dpFhoursRow">
-            <label class="form-label small">Window (hours)</label>
+            <label class="form-label small">{{ _('Window (hours)') }}</label>
             <input type="number" class="form-control form-control-sm" name="stale_after_h"
                    id="dpFhours" value="1">
-            <div class="form-text small">Only used by <b>HTTP transactions</b>: the
+            <div class="form-text small">{{ _('Only used by') }} <b>{{ _('HTTP transactions') }}</b>: the
               appliance picks the bucket width from this (1&nbsp;h → 5-minute buckets,
               24&nbsp;h → 2-hour buckets).</div>
           </div>
           <div class="mb-2 dp-f-api">
             <div class="form-text small">
-              Every kind here reads the appliance's REST monitor API and never opens
-              an SSH session, so they keep reporting on a device whose <em>cmdb</em>
+              {{ _('Every kind here reads the appliance\'s REST monitor API and never opens an SSH session, so they keep reporting on a device whose') }} <em>{{ _('cmdb') }}</em>
               is licence-locked — verified on fw7, where every config read fails with
               <code>-20010</code> while <code>policystatus</code> still answers 200.
               Each kind is offered on the products that can actually answer it:
-              traffic and session kinds on <b>FortiWeb</b>, licence headroom and the
-              FortiToken pools on <b>FortiAuthenticator</b>. 0 disables a threshold
-              level.
+              traffic and session kinds on <b>{{ _('FortiWeb') }}</b>{{ _(', licence headroom and the FortiToken pools on') }} <b>{{ _('FortiAuthenticator') }}</b>{{ _('. 0 disables a threshold level.') }}
             </div>
           </div>
           {% endif %}
           <div class="row g-2 mt-1">
-            <div class="col-6"><label class="form-label small">Interval (min)</label>
+            <div class="col-6"><label class="form-label small">{{ _('Interval (min)') }}</label>
               <input type="number" class="form-control form-control-sm" name="interval_min" id="dpFint" value="5"></div>
-            <div class="col-6"><label class="form-label small">Timeout (s)</label>
+            <div class="col-6"><label class="form-label small">{{ _('Timeout (s)') }}</label>
               <input type="number" class="form-control form-control-sm" name="timeout_s" id="dpFto" value="10"></div>
           </div>
           <div class="form-text small mt-2">
-            Leave a threshold box <b>empty</b> to inherit this product's value from
+            {{ _('Leave a threshold box') }} <b>{{ _('empty') }}</b> to inherit this product's value from
             Settings&nbsp;&rarr;&nbsp;Thresholds; the greyed number in the box is
             what it will inherit. <b>0</b> is a different answer &mdash; it switches
             that level off.
           </div>
           <div class="row g-2 mt-2 pt-2 border-top">
-            <div class="col-12"><label class="form-label small mb-1">Mute this probe (hours)</label>
+            <div class="col-12"><label class="form-label small mb-1">{{ _('Mute this probe (hours)') }}</label>
               <div class="form-text small mb-1">
                 A muted probe keeps running and keeps showing its own status &mdash;
                 what it stops doing is raising the device badge and the alert mail.
@@ -436,13 +430,13 @@
             <div class="col-8">
               <input type="text" maxlength="200" class="form-control form-control-sm"
                      name="suppress_reason" id="dpFsupr"
-                     placeholder="why (recorded and shown on the row)"></div>
+                     placeholder="{{ _('why (recorded and shown on the row)') }}"></div>
           </div>
           <div class="alert alert-danger py-2 px-3 mt-2 small d-none" id="dpFerr"></div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-sm btn-primary">Save</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-sm btn-primary">{{ _('Save') }}</button>
         </div>
       </form>
     </div>
@@ -455,8 +449,8 @@
     <div class="modal-content">
       <form id="dpDiscForm">
         <div class="modal-header">
-          <h5 class="modal-title">Discover probes from a device</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <h5 class="modal-title">{{ _('Discover probes from a device') }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
         </div>
         <div class="modal-body">
           <p class="small text-muted">
@@ -469,24 +463,22 @@
           <div class="dp-disc">
             {% if 'policies' in page.discover %}
             <label><input type="checkbox" name="what" value="policies" checked>
-              <span><b>Server policies</b> — one HTTPS probe per published front-end
+              <span><b>{{ _('Server policies') }}</b> — one HTTPS probe per published front-end
                 (explicit IP &rarr; system VIP &rarr; bound interface, the same order the
                 upgrade runbook uses). FortiWeb only.</span></label>
             {% endif %}
             {% if 'baseline' in page.discover %}
             <label><input type="checkbox" name="what" value="baseline" checked>
-              <span><b>Device baseline</b> — one interface watch covering all ports, plus
+              <span><b>{{ _('Device baseline') }}</b> — one interface watch covering all ports, plus
                 processor load and memory usage, plus <code>proxyd</code> on FortiWeb.</span></label>
             {% endif %}
             {% if 'interfaces' in page.discover %}
             <label><input type="checkbox" name="what" value="interfaces">
-              <span><b>One probe per interface</b> — a separate series, interval and history
-                for every port. Pick this instead of the all-ports watch when you want to
-                chart or alert on ports individually.</span></label>
+              <span><b>{{ _('One probe per interface') }}</b> {{ _('— a separate series, interval and history for every port. Pick this instead of the all-ports watch when you want to chart or alert on ports individually.') }}</span></label>
             {% endif %}
             {% if 'api' in page.discover %}
             <label><input type="checkbox" name="what" value="api" checked>
-              <span><b>REST telemetry</b> — box concurrent sessions, the
+              <span><b>{{ _('REST telemetry') }}</b> — box concurrent sessions, the
                 <code>Total HTTP Throughput</code> aggregate, and per-policy sessions +
                 throughput for every HTTP/HTTPS server policy. Policies come from the LIVE
                 <code>policystatus</code> call, not the harvest cache, so this needs the
@@ -496,8 +488,8 @@
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-sm btn-primary">Discover</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-sm btn-primary">{{ _('Discover') }}</button>
         </div>
       </form>
     </div>

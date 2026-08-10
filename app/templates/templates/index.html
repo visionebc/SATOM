@@ -4,17 +4,17 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <span>Templates</span>
+  <span>{{ _('Templates') }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-collection me-2 text-accent"></i>Templates</h1>
-    <p class="text-muted mb-0" style="font-size:13px;">Reusable desired-state profiles (Web Protection, System, Server Policy, Structure) — authored once, pushed on demand</p>
+    <h1 class="fw-page-title"><i class="bi bi-collection me-2 text-accent"></i>{{ _('Templates') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('Reusable desired-state profiles (Web Protection, System, Server Policy, Structure) — authored once, pushed on demand') }}</p>
   </div>
   <div class="d-flex gap-2">
     {% if current_user and current_user.can('user_manage') %}
@@ -22,13 +22,13 @@
       <i class="bi bi-sliders me-1"></i>FortiWeb Sections
       {% if pending_template_count %}
       <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-warning text-dark" style="font-size:10px;">
-        {{ pending_template_count }}<span class="visually-hidden">pending</span>
+        {{ pending_template_count }}<span class="visually-hidden">{{ _('pending') }}</span>
       </span>
       {% endif %}
     </a>
     {% endif %}
     <button class="btn btn-fw-primary" data-bs-toggle="modal" data-bs-target="#modalAddTemplate">
-      <i class="bi bi-plus-lg me-1"></i>New Template
+      <i class="bi bi-plus-lg me-1"></i>{{ _('New Template') }}
     </button>
   </div>
 </div>
@@ -37,10 +37,10 @@
 <div class="fw-toolbar">
   <div class="fw-search-box">
     <i class="bi bi-search search-icon"></i>
-    <input type="text" id="tplSearch" placeholder="Search templates…">
+    <input type="text" id="tplSearch" placeholder="{{ _('Search templates…') }}">
   </div>
   <div class="d-flex gap-1 flex-wrap">
-    <a href="{{ url_for('templates.index') }}" class="btn btn-sm {{ 'btn-fw-primary' if not active_kind and not active_status else 'btn-outline-secondary' }}">All</a>
+    <a href="{{ url_for('templates.index') }}" class="btn btn-sm {{ 'btn-fw-primary' if not active_kind and not active_status else 'btn-outline-secondary' }}">{{ _('All') }}</a>
     {% for k in kinds %}
     <a href="{{ url_for('templates.index', kind=k) }}"
        class="btn btn-sm {{ 'btn-fw-primary' if active_kind == k else 'btn-outline-secondary' }}">{{ kind_labels[k] }}</a>
@@ -51,7 +51,7 @@
        class="btn btn-sm {{ 'btn-fw-primary' if active_status == 'pending' else 'btn-outline-secondary' }}">
        Pending{% if pending_template_count %} <span class="badge bg-warning text-dark">{{ pending_template_count }}</span>{% endif %}</a>
     <a href="{{ url_for('templates.index', kind=active_kind, status='approved') }}"
-       class="btn btn-sm {{ 'btn-fw-primary' if active_status == 'approved' else 'btn-outline-secondary' }}">Approved</a>
+       class="btn btn-sm {{ 'btn-fw-primary' if active_status == 'approved' else 'btn-outline-secondary' }}">{{ _('Approved') }}</a>
   </div>
 </div>
 
@@ -60,14 +60,14 @@
   <table class="fw-table" id="tplTable">
     <thead>
       <tr>
-        <th>Kind</th>
-        <th>Name</th>
-        <th>Version</th>
-        <th>Status</th>
-        <th>Note</th>
-        <th>Author</th>
-        <th>Created</th>
-        <th class="actions-col">Actions</th>
+        <th>{{ _('Kind') }}</th>
+        <th>{{ _('Name') }}</th>
+        <th>{{ _('Version') }}</th>
+        <th>{{ _('Status') }}</th>
+        <th>{{ _('Note') }}</th>
+        <th>{{ _('Author') }}</th>
+        <th>{{ _('Created') }}</th>
+        <th class="actions-col">{{ _('Actions') }}</th>
       </tr>
     </thead>
     <tbody>
@@ -75,22 +75,22 @@
         {% for t in templates %}
         <tr>
           <td><span class="fw-badge fw-badge-primary">{{ kind_labels.get(t.kind, t.kind) }}</span></td>
-          <td><strong>{{ t.name }}</strong>{% if t.locked %} <i class="bi bi-lock-fill text-muted" title="Locked"></i>{% endif %}</td>
+          <td><strong>{{ t.name }}</strong>{% if t.locked %} <i class="bi bi-lock-fill text-muted" title="{{ _('Locked') }}"></i>{% endif %}</td>
           <td>v{{ t.version }}</td>
           <td>
             {% if t.status == 'approved' %}
-              <span class="fw-badge fw-badge-success" title="Approved by {{ t.reviewed_by or '—' }}">approved</span>
+              <span class="fw-badge fw-badge-success" title="Approved by {{ t.reviewed_by or '—' }}">{{ _('approved') }}</span>
             {% elif t.status == 'rejected' %}
-              <span class="fw-badge fw-badge-danger" title="{{ t.reject_reason or 'rejected' }}">rejected</span>
+              <span class="fw-badge fw-badge-danger" title="{{ t.reject_reason or 'rejected' }}">{{ _('rejected') }}</span>
             {% else %}
-              <span class="fw-badge fw-badge-info">pending</span>
+              <span class="fw-badge fw-badge-info">{{ _('pending') }}</span>
             {% endif %}
           </td>
           <td style="font-size:13px; max-width:280px;" class="note-cell">
             {% if t.note %}
               {% if t.note|length > 70 %}
                 <span class="note-short">{{ t.note[:70] }}…</span><span class="note-full" style="display:none; white-space:pre-wrap; word-break:break-word;">{{ t.note }}</span>
-                <a href="#" class="note-toggle" style="font-size:11px; white-space:nowrap;">see more</a>
+                <a href="#" class="note-toggle" style="font-size:11px; white-space:nowrap;">{{ _('see more') }}</a>
               {% else %}
                 <span style="white-space:pre-wrap; word-break:break-word;">{{ t.note }}</span>
               {% endif %}
@@ -99,41 +99,41 @@
           <td style="font-size:13px;">{{ t.author or '—' }}</td>
           <td style="font-size:13px;">{{ t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '—' }}</td>
           <td class="actions-col">
-            <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1" title="View"
+            <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1" title="{{ _('View') }}"
                     data-js="view-template" data-tpl-id="{{ t.id }}"><i class="bi bi-eye"></i></button>
-            <button class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Approval history (who approved / rejected)"
+            <button class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Approval history (who approved / rejected)') }}"
                     data-js="open-history" data-tpl-id="{{ t.id }}" data-tpl-name="{{ t.name }}"><i class="bi bi-clock-history"></i></button>
             {% if current_user.can('operations.template_approve') and t.status == 'pending' %}
             <form method="POST" action="{{ url_for('templates.approve', template_id=t.id) }}" style="display:inline;">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" class="btn btn-sm btn-outline-success btn-sm-icon me-1" title="Approve (make fleet-deployable)"><i class="bi bi-check2-circle"></i></button>
+              <button type="submit" class="btn btn-sm btn-outline-success btn-sm-icon me-1" title="{{ _('Approve (make fleet-deployable)') }}"><i class="bi bi-check2-circle"></i></button>
             </form>
-            <button class="btn btn-sm btn-outline-danger btn-sm-icon me-1" title="Reject"
+            <button class="btn btn-sm btn-outline-danger btn-sm-icon me-1" title="{{ _('Reject') }}"
                     data-js="open-reject" data-tpl-id="{{ t.id }}" data-tpl-name="{{ t.name }}"><i class="bi bi-x-circle"></i></button>
             {% endif %}
             {% if current_user.can('operations.template_approve') and t.status == 'approved' %}
             <form method="POST" action="{{ url_for('templates.unapprove', template_id=t.id) }}" style="display:inline;"
                   data-fw-confirm-form="Revoke approval for '{{ t.name }}' (v{{ t.version }})? It returns to pending and is no longer fleet-deployable.">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" class="btn btn-sm btn-outline-warning btn-sm-icon me-1" title="Revoke approval (back to pending)"><i class="bi bi-arrow-counterclockwise"></i></button>
+              <button type="submit" class="btn btn-sm btn-outline-warning btn-sm-icon me-1" title="{{ _('Revoke approval (back to pending)') }}"><i class="bi bi-arrow-counterclockwise"></i></button>
             </form>
             {% endif %}
             {% if current_user.can('operations.template_apply') %}
-            <button class="btn btn-sm btn-fw-primary btn-sm-icon me-1" title="Apply to devices"
+            <button class="btn btn-sm btn-fw-primary btn-sm-icon me-1" title="{{ _('Apply to devices') }}"
                     data-js="open-apply" data-tpl-id="{{ t.id }}" data-tpl-name="{{ t.name }}"
                     data-approved="{{ (t.status == 'approved')|tojson }}"><i class="bi bi-upload"></i></button>
             {% endif %}
             {% if current_user.can('operations.template_save') %}
-            <button class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Edit (saves a new version)"
+            <button class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Edit (saves a new version)') }}"
                     data-js="edit-template" data-tpl-id="{{ t.id }}"><i class="bi bi-pencil"></i></button>
             <form method="POST" action="{{ url_for('templates.clone', template_id=t.id) }}" style="display:inline;">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="Clone"><i class="bi bi-files"></i></button>
+              <button type="submit" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Clone') }}"><i class="bi bi-files"></i></button>
             </form>
             <form method="POST" action="{{ url_for('templates.delete', template_id=t.id) }}" style="display:inline;"
                   data-fw-confirm-form="Delete template '{{ t.name }}' (v{{ t.version }})? This cannot be undone.">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" class="btn btn-sm btn-outline-danger btn-sm-icon" title="Delete"
+              <button type="submit" class="btn btn-sm btn-outline-danger btn-sm-icon" title="{{ _('Delete') }}"
                       {{ 'disabled' if t.locked else '' }}><i class="bi bi-trash"></i></button>
             </form>
             {% endif %}
@@ -145,10 +145,10 @@
           <td colspan="8">
             <div class="fw-empty-state">
               <div class="fw-empty-state-icon"><i class="bi bi-collection"></i></div>
-              <div class="fw-empty-state-title">No templates yet</div>
-              <div class="fw-empty-state-text">Create a reusable desired-state profile to push to your appliances on demand.</div>
+              <div class="fw-empty-state-title">{{ _('No templates yet') }}</div>
+              <div class="fw-empty-state-text">{{ _('Create a reusable desired-state profile to push to your appliances on demand.') }}</div>
               <button class="btn btn-fw-primary mt-2" data-bs-toggle="modal" data-bs-target="#modalAddTemplate">
-                <i class="bi bi-plus-lg me-1"></i>New Template
+                <i class="bi bi-plus-lg me-1"></i>{{ _('New Template') }}
               </button>
             </div>
           </td>
@@ -163,7 +163,7 @@
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-plus-lg me-2"></i>New Template</h5>
+        <h5 class="modal-title"><i class="bi bi-plus-lg me-2"></i>{{ _('New Template') }}</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="POST" action="{{ url_for('templates.create') }}">
@@ -171,37 +171,37 @@
         <div class="modal-body">
           <div class="row g-3">
             <div class="col-md-5">
-              <label class="fw-form-label">Kind <span class="text-danger">*</span></label>
+              <label class="fw-form-label">{{ _('Kind') }} <span class="text-danger">*</span></label>
               <select class="form-select" name="kind" required>
                 {% for k in kinds %}<option value="{{ k }}">{{ kind_labels[k] }}</option>{% endfor %}
               </select>
             </div>
             <div class="col-md-7">
-              <label class="fw-form-label">Name <span class="text-danger">*</span></label>
-              <input type="text" class="form-control" name="name" placeholder="e.g. baseline-wpp" required autocomplete="off">
+              <label class="fw-form-label">{{ _('Name') }} <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" name="name" placeholder="{{ _('e.g. baseline-wpp') }}" required autocomplete="off">
             </div>
           </div>
           <div class="mb-2 mt-3">
-            <label class="fw-form-label">Note</label>
-            <input type="text" class="form-control" name="note" placeholder="Optional description">
+            <label class="fw-form-label">{{ _('Note') }}</label>
+            <input type="text" class="form-control" name="note" placeholder="{{ _('Optional description') }}">
           </div>
           <div class="mb-2">
-            <label class="fw-form-label">Body (JSON) <span class="text-danger">*</span></label>
+            <label class="fw-form-label">{{ _('Body (JSON)') }} <span class="text-danger">*</span></label>
             <textarea class="form-control" name="body" rows="10" spellcheck="false"
                       style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;">{}</textarea>
-            <div class="form-text">Desired-state payload. Validated as JSON on save. Secrets are entered at apply-time, never stored here.</div>
+            <div class="form-text">{{ _('Desired-state payload. Validated as JSON on save. Secrets are entered at apply-time, never stored here.') }}</div>
           </div>
           <div class="mb-1">
-            <label class="fw-form-label">Exceptions (JSON)</label>
+            <label class="fw-form-label">{{ _('Exceptions (JSON)') }}</label>
             <textarea class="form-control" name="exceptions" rows="4" spellcheck="false"
                       placeholder="Optional — JSON object or array of exception rules"
                       style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"></textarea>
-            <div class="form-text">Optional exception rules carried with the template (validated as JSON when present).</div>
+            <div class="form-text">{{ _('Optional exception rules carried with the template (validated as JSON when present).') }}</div>
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save Template</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save Template') }}</button>
         </div>
       </form>
     </div>
@@ -213,20 +213,20 @@
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-eye me-2"></i><span id="vt-title">Template</span></h5>
+        <h5 class="modal-title"><i class="bi bi-eye me-2"></i><span id="vt-title">{{ _('Template') }}</span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <div class="mb-2 text-muted" style="font-size:13px;" id="vt-meta"></div>
-        <label class="fw-form-label">Body</label>
+        <label class="fw-form-label">{{ _('Body') }}</label>
         <pre style="background:#0d1626; color:#e2e8f0; padding:12px; border-radius:8px; max-height:340px; overflow:auto; font-size:12.5px;"><code id="vt-body"></code></pre>
         <div id="vt-exc-wrap" style="display:none;">
-          <label class="fw-form-label">Exceptions</label>
+          <label class="fw-form-label">{{ _('Exceptions') }}</label>
           <pre style="background:#0d1626; color:#e2e8f0; padding:12px; border-radius:8px; max-height:200px; overflow:auto; font-size:12.5px;"><code id="vt-exc"></code></pre>
         </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Close') }}</button>
       </div>
     </div>
   </div>
@@ -237,7 +237,7 @@
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Template <span class="text-muted" style="font-weight:normal;font-size:13px;">→ saves a new version</span></h5>
+        <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>{{ _('Edit Template') }} <span class="text-muted" style="font-weight:normal;font-size:13px;">{{ _('→ saves a new version') }}</span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="POST" id="editForm">
@@ -245,33 +245,33 @@
         <div class="modal-body">
           <div class="row g-3">
             <div class="col-md-5">
-              <label class="fw-form-label">Kind</label>
+              <label class="fw-form-label">{{ _('Kind') }}</label>
               <input type="text" class="form-control" id="et-kind" readonly>
             </div>
             <div class="col-md-7">
-              <label class="fw-form-label">Name <span class="text-danger">*</span></label>
+              <label class="fw-form-label">{{ _('Name') }} <span class="text-danger">*</span></label>
               <input type="text" class="form-control" name="name" id="et-name" required autocomplete="off">
             </div>
           </div>
           <div class="mb-2 mt-3">
-            <label class="fw-form-label">Note</label>
-            <input type="text" class="form-control" name="note" id="et-note" placeholder="Optional description">
+            <label class="fw-form-label">{{ _('Note') }}</label>
+            <input type="text" class="form-control" name="note" id="et-note" placeholder="{{ _('Optional description') }}">
           </div>
           <div class="mb-2">
-            <label class="fw-form-label">Body (JSON) <span class="text-danger">*</span></label>
+            <label class="fw-form-label">{{ _('Body (JSON)') }} <span class="text-danger">*</span></label>
             <textarea class="form-control" name="body" id="et-body" rows="10" spellcheck="false"
                       style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"></textarea>
           </div>
           <div class="mb-1">
-            <label class="fw-form-label">Exceptions (JSON)</label>
+            <label class="fw-form-label">{{ _('Exceptions (JSON)') }}</label>
             <textarea class="form-control" name="exceptions" id="et-exceptions" rows="4" spellcheck="false"
                       placeholder="Optional — JSON object or array of exception rules"
                       style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"></textarea>
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save New Version</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save New Version') }}</button>
         </div>
       </form>
     </div>
@@ -286,39 +286,38 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="confirm" value="1">
         <div class="modal-header">
-          <h5 class="modal-title"><i class="bi bi-upload me-2"></i>Apply <span id="ap-name"></span></h5>
+          <h5 class="modal-title"><i class="bi bi-upload me-2"></i>{{ _('Apply') }} <span id="ap-name"></span></h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
           <div id="ap-status-note" class="fw-alert fw-alert-warning" style="display:none; font-size:13px;"></div>
           <div class="fw-alert fw-alert-warning d-flex align-items-center gap-2 mb-3">
             <i class="bi bi-exclamation-triangle-fill"></i>
-            <span style="font-size:13px;"><strong>Live write.</strong> Confirm performs a real config
-              push (canary device first; the rest only if the canary succeeds). Preview first.</span>
+            <span style="font-size:13px;"><strong>{{ _('Live write.') }}</strong> {{ _('Confirm performs a real config push (canary device first; the rest only if the canary succeeds). Preview first.') }}</span>
           </div>
-          <label class="fw-form-label">Target devices <span class="text-danger">*</span></label>
+          <label class="fw-form-label">{{ _('Target devices') }} <span class="text-danger">*</span></label>
           {% if appliances %}
           <select class="form-select" name="device_ids" id="ap-devices" multiple size="6" required>
             {% for a in appliances %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
           </select>
-          <div class="form-text">Hold Ctrl/Cmd to select several. The first selected device is the canary.</div>
+          <div class="form-text">{{ _('Hold Ctrl/Cmd to select several. The first selected device is the canary.') }}</div>
           {% else %}
-          <div class="text-muted" style="font-size:13px;">No appliances are configured.</div>
+          <div class="text-muted" style="font-size:13px;">{{ _('No appliances are configured.') }}</div>
           {% endif %}
           <div class="mt-3">
             <button type="button" class="btn btn-fw-outline btn-sm" data-js="apply-preview">
-              <i class="bi bi-search me-1"></i>Dry-run preview
+              <i class="bi bi-search me-1"></i>{{ _('Dry-run preview') }}
             </button>
           </div>
           <div id="ap-preview" class="mt-3" style="display:none;">
-            <label class="fw-form-label">Dry-run preview</label>
+            <label class="fw-form-label">{{ _('Dry-run preview') }}</label>
             <div id="ap-preview-box" style="max-height:260px; overflow:auto; border:1px solid var(--fw-border,#dee2e6); border-radius:8px; padding:8px; font-size:12.5px;"></div>
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
           <button type="submit" class="btn btn-fw-danger" id="ap-confirm" disabled>
-            <i class="bi bi-upload me-1"></i>Confirm live apply
+            <i class="bi bi-upload me-1"></i>{{ _('Confirm live apply') }}
           </button>
         </div>
       </form>
@@ -331,7 +330,7 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-clock-history me-2"></i>Approval history — <span id="ht-title">Template</span></h5>
+        <h5 class="modal-title"><i class="bi bi-clock-history me-2"></i>{{ _('Approval history —') }} <span id="ht-title">{{ _('Template') }}</span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -339,7 +338,7 @@
         <div id="ht-timeline"></div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Close') }}</button>
       </div>
     </div>
   </div>
@@ -352,17 +351,17 @@
       <form method="POST" id="rejectForm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-header">
-          <h5 class="modal-title"><i class="bi bi-x-circle me-2"></i>Reject <span id="rj-name"></span></h5>
+          <h5 class="modal-title"><i class="bi bi-x-circle me-2"></i>{{ _('Reject') }} <span id="rj-name"></span></h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
-          <label class="fw-form-label" for="rj-reason">Reason (shown to the author)</label>
+          <label class="fw-form-label" for="rj-reason">{{ _('Reason (shown to the author)') }}</label>
           <textarea class="form-control" id="rj-reason" name="reason" rows="3"
                     placeholder="Why is this template being rejected?"></textarea>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-fw-danger"><i class="bi bi-x-circle me-1"></i>Reject template</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-danger"><i class="bi bi-x-circle me-1"></i>{{ _('Reject template') }}</button>
         </div>
       </form>
     </div>

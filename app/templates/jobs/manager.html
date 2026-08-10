@@ -4,9 +4,9 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <span>Jobs</span>
+  <span>{{ _('Jobs') }}</span>
 </div>
 {% endblock %}
 
@@ -14,17 +14,17 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title">
-      <i class="bi bi-list-task me-2 text-accent"></i>Jobs
+      <i class="bi bi-list-task me-2 text-accent"></i>{{ _('Jobs') }}
     </h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       Every background task — running and executed. Pause, resume or stop a job;
       see who launched it, where it runs and how far it got.
-      {% if is_admin %}You are seeing <strong>all users'</strong> jobs.{% else %}You are seeing your own jobs.{% endif %}
+      {% if is_admin %}You are seeing <strong>{{ _('all users\'') }}</strong> jobs.{% else %}You are seeing your own jobs.{% endif %}
     </p>
   </div>
   <div class="d-flex align-items-center gap-2">
-    <span id="jm-live" class="fw-badge" title="Auto-refreshing every 3s">
-      <i class="bi bi-arrow-repeat me-1"></i><span id="jm-count">–</span> jobs
+    <span id="jm-live" class="fw-badge" title="{{ _('Auto-refreshing every 3s') }}">
+      <i class="bi bi-arrow-repeat me-1"></i><span id="jm-count">–</span> {{ _('jobs') }}
     </span>
   </div>
 </div>
@@ -32,21 +32,21 @@
 <div class="fw-card mb-3">
   <div class="fw-card-body py-2 d-flex flex-wrap align-items-center gap-2">
     <select id="jm-status" class="form-select form-select-sm" style="width:auto;">
-      <option value="">All states</option>
-      <option value="running">Running</option>
-      <option value="paused">Paused</option>
-      <option value="pausing">Pausing</option>
-      <option value="cancelling">Stopping</option>
-      <option value="pending">Pending</option>
-      <option value="success">Success</option>
-      <option value="cancelled">Stopped</option>
-      <option value="error">Error</option>
+      <option value="">{{ _('All states') }}</option>
+      <option value="running">{{ _('Running') }}</option>
+      <option value="paused">{{ _('Paused') }}</option>
+      <option value="pausing">{{ _('Pausing') }}</option>
+      <option value="cancelling">{{ _('Stopping') }}</option>
+      <option value="pending">{{ _('Pending') }}</option>
+      <option value="success">{{ _('Success') }}</option>
+      <option value="cancelled">{{ _('Stopped') }}</option>
+      <option value="error">{{ _('Error') }}</option>
     </select>
     <input id="jm-search" type="search" class="form-control form-control-sm" style="max-width:260px;"
-           placeholder="Filter by title, type, user, device…">
+           placeholder="{{ _('Filter by title, type, user, device…') }}">
     <div class="form-check form-switch ms-auto mb-0" style="font-size:13px;">
       <input class="form-check-input" type="checkbox" id="jm-active-only">
-      <label class="form-check-label" for="jm-active-only">Active only</label>
+      <label class="form-check-label" for="jm-active-only">{{ _('Active only') }}</label>
     </div>
   </div>
 </div>
@@ -58,18 +58,18 @@
         <thead>
           <tr>
             <th style="width:150px;">ID</th>
-            <th style="width:110px;">Status</th>
-            <th>Job</th>
-            <th style="width:170px;">Progress</th>
-            <th style="width:110px;">Owner</th>
-            <th style="width:180px;">Where</th>
-            <th style="width:150px;">Started</th>
-            <th style="width:90px;">Duration</th>
-            <th style="width:190px;" class="text-end">Actions</th>
+            <th style="width:110px;">{{ _('Status') }}</th>
+            <th>{{ _('Job') }}</th>
+            <th style="width:170px;">{{ _('Progress') }}</th>
+            <th style="width:110px;">{{ _('Owner') }}</th>
+            <th style="width:180px;">{{ _('Where') }}</th>
+            <th style="width:150px;">{{ _('Started') }}</th>
+            <th style="width:90px;">{{ _('Duration') }}</th>
+            <th style="width:190px;" class="text-end">{{ _('Actions') }}</th>
           </tr>
         </thead>
         <tbody id="jm-body">
-          <tr><td colspan="9" class="text-center text-muted py-5">Loading…</td></tr>
+          <tr><td colspan="9" class="text-center text-muted py-5">{{ _('Loading…') }}</td></tr>
         </tbody>
       </table>
     </div>

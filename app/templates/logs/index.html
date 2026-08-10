@@ -4,16 +4,16 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <span>Log Collection</span>
+  <span>{{ _('Log Collection') }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-journal-text me-2 text-accent"></i>Log Collection</h1>
+    <h1 class="fw-page-title"><i class="bi bi-journal-text me-2 text-accent"></i>{{ _('Log Collection') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       Collect a read-only diagnostic battery (<code>get</code>/<code>diagnose</code>:
       status, HA, hardware, disk, network…) from one or more FortiWeb appliances
@@ -27,10 +27,10 @@
   <div class="col-lg-5">
     <div class="fw-card mb-3">
       <div class="fw-card-header d-flex align-items-center justify-content-between">
-        <span><i class="bi bi-server me-2 text-accent"></i>Devices (FortiWeb)</span>
+        <span><i class="bi bi-server me-2 text-accent"></i>{{ _('Devices (FortiWeb)') }}</span>
         <div class="d-flex gap-2">
-          <button type="button" class="btn btn-fw-outline btn-sm" id="selAll">Select all</button>
-          <button type="button" class="btn btn-secondary btn-sm" id="selNone">None</button>
+          <button type="button" class="btn btn-fw-outline btn-sm" id="selAll">{{ _('Select all') }}</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="selNone">{{ _('None') }}</button>
         </div>
       </div>
       <div class="fw-card-body">
@@ -47,8 +47,8 @@
         {% else %}
         <div class="fw-empty-state py-4">
           <div class="fw-empty-state-icon"><i class="bi bi-server"></i></div>
-          <div class="fw-empty-state-title">No FortiWeb appliances configured</div>
-          <a href="{{ url_for('appliances.index') }}" class="btn btn-fw-primary mt-2">Add Appliance</a>
+          <div class="fw-empty-state-title">{{ _('No FortiWeb appliances configured') }}</div>
+          <a href="{{ url_for('appliances.index') }}" class="btn btn-fw-primary mt-2">{{ _('Add Appliance') }}</a>
         </div>
         {% endif %}
       </div>
@@ -56,13 +56,13 @@
 
     <div class="fw-card mb-3">
       <div class="fw-card-body">
-        <label class="fw-form-label" style="font-size:12px;">Label</label>
+        <label class="fw-form-label" style="font-size:12px;">{{ _('Label') }}</label>
         <input type="text" class="form-control form-control-sm mb-3" id="labelInput"
-               value="manual" placeholder="e.g. before / after / incident">
+               value="manual" placeholder="{{ _('e.g. before / after / incident') }}">
 
         <details id="customWrap" class="mb-3">
           <summary style="cursor:pointer;font-size:13px;font-weight:600;">
-            <i class="bi bi-terminal me-1"></i>Custom commands (optional)
+            <i class="bi bi-terminal me-1"></i>{{ _('Custom commands (optional)') }}
           </summary>
           <p class="text-muted mt-2 mb-1" style="font-size:12px;">
             One command per line. Only read-only commands are allowed
@@ -77,7 +77,7 @@
 
         <button type="button" class="btn btn-fw-primary w-100" id="collectBtn"
                 {% if not appliances %}disabled{% endif %}>
-          <i class="bi bi-download me-1"></i>Collect logs
+          <i class="bi bi-download me-1"></i>{{ _('Collect logs') }}
         </button>
         <div id="collectErr" class="fw-alert fw-alert-warning mt-2 d-none" style="font-size:12.5px;"></div>
       </div>
@@ -87,7 +87,7 @@
   <!-- Right: progress + history -->
   <div class="col-lg-7">
     <div class="fw-card mb-3" id="progressCard" style="display:none;">
-      <div class="fw-card-header"><i class="bi bi-activity me-2 text-accent"></i>Progress</div>
+      <div class="fw-card-header"><i class="bi bi-activity me-2 text-accent"></i>{{ _('Progress') }}</div>
       <div class="fw-card-body">
         <div class="d-flex align-items-center justify-content-between mb-1">
           <span id="progLabel" class="text-muted" style="font-size:12.5px;">—</span>
@@ -103,7 +103,7 @@
 
     <div class="fw-card">
       <div class="fw-card-header d-flex align-items-center justify-content-between">
-        <span><i class="bi bi-clock-history me-2 text-accent"></i>Existing logs</span>
+        <span><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Existing logs') }}</span>
         <button type="button" class="btn btn-fw-outline btn-sm" id="refreshHist">
           <i class="bi bi-arrow-clockwise"></i>
         </button>
@@ -113,8 +113,8 @@
           <table class="fw-table" style="font-size:12.5px;margin:0;">
             <thead>
               <tr>
-                <th>Label</th><th>File</th><th style="width:160px;">When</th>
-                <th style="width:80px;">Size</th><th style="width:120px;"></th>
+                <th>{{ _('Label') }}</th><th>{{ _('File') }}</th><th style="width:160px;">{{ _('When') }}</th>
+                <th style="width:80px;">{{ _('Size') }}</th><th style="width:120px;"></th>
               </tr>
             </thead>
             <tbody id="histBody">
@@ -127,7 +127,7 @@
                   <td>{{ (h.size / 1024)|round(1) }} KB</td>
                   <td>
                     <a class="btn btn-fw-outline btn-sm" target="_blank"
-                       href="{{ url_for('logs.view_file', name=h.name) }}">View</a>
+                       href="{{ url_for('logs.view_file', name=h.name) }}">{{ _('View') }}</a>
                     <a class="btn btn-secondary btn-sm"
                        href="{{ url_for('logs.view_file', name=h.name) }}?download=1">↓</a>
                   </td>
@@ -137,7 +137,7 @@
                 <tr><td colspan="5">
                   <div class="fw-empty-state py-4">
                     <div class="fw-empty-state-icon"><i class="bi bi-journal"></i></div>
-                    <div class="fw-empty-state-title">No logs collected yet</div>
+                    <div class="fw-empty-state-title">{{ _('No logs collected yet') }}</div>
                   </div>
                 </td></tr>
               {% endif %}

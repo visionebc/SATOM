@@ -42,19 +42,19 @@
 
       <div class="modal-header">
         <h5 class="modal-title mb-0">
-          <i class="bi bi-journal-richtext me-2"></i>Release Notes
+          <i class="bi bi-journal-richtext me-2"></i>{{ _('Release Notes') }}
         </h5>
         <div class="d-flex align-items-center gap-2 ms-auto me-2">
           {% if current_user.can('user_manage') %}
           <button type="button" class="btn btn-sm btn-primary" id="rnScanToggle">
-            <i class="bi bi-search"></i> Scan from Fortinet…
+            <i class="bi bi-search"></i> {{ _('Scan from Fortinet…') }}
           </button>
           {% endif %}
           <button type="button" class="btn btn-sm btn-outline-secondary" id="rnSyncBtn">
-            <i class="bi bi-arrow-down-circle"></i> Sync from git
+            <i class="bi bi-arrow-down-circle"></i> {{ _('Sync from git') }}
           </button>
         </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
       </div>
 
       <div class="modal-body">
@@ -63,58 +63,58 @@
           Data is harvested from docs.fortinet.com into the git-shared reference; use the
           Upgrade advisor to diff your current firmware against a target.
         </p>
-        <div id="rnStatus" class="small mb-3 text-muted">Loading…</div>
+        <div id="rnStatus" class="small mb-3 text-muted">{{ _('Loading…') }}</div>
 
         {% if current_user.can('user_manage') %}
         {# ---- Scan panel (collapsible, admin only) ---- #}
         <div id="rnScanPanel" class="border rounded p-3 mb-3 d-none bg-body-tertiary">
           <div class="row g-2 align-items-end">
             <div class="col-md-4">
-              <label class="form-label small mb-1">Versions (major.minor)</label>
+              <label class="form-label small mb-1">{{ _('Versions (major.minor)') }}</label>
               <input type="text" class="form-control form-control-sm" id="rnMajors"
                      value="7.0,7.2,7.4,7.6,8.0">
             </div>
             <div class="col-md-3">
               <div class="form-check mt-3">
                 <input class="form-check-input" type="checkbox" id="rnAll">
-                <label class="form-check-label small" for="rnAll">All discovered (slow)</label>
+                <label class="form-check-label small" for="rnAll">{{ _('All discovered (slow)') }}</label>
               </div>
             </div>
             <div class="col-md-5">
               <div class="form-check form-check-inline">
                 <input class="form-check-input" type="checkbox" id="rnDirect" checked>
-                <label class="form-check-label small" for="rnDirect">Direct (httpx)</label>
+                <label class="form-check-label small" for="rnDirect">{{ _('Direct (httpx)') }}</label>
               </div>
               <div class="form-check form-check-inline">
                 <input class="form-check-input" type="checkbox" id="rnFc" checked>
-                <label class="form-check-label small" for="rnFc">Firecrawl fallback</label>
+                <label class="form-check-label small" for="rnFc">{{ _('Firecrawl fallback') }}</label>
               </div>
             </div>
             <div class="col-md-6">
-              <label class="form-label small mb-1">Firecrawl endpoint</label>
+              <label class="form-label small mb-1">{{ _('Firecrawl endpoint') }}</label>
               <input type="text" class="form-control form-control-sm" id="rnFcEndpoint"
-                     placeholder="http://192.0.2.66:3002">
+                     placeholder="{{ _('http://192.0.2.66:3002') }}">
             </div>
             <div class="col-md-4">
-              <label class="form-label small mb-1">Firecrawl key (optional)</label>
+              <label class="form-label small mb-1">{{ _('Firecrawl key (optional)') }}</label>
               <input type="password" class="form-control form-control-sm" id="rnFcKey"
                      autocomplete="off">
             </div>
             <div class="col-md-2">
               <div class="form-check mt-3">
                 <input class="form-check-input" type="checkbox" id="rnPublish" checked>
-                <label class="form-check-label small" for="rnPublish">Publish to git</label>
+                <label class="form-check-label small" for="rnPublish">{{ _('Publish to git') }}</label>
               </div>
             </div>
             <div class="col-12">
               <button type="button" class="btn btn-sm btn-primary" id="rnScanStart">
-                <i class="bi bi-search"></i> Start scan
+                <i class="bi bi-search"></i> {{ _('Start scan') }}
               </button>
               <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="rnScanBg">
-                <i class="bi bi-window-stack"></i> Run in background
+                <i class="bi bi-window-stack"></i> {{ _('Run in background') }}
               </button>
               <span class="text-muted small ms-2">
-                Reads docs.fortinet.com — no appliance needed. New versions merge in.
+                {{ _('Reads docs.fortinet.com — no appliance needed. New versions merge in.') }}
               </span>
             </div>
           </div>
@@ -127,15 +127,15 @@
         <ul class="nav nav-tabs" id="rnTabs" role="tablist">
           <li class="nav-item" role="presentation">
             <button class="nav-link active" data-bs-toggle="tab"
-                    data-bs-target="#rnTabIssues" type="button">Issues</button>
+                    data-bs-target="#rnTabIssues" type="button">{{ _('Issues') }}</button>
           </li>
           <li class="nav-item" role="presentation">
             <button class="nav-link" data-bs-toggle="tab"
-                    data-bs-target="#rnTabAdvisor" type="button">Upgrade advisor</button>
+                    data-bs-target="#rnTabAdvisor" type="button">{{ _('Upgrade advisor') }}</button>
           </li>
           <li class="nav-item" role="presentation">
             <button class="nav-link" data-bs-toggle="tab"
-                    data-bs-target="#rnTabNotes" type="button">Notes</button>
+                    data-bs-target="#rnTabNotes" type="button">{{ _('Notes') }}</button>
           </li>
         </ul>
 
@@ -149,9 +149,9 @@
               </div>
               <div class="col-auto">
                 <select class="form-select form-select-sm" id="rnIssueStatus">
-                  <option value="">(all status)</option>
-                  <option value="known">Known</option>
-                  <option value="resolved">Resolved</option>
+                  <option value="">{{ _('(all status)') }}</option>
+                  <option value="known">{{ _('Known') }}</option>
+                  <option value="resolved">{{ _('Resolved') }}</option>
                 </select>
               </div>
               <div class="col-auto">
@@ -159,15 +159,15 @@
               </div>
               <div class="col">
                 <input type="text" class="form-control form-control-sm" id="rnIssueQuery"
-                       placeholder="Search bug id / description / workaround …">
+                       placeholder="{{ _('Search bug id / description / workaround …') }}">
               </div>
             </div>
             <div class="table-responsive" style="max-height:46vh;overflow:auto;">
               <table class="table table-sm table-hover align-middle mb-1">
                 <thead class="sticky-top bg-body">
                   <tr>
-                    <th>Version</th><th>Status</th><th>Bug ID</th>
-                    <th>Topic</th><th>Description</th>
+                    <th>{{ _('Version') }}</th><th>{{ _('Status') }}</th><th>{{ _('Bug ID') }}</th>
+                    <th>{{ _('Topic') }}</th><th>{{ _('Description') }}</th>
                   </tr>
                 </thead>
                 <tbody id="rnIssueRows"></tbody>
@@ -180,14 +180,14 @@
           {# Upgrade advisor #}
           <div class="tab-pane fade" id="rnTabAdvisor" role="tabpanel">
             <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-              <label class="small mb-0">Current:</label>
+              <label class="small mb-0">{{ _('Current:') }}</label>
               <select class="form-select form-select-sm w-auto" id="rnAdvCurrent"></select>
-              <label class="small mb-0">→ Target:</label>
+              <label class="small mb-0">{{ _('→ Target:') }}</label>
               <select class="form-select form-select-sm w-auto" id="rnAdvTarget"></select>
-              <button type="button" class="btn btn-sm btn-primary" id="rnAdvShow">Show advisory</button>
+              <button type="button" class="btn btn-sm btn-primary" id="rnAdvShow">{{ _('Show advisory') }}</button>
             </div>
             <div id="rnAdvView" class="small text-muted">
-              Pick a current and target version, then Show advisory.
+              {{ _('Pick a current and target version, then Show advisory.') }}
             </div>
           </div>
 
@@ -199,16 +199,16 @@
               </div>
               <div class="col-auto">
                 <select class="form-select form-select-sm" id="rnNoteSection">
-                  <option value="">(all sections)</option>
+                  <option value="">{{ _('(all sections)') }}</option>
                 </select>
               </div>
               <div class="col">
                 <input type="text" class="form-control form-control-sm" id="rnNoteQuery"
-                       placeholder="Search the prose (what's new / upgrade notes …)">
+                       placeholder="{{ _('Search the prose (what\'s new / upgrade notes …)') }}">
               </div>
             </div>
             <div id="rnNoteView" class="small" style="max-height:52vh;overflow:auto;">
-              <span class="text-muted">Matching sections appear here.</span>
+              <span class="text-muted">{{ _('Matching sections appear here.') }}</span>
             </div>
           </div>
 

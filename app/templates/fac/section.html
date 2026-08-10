@@ -7,7 +7,7 @@
   <div>
     <h1 class="h5 mb-0">{{ item.label }}</h1>
     <div class="text-muted" style="font-size:12px;">
-      <a href="{{ url_for('fac.index') }}" class="text-decoration-none">FortiAuthenticator</a>
+      <a href="{{ url_for('fac.index') }}" class="text-decoration-none">{{ _('FortiAuthenticator') }}</a>
       <i class="bi bi-chevron-right" style="font-size:9px;"></i> {{ group.label }}
     </div>
   </div>
@@ -27,9 +27,9 @@
 <div class="fw-card" style="padding:20px;">
   <div class="fw-empty-state py-4">
     <i class="bi bi-person-badge"></i>
-    <p class="mb-1">No FortiAuthenticator is selected.</p>
+    <p class="mb-1">{{ _('No FortiAuthenticator is selected.') }}</p>
     <a class="btn btn-sm btn-fw-primary mt-2" href="{{ url_for('fac.index') }}">
-      <i class="bi bi-hdd-rack me-1"></i>Pick a device</a>
+      <i class="bi bi-hdd-rack me-1"></i>{{ _('Pick a device') }}</a>
   </div>
 </div>
 
@@ -38,7 +38,7 @@
 <div class="fw-card" style="padding:20px;">
   <div class="fw-empty-state py-4">
     <i class="bi bi-plug"></i>
-    <p class="mb-1"><strong>No endpoint bound.</strong></p>
+    <p class="mb-1"><strong>{{ _('No endpoint bound.') }}</strong></p>
     <p class="text-muted mb-0" style="font-size:12px;max-width:44rem;">
       FortiAuthenticator 8.0.3 serves this pane in its GUI but exposes no
       REST resource for it. Nothing is shown here rather than an empty table
@@ -116,14 +116,14 @@
             {% set v = r.get(c) %}
             {% if v is mapping or (v is sequence and v is not string) %}
               <span class="text-muted">{{ v|length }} item{{ '' if v|length == 1 else 's' }}</span>
-            {% elif v is sameas true %}<span class="fw-badge fw-badge-success">yes</span>
-            {% elif v is sameas false %}<span class="fw-badge fw-badge-secondary">no</span>
+            {% elif v is sameas true %}<span class="fw-badge fw-badge-success">{{ _('yes') }}</span>
+            {% elif v is sameas false %}<span class="fw-badge fw-badge-secondary">{{ _('no') }}</span>
             {% else %}{{ v if v not in (None, '') else '—' }}{% endif %}
           </td>
           {% endfor %}
           <td>
             <details>
-              <summary class="text-muted" style="cursor:pointer;font-size:11px;">raw</summary>
+              <summary class="text-muted" style="cursor:pointer;font-size:11px;">{{ _('raw') }}</summary>
               <pre class="mt-2 mb-0" style="font-size:11px;white-space:pre-wrap;
                    max-width:52rem;">{{ r|tojson(indent=1) }}</pre>
             </details>
@@ -138,8 +138,7 @@
   <div class="fw-empty-state py-4">
     <i class="bi bi-inbox"></i>
     <p class="mb-0">This resource is empty on {{ appliance.name }}.</p>
-    <p class="text-muted mb-0" style="font-size:12px;">The device answered
-      successfully with zero objects — this is not an error.</p>
+    <p class="text-muted mb-0" style="font-size:12px;">{{ _('The device answered successfully with zero objects — this is not an error.') }}</p>
   </div>
   {% endif %}
 
@@ -147,9 +146,8 @@
 </div>
 
 <p class="text-muted mt-3 mb-0" style="font-size:12px;">
-  Read-only view. Writes go through the
-  <a href="{{ url_for('fac_api.index') }}">API console</a>, where every request
-  is explicit, dry-run by default and audited.
+  {{ _('Read-only view. Writes go through the') }}
+  <a href="{{ url_for('fac_api.index') }}">{{ _('API console') }}</a>{{ _(', where every request is explicit, dry-run by default and audited.') }}
 </p>
 {% endif %}
 {% endblock %}

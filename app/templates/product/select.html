@@ -128,17 +128,17 @@
 </head>
 <body>
   <div class="ps-backdrop">
-    <div class="ps-modal" role="dialog" aria-modal="true" aria-label="Select a product">
+    <div class="ps-modal" role="dialog" aria-modal="true" aria-label="{{ _('Select a product') }}">
       <div class="ps-head">
-        <img src="{{ theme_logo_url or url_for('static', filename='img/satom-mark.png') }}" alt="SATOM">
+        <img src="{{ theme_logo_url or url_for('static', filename='img/satom-mark.png') }}" alt="{{ _('SATOM') }}">
         <div class="ps-head-text">
         {% set _is_prod = env_mode == 'production' %}
         <span class="ps-env {{ 'prod' if _is_prod else 'dev' }}">
           <i class="ps-env-dot"></i>{{ 'PRODUCTION' if _is_prod else 'DEVELOPMENT' }}
         </span>
-        <h1>SATOM</h1>
+        <h1>{{ _('SATOM') }}</h1>
         <p class="ps-full">System Automation & Task Orchestration Manager</p>
-        <p>Select the product you want to manage</p>
+        <p>{{ _('Select the product you want to manage') }}</p>
         </div>
       </div>
 
@@ -159,7 +159,7 @@
 
       <div class="ps-foot">
         {{ current_user.username }} &middot;
-        <a href="{{ url_for('auth.logout') }}">Sign out</a>
+        <a href="{{ url_for('auth.logout') }}">{{ _('Sign out') }}</a>
       </div>
     </div>
   </div>

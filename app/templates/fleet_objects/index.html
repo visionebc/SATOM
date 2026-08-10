@@ -4,9 +4,9 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <span>Fleet objects</span>
+  <span>{{ _('Fleet objects') }}</span>
 </div>
 {% endblock %}
 
@@ -15,7 +15,7 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title">
-      <i class="bi bi-box-seam me-2 text-accent"></i>Fleet objects
+      <i class="bi bi-box-seam me-2 text-accent"></i>{{ _('Fleet objects') }}
     </h1>
     <div class="d-flex align-items-center gap-2 mt-1">
       <span class="mono" style="font-size:12px;color:#6C757D;">
@@ -41,8 +41,7 @@
 {% if errors %}
 <div class="fw-alert fw-alert-warning mb-3">
   <i class="bi bi-exclamation-triangle me-2"></i>
-  <strong>{{ errors|length }}</strong> appliance(s) could not be read and were
-  skipped:
+  <strong>{{ errors|length }}</strong> {{ _('appliance(s) could not be read and were skipped:') }}
   <span class="ms-1">
     {% for e in errors %}
       <span class="fw-badge fw-badge-secondary" title="{{ e.error }}">{{ e.device }}</span>
@@ -80,7 +79,7 @@
 
   <a href="{{ url_for('fleet_objects.index', format='csv', **query_args) }}"
      class="btn btn-fw-outline btn-sm">
-    <i class="bi bi-download me-1"></i>Export CSV
+    <i class="bi bi-download me-1"></i>{{ _('Export CSV') }}
   </a>
 
   <span class="ms-auto" style="font-size:12px;color:#6C757D;align-self:center;">
@@ -112,7 +111,7 @@
             {% elif ckey == 'status' %}
               {% if value in ['enable', 'enabled'] %}
                 <span class="fw-status fw-status-online" style="font-size:12px;">
-                  <span class="fw-status-dot"></span>Enabled
+                  <span class="fw-status-dot"></span>{{ _('Enabled') }}
                 </span>
               {% elif value %}
                 <span class="fw-status fw-status-offline" style="font-size:12px;">
@@ -132,21 +131,19 @@
             <div class="fw-empty-state">
               <div class="fw-empty-state-icon"><i class="bi bi-box-seam"></i></div>
               {% if is_search and not q %}
-                <div class="fw-empty-state-title">Type a term to search</div>
+                <div class="fw-empty-state-title">{{ _('Type a term to search') }}</div>
                 <div class="fw-empty-state-text">
-                  The Find box is the query in this mode — enter any value to find
-                  it across every object on every appliance.
+                  {{ _('The Find box is the query in this mode — enter any value to find it across every object on every appliance.') }}
                 </div>
               {% elif is_search %}
                 <div class="fw-empty-state-title">No matches for “{{ q }}”</div>
                 <div class="fw-empty-state-text">
-                  No object field on any reachable appliance contains that value.
+                  {{ _('No object field on any reachable appliance contains that value.') }}
                 </div>
               {% else %}
-                <div class="fw-empty-state-title">No objects found</div>
+                <div class="fw-empty-state-title">{{ _('No objects found') }}</div>
                 <div class="fw-empty-state-text">
-                  No appliances are configured, none are reachable, or none has
-                  objects of this type matching the current filters.
+                  {{ _('No appliances are configured, none are reachable, or none has objects of this type matching the current filters.') }}
                 </div>
               {% endif %}
             </div>

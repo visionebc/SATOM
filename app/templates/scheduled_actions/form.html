@@ -4,9 +4,9 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <a href="{{ url_for('scheduled_actions.index') }}">Scheduled Actions</a>
+  <a href="{{ url_for('scheduled_actions.index') }}">{{ _('Scheduled Actions') }}</a>
   <span class="separator">/</span>
   <span>{{ 'Edit' if action else 'New' }}</span>
 </div>
@@ -19,11 +19,11 @@
       <i class="bi bi-clock-history me-2 text-accent"></i>{{ 'Edit' if action else 'New' }} Scheduled Action
     </h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      Pick an automation, choose its targets, and set when it runs.
+      {{ _('Pick an automation, choose its targets, and set when it runs.') }}
     </p>
   </div>
   <a class="btn btn-fw-outline btn-sm" href="{{ url_for('scheduled_actions.index') }}">
-    <i class="bi bi-chevron-left me-1"></i>Back
+    <i class="bi bi-chevron-left me-1"></i>{{ _('Back') }}
   </a>
 </div>
 
@@ -36,20 +36,20 @@
     <div class="col-lg-6">
       <div class="fw-card">
         <div class="fw-card-header">
-          <span class="fw-card-title"><i class="bi bi-gear me-2 text-accent"></i>Action</span>
+          <span class="fw-card-title"><i class="bi bi-gear me-2 text-accent"></i>{{ _('Action') }}</span>
         </div>
         <div class="fw-card-body">
           <div class="mb-3">
-            <label class="fw-form-label">Name <span class="text-danger">*</span></label>
+            <label class="fw-form-label">{{ _('Name') }} <span class="text-danger">*</span></label>
             <input type="text" class="form-control" name="name" required autocomplete="off"
-                   placeholder="e.g. Nightly config backup"
+                   placeholder="{{ _('e.g. Nightly config backup') }}"
                    value="{{ action.name if action else '' }}">
           </div>
 
           <div class="mb-3">
-            <label class="fw-form-label">Action <span class="text-danger">*</span></label>
+            <label class="fw-form-label">{{ _('Action') }} <span class="text-danger">*</span></label>
             <select class="form-select" name="action" id="actionSelect" required>
-              {% if not action %}<option value="" disabled selected>— select an action —</option>{% endif %}
+              {% if not action %}<option value="" disabled selected>{{ _('— select an action —') }}</option>{% endif %}
               <optgroup label="Admin maintenance">
                 {% for spec in admin_actions %}
                 <option value="{{ spec.key }}"
@@ -74,15 +74,15 @@
               </optgroup>
             </select>
             <div class="form-text">
-              Scope: <strong id="scopeLabel" class="text-uppercase">—</strong>
+              {{ _('Scope:') }} <strong id="scopeLabel" class="text-uppercase">—</strong>
               <span id="dangerNote" class="text-danger ms-2" style="display:none;">
-                <i class="bi bi-exclamation-triangle-fill"></i> Destructive — handle with care.
+                <i class="bi bi-exclamation-triangle-fill"></i> {{ _('Destructive — handle with care.') }}
               </span>
             </div>
           </div>
 
           <div class="mb-3">
-            <label class="fw-form-label">Targets</label>
+            <label class="fw-form-label">{{ _('Targets') }}</label>
             <select class="form-select" name="targets" id="targetsSelect" multiple size="6">
               {% for ap in appliances %}
               <option value="{{ ap.id }}" {{ 'selected' if ap.id in selected_targets else '' }}>
@@ -100,7 +100,7 @@
           </div>
 
           <div class="mb-2" id="genericParams">
-            <label class="fw-form-label">Advanced params (JSON, optional)</label>
+            <label class="fw-form-label">{{ _('Advanced params (JSON, optional)') }}</label>
             <textarea class="form-control" name="params_json" rows="4" spellcheck="false"
                       style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"
                       placeholder='{"policy": "default", "enabled": true}'>{{ params_text }}</textarea>
@@ -114,7 +114,7 @@
 
       <div class="fw-card mt-3" id="customCard" style="display:none;">
         <div class="fw-card-header">
-          <span class="fw-card-title"><i class="bi bi-braces me-2 text-accent"></i>Custom REST request</span>
+          <span class="fw-card-title"><i class="bi bi-braces me-2 text-accent"></i>{{ _('Custom REST request') }}</span>
         </div>
         <div class="fw-card-body">
 
@@ -127,38 +127,37 @@
 
           <div class="collapse show mb-3" id="customHelp">
             <div class="fw-help">
-              <p class="mb-2"><strong>Build any FortiWeb REST call and schedule it.</strong> Pick a method,
-                choose an endpoint, and (for writes) give the object name + a JSON body.</p>
+              <p class="mb-2"><strong>{{ _('Build any FortiWeb REST call and schedule it.') }}</strong> {{ _('Pick a method, choose an endpoint, and (for writes) give the object name + a JSON body.') }}</p>
               <ul class="mb-2 ps-3">
-                <li><span class="badge bg-secondary">GET</span> read only — never changes the box; the body is ignored.</li>
+                <li><span class="badge bg-secondary">GET</span> {{ _('read only — never changes the box; the body is ignored.') }}</li>
                 <li><span class="badge bg-success">POST</span> create &nbsp;·&nbsp;
                     <span class="badge bg-primary">PUT</span> update &nbsp;·&nbsp;
-                    <span class="badge bg-danger">DELETE</span> remove.</li>
-                <li><strong>mkey</strong> = the object's <em>name</em> (e.g. a policy called <code>pol-demo</code>) —
+                    <span class="badge bg-danger">{{ _('DELETE') }}</span> {{ _('remove.') }}</li>
+                <li><strong>{{ _('mkey') }}</strong> {{ _('= the object\'s') }} <em>{{ _('name') }}</em> (e.g. a policy called <code>pol-demo</code>) —
                     needed to target one specific object on PUT / DELETE / single GET.</li>
-                <li><strong>Endpoint</strong> = a friendly registry key (<code>server_policy</code>) or a raw
+                <li><strong>{{ _('Endpoint') }}</strong> = a friendly registry key (<code>server_policy</code>) or a raw
                     <code>/api/v2.0/...</code> path. Start typing to search all endpoints.</li>
-                <li>Every write goes through <strong>snapshot + audit + change-history</strong> — reversible and logged.</li>
+                <li>{{ _('Every write goes through') }} <strong>{{ _('snapshot + audit + change-history') }}</strong> {{ _('— reversible and logged.') }}</li>
               </ul>
-              <div class="mb-1 text-muted" style="font-size:12px;">Click a recipe to fill the form, then adjust:</div>
+              <div class="mb-1 text-muted" style="font-size:12px;">{{ _('Click a recipe to fill the form, then adjust:') }}</div>
               <div class="d-flex flex-wrap gap-2" id="recipeChips"></div>
             </div>
           </div>
 
           <div class="mb-3">
-            <label class="fw-form-label">Request preview</label>
-            <div id="customPreview" class="fw-preview">GET —</div>
+            <label class="fw-form-label">{{ _('Request preview') }}</label>
+            <div id="customPreview" class="fw-preview">{{ _('GET —') }}</div>
           </div>
 
           <div class="mb-3">
-            <label class="fw-form-label">Label (optional)</label>
+            <label class="fw-form-label">{{ _('Label (optional)') }}</label>
             <input type="text" class="form-control" name="custom_label" id="customLabel" autocomplete="off"
                    value="{{ custom_params.get('label', '') }}"
-                   placeholder="e.g. Disable a maintenance banner">
+                   placeholder="{{ _('e.g. Disable a maintenance banner') }}">
           </div>
           <div class="row g-2 mb-3">
             <div class="col-4">
-              <label class="fw-form-label">Method</label>
+              <label class="fw-form-label">{{ _('Method') }}</label>
               <select class="form-select" name="custom_method" id="customMethod">
                 {% for m in ['GET', 'POST', 'PUT', 'DELETE'] %}
                 <option value="{{ m }}" {{ 'selected' if custom_params.get('method', 'GET') == m else '' }}>{{ m }}</option>
@@ -166,18 +165,18 @@
               </select>
             </div>
             <div class="col-8">
-              <label class="fw-form-label">mkey (object name, optional)</label>
+              <label class="fw-form-label">{{ _('mkey (object name, optional)') }}</label>
               <input type="text" class="form-control" name="custom_mkey" id="customMkey" autocomplete="off"
-                     value="{{ custom_params.get('mkey', '') }}" placeholder="e.g. default">
+                     value="{{ custom_params.get('mkey', '') }}" placeholder="{{ _('e.g. default') }}">
             </div>
           </div>
           <div class="mb-3">
-            <label class="fw-form-label">Endpoint <span class="text-danger">*</span></label>
+            <label class="fw-form-label">{{ _('Endpoint') }} <span class="text-danger">*</span></label>
             <input type="text" class="form-control" name="custom_endpoint" id="customEndpoint" list="registryEndpoints"
                    autocomplete="off" spellcheck="false"
                    style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"
                    value="{{ custom_params.get('endpoint', '') }}"
-                   placeholder="/api/v2.0/cmdb/... or a registry key">
+                   placeholder="{{ _('/api/v2.0/cmdb/... or a registry key') }}">
             <datalist id="registryEndpoints">
               {% for e in registry_endpoints %}
               <option value="{{ e.path }}">{{ e.name }}</option>
@@ -190,17 +189,17 @@
           </div>
           <div class="mb-1">
             <div class="d-flex align-items-center mb-1">
-              <label class="fw-form-label mb-0">JSON body (POST / PUT)</label>
+              <label class="fw-form-label mb-0">{{ _('JSON body (POST / PUT)') }}</label>
               <button type="button" class="btn btn-fw-outline btn-sm ms-auto" data-js="format-custom-body">
-                <i class="bi bi-braces-asterisk me-1"></i>Format
+                <i class="bi bi-braces-asterisk me-1"></i>{{ _('Format') }}
               </button>
             </div>
             <textarea class="form-control" name="custom_body" id="customBody" rows="5" spellcheck="false"
                       style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;"
                       placeholder='{"status": "disable"}'>{% if custom_params.get('body') is not none %}{{ custom_params.get('body') | tojson(indent=2) }}{% endif %}</textarea>
             <div class="form-text" id="customBodyHint">
-              GET ignores the body. <strong>POST</strong>=create, <strong>PUT</strong>=update,
-              <strong>DELETE</strong>=delete — every write goes through snapshot + audit + dry-run.
+              {{ _('GET ignores the body.') }} <strong>POST</strong>{{ _('=create,') }} <strong>PUT</strong>{{ _('=update,') }}
+              <strong>{{ _('DELETE') }}</strong>{{ _('=delete — every write goes through snapshot + audit + dry-run.') }}
             </div>
           </div>
         </div>
@@ -211,11 +210,11 @@
     <div class="col-lg-6">
       <div class="fw-card">
         <div class="fw-card-header">
-          <span class="fw-card-title"><i class="bi bi-calendar-event me-2 text-accent"></i>Schedule</span>
+          <span class="fw-card-title"><i class="bi bi-calendar-event me-2 text-accent"></i>{{ _('Schedule') }}</span>
         </div>
         <div class="fw-card-body">
           <div class="mb-3">
-            <label class="fw-form-label">Frequency</label>
+            <label class="fw-form-label">{{ _('Frequency') }}</label>
             <select class="form-select" name="schedule_kind" id="scheduleKind">
               {% for k in schedule_kinds %}
               <option value="{{ k }}"
@@ -225,20 +224,20 @@
               {% endfor %}
             </select>
             <div class="form-text" id="forcedNote" style="display:none;">
-              This action is locked to a one-time (<strong>once</strong>) schedule.
+              {{ _('This action is locked to a one-time (') }}<strong>{{ _('once') }}</strong>{{ _(') schedule.') }}
             </div>
           </div>
 
           <!-- ONCE -->
           <div class="sched-group" data-kind="once">
-            <label class="fw-form-label">Run at</label>
+            <label class="fw-form-label">{{ _('Run at') }}</label>
             <input type="datetime-local" class="form-control" name="once_at"
                    value="{{ schedule.get('at', '')[:16] }}">
           </div>
 
           <!-- INTERVAL -->
           <div class="sched-group" data-kind="interval">
-            <label class="fw-form-label">Every</label>
+            <label class="fw-form-label">{{ _('Every') }}</label>
             <div class="d-flex gap-2">
               <input type="number" class="form-control" name="interval_every" min="1" style="max-width:120px;"
                      value="{{ schedule.get('every', 1) }}">
@@ -252,7 +251,7 @@
 
           <!-- DAILY -->
           <div class="sched-group" data-kind="daily">
-            <label class="fw-form-label">Time of day</label>
+            <label class="fw-form-label">{{ _('Time of day') }}</label>
             <input type="time" class="form-control" name="daily_time" style="max-width:160px;"
                    value="{{ schedule.get('time', '00:00') }}">
           </div>
@@ -289,21 +288,21 @@
             <input class="form-check-input" type="checkbox" name="enabled" id="enabledCheck"
                    {{ 'checked' if (not action or action.enabled) else '' }}>
             <label class="form-check-label" for="enabledCheck">
-              Enabled <span class="text-muted">— eligible to fire on its schedule</span>
+              {{ _('Enabled') }} <span class="text-muted">{{ _('— eligible to fire on its schedule') }}</span>
             </label>
           </div>
           <div class="form-check">
             <input class="form-check-input" type="checkbox" name="catch_up" id="catchUpCheck"
                    {{ 'checked' if (not action or action.catch_up) else '' }}>
             <label class="form-check-label" for="catchUpCheck">
-              Catch up <span class="text-muted">— run a missed fire instead of skipping it</span>
+              {{ _('Catch up') }} <span class="text-muted">{{ _('— run a missed fire instead of skipping it') }}</span>
             </label>
           </div>
         </div>
       </div>
 
       <div class="d-flex justify-content-end gap-2 mt-3">
-        <a class="btn btn-secondary" href="{{ url_for('scheduled_actions.index') }}">Cancel</a>
+        <a class="btn btn-secondary" href="{{ url_for('scheduled_actions.index') }}">{{ _('Cancel') }}</a>
         <button type="submit" class="btn btn-fw-primary">
           <i class="bi bi-check-lg me-1"></i>{{ 'Save changes' if action else 'Create action' }}
         </button>

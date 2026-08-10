@@ -4,32 +4,29 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <span>Automation</span>
+  <span>{{ _('Automation') }}</span>
   <span class="separator">/</span>
-  <span>Certificate Manager</span>
+  <span>{{ _('Certificate Manager') }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-shield-lock me-2 text-accent"></i>Certificate Manager</h1>
+    <h1 class="fw-page-title"><i class="bi bi-shield-lock me-2 text-accent"></i>{{ _('Certificate Manager') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      CA-signed certificate lifecycle for FortiWeb — generate a CSR here, sign it via the
-      configured protocol (ADCS or ACME, Settings → Certificate Manager), deploy the cert + key
-      to the device, then swap the binding in a maintenance window. Private keys are stored
-      encrypted; superseded/expired material is revoked and cleaned per the lifecycle policy.
+      {{ _('CA-signed certificate lifecycle for FortiWeb — generate a CSR here, sign it via the configured protocol (ADCS or ACME, Settings → Certificate Manager), deploy the cert + key to the device, then swap the binding in a maintenance window. Private keys are stored encrypted; superseded/expired material is revoked and cleaned per the lifecycle policy.') }}
     </p>
   </div>
   <div class="d-flex gap-2">
     <a class="btn btn-fw-secondary" href="{{ url_for('cert_manager.renewals') }}"
-       title="Renewal history and failures for every node, with the exact error">
-      <i class="bi bi-arrow-repeat me-1"></i>Renewals
+       title="{{ _('Renewal history and failures for every node, with the exact error') }}">
+      <i class="bi bi-arrow-repeat me-1"></i>{{ _('Renewals') }}
     </a>
     <a class="btn btn-fw-primary {{ '' if configured else 'disabled' }}" href="{{ url_for('cert_manager.new') }}">
-      <i class="bi bi-plus-lg me-1"></i>New Certificate
+      <i class="bi bi-plus-lg me-1"></i>{{ _('New Certificate') }}
     </a>
   </div>
 </div>
@@ -37,9 +34,7 @@
 {% if not configured %}
 <div class="alert alert-warning" role="alert" style="font-size:13px;">
   <i class="bi bi-exclamation-triangle me-1"></i>
-  The ADCS connection and at least one class template are not configured yet.
-  Open <a href="{{ url_for('cert_manager.settings') }}">Settings</a> to enter your CA host, name,
-  enrolment account and the per-class signing command.
+  {{ _('The ADCS connection and at least one class template are not configured yet. Open') }} <a href="{{ url_for('cert_manager.settings') }}">{{ _('Settings') }}</a> {{ _('to enter your CA host, name, enrolment account and the per-class signing command.') }}
 </div>
 {% endif %}
 
@@ -47,15 +42,15 @@
   <table class="fw-table">
     <thead>
       <tr>
-        <th>Name</th>
-        <th>Device</th>
-        <th>Class</th>
-        <th>SANs</th>
-        <th>Expires</th>
-        <th>Days left</th>
-        <th>Status</th>
-        <th>Bindings</th>
-        <th class="actions-col">Actions</th>
+        <th>{{ _('Name') }}</th>
+        <th>{{ _('Device') }}</th>
+        <th>{{ _('Class') }}</th>
+        <th>{{ _('SANs') }}</th>
+        <th>{{ _('Expires') }}</th>
+        <th>{{ _('Days left') }}</th>
+        <th>{{ _('Status') }}</th>
+        <th>{{ _('Bindings') }}</th>
+        <th class="actions-col">{{ _('Actions') }}</th>
       </tr>
     </thead>
     <tbody>
@@ -65,7 +60,7 @@
         <tr>
           <td><strong>{{ c.name }}</strong>
             {% if not c.has_private_key %}
-              <span class="fw-badge fw-badge-secondary ms-1" title="No stored private key">no key</span>
+              <span class="fw-badge fw-badge-secondary ms-1" title="{{ _('No stored private key') }}">{{ _('no key') }}</span>
             {% endif %}
           </td>
           <td style="font-size:13px;">{{ row.device }}</td>
@@ -78,16 +73,16 @@
             {% else %}<span class="text-muted">—</span>{% endif %}
           </td>
           <td>
-            {% if c.status == 'active' %}<span class="fw-badge fw-badge-success">active</span>
-            {% elif c.status == 'expiring' %}<span class="fw-badge fw-badge-warning">expiring</span>
-            {% elif c.status == 'superseded' %}<span class="fw-badge fw-badge-secondary">superseded</span>
-            {% elif c.status == 'revoked' %}<span class="fw-badge fw-badge-danger">revoked</span>
-            {% else %}<span class="fw-badge fw-badge-info">pending</span>{% endif %}
+            {% if c.status == 'active' %}<span class="fw-badge fw-badge-success">{{ _('active') }}</span>
+            {% elif c.status == 'expiring' %}<span class="fw-badge fw-badge-warning">{{ _('expiring') }}</span>
+            {% elif c.status == 'superseded' %}<span class="fw-badge fw-badge-secondary">{{ _('superseded') }}</span>
+            {% elif c.status == 'revoked' %}<span class="fw-badge fw-badge-danger">{{ _('revoked') }}</span>
+            {% else %}<span class="fw-badge fw-badge-info">{{ _('pending') }}</span>{% endif %}
           </td>
           <td style="font-size:12px;">{{ c.bound_policies | join(', ') if c.bound_policies else '—' }}</td>
           <td class="actions-col">
             <a class="btn btn-sm btn-outline-primary btn-sm-icon" href="{{ url_for('cert_manager.detail', id=c.id) }}"
-               title="Details / timeline"><i class="bi bi-eye"></i></a>
+               title="{{ _('Details / timeline') }}"><i class="bi bi-eye"></i></a>
           </td>
         </tr>
         {% endfor %}
@@ -96,16 +91,16 @@
           <td colspan="9">
             <div class="fw-empty-state">
               <div class="fw-empty-state-icon"><i class="bi bi-shield-lock"></i></div>
-              <div class="fw-empty-state-title">No managed certificates yet</div>
+              <div class="fw-empty-state-title">{{ _('No managed certificates yet') }}</div>
               <div class="fw-empty-state-text">
-                Create your first certificate — generate a CSR, sign it at your ADCS, and deploy it to a FortiWeb.
+                {{ _('Create your first certificate — generate a CSR, sign it at your ADCS, and deploy it to a FortiWeb.') }}
               </div>
               {% if configured %}
               <a class="btn btn-fw-primary mt-2" href="{{ url_for('cert_manager.new') }}">
-                <i class="bi bi-plus-lg me-1"></i>New Certificate</a>
+                <i class="bi bi-plus-lg me-1"></i>{{ _('New Certificate') }}</a>
               {% else %}
               <a class="btn btn-fw-primary mt-2" href="{{ url_for('cert_manager.settings') }}">
-                <i class="bi bi-gear me-1"></i>Configure ADCS first</a>
+                <i class="bi bi-gear me-1"></i>{{ _('Configure ADCS first') }}</a>
               {% endif %}
             </div>
           </td>
@@ -118,46 +113,42 @@
 {# --- Lifecycle policy: what is DUE for revocation / device deletion --------- #}
 <div class="fw-card mt-4 mb-2">
   <div class="fw-card-header d-flex justify-content-between align-items-center">
-    <span class="fw-card-title"><i class="bi bi-recycle me-2 text-accent"></i>Lifecycle — due for revocation / device cleanup</span>
+    <span class="fw-card-title"><i class="bi bi-recycle me-2 text-accent"></i>{{ _('Lifecycle — due for revocation / device cleanup') }}</span>
     <div class="d-flex gap-2">
       <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('cert_manager.settings') }}"
-         title="Grace / retention windows live in Settings → Certificate Manager">
-        <i class="bi bi-gear me-1"></i>Policy</a>
+         title="{{ _('Grace / retention windows live in Settings → Certificate Manager') }}">
+        <i class="bi bi-gear me-1"></i>{{ _('Policy') }}</a>
       <form method="post" action="{{ url_for('cert_manager.lifecycle_run') }}"
             data-fw-confirm-form="Apply the lifecycle sweep now? Due certs are revoked at the CA and unbound material is deleted from the devices (bindings re-verified live, fail-closed).">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn-sm fw-btn-primary"
                 {{ 'disabled' if not (lifecycle.revoke_due or lifecycle.delete_due) }}>
-          <i class="bi bi-play-fill me-1"></i>Run sweep now
+          <i class="bi bi-play-fill me-1"></i>{{ _('Run sweep now') }}
         </button>
       </form>
     </div>
   </div>
   <div class="fw-card-body" style="font-size:13px;">
     <p class="text-muted mb-2" style="font-size:12px;">
-      Policy: revoke superseded after <strong>{{ lifecycle.policy.revoke_grace_days }}d</strong>
+      {{ _('Policy: revoke superseded after') }} <strong>{{ lifecycle.policy.revoke_grace_days }}d</strong>
       ({{ 'on' if lifecycle.policy.revoke_on_supersede else 'off' }}) ·
-      delete superseded after <strong>{{ lifecycle.policy.delete_superseded_after_days }}d</strong> ·
-      delete expired after <strong>{{ lifecycle.policy.delete_expired_after_days }}d</strong> ·
-      delete revoked material: <strong>{{ 'yes' if lifecycle.policy.delete_revoked_from_device else 'no' }}</strong> ·
-      scheduled auto-apply: <strong>{{ 'ON' if lifecycle.policy.auto_apply else 'off (report-only)' }}</strong>.
-      A cert still bound anywhere is never touched.
+      delete superseded after <strong>{{ lifecycle.policy.delete_superseded_after_days }}d</strong> {{ _('· delete expired after') }} <strong>{{ lifecycle.policy.delete_expired_after_days }}d</strong> {{ _('· delete revoked material:') }} <strong>{{ 'yes' if lifecycle.policy.delete_revoked_from_device else 'no' }}</strong> {{ _('· scheduled auto-apply:') }} <strong>{{ 'ON' if lifecycle.policy.auto_apply else 'off (report-only)' }}</strong>{{ _('. A cert still bound anywhere is never touched.') }}
     </p>
     {% if lifecycle.revoke_due or lifecycle.delete_due or lifecycle.blocked %}
       {% for item in lifecycle.revoke_due %}
-      <div><span class="fw-badge fw-badge-danger me-1">revoke due</span>
+      <div><span class="fw-badge fw-badge-danger me-1">{{ _('revoke due') }}</span>
         <strong>{{ item.cert.name }}</strong> — {{ item.reason }}</div>
       {% endfor %}
       {% for item in lifecycle.delete_due %}
-      <div><span class="fw-badge fw-badge-warning me-1">delete due</span>
+      <div><span class="fw-badge fw-badge-warning me-1">{{ _('delete due') }}</span>
         <strong>{{ item.cert.name }}</strong> — {{ item.reason }}</div>
       {% endfor %}
       {% for item in lifecycle.blocked %}
-      <div><span class="fw-badge fw-badge-secondary me-1">blocked</span>
+      <div><span class="fw-badge fw-badge-secondary me-1">{{ _('blocked') }}</span>
         <strong>{{ item.cert.name }}</strong> — {{ item.action }} due ({{ item.reason }}) but still bound: {{ item.cert.bound_policies | join(', ') }}</div>
       {% endfor %}
     {% else %}
-      <span class="text-muted"><i class="bi bi-check-circle me-1 text-success"></i>Nothing due — the fleet matches the lifecycle policy.</span>
+      <span class="text-muted"><i class="bi bi-check-circle me-1 text-success"></i>{{ _('Nothing due — the fleet matches the lifecycle policy.') }}</span>
     {% endif %}
   </div>
 </div>
@@ -166,16 +157,15 @@
 <div class="fw-page-header mt-4">
   <div>
     <h2 class="fw-page-title" style="font-size:18px;">
-      <i class="bi bi-hdd-network me-2 text-accent"></i>On-device certificates
+      <i class="bi bi-hdd-network me-2 text-accent"></i>{{ _('On-device certificates') }}
     </h2>
     <p class="text-muted mb-0" style="font-size:13px;">
       Certificates live on the FortiWebs — cached in the manager so expiry, issuer and
       SANs show without hitting every box. The same certificate deployed on several
       boxes is shown once, with every device it lives on.
-      {% if device_unique %}<strong>{{ device_unique }}</strong> unique
-        across <strong>{{ device_deployments }}</strong> deployment{{ 's' if device_deployments != 1 }}.{% endif %}
+      {% if device_unique %}<strong>{{ device_unique }}</strong> {{ _('unique across') }} <strong>{{ device_deployments }}</strong> deployment{{ 's' if device_deployments != 1 }}.{% endif %}
       {% if device_last_scanned %}
-        <br><i class="bi bi-clock-history me-1"></i>Last scanned
+        <br><i class="bi bi-clock-history me-1"></i>{{ _('Last scanned') }}
         <span title="{{ device_last_scanned.strftime('%Y-%m-%d %H:%M UTC') }}">{{ device_last_scanned.strftime('%Y-%m-%d %H:%M') }} UTC</span>.
       {% elif not device_cached %}
         <br><i class="bi bi-exclamation-triangle me-1 text-warning"></i>Not scanned yet —
@@ -185,8 +175,8 @@
   </div>
   <div class="d-flex gap-2 align-items-start">
     <form method="post" action="{{ url_for('cert_manager.scan_devices') }}">
-      <button type="submit" class="btn btn-fw-secondary" title="Read every FortiWeb's certificate stores and refresh the cache">
-        <i class="bi bi-arrow-repeat me-1"></i>Scan devices
+      <button type="submit" class="btn btn-fw-secondary" title="{{ _('Read every FortiWeb\'s certificate stores and refresh the cache') }}">
+        <i class="bi bi-arrow-repeat me-1"></i>{{ _('Scan devices') }}
       </button>
     </form>
   </div>
@@ -203,15 +193,15 @@
   <table class="fw-table">
     <thead>
       <tr>
-        <th>Name</th>
-        <th>Store</th>
-        <th>SANs</th>
-        <th>Expires</th>
-        <th>Days left</th>
-        <th>Status</th>
-        <th>Bindings</th>
-        <th>Deployed on</th>
-        <th class="actions-col">Actions</th>
+        <th>{{ _('Name') }}</th>
+        <th>{{ _('Store') }}</th>
+        <th>{{ _('SANs') }}</th>
+        <th>{{ _('Expires') }}</th>
+        <th>{{ _('Days left') }}</th>
+        <th>{{ _('Status') }}</th>
+        <th>{{ _('Bindings') }}</th>
+        <th>{{ _('Deployed on') }}</th>
+        <th class="actions-col">{{ _('Actions') }}</th>
       </tr>
     </thead>
     <tbody>
@@ -228,7 +218,7 @@
             {% else %}<span class="text-muted">—</span>{% endif %}
           </td>
           <td>
-            {% if c.status == 'ok' %}<span class="fw-badge fw-badge-success">ok</span>
+            {% if c.status == 'ok' %}<span class="fw-badge fw-badge-success">{{ _('ok') }}</span>
             {% elif c.status %}<span class="fw-badge fw-badge-warning">{{ c.status }}</span>
             {% else %}<span class="text-muted">—</span>{% endif %}
           </td>
@@ -252,7 +242,7 @@
           <td colspan="9">
             <div class="fw-empty-state">
               <div class="fw-empty-state-icon"><i class="bi bi-hdd-network"></i></div>
-              <div class="fw-empty-state-title">No certificates found on any FortiWeb</div>
+              <div class="fw-empty-state-title">{{ _('No certificates found on any FortiWeb') }}</div>
               <div class="fw-empty-state-text">
                 {% if device_offline %}Every registered box was unreachable.{% else %}The fleet's certificate stores came back empty.{% endif %}
               </div>

@@ -11,5 +11,5 @@
    ========================================================================= #}
 {% if current_user.is_authenticated and current_user.can('advisor.use') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'advisor' else '' }}" href="{{ url_for('advisor.index', _adom=product.key) }}">
-  <i class="bi bi-stars fw-nav-icon"></i><span>AI Advisor</span></a>
+  <i class="bi bi-stars fw-nav-icon"></i><span>{{ _('AI Advisor') }}</span></a>
 {% endif %}

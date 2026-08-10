@@ -4,29 +4,27 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <span>Architecture</span>
+  <span>{{ _('Architecture') }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
 <div class="fw-page-header mb-3">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>Fleet Map</h1>
+    <h1 class="fw-page-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('Fleet Map') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      Network view of the whole fleet: Internet → published services (VIP:port) → FortiWeb → server pools → back-end servers.
-      Devices start collapsed — click one to unfold its topology. Searching switches to a focused view
-      (zone → device → server policy → backends) so only the matching path is drawn.
+      {{ _('Network view of the whole fleet: Internet → published services (VIP:port) → FortiWeb → server pools → back-end servers. Devices start collapsed — click one to unfold its topology. Searching switches to a focused view (zone → device → server policy → backends) so only the matching path is drawn.') }}
     </p>
   </div>
   {% if current %}
   <div class="d-flex align-items-center gap-2">
     <span class="fm-stat-badge" style="background:rgba(34,197,94,.15);color:#22c55e;">
-      <i class="bi bi-hdd-rack me-1"></i>Current: <strong>{{ current.name }}</strong>
+      <i class="bi bi-hdd-rack me-1"></i>{{ _('Current:') }} <strong>{{ current.name }}</strong>
     </span>
     <a href="{{ url_for('workspace.index') }}" class="btn btn-sm fw-btn-primary">
-      Open Server Policy <i class="bi bi-arrow-right ms-1"></i>
+      {{ _('Open Server Policy') }} <i class="bi bi-arrow-right ms-1"></i>
     </a>
   </div>
   {% endif %}
@@ -36,17 +34,17 @@
 <!-- Toolbar: search + view controls -->
 <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
   <input id="mapSearch" type="text" class="form-control fm-search"
-         placeholder="Search device / policy / VIP / WAF / pool / backend ip:port…  (shows a focused result view)">
+         placeholder="{{ _('Search device / policy / VIP / WAF / pool / backend ip:port… (shows a focused result view)') }}">
   <div class="btn-group fm-viewtoggle" role="group">
-    <button id="fmViewMap"  type="button" class="btn btn-sm fm-tool active" title="Network map view"><i class="bi bi-diagram-3"></i> Map</button>
-    <button id="fmViewList" type="button" class="btn btn-sm fm-tool" title="Grouped list (Zone → Line → Department)"><i class="bi bi-list-ul"></i> List</button>
+    <button id="fmViewMap"  type="button" class="btn btn-sm fm-tool active" title="{{ _('Network map view') }}"><i class="bi bi-diagram-3"></i> {{ _('Map') }}</button>
+    <button id="fmViewList" type="button" class="btn btn-sm fm-tool" title="{{ _('Grouped list (Zone → Line → Department)') }}"><i class="bi bi-list-ul"></i> {{ _('List') }}</button>
   </div>
   <div class="btn-group fm-toolbtns" role="group">
-    <button id="fmExpand"   type="button" class="btn btn-sm fm-tool" title="Expand every device"><i class="bi bi-arrows-expand"></i> Expand all</button>
-    <button id="fmCollapse" type="button" class="btn btn-sm fm-tool" title="Collapse every device"><i class="bi bi-arrows-collapse"></i> Collapse</button>
-    <button id="fmFit"      type="button" class="btn btn-sm fm-tool" title="Fit diagram to view"><i class="bi bi-aspect-ratio"></i> Fit</button>
-    <button id="fmZoomOut"  type="button" class="btn btn-sm fm-tool" title="Zoom out"><i class="bi bi-dash-lg"></i></button>
-    <button id="fmZoomIn"   type="button" class="btn btn-sm fm-tool" title="Zoom in"><i class="bi bi-plus-lg"></i></button>
+    <button id="fmExpand"   type="button" class="btn btn-sm fm-tool" title="{{ _('Expand every device') }}"><i class="bi bi-arrows-expand"></i> {{ _('Expand all') }}</button>
+    <button id="fmCollapse" type="button" class="btn btn-sm fm-tool" title="{{ _('Collapse every device') }}"><i class="bi bi-arrows-collapse"></i> {{ _('Collapse') }}</button>
+    <button id="fmFit"      type="button" class="btn btn-sm fm-tool" title="{{ _('Fit diagram to view') }}"><i class="bi bi-aspect-ratio"></i> {{ _('Fit') }}</button>
+    <button id="fmZoomOut"  type="button" class="btn btn-sm fm-tool" title="{{ _('Zoom out') }}"><i class="bi bi-dash-lg"></i></button>
+    <button id="fmZoomIn"   type="button" class="btn btn-sm fm-tool" title="{{ _('Zoom in') }}"><i class="bi bi-plus-lg"></i></button>
   </div>
 </div>
 
@@ -54,22 +52,22 @@
 <div id="mapFilters" class="mb-2 d-flex flex-wrap gap-2 align-items-center" style="min-height:30px;"></div>
 
 <!-- Stats bar -->
-<div id="mapStats" class="mb-2" style="font-size:13px;color:#93a1bd;">Loading…</div>
+<div id="mapStats" class="mb-2" style="font-size:13px;color:#93a1bd;">{{ _('Loading…') }}</div>
 
 <!-- Diagram viewport -->
 <div id="mapViewport">
   <svg id="mapSvg" width="100%" height="100%"></svg>
   <div id="fmTooltip"></div>
   <div id="fmLegend">
-    <div class="fm-lg-title">LEGEND</div>
-    <div class="fm-lg-row"><span class="fm-lg-swatch" style="border-color:#4f8cff;border-radius:12px;"></span> Published service (VIP:port)</div>
-    <div class="fm-lg-row"><span class="fm-lg-swatch" style="border-color:#22c55e;border-radius:12px;"></span> HTTPS / TLS service</div>
-    <div class="fm-lg-row"><span class="fm-lg-swatch" style="background:linear-gradient(135deg,#3b82f6,#8b5cf6);border:none;"></span> FortiWeb appliance</div>
-    <div class="fm-lg-row"><span class="fm-lg-swatch" style="border-color:#8b5cf6;"></span> Server pool (load balancing)</div>
-    <div class="fm-lg-row"><span class="fm-lg-swatch" style="border-color:#14b8a6;"></span> Back-end servers</div>
-    <div class="fm-lg-row"><span class="fm-lg-line"></span> Traffic path (animated = enabled)</div>
-    <div class="fm-lg-row"><span class="fm-lg-line" style="border-top-style:dashed;border-top-color:#64748b;"></span> Disabled policy</div>
-    <div class="fm-lg-row"><span style="color:#22c55e;">🛡</span> WAF profile attached</div>
+    <div class="fm-lg-title">{{ _('LEGEND') }}</div>
+    <div class="fm-lg-row"><span class="fm-lg-swatch" style="border-color:#4f8cff;border-radius:12px;"></span> {{ _('Published service (VIP:port)') }}</div>
+    <div class="fm-lg-row"><span class="fm-lg-swatch" style="border-color:#22c55e;border-radius:12px;"></span> {{ _('HTTPS / TLS service') }}</div>
+    <div class="fm-lg-row"><span class="fm-lg-swatch" style="background:linear-gradient(135deg,#3b82f6,#8b5cf6);border:none;"></span> {{ _('FortiWeb appliance') }}</div>
+    <div class="fm-lg-row"><span class="fm-lg-swatch" style="border-color:#8b5cf6;"></span> {{ _('Server pool (load balancing)') }}</div>
+    <div class="fm-lg-row"><span class="fm-lg-swatch" style="border-color:#14b8a6;"></span> {{ _('Back-end servers') }}</div>
+    <div class="fm-lg-row"><span class="fm-lg-line"></span> {{ _('Traffic path (animated = enabled)') }}</div>
+    <div class="fm-lg-row"><span class="fm-lg-line" style="border-top-style:dashed;border-top-color:#64748b;"></span> {{ _('Disabled policy') }}</div>
+    <div class="fm-lg-row"><span style="color:#22c55e;">🛡</span> {{ _('WAF profile attached') }}</div>
   </div>
 </div>
 
@@ -89,10 +87,10 @@
 {% else %}
 <div style="text-align:center;padding:80px 40px;color:#475569;background:#080b16;border-radius:14px;border:1px solid rgba(148,163,184,0.08);">
   <div style="font-size:48px;margin-bottom:16px;">🗺</div>
-  <div style="font-size:16px;font-weight:600;color:#93a1bd;">No appliances configured</div>
+  <div style="font-size:16px;font-weight:600;color:#93a1bd;">{{ _('No appliances configured') }}</div>
   <div style="font-size:13px;margin-top:8px;">
-    Add appliances and assign Zone / Line / Department in
-    <a href="{{ url_for('appliances.index') }}" style="color:#4f8cff;">Appliances</a> to see the fleet map.
+    {{ _('Add appliances and assign Zone / Line / Department in') }}
+    <a href="{{ url_for('appliances.index') }}" style="color:#4f8cff;">{{ _('Appliances') }}</a> {{ _('to see the fleet map.') }}
   </div>
 </div>
 {% endif %}
@@ -105,8 +103,8 @@
         <div class="dm-head-main">
           <div class="dm-avatar"><i class="bi bi-hdd-rack"></i></div>
           <div>
-            <h5 class="modal-title dm-title"><span id="dmName">Device</span>
-              <span id="dmStatusPill" class="dm-pill dm-pill-mut">unknown</span>
+            <h5 class="modal-title dm-title"><span id="dmName">{{ _('Device') }}</span>
+              <span id="dmStatusPill" class="dm-pill dm-pill-mut">{{ _('unknown') }}</span>
             </h5>
             <div class="dm-sub">
               <span id="dmKindChip" class="dm-chip"></span>
@@ -115,28 +113,28 @@
             </div>
           </div>
         </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
       </div>
       <div class="modal-body dm-body">
-        <div id="dmLoading" class="text-muted py-5 text-center">Loading…</div>
+        <div id="dmLoading" class="text-muted py-5 text-center">{{ _('Loading…') }}</div>
         <div id="dmContent" class="d-none">
 
           <div class="dm-specs" id="dmSpecs"></div>
 
           <div id="dmDatasheetWrap" class="mb-3 d-none">
             <a id="dmDatasheet" href="#" target="_blank" rel="noopener" class="btn btn-sm fw-btn-secondary">
-              <i class="bi bi-file-earmark-pdf me-1"></i>Datasheet (PDF)</a>
+              <i class="bi bi-file-earmark-pdf me-1"></i>{{ _('Datasheet (PDF)') }}</a>
           </div>
 
           <div class="dm-sec-head">
             <div>
-              <span class="dm-sec-title">Interfaces</span>
+              <span class="dm-sec-title">{{ _('Interfaces') }}</span>
               <span id="dmIfCount" class="dm-count"></span>
             </div>
             <div class="dm-sec-tools">
               <span id="dmIfFresh" class="dm-note"></span>
               <button type="button" id="dmMacBtn" class="btn btn-sm fw-btn-secondary">
-                <i class="bi bi-ethernet me-1"></i><span id="dmMacBtnTxt">Fetch MAC addresses</span>
+                <i class="bi bi-ethernet me-1"></i><span id="dmMacBtnTxt">{{ _('Fetch MAC addresses') }}</span>
               </button>
             </div>
           </div>
@@ -145,22 +143,22 @@
           <div class="dm-iftable-wrap">
             <table class="dm-iftable">
               <thead>
-                <tr><th>Port</th><th>Role</th><th>State</th><th>Address</th><th>MAC</th><th>Connected to</th><th>Notes</th></tr>
+                <tr><th>{{ _('Port') }}</th><th>{{ _('Role') }}</th><th>{{ _('State') }}</th><th>{{ _('Address') }}</th><th>MAC</th><th>{{ _('Connected to') }}</th><th>{{ _('Notes') }}</th></tr>
               </thead>
               <tbody id="dmIfaces"></tbody>
             </table>
           </div>
           <div id="dmNoIfaces" class="dm-empty d-none">
             <i class="bi bi-plug"></i>
-            <div>No interfaces in the cache for this device.<br>
-              <span class="dm-note">Run a device sync (or document ports on the appliance) and they will appear here.</span>
+            <div>{{ _('No interfaces in the cache for this device.') }}<br>
+              <span class="dm-note">{{ _('Run a device sync (or document ports on the appliance) and they will appear here.') }}</span>
             </div>
           </div>
           <div class="dm-legend">
-            <span><i class="bi bi-database"></i> harvested from the device cache</span>
-            <span><i class="bi bi-pencil-square"></i> operator-documented</span>
-            <span><i class="bi bi-ethernet"></i> MAC via read-only CLI, cached</span>
-            <span><i class="bi bi-tag"></i> roles derived from the device's own HA / management config</span>
+            <span><i class="bi bi-database"></i> {{ _('harvested from the device cache') }}</span>
+            <span><i class="bi bi-pencil-square"></i> {{ _('operator-documented') }}</span>
+            <span><i class="bi bi-ethernet"></i> {{ _('MAC via read-only CLI, cached') }}</span>
+            <span><i class="bi bi-tag"></i> {{ _('roles derived from the device\'s own HA / management config') }}</span>
           </div>
         </div>
         <div id="dmError" class="alert alert-danger d-none mb-0"></div>
@@ -168,9 +166,9 @@
       <div class="modal-footer dm-foot">
         <form id="dmEnterForm" method="post" action="" class="me-auto" style="margin:0;">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="btn fw-btn-primary btn-sm"><i class="bi bi-box-arrow-in-right me-1"></i>Enter device</button>
+          <button type="submit" class="btn fw-btn-primary btn-sm"><i class="bi bi-box-arrow-in-right me-1"></i>{{ _('Enter device') }}</button>
         </form>
-        <a id="dmDetailLink" href="#" class="btn fw-btn-primary btn-sm">Open full detail <i class="bi bi-arrow-right ms-1"></i></a>
+        <a id="dmDetailLink" href="#" class="btn fw-btn-primary btn-sm">{{ _('Open full detail') }} <i class="bi bi-arrow-right ms-1"></i></a>
       </div>
     </div>
   </div>
@@ -182,26 +180,26 @@
       <div class="modal-header" style="border-color:var(--fw-border);background:var(--fw-content-bg);">
         <div>
           <h5 class="modal-title" style="color:var(--fw-text-primary);">
-            <i class="bi bi-shield-check me-2" style="color:var(--fw-accent);"></i><span id="pmName">Server policy</span>
+            <i class="bi bi-shield-check me-2" style="color:var(--fw-accent);"></i><span id="pmName">{{ _('Server policy') }}</span>
           </h5>
           <div style="font-size:12px;color:var(--fw-text-secondary);margin-top:2px;">
             <span id="pmAppl"></span>
             <span id="pmFresh" class="fm-stat-badge ms-2"></span>
           </div>
         </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
       </div>
       <div class="modal-body">
-        <div id="pmLoading" class="text-muted py-4 text-center">Loading…</div>
+        <div id="pmLoading" class="text-muted py-4 text-center">{{ _('Loading…') }}</div>
         <div id="pmContent" class="d-none"></div>
         <div id="pmError" class="alert alert-danger d-none mb-0"></div>
       </div>
       <div class="modal-footer" style="border-color:var(--fw-border);background:var(--fw-content-bg);">
         <span style="font-size:12px;color:var(--fw-text-secondary);" class="me-auto">
-          <i class="bi bi-database me-1"></i>Data from the device cache — “Configure” links open the live editor.
+          <i class="bi bi-database me-1"></i>{{ _('Data from the device cache — “Configure” links open the live editor.') }}
         </span>
         <a id="pmPolicyLink" href="#" class="btn fw-btn-primary btn-sm d-none">
-          <i class="bi bi-gear me-1"></i>Open policy configuration <i class="bi bi-arrow-right ms-1"></i>
+          <i class="bi bi-gear me-1"></i>{{ _('Open policy configuration') }} <i class="bi bi-arrow-right ms-1"></i>
         </a>
       </div>
     </div>

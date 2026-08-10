@@ -60,16 +60,16 @@
 
 <div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
   <div>
-    <h1 class="fw-page-title mb-0"><i class="bi bi-hdd-rack me-2 text-accent"></i>Device health</h1>
-    <p class="text-muted small mb-0">{% if is_global %}Appliance health and capacity guardrails — data from the local cache, no live device calls. For this installation's own health see <a href="{{ url_for('monitoring.satom', _adom='global') }}">SATOM health</a>.{% else %}{{ product.name }} appliance health and capacity guardrails — data from the local cache, no live device calls.{% endif %}</p>
+    <h1 class="fw-page-title mb-0"><i class="bi bi-hdd-rack me-2 text-accent"></i>{{ _('Device health') }}</h1>
+    <p class="text-muted small mb-0">{% if is_global %}Appliance health and capacity guardrails — data from the local cache, no live device calls. For this installation's own health see <a href="{{ url_for('monitoring.satom', _adom='global') }}">{{ _('SATOM health') }}</a>.{% else %}{{ product.name }} appliance health and capacity guardrails — data from the local cache, no live device calls.{% endif %}</p>
   </div>
   <div class="d-flex align-items-center gap-2">
     <span id="monStamp" class="text-muted small"></span>
     {% if can_scan %}
     <button id="monScanBtn" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-cpu me-1"></i>Scan hardware (SSH)</button>
+      <i class="bi bi-cpu me-1"></i>{{ _('Scan hardware (SSH)') }}</button>
     {% endif %}
-    <button id="monRefreshBtn" class="btn btn-sm btn-primary"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+    <button id="monRefreshBtn" class="btn btn-sm btn-primary"><i class="bi bi-arrow-clockwise me-1"></i>{{ _('Refresh') }}</button>
   </div>
 </div>
 
@@ -79,7 +79,7 @@
 <div class="mon-sec-title"><i class="bi bi-hdd-rack me-1"></i>Device health &amp; capacity</div>
 <div class="mon-grid" id="monDevices"></div>
 
-<div class="mon-sec-title"><i class="bi bi-diagram-2 me-1"></i>Device HA posture</div>
+<div class="mon-sec-title"><i class="bi bi-diagram-2 me-1"></i>{{ _('Device HA posture') }}</div>
 <div class="fw-card"><div class="fw-card-body" id="monHaPosture"></div></div>
 
 

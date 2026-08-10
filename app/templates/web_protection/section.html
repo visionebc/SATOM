@@ -4,9 +4,9 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <a href="{{ url_for('web_protection.overview', id=appliance.id) }}">Web Protection</a>
+  <a href="{{ url_for('web_protection.overview', id=appliance.id) }}">{{ _('Web Protection') }}</a>
   <span class="separator">/</span>
   <span>{{ item.label }}</span>
 </div>
@@ -23,13 +23,13 @@
         </p>
       </div>
       <div class="d-flex align-items-center gap-2">
-        <span class="badge bg-dark border" title="Served from the local source of truth">
+        <span class="badge bg-dark border" title="{{ _('Served from the local source of truth') }}">
           <i class="bi bi-database me-1"></i>{{ freshness or 'no local data' }}</span>
         <form method="post" action="{{ url_for('web_protection.refresh', id=appliance.id) }}" class="d-inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="next" value="{{ request.full_path }}">
-          <button type="submit" class="btn btn-outline-light btn-sm" title="Pull live config from the device into the cache">
-            <i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+          <button type="submit" class="btn btn-outline-light btn-sm" title="{{ _('Pull live config from the device into the cache') }}">
+            <i class="bi bi-arrow-clockwise me-1"></i>{{ _('Refresh') }}</button>
         </form>
       </div>
     </div>
@@ -56,11 +56,11 @@
     <div class="fw-toolbar mb-2 d-flex align-items-center gap-2 flex-wrap">
       <a class="btn btn-fw-primary btn-sm"
          href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=tab.collection, title=tab.label, create=1) }}">
-        <i class="bi bi-plus-lg me-1"></i>Create New
+        <i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}
       </a>
       <div class="fw-search-box">
         <i class="bi bi-search search-icon"></i>
-        <input type="text" id="wp-obj-search" placeholder="Search…">
+        <input type="text" id="wp-obj-search" placeholder="{{ _('Search…') }}">
       </div>
       <span class="text-muted ms-auto" style="font-size:12px;">{{ rows|length }} object(s)</span>
     </div>
@@ -70,9 +70,9 @@
       <table class="fw-table" id="wp-obj-table">
         <thead>
           <tr>
-            <th>Name</th>
+            <th>{{ _('Name') }}</th>
             {% for col in tab.columns %}<th>{{ col.label }}</th>{% endfor %}
-            <th style="width:160px;">Actions</th>
+            <th style="width:160px;">{{ _('Actions') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -104,14 +104,14 @@
               <td>
                 {% if item.special == 'signatures' and tab.logical == 'signature' %}
                 <a href="{{ url_for('web_protection.signature_policy', id=appliance.id, name=r.name) }}"
-                   class="btn btn-sm btn-outline-primary" title="Open the FortiWeb-style signature editor (classes, details, exceptions)">
+                   class="btn btn-sm btn-outline-primary" title="{{ _('Open the FortiWeb-style signature editor (classes, details, exceptions)') }}">
                   <i class="bi bi-fingerprint"></i></a>
                 {% endif %}
                 <a href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=tab.collection, mkey=r.name, title=tab.label) }}"
-                   class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
-                <button type="button" class="btn btn-sm btn-outline-info" title="Clone (copies the object and its sub-table rows under a new name)"
+                   class="btn btn-sm btn-outline-secondary" title="{{ _('Edit') }}"><i class="bi bi-pencil"></i></a>
+                <button type="button" class="btn btn-sm btn-outline-info" title="{{ _('Clone (copies the object and its sub-table rows under a new name)') }}"
                         data-js="wp-clone" data-name="{{ r.name }}"><i class="bi bi-files"></i></button>
-                <button type="button" class="btn btn-sm btn-outline-danger" title="Delete"
+                <button type="button" class="btn btn-sm btn-outline-danger" title="{{ _('Delete') }}"
                         data-js="wp-delete" data-name="{{ r.name }}"><i class="bi bi-trash"></i></button>
               </td>
             </tr>
@@ -120,7 +120,7 @@
             <tr><td colspan="{{ ncols }}"><div class="fw-empty-state py-4">
               <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi {{ item.icon }}"></i></div>
               <div class="fw-empty-state-title">No {{ tab.label }} objects</div>
-              <div class="fw-empty-state-text">Create one, or Refresh to pull live config from the device.</div>
+              <div class="fw-empty-state-text">{{ _('Create one, or Refresh to pull live config from the device.') }}</div>
             </div></td></tr>
           {% endif %}
         </tbody>

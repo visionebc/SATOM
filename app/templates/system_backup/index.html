@@ -4,51 +4,51 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-hdd-stack me-2 text-accent"></i>System Backup &amp; Restore</h1>
-    <p class="text-muted mb-0" style="font-size:13px;">Everything needed to roll this system back: application <strong>code</strong> (git → self-update queue), <strong>database</strong> (pg_dump bundles), <strong>device configs</strong> (versioned local SoT store + device-pushed backups on the external backup server) and <strong>firmware</strong> (binaries on the backup server, pullable into the console).</p>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('Everything needed to roll this system back: application') }} <strong>{{ _('code') }}</strong> {{ _('(git → self-update queue),') }} <strong>{{ _('database') }}</strong> {{ _('(pg_dump bundles),') }} <strong>{{ _('device configs') }}</strong> {{ _('(versioned local SoT store + device-pushed backups on the external backup server) and') }} <strong>{{ _('firmware') }}</strong> {{ _('(binaries on the backup server, pullable into the console).') }}</p>
   </div>
 </div>
 
 {# ── Everything at a glance: every backup stream, its format, destinations, cadence and LIVE state ── #}
-<div class="card mb-3"><div class="card-header"><strong><i class="bi bi-clipboard-check me-1"></i>Backup coverage — everything, at a glance</strong></div>
+<div class="card mb-3"><div class="card-header"><strong><i class="bi bi-clipboard-check me-1"></i>{{ _('Backup coverage — everything, at a glance') }}</strong></div>
   <div class="card-body p-0">
     <div class="table-responsive">
     <table class="table table-sm align-middle mb-0" style="font-size:12.5px;">
       <thead><tr>
-        <th style="min-width:150px;">What</th><th>Format</th><th>Where it lives</th><th>How / cadence</th><th>State</th>
+        <th style="min-width:150px;">{{ _('What') }}</th><th>{{ _('Format') }}</th><th>{{ _('Where it lives') }}</th><th>{{ _('How / cadence') }}</th><th>{{ _('State') }}</th>
       </tr></thead>
       <tbody>
         <tr>
-          <td><strong>Application code</strong></td>
-          <td>git repo (source)</td>
-          <td>Gitea app repo + checked out on both nodes</td>
-          <td>Every commit / push; rollback via self-update queue</td>
-          <td>{% if code_history %}<span class="badge bg-success">running {{ git.commit }}</span>{% else %}<span class="badge bg-secondary">no history</span>{% endif %}</td>
+          <td><strong>{{ _('Application code') }}</strong></td>
+          <td>{{ _('git repo (source)') }}</td>
+          <td>{{ _('Gitea app repo + checked out on both nodes') }}</td>
+          <td>{{ _('Every commit / push; rollback via self-update queue') }}</td>
+          <td>{% if code_history %}<span class="badge bg-success">running {{ git.commit }}</span>{% else %}<span class="badge bg-secondary">{{ _('no history') }}</span>{% endif %}</td>
         </tr>
         <tr>
-          <td><strong>Database — live</strong></td>
-          <td>PostgreSQL</td>
-          <td>Primary 248 (read-write) · standby 249 (streaming replica)</td>
-          <td>WAL streaming replication (continuous)</td>
-          <td>{% if peer.reachable %}<span class="badge bg-success">replica reachable</span>{% elif peer.host %}<span class="badge bg-danger">standby unreachable</span>{% else %}<span class="badge bg-secondary">standalone</span>{% endif %}</td>
+          <td><strong>{{ _('Database — live') }}</strong></td>
+          <td>{{ _('PostgreSQL') }}</td>
+          <td>{{ _('Primary 248 (read-write) · standby 249 (streaming replica)') }}</td>
+          <td>{{ _('WAL streaming replication (continuous)') }}</td>
+          <td>{% if peer.reachable %}<span class="badge bg-success">{{ _('replica reachable') }}</span>{% elif peer.host %}<span class="badge bg-danger">{{ _('standby unreachable') }}</span>{% else %}<span class="badge bg-secondary">{{ _('standalone') }}</span>{% endif %}</td>
         </tr>
         <tr>
-          <td><strong>Database — bundles</strong></td>
+          <td><strong>{{ _('Database — bundles') }}</strong></td>
           <td><code>.tar.gz</code> (pg_dump + <code>reports/</code>)</td>
-          <td>This node <code>data/system_backups/</code> · standby (rsync) · <strong>backup-server <code>/system/</code></strong> (off-rack)</td>
+          <td>This node <code>data/system_backups/</code> · standby (rsync) · <strong>backup-server <code>/system/</code></strong> {{ _('(off-rack)') }}</td>
           <td>Nightly 01:30 (<code>system_backup</code>, id11) + manual; pushed to backup-server by default</td>
           <td>
             <span class="badge bg-{{ 'success' if backups else 'secondary' }}">{{ backups|length }} local</span>
             {% if bk_system.configured %}
               {% if bk_system.reachable %}<span class="badge bg-{{ 'success' if bk_system.files else 'warning text-dark' }}">{{ bk_system.files|length }} on backup-server</span>
-              {% else %}<span class="badge bg-danger">backup-server unreachable</span>{% endif %}
+              {% else %}<span class="badge bg-danger">{{ _('backup-server unreachable') }}</span>{% endif %}
             {% endif %}
           </td>
         </tr>
         <tr>
-          <td><strong>Device config — source of truth</strong></td>
+          <td><strong>{{ _('Device config — source of truth') }}</strong></td>
           <td><code>_config.json</code> (latest view) + content-addressed versions (<code>data/sot/</code>)</td>
           <td>This node · standby (rsync) · backup-server <code>/system/sot/</code> · cache in Postgres</td>
-          <td>Hourly sync (id5) records a version on every config change; nightly publish 02:45 (id12) pushes new blobs off-box — FortiWeb, FortiADC <em>and</em> FortiAnalyzer</td>
+          <td>{{ _('Hourly sync (id5) records a version on every config change; nightly publish 02:45 (id12) pushes new blobs off-box — FortiWeb, FortiADC') }} <em>{{ _('and') }}</em> {{ _('FortiAnalyzer') }}</td>
           <td>
             {% set covered = sot|selectattr('has_json')|list|length %}
             <span class="badge bg-{{ 'success' if covered == sot|length and sot else 'warning text-dark' }}">{{ covered }}/{{ sot|length }} devices</span>
@@ -56,42 +56,42 @@
           </td>
         </tr>
         <tr>
-          <td><strong>Git repository (application code)</strong></td>
+          <td><strong>{{ _('Git repository (application code)') }}</strong></td>
           <td><code>.bundle</code> (full history, all refs)</td>
-          <td>This node <code>data/git-bundles/</code> · standby (rsync) · <strong>backup-server <code>{{ gitb_cfg.remote_dir }}</code></strong> · your laptop (download)</td>
-          <td>Manual (below); captures CODE commits that cannot reach Gitea. Device-config history moved to the SoT store</td>
+          <td>This node <code>data/git-bundles/</code> · standby (rsync) · <strong>backup-server <code>{{ gitb_cfg.remote_dir }}</code></strong> {{ _('· your laptop (download)') }}</td>
+          <td>{{ _('Manual (below); captures CODE commits that cannot reach Gitea. Device-config history moved to the SoT store') }}</td>
           <td>
             <span class="badge bg-{{ 'success' if gitb else 'secondary' }}">{{ gitb|length }} local</span>
             {% if gitb_state.ahead %}<span class="badge bg-{{ 'danger' if gitb_state.oldest_age_h >= 24 else 'warning text-dark' }}">{{ gitb_state.ahead }} unpushed{% if gitb_state.oldest_age_h %} · {{ gitb_state.oldest_age_h }}h{% endif %}</span>
-            {% elif gitb_state.upstream %}<span class="badge bg-success">in sync with remote</span>{% endif %}
+            {% elif gitb_state.upstream %}<span class="badge bg-success">{{ _('in sync with remote') }}</span>{% endif %}
           </td>
         </tr>
         <tr>
-          <td><strong>Device config — vault</strong></td>
-          <td>raw device export</td>
+          <td><strong>{{ _('Device config — vault') }}</strong></td>
+          <td>{{ _('raw device export') }}</td>
           <td>This node <code>data/backups/</code> · standby (rsync)</td>
-          <td>On-demand per-appliance backup; mirrored every 5 min</td>
+          <td>{{ _('On-demand per-appliance backup; mirrored every 5 min') }}</td>
           <td><span class="badge bg-{{ 'success' if vault.entries else 'secondary' }}">{{ vault.entries }} entr{{ 'y' if vault.entries == 1 else 'ies' }}</span></td>
         </tr>
         <tr>
-          <td><strong>Appliance-pushed config</strong></td>
-          <td>Fortinet config archive (zip)</td>
+          <td><strong>{{ _('Appliance-pushed config') }}</strong></td>
+          <td>{{ _('Fortinet config archive (zip)') }}</td>
           <td>backup-server <code>/configs/&lt;device&gt;/</code> (independent of this app)</td>
           <td>Each appliance pushes on its own schedule (<code>config system backup</code> → SFTP; fw6 daily 02:00)</td>
           <td>
-            {% if not bk.configured %}<span class="badge bg-secondary">not configured</span>
-            {% elif not bk.reachable %}<span class="badge bg-danger">unreachable</span>
+            {% if not bk.configured %}<span class="badge bg-secondary">{{ _('not configured') }}</span>
+            {% elif not bk.reachable %}<span class="badge bg-danger">{{ _('unreachable') }}</span>
             {% else %}<span class="badge bg-{{ 'success' if bk.devices else 'warning text-dark' }}">{{ bk.devices|length }} device(s)</span>{% endif %}
           </td>
         </tr>
         <tr>
-          <td><strong>Firmware</strong></td>
+          <td><strong>{{ _('Firmware') }}</strong></td>
           <td><code>.out</code> binaries + manifest</td>
           <td>backup-server <code>/firmware/</code> · manifest in firmware SoT repo · pullable into the console</td>
-          <td>Uploaded to the backup server; Pull → Infrastructure → Firmware (sha256-verified)</td>
+          <td>{{ _('Uploaded to the backup server; Pull → Infrastructure → Firmware (sha256-verified)') }}</td>
           <td>
-            {% if not bk.configured %}<span class="badge bg-secondary">not configured</span>
-            {% elif not bk.reachable %}<span class="badge bg-danger">unreachable</span>
+            {% if not bk.configured %}<span class="badge bg-secondary">{{ _('not configured') }}</span>
+            {% elif not bk.reachable %}<span class="badge bg-danger">{{ _('unreachable') }}</span>
             {% else %}<span class="badge bg-{{ 'success' if bk.firmware else 'secondary' }}">{{ bk.firmware|length }} image(s)</span>{% endif %}
           </td>
         </tr>
@@ -100,15 +100,15 @@
     </div>
     <div class="card-body py-2 border-top">
       <div class="small text-muted d-flex flex-wrap gap-3 align-items-center">
-        <span><i class="bi bi-hdd-stack me-1"></i><strong>Per-device SoT:</strong></span>
+        <span><i class="bi bi-hdd-stack me-1"></i><strong>{{ _('Per-device SoT:') }}</strong></span>
         {% for d in sot %}
           <span class="font-monospace">{{ d.name }} <span class="text-muted">({{ d.kind }})</span>
             {% if d.has_json %}<i class="bi bi-check-circle-fill text-success" title="snapshot {{ d.mtime }} UTC"></i>
-            {% else %}<i class="bi bi-x-circle-fill text-danger" title="no snapshot yet"></i>{% endif %}
+            {% else %}<i class="bi bi-x-circle-fill text-danger" title="{{ _('no snapshot yet') }}"></i>{% endif %}
           </span>
         {% endfor %}
         {% if bk_system.configured and bk_system.files %}
-          <span class="ms-auto"><i class="bi bi-hdd-network me-1"></i>Newest DB bundle off-rack: <span class="font-monospace">{{ bk_system.files[0].name }}</span> ({{ (bk_system.files[0].size/1024)|round(0)|int }} KB, {{ bk_system.files[0].mtime }} UTC)</span>
+          <span class="ms-auto"><i class="bi bi-hdd-network me-1"></i>{{ _('Newest DB bundle off-rack:') }} <span class="font-monospace">{{ bk_system.files[0].name }}</span> ({{ (bk_system.files[0].size/1024)|round(0)|int }} KB, {{ bk_system.files[0].mtime }} UTC)</span>
         {% endif %}
       </div>
     </div>
@@ -117,7 +117,7 @@
 
 <div class="row g-3">
   <div class="col-lg-5">
-    <div class="card mb-3"><div class="card-header"><strong>Create backup</strong></div>
+    <div class="card mb-3"><div class="card-header"><strong>{{ _('Create backup') }}</strong></div>
       <div class="card-body">
         <form method="post" action="{{ url_for('system_backup.create') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -125,27 +125,27 @@
             <input class="form-check-input" type="checkbox" name="include_reports" id="ir" checked>
             <label class="form-check-label small" for="ir">Include per-device JSON (<code>reports/</code>)</label>
           </div>
-          <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>Create backup now</button>
+          <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Create backup now') }}</button>
         </form>
         <hr>
         <form method="post" action="{{ url_for('system_backup.publish_json') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="btn btn-outline-light btn-sm"><i class="bi bi-clock-history me-1"></i>Record versions + push off-box now</button>
-          <div class="form-text">Records the current per-device JSON into the versioned SoT store and uploads new blobs to the backup server. The hourly harvest records automatically; unchanged configs cost nothing.</div>
+          <button type="submit" class="btn btn-outline-light btn-sm"><i class="bi bi-clock-history me-1"></i>{{ _('Record versions + push off-box now') }}</button>
+          <div class="form-text">{{ _('Records the current per-device JSON into the versioned SoT store and uploads new blobs to the backup server. The hourly harvest records automatically; unchanged configs cost nothing.') }}</div>
         </form>
       </div>
     </div>
 
-    <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-hdd-stack me-1"></i>Versioned SoT store (local)</strong></div>
+    <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-hdd-stack me-1"></i>{{ _('Versioned SoT store (local)') }}</strong></div>
       <div class="card-body">
         <table class="table table-sm mb-2"><tbody>
-          <tr><td class="small text-muted" style="width:130px;">Location</td><td class="small font-monospace">data/sot/ (replicated to the standby; blobs pushed to backup-server)</td></tr>
-          <tr><td class="small text-muted">Devices</td><td class="small">{{ sot_stats.devices }}</td></tr>
-          <tr><td class="small text-muted">Versions</td><td class="small">{{ sot_stats.versions }} ({{ sot_stats.blobs }} distinct blob(s), {{ (sot_stats.bytes/1024)|round(0)|int }} KB)</td></tr>
+          <tr><td class="small text-muted" style="width:130px;">{{ _('Location') }}</td><td class="small font-monospace">{{ _('data/sot/ (replicated to the standby; blobs pushed to backup-server)') }}</td></tr>
+          <tr><td class="small text-muted">{{ _('Devices') }}</td><td class="small">{{ sot_stats.devices }}</td></tr>
+          <tr><td class="small text-muted">{{ _('Versions') }}</td><td class="small">{{ sot_stats.versions }} ({{ sot_stats.blobs }} distinct blob(s), {{ (sot_stats.bytes/1024)|round(0)|int }} KB)</td></tr>
         </tbody></table>
         {% if sot_sum %}
         <table class="table table-sm table-hover mb-0">
-          <thead><tr><th>Device</th><th>Versions</th><th>Last change</th><th>Last confirmed</th></tr></thead>
+          <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Versions') }}</th><th>{{ _('Last change') }}</th><th>{{ _('Last confirmed') }}</th></tr></thead>
           <tbody>
           {% for s in sot_sum %}
             <tr>
@@ -158,7 +158,7 @@
           </tbody>
         </table>
         {% else %}
-        <div class="alert alert-secondary small py-2 mb-0">No versions recorded yet — the next device sync records the first one automatically.</div>
+        <div class="alert alert-secondary small py-2 mb-0">{{ _('No versions recorded yet — the next device sync records the first one automatically.') }}</div>
         {% endif %}
       </div>
     </div>
@@ -166,15 +166,15 @@
 
   <div class="col-lg-7">
     <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center">
-        <strong><i class="bi bi-database me-1"></i>Database backups — pg_dump bundles (this node)</strong>
-        {% if backups %}<button class="btn btn-outline-light btn-sm py-0" data-bs-toggle="modal" data-bs-target="#bundlesModal"><i class="bi bi-list-check me-1"></i>Manage / clean up</button>{% endif %}
+        <strong><i class="bi bi-database me-1"></i>{{ _('Database backups — pg_dump bundles (this node)') }}</strong>
+        {% if backups %}<button class="btn btn-outline-light btn-sm py-0" data-bs-toggle="modal" data-bs-target="#bundlesModal"><i class="bi bi-list-check me-1"></i>{{ _('Manage / clean up') }}</button>{% endif %}
       </div>
       <div class="card-body">
         {% if not backups %}
-          <p class="text-muted small mb-0">No backups yet.</p>
+          <p class="text-muted small mb-0">{{ _('No backups yet.') }}</p>
         {% else %}
         <table class="table table-sm table-hover align-middle">
-          <thead><tr><th>Bundle</th><th>Created (UTC)</th><th>Size</th><th></th></tr></thead>
+          <thead><tr><th>{{ _('Bundle') }}</th><th>{{ _('Created (UTC)') }}</th><th>{{ _('Size') }}</th><th></th></tr></thead>
           <tbody>
           {% for b in backups %}
             <tr>
@@ -183,7 +183,7 @@
               <td class="small">{{ (b.size/1024)|round(1) }} KB</td>
               <td class="text-end">
                 <a class="btn btn-outline-light btn-sm" href="{{ url_for('system_backup.download', name=b.name) }}"><i class="bi bi-download"></i></a>
-                <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#restoreModal" data-js="restore-backup" data-name="{{ b.name }}"><i class="bi bi-arrow-counterclockwise"></i> Restore</button>
+                <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#restoreModal" data-js="restore-backup" data-name="{{ b.name }}"><i class="bi bi-arrow-counterclockwise"></i> {{ _('Restore') }}</button>
               </td>
             </tr>
           {% endfor %}
@@ -196,12 +196,12 @@
     <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-hdd-network me-1"></i>Backup server (standby{% if peer.host %} — {{ peer.host }}{% endif %})</strong></div>
       <div class="card-body">
         {% if not peer.host %}
-          <p class="text-muted small mb-0">No peer registered (standalone mode) — off-box copies are the backup-server pushes only.</p>
+          <p class="text-muted small mb-0">{{ _('No peer registered (standalone mode) — off-box copies are the backup-server pushes only.') }}</p>
         {% elif not peer.reachable %}
           <div class="alert alert-danger small py-2 mb-0"><i class="bi bi-x-circle me-1"></i>Peer {{ peer.host }} unreachable — off-box bundle copy cannot be verified right now.</div>
         {% else %}
         <table class="table table-sm table-hover align-middle mb-2">
-          <thead><tr><th>Bundle</th><th class="text-center">This node</th><th class="text-center">Backup server</th></tr></thead>
+          <thead><tr><th>{{ _('Bundle') }}</th><th class="text-center">{{ _('This node') }}</th><th class="text-center">{{ _('Backup server') }}</th></tr></thead>
           <tbody>
           {% for r in inv_rows %}
             <tr>
@@ -209,15 +209,15 @@
               <td class="text-center">{% if r.local %}<i class="bi bi-check-circle text-success"></i>{% else %}<i class="bi bi-dash-circle text-muted"></i>{% endif %}</td>
               <td class="text-center">
                 {% if r.peer and r.size_match %}<i class="bi bi-check-circle text-success"></i>
-                {% elif r.peer %}<span class="badge bg-warning text-dark">size differs</span>
-                {% else %}<span class="badge bg-danger">missing</span>{% endif %}
+                {% elif r.peer %}<span class="badge bg-warning text-dark">{{ _('size differs') }}</span>
+                {% else %}<span class="badge bg-danger">{{ _('missing') }}</span>{% endif %}
               </td>
             </tr>
           {% endfor %}
           </tbody>
         </table>
         <div class="small text-muted">
-          Device-config vault: <strong>{{ vault.entries }}</strong> entr{{ 'y' if vault.entries == 1 else 'ies' }} here
+          {{ _('Device-config vault:') }} <strong>{{ vault.entries }}</strong> entr{{ 'y' if vault.entries == 1 else 'ies' }} here
           {% if peer.vault %} / <strong>{{ peer.vault.entries }}</strong> on the backup server{% endif %}
           {% if vault.latest %} · latest {{ vault.latest }} UTC{% endif %}.
           Synced by <code>satom-ha-datasync.timer</code> (standby pulls <code>data/</code> every 5 min).
@@ -232,16 +232,16 @@
   <div class="col-lg-6">
     <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-code-square me-1"></i>Application code — versions &amp; rollback</strong></div>
       <div class="card-body">
-        <p class="small text-muted mb-2">Code is versioned in the app repo (Gitea). Rolling back enqueues the target commit on the <em>self-update</em> queue — the privileged runner does checkout + pip + migrate + service restart on this node (sync the standby the same way afterwards).</p>
+        <p class="small text-muted mb-2">{{ _('Code is versioned in the app repo (Gitea). Rolling back enqueues the target commit on the') }} <em>{{ _('self-update') }}</em> {{ _('queue — the privileged runner does checkout + pip + migrate + service restart on this node (sync the standby the same way afterwards).') }}</p>
         {% if not code_history %}
-          <p class="text-muted small mb-0">No git history available.</p>
+          <p class="text-muted small mb-0">{{ _('No git history available.') }}</p>
         {% else %}
         <table class="table table-sm table-hover align-middle mb-0">
-          <thead><tr><th>Commit</th><th>Date</th><th>Subject</th><th class="text-end"></th></tr></thead>
+          <thead><tr><th>{{ _('Commit') }}</th><th>{{ _('Date') }}</th><th>{{ _('Subject') }}</th><th class="text-end"></th></tr></thead>
           <tbody>
           {% for c in code_history %}
             <tr {% if c.current %}class="table-active"{% endif %}>
-              <td class="small font-monospace">{{ c.hash }}{% if c.current %} <span class="badge bg-success">running</span>{% endif %}</td>
+              <td class="small font-monospace">{{ c.hash }}{% if c.current %} <span class="badge bg-success">{{ _('running') }}</span>{% endif %}</td>
               <td class="small">{{ c.date }}</td>
               <td class="small">{{ c.subject|truncate(60) }}</td>
               <td class="text-end">
@@ -263,13 +263,13 @@
     <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-hdd-network me-1"></i>External backup server{% if bk.host %} — {{ bk.host }}{% endif %}</strong></div>
       <div class="card-body">
         {% if not bk.configured %}
-          <p class="text-muted small mb-0">Not configured — set host / credentials in <a href="{{ url_for('settings.index') }}#tab-sotbackup">Settings → SoT &amp; Backup</a>.</p>
+          <p class="text-muted small mb-0">{{ _('Not configured — set host / credentials in') }} <a href="{{ url_for('settings.index') }}#tab-sotbackup">Settings → SoT &amp; Backup</a>.</p>
         {% elif not bk.reachable %}
           <div class="alert alert-danger small py-2 mb-0"><i class="bi bi-x-circle me-1"></i>{{ bk.host }}:{{ bk.port }} unreachable — {{ bk.error }}</div>
         {% else %}
         <p class="small text-muted mb-2">Config backups the appliances push here themselves (<code>config system backup</code>, SFTP) — independent of this app and of both HA nodes.</p>
         <table class="table table-sm table-hover align-middle mb-3">
-          <thead><tr><th>Device</th><th>Backups</th><th>Latest push (UTC)</th><th class="text-end"></th></tr></thead>
+          <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Backups') }}</th><th>{{ _('Latest push (UTC)') }}</th><th class="text-end"></th></tr></thead>
           <tbody>
           {% for d in bk.devices %}
             <tr>
@@ -277,7 +277,7 @@
               <td class="small">{{ d.count }}</td>
               <td class="small">{{ d.latest or '—' }}{% if d.files %} <span class="text-muted">({{ d.files[0].name|truncate(40) }}, {{ (d.files[0].size/1048576)|round(1) }} MB)</span>{% endif %}</td>
               <td class="text-end">
-                <button class="btn btn-outline-light btn-sm py-0" data-js="ext-browse" data-device="{{ d.device }}" title="browse, compare and search this device's pushed backups"><i class="bi bi-search me-1"></i>Browse</button>
+                <button class="btn btn-outline-light btn-sm py-0" data-js="ext-browse" data-device="{{ d.device }}" title="{{ _('browse, compare and search this device\'s pushed backups') }}"><i class="bi bi-search me-1"></i>{{ _('Browse') }}</button>
               </td>
             </tr>
           {% endfor %}
@@ -285,12 +285,12 @@
         </table>
 
         <h6 class="small"><i class="bi bi-cpu me-1"></i>Firmware on the backup server
-          {% if fw_repo.url %}<span class="text-muted fw-normal">· manifest SoT: <a href="{{ fw_repo.url }}" target="_blank" rel="noopener" class="font-monospace">{{ fw_repo.url|replace('https://','')|replace('http://','')|truncate(48) }}</a></span>{% endif %}</h6>
+          {% if fw_repo.url %}<span class="text-muted fw-normal">{{ _('· manifest SoT:') }} <a href="{{ fw_repo.url }}" target="_blank" rel="noopener" class="font-monospace">{{ fw_repo.url|replace('https://','')|replace('http://','')|truncate(48) }}</a></span>{% endif %}</h6>
         {% if not bk.firmware %}
           <p class="text-muted small mb-0">No <code>.out</code> images under the firmware folder yet.</p>
         {% else %}
         <table class="table table-sm table-hover align-middle mb-0">
-          <thead><tr><th>Image</th><th>Size</th><th>Uploaded</th><th class="text-end"></th></tr></thead>
+          <thead><tr><th>{{ _('Image') }}</th><th>{{ _('Size') }}</th><th>{{ _('Uploaded') }}</th><th class="text-end"></th></tr></thead>
           <tbody>
           {% for f in bk.firmware %}
             <tr>
@@ -299,12 +299,12 @@
               <td class="small">{{ f.mtime }}</td>
               <td class="text-end">
                 {% if f.name in local_fw %}
-                  <a class="btn btn-outline-success btn-sm py-0" href="{{ url_for('firmware.index') }}" title="already in the local firmware store"><i class="bi bi-check-circle me-1"></i>in console</a>
+                  <a class="btn btn-outline-success btn-sm py-0" href="{{ url_for('firmware.index') }}" title="{{ _('already in the local firmware store') }}"><i class="bi bi-check-circle me-1"></i>{{ _('in console') }}</a>
                 {% else %}
                 <form method="post" action="{{ url_for('system_backup.firmware_pull') }}" class="d-inline">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <input type="hidden" name="name" value="{{ f.name }}">
-                  <button class="btn btn-outline-light btn-sm py-0" title="pull to this server for console-driven restore/upgrade"><i class="bi bi-download me-1"></i>Pull</button>
+                  <button class="btn btn-outline-light btn-sm py-0" title="{{ _('pull to this server for console-driven restore/upgrade') }}"><i class="bi bi-download me-1"></i>{{ _('Pull') }}</button>
                 </form>
                 {% endif %}
               </td>
@@ -312,7 +312,7 @@
           {% endfor %}
           </tbody>
         </table>
-        <div class="form-text mt-1">Pulled images land in <a href="{{ url_for('firmware.index') }}">Infrastructure → Firmware</a> (sha256-verified) and feed the per-appliance Upgrade / Downgrade actions — the console-driven firmware restore.</div>
+        <div class="form-text mt-1">{{ _('Pulled images land in') }} <a href="{{ url_for('firmware.index') }}">{{ _('Infrastructure → Firmware') }}</a> {{ _('(sha256-verified) and feed the per-appliance Upgrade / Downgrade actions — the console-driven firmware restore.') }}</div>
         {% endif %}
         {% endif %}
       </div>
@@ -322,7 +322,7 @@
 
 <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center">
     <strong><i class="bi bi-git me-1"></i>Git repository backup — bundles (code + <code>reports/</code> history + all refs)</strong>
-    <button class="btn btn-outline-light btn-sm py-0" data-js="gitb-external"><i class="bi bi-hdd-network me-1"></i>Check backup server</button>
+    <button class="btn btn-outline-light btn-sm py-0" data-js="gitb-external"><i class="bi bi-hdd-network me-1"></i>{{ _('Check backup server') }}</button>
   </div>
   <div class="card-body">
     <p class="small text-muted">
@@ -359,27 +359,27 @@
     <div class="row">
       <div class="col-lg-7">
         {% if not gitb %}
-          <p class="text-muted small">No repository bundle yet.</p>
+          <p class="text-muted small">{{ _('No repository bundle yet.') }}</p>
         {% else %}
         <table class="table table-sm table-hover align-middle">
-          <thead><tr><th>Bundle</th><th>Created (UTC)</th><th>Size</th><th>Head</th><th>sha256</th><th></th></tr></thead>
+          <thead><tr><th>{{ _('Bundle') }}</th><th>{{ _('Created (UTC)') }}</th><th>{{ _('Size') }}</th><th>{{ _('Head') }}</th><th>{{ _('sha256') }}</th><th></th></tr></thead>
           <tbody>
           {% for b in gitb %}
             <tr>
               <td class="small font-monospace">{{ b.name }}
-                {% if b.unpushed %}<span class="badge bg-warning text-dark ms-1" title="unpushed commits captured">+{{ b.unpushed }}</span>{% endif %}
-                {% if b.pushed %}<span class="badge bg-success ms-1" title="{{ b.pushed }}">off-box</span>{% endif %}
+                {% if b.unpushed %}<span class="badge bg-warning text-dark ms-1" title="{{ _('unpushed commits captured') }}">+{{ b.unpushed }}</span>{% endif %}
+                {% if b.pushed %}<span class="badge bg-success ms-1" title="{{ b.pushed }}">{{ _('off-box') }}</span>{% endif %}
               </td>
               <td class="small">{{ b.mtime }}</td>
               <td class="small">{{ (b.size/1048576)|round(1) }} MB</td>
               <td class="small font-monospace">{{ b.head }} <span class="text-muted">({{ b.refs }} refs)</span></td>
               <td class="small font-monospace" title="{{ b.sha256 }}">{{ b.sha256[:12] }}…</td>
               <td class="text-end text-nowrap">
-                <a class="btn btn-outline-light btn-sm" href="{{ url_for('system_backup.git_bundle_download', name=b.name) }}" title="Download"><i class="bi bi-download"></i></a>
+                <a class="btn btn-outline-light btn-sm" href="{{ url_for('system_backup.git_bundle_download', name=b.name) }}" title="{{ _('Download') }}"><i class="bi bi-download"></i></a>
                 <form method="post" action="{{ url_for('system_backup.git_bundle_delete') }}" class="d-inline">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <input type="hidden" name="name" value="{{ b.name }}">
-                  <button class="btn btn-outline-danger btn-sm" data-js="two-click" data-armed-label="Sure? click again" title="delete this bundle (replicates to the standby)"><i class="bi bi-trash"></i></button>
+                  <button class="btn btn-outline-danger btn-sm" data-js="two-click" data-armed-label="Sure? click again" title="{{ _('delete this bundle (replicates to the standby)') }}"><i class="bi bi-trash"></i></button>
                 </form>
               </td>
             </tr>
@@ -397,21 +397,21 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="form-check mb-2">
             <input class="form-check-input" type="checkbox" name="push_server" id="gbps" {% if gitb_cfg.push_server %}checked{% endif %}>
-            <label class="form-check-label small" for="gbps">Also push to the external backup server (separate failure domain)</label>
+            <label class="form-check-label small" for="gbps">{{ _('Also push to the external backup server (separate failure domain)') }}</label>
           </div>
-          <button class="btn btn-fw-primary btn-sm"><i class="bi bi-box-seam me-1"></i>Create repository bundle now</button>
-          <div class="form-text">Packs the full history, delta-compressed — a few MB and a few seconds.</div>
+          <button class="btn btn-fw-primary btn-sm"><i class="bi bi-box-seam me-1"></i>{{ _('Create repository bundle now') }}</button>
+          <div class="form-text">{{ _('Packs the full history, delta-compressed — a few MB and a few seconds.') }}</div>
         </form>
         <form method="post" action="{{ url_for('system_backup.git_bundle_config') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <label class="fw-form-label small">Bundles to keep on each node</label>
+          <label class="fw-form-label small">{{ _('Bundles to keep on each node') }}</label>
           <div class="input-group input-group-sm mb-2" style="max-width:220px;">
             <input type="number" class="form-control fw-form-control" name="keep" min="1" max="50" value="{{ gitb_cfg.keep }}">
-            <button class="btn btn-outline-light">Save</button>
+            <button class="btn btn-outline-light">{{ _('Save') }}</button>
           </div>
           <div class="form-check">
             <input class="form-check-input" type="checkbox" name="push_server" id="gbpd" {% if gitb_cfg.push_server %}checked{% endif %}>
-            <label class="form-check-label small" for="gbpd">Push to the backup server by default (scheduled runs too)</label>
+            <label class="form-check-label small" for="gbpd">{{ _('Push to the backup server by default (scheduled runs too)') }}</label>
           </div>
           <div class="form-text">Deletes must be done on the primary —
             the standby re-syncs <code>data/</code> with <code>rsync --delete</code>.</div>
@@ -421,14 +421,14 @@
   </div>
 </div>
 
-<div class="card mb-3"><div class="card-header"><strong><i class="bi bi-clock-history me-1"></i>Device config versions (SoT store) — compare / rollback</strong></div>
+<div class="card mb-3"><div class="card-header"><strong><i class="bi bi-clock-history me-1"></i>{{ _('Device config versions (SoT store) — compare / rollback') }}</strong></div>
   <div class="card-body">
     {% if not sot_hist %}
-      <p class="text-muted small mb-0">No versions recorded yet — the next device sync (or the button above) records the first one.</p>
+      <p class="text-muted small mb-0">{{ _('No versions recorded yet — the next device sync (or the button above) records the first one.') }}</p>
     {% else %}
     <form method="get" action="{{ url_for('system_backup.compare') }}">
       <table class="table table-sm table-hover align-middle">
-        <thead><tr><th style="width:34px;">A</th><th style="width:34px;">B</th><th>Version</th><th>Device</th><th>Recorded (UTC)</th><th>Objects</th><th>Source</th></tr></thead>
+        <thead><tr><th style="width:34px;">A</th><th style="width:34px;">B</th><th>{{ _('Version') }}</th><th>{{ _('Device') }}</th><th>{{ _('Recorded (UTC)') }}</th><th>{{ _('Objects') }}</th><th>{{ _('Source') }}</th></tr></thead>
         <tbody>
         {% for v in sot_hist %}
           <tr>
@@ -444,8 +444,8 @@
         </tbody>
       </table>
       <div class="d-flex gap-2 align-items-center">
-        <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-file-diff me-1"></i>Compare A → B</button>
-        <span class="form-text mb-0">Pick two versions of the SAME device to see what changed between them.</span>
+        <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-file-diff me-1"></i>{{ _('Compare A → B') }}</button>
+        <span class="form-text mb-0">{{ _('Pick two versions of the SAME device to see what changed between them.') }}</span>
       </div>
     </form>
 
@@ -456,7 +456,7 @@
       {% elif diff.identical %}
         <div class="alert alert-success small py-2 mb-0"><i class="bi bi-check-circle me-1"></i>Versions #{{ diff.a.id }} and #{{ diff.b.id }} are identical.</div>
       {% else %}
-        <p class="small mb-1"><strong>#{{ diff.a.id }} ({{ diff.a.device }}, {{ diff.a.taken_at|replace('T', ' ') }}) → #{{ diff.b.id }} ({{ diff.b.device }}, {{ diff.b.taken_at|replace('T', ' ') }})</strong>{% if diff.truncated %} — <span class="badge bg-warning text-dark">diff truncated</span>{% endif %}</p>
+        <p class="small mb-1"><strong>#{{ diff.a.id }} ({{ diff.a.device }}, {{ diff.a.taken_at|replace('T', ' ') }}) → #{{ diff.b.id }} ({{ diff.b.device }}, {{ diff.b.taken_at|replace('T', ' ') }})</strong>{% if diff.truncated %} — <span class="badge bg-warning text-dark">{{ _('diff truncated') }}</span>{% endif %}</p>
         <p class="small mb-1">
           <span class="badge bg-success">{{ diff.n_added }} added</span>
           <span class="badge bg-danger">{{ diff.n_removed }} removed</span>
@@ -487,47 +487,47 @@
 <div class="card mb-3">
   <div class="card-header d-flex justify-content-between align-items-center">
     <strong><i class="bi bi-book me-1"></i>How this works — backup architecture &amp; runbook</strong>
-    <button class="btn btn-outline-light btn-sm" data-bs-toggle="collapse" data-bs-target="#sbDocs">Show / hide</button>
+    <button class="btn btn-outline-light btn-sm" data-bs-toggle="collapse" data-bs-target="#sbDocs">{{ _('Show / hide') }}</button>
   </div>
   <div class="collapse" id="sbDocs"><div class="card-body small">
-    <h6>The copies (per artifact)</h6>
+    <h6>{{ _('The copies (per artifact)') }}</h6>
     <table class="table table-sm">
-      <thead><tr><th>Copy</th><th>What</th><th>How it gets there</th><th>RPO</th></tr></thead>
+      <thead><tr><th>{{ _('Copy') }}</th><th>{{ _('What') }}</th><th>{{ _('How it gets there') }}</th><th>RPO</th></tr></thead>
       <tbody>
-        <tr><td><strong>1. This node (primary)</strong></td>
+        <tr><td><strong>{{ _('1. This node (primary)') }}</strong></td>
             <td>Postgres (live) · bundles <code>data/system_backups/</code> · device vault <code>data/backups/</code> · JSON tree <code>data/reports/</code> · versioned SoT store <code>data/sot/</code></td>
-            <td>Created here (manual bundles, device backups, device sync)</td><td>—</td></tr>
-        <tr><td><strong>2. Standby / backup server</strong></td>
+            <td>{{ _('Created here (manual bundles, device backups, device sync)') }}</td><td>—</td></tr>
+        <tr><td><strong>{{ _('2. Standby / backup server') }}</strong></td>
             <td>Postgres (streaming replica) · full <code>data/</code> copy (bundles + vault + reports + SoT store)</td>
             <td>Postgres streaming replication (continuous) + <code>satom-ha-datasync.timer</code> rsync every 5 min (standby pulls; inert on the primary and in standalone mode)</td>
-            <td>≈ seconds (DB) / ≤ 5 min (files)</td></tr>
-        <tr><td><strong>3. Versioned SoT store (local + off-box)</strong></td>
+            <td>{{ _('≈ seconds (DB) / ≤ 5 min (files)') }}</td></tr>
+        <tr><td><strong>{{ _('3. Versioned SoT store (local + off-box)') }}</strong></td>
             <td>Content-addressed snapshots of every device's config (<code>data/sot/objects/</code>, gzip, deduplicated — an unchanged config costs zero bytes per cycle) with the version index in Postgres. Replaced the git-committed <code>reports/</code> history on 2026-08-05: a repo receiving the whole fleet hourly grows without bound at scale, and this store keeps working with Gitea down</td>
             <td>Hourly sync (<code>device_sync</code>, id5) records a version on every config CHANGE; nightly <code>device_inspect</code> (id12, 02:45) uploads new blobs to backup-server <code>/system/sot/</code>; plus the manual button</td>
-            <td>≤ 1 h (or on demand)</td></tr>
-        <tr><td><strong>4. External backup server (backup-server)</strong></td>
-            <td><strong>App-pushed DB bundle</strong> (<code>/system/</code> — this app's pg_dump, off-rack) · device-pushed config backups (<code>/configs/&lt;device&gt;/</code>) · firmware <code>.out</code> binaries (<code>/firmware/</code>)</td>
+            <td>{{ _('≤ 1 h (or on demand)') }}</td></tr>
+        <tr><td><strong>{{ _('4. External backup server (backup-server)') }}</strong></td>
+            <td><strong>{{ _('App-pushed DB bundle') }}</strong> (<code>/system/</code> — this app's pg_dump, off-rack) · device-pushed config backups (<code>/configs/&lt;device&gt;/</code>) · firmware <code>.out</code> binaries (<code>/firmware/</code>)</td>
             <td>The nightly <code>system_backup</code> (id11) pushes the pg_dump bundle to <code>/system/</code> over SFTP (default on). Separately, the appliances push their OWN config backups (<code>config system backup</code> → SFTP, e.g. fw6 daily 02:00) — zero dependency on this app or either HA node</td>
-            <td>DB: ≤ 24 h · per-device schedule (fw6: ≤ 24 h)</td></tr>
+            <td>{{ _('DB: ≤ 24 h · per-device schedule (fw6: ≤ 24 h)') }}</td></tr>
       </tbody>
     </table>
     <p class="text-muted mb-2">Git now holds only the application CODE. Device-config history, pg_dump bundles and raw device-config exports all live under <code>data/</code>: they travel via rsync to the standby, and the pg_dump bundle + SoT blobs are additionally pushed to backup-server <code>/system/</code> so they have an off-rack copy on a separate failure domain. No backup copy depends on an external service being up.</p>
-    <p class="text-muted mb-2">The device-pushed backups on the external server are browsable here: <em>External backup server</em> card → <strong>Browse</strong> — compare two pushes (A → B), search inside B, <strong>click a filename</strong> (or <em>View B</em>) to read the extracted config text inline, or download the raw archive. Firmware <code>.out</code> images listed there are pulled into Infrastructure → Firmware, sha256-verified.</p>
+    <p class="text-muted mb-2">{{ _('The device-pushed backups on the external server are browsable here:') }} <em>{{ _('External backup server') }}</em> {{ _('card →') }} <strong>{{ _('Browse') }}</strong> {{ _('— compare two pushes (A → B), search inside B,') }} <strong>{{ _('click a filename') }}</strong> {{ _('(or') }} <em>{{ _('View B') }}</em>) to read the extracted config text inline, or download the raw archive. Firmware <code>.out</code> images listed there are pulled into Infrastructure → Firmware, sha256-verified.</p>
 
-    <h6>Rollback / restore procedures</h6>
+    <h6>{{ _('Rollback / restore procedures') }}</h6>
     <ol>
-      <li><strong>Whole instance</strong> — pick a bundle above → <em>Restore</em> (type <code>RESTORE</code>). Takes a safety dump first, then <code>pg_restore --clean</code> + replaces <code>reports/</code>. If this node is dead, the same bundles exist on the backup server under <code>/opt/satom/data/system_backups/</code>.</li>
-      <li><strong>One device's JSON to an older version</strong> — pick the two versions in <em>Device config versions</em>, verify with <em>Compare</em>. The store keeps every recorded version under <code>data/sot/objects/</code> (gzip JSON, named by sha256) — extract with <code>zcat</code> to inspect or re-import. This rolls back the JSON snapshot only — it does NOT push config to the device (use Templates/Provisioning for that).</li>
-      <li><strong>Single appliance config</strong> — use the per-appliance Backups page (vault); device-level restore is currently dry-run gated pending a live canary round-trip.</li>
-      <li><strong>Total loss of both nodes</strong> — reinstall from Gitea or an installer bundle (code), then restore the newest DB bundle from any surviving copy (downloaded bundle, backup-server <code>/system/</code>, or the device-pushed backups on the external backup server). The bundle carries <code>data/reports/</code> AND the SoT store, so version history survives too.</li>
-      <li><strong>Application code to an older version</strong> — <em>Application code</em> card above → pick the commit → Queue rollback. Goes through the self-update runner (checkout + pip + migrate + restart). Roll the standby the same way afterwards. Note: newer DB schema is not auto-downgraded — pair a code rollback with a database bundle restore when a migration was involved.</li>
-      <li><strong>Firmware</strong> — the <code>.out</code> images live on the external backup server (<code>/firmware/</code>), inventoried in the firmware SoT repo (manifest). <em>Pull</em> brings the image into Infrastructure → Firmware (sha256-verified) and the per-appliance <em>Upgrade / Downgrade</em> action flashes it from the console. A device factory-reset recovery = flash firmware + restore its own pushed config backup from <code>/configs/&lt;device&gt;/</code>.</li>
+      <li><strong>{{ _('Whole instance') }}</strong> {{ _('— pick a bundle above →') }} <em>{{ _('Restore') }}</em> (type <code>RESTORE</code>). Takes a safety dump first, then <code>pg_restore --clean</code> + replaces <code>reports/</code>. If this node is dead, the same bundles exist on the backup server under <code>/opt/satom/data/system_backups/</code>.</li>
+      <li><strong>{{ _('One device\'s JSON to an older version') }}</strong> {{ _('— pick the two versions in') }} <em>{{ _('Device config versions') }}</em>{{ _(', verify with') }} <em>{{ _('Compare') }}</em>. The store keeps every recorded version under <code>data/sot/objects/</code> (gzip JSON, named by sha256) — extract with <code>zcat</code> to inspect or re-import. This rolls back the JSON snapshot only — it does NOT push config to the device (use Templates/Provisioning for that).</li>
+      <li><strong>{{ _('Single appliance config') }}</strong> {{ _('— use the per-appliance Backups page (vault); device-level restore is currently dry-run gated pending a live canary round-trip.') }}</li>
+      <li><strong>{{ _('Total loss of both nodes') }}</strong> — reinstall from Gitea or an installer bundle (code), then restore the newest DB bundle from any surviving copy (downloaded bundle, backup-server <code>/system/</code>, or the device-pushed backups on the external backup server). The bundle carries <code>data/reports/</code> AND the SoT store, so version history survives too.</li>
+      <li><strong>{{ _('Application code to an older version') }}</strong> — <em>{{ _('Application code') }}</em> {{ _('card above → pick the commit → Queue rollback. Goes through the self-update runner (checkout + pip + migrate + restart). Roll the standby the same way afterwards. Note: newer DB schema is not auto-downgraded — pair a code rollback with a database bundle restore when a migration was involved.') }}</li>
+      <li><strong>{{ _('Firmware') }}</strong> — the <code>.out</code> images live on the external backup server (<code>/firmware/</code>), inventoried in the firmware SoT repo (manifest). <em>{{ _('Pull') }}</em> {{ _('brings the image into Infrastructure → Firmware (sha256-verified) and the per-appliance') }} <em>{{ _('Upgrade / Downgrade') }}</em> action flashes it from the console. A device factory-reset recovery = flash firmware + restore its own pushed config backup from <code>/configs/&lt;device&gt;/</code>.</li>
     </ol>
 
-    <h6>Failover notes</h6>
+    <h6>{{ _('Failover notes') }}</h6>
     <ul class="mb-0">
       <li>After a promote, <code>satom-ha-datasync</code> on the new primary becomes a no-op automatically (role guard) — no unit reconfiguration needed. (The hourly <code>satom-git-publish</code> that used to activate here was retired on 2026-08-05 with the git SoT; the source of truth is now <code>data/sot/</code>, which the datasync already carries.)</li>
-      <li><strong>Check that your copies are not all on one hypervisor.</strong> The three automatic copies — this node, the standby via <code>satom-ha-datasync</code>, and the external backup server — are only three copies if they fail independently. Two nodes and a backup host that share a hypervisor are one copy wearing three hats, and nothing in this page can detect that: SATOM sees three reachable destinations either way. Verify it where the guests actually live, not here. Bundles downloaded via the button above are the operator-held copy that is definitionally elsewhere.</li>
+      <li><strong>{{ _('Check that your copies are not all on one hypervisor.') }}</strong> The three automatic copies — this node, the standby via <code>satom-ha-datasync</code>, and the external backup server — are only three copies if they fail independently. Two nodes and a backup host that share a hypervisor are one copy wearing three hats, and nothing in this page can detect that: SATOM sees three reachable destinations either way. Verify it where the guests actually live, not here. Bundles downloaded via the button above are the operator-held copy that is definitionally elsewhere.</li>
       <li>A bundle alone does not recover a total loss: <code>FERNET_KEY</code> is not in it, deliberately. Run <code>satom diagnose recovery</code> to check somebody holds it.</li>
       <li>This page probes the peer over HTTP (<code>/healthz/backups</code>) — no SSH between nodes is required to verify the off-box copy.</li>
     </ul>
@@ -540,18 +540,17 @@
     <form method="post" action="{{ url_for('system_backup.code_rollback') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="target" id="cr-target">
-      <div class="modal-header"><h5 class="modal-title">Roll back application code</h5>
+      <div class="modal-header"><h5 class="modal-title">{{ _('Roll back application code') }}</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         <div class="alert alert-warning small"><i class="bi bi-exclamation-triangle me-1"></i>
-          This queues a self-update to <strong id="cr-label"></strong> (<span id="cr-subject" class="fst-italic"></span>).
-          The privileged runner checks out that commit, reinstalls deps, runs migrations and <strong>restarts the service</strong>.
+          {{ _('This queues a self-update to') }} <strong id="cr-label"></strong> (<span id="cr-subject" class="fst-italic"></span>{{ _('). The privileged runner checks out that commit, reinstalls deps, runs migrations and') }} <strong>{{ _('restarts the service') }}</strong>.
           Database schema from newer code is NOT downgraded automatically. Type <code>ROLLBACK</code> to confirm.</div>
-        <input type="text" name="confirm" class="form-control" placeholder="ROLLBACK" autocomplete="off">
+        <input type="text" name="confirm" class="form-control" placeholder="{{ _('ROLLBACK') }}" autocomplete="off">
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-        <button type="submit" class="btn btn-danger btn-sm">Queue rollback</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+        <button type="submit" class="btn btn-danger btn-sm">{{ _('Queue rollback') }}</button>
       </div>
     </form>
   </div></div>
@@ -563,17 +562,17 @@
     <form method="post" action="{{ url_for('system_backup.restore') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="name" id="restore-name">
-      <div class="modal-header"><h5 class="modal-title">Restore database</h5>
+      <div class="modal-header"><h5 class="modal-title">{{ _('Restore database') }}</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         <div class="alert alert-warning small"><i class="bi bi-exclamation-triangle me-1"></i>
           This REPLACES the current database and <code>reports/</code> with <strong id="restore-label"></strong>.
           A safety backup is taken first. Type <code>RESTORE</code> to confirm.</div>
-        <input type="text" name="confirm" class="form-control" placeholder="RESTORE" autocomplete="off">
+        <input type="text" name="confirm" class="form-control" placeholder="{{ _('RESTORE') }}" autocomplete="off">
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-        <button type="submit" class="btn btn-danger btn-sm">Restore</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+        <button type="submit" class="btn btn-danger btn-sm">{{ _('Restore') }}</button>
       </div>
     </form>
   </div></div>
@@ -581,12 +580,12 @@
 <!-- Bundle management modal (list all + delete old) -->
 <div class="modal fade" id="bundlesModal" tabindex="-1">
   <div class="modal-dialog modal-lg"><div class="modal-content">
-    <div class="modal-header"><h5 class="modal-title"><i class="bi bi-database me-1"></i>Database bundles on this node</h5>
+    <div class="modal-header"><h5 class="modal-title"><i class="bi bi-database me-1"></i>{{ _('Database bundles on this node') }}</h5>
       <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
     <div class="modal-body">
-      <p class="small text-muted mb-2">Deleting here (on the <strong>primary</strong>) replicates to the standby automatically — <code>satom-ha-datasync</code> mirrors <code>data/</code> with <code>rsync --delete</code> every 5 min. Deleting on the standby is blocked (it would be undone by the next sync).</p>
+      <p class="small text-muted mb-2">{{ _('Deleting here (on the') }} <strong>{{ _('primary') }}</strong>) replicates to the standby automatically — <code>satom-ha-datasync</code> mirrors <code>data/</code> with <code>rsync --delete</code> every 5 min. Deleting on the standby is blocked (it would be undone by the next sync).</p>
       <table class="table table-sm table-hover align-middle mb-0">
-        <thead><tr><th>Bundle</th><th>Created (UTC)</th><th>Size</th><th class="text-end"></th></tr></thead>
+        <thead><tr><th>{{ _('Bundle') }}</th><th>{{ _('Created (UTC)') }}</th><th>{{ _('Size') }}</th><th class="text-end"></th></tr></thead>
         <tbody>
         {% for b in backups %}
           <tr>
@@ -594,11 +593,11 @@
             <td class="small">{{ b.created }}</td>
             <td class="small">{{ (b.size/1024)|round(1) }} KB</td>
             <td class="text-end text-nowrap">
-              <a class="btn btn-outline-light btn-sm py-0" href="{{ url_for('system_backup.download', name=b.name) }}" title="download"><i class="bi bi-download"></i></a>
+              <a class="btn btn-outline-light btn-sm py-0" href="{{ url_for('system_backup.download', name=b.name) }}" title="{{ _('download') }}"><i class="bi bi-download"></i></a>
               <form method="post" action="{{ url_for('system_backup.delete') }}" class="d-inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="name" value="{{ b.name }}">
-                <button type="submit" class="btn btn-outline-danger btn-sm py-0" data-js="two-click" data-armed-label="Sure? click again" title="delete this bundle (replicates to standby)"><i class="bi bi-trash"></i></button>
+                <button type="submit" class="btn btn-outline-danger btn-sm py-0" data-js="two-click" data-armed-label="Sure? click again" title="{{ _('delete this bundle (replicates to standby)') }}"><i class="bi bi-trash"></i></button>
               </form>
             </td>
           </tr>
@@ -616,25 +615,25 @@
       <h5 class="modal-title"><i class="bi bi-hdd-network me-1"></i>Device backups on {{ bk.host }} — <span id="eb-device" class="font-monospace"></span></h5>
       <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
     <div class="modal-body">
-      <div id="eb-loading" class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Listing pushed backups…</div>
+      <div id="eb-loading" class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>{{ _('Listing pushed backups…') }}</div>
       <div id="eb-error" class="alert alert-danger small py-2 d-none"></div>
       <div id="eb-main" class="d-none">
-        <p class="small text-muted mb-2">Pick <strong>A</strong> and <strong>B</strong> to compare two pushes (e.g. yesterday vs today); <em>Search</em>, <em>View</em> and <em>Download</em> act on <strong>B</strong>. <strong>Click a filename</strong> (or <em>View B</em>) to read its config inline — text sections are extracted from the pushed archive on the fly; encrypted blobs inside it are listed but not viewable or searchable.</p>
+        <p class="small text-muted mb-2">{{ _('Pick') }} <strong>A</strong> {{ _('and') }} <strong>B</strong> {{ _('to compare two pushes (e.g. yesterday vs today);') }} <em>{{ _('Search') }}</em>, <em>{{ _('View') }}</em> {{ _('and') }} <em>{{ _('Download') }}</em> {{ _('act on') }} <strong>B</strong>. <strong>{{ _('Click a filename') }}</strong> {{ _('(or') }} <em>{{ _('View B') }}</em>{{ _(') to read its config inline — text sections are extracted from the pushed archive on the fly; encrypted blobs inside it are listed but not viewable or searchable.') }}</p>
         <div class="table-responsive" style="max-height:260px; overflow:auto;">
           <table class="table table-sm table-hover align-middle mb-2">
-            <thead><tr><th style="width:34px;">A</th><th style="width:34px;">B</th><th>File</th><th>Size</th><th>Pushed (UTC)</th></tr></thead>
+            <thead><tr><th style="width:34px;">A</th><th style="width:34px;">B</th><th>{{ _('File') }}</th><th>{{ _('Size') }}</th><th>{{ _('Pushed (UTC)') }}</th></tr></thead>
             <tbody id="eb-files"></tbody>
           </table>
         </div>
         <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
-          <button class="btn btn-fw-primary btn-sm" id="eb-compare"><i class="bi bi-file-diff me-1"></i>Compare A → B</button>
+          <button class="btn btn-fw-primary btn-sm" id="eb-compare"><i class="bi bi-file-diff me-1"></i>{{ _('Compare A → B') }}</button>
           <div class="input-group input-group-sm" style="max-width:340px;">
-            <input type="text" class="form-control" id="eb-query" placeholder="search in B… (e.g. server-policy, 10.0.0.)">
+            <input type="text" class="form-control" id="eb-query" placeholder="{{ _('search in B… (e.g. server-policy, 10.0.0.)') }}">
             <button class="btn btn-outline-light" id="eb-search"><i class="bi bi-search"></i></button>
           </div>
-          <button class="btn btn-outline-light btn-sm" id="eb-outline"><i class="bi bi-list-nested me-1"></i>What's inside B</button>
-          <button class="btn btn-outline-light btn-sm" id="eb-view"><i class="bi bi-eye me-1"></i>View B</button>
-          <a class="btn btn-outline-light btn-sm" id="eb-download" href="#"><i class="bi bi-download me-1"></i>Download B</a>
+          <button class="btn btn-outline-light btn-sm" id="eb-outline"><i class="bi bi-list-nested me-1"></i>{{ _('What\'s inside B') }}</button>
+          <button class="btn btn-outline-light btn-sm" id="eb-view"><i class="bi bi-eye me-1"></i>{{ _('View B') }}</button>
+          <a class="btn btn-outline-light btn-sm" id="eb-download" href="#"><i class="bi bi-download me-1"></i>{{ _('Download B') }}</a>
         </div>
         <div id="eb-busy" class="text-muted small d-none"><span class="spinner-border spinner-border-sm me-1"></span>Fetching &amp; extracting on the backup server link — first hit on a big backup takes a few seconds…</div>
         <div id="eb-result"></div>

@@ -7014,3 +7014,72 @@ masking, the residue rejection and the ledger row live there, and a second path
 to the same model is a second place for them to be missing. After any `.po`
 edit: `venv/bin/pybabel compile -d app/translations` **as `satom`**, then
 restart — root-owned catalogue files break the next run.
+
+## §62. Two implementations of one operation, and the useful one stores nothing
+
+**Guard:** `tests/test_upgrade_flow.py` (19 tests). **15 mutations, 15 bite.**
+
+SATOM had two things called "upgrade prep". `views.appliances.upgrade_prep_run`
+ran `upgrade.prepare()` — configuration backup, health battery, maintenance
+permission, HTTP baseline of every published service — and persisted an
+`UpgradePrep` row with the affected-service inventory.
+`services.scheduled_actions._do_upgrade_prep` ran `create_backup()` plus
+`status_check()` and persisted nothing.
+
+Neither ever failed. Both reported `ok=True`. The reason it mattered is *which
+of the two accepts more than one device*: the scheduled action, because
+`ActionSpec("upgrade_prep")` has `needs_targets=True` and no `single_target`.
+So the only way to pre-flight a whole maintenance window was the only way that
+left no evidence, and the feature everybody assumed existed — pre-flight in
+bulk, then raise the change — could not be built on top of it.
+
+**The shape of the defect, stated generally:** when one operation has two
+implementations and they differ in what they *record* rather than in what they
+*do*, no test of either one fails. Each is internally consistent. The gap is
+only visible from a caller that expects the two to be interchangeable, and
+there was no such caller until somebody tried to build one.
+
+Two more defects of exactly the same shape were sitting behind it, and both
+were about a document being *narrower than it reads*:
+
+* `ChangeRequest.prep_id` is scalar, and the create path dropped any run whose
+  appliance was not among the change's devices. A twenty-device change carried
+  one device's baseline. It did not render as incomplete — it rendered as a
+  change whose pre-upgrade passed.
+* the customer-impact spreadsheet is generated from the inventory frozen at
+  creation, and that inventory came off the single cited run. The outage
+  warning under-stated itself by however many devices were not that one.
+
+### Recipe
+
+1. **The unification bites:** revert `_do_upgrade_prep` to return without
+   calling `prep_store.run_for` — `test_the_scheduled_action_delegates_to_the_
+   same_runner_as_the_page` fails on `UpgradePrep.query.count()`.
+2. **The per-run device check bites:** relax
+   `prep.appliance_id not in device_ids` to `prep is None` — a change certifies
+   a machine it does not target.
+3. **The merge bites:** freeze `preps[0].inventory_list` instead of
+   `merged_inventory(preps)` — the frozen inventory covers one device of N.
+4. **De-duplication is keyed on (device_id, device, policy), not on policy
+   alone.** Two appliances legitimately publish the same policy name; keying on
+   the name collapses them into one row and *under*-states the outage, which is
+   the same class of error as the double-count it is there to prevent.
+5. **A sweep returns one row per appliance, always.** Mutate the per-device
+   `except` to `raise` — one unreachable box ends the sweep and the rest of the
+   window goes un-prepared. Mutate the cap to `ids = ids[:MAX_SWEEP]` — devices
+   are dropped silently and the page reports success.
+
+**Trap in the guard itself.** The cap test first posted invented device ids, so
+a truncating implementation still fell into the "one or more do not exist"
+branch and never swept — the test passed against the very defect it names. It
+had to create `MAX_SWEEP + 1` REAL appliances before the mutation could bite.
+That is the eighth assertion in this repo that passed for a reason unrelated to
+its subject; the tell is always the same, a mutation that survives against a
+test whose name says it should not.
+
+**`ok` still means the sweep RAN**, not that it came back clean. Grading the
+scheduled action by the verdict would newly fail every schedule whose devices
+have a service already down before the window — and finding that out is the
+single most valuable thing the pre-flight produces. Same reasoning as
+`prep_store.verdict`, and the same reasoning as §-the-collector rule that a
+failed collector writes `satom_scrape_up 0` rather than staying silent.

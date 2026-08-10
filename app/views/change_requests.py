@@ -165,7 +165,7 @@ def _next_ref(cr) -> str:
     return f"CR-{year}-{int(cr.id):04d}"
 
 
-def _freeze_inventory(cr, device_ids, prep=None) -> None:
+def _freeze_inventory(cr, device_ids, preps=None) -> None:
     """Store the affected published services AS THEY ARE NOW on the CR.
 
     Prefers the inventory captured by the pre-upgrade run this change was
@@ -175,8 +175,13 @@ def _freeze_inventory(cr, device_ids, prep=None) -> None:
     execution, so the document somebody signed and the document that describes
     what ran would not be the same document."""
     rows = []
-    if prep is not None:
-        rows = prep.inventory_list
+    if preps:
+        # MERGED across every bound run: a change over twenty appliances whose
+        # frozen inventory held one box's policies understated the outage by
+        # nineteen devices, and the customer-impact export is generated from
+        # exactly this field.
+        from ..services import prep_store
+        rows = prep_store.merged_inventory(preps)
     if not rows:
         try:
             rows = svc.affected_policies(device_ids, timeout=6.0)
@@ -337,13 +342,28 @@ def new():
             return redirect(url_for('change_requests.new'))
 
         from ..services import cr_document, prep_store
-        prep = prep_store.get(request.form.get('prep_id'))
-        # A pre-upgrade run may only be cited by a change that targets ITS
-        # appliance. Without this an operator could attach somebody else's
-        # green pre-flight as the evidence for a change to a different box -
-        # a document that reads correct and certifies the wrong machine.
-        if prep is not None and prep.appliance_id not in device_ids:
-            prep = None
+        # N runs, one per appliance the window covers. 'prep_id' (singular) is
+        # still accepted so an existing form post, link or test keeps working;
+        # it is simply the one-element case.
+        wanted_preps = (request.form.getlist('prep_ids')
+                        or ([request.form.get('prep_id')]
+                            if request.form.get('prep_id') else []))
+        preps = []
+        seen_preps: set[int] = set()
+        for raw in wanted_preps:
+            prep = prep_store.get(raw)
+            # A pre-upgrade run may only be cited by a change that targets ITS
+            # appliance. Without this an operator could attach somebody else's
+            # green pre-flight as the evidence for a change to a different box -
+            # a document that reads correct and certifies the wrong machine.
+            # The check is PER RUN, not "the first one matched": a bulk change
+            # must not inherit permission for twenty devices from one.
+            if prep is None or prep.appliance_id not in device_ids:
+                continue
+            if prep.id in seen_preps:
+                continue
+            seen_preps.add(prep.id)
+            preps.append(prep)
 
         cr = ChangeRequest(
             title=title[:200],
@@ -369,13 +389,15 @@ def new():
         db.session.add(cr)
         db.session.commit()
         cr.ref = _next_ref(cr)
-        _freeze_inventory(cr, device_ids, prep)
+        _freeze_inventory(cr, device_ids, preps)
         db.session.commit()
-        if prep is not None:
-            prep_store.bind_change_request(prep, cr)
+        if preps:
+            prep_store.bind_many(cr, preps)
         log_action('change_request.create', target=cr.title,
                    detail=f'{cr.ref} / {action} / risk={risk}'
-                          + (f' / prep #{prep.id}' if prep is not None else ''))
+                          + (' / preps '
+                             + ', '.join(f'#{p.id}' for p in preps)
+                             if preps else ''))
         flash(f'Change request {cr.ref} "{cr.title}" created.', 'success')
         return redirect(url_for('change_requests.detail', id=cr.id))
 

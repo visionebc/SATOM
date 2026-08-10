@@ -1,0 +1,224 @@
+{% extends 'base.html' %}
+{% block title %}{{ _('Upgrade Flow') }}{% endblock %}
+{% block content %}
+{#
+  Light chrome ONLY. This product has no dark theme (static/css/fortiweb.css is
+  the whole of it: --fw-content-bg #F4F5F7, .fw-card white, accent #EF5424).
+  A translucent slate card with a backdrop-filter renders here as an opaque
+  grey slab, and dark-theme pastel status pills land at ~1.4:1 on white — a
+  badge reading "not clean" that nobody can read. Status colour comes from the
+  .fw-badge-* set, which is calibrated against white.
+#}
+<div class="fw-page-header d-flex justify-content-between align-items-center">
+  <h4><i class="bi bi-arrow-up-circle me-2"></i>{{ _('Upgrade Flow') }}</h4>
+  <a href="{{ url_for('change_requests.index', _adom=product.key) }}" class="btn fw-btn-secondary btn-sm">
+    <i class="bi bi-clipboard2-check me-1"></i>{{ _('Change Requests') }}</a>
+</div>
+<p class="text-muted">
+  {{ _('One maintenance window, four stages: pre-flight every appliance in the window, raise a single change request that cites all of that evidence, export the consolidated customer impact, then execute inside the approved window.') }}
+</p>
+
+{# ---------------------------------------------------------------- stage 1 #}
+<form method="post" action="{{ url_for('upgrade_flow.prep') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="fw-card mb-3">
+    <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <span><span class="fw-badge fw-badge-secondary me-2">1</span><strong>{{ _('Pre-upgrade (bulk)') }}</strong></span>
+      <span class="text-muted small">{{ _('Read-only. Config backup, health battery, maintenance permission, and an HTTP baseline of every published service — persisted as citable evidence.') }}</span>
+    </div>
+    <div class="fw-card-body">
+      {% if not devices %}
+        <p class="text-muted mb-0">
+          {{ _('No appliance of a type the pre-upgrade supports is visible to you.') }}
+          {{ _('It runs against:') }} <span class="is-mono">{{ kinds|join(', ') or '—' }}</span>
+        </p>
+      {% else %}
+      <div class="d-flex gap-3 flex-wrap mb-3">
+        <label class="form-check"><input class="form-check-input" type="checkbox" name="backup" value="1" checked> <span class="form-check-label">{{ _('Config backup') }}</span></label>
+        <label class="form-check"><input class="form-check-input" type="checkbox" name="health" value="1" checked> <span class="form-check-label">{{ _('Health battery (SSH)') }}</span></label>
+        <label class="form-check"><input class="form-check-input" type="checkbox" name="services" value="1" checked> <span class="form-check-label">{{ _('Service validation') }}</span></label>
+      </div>
+      <div class="table-responsive">
+        <table class="table fw-table align-middle mb-0">
+          <thead><tr>
+            <th style="width:2.5rem;"><input class="form-check-input" type="checkbox" id="uf-all"></th>
+            <th>{{ _('Appliance') }}</th>
+            <th>{{ _('Product') }}</th>
+            <th>{{ _('Latest pre-upgrade') }}</th>
+            <th>{{ _('Verdict') }}</th>
+          </tr></thead>
+          <tbody>
+          {% for d in devices %}
+            {% set p = latest.get(d.id) %}
+            <tr>
+              <td><input class="form-check-input uf-dev" type="checkbox" name="device_ids" value="{{ d.id }}"
+                         data-prep="{{ p.id if p else '' }}"></td>
+              <td><a href="{{ url_for('appliances.detail', id=d.id) }}">{{ d.name }}</a>
+                  <div class="text-muted small is-mono">{{ d.host }}</div></td>
+              <td><span class="fw-badge fw-badge-secondary">{{ d.kind }}</span></td>
+              <td>
+                {% if p %}
+                  <a href="{{ url_for('appliances.upgrade_prep', id=d.id) }}">#{{ p.id }}</a>
+                  <span class="text-muted small">{{ p.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
+                {% else %}
+                  {# "never" and "failed" are opposite statements; this page must
+                     not let one read as the other. #}
+                  <span class="text-muted">{{ _('never run') }}</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if p %}
+                  <span class="fw-badge fw-badge-{{ 'success' if p.ok else 'warning' }}">{{ _('passed') if p.ok else _('not clean') }}</span>
+                  <div class="text-muted small">{{ p.summary }}</div>
+                {% else %}<span class="text-muted">—</span>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+        <span class="text-muted small">
+          {{ _('Runs one appliance at a time, on purpose: each takes a configuration backup, and firing them all at one backup server is how the pre-flight becomes the incident. Up to') }}
+          <strong>{{ max_sweep }}</strong> {{ _('per sweep.') }}
+        </span>
+        <button type="submit" class="btn fw-btn-primary"><i class="bi bi-play-fill me-1"></i>{{ _('Run pre-upgrade on selected') }}</button>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</form>
+
+{# ---------------------------------------------------------------- stage 2 #}
+{% if current_user.can('user_manage') %}
+<form method="post" action="{{ url_for('change_requests.new') }}" id="uf-cr">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="action" value="upgrade">
+  <div class="fw-card mb-3">
+    <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <span><span class="fw-badge fw-badge-secondary me-2">2</span><strong>{{ _('Change request (CRQ)') }}</strong></span>
+      <span class="text-muted small">{{ _('One change for the whole window, citing every pre-upgrade run above.') }}</span>
+    </div>
+    <div class="fw-card-body">
+      <div class="row g-3">
+        <div class="col-12 col-lg-6">
+          <label class="form-label">{{ _('Title') }}</label>
+          <input class="form-control" name="title" required maxlength="200"
+                 placeholder="{{ _('Firmware upgrade — maintenance window') }}">
+        </div>
+        <div class="col-6 col-lg-3">
+          <label class="form-label">{{ _('Window start') }}</label>
+          <input class="form-control" type="datetime-local" name="window_start">
+        </div>
+        <div class="col-6 col-lg-3">
+          <label class="form-label">{{ _('Window end') }}</label>
+          <input class="form-control" type="datetime-local" name="window_end">
+        </div>
+        <div class="col-12 col-lg-3">
+          <label class="form-label">{{ _('Risk') }}</label>
+          <select class="form-select" name="risk">
+            <option value="low">{{ _('low') }}</option>
+            <option value="medium" selected>{{ _('medium') }}</option>
+            <option value="high">{{ _('high') }}</option>
+          </select>
+        </div>
+        <div class="col-12 col-lg-9">
+          <label class="form-label">{{ _('Reason') }}</label>
+          <input class="form-control" name="reason" placeholder="{{ _('Why this window exists') }}">
+        </div>
+      </div>
+      <div id="uf-cr-targets" class="mt-3"></div>
+      <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+        <span class="text-muted small" id="uf-cr-note">{{ _('Tick appliances in stage 1. Only those with a stored pre-upgrade run contribute evidence; an appliance without one is still covered by the change, it simply carries no baseline.') }}</span>
+        <button type="submit" class="btn fw-btn-primary"><i class="bi bi-clipboard2-plus me-1"></i>{{ _('Raise one change request') }}</button>
+      </div>
+    </div>
+  </div>
+</form>
+{% endif %}
+
+{# ------------------------------------------------------------- stages 3+4 #}
+<div class="fw-card">
+  <div class="fw-card-header">
+    <span><span class="fw-badge fw-badge-secondary me-2">3–4</span><strong>{{ _('Customer impact and execution') }}</strong></span>
+  </div>
+  <div class="fw-card-body">
+    <p class="text-muted">{{ _('Both live on the change itself: the consolidated spreadsheet is generated from its frozen inventory (merged across every bound pre-upgrade run), and execution is its one-shot scheduled action, re-gated at fire time against the approved window.') }}</p>
+    {% if recent_crs %}
+    <div class="table-responsive">
+      <table class="table fw-table align-middle mb-0">
+        <thead><tr>
+          <th>{{ _('Change') }}</th><th>{{ _('Status') }}</th><th>{{ _('Window') }}</th>
+          <th>{{ _('Customer impact') }}</th><th>{{ _('Execution') }}</th>
+        </tr></thead>
+        <tbody>
+        {% for cr in recent_crs %}
+          <tr>
+            <td><a href="{{ url_for('change_requests.detail', id=cr.id) }}">{{ cr.ref or ('#' ~ cr.id) }}</a>
+                <div class="text-muted small">{{ cr.title }}</div></td>
+            <td><span class="fw-badge fw-badge-{{ 'success' if cr.status in ('approved','completed') else ('warning' if cr.status in ('draft','scheduled','in_progress') else 'secondary') }}">{{ cr.status }}</span></td>
+            <td class="is-mono small">{{ cr.window_start.strftime('%Y-%m-%d %H:%M') if cr.window_start else '—' }}</td>
+            <td>
+              <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('change_requests.inventory_export', id=cr.id, fmt='xlsx') }}"><i class="bi bi-file-earmark-excel me-1"></i>XLSX</a>
+              <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('change_requests.inventory_export', id=cr.id, fmt='csv') }}">CSV</a>
+            </td>
+            <td><a class="btn btn-sm fw-btn-secondary" href="{{ url_for('change_requests.detail', id=cr.id) }}">{{ _('open change') }}</a></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <p class="text-muted mb-0">{{ _('No upgrade change request has been raised yet.') }}</p>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+(function () {
+  // Stage 2 posts to the change-request form's own handler, so the devices and
+  // their evidence must arrive as its fields (device_ids / prep_ids). They are
+  // MIRRORED from stage 1's ticks rather than duplicated as a second set of
+  // checkboxes: two lists of the same devices drift the moment somebody ticks
+  // one and not the other, and the pair that drifts here is "which boxes go
+  // down" against "which boxes we have a baseline for".
+  var form = document.getElementById('uf-cr');
+  if (!form) { return; }
+  var box = document.getElementById('uf-cr-targets');
+  var note = document.getElementById('uf-cr-note');
+  var all = document.getElementById('uf-all');
+  var devs = Array.prototype.slice.call(document.querySelectorAll('.uf-dev'));
+
+  function sync() {
+    var picked = devs.filter(function (c) { return c.checked; });
+    box.innerHTML = '';
+    var withPrep = 0;
+    picked.forEach(function (c) {
+      var d = document.createElement('input');
+      d.type = 'hidden'; d.name = 'device_ids'; d.value = c.value;
+      box.appendChild(d);
+      var pid = c.getAttribute('data-prep');
+      if (pid) {
+        withPrep += 1;
+        var p = document.createElement('input');
+        p.type = 'hidden'; p.name = 'prep_ids'; p.value = pid;
+        box.appendChild(p);
+      }
+    });
+    if (picked.length) {
+      note.textContent = picked.length + ' appliance(s) selected, ' + withPrep
+        + ' with a stored pre-upgrade run to cite.';
+    }
+  }
+
+  devs.forEach(function (c) { c.addEventListener('change', sync); });
+  if (all) {
+    all.addEventListener('change', function () {
+      devs.forEach(function (c) { c.checked = all.checked; });
+      sync();
+    });
+  }
+  sync();
+})();
+</script>
+{% endblock %}

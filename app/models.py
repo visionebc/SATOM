@@ -1235,6 +1235,46 @@ class UpgradePrep(db.Model):
         return f"<UpgradePrep {self.id} appliance={self.appliance_id} ok={self.ok}>"
 
 
+class CrPrep(db.Model):
+    """Bridge — which pre-upgrade runs one change request rests on.
+
+    ``ChangeRequest.prep_id`` / ``UpgradePrep.cr_id`` were a ONE-to-one link,
+    and views.change_requests refused any run whose appliance was not among the
+    change's devices — in practice, one run per change. A change covering
+    twenty appliances could therefore carry the evidence of ONE of them, and an
+    approver reading "the pre-upgrade passed" was told the truth about a single
+    box and nothing at all about the other nineteen. That is not an incomplete
+    document, it is a misleading one.
+
+    The scalar columns are KEPT and keep pointing at the FIRST run bound, so
+    every reader written before this table — the change document, the detail
+    page, prep_store.bind_change_request — works unchanged. This table is the
+    authority; the scalars are a compatibility shim, not a second source.
+
+    UNIQUE(cr_id, prep_id): binding the same run twice is a double count in the
+    consolidated customer-impact export, not a second piece of evidence.
+    """
+    __tablename__ = "cr_preps"
+    __table_args__ = (
+        db.UniqueConstraint("cr_id", "prep_id", name="uq_cr_prep"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    cr_id = db.Column(
+        db.Integer, db.ForeignKey("change_request.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    prep_id = db.Column(
+        db.Integer, db.ForeignKey("upgrade_prep.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    # Denormalised so the change page can say WHICH DEVICE each piece of
+    # evidence covers without loading every prep row to find out.
+    appliance_id = db.Column(db.Integer, nullable=True, index=True)
+    bound_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<CrPrep cr={self.cr_id} prep={self.prep_id}>"
+
+
 class ChangeRequestEvent(db.Model):
     __tablename__ = "change_request_event"
 

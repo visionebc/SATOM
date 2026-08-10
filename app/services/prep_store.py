@@ -240,13 +240,192 @@ def get(prep_id) -> UpgradePrep | None:
         return None
 
 
+def run_for(appliance, *, do_backup: bool = True, do_health: bool = True,
+            do_services: bool = True, created_by: str = "",
+            inventory_timeout: float = 6.0, on_store_error=None):
+    """Run the pre-upgrade against ONE appliance and persist it. Returns
+    ``(result, prep)``.
+
+    THE one implementation. There were two: the appliance page called
+    :func:`app.services.upgrade.prepare` (backup + health + maintenance
+    permission + service probes) and stored an :class:`UpgradePrep`; the
+    scheduled action called ``create_backup()`` + ``status_check()`` and stored
+    nothing. Both were called "upgrade prep", and the one that stored nothing
+    was the only MULTI-TARGET path there was — so pre-flighting a whole
+    maintenance window produced no evidence any change request could cite.
+
+    ``prep`` is None only when PERSISTENCE failed. The result is returned
+    regardless: the calls already went out to a live device, and throwing that
+    away because a row would not write is strictly worse than reporting it.
+    """
+    from . import change_requests as crsvc, upgrade
+    result = upgrade.prepare(appliance, do_backup=do_backup,
+                             do_health=do_health, do_services=do_services)
+    prep = None
+    try:
+        inventory = crsvc.affected_policies([appliance.id],
+                                            timeout=inventory_timeout)
+        prep = record(appliance, result, inventory=inventory,
+                      created_by=created_by or "")
+    except Exception as exc:  # noqa: BLE001 - see docstring
+        db.session.rollback()
+        if callable(on_store_error):
+            on_store_error(exc)
+    return result, prep
+
+
+def run_bulk(appliances, *, do_backup: bool = True, do_health: bool = True,
+             do_services: bool = True, created_by: str = "",
+             on_store_error=None) -> list[dict]:
+    """Pre-flight N appliances and return ONE ROW PER APPLIANCE, always.
+
+    SEQUENTIAL on purpose. ``prepare()`` takes a configuration backup, and
+    firing sixty of those at one shared backup server is how the pre-flight
+    meant to protect a maintenance window becomes the incident inside it. The
+    wall-clock is the operator's to spend; the fleet's capacity is not.
+
+    A device that raises gets ``ok=False`` and the error, and the sweep
+    CONTINUES. Both halves matter: stopping would leave the rest of the window
+    un-prepared because one box is unreachable, and dropping the row would let
+    a sweep over twenty appliances return nineteen results and read as
+    complete.
+    """
+    rows: list[dict] = []
+    for appliance in appliances or []:
+        row = {
+            "appliance_id": getattr(appliance, "id", None),
+            "name": getattr(appliance, "name", "") or "",
+            "kind": getattr(appliance, "kind", "") or "",
+            "ok": False, "stored": False, "prep_id": None,
+            "summary": "", "error": "",
+        }
+        try:
+            result, prep = run_for(
+                appliance, do_backup=do_backup, do_health=do_health,
+                do_services=do_services, created_by=created_by,
+                on_store_error=on_store_error)
+            if prep is not None:
+                row.update(ok=bool(prep.ok), stored=True, prep_id=prep.id,
+                           summary=prep.summary or "")
+            else:
+                ok, summary = verdict(result)
+                row.update(ok=ok, summary=summary,
+                           error="the run completed but could not be stored")
+        except Exception as exc:  # noqa: BLE001 - one dead box is not a dead sweep
+            db.session.rollback()
+            row["error"] = f"{type(exc).__name__}: {exc}"
+            row["summary"] = row["error"][:_SUMMARY_MAX]
+        rows.append(row)
+    return rows
+
+
 def bind_change_request(prep, cr) -> None:
-    """Record both directions of the pre-upgrade -> change link."""
+    """Record both directions of the pre-upgrade -> change link (ONE run).
+
+    Kept as-is for every caller that binds a single run; it now delegates, so
+    there is one place that decides what "bound" means.
+    """
     if prep is None or cr is None:
         return
-    prep.cr_id = cr.id
-    cr.prep_id = prep.id
+    bind_many(cr, [prep])
+
+
+def bind_many(cr, preps) -> list:
+    """Bind N pre-upgrade runs to one change request. Idempotent.
+
+    ``cr.prep_id`` keeps pointing at the FIRST run bound and is never
+    re-pointed: a document already printed cites a specific run, and letting a
+    later binding move that pointer would silently change what an approved
+    document claims to rest on.
+    """
+    from ..models import CrPrep
+    if cr is None:
+        return []
+    existing = {row.prep_id for row in CrPrep.query.filter_by(cr_id=cr.id).all()}
+    bound: list = []
+    for prep in preps or []:
+        if prep is None or prep.id in existing:
+            continue
+        db.session.add(CrPrep(cr_id=cr.id, prep_id=prep.id,
+                              appliance_id=prep.appliance_id,
+                              bound_at=datetime.utcnow()))
+        existing.add(prep.id)
+        prep.cr_id = cr.id
+        bound.append(prep)
+    if bound and not cr.prep_id:
+        cr.prep_id = bound[0].id
     db.session.commit()
+    return bound
+
+
+def preps_for_cr(cr) -> list:
+    """Every run bound to this change, in binding order.
+
+    Falls back to the scalar ``cr.prep_id`` for a change raised BEFORE the
+    bridge table existed. Those rows have no bridge entry, and returning an
+    empty list for them would make a change that DID carry evidence render as
+    one that never had any.
+    """
+    from ..models import CrPrep
+    if cr is None:
+        return []
+    ids = [r.prep_id for r in (CrPrep.query.filter_by(cr_id=cr.id)
+                               .order_by(CrPrep.id.asc()).all())]
+    if not ids and getattr(cr, "prep_id", None):
+        ids = [cr.prep_id]
+    out = []
+    for pid in ids:
+        prep = get(pid)
+        if prep is not None:
+            out.append(prep)
+    return out
+
+
+def latest_for_many(appliance_ids) -> dict:
+    """``{appliance_id: newest UpgradePrep}`` in ONE query, not N."""
+    ids: list[int] = []
+    for value in appliance_ids or []:
+        try:
+            ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return {}
+    rows = (UpgradePrep.query
+            .filter(UpgradePrep.appliance_id.in_(ids))
+            .order_by(UpgradePrep.created_at.asc(), UpgradePrep.id.asc())
+            .all())
+    # ASCENDING plus overwrite leaves the newest row per appliance. Sorting
+    # descending and keeping the first would need a seen-set to do the same
+    # thing; this way the invariant is the sort order itself.
+    return {r.appliance_id: r for r in rows}
+
+
+def merged_inventory(preps) -> list:
+    """One affected-service inventory across N runs, de-duplicated.
+
+    The key is (device_id, device, policy) — device_id ALONE is not enough
+    because rows captured before it was stored carry None, and a policy name
+    alone is not enough because two appliances legitimately publish the same
+    policy name. Concatenating without a key would double-count every service
+    on any box that was pre-flighted twice (a re-run after a failed attempt is
+    normal) and overstate the outage to the customers being warned.
+    """
+    rows: list = []
+    seen: set = set()
+    for prep in preps or []:
+        if prep is None:
+            continue
+        for row in prep.inventory_list:
+            if not isinstance(row, dict):
+                continue
+            key = (row.get("device_id"), str(row.get("device") or ""),
+                   str(row.get("policy") or ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append(row)
+    return rows
 
 
 # --------------------------------------------------------------------------- #
@@ -303,6 +482,8 @@ def export_xlsx(rows, keys, *, sheet_name: str = "Affected services") -> bytes:
 __all__ = [
     "FIELDS", "FIELD_KEYS", "FIELD_LABELS", "DEFAULT_FIELDS",
     "verdict", "build_inventory", "record", "latest_for", "recent", "get",
-    "bind_change_request", "select_fields", "export_matrix", "export_csv",
-    "export_xlsx",
+    "run_for", "run_bulk",
+    "bind_change_request", "bind_many", "preps_for_cr", "latest_for_many",
+    "merged_inventory",
+    "select_fields", "export_matrix", "export_csv", "export_xlsx",
 ]

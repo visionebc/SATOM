@@ -113,7 +113,7 @@
   <div class="col-lg-5">
     <div class="fw-card">
       <div class="fw-card-header">
-        <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>About {{ product.title if product else 'SATOM' }}</span>
+        <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>{{ _('About %(product)s', product=(product.title if product else 'SATOM')) }}</span>
       </div>
       <div class="fw-card-body">
         <div class="d-flex align-items-center gap-3 mb-4">
@@ -122,22 +122,19 @@
           <div>
             <h5 class="mb-0" style="font-weight:700;">{{ settings.app_name if settings else product.title }}</h5>
             <div class="text-muted" style="font-size:12px; font-weight:500; letter-spacing:.2px;">System Automation & Task Orchestration Manager</div>
-            <span class="fw-badge fw-badge-primary">{{ _('v1.0') }}</span>
+            <span class="fw-badge fw-badge-primary">v{{ app_version }}</span>
           </div>
         </div>
         <p style="font-size:13.5px; color:#495057;">
-          Multi-user FortiWeb &amp; FortiADC management console built on Flask + SQLAlchemy.
-          OWASP-hardened with full audit logging, RBAC, and encrypted credential storage.
+          {{ _('Multi-user appliance management console built on Flask + SQLAlchemy. OWASP-hardened with full audit logging, RBAC, and encrypted credential storage.') }}
         </p>
         <dl class="row" style="font-size:13px;">
           <dt class="col-sm-4 text-muted">{{ _('Repository') }}</dt>
           <dd class="col-sm-8"><a href="https://github.com/visionebc/SATOM" target="_blank" rel="noopener">{{ _('visionebc/SATOM') }}</a></dd>
           <dt class="col-sm-4 text-muted">{{ _('RBAC Roles') }}</dt>
           <dd class="col-sm-8">{{ _('readonly, operator, admin') }}</dd>
-          <dt class="col-sm-4 text-muted">{{ _('API Target') }}</dt>
-          <dd class="col-sm-8">{{ _('FortiWeb 7.6 REST API') }}</dd>
           <dt class="col-sm-4 text-muted">{{ _('UI Framework') }}</dt>
-          <dd class="col-sm-8">{{ _('Bootstrap 5.3 + Custom FortiWeb 7.6 Theme') }}</dd>
+          <dd class="col-sm-8">{{ _('Bootstrap 5.3 + SATOM theme') }}</dd>
         </dl>
         <p class="text-muted mb-0" style="font-size:12px;">
           {{ _('To change your password, open') }} <a href="{{ url_for('settings.index') }}#tab-password">{{ _('Settings → Change Password') }}</a>.

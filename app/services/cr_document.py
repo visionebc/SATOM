@@ -64,11 +64,25 @@ import re
 import unicodedata
 from typing import Any
 
+from . import langs
+
 # --------------------------------------------------------------------------- #
 #  Languages                                                                    #
 # --------------------------------------------------------------------------- #
-LANGS: tuple = (("en", "English"), ("de", "Deutsch"))
-DEFAULT_LANG = "en"
+#: The languages a COMPLETE change document can be produced in — i.e. the ones
+#: :data:`ACTION_PROFILES` is authored in.  This is deliberately narrower than
+#: :data:`app.services.langs.SUPPORTED`: offering a language whose profiles do
+#: not exist would produce a document half in English under a signature line,
+#: and nothing would fail.  Widen it only together with the prose.
+AUTHORED_LANGS: frozenset = frozenset({"en", "de"})
+
+#: Ordered and labelled BY THE REGISTRY, never re-listed here.  A second author
+#: of the language list is how a picker ends up offering a language the
+#: renderer cannot produce.  ``langs`` imports nothing, so this does not break
+#: the rule above that keeps this module free of the ORM.
+LANGS: tuple = tuple((code, langs.label(code)) for code in langs.codes()
+                     if code in AUTHORED_LANGS)
+DEFAULT_LANG = langs.DEFAULT
 
 _LANG_KEYS = tuple(code for code, _label in LANGS)
 
@@ -91,11 +105,11 @@ def normalize_lang(value) -> str:
     tags degrade to their base language ("de-CH" -> "de") and case is ignored,
     so a browser header or a stored preference can be passed straight in.
     """
-    try:
-        key = str(value or "").strip().lower()
-    except Exception:  # noqa: BLE001 - a language pick must never break a print
-        return DEFAULT_LANG
-    key = key.replace("_", "-").split("-")[0]
+    key = langs.normalize(value)
+    # A supported language is not the same as a renderable one: "es" is a real
+    # product language, but until its profiles are authored a Spanish document
+    # would print English prose under a Spanish heading.  Degrade to the
+    # source language, which is at least internally consistent.
     return key if key in _LANG_KEYS else DEFAULT_LANG
 
 

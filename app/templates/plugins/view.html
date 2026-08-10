@@ -3,11 +3,11 @@
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <div class="fw-breadcrumb"><a href="{{ url_for('plugins.gallery') }}">Custom Views</a><span class="separator">/</span>{{ plugin.name }}</div>
+    <div class="fw-breadcrumb"><a href="{{ url_for('plugins.gallery') }}">{{ _('Custom Views') }}</a><span class="separator">/</span>{{ plugin.name }}</div>
     <h1 class="fw-page-title"><i class="bi {{ plugin.icon }} me-2 text-accent"></i>{{ plugin.name }}</h1>
   </div>
   {% if current_user.is_admin_capable %}
-  <div><a class="btn btn-fw-outline btn-sm" href="{{ url_for('plugins.edit', pid=plugin.id) }}"><i class="bi bi-pencil me-1"></i>Edit</a></div>
+  <div><a class="btn btn-fw-outline btn-sm" href="{{ url_for('plugins.edit', pid=plugin.id) }}"><i class="bi bi-pencil me-1"></i>{{ _('Edit') }}</a></div>
   {% endif %}
 </div>
 
@@ -19,7 +19,7 @@
       <label class="pv-lbl">{{ pd.label }}{% if pd.required %} <span class="pv-req">*</span>{% endif %}</label>
       {% if pd.type in ('device', 'select') %}
       <select class="form-select fw-form-control pv-input" data-name="{{ pd.name }}">
-        {% if not pd.required %}<option value="">All</option>{% endif %}
+        {% if not pd.required %}<option value="">{{ _('All') }}</option>{% endif %}
         {% for o in pd.options %}<option value="{{ o.value }}" {{ 'selected' if initial.get(pd.name)|string == o.value|string else '' }}>{{ o.label }}</option>{% endfor %}
       </select>
       {% elif pd.type == 'number' %}
@@ -34,7 +34,7 @@
       {% endif %}
     </div>
     {% endfor %}
-    <button type="button" class="btn btn-fw-outline btn-sm pv-reset"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset</button>
+    <button type="button" class="btn btn-fw-outline btn-sm pv-reset"><i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Reset') }}</button>
   </div>
 </div>
 {% endif %}

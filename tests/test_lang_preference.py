@@ -27,6 +27,7 @@ import pytest
 from app.models import UserSetting, db
 from app.services import cr_document as doc
 from app.services import langs as lang_registry
+from app.services import ui_locale
 from app.services import user_settings_store as ustore
 from tests.conftest import admin_user_id, login
 
@@ -34,6 +35,26 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FORM_TPL = os.path.join(REPO, "app", "templates", "change_requests", "form.html")
 PROFILE_TPL = os.path.join(REPO, "app", "templates", "auth", "profile.html")
 BASE_TPL = os.path.join(REPO, "app", "templates", "base.html")
+
+
+_PY_DOCSTRING = re.compile(r"(\"\"\".*?\"\"\"|\'\'\'.*?\'\'\')", re.S)
+_PY_COMMENT = re.compile(r"(?m)#.*$")
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
+
+
+def _code_only(name, text):
+    """The file with its prose removed.
+
+    A guard that forbids a literal cannot be allowed to count the sentence that
+    *documents* the literal: a module which correctly delegates to the one
+    author, and says so in its docstring, would fail for being well documented.
+    So the prose comes out before the search, and only executable text is
+    judged.
+    """
+    if name.endswith(".py"):
+        text = _PY_DOCSTRING.sub(" ", text)
+        return _PY_COMMENT.sub(" ", text)
+    return _HTML_COMMENT.sub(" ", text)
 
 RENDERABLE = tuple(code for code, _label in doc.document_langs())
 ALL_CODES = lang_registry.codes()
@@ -234,7 +255,8 @@ def test_profile_page_offers_every_registry_language(app, client, admin):
     assert "No preference" in options[""]
 
 
-def test_profile_page_says_which_languages_documents_exist_in(app, client, admin):
+def test_profile_page_says_which_languages_documents_exist_in(app, client, admin,
+                                                             monkeypatch):
     """A preference the product cannot honour must say so where it is SET, not
     fail to appear later on a form the operator is already filling in.
 
@@ -243,6 +265,12 @@ def test_profile_page_says_which_languages_documents_exist_in(app, client, admin
     anywhere on the page cannot tell them apart."""
     with app.app_context():
         ustore.save_language(admin, "fr")
+    # The chrome now follows that same preference, so the page would come back
+    # in French and every English assertion below would fail for the wrong
+    # reason. This test is about the *document* labels; the chrome language is
+    # a separate axis with its own guard (test_ui_locale.py). Pin it so the one
+    # variable under test is the only one moving.
+    monkeypatch.setattr(ui_locale, "_saved_preference", lambda: "en")
     html = client.get("/auth/profile").get_data(as_text=True)
     options = _lang_options(html)
     for code in RENDERABLE:
@@ -405,6 +433,6 @@ def test_the_preference_key_has_one_author(app):
             if not name.endswith((".py", ".html")):
                 continue
             path = os.path.join(root, name)
-            if "i18n.lang" in _read(path):
+            if "i18n.lang" in _code_only(name, _read(path)):
                 hits.append(os.path.relpath(path, REPO))
     assert hits == ["app/services/user_settings_store.py"], hits

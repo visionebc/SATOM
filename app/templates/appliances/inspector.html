@@ -7,9 +7,9 @@
   <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; Back</a>
 </div>
 {% if is_adc %}
-<p class="text-muted">Per virtual-server tree (listener, real server pool + members, profile chain), composed live over REST.</p>
+<p class="text-muted">{{ _('Per virtual-server tree (listener, real server pool + members, profile chain), composed live over REST.') }}</p>
 {% else %}
-<p class="text-muted">Per server-policy tree (virtual server + VIPs, server pool + back-ends, health check, web-protection profile), composed live over REST.</p>
+<p class="text-muted">{{ _('Per server-policy tree (virtual server + VIPs, server pool + back-ends, health check, web-protection profile), composed live over REST.') }}</p>
 {% endif %}
 
 {% if error %}
@@ -21,7 +21,7 @@
     {% else %}
     {{ result.count }} server polic{{ 'y' if result.count == 1 else 'ies' }} inspected
     {% endif %}
-    {% if one_policy %}<a href="{{ url_for('appliances.inspector', id=appliance.id) }}" class="ms-2">show all</a>{% endif %}
+    {% if one_policy %}<a href="{{ url_for('appliances.inspector', id=appliance.id) }}" class="ms-2">{{ _('show all') }}</a>{% endif %}
     {% if result.errors %}· <span class="text-danger">{{ result.errors|length }} failed</span>{% endif %}
   </div>
   {% for p in result.policies %}
@@ -29,7 +29,7 @@
       <div class="card-header fw-card-header d-flex justify-content-between align-items-center">
         <span><i class="bi bi-shield-check me-2"></i>{{ p.name }}</span>
         <button class="btn fw-btn-secondary btn-sm" type="button" data-bs-toggle="collapse"
-                data-bs-target="#json-{{ loop.index }}">Raw JSON</button>
+                data-bs-target="#json-{{ loop.index }}">{{ _('Raw JSON') }}</button>
       </div>
       <div class="card-body">
         <pre class="fw-tree mb-0">{{ p.tree }}</pre>
@@ -39,13 +39,13 @@
       </div>
     </div>
   {% else %}
-    <div class="fw-alert fw-alert-info">No server policies found on this appliance.</div>
+    <div class="fw-alert fw-alert-info">{{ _('No server policies found on this appliance.') }}</div>
   {% endfor %}
   {% if result.errors %}
     <div class="card shadow-sm">
-      <div class="card-header fw-card-header text-danger">Failed policies</div>
+      <div class="card-header fw-card-header text-danger">{{ _('Failed policies') }}</div>
       <div class="card-body p-0"><table class="table table-sm fw-table mb-0">
-        <thead><tr><th>Policy</th><th>Error</th></tr></thead>
+        <thead><tr><th>{{ _('Policy') }}</th><th>{{ _('Error') }}</th></tr></thead>
         <tbody>{% for e in result.errors %}<tr><td>{{ e.name }}</td><td class="text-danger small">{{ e.error }}</td></tr>{% endfor %}</tbody>
       </table></div>
     </div>

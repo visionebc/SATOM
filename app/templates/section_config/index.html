@@ -4,20 +4,19 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <span>Configuration</span>
+  <span>{{ _('Configuration') }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-sliders me-2 text-accent"></i>FortiWeb Configuration</h1>
+    <h1 class="fw-page-title"><i class="bi bi-sliders me-2 text-accent"></i>{{ _('FortiWeb Configuration') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      Every config GUI section. Sections marked <span class="fw-badge fw-badge-info"><i class="bi bi-hdd-network me-1"></i>live browser</span>
-      open a device → GUI menu → live object list → deep editor; the rest show a
-      registry-derived object-type catalog. Each section keeps a template library.
+      {{ _('Every config GUI section. Sections marked') }} <span class="fw-badge fw-badge-info"><i class="bi bi-hdd-network me-1"></i>{{ _('live browser') }}</span>
+      {{ _('open a device → GUI menu → live object list → deep editor; the rest show a registry-derived object-type catalog. Each section keeps a template library.') }}
     </p>
   </div>
 </div>
@@ -35,19 +34,19 @@
             <span style="font-size:24px;line-height:1;">{{ s.emoji }}</span>
             <span class="fw-card-title mb-0">{{ s.label }}</span>
           </div>
-          <span class="fw-badge fw-badge-secondary" title="Object types in this section">
+          <span class="fw-badge fw-badge-secondary" title="{{ _('Object types in this section') }}">
             {{ s.count }}
           </span>
         </div>
         <div class="mt-2 d-flex gap-1 flex-wrap">
           {% if s.live %}
-          <span class="fw-badge fw-badge-info" title="Live device browser (menu → objects → editor)"><i class="bi bi-hdd-network me-1"></i>live browser</span>
+          <span class="fw-badge fw-badge-info" title="{{ _('Live device browser (menu → objects → editor)') }}"><i class="bi bi-hdd-network me-1"></i>{{ _('live browser') }}</span>
           {% endif %}
           {% if s.danger %}
-          <span class="fw-badge fw-badge-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>danger</span>
+          <span class="fw-badge fw-badge-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>{{ _('danger') }}</span>
           {% endif %}
           {% if s.readonly %}
-          <span class="fw-badge fw-badge-secondary"><i class="bi bi-eye me-1"></i>read-only</span>
+          <span class="fw-badge fw-badge-secondary"><i class="bi bi-eye me-1"></i>{{ _('read-only') }}</span>
           {% endif %}
           <span class="text-muted" style="font-size:12px;align-self:center;">
             {{ s.count }} object type{{ '' if s.count == 1 else 's' }}

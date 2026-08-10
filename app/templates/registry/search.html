@@ -2,10 +2,10 @@
 {% block title %}Registry Search{% endblock %}
 
 {% block breadcrumb %}
-<nav aria-label="breadcrumb" class="mb-3">
+<nav aria-label="{{ _('breadcrumb') }}" class="mb-3">
   <ol class="breadcrumb">
-    <li class="breadcrumb-item"><a href="{{ url_for('registry.index') }}">Registry</a></li>
-    <li class="breadcrumb-item active">Search</li>
+    <li class="breadcrumb-item"><a href="{{ url_for('registry.index') }}">{{ _('Registry') }}</a></li>
+    <li class="breadcrumb-item active">{{ _('Search') }}</li>
   </ol>
 </nav>
 {% endblock %}
@@ -17,8 +17,8 @@
 <h4 class="mb-3">Registry Search{% if term %} — "{{ term }}"{% endif %}</h4>
 
 <form method="get" action="{{ url_for('registry.search') }}" class="mb-3 d-flex gap-2">
-  <input name="q" value="{{ term }}" class="form-control" placeholder="Search endpoints...">
-  <button class="btn btn-primary">Search</button>
+  <input name="q" value="{{ term }}" class="form-control" placeholder="{{ _('Search endpoints...') }}">
+  <button class="btn btn-primary">{{ _('Search') }}</button>
 </form>
 
 {% if term %}
@@ -27,7 +27,7 @@
   <div class="card">
     <div class="card-body p-0">
       <table class="table table-hover mb-0">
-        <thead><tr><th>Section</th><th>Name</th><th>Path</th><th>Methods</th></tr></thead>
+        <thead><tr><th>{{ _('Section') }}</th><th>{{ _('Name') }}</th><th>{{ _('Path') }}</th><th>{{ _('Methods') }}</th></tr></thead>
         <tbody>
           {% for r in results %}
           <tr>

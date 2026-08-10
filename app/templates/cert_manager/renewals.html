@@ -4,13 +4,13 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <span>Automation</span>
+  <span>{{ _('Automation') }}</span>
   <span class="separator">/</span>
-  <a href="{{ url_for('cert_manager.index') }}">Certificate Manager</a>
+  <a href="{{ url_for('cert_manager.index') }}">{{ _('Certificate Manager') }}</a>
   <span class="separator">/</span>
-  <span>Renewals</span>
+  <span>{{ _('Renewals') }}</span>
 </div>
 {% endblock %}
 
@@ -22,24 +22,24 @@
 
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-arrow-repeat me-2 text-accent"></i>Certificate renewals</h1>
+    <h1 class="fw-page-title"><i class="bi bi-arrow-repeat me-2 text-accent"></i>{{ _('Certificate renewals') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       Every renewal attempt on every node — what ran, when, and the exact error when it failed.
       The nightly <code>satom-cert-renew</code> timer used to leave its result only in
       <code>journalctl</code>, so a silent failure was invisible until the expiry alert fired.
-      The alert e-mail tells you <em>something</em> is wrong; this page tells you <em>what</em>.
+      The alert e-mail tells you <em>{{ _('something') }}</em> {{ _('is wrong; this page tells you') }} <em>{{ _('what') }}</em>.
     </p>
   </div>
   <div class="d-flex gap-2">
     <form method="post" action="{{ url_for('cert_manager.renewals_run') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="btn btn-fw-secondary" type="submit"
-              title="Run the same pass the nightly timer runs, on this node, now">
-        <i class="bi bi-play-fill me-1"></i>Run renewal pass now
+              title="{{ _('Run the same pass the nightly timer runs, on this node, now') }}">
+        <i class="bi bi-play-fill me-1"></i>{{ _('Run renewal pass now') }}
       </button>
     </form>
     <a class="btn btn-fw-primary" href="{{ url_for('cert_manager.index') }}">
-      <i class="bi bi-shield-lock me-1"></i>Certificates
+      <i class="bi bi-shield-lock me-1"></i>{{ _('Certificates') }}
     </a>
   </div>
 </div>
@@ -67,7 +67,7 @@
   <div class="fw-card-header d-flex justify-content-between align-items-center">
     <span class="fw-card-title">
       <i class="bi bi-hdd-network me-2 text-accent"></i>{{ n.name }}
-      {% if n.is_self %}<span class="fw-badge fw-badge-info ms-1">this node</span>
+      {% if n.is_self %}<span class="fw-badge fw-badge-info ms-1">{{ _('this node') }}</span>
       {% else %}<span class="fw-badge fw-badge-secondary ms-1">peer {{ n.host }}</span>{% endif %}
       {% if n.cert and n.cert.get('renew_mode') %}
         <span class="fw-badge fw-badge-secondary ms-1">mode: {{ n.cert.renew_mode }}</span>
@@ -76,13 +76,13 @@
     </span>
     <span>
       {% if not n.reachable and not n.is_self %}
-        <span class="fw-badge fw-badge-danger">unreachable</span>
+        <span class="fw-badge fw-badge-danger">{{ _('unreachable') }}</span>
       {% elif n.summary and n.summary.get('fail_streak', 0) > 0 %}
         <span class="fw-badge fw-badge-danger">{{ n.summary.fail_streak }} consecutive failure(s)</span>
       {% elif n.summary and n.summary.get('errors', 0) > 0 %}
         <span class="fw-badge fw-badge-warning">{{ n.summary.errors }} past error(s)</span>
       {% else %}
-        <span class="fw-badge fw-badge-success">no failures recorded</span>
+        <span class="fw-badge fw-badge-success">{{ _('no failures recorded') }}</span>
       {% endif %}
     </span>
   </div>
@@ -106,7 +106,7 @@
     {% else %}
     <div class="d-flex flex-wrap gap-4 mb-3">
       <div>
-        <div class="text-muted" style="font-size:11px;text-transform:uppercase;">Expires in</div>
+        <div class="text-muted" style="font-size:11px;text-transform:uppercase;">{{ _('Expires in') }}</div>
         {% set d = c.get('days_left') %}
         <span class="fw-badge fw-badge-{{ 'danger' if d is not none and d < 0 else 'danger' if d is not none and d <= 14 else 'warning' if d is not none and d <= 30 else 'success' }}">
           {{ d if d is not none else '?' }} d
@@ -114,14 +114,14 @@
         <span class="text-muted ms-1">{{ c.get('not_after') or '' }}</span>
       </div>
       <div>
-        <div class="text-muted" style="font-size:11px;text-transform:uppercase;">Source</div>
+        <div class="text-muted" style="font-size:11px;text-transform:uppercase;">{{ _('Source') }}</div>
         {{ c.get('source') or '?' }}
         {% if c.get('source') == 'imported' %}
-          <span class="text-muted">— cannot be re-minted here</span>
+          <span class="text-muted">{{ _('— cannot be re-minted here') }}</span>
         {% endif %}
       </div>
       <div>
-        <div class="text-muted" style="font-size:11px;text-transform:uppercase;">Renewal strategy</div>
+        <div class="text-muted" style="font-size:11px;text-transform:uppercase;">{{ _('Renewal strategy') }}</div>
         {% if c.get('source') == 'issued' %}
           auto re-mint from the internal CA
         {% elif c.get('renew_mode') == 'autopull' %}
@@ -131,7 +131,7 @@
         {% endif %}
       </div>
       <div>
-        <div class="text-muted" style="font-size:11px;text-transform:uppercase;">Installed</div>
+        <div class="text-muted" style="font-size:11px;text-transform:uppercase;">{{ _('Installed') }}</div>
         {{ c.get('installed_at') or '—' }}
       </div>
     </div>
@@ -142,18 +142,18 @@
       <div class="text-muted">
         No renewal attempt recorded yet on this node. The journal starts filling at the next
         nightly run (<code>satom-cert-renew.timer</code>, 03:30) or when you press
-        <em>Run renewal pass now</em>.
+        <em>{{ _('Run renewal pass now') }}</em>.
       </div>
     {% else %}
     <div class="fw-table-wrapper">
       <table class="fw-table">
         <thead>
           <tr>
-            <th style="width:170px;">When (UTC)</th>
-            <th style="width:110px;">Channel</th>
-            <th style="width:90px;">Result</th>
-            <th>What happened / error</th>
-            <th style="width:110px;">Triggered by</th>
+            <th style="width:170px;">{{ _('When (UTC)') }}</th>
+            <th style="width:110px;">{{ _('Channel') }}</th>
+            <th style="width:90px;">{{ _('Result') }}</th>
+            <th>{{ _('What happened / error') }}</th>
+            <th style="width:110px;">{{ _('Triggered by') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -162,9 +162,9 @@
             <td class="text-muted">{{ r.at }}</td>
             <td><span class="fw-badge fw-badge-secondary">{{ r.channel }}</span></td>
             <td>
-              {% if r.status == 'error' %}<span class="fw-badge fw-badge-danger">error</span>
-              {% elif r.status == 'renewed' %}<span class="fw-badge fw-badge-success">renewed</span>
-              {% else %}<span class="fw-badge fw-badge-secondary">skipped</span>{% endif %}
+              {% if r.status == 'error' %}<span class="fw-badge fw-badge-danger">{{ _('error') }}</span>
+              {% elif r.status == 'renewed' %}<span class="fw-badge fw-badge-success">{{ _('renewed') }}</span>
+              {% else %}<span class="fw-badge fw-badge-secondary">{{ _('skipped') }}</span>{% endif %}
             </td>
             <td>
               {{ r.summary }}
@@ -192,30 +192,28 @@
 <div class="fw-card mt-4 mb-2">
   <div class="fw-card-header d-flex justify-content-between align-items-center">
     <span class="fw-card-title">
-      <i class="bi bi-hdd-rack me-2 text-accent"></i>Appliance certificates — failed lifecycle events
+      <i class="bi bi-hdd-rack me-2 text-accent"></i>{{ _('Appliance certificates — failed lifecycle events') }}
     </span>
     <span>
       {% if dev_failures %}<span class="fw-badge fw-badge-danger">{{ dev_failures|length }}</span>
-      {% else %}<span class="fw-badge fw-badge-success">none</span>{% endif %}
+      {% else %}<span class="fw-badge fw-badge-success">{{ _('none') }}</span>{% endif %}
     </span>
   </div>
   <div class="fw-card-body" style="font-size:13px;">
     {% if not dev_failures %}
       <div class="text-muted">
-        No failed sign / deploy / swap / renew / revoke event on any managed certificate.
-        These are the certificates SATOM issues for the appliances (ADCS or ACME), which is a
-        different pipeline from the node's own TLS certificate above.
+        {{ _('No failed sign / deploy / swap / renew / revoke event on any managed certificate. These are the certificates SATOM issues for the appliances (ADCS or ACME), which is a different pipeline from the node\'s own TLS certificate above.') }}
       </div>
     {% else %}
     <div class="fw-table-wrapper">
       <table class="fw-table">
         <thead>
           <tr>
-            <th style="width:170px;">When</th>
-            <th style="width:110px;">Step</th>
-            <th>Certificate</th>
-            <th>Error</th>
-            <th style="width:110px;">By</th>
+            <th style="width:170px;">{{ _('When') }}</th>
+            <th style="width:110px;">{{ _('Step') }}</th>
+            <th>{{ _('Certificate') }}</th>
+            <th>{{ _('Error') }}</th>
+            <th style="width:110px;">{{ _('By') }}</th>
           </tr>
         </thead>
         <tbody>

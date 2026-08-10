@@ -3,8 +3,8 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a><span class="separator">/</span>
-  <a href="{{ url_for('workspace.index') }}">Server Policy</a><span class="separator">/</span>
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <a href="{{ url_for('workspace.index') }}">{{ _('Server Policy') }}</a><span class="separator">/</span>
   <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) if appliance else '#' }}">{{ appliance.name if appliance else 'Appliance' }}</a>
   <span class="separator">/</span><span>{{ policy.name or policy_name }}</span>
 </div>
@@ -17,12 +17,12 @@
   <div>
     <h1 class="fw-page-title">
       <i class="bi bi-shield-fill-check me-2 text-accent"></i>{{ policy.name or policy_name }}
-      <span class="fw-badge fw-badge-secondary" title="The server-policy name is the object key and cannot be changed"><i class="bi bi-lock-fill me-1"></i>name locked</span>
+      <span class="fw-badge fw-badge-secondary" title="{{ _('The server-policy name is the object key and cannot be changed') }}"><i class="bi bi-lock-fill me-1"></i>{{ _('name locked') }}</span>
     </h1>
     <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
       {% if policy %}
-        {% if policy_on %}<span class="fw-status fw-status-online"><span class="fw-status-dot"></span>Enabled</span>
-        {% else %}<span class="fw-status fw-status-offline"><span class="fw-status-dot"></span>Disabled</span>{% endif %}
+        {% if policy_on %}<span class="fw-status fw-status-online"><span class="fw-status-dot"></span>{{ _('Enabled') }}</span>
+        {% else %}<span class="fw-status fw-status-offline"><span class="fw-status-dot"></span>{{ _('Disabled') }}</span>{% endif %}
         {% if policy.get('deployment-mode') %}<span class="fw-badge fw-badge-secondary">{{ policy.get('deployment-mode') }}</span>{% endif %}
         {% if policy.get('protocol') %}<span class="fw-badge fw-badge-info">{{ policy.get('protocol') }}</span>{% endif %}
       {% endif %}
@@ -30,19 +30,19 @@
     </div>
   </div>
   <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) if appliance else '#' }}" class="btn btn-secondary btn-sm">
-    <i class="bi bi-chevron-left me-1"></i>Back to Policies
+    <i class="bi bi-chevron-left me-1"></i>{{ _('Back to Policies') }}
   </a>
 </div>
 
-{% if cache_freshness %}<div class="mb-2"><span class="fw-badge fw-badge-success" title="Served from the local source of truth (PostgreSQL deep capture). Use 'Refresh from device' on the policy list to pull live config."><i class="bi bi-database me-1"></i>{{ cache_freshness }}</span></div>{% endif %}
+{% if cache_freshness %}<div class="mb-2"><span class="fw-badge fw-badge-success" title="{{ _('Served from the local source of truth (PostgreSQL deep capture). Use \'Refresh from device\' on the policy list to pull live config.') }}"><i class="bi bi-database me-1"></i>{{ cache_freshness }}</span></div>{% endif %}
 {% if error %}<div class="fw-alert fw-alert-warning mb-3"><i class="bi bi-exclamation-triangle me-2"></i>{{ error }}</div>{% endif %}
-{% if not policy and not error %}<div class="fw-alert fw-alert-warning mb-3"><i class="bi bi-exclamation-triangle me-2"></i>The device returned no data for this policy.</div>{% endif %}
+{% if not policy and not error %}<div class="fw-alert fw-alert-warning mb-3"><i class="bi bi-exclamation-triangle me-2"></i>{{ _('The device returned no data for this policy.') }}</div>{% endif %}
 
 {% if policy_links %}
 <!-- ─────────────── Dynamic Policy Links (Settings → Policy Links) ─────────────── -->
 <div class="fw-card mb-3">
   <div class="fw-card-body d-flex align-items-center flex-wrap" style="gap:8px;">
-    <span class="text-muted me-1" style="font-size:12px;"><i class="bi bi-link-45deg me-1"></i>Links</span>
+    <span class="text-muted me-1" style="font-size:12px;"><i class="bi bi-link-45deg me-1"></i>{{ _('Links') }}</span>
     {% for l in policy_links %}
     <a href="{{ l.url }}" class="btn btn-sm btn-fw-outline"{% if l.new_tab %} target="_blank" rel="noopener noreferrer"{% endif %}>
       <i class="bi bi-box-arrow-up-right me-1"></i>{{ l.label }}</a>
@@ -58,8 +58,8 @@
     {% if appliance and appliance.kind == 'fortiweb' %}
     <button type="button" class="btn btn-sm btn-fw-outline" id="fwHealthBtn"
             data-url="{{ url_for('workspace.policy_health', appliance_id=appliance.id, name=policy_name) }}"
-            title="Query the device live (policy status monitor) for the REAL per-backend health-check state">
-      <i class="bi bi-heart-pulse me-1"></i>Check live health</button>
+            title="{{ _('Query the device live (policy status monitor) for the REAL per-backend health-check state') }}">
+      <i class="bi bi-heart-pulse me-1"></i>{{ _('Check live health') }}</button>
     {% endif %}
   </div>
   <div class="fw-card-body">
@@ -71,11 +71,11 @@
       {% set vip_ip = (vips|map(attribute='effective_ip')|select|list|join(', ')) %}
       {% if vip_ip %}
       <span class="fw-topo-arrow">&#9472;&#9654;</span>
-      <span class="fw-topo-node font-monospace" title="Virtual server VIP"><i class="bi bi-hdd-network me-1"></i>{{ vip_ip }}</span>
+      <span class="fw-topo-node font-monospace" title="{{ _('Virtual server VIP') }}"><i class="bi bi-hdd-network me-1"></i>{{ vip_ip }}</span>
       {% endif %}
       {% if pool_name %}
       <span class="fw-topo-arrow">&#9472;&#9654;</span>
-      <span class="fw-topo-node" title="Server pool"><i class="bi bi-diagram-3 me-1"></i>{{ pool_name }}</span>
+      <span class="fw-topo-node" title="{{ _('Server pool') }}"><i class="bi bi-diagram-3 me-1"></i>{{ pool_name }}</span>
       {% endif %}
       <span class="fw-topo-arrow">&#9472;&#9654;</span>
       {% for b in backends %}
@@ -85,16 +85,16 @@
             title="Back-end · configured status: {{ b.get('status') or 'unknown' }}" style="border-color:{{ bcol }};">
         <span class="fw-topo-dot" style="background:{{ bcol }};"></span>{{ b.get('ip') or b.get('domain') or '—' }}{% if b.get('port') %}:{{ b.get('port') }}{% endif %}<span class="fw-topo-hc"></span></span>
       {% else %}
-      <span class="text-muted fst-italic">no back-ends in cache</span>
+      <span class="text-muted fst-italic">{{ _('no back-ends in cache') }}</span>
       {% endfor %}
     </div>
     <div class="mt-2 d-flex align-items-center flex-wrap" style="gap:14px; font-size:11px;">
-      <span class="text-muted">Dots = <strong>configured</strong> status (green enabled · red disabled · amber maintenance).</span>
+      <span class="text-muted">{{ _('Dots =') }} <strong>{{ _('configured') }}</strong> {{ _('status (green enabled · red disabled · amber maintenance).') }}</span>
       <span id="fwHealthLegend" class="d-none text-muted">
-        <span class="me-2">Live health:</span>
+        <span class="me-2">{{ _('Live health:') }}</span>
         <span class="me-2"><span class="fw-topo-dot" style="background:#10b981;"></span>UP</span>
         <span class="me-2"><span class="fw-topo-dot" style="background:#ef4444;"></span>DOWN</span>
-        <span><span class="fw-topo-dot" style="background:#94a3b8;"></span>N/A (no health check)</span>
+        <span><span class="fw-topo-dot" style="background:#94a3b8;"></span>{{ _('N/A (no health check)') }}</span>
       </span>
       <span id="fwHealthMsg"></span>
     </div>
@@ -104,10 +104,10 @@
 <!-- ───────────────────────── Virtual Server / VIP ───────────────────────── -->
 <div class="fw-card mb-3">
   <div class="fw-card-header d-flex justify-content-between align-items-center">
-    <span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>Virtual Server <span class="mono text-muted">{{ vserver_name or '—' }}</span></span>
+    <span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>{{ _('Virtual Server') }} <span class="mono text-muted">{{ vserver_name or '—' }}</span></span>
     {% if vserver_name %}
     <button type="button" class="btn btn-sm btn-fw-outline fw-open-obj" data-coll="server-policy/vserver" data-mkey="{{ vserver_name }}" data-label="Virtual Server"
-            title="Open the virtual server in the full editor (add / remove VIP rows)"><i class="bi bi-layout-sidebar-inset-reverse me-1"></i>Manage VIP rows…</button>
+            title="{{ _('Open the virtual server in the full editor (add / remove VIP rows)') }}"><i class="bi bi-layout-sidebar-inset-reverse me-1"></i>{{ _('Manage VIP rows…') }}</button>
     {% endif %}
   </div>
   <div class="fw-card-body">
@@ -115,49 +115,49 @@
       {% for v in vips %}
       <div class="fw-scope fw-row-card" data-endpoint="{{ eps.viplist }}" data-mkey="{{ vserver_name }}" data-child-id="{{ v.get('id') }}">
         <div class="fw-vip-ip">
-          <span class="text-muted" style="font-size:12px;">Answers on</span>
+          <span class="text-muted" style="font-size:12px;">{{ _('Answers on') }}</span>
           <span class="fw-vip-addr mono">{{ v.get('effective_ip') or '— (no IP resolved)' }}</span>
           {% if v.get('ip_source') %}<span class="fw-badge fw-badge-secondary">{{ v.get('ip_source') }}</span>{% endif %}
         </div>
         <div class="fw-fld-grid">
           <div class="fw-fld">
-            <label class="fw-fld-label">Interface <span class="fw-key">interface</span></label>
+            <label class="fw-fld-label">{{ _('Interface') }} <span class="fw-key">{{ _('interface') }}</span></label>
             <select class="form-select form-select-sm fw-input fw-ref-select" data-key="interface" data-orig="{{ v.get('interface') }}" data-ref="system/interface">
-              <option value="">— none —</option>
+              <option value="">{{ _('— none —') }}</option>
               {% if v.get('interface') %}<option value="{{ v.get('interface') }}" selected>{{ v.get('interface') }}</option>{% endif %}
             </select>
           </div>
           <div class="fw-fld">
-            <label class="fw-fld-label">Use Interface IP <span class="fw-key">use-interface-ip</span></label>
+            <label class="fw-fld-label">{{ _('Use Interface IP') }} <span class="fw-key">{{ _('use-interface-ip') }}</span></label>
             {{ switch('use-interface-ip', (v.get('use-interface-ip')|string).lower() in ['enable','enabled','1','true']) }}
           </div>
           <div class="fw-fld">
-            <label class="fw-fld-label">Virtual IP <span class="fw-key">vip</span></label>
+            <label class="fw-fld-label">{{ _('Virtual IP') }} <span class="fw-key">{{ _('vip') }}</span></label>
             <div class="fw-ref">
               <select class="form-select form-select-sm fw-input fw-ref-select" data-key="vip" data-orig="{{ v.get('vip') }}" data-ref="system/vip">
-                <option value="">— use interface IP —</option>
+                <option value="">{{ _('— use interface IP —') }}</option>
                 {% if v.get('vip') %}<option value="{{ v.get('vip') }}" selected>{{ v.get('vip') }}</option>{% endif %}
               </select>
-              <button type="button" class="btn btn-sm btn-fw-outline fw-edit-ref" data-ref="system/vip" data-key="vip" title="Edit the selected VIP object">✎</button>
-              <button type="button" class="btn btn-sm btn-fw-outline fw-create" data-ref="system/vip" data-key="vip" title="Create a new VIP from scratch">＋</button>
+              <button type="button" class="btn btn-sm btn-fw-outline fw-edit-ref" data-ref="system/vip" data-key="vip" title="{{ _('Edit the selected VIP object') }}">✎</button>
+              <button type="button" class="btn btn-sm btn-fw-outline fw-create" data-ref="system/vip" data-key="vip" title="{{ _('Create a new VIP from scratch') }}">＋</button>
             </div>
           </div>
           <div class="fw-fld">
-            <label class="fw-fld-label">Status <span class="fw-key">status</span></label>
+            <label class="fw-fld-label">{{ _('Status') }} <span class="fw-key">{{ _('status') }}</span></label>
             {{ switch('status', (v.get('status')|string).lower() in ['enable','enabled']) }}
           </div>
         </div>
         {{ savebar('Save VIP') }}
       </div>
       {% endfor %}
-    {% else %}<span class="text-muted">No virtual IP rows.</span>{% endif %}
+    {% else %}<span class="text-muted">{{ _('No virtual IP rows.') }}</span>{% endif %}
   </div>
 </div>
 
 <!-- ───────────────────────── Server Policy config ───────────────────────── -->
 <div class="fw-card mb-3 fw-scope" id="policyConfig" data-endpoint="{{ eps.policy }}" data-mkey="{{ policy_name }}">
   <div class="fw-card-header">
-    <span class="fw-card-title"><i class="bi bi-sliders me-2 text-accent"></i>Server Policy Configuration</span>
+    <span class="fw-card-title"><i class="bi bi-sliders me-2 text-accent"></i>{{ _('Server Policy Configuration') }}</span>
     {{ savebar('Save policy') }}
   </div>
   <div class="fw-card-body">
@@ -174,36 +174,36 @@
 
 <!-- ───────────── Content Routing (only in HTTP Content Routing mode) ───────────── -->
 <div class="fw-card mb-3" id="crCard" data-mode-vis='{"t":"mode","modes":["http-content-routing"]}'>
-  <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-signpost-split me-2 text-accent"></i>Content Routing</span></div>
+  <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-signpost-split me-2 text-accent"></i>{{ _('Content Routing') }}</span></div>
   <div class="fw-card-body">
-    <p class="text-muted" style="font-size:12px;margin:0 0 10px;">Each rule routes matching requests to a back-end pool. Use <strong>New routing policy…</strong> to create one (default pool + Web Protection Profile, then its Match Conditions), or <strong>Add rule</strong> to bind an existing one. <strong>Conditions…</strong> edits a policy's match conditions and pool.</p>
+    <p class="text-muted" style="font-size:12px;margin:0 0 10px;">{{ _('Each rule routes matching requests to a back-end pool. Use') }} <strong>{{ _('New routing policy…') }}</strong> {{ _('to create one (default pool + Web Protection Profile, then its Match Conditions), or') }} <strong>{{ _('Add rule') }}</strong> {{ _('to bind an existing one.') }} <strong>{{ _('Conditions…') }}</strong> {{ _('edits a policy\'s match conditions and pool.') }}</p>
     <div class="table-responsive">
     <table class="table table-sm align-middle" style="font-size:12.5px;">
-      <thead><tr><th style="width:60px">#</th><th>Routing Policy</th><th>Server Pool</th><th style="width:120px">Default</th><th style="width:280px"></th></tr></thead>
+      <thead><tr><th style="width:60px">#</th><th>{{ _('Routing Policy') }}</th><th>{{ _('Server Pool') }}</th><th style="width:120px">{{ _('Default') }}</th><th style="width:280px"></th></tr></thead>
       <tbody id="crBody">
         {% for e in cr_entries %}
         <tr data-cr-id="{{ e.get('id') }}">
           <td class="mono text-muted">{{ e.get('id') or loop.index }}</td>
           <td>
             <select class="form-select form-select-sm fw-input fw-ref-select fw-cr-policy" data-key="content-routing-policy-name" data-ref="{{ eps.crpolicy and 'server-policy/http-content-routing-policy' }}" data-orig="{{ e.get('content-routing-policy-name') }}">
-              <option value="">— none —</option>
+              <option value="">{{ _('— none —') }}</option>
               {% if e.get('content-routing-policy-name') %}<option value="{{ e.get('content-routing-policy-name') }}" selected>{{ e.get('content-routing-policy-name') }}</option>{% endif %}
             </select>
           </td>
           <td>
             {% if e.get('pool') %}
-              <span class="fw-topo-node" title="Back-end pool bound to this routing rule"><i class="bi bi-diagram-3 me-1"></i>{{ e.get('pool') }}</span>
+              <span class="fw-topo-node" title="{{ _('Back-end pool bound to this routing rule') }}"><i class="bi bi-diagram-3 me-1"></i>{{ e.get('pool') }}</span>
               {% if e.get('backends') %}<span class="text-muted mono" style="font-size:11px;">({{ e.get('backends')|length }})</span>{% endif %}
-              <button type="button" class="btn btn-sm btn-fw-outline fw-open-obj" data-coll="server-policy/server-pool" data-mkey="{{ e.get('pool') }}" data-label="Server Pool" title="Open this pool in the full editor (add / remove back-end members)"><i class="bi bi-layout-sidebar-inset-reverse me-1"></i>Members…</button>
+              <button type="button" class="btn btn-sm btn-fw-outline fw-open-obj" data-coll="server-policy/server-pool" data-mkey="{{ e.get('pool') }}" data-label="Server Pool" title="{{ _('Open this pool in the full editor (add / remove back-end members)') }}"><i class="bi bi-layout-sidebar-inset-reverse me-1"></i>{{ _('Members…') }}</button>
             {% else %}
               <span class="text-muted">—</span>
             {% endif %}
           </td>
           <td>{{ switch('', (e.get('is-default')|string).lower() in ['enable','enabled','yes'], 'Default', '—', 'fw-toggle-sw-sm', 'fw-cr-default') }}</td>
           <td>
-            <button type="button" class="btn btn-sm btn-fw-outline fw-cr-edit" data-name="{{ e.get('content-routing-policy-name') }}" title="Edit this rule's match conditions and pool">Conditions…</button>
-            <button type="button" class="btn btn-sm btn-fw-primary fw-cr-save">Save</button>
-            <button type="button" class="btn btn-sm btn-fw-outline text-danger fw-cr-delete">Delete</button>
+            <button type="button" class="btn btn-sm btn-fw-outline fw-cr-edit" data-name="{{ e.get('content-routing-policy-name') }}" title="{{ _('Edit this rule\'s match conditions and pool') }}">{{ _('Conditions…') }}</button>
+            <button type="button" class="btn btn-sm btn-fw-primary fw-cr-save">{{ _('Save') }}</button>
+            <button type="button" class="btn btn-sm btn-fw-outline text-danger fw-cr-delete">{{ _('Delete') }}</button>
           </td>
         </tr>
         {% endfor %}
@@ -211,8 +211,8 @@
     </table>
     </div>
     <div class="d-flex justify-content-end gap-2">
-      <button type="button" class="btn btn-sm btn-fw-outline" data-js="cr-new-open"><i class="bi bi-plus-square me-1"></i>New routing policy…</button>
-      <button type="button" class="btn btn-sm btn-fw-primary" data-js="cr-add-row"><i class="bi bi-plus-lg me-1"></i>Add rule</button>
+      <button type="button" class="btn btn-sm btn-fw-outline" data-js="cr-new-open"><i class="bi bi-plus-square me-1"></i>{{ _('New routing policy…') }}</button>
+      <button type="button" class="btn btn-sm btn-fw-primary" data-js="cr-add-row"><i class="bi bi-plus-lg me-1"></i>{{ _('Add rule') }}</button>
     </div>
   </div>
 </div>
@@ -220,10 +220,10 @@
 <!-- ───────────────────────── Server Pool ───────────────────────── -->
 <div class="fw-card mb-3" id="poolCard" data-mode-vis='{"t":"mode","modes":["server-pool","offline-protection","transparent-servers","wccp-servers"]}'>
   <div class="fw-card-header d-flex justify-content-between align-items-center">
-    <span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>Server Pool <span class="mono text-muted">{{ pool_name or '—' }}</span></span>
+    <span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('Server Pool') }} <span class="mono text-muted">{{ pool_name or '—' }}</span></span>
     {% if pool_name %}
     <button type="button" class="btn btn-sm btn-fw-outline fw-open-obj" data-coll="server-policy/server-pool" data-mkey="{{ pool_name }}" data-label="Server Pool"
-            title="Open the pool in the full editor (add / remove back-end members)"><i class="bi bi-layout-sidebar-inset-reverse me-1"></i>Manage members…</button>
+            title="{{ _('Open the pool in the full editor (add / remove back-end members)') }}"><i class="bi bi-layout-sidebar-inset-reverse me-1"></i>{{ _('Manage members…') }}</button>
     {% endif %}
   </div>
   <div class="fw-card-body">
@@ -243,7 +243,7 @@
         <div class="text-muted mb-2" style="font-size:12px;">Back-end servers ({{ backends|length }}) — edit a row and save</div>
         <div class="table-responsive">
         <table class="table table-sm align-middle" style="font-size:12.5px;">
-          <thead><tr><th>Type</th><th>IP / Domain</th><th>Port</th><th>Weight</th><th>SSL</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>{{ _('Type') }}</th><th>{{ _('IP / Domain') }}</th><th>{{ _('Port') }}</th><th>{{ _('Weight') }}</th><th>SSL</th><th>{{ _('Status') }}</th><th></th></tr></thead>
           <tbody>
           {% for b in backends %}
           <tr class="fw-scope" data-endpoint="{{ eps.pserver }}" data-mkey="{{ pool_name }}" data-child-id="{{ b.get('id') }}">
@@ -255,7 +255,7 @@
             <td style="width:80px"><input type="number" class="form-control form-control-sm fw-input" data-key="weight" data-orig="{{ b.get('weight') }}" value="{{ b.get('weight') }}"></td>
             <td>{{ switch('ssl', (b.get('ssl')|string).lower() in ['enable','enabled'], 'On', 'Off', 'fw-toggle-sw-sm') }}</td>
             <td>{{ switch('status', (b.get('status')|string).lower() in ['enable','enabled'], 'Up', 'Down', 'fw-toggle-sw-sm') }}</td>
-            <td><button type="button" class="btn btn-sm btn-fw-outline" data-js="save-scope">Save</button></td>
+            <td><button type="button" class="btn btn-sm btn-fw-outline" data-js="save-scope">{{ _('Save') }}</button></td>
           </tr>
           {% endfor %}
           </tbody>
@@ -263,67 +263,67 @@
         </div>
       </div>
       {% endif %}
-    {% else %}<span class="text-muted">Not configured</span>{% endif %}
+    {% else %}<span class="text-muted">{{ _('Not configured') }}</span>{% endif %}
   </div>
 </div>
 
 <!-- Raw -->
 <details class="fw-card">
-  <summary class="fw-card-header" style="cursor:pointer;"><span class="fw-card-title"><i class="bi bi-code-square me-2 text-accent"></i>Raw Configuration</span></summary>
+  <summary class="fw-card-header" style="cursor:pointer;"><span class="fw-card-title"><i class="bi bi-code-square me-2 text-accent"></i>{{ _('Raw Configuration') }}</span></summary>
   <div class="fw-card-body p-0"><pre class="fw-code-block m-0" id="rawConfig">{{ policy_clean | tojson(indent=2) if policy_clean else '{}' }}</pre></div>
 </details>
 
 <!-- New content-routing policy modal -->
 <div class="modal fade" id="crNewModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
-  <div class="modal-header"><h5 class="modal-title"><i class="bi bi-signpost-split me-2 text-accent"></i>New Content Routing Policy</h5>
+  <div class="modal-header"><h5 class="modal-title"><i class="bi bi-signpost-split me-2 text-accent"></i>{{ _('New Content Routing Policy') }}</h5>
     <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body">
-    <p class="text-muted" style="font-size:12px;">Create the routing policy with its default server pool. Its Match Conditions (and per-condition pool / Web Protection Profile) are added in the editor right after.</p>
-    <div class="fw-fld mb-2"><label class="fw-fld-label">Name <span class="fw-key">name</span></label>
-      <input type="text" class="form-control form-control-sm" id="crNewName" placeholder="content-routing policy name"></div>
-    <div class="fw-fld mb-2"><label class="fw-fld-label">Default Server Pool <span class="fw-key">server-pool</span></label>
+    <p class="text-muted" style="font-size:12px;">{{ _('Create the routing policy with its default server pool. Its Match Conditions (and per-condition pool / Web Protection Profile) are added in the editor right after.') }}</p>
+    <div class="fw-fld mb-2"><label class="fw-fld-label">{{ _('Name') }} <span class="fw-key">{{ _('name') }}</span></label>
+      <input type="text" class="form-control form-control-sm" id="crNewName" placeholder="{{ _('content-routing policy name') }}"></div>
+    <div class="fw-fld mb-2"><label class="fw-fld-label">{{ _('Default Server Pool') }} <span class="fw-key">{{ _('server-pool') }}</span></label>
       <div class="input-group input-group-sm">
-        <select class="form-select form-select-sm" id="crNewPool"><option value="">— none —</option></select>
-        <button type="button" class="btn btn-fw-outline" data-js="pool-new-open" title="Create a new server pool on the device"><i class="bi bi-plus-lg me-1"></i>New pool</button>
+        <select class="form-select form-select-sm" id="crNewPool"><option value="">{{ _('— none —') }}</option></select>
+        <button type="button" class="btn btn-fw-outline" data-js="pool-new-open" title="{{ _('Create a new server pool on the device') }}"><i class="bi bi-plus-lg me-1"></i>{{ _('New pool') }}</button>
       </div></div>
   </div>
   <div class="modal-footer">
-    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-    <button type="button" class="btn btn-fw-primary" data-js="cr-new-submit"><i class="bi bi-check2-circle me-1"></i>Create on device</button>
+    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+    <button type="button" class="btn btn-fw-primary" data-js="cr-new-submit"><i class="bi bi-check2-circle me-1"></i>{{ _('Create on device') }}</button>
   </div>
 </div></div></div>
 
 <!-- New server-pool modal (opened from the New Content Routing Policy modal) -->
 <div class="modal fade" id="poolNewModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
-  <div class="modal-header"><h5 class="modal-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>New Server Pool</h5>
+  <div class="modal-header"><h5 class="modal-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('New Server Pool') }}</h5>
     <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body">
-    <p class="text-muted" style="font-size:12px;">Create the pool now; its real-server members (back-ends) are added in the editor right after. The new pool is selected back into the routing policy.</p>
-    <div class="fw-fld mb-2"><label class="fw-fld-label">Name <span class="fw-key">name</span></label>
-      <input type="text" class="form-control form-control-sm" id="poolNewName" placeholder="server pool name"></div>
-    <div class="fw-fld mb-2"><label class="fw-fld-label">Type <span class="fw-key">type</span></label>
+    <p class="text-muted" style="font-size:12px;">{{ _('Create the pool now; its real-server members (back-ends) are added in the editor right after. The new pool is selected back into the routing policy.') }}</p>
+    <div class="fw-fld mb-2"><label class="fw-fld-label">{{ _('Name') }} <span class="fw-key">{{ _('name') }}</span></label>
+      <input type="text" class="form-control form-control-sm" id="poolNewName" placeholder="{{ _('server pool name') }}"></div>
+    <div class="fw-fld mb-2"><label class="fw-fld-label">{{ _('Type') }} <span class="fw-key">{{ _('type') }}</span></label>
       <select class="form-select form-select-sm" id="poolNewType">
-        <option value="reverse-proxy" selected>reverse-proxy</option>
-        <option value="true-transparent-proxy">true-transparent-proxy</option>
-        <option value="transparent-inspection">transparent-inspection</option>
-        <option value="offline-protection">offline-protection</option>
-        <option value="wccp">wccp</option>
+        <option value="reverse-proxy" selected>{{ _('reverse-proxy') }}</option>
+        <option value="true-transparent-proxy">{{ _('true-transparent-proxy') }}</option>
+        <option value="transparent-inspection">{{ _('transparent-inspection') }}</option>
+        <option value="offline-protection">{{ _('offline-protection') }}</option>
+        <option value="wccp">{{ _('wccp') }}</option>
       </select></div>
   </div>
   <div class="modal-footer">
-    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-    <button type="button" class="btn btn-fw-primary" data-js="pool-new-submit"><i class="bi bi-check2-circle me-1"></i>Create on device</button>
+    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+    <button type="button" class="btn btn-fw-primary" data-js="pool-new-submit"><i class="bi bi-check2-circle me-1"></i>{{ _('Create on device') }}</button>
   </div>
 </div></div></div>
 
 <!-- Confirm / diff modal -->
 <div class="modal fade" id="diffModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
-  <div class="modal-header"><h5 class="modal-title"><i class="bi bi-exclamation-octagon me-2 text-warning"></i>Confirm change to the live device</h5>
+  <div class="modal-header"><h5 class="modal-title"><i class="bi bi-exclamation-octagon me-2 text-warning"></i>{{ _('Confirm change to the live device') }}</h5>
     <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body" id="diffBody"></div>
   <div class="modal-footer">
-    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-    <button type="button" class="btn btn-fw-primary" data-js="apply-pending"><i class="bi bi-lightning-charge me-1"></i>Apply to device</button>
+    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+    <button type="button" class="btn btn-fw-primary" data-js="apply-pending"><i class="bi bi-lightning-charge me-1"></i>{{ _('Apply to device') }}</button>
   </div>
 </div></div></div>
 
@@ -333,12 +333,12 @@
 <!-- Create-new object modal (kept ONLY for the WPP '+', which offers
      clone-from-an-existing-profile; every other ＋ opens the slide-over) -->
 <div class="modal fade" id="createModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
-  <div class="modal-header"><h5 class="modal-title"><i class="bi bi-plus-square me-2 text-accent"></i><span id="createTitle">Create object</span></h5>
+  <div class="modal-header"><h5 class="modal-title"><i class="bi bi-plus-square me-2 text-accent"></i><span id="createTitle">{{ _('Create object') }}</span></h5>
     <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body" id="createBody"></div>
   <div class="modal-footer">
-    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-    <button type="button" class="btn btn-fw-primary" data-js="submit-create"><i class="bi bi-check2-circle me-1"></i>Create on device</button>
+    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+    <button type="button" class="btn btn-fw-primary" data-js="submit-create"><i class="bi bi-check2-circle me-1"></i>{{ _('Create on device') }}</button>
   </div>
 </div></div></div>
 {% endblock %}

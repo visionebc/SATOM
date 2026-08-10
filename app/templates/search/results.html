@@ -2,10 +2,10 @@
 {% block title %}Search Results — "{{ term }}"{% endblock %}
 
 {% block breadcrumb %}
-<nav aria-label="breadcrumb" class="mb-3">
+<nav aria-label="{{ _('breadcrumb') }}" class="mb-3">
   <ol class="breadcrumb">
-    <li class="breadcrumb-item"><a href="{{ url_for('search.index') }}">Search</a></li>
-    <li class="breadcrumb-item active">Results</li>
+    <li class="breadcrumb-item"><a href="{{ url_for('search.index') }}">{{ _('Search') }}</a></li>
+    <li class="breadcrumb-item active">{{ _('Results') }}</li>
   </ol>
 </nav>
 {% endblock %}
@@ -15,13 +15,13 @@
 
 <form method="get" action="{{ url_for('search.results') }}" class="mb-4">
   <div class="d-flex gap-2">
-    <input name="q" value="{{ term }}" class="form-control" placeholder="Search across appliances...">
-    <button class="btn btn-primary">Search</button>
+    <input name="q" value="{{ term }}" class="form-control" placeholder="{{ _('Search across appliances...') }}">
+    <button class="btn btn-primary">{{ _('Search') }}</button>
   </div>
 </form>
 
 {% if not search_results %}
-<div class="text-muted">No results found.</div>
+<div class="text-muted">{{ _('No results found.') }}</div>
 {% else %}
   {% for entry in search_results %}
   <div class="card mb-3">
@@ -35,7 +35,7 @@
         <div class="alert alert-warning m-3">{{ entry.hits[0].error }}</div>
       {% else %}
       <table class="table table-sm table-hover mb-0">
-        <thead><tr><th>Endpoint</th><th>Name</th></tr></thead>
+        <thead><tr><th>{{ _('Endpoint') }}</th><th>{{ _('Name') }}</th></tr></thead>
         <tbody>
           {% for hit in entry.hits %}
           <tr>

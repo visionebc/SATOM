@@ -5,18 +5,16 @@
   <div class="d-flex align-items-center justify-content-between mb-3">
     <div>
       <a href="{{ url_for('templates.index') }}" class="btn btn-sm btn-outline-secondary mb-2">
-        <i class="bi bi-arrow-left"></i> Back to Templates</a>
-      <h4 class="mb-1"><i class="bi bi-sliders"></i> FortiWeb Sections</h4>
-      <div class="text-muted small">Approved templates, grouped by section. These are
-        assembled into baselines in <a href="{{ url_for('provisioning.index') }}">System Provisioning</a>.</div>
+        <i class="bi bi-arrow-left"></i> {{ _('Back to Templates') }}</a>
+      <h4 class="mb-1"><i class="bi bi-sliders"></i> {{ _('FortiWeb Sections') }}</h4>
+      <div class="text-muted small">{{ _('Approved templates, grouped by section. These are assembled into baselines in') }} <a href="{{ url_for('provisioning.index') }}">{{ _('System Provisioning') }}</a>.</div>
     </div>
     <span class="badge bg-secondary">{{ total }} approved</span>
   </div>
 
   {% if not groups %}
-    <div class="alert alert-info">No approved templates yet. Save a template (e.g. from
-      Web Protection), then approve it in the
-      <a href="{{ url_for('templates.index') }}">Template Library</a>.</div>
+    <div class="alert alert-info">{{ _('No approved templates yet. Save a template (e.g. from Web Protection), then approve it in the') }}
+      <a href="{{ url_for('templates.index') }}">{{ _('Template Library') }}</a>.</div>
   {% endif %}
 
   {% for g in groups %}
@@ -30,19 +28,19 @@
       <div class="list-group-item d-flex align-items-center justify-content-between">
         <div>
           <span class="fw-semibold">{{ t.name }}</span>
-          <span class="badge bg-success-subtle text-success ms-2">approved</span>
+          <span class="badge bg-success-subtle text-success ms-2">{{ _('approved') }}</span>
           <span class="text-muted small ms-2">v{{ t.version }} · {{ kind_labels.get(t.kind, t.kind) }}</span>
           {% if t.author %}<span class="text-muted small ms-2">by {{ t.author }}</span>{% endif %}
         </div>
         <div class="d-flex gap-2">
           <a class="btn btn-sm btn-outline-secondary"
              href="{{ url_for('section_catalog.detail', template_id=t.id) }}" target="_blank">
-            <i class="bi bi-eye"></i> View</a>
+            <i class="bi bi-eye"></i> {{ _('View') }}</a>
           <form method="post"
                 action="{{ url_for('templates.unapprove', template_id=t.id) }}?next={{ request.path }}"
                 data-js="revoke-form" data-name="{{ t.name }}">
             <button type="submit" class="btn btn-sm btn-outline-warning">
-              <i class="bi bi-x-circle"></i> Revoke</button>
+              <i class="bi bi-x-circle"></i> {{ _('Revoke') }}</button>
           </form>
         </div>
       </div>

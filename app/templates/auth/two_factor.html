@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="{{ csrf_token() }}">
-  <title>Two-Factor Authentication — SATOM</title>
+  <title>{{ _('Two-Factor Authentication — SATOM') }}</title>
   {# Vendored, not a CDN: this product ships offline installers for isolated
      management networks, where an auth page that needs public internet to lay
      itself out is an auth page nobody can read. #}
@@ -33,8 +33,8 @@
   <div class="login-card">
     <div class="login-header">
       <div class="login-logo"><i class="bi bi-shield-lock"></i></div>
-      <p class="login-brand-text">Two-Factor Authentication</p>
-      <p class="login-subtitle">Enter the 6-digit code from your authenticator app</p>
+      <p class="login-brand-text">{{ _('Two-Factor Authentication') }}</p>
+      <p class="login-subtitle">{{ _('Enter the 6-digit code from your authenticator app') }}</p>
     </div>
     <div class="login-body">
       {% with messages = get_flashed_messages(with_categories=True) %}
@@ -45,16 +45,16 @@
       <form method="POST" action="{{ url_for('auth.two_factor') }}" novalidate>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="mb-4">
-          <label for="code" class="form-label">Authentication code</label>
+          <label for="code" class="form-label">{{ _('Authentication code') }}</label>
           <input type="text" class="form-control otp-input" id="code" name="code"
                  inputmode="numeric" autocomplete="one-time-code" maxlength="9"
                  placeholder="000000" autofocus required>
-          <div class="form-text">Or enter one of your backup codes.</div>
+          <div class="form-text">{{ _('Or enter one of your backup codes.') }}</div>
         </div>
-        <button type="submit" class="btn btn-login"><i class="bi bi-check-lg me-1"></i>Verify</button>
+        <button type="submit" class="btn btn-login"><i class="bi bi-check-lg me-1"></i>{{ _('Verify') }}</button>
       </form>
       <div class="text-center mt-3">
-        <a href="{{ url_for('auth.logout') }}" style="font-size:13px;">Cancel and sign out</a>
+        <a href="{{ url_for('auth.logout') }}" style="font-size:13px;">{{ _('Cancel and sign out') }}</a>
       </div>
     </div>
   </div>

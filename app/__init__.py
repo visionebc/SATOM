@@ -9,7 +9,9 @@ import click
 from flask import Flask, g, request
 
 from .config import get_config
-from .extensions import csrf, db, limiter, login_manager, migrate
+from .services import langs as _langs
+from .services import ui_locale as _ui_locale
+from .extensions import babel, csrf, db, limiter, login_manager, migrate
 
 
 from .extensions import real_client_ip as _client_ip  # single source of truth
@@ -82,6 +84,14 @@ def create_app(config_override: object | None = None) -> Flask:
     login_manager.init_app(app)
     csrf.init_app(app)
     limiter.init_app(app)
+
+    # Chrome language. The selector lives in a service so it can be
+    # tested without a live Babel, and it degrades to the default
+    # rather than raising — it runs on every request, error pages
+    # included.
+    app.config.setdefault("BABEL_DEFAULT_LOCALE", _langs.DEFAULT)
+    app.config.setdefault("BABEL_DEFAULT_TIMEZONE", "UTC")
+    babel.init_app(app, locale_selector=_ui_locale.resolve)
 
     login_manager.login_view = "auth.login"
     login_manager.login_message = "Please log in to access this page."

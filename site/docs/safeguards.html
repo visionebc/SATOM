@@ -6872,6 +6872,62 @@ tests/test_i18n_foundation.py tests/test_cr_document.py -q</code> (rc, not the t
 the output). Mutation harnesses: <code>/root/mutate_crdoc_i18n.py</code> (25) and
 <code>/root/mutate_crdoc_i18n_2.py</code> (4 line-anchored). Both restore the file with
 <code>shutil.move</code>, which leaves it <strong>root-owned</strong> — <code>chown satom:satom</code> afterwards.</p>
+<h2 id="61-a-translated-string-is-data-the-product-prints-without-ever-reading-it">§61. A translated string is data the product prints without ever reading it</h2>
+<p>The chrome catalogues (<code>app/translations/&lt;lang&gt;/LC_MESSAGES/</code>) are filled by a
+machine translator and printed verbatim on every page. Nothing in that path ever
+looks at what it is printing, so every defect below shipped green and was found
+by <strong>rendering</strong>, never by a unit test.</p>
+<p><strong>What is guarded</strong> (<code>tests/test_ui_locale.py</code>, 31 cases):</p>
+<ol>
+<li><strong>Selection order.</strong> Saved profile preference → <code>Accept-Language</code> narrowed to
+   what we ship → English. A browser guess that can override an explicit choice
+   turns the profile into a suggestion box. <code>resolve()</code> must never raise: a
+   locale selector runs on <em>every</em> request including the error pages, so an
+   exception there replaces a recoverable failure with a blank page.</li>
+<li><strong>No invented <code>%</code>.</strong> Jinja's <code>gettext</code> applies <code>rv % variables</code> to the
+   <em>translated</em> string unconditionally. A stray <code>%</code> raises
+   <code>ValueError: incomplete format</code> at render time, only on the pages carrying
+   that string. Such msgids are not extracted, and a translation that adds a <code>%</code>
+   the source lacks is rejected.</li>
+<li><strong>No translator sentinel.</strong> Judged <strong>against the source, never in the
+   absolute</strong> — a msgid that legitimately contains <code>[[</code> may keep it; only residue
+   the translation <em>invented</em> is a defect. This includes the fence <strong>after the
+   model has translated it</strong>: <code>_MARKER_WORD</code> knows only the English <code>UNTRUSTED</code>,
+   so <code>„UNvertrauenswürdige Quelle“</code> walked past it into the German catalogue and
+   printed in the navigation. The rule is now trust vocabulary in the reply with
+   none in the source — which keeps <code>TLS trust store</code> →
+   <code>TLS-Vertrauensspeicher</code>, because that source <em>does</em> raise it.</li>
+<li><strong>The compiled copy is not older than its source.</strong> The app reads the <code>.mo</code>;
+   humans and repair runs edit the <code>.po</code>. A fixed <code>.po</code> with a stale <code>.mo</code> is a
+   fix that was never delivered, and every text-level check passes while the
+   running product still shows the broken string. This one really happened: the
+   repair finished at 18:05 against catalogues compiled at 17:51.</li>
+<li><strong><code>flask-babel</code> declared, not merely installed.</strong> It lived in the venv and not
+   in <code>requirements.txt</code>; the installer rebuilds the venv, so the next
+   reinstallation removes a dependency the app cannot start without.</li>
+</ol>
+<p><strong>Two authors, deliberately.</strong> The catalogue check in the test writes its own
+residue rule, and a separate pair of cases pins the <em>production</em> rule
+(<code>translator._sentinel_residue</code>) to the three German strings that actually
+shipped. Sharing one definition would let a weakened guard go blind in both
+places at once.</p>
+<p><strong>Recipe.</strong> <code>venv/bin/python -m pytest tests/test_ui_locale.py
+tests/test_lang_preference.py tests/test_i18n_foundation.py
+tests/test_cr_doc_i18n.py tests/test_cr_types.py -q</code> — judged by <strong>rc</strong>, not by
+grepping the tail (pytest prints <code>FAILED</code> in upper case; a search for <code>failed</code>
+reports SURVIVES on mutations that bit). Mutation harness:
+<code>data/i18n_sweep/mut_final.py</code> (6). Catalogue audits:
+<code>data/i18n_sweep/count_residue.py</code> (production rule) and
+<code>data/i18n_sweep/audit.py</code> (coverage, <code>%</code> drift, placeholder drift). Render
+across the five languages: <code>data/i18n_sweep/render_check.py</code> — it saves and
+restores the user's preference, because a harness that leaves the row where the
+last case put it silently changes a real operator's language.</p>
+<p><strong>Refilling or repairing a catalogue</strong> goes through
+<code>app.services.translator.translate</code>, never straight to Ollama: the placeholder
+masking, the residue rejection and the ledger row live there, and a second path
+to the same model is a second place for them to be missing. After any <code>.po</code>
+edit: <code>venv/bin/pybabel compile -d app/translations</code> <strong>as <code>satom</code></strong>, then
+restart — root-owned catalogue files break the next run.</p>
     </div>
   </div>
 </section>

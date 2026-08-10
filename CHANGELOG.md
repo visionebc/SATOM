@@ -8,6 +8,49 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **The interface itself is translated — Spanish, German, French and Italian,
+  chosen from your profile.** Until now only the change *document* could change
+  language; the chrome was English written by hand inside the templates, so a
+  saved preference of *Español* still produced an English menu. The 163
+  templates are now marked for translation (3 468 distinct strings) and the
+  language is resolved per request: the saved profile preference first, then the
+  browser's `Accept-Language` narrowed to what we actually ship, then English.
+
+  **Translation happens once, offline, into catalogue files — never on a
+  request.** The pages read a compiled binary catalogue in memory (~7 µs per
+  lookup); no page render talks to a model. Three reasons this is not
+  negotiable: a model call is ~50 000× slower than a lookup and a page carries
+  dozens of strings; a model returns different wording each time, so the same
+  button would be renamed between reloads; and an installation in a customer's
+  own datacentre cannot depend on our GPU to paint a menu. The catalogues are
+  plain text — a wrong translation is corrected in the `.po` and recompiled,
+  with no code change.
+
+  Four defects behind this, each of which failed *silently*:
+
+  * **A stray `%` in a translated string crashed the page that carried it.**
+    Jinja's `gettext` applies `rv % variables` to the translated text
+    unconditionally, so `Warn at %` raised `ValueError: incomplete format` at
+    render time — on the pages containing that string and nowhere else. Such
+    strings are no longer extracted, and a guard rejects any translation that
+    invents a `%` the source did not have.
+  * **The machine translator echoed its own untrusted-data fence into the
+    catalogue**, which printed `[[END_UNTRUSTED]]` in the navigation under *AI
+    Advisor*. The existing guard knew only the English spelling of that marker,
+    so a translated fence — `UNvertrauenswürdige Quelle` — walked straight past
+    it. Residue is now judged against the source in every shipped language: a
+    reply that raises trust vocabulary the source never does cannot be a
+    translation of it. `TLS trust store` still becomes `TLS-Vertrauensspeicher`,
+    because that source *does* raise it.
+  * **A repaired catalogue was still serving the broken text.** The `.po` files
+    were fixed while the compiled `.mo` the application reads was older — a fix
+    that was never delivered, with every text-level check green. A guard now
+    fails when a `.mo` is older than its `.po`.
+  * **`flask-babel` was installed in the virtualenv but absent from
+    `requirements.txt`.** The installer rebuilds the venv, so the next
+    reinstallation would have removed a dependency the application cannot start
+    without.
+
 - **Change documents are produced in five languages, and a language is offered
   only when it can actually be produced.** Spanish, French and Italian join
   English and German. The prose is not a fourth and fifth copy of the action

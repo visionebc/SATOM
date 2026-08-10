@@ -3,19 +3,19 @@
 {% block content %}
 <div class="fw-page-header d-flex align-items-start">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-terminal me-2 text-accent"></i>Python Console</h1>
+    <h1 class="fw-page-title"><i class="bi bi-terminal me-2 text-accent"></i>{{ _('Python Console') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      Run Python over the curated fleet datasets — inside a locked-down sandbox.</p>
+      {{ _('Run Python over the curated fleet datasets — inside a locked-down sandbox.') }}</p>
   </div>
   <a class="btn btn-outline-secondary btn-sm ms-auto" href="{{ url_for('database.index') }}">
-    <i class="bi bi-arrow-left me-1"></i>Back to Database</a>
+    <i class="bi bi-arrow-left me-1"></i>{{ _('Back to Database') }}</a>
 </div>
 
 <div class="alert alert-warning d-flex" style="gap:10px;">
   <i class="bi bi-shield-lock" style="font-size:20px;flex:0 0 auto;"></i>
   <div style="font-size:13px;">
-    <strong>Sandboxed (bubblewrap).</strong> Your script runs isolated: it
-    <strong>cannot</strong> read secrets (<code>.env</code> / Fernet keys), open the network, or
+    <strong>{{ _('Sandboxed (bubblewrap).') }}</strong> {{ _('Your script runs isolated: it') }}
+    <strong>{{ _('cannot') }}</strong> read secrets (<code>.env</code> / Fernet keys), open the network, or
     write app files, and it is CPU / memory / time capped (~8&nbsp;s). It receives only the
     read-only <code>data</code> bundle you select below — the same curated, masked, SELECT-only
     datasets the plugins use. It cannot reach the database directly. Every run is audited.
@@ -25,7 +25,7 @@
 <div class="row g-3">
   <div class="col-lg-4">
     <div class="card h-100"><div class="card-body">
-      <h6 class="mb-2"><i class="bi bi-collection me-1"></i>Data bundle</h6>
+      <h6 class="mb-2"><i class="bi bi-collection me-1"></i>{{ _('Data bundle') }}</h6>
       <p class="text-muted small mb-2">Tick datasets to expose as
         <code>data['&lt;key&gt;']</code> — each is <code>{columns, rows}</code>,
         <code>rows</code> being a list of dicts.</p>
@@ -46,11 +46,11 @@
   <div class="col-lg-8">
     <div class="card"><div class="card-body">
       <div class="d-flex align-items-center mb-2 flex-wrap" style="gap:8px;">
-        <h6 class="mb-0"><i class="bi bi-code-slash me-1"></i>Script</h6>
+        <h6 class="mb-0"><i class="bi bi-code-slash me-1"></i>{{ _('Script') }}</h6>
         <button type="button" id="btn-examples" class="btn btn-outline-primary btn-sm ms-auto">
-          <i class="bi bi-collection me-1"></i>Browse examples</button>
+          <i class="bi bi-collection me-1"></i>{{ _('Browse examples') }}</button>
         <button id="run-btn" class="btn btn-primary btn-sm">
-          <i class="bi bi-play-fill me-1"></i>Run</button>
+          <i class="bi bi-play-fill me-1"></i>{{ _('Run') }}</button>
       </div>
       <textarea id="src" class="form-control" spellcheck="false"
         style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;min-height:300px;"
@@ -58,11 +58,11 @@
 
       <div id="pyc-status" class="mt-2" style="font-size:12px;min-height:20px;"></div>
       <div class="mt-1">
-        <label class="text-muted small mb-1">Output (stdout)</label>
+        <label class="text-muted small mb-1">{{ _('Output (stdout)') }}</label>
         <pre id="pyc-stdout" class="p-2" style="background:rgba(0,0,0,.25);border-radius:8px;min-height:60px;max-height:340px;overflow:auto;font-size:12px;white-space:pre-wrap;margin:0;"></pre>
       </div>
       <div class="mt-2" id="pyc-stderr-wrap" style="display:none;">
-        <label class="text-danger small mb-1">Errors (stderr)</label>
+        <label class="text-danger small mb-1">{{ _('Errors (stderr)') }}</label>
         <pre id="pyc-stderr" class="p-2" style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:8px;max-height:240px;overflow:auto;font-size:12px;white-space:pre-wrap;color:#fca5a5;margin:0;"></pre>
       </div>
     </div></div>

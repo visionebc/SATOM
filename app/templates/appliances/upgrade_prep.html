@@ -5,16 +5,16 @@
   <h4><i class="bi bi-clipboard-check me-2"></i>Upgrade Preparation — {{ appliance.name }}</h4>
   <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; Back</a>
 </div>
-<p class="text-muted">A read-only pre-flight before a firmware upgrade: take a config backup, capture the SSH health battery, check maintenance permission, and HTTP-validate every published service. Nothing is changed.</p>
+<p class="text-muted">{{ _('A read-only pre-flight before a firmware upgrade: take a config backup, capture the SSH health battery, check maintenance permission, and HTTP-validate every published service. Nothing is changed.') }}</p>
 
 <div class="fw-card">
   <div class="fw-card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
     <div class="d-flex gap-3 flex-wrap">
-      <label class="form-check"><input class="form-check-input" type="checkbox" id="opt-backup" checked> <span class="form-check-label">Config backup</span></label>
-      <label class="form-check"><input class="form-check-input" type="checkbox" id="opt-health" checked> <span class="form-check-label">Health battery (SSH)</span></label>
-      <label class="form-check"><input class="form-check-input" type="checkbox" id="opt-services" checked> <span class="form-check-label">Service validation</span></label>
+      <label class="form-check"><input class="form-check-input" type="checkbox" id="opt-backup" checked> <span class="form-check-label">{{ _('Config backup') }}</span></label>
+      <label class="form-check"><input class="form-check-input" type="checkbox" id="opt-health" checked> <span class="form-check-label">{{ _('Health battery (SSH)') }}</span></label>
+      <label class="form-check"><input class="form-check-input" type="checkbox" id="opt-services" checked> <span class="form-check-label">{{ _('Service validation') }}</span></label>
     </div>
-    <button id="prep-run" class="btn fw-btn-primary"><i class="bi bi-play-fill me-1"></i>Run preparation</button>
+    <button id="prep-run" class="btn fw-btn-primary"><i class="bi bi-play-fill me-1"></i>{{ _('Run preparation') }}</button>
   </div>
 </div>
 
@@ -24,39 +24,39 @@
   <div class="row g-3 mb-3">
     <div class="col-6 col-lg-3">
       <div class="fw-fact">
-        <div class="fw-fact-label">Firmware</div>
+        <div class="fw-fact-label">{{ _('Firmware') }}</div>
         <div id="r-fw" class="fw-fact-value is-mono">—</div>
       </div>
     </div>
     <div class="col-6 col-lg-3">
       <div class="fw-fact">
-        <div class="fw-fact-label">Maintenance permission</div>
+        <div class="fw-fact-label">{{ _('Maintenance permission') }}</div>
         <div id="r-perm" class="fw-fact-value">—</div>
       </div>
     </div>
     <div class="col-6 col-lg-3">
       <div class="fw-fact">
-        <div class="fw-fact-label">Backup</div>
+        <div class="fw-fact-label">{{ _('Backup') }}</div>
         <div id="r-backup" class="fw-fact-value is-mono">—</div>
       </div>
     </div>
     <div class="col-6 col-lg-3">
       <div class="fw-fact">
-        <div class="fw-fact-label">Services validated</div>
+        <div class="fw-fact-label">{{ _('Services validated') }}</div>
         <div id="r-svc-count" class="fw-fact-value">—</div>
       </div>
     </div>
   </div>
 
   <div class="fw-card">
-    <div class="fw-card-header"><h6 class="fw-card-title">Service validation</h6></div>
+    <div class="fw-card-header"><h6 class="fw-card-title">{{ _('Service validation') }}</h6></div>
     <div id="r-services"></div>
   </div>
 
   <div class="fw-card">
     <div class="fw-card-header">
-      <h6 class="fw-card-title">Health battery (SSH)</h6>
-      <span class="fw-badge fw-badge-secondary">device CLI output</span>
+      <h6 class="fw-card-title">{{ _('Health battery (SSH)') }}</h6>
+      <span class="fw-badge fw-badge-secondary">{{ _('device CLI output') }}</span>
     </div>
     <div class="fw-card-body"><pre id="r-health" class="fw-pre">—</pre></div>
   </div>
@@ -67,7 +67,7 @@
      see what a change request is actually citing. #}
   <div class="fw-card">
     <div class="fw-card-header">
-      <h6 class="fw-card-title">Affected services captured with this run</h6>
+      <h6 class="fw-card-title">{{ _('Affected services captured with this run') }}</h6>
       <span id="r-inv-count" class="fw-badge fw-badge-secondary">—</span>
     </div>
     <div id="r-inventory"></div>
@@ -76,14 +76,14 @@
 
 <div class="fw-card">
   <div class="fw-card-header">
-    <h6 class="fw-card-title">Recorded pre-flight runs</h6>
-    <span class="fw-badge fw-badge-secondary">10 most recent</span>
-    <span id="prep-runs-stale" class="fw-badge fw-badge-warning d-none">reload to list the run you just made</span>
+    <h6 class="fw-card-title">{{ _('Recorded pre-flight runs') }}</h6>
+    <span class="fw-badge fw-badge-secondary">{{ _('10 most recent') }}</span>
+    <span id="prep-runs-stale" class="fw-badge fw-badge-warning d-none">{{ _('reload to list the run you just made') }}</span>
   </div>
   {% if runs %}
   <div class="fw-table-wrapper" style="border:0; box-shadow:none; border-radius:0;">
     <table class="fw-table">
-      <thead><tr><th>When</th><th>By</th><th>Firmware</th><th>Verdict</th><th class="text-end">Services</th><th>Change</th><th></th></tr></thead>
+      <thead><tr><th>{{ _('When') }}</th><th>{{ _('By') }}</th><th>{{ _('Firmware') }}</th><th>{{ _('Verdict') }}</th><th class="text-end">{{ _('Services') }}</th><th>{{ _('Change') }}</th><th></th></tr></thead>
       <tbody>
         {% for r in runs %}
         <tr>
@@ -97,17 +97,17 @@
           <td class="text-end">{{ r.inventory_list|length }}</td>
           <td>
             {% if r.cr_id %}<a href="{{ url_for('change_requests.detail', id=r.cr_id) }}">CR #{{ r.cr_id }}</a>
-            {% else %}<span class="text-muted">none</span>{% endif %}
+            {% else %}<span class="text-muted">{{ _('none') }}</span>{% endif %}
           </td>
           <td class="text-end text-nowrap">
             <button type="button" class="btn btn-sm fw-btn-secondary prep-view"
                     data-prep="{{ r.id }}">
-              <i class="bi bi-eye me-1"></i>View result
+              <i class="bi bi-eye me-1"></i>{{ _('View result') }}
             </button>
             {% if not r.cr_id %}
             <a class="btn btn-sm fw-btn-secondary text-nowrap"
                href="{{ url_for('change_requests.new', prep_id=r.id, action='upgrade') }}">
-              Raise change request
+              {{ _('Raise change request') }}
             </a>
             {% endif %}
           </td>

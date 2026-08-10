@@ -5,7 +5,7 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="{{ url_for('adc.index') }}">FortiADC</a>
+  <a href="{{ url_for('adc.index') }}">{{ _('FortiADC') }}</a>
   <span class="separator">/</span>
   <a href="{{ back }}">{{ logical }}</a>
   <span class="separator">/</span>
@@ -22,11 +22,11 @@
     <p class="text-muted mb-0" style="font-size:13px;">
       <code>{{ logical }}</code> on <strong>{{ appliance.name }}</strong>
       <span class="fw-badge fw-badge-secondary ms-1">LIVE</span>
-      {% if create %}<span class="fw-badge fw-badge-warning ms-1">create</span>{% endif %}
+      {% if create %}<span class="fw-badge fw-badge-warning ms-1">{{ _('create') }}</span>{% endif %}
     </p>
   </div>
   <a class="btn btn-outline-secondary btn-sm" href="{{ back }}">
-    <i class="bi bi-arrow-left me-1"></i>Back</a>
+    <i class="bi bi-arrow-left me-1"></i>{{ _('Back') }}</a>
 </div>
 
 {% if error %}
@@ -38,18 +38,17 @@
 {# ── object scalar fields (FortiWeb-style form, same fld widgets) ────────── #}
 <div class="fw-card mb-3" style="padding:18px 20px;">
   <div class="d-flex justify-content-between align-items-center mb-2">
-    <strong>Settings</strong>
+    <strong>{{ _('Settings') }}</strong>
     <span class="text-muted" style="font-size:12px;">
-      changed fields are merged onto the device object — nothing un-shown is dropped</span>
+      {{ _('changed fields are merged onto the device object — nothing un-shown is dropped') }}</span>
   </div>
   <div class="adc-scope" data-logical="{{ logical }}" data-mkey="{{ mkey or '' }}">
     {% if create %}
     <div class="mb-3" style="max-width:420px;">
-      <label class="form-label small fw-bold">Name (mkey) <span class="text-danger">*</span></label>
+      <label class="form-label small fw-bold">{{ _('Name (mkey)') }} <span class="text-danger">*</span></label>
       <input type="text" class="form-control form-control-sm" id="adc-new-name"
-             placeholder="object name" autocomplete="off">
-      <div class="form-text">The object's unique identity. Child tables (members, rules…)
-        are added after it's created.</div>
+             placeholder="{{ _('object name') }}" autocomplete="off">
+      <div class="form-text">{{ _('The object\'s unique identity. Child tables (members, rules…) are added after it\'s created.') }}</div>
     </div>
     {% if create_hint %}<div class="alert alert-info py-2 px-3 mb-3" style="font-size:12.5px;max-width:640px;"><i class="bi bi-info-circle me-1"></i>{{ create_hint }}</div>{% endif %}
     {% endif %}
@@ -74,7 +73,7 @@
         </details>
       {% endif %}
     {% else %}
-      {% if not create %}<p class="text-muted mb-0">This object exposes no editable scalar fields.</p>{% endif %}
+      {% if not create %}<p class="text-muted mb-0">{{ _('This object exposes no editable scalar fields.') }}</p>{% endif %}
     {% endfor %}
     {% if current_user.can('config_write') %}
     <div class="mt-2">
@@ -118,14 +117,14 @@
     {% endfor %}
     {% if current_user.can('config_write') %}
     <div class="mt-2">
-      <button type="button" class="btn btn-sm btn-fw-primary" data-js="adc-save-row">Save row</button>
-      <button type="button" class="btn btn-sm btn-fw-danger" data-js="adc-delete-row">Delete</button>
+      <button type="button" class="btn btn-sm btn-fw-primary" data-js="adc-save-row">{{ _('Save row') }}</button>
+      <button type="button" class="btn btn-sm btn-fw-danger" data-js="adc-delete-row">{{ _('Delete') }}</button>
     </div>
     {% endif %}
     <div class="adc-result"></div>
   </details>
   {% else %}
-  <p class="text-muted mb-1">No rows yet.</p>
+  <p class="text-muted mb-1">{{ _('No rows yet.') }}</p>
   {% endfor %}
 
   {% if current_user.can('config_write') %}
@@ -137,11 +136,9 @@
         <div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, false) }}{% endfor %}</div>
       {% endfor %}
       <div class="mt-2"><button type="button" class="btn btn-sm btn-fw-primary"
-        data-js="adc-create-row">Create row</button></div>
+        data-js="adc-create-row">{{ _('Create row') }}</button></div>
     {% else %}
-      <p class="text-muted small mb-0 mt-2">No field template is known for this child
-      table yet — no sibling rows exist to derive it from. Use the Raw JSON editor
-      below, or create the first row on a device that already has one.</p>
+      <p class="text-muted small mb-0 mt-2">{{ _('No field template is known for this child table yet — no sibling rows exist to derive it from. Use the Raw JSON editor below, or create the first row on a device that already has one.') }}</p>
     {% endif %}
     <div class="adc-result"></div>
   </details>
@@ -152,15 +149,15 @@
 {# ── raw JSON escape hatch (inline arrays/objects live here) ─────────────── #}
 {% if not create %}
 <details class="fw-card mb-3" style="padding:18px 20px;">
-  <summary class="fw-group-head"><i class="bi bi-braces-asterisk me-1"></i>Raw JSON
-    <span class="text-muted small">— full object, incl. structured values the form can't edit</span></summary>
+  <summary class="fw-group-head"><i class="bi bi-braces-asterisk me-1"></i>{{ _('Raw JSON') }}
+    <span class="text-muted small">{{ _('— full object, incl. structured values the form can\'t edit') }}</span></summary>
   <textarea id="adc-json" class="form-control mt-2" rows="18" spellcheck="false"
             style="font-family:var(--bs-font-monospace);font-size:12.5px;"
             {% if not current_user.can('config_write') %}readonly{% endif %}>{{ data_json }}</textarea>
   {% if current_user.can('config_write') %}
   <div class="mt-2 d-flex gap-2">
     <button type="button" id="adc-raw-save" class="btn btn-outline-danger btn-sm">
-      <i class="bi bi-save me-1"></i>Save raw JSON to device</button>
+      <i class="bi bi-save me-1"></i>{{ _('Save raw JSON to device') }}</button>
     <span id="adc-raw-msg" class="text-muted align-self-center" style="font-size:12px;"></span>
   </div>
   {% endif %}

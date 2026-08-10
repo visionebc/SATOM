@@ -83,9 +83,19 @@ def _rows(lang: str) -> dict:
 
 
 def _polluted(text: str, source: str = "") -> bool:
-    """True when stored text still carries a model-echoed untrusted fence."""
-    from .translator import _fence_residue
-    return bool(_fence_residue(text or "", source or ""))
+    """True when stored text still carries anything the model echoed back.
+
+    Both residue guards, not just the fence one.  Asking only about angle
+    brackets let twelve rows through -- ``[[END_UNTRUSTED]]`` (the fence wearing
+    the shape of a mask sentinel), ``{{backup}}`` (a placeholder the model
+    invented) and ``<|end|>`` (the model's own control token) -- and each of
+    them reported the language COMPLETE while the signed document printed the
+    delimiter.  A coverage check that trusts a narrower rule than the writer
+    does is a coverage check that certifies its own blind spot.
+    """
+    from .translator import _fence_residue, _sentinel_residue
+    return bool(_fence_residue(text or "", source or "")
+                or _sentinel_residue(text or "", source or ""))
 
 
 def coverage(lang: str) -> dict:

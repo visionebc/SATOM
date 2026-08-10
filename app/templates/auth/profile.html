@@ -3,16 +3,16 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <span>Profile</span>
+  <span>{{ _('Profile') }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-person-circle me-2 text-accent"></i>My Profile</h1>
+    <h1 class="fw-page-title"><i class="bi bi-person-circle me-2 text-accent"></i>{{ _('My Profile') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">Personal account &amp; user settings</p>
   </div>
 </div>
@@ -26,7 +26,7 @@
       </div>
       <div>
         <div style="font-size:15px; font-weight:600;">{{ current_user.username }}</div>
-        <div class="text-muted" style="font-size:13px;">Role: <strong>{{ current_user.role }}</strong></div>
+        <div class="text-muted" style="font-size:13px;">{{ _('Role:') }} <strong>{{ current_user.role }}</strong></div>
       </div>
     </div>
   </div>
@@ -35,7 +35,7 @@
 <!-- LANGUAGE (per-user setting, saved in the DB) -->
 <div class="fw-card mb-3" id="language">
   <div class="fw-card-header">
-    <span class="fw-card-title"><i class="bi bi-translate me-2 text-accent"></i>Language</span>
+    <span class="fw-card-title"><i class="bi bi-translate me-2 text-accent"></i>{{ _('Language') }}</span>
   </div>
   <div class="fw-card-body">
     <p class="text-muted" style="font-size:13px;">
@@ -46,7 +46,7 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="row g-3 align-items-end">
         <div class="col-md-6">
-          <label class="fw-form-label" for="pref-lang">Preferred language</label>
+          <label class="fw-form-label" for="pref-lang">{{ _('Preferred language') }}</label>
           <select class="form-select" name="lang" id="pref-lang">
             <option value="" {{ 'selected' if not pref_lang }}>No preference &mdash; ask me each time</option>
             {% for code, name in lang_options %}
@@ -55,12 +55,12 @@
           </select>
         </div>
         <div class="col-md-6">
-          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save Language</button>
+          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save Language') }}</button>
         </div>
       </div>
     </form>
     <div class="form-text mt-2">
-      Change documents can be produced in
+      {{ _('Change documents can be produced in') }}
       <strong>{% for c in doc_langs %}{{ c|upper }}{{ ', ' if not loop.last }}{% endfor %}</strong> today.
       A preference outside that list is still kept &mdash; it is your language, and the rest of the
       product adopts it as text is translated &mdash; but the change-request form will keep asking
@@ -76,12 +76,11 @@
   <div class="col-lg-7">
     <div class="fw-card">
       <div class="fw-card-header">
-        <span class="fw-card-title"><i class="bi bi-palette me-2 text-accent"></i>Branding — Top-bar Banner</span>
+        <span class="fw-card-title"><i class="bi bi-palette me-2 text-accent"></i>{{ _('Branding — Top-bar Banner') }}</span>
       </div>
       <div class="fw-card-body">
         <p class="text-muted" style="font-size:13px;">
-          Your personal top-bar banner per product — saved to your account in the database, not shared with other users.
-          Each ADOM can use a different banner.
+          {{ _('Your personal top-bar banner per product — saved to your account in the database, not shared with other users. Each ADOM can use a different banner.') }}
         </p>
         <form method="POST" action="{{ url_for('settings.save_banners') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -103,7 +102,7 @@
             {% endfor %}
           </div>
           <div class="mt-3">
-            <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save Banners</button>
+            <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save Banners') }}</button>
           </div>
         </form>
       </div>
@@ -123,7 +122,7 @@
           <div>
             <h5 class="mb-0" style="font-weight:700;">{{ settings.app_name if settings else product.title }}</h5>
             <div class="text-muted" style="font-size:12px; font-weight:500; letter-spacing:.2px;">System Automation & Task Orchestration Manager</div>
-            <span class="fw-badge fw-badge-primary">v1.0</span>
+            <span class="fw-badge fw-badge-primary">{{ _('v1.0') }}</span>
           </div>
         </div>
         <p style="font-size:13.5px; color:#495057;">
@@ -131,17 +130,17 @@
           OWASP-hardened with full audit logging, RBAC, and encrypted credential storage.
         </p>
         <dl class="row" style="font-size:13px;">
-          <dt class="col-sm-4 text-muted">Repository</dt>
-          <dd class="col-sm-8"><a href="https://github.com/visionebc/SATOM" target="_blank" rel="noopener">visionebc/SATOM</a></dd>
-          <dt class="col-sm-4 text-muted">RBAC Roles</dt>
-          <dd class="col-sm-8">readonly, operator, admin</dd>
-          <dt class="col-sm-4 text-muted">API Target</dt>
-          <dd class="col-sm-8">FortiWeb 7.6 REST API</dd>
-          <dt class="col-sm-4 text-muted">UI Framework</dt>
-          <dd class="col-sm-8">Bootstrap 5.3 + Custom FortiWeb 7.6 Theme</dd>
+          <dt class="col-sm-4 text-muted">{{ _('Repository') }}</dt>
+          <dd class="col-sm-8"><a href="https://github.com/visionebc/SATOM" target="_blank" rel="noopener">{{ _('visionebc/SATOM') }}</a></dd>
+          <dt class="col-sm-4 text-muted">{{ _('RBAC Roles') }}</dt>
+          <dd class="col-sm-8">{{ _('readonly, operator, admin') }}</dd>
+          <dt class="col-sm-4 text-muted">{{ _('API Target') }}</dt>
+          <dd class="col-sm-8">{{ _('FortiWeb 7.6 REST API') }}</dd>
+          <dt class="col-sm-4 text-muted">{{ _('UI Framework') }}</dt>
+          <dd class="col-sm-8">{{ _('Bootstrap 5.3 + Custom FortiWeb 7.6 Theme') }}</dd>
         </dl>
         <p class="text-muted mb-0" style="font-size:12px;">
-          To change your password, open <a href="{{ url_for('settings.index') }}#tab-password">Settings → Change Password</a>.
+          {{ _('To change your password, open') }} <a href="{{ url_for('settings.index') }}#tab-password">{{ _('Settings → Change Password') }}</a>.
         </p>
       </div>
     </div>

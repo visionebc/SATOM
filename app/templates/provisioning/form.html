@@ -4,9 +4,9 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <a href="{{ url_for('provisioning.index') }}">System Provisioning</a>
+  <a href="{{ url_for('provisioning.index') }}">{{ _('System Provisioning') }}</a>
   <span class="separator">/</span>
   <span>{{ 'Edit profile' if template_id else 'New profile' }}</span>
 </div>
@@ -24,9 +24,9 @@
   <input type="hidden" name="rows" value="{{ idx }}">
   <div class="row g-2 align-items-end">
     <div class="col-md-6">
-      <label class="fw-form-label">Element</label>
+      <label class="fw-form-label">{{ _('Element') }}</label>
       <select class="form-select prov-key" name="key_{{ idx }}">
-        <option value="">— select a configuration object —</option>
+        <option value="">{{ _('— select a configuration object —') }}</option>
         {% for section, slist in grouped_specs.items() %}
         <optgroup label="{{ section }}">
           {% for s in slist %}
@@ -44,12 +44,12 @@
       </select>
     </div>
     <div class="col-md-3">
-      <label class="fw-form-label">mkey <span class="text-muted">(optional)</span></label>
+      <label class="fw-form-label">{{ _('mkey') }} <span class="text-muted">{{ _('(optional)') }}</span></label>
       <input type="text" class="form-control" name="mkey_{{ idx }}"
-             value="{{ row.mkey if row else '' }}" placeholder="key of object to update" autocomplete="off">
+             value="{{ row.mkey if row else '' }}" placeholder="{{ _('key of object to update') }}" autocomplete="off">
     </div>
     <div class="col-md-2">
-      <label class="fw-form-label d-block">Singleton</label>
+      <label class="fw-form-label d-block">{{ _('Singleton') }}</label>
       <div class="form-check mt-1">
         <input class="form-check-input prov-singleton" type="checkbox" name="singleton_{{ idx }}"
                {{ 'checked' if row and row.singleton else '' }}>
@@ -57,18 +57,18 @@
     </div>
     <div class="col-md-1 text-end">
       <div class="btn-group-vertical btn-group-sm" role="group">
-        <button type="button" class="btn btn-outline-secondary btn-sm-icon" title="Move up"
+        <button type="button" class="btn btn-outline-secondary btn-sm-icon" title="{{ _('Move up') }}"
                 data-js="row-up"><i class="bi bi-arrow-up"></i></button>
-        <button type="button" class="btn btn-outline-secondary btn-sm-icon" title="Move down"
+        <button type="button" class="btn btn-outline-secondary btn-sm-icon" title="{{ _('Move down') }}"
                 data-js="row-down"><i class="bi bi-arrow-down"></i></button>
-        <button type="button" class="btn btn-outline-danger btn-sm-icon" title="Remove element"
+        <button type="button" class="btn btn-outline-danger btn-sm-icon" title="{{ _('Remove element') }}"
                 data-js="row-remove"><i class="bi bi-trash"></i></button>
       </div>
     </div>
   </div>
   {# Values — the object's payload, typed as JSON (singleton = PUT whole object). #}
   <div class="mt-2">
-    <label class="fw-form-label">Values <span class="text-muted">(JSON — the fields to push)</span></label>
+    <label class="fw-form-label">{{ _('Values') }} <span class="text-muted">{{ _('(JSON — the fields to push)') }}</span></label>
     <textarea class="form-control prov-data" name="data_{{ idx }}" rows="5" spellcheck="false"
               placeholder='{ "hostname": "fw-test" }'
               style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;">{{ row.data if row else '{}' }}</textarea>
@@ -81,9 +81,9 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-sliders me-2 text-accent"></i>{{ 'Edit' if template_id else 'New' }} system profile</h1>
-    <p class="text-muted mb-0" style="font-size:13px;">An ordered list of provisioning elements — each maps a configuration object (any section) to a JSON payload. Add / reorder / remove elements, then save as a versioned profile and apply to one device or the fleet (dry-run → canary). Secret fields (passwords, shared secrets) are stripped on save and re-entered at apply time.</p>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('An ordered list of provisioning elements — each maps a configuration object (any section) to a JSON payload. Add / reorder / remove elements, then save as a versioned profile and apply to one device or the fleet (dry-run → canary). Secret fields (passwords, shared secrets) are stripped on save and re-entered at apply time.') }}</p>
   </div>
-  <a class="btn btn-fw-outline" href="{{ url_for('provisioning.index') }}"><i class="bi bi-arrow-left me-1"></i>Back</a>
+  <a class="btn btn-fw-outline" href="{{ url_for('provisioning.index') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Back') }}</a>
 </div>
 
 <form method="POST"
@@ -91,38 +91,38 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
   <div class="fw-card mb-3">
-    <div class="fw-card-header"><span class="fw-card-title">Profile</span></div>
+    <div class="fw-card-header"><span class="fw-card-title">{{ _('Profile') }}</span></div>
     <div class="fw-card-body">
       <div class="row g-3 mb-3">
         <div class="col-md-6">
-          <label class="fw-form-label">Name <span class="text-danger">*</span></label>
+          <label class="fw-form-label">{{ _('Name') }} <span class="text-danger">*</span></label>
           <input type="text" class="form-control" name="name" value="{{ profile_name }}"
-                 placeholder="e.g. fortiweb-baseline" required autocomplete="off">
+                 placeholder="{{ _('e.g. fortiweb-baseline') }}" required autocomplete="off">
         </div>
       </div>
       <div class="fw-alert fw-alert-info d-flex align-items-center gap-2 mb-3" style="font-size:13px;">
         <i class="bi bi-info-circle"></i>
-        <span>Set a scope to restrict this profile to a specific zone, line, or department. Leave blank to apply to any.</span>
+        <span>{{ _('Set a scope to restrict this profile to a specific zone, line, or department. Leave blank to apply to any.') }}</span>
       </div>
       <div class="row g-3">
         <div class="col-md-4">
-          <label class="fw-form-label">Zone</label>
+          <label class="fw-form-label">{{ _('Zone') }}</label>
           <select class="form-select" name="scope_zone">
-            <option value="">— Any zone —</option>
+            <option value="">{{ _('— Any zone —') }}</option>
             {% for z in zones %}<option value="{{ z }}" {{ 'selected' if scope.get('zone') == z else '' }}>{{ z }}</option>{% endfor %}
           </select>
         </div>
         <div class="col-md-4">
-          <label class="fw-form-label">Line</label>
+          <label class="fw-form-label">{{ _('Line') }}</label>
           <select class="form-select" name="scope_line">
-            <option value="">— Any line —</option>
+            <option value="">{{ _('— Any line —') }}</option>
             {% for l in lines %}<option value="{{ l }}" {{ 'selected' if scope.get('line') == l else '' }}>{{ l }}</option>{% endfor %}
           </select>
         </div>
         <div class="col-md-4">
-          <label class="fw-form-label">Department</label>
+          <label class="fw-form-label">{{ _('Department') }}</label>
           <select class="form-select" name="scope_department">
-            <option value="">— Any department —</option>
+            <option value="">{{ _('— Any department —') }}</option>
             {% for d in departments %}<option value="{{ d }}" {{ 'selected' if scope.get('department') == d else '' }}>{{ d }}</option>{% endfor %}
           </select>
         </div>
@@ -132,28 +132,28 @@
 
   <div class="fw-card mb-3">
     <div class="fw-card-header d-flex justify-content-between align-items-center">
-      <span class="fw-card-title">Provisioning elements</span>
-      <button type="button" class="btn btn-sm btn-fw-outline" data-js="add-row"><i class="bi bi-plus-lg me-1"></i>Add element</button>
+      <span class="fw-card-title">{{ _('Provisioning elements') }}</span>
+      <button type="button" class="btn btn-sm btn-fw-outline" data-js="add-row"><i class="bi bi-plus-lg me-1"></i>{{ _('Add element') }}</button>
     </div>
     <div class="fw-card-body">
       {% if not spec_keys %}
       <div class="fw-alert fw-alert-warning d-flex align-items-center gap-2 mb-3" style="font-size:13px;">
         <i class="bi bi-exclamation-triangle"></i>
-        <span>No configuration objects are available from the registry yet. Load the registry / connect an appliance, then reload this page.</span>
+        <span>{{ _('No configuration objects are available from the registry yet. Load the registry / connect an appliance, then reload this page.') }}</span>
       </div>
       {% endif %}
       <div id="rows" data-next-index="{{ rows|length }}">
         {% for row in rows %}{{ render_row(loop.index0, row, grouped_specs, spec_keys) }}{% endfor %}
       </div>
       <div id="emptyRows" class="text-muted" style="font-size:13px; {{ 'display:none;' if rows else '' }}">
-        No elements yet — click <strong>Add element</strong> to begin.
+        {{ _('No elements yet — click') }} <strong>{{ _('Add element') }}</strong> {{ _('to begin.') }}
       </div>
     </div>
   </div>
 
   <div class="d-flex gap-2">
-    <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save profile</button>
-    <a class="btn btn-fw-outline" href="{{ url_for('provisioning.index') }}">Cancel</a>
+    <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save profile') }}</button>
+    <a class="btn btn-fw-outline" href="{{ url_for('provisioning.index') }}">{{ _('Cancel') }}</a>
   </div>
 </form>
 

@@ -4,20 +4,20 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <a href="{{ url_for('change_requests.index') }}">Change Requests</a>
+  <a href="{{ url_for('change_requests.index') }}">{{ _('Change Requests') }}</a>
   <span class="separator">/</span>
   <a href="{{ url_for('change_requests.detail', id=cr.id) }}">{{ cr.ref or ('#' ~ cr.id) }}</a>
   <span class="separator">/</span>
-  <span>Document</span>
+  <span>{{ _('Document') }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-file-earmark-text me-2 text-accent"></i>Change document</h1>
+    <h1 class="fw-page-title"><i class="bi bi-file-earmark-text me-2 text-accent"></i>{{ _('Change document') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       {{ cr.ref or ('CR #' ~ cr.id) }} &mdash; {{ cr.title }}. Rendered from the stored
       record and the frozen inventory only; nothing here re-reads a device.
@@ -30,19 +30,19 @@
     {% endfor %}
     <a class="btn btn-sm btn-fw-outline"
        href="{{ url_for('change_requests.document', id=cr.id, lang=lang, download=1) }}">
-      <i class="bi bi-download me-1"></i>Download .md
+      <i class="bi bi-download me-1"></i>{{ _('Download .md') }}
     </a>
     <a class="btn btn-fw-outline btn-sm" href="{{ url_for('change_requests.detail', id=cr.id) }}">
-      <i class="bi bi-chevron-left me-1"></i>Back
+      <i class="bi bi-chevron-left me-1"></i>{{ _('Back') }}
     </a>
   </div>
 </div>
 
 <div class="fw-card">
   <div class="fw-card-header">
-    <span class="fw-card-title"><i class="bi bi-card-text me-2 text-accent"></i>Markdown source</span>
+    <span class="fw-card-title"><i class="bi bi-card-text me-2 text-accent"></i>{{ _('Markdown source') }}</span>
     <button type="button" class="btn btn-sm btn-fw-outline" id="cr-doc-copy">
-      <i class="bi bi-clipboard me-1"></i>Copy
+      <i class="bi bi-clipboard me-1"></i>{{ _('Copy') }}
     </button>
   </div>
   <div class="fw-card-body">

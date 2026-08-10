@@ -2,18 +2,16 @@
 {% block title %}Integrations — Settings{% endblock %}
 {% block content %}
 <div class="fw-page-header">
-  <h4 class="mb-1"><i class="bi bi-plug me-2"></i>Integrations</h4>
+  <h4 class="mb-1"><i class="bi bi-plug me-2"></i>{{ _('Integrations') }}</h4>
   <p class="text-muted mb-0" style="font-size:13px;">
-    Outbound links to systems SATOM does not own: NetBox for maintenance windows, and your own Python hooks for
-    everything else (CRM, ticketing, chat). Every integration here is optional — with all of them off, change
-    requests and upgrades work exactly as before. Nothing on this page is contacted while the page renders.
+    {{ _('Outbound links to systems SATOM does not own: NetBox for maintenance windows, and your own Python hooks for everything else (CRM, ticketing, chat). Every integration here is optional — with all of them off, change requests and upgrades work exactly as before. Nothing on this page is contacted while the page renders.') }}
   </p>
 </div>
 
 <div class="card mb-3">
   <div class="card-header d-flex justify-content-between align-items-center">
-    <strong><i class="bi bi-diagram-3 me-1"></i>NetBox</strong>
-    <span class="small text-muted">Source of truth for the maintenance window</span>
+    <strong><i class="bi bi-diagram-3 me-1"></i>{{ _('NetBox') }}</strong>
+    <span class="small text-muted">{{ _('Source of truth for the maintenance window') }}</span>
   </div>
   <div class="card-body">
     <form method="post" action="{{ url_for('integrations.save_netbox') }}" class="row g-3">
@@ -21,46 +19,45 @@
       <div class="col-md-3">
         <div class="form-check form-switch mt-4">
           <input class="form-check-input" type="checkbox" id="nb_enabled" name="enabled" {% if netbox.enabled %}checked{% endif %}>
-          <label class="form-check-label" for="nb_enabled">Enabled</label>
+          <label class="form-check-label" for="nb_enabled">{{ _('Enabled') }}</label>
         </div>
       </div>
       <div class="col-md-5">
-        <label class="form-label small">Base URL</label>
-        <input class="form-control form-control-sm" name="url" value="{{ netbox.url }}" placeholder="https://netbox.example.com">
+        <label class="form-label small">{{ _('Base URL') }}</label>
+        <input class="form-control form-control-sm" name="url" value="{{ netbox.url }}" placeholder="{{ _('https://netbox.example.com') }}">
       </div>
       <div class="col-md-4">
-        <label class="form-label small">API token</label>
+        <label class="form-label small">{{ _('API token') }}</label>
         <input class="form-control form-control-sm" name="token" type="password" autocomplete="new-password"
                placeholder="{% if netbox.has_token %}•••••••• (leave blank to keep){% else %}paste token{% endif %}">
-        <div class="form-text">Stored encrypted. Leaving this blank keeps the existing token — it never clears it.</div>
+        <div class="form-text">{{ _('Stored encrypted. Leaving this blank keeps the existing token — it never clears it.') }}</div>
       </div>
       <div class="col-md-3">
-        <label class="form-label small">Timeout (s)</label>
+        <label class="form-label small">{{ _('Timeout (s)') }}</label>
         <input class="form-control form-control-sm" name="timeout" type="number" min="1" max="60" value="{{ netbox.timeout }}">
-        <div class="form-text">Hard cap. In an isolated management network everything external must fail fast.</div>
+        <div class="form-text">{{ _('Hard cap. In an isolated management network everything external must fail fast.') }}</div>
       </div>
       <div class="col-md-3">
         <div class="form-check form-switch mt-4">
           <input class="form-check-input" type="checkbox" id="nb_tls" name="verify_tls" {% if netbox.verify_tls %}checked{% endif %}>
-          <label class="form-check-label" for="nb_tls">Verify TLS</label>
+          <label class="form-check-label" for="nb_tls">{{ _('Verify TLS') }}</label>
         </div>
       </div>
       <div class="col-md-6">
-        <label class="form-label small">Maintenance-window backend</label>
+        <label class="form-label small">{{ _('Maintenance-window backend') }}</label>
         <select class="form-select form-select-sm" name="mw_backend">
           {% for slug, label in mw_backends %}
             <option value="{{ slug }}" {% if netbox.mw_backend == slug %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
         <div class="form-text">
-          NetBox <strong>core has no maintenance-window object</strong> — that lives in third-party plugins. These
-          backends use core models only, so they work against any NetBox. Pick the one your NetBox conventions match.
+          {{ _('NetBox') }} <strong>{{ _('core has no maintenance-window object') }}</strong> {{ _('— that lives in third-party plugins. These backends use core models only, so they work against any NetBox. Pick the one your NetBox conventions match.') }}
         </div>
       </div>
       <div class="col-12 d-flex gap-2">
-        <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>Save</button>
+        <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
         <button type="button" class="btn btn-outline-secondary btn-sm" id="nb-test">
-          <i class="bi bi-broadcast me-1"></i>Test connection
+          <i class="bi bi-broadcast me-1"></i>{{ _('Test connection') }}
         </button>
         <span id="nb-test-result" class="small align-self-center"></span>
       </div>
@@ -69,16 +66,15 @@
 </div>
 
 <div class="card mb-3">
-  <div class="card-header"><strong><i class="bi bi-link-45deg me-1"></i>Device mapping</strong></div>
+  <div class="card-header"><strong><i class="bi bi-link-45deg me-1"></i>{{ _('Device mapping') }}</strong></div>
   <div class="card-body">
     <p class="small text-muted">
-      Which NetBox device each appliance is. Leave blank to fall back to an exact <em>name</em> match — that works
-      until somebody renames a device on either side, which is why the fallback is shown rather than assumed.
+      {{ _('Which NetBox device each appliance is. Leave blank to fall back to an exact') }} <em>{{ _('name') }}</em> {{ _('match — that works until somebody renames a device on either side, which is why the fallback is shown rather than assumed.') }}
     </p>
     <form method="post" action="{{ url_for('integrations.save_map') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <table class="table table-sm align-middle mb-2">
-        <thead><tr><th>Appliance</th><th>Host</th><th style="width:220px;">NetBox device id</th><th>Resolution</th></tr></thead>
+        <thead><tr><th>{{ _('Appliance') }}</th><th>{{ _('Host') }}</th><th style="width:220px;">{{ _('NetBox device id') }}</th><th>{{ _('Resolution') }}</th></tr></thead>
         <tbody>
         {% for a in appliances %}
           <tr>
@@ -87,27 +83,27 @@
             <td><input class="form-control form-control-sm" name="map_{{ a.id }}" value="{{ device_map.get(a.id|string, '') }}" placeholder="—"></td>
             <td>
               {% if device_map.get(a.id|string) %}
-                <span class="fw-badge fw-badge-ok">mapped</span>
+                <span class="fw-badge fw-badge-ok">{{ _('mapped') }}</span>
               {% else %}
-                <span class="fw-badge fw-badge-info">by name</span>
+                <span class="fw-badge fw-badge-info">{{ _('by name') }}</span>
               {% endif %}
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="4" class="text-muted small">No appliances registered.</td></tr>
+          <tr><td colspan="4" class="text-muted small">{{ _('No appliances registered.') }}</td></tr>
         {% endfor %}
         </tbody>
       </table>
-      <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>Save mapping</button>
+      <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Save mapping') }}</button>
     </form>
   </div>
 </div>
 
 <div class="card">
   <div class="card-header d-flex justify-content-between align-items-center">
-    <strong><i class="bi bi-code-square me-1"></i>Integration hooks (your Python)</strong>
+    <strong><i class="bi bi-code-square me-1"></i>{{ _('Integration hooks (your Python)') }}</strong>
     <a class="btn btn-fw-primary btn-sm" href="{{ url_for('integrations.hook_detail', slug='new') }}">
-      <i class="bi bi-plus-lg me-1"></i>New hook
+      <i class="bi bi-plus-lg me-1"></i>{{ _('New hook') }}
     </a>
   </div>
   <div class="card-body">
@@ -121,33 +117,33 @@
       user, with a hard timeout and only the secrets the hook declared.
     </p>
     <table class="table table-sm align-middle">
-      <thead><tr><th>Hook</th><th>Event</th><th>Enabled</th><th>Timeout</th><th>Secrets</th><th>Updated</th><th></th></tr></thead>
+      <thead><tr><th>{{ _('Hook') }}</th><th>{{ _('Event') }}</th><th>{{ _('Enabled') }}</th><th>{{ _('Timeout') }}</th><th>{{ _('Secrets') }}</th><th>{{ _('Updated') }}</th><th></th></tr></thead>
       <tbody>
       {% for h in hooks %}
         <tr>
           <td><a href="{{ url_for('integrations.hook_detail', slug=h.slug) }}"><strong>{{ h.name or h.slug }}</strong></a>
               <div class="small text-muted"><code>{{ h.slug }}</code></div></td>
           <td><code class="small">{{ h.event }}</code></td>
-          <td>{% if h.enabled %}<span class="fw-badge fw-badge-ok">on</span>{% else %}<span class="fw-badge fw-badge-muted">off</span>{% endif %}</td>
+          <td>{% if h.enabled %}<span class="fw-badge fw-badge-ok">{{ _('on') }}</span>{% else %}<span class="fw-badge fw-badge-muted">{{ _('off') }}</span>{% endif %}</td>
           <td class="small">{{ h.timeout }}s</td>
           <td class="small">{{ h.secrets|join(', ') or '—' }}</td>
           <td class="small text-muted">{{ h.updated_at or '' }}</td>
-          <td class="text-end"><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('integrations.hook_detail', slug=h.slug) }}">Open</a></td>
+          <td class="text-end"><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('integrations.hook_detail', slug=h.slug) }}">{{ _('Open') }}</a></td>
         </tr>
       {% else %}
-        <tr><td colspan="7" class="text-muted small">No hooks yet.</td></tr>
+        <tr><td colspan="7" class="text-muted small">{{ _('No hooks yet.') }}</td></tr>
       {% endfor %}
       </tbody>
     </table>
 
-    <h6 class="mt-3">Events SATOM emits</h6>
+    <h6 class="mt-3">{{ _('Events SATOM emits') }}</h6>
     <ul class="small text-muted mb-3">
       {% for name, doc in events.items() %}<li><code>{{ name }}</code> — {{ doc }}</li>{% endfor %}
     </ul>
 
-    <h6>Recent hook runs</h6>
+    <h6>{{ _('Recent hook runs') }}</h6>
     <table class="table table-sm align-middle mb-0">
-      <thead><tr><th>When</th><th>Hook</th><th>Event</th><th>Status</th><th>ms</th><th>Detail</th></tr></thead>
+      <thead><tr><th>{{ _('When') }}</th><th>{{ _('Hook') }}</th><th>{{ _('Event') }}</th><th>{{ _('Status') }}</th><th>{{ _('ms') }}</th><th>{{ _('Detail') }}</th></tr></thead>
       <tbody>
       {% for r in recent %}
         <tr>
@@ -155,16 +151,16 @@
           <td class="small"><code>{{ r.slug }}</code></td>
           <td class="small"><code>{{ r.event }}</code></td>
           <td>
-            {% if r.status == 'ok' %}<span class="fw-badge fw-badge-ok">ok</span>
+            {% if r.status == 'ok' %}<span class="fw-badge fw-badge-ok">{{ _('ok') }}</span>
             {% elif r.status in ('failed', 'timeout') %}<span class="fw-badge fw-badge-crit">{{ r.status }}</span>
-            {% elif r.status == 'running' %}<span class="fw-badge fw-badge-info">running</span>
+            {% elif r.status == 'running' %}<span class="fw-badge fw-badge-info">{{ _('running') }}</span>
             {% else %}<span class="fw-badge fw-badge-muted">{{ r.status }}</span>{% endif %}
           </td>
           <td class="small">{{ r.duration_ms if r.duration_ms is not none else '—' }}</td>
           <td class="small text-muted">{{ (r.error or r.detail or '')[:160] }}</td>
         </tr>
       {% else %}
-        <tr><td colspan="6" class="text-muted small">No runs recorded.</td></tr>
+        <tr><td colspan="6" class="text-muted small">{{ _('No runs recorded.') }}</td></tr>
       {% endfor %}
       </tbody>
     </table>

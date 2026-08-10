@@ -4,9 +4,9 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <a href="{{ url_for('provisioning.index') }}">System Provisioning</a>
+  <a href="{{ url_for('provisioning.index') }}">{{ _('System Provisioning') }}</a>
   <span class="separator">/</span>
   <span>{{ 'Preview' if phase == 'preview' else 'Apply result' }}: {{ prof_name }}</span>
 </div>
@@ -20,17 +20,17 @@
     {% if dev.ok %}
       <span class="fw-badge fw-badge-success">OK</span>
     {% else %}
-      <span class="fw-badge fw-badge-danger">FAILED</span>
+      <span class="fw-badge fw-badge-danger">{{ _('FAILED') }}</span>
     {% endif %}
   </div>
   <div class="fw-card-body" style="padding:0;">
     <table class="fw-table" style="margin-bottom:0;">
       <thead>
         <tr>
-          <th style="width:90px;">Method</th>
-          <th>Path</th>
-          <th>Body</th>
-          <th style="width:70px;">Status</th>
+          <th style="width:90px;">{{ _('Method') }}</th>
+          <th>{{ _('Path') }}</th>
+          <th>{{ _('Body') }}</th>
+          <th style="width:70px;">{{ _('Status') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -41,14 +41,14 @@
           <td><pre style="margin:0; max-height:160px; overflow:auto; font-size:11.5px;">{{ (r.request.body if r.request else r.after) | tojson }}</pre></td>
           <td>
             {% if r.ok %}
-              <i class="bi bi-check-circle text-success" title="ok"></i>
+              <i class="bi bi-check-circle text-success" title="{{ _('ok') }}"></i>
             {% else %}
               <span class="text-danger" title="{{ r.error }}"><i class="bi bi-x-circle"></i> {{ r.error }}</span>
             {% endif %}
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="4" class="text-muted" style="font-size:13px;">No requests for this device.</td></tr>
+        <tr><td colspan="4" class="text-muted" style="font-size:13px;">{{ _('No requests for this device.') }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -60,9 +60,9 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-rocket-takeoff me-2 text-accent"></i>Apply: {{ prof_name }}</h1>
-    <p class="text-muted mb-0" style="font-size:13px;">Target: <strong>{{ target_desc }}</strong> — {{ target_count }} device(s) &nbsp;·&nbsp; Host: <strong>{{ target_hostname }}</strong> &nbsp;·&nbsp; Change: <code>{{ change_id }}</code></p>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('Target:') }} <strong>{{ target_desc }}</strong> — {{ target_count }} device(s) &nbsp;·&nbsp; Host: <strong>{{ target_hostname }}</strong> &nbsp;·&nbsp; Change: <code>{{ change_id }}</code></p>
   </div>
-  <a class="btn btn-fw-outline" href="{{ url_for('provisioning.index') }}"><i class="bi bi-arrow-left me-1"></i>Back</a>
+  <a class="btn btn-fw-outline" href="{{ url_for('provisioning.index') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Back') }}</a>
 </div>
 
 {# ----------------------------- PREVIEW PHASE ---------------------------- #}
@@ -70,8 +70,8 @@
   <div class="fw-alert fw-alert-warning d-flex align-items-start gap-2 mb-3" style="font-size:13.5px;">
     <i class="bi bi-exclamation-triangle-fill" style="margin-top:2px;"></i>
     <div>
-      <strong>This is a dry-run preview — nothing has been written yet.</strong>
-      Confirming below will push the requests shown here to <strong>LIVE devices</strong>. The write is canary-gated: the first device runs alone and, if it fails, the rest are skipped. Secrets in sensitive items are applied live but are never stored in the profile.
+      <strong>{{ _('This is a dry-run preview — nothing has been written yet.') }}</strong>
+      {{ _('Confirming below will push the requests shown here to') }} <strong>{{ _('LIVE devices') }}</strong>{{ _('. The write is canary-gated: the first device runs alone and, if it fails, the rest are skipped. Secrets in sensitive items are applied live but are never stored in the profile.') }}
     </div>
   </div>
 
@@ -87,14 +87,14 @@
       <input type="hidden" name="change_id" value="{{ change_id }}">
       {% for did in device_ids %}<input type="hidden" name="device_ids" value="{{ did }}">{% endfor %}
       <button type="submit" class="btn btn-fw-danger"><i class="bi bi-exclamation-octagon me-1"></i>Confirm &amp; apply to live devices</button>
-      <a class="btn btn-fw-outline ms-2" href="{{ url_for('provisioning.index') }}">Cancel</a>
+      <a class="btn btn-fw-outline ms-2" href="{{ url_for('provisioning.index') }}">{{ _('Cancel') }}</a>
     </form>
   {% else %}
     <div class="fw-empty-state">
       <div class="fw-empty-state-icon"><i class="bi bi-hdd-network"></i></div>
-      <div class="fw-empty-state-title">No appliances targeted</div>
-      <div class="fw-empty-state-text">There are no appliances to apply to. Register an appliance, then try again.</div>
-      <a class="btn btn-fw-outline mt-2" href="{{ url_for('provisioning.index') }}">Back to profiles</a>
+      <div class="fw-empty-state-title">{{ _('No appliances targeted') }}</div>
+      <div class="fw-empty-state-text">{{ _('There are no appliances to apply to. Register an appliance, then try again.') }}</div>
+      <a class="btn btn-fw-outline mt-2" href="{{ url_for('provisioning.index') }}">{{ _('Back to profiles') }}</a>
     </div>
   {% endif %}
 {% endif %}
@@ -104,29 +104,29 @@
   {% if result.aborted %}
     <div class="fw-alert fw-alert-danger d-flex align-items-center gap-2 mb-3" style="font-size:13.5px;">
       <i class="bi bi-x-octagon-fill"></i>
-      <span><strong>Aborted.</strong> The canary device failed — the remaining devices were skipped. Review the canary result below, fix the issue, and retry.</span>
+      <span><strong>{{ _('Aborted.') }}</strong> {{ _('The canary device failed — the remaining devices were skipped. Review the canary result below, fix the issue, and retry.') }}</span>
     </div>
   {% else %}
     <div class="fw-alert fw-alert-success d-flex align-items-center gap-2 mb-3" style="font-size:13.5px;">
       <i class="bi bi-check-circle-fill"></i>
-      <span>Apply completed. Review the per-device results below.</span>
+      <span>{{ _('Apply completed. Review the per-device results below.') }}</span>
     </div>
   {% endif %}
 
-  <div class="mb-2 mt-3" style="font-weight:600; font-size:14px;"><i class="bi bi-1-circle me-1"></i>Canary</div>
+  <div class="mb-2 mt-3" style="font-weight:600; font-size:14px;"><i class="bi bi-1-circle me-1"></i>{{ _('Canary') }}</div>
   {% if result.canary %}
     {% for dev in result.canary %}{{ device_block(dev) }}{% endfor %}
   {% else %}
-    <div class="text-muted mb-3" style="font-size:13px;">No canary device (empty fleet — nothing was applied).</div>
+    <div class="text-muted mb-3" style="font-size:13px;">{{ _('No canary device (empty fleet — nothing was applied).') }}</div>
   {% endif %}
 
-  <div class="mb-2 mt-3" style="font-weight:600; font-size:14px;"><i class="bi bi-2-circle me-1"></i>Remaining devices</div>
+  <div class="mb-2 mt-3" style="font-weight:600; font-size:14px;"><i class="bi bi-2-circle me-1"></i>{{ _('Remaining devices') }}</div>
   {% if result.rest %}
     {% for dev in result.rest %}{{ device_block(dev) }}{% endfor %}
   {% else %}
     <div class="text-muted" style="font-size:13px;">{{ 'Skipped — the canary failed.' if result.aborted else 'None.' }}</div>
   {% endif %}
 
-  <a class="btn btn-fw-primary mt-3" href="{{ url_for('provisioning.index') }}"><i class="bi bi-check-lg me-1"></i>Done</a>
+  <a class="btn btn-fw-primary mt-3" href="{{ url_for('provisioning.index') }}"><i class="bi bi-check-lg me-1"></i>{{ _('Done') }}</a>
 {% endif %}
 {% endblock %}

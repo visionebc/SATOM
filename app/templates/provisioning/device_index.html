@@ -4,126 +4,108 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <span>Device Provisioning</span>
+  <span>{{ _('Device Provisioning') }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-hdd-network-fill me-2 text-accent"></i>Device Provisioning</h1>
+    <h1 class="fw-page-title"><i class="bi bi-hdd-network-fill me-2 text-accent"></i>{{ _('Device Provisioning') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      Build an appliance machine from nothing: create the virtual machine, give it an address and a
-      DNS name, bring it up, register it, and hand it to System Provisioning for its configuration.
-      Scoped to the <strong>{{ adom }}</strong> ADOM.
+      {{ _('Build an appliance machine from nothing: create the virtual machine, give it an address and a DNS name, bring it up, register it, and hand it to System Provisioning for its configuration. Scoped to the') }} <strong>{{ adom }}</strong> {{ _('ADOM.') }}
     </p>
   </div>
   <div class="d-flex gap-2">
     <a class="btn btn-fw-secondary" href="{{ url_for('provisioning.index') }}">
-      <i class="bi bi-sliders me-1"></i>System Provisioning</a>
-    <button class="btn btn-fw-primary" id="dp-new-btn"><i class="bi bi-plus-lg me-1"></i>New machine</button>
+      <i class="bi bi-sliders me-1"></i>{{ _('System Provisioning') }}</a>
+    <button class="btn btn-fw-primary" id="dp-new-btn"><i class="bi bi-plus-lg me-1"></i>{{ _('New machine') }}</button>
   </div>
 </div>
 
 {% if not has_hypervisor %}
 <div class="alert alert-warning">
-  <div class="fw-semibold mb-1"><i class="bi bi-exclamation-triangle me-1"></i>No hypervisor is registered</div>
+  <div class="fw-semibold mb-1"><i class="bi bi-exclamation-triangle me-1"></i>{{ _('No hypervisor is registered') }}</div>
   <p class="mb-1 small">
-    SATOM cannot create virtual machines until a Proxmox or ESXi endpoint is registered in
-    <a href="{{ url_for('settings.index') }}#tab-hypervisors">Settings &rsaquo; Hypervisors</a>.
-    The machine-building modes are therefore not offered below — rather than shown as buttons that
-    would fail partway through.
+    {{ _('SATOM cannot create virtual machines until a Proxmox or ESXi endpoint is registered in') }}
+    <a href="{{ url_for('settings.index') }}#tab-hypervisors">Settings &rsaquo; Hypervisors</a>{{ _('. The machine-building modes are therefore not offered below — rather than shown as buttons that would fail partway through.') }}
   </p>
   <p class="mb-0 small">
-    <strong>Config only</strong> still works: point it at a machine you built by hand and SATOM will
-    reserve the address, create the DNS record, register the appliance and apply the profile.
+    <strong>{{ _('Config only') }}</strong> {{ _('still works: point it at a machine you built by hand and SATOM will reserve the address, create the DNS record, register the appliance and apply the profile.') }}
   </p>
 </div>
 {% endif %}
 
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><span><i class="bi bi-signpost-split me-1"></i>How far SATOM can take it — pick a mode</span></div>
+  <div class="fw-card-header"><span><i class="bi bi-signpost-split me-1"></i>{{ _('How far SATOM can take it — pick a mode') }}</span></div>
   <div class="fw-card-body">
     <p class="text-muted small">
-      A factory Fortinet appliance boots into a first-boot dialog: <em>admin</em> with an empty
+      {{ _('A factory Fortinet appliance boots into a first-boot dialog:') }} <em>{{ _('admin') }}</em> with an empty
       password and a forced change. Nothing can reach its API until that dialog is completed, so
       &ldquo;fully automatic&rdquo; depends entirely on whether the hypervisor exposes a
-      <strong>scriptable serial console</strong>. Proxmox does; a standalone ESXi does not, at any
-      licence tier. That single fact is what the modes are about.
+      <strong>{{ _('scriptable serial console') }}</strong>{{ _('. Proxmox does; a standalone ESXi does not, at any licence tier. That single fact is what the modes are about.') }}
     </p>
     <div class="table-responsive">
       <table class="table table-sm align-middle">
         <thead><tr>
-          <th style="width:13%">Mode</th><th style="width:29%">What it does</th>
-          <th style="width:29%">Advantages</th><th style="width:29%">Disadvantages</th>
+          <th style="width:13%">{{ _('Mode') }}</th><th style="width:29%">{{ _('What it does') }}</th>
+          <th style="width:29%">{{ _('Advantages') }}</th><th style="width:29%">{{ _('Disadvantages') }}</th>
         </tr></thead>
         <tbody>
           <tr>
-            <td><span class="fw-badge fw-badge-success">Full</span></td>
-            <td>Everything: address, DNS, machine, boot, walks the first-boot dialog over the serial
-                console, registers the appliance, applies the profile.</td>
-            <td>No human step. Repeatable and auditable end to end; every action lands in the run log.</td>
-            <td><strong>Proxmox only.</strong> Needs an API serial console. Most moving parts, so the
-                widest surface for a mid-run failure — which is why rollback exists.</td>
+            <td><span class="fw-badge fw-badge-success">{{ _('Full') }}</span></td>
+            <td>{{ _('Everything: address, DNS, machine, boot, walks the first-boot dialog over the serial console, registers the appliance, applies the profile.') }}</td>
+            <td>{{ _('No human step. Repeatable and auditable end to end; every action lands in the run log.') }}</td>
+            <td><strong>{{ _('Proxmox only.') }}</strong> {{ _('Needs an API serial console. Most moving parts, so the widest surface for a mid-run failure — which is why rollback exists.') }}</td>
           </tr>
           <tr>
-            <td><span class="fw-badge fw-badge-primary">Semi</span></td>
-            <td>Builds and boots the machine, then <em>stops</em>. You complete the first-boot dialog
-                on the hypervisor console and press Resume.</td>
-            <td>Works on <strong>every</strong> backend, including a free-licensed ESXi. The manual
-                step is the one a human is genuinely needed for; everything else is automated.</td>
-            <td>Not unattended — a run sits waiting until somebody acts on it.</td>
+            <td><span class="fw-badge fw-badge-primary">{{ _('Semi') }}</span></td>
+            <td>{{ _('Builds and boots the machine, then') }} <em>{{ _('stops') }}</em>{{ _('. You complete the first-boot dialog on the hypervisor console and press Resume.') }}</td>
+            <td>{{ _('Works on') }} <strong>{{ _('every') }}</strong> {{ _('backend, including a free-licensed ESXi. The manual step is the one a human is genuinely needed for; everything else is automated.') }}</td>
+            <td>{{ _('Not unattended — a run sits waiting until somebody acts on it.') }}</td>
           </tr>
           <tr>
             <td><span class="fw-badge fw-badge-primary">DHCP</span></td>
-            <td>Builds and boots; the appliance takes a lease, SATOM finds it at that address and
-                carries on.</td>
-            <td>Unattended without a serial console. Good on a build VLAN that runs DHCP.</td>
+            <td>{{ _('Builds and boots; the appliance takes a lease, SATOM finds it at that address and carries on.') }}</td>
+            <td>{{ _('Unattended without a serial console. Good on a build VLAN that runs DHCP.') }}</td>
             <td>Needs DHCP reachable from the machine&rsquo;s network, and the address it lands on is
                 not the one you chose. Not every appliance takes a lease on its factory config.</td>
           </tr>
           <tr>
-            <td><span class="fw-badge fw-badge-secondary">VM only</span></td>
-            <td>Creates and powers on the machine. Stops there, by design.</td>
-            <td>Smallest blast radius. Useful when the appliance is configured by another team or a
-                different tool.</td>
-            <td>No address, no DNS, no registration — none of the rest of SATOM knows the machine
-                exists until you onboard it.</td>
+            <td><span class="fw-badge fw-badge-secondary">{{ _('VM only') }}</span></td>
+            <td>{{ _('Creates and powers on the machine. Stops there, by design.') }}</td>
+            <td>{{ _('Smallest blast radius. Useful when the appliance is configured by another team or a different tool.') }}</td>
+            <td>{{ _('No address, no DNS, no registration — none of the rest of SATOM knows the machine exists until you onboard it.') }}</td>
           </tr>
           <tr>
-            <td><span class="fw-badge fw-badge-secondary">Config only</span></td>
-            <td>Skips machine creation entirely: reserves the address, writes DNS, registers the
-                appliance and applies the profile against a machine that already exists.</td>
-            <td>Needs <strong>no hypervisor at all</strong>. The path for physical appliances and for
-                anything built outside SATOM.</td>
-            <td>You built the machine, so its CPU, memory, disk and network are outside the run log
-                and outside the audit trail.</td>
+            <td><span class="fw-badge fw-badge-secondary">{{ _('Config only') }}</span></td>
+            <td>{{ _('Skips machine creation entirely: reserves the address, writes DNS, registers the appliance and applies the profile against a machine that already exists.') }}</td>
+            <td>{{ _('Needs') }} <strong>{{ _('no hypervisor at all') }}</strong>{{ _('. The path for physical appliances and for anything built outside SATOM.') }}</td>
+            <td>{{ _('You built the machine, so its CPU, memory, disk and network are outside the run log and outside the audit trail.') }}</td>
           </tr>
         </tbody>
       </table>
     </div>
     <div class="small text-body-secondary">
       <i class="bi bi-shield-check me-1"></i>
-      Every mode is preflighted before it changes anything: SATOM asks the hypervisor what it can
-      actually do and refuses a run it cannot finish, rather than discovering the limit after an
-      address and a DNS record have already been committed.
+      {{ _('Every mode is preflighted before it changes anything: SATOM asks the hypervisor what it can actually do and refuses a run it cannot finish, rather than discovering the limit after an address and a DNS record have already been committed.') }}
     </div>
   </div>
 </div>
 
 <div class="fw-card mb-3" id="dp-form-card" style="display:none;">
-  <div class="fw-card-header"><span><i class="bi bi-plus-circle me-1"></i>New machine</span></div>
+  <div class="fw-card-header"><span><i class="bi bi-plus-circle me-1"></i>{{ _('New machine') }}</span></div>
   <div class="fw-card-body">
     <form id="dp-form" class="row g-3" autocomplete="off">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="col-md-3">
-        <label class="form-label small">Machine name</label>
-        <input class="form-control form-control-sm" name="name" required placeholder="fortiweb11">
+        <label class="form-label small">{{ _('Machine name') }}</label>
+        <input class="form-control form-control-sm" name="name" required placeholder="{{ _('fortiweb11') }}">
       </div>
       <div class="col-md-3">
-        <label class="form-label small">Mode</label>
+        <label class="form-label small">{{ _('Mode') }}</label>
         <select class="form-select form-select-sm" name="mode" id="dp-mode">
           {% for k, label in modes.items() %}
           <option value="{{ k }}"{% if k == 'semi' %} selected{% endif %}>{{ label }}</option>
@@ -131,103 +113,102 @@
         </select>
       </div>
       <div class="col-md-3">
-        <label class="form-label small">Hypervisor</label>
+        <label class="form-label small">{{ _('Hypervisor') }}</label>
         <select class="form-select form-select-sm" name="target_id" id="dp-target">
-          <option value="">— none (config only) —</option>
+          <option value="">{{ _('— none (config only) —') }}</option>
           {% for t in targets %}
           <option value="{{ t.id }}">{{ t.name }} ({{ t.backend }})</option>
           {% endfor %}
         </select>
       </div>
       <div class="col-md-3">
-        <label class="form-label small">Install image</label>
+        <label class="form-label small">{{ _('Install image') }}</label>
         <select class="form-select form-select-sm" name="firmware_id">
-          <option value="">— none —</option>
+          <option value="">{{ _('— none —') }}</option>
           {% for f in install_images %}
           <option value="{{ f.id }}">{{ f.version }} {{ f.filename }}</option>
           {% endfor %}
         </select>
-        <div class="form-text">Install media only — upgrade images are a different list.</div>
+        <div class="form-text">{{ _('Install media only — upgrade images are a different list.') }}</div>
       </div>
 
       {% if adom == 'global' %}
       <div class="col-md-3">
-        <label class="form-label small">Product</label>
+        <label class="form-label small">{{ _('Product') }}</label>
         <select class="form-select form-select-sm" name="product" required>
-          <option value="">— pick one —</option>
+          <option value="">{{ _('— pick one —') }}</option>
           {# Derived from the ADOM registry: a hardcoded roster here is how
              a shipped product becomes unofferable with nothing raising. #}
           {% for key, label in (kind_options or []) %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
         </select>
-        <div class="form-text">Decides what kind of appliance is registered.</div>
+        <div class="form-text">{{ _('Decides what kind of appliance is registered.') }}</div>
       </div>
       {% endif %}
 
       <div class="col-md-3">
-        <label class="form-label small">Hostname (DNS)</label>
-        <input class="form-control form-control-sm" name="hostname" placeholder="fortiweb11.example.com">
+        <label class="form-label small">{{ _('Hostname (DNS)') }}</label>
+        <input class="form-control form-control-sm" name="hostname" placeholder="{{ _('fortiweb11.example.com') }}">
       </div>
       <div class="col-md-3">
-        <label class="form-label small">Management address</label>
+        <label class="form-label small">{{ _('Management address') }}</label>
         <input class="form-control form-control-sm" name="mgmt_ip" placeholder="192.0.2.20">
       </div>
       <div class="col-md-3">
-        <label class="form-label small">Netmask</label>
+        <label class="form-label small">{{ _('Netmask') }}</label>
         <input class="form-control form-control-sm" name="netmask" placeholder="255.255.255.0">
       </div>
       <div class="col-md-3">
-        <label class="form-label small">Gateway</label>
+        <label class="form-label small">{{ _('Gateway') }}</label>
         <input class="form-control form-control-sm" name="gateway" placeholder="192.0.2.1">
       </div>
 
       <div class="col-md-2">
-        <label class="form-label small">vCPU</label>
+        <label class="form-label small">{{ _('vCPU') }}</label>
         <input class="form-control form-control-sm" name="cpus" value="4">
       </div>
       <div class="col-md-2">
-        <label class="form-label small">Memory (MB)</label>
+        <label class="form-label small">{{ _('Memory (MB)') }}</label>
         <input class="form-control form-control-sm" name="memory_mb" value="4096">
       </div>
       <div class="col-md-2">
-        <label class="form-label small">Disk (GB)</label>
+        <label class="form-label small">{{ _('Disk (GB)') }}</label>
         <input class="form-control form-control-sm" name="disk_gb" value="0">
-        <div class="form-text">0 = from image</div>
+        <div class="form-text">{{ _('0 = from image') }}</div>
       </div>
       <div class="col-md-2">
-        <label class="form-label small">Node</label>
+        <label class="form-label small">{{ _('Node') }}</label>
         <input class="form-control form-control-sm" name="node">
       </div>
       <div class="col-md-2">
-        <label class="form-label small">Datastore</label>
+        <label class="form-label small">{{ _('Datastore') }}</label>
         <input class="form-control form-control-sm" name="datastore">
       </div>
       <div class="col-md-2">
-        <label class="form-label small">Network</label>
+        <label class="form-label small">{{ _('Network') }}</label>
         <input class="form-control form-control-sm" name="network">
       </div>
 
       <div class="col-md-3">
-        <label class="form-label small">Admin user</label>
+        <label class="form-label small">{{ _('Admin user') }}</label>
         <input class="form-control form-control-sm" name="admin_user" value="admin">
       </div>
       <div class="col-md-3">
-        <label class="form-label small">Admin password to set</label>
+        <label class="form-label small">{{ _('Admin password to set') }}</label>
         <input class="form-control form-control-sm" type="password" name="admin_password">
       </div>
       <div class="col-md-6 d-flex align-items-end">
         <div class="form-check">
           <input class="form-check-input" type="checkbox" name="use_ipam" id="dp-ipam" value="1">
           <label class="form-check-label small" for="dp-ipam">
-            Take the address from IPAM
-            <span class="text-muted">— only then is it released on rollback; a typed address is
-            never handed back to a pool</span>
+            {{ _('Take the address from IPAM') }}
+            <span class="text-muted">{{ _('— only then is it released on rollback; a typed address is never handed back to a pool') }}</span>
           </label>
         </div>
       </div>
 
       <div class="col-12 text-end">
-        <button type="button" class="btn btn-sm btn-outline-secondary" id="dp-cancel">Cancel</button>
-        <button type="submit" class="btn btn-sm btn-fw-primary">Create run</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="dp-cancel">{{ _('Cancel') }}</button>
+        <button type="submit" class="btn btn-sm btn-fw-primary">{{ _('Create run') }}</button>
       </div>
     </form>
     <div id="dp-form-msg" class="mt-3"></div>
@@ -235,15 +216,15 @@
 </div>
 
 <div class="fw-card">
-  <div class="fw-card-header"><span><i class="bi bi-list-task me-1"></i>Runs</span></div>
+  <div class="fw-card-header"><span><i class="bi bi-list-task me-1"></i>{{ _('Runs') }}</span></div>
   <div class="fw-card-body">
     <div class="table-responsive">
       <table class="table table-sm align-middle">
         <thead><tr>
-          <th>Name</th><th>Mode</th><th>Step</th><th>Progress</th>
-          <th>Address</th><th>Status</th><th class="text-end">Actions</th>
+          <th>{{ _('Name') }}</th><th>{{ _('Mode') }}</th><th>{{ _('Step') }}</th><th>{{ _('Progress') }}</th>
+          <th>{{ _('Address') }}</th><th>{{ _('Status') }}</th><th class="text-end">{{ _('Actions') }}</th>
         </tr></thead>
-        <tbody id="dp-rows"><tr><td colspan="7" class="text-muted">Loading…</td></tr></tbody>
+        <tbody id="dp-rows"><tr><td colspan="7" class="text-muted">{{ _('Loading…') }}</td></tr></tbody>
       </table>
     </div>
   </div>

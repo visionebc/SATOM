@@ -9,12 +9,11 @@
 <div class="fw-alert fw-alert-danger d-flex align-items-start gap-2">
   <i class="bi bi-exclamation-octagon-fill mt-1"></i>
   <div>
-    A live downgrade <b>reboots the appliance</b> and interrupts every service it fronts, and a
-    downgrade <b>can reset the configuration</b> — especially across a major branch
-    (e.g. 8.0&rarr;7.6). <b>Take a config backup first</b> via
-    <a href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}" class="alert-link">Upgrade Preparation</a>,
+    {{ _('A live downgrade') }} <b>{{ _('reboots the appliance') }}</b> {{ _('and interrupts every service it fronts, and a downgrade') }} <b>{{ _('can reset the configuration') }}</b> — especially across a major branch
+    (e.g. 8.0&rarr;7.6). <b>{{ _('Take a config backup first') }}</b> {{ _('via') }}
+    <a href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}" class="alert-link">{{ _('Upgrade Preparation') }}</a>,
     and keep the current (running) <code>.out</code> in the repository so you can roll forward again.
-    Leave <b>Dry run</b> checked to validate without sending anything.
+    Leave <b>{{ _('Dry run') }}</b> {{ _('checked to validate without sending anything.') }}
   </div>
 </div>
 
@@ -24,11 +23,11 @@
   <div class="card-body">
     <div class="fw-alert fw-alert-{{ 'success' if result.ok else 'warning' }} mb-2">{{ result.message }}</div>
     <dl class="row mb-0 small">
-      <dt class="col-sm-3">Image</dt><dd class="col-sm-9">{{ result.image }} ({{ '{:,}'.format(result.size) }} bytes)</dd>
-      <dt class="col-sm-3">Firmware before</dt><dd class="col-sm-9">{{ result.firmware_before or '?' }}</dd>
-      <dt class="col-sm-3">Maintenance permission</dt><dd class="col-sm-9">{{ result.permitted if result.permitted is not none else 'unknown' }}</dd>
-      {% if result.maturity %}<dt class="col-sm-3 text-warning">Maturity prompt</dt><dd class="col-sm-9 text-warning">{{ result.maturity }} — re-submit with "Confirm maturity change" checked to install.</dd>{% endif %}
-      {% if result.warning %}<dt class="col-sm-3 text-warning">Warning</dt><dd class="col-sm-9 text-warning">{{ result.warning }}</dd>{% endif %}
+      <dt class="col-sm-3">{{ _('Image') }}</dt><dd class="col-sm-9">{{ result.image }} ({{ '{:,}'.format(result.size) }} bytes)</dd>
+      <dt class="col-sm-3">{{ _('Firmware before') }}</dt><dd class="col-sm-9">{{ result.firmware_before or '?' }}</dd>
+      <dt class="col-sm-3">{{ _('Maintenance permission') }}</dt><dd class="col-sm-9">{{ result.permitted if result.permitted is not none else 'unknown' }}</dd>
+      {% if result.maturity %}<dt class="col-sm-3 text-warning">{{ _('Maturity prompt') }}</dt><dd class="col-sm-9 text-warning">{{ result.maturity }} — re-submit with "Confirm maturity change" checked to install.</dd>{% endif %}
+      {% if result.warning %}<dt class="col-sm-3 text-warning">{{ _('Warning') }}</dt><dd class="col-sm-9 text-warning">{{ result.warning }}</dd>{% endif %}
     </dl>
   </div>
 </div>
@@ -37,13 +36,12 @@
 {% if not images %}
 <div class="card shadow-sm">
   <div class="card-body">
-    <p class="small text-muted mb-2">Current firmware: <b>{{ firmware or 'unknown' }}</b></p>
+    <p class="small text-muted mb-2">{{ _('Current firmware:') }} <b>{{ firmware or 'unknown' }}</b></p>
     <div class="fw-alert fw-alert-warning mb-0">
       <i class="bi bi-info-circle me-1"></i>
-      No firmware image in the repository matches this appliance
-      (<b>{{ appliance.kind }}</b>{% if appliance.model %} / {{ appliance.model }}{% endif %}).
+      {{ _('No firmware image in the repository matches this appliance (') }}<b>{{ appliance.kind }}</b>{% if appliance.model %} / {{ appliance.model }}{% endif %}).
       Add the rollback <code>.out</code> in the
-      <a class="alert-link" href="{{ url_for('firmware.index') }}">Firmware repository</a> first.
+      <a class="alert-link" href="{{ url_for('firmware.index') }}">{{ _('Firmware repository') }}</a> {{ _('first.') }}
     </div>
   </div>
 </div>
@@ -52,10 +50,10 @@
 {% if firmware and not older_exists %}
 <div class="fw-alert fw-alert-warning">
   <i class="bi bi-info-circle me-1"></i>
-  No image <b>older</b> than the running firmware (<b>{{ firmware }}</b>) is in the repository, so there is
+  {{ _('No image') }} <b>{{ _('older') }}</b> {{ _('than the running firmware (') }}<b>{{ firmware }}</b>) is in the repository, so there is
   nothing to roll back to. You can still flash any image below, but selecting a same/newer version is an
   upgrade, not a downgrade — add the target rollback <code>.out</code> in the
-  <a class="alert-link" href="{{ url_for('firmware.index') }}">Firmware repository</a>.
+  <a class="alert-link" href="{{ url_for('firmware.index') }}">{{ _('Firmware repository') }}</a>.
 </div>
 {% endif %}
 
@@ -65,14 +63,13 @@
 {% endmacro %}
 
 <div class="card shadow-sm">
-  <div class="card-header fw-card-header"><i class="bi bi-arrow-counterclockwise me-1"></i>Roll back now</div>
+  <div class="card-header fw-card-header"><i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Roll back now') }}</div>
   <div class="card-body">
-    <p class="small text-muted mb-3">Current firmware: <b>{{ firmware or 'unknown' }}</b> — the newest image
-      that is <b>older</b> than the running version is pre-selected as the rollback target.</p>
+    <p class="small text-muted mb-3">{{ _('Current firmware:') }} <b>{{ firmware or 'unknown' }}</b> {{ _('— the newest image that is') }} <b>{{ _('older') }}</b> {{ _('than the running version is pre-selected as the rollback target.') }}</p>
     <form method="POST" action="{{ url_for('appliances.downgrade_push', id=appliance.id) }}" id="flash-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="mb-3">
-        <label class="form-label">Firmware image (from repository)</label>
+        <label class="form-label">{{ _('Firmware image (from repository)') }}</label>
         <select class="form-select" name="image_id" required>
           {% for img in images %}
           <option value="{{ img.id }}" {{ 'selected' if selected_id and selected_id == img.id else '' }}>
@@ -84,7 +81,7 @@
       </div>
       <div class="form-check mb-2">
         <input class="form-check-input" type="checkbox" name="dry_run" id="dry_run" checked>
-        <label class="form-check-label" for="dry_run">Dry run (validate the image only — nothing is sent)</label>
+        <label class="form-check-label" for="dry_run">{{ _('Dry run (validate the image only — nothing is sent)') }}</label>
       </div>
       <div id="live-fields" class="d-none border rounded p-3 mb-3" style="background:rgba(248,113,113,.06)">
         <div class="form-check mb-2">
@@ -94,7 +91,7 @@
         <label class="form-label small">Type the appliance name <code>{{ appliance.name }}</code> to authorise the live reboot:</label>
         <input class="form-control" type="text" name="confirm_name" autocomplete="off" placeholder="{{ appliance.name }}">
       </div>
-      <button class="btn fw-btn-primary" type="submit"><i class="bi bi-check2-circle me-1"></i>Validate / Roll back</button>
+      <button class="btn fw-btn-primary" type="submit"><i class="bi bi-check2-circle me-1"></i>{{ _('Validate / Roll back') }}</button>
     </form>
   </div>
 </div>

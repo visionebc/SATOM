@@ -4,25 +4,25 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <span>Audit Log</span>
+  <span>{{ _('Audit Log') }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-clipboard-check me-2 text-accent"></i>Audit Log</h1>
-    <p class="text-muted mb-0" style="font-size:13px;">All user actions are recorded for compliance and accountability</p>
+    <h1 class="fw-page-title"><i class="bi bi-clipboard-check me-2 text-accent"></i>{{ _('Audit Log') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('All user actions are recorded for compliance and accountability') }}</p>
   </div>
   <div class="d-flex gap-2">
     <button class="btn btn-fw-outline btn-sm" data-js="audit-refresh">
-      <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+      <i class="bi bi-arrow-clockwise me-1"></i>{{ _('Refresh') }}
     </button>
     <a href="{{ url_for('audit.index') }}"
        class="btn btn-secondary btn-sm">
-      <i class="bi bi-download me-1"></i>Export CSV
+      <i class="bi bi-download me-1"></i>{{ _('Export CSV') }}
     </a>
   </div>
 </div>
@@ -30,51 +30,51 @@
 <!-- Filter Bar -->
 <div class="fw-card mb-3">
   <div class="fw-card-header">
-    <span class="fw-card-title"><i class="bi bi-funnel me-2"></i>Filters</span>
+    <span class="fw-card-title"><i class="bi bi-funnel me-2"></i>{{ _('Filters') }}</span>
     <a href="{{ url_for('audit.index') }}" class="btn btn-sm btn-secondary">
-      <i class="bi bi-x-lg me-1"></i>Clear
+      <i class="bi bi-x-lg me-1"></i>{{ _('Clear') }}
     </a>
   </div>
   <div class="fw-card-body">
     <form method="GET" action="{{ url_for('audit.index') }}" class="row g-3 align-items-end">
       <div class="col-md-12">
-        <label class="fw-form-label">Search (user · action · target · detail · error ID)</label>
+        <label class="fw-form-label">{{ _('Search (user · action · target · detail · error ID)') }}</label>
         <input type="text" name="q" class="form-control form-control-sm"
-               placeholder="Search all fields — e.g. an Error ID like 69881E81"
+               placeholder="{{ _('Search all fields — e.g. an Error ID like 69881E81') }}"
                value="{{ request.args.get('q','') if request else '' }}">
       </div>
       <div class="col-md-3">
-        <label class="fw-form-label">Username</label>
+        <label class="fw-form-label">{{ _('Username') }}</label>
         <input type="text" name="user" class="form-control form-control-sm"
-               placeholder="Filter by user" value="{{ request.args.get('user','') if request else '' }}">
+               placeholder="{{ _('Filter by user') }}" value="{{ request.args.get('user','') if request else '' }}">
       </div>
       <div class="col-md-3">
-        <label class="fw-form-label">Action</label>
+        <label class="fw-form-label">{{ _('Action') }}</label>
         <select name="action" class="form-select form-select-sm">
-          <option value="">All Actions</option>
-          <option value="login" {{ 'selected' if request and request.args.get('action') == 'login' }}>Login</option>
-          <option value="logout" {{ 'selected' if request and request.args.get('action') == 'logout' }}>Logout</option>
-          <option value="create" {{ 'selected' if request and request.args.get('action') == 'create' }}>Create</option>
-          <option value="update" {{ 'selected' if request and request.args.get('action') == 'update' }}>Update</option>
-          <option value="delete" {{ 'selected' if request and request.args.get('action') == 'delete' }}>Delete</option>
-          <option value="backup" {{ 'selected' if request and request.args.get('action') == 'backup' }}>Backup</option>
-          <option value="error" {{ 'selected' if request and request.args.get('action') == 'error' }}>Error</option>
-          <option value="api_call" {{ 'selected' if request and request.args.get('action') == 'api_call' }}>API Call</option>
+          <option value="">{{ _('All Actions') }}</option>
+          <option value="login" {{ 'selected' if request and request.args.get('action') == 'login' }}>{{ _('Login') }}</option>
+          <option value="logout" {{ 'selected' if request and request.args.get('action') == 'logout' }}>{{ _('Logout') }}</option>
+          <option value="create" {{ 'selected' if request and request.args.get('action') == 'create' }}>{{ _('Create') }}</option>
+          <option value="update" {{ 'selected' if request and request.args.get('action') == 'update' }}>{{ _('Update') }}</option>
+          <option value="delete" {{ 'selected' if request and request.args.get('action') == 'delete' }}>{{ _('Delete') }}</option>
+          <option value="backup" {{ 'selected' if request and request.args.get('action') == 'backup' }}>{{ _('Backup') }}</option>
+          <option value="error" {{ 'selected' if request and request.args.get('action') == 'error' }}>{{ _('Error') }}</option>
+          <option value="api_call" {{ 'selected' if request and request.args.get('action') == 'api_call' }}>{{ _('API Call') }}</option>
         </select>
       </div>
       <div class="col-md-2">
-        <label class="fw-form-label">From Date</label>
+        <label class="fw-form-label">{{ _('From Date') }}</label>
         <input type="date" name="date_from" class="form-control form-control-sm"
                value="{{ request.args.get('date_from','') if request else '' }}">
       </div>
       <div class="col-md-2">
-        <label class="fw-form-label">To Date</label>
+        <label class="fw-form-label">{{ _('To Date') }}</label>
         <input type="date" name="date_to" class="form-control form-control-sm"
                value="{{ request.args.get('date_to','') if request else '' }}">
       </div>
       <div class="col-md-2">
         <button type="submit" class="btn btn-fw-primary btn-sm w-100">
-          <i class="bi bi-search me-1"></i>Apply
+          <i class="bi bi-search me-1"></i>{{ _('Apply') }}
         </button>
       </div>
     </form>
@@ -84,14 +84,14 @@
 <!-- Results count -->
 <div class="d-flex align-items-center justify-content-between mb-2">
   <span class="text-muted" style="font-size:13px;">
-    Showing <strong>{{ entries|length if entries else 0 }}</strong> entries
+    {{ _('Showing') }} <strong>{{ entries|length if entries else 0 }}</strong> entries
     {% if request and (request.args.get('q') or request.args.get('user') or request.args.get('action') or request.args.get('date_from')) %}
       (filtered)
     {% endif %}
   </span>
   <div class="fw-search-box" style="max-width:240px;">
     <i class="bi bi-search search-icon"></i>
-    <input type="text" id="auditSearch" placeholder="Quick search…">
+    <input type="text" id="auditSearch" placeholder="{{ _('Quick search…') }}">
   </div>
 </div>
 
@@ -107,12 +107,12 @@
     <thead>
       <tr>
         <th style="width:92px;">ID</th>
-        <th>Timestamp</th>
-        <th>User</th>
-        <th>Action</th>
-        <th>Target</th>
-        <th>Detail</th>
-        <th>IP Address</th>
+        <th>{{ _('Timestamp') }}</th>
+        <th>{{ _('User') }}</th>
+        <th>{{ _('Action') }}</th>
+        <th>{{ _('Target') }}</th>
+        <th>{{ _('Detail') }}</th>
+        <th>{{ _('IP Address') }}</th>
         <th style="width:34px;"></th>
       </tr>
     </thead>
@@ -129,7 +129,7 @@
             data-extra="{{ e.extra or '' }}">
           <td>
             <span class="audit-id" data-js="copy-id" data-id="{{ e.id }}"
-                  title="Click to copy this entry ID">#{{ e.id }}</span>
+                  title="{{ _('Click to copy this entry ID') }}">#{{ e.id }}</span>
           </td>
           <td class="text-nowrap mono" style="font-size:12px;">
             {{ e.timestamp | localtime }}
@@ -165,9 +165,9 @@
           <td colspan="8">
             <div class="fw-empty-state">
               <div class="fw-empty-state-icon"><i class="bi bi-clipboard"></i></div>
-              <div class="fw-empty-state-title">No audit entries</div>
+              <div class="fw-empty-state-title">{{ _('No audit entries') }}</div>
               <div class="fw-empty-state-text">
-                Audit entries will appear here as users interact with the system.
+                {{ _('Audit entries will appear here as users interact with the system.') }}
               </div>
             </div>
           </td>
@@ -185,13 +185,13 @@
     {% if page > 1 %}
       <a href="?page={{ page - 1 }}&{{ request.query_string.decode() if request else '' }}"
          class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-chevron-left"></i> Previous
+        <i class="bi bi-chevron-left"></i> {{ _('Previous') }}
       </a>
     {% endif %}
     {% if has_next %}
       <a href="?page={{ page + 1 }}&{{ request.query_string.decode() if request else '' }}"
          class="btn btn-outline-secondary btn-sm">
-        Next <i class="bi bi-chevron-right"></i>
+        {{ _('Next') }} <i class="bi bi-chevron-right"></i>
       </a>
     {% endif %}
   </div>
@@ -211,7 +211,7 @@
   <div style="display:flex;align-items:center;justify-content:space-between;
               padding:16px 18px;background:#0e1626;border-bottom:1px solid rgba(148,163,184,.12);">
     <h5 style="margin:0;font-size:15px;font-weight:700;color:#eaf0fb;">
-      <i class="bi bi-clipboard-data me-2" style="color:var(--fw-accent);"></i>Audit Entry
+      <i class="bi bi-clipboard-data me-2" style="color:var(--fw-accent);"></i>{{ _('Audit Entry') }}
     </h5>
     <button type="button" data-js="audit-detail-close"
             style="background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.18);

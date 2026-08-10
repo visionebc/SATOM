@@ -4,9 +4,9 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <span>API Tokens</span>
+  <span>{{ _('API Tokens') }}</span>
 </div>
 {% endblock %}
 
@@ -21,7 +21,7 @@
 } %}
 {% set SCOPE_DESC = {'read': '(GET)', 'write': '(run actions / config_write)', 'admin': '(admin)'} %}
 <div class="d-flex align-items-center mb-3">
-  <h4 class="mb-0"><i class="bi bi-key me-2"></i>API Tokens</h4>
+  <h4 class="mb-0"><i class="bi bi-key me-2"></i>{{ _('API Tokens') }}</h4>
 </div>
 <p class="text-muted" style="max-width:70ch">
   Tokens let authenticated external systems call the <code>/api/v1</code>
@@ -32,31 +32,26 @@
 
 {% if new_token %}
 <div class="alert alert-success">
-  <strong>New token created — copy it now.</strong> This is the only time the
-  full token is shown. Store it securely.
+  <strong>{{ _('New token created — copy it now.') }}</strong> {{ _('This is the only time the full token is shown. Store it securely.') }}
   <input class="form-control mt-2" readonly value="{{ new_token }}"
          style="font-family:monospace">
   <div class="small text-muted mt-1">
-    Owner: <strong>{{ new_token_row.owner.username }}</strong> ·
-    Scopes: <strong>{{ new_token_row.scope_list|join(', ') }}</strong> ·
-    Capabilities: <strong>{{ new_token_row.capability_list|join(', ') if new_token_row.capability_list else 'all' }}</strong> ·
-    AppID scope: <strong>{{ new_token_row.app_id_list|join(', ') if new_token_row.app_id_list else 'any' }}</strong> ·
-    ADOM: <strong>{{ new_token_row.product }}</strong>
+    {{ _('Owner:') }} <strong>{{ new_token_row.owner.username }}</strong> {{ _('· Scopes:') }} <strong>{{ new_token_row.scope_list|join(', ') }}</strong> {{ _('· Capabilities:') }} <strong>{{ new_token_row.capability_list|join(', ') if new_token_row.capability_list else 'all' }}</strong> {{ _('· AppID scope:') }} <strong>{{ new_token_row.app_id_list|join(', ') if new_token_row.app_id_list else 'any' }}</strong> {{ _('· ADOM:') }} <strong>{{ new_token_row.product }}</strong>
   </div>
 </div>
 {% endif %}
 
 <div class="card fw-card mb-4">
-  <div class="card-header">Create a token</div>
+  <div class="card-header">{{ _('Create a token') }}</div>
   <div class="card-body">
     <form method="post" action="{{ url_for('api_tokens.create') }}" class="row g-3">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="col-md-4">
-        <label class="form-label">Name</label>
-        <input class="form-control" name="name" placeholder="e.g. splunk-integration" required>
+        <label class="form-label">{{ _('Name') }}</label>
+        <input class="form-control" name="name" placeholder="{{ _('e.g. splunk-integration') }}" required>
       </div>
       <div class="col-md-4">
-        <label class="form-label">Owner (inherits RBAC)</label>
+        <label class="form-label">{{ _('Owner (inherits RBAC)') }}</label>
         <select class="form-select" name="owner_id" required>
           {% for u in users %}
           <option value="{{ u.id }}">{{ u.username }} ({{ u.role }})</option>
@@ -70,11 +65,11 @@
         </select>
       </div>
       <div class="col-md-2">
-        <label class="form-label">Expires (days)</label>
-        <input class="form-control" name="expires_days" type="number" min="1" placeholder="never">
+        <label class="form-label">{{ _('Expires (days)') }}</label>
+        <input class="form-control" name="expires_days" type="number" min="1" placeholder="{{ _('never') }}">
       </div>
       <div class="col-12">
-        <label class="form-label d-block">Scopes</label>
+        <label class="form-label d-block">{{ _('Scopes') }}</label>
         {% for s in scopes %}
         <div class="form-check form-check-inline">
           <input class="form-check-input" type="checkbox" name="scopes" value="{{ s }}"
@@ -90,7 +85,7 @@
       </div>
 
       <div class="col-md-6">
-        <label class="form-label d-block">Capabilities <span class="text-muted small">(what — leave all unchecked for no restriction)</span></label>
+        <label class="form-label d-block">{{ _('Capabilities') }} <span class="text-muted small">{{ _('(what — leave all unchecked for no restriction)') }}</span></label>
         {% for c in capabilities %}
         <div class="form-check">
           <input class="form-check-input" type="checkbox" name="capabilities" value="{{ c }}"
@@ -105,37 +100,34 @@
         {% endfor %}
       </div>
       <div class="col-md-6">
-        <label class="form-label d-block">AppID scope <span class="text-muted small">(where — leave empty for no restriction)</span></label>
+        <label class="form-label d-block">{{ _('AppID scope') }} <span class="text-muted small">{{ _('(where — leave empty for no restriction)') }}</span></label>
         <select class="form-select" name="app_ids" multiple size="6">
           {% for a in appid_catalog %}
           <option value="{{ a.app_id }}">{{ a.app_id }}{% if a.customer %} — {{ a.customer }}{% endif %} ({{ a.product }})</option>
           {% endfor %}
         </select>
         <div class="form-text">
-          A token pinned to AppIDs may run only backend/policy/cert actions whose
-          target server policy is bound to one of these AppIDs — and no fleet-wide
-          action at all. Assign policies under <a href="/web/appids">AppIDs</a>.
-          Only AppIDs of the token's ADOM resolve.
+          {{ _('A token pinned to AppIDs may run only backend/policy/cert actions whose target server policy is bound to one of these AppIDs — and no fleet-wide action at all. Assign policies under') }} <a href="/web/appids">{{ _('AppIDs') }}</a>{{ _('. Only AppIDs of the token\'s ADOM resolve.') }}
         </div>
       </div>
 
       <div class="col-12">
         <button class="btn btn-primary" type="submit">
-          <i class="bi bi-plus-lg me-1"></i>Create token</button>
+          <i class="bi bi-plus-lg me-1"></i>{{ _('Create token') }}</button>
       </div>
     </form>
   </div>
 </div>
 
 <div class="card fw-card">
-  <div class="card-header">Existing tokens</div>
+  <div class="card-header">{{ _('Existing tokens') }}</div>
   <div class="table-responsive">
     <table class="table table-hover mb-0 align-middle">
       <thead>
         <tr>
-          <th>Name</th><th>Token</th><th>Owner</th><th>Scopes</th>
-          <th>Capabilities</th><th>AppID scope</th>
-          <th>ADOM</th><th>Status</th><th>Last used</th><th></th>
+          <th>{{ _('Name') }}</th><th>{{ _('Token') }}</th><th>{{ _('Owner') }}</th><th>{{ _('Scopes') }}</th>
+          <th>{{ _('Capabilities') }}</th><th>{{ _('AppID scope') }}</th>
+          <th>ADOM</th><th>{{ _('Status') }}</th><th>{{ _('Last used') }}</th><th></th>
         </tr>
       </thead>
       <tbody>
@@ -149,29 +141,29 @@
           <td class="small">{{ t.app_id_list|join(', ') if t.app_id_list else 'any' }}</td>
           <td>{{ t.product }}</td>
           <td>
-            {% if t.revoked %}<span class="badge bg-secondary">revoked</span>
-            {% elif t.is_expired %}<span class="badge bg-warning text-dark">expired</span>
-            {% else %}<span class="badge bg-success">active</span>{% endif %}
+            {% if t.revoked %}<span class="badge bg-secondary">{{ _('revoked') }}</span>
+            {% elif t.is_expired %}<span class="badge bg-warning text-dark">{{ _('expired') }}</span>
+            {% else %}<span class="badge bg-success">{{ _('active') }}</span>{% endif %}
           </td>
           <td class="small text-muted">
             {{ t.last_used_at.strftime('%Y-%m-%d %H:%M') if t.last_used_at else 'never' }}</td>
           <td class="text-end">
             <button type="button" class="btn btn-sm btn-outline-secondary"
-                    data-bs-toggle="modal" data-bs-target="#editTok{{ t.id }}">Edit</button>
+                    data-bs-toggle="modal" data-bs-target="#editTok{{ t.id }}">{{ _('Edit') }}</button>
             {% if not t.revoked %}
             <form method="post" action="{{ url_for('api_tokens.revoke', id=t.id) }}" class="d-inline">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button class="btn btn-sm btn-outline-warning" type="submit">Revoke</button>
+              <button class="btn btn-sm btn-outline-warning" type="submit">{{ _('Revoke') }}</button>
             </form>
             {% endif %}
             <form method="post" action="{{ url_for('api_tokens.delete', id=t.id) }}" class="d-inline">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+              <button class="btn btn-sm btn-outline-danger" type="submit">{{ _('Delete') }}</button>
             </form>
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="10" class="text-center text-muted py-4">No tokens yet.</td></tr>
+        <tr><td colspan="10" class="text-center text-muted py-4">{{ _('No tokens yet.') }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -188,12 +180,12 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-header">
           <h5 class="modal-title">Edit token — <code>{{ t.masked }}</code></h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
         </div>
         <div class="modal-body">
           <div class="row g-3">
             <div class="col-md-6">
-              <label class="form-label">Name</label>
+              <label class="form-label">{{ _('Name') }}</label>
               <input class="form-control" name="name" value="{{ t.name }}">
             </div>
             <div class="col-md-3">
@@ -205,9 +197,9 @@
               </select>
             </div>
             <div class="col-md-3">
-              <label class="form-label">Expiry (days)</label>
+              <label class="form-label">{{ _('Expiry (days)') }}</label>
               <input class="form-control" name="expires_days" type="number"
-                     placeholder="keep" min="-1">
+                     placeholder="{{ _('keep') }}" min="-1">
               <div class="form-text">
                 blank = keep{% if t.expires_at %} (now {{ t.expires_at.strftime('%Y-%m-%d') }}){% else %} (never expires){% endif %},
                 a number re-anchors from today, <code>-1</code> clears.
@@ -215,7 +207,7 @@
             </div>
 
             <div class="col-12">
-              <label class="form-label d-block">Scopes</label>
+              <label class="form-label d-block">{{ _('Scopes') }}</label>
               {% for s in scopes %}
               <div class="form-check form-check-inline">
                 <input class="form-check-input" type="checkbox" name="scopes" value="{{ s }}"
@@ -228,8 +220,8 @@
             </div>
 
             <div class="col-md-6">
-              <label class="form-label d-block">Capabilities
-                <span class="text-muted small">(what — all unchecked = no restriction)</span></label>
+              <label class="form-label d-block">{{ _('Capabilities') }}
+                <span class="text-muted small">{{ _('(what — all unchecked = no restriction)') }}</span></label>
               {% for c in capabilities %}
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="capabilities" value="{{ c }}"
@@ -244,8 +236,8 @@
               {% endfor %}
             </div>
             <div class="col-md-6">
-              <label class="form-label d-block">AppID scope
-                <span class="text-muted small">(where — empty = no restriction)</span></label>
+              <label class="form-label d-block">{{ _('AppID scope') }}
+                <span class="text-muted small">{{ _('(where — empty = no restriction)') }}</span></label>
               <select class="form-select" name="app_ids" multiple size="6">
                 {% for a in appid_catalog %}
                 <option value="{{ a.app_id }}" {{ 'selected' if a.app_id in t.app_id_list else '' }}>
@@ -259,8 +251,8 @@
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary">Save changes</button>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-primary">{{ _('Save changes') }}</button>
         </div>
       </form>
     </div>

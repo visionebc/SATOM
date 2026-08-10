@@ -2,9 +2,9 @@
 {% block title %}{{ baseline.name }} — Combo{% endblock %}
 {% block content %}
 <div class="fw-breadcrumb mb-1">
-  <a href="{{ url_for('provisioning.index') }}">Provisioning</a>
+  <a href="{{ url_for('provisioning.index') }}">{{ _('Provisioning') }}</a>
   <span class="separator">/</span>
-  <a href="{{ url_for('provisioning.baselines') }}">Combos</a>
+  <a href="{{ url_for('provisioning.baselines') }}">{{ _('Combos') }}</a>
   <span class="separator">/</span>
   <span>{{ baseline.name }}</span>
 </div>
@@ -26,7 +26,7 @@
       <button class="btn btn-fw-primary"><i class="bi bi-rocket-takeoff me-1"></i>Apply to {{ devices|length }} device(s)…</button>
     </form>
     {% endif %}
-    <a class="btn btn-fw-secondary" href="{{ url_for('provisioning.baselines') }}"><i class="bi bi-arrow-left me-1"></i>Back</a>
+    <a class="btn btn-fw-secondary" href="{{ url_for('provisioning.baselines') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Back') }}</a>
   </div>
 </div>
 
@@ -34,12 +34,11 @@
   <!-- Assigned -->
   <div class="col-lg-6">
     <div class="fw-card">
-      <div class="fw-card-header"><i class="bi bi-check2-square me-2"></i>Assigned templates
+      <div class="fw-card-header"><i class="bi bi-check2-square me-2"></i>{{ _('Assigned templates') }}
         <span class="fw-badge fw-badge-primary ms-1">{{ assigned|length }}</span></div>
       <div class="fw-card-body">
         {% if not assigned %}
-          <p class="text-muted mb-0" style="font-size:13px;">Nothing assigned yet. Pick from the
-            available templates on the right.</p>
+          <p class="text-muted mb-0" style="font-size:13px;">{{ _('Nothing assigned yet. Pick from the available templates on the right.') }}</p>
         {% else %}
           {% for key, label, items in assigned_groups %}
           <div class="fw-section-group" style="margin-bottom:14px;">
@@ -48,7 +47,7 @@
               <span class="text-muted" style="font-size:11px; font-weight:400;">({{ items|length }})</span>
             </h3>
             <table class="fw-table">
-              <thead><tr><th>Name</th><th>Kind</th><th>Ver</th><th class="actions-col"></th></tr></thead>
+              <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Kind') }}</th><th>{{ _('Ver') }}</th><th class="actions-col"></th></tr></thead>
               <tbody>
               {% for t in items %}
                 <tr>
@@ -61,7 +60,7 @@
                           data-fw-confirm-form="Remove {{ t.name }} from this combo?">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <input type="hidden" name="template_id" value="{{ t.id }}">
-                      <button class="btn btn-sm btn-outline-danger" title="Remove"><i class="bi bi-x-lg"></i></button>
+                      <button class="btn btn-sm btn-outline-danger" title="{{ _('Remove') }}"><i class="bi bi-x-lg"></i></button>
                     </form>
                   </td>
                 </tr>
@@ -78,14 +77,13 @@
   <!-- Available -->
   <div class="col-lg-6">
     <div class="fw-card">
-      <div class="fw-card-header"><i class="bi bi-plus-square me-2"></i>Available to assign
+      <div class="fw-card-header"><i class="bi bi-plus-square me-2"></i>{{ _('Available to assign') }}
         <span class="fw-badge fw-badge-secondary ms-1">{{ available|length }}</span>
-        <span class="text-muted ms-2" style="font-size:11px; font-weight:400;">latest version only</span></div>
+        <span class="text-muted ms-2" style="font-size:11px; font-weight:400;">{{ _('latest version only') }}</span></div>
       <div class="fw-card-body">
         {% if not available %}
-          <p class="text-muted mb-0" style="font-size:13px;">No more scope-compatible approved
-            templates to add. Approve more in
-            <a href="{{ url_for('provisioning.index') }}">System Provisioning</a>.</p>
+          <p class="text-muted mb-0" style="font-size:13px;">{{ _('No more scope-compatible approved templates to add. Approve more in') }}
+            <a href="{{ url_for('provisioning.index') }}">{{ _('System Provisioning') }}</a>.</p>
         {% else %}
           {% for key, label, items in available_groups %}
           <div class="fw-section-group" style="margin-bottom:14px;">
@@ -94,7 +92,7 @@
               <span class="text-muted" style="font-size:11px; font-weight:400;">({{ items|length }})</span>
             </h3>
             <table class="fw-table">
-              <thead><tr><th>Name</th><th>Kind</th><th>Ver</th><th class="actions-col"></th></tr></thead>
+              <thead><tr><th>{{ _('Name') }}</th><th>{{ _('Kind') }}</th><th>{{ _('Ver') }}</th><th class="actions-col"></th></tr></thead>
               <tbody>
               {% for t in items %}
                 <tr>
@@ -106,7 +104,7 @@
                           action="{{ url_for('provisioning.baseline_assign', baseline_id=baseline.id) }}">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <input type="hidden" name="template_id" value="{{ t.id }}">
-                      <button class="btn btn-sm btn-outline-success" title="Assign"><i class="bi bi-plus-lg"></i></button>
+                      <button class="btn btn-sm btn-outline-success" title="{{ _('Assign') }}"><i class="bi bi-plus-lg"></i></button>
                     </form>
                   </td>
                 </tr>
@@ -123,7 +121,7 @@
 
 {% if devices %}
 <div class="fw-card mt-3">
-  <div class="fw-card-header"><i class="bi bi-hdd-network me-2"></i>Matching devices
+  <div class="fw-card-header"><i class="bi bi-hdd-network me-2"></i>{{ _('Matching devices') }}
     <span class="fw-badge fw-badge-secondary ms-1">{{ devices|length }}</span></div>
   <div class="fw-card-body">
     {% for d in devices %}<span class="fw-badge fw-badge-secondary me-1 mb-1 d-inline-block">{{ d.name }}</span>{% endfor %}
@@ -131,7 +129,6 @@
 </div>
 {% else %}
 <div class="alert alert-warning mt-3 py-2" style="font-size:13px;">
-  <i class="bi bi-exclamation-triangle me-1"></i>No registered device matches this combo's scope yet —
-  nothing to apply to until a device is classified into it.</div>
+  <i class="bi bi-exclamation-triangle me-1"></i>{{ _('No registered device matches this combo\'s scope yet — nothing to apply to until a device is classified into it.') }}</div>
 {% endif %}
 {% endblock %}

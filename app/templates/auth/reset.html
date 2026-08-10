@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="{{ csrf_token() }}">
-  <title>Choose a New Password — SATOM</title>
+  <title>{{ _('Choose a New Password — SATOM') }}</title>
   {# Vendored, not a CDN: this product ships offline installers for isolated
      management networks, where an auth page that needs public internet to lay
      itself out is an auth page nobody can read. #}
@@ -31,7 +31,7 @@
   <div class="login-card">
     <div class="login-header">
       <div class="login-logo"><i class="bi bi-shield-lock"></i></div>
-      <p class="login-brand-text">Choose a new password</p>
+      <p class="login-brand-text">{{ _('Choose a new password') }}</p>
     </div>
     <div class="login-body">
       {% with messages = get_flashed_messages(with_categories=True) %}
@@ -42,19 +42,19 @@
       <form method="POST" action="{{ url_for('auth.reset_password', token=token) }}" novalidate>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="mb-3">
-          <label for="new_password" class="form-label">New password</label>
+          <label for="new_password" class="form-label">{{ _('New password') }}</label>
           <input type="password" class="form-control" id="new_password" name="new_password"
-                 placeholder="At least 8 characters" autocomplete="new-password" required>
+                 placeholder="{{ _('At least 8 characters') }}" autocomplete="new-password" required>
         </div>
         <div class="mb-4">
-          <label for="confirm_password" class="form-label">Confirm new password</label>
+          <label for="confirm_password" class="form-label">{{ _('Confirm new password') }}</label>
           <input type="password" class="form-control" id="confirm_password" name="confirm_password"
-                 placeholder="Repeat new password" autocomplete="new-password" required>
+                 placeholder="{{ _('Repeat new password') }}" autocomplete="new-password" required>
         </div>
-        <button type="submit" class="btn btn-login"><i class="bi bi-check-lg me-1"></i>Set new password</button>
+        <button type="submit" class="btn btn-login"><i class="bi bi-check-lg me-1"></i>{{ _('Set new password') }}</button>
       </form>
       <div class="text-center mt-3">
-        <a href="{{ url_for('auth.login') }}" style="font-size:13px;"><i class="bi bi-arrow-left me-1"></i>Back to sign in</a>
+        <a href="{{ url_for('auth.login') }}" style="font-size:13px;"><i class="bi bi-arrow-left me-1"></i>{{ _('Back to sign in') }}</a>
       </div>
     </div>
   </div>

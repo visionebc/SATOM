@@ -17,4 +17,4 @@
    including it.
    ========================================================================= #}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics_admin' else '' }}" href="{{ url_for('metrics_admin.index', _adom=product.key) }}">
-  <i class="bi bi-cloud-download fw-nav-icon"></i><span>Collection</span></a>
+  <i class="bi bi-cloud-download fw-nav-icon"></i><span>{{ _('Collection') }}</span></a>

@@ -117,12 +117,18 @@
       </div>
       <div class="fw-card-body">
         <div class="d-flex align-items-center gap-3 mb-4">
-          <img src="{{ url_for('static', filename=product.mark) }}" alt="{{ product.name }}"
-               style="width:48px;height:48px;border-radius:10px;">
+          {# Brand emblem, never product.mark: this card is About the CONSOLE,
+             and product.mark is the ACTIVE ADOM's icon -- it drew the Global
+             globe here, and a FortiWeb logo inside a FortiWeb ADOM. #}
+          <img src="{{ theme_logo_url or url_for('static', filename='img/satom-mark.png') }}"
+               alt="{{ settings.app_name if settings else (product.title if product else 'SATOM') }}"
+               style="width:48px;height:48px;border-radius:10px;object-fit:contain;">
           <div>
-            <h5 class="mb-0" style="font-weight:700;">{{ settings.app_name if settings else product.title }}</h5>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <h5 class="mb-0" style="font-weight:700;">{{ settings.app_name if settings else product.title }}</h5>
+              <span class="fw-badge fw-badge-primary">v{{ app_version }}</span>
+            </div>
             <div class="text-muted" style="font-size:12px; font-weight:500; letter-spacing:.2px;">System Automation & Task Orchestration Manager</div>
-            <span class="fw-badge fw-badge-primary">v{{ app_version }}</span>
           </div>
         </div>
         <p style="font-size:13.5px; color:#495057;">

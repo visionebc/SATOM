@@ -27,10 +27,22 @@
    does not have. A missing menu entry is a nuisance; that one is an outage.
    ========================================================================= #}
 {% if current_user and current_user.can('config_write') %}
-{% set _auto_bps = ['scheduled_actions','device_provision','provisioning','change_requests'] %}
+{% set _auto_bps = ['upgrade_flow','scheduled_actions','device_provision','provisioning','change_requests'] %}
 <div class="fw-nav-group {{ 'open' if request.blueprint in _auto_bps }}" data-nav-group="Automation">
   <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-gear-wide-connected fw-nav-section-icon" style="color:#8b5cf6;"></i><span>{{ _('Automation') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-group-body">
+    {# Upgrade Flow is the staged ENTRY POINT (pre-upgrade in bulk -> one change
+       -> consolidated impact -> execution), so it leads the group. Shown only
+       where services.scheduled_actions upgrade_prep declares a product
+       (fortiweb, fortiadc): in the FortiAnalyzer / FortiAuthenticator ADOMs it
+       could only render an empty device list, which reads as "this fleet has
+       no appliances" rather than "this stage does not apply here". Gated on
+       BACKUP, the permission the page itself requires - a link that leads to a
+       403 is a bug report waiting to be filed. #}
+    {% if product.key in ('fortiweb', 'fortiadc') and current_user.can('backup') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'upgrade_flow' else '' }}" href="{{ url_for('upgrade_flow.index', _adom=product.key) }}">
+      <i class="bi bi-arrow-up-circle fw-nav-icon"></i><span>{{ _('Upgrade Flow') }}</span></a>
+    {% endif %}
     {% if current_user.can('user_manage') %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'scheduled_actions' else '' }}" href="{{ url_for('scheduled_actions.index', _adom=product.key) }}">
       <i class="bi bi-clock-history fw-nav-icon"></i><span>{{ _('Scheduled Actions') }}</span></a>

@@ -609,27 +609,24 @@ def upgrade_prep_run(id):
     appliance = _managed_or_404(id)
     if appliance is None:
         return jsonify({'ok': False, 'error': 'unsupported appliance kind'}), 400
-    from ..services import change_requests as crsvc, prep_store, upgrade
+    from ..services import prep_store
     opts = request.json or {}
     try:
-        result = upgrade.prepare(
+        # ONE implementation of the pre-upgrade, shared with the scheduled
+        # action (services.scheduled_actions._do_upgrade_prep). It runs
+        # upgrade.prepare(), captures the affected-service inventory and
+        # persists the row; a storage failure must not discard a pre-flight
+        # that already ran against the device, so it returns the result either
+        # way and reports the failure through on_store_error.
+        result, prep = prep_store.run_for(
             appliance,
             do_backup=opts.get('backup', True),
             do_health=opts.get('health', True),
             do_services=opts.get('services', True),
+            created_by=getattr(current_user, 'username', '') or '',
+            on_store_error=lambda exc: log_exception(
+                exc, context='appliances.upgrade_prep_store'),
         )
-        # PERSIST the run and the inventory of published services it covers.
-        # Until this existed the pre-flight vanished with the browser tab, so
-        # the chain the operator actually wants - pre-upgrade passed, therefore
-        # raise the change - had nothing to attach. A storage failure must not
-        # discard a pre-flight that already ran against the device.
-        prep = None
-        try:
-            inventory = crsvc.affected_policies([appliance.id], timeout=6.0)
-            prep = prep_store.record(appliance, result, inventory=inventory,
-                                     created_by=getattr(current_user, 'username', '') or '')
-        except Exception as exc:  # noqa: BLE001
-            log_exception(exc, context='appliances.upgrade_prep_store')
         log_action('appliance.upgrade_prep', target=appliance.name,
                    detail=(f'prep #{prep.id} ok={prep.ok}' if prep else 'not stored'))
         # 'result' is passed through from the live call, not re-read from the

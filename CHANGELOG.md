@@ -6,6 +6,45 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **A maintenance window is now one staged workflow: Automation → Upgrade
+  Flow.** Pre-flight every appliance in the window in one sweep, raise a single
+  change request that cites *all* of that evidence, export the consolidated
+  customer impact, then execute. Each stage already existed; each was
+  per-device or unlinked, so an operator upgrading sixty appliances walked the
+  path sixty times and still finished holding a change document whose evidence
+  covered one box.
+
+### Fixed
+
+- **The pre-upgrade had two implementations, and the only one that accepted
+  more than one device stored nothing.** The appliance page ran the full
+  pre-flight — configuration backup, health battery, maintenance permission and
+  an HTTP baseline of every published service — and kept it as citable
+  evidence. The scheduled action of the same name took a backup and a health
+  read, and kept nothing at all: no service baseline, no affected-service
+  inventory, no verdict, no record. Nothing ever failed. Pre-flighting a whole
+  window simply produced no evidence a change request could cite, which is why
+  a bulk pre-upgrade could not feed a change in the first place. There is now
+  one implementation, and the scheduled action uses it.
+
+- **A change request could rest on the evidence of a single appliance.** The
+  link was one-to-one, and the create path silently dropped any pre-upgrade run
+  whose device was not the change's own — so a twenty-device window carried one
+  device's baseline, and an approver reading *the pre-upgrade passed* was told
+  the truth about one box and nothing about the other nineteen. A change now
+  cites one run per device it covers, and each run is checked against the
+  change's devices individually.
+
+- **The customer-impact spreadsheet under-stated the outage for exactly the
+  same reason.** It is generated from the inventory frozen when the change was
+  raised, and that inventory came off the single cited run. It is now merged
+  across every bound run and de-duplicated, so a re-run does not double-count
+  its services and two appliances publishing the same policy name do not
+  collapse into one row.
+
+
 ## [1.9.3] - 2026-08-10
 
 ### Added

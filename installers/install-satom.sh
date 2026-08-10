@@ -1105,6 +1105,16 @@ else
 fi
 ok "Entorno virtual listo ($(venv/bin/python --version 2>&1))"
 
+# Catalogos de idioma. El .po viaja en el repo; el .mo que lee la aplicacion
+# es derivado y se genera aqui. Sin este paso la interfaz se sirve en ingles
+# aunque el perfil pida otro idioma -- y lo haria EN SILENCIO, que es como se
+# descubren estas cosas un mes despues.
+if venv/bin/pybabel compile -d app/translations >>"$INSTALL_LOG" 2>&1; then
+    ok "Catalogos de idioma compilados"
+else
+    warn "No se pudieron compilar los catalogos: la interfaz quedara en ingles"
+fi
+
 # ---------------------------------------------------------------------------
 # Cuenta de servicio + privilegios mínimos
 # ---------------------------------------------------------------------------

@@ -6647,10 +6647,25 @@ human signs. Every failure mode in that sentence is silent:</p>
    that stopped <code>index.html</code> losing its Docs link and that §53 restates for
    brand marks: a phrase with two authors drifts, and the drifted copy is the
    one that gets signed.</li>
-<li><strong>A proposal never overwrites a human.</strong> <code>paint()</code> returns early on
+<li>
+<p><strong>A proposal never overwrites a human.</strong> <code>paint()</code> returns early on
    <code>data-auto="0"</code>, set the first time the operator types. Without it, answering
    the language question after writing the reason wipes it — and the wipe looks
-   like the form working.</li>
+   like the form working.</p>
+</li>
+<li>
+<p><strong>A question must be answerable with every one of its answers.</strong> The picker
+   opens on an entry with no value. A control that opens on a real answer cannot
+   report that answer being chosen — <code>change</code> fires on a change of value, and
+   picking what is already picked is not one. This is the same defect the
+   language radios carry a <code>click</code> listener for, and it is invisible from the
+   server: the payload is complete, the markup is correct, and the operator is
+   stuck. Guard: nothing is pre-selected on a direct visit, the opening entry is
+   not submittable (<code>required</code> + empty value + server rejection), and
+   <code>actionAnswered</code> is <strong>derived from the control's value</strong>, never assigned a
+   literal — with a literal, going back to the question leaves step 3 open over
+   a proposal for no change at all.</p>
+</li>
 </ol>
 <p>Recipe:</p>
 <pre><code>cd /opt/satom

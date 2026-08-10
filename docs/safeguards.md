@@ -6713,6 +6713,18 @@ Two structural rules this section exists to hold:
    the language question after writing the reason wipes it — and the wipe looks
    like the form working.
 
+3. **A question must be answerable with every one of its answers.** The picker
+   opens on an entry with no value. A control that opens on a real answer cannot
+   report that answer being chosen — `change` fires on a change of value, and
+   picking what is already picked is not one. This is the same defect the
+   language radios carry a `click` listener for, and it is invisible from the
+   server: the payload is complete, the markup is correct, and the operator is
+   stuck. Guard: nothing is pre-selected on a direct visit, the opening entry is
+   not submittable (`required` + empty value + server rejection), and
+   `actionAnswered` is **derived from the control's value**, never assigned a
+   literal — with a literal, going back to the question leaves step 3 open over
+   a proposal for no change at all.
+
 Recipe:
 
     cd /opt/satom

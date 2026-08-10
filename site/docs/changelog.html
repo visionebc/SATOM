@@ -93,6 +93,30 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>The Automation section is in every ADOM, and each ADOM shows only its own.</strong>
+  Scheduled Actions, Device Provisioning and Change Requests now appear in the
+  Global, FortiWeb, FortiADC, FortiAnalyzer and FortiAuthenticator consoles —
+  and in any ADOM declared from here on. The pages always existed and always
+  answered by URL; four of the five consoles simply had no way to navigate to
+  them, which is not an error anyone sees. The group has ONE author
+  (<code>partials/nav_automation.html</code>), so an entry added to it lands in every ADOM
+  in the same commit rather than in whichever branch someone remembered.
+  Reaching them needed the router too: <code>scheduled_actions</code> was pinned to the
+  FortiWeb ADOM, so the concrete ADOMs would have bounced off the link and the
+  Global console would have been silently re-pinned — its automation calendar
+  was FortiWeb's, wearing Global's chrome. Scoping is by row instead
+  (<code>ScheduledAction.product</code>), and it now covers the <strong>five by-id routes</strong> as
+  well as the list: edit, toggle, delete, run-now and history read the table raw
+  until now, and a page that hides a row and then serves it one URL away is not
+  scoped, it is decorated. The editor follows the same rule — the catalog is cut
+  to the actions whose declared products include this ADOM, and the posted
+  action and target list are re-checked server-side, because the form is a hint
+  and this is the rule. Its device picker was hardcoded to <code>kind='fortiweb'</code>,
+  which rendered an <strong>empty</strong> roster in every other ADOM: no error, no message,
+  a form that silently could not target anything. <strong>System Provisioning stays
+  FortiWeb-only on purpose</strong> — it composes FortiWeb <code>cmdb</code> objects out of a
+  registry stamped <code>product='fortiweb'</code>, so offering it in the FortiAnalyzer
+  ADOM would aim FortiWeb configuration at a box that has none of those objects.</li>
 <li><strong>The new change request asks two questions and proposes the rest.</strong>
   <code>/change-requests/new</code> now asks, in this order, the <strong>document language</strong>
   (English / Deutsch) and then the <strong>type of change</strong> — and fills in title,

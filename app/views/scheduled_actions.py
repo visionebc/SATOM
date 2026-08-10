@@ -151,6 +151,63 @@ def _schedule_summary(kind: str, spec: dict) -> str:
     return kind or '—'
 
 
+def _action_or_404(id):
+    """Load one scheduled action by id under the SAME ADOM scope as the list.
+
+    Filtering the LIST while every by-id route reads the table raw is not
+    scoping, it is decoration — the hole closed fleet-wide for appliances on
+    2026-08-06 (``visible_appliance_or_404``) and for change requests in
+    ``_cr_in_scope_or_404``. It did not matter here while Automation existed in
+    one ADOM only; the moment the group renders in all of them, edit / toggle /
+    delete / run-now are five cross-ADOM writes one URL away.
+
+    404, never 403: do not confirm the row exists.
+    """
+    from flask import abort
+
+    from ..services.product_scope import scope_query
+    row = scope_query(
+        ScheduledAction.query.filter(ScheduledAction.id == id),
+        ScheduledAction.product).first()
+    if row is None:
+        abort(404)
+    return row
+
+
+def _adom_specs(specs):
+    """The catalog entries the ACTIVE ADOM may schedule.
+
+    An action declares the appliance KINDS it fires against (``spec.products``).
+    Offering a FortiWeb-only action inside the FortiAnalyzer ADOM does not fail:
+    it builds a job whose entire target set is invisible there, and a job that
+    runs against nothing reports success. Global offers everything — it sees
+    every product.
+    """
+    from ..services.product_scope import concrete_products, session_product
+    p = session_product()
+    if p not in concrete_products():
+        return list(specs)
+    return [s for s in specs if p in (s.products or ())]
+
+
+def _rejected_targets(spec) -> list[str]:
+    """Names of selected devices this action may not fire against.
+
+    The form is a hint; this is the rule. Without it a posted ``targets`` field
+    aims an action at a product it has no transport for — in the Global ADOM the
+    picker legitimately lists every kind, so the mismatch is one click away.
+    """
+    ids = _build_targets()
+    if not ids:
+        return []
+    kinds = set(spec.products or ())
+    if not kinds:
+        return []
+    rows = visible_appliances().filter(Appliance.id.in_(ids)).all()
+    return sorted(r.name for r in rows
+                  if (r.kind or 'fortiweb').strip().lower() not in kinds)
+
+
 def _apply_form(action: ScheduledAction) -> bool:
     """Read the editor form onto ``action`` (no commit). Returns False (and
     flashes) on a validation miss so the caller can bounce back to the form."""
@@ -161,6 +218,15 @@ def _apply_form(action: ScheduledAction) -> bool:
         return False
     if spec is None:
         flash('Select a valid action from the catalog.', 'danger')
+        return False
+    if spec.key not in {s.key for s in _adom_specs(sa.ALL_ACTIONS.values())}:
+        # Not "unknown" — known, and not this ADOM's to schedule. Saying so is
+        # the difference between a typo and a permission answer.
+        flash('That action does not apply to this ADOM.', 'danger')
+        return False
+    bad = _rejected_targets(spec)
+    if bad:
+        flash('This action cannot target %s.' % ', '.join(bad), 'danger')
         return False
 
     kind = (request.form.get('schedule_kind') or 'once').strip()
@@ -191,14 +257,15 @@ def _apply_form(action: ScheduledAction) -> bool:
 
 
 def _form_context(action: ScheduledAction | None) -> dict:
-    appliances = (visible_appliances()
-                  .filter_by(kind='fortiweb')
-                  .order_by(Appliance.name)
-                  .all())
+    # The roster follows the ADOM. The hardcoded ``kind='fortiweb'`` rendered an
+    # EMPTY device list in every other ADOM — no error, no message, just a form
+    # that silently could not target anything. ``visible_appliances`` already
+    # applies the ADOM's kind filter (Global sees every product).
+    appliances = visible_appliances().order_by(Appliance.name).all()
     return dict(
         action=action,
-        admin_actions=sa.ADMIN_ACTIONS,
-        user_actions=sa.USER_ACTIONS,
+        admin_actions=_adom_specs(sa.ADMIN_ACTIONS),
+        user_actions=_adom_specs(sa.USER_ACTIONS),
         all_actions=sa.ALL_ACTIONS,
         appliances=appliances,
         selected_targets=set(action.targets_list) if action else set(),
@@ -260,7 +327,7 @@ def new():
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def edit(id):
-    action = ScheduledAction.query.get_or_404(id)
+    action = _action_or_404(id)
     if request.method == 'POST':
         if _apply_form(action):
             db.session.commit()
@@ -276,7 +343,7 @@ def edit(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def toggle(id):
-    action = ScheduledAction.query.get_or_404(id)
+    action = _action_or_404(id)
     action.enabled = not action.enabled
     if action.enabled:
         # Re-arm: a freshly enabled action gets a fresh next_run from now.
@@ -293,7 +360,7 @@ def toggle(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def delete(id):
-    action = ScheduledAction.query.get_or_404(id)
+    action = _action_or_404(id)
     name = action.name
     # Remove run history first (FK is ON DELETE CASCADE at the DB level, but
     # SQLite does not enforce it unless PRAGMA foreign_keys is on).
@@ -309,7 +376,7 @@ def delete(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def run_now(id):
-    action = ScheduledAction.query.get_or_404(id)
+    action = _action_or_404(id)
     # NOTE: this runs SYNCHRONOUSLY in the request thread — device calls inside
     # execute_and_record may block for the client timeout. That is acceptable for
     # a deliberate, manual admin trigger; the unattended timer path uses the very
@@ -330,7 +397,7 @@ def run_now(id):
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def history(id):
-    action = ScheduledAction.query.get_or_404(id)
+    action = _action_or_404(id)
     runs = (ScheduledActionRun.query
             .filter_by(action_id=action.id)
             .order_by(ScheduledActionRun.started_at.desc())

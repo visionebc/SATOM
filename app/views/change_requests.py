@@ -199,6 +199,31 @@ def index():
                            risk_badge=_RISK_BADGE)
 
 
+
+def _prep_draft_context(prep):
+    """The pre-flight run reduced to the plain facts a draft sentence may cite.
+
+    Built HERE, not in :mod:`app.services.cr_document`, so that module keeps
+    touching neither the ORM nor a timezone. The backup is only quoted when the
+    run actually took one: naming a backup that failed would put a rollback in
+    writing that has nothing to roll back to.
+    """
+    if prep is None:
+        return None
+    from ..services import settings_store
+    result = prep.result_dict
+    backup = result.get('backup') if isinstance(result.get('backup'), dict) else {}
+    return {
+        'id': prep.id,
+        'at': settings_store.to_local(prep.created_at, '%Y-%m-%d %H:%M %Z'),
+        'ok': bool(prep.ok),
+        'services': len(prep.inventory_list),
+        'firmware': (prep.firmware or '').strip(),
+        'backup': ((backup.get('name') or '').strip()
+                   if backup.get('ok') else ''),
+    }
+
+
 @bp.route('/new', methods=['GET', 'POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
@@ -304,6 +329,25 @@ def new():
     prep = prep_store.get(request.args.get('prep_id'))
     if prep is not None and prep.appliance_id not in {a.id for a in appliances}:
         prep = None            # not visible in this ADOM: do not leak that it exists
+    # The guided form asks two questions - document language, then change type -
+    # and proposes the prose that follows from them. Every proposal is authored
+    # SERVER-side, in both languages, for every action, and handed to the page as
+    # data; the page only substitutes the device names. Composing sentences in
+    # JavaScript would give the printed document a second author.
+    from ..services import email_service
+    prep_ctx = _prep_draft_context(prep)
+    lang_codes = [code for code, _label in cr_document.LANGS]
+    keys = sorted(cr_action_keys())
+    drafts = {key: {code: cr_document.draft_fields(key, code, prep=prep_ctx)
+                    for code in lang_codes} for key in keys}
+    action_labels = {key: {code: cr_document.action_label(key, code)
+                           for code in lang_codes} for key in keys}
+    # Proposed, VISIBLE and editable - not silently applied. An owner the
+    # operator never saw is exactly the attribution this field refuses to make.
+    defaults = {
+        'owner': (getattr(current_user, 'username', '') or ''),
+        'notify_to': (email_service.config().get('default_to') or '').strip(),
+    }
     return render_template('change_requests/form.html',
                            appliances=appliances,
                            cr_actions=cr_actions(),
@@ -313,6 +357,12 @@ def new():
                            prep=prep,
                            preset_action=(request.args.get('action') or '').strip(),
                            langs=cr_document.LANGS,
+                           drafts=drafts,
+                           action_labels=action_labels,
+                           devices_token=cr_document.DEVICES_TOKEN,
+                           devices_none={code: cr_document.devices_placeholder(code)
+                                         for code in lang_codes},
+                           defaults=defaults,
                            tz_name=_tz_name())
 
 

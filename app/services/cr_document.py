@@ -2102,6 +2102,148 @@ def _outcome(cr, lang: str, status: str) -> list:
     return out
 
 
+# --------------------------------------------------------------------------- #
+#  Draft prefill for a NEW change request                                       #
+# --------------------------------------------------------------------------- #
+#: Token the caller substitutes with the live device selection. The sentences
+#: below are authored HERE, in both languages, and the form only replaces this
+#: token - a phrase with two authors drifts, and the drifted copy is the one an
+#: approver ends up signing.
+DEVICES_TOKEN = "{devices}"
+
+#: The fields :func:`draft_fields` proposes. NOT the whole form: the devices and
+#: the maintenance window are decisions, not defaults, and are never guessed.
+DRAFT_FIELDS: tuple = ("title", "reason", "rollback")
+
+#: Why these sentences do NOT reuse the action profile's prose: the rendered
+#: document already prints the standard justification (section 4) and the
+#: standard rollback steps (section 7) from :data:`ACTION_PROFILES`, and prints
+#: the change's OWN ``reason``/``rollback`` next to them. Copying the profile
+#: text into those fields would print the same paragraph twice and, worse, make
+#: the operator's statement indistinguishable from boilerplate. So the proposal
+#: is built from what is true of THIS change - the action, the devices, and the
+#: pre-flight run it rests on.
+_DRAFT: dict = {
+    "de": {
+        "devices_none": "(noch keine Geräte gewählt)",
+        "title": "{action} — {devices}",
+        "reason": (
+            "Geplante Durchführung von „{action}“ auf {devices}. Die Aktion ist "
+            "änderungspflichtig und läuft ausschliesslich innerhalb des unten "
+            "festgelegten, freigegebenen Wartungsfensters."),
+        "reason_prep": (
+            "Geplante Durchführung von „{action}“ auf {devices}. Nachweis: "
+            "Pre-Flight-Lauf #{prep_id} vom {prep_at} — Ergebnis {verdict}, "
+            "{services} veröffentlichte Dienste erfasst{firmware}{backup}. Die "
+            "Aktion läuft ausschliesslich innerhalb des unten festgelegten, "
+            "freigegebenen Wartungsfensters."),
+        "verdict_ok": "bestanden",
+        "verdict_bad": "NICHT sauber",
+        "firmware": ", Firmware-Stand zum Zeitpunkt der Prüfung {firmware}",
+        "backup": ", Konfigurations-Backup {backup}",
+        "rollback": (
+            "Bei Fehlschlag: beim fehlgeschlagenen Schritt anhalten, den Zustand "
+            "vor dem Change auf {devices} wiederherstellen (vorherige "
+            "Firmware-Partition bzw. letztes Konfigurations-Backup), die auf "
+            "diesem Change erfassten veröffentlichten Dienste erneut prüfen und "
+            "erst danach das Wartungsfenster schliessen. Die Standardschritte "
+            "dieser Aktion stehen in Abschnitt 7 des Change-Dokuments."),
+        "rollback_prep": (
+            "Bei Fehlschlag: beim fehlgeschlagenen Schritt anhalten, den Zustand "
+            "vor dem Change auf {devices} wiederherstellen — Konfigurations-Backup "
+            "{backup} aus dem Pre-Flight-Lauf #{prep_id} —, die auf diesem Change "
+            "erfassten veröffentlichten Dienste erneut prüfen und erst danach das "
+            "Wartungsfenster schliessen. Die Standardschritte dieser Aktion stehen "
+            "in Abschnitt 7 des Change-Dokuments."),
+    },
+    "en": {
+        "devices_none": "(no devices selected yet)",
+        "title": "{action} — {devices}",
+        "reason": (
+            "Planned execution of “{action}” on {devices}. The action is "
+            "change-controlled and runs only inside the approved maintenance "
+            "window set below."),
+        "reason_prep": (
+            "Planned execution of “{action}” on {devices}. Evidence: pre-flight "
+            "run #{prep_id} of {prep_at} — verdict {verdict}, {services} published "
+            "service(s) recorded{firmware}{backup}. The action runs only inside "
+            "the approved maintenance window set below."),
+        "verdict_ok": "passed",
+        "verdict_bad": "NOT clean",
+        "firmware": ", firmware at the time of the check {firmware}",
+        "backup": ", configuration backup {backup}",
+        "rollback": (
+            "On failure: stop at the failed step, restore the pre-change state on "
+            "{devices} (previous firmware partition, or the last configuration "
+            "backup), re-check the published services recorded on this change, and "
+            "only then close the maintenance window. The standard steps for this "
+            "action are printed in section 7 of the change document."),
+        "rollback_prep": (
+            "On failure: stop at the failed step, restore the pre-change state on "
+            "{devices} — configuration backup {backup} from pre-flight run "
+            "#{prep_id} —, re-check the published services recorded on this change, "
+            "and only then close the maintenance window. The standard steps for "
+            "this action are printed in section 7 of the change document."),
+    },
+}
+
+
+def action_label(action, lang) -> str:
+    """The action's label in ``lang`` - the same string section 2 of the
+    document uses.
+
+    The English labels mirror the automation registry verbatim; the German ones
+    exist only here. Reading both from the profile means the picker, the title
+    it proposes and the printed document cannot name the same action three
+    different ways."""
+    return str(_profile_text(action, normalize_lang(lang)).get("label", "")
+               or "").strip()
+
+
+def draft_fields(action, lang, *, prep=None) -> dict:
+    """Proposed ``title`` / ``reason`` / ``rollback`` for a new change request.
+
+    ``prep`` is an optional plain mapping describing the pre-flight run the
+    change rests on - ``{id, at, ok, services, firmware, backup}`` - prepared by
+    the caller so this module keeps touching no ORM and no timezone.
+
+    Every returned string carries :data:`DEVICES_TOKEN` where the device names
+    belong; the caller substitutes the live selection. What comes back is a
+    PROPOSAL rendered into editable fields, never stored behind the operator's
+    back: section 1 of the document attributes this text to them by name.
+    """
+    code = normalize_lang(lang)
+    t = _DRAFT[code]
+    label = action_label(action, code)
+    ctx = prep if isinstance(prep, dict) else None
+
+    title = t["title"].format(action=label, devices=DEVICES_TOKEN)
+    if ctx:
+        firmware = str(ctx.get("firmware") or "").strip()
+        backup = str(ctx.get("backup") or "").strip()
+        prep_id = ctx.get("id", "?")
+        reason = t["reason_prep"].format(
+            action=label, devices=DEVICES_TOKEN, prep_id=prep_id,
+            prep_at=str(ctx.get("at") or "?"),
+            verdict=t["verdict_ok"] if ctx.get("ok") else t["verdict_bad"],
+            services=ctx.get("services", 0),
+            firmware=(t["firmware"].format(firmware=firmware) if firmware else ""),
+            backup=(t["backup"].format(backup=backup) if backup else ""))
+        rollback = (t["rollback_prep"].format(devices=DEVICES_TOKEN,
+                                              backup=backup, prep_id=prep_id)
+                    if backup else t["rollback"].format(devices=DEVICES_TOKEN))
+    else:
+        reason = t["reason"].format(action=label, devices=DEVICES_TOKEN)
+        rollback = t["rollback"].format(devices=DEVICES_TOKEN)
+    return {"title": title, "reason": reason, "rollback": rollback}
+
+
+def devices_placeholder(lang) -> str:
+    """What stands in for the device list while nothing is selected. It reads as
+    an unfilled blank, never as a device name."""
+    return _DRAFT[normalize_lang(lang)]["devices_none"]
+
+
 __all__ = [
     "LANGS",
     "DEFAULT_LANG",
@@ -2113,5 +2255,10 @@ __all__ = [
     "change_ref",
     "filename",
     "profile_for",
+    "action_label",
+    "draft_fields",
+    "devices_placeholder",
+    "DEVICES_TOKEN",
+    "DRAFT_FIELDS",
     "render",
 ]

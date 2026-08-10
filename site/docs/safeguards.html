@@ -6616,6 +6616,52 @@ venv/bin/python /root/mutate_prep.py                               # 12/12 kille
 <code>rc==4</code> is a usage error and <code>pytest</code> prints <code>FAILED</code> in upper case), and the
 browser pass is not optional: the defect class here lives between the template
 and the stylesheet, where no test can see it.</p>
+<h2 id="56-a-proposal-is-not-a-default-and-a-plausible-one-never-fails">§56. A proposal is not a default, and a plausible one never fails</h2>
+<p>The guided <code>/change-requests/new</code> form proposes the wording of a document a
+human signs. Every failure mode in that sentence is silent:</p>
+<ul>
+<li>A German change request drafted with English prose renders, saves and prints.
+  It reads as a typo, not as a bug. Guard: fixed vocabulary that only ever
+  appears in one language (<code>_ONLY_IN</code>), checked <strong>with and without</strong> a cited
+  run — the two sentences share no text, so translating one proves nothing
+  about the other.</li>
+<li>A proposed title that lost its <code>{devices}</code> token is a document about nothing,
+  and it is still a valid title. Guard: every proposed field must carry
+  <code>cr_document.DEVICES_TOKEN</code>.</li>
+<li>A "reason" copied from <code>ACTION_PROFILES</code> prints the same paragraph the
+  document already prints in §4, and makes the operator's own statement
+  indistinguishable from boilerplate. Guard: the profile prose must not appear
+  inside the proposal.</li>
+<li>A rollback plan naming a configuration backup that never completed reads
+  exactly like a correct one, and is discovered during the rollback. Guard: with
+  no backup name, the proposal must be <strong>identical</strong> to the no-run variant.</li>
+<li>An owner filled in at save time attributes accountability nobody watched being
+  assigned. Guard: the owner is proposed into the visible field, and the page
+  payload carries it.</li>
+</ul>
+<p>Two structural rules this section exists to hold:</p>
+<ol>
+<li><strong>One author per phrase.</strong> The sentences live in <code>cr_document</code>, in both
+   languages, for every change-controlled action, and reach the page as JSON.
+   The page substitutes device names and nothing else. This is the same rule
+   that stopped <code>index.html</code> losing its Docs link and that §53 restates for
+   brand marks: a phrase with two authors drifts, and the drifted copy is the
+   one that gets signed.</li>
+<li><strong>A proposal never overwrites a human.</strong> <code>paint()</code> returns early on
+   <code>data-auto="0"</code>, set the first time the operator types. Without it, answering
+   the language question after writing the reason wipes it — and the wipe looks
+   like the form working.</li>
+</ol>
+<p>Recipe:</p>
+<pre><code>cd /opt/satom
+runuser -u satom -- venv/bin/python -m pytest tests/test_cr_draft_prefill.py -q
+</code></pre>
+<p>Known limit, stated rather than hidden: the reveal, the substitution and the
+<code>data-auto</code> branch are <strong>JavaScript</strong>. The tests pin the branch in the source;
+they cannot execute it. The behaviour itself is verified by rendering the page
+in a browser, which is also the only way to see that a hidden step is actually
+hidden — <code>.row</code> and <code>.fw-card</code> set <code>display</code>, and a class beats the UA
+stylesheet's <code>[hidden]</code> rule on equal specificity.</p>
     </div>
   </div>
 </section>

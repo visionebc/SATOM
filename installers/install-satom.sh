@@ -43,7 +43,7 @@
 # ============================================================================
 set -euo pipefail
 
-VERSION="1.9.2"
+VERSION="1.9.3"
 APP_DIR="/opt/satom"
 ACME_WEBROOT="/var/www/acme"
 LEGO_VERSION="5.2.2"

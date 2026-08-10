@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#193-2026-08-10">[1.9.3] - 2026-08-10</a>
       <a href="#192-2026-08-09">[1.9.2] - 2026-08-09</a>
       <a href="#191-2026-08-09">[1.9.1] - 2026-08-09</a>
       <a href="#190-2026-08-08">[1.9.0] - 2026-08-08</a>
@@ -91,6 +92,7 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="193-2026-08-10">[1.9.3] - 2026-08-10</h2>
 <h3 id="added">Added</h3>
 <ul>
 <li><strong>The interface itself is translated — Spanish, German, French and Italian,
@@ -786,12 +788,65 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   use a tile built for strings rather than for counts, and the backup filename
   has moved out of its badge onto its own line: the badge states the verdict,
   the filename is the evidence.</li>
-<li><strong>The page uses the product's chrome.</strong> It was assembled from raw Bootstrap
+<li>
+<p><strong>The page uses the product's chrome.</strong> It was assembled from raw Bootstrap
   cards, badges and alerts; <code>.card</code> has no override in the product stylesheet, so
   it rendered unlike every other page, and the Bootstrap status colours are not
   the ones calibrated against white. Values read off the appliance are now
   HTML-escaped before reaching <code>innerHTML</code> — a policy name carrying <code>&lt;</code> silently
-  ate the rest of its row, which looks exactly like missing data.</li>
+  ate the rest of its row, which looks exactly like missing data.</p>
+</li>
+<li>
+<p><strong>The About card in your profile announced <code>v1.0</code>.</strong> It had been wrong for
+  eight releases. <code>app/version.py</code> exists precisely to kill hand-written
+  version numbers — its own docstring records that the footer and Settings →
+  System Information each carried a <code>v1.0</code> that "quietly rotted through 1.1,
+  1.2, 1.2.1 and 1.2.2 while the release pipeline dutifully published the real
+  number everywhere else". The card now interpolates the shipped version.</p>
+</li>
+</ul>
+<p><strong>The guard that should have caught it was an enumerated list.</strong> It walked
+  exactly two templates, <code>base.html</code> and <code>settings/index.html</code>; the literal
+  lived in a third. An allowlist written by hand over a tree that keeps growing
+  stops covering new files without ever failing. The rule now sweeps <em>every</em>
+  template and an exemption must carry a written reason — the four that remain
+  are appliance-API versions (<code>v2.0</code>), not ours.</p>
+<ul>
+<li>
+<p><strong>The same card described SATOM as a FortiWeb console.</strong> It advertised an
+  <code>API Target</code> of "FortiWeb 7.6 REST API", a "Custom FortiWeb 7.6 Theme" and a
+  "Multi-user FortiWeb &amp; FortiADC management console". SATOM routes four
+  distinct appliance clients — FortiWeb, FortiADC, FortiAuthenticator and
+  FortiAnalyzer — so naming one API was not incomplete, it was false. The API
+  row is gone and the description no longer names a family. The description was
+  also never marked for translation, so it stayed English in all five
+  languages; it is translated now, as is the card's title.</p>
+</li>
+<li>
+<p><strong>Settings → Default appliance platform offered three of the four families,
+  and discarded the others in silence.</strong> FortiAuthenticator and FortiAnalyzer
+  were missing, and <code>FortiWeb-Cloud</code> — a family SATOM has no client for — was
+  offered as though it worked. Worse than the missing options was the
+  server-side rule behind them: a hardcoded three-value whitelist folded
+  anything else to <code>FortiWeb</code> with no error, so a posted <code>fortiauthenticator</code>
+  was <em>stored as FortiWeb</em>. The operator chose one thing and the system saved
+  another.</p>
+</li>
+</ul>
+<p>The list now has a single author — the same product registry that drives the
+  appliance form (<code>product_scope.device_products()</code>) — and the server validates
+  against that registry rather than a copy of it. Values written before this
+  change still read back: the old <code>FortiWeb</code>/<code>FortiADC</code> spellings map onto the
+  registry keys, and <code>FortiWeb-Cloud</code> folds to <code>fortiweb</code>. Without that
+  migration an existing installation would have opened the page with <em>no</em>
+  option selected and the operator would have read it as a lost setting.</p>
+<ul>
+<li><strong>The setting now does what its help text has always claimed.</strong> "Pre-selected
+  when registering a new appliance" was untrue: <code>default_kind</code> was written and
+  displayed, and nothing ever read it — the appliance form ignored it entirely,
+  and its vocabulary (<code>FortiWeb</code>) could not have matched the form's
+  (<code>fortiweb</code>) even if it had. Registering an appliance now starts on the
+  configured platform.</li>
 </ul>
 <h2 id="192-2026-08-09">[1.9.2] - 2026-08-09</h2>
 <h3 id="fixed_1">Fixed</h3>

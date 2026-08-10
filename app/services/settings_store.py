@@ -40,7 +40,7 @@ SEGMENT_FIELDS = ("name", "zone", "line", "department", "cidr", "interface", "ga
 
 DEFAULTS = {
     K_APP_NAME: "SATOM",
-    K_DEFAULT_KIND: "FortiWeb",
+    K_DEFAULT_KIND: "fortiweb",
     K_SESSION_TIMEOUT: "60",
     K_POLL_INTERVAL: "30",
     K_SHOW_RAW: "0",
@@ -162,7 +162,7 @@ def timezones() -> list[str]:
 def general() -> dict[str, Any]:
     return {
         "app_name": get_str(K_APP_NAME),
-        "default_kind": get_str(K_DEFAULT_KIND),
+        "default_kind": normalise_default_kind(get_str(K_DEFAULT_KIND)),
         "session_timeout": _to_int(get_str(K_SESSION_TIMEOUT), 60),
         "poll_interval": _to_int(get_str(K_POLL_INTERVAL), 30),
         "show_raw_config": get_str(K_SHOW_RAW) == "1",
@@ -241,12 +241,51 @@ def parse_local(value: Any) -> Any:
         return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
 
 
+#: Los valores que este ajuste guardaba antes de tener un roster. Eran
+#: TitleCase y ademas de un vocabulario distinto del de ``Appliance.kind``
+#: (minusculas), asi que el ajuste no podia casar con el formulario que decia
+#: rellenar. ``FortiWeb-Cloud`` no es una familia de appliance: SATOM no tiene
+#: cliente para ella (app/models.py no la enruta), de modo que se pliega a
+#: fortiweb en vez de conservarse como una opcion que no lleva a ninguna parte.
+_LEGACY_DEFAULT_KIND = {
+    "fortiweb": "fortiweb",
+    "fortiweb-cloud": "fortiweb",
+    "fortiadc": "fortiadc",
+    "fortianalyzer": "fortianalyzer",
+    "fortiauthenticator": "fortiauthenticator",
+}
+
+
+def platform_choices() -> tuple[tuple[str, str], ...]:
+    """El roster de plataformas, del registro de ADOMs. Un solo autor."""
+    from .product_scope import device_products
+    return device_products()
+
+
+def normalise_default_kind(value: Any) -> str:
+    """La clave de plataforma valida mas cercana a ``value``.
+
+    La plantilla es una pista; esto es la regla. Sin ella un ``default_kind``
+    posteado a mano se guardaba tal cual o se plegaba en silencio a FortiWeb,
+    que es como elegir FortiAuthenticator acababa siendo FortiWeb sin decirlo.
+    """
+    try:
+        valid = {key for key, _ in platform_choices()}
+    except Exception:  # noqa: BLE001 -- un registro roto no puede perder el valor
+        valid = set(_LEGACY_DEFAULT_KIND.values())
+    raw = str(value or "").strip().lower()
+    candidate = _LEGACY_DEFAULT_KIND.get(raw, raw)
+    if candidate in valid:
+        return candidate
+    return "fortiweb" if "fortiweb" in valid else (sorted(valid)[0] if valid else "fortiweb")
+
+
 def save_general(app_name: str, default_kind: str, session_timeout: Any,
                  poll_interval: Any, show_raw_config: bool,
                  log_levels: list[str], timezone: str = "",
                  log_format: str = "plain", env_mode: str = "") -> None:
     set_str(K_APP_NAME, (app_name or "SATOM").strip())
-    set_str(K_DEFAULT_KIND, default_kind if default_kind in ("FortiWeb", "FortiWeb-Cloud", "FortiADC") else "FortiWeb")
+    set_str(K_DEFAULT_KIND, normalise_default_kind(default_kind))
     set_str(K_SESSION_TIMEOUT, max(5, min(1440, _to_int(session_timeout, 60))))
     set_str(K_POLL_INTERVAL, max(10, min(3600, _to_int(poll_interval, 30))))
     set_str(K_SHOW_RAW, "1" if show_raw_config else "0")

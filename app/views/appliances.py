@@ -131,6 +131,7 @@ def index():
                            pagination=pagination, q=q,
                            total_count=total_count, kinds_count=kinds_count,
                            kind_options=product_scope.creatable_kinds(),
+                           default_kind=store.general().get('default_kind', ''),
                            classification=store.all_classification(),
                            has_snapshot=rediscovery.has_snapshot)
 

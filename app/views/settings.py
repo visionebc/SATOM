@@ -99,10 +99,13 @@ def _acme_creds_state() -> dict:
 @bp.route('/')
 @login_required
 def index():
+    from ..services import product_scope
     scheme = naming.effective_scheme(store.naming_overrides())
     return render_template(
         'settings/index.html',
         settings=store.general(),
+        platform_options=product_scope.device_products(),
+        platform_labels=dict(product_scope.device_products()),
         log_levels_all=store.LOG_LEVELS_ALL,
         log_formats_all=store.LOG_FORMATS,
         timezones_all=store.timezones(),
@@ -596,7 +599,7 @@ def save_general():
     try:
         store.save_general(
             app_name=request.form.get('app_name', ''),
-            default_kind=request.form.get('default_kind', 'FortiWeb'),
+            default_kind=request.form.get('default_kind', ''),
             session_timeout=request.form.get('session_timeout', 60),
             poll_interval=request.form.get('poll_interval', 30),
             show_raw_config=request.form.get('show_raw_config') == 'on',

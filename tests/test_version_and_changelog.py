@@ -45,18 +45,13 @@ def test_app_version_module_reads_the_file():
     assert app_version() == VERSION_FILE.read_text(encoding="utf-8").strip()
 
 
-@pytest.mark.parametrize("rel", ["base.html", "settings/index.html"])
-def test_no_version_literal_in_the_templates_that_display_one(rel):
-    """The footer and the System Information table must interpolate, not hardcode.
-
-    A literal here is invisible: the page renders, the number is simply a lie.
-    """
-    text = (TEMPLATES / rel).read_text(encoding="utf-8")
-    found = VERSION_LITERAL.findall(text)
-    assert not found, (
-        f"{rel} carries a version literal {found!r}; use "
-        "{{ app_version }} (see app/version.py)"
-    )
+# NOTE: this guard used to be a @parametrize over exactly two templates --
+# base.html and settings/index.html.  The literal that mattered was in a third
+# one, auth/profile.html, which shipped ``v1.0`` for eight releases while this
+# file sat green.  An enumerated allowlist over a tree that grows stops
+# covering without ever failing.  The rule now lives in ONE place and sweeps
+# every template: tests/test_platform_roster.py
+# ::test_no_template_anywhere_hardcodes_the_application_version
 
 
 def test_the_rendered_settings_page_shows_the_shipped_version(app, client):

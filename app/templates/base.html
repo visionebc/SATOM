@@ -233,6 +233,12 @@
           </a>
         </li>
         <li>
+          <a class="dropdown-item" href="{{ url_for('auth.profile') }}#language">
+            <i class="bi bi-translate me-2"></i>Language
+            <span class="text-muted ms-1">{{ user_lang|upper if user_lang else 'not set' }}</span>
+          </a>
+        </li>
+        <li>
           <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#bugReportModal">
             <i class="bi bi-bug me-2"></i>Report a problem
           </a>

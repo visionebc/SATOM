@@ -75,3 +75,40 @@ def architecture_filters(user_id: int) -> dict:
 def save_architecture_filters(user_id: int, mapping: dict) -> None:
     clean = {k: str((mapping or {}).get(k) or "") for k in _ARCH_KEYS}
     UserSetting.set(user_id, K_ARCH_FILTERS, _json.dumps(clean))
+
+
+# ---------------------------------------------------------------------------
+# Language (per user, DB-backed)
+# ---------------------------------------------------------------------------
+from . import langs as _langs                                    # noqa: E402
+
+K_LANG = "i18n.lang"
+
+
+def language(user_id: int) -> str:
+    """The language this user picked in their profile, or ``""`` when they
+    never picked one.
+
+    Empty is NOT the same as ``"en"``. A user who has never answered the
+    question must still be asked it where the answer is consequential -- the
+    change document is written in one language and *signed* in it -- while a
+    user who deliberately picked English must never be asked again. Collapsing
+    the two into the default makes the setting unobservable: "no preference"
+    and "prefers the default" would render identically, so the profile could
+    never show which one is true.
+    """
+    raw = UserSetting.get(user_id, K_LANG)
+    return _langs.normalize(raw) if _langs.is_supported(raw) else ""
+
+
+def save_language(user_id: int, code) -> str:
+    """Persist ``code`` as this user's language; return what was stored.
+
+    A blank or unsupported code CLEARS the preference instead of storing the
+    default. "No preference" is a choice the profile offers explicitly, and
+    writing ``en`` for it would answer the question the user just un-answered
+    -- silently, and in the language they did not choose.
+    """
+    value = _langs.normalize(code) if _langs.is_supported(code) else ""
+    UserSetting.set(user_id, K_LANG, value)
+    return value

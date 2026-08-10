@@ -67,3 +67,10 @@ publication-rules.local.json
 /.[!.]*.sh
 /.[!.]*.log
 /.[!.]*.rc
+
+# Catalogos compilados: artefacto DERIVADO del .po, generado por el
+# instalador y por el runner de update. No se versiona por dos razones:
+# lleva identificadores internos que el saneado del publicador no puede
+# reescribir sin romper la tabla de offsets del binario, y un binario
+# roto se publica en silencio.
+app/translations/*/LC_MESSAGES/*.mo

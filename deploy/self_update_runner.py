@@ -432,6 +432,16 @@ def process(req_path):
             if p.returncode != 0:
                 raise RuntimeError("pip install failed")
 
+        # Los .mo son DERIVADOS y ya no viajan en el repo, asi que un update
+        # que trae .po nuevos deja la interfaz en ingles hasta recompilarlos.
+        # Fuera del bloque do_pip a proposito: una actualizacion de solo codigo
+        # tambien trae catalogos. Nunca aborta -- un catalogo viejo es peor que
+        # uno nuevo, pero los dos son mejores que un update revertido.
+        pb = run([str(VENV / "pybabel"), "compile", "-d",
+                  str(APP / "app" / "translations")], timeout=300, user=APP_USER)
+        st.step("pybabel compile (language catalogues)",
+                pb.returncode == 0, pb.stderr)
+
         # Migrations run on the PRIMARY only; on a standby the schema arrives
         # via streaming replication, and `flask db upgrade` would fail on the
         # read-only replica.

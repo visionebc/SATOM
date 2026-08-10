@@ -728,27 +728,54 @@ def _do_appid_import(params: dict, dry_run: bool) -> dict:
 
 
 def _do_upgrade_prep(appliance, dry_run: bool) -> dict:
+    """Pre-upgrade snapshot for ONE device — the SAME run the appliance page does.
+
+    This used to be a SECOND implementation of "upgrade prep": create_backup()
+    plus status_check(), with no permission check, no service baseline, no
+    affected-service inventory, no verdict and — the part that mattered — NO
+    ROW. views.appliances.upgrade_prep_run has always called upgrade.prepare()
+    and persisted an UpgradePrep.
+
+    Two things named the same producing different evidence is bad enough. The
+    trap was which of the two is MULTI-TARGET: this one. So the only way to
+    pre-flight a whole maintenance window was the only way that left nothing a
+    change request could cite, which is exactly why a bulk pre-upgrade could
+    not feed a change. It now delegates to prep_store.run_for.
+
+    ``ok`` still means THE SNAPSHOT RAN, not that it came back clean. Grading
+    the action by the verdict would newly fail every schedule whose devices
+    have a service already down before the window — and discovering that is
+    the single most valuable thing the pre-flight produces (prep_store.verdict
+    says the same thing for the same reason). The verdict goes in the summary,
+    where an operator reads it, not in a flag that pages someone.
+    """
     if appliance is None:
         return {"ok": False,
                 "summary": "upgrade_prep needs a target device.", "log": ""}
     if dry_run:
         return {"ok": True,
-                "summary": f"[dry-run] would snapshot {appliance.name} (backup + health).",
+                "summary": (f"[dry-run] would snapshot {appliance.name} "
+                            "(backup + health + service baseline) and store it "
+                            "as citable evidence."),
                 "log": ""}
-    client = appliance.build_client()
+    from .prep_store import run_for, verdict as _prep_verdict
     lines: list[str] = []
-    # The backup is MANDATORY - if it raises, run_action reports ok=False.
-    resp = backup.create_backup(client)
-    bname = resp.get("name", "") if isinstance(resp, dict) else ""
-    lines.append(f"backup: {bname or 'created'}")
-    # Health read is best-effort (a bonus baseline), never fatal.
-    try:
-        status = client.status_check()
-        lines.append("health: " + json.dumps(status)[:1000])
-    except Exception as exc:  # noqa: BLE001
-        lines.append(f"health read skipped: {type(exc).__name__}: {exc}")
+    # The backup is MANDATORY - if prepare() raises, run_action reports ok=False.
+    result, prep = run_for(appliance, created_by="scheduler")
+    if prep is not None:
+        ok, summary = bool(prep.ok), (prep.summary or "")
+        lines.append(f"stored as prep #{prep.id} "
+                     f"({len(prep.inventory_list)} affected published services)")
+    else:
+        # The run happened against a live device; only the row failed. Saying
+        # "stored" here would send somebody to look for evidence that is not
+        # there, hours later, inside the window.
+        ok, summary = _prep_verdict(result)
+        lines.append("RAN BUT NOT STORED - no citable evidence for a change request")
+    lines.append(json.dumps(result, default=str)[:2000])
     return {"ok": True,
-            "summary": f"{appliance.name}: pre-upgrade snapshot ready (backup + health).",
+            "summary": f"{appliance.name}: {summary or 'pre-upgrade snapshot ready'}"
+                       + ("" if ok else " [not clean]"),
             "log": "\n".join(lines)[:_LOG_MAX]}
 
 

@@ -415,6 +415,15 @@ def new():
         'owner': (getattr(current_user, 'username', '') or ''),
         'notify_to': (email_service.config().get('default_to') or '').strip(),
     }
+    # Question 1 is answered from the operator's PROFILE, and only from there.
+    # A pre-checked first radio is not an answer: nobody chose it, and the
+    # document that comes out of this form is signed in whatever it says. A
+    # preference for a language no complete document exists in is NOT quietly
+    # downgraded to English either -- the form says so and still asks.
+    from ..services import user_settings_store as user_store
+    from ..services import langs as lang_registry
+    pref_lang = user_store.language(getattr(current_user, 'id', 0) or 0)
+    lang_preset = pref_lang if pref_lang in set(lang_codes) else ''
     return render_template('change_requests/form.html',
                            appliances=appliances,
                            cr_actions=[(e['key'], e['label'])
@@ -427,6 +436,11 @@ def new():
                            prep=prep,
                            preset_action=(request.args.get('action') or '').strip(),
                            langs=cr_document.LANGS,
+                           lang_preset=lang_preset,
+                           lang_pref=pref_lang,
+                           lang_pref_label=(lang_registry.label(pref_lang)
+                                            if pref_lang else ''),
+                           lang_pref_unrenderable=bool(pref_lang) and not lang_preset,
                            drafts=drafts,
                            action_labels=action_labels,
                            devices_token=cr_document.DEVICES_TOKEN,

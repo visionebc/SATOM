@@ -810,6 +810,24 @@ def create_app(config_override: object | None = None) -> Flask:
         return {"docs_url": site_url}
 
     @app.context_processor
+    def _inject_user_lang():
+        """The signed-in user's language preference, or "" when they have none.
+
+        Read here so the top bar can show the current choice next to the entry
+        that changes it. An anonymous request, a missing table (fresh install
+        mid-migration) or a broken row must never take down every page that
+        extends base.html, so this degrades to "" rather than raising.
+        """
+        from flask_login import current_user
+        from .services import user_settings_store as _ustore
+        try:
+            if getattr(current_user, "is_authenticated", False):
+                return {"user_lang": _ustore.language(current_user.id)}
+        except Exception:  # noqa: BLE001 - chrome must not break on a preference
+            pass
+        return {"user_lang": ""}
+
+    @app.context_processor
     def _inject_csp_nonce():
         return {"csp_nonce": getattr(g, "csp_nonce", "")}
 

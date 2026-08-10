@@ -306,13 +306,42 @@ def profile():
             flash('Password updated successfully.', 'success')
             return redirect(url_for('auth.profile'))
 
+    from ..services import cr_document, langs as lang_registry
     is_admin = bool(current_user and current_user.can(Permission.USER_MANAGE))
     return render_template(
         'auth/profile.html',
         is_admin=is_admin,
+        pref_lang=user_store.language(current_user.id),
+        lang_options=lang_registry.SUPPORTED,
+        # Which languages a whole change document can actually be produced in.
+        # Offered next to the picker rather than left implicit: a preference
+        # the product cannot honour yet must SAY so on the page where it is
+        # set, not fail to appear later on a form the operator is mid-way
+        # through.
+        doc_langs=[code for code, _label in cr_document.LANGS],
         settings=store.general(),
         banner_templates=store.BANNER_TEMPLATES,
         banners=user_store.all_banners(current_user.id),
         banner_products=[(k, _BRAND_PRODUCTS[k]['name'])
                          for k in store.BANNER_PRODUCTS],
     )
+
+
+@bp.route('/profile/language', methods=['POST'])
+@login_required
+def save_language():
+    """Store (or clear) the signed-in user's language preference.
+
+    Deliberately NOT part of the profile POST above: that handler validates the
+    current password and flashes "Current password is incorrect" when it is
+    absent. Saving a language through it would demand a password to change a
+    display preference -- or, worse, tempt the next editor to relax the
+    password check for everyone.
+    """
+    code = user_store.save_language(current_user.id,
+                                    request.form.get('lang'))
+    log_action('profile.language', target=(code or 'none'))
+    flash('Language preference saved.' if code else
+          'Language preference cleared \u2014 you will be asked each time.',
+          'success')
+    return redirect(url_for('auth.profile') + '#language')

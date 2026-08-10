@@ -6788,6 +6788,43 @@ agreed to.</p>
 </ul>
 <p>Recipe: <code>pytest tests/test_cr_types.py</code> (58 guards). Mutation harness
 <code>/tmp/pt_crt/mutate_crt.py</code> on a1 — verdict by <strong>rc</strong>, only <code>rc == 1</code> counts.</p>
+<h2 id="59-a-preference-that-cannot-be-distinguished-from-its-default-does-not-exist">§59. A preference that cannot be distinguished from its default does not exist</h2>
+<p><code>tests/test_lang_preference.py</code> (40 guards). The document language moved out of
+the page and into the operator's profile (<code>user_settings.i18n.lang</code>).</p>
+<p><strong>The failure has no exit code.</strong> A language question that answers itself
+produces a complete, well-formed, <em>signed</em> change document in a language nobody
+chose. Every field is filled, every section renders, nothing logs.</p>
+<p>Three rules, each with guards:</p>
+<ol>
+<li><strong>"No preference" is stored distinctly from "prefers English."</strong>
+   <code>user_settings_store.language()</code> returns <code>""</code> for the first and <code>"en"</code> for
+   the second. Collapse them and the profile can no longer render which is
+   true, and an operator who deliberately picked English is re-asked forever.
+   <code>save_language()</code> <strong>clears</strong> on a blank or unsupported code rather than
+   writing the default — writing <code>en</code> would answer the question the user just
+   un-answered.</li>
+<li><strong>Nothing is pre-selected without an answer behind it.</strong> The old
+   <code>{{ 'checked' if loop.first }}</code> was a default nobody gave; the radio is now
+   checked only when it equals the stored preference, the group is <code>required</code>,
+   and <code>langAnswered</code> is <strong>derived</strong> (<code>!!lang()</code>) on load <em>and</em> in the click
+   handler. <code>lang()</code> returns <code>''</code> when nothing is checked — a real state — and
+   a separate <code>langOr()</code> supplies a language for <em>rendering</em>, because text has
+   to come out in something while the question stays open. One function doing
+   both is exactly how "unanswered" became "English".</li>
+<li><strong>A preference the product cannot honour is stated, never downgraded.</strong> The
+   registry declares five languages; <code>cr_document.LANGS</code> renders two. A profile
+   set to <code>fr</code> is kept, is NOT pre-selected, and the form says why. A property
+   test parametrised over the whole registry asserts that whatever ends up
+   checked is a language a complete document can be produced in.</li>
+</ol>
+<p><strong>Recipe.</strong> <code>grep -rl 'i18n.lang' app/</code> must print exactly
+<code>app/services/user_settings_store.py</code> — a second literal for the same key is
+how one page reads a preference another page never wrote.</p>
+<p><strong>Traps repaid here.</strong> The seventh <code>_strip_js_comments</code> (the comment explaining
+the guard names the literal the guard forbids). And the first mutation run
+found a real survivor: <code>answerLang()</code> still assigned <code>langAnswered = true</code>
+while the load path derived it — two authors of the same fact, one of which
+cannot be wrong and one of which can.</p>
     </div>
   </div>
 </section>

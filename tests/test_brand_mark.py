@@ -132,7 +132,8 @@ def test_no_site_chrome_requests_the_invented_vector():
 
 
 # ── every brand surface actually shows it ──────────────────────────────────
-BRAND_SURFACES = ("base.html", "auth/login.html", "product/select.html")
+BRAND_SURFACES = ("base.html", "auth/login.html", "product/select.html",
+                  "auth/profile.html")
 
 
 @pytest.mark.parametrize("rel", BRAND_SURFACES)
@@ -240,3 +241,65 @@ def test_the_brand_chrome_of_the_console_does_not_name_the_vendor():
     assert offenders == [], (
         "the console <head> names the vendor in its own brand chrome: %s"
         % offenders)
+
+
+# ── the enumerated list above rots; this is what notices ────────────────────
+#: Renders the console's own name/logo but is NOT a brand surface: the branding
+#: settings page prints ``settings.app_name`` into a form FIELD and uploads the
+#: theme asset -- it has no emblem of its own to get wrong.
+NON_EMBLEM_IDENTITY_PAGES = {"settings/index.html"}
+
+
+def _identity_templates():
+    """Templates that render the CONSOLE's own identity -- its configured name
+    or its theme logo. This is the roster BRAND_SURFACES is supposed to be."""
+    out = []
+    for p in _live_templates():
+        text = p.read_text()
+        if "settings.app_name" in text or "theme_logo_url" in text:
+            out.append(str(p.relative_to(ROOT / "app" / "templates")))
+    return sorted(out)
+
+
+def test_no_identity_surface_is_missing_from_the_enumeration():
+    """BRAND_SURFACES is an enumerated allowlist over a tree that grows, so it
+    stops covering WITHOUT EVER FAILING -- that is exactly how the profile
+    About card drew the ADOM globe for four releases while every brand test
+    stayed green. Derive the roster and make the omission itself the failure:
+    a new page that shows the console's name or logo must be classified, not
+    silently uncovered."""
+    unclassified = [rel for rel in _identity_templates()
+                    if rel not in BRAND_SURFACES
+                    and rel not in NON_EMBLEM_IDENTITY_PAGES]
+    assert unclassified == [], (
+        "these templates render the console's own identity but are in neither "
+        "BRAND_SURFACES nor NON_EMBLEM_IDENTITY_PAGES: %s" % unclassified)
+
+
+def test_the_about_card_does_not_draw_the_active_adom():
+    """``product.mark`` is the ACTIVE ADOM's icon. Under Global it is a globe;
+    inside a FortiWeb ADOM it is the FortiWeb logo. Either one next to the
+    console's own name and version is a false claim about what this is, which
+    is the same class of defect as the ``v1.0`` literal this card shipped."""
+    import re as _re
+    text = (ROOT / "app" / "templates" / "auth" / "profile.html").read_text()
+    # Strip Jinja comments FIRST: the comment that explains this guard names
+    # ``product.mark``, and a substring assert that matches its own rationale
+    # passes against the defect it is written for.
+    text = _re.sub(r"\{#.*?#\}", "", text, flags=_re.S)
+    assert "product.mark" not in text, (
+        "auth/profile.html renders the ADOM mark; the About card must use the "
+        "brand emblem (theme_logo_url or img/satom-mark.png)")
+
+
+def test_the_version_badge_sits_beside_the_product_name():
+    """The badge used to hang under the tagline, two lines below the name it
+    qualifies -- so the card read as a product blurb with a loose number under
+    it. Name and version are ONE claim; they render on one line."""
+    text = (ROOT / "app" / "templates" / "auth" / "profile.html").read_text()
+    end_name = text.index("</h5>")
+    badge = text.index("v{{ app_version }}")
+    tagline = text.index("System Automation")
+    assert end_name < badge < tagline, (
+        "the version badge is no longer adjacent to the product name "
+        "(name ends %d, badge %d, tagline %d)" % (end_name, badge, tagline))

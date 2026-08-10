@@ -18,6 +18,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **The profile's About card drew the ACTIVE ADOM, not the console.** It
+  sourced its emblem from `product.mark`, so under Global it showed the globe
+  and inside a FortiWeb ADOM it showed the FortiWeb logo — next to this
+  console's own name and version, which makes it a claim about what SATOM *is*.
+  It now uses the brand emblem the topbar and the login page already use (the
+  active theme's logo, falling back to the shipped mark). The version badge
+  also moves up beside the product name: name and version are one statement and
+  no longer render two lines apart. The brand guard that should have caught
+  this enumerated three templates and this card was a fourth, so it stopped
+  covering without ever failing; the roster is now derived from the templates
+  that actually render the console's identity, and an unclassified new one
+  fails the suite.
+
 - **The pre-upgrade had two implementations, and the only one that accepted
   more than one device stored nothing.** The appliance page ran the full
   pre-flight — configuration backup, health battery, maintenance permission and

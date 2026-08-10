@@ -7,6 +7,36 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **The new change request asks two questions and proposes the rest.**
+  `/change-requests/new` now asks, in this order, the **document language**
+  (English / Deutsch) and then the **type of change** — and fills in title,
+  reason, rollback plan, change owner and notification recipients from those two
+  answers plus the pre-flight run the change cites. The order is the point: the
+  proposed prose is written in the language you picked, so picking it afterwards
+  would mean rewriting everything already on screen. What is *not* proposed is
+  the device list and the maintenance window — those are decisions, and a
+  guessed window is worse than an empty one.
+  The proposed text is **not** a copy of the action's standard justification or
+  standard rollback steps: the rendered document already prints those (§4, §7)
+  and prints the change's own wording beside them, so copying would print the
+  same paragraph twice and make the operator's statement indistinguishable from
+  boilerplate. It is composed from what is true of *this* change — the action,
+  the devices, and the cited run's number, timestamp, verdict, firmware and
+  configuration backup. A backup that did not complete is never named in a
+  rollback plan, because a plan quoting a file nobody took reads exactly like a
+  correct one.
+  Every sentence is authored **server-side, in both languages, for every
+  change-controlled action**, and handed to the page as data; the page only
+  substitutes the device names. Composing sentences in JavaScript would give a
+  document that gets signed a second author. The fields stop updating the moment
+  you type in one — an answer changed after you have written something must not
+  wipe your words — and "Restore proposal" puts them back. Owner and recipients
+  are pre-filled **visibly, in the field** (your account; the default recipients
+  from Settings → Email) rather than derived at save time: §1 of the document
+  attributes the change to a name, and accountability you never saw assigned is
+  not accountability. With scripting off the whole form is still present and
+  submittable — the two-question flow is a progressive reveal, not a server-side
+  wizard holding half a change request.
 - **Recorded pre-flight runs can be read back** (`GET /appliances/<id>/upgrade/
   prep/<prep_id>.json`, "View result" on every row of the runs table). The runs
   were already stored, listed and citable by a change request — and not

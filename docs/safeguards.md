@@ -6675,3 +6675,53 @@ Mutation verdicts are read from the **return code** (`rc==1` is a failure;
 `rc==4` is a usage error and `pytest` prints `FAILED` in upper case), and the
 browser pass is not optional: the defect class here lives between the template
 and the stylesheet, where no test can see it.
+
+## §56. A proposal is not a default, and a plausible one never fails
+
+The guided `/change-requests/new` form proposes the wording of a document a
+human signs. Every failure mode in that sentence is silent:
+
+- A German change request drafted with English prose renders, saves and prints.
+  It reads as a typo, not as a bug. Guard: fixed vocabulary that only ever
+  appears in one language (`_ONLY_IN`), checked **with and without** a cited
+  run — the two sentences share no text, so translating one proves nothing
+  about the other.
+- A proposed title that lost its `{devices}` token is a document about nothing,
+  and it is still a valid title. Guard: every proposed field must carry
+  `cr_document.DEVICES_TOKEN`.
+- A "reason" copied from `ACTION_PROFILES` prints the same paragraph the
+  document already prints in §4, and makes the operator's own statement
+  indistinguishable from boilerplate. Guard: the profile prose must not appear
+  inside the proposal.
+- A rollback plan naming a configuration backup that never completed reads
+  exactly like a correct one, and is discovered during the rollback. Guard: with
+  no backup name, the proposal must be **identical** to the no-run variant.
+- An owner filled in at save time attributes accountability nobody watched being
+  assigned. Guard: the owner is proposed into the visible field, and the page
+  payload carries it.
+
+Two structural rules this section exists to hold:
+
+1. **One author per phrase.** The sentences live in `cr_document`, in both
+   languages, for every change-controlled action, and reach the page as JSON.
+   The page substitutes device names and nothing else. This is the same rule
+   that stopped `index.html` losing its Docs link and that §53 restates for
+   brand marks: a phrase with two authors drifts, and the drifted copy is the
+   one that gets signed.
+2. **A proposal never overwrites a human.** `paint()` returns early on
+   `data-auto="0"`, set the first time the operator types. Without it, answering
+   the language question after writing the reason wipes it — and the wipe looks
+   like the form working.
+
+Recipe:
+
+    cd /opt/satom
+    runuser -u satom -- venv/bin/python -m pytest tests/test_cr_draft_prefill.py -q
+
+Known limit, stated rather than hidden: the reveal, the substitution and the
+`data-auto` branch are **JavaScript**. The tests pin the branch in the source;
+they cannot execute it. The behaviour itself is verified by rendering the page
+in a browser, which is also the only way to see that a hidden step is actually
+hidden — `.row` and `.fw-card` set `display`, and a class beats the UA
+stylesheet's `[hidden]` rule on equal specificity.
+

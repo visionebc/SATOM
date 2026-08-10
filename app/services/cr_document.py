@@ -2126,6 +2126,7 @@ DRAFT_FIELDS: tuple = ("title", "reason", "rollback")
 _DRAFT: dict = {
     "de": {
         "devices_none": "(noch keine Geräte gewählt)",
+        "choose_action": "— Art der Änderung wählen —",
         "title": "{action} — {devices}",
         "reason": (
             "Geplante Durchführung von „{action}“ auf {devices}. Die Aktion ist "
@@ -2158,6 +2159,7 @@ _DRAFT: dict = {
     },
     "en": {
         "devices_none": "(no devices selected yet)",
+        "choose_action": "— Choose the type of change —",
         "title": "{action} — {devices}",
         "reason": (
             "Planned execution of “{action}” on {devices}. The action is "
@@ -2238,6 +2240,18 @@ def draft_fields(action, lang, *, prep=None) -> dict:
     return {"title": title, "reason": reason, "rollback": rollback}
 
 
+def action_placeholder(lang) -> str:
+    """The picker's opening entry, in ``lang``.
+
+    It exists so that NOTHING is pre-selected. A picker that opens on a real
+    action makes that action a default nobody chose, and - worse - choosing it
+    fires no ``change`` event, so the page never learns the question was
+    answered. The entry carries an empty value: it is a question, not a
+    submittable answer, and the view rejects it like any other unknown action.
+    """
+    return _DRAFT[normalize_lang(lang)]["choose_action"]
+
+
 def devices_placeholder(lang) -> str:
     """What stands in for the device list while nothing is selected. It reads as
     an unfilled blank, never as a device name."""
@@ -2259,6 +2273,7 @@ __all__ = [
     "draft_fields",
     "devices_placeholder",
     "DEVICES_TOKEN",
+    "action_placeholder",
     "DRAFT_FIELDS",
     "render",
 ]

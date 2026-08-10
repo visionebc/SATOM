@@ -362,6 +362,8 @@ def new():
                            devices_token=cr_document.DEVICES_TOKEN,
                            devices_none={code: cr_document.devices_placeholder(code)
                                          for code in lang_codes},
+                           action_prompt={code: cr_document.action_placeholder(code)
+                                          for code in lang_codes},
                            defaults=defaults,
                            tz_name=_tz_name())
 

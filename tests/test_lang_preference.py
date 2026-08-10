@@ -35,7 +35,7 @@ FORM_TPL = os.path.join(REPO, "app", "templates", "change_requests", "form.html"
 PROFILE_TPL = os.path.join(REPO, "app", "templates", "auth", "profile.html")
 BASE_TPL = os.path.join(REPO, "app", "templates", "base.html")
 
-RENDERABLE = tuple(code for code, _label in doc.LANGS)
+RENDERABLE = tuple(code for code, _label in doc.document_langs())
 ALL_CODES = lang_registry.codes()
 NOT_RENDERABLE = tuple(c for c in ALL_CODES if c not in RENDERABLE)
 

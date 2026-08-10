@@ -398,7 +398,7 @@ def new():
     # JavaScript would give the printed document a second author.
     from ..services import cr_types, email_service
     prep_ctx = _prep_draft_context(prep)
-    lang_codes = [code for code, _label in cr_document.LANGS]
+    lang_codes = [code for code, _label in cr_document.document_langs()]
     entries = cr_type_entries()
     keys = sorted(e['key'] for e in entries)
     # Through cr_types, not cr_document: an administrator's wording wins per
@@ -435,7 +435,7 @@ def new():
                            risks=svc.RISKS,
                            prep=prep,
                            preset_action=(request.args.get('action') or '').strip(),
-                           langs=cr_document.LANGS,
+                           langs=cr_document.document_langs(),
                            lang_preset=lang_preset,
                            lang_pref=pref_lang,
                            lang_pref_label=(lang_registry.label(pref_lang)
@@ -498,7 +498,7 @@ def detail(id):
                            policies=policies,
                            live_drift=live_drift,
                            prep=prep_store.get(cr.prep_id),
-                           langs=cr_document.LANGS,
+                           langs=cr_document.document_langs(),
                            fields=prep_store.FIELDS,
                            default_fields=prep_store.DEFAULT_FIELDS,
                            tz_name=_tz_name(),
@@ -545,7 +545,7 @@ def document(id):
             headers={'Content-Disposition':
                      f'attachment; filename="{cr_document.filename(cr, lang)}"'})
     return render_template('change_requests/document.html', cr=cr, lang=lang,
-                           langs=cr_document.LANGS, text=text)
+                           langs=cr_document.document_langs(), text=text)
 
 
 @bp.route('/<int:id>/inventory.<fmt>')

@@ -21,17 +21,22 @@ from app.models import db
 from app.models_i18n import (ORIGIN_HUMAN, ORIGIN_MACHINE, TranslationRun,
                              TranslationUnit, source_digest)
 from app.services import langs, translator
+from app.services.advisor_providers import ChatResult
 
 APP_DIR = Path(__file__).resolve().parents[1] / "app"
 
 
-class _Res:
-    """What advisor_providers.send returns."""
+def _Res(content, prompt_tokens=11, completion_tokens=22):
+    """What advisor_providers.send returns — the PRODUCTION class.
 
-    def __init__(self, content, prompt_tokens=11, completion_tokens=22):
-        self.content = content
-        self.prompt_tokens = prompt_tokens
-        self.completion_tokens = completion_tokens
+    This was a hand-rolled double whose field was named .content.  The reader
+    in translator.py had the same typo, so the double and the defect agreed
+    with each other and 34 guards passed over a layer that had never produced
+    a single translation.  A test double for a provider result must BE the
+    provider result.
+    """
+    return ChatResult(text=content, prompt_tokens=prompt_tokens,
+                      completion_tokens=completion_tokens)
 
 
 @pytest.fixture()
@@ -109,18 +114,23 @@ def test_the_registry_is_the_only_author_of_the_language_list():
     src = (APP_DIR / "services" / "cr_document.py").read_text(encoding="utf-8")
     src = re.sub(r"#.*", "", src)          # a comment may legitimately name it
     src = re.sub(r'""".*?"""', "", src, flags=re.S)
-    m = re.search(r"^LANGS[^\n]*=\s*(.+)$", src, flags=re.M)
-    assert m, "cr_document must still declare LANGS"
-    assert "langs" in m.group(1), (
-        "cr_document.LANGS must derive from services.langs, not re-list the "
-        f"languages itself; found: {m.group(1)!r}")
+    assert not re.search(r"^LANGS\s*[:=]", src, flags=re.M), (
+        "cr_document must not re-introduce a module-level LANGS constant: a "
+        "tuple fixed at import can only describe the languages authored in "
+        "Python, so every picker reading it is blind to the translated "
+        "catalogue")
+    m = re.search(r"def document_langs\(\).*?\n(.*?)\n\n\ndef ", src, flags=re.S)
+    assert m, "cr_document must still declare document_langs()"
+    assert "langs.codes()" in m.group(1) and "langs.label(" in m.group(1), (
+        "document_langs() must derive order and labels from services.langs, "
+        f"not re-list the languages itself; found: {m.group(1)!r}")
 
 
 def test_the_document_picker_only_offers_languages_it_can_render():
     """A language with no authored action profiles must NOT appear in the CR
     picker: choosing it would produce a document half in English."""
     from app.services import cr_document
-    offered = {c for c, _ in cr_document.LANGS}
+    offered = {c for c, _ in cr_document.document_langs()}
     assert offered <= set(langs.codes())
     for code in offered:
         assert cr_document._profile_text("reboot", code), \

@@ -32,7 +32,7 @@ from tests.conftest import admin_user_id, login
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TPL_PATH = os.path.join(REPO, "app", "templates", "change_requests", "form.html")
 
-LANG_CODES = tuple(code for code, _label in doc.LANGS)
+LANG_CODES = tuple(code for code, _label in doc.document_langs())
 
 RESULT_FIXTURE = {
     "appliance": "draftbox",

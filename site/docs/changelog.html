@@ -93,6 +93,18 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>Change documents are produced in five languages, and a language is offered
+  only when it can actually be produced.</strong> Spanish, French and Italian join
+  English and German. The prose is not a fourth and fifth copy of the action
+  profiles in Python — it lives in the translation catalogue and is overlaid on
+  the authored English at render time, so the original stays the single author
+  of every sentence.
+  The gate is now <strong>measured, not declared</strong>. The picker previously read a
+  hardcoded set of authored languages; it now asks whether every one of the 292
+  strings a document can print exists for that language and is not stale. One
+  missing or outdated unit withdraws the whole language, because the failure it
+  prevents is a document half in Spanish and half in English <em>under an
+  approver's signature line</em> — which raises nothing and looks finished.</li>
 <li><strong>Your language is a profile preference, and the change document stops
   guessing it.</strong> <strong>Profile → Language</strong> stores the language you work in against
   your account in the database — not a cookie, and not shared with other users —
@@ -541,6 +553,26 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><strong>The translation layer had never produced a single translation.</strong> It read
+  <code>.content</code> off the provider result, whose field is <code>.text</code>, through a
+  <code>getattr</code> with a default — so every call returned an empty string and was
+  reported to the operator as <em>"the provider returned an empty translation"</em>,
+  blaming the model for a reader bug. The test that covered it built its own
+  stand-in object carrying the misspelled attribute, so the test and the defect
+  agreed with each other. The double is now the production class.</li>
+<li><strong>A translated string can no longer corrupt the document it is written into.</strong>
+  Placeholders (<code>{devices}</code>, <code>{action}</code>, <code>%s</code>) and backticked identifiers are
+  hidden from the model behind markers rather than requested back: asked to
+  preserve them, the model translated the words inside them — <code>{devices}</code> came
+  back as <code>{dispositivos}</code>, <code>`approved_by`</code> as <code>`aprobado_por`</code>. A reply
+  that still drops, invents or alters one gets a single corrective retry and is
+  then refused, never stored.</li>
+<li><strong>Echoed delimiters no longer reach the catalogue.</strong> The model translates the
+  untrusted-input fence it is told to ignore, in shapes that keep changing
+  (<code>&lt;&lt;&lt;FIN NO CONFIABLE&gt;&gt;&gt;</code>, <code>&lt;&lt;&lt;NON FIDATO&gt;&gt;/&gt;&gt;</code>, <code>&lt;&lt;(fin de UNTRUSTED)&gt;&gt;</code>).
+  Both ends of a reply are now stripped by shape, and anything left is judged
+  against the source rather than against a list of known shapes — enumerating
+  them is a race that always runs one shape behind.</li>
 <li><strong>The change-type picker could not be answered with its own first entry.</strong>
   On <code>/change-requests/new</code> reached directly — no pre-flight run to cite — the
   picker opened with the first change-controlled action <em>already selected</em>, and

@@ -201,7 +201,7 @@ def test_the_frozen_snapshot_matches_the_documents_field_set(app):
     with app.app_context():
         _mk_type(texts={"draft_reason": "R {devices}"})
         snap = cr_types.snapshot("cabling")
-        assert set(snap) == {code for code, _label in cr_document.LANGS}
+        assert set(snap) == {code for code, _label in cr_document.document_langs()}
         for code in snap:
             assert set(snap[code]) == set(cr_document._profile_text("cabling", code))
 
@@ -269,7 +269,7 @@ def test_approval_freezes_the_wording(app):
         cr = _mk_cr(action="upgrade", status="draft")
         svc.approve(cr.id, by="approver")
         frozen = cr.doc_profile_dict
-        assert set(frozen) == {code for code, _label in cr_document.LANGS}, \
+        assert set(frozen) == {code for code, _label in cr_document.document_langs()}, \
             "the snapshot must cover every language the document prints in"
         assert frozen["en"]["impact"]
 

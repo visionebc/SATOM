@@ -22,6 +22,7 @@ Design commitments, each of which is a defect if dropped:
 """
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass
 
@@ -48,6 +49,9 @@ _SYSTEM = (
     "Rules:\n"
     "- Return ONLY the translation. No preamble, no notes, no quotes, no "
     "code fences.\n"
+    "- Some fragments are replaced by markers like [[0]], [[1]]. Reproduce "
+    "every marker EXACTLY, in the same order, and translate nothing "
+    "inside one.\n"
     "- Preserve every placeholder exactly as written: {{name}}, %s, {{{{...}}}}.\n"
     "- Do NOT translate: hostnames, IP addresses, CLI commands, product names "
     "(FortiWeb, FortiADC, FortiAnalyzer, FortiAuthenticator, SATOM), field "
@@ -129,6 +133,164 @@ def _log(*, namespace, key, src, dst, provider, external, started,
         db.session.rollback()                  # important than the answer
 
 
+#: The delimiter :func:`advisor.wrap_untrusted` puts around operator text.  A
+#: small model is told the fence is not content and still translates it --
+#: aya-expanse returns ``<<<NO CONFIABLE>>>`` / ``<<<NON fidato>>>``.  So the
+#: fence cannot be matched literally; it is matched by SHAPE, and only when it
+#: wraps the whole reply.  A ``<<<...>>>`` line in the middle is content.
+_FENCE = re.compile(r"<{2,}[^<>\n]{0,60}>[>/]*")
+
+
+def _strip_untrusted_fence(out: str) -> str:
+    """Remove an echoed untrusted-fence from either END of the reply.
+
+    Matched by SHAPE, not literally, and not line by line.  aya-expanse returns
+    all of these against the same input: ``<<<NO CONFIABLE>>>`` on its own line,
+    ``<<<NO CONFIABLE>>>, firmware...`` inline with the first words,
+    ``<<<NON FIDATO>>/>>`` with a broken closer, and ``<<<FINE NON fidato>>>.``
+    with a full stop the model added.  A line-anchored matcher caught only the
+    tidy case and let the rest into the catalogue, where the delimiter prints
+    inside a signed document and nothing fails.
+
+    Only the ends are touched: a ``<<<...>>>`` run in the MIDDLE is content.
+    """
+    out = (out or "").strip()
+    for _ in range(4):          # opener + closer, plus malformed repeats
+        before = out
+        out = re.sub(r"^\s*" + _FENCE.pattern + r"[,.:;`]*\s*", "", out)
+        out = re.sub(r"\s*" + _FENCE.pattern + r"\s*[,.:;`]*\s*$", "", out)
+        # A DANGLING opener/closer: the model wrapped the reply in "<<(" with
+        # no matching ">>", so the shape-matcher above sees nothing.  Only the
+        # angle run is removed -- the parenthesis belongs to the source string
+        # ("(no devices selected yet)") and eating it would silently reword the
+        # placeholder an operator reads in the draft form.
+        out = re.sub(r"^<{2,}", "", out)
+        out = re.sub(r">{2,}$", "", out)
+        # NOT strip("`"): a reply that is a whole ``` block still has to reach
+        # the code-fence branch below, and eating its backticks here left
+        # "```text\nHola\n```" as "text\nHola" -- a stray language tag inside
+        # the stored translation.  Stray backticks are handled by the fence
+        # patterns above, which only fire where a fence actually was.
+        out = out.strip()
+        if out == before:
+            break
+    return out
+
+
+_ANGLE_RUN = re.compile(r"<{2,}|>{2,}")
+
+
+def _fence_residue(text: str, source: str = "") -> str:
+    """Non-empty when a fence survived anywhere in ``text``.
+
+    Belt to the braces above: an unanticipated fence shape must FAIL the
+    translation, not be stored.  Coverage is computed from stored rows, so a
+    polluted row would otherwise report the language as COMPLETE while the
+    document prints the delimiter under a signature line.
+
+    Judged against the SOURCE, not against a list of known shapes: the model
+    keeps inventing new ones (``<<<NON FIDATO>>/>>``, ``<<(fin de UNTRUSTED)>>``),
+    and enumerating them is a race that only ever runs one shape behind.  A
+    doubled angle bracket the source did not contain is residue, whatever it
+    looks like.
+    """
+    m = _FENCE.search(text or "")
+    if m:
+        return f"reply still contains the untrusted delimiter {m.group(0)!r}"
+    if _ANGLE_RUN.search(text or "") and not _ANGLE_RUN.search(source or ""):
+        run = _ANGLE_RUN.search(text).group(0)
+        return f"reply contains {run!r}, which the source does not"
+    return ""
+
+
+#: ``str.format`` placeholders (``{devices}``, ``{action}``) and backticked
+#: identifiers (hostnames, CLI, field names).  Both are load-bearing: the
+#: renderer formats the first and the operator types the second.
+_PLACEHOLDER = re.compile(r"\{[a-zA-Z_][a-zA-Z0-9_]*\}|%[sdr]")
+_BACKTICKED = re.compile(r"`([^`\n]+)`")
+
+
+def _tokens(text: str) -> tuple[frozenset, frozenset]:
+    return (frozenset(_PLACEHOLDER.findall(text or "")),
+            frozenset(m.strip() for m in _BACKTICKED.findall(text or "")))
+
+
+def _token_drift(source: str, out: str) -> str:
+    """Describe how ``out`` corrupted the source's load-bearing tokens, or "".
+
+    aya-expanse rewrote ``\u0060fortiweb08\u0060`` as ``\u0060{fortiweb08}\u0060`` in Italian.
+    That invents a placeholder the renderer will try to fill and cannot, and
+    :class:`cr_document._Keep` prints unknown placeholders VERBATIM -- so the
+    signed document would show a literal ``{fortiweb08}``.  Dropping ``{devices}``
+    is worse: the appliance list silently disappears.  Neither raises anything,
+    so the only place this can be caught is here, before it is stored.
+    """
+    s_ph, s_bt = _tokens(source)
+    o_ph, o_bt = _tokens(out)
+    problems = []
+    if o_ph - s_ph:
+        problems.append(f"invented placeholder(s) {sorted(o_ph - s_ph)}")
+    if s_ph - o_ph:
+        problems.append(f"dropped placeholder(s) {sorted(s_ph - o_ph)}")
+    if s_bt - o_bt:
+        problems.append(f"altered or dropped literal(s) {sorted(s_bt - o_bt)}")
+    return "; ".join(problems)
+
+
+#: Sentinel used to hide load-bearing tokens from the model.  Digits inside
+#: doubled brackets survive translation intact where the token itself does not:
+#: aya-expanse reliably translates the WORD in ``{devices}`` -> ``{dispositivos}``
+#: and ``\u0060approved_by\u0060`` -> ``\u0060aprobado_por\u0060``.  Telling a small model
+#: "preserve this" loses; not showing it the word wins.
+def _mask(text: str) -> tuple[str, list]:
+    """Replace placeholders and backticked literals with ``[[n]]`` sentinels."""
+    spans = []
+    for m in _PLACEHOLDER.finditer(text or ""):
+        spans.append((m.start(), m.end(), m.group(0)))
+    for m in _BACKTICKED.finditer(text or ""):
+        spans.append((m.start(), m.end(), m.group(0)))
+    spans.sort()
+    # Drop overlaps (a placeholder inside backticks is masked once, as the
+    # backticked run -- masking it twice would nest sentinels).
+    merged, last_end = [], -1
+    for start, end, raw in spans:
+        if start >= last_end:
+            merged.append((start, end, raw))
+            last_end = end
+    if not merged:
+        return text, []
+    out, cursor, table = [], 0, []
+    for start, end, raw in merged:
+        out.append(text[cursor:start])
+        out.append(f"[[{len(table)}]]")
+        table.append(raw)
+        cursor = end
+    out.append(text[cursor:])
+    return "".join(out), table
+
+
+def _unmask(text: str, table: list) -> tuple[str, str]:
+    """Restore the sentinels.  Returns ``(text, problem)``; ``problem`` names
+    the sentinels the model lost, which is drift by another route."""
+    missing = []
+    out = text or ""
+    for i, raw in enumerate(table):
+        token = f"[[{i}]]"
+        if token not in out:
+            missing.append(token)
+            continue
+        out = out.replace(token, raw)
+    return out, ("lost marker(s) " + ", ".join(missing) if missing else "")
+
+
+#: Appended to the system prompt on the single retry a drifted answer gets.
+_RETRY_NOTE = (
+    "\nThe previous attempt corrupted the text: {problem}. Reproduce every "
+    "{{placeholder}} and every `backticked` token byte-for-byte, and do not "
+    "add braces to anything."
+)
+
+
 def _clean(raw: str) -> str:
     """Strip the wrappers small models add despite being told not to.
 
@@ -136,7 +298,7 @@ def _clean(raw: str) -> str:
     middle is content (a CLI snippet inside a rollback plan) and deleting it
     would silently drop part of the translation.
     """
-    out = (raw or "").strip()
+    out = _strip_untrusted_fence((raw or "").strip())
     if out.startswith("```") and out.endswith("```") and out.count("```") == 2:
         body = out[3:-3]
         if "\n" in body:
@@ -182,25 +344,66 @@ def translate(text: str, *, src: str, dst: str, namespace: str = "",
 
     system = _SYSTEM.format(src=_TARGET_NAMES.get(src, src),
                             dst=_TARGET_NAMES.get(dst, dst))
+    # Hide the tokens rather than ask for them back: see _mask.
+    masked, mask_table = _mask(payload)
     messages = [{"role": "user",
-                 "content": advisor.wrap_untrusted("text to translate", payload)}]
+                 "content": advisor.wrap_untrusted("text to translate", masked)}]
 
     started = time.monotonic()
-    try:
-        res = _provider_send(
-            provider.get("kind", ""),
-            base_url=provider.get("base_url", ""),
-            api_key=advisor._provider_secret(provider.get("key", "")),
-            model=provider.get("model", ""),
-            system=system, messages=messages, timeout=timeout)
-    except Exception as exc:  # noqa: BLE001 — ProviderError included
-        _log(namespace=namespace, key=key, src=src, dst=dst, provider=provider,
-             external=external, started=started, prompt_tokens=None,
-             completion_tokens=None, chars_in=len(text), chars_out=0,
-             ok=False, error=str(exc), username=username)
-        raise TranslationError(str(exc)) from exc
+    attempts = (0, 1)          # first pass, then one corrective retry
+    res = None
+    out = ""
+    drift = ""
+    for n in attempts:
+        try:
+            res = _provider_send(
+                provider.get("kind", ""),
+                base_url=provider.get("base_url", ""),
+                api_key=advisor._provider_secret(provider.get("key", "")),
+                model=provider.get("model", ""),
+                # Only the NOTE is formatted.  ``system`` legitimately
+                # contains ``{name}`` -- it is the example placeholder the
+                # rules tell the model to preserve -- so formatting the whole
+                # string raises KeyError('name') and turns every retry into a
+                # crash that looks like a provider fault.
+                system=(system + _RETRY_NOTE.format(problem=drift)) if n else system,
+                messages=messages, timeout=timeout)
+        except Exception as exc:  # noqa: BLE001 — ProviderError included
+            _log(namespace=namespace, key=key, src=src, dst=dst, provider=provider,
+                 external=external, started=started, prompt_tokens=None,
+                 completion_tokens=None, chars_in=len(text), chars_out=0,
+                 ok=False, error=str(exc), username=username)
+            raise TranslationError(str(exc)) from exc
 
-    out = _clean(getattr(res, "content", "") or "")
+        # ``res`` is an advisor_providers.ChatResult: the field is ``text``.
+        # This was ``getattr(res, "content", "")`` and the default silently
+        # produced "" for EVERY call -- reported to the operator as "provider
+        # returned an empty translation", which blames the model for a reader
+        # bug.  Attribute access is deliberate: a renamed field must raise
+        # here, not degrade into a plausible provider fault.
+        out = _clean(res.text or "")
+        if out:
+            out, lost = _unmask(out, mask_table)
+            drift = lost or _fence_residue(out, text) or _token_drift(text, out)
+        else:
+            drift = ""
+        if not out or not drift:
+            break
+
+    if out and drift:
+        # One retry, then refuse.  Storing it would put a corrupted placeholder
+        # into a document that gets signed, and nothing downstream can tell the
+        # difference between that and text the operator wrote.
+        _log(namespace=namespace, key=key, src=src, dst=dst, provider=provider,
+             external=external, started=started,
+             prompt_tokens=getattr(res, "prompt_tokens", None),
+             completion_tokens=getattr(res, "completion_tokens", None),
+             chars_in=len(text), chars_out=len(out), ok=False,
+             error=f"translation corrupted the source tokens: {drift}",
+             username=username)
+        raise TranslationError(
+            f"the model changed load-bearing tokens ({drift}) — refusing to "
+            f"store this translation")
     duration_ms = int((time.monotonic() - started) * 1000)
     ptok = getattr(res, "prompt_tokens", None)
     ctok = getattr(res, "completion_tokens", None)

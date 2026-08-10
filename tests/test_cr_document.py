@@ -265,8 +265,13 @@ def test_render_falls_back_to_default_lang():
 
 
 def test_langs_shape():
-    assert cr_document.LANGS == (("en", "English"), ("de", "Deutsch"))
+    # With no catalogue rows (no app context here) the answer is the authored
+    # set.  This is a FUNCTION now, not a constant: a module-level tuple could
+    # only ever describe the languages written in Python and was therefore
+    # blind to the translated catalogue.
+    assert cr_document.document_langs() == (("en", "English"), ("de", "Deutsch"))
     assert cr_document.DEFAULT_LANG == "en"
+    assert not hasattr(cr_document, "LANGS")
 
 
 # --------------------------------------------------------------------------- #

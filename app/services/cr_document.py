@@ -80,11 +80,36 @@ AUTHORED_LANGS: frozenset = frozenset({"en", "de"})
 #: of the language list is how a picker ends up offering a language the
 #: renderer cannot produce.  ``langs`` imports nothing, so this does not break
 #: the rule above that keeps this module free of the ORM.
-LANGS: tuple = tuple((code, langs.label(code)) for code in langs.codes()
-                     if code in AUTHORED_LANGS)
 DEFAULT_LANG = langs.DEFAULT
 
-_LANG_KEYS = tuple(code for code, _label in LANGS)
+
+def document_langs() -> tuple:
+    """``((code, endonym), ...)`` for every language a COMPLETE document can be
+    produced in, in the registry's display order.
+
+    There is deliberately no ``LANGS`` constant any more.  A module-level tuple
+    could only ever describe the languages authored in Python, so every picker
+    that read it was blind to the translated catalogue -- and a second author of
+    the language list is exactly how a picker comes to offer a language the
+    renderer cannot produce.  This is the ONE answer; it is a function because
+    the honest answer depends on data.
+
+    Falls back to the authored set if the catalogue cannot be read (no app
+    context, table missing): degrading to English+German is a smaller lie than
+    claiming five languages the renderer cannot fill.
+    """
+    try:
+        from . import cr_i18n
+        ready = set(cr_i18n.cached_ready())
+    except Exception:  # noqa: BLE001
+        ready = set(AUTHORED_LANGS)
+    ready |= set(AUTHORED_LANGS)
+    return tuple((code, langs.label(code)) for code in langs.codes()
+                 if code in ready)
+
+
+def _lang_keys() -> tuple:
+    return tuple(code for code, _label in document_langs())
 
 #: Every key a per-language action profile MUST define. A half-translated
 #: profile is exactly how a German document ships with an English paragraph in
@@ -107,10 +132,12 @@ def normalize_lang(value) -> str:
     """
     key = langs.normalize(value)
     # A supported language is not the same as a renderable one: "es" is a real
-    # product language, but until its profiles are authored a Spanish document
+    # product language, but until its catalogue is COMPLETE a Spanish document
     # would print English prose under a Spanish heading.  Degrade to the
-    # source language, which is at least internally consistent.
-    return key if key in _LANG_KEYS else DEFAULT_LANG
+    # source language, which is at least internally consistent.  Completeness
+    # is measured (see cr_i18n.coverage), never declared -- a half-filled
+    # catalogue withdraws the language instead of shipping a mixed document.
+    return key if key in _lang_keys() else DEFAULT_LANG
 
 
 # --------------------------------------------------------------------------- #
@@ -1484,6 +1511,45 @@ ACTION_PROFILES: dict = {
 }
 
 
+# --------------------------------------------------------------------------- #
+#  Translated languages                                                         #
+# --------------------------------------------------------------------------- #
+class _Localized(dict):
+    """An authored ``{lang: ...}`` block that can also answer for a TRANSLATED
+    language, by overlaying the catalogue onto the English structure.
+
+    ``__missing__`` rather than an explicit lookup at each of the twenty call
+    sites: twenty edits is twenty chances to miss one, and the one that is
+    missed does not fail -- it quietly prints English inside an otherwise
+    Spanish document.  The shape (str vs tuple) always comes from the authored
+    English, so a translation can change the words and never the structure.
+    """
+
+    __slots__ = ("_prefix",)
+
+    def __init__(self, mapping, prefix: str):
+        super().__init__(mapping)
+        self._prefix = prefix
+
+    def __missing__(self, lang):
+        from . import cr_i18n
+        table = cr_i18n.cached_texts(lang)
+        if not table:
+            raise KeyError(lang)
+        built = cr_i18n.overlay(self[langs.DEFAULT], self._prefix, table)
+        return built
+
+
+def _localize_all() -> None:
+    """Wrap the authored blocks once, after their literals are defined."""
+    global SECTION_TITLES, _T, _DRAFT, ACTION_PROFILES
+    SECTION_TITLES = _Localized(SECTION_TITLES, "titles")
+    _T = _Localized(_T, "t")
+    _DRAFT = _Localized(_DRAFT, "draft")
+    ACTION_PROFILES = {key: _Localized(block, f"profile.{key}")
+                       for key, block in ACTION_PROFILES.items()}
+
+
 def profile_for(action) -> dict:
     """The per-language profile for ``action``.
 
@@ -2287,13 +2353,12 @@ def devices_placeholder(lang) -> str:
 
 
 __all__ = [
-    "LANGS",
-    "DEFAULT_LANG",
     "REQUIRED_PROFILE_KEYS",
     "GENERIC_ACTION",
     "ACTION_PROFILES",
     "SECTION_TITLES",
     "normalize_lang",
+    "document_langs",
     "change_ref",
     "filename",
     "profile_for",
@@ -2305,3 +2370,6 @@ __all__ = [
     "DRAFT_FIELDS",
     "render",
 ]
+
+
+_localize_all()

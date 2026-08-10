@@ -392,4 +392,4 @@ def snapshot(action) -> dict:
     signed -- the reprint would differ from the paper in the file, and nothing
     would say so.
     """
-    return {code: profile_text(action, code) for code, _label in cr_document.LANGS}
+    return {code: profile_text(action, code) for code, _label in cr_document.document_langs()}

@@ -141,16 +141,13 @@ def test_no_translation_invents_a_percent_sign(code):
     assert not offenders, offenders[:5]
 
 
-@pytest.mark.parametrize("code", SHIPPED)
-def test_the_compiled_catalogue_is_not_older_than_its_source(code):
-    """The app reads the ``.mo``; humans and repair runs edit the ``.po``. A
-    fixed ``.po`` with a stale ``.mo`` is a fix that was never delivered, and
-    every text-level check passes while the running product still shows the
-    broken string."""
-    base = os.path.join(TRANSLATIONS, code, "LC_MESSAGES")
-    po = os.path.getmtime(os.path.join(base, "messages.po"))
-    mo = os.path.getmtime(os.path.join(base, "messages.mo"))
-    assert mo >= po, f"{code}: messages.mo is older than messages.po -- recompile"
+# NOTE: the "compiled catalogue is not older than its source" guard moved to
+# tests/test_catalog_delivery.py.  It asserted the .mo EXISTS, which was true
+# while the .mo was tracked in git; it no longer is (a derived artefact that
+# carries internal identifiers the publisher can neither rewrite without
+# corrupting the binary nor leave alone without leaking).  The rule now lives
+# in one place, skips on an uncompiled checkout, and is paired with guards that
+# the installer and the update runner actually produce the file.
 
 
 @pytest.mark.parametrize("code", SHIPPED)

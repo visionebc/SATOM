@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.9.3] - 2026-08-10
+
 ### Added
 
 - **The interface itself is translated — Spanish, German, French and Italian,
@@ -683,6 +685,54 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   the ones calibrated against white. Values read off the appliance are now
   HTML-escaped before reaching `innerHTML` — a policy name carrying `<` silently
   ate the rest of its row, which looks exactly like missing data.
+
+
+- **The About card in your profile announced `v1.0`.** It had been wrong for
+  eight releases. `app/version.py` exists precisely to kill hand-written
+  version numbers — its own docstring records that the footer and Settings →
+  System Information each carried a `v1.0` that "quietly rotted through 1.1,
+  1.2, 1.2.1 and 1.2.2 while the release pipeline dutifully published the real
+  number everywhere else". The card now interpolates the shipped version.
+
+  **The guard that should have caught it was an enumerated list.** It walked
+  exactly two templates, `base.html` and `settings/index.html`; the literal
+  lived in a third. An allowlist written by hand over a tree that keeps growing
+  stops covering new files without ever failing. The rule now sweeps *every*
+  template and an exemption must carry a written reason — the four that remain
+  are appliance-API versions (`v2.0`), not ours.
+
+- **The same card described SATOM as a FortiWeb console.** It advertised an
+  `API Target` of "FortiWeb 7.6 REST API", a "Custom FortiWeb 7.6 Theme" and a
+  "Multi-user FortiWeb & FortiADC management console". SATOM routes four
+  distinct appliance clients — FortiWeb, FortiADC, FortiAuthenticator and
+  FortiAnalyzer — so naming one API was not incomplete, it was false. The API
+  row is gone and the description no longer names a family. The description was
+  also never marked for translation, so it stayed English in all five
+  languages; it is translated now, as is the card's title.
+
+- **Settings → Default appliance platform offered three of the four families,
+  and discarded the others in silence.** FortiAuthenticator and FortiAnalyzer
+  were missing, and `FortiWeb-Cloud` — a family SATOM has no client for — was
+  offered as though it worked. Worse than the missing options was the
+  server-side rule behind them: a hardcoded three-value whitelist folded
+  anything else to `FortiWeb` with no error, so a posted `fortiauthenticator`
+  was *stored as FortiWeb*. The operator chose one thing and the system saved
+  another.
+
+  The list now has a single author — the same product registry that drives the
+  appliance form (`product_scope.device_products()`) — and the server validates
+  against that registry rather than a copy of it. Values written before this
+  change still read back: the old `FortiWeb`/`FortiADC` spellings map onto the
+  registry keys, and `FortiWeb-Cloud` folds to `fortiweb`. Without that
+  migration an existing installation would have opened the page with *no*
+  option selected and the operator would have read it as a lost setting.
+
+- **The setting now does what its help text has always claimed.** "Pre-selected
+  when registering a new appliance" was untrue: `default_kind` was written and
+  displayed, and nothing ever read it — the appliance form ignored it entirely,
+  and its vocabulary (`FortiWeb`) could not have matched the form's
+  (`fortiweb`) even if it had. Registering an appliance now starts on the
+  configured platform.
 
 ## [1.9.2] - 2026-08-09
 

@@ -175,9 +175,9 @@
                 <div class="col-md-6">
                   <label class="fw-form-label">{{ _('Default Appliance Platform') }}</label>
                   <select name="default_kind" class="form-select fw-form-control">
-                    <option value="FortiWeb" {{ 'selected' if settings.default_kind == 'FortiWeb' else '' }}>{{ _('FortiWeb (Hardware / VM)') }}</option>
-                    <option value="FortiWeb-Cloud" {{ 'selected' if settings.default_kind == 'FortiWeb-Cloud' else '' }}>{{ _('FortiWeb-Cloud') }}</option>
-                    <option value="FortiADC" {{ 'selected' if settings.default_kind == 'FortiADC' else '' }}>{{ _('FortiADC') }}</option>
+                    {% for key, label in (platform_options or []) %}
+                    <option value="{{ key }}" {{ 'selected' if settings.default_kind == key else '' }}>{{ label }}</option>
+                    {% endfor %}
                   </select>
                   <div class="form-text">{{ _('Pre-selected when registering a new appliance') }}</div>
                 </div>
@@ -293,7 +293,7 @@
                   <tbody>
                     <tr><td class="text-muted" style="width:46%;">{{ _('Application') }}</td><td>{{ settings.app_name }}</td></tr>
                     <tr><td class="text-muted">{{ _('Version') }}</td><td><span class="fw-badge fw-badge-primary">v{{ app_version }}</span></td></tr>
-                    <tr><td class="text-muted">{{ _('Default platform') }}</td><td>{{ settings.default_kind }}</td></tr>
+                    <tr><td class="text-muted">{{ _('Default platform') }}</td><td>{{ platform_labels.get(settings.default_kind, settings.default_kind) }}</td></tr>
                     <tr><td class="text-muted">{{ _('Session lock') }}</td><td>{{ settings.session_timeout }} min</td></tr>
                     <tr><td class="text-muted">{{ _('Status poll') }}</td><td>{{ settings.poll_interval }} s</td></tr>
                     <tr><td class="text-muted">{{ _('Log levels') }}</td><td>{{ settings.log_levels | join(', ') }}</td></tr>

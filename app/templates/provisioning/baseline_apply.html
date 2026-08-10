@@ -26,11 +26,11 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="confirm" value="1">
     <button class="btn btn-warning" type="submit">
-      <i class="bi bi-cloud-upload"></i> Confirm live apply (canary-gated)</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('provisioning.baselines') }}">Cancel</a>
+      <i class="bi bi-cloud-upload"></i> {{ _('Confirm live apply (canary-gated)') }}</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('provisioning.baselines') }}">{{ _('Cancel') }}</a>
   </form>
 {% else %}
   <div class="alert alert-info" style="max-width:1000px;"><pre class="mb-0" style="max-height:340px;overflow:auto;">{{ result|tojson(indent=2) }}</pre></div>
-  <a class="btn btn-fw-primary" href="{{ url_for('provisioning.baselines') }}">Back to baselines</a>
+  <a class="btn btn-fw-primary" href="{{ url_for('provisioning.baselines') }}">{{ _('Back to baselines') }}</a>
 {% endif %}
 {% endblock %}

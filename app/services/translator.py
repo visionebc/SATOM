@@ -203,6 +203,69 @@ def _fence_residue(text: str, source: str = "") -> str:
     return ""
 
 
+#: Our OWN marker word.  ``advisor.wrap_untrusted`` spells the fence
+#: ``<<<UNTRUSTED>>>``; the word is ours, so seeing it come back in a reply
+#: that started without it is residue by definition -- not an enumeration of
+#: the shapes the model invents, which is a race that always runs one behind.
+_MARKER_WORD = re.compile(r"UNTRUSTED", re.I)
+
+#: The same marker word, in the languages we ship.  ``_MARKER_WORD`` knows only
+#: the English spelling, so a model that TRANSLATES the fence walks straight
+#: past it -- which is how ``Access denied`` came back as a German string
+#: announcing an untrusted source (``UNvertrauenswuerdige Quelle``), and how
+#: ``no confiable`` / ``non fidato`` reached the Spanish and Italian rows.
+#: Bounded by the languages we ship rather than by the shapes the model
+#: invents: the word is OURS in every one of them, so a reply that raises the
+#: subject when the source never did is residue by definition.
+_TRUST_REPLY = re.compile(
+    r"UNTRUST|\bTRUST|VERTRAU|CONFIAB|CONFIAN|\bFIDAT|FIDUCI|\bFIABLE|\bFIABILI",
+    re.I,
+)
+
+#: Sources that may LEGITIMATELY come back carrying that vocabulary -- the TLS
+#: trust store, a reliability note.  Judged on the source for the same reason
+#: every other residue rule is: without this half, ``TLS trust store`` would be
+#: rejected for translating the word ``trust`` correctly.
+_TRUST_SOURCE = re.compile(r"TRUST|RELIAB|CONFIDEN|CREDIBL|DEPENDABL", re.I)
+
+
+#: Delimiter shapes used by the masking layer and by the fence.  aya-expanse
+#: echoes the fence as ``[[END_UNTRUSTED]]`` -- the shape of a mask SENTINEL,
+#: not of a fence -- so :func:`_fence_residue` (which hunts doubled angle
+#: brackets) sees nothing, and :func:`_unmask` sees no *missing* sentinel
+#: either, because nothing was lost.  The literal therefore reached the
+#: catalogue and printed in the navigation menu.
+_DELIMITERS = ("[[", "]]", "{{", "}}", "<", ">")
+
+
+def _sentinel_residue(text: str, source: str = "") -> str:
+    """Non-empty when ``text`` carries a delimiter the source did not have.
+
+    Covers the two shapes that slipped past every other guard: an INVENTED
+    sentinel (``[[END_UNTRUSTED]]``, or a stray ``[[0]]`` in a string that had
+    no token to mask at all) and a fence spelled with other brackets
+    (``{{<FIN_DESCONFIADO>}}``, ``<fin de ><NON_CONFIABLE``).
+
+    :func:`_unmask` reports only the sentinels that went MISSING.  A sentinel
+    the model MADE UP is invisible to it, and invisible to the token guard too,
+    because it is not a ``{placeholder}`` and not a `backticked` literal.  This
+    is the hole those two leave between them.
+
+    Judged against the source for the same reason the fence is: a delimiter
+    the source never contained cannot be a translation of anything in it.
+    """
+    for delim in _DELIMITERS:
+        if delim in (text or "") and delim not in (source or ""):
+            return (f"reply contains the delimiter {delim!r}, "
+                    f"which the source does not")
+    if _MARKER_WORD.search(text or "") and not _MARKER_WORD.search(source or ""):
+        return "reply echoes our own untrusted marker word"
+    if _TRUST_REPLY.search(text or "") and not _TRUST_SOURCE.search(source or ""):
+        return ("reply raises trust vocabulary the source never does -- the "
+                "fence word, translated")
+    return ""
+
+
 #: ``str.format`` placeholders (``{devices}``, ``{action}``) and backticked
 #: identifiers (hostnames, CLI, field names).  Both are load-bearing: the
 #: renderer formats the first and the operator types the second.
@@ -384,7 +447,9 @@ def translate(text: str, *, src: str, dst: str, namespace: str = "",
         out = _clean(res.text or "")
         if out:
             out, lost = _unmask(out, mask_table)
-            drift = lost or _fence_residue(out, text) or _token_drift(text, out)
+            drift = (lost or _fence_residue(out, text)
+                         or _sentinel_residue(out, text)
+                         or _token_drift(text, out))
         else:
             drift = ""
         if not out or not drift:

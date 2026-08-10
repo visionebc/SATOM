@@ -3,27 +3,26 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a><span class="separator">/</span><span>AppIDs</span>
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span><span>{{ _('AppIDs') }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-tags me-2 text-accent"></i>AppIDs</h1>
+    <h1 class="fw-page-title"><i class="bi bi-tags me-2 text-accent"></i>{{ _('AppIDs') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      The billing + access-control catalog. Each Server Policy belongs to exactly
-      one AppID (one customer). Imports are additive — a vanished AppID is flagged
-      <span class="badge bg-warning text-dark">stale</span>, never deleted.
+      {{ _('The billing + access-control catalog. Each Server Policy belongs to exactly one AppID (one customer). Imports are additive — a vanished AppID is flagged') }}
+      <span class="badge bg-warning text-dark">{{ _('stale') }}</span>{{ _(', never deleted.') }}
     </p>
   </div>
 </div>
 
 <ul class="nav nav-tabs mb-3" id="appidTabs" role="tablist">
-  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-catalog" type="button">Catalog</button></li>
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-catalog" type="button">{{ _('Catalog') }}</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-import" type="button">Upload &amp; map</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-source" type="button">Nightly source</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-assign" type="button">Assign policies</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-source" type="button">{{ _('Nightly source') }}</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-assign" type="button">{{ _('Assign policies') }}</button></li>
 </ul>
 
 <div class="tab-content">
@@ -32,16 +31,16 @@
     <div class="fw-card p-3 mb-3">
       <form method="POST" action="{{ url_for('appids.create') }}" class="row g-2 align-items-end">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="col-md-2"><label class="form-label">AppID *</label><input name="app_id" class="form-control form-control-sm" required></div>
-        <div class="col-md-3"><label class="form-label">Customer</label><input name="customer" class="form-control form-control-sm"></div>
-        <div class="col-md-3"><label class="form-label">Label</label><input name="label" class="form-control form-control-sm"></div>
-        <div class="col-md-2"><label class="form-label">Rate</label><input name="rate" class="form-control form-control-sm" placeholder="e.g. 50"></div>
-        <div class="col-md-2"><button class="btn btn-fw btn-sm w-100">Add AppID</button></div>
+        <div class="col-md-2"><label class="form-label">{{ _('AppID *') }}</label><input name="app_id" class="form-control form-control-sm" required></div>
+        <div class="col-md-3"><label class="form-label">{{ _('Customer') }}</label><input name="customer" class="form-control form-control-sm"></div>
+        <div class="col-md-3"><label class="form-label">{{ _('Label') }}</label><input name="label" class="form-control form-control-sm"></div>
+        <div class="col-md-2"><label class="form-label">{{ _('Rate') }}</label><input name="rate" class="form-control form-control-sm" placeholder="{{ _('e.g. 50') }}"></div>
+        <div class="col-md-2"><button class="btn btn-fw btn-sm w-100">{{ _('Add AppID') }}</button></div>
       </form>
     </div>
     <div class="fw-card p-0">
       <table class="table table-sm mb-0 fw-table">
-        <thead><tr><th>AppID</th><th>Customer</th><th>Label</th><th>Rate</th><th>Source</th><th>Status</th><th>Policies</th><th></th></tr></thead>
+        <thead><tr><th>{{ _('AppID') }}</th><th>{{ _('Customer') }}</th><th>{{ _('Label') }}</th><th>{{ _('Rate') }}</th><th>{{ _('Source') }}</th><th>{{ _('Status') }}</th><th>{{ _('Policies') }}</th><th></th></tr></thead>
         <tbody>
         {% for a in catalog %}
           {% set nbind = bindings|selectattr('app_id_id','equalto',a.id)|list|length %}
@@ -52,9 +51,9 @@
             <td>{{ a.rate or '—' }}</td>
             <td><span class="badge bg-secondary">{{ a.source }}</span></td>
             <td>
-              {% if a.stale %}<span class="badge bg-warning text-dark" title="{{ a.stale_reason }}">stale</span>
-              {% elif a.active %}<span class="badge bg-success">active</span>
-              {% else %}<span class="badge bg-secondary">inactive</span>{% endif %}
+              {% if a.stale %}<span class="badge bg-warning text-dark" title="{{ a.stale_reason }}">{{ _('stale') }}</span>
+              {% elif a.active %}<span class="badge bg-success">{{ _('active') }}</span>
+              {% else %}<span class="badge bg-secondary">{{ _('inactive') }}</span>{% endif %}
             </td>
             <td>{{ nbind }}</td>
             <td class="text-end">
@@ -66,7 +65,7 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="8" class="text-muted p-3">No AppIDs yet. Add one above or import a catalog.</td></tr>
+          <tr><td colspan="8" class="text-muted p-3">{{ _('No AppIDs yet. Add one above or import a catalog.') }}</td></tr>
         {% endfor %}
         </tbody>
       </table>
@@ -77,42 +76,40 @@
   <div class="tab-pane fade" id="tab-import">
     <div class="fw-card p-3">
       <p class="text-muted" style="font-size:13px;">
-        Upload a CSV / TSV / TXT / PDF. It's normalized to a table so you can map
-        each column to a field <strong>once</strong> — the mapping is saved and
-        reused by later uploads and the nightly action.
+        {{ _('Upload a CSV / TSV / TXT / PDF. It\'s normalized to a table so you can map each column to a field') }} <strong>{{ _('once') }}</strong> {{ _('— the mapping is saved and reused by later uploads and the nightly action.') }}
       </p>
       <form id="importForm" method="POST" action="{{ url_for('appids.do_import') }}" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="row g-2 align-items-end mb-2">
-          <div class="col-md-6"><label class="form-label">File</label>
+          <div class="col-md-6"><label class="form-label">{{ _('File') }}</label>
             <input type="file" name="catalog_file" id="catalogFile" class="form-control form-control-sm" accept=".csv,.tsv,.txt,.pdf" required></div>
           <div class="col-md-3"><button type="button" id="previewBtn" class="btn btn-fw-outline btn-sm w-100">Preview &amp; map</button></div>
           <div class="col-md-3 form-check mt-4"><input class="form-check-input" type="checkbox" name="has_header" value="1" id="hasHeader" checked>
-            <label class="form-check-label" for="hasHeader">First row is a header</label></div>
+            <label class="form-check-label" for="hasHeader">{{ _('First row is a header') }}</label></div>
         </div>
 
         <div id="previewNote" class="alert alert-info py-2" style="display:none;font-size:12px;"></div>
         <div id="previewWrap" style="display:none;">
           <div class="table-responsive mb-3"><table class="table table-sm table-bordered mono" style="font-size:11px;" id="previewTable"></table></div>
 
-          <h6>Map columns → fields</h6>
+          <h6>{{ _('Map columns → fields') }}</h6>
           <div class="row g-2 mb-2">
             {% set saved = mapping.get('fields', {}) %}
-            <div class="col-md-3"><label class="form-label">AppID column *</label>
+            <div class="col-md-3"><label class="form-label">{{ _('AppID column *') }}</label>
               <select name="map_app_id" id="map_app_id" class="form-select form-select-sm map-col" data-saved="{{ saved.get('app_id','') }}" required></select></div>
-            <div class="col-md-3"><label class="form-label">Customer column</label>
+            <div class="col-md-3"><label class="form-label">{{ _('Customer column') }}</label>
               <select name="map_customer" class="form-select form-select-sm map-col" data-saved="{{ saved.get('customer','') }}"></select></div>
-            <div class="col-md-3"><label class="form-label">Label column</label>
+            <div class="col-md-3"><label class="form-label">{{ _('Label column') }}</label>
               <select name="map_label" class="form-select form-select-sm map-col" data-saved="{{ saved.get('label','') }}"></select></div>
-            <div class="col-md-3"><label class="form-label">Rate column</label>
+            <div class="col-md-3"><label class="form-label">{{ _('Rate column') }}</label>
               <select name="map_rate" class="form-select form-select-sm map-col" data-saved="{{ saved.get('rate','') }}"></select></div>
           </div>
 
-          <h6>Extra columns (kept per AppID)</h6>
+          <h6>{{ _('Extra columns (kept per AppID)') }}</h6>
           <div id="extraRows"></div>
-          <button type="button" id="addExtra" class="btn btn-sm btn-fw-outline mb-3"><i class="bi bi-plus"></i> Add extra field</button>
+          <button type="button" id="addExtra" class="btn btn-sm btn-fw-outline mb-3"><i class="bi bi-plus"></i> {{ _('Add extra field') }}</button>
 
-          <div><button class="btn btn-fw btn-sm">Import (additive)</button></div>
+          <div><button class="btn btn-fw btn-sm">{{ _('Import (additive)') }}</button></div>
         </div>
       </form>
     </div>
@@ -122,35 +119,32 @@
   <div class="tab-pane fade" id="tab-source">
     <div class="fw-card p-3">
       <p class="text-muted" style="font-size:13px;">
-        For the nightly action, point at a URL that serves the catalog (the file
-        that "changes every day"). It reuses the saved column mapping. Create the
-        scheduled action from Automation → Scheduled Actions (<span class="mono">appid_import</span>,
-        left disabled by default).
+        {{ _('For the nightly action, point at a URL that serves the catalog (the file that "changes every day"). It reuses the saved column mapping. Create the scheduled action from Automation → Scheduled Actions (') }}<span class="mono">{{ _('appid_import') }}</span>{{ _(', left disabled by default).') }}
       </p>
       <form method="POST" action="{{ url_for('appids.save_source') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="row g-2 mb-2">
-          <div class="col-md-3"><label class="form-label">Source type</label>
+          <div class="col-md-3"><label class="form-label">{{ _('Source type') }}</label>
             <select name="source_type" class="form-select form-select-sm">
-              <option value="manual" {{ 'selected' if source.get('type')=='manual' else '' }}>Manual upload only</option>
-              <option value="url" {{ 'selected' if source.get('type')=='url' else '' }}>Fetch from URL (nightly)</option>
+              <option value="manual" {{ 'selected' if source.get('type')=='manual' else '' }}>{{ _('Manual upload only') }}</option>
+              <option value="url" {{ 'selected' if source.get('type')=='url' else '' }}>{{ _('Fetch from URL (nightly)') }}</option>
             </select></div>
           <div class="col-md-6"><label class="form-label">URL</label>
-            <input name="source_url" class="form-control form-control-sm" value="{{ source.get('url','') }}" placeholder="https://catalog.example/appids.csv"></div>
-          <div class="col-md-3"><label class="form-label">Auth</label>
+            <input name="source_url" class="form-control form-control-sm" value="{{ source.get('url','') }}" placeholder="{{ _('https://catalog.example/appids.csv') }}"></div>
+          <div class="col-md-3"><label class="form-label">{{ _('Auth') }}</label>
             <select name="source_auth" class="form-select form-select-sm">
               {% for a in ['none','basic','bearer'] %}<option value="{{ a }}" {{ 'selected' if source.get('auth')==a else '' }}>{{ a }}</option>{% endfor %}
             </select></div>
         </div>
         <div class="row g-2 mb-2">
-          <div class="col-md-3"><label class="form-label">Username (basic)</label>
+          <div class="col-md-3"><label class="form-label">{{ _('Username (basic)') }}</label>
             <input name="source_username" class="form-control form-control-sm" value="{{ source.get('username','') }}"></div>
-          <div class="col-md-3"><label class="form-label">Password (basic)</label>
+          <div class="col-md-3"><label class="form-label">{{ _('Password (basic)') }}</label>
             <input name="source_password" type="password" class="form-control form-control-sm" placeholder="{{ '••••••' if source.get('has_password') else '' }}"></div>
-          <div class="col-md-6"><label class="form-label">Bearer token</label>
+          <div class="col-md-6"><label class="form-label">{{ _('Bearer token') }}</label>
             <input name="source_token" type="password" class="form-control form-control-sm" placeholder="{{ '••••••' if source.get('has_token') else '' }}"></div>
         </div>
-        <button class="btn btn-fw btn-sm">Save source</button>
+        <button class="btn btn-fw btn-sm">{{ _('Save source') }}</button>
       </form>
     </div>
   </div>
@@ -160,24 +154,24 @@
     <div class="fw-card p-3 mb-3">
       <form method="POST" action="{{ url_for('appids.assign') }}" class="row g-2 align-items-end">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="col-md-3"><label class="form-label">AppID *</label>
+        <div class="col-md-3"><label class="form-label">{{ _('AppID *') }}</label>
           <select name="app_id_pk" class="form-select form-select-sm" required>
             <option value="">—</option>
             {% for a in catalog %}<option value="{{ a.id }}">{{ a.app_id }} — {{ a.customer or 'no customer' }}</option>{% endfor %}
           </select></div>
-        <div class="col-md-3"><label class="form-label">Device *</label>
+        <div class="col-md-3"><label class="form-label">{{ _('Device *') }}</label>
           <select name="appliance_id" class="form-select form-select-sm" required>
             <option value="">—</option>
             {% for d in appliances %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
           </select></div>
-        <div class="col-md-4"><label class="form-label">Server Policy name *</label>
-          <input name="server_policy" class="form-control form-control-sm" required placeholder="pol-..."></div>
-        <div class="col-md-2"><button class="btn btn-fw btn-sm w-100">Assign</button></div>
+        <div class="col-md-4"><label class="form-label">{{ _('Server Policy name *') }}</label>
+          <input name="server_policy" class="form-control form-control-sm" required placeholder="{{ _('pol-...') }}"></div>
+        <div class="col-md-2"><button class="btn btn-fw btn-sm w-100">{{ _('Assign') }}</button></div>
       </form>
     </div>
     <div class="fw-card p-0">
       <table class="table table-sm mb-0 fw-table">
-        <thead><tr><th>Server Policy</th><th>AppID</th><th>Customer</th><th></th></tr></thead>
+        <thead><tr><th>{{ _('Server Policy') }}</th><th>{{ _('AppID') }}</th><th>{{ _('Customer') }}</th><th></th></tr></thead>
         <tbody>
         {% for b in bindings %}
           <tr>
@@ -192,7 +186,7 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="4" class="text-muted p-3">No policies assigned yet.</td></tr>
+          <tr><td colspan="4" class="text-muted p-3">{{ _('No policies assigned yet.') }}</td></tr>
         {% endfor %}
         </tbody>
       </table>

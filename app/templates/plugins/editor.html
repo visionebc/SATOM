@@ -3,7 +3,7 @@
 {% block content %}
 
 <div class="fw-breadcrumb">
-  <a href="{{ url_for('plugins.index') }}">Plugin Studio</a>
+  <a href="{{ url_for('plugins.index') }}">{{ _('Plugin Studio') }}</a>
   <span class="separator">/</span>{{ plugin.name if plugin else 'New custom view' }}
 </div>
 
@@ -13,8 +13,8 @@
     <p class="fw-page-sub">Body is Jinja (sandboxed). CSS/JS run inside an isolated <code>sandbox=allow-scripts</code> iframe. Read data with <code>{{ '{{ data.KEY.rows }}' }}</code> in the body or <code>window.pluginData.KEY.rows</code> in JS.</p>
   </div>
   <div class="d-flex gap-2">
-    <button class="btn btn-fw-outline btn-sm" type="button" id="btn-examples"><i class="bi bi-collection me-1"></i>Browse examples</button>
-    <a class="btn btn-fw-secondary btn-sm" href="{{ url_for('plugins.index') }}"><i class="bi bi-arrow-left me-1"></i>All views</a>
+    <button class="btn btn-fw-outline btn-sm" type="button" id="btn-examples"><i class="bi bi-collection me-1"></i>{{ _('Browse examples') }}</button>
+    <a class="btn btn-fw-secondary btn-sm" href="{{ url_for('plugins.index') }}"><i class="bi bi-arrow-left me-1"></i>{{ _('All views') }}</a>
   </div>
 </div>
 
@@ -22,7 +22,7 @@
 {% set steps = [('draft','Draft','bi-pencil'),('testing','Testing','bi-eye'),('published','Published','bi-broadcast')] %}
 {% set order = {'draft':0,'testing':1,'published':2} %}
 <div class="fw-card">
-  <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>Lifecycle</h2>
+  <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('Lifecycle') }}</h2>
     <span class="fw-badge fw-badge-{{ {'draft':'secondary','testing':'warning','published':'success'}[plugin.status] }}">{{ plugin.status }}</span>
   </div>
   <div class="fw-card-body">
@@ -49,7 +49,7 @@
         </form>
         {% endif %}
       {% endfor %}
-      <span class="lc-hint">Publishing requires a clean render in <strong>Testing</strong>; published views appear under <em>Custom Views</em> for every engineer.</span>
+      <span class="lc-hint">{{ _('Publishing requires a clean render in') }} <strong>{{ _('Testing') }}</strong>{{ _('; published views appear under') }} <em>{{ _('Custom Views') }}</em> {{ _('for every engineer.') }}</span>
     </div>
   </div>
 </div>
@@ -60,21 +60,21 @@
   <input type="hidden" name="params" id="fld-params" value="[]">
   <div class="ed-grid">
     <div class="fw-card">
-      <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-code-square me-2 text-accent"></i>Definition</h2></div>
+      <div class="fw-card-header"><h2 class="fw-card-title"><i class="bi bi-code-square me-2 text-accent"></i>{{ _('Definition') }}</h2></div>
       <div class="fw-card-body">
         <div class="row g-3 mb-3">
-          <div class="col-sm-6"><label class="fw-form-label">Name</label>
+          <div class="col-sm-6"><label class="fw-form-label">{{ _('Name') }}</label>
             <input class="form-control fw-form-control" name="name" id="fld-name" value="{{ plugin.name if plugin else '' }}" required></div>
-          <div class="col-sm-3"><label class="fw-form-label">Kind</label>
+          <div class="col-sm-3"><label class="fw-form-label">{{ _('Kind') }}</label>
             <select class="form-select fw-form-control" name="kind" id="fld-kind">
               {% for k in ['view','widget'] %}<option value="{{ k }}" {{ 'selected' if plugin and plugin.kind==k }}>{{ k }}</option>{% endfor %}
             </select></div>
-          <div class="col-sm-3"><label class="fw-form-label">Icon</label>
+          <div class="col-sm-3"><label class="fw-form-label">{{ _('Icon') }}</label>
             <input class="form-control fw-form-control" name="icon" id="fld-icon" value="{{ plugin.icon if plugin else 'bi-puzzle' }}"></div>
         </div>
 
         <div class="mb-3">
-          <label class="fw-form-label">Datasets <span class="text-secondary fw-normal">(read-only)</span></label>
+          <label class="fw-form-label">{{ _('Datasets') }} <span class="text-secondary fw-normal">{{ _('(read-only)') }}</span></label>
           <div class="d-flex flex-wrap gap-2">
             {% for d in datasets %}
             <label class="ds-chip" title="{{ d.description }}">
@@ -87,42 +87,42 @@
 
         <div class="mb-3">
           <div class="d-flex align-items-center justify-content-between mb-1">
-            <label class="fw-form-label mb-0">Inputs <span class="text-secondary fw-normal">(selectors the viewer fills — read as <code>{{ '{{ params.NAME }}' }}</code> in the body)</span></label>
-            <button class="btn btn-fw-outline btn-sm" type="button" id="btn-add-param"><i class="bi bi-plus-lg me-1"></i>Add input</button>
+            <label class="fw-form-label mb-0">{{ _('Inputs') }} <span class="text-secondary fw-normal">(selectors the viewer fills — read as <code>{{ '{{ params.NAME }}' }}</code> in the body)</span></label>
+            <button class="btn btn-fw-outline btn-sm" type="button" id="btn-add-param"><i class="bi bi-plus-lg me-1"></i>{{ _('Add input') }}</button>
           </div>
           <div id="param-rows" class="param-rows"></div>
         </div>
 
         <div class="mb-3">
-          <label class="fw-form-label">Body <span class="text-secondary fw-normal">(Jinja / HTML)</span></label>
+          <label class="fw-form-label">{{ _('Body') }} <span class="text-secondary fw-normal">{{ _('(Jinja / HTML)') }}</span></label>
           <textarea class="form-control fw-form-control font-monospace" name="jinja" id="fld-jinja" rows="12">{{ plugin.jinja if plugin else '<h2>Hello fleet</h2>\n<p>Devices: {{ data.fleet_counts.rows[0].devices }}</p>' }}</textarea>
         </div>
         <div class="row g-3">
           <div class="col-md-6"><label class="fw-form-label">CSS</label>
             <textarea class="form-control fw-form-control font-monospace" name="css" id="fld-css" rows="6">{{ plugin.css if plugin else '' }}</textarea></div>
-          <div class="col-md-6"><label class="fw-form-label">JavaScript</label>
+          <div class="col-md-6"><label class="fw-form-label">{{ _('JavaScript') }}</label>
             <textarea class="form-control fw-form-control font-monospace" name="js" id="fld-js" rows="6">{{ plugin.js if plugin else '' }}</textarea></div>
         </div>
       </div>
       <div class="fw-card-footer d-flex gap-2 flex-wrap align-items-center">
-        <button class="btn btn-fw-primary" type="submit"><i class="bi bi-save me-1"></i>Save</button>
-        <button class="btn btn-fw-outline" type="button" id="btn-preview"><i class="bi bi-eye me-1"></i>Live preview</button>
+        <button class="btn btn-fw-primary" type="submit"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
+        <button class="btn btn-fw-outline" type="button" id="btn-preview"><i class="bi bi-eye me-1"></i>{{ _('Live preview') }}</button>
         {% if plugin %}
         <button class="btn btn-fw-danger ms-auto" type="button" id="btn-del"
                 data-action="{{ url_for('plugins.delete', pid=plugin.id) }}"
-                data-csrf="{{ csrf_token() }}"><i class="bi bi-trash me-1"></i>Delete</button>
+                data-csrf="{{ csrf_token() }}"><i class="bi bi-trash me-1"></i>{{ _('Delete') }}</button>
         {% endif %}
       </div>
     </div>
 
     <div class="fw-card">
       <div class="fw-card-header">
-        <h2 class="fw-card-title"><i class="bi bi-window me-2 text-accent"></i>Sandboxed preview</h2>
-        <span class="text-secondary" style="font-size:11px">opaque origin · no cookies · read-only</span>
+        <h2 class="fw-card-title"><i class="bi bi-window me-2 text-accent"></i>{{ _('Sandboxed preview') }}</h2>
+        <span class="text-secondary" style="font-size:11px">{{ _('opaque origin · no cookies · read-only') }}</span>
       </div>
       <div class="fw-card-body">
         <div id="param-bar" class="param-bar" style="display:none"></div>
-        <iframe id="preview-frame" sandbox="allow-scripts" title="preview"
+        <iframe id="preview-frame" sandbox="allow-scripts" title="{{ _('preview') }}"
           {% if plugin %}src="{{ url_for('plugins.frame', pid=plugin.id) }}"{% endif %}
           style="width:100%;height:560px;border:1px solid var(--fw-border);border-radius:var(--fw-radius);background:#fff"></iframe>
       </div>

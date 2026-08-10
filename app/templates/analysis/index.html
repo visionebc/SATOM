@@ -51,179 +51,179 @@
 {% endblock %}
 
 {% block breadcrumb %}
-<nav class="fw-breadcrumb"><span>Analysis</span></nav>
+<nav class="fw-breadcrumb"><span>{{ _('Analysis') }}</span></nav>
 {% endblock %}
 
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-graph-up"></i> Analysis</h1>
+    <h1 class="fw-page-title"><i class="bi bi-graph-up"></i> {{ _('Analysis') }}</h1>
     <p class="fw-page-sub">DB-first fleet & per-device analytics — every metric from the local cache, no live device calls.</p>
   </div>
   <div>
-    <button id="anaRefresh" class="btn fw-btn-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+    <button id="anaRefresh" class="btn fw-btn-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> {{ _('Refresh') }}</button>
   </div>
 </div>
 
 <!-- Filters -->
 <div class="ana-panel" style="margin-bottom:1rem">
   <div class="ana-bar">
-    <div class="fld"><label>Platform</label>
-      <select id="fPlatform"><option value="">All</option>
+    <div class="fld"><label>{{ _('Platform') }}</label>
+      <select id="fPlatform"><option value="">{{ _('All') }}</option>
         {% for k in options.platforms %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
       </select></div>
-    <div class="fld"><label>Zone</label>
-      <select id="fZone"><option value="">All</option>
+    <div class="fld"><label>{{ _('Zone') }}</label>
+      <select id="fZone"><option value="">{{ _('All') }}</option>
         {% for z in options.zones %}<option value="{{ z }}">{{ z }}</option>{% endfor %}
       </select></div>
-    <div class="fld"><label>Line</label>
-      <select id="fLine"><option value="">All</option>
+    <div class="fld"><label>{{ _('Line') }}</label>
+      <select id="fLine"><option value="">{{ _('All') }}</option>
         {% for l in options.lines %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
       </select></div>
-    <div class="fld"><label>Department</label>
-      <select id="fDept"><option value="">All</option>
+    <div class="fld"><label>{{ _('Department') }}</label>
+      <select id="fDept"><option value="">{{ _('All') }}</option>
         {% for d in options.departments %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
       </select></div>
-    <div class="fld"><label>Devices (ctrl=multi)</label>
+    <div class="fld"><label>{{ _('Devices (ctrl=multi)') }}</label>
       <select id="fDevices" multiple size="3">
         {% for d in options.devices %}<option value="{{ d.id }}">{{ d.name }} ({{ d.kind }})</option>{% endfor %}
       </select></div>
-    <div class="fld"><label>Changes from</label><input type="date" id="fFrom"></div>
-    <div class="fld"><label>Changes to</label><input type="date" id="fTo"></div>
+    <div class="fld"><label>{{ _('Changes from') }}</label><input type="date" id="fFrom"></div>
+    <div class="fld"><label>{{ _('Changes to') }}</label><input type="date" id="fTo"></div>
     <div class="fld">
-      <button id="anaApply" class="btn fw-btn-primary btn-sm">Apply</button>
+      <button id="anaApply" class="btn fw-btn-primary btn-sm">{{ _('Apply') }}</button>
     </div>
     <div class="fld">
-      <button id="anaReset" class="btn fw-btn-secondary btn-sm">Reset</button>
+      <button id="anaReset" class="btn fw-btn-secondary btn-sm">{{ _('Reset') }}</button>
     </div>
   </div>
   <form method="post" action="{{ url_for('analysis.save_appid_regex') }}" class="ana-regex" style="margin-top:.4rem">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="fld"><label>App ID pattern (regex, from Server Policy comment)</label>
-      <input type="text" name="appid_regex" value="{{ options.appid_regex }}" style="min-width:240px" placeholder="app\d{5}"></div>
-    <button class="btn fw-btn-secondary btn-sm" type="submit">Save pattern</button>
+    <div class="fld"><label>{{ _('App ID pattern (regex, from Server Policy comment)') }}</label>
+      <input type="text" name="appid_regex" value="{{ options.appid_regex }}" style="min-width:240px" placeholder="{{ _('app\\d{5}') }}"></div>
+    <button class="btn fw-btn-secondary btn-sm" type="submit">{{ _('Save pattern') }}</button>
     <span style="font-size:.75rem;opacity:.6;align-self:center">default <code>app\d{5}</code> · case-insensitive</span>
   </form>
 </div>
 
-<div id="anaStatus" class="ana-empty">Loading…</div>
+<div id="anaStatus" class="ana-empty">{{ _('Loading…') }}</div>
 
 <!-- Summary cards -->
 <div class="ana-cards" id="anaCards"></div>
 
 <!-- Devices -->
-<div class="ana-sec">Devices</div>
+<div class="ana-sec">{{ _('Devices') }}</div>
 <div class="ana-grid">
-  <div class="ana-panel"><h3>By platform</h3><div class="ana-chart"><canvas id="cDevPlatform"></canvas></div></div>
-  <div class="ana-panel"><h3>By zone</h3><div class="ana-chart"><canvas id="cDevZone"></canvas></div></div>
-  <div class="ana-panel"><h3>By line</h3><div class="ana-chart"><canvas id="cDevLine"></canvas></div></div>
-  <div class="ana-panel"><h3>By department</h3><div class="ana-chart"><canvas id="cDevDept"></canvas></div></div>
-  <div class="ana-panel"><h3>By status</h3><div class="ana-chart"><canvas id="cDevStatus"></canvas></div></div>
-  <div class="ana-panel"><h3>Objects by section</h3><div class="ana-chart"><canvas id="cObjSection"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('By platform') }}</h3><div class="ana-chart"><canvas id="cDevPlatform"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('By zone') }}</h3><div class="ana-chart"><canvas id="cDevZone"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('By line') }}</h3><div class="ana-chart"><canvas id="cDevLine"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('By department') }}</h3><div class="ana-chart"><canvas id="cDevDept"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('By status') }}</h3><div class="ana-chart"><canvas id="cDevStatus"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('Objects by section') }}</h3><div class="ana-chart"><canvas id="cObjSection"></canvas></div></div>
 </div>
 
 <!-- Object Inventory (every section & type) -->
 <div class="ana-sec">Object Inventory — every section &amp; object type</div>
 <div class="ana-grid">
-  <div class="ana-panel"><h3>Objects by section</h3><div class="ana-chart"><canvas id="cInvSection"></canvas></div></div>
-  <div class="ana-panel"><h3>Top object types</h3><div class="ana-chart"><canvas id="cInvTypes"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('Objects by section') }}</h3><div class="ana-chart"><canvas id="cInvSection"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('Top object types') }}</h3><div class="ana-chart"><canvas id="cInvTypes"></canvas></div></div>
 </div>
-<div class="ana-panel wide"><h3>Every object type per device <span id="invN" style="opacity:.5"></span></h3>
+<div class="ana-panel wide"><h3>{{ _('Every object type per device') }} <span id="invN" style="opacity:.5"></span></h3>
   <div class="ana-bar" style="margin-bottom:.5rem">
-    <div class="fld"><label>Section</label><select id="invSection"><option value="">All sections</option></select></div>
-    <div class="fld"><label>Filter type</label><input id="invFilter" placeholder="type name…"></div>
+    <div class="fld"><label>{{ _('Section') }}</label><select id="invSection"><option value="">{{ _('All sections') }}</option></select></div>
+    <div class="fld"><label>{{ _('Filter type') }}</label><input id="invFilter" placeholder="{{ _('type name…') }}"></div>
   </div>
   <div class="ana-scroll"><table class="ana-tbl" id="tInv">
-    <thead><tr id="invHead"><th>Section</th><th>Object type</th><th>Total</th></tr></thead>
+    <thead><tr id="invHead"><th>{{ _('Section') }}</th><th>{{ _('Object type') }}</th><th>{{ _('Total') }}</th></tr></thead>
     <tbody></tbody></table></div>
 </div>
 
 <!-- Server Policies -->
-<div class="ana-sec">Server Policies</div>
+<div class="ana-sec">{{ _('Server Policies') }}</div>
 <div class="ana-grid">
-  <div class="ana-panel"><h3>By deployment mode</h3><div class="ana-chart"><canvas id="cPolMode"></canvas></div></div>
-  <div class="ana-panel"><h3>By status</h3><div class="ana-chart"><canvas id="cPolStatus"></canvas></div></div>
-  <div class="ana-panel"><h3>Traffic log (tlog)</h3><div class="ana-chart"><canvas id="cPolTlog"></canvas></div></div>
-  <div class="ana-panel"><h3>TLS exposure</h3><div class="ana-chart"><canvas id="cPolTls"></canvas></div></div>
-  <div class="ana-panel"><h3>Policies per device</h3><div class="ana-chart"><canvas id="cPolDev"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('By deployment mode') }}</h3><div class="ana-chart"><canvas id="cPolMode"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('By status') }}</h3><div class="ana-chart"><canvas id="cPolStatus"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('Traffic log (tlog)') }}</h3><div class="ana-chart"><canvas id="cPolTlog"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('TLS exposure') }}</h3><div class="ana-chart"><canvas id="cPolTls"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('Policies per device') }}</h3><div class="ana-chart"><canvas id="cPolDev"></canvas></div></div>
 </div>
-<div class="ana-panel wide"><h3>All server policies <span id="polCount" style="opacity:.5"></span></h3>
-  <input id="polFilter" class="form-control form-control-sm" placeholder="filter…" style="max-width:260px;margin-bottom:.5rem">
+<div class="ana-panel wide"><h3>{{ _('All server policies') }} <span id="polCount" style="opacity:.5"></span></h3>
+  <input id="polFilter" class="form-control form-control-sm" placeholder="{{ _('filter…') }}" style="max-width:260px;margin-bottom:.5rem">
   <div class="ana-scroll"><table class="ana-tbl" id="tPolicies">
-    <thead><tr><th>Device</th><th>Policy</th><th>Mode</th><th>Status</th><th>tlog</th><th>WPP</th><th>Service</th><th>HTTPS</th><th>App ID</th></tr></thead>
+    <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Policy') }}</th><th>{{ _('Mode') }}</th><th>{{ _('Status') }}</th><th>{{ _('tlog') }}</th><th>WPP</th><th>{{ _('Service') }}</th><th>{{ _('HTTPS') }}</th><th>{{ _('App ID') }}</th></tr></thead>
     <tbody></tbody></table></div>
 </div>
 
 <!-- Web Protection Profiles -->
-<div class="ana-sec">Web Protection Profiles</div>
+<div class="ana-sec">{{ _('Web Protection Profiles') }}</div>
 <div class="ana-grid">
-  <div class="ana-panel"><h3>By kind</h3><div class="ana-chart"><canvas id="cWppKind"></canvas></div></div>
-  <div class="ana-panel"><h3>WPP per device</h3><div class="ana-chart"><canvas id="cWppDev"></canvas></div></div>
-  <div class="ana-panel"><h3>Usage (policies per WPP)</h3><div class="ana-chart"><canvas id="cWppUsage"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('By kind') }}</h3><div class="ana-chart"><canvas id="cWppKind"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('WPP per device') }}</h3><div class="ana-chart"><canvas id="cWppDev"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('Usage (policies per WPP)') }}</h3><div class="ana-chart"><canvas id="cWppUsage"></canvas></div></div>
 </div>
 <div class="ana-grid">
-  <div class="ana-panel"><h3>Which WPP per device (matrix)</h3>
+  <div class="ana-panel"><h3>{{ _('Which WPP per device (matrix)') }}</h3>
     <div class="ana-scroll"><table class="ana-tbl" id="tWppMatrix">
-      <thead><tr><th>Device</th><th>Web Protection Profile</th><th>Policies</th></tr></thead><tbody></tbody></table></div></div>
-  <div class="ana-panel"><h3>Unused WPP <span id="wppUnusedN" style="opacity:.5"></span></h3>
+      <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Web Protection Profile') }}</th><th>{{ _('Policies') }}</th></tr></thead><tbody></tbody></table></div></div>
+  <div class="ana-panel"><h3>{{ _('Unused WPP') }} <span id="wppUnusedN" style="opacity:.5"></span></h3>
     <div class="ana-scroll" id="wppUnused"></div></div>
 </div>
 
 <!-- Backends / Services -->
 <div class="ana-sec">Backends & Services</div>
 <div class="ana-grid">
-  <div class="ana-panel"><h3>Pools by type</h3><div class="ana-chart"><canvas id="cPoolType"></canvas></div></div>
-  <div class="ana-panel"><h3>Pools by protocol</h3><div class="ana-chart"><canvas id="cPoolProto"></canvas></div></div>
-  <div class="ana-panel"><h3>Pools per device</h3><div class="ana-chart"><canvas id="cPoolDev"></canvas></div></div>
-  <div class="ana-panel"><h3>Policy service ports (HTTP)</h3><div class="ana-chart"><canvas id="cSvcPorts"></canvas></div></div>
-  <div class="ana-panel"><h3>Policy HTTPS service</h3><div class="ana-chart"><canvas id="cSvcHttps"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('Pools by type') }}</h3><div class="ana-chart"><canvas id="cPoolType"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('Pools by protocol') }}</h3><div class="ana-chart"><canvas id="cPoolProto"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('Pools per device') }}</h3><div class="ana-chart"><canvas id="cPoolDev"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('Policy service ports (HTTP)') }}</h3><div class="ana-chart"><canvas id="cSvcPorts"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('Policy HTTPS service') }}</h3><div class="ana-chart"><canvas id="cSvcHttps"></canvas></div></div>
 </div>
 
 <!-- Exceptions -->
-<div class="ana-sec">Exceptions</div>
+<div class="ana-sec">{{ _('Exceptions') }}</div>
 <div class="ana-grid">
-  <div class="ana-panel"><h3>By category</h3><div class="ana-chart"><canvas id="cExcCat"></canvas></div></div>
-  <div class="ana-panel"><h3>By type</h3><div class="ana-chart"><canvas id="cExcType"></canvas></div></div>
-  <div class="ana-panel"><h3>By device</h3><div class="ana-chart"><canvas id="cExcDev"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('By category') }}</h3><div class="ana-chart"><canvas id="cExcCat"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('By type') }}</h3><div class="ana-chart"><canvas id="cExcType"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('By device') }}</h3><div class="ana-chart"><canvas id="cExcDev"></canvas></div></div>
 </div>
-<div class="ana-panel wide"><h3>Duplicate exceptions <span id="excDupN" style="opacity:.5"></span></h3>
+<div class="ana-panel wide"><h3>{{ _('Duplicate exceptions') }} <span id="excDupN" style="opacity:.5"></span></h3>
   <div class="ana-scroll"><table class="ana-tbl" id="tExcDup">
-    <thead><tr><th>Device</th><th>WPP</th><th>Type</th><th>Count</th><th>Names</th></tr></thead><tbody></tbody></table></div>
+    <thead><tr><th>{{ _('Device') }}</th><th>WPP</th><th>{{ _('Type') }}</th><th>{{ _('Count') }}</th><th>{{ _('Names') }}</th></tr></thead><tbody></tbody></table></div>
 </div>
 
 <!-- App IDs -->
-<div class="ana-sec">Application IDs</div>
+<div class="ana-sec">{{ _('Application IDs') }}</div>
 <div class="ana-grid">
-  <div class="ana-panel"><h3>App ID coverage</h3><div class="ana-chart"><canvas id="cAppidCov"></canvas></div></div>
-  <div class="ana-panel wide" style="grid-column:span 2"><h3>App IDs <span id="appidN" style="opacity:.5"></span></h3>
+  <div class="ana-panel"><h3>{{ _('App ID coverage') }}</h3><div class="ana-chart"><canvas id="cAppidCov"></canvas></div></div>
+  <div class="ana-panel wide" style="grid-column:span 2"><h3>{{ _('App IDs') }} <span id="appidN" style="opacity:.5"></span></h3>
     <div class="ana-scroll"><table class="ana-tbl" id="tAppid">
-      <thead><tr><th>App ID</th><th>Policies</th><th>Devices</th><th>Policy names</th></tr></thead><tbody></tbody></table></div></div>
+      <thead><tr><th>{{ _('App ID') }}</th><th>{{ _('Policies') }}</th><th>{{ _('Devices') }}</th><th>{{ _('Policy names') }}</th></tr></thead><tbody></tbody></table></div></div>
 </div>
-<div class="ana-panel wide"><h3>Server policies WITHOUT an App ID <span id="noAppidN" style="opacity:.5"></span></h3>
+<div class="ana-panel wide"><h3>{{ _('Server policies WITHOUT an App ID') }} <span id="noAppidN" style="opacity:.5"></span></h3>
   <div class="ana-scroll"><table class="ana-tbl" id="tNoAppid">
-    <thead><tr><th>Device</th><th>Policy</th><th>Comment</th></tr></thead><tbody></tbody></table></div>
+    <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Policy') }}</th><th>{{ _('Comment') }}</th></tr></thead><tbody></tbody></table></div>
 </div>
 
 <!-- Segments -->
-<div class="ana-sec">Network Segments</div>
+<div class="ana-sec">{{ _('Network Segments') }}</div>
 <div class="ana-grid">
-  <div class="ana-panel"><h3>IPs per segment</h3><div class="ana-chart"><canvas id="cSegIps"></canvas></div></div>
-  <div class="ana-panel wide" style="grid-column:span 2"><h3>Segments <span id="segN" style="opacity:.5"></span></h3>
+  <div class="ana-panel"><h3>{{ _('IPs per segment') }}</h3><div class="ana-chart"><canvas id="cSegIps"></canvas></div></div>
+  <div class="ana-panel wide" style="grid-column:span 2"><h3>{{ _('Segments') }} <span id="segN" style="opacity:.5"></span></h3>
     <div class="ana-scroll"><table class="ana-tbl" id="tSeg">
-      <thead><tr><th>Name</th><th>CIDR</th><th>Usable IPs</th><th>Interface</th><th>Gateway</th><th>Zone</th><th>Line</th><th>Dept</th></tr></thead><tbody></tbody></table></div></div>
+      <thead><tr><th>{{ _('Name') }}</th><th>CIDR</th><th>{{ _('Usable IPs') }}</th><th>{{ _('Interface') }}</th><th>{{ _('Gateway') }}</th><th>{{ _('Zone') }}</th><th>{{ _('Line') }}</th><th>{{ _('Dept') }}</th></tr></thead><tbody></tbody></table></div></div>
 </div>
 
 <!-- Changes -->
-<div class="ana-sec">Change Activity</div>
+<div class="ana-sec">{{ _('Change Activity') }}</div>
 <div class="ana-grid">
-  <div class="ana-panel wide"><h3>Activity over time</h3><div class="ana-chart" style="height:260px"><canvas id="cChgTime"></canvas></div></div>
-  <div class="ana-panel"><h3>Changes by action</h3><div class="ana-chart"><canvas id="cChgAction"></canvas></div></div>
-  <div class="ana-panel"><h3>Changes by device</h3><div class="ana-chart"><canvas id="cChgDev"></canvas></div></div>
-  <div class="ana-panel"><h3>Audit by action</h3><div class="ana-chart"><canvas id="cAuditAction"></canvas></div></div>
+  <div class="ana-panel wide"><h3>{{ _('Activity over time') }}</h3><div class="ana-chart" style="height:260px"><canvas id="cChgTime"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('Changes by action') }}</h3><div class="ana-chart"><canvas id="cChgAction"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('Changes by device') }}</h3><div class="ana-chart"><canvas id="cChgDev"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('Audit by action') }}</h3><div class="ana-chart"><canvas id="cAuditAction"></canvas></div></div>
 </div>
-<div class="ana-panel wide"><h3>Recent config changes <span id="chgN" style="opacity:.5"></span></h3>
+<div class="ana-panel wide"><h3>{{ _('Recent config changes') }} <span id="chgN" style="opacity:.5"></span></h3>
   <div class="ana-scroll"><table class="ana-tbl" id="tChanges">
-    <thead><tr><th>When (UTC)</th><th>Device</th><th>Action</th><th>Endpoint</th><th>Object</th><th>Mode</th><th>User</th></tr></thead><tbody></tbody></table></div>
+    <thead><tr><th>{{ _('When (UTC)') }}</th><th>{{ _('Device') }}</th><th>{{ _('Action') }}</th><th>{{ _('Endpoint') }}</th><th>{{ _('Object') }}</th><th>{{ _('Mode') }}</th><th>{{ _('User') }}</th></tr></thead><tbody></tbody></table></div>
 </div>
 
 <!-- Deep Analysis (WPP + Policy depth) -->
@@ -232,45 +232,45 @@
   <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
     <div id="deepFresh" class="d-flex flex-wrap" style="gap:.2rem"></div>
     <div class="d-flex gap-2">
-      <button id="deepReload" class="btn fw-btn-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> Reload</button>
-      <button id="deepRun" class="btn fw-btn-primary btn-sm"><i class="bi bi-diagram-3"></i> Run deep capture</button>
+      <button id="deepReload" class="btn fw-btn-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> {{ _('Reload') }}</button>
+      <button id="deepRun" class="btn fw-btn-primary btn-sm"><i class="bi bi-diagram-3"></i> {{ _('Run deep capture') }}</button>
     </div>
   </div>
-  <p class="small text-muted mb-0 mt-2">The full WPP sub-tree + Server-Policy dependency graph captured into the cache (opt-in deep rediscovery). Every sub-element is queryable here — no live device calls. Click ⤢ on any chart to expand, change type, top-N, and export CSV/PNG.</p>
+  <p class="small text-muted mb-0 mt-2">{{ _('The full WPP sub-tree + Server-Policy dependency graph captured into the cache (opt-in deep rediscovery). Every sub-element is queryable here — no live device calls. Click ⤢ on any chart to expand, change type, top-N, and export CSV/PNG.') }}</p>
 </div>
 <!-- Fleet inventory (cardinality) -->
 <div class="ana-panel" style="margin-bottom:1rem">
-  <h3>Fleet inventory <span id="invScope" style="opacity:.5;font-weight:400;font-size:.8rem"></span></h3>
-  <div id="deepInv"><div class="ana-empty">Loading…</div></div>
+  <h3>{{ _('Fleet inventory') }} <span id="invScope" style="opacity:.5;font-weight:400;font-size:.8rem"></span></h3>
+  <div id="deepInv"><div class="ana-empty">{{ _('Loading…') }}</div></div>
   <div class="ana-grid" style="margin-top:.8rem">
-    <div class="ana-panel"><h3>Back-end ports</h3>
+    <div class="ana-panel"><h3>{{ _('Back-end ports') }}</h3>
       <div class="ana-chart" style="height:240px"><canvas id="cDeepPorts"></canvas></div>
       <div class="ana-scroll" style="max-height:150px;margin-top:.5rem"><table class="ana-tbl" id="tDeepPorts">
-        <thead><tr><th>Port</th><th>Back-ends</th></tr></thead><tbody></tbody></table></div></div>
-    <div class="ana-panel wide"><h3>Per-device inventory</h3>
+        <thead><tr><th>{{ _('Port') }}</th><th>{{ _('Back-ends') }}</th></tr></thead><tbody></tbody></table></div></div>
+    <div class="ana-panel wide"><h3>{{ _('Per-device inventory') }}</h3>
       <div class="ana-scroll" style="max-height:270px"><table class="ana-tbl" id="tDeepInvDev">
-        <thead><tr><th>Device</th><th>Policies</th><th>Pools</th><th>Back-ends</th><th>SNI</th><th>Certs</th></tr></thead><tbody></tbody></table></div></div>
+        <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Policies') }}</th><th>{{ _('Pools') }}</th><th>{{ _('Back-ends') }}</th><th>SNI</th><th>{{ _('Certs') }}</th></tr></thead><tbody></tbody></table></div></div>
   </div>
 </div>
 <div class="ana-grid">
-  <div class="ana-panel wide"><h3>WPP feature coverage <span id="deepWppN" style="opacity:.5"></span></h3>
+  <div class="ana-panel wide"><h3>{{ _('WPP feature coverage') }} <span id="deepWppN" style="opacity:.5"></span></h3>
     <div class="ana-chart" style="height:300px"><canvas id="cDeepWppMatrix"></canvas></div>
     <div class="ana-scroll" style="margin-top:.6rem"><table class="ana-tbl" id="tDeepWpp">
-      <thead><tr><th>Feature</th><th>Bound / Total</th><th>Coverage</th></tr></thead><tbody></tbody></table></div></div>
-  <div class="ana-panel"><h3>Sub-elements captured</h3>
+      <thead><tr><th>{{ _('Feature') }}</th><th>{{ _('Bound / Total') }}</th><th>{{ _('Coverage') }}</th></tr></thead><tbody></tbody></table></div></div>
+  <div class="ana-panel"><h3>{{ _('Sub-elements captured') }}</h3>
     <div class="ana-chart" style="height:300px"><canvas id="cDeepSub"></canvas></div>
     <div class="ana-scroll" style="max-height:160px;margin-top:.6rem"><table class="ana-tbl" id="tDeepSub">
-      <thead><tr><th>Sub-element type</th><th>Rows</th></tr></thead><tbody></tbody></table></div></div>
+      <thead><tr><th>{{ _('Sub-element type') }}</th><th>{{ _('Rows') }}</th></tr></thead><tbody></tbody></table></div></div>
 </div>
 <div class="ana-grid">
-  <div class="ana-panel"><h3>Unused WPP (orphans) <span id="deepOrphN" style="opacity:.5"></span></h3>
+  <div class="ana-panel"><h3>{{ _('Unused WPP (orphans)') }} <span id="deepOrphN" style="opacity:.5"></span></h3>
     <div id="deepOrphans" class="ana-scroll"></div></div>
-  <div class="ana-panel wide"><h3>Drill-down explorer</h3>
+  <div class="ana-panel wide"><h3>{{ _('Drill-down explorer') }}</h3>
     <div class="d-flex gap-2 align-items-center mb-2" style="flex-wrap:wrap">
-      <select id="deepKind" class="form-select form-select-sm" style="width:auto"><option value="wpp">Web Protection Profile</option><option value="policy">Server Policy</option></select>
+      <select id="deepKind" class="form-select form-select-sm" style="width:auto"><option value="wpp">{{ _('Web Protection Profile') }}</option><option value="policy">{{ _('Server Policy') }}</option></select>
       <select id="deepObj" class="form-select form-select-sm" style="width:auto;max-width:360px"></select>
     </div>
-    <div id="deepTree" class="ana-scroll dt-tree" style="max-height:420px"><div class="ana-empty">Pick an object</div></div></div>
+    <div id="deepTree" class="ana-scroll dt-tree" style="max-height:420px"><div class="ana-empty">{{ _('Pick an object') }}</div></div></div>
 </div>
 
 <!-- Reusable chart modal -->
@@ -279,15 +279,15 @@
     <div class="anam-head">
       <span id="anamTitle" class="anam-title"></span>
       <div class="anam-ctl">
-        <label>Type <select id="anamType"><option value="bar">Bar</option><option value="line">Line</option><option value="doughnut">Doughnut</option></select></label>
-        <label>Top <input id="anamTop" type="number" min="0" placeholder="all" style="width:64px"></label>
+        <label>{{ _('Type') }} <select id="anamType"><option value="bar">{{ _('Bar') }}</option><option value="line">{{ _('Line') }}</option><option value="doughnut">{{ _('Doughnut') }}</option></select></label>
+        <label>{{ _('Top') }} <input id="anamTop" type="number" min="0" placeholder="{{ _('all') }}" style="width:64px"></label>
         <button id="anamCsv" class="btn fw-btn-secondary btn-sm">CSV</button>
         <button id="anamPng" class="btn fw-btn-secondary btn-sm">PNG</button>
         <button id="anamClose" class="btn fw-btn-secondary btn-sm">✕</button>
       </div>
     </div>
     <div class="anam-chart"><canvas id="anamCanvas"></canvas></div>
-    <div class="ana-scroll" style="max-height:210px"><table class="ana-tbl" id="anamTbl"><thead><tr><th>Label</th><th>Value</th></tr></thead><tbody></tbody></table></div>
+    <div class="ana-scroll" style="max-height:210px"><table class="ana-tbl" id="anamTbl"><thead><tr><th>{{ _('Label') }}</th><th>{{ _('Value') }}</th></tr></thead><tbody></tbody></table></div>
   </div>
 </div>
 {% endblock %}

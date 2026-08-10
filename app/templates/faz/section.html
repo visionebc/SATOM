@@ -4,7 +4,7 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="{{ url_for('faz.index') }}">FortiAnalyzer</a>
+  <a href="{{ url_for('faz.index') }}">{{ _('FortiAnalyzer') }}</a>
   <span class="separator">/</span>
   <span>{{ group.label }}</span>
   <span class="separator">/</span>
@@ -18,13 +18,13 @@
     <h1 class="fw-page-title"><i class="bi {{ item.icon }} me-2 text-accent"></i>{{ item.label }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       {{ group.label }} &gt; {{ item.label }}
-      {% if appliance %} on <strong>{{ appliance.name }}</strong> <span class="fw-badge fw-badge-secondary ms-1" title="Read live from the device over JSON-RPC">LIVE</span>{% endif %}
+      {% if appliance %} on <strong>{{ appliance.name }}</strong> <span class="fw-badge fw-badge-secondary ms-1" title="{{ _('Read live from the device over JSON-RPC') }}">LIVE</span>{% endif %}
     </p>
   </div>
   <div class="d-flex align-items-center gap-2">
     {% if appliance %}
-    <a class="btn btn-outline-light btn-sm" href="{{ request.full_path }}" title="Re-read from the device">
-      <i class="bi bi-arrow-clockwise me-1"></i>Refresh</a>
+    <a class="btn btn-outline-light btn-sm" href="{{ request.full_path }}" title="{{ _('Re-read from the device') }}">
+      <i class="bi bi-arrow-clockwise me-1"></i>{{ _('Refresh') }}</a>
     {% endif %}
   </div>
 </div>
@@ -32,10 +32,10 @@
 {% if not appliance %}
 <div class="fw-alert fw-alert-warning d-flex align-items-center gap-2 mb-3">
   <i class="bi bi-hdd-rack"></i>
-  <div>No FortiAnalyzer selected — sections are read live from a device.
-    <a href="{{ url_for('faz.index') }}">Pick one on the FortiAnalyzer dashboard</a>
+  <div>{{ _('No FortiAnalyzer selected — sections are read live from a device.') }}
+    <a href="{{ url_for('faz.index') }}">{{ _('Pick one on the FortiAnalyzer dashboard') }}</a>
     {% if not fleet %} (none registered yet — add the unit under
-    <a href="{{ url_for('appliances.index') }}">Appliances</a>){% endif %}.
+    <a href="{{ url_for('appliances.index') }}">{{ _('Appliances') }}</a>){% endif %}.
   </div>
 </div>
 {% elif tab and tab.error %}
@@ -69,14 +69,14 @@
     {% if editable %}
     <button type="button" class="btn btn-sm btn-fw-primary" id="faz-edit-kv"
             data-fields='{{ tab.kv_fields|tojson|forceescape }}'>
-      <i class="bi bi-pencil me-1"></i>Edit</button>
+      <i class="bi bi-pencil me-1"></i>{{ _('Edit') }}</button>
     {% endif %}
     <span class="text-muted ms-auto" style="font-size:12px;">
       {{ tab.kv|length }} setting(s) · <code style="font-size:11px;">{{ tab.urn }}</code></span>
   </div>
   <div class="fw-table-wrapper">
     <table class="fw-table">
-      <thead><tr><th style="width:320px;">Setting</th><th>Value</th></tr></thead>
+      <thead><tr><th style="width:320px;">{{ _('Setting') }}</th><th>{{ _('Value') }}</th></tr></thead>
       <tbody>
         {% for k, v in tab.kv.items() if k != 'obj flags' %}
         <tr>
@@ -99,46 +99,46 @@
       <i class="bi bi-plus-lg me-1"></i>{{ 'Add Device' if is_devices else 'Create New' }}</button>
     {% endif %}
     {% if is_devices %}
-    <div class="fw-toolbar-group" role="group" aria-label="Device actions">
+    <div class="fw-toolbar-group" role="group" aria-label="{{ _('Device actions') }}">
       {% if can_write %}
       <button type="button" class="btn btn-sm btn-fw-primary" id="fazdev-authorize" disabled
-              title="Authorize the selected device(s) — exec /dvm/cmd/add/dev-list">
-        <i class="bi bi-check2-circle me-1"></i>Authorize</button>{% endif %}
+              title="{{ _('Authorize the selected device(s) — exec /dvm/cmd/add/dev-list') }}">
+        <i class="bi bi-check2-circle me-1"></i>{{ _('Authorize') }}</button>{% endif %}
       <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-hide" disabled
-              title="Hide the selected device(s) from this view">
-        <i class="bi bi-eye-slash me-1"></i>Hide</button>
+              title="{{ _('Hide the selected device(s) from this view') }}">
+        <i class="bi bi-eye-slash me-1"></i>{{ _('Hide') }}</button>
       {% if editable %}
       <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-edit" disabled
-              title="Edit the selected device (single selection)">
-        <i class="bi bi-pencil me-1"></i>Edit</button>
+              title="{{ _('Edit the selected device (single selection)') }}">
+        <i class="bi bi-pencil me-1"></i>{{ _('Edit') }}</button>
       {% endif %}
       {% if can_write %}
       <button type="button" class="btn btn-sm btn-fw-danger" id="fazdev-delete" disabled
-              title="Delete the selected device(s) — exec /dvm/cmd/del/dev-list">
-        <i class="bi bi-trash me-1"></i>Delete</button>{% endif %}
+              title="{{ _('Delete the selected device(s) — exec /dvm/cmd/del/dev-list') }}">
+        <i class="bi bi-trash me-1"></i>{{ _('Delete') }}</button>{% endif %}
     </div>
     <span class="fw-toolbar-sep" aria-hidden="true"></span>
     <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-showhidden"
-            title="Toggle showing devices you have hidden">
-      <i class="bi bi-eye me-1"></i>Display Hidden Devices</button>
+            title="{{ _('Toggle showing devices you have hidden') }}">
+      <i class="bi bi-eye me-1"></i>{{ _('Display Hidden Devices') }}</button>
     <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-fullscreen"
-            title="Full screen">
-      <i class="bi bi-arrows-fullscreen me-1"></i>Full Screen</button>
-    <div class="fw-toolbar-group" role="group" aria-label="List actions">
+            title="{{ _('Full screen') }}">
+      <i class="bi bi-arrows-fullscreen me-1"></i>{{ _('Full Screen') }}</button>
+    <div class="fw-toolbar-group" role="group" aria-label="{{ _('List actions') }}">
       <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-export"
-              title="Export the device list to CSV">
-        <i class="bi bi-download me-1"></i>Export</button>
+              title="{{ _('Export the device list to CSV') }}">
+        <i class="bi bi-download me-1"></i>{{ _('Export') }}</button>
       <div style="position:relative;display:inline-block;">
         <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-columns"
-                title="Choose which columns to display">
-          <i class="bi bi-layout-three-columns me-1"></i>Columns</button>
+                title="{{ _('Choose which columns to display') }}">
+          <i class="bi bi-layout-three-columns me-1"></i>{{ _('Columns') }}</button>
         <div id="fazdev-col-panel" class="fw-card" style="display:none;position:absolute;z-index:30;top:110%;left:0;min-width:180px;max-height:260px;overflow:auto;padding:8px 10px;font-size:12px;"></div>
       </div>
     </div>
     {% endif %}
     <div class="fw-search-box">
       <i class="bi bi-search search-icon"></i>
-      <input type="text" id="faz-obj-search" placeholder="Search…">
+      <input type="text" id="faz-obj-search" placeholder="{{ _('Search…') }}">
     </div>
     <span class="text-muted ms-auto" style="font-size:12px;">
       {{ tab.rows|length }}{{ '+' if tab.truncated }} row(s)
@@ -153,9 +153,9 @@
     <table class="fw-table" id="faz-obj-table">
       <thead>
         <tr>
-          {% if is_devices %}<th style="width:34px;text-align:center;"><input type="checkbox" id="fazdev-all" title="Select all"></th>{% endif %}
+          {% if is_devices %}<th style="width:34px;text-align:center;"><input type="checkbox" id="fazdev-all" title="{{ _('Select all') }}"></th>{% endif %}
           {% for col in tab.columns %}<th>{{ col.replace('_',' ').replace('-',' ')|title }}</th>{% endfor %}
-          {% if editable %}<th style="width:110px;text-align:right;">Actions</th>{% endif %}
+          {% if editable %}<th style="width:110px;text-align:right;">{{ _('Actions') }}</th>{% endif %}
         </tr>
       </thead>
       <tbody>
@@ -181,12 +181,12 @@
               {% if flds.update({k: v}) %}{% endif %}
             {% endfor %}
             <td style="text-align:right;white-space:nowrap;">
-              <button type="button" class="btn btn-sm btn-outline-light faz-edit-row" title="Edit"
+              <button type="button" class="btn btn-sm btn-outline-light faz-edit-row" title="{{ _('Edit') }}"
                       data-mkey="{{ r.get(tab.mkey, '') }}"
                       data-fields='{{ flds|tojson|forceescape }}'>
                 <i class="bi bi-pencil"></i></button>
               {% if tab.can_delete %}
-              <button type="button" class="btn btn-sm btn-outline-danger faz-del-row" title="Delete"
+              <button type="button" class="btn btn-sm btn-outline-danger faz-del-row" title="{{ _('Delete') }}"
                       data-mkey="{{ r.get(tab.mkey, '') }}">
                 <i class="bi bi-trash"></i></button>
               {% endif %}
@@ -224,7 +224,7 @@
       <div class="d-flex flex-wrap gap-2">
         <a class="btn btn-sm btn-fw-primary" target="_blank" rel="noopener"
            href="https://{{ appliance.host }}{% if appliance.port and appliance.port != 443 %}:{{ appliance.port }}{% endif %}/">
-          <i class="bi bi-box-arrow-up-right me-1"></i>Open in FortiAnalyzer</a>
+          <i class="bi bi-box-arrow-up-right me-1"></i>{{ _('Open in FortiAnalyzer') }}</a>
         <a class="btn btn-sm btn-outline-light" href="{{ url_for('faz_api.index') }}">
           <i class="bi bi-hdd-stack me-1"></i>API &amp; Registry</a>
       </div>
@@ -241,16 +241,16 @@
 <div id="faz-modal" style="display:none;position:fixed;inset:0;z-index:1080;background:rgba(2,6,17,.72);backdrop-filter:blur(3px);">
   <div class="fw-card" style="max-width:640px;margin:6vh auto;max-height:84vh;display:flex;flex-direction:column;padding:0;">
     <div class="d-flex align-items-center justify-content-between" style="padding:14px 18px;border-bottom:1px solid rgba(148,163,184,.12);">
-      <strong id="faz-modal-title">Edit</strong>
+      <strong id="faz-modal-title">{{ _('Edit') }}</strong>
       <button type="button" class="btn btn-sm btn-outline-light" id="faz-modal-close"><i class="bi bi-x-lg"></i></button>
     </div>
     <div id="faz-modal-body" style="padding:16px 18px;overflow:auto;"></div>
     <div style="padding:12px 18px;border-top:1px solid rgba(148,163,184,.12);">
       <div id="faz-modal-result"></div>
       <div class="d-flex gap-2 mt-2">
-        <button type="button" class="btn btn-sm btn-fw-primary" id="faz-modal-preview">Preview request</button>
+        <button type="button" class="btn btn-sm btn-fw-primary" id="faz-modal-preview">{{ _('Preview request') }}</button>
         <span class="text-muted ms-auto align-self-center" style="font-size:11px;">
-          Dry-run first — nothing is written until you apply.</span>
+          {{ _('Dry-run first — nothing is written until you apply.') }}</span>
       </div>
     </div>
   </div>
@@ -422,16 +422,16 @@
 <div id="fazdev-modal" style="display:none;position:fixed;inset:0;z-index:1080;background:rgba(2,6,17,.72);backdrop-filter:blur(3px);">
   <div class="fw-card" style="max-width:640px;margin:8vh auto;max-height:80vh;display:flex;flex-direction:column;padding:0;">
     <div class="d-flex align-items-center justify-content-between" style="padding:14px 18px;border-bottom:1px solid rgba(148,163,184,.12);">
-      <strong id="fazdev-modal-title">Device action</strong>
+      <strong id="fazdev-modal-title">{{ _('Device action') }}</strong>
       <button type="button" class="btn btn-sm btn-outline-light" id="fazdev-modal-close"><i class="bi bi-x-lg"></i></button>
     </div>
     <div id="fazdev-modal-body" style="padding:16px 18px;overflow:auto;"></div>
     <div style="padding:12px 18px;border-top:1px solid rgba(148,163,184,.12);">
       <div id="fazdev-modal-result"></div>
       <div class="d-flex gap-2 mt-2">
-        <button type="button" class="btn btn-sm btn-fw-primary" id="fazdev-modal-preview">Preview request</button>
+        <button type="button" class="btn btn-sm btn-fw-primary" id="fazdev-modal-preview">{{ _('Preview request') }}</button>
         <span class="text-muted ms-auto align-self-center" style="font-size:11px;">
-          Dry-run first — nothing is sent to the device until you apply.</span>
+          {{ _('Dry-run first — nothing is sent to the device until you apply.') }}</span>
       </div>
     </div>
   </div>

@@ -17,9 +17,9 @@
     {%- elif c.state == 'exclusive' %}
       <span class="fw-badge fw-badge-success">{{ c.wpp }}</span>
     {%- elif c.state == 'unknown' %}
-      <span class="fw-badge fw-badge-secondary">unknown</span>
+      <span class="fw-badge fw-badge-secondary">{{ _('unknown') }}</span>
     {%- elif c.state == 'missing' %}
-      <span class="fw-badge fw-badge-danger">policy not on device</span>
+      <span class="fw-badge fw-badge-danger">{{ _('policy not on device') }}</span>
     {%- else %}
       <span class="text-muted">—</span>
     {%- endif %}
@@ -28,11 +28,11 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
   <span>WAF</span>
   <span class="separator">/</span>
-  <span>Search Attack ID</span>
+  <span>{{ _('Search Attack ID') }}</span>
   {% if appliance %}
     <span class="separator">/</span>
     <span>{{ appliance.name }}</span>
@@ -43,7 +43,7 @@
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-search me-2 text-accent"></i>Search Attack ID</h1>
+    <h1 class="fw-page-title"><i class="bi bi-search me-2 text-accent"></i>{{ _('Search Attack ID') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       Paste the reference shown on the WAF block page
       (<code>id-&lt;device&gt;-&lt;number&gt;</code>) to pull up the attack-log entry
@@ -64,17 +64,17 @@
        label row (only where the row is actually horizontal). #}
     <form method="get" action="{{ url_for('attack_search.index') }}" class="row g-2 align-items-start">
       <div class="col-lg-7">
-        <label class="form-label" for="q">Attack ID</label>
+        <label class="form-label" for="q">{{ _('Attack ID') }}</label>
         <input type="text" class="form-control" id="q" name="q" value="{{ query }}"
-               placeholder="id-fortiweb08-000000004117" autocomplete="off" autofocus>
+               placeholder="{{ _('id-fortiweb08-000000004117') }}" autocomplete="off" autofocus>
         <div class="form-text">
-          The bare MSG ID also works; leading zeros are optional.
+          {{ _('The bare MSG ID also works; leading zeros are optional.') }}
         </div>
       </div>
       <div class="col-lg-3">
-        <label class="form-label" for="appliance_id">Appliance</label>
+        <label class="form-label" for="appliance_id">{{ _('Appliance') }}</label>
         <select class="form-select" id="appliance_id" name="appliance_id">
-          <option value="">From the ID</option>
+          <option value="">{{ _('From the ID') }}</option>
           {% for a in appliances %}
           <option value="{{ a.id }}" {{ 'selected' if explicit_id == a.id|string }}>{{ a.name }}</option>
           {% endfor %}
@@ -83,7 +83,7 @@
       <div class="col-lg-2">
         <span class="form-label d-none d-lg-block" aria-hidden="true">&nbsp;</span>
         <button type="submit" class="btn btn-primary w-100">
-          <i class="bi bi-search me-1"></i>Search
+          <i class="bi bi-search me-1"></i>{{ _('Search') }}
         </button>
       </div>
     </form>
@@ -105,7 +105,7 @@
       {% if rows %}
         <span class="fw-badge fw-badge-success">{{ rows|length }} match{{ '' if rows|length == 1 else 'es' }}</span>
       {% else %}
-        <span class="fw-badge fw-badge-warning">no match</span>
+        <span class="fw-badge fw-badge-warning">{{ _('no match') }}</span>
       {% endif %}
     </div>
   </div>
@@ -114,8 +114,8 @@
 {% if rows %}
 <div class="fw-card mb-3">
   <div class="fw-card-header d-flex justify-content-between align-items-center">
-    <span><i class="bi bi-shield-exclamation me-1"></i>Matching attack-log entries</span>
-    <span class="text-muted" style="font-size:12px;">Click a row to open the full entry</span>
+    <span><i class="bi bi-shield-exclamation me-1"></i>{{ _('Matching attack-log entries') }}</span>
+    <span class="text-muted" style="font-size:12px;">{{ _('Click a row to open the full entry') }}</span>
   </div>
   <div class="table-responsive">
     <table class="table fw-table table-sm mb-0" id="atk-results">
@@ -147,7 +147,7 @@
           {% endfor %}
           <td class="text-end">
             <button type="button" class="btn btn-sm btn-fw-outline atk-open"
-                    data-atk-index="{{ ridx }}" title="Open details">
+                    data-atk-index="{{ ridx }}" title="{{ _('Open details') }}">
               <i class="bi bi-box-arrow-in-right"></i>
             </button>
           </td>
@@ -165,8 +165,7 @@
   <div class="fw-card-body">
     {% if recent %}
     <p class="text-muted" style="font-size:13px;">
-      The feed is working — these are the newest rows this appliance holds. If the
-      ID you searched is older than these, it has aged out of the log.
+      {{ _('The feed is working — these are the newest rows this appliance holds. If the ID you searched is older than these, it has aged out of the log.') }}
     </p>
     <div class="table-responsive">
       <table class="table fw-table table-sm mb-0">
@@ -193,7 +192,7 @@
       </table>
     </div>
     {% else %}
-    <p class="text-muted mb-0">This appliance holds no attack-log entries at all.</p>
+    <p class="text-muted mb-0">{{ _('This appliance holds no attack-log entries at all.') }}</p>
     {% endif %}
   </div>
 </div>

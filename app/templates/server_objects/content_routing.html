@@ -2,11 +2,11 @@
 {% block title %}Content Routing — {{ appliance.name }}{% endblock %}
 
 {% block breadcrumb %}
-<nav aria-label="breadcrumb" class="mb-3">
+<nav aria-label="{{ _('breadcrumb') }}" class="mb-3">
   <ol class="breadcrumb">
-    <li class="breadcrumb-item"><a href="{{ url_for('server_objects.index') }}">Server Objects</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('server_objects.index') }}">{{ _('Server Objects') }}</a></li>
     <li class="breadcrumb-item"><a href="{{ url_for('server_objects.overview', id=appliance.id) }}">{{ appliance.name }}</a></li>
-    <li class="breadcrumb-item active">Content Routing</li>
+    <li class="breadcrumb-item active">{{ _('Content Routing') }}</li>
   </ol>
 </nav>
 {% endblock %}
@@ -28,7 +28,7 @@
       </table>
     </div>
     {% else %}
-    <div class="p-4 text-center text-muted">No content routing rules found.</div>
+    <div class="p-4 text-center text-muted">{{ _('No content routing rules found.') }}</div>
     {% endif %}
   </div>
 </div>

@@ -93,7 +93,51 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>Change documents are produced in five languages, and a language is offered
+<li><strong>The interface itself is translated — Spanish, German, French and Italian,
+  chosen from your profile.</strong> Until now only the change <em>document</em> could change
+  language; the chrome was English written by hand inside the templates, so a
+  saved preference of <em>Español</em> still produced an English menu. The 163
+  templates are now marked for translation (3 468 distinct strings) and the
+  language is resolved per request: the saved profile preference first, then the
+  browser's <code>Accept-Language</code> narrowed to what we actually ship, then English.</li>
+</ul>
+<p><strong>Translation happens once, offline, into catalogue files — never on a
+  request.</strong> The pages read a compiled binary catalogue in memory (~7 µs per
+  lookup); no page render talks to a model. Three reasons this is not
+  negotiable: a model call is ~50 000× slower than a lookup and a page carries
+  dozens of strings; a model returns different wording each time, so the same
+  button would be renamed between reloads; and an installation in a customer's
+  own datacentre cannot depend on our GPU to paint a menu. The catalogues are
+  plain text — a wrong translation is corrected in the <code>.po</code> and recompiled,
+  with no code change.</p>
+<p>Four defects behind this, each of which failed <em>silently</em>:</p>
+<ul>
+<li><strong>A stray <code>%</code> in a translated string crashed the page that carried it.</strong>
+    Jinja's <code>gettext</code> applies <code>rv % variables</code> to the translated text
+    unconditionally, so <code>Warn at %</code> raised <code>ValueError: incomplete format</code> at
+    render time — on the pages containing that string and nowhere else. Such
+    strings are no longer extracted, and a guard rejects any translation that
+    invents a <code>%</code> the source did not have.</li>
+<li><strong>The machine translator echoed its own untrusted-data fence into the
+    catalogue</strong>, which printed <code>[[END_UNTRUSTED]]</code> in the navigation under <em>AI
+    Advisor</em>. The existing guard knew only the English spelling of that marker,
+    so a translated fence — <code>UNvertrauenswürdige Quelle</code> — walked straight past
+    it. Residue is now judged against the source in every shipped language: a
+    reply that raises trust vocabulary the source never does cannot be a
+    translation of it. <code>TLS trust store</code> still becomes <code>TLS-Vertrauensspeicher</code>,
+    because that source <em>does</em> raise it.</li>
+<li><strong>A repaired catalogue was still serving the broken text.</strong> The <code>.po</code> files
+    were fixed while the compiled <code>.mo</code> the application reads was older — a fix
+    that was never delivered, with every text-level check green. A guard now
+    fails when a <code>.mo</code> is older than its <code>.po</code>.</li>
+<li>
+<p><strong><code>flask-babel</code> was installed in the virtualenv but absent from
+    <code>requirements.txt</code>.</strong> The installer rebuilds the venv, so the next
+    reinstallation would have removed a dependency the application cannot start
+    without.</p>
+</li>
+<li>
+<p><strong>Change documents are produced in five languages, and a language is offered
   only when it can actually be produced.</strong> Spanish, French and Italian join
   English and German. The prose is not a fourth and fifth copy of the action
   profiles in Python — it lives in the translation catalogue and is overlaid on
@@ -104,7 +148,8 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   strings a document can print exists for that language and is not stale. One
   missing or outdated unit withdraws the whole language, because the failure it
   prevents is a document half in Spanish and half in English <em>under an
-  approver's signature line</em> — which raises nothing and looks finished.</li>
+  approver's signature line</em> — which raises nothing and looks finished.</p>
+</li>
 <li><strong>Your language is a profile preference, and the change document stops
   guessing it.</strong> <strong>Profile → Language</strong> stores the language you work in against
   your account in the database — not a cookie, and not shared with other users —

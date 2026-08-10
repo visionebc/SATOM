@@ -4,9 +4,9 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <a href="{{ url_for('workspace.index') }}">Server Policy</a>
+  <a href="{{ url_for('workspace.index') }}">{{ _('Server Policy') }}</a>
   <span class="separator">/</span>
   <span>{{ appliance.name if appliance else 'Appliance' }}</span>
 </div>
@@ -17,7 +17,7 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title">
-      <i class="bi bi-shield-check me-2 text-accent"></i>Server Policies
+      <i class="bi bi-shield-check me-2 text-accent"></i>{{ _('Server Policies') }}
     </h1>
     <div class="d-flex align-items-center gap-2 mt-1">
       <span class="fw-badge fw-badge-secondary">{{ appliance.kind if appliance else '' }}</span>
@@ -25,29 +25,29 @@
         {{ appliance.host if appliance else '' }}:{{ appliance.port if appliance else '' }}
       </span>
       <span class="fw-status fw-status-unknown" data-status-id="{{ appliance.id if appliance else '' }}" style="font-size:12px;">
-        <span class="fw-status-dot"></span>Checking…
+        <span class="fw-status-dot"></span>{{ _('Checking…') }}
       </span>
       {% if cache_meta is defined %}
       <span class="fw-badge {{ 'fw-badge-success' if cache_meta.generated_at else 'fw-badge-warning' }}"
-            title="Local source of truth (PostgreSQL). Use 'Refresh from device' to pull live config.">
+            title="{{ _('Local source of truth (PostgreSQL). Use \'Refresh from device\' to pull live config.') }}">
         <i class="bi bi-database me-1"></i>{{ cache_freshness }}
       </span>
       {% endif %}
     </div>
   </div>
   <div class="d-flex gap-2">
-    {% if appliance %}<a href="{{ url_for('workspace.new_policy', appliance_id=appliance.id) }}" class="btn btn-fw-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>New Server Policy</a>{% endif %}
+    {% if appliance %}<a href="{{ url_for('workspace.new_policy', appliance_id=appliance.id) }}" class="btn btn-fw-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>{{ _('New Server Policy') }}</a>{% endif %}
     {% if appliance %}
     <form method="post" action="{{ url_for('workspace.refresh', appliance_id=appliance.id) }}" style="display:inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-fw-outline btn-sm"
-              title="Pull live config from the device into the local source of truth">
-        <i class="bi bi-arrow-clockwise me-1"></i>Refresh from device
+              title="{{ _('Pull live config from the device into the local source of truth') }}">
+        <i class="bi bi-arrow-clockwise me-1"></i>{{ _('Refresh from device') }}
       </button>
     </form>
     {% endif %}
     <a href="{{ url_for('workspace.index') }}" class="btn btn-secondary btn-sm">
-      <i class="bi bi-chevron-left me-1"></i>Change Appliance
+      <i class="bi bi-chevron-left me-1"></i>{{ _('Change Appliance') }}
     </a>
   </div>
 </div>
@@ -59,7 +59,7 @@
       <div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-shield"></i></div>
       <div>
         <div class="fw-stat-value">{{ policies|length if policies else 0 }}</div>
-        <div class="fw-stat-label">Total Policies</div>
+        <div class="fw-stat-label">{{ _('Total Policies') }}</div>
       </div>
     </div>
   </div>
@@ -70,7 +70,7 @@
         <div class="fw-stat-value">
           {{ policies|selectattr('status','equalto','enable')|list|length if policies else 0 }}
         </div>
-        <div class="fw-stat-label">Enabled</div>
+        <div class="fw-stat-label">{{ _('Enabled') }}</div>
       </div>
     </div>
   </div>
@@ -81,7 +81,7 @@
         <div class="fw-stat-value">
           {{ policies|selectattr('status','equalto','disable')|list|length if policies else 0 }}
         </div>
-        <div class="fw-stat-label">Disabled</div>
+        <div class="fw-stat-label">{{ _('Disabled') }}</div>
       </div>
     </div>
   </div>
@@ -92,7 +92,7 @@
         <div class="fw-stat-value">
           {{ policies|map(attribute='vserver')|unique|list|length if policies else 0 }}
         </div>
-        <div class="fw-stat-label">Virtual Servers</div>
+        <div class="fw-stat-label">{{ _('Virtual Servers') }}</div>
       </div>
     </div>
   </div>
@@ -108,43 +108,43 @@
 <div class="fw-toolbar flex-wrap gap-2">
   <div class="fw-search-box">
     <i class="bi bi-search search-icon"></i>
-    <input type="text" id="policySearch" placeholder="Name or /regex/…" autocomplete="off" title="Plain text = case-insensitive substring. Wrap in slashes for regex, e.g. /pol-.*-prod/ or /^vs-/i">
+    <input type="text" id="policySearch" placeholder="{{ _('Name or /regex/…') }}" autocomplete="off" title="{{ _('Plain text = case-insensitive substring. Wrap in slashes for regex, e.g. /pol-.*-prod/ or /^vs-/i') }}">
   </div>
-  <input type="text" class="form-control form-control-sm" style="width:140px;" id="fVip" placeholder="VIP / IP…" autocomplete="off" title="Substring, or /regex/ (e.g. /^10\.0\./)">
-  <input type="text" class="form-control form-control-sm" style="width:150px;" id="fPool" placeholder="Backend pool…" autocomplete="off" title="Substring, or /regex/">
-  <input type="text" class="form-control form-control-sm" style="width:160px;" id="fBackend" placeholder="Backend server IP…" autocomplete="off" title="Substring, or /regex/ (e.g. /:8080$/)">
+  <input type="text" class="form-control form-control-sm" style="width:140px;" id="fVip" placeholder="{{ _('VIP / IP…') }}" autocomplete="off" title="{{ _('Substring, or /regex/ (e.g. /^10\\.0\\./)') }}">
+  <input type="text" class="form-control form-control-sm" style="width:150px;" id="fPool" placeholder="{{ _('Backend pool…') }}" autocomplete="off" title="{{ _('Substring, or /regex/') }}">
+  <input type="text" class="form-control form-control-sm" style="width:160px;" id="fBackend" placeholder="{{ _('Backend server IP…') }}" autocomplete="off" title="{{ _('Substring, or /regex/ (e.g. /:8080$/)') }}">
   <select class="form-select form-select-sm" style="width:auto;" id="fCert">
-    <option value="">Any certificate</option>
-    <option value="local">Local</option>
-    <option value="multi">Multi (SNI)</option>
-    <option value="letsencrypt">Let's Encrypt</option>
-    <option value="none">None</option>
+    <option value="">{{ _('Any certificate') }}</option>
+    <option value="local">{{ _('Local') }}</option>
+    <option value="multi">{{ _('Multi (SNI)') }}</option>
+    <option value="letsencrypt">{{ _('Let\'s Encrypt') }}</option>
+    <option value="none">{{ _('None') }}</option>
   </select>
   <select class="form-select form-select-sm" style="width:auto;" id="statusFilter">
-    <option value="">All Status</option>
-    <option value="enabled">Enabled</option>
-    <option value="disabled">Disabled</option>
+    <option value="">{{ _('All Status') }}</option>
+    <option value="enabled">{{ _('Enabled') }}</option>
+    <option value="disabled">{{ _('Disabled') }}</option>
   </select>
-  <button type="button" class="btn btn-sm btn-fw-outline" id="clearFilters" title="Clear all filters">
+  <button type="button" class="btn btn-sm btn-fw-outline" id="clearFilters" title="{{ _('Clear all filters') }}">
     <i class="bi bi-x-lg"></i>
   </button>
   {% if not has_deep %}
-  <span class="fw-badge fw-badge-warning" title="Backend server IP and VIP filters read the deep capture cache. Run a deep capture (Analysis) to populate them.">
-    <i class="bi bi-info-circle me-1"></i>VIP / backend filters need a deep capture
+  <span class="fw-badge fw-badge-warning" title="{{ _('Backend server IP and VIP filters read the deep capture cache. Run a deep capture (Analysis) to populate them.') }}">
+    <i class="bi bi-info-circle me-1"></i>{{ _('VIP / backend filters need a deep capture') }}
   </span>
   {% endif %}
 </div>
 
 <!-- Bulk action bar (shown when ≥1 policy is checked) -->
 <div id="bulkBar" class="fw-alert fw-alert-info d-none align-items-center justify-content-between mb-2" style="gap:12px;">
-  <span><strong id="bulkCount">0</strong> selected</span>
+  <span><strong id="bulkCount">0</strong> {{ _('selected') }}</span>
   <div class="d-flex gap-2 flex-wrap">
-    <button type="button" class="btn btn-sm btn-outline-success fw-bulk-action" data-action="enable"><i class="bi bi-play-fill me-1"></i>Enable</button>
-    <button type="button" class="btn btn-sm btn-outline-warning fw-bulk-action" data-action="disable"><i class="bi bi-pause-fill me-1"></i>Disable</button>
-    <button type="button" class="btn btn-sm btn-outline-primary fw-bulk-action" data-action="clone_here"><i class="bi bi-files me-1"></i>Clone here</button>
-    <button type="button" class="btn btn-sm btn-outline-primary fw-bulk-action" data-action="clone_to" {{ 'disabled' if not other_appliances }} title="{{ 'No other FortiWeb registered' if not other_appliances else 'Clone to another FortiWeb' }}"><i class="bi bi-box-arrow-up-right me-1"></i>Clone to…</button>
-    <button type="button" class="btn btn-sm btn-outline-info fw-bulk-action" data-action="migrate_to" {{ 'disabled' if not other_appliances }} title="{{ 'No other FortiWeb registered' if not other_appliances else 'Migrate to another FortiWeb (disables the source)' }}"><i class="bi bi-arrow-left-right me-1"></i>Migrate to…</button>
-    <button type="button" class="btn btn-sm btn-outline-danger fw-bulk-action" data-action="delete"><i class="bi bi-trash me-1"></i>Delete</button>
+    <button type="button" class="btn btn-sm btn-outline-success fw-bulk-action" data-action="enable"><i class="bi bi-play-fill me-1"></i>{{ _('Enable') }}</button>
+    <button type="button" class="btn btn-sm btn-outline-warning fw-bulk-action" data-action="disable"><i class="bi bi-pause-fill me-1"></i>{{ _('Disable') }}</button>
+    <button type="button" class="btn btn-sm btn-outline-primary fw-bulk-action" data-action="clone_here"><i class="bi bi-files me-1"></i>{{ _('Clone here') }}</button>
+    <button type="button" class="btn btn-sm btn-outline-primary fw-bulk-action" data-action="clone_to" {{ 'disabled' if not other_appliances }} title="{{ 'No other FortiWeb registered' if not other_appliances else 'Clone to another FortiWeb' }}"><i class="bi bi-box-arrow-up-right me-1"></i>{{ _('Clone to…') }}</button>
+    <button type="button" class="btn btn-sm btn-outline-info fw-bulk-action" data-action="migrate_to" {{ 'disabled' if not other_appliances }} title="{{ 'No other FortiWeb registered' if not other_appliances else 'Migrate to another FortiWeb (disables the source)' }}"><i class="bi bi-arrow-left-right me-1"></i>{{ _('Migrate to…') }}</button>
+    <button type="button" class="btn btn-sm btn-outline-danger fw-bulk-action" data-action="delete"><i class="bi bi-trash me-1"></i>{{ _('Delete') }}</button>
   </div>
 </div>
 
@@ -153,15 +153,15 @@
   <table class="fw-table" id="policiesTable">
     <thead>
       <tr>
-        <th style="width:34px;"><input type="checkbox" id="selectAll" title="Select all (visible)"></th>
-        <th>Policy Name</th>
-        <th>Virtual Server</th>
-        <th>Server Pool</th>
-        <th>Protection Profile</th>
-        <th>HTTP Service</th>
-        <th>HTTPS Service</th>
-        <th>Status</th>
-        <th class="actions-col">Actions</th>
+        <th style="width:34px;"><input type="checkbox" id="selectAll" title="{{ _('Select all (visible)') }}"></th>
+        <th>{{ _('Policy Name') }}</th>
+        <th>{{ _('Virtual Server') }}</th>
+        <th>{{ _('Server Pool') }}</th>
+        <th>{{ _('Protection Profile') }}</th>
+        <th>{{ _('HTTP Service') }}</th>
+        <th>{{ _('HTTPS Service') }}</th>
+        <th>{{ _('Status') }}</th>
+        <th class="actions-col">{{ _('Actions') }}</th>
       </tr>
     </thead>
     <tbody>
@@ -190,7 +190,7 @@
           <td>{{ p.get('server-pool','') or p.get('pool','') or '—' }}</td>
           <td>
             {% set wpp = p.get('web-protection-profile','') or p.get('wpp','') %}
-            {% if wpp %}<span class="fw-badge fw-badge-primary">{{ wpp }}</span>{% else %}<span class="text-muted">None</span>{% endif %}
+            {% if wpp %}<span class="fw-badge fw-badge-primary">{{ wpp }}</span>{% else %}<span class="text-muted">{{ _('None') }}</span>{% endif %}
           </td>
           <td>
             {% set svc = p.get('service','') %}
@@ -202,31 +202,31 @@
           </td>
           <td>
             {% if is_on %}
-              <span class="fw-status fw-status-online" style="font-size:12px;"><span class="fw-status-dot"></span>Enabled</span>
+              <span class="fw-status fw-status-online" style="font-size:12px;"><span class="fw-status-dot"></span>{{ _('Enabled') }}</span>
             {% else %}
-              <span class="fw-status fw-status-offline" style="font-size:12px;"><span class="fw-status-dot"></span>Disabled</span>
+              <span class="fw-status fw-status-offline" style="font-size:12px;"><span class="fw-status-dot"></span>{{ _('Disabled') }}</span>
             {% endif %}
           </td>
           <td class="actions-col">
             <a href="{{ url_for('workspace.policy_detail', appliance_id=appliance.id, name=pname) if appliance else '#' }}"
-               class="btn btn-sm btn-outline-primary btn-sm-icon" title="View / Edit Detail">
+               class="btn btn-sm btn-outline-primary btn-sm-icon" title="{{ _('View / Edit Detail') }}">
               <i class="bi bi-eye"></i>
             </a>
             <div class="dropdown d-inline-block">
-              <button class="btn btn-sm btn-outline-secondary btn-sm-icon" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Actions">
+              <button class="btn btn-sm btn-outline-secondary btn-sm-icon" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="{{ _('Actions') }}">
                 <i class="bi bi-three-dots-vertical"></i>
               </button>
               <ul class="dropdown-menu dropdown-menu-end shadow-sm">
                 {% if is_on %}
-                <li><button class="dropdown-item fw-row-action" data-action="disable" data-policy="{{ pname }}"><i class="bi bi-pause-fill me-2 text-warning"></i>Disable</button></li>
+                <li><button class="dropdown-item fw-row-action" data-action="disable" data-policy="{{ pname }}"><i class="bi bi-pause-fill me-2 text-warning"></i>{{ _('Disable') }}</button></li>
                 {% else %}
-                <li><button class="dropdown-item fw-row-action" data-action="enable" data-policy="{{ pname }}"><i class="bi bi-play-fill me-2 text-success"></i>Enable</button></li>
+                <li><button class="dropdown-item fw-row-action" data-action="enable" data-policy="{{ pname }}"><i class="bi bi-play-fill me-2 text-success"></i>{{ _('Enable') }}</button></li>
                 {% endif %}
-                <li><button class="dropdown-item fw-row-action" data-action="clone_here" data-policy="{{ pname }}"><i class="bi bi-files me-2"></i>Clone (same box)…</button></li>
-                <li><button class="dropdown-item fw-row-action" data-action="clone_to" data-policy="{{ pname }}" {{ 'disabled' if not other_appliances }}><i class="bi bi-box-arrow-up-right me-2"></i>Clone to another FortiWeb…</button></li>
-                <li><button class="dropdown-item fw-row-action" data-action="migrate_to" data-policy="{{ pname }}" {{ 'disabled' if not other_appliances }}><i class="bi bi-arrow-left-right me-2"></i>Migrate to another FortiWeb…</button></li>
+                <li><button class="dropdown-item fw-row-action" data-action="clone_here" data-policy="{{ pname }}"><i class="bi bi-files me-2"></i>{{ _('Clone (same box)…') }}</button></li>
+                <li><button class="dropdown-item fw-row-action" data-action="clone_to" data-policy="{{ pname }}" {{ 'disabled' if not other_appliances }}><i class="bi bi-box-arrow-up-right me-2"></i>{{ _('Clone to another FortiWeb…') }}</button></li>
+                <li><button class="dropdown-item fw-row-action" data-action="migrate_to" data-policy="{{ pname }}" {{ 'disabled' if not other_appliances }}><i class="bi bi-arrow-left-right me-2"></i>{{ _('Migrate to another FortiWeb…') }}</button></li>
                 <li><hr class="dropdown-divider"></li>
-                <li><button class="dropdown-item text-danger fw-row-action" data-action="delete" data-policy="{{ pname }}"><i class="bi bi-trash me-2"></i>Delete</button></li>
+                <li><button class="dropdown-item text-danger fw-row-action" data-action="delete" data-policy="{{ pname }}"><i class="bi bi-trash me-2"></i>{{ _('Delete') }}</button></li>
               </ul>
             </div>
           </td>
@@ -237,9 +237,9 @@
           <td colspan="9">
             <div class="fw-empty-state">
               <div class="fw-empty-state-icon"><i class="bi bi-shield"></i></div>
-              <div class="fw-empty-state-title">No server policies found</div>
+              <div class="fw-empty-state-title">{{ _('No server policies found') }}</div>
               <div class="fw-empty-state-text">
-                This appliance has no server policies configured, or the connection could not be established.
+                {{ _('This appliance has no server policies configured, or the connection could not be established.') }}
               </div>
             </div>
           </td>
@@ -254,13 +254,13 @@
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="actionModalTitle">Action</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <h5 class="modal-title" id="actionModalTitle">{{ _('Action') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
       </div>
       <div class="modal-body">
         <p id="actionModalIntro" class="text-muted"></p>
         <div id="actionFieldDest" class="mb-3 d-none">
-          <label class="fw-fld-label">Destination FortiWeb</label>
+          <label class="fw-fld-label">{{ _('Destination FortiWeb') }}</label>
           <select class="form-select form-select-sm" id="actionDest">
             {% for a in other_appliances %}
             <option value="{{ a.id }}">{{ a.name }}</option>
@@ -268,40 +268,40 @@
           </select>
         </div>
         <div id="actionFieldName" class="mb-3 d-none">
-          <label class="fw-fld-label">New policy name</label>
-          <input type="text" class="form-control form-control-sm" id="actionNewName" placeholder="new-policy-name" autocomplete="off">
+          <label class="fw-fld-label">{{ _('New policy name') }}</label>
+          <input type="text" class="form-control form-control-sm" id="actionNewName" placeholder="{{ _('new-policy-name') }}" autocomplete="off">
         </div>
         <div id="actionFieldVip" class="mb-3 d-none">
-          <label class="fw-fld-label">VIP IP for the copy</label>
-          <input type="text" class="form-control form-control-sm" id="actionVipIp" placeholder="e.g. 240.1.10.1" autocomplete="off">
+          <label class="fw-fld-label">{{ _('VIP IP for the copy') }}</label>
+          <input type="text" class="form-control form-control-sm" id="actionVipIp" placeholder="{{ _('e.g. 240.1.10.1') }}" autocomplete="off">
           <div class="form-text" id="actionVipHint" style="font-size:12px;"></div>
         </div>
         <div id="actionBulkIpNote" class="mb-3 d-none">
-          <span class="fw-badge fw-badge-secondary">Bulk</span>
-          <span class="text-muted" style="font-size:12.5px;">Each copy's VIP gets a <strong>dummy IP</strong> automatically, per the admin rules:
+          <span class="fw-badge fw-badge-secondary">{{ _('Bulk') }}</span>
+          <span class="text-muted" style="font-size:12.5px;">{{ _('Each copy\'s VIP gets a') }} <strong>{{ _('dummy IP') }}</strong> automatically, per the admin rules:
             <code>{{ clone_rules_summary }}</code> (Settings → Clone / Migrate).</span>
         </div>
         <div id="actionFieldWppOpts" class="mb-3 d-none">
           <div class="d-flex align-items-center flex-wrap gap-3">
             <div class="form-check mb-0">
               <input class="form-check-input" type="checkbox" id="actionCopyWpp" {{ 'checked' if clone_cfg.copy_wpp_default }} disabled>
-              <label class="form-check-label" for="actionCopyWpp" style="font-size:13px;">Copy Web Protection Profile</label>
+              <label class="form-check-label" for="actionCopyWpp" style="font-size:13px;">{{ _('Copy Web Protection Profile') }}</label>
             </div>
             <div class="form-check mb-0">
               <input class="form-check-input" type="checkbox" id="actionOverrideDefaults">
-              <label class="form-check-label" for="actionOverrideDefaults" style="font-size:13px;">Override admin defaults</label>
+              <label class="form-check-label" for="actionOverrideDefaults" style="font-size:13px;">{{ _('Override admin defaults') }}</label>
             </div>
           </div>
-          <div class="form-text" style="font-size:12px;">Values come from the administrator (Settings → Clone / Migrate). Tick "Override admin defaults" to change them for this run only.</div>
+          <div class="form-text" style="font-size:12px;">{{ _('Values come from the administrator (Settings → Clone / Migrate). Tick "Override admin defaults" to change them for this run only.') }}</div>
           <div id="actionWppChoice" class="d-none mt-2 p-2" style="border:1px solid rgba(251,191,36,.45);border-radius:8px;">
             <div style="font-size:13px;" class="mb-1"><i class="bi bi-exclamation-triangle text-warning me-1"></i><span id="actionWppChoiceText"></span></div>
             <div class="form-check">
               <input class="form-check-input" type="radio" name="wppChoice" id="wppChoiceDest" value="use_dest">
-              <label class="form-check-label" for="wppChoiceDest" style="font-size:13px;">Use the destination's existing profile (accepting its differing values)</label>
+              <label class="form-check-label" for="wppChoiceDest" style="font-size:13px;">{{ _('Use the destination\'s existing profile (accepting its differing values)') }}</label>
             </div>
             <div class="form-check">
               <input class="form-check-input" type="radio" name="wppChoice" id="wppChoiceNew" value="new" checked>
-              <label class="form-check-label" for="wppChoiceNew" style="font-size:13px;">Copy the source profile under a <strong>new name</strong></label>
+              <label class="form-check-label" for="wppChoiceNew" style="font-size:13px;">{{ _('Copy the source profile under a') }} <strong>{{ _('new name') }}</strong></label>
             </div>
             <input type="text" class="form-control form-control-sm mt-1" id="actionWppNewName" autocomplete="off">
             <div class="form-text" id="actionWppNewHint" style="font-size:12px;"></div>
@@ -309,16 +309,16 @@
         </div>
         <div id="actionChecklist" class="mb-3 d-none">
           <div class="d-flex align-items-center justify-content-between mb-1">
-            <strong style="font-size:13px;"><i class="bi bi-clipboard-check me-1"></i>Pre-flight checklist</strong>
-            <button type="button" class="btn btn-sm btn-fw-outline" id="actionChecklistBtn"><i class="bi bi-arrow-repeat me-1"></i>Re-run checks</button>
+            <strong style="font-size:13px;"><i class="bi bi-clipboard-check me-1"></i>{{ _('Pre-flight checklist') }}</strong>
+            <button type="button" class="btn btn-sm btn-fw-outline" id="actionChecklistBtn"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Re-run checks') }}</button>
           </div>
-          <div id="actionChecklistBody" style="font-size:12.5px;max-height:280px;overflow:auto;"><span class="text-muted">Running checks…</span></div>
+          <div id="actionChecklistBody" style="font-size:12.5px;max-height:280px;overflow:auto;"><span class="text-muted">{{ _('Running checks…') }}</span></div>
         </div>
         <div id="actionTargets" class="mb-3"></div>
         <div id="actionPreview" class="d-none">
           <hr>
           <div class="d-flex align-items-center justify-content-between mb-2">
-            <strong>Dry-run preview</strong>
+            <strong>{{ _('Dry-run preview') }}</strong>
             <span class="fw-badge fw-badge-secondary" id="actionPreviewBadge"></span>
           </div>
           <div id="actionPreviewBody" class="mono" style="font-size:12px;max-height:340px;overflow:auto;"></div>
@@ -326,9 +326,9 @@
         <div id="actionError" class="fw-alert fw-alert-warning d-none mt-2"></div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-fw-outline btn-sm" id="actionPreviewBtn"><i class="bi bi-eye me-1"></i>Preview (dry-run)</button>
-        <button type="button" class="btn btn-fw-primary btn-sm" id="actionApplyBtn" disabled><i class="bi bi-lightning-charge me-1"></i>Apply for real</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+        <button type="button" class="btn btn-fw-outline btn-sm" id="actionPreviewBtn"><i class="bi bi-eye me-1"></i>{{ _('Preview (dry-run)') }}</button>
+        <button type="button" class="btn btn-fw-primary btn-sm" id="actionApplyBtn" disabled><i class="bi bi-lightning-charge me-1"></i>{{ _('Apply for real') }}</button>
       </div>
     </div>
   </div>

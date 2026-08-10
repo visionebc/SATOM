@@ -4,34 +4,34 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <a href="{{ url_for('change_requests.index') }}">Change Requests</a>
+  <a href="{{ url_for('change_requests.index') }}">{{ _('Change Requests') }}</a>
   <span class="separator">/</span>
-  <span>New</span>
+  <span>{{ _('New') }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-clipboard2-plus me-2 text-accent"></i>New Change Request</h1>
+    <h1 class="fw-page-title"><i class="bi bi-clipboard2-plus me-2 text-accent"></i>{{ _('New Change Request') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       Two questions &mdash; the language the document is written in, then the type of change.
       Everything that follows from those is proposed for you; the devices and the maintenance
       window are decisions, so they are never guessed. Created as a
-      <strong>draft</strong> and must be approved before it can be scheduled.
+      <strong>{{ _('draft') }}</strong> {{ _('and must be approved before it can be scheduled.') }}
     </p>
   </div>
   <a class="btn btn-fw-outline btn-sm" href="{{ url_for('change_requests.index') }}">
-    <i class="bi bi-chevron-left me-1"></i>Back
+    <i class="bi bi-chevron-left me-1"></i>{{ _('Back') }}
   </a>
 </div>
 
 {% if prep %}
 <div class="fw-alert {{ 'fw-alert-success' if prep.ok else 'fw-alert-warning' }} mb-3">
   <i class="bi bi-clipboard2-check me-2"></i>
-  Raised from <strong>upgrade preparation #{{ prep.id }}</strong>
+  {{ _('Raised from') }} <strong>upgrade preparation #{{ prep.id }}</strong>
   ({{ prep.created_at|localtime }}) &mdash;
   verdict <strong>{{ 'passed' if prep.ok else 'NOT clean' }}</strong>: {{ prep.summary }}.
   Its inventory of <strong>{{ prep.inventory_list|length }}</strong> published service(s)
@@ -49,7 +49,7 @@
     <div class="fw-card-header">
       <span class="fw-card-title">
         <span class="fw-step-num">1</span>
-        <i class="bi bi-translate me-2 text-accent"></i>Document language
+        <i class="bi bi-translate me-2 text-accent"></i>{{ _('Document language') }}
       </span>
     </div>
     <div class="fw-card-body">
@@ -70,8 +70,8 @@
       </div>
       {% if lang_preset %}
       <div class="form-text mt-1">
-        <i class="bi bi-person-check me-1"></i>Pre-selected from your
-        <a href="{{ url_for('auth.profile') }}#language">profile</a> &mdash; changing it here
+        <i class="bi bi-person-check me-1"></i>{{ _('Pre-selected from your') }}
+        <a href="{{ url_for('auth.profile') }}#language">{{ _('profile') }}</a> &mdash; changing it here
         applies to this document only.
       </div>
       {% elif lang_pref_unrenderable %}
@@ -82,9 +82,8 @@
       </div>
       {% else %}
       <div class="form-text mt-1">
-        Nothing is pre-selected. Set a language in your
-        <a href="{{ url_for('auth.profile') }}#language">profile</a> and this question is
-        answered for you from then on.
+        {{ _('Nothing is pre-selected. Set a language in your') }}
+        <a href="{{ url_for('auth.profile') }}#language">{{ _('profile') }}</a> {{ _('and this question is answered for you from then on.') }}
       </div>
       {% endif %}
     </div>
@@ -95,13 +94,13 @@
     <div class="fw-card-header">
       <span class="fw-card-title">
         <span class="fw-step-num">2</span>
-        <i class="bi bi-lightning-charge me-2 text-accent"></i>Type of change
+        <i class="bi bi-lightning-charge me-2 text-accent"></i>{{ _('Type of change') }}
       </span>
     </div>
     <div class="fw-card-body">
       <div class="row g-3">
         <div class="col-md-8">
-          <label class="fw-form-label">Change type <span class="text-danger">*</span></label>
+          <label class="fw-form-label">{{ _('Change type') }} <span class="text-danger">*</span></label>
           <select class="form-select" name="action" id="cr-action" required>
             {% if not preset_action %}
             <option value="" id="cr-action-prompt" selected>{{ action_prompt['en'] }}</option>
@@ -112,16 +111,11 @@
           </select>
           <div class="form-text" id="cr-manual-note" hidden
                style="color:#7A5700;font-weight:600;">
-            This change type has no automation behind it: the change request is raised,
-            approved and printed here, and the work is carried out by hand. It cannot be
-            bound to the scheduler.</div>
-          <div class="form-text">Nothing is pre-selected: the first entry on the list is not
-            a default, and picking an entry that was already selected would answer the
-            question without the page ever hearing it. Only change-controlled actions appear
-            here, and the executor refuses to run any of them outside an approved window.</div>
+            {{ _('This change type has no automation behind it: the change request is raised, approved and printed here, and the work is carried out by hand. It cannot be bound to the scheduler.') }}</div>
+          <div class="form-text">{{ _('Nothing is pre-selected: the first entry on the list is not a default, and picking an entry that was already selected would answer the question without the page ever hearing it. Only change-controlled actions appear here, and the executor refuses to run any of them outside an approved window.') }}</div>
         </div>
         <div class="col-md-4">
-          <label class="fw-form-label">Risk</label>
+          <label class="fw-form-label">{{ _('Risk') }}</label>
           <select class="form-select" name="risk">
             {% for r in risks %}
             <option value="{{ r }}" {{ 'selected' if r == 'medium' else '' }}>{{ r|capitalize }}</option>
@@ -139,10 +133,10 @@
         <div class="fw-card-header">
           <span class="fw-card-title">
             <span class="fw-step-num">3</span>
-            <i class="bi bi-pencil-square me-2 text-accent"></i>Proposed wording
+            <i class="bi bi-pencil-square me-2 text-accent"></i>{{ _('Proposed wording') }}
           </span>
           <button type="button" class="btn btn-fw-outline btn-sm" id="cr-reset-proposal">
-            <i class="bi bi-arrow-counterclockwise me-1"></i>Restore proposal
+            <i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Restore proposal') }}
           </button>
         </div>
         <div class="fw-card-body">
@@ -150,59 +144,55 @@
             <i class="bi bi-info-circle me-2"></i>
             These three fields are filled in from the change type, the devices you select and the
             pre-flight run this change cites. They stop updating the moment you edit one &mdash;
-            your words are never overwritten. They are a <strong>proposal</strong>: &sect;1 of the
+            your words are never overwritten. They are a <strong>{{ _('proposal') }}</strong>: &sect;1 of the
             document attributes this text to you by name, so read it before you submit.
           </div>
 
           <div class="mb-3">
-            <label class="fw-form-label">Title <span class="text-danger">*</span>
-              <span class="fw-auto-chip" data-for="title">auto</span></label>
+            <label class="fw-form-label">{{ _('Title') }} <span class="text-danger">*</span>
+              <span class="fw-auto-chip" data-for="title">{{ _('auto') }}</span></label>
             <input type="text" class="form-control" name="title" id="cr-title" required autocomplete="off"
                    data-auto="1">
           </div>
 
           <div class="mb-3">
-            <label class="fw-form-label">Reason
-              <span class="fw-auto-chip" data-for="reason">auto</span></label>
+            <label class="fw-form-label">{{ _('Reason') }}
+              <span class="fw-auto-chip" data-for="reason">{{ _('auto') }}</span></label>
             <textarea class="form-control" name="reason" id="cr-reason" rows="4" data-auto="1"></textarea>
             <div class="form-text">Printed in the &ldquo;reason recorded on the change request&rdquo;
               block, next to (not instead of) the standard justification for this action.</div>
           </div>
 
           <div class="mb-3">
-            <label class="fw-form-label">Rollback plan
-              <span class="fw-auto-chip" data-for="rollback">auto</span></label>
+            <label class="fw-form-label">{{ _('Rollback plan') }}
+              <span class="fw-auto-chip" data-for="rollback">{{ _('auto') }}</span></label>
             <textarea class="form-control" name="rollback" id="cr-rollback" rows="4" data-auto="1"></textarea>
           </div>
 
           <div class="row g-3">
             <div class="col-md-7">
-              <label class="fw-form-label">Change owner (Verantwortlicher)</label>
+              <label class="fw-form-label">{{ _('Change owner (Verantwortlicher)') }}</label>
               <input type="text" class="form-control" name="owner" id="cr-owner">
               <div class="form-text">Pre-filled with your account and editable. Printed in &sect;1
-                of the change document; cleared, it prints as <em>not recorded</em>. It is filled
-                in <strong>visibly</strong> rather than derived at save time &mdash; accountability
+                of the change document; cleared, it prints as <em>{{ _('not recorded') }}</em>{{ _('. It is filled in') }} <strong>{{ _('visibly') }}</strong> rather than derived at save time &mdash; accountability
                 you did not see assigned is not accountability.</div>
             </div>
             <div class="col-md-5">
-              <label class="fw-form-label">Notify on completion</label>
+              <label class="fw-form-label">{{ _('Notify on completion') }}</label>
               <input type="text" class="form-control" name="notify_to" id="cr-notify"
-                     placeholder="ops@example.com">
-              <div class="form-text" id="cr-notify-help">Who is emailed when the window closes
-                (completed or failed).</div>
+                     placeholder="{{ _('ops@example.com') }}">
+              <div class="form-text" id="cr-notify-help">{{ _('Who is emailed when the window closes (completed or failed).') }}</div>
             </div>
           </div>
 
           <div class="mb-1 mt-3">
-            <label class="fw-form-label">Approval</label>
+            <label class="fw-form-label">{{ _('Approval') }}</label>
             <select class="form-select" name="approval_mode">
-              <option value="manual" selected>Manual — approved here in SATOM</option>
-              <option value="external">External — an integration must approve it</option>
+              <option value="manual" selected>{{ _('Manual — approved here in SATOM') }}</option>
+              <option value="external">{{ _('External — an integration must approve it') }}</option>
             </select>
             <div class="form-text">
-              <strong>External</strong> is fail-closed: this change cannot run until your change-management system
-              explicitly approves it. Unreachable, slow and no-answer all count as <em>not approved</em> — that is the
-              whole point of routing approval through it.
+              <strong>{{ _('External') }}</strong> {{ _('is fail-closed: this change cannot run until your change-management system explicitly approves it. Unreachable, slow and no-answer all count as') }} <em>{{ _('not approved') }}</em> {{ _('— that is the whole point of routing approval through it.') }}
             </div>
           </div>
         </div>
@@ -216,7 +206,7 @@
         </div>
         <div class="fw-card-body">
           <div class="mb-3">
-            <label class="fw-form-label">Affected devices</label>
+            <label class="fw-form-label">{{ _('Affected devices') }}</label>
             <select class="form-select" name="device_ids" id="cr-devices" multiple size="6">
               {% for ap in appliances %}
               <option value="{{ ap.id }}" data-kind="{{ ap.kind }}" data-name="{{ ap.name }}"
@@ -236,14 +226,14 @@
           </div>
 
           <div class="mb-3">
-            <label class="fw-form-label">Window start <span class="text-muted">({{ tz_name }})</span></label>
+            <label class="fw-form-label">{{ _('Window start') }} <span class="text-muted">({{ tz_name }})</span></label>
             <input type="datetime-local" class="form-control" name="window_start">
           </div>
           <div class="mb-1">
-            <label class="fw-form-label">Window end <span class="text-muted">({{ tz_name }})</span></label>
+            <label class="fw-form-label">{{ _('Window end') }} <span class="text-muted">({{ tz_name }})</span></label>
             <input type="datetime-local" class="form-control" name="window_end">
             <div class="form-text">
-              Both times are read in <strong>{{ tz_name }}</strong> &mdash; the timezone set under
+              {{ _('Both times are read in') }} <strong>{{ tz_name }}</strong> &mdash; the timezone set under
               Settings &rarr; General &mdash; and stored as UTC. A browser field carries no
               timezone of its own, so this label is the only thing that says which clock
               you are typing in.
@@ -253,9 +243,9 @@
       </div>
 
       <div class="d-flex justify-content-end gap-2 mt-3">
-        <a class="btn btn-secondary" href="{{ url_for('change_requests.index') }}">Cancel</a>
+        <a class="btn btn-secondary" href="{{ url_for('change_requests.index') }}">{{ _('Cancel') }}</a>
         <button type="submit" class="btn btn-fw-primary">
-          <i class="bi bi-check-lg me-1"></i>Create draft
+          <i class="bi bi-check-lg me-1"></i>{{ _('Create draft') }}
         </button>
       </div>
     </div>

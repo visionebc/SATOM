@@ -32,73 +32,73 @@
 {% endblock %}
 
 {% block breadcrumb %}
-<nav class="fw-breadcrumb"><span>Analysis</span></nav>
+<nav class="fw-breadcrumb"><span>{{ _('Analysis') }}</span></nav>
 {% endblock %}
 
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-graph-up"></i> Analysis <span class="faz-live">FortiAnalyzer</span></h1>
+    <h1 class="fw-page-title"><i class="bi bi-graph-up"></i> {{ _('Analysis') }} <span class="faz-live">{{ _('FortiAnalyzer') }}</span></h1>
     <p class="fw-page-sub">Inventory &amp; change activity from the local cache, plus live log-rate and storage/quota read straight from the FortiAnalyzer.</p>
   </div>
   <div>
-    <button id="anaRefresh" class="btn fw-btn-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+    <button id="anaRefresh" class="btn fw-btn-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> {{ _('Refresh') }}</button>
   </div>
 </div>
 
-<div id="anaStatus" class="ana-empty">Loading…</div>
+<div id="anaStatus" class="ana-empty">{{ _('Loading…') }}</div>
 
 <!-- Summary cards -->
 <div class="ana-cards" id="anaCards"></div>
 
 <!-- Operational (LIVE) — log rate + storage/quota -->
-<div class="ana-sec">Operational — log rate &amp; storage <span id="opsLive" class="faz-live" style="background:#e0e7ff;color:#3730a3">live</span></div>
-<div id="opsStatus" class="ana-empty">Loading live data from the FortiAnalyzer…</div>
+<div class="ana-sec">Operational — log rate &amp; storage <span id="opsLive" class="faz-live" style="background:#e0e7ff;color:#3730a3">{{ _('live') }}</span></div>
+<div id="opsStatus" class="ana-empty">{{ _('Loading live data from the FortiAnalyzer…') }}</div>
 <div class="ana-cards" id="opsCards"></div>
 <div class="ana-grid">
-  <div class="ana-panel"><h3>Incoming log rate — by device</h3>
+  <div class="ana-panel"><h3>{{ _('Incoming log rate — by device') }}</h3>
     <div class="ana-scroll"><table class="ana-tbl" id="tLogRate">
-      <thead><tr><th>Device</th><th>Logs / sec</th></tr></thead><tbody></tbody></table></div></div>
+      <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Logs / sec') }}</th></tr></thead><tbody></tbody></table></div></div>
   <div class="ana-panel wide"><h3>Storage &amp; quota — by ADOM <span id="stgN" style="opacity:.5"></span></h3>
     <div class="ana-scroll"><table class="ana-tbl" id="tStorage">
-      <thead><tr><th>ADOM</th><th>Analytics used</th><th>Analytics quota</th><th>%</th><th>Archive used</th><th>Archive quota</th><th>Retention (A/Ar days)</th></tr></thead><tbody></tbody></table></div></div>
+      <thead><tr><th>ADOM</th><th>{{ _('Analytics used') }}</th><th>{{ _('Analytics quota') }}</th><th>%</th><th>{{ _('Archive used') }}</th><th>{{ _('Archive quota') }}</th><th>{{ _('Retention (A/Ar days)') }}</th></tr></thead><tbody></tbody></table></div></div>
 </div>
 
 <!-- Devices -->
-<div class="ana-sec">Devices</div>
+<div class="ana-sec">{{ _('Devices') }}</div>
 <div class="ana-grid">
-  <div class="ana-panel"><h3>By zone</h3><div class="ana-chart"><canvas id="cDevZone"></canvas></div></div>
-  <div class="ana-panel"><h3>By line</h3><div class="ana-chart"><canvas id="cDevLine"></canvas></div></div>
-  <div class="ana-panel"><h3>By department</h3><div class="ana-chart"><canvas id="cDevDept"></canvas></div></div>
-  <div class="ana-panel"><h3>By status</h3><div class="ana-chart"><canvas id="cDevStatus"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('By zone') }}</h3><div class="ana-chart"><canvas id="cDevZone"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('By line') }}</h3><div class="ana-chart"><canvas id="cDevLine"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('By department') }}</h3><div class="ana-chart"><canvas id="cDevDept"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('By status') }}</h3><div class="ana-chart"><canvas id="cDevStatus"></canvas></div></div>
 </div>
 
 <!-- Object Inventory -->
 <div class="ana-sec">Object Inventory — every section &amp; object type</div>
 <div class="ana-grid">
-  <div class="ana-panel"><h3>Objects by section</h3><div class="ana-chart"><canvas id="cInvSection"></canvas></div></div>
-  <div class="ana-panel"><h3>Top object types</h3><div class="ana-chart"><canvas id="cInvTypes"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('Objects by section') }}</h3><div class="ana-chart"><canvas id="cInvSection"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('Top object types') }}</h3><div class="ana-chart"><canvas id="cInvTypes"></canvas></div></div>
 </div>
-<div class="ana-panel wide"><h3>Every object type per device <span id="invN" style="opacity:.5"></span></h3>
+<div class="ana-panel wide"><h3>{{ _('Every object type per device') }} <span id="invN" style="opacity:.5"></span></h3>
   <div class="ana-bar" style="margin-bottom:.5rem">
-    <div class="fld"><label>Section</label><select id="invSection"><option value="">All sections</option></select></div>
-    <div class="fld"><label>Filter type</label><input id="invFilter" placeholder="type name…"></div>
+    <div class="fld"><label>{{ _('Section') }}</label><select id="invSection"><option value="">{{ _('All sections') }}</option></select></div>
+    <div class="fld"><label>{{ _('Filter type') }}</label><input id="invFilter" placeholder="{{ _('type name…') }}"></div>
   </div>
   <div class="ana-scroll"><table class="ana-tbl" id="tInv">
-    <thead><tr id="invHead"><th>Section</th><th>Object type</th><th>Total</th></tr></thead>
+    <thead><tr id="invHead"><th>{{ _('Section') }}</th><th>{{ _('Object type') }}</th><th>{{ _('Total') }}</th></tr></thead>
     <tbody></tbody></table></div>
 </div>
 
 <!-- Change Activity -->
-<div class="ana-sec">Change Activity</div>
+<div class="ana-sec">{{ _('Change Activity') }}</div>
 <div class="ana-grid">
-  <div class="ana-panel wide"><h3>Activity over time</h3><div class="ana-chart" style="height:260px"><canvas id="cChgTime"></canvas></div></div>
-  <div class="ana-panel"><h3>Changes by action</h3><div class="ana-chart"><canvas id="cChgAction"></canvas></div></div>
-  <div class="ana-panel"><h3>Audit by action</h3><div class="ana-chart"><canvas id="cAuditAction"></canvas></div></div>
+  <div class="ana-panel wide"><h3>{{ _('Activity over time') }}</h3><div class="ana-chart" style="height:260px"><canvas id="cChgTime"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('Changes by action') }}</h3><div class="ana-chart"><canvas id="cChgAction"></canvas></div></div>
+  <div class="ana-panel"><h3>{{ _('Audit by action') }}</h3><div class="ana-chart"><canvas id="cAuditAction"></canvas></div></div>
 </div>
-<div class="ana-panel wide"><h3>Recent config changes <span id="chgN" style="opacity:.5"></span></h3>
+<div class="ana-panel wide"><h3>{{ _('Recent config changes') }} <span id="chgN" style="opacity:.5"></span></h3>
   <div class="ana-scroll"><table class="ana-tbl" id="tChanges">
-    <thead><tr><th>When (UTC)</th><th>Device</th><th>Action</th><th>Endpoint</th><th>Object</th><th>Mode</th><th>User</th></tr></thead><tbody></tbody></table></div>
+    <thead><tr><th>{{ _('When (UTC)') }}</th><th>{{ _('Device') }}</th><th>{{ _('Action') }}</th><th>{{ _('Endpoint') }}</th><th>{{ _('Object') }}</th><th>{{ _('Mode') }}</th><th>{{ _('User') }}</th></tr></thead><tbody></tbody></table></div>
 </div>
 {% endblock %}
 

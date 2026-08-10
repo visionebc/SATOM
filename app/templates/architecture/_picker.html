@@ -47,21 +47,21 @@
 <div id="devicePicker">
   <div class="dp-filters">
     <div class="dp-search"><i class="bi bi-search"></i>
-      <input id="dpSearch" type="text" placeholder="Filter by name or host…" autocomplete="off">
+      <input id="dpSearch" type="text" placeholder="{{ _('Filter by name or host…') }}" autocomplete="off">
     </div>
     {% if facet_zones %}
-    <select id="dpZone" class="dp-sel" title="Zone"><option value="">All zones</option>
+    <select id="dpZone" class="dp-sel" title="{{ _('Zone') }}"><option value="">{{ _('All zones') }}</option>
       {% for z in facet_zones %}<option value="{{ z }}">{{ z }}</option>{% endfor %}
     </select>{% endif %}
     {% if facet_lines %}
-    <select id="dpLine" class="dp-sel" title="Line"><option value="">All lines</option>
+    <select id="dpLine" class="dp-sel" title="{{ _('Line') }}"><option value="">{{ _('All lines') }}</option>
       {% for l in facet_lines %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
     </select>{% endif %}
     {% if facet_depts %}
-    <select id="dpDept" class="dp-sel" title="Department"><option value="">All departments</option>
+    <select id="dpDept" class="dp-sel" title="{{ _('Department') }}"><option value="">{{ _('All departments') }}</option>
       {% for d in facet_depts %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
     </select>{% endif %}
-    <button type="button" class="dp-clear" id="dpClear"><i class="bi bi-x-circle"></i> Clear</button>
+    <button type="button" class="dp-clear" id="dpClear"><i class="bi bi-x-circle"></i> {{ _('Clear') }}</button>
   </div>
   {% if fleet_map %}
     {% for zone, lines in fleet_map.items() %}
@@ -94,7 +94,7 @@
                 <span class="dp-host">{{ a.host }}</span>
                 <div class="dp-badges">
                   <span class="dp-badge">{{ a.kind }}</span>
-                  {% if current and current.id == a.id %}<span class="dp-badge dp-cur">current</span>{% endif %}
+                  {% if current and current.id == a.id %}<span class="dp-badge dp-cur">{{ _('current') }}</span>{% endif %}
                 </div>
               </button>
             </form>
@@ -106,12 +106,12 @@
       {% endfor %}
     </div>
     {% endfor %}
-    <div class="dp-noresult" id="dpNoResult"><i class="bi bi-search me-1"></i>No devices match your filter.</div>
+    <div class="dp-noresult" id="dpNoResult"><i class="bi bi-search me-1"></i>{{ _('No devices match your filter.') }}</div>
   {% else %}
     <div class="dp-empty">
       <div style="font-size:36px;margin-bottom:8px;">🗺</div>
-      <div style="font-weight:600;color:#cdd7ea;">No appliances configured</div>
-      <div style="font-size:12px;margin-top:4px;">Add devices in Appliances to see the fleet here.</div>
+      <div style="font-weight:600;color:#cdd7ea;">{{ _('No appliances configured') }}</div>
+      <div style="font-size:12px;margin-top:4px;">{{ _('Add devices in Appliances to see the fleet here.') }}</div>
     </div>
   {% endif %}
 </div>

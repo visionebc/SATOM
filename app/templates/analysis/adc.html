@@ -27,22 +27,19 @@
 {% endblock %}
 
 {% block breadcrumb %}
-<nav class="fw-breadcrumb"><span>Analysis</span></nav>
+<nav class="fw-breadcrumb"><span>{{ _('Analysis') }}</span></nav>
 {% endblock %}
 
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1>Analysis — delivery</h1>
-    <p class="fw-page-sub">Published services, back-end health, security
-      attachment and TLS posture across every FortiADC in this ADOM. Read
-      entirely from the configuration cache — opening this page never contacts
-      an appliance.</p>
+    <h1>{{ _('Analysis — delivery') }}</h1>
+    <p class="fw-page-sub">{{ _('Published services, back-end health, security attachment and TLS posture across every FortiADC in this ADOM. Read entirely from the configuration cache — opening this page never contacts an appliance.') }}</p>
   </div>
 </div>
 
 {% if not data.devices %}
-  <div class="ana-empty">No FortiADC appliance is visible in this ADOM.</div>
+  <div class="ana-empty">{{ _('No FortiADC appliance is visible in this ADOM.') }}</div>
 {% else %}
 
 {% set d = data.delivery %}{% set b = data.backends %}
@@ -52,57 +49,54 @@
 <div class="ana-cards">
   <div class="ana-card">
     <div class="v">{{ sm.virtual_servers }}</div>
-    <div class="k">Virtual servers</div>
+    <div class="k">{{ _('Virtual servers') }}</div>
     <div class="s">{{ sm.virtual_servers_enabled }} enabled</div>
   </div>
   <div class="ana-card">
     <div class="v">{{ sm.pools }}</div>
-    <div class="k">Pools</div>
+    <div class="k">{{ _('Pools') }}</div>
     <div class="s">{{ sm.pool_members }} member(s), {{ sm.real_servers }} real server(s)</div>
   </div>
   <div class="ana-card">
     <div class="v">{{ sm.pools_without_health_check }}</div>
-    <div class="k">Pools with no health check</div>
-    <div class="s">traffic keeps flowing to dead members</div>
+    <div class="k">{{ _('Pools with no health check') }}</div>
+    <div class="s">{{ _('traffic keeps flowing to dead members') }}</div>
   </div>
   <div class="ana-card">
     <div class="v">{{ sm.bare_virtual_servers }}</div>
-    <div class="k">Virtual servers with no security profile</div>
+    <div class="k">{{ _('Virtual servers with no security profile') }}</div>
   </div>
   <div class="ana-card">
     <div class="v">{{ sm.certificates_expired }}<span style="font-size:.9rem;opacity:.5">/{{ sm.certificates }}</span></div>
-    <div class="k">Expired certificates</div>
+    <div class="k">{{ _('Expired certificates') }}</div>
   </div>
   <div class="ana-card">
     <div class="v">{{ data.inventory.endpoints_present }}<span style="font-size:.9rem;opacity:.5">/{{ data.inventory.endpoints_known }}</span></div>
-    <div class="k">Endpoints harvested</div>
-    <div class="s">registry-derived</div>
+    <div class="k">{{ _('Endpoints harvested') }}</div>
+    <div class="s">{{ _('registry-derived') }}</div>
   </div>
 </div>
 
 {# ---------------------------------------------------------------- findings #}
-<div class="ana-sec">Findings</div>
+<div class="ana-sec">{{ _('Findings') }}</div>
 <div class="adc-note">
-  Every finding below is derived from a section the sweep actually collected. A
-  section that was never harvested produces <em>no</em> finding rather than a
-  reassuring zero — “nothing collected” and “nothing wrong” are opposite facts
-  and only one of them is safe to act on.
+  {{ _('Every finding below is derived from a section the sweep actually collected. A section that was never harvested produces') }} <em>{{ _('no') }}</em> {{ _('finding rather than a reassuring zero — “nothing collected” and “nothing wrong” are opposite facts and only one of them is safe to act on.') }}
 </div>
 <div class="ana-panel wide" style="margin-bottom:1.4rem">
   {% if not data.findings %}
-    <div class="ana-empty">No findings — every harvested section is clean.</div>
+    <div class="ana-empty">{{ _('No findings — every harvested section is clean.') }}</div>
   {% else %}
   <div class="ana-scroll">
     <table class="ana-tbl">
-      <thead><tr><th>Severity</th><th>Device</th><th>Finding</th><th>Detail</th></tr></thead>
+      <thead><tr><th>{{ _('Severity') }}</th><th>{{ _('Device') }}</th><th>{{ _('Finding') }}</th><th>{{ _('Detail') }}</th></tr></thead>
       <tbody>
         {% for f in data.findings %}
         <tr>
           <td>
-            {% if f.severity == 'crit' %}<span class="fw-badge fw-badge-danger">crit</span>
-            {% elif f.severity == 'warn' %}<span class="fw-badge fw-badge-warning">warn</span>
-            {% elif f.severity == 'info' %}<span class="fw-badge fw-badge-secondary">info</span>
-            {% else %}<span class="fw-badge fw-badge-success">ok</span>{% endif %}
+            {% if f.severity == 'crit' %}<span class="fw-badge fw-badge-danger">{{ _('crit') }}</span>
+            {% elif f.severity == 'warn' %}<span class="fw-badge fw-badge-warning">{{ _('warn') }}</span>
+            {% elif f.severity == 'info' %}<span class="fw-badge fw-badge-secondary">{{ _('info') }}</span>
+            {% else %}<span class="fw-badge fw-badge-success">{{ _('ok') }}</span>{% endif %}
           </td>
           <td>{{ f.device }}</td>
           <td><strong>{{ f.title }}</strong></td>
@@ -116,55 +110,53 @@
 </div>
 
 {# ---------------------------------------------------------------- delivery #}
-<div class="ana-sec">Delivery — what this ADC publishes</div>
+<div class="ana-sec">{{ _('Delivery — what this ADC publishes') }}</div>
 {% if not d.harvested %}
-  <div class="ana-empty">The virtual-server section has never been harvested for
-    the devices in scope. This is not “no published services” — it is no data.</div>
+  <div class="ana-empty">{{ _('The virtual-server section has never been harvested for the devices in scope. This is not “no published services” — it is no data.') }}</div>
 {% else %}
 <div class="ana-grid">
   <div class="ana-panel">
-    <h3>By type</h3>
+    <h3>{{ _('By type') }}</h3>
     {% for r in d.by_type %}
       <div style="display:flex;justify-content:space-between"><span>{{ r.label }}</span><strong>{{ r.count }}</strong></div>
-    {% else %}<div class="ana-empty">none</div>{% endfor %}
+    {% else %}<div class="ana-empty">{{ _('none') }}</div>{% endfor %}
   </div>
   <div class="ana-panel">
-    <h3>By admin status</h3>
+    <h3>{{ _('By admin status') }}</h3>
     {% for r in d.by_status %}
       <div style="display:flex;justify-content:space-between"><span>{{ r.label }}</span><strong>{{ r.count }}</strong></div>
-    {% else %}<div class="ana-empty">none</div>{% endfor %}
+    {% else %}<div class="ana-empty">{{ _('none') }}</div>{% endfor %}
   </div>
   <div class="ana-panel">
-    <h3>Reported availability</h3>
+    <h3>{{ _('Reported availability') }}</h3>
     {% for r in d.by_availability %}
       <div style="display:flex;justify-content:space-between"><span>{{ r.label }}</span><strong>{{ r.count }}</strong></div>
-    {% else %}<div class="ana-empty">none</div>{% endfor %}
-    <div style="font-size:.72rem;opacity:.55;margin-top:.4rem">Last value the
-      harvest captured, not a live probe.</div>
+    {% else %}<div class="ana-empty">{{ _('none') }}</div>{% endfor %}
+    <div style="font-size:.72rem;opacity:.55;margin-top:.4rem">{{ _('Last value the harvest captured, not a live probe.') }}</div>
   </div>
   <div class="ana-panel wide">
-    <h3>Virtual servers</h3>
+    <h3>{{ _('Virtual servers') }}</h3>
     <div class="ana-scroll">
       <table class="ana-tbl">
         <thead><tr>
-          <th>Device</th><th>Name</th><th>Status</th><th>Type</th>
-          <th>Front-end</th><th>Interface</th><th>Pool</th><th>Method</th>
-          <th>Security</th><th>Traffic log</th>
+          <th>{{ _('Device') }}</th><th>{{ _('Name') }}</th><th>{{ _('Status') }}</th><th>{{ _('Type') }}</th>
+          <th>{{ _('Front-end') }}</th><th>{{ _('Interface') }}</th><th>{{ _('Pool') }}</th><th>{{ _('Method') }}</th>
+          <th>{{ _('Security') }}</th><th>{{ _('Traffic log') }}</th>
         </tr></thead>
         <tbody>
           {% for r in d.rows %}
           <tr>
             <td>{{ r.device }}</td>
             <td><strong>{{ r.name }}</strong></td>
-            <td>{% if r.status == 'enabled' %}<span class="fw-badge fw-badge-success">enabled</span>
-                {% else %}<span class="fw-badge fw-badge-secondary">disabled</span>{% endif %}</td>
+            <td>{% if r.status == 'enabled' %}<span class="fw-badge fw-badge-success">{{ _('enabled') }}</span>
+                {% else %}<span class="fw-badge fw-badge-secondary">{{ _('disabled') }}</span>{% endif %}</td>
             <td>{{ r.type }}</td>
             <td class="adc-mono">{{ r.address }}{% if r.port %}:{{ r.port }}{% endif %}</td>
             <td>{{ r.interface or '—' }}</td>
-            <td>{{ r.pool or '' }}{% if not r.pool %}<span class="adc-none">none</span>{% endif %}</td>
+            <td>{{ r.pool or '' }}{% if not r.pool %}<span class="adc-none">{{ _('none') }}</span>{% endif %}</td>
             <td>{{ r.method or '—' }}</td>
-            <td>{% for x in r.security %}<span class="adc-chip">{{ x }}</span>{% else %}<span class="adc-none">none</span>{% endfor %}</td>
-            <td>{% if r.traffic_log %}on{% else %}<span class="adc-none">off</span>{% endif %}</td>
+            <td>{% for x in r.security %}<span class="adc-chip">{{ x }}</span>{% else %}<span class="adc-none">{{ _('none') }}</span>{% endfor %}</td>
+            <td>{% if r.traffic_log %}on{% else %}<span class="adc-none">{{ _('off') }}</span>{% endif %}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -175,10 +167,9 @@
 {% endif %}
 
 {# ---------------------------------------------------------------- backends #}
-<div class="ana-sec">Back-ends — pools, members and real servers</div>
+<div class="ana-sec">{{ _('Back-ends — pools, members and real servers') }}</div>
 {% if not b.harvested %}
-  <div class="ana-empty">The pool section has never been harvested for the
-    devices in scope.</div>
+  <div class="ana-empty">{{ _('The pool section has never been harvested for the devices in scope.') }}</div>
 {% else %}
 <div class="adc-note">
   A pool with no health check is the ADC’s signature outage: it keeps balancing
@@ -188,13 +179,13 @@
 </div>
 <div class="ana-grid">
   <div class="ana-panel wide">
-    <h3>Pools</h3>
+    <h3>{{ _('Pools') }}</h3>
     <div class="ana-scroll">
       <table class="ana-tbl">
         <thead><tr>
-          <th>Device</th><th>Pool</th><th>Type</th><th>Port</th>
-          <th>Health check</th><th style="text-align:right">Members</th>
-          <th style="text-align:right">Enabled</th><th>Availability</th>
+          <th>{{ _('Device') }}</th><th>{{ _('Pool') }}</th><th>{{ _('Type') }}</th><th>{{ _('Port') }}</th>
+          <th>{{ _('Health check') }}</th><th style="text-align:right">{{ _('Members') }}</th>
+          <th style="text-align:right">{{ _('Enabled') }}</th><th>{{ _('Availability') }}</th>
         </tr></thead>
         <tbody>
           {% for r in b.rows %}
@@ -203,9 +194,9 @@
             <td><strong>{{ r.name }}</strong></td>
             <td>{{ r.type }}{% if r.pool_type %} / {{ r.pool_type }}{% endif %}</td>
             <td class="adc-mono">{{ r.service_port or '—' }}</td>
-            <td>{% if r.health_check %}<span class="fw-badge fw-badge-success">configured</span>
+            <td>{% if r.health_check %}<span class="fw-badge fw-badge-success">{{ _('configured') }}</span>
                   {% for h in r.health_check_list %}<span class="adc-chip">{{ h }}</span>{% endfor %}
-                {% else %}<span class="fw-badge fw-badge-warning">none</span>{% endif %}</td>
+                {% else %}<span class="fw-badge fw-badge-warning">{{ _('none') }}</span>{% endif %}</td>
             <td style="text-align:right">{{ r.members }}</td>
             <td style="text-align:right">{{ r.members_up }}</td>
             <td>{{ r.availability }}</td>
@@ -217,7 +208,7 @@
             <td colspan="2" class="adc-mono">{{ m.address }}{% if m.port %}:{{ m.port }}{% endif %}</td>
             <td>{{ m.real_server or '—' }}</td>
             <td colspan="2" style="text-align:right">weight {{ m.weight }}{% if m.backup %} · backup{% endif %}</td>
-            <td>{% if m.status == 'enabled' %}enabled{% else %}<span class="adc-none">disabled</span>{% endif %}</td>
+            <td>{% if m.status == 'enabled' %}enabled{% else %}<span class="adc-none">{{ _('disabled') }}</span>{% endif %}</td>
           </tr>
           {% endfor %}
           {% endfor %}
@@ -226,22 +217,22 @@
     </div>
   </div>
   <div class="ana-panel wide">
-    <h3>Real servers</h3>
+    <h3>{{ _('Real servers') }}</h3>
     {% if not b.rs_harvested %}
-      <div class="ana-empty">not harvested</div>
+      <div class="ana-empty">{{ _('not harvested') }}</div>
     {% else %}
     <table class="ana-tbl">
-      <thead><tr><th>Device</th><th>Name</th><th>Address</th><th>Status</th><th>In a pool?</th></tr></thead>
+      <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Name') }}</th><th>{{ _('Address') }}</th><th>{{ _('Status') }}</th><th>{{ _('In a pool?') }}</th></tr></thead>
       <tbody>
         {% for r in b.real_server_rows %}
         <tr>
           <td>{{ r.device }}</td><td><strong>{{ r.name }}</strong></td>
           <td class="adc-mono">{{ r.address or '—' }}</td>
-          <td>{% if r.status == 'enabled' %}enabled{% else %}<span class="adc-none">disabled</span>{% endif %}</td>
-          <td>{% if r.referenced %}<span class="fw-badge fw-badge-success">referenced</span>
-              {% else %}<span class="fw-badge fw-badge-secondary">unreferenced</span>{% endif %}</td>
+          <td>{% if r.status == 'enabled' %}enabled{% else %}<span class="adc-none">{{ _('disabled') }}</span>{% endif %}</td>
+          <td>{% if r.referenced %}<span class="fw-badge fw-badge-success">{{ _('referenced') }}</span>
+              {% else %}<span class="fw-badge fw-badge-secondary">{{ _('unreferenced') }}</span>{% endif %}</td>
         </tr>
-        {% else %}<tr><td colspan="5" class="ana-empty">none</td></tr>{% endfor %}
+        {% else %}<tr><td colspan="5" class="ana-empty">{{ _('none') }}</td></tr>{% endfor %}
       </tbody>
     </table>
     {% endif %}
@@ -250,17 +241,15 @@
 {% endif %}
 
 {# ---------------------------------------------------------------- security #}
-<div class="ana-sec">Security — defined versus applied</div>
+<div class="ana-sec">{{ _('Security — defined versus applied') }}</div>
 <div class="adc-note">
-  A profile that exists protects nothing. These counts are the number of
-  virtual servers that <em>reference</em> each profile kind, which is the only
-  measure that corresponds to traffic actually being inspected.
+  {{ _('A profile that exists protects nothing. These counts are the number of virtual servers that') }} <em>{{ _('reference') }}</em> {{ _('each profile kind, which is the only measure that corresponds to traffic actually being inspected.') }}
 </div>
 <div class="ana-grid">
   <div class="ana-panel">
     <h3>Attachment across {{ s.virtual_servers }} virtual server(s)</h3>
     <table class="ana-tbl">
-      <thead><tr><th>Profile kind</th><th style="text-align:right">Attached</th><th style="text-align:right">Bare</th></tr></thead>
+      <thead><tr><th>{{ _('Profile kind') }}</th><th style="text-align:right">{{ _('Attached') }}</th><th style="text-align:right">{{ _('Bare') }}</th></tr></thead>
       <tbody>
         {% for c in s.coverage %}
         <tr>
@@ -275,94 +264,90 @@
   <div class="ana-panel">
     <h3>WAF profiles ({{ s.waf_tuned }} tuned of {{ s.waf_total }})</h3>
     <table class="ana-tbl">
-      <thead><tr><th>Device</th><th>Profile</th><th style="text-align:right">Modules</th><th>Origin</th></tr></thead>
+      <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Profile') }}</th><th style="text-align:right">{{ _('Modules') }}</th><th>{{ _('Origin') }}</th></tr></thead>
       <tbody>
         {% for r in s.waf_profiles %}
         <tr>
           <td>{{ r.device }}</td><td><strong>{{ r.name }}</strong></td>
           <td style="text-align:right">{{ r.modules_filled }}<span style="opacity:.45">/{{ r.modules_total }}</span></td>
-          <td>{% if r.factory %}<span class="adc-none">factory</span>{% else %}<span class="fw-badge fw-badge-success">tuned</span>{% endif %}</td>
+          <td>{% if r.factory %}<span class="adc-none">{{ _('factory') }}</span>{% else %}<span class="fw-badge fw-badge-success">{{ _('tuned') }}</span>{% endif %}</td>
         </tr>
-        {% else %}<tr><td colspan="4" class="ana-empty">none</td></tr>{% endfor %}
+        {% else %}<tr><td colspan="4" class="ana-empty">{{ _('none') }}</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
   <div class="ana-panel">
-    <h3>IPS profiles</h3>
+    <h3>{{ _('IPS profiles') }}</h3>
     <table class="ana-tbl">
-      <thead><tr><th>Device</th><th>Profile</th><th>Comment</th></tr></thead>
+      <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Profile') }}</th><th>{{ _('Comment') }}</th></tr></thead>
       <tbody>
         {% for r in s.ips_profiles %}
         <tr><td>{{ r.device }}</td><td><strong>{{ r.name }}</strong></td>
             <td style="opacity:.75">{{ r.comments }}</td></tr>
-        {% else %}<tr><td colspan="3" class="ana-empty">none</td></tr>{% endfor %}
+        {% else %}<tr><td colspan="3" class="ana-empty">{{ _('none') }}</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
 </div>
 
 {# --------------------------------------------------------------------- TLS #}
-<div class="ana-sec">TLS posture</div>
+<div class="ana-sec">{{ _('TLS posture') }}</div>
 <div class="ana-grid">
   <div class="ana-panel">
     <h3>Client-SSL profiles ({{ t.profiles_with_legacy }} allow legacy TLS)</h3>
     <div class="ana-scroll">
       <table class="ana-tbl">
-        <thead><tr><th>Device</th><th>Profile</th><th>Versions</th><th>Origin</th></tr></thead>
+        <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Profile') }}</th><th>{{ _('Versions') }}</th><th>{{ _('Origin') }}</th></tr></thead>
         <tbody>
           {% for r in t.profiles %}
           <tr>
             <td>{{ r.device }}</td><td><strong>{{ r.name }}</strong></td>
-            <td>{% for v in r.versions %}<span class="adc-chip">{{ v }}</span>{% else %}<span class="adc-none">unset</span>{% endfor %}</td>
-            <td>{% if r.factory %}<span class="adc-none">factory</span>{% else %}tuned{% endif %}</td>
+            <td>{% for v in r.versions %}<span class="adc-chip">{{ v }}</span>{% else %}<span class="adc-none">{{ _('unset') }}</span>{% endfor %}</td>
+            <td>{% if r.factory %}<span class="adc-none">{{ _('factory') }}</span>{% else %}tuned{% endif %}</td>
           </tr>
-          {% else %}<tr><td colspan="4" class="ana-empty">none</td></tr>{% endfor %}
+          {% else %}<tr><td colspan="4" class="ana-empty">{{ _('none') }}</td></tr>{% endfor %}
         </tbody>
       </table>
     </div>
   </div>
   <div class="ana-panel">
-    <h3>Local certificates</h3>
+    <h3>{{ _('Local certificates') }}</h3>
     <div class="ana-scroll">
       <table class="ana-tbl">
-        <thead><tr><th>Device</th><th>Name</th><th>Expires</th><th style="text-align:right">Days left</th></tr></thead>
+        <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Name') }}</th><th>{{ _('Expires') }}</th><th style="text-align:right">{{ _('Days left') }}</th></tr></thead>
         <tbody>
           {% for r in t.certificates %}
           <tr>
             <td>{{ r.device }}</td><td><strong>{{ r.name }}</strong></td>
             <td class="adc-mono">{{ r.valid_to or '—' }}</td>
             <td style="text-align:right">
-              {% if r.days_left is none %}<span class="adc-none">unparsed</span>
-              {% elif r.days_left < 0 %}<span class="fw-badge fw-badge-danger">expired</span>
+              {% if r.days_left is none %}<span class="adc-none">{{ _('unparsed') }}</span>
+              {% elif r.days_left < 0 %}<span class="fw-badge fw-badge-danger">{{ _('expired') }}</span>
               {% elif r.days_left <= 30 %}<span class="fw-badge fw-badge-warning">{{ r.days_left }}</span>
               {% else %}{{ r.days_left }}{% endif %}
             </td>
           </tr>
-          {% else %}<tr><td colspan="4" class="ana-empty">none</td></tr>{% endfor %}
+          {% else %}<tr><td colspan="4" class="ana-empty">{{ _('none') }}</td></tr>{% endfor %}
         </tbody>
       </table>
     </div>
-    <div style="font-size:.72rem;opacity:.55;margin-top:.4rem">Expiry is read at
-      day precision: the appliance stamps a timezone abbreviation that cannot be
-      parsed unambiguously, so the time of day is discarded.</div>
+    <div style="font-size:.72rem;opacity:.55;margin-top:.4rem">{{ _('Expiry is read at day precision: the appliance stamps a timezone abbreviation that cannot be parsed unambiguously, so the time of day is discarded.') }}</div>
   </div>
 </div>
 
 {# --------------------------------------------------------------- inventory #}
-<div class="ana-sec">Object inventory</div>
+<div class="ana-sec">{{ _('Object inventory') }}</div>
 <div class="adc-note">
-  Rows are derived from the FortiADC endpoint registry, so an endpoint a
-  firmware adds appears here without a code change.
-  <strong>not harvested</strong> means the sweep stored no rows for that
-  endpoint — which is different from the endpoint being empty.
+  {{ _('Rows are derived from the FortiADC endpoint registry, so an endpoint a firmware adds appears here without a code change.') }}
+  <strong>{{ _('not harvested') }}</strong> {{ _('means the sweep stored no rows for that endpoint — which is different from the endpoint being empty.') }}
 </div>
 <div class="ana-panel wide" style="margin-bottom:1.4rem">
   <div class="ana-scroll">
     <table class="ana-tbl">
       <thead><tr>
-        <th>Section</th><th>Object</th><th>Endpoint</th>
+        <th>{{ _('Section') }}</th><th>{{ _('Object') }}</th><th>{{ _('Endpoint') }}</th>
         {% for dv in data.devices %}<th style="text-align:right">{{ dv.name }}</th>{% endfor %}
-        <th style="text-align:right">Total</th>
+        <th style="text-align:right">{{ _('Total') }}</th>
       </tr></thead>
       <tbody>
         {% for row in data.inventory.rows %}
@@ -372,31 +357,31 @@
           <td><code style="font-size:.72rem;opacity:.6">{{ row.endpoint }}</code></td>
           {% for p in row.devices %}
           <td style="text-align:right">
-            {% if p.harvested %}{{ p.count }}{% else %}<span class="adc-none" title="the sweep stored no rows for this endpoint">not harvested</span>{% endif %}
+            {% if p.harvested %}{{ p.count }}{% else %}<span class="adc-none" title="{{ _('the sweep stored no rows for this endpoint') }}">{{ _('not harvested') }}</span>{% endif %}
           </td>
           {% endfor %}
           <td style="text-align:right"><strong>{{ row.total }}</strong></td>
         </tr>
-        {% else %}<tr><td colspan="4" class="ana-empty">nothing cached</td></tr>{% endfor %}
+        {% else %}<tr><td colspan="4" class="ana-empty">{{ _('nothing cached') }}</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
 </div>
 
 {# --------------------------------------------------------------- freshness #}
-<div class="ana-sec">Cache freshness</div>
+<div class="ana-sec">{{ _('Cache freshness') }}</div>
 <div class="ana-panel wide">
   <table class="ana-tbl">
-    <thead><tr><th>Device</th><th>Host</th><th>Harvested</th><th>Age</th><th>Layer</th><th>State</th></tr></thead>
+    <thead><tr><th>{{ _('Device') }}</th><th>{{ _('Host') }}</th><th>{{ _('Harvested') }}</th><th>{{ _('Age') }}</th><th>{{ _('Layer') }}</th><th>{{ _('State') }}</th></tr></thead>
     <tbody>
       {% for r in data.freshness.rows %}
       <tr>
         <td><strong>{{ r.device }}</strong></td>
         <td class="adc-mono">{{ r.host }}</td>
-        <td>{% if r.cached %}{{ r.generated_at }}{% else %}<span class="fw-badge fw-badge-warning">never</span>{% endif %}</td>
+        <td>{% if r.cached %}{{ r.generated_at }}{% else %}<span class="fw-badge fw-badge-warning">{{ _('never') }}</span>{% endif %}</td>
         <td>{% if r.age_hours is not none %}{{ r.age_hours|round(1) }} h{% else %}—{% endif %}</td>
         <td>{{ r.layer or '—' }}</td>
-        <td>{% if r.maintenance %}<span class="fw-badge fw-badge-secondary">maintenance</span>{% else %}<span class="fw-badge fw-badge-success">active</span>{% endif %}</td>
+        <td>{% if r.maintenance %}<span class="fw-badge fw-badge-secondary">{{ _('maintenance') }}</span>{% else %}<span class="fw-badge fw-badge-success">{{ _('active') }}</span>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

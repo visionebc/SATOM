@@ -4,7 +4,7 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="{{ url_for('adc.index') }}">FortiADC</a>
+  <a href="{{ url_for('adc.index') }}">{{ _('FortiADC') }}</a>
   <span class="separator">/</span>
   <span>{{ group.label }}</span>
   <span class="separator">/</span>
@@ -18,13 +18,13 @@
     <h1 class="fw-page-title"><i class="bi {{ item.icon }} me-2 text-accent"></i>{{ item.label }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       {{ group.label }} &gt; {{ item.label }}
-      {% if appliance %} on <strong>{{ appliance.name }}</strong> <span class="fw-badge fw-badge-secondary ms-1" title="Read live from the device — FortiADC has no local cache yet">LIVE</span>{% endif %}
+      {% if appliance %} on <strong>{{ appliance.name }}</strong> <span class="fw-badge fw-badge-secondary ms-1" title="{{ _('Read live from the device — FortiADC has no local cache yet') }}">LIVE</span>{% endif %}
     </p>
   </div>
   <div class="d-flex align-items-center gap-2">
     {% if appliance %}
-    <a class="btn btn-outline-light btn-sm" href="{{ request.full_path }}" title="Re-read from the device">
-      <i class="bi bi-arrow-clockwise me-1"></i>Refresh</a>
+    <a class="btn btn-outline-light btn-sm" href="{{ request.full_path }}" title="{{ _('Re-read from the device') }}">
+      <i class="bi bi-arrow-clockwise me-1"></i>{{ _('Refresh') }}</a>
     {% endif %}
   </div>
 </div>
@@ -32,10 +32,10 @@
 {% if not appliance %}
 <div class="fw-alert fw-alert-warning d-flex align-items-center gap-2 mb-3">
   <i class="bi bi-hdd-rack"></i>
-  <div>No FortiADC selected — object lists are read live from a device.
-    <a href="{{ url_for('adc.index') }}">Pick one on the FortiADC dashboard</a>
+  <div>{{ _('No FortiADC selected — object lists are read live from a device.') }}
+    <a href="{{ url_for('adc.index') }}">{{ _('Pick one on the FortiADC dashboard') }}</a>
     {% if not fleet %} (none registered yet — add the VM under
-    <a href="{{ url_for('appliances.index') }}">Appliances</a>){% endif %}.
+    <a href="{{ url_for('appliances.index') }}">{{ _('Appliances') }}</a>){% endif %}.
   </div>
 </div>
 {% elif error %}
@@ -61,18 +61,18 @@
   {% if appliance and current_user.can('config_write') %}
   <a class="btn btn-fw-primary btn-sm"
      href="{{ url_for('adc.object_detail', logical=tab.logical, create=1, back=request.full_path) }}">
-    <i class="bi bi-plus-lg me-1"></i>Create New
+    <i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}
   </a>
   {% if tab.logical == 'load_balance_virtual_server' %}
   <a class="btn btn-outline-light btn-sm"
      href="{{ url_for('adc.wizard_virtual_server', back=request.full_path) }}"
-     title="Guided wizard: create the pool + real servers + virtual server in one step">
-    <i class="bi bi-magic me-1"></i>New (guided)</a>
+     title="{{ _('Guided wizard: create the pool + real servers + virtual server in one step') }}">
+    <i class="bi bi-magic me-1"></i>{{ _('New (guided)') }}</a>
   {% endif %}
   {% endif %}
   <div class="fw-search-box">
     <i class="bi bi-search search-icon"></i>
-    <input type="text" id="adc-obj-search" placeholder="Search…">
+    <input type="text" id="adc-obj-search" placeholder="{{ _('Search…') }}">
   </div>
   <span class="text-muted ms-auto" style="font-size:12px;">
     {{ rows|length }} object(s) · <code style="font-size:11px;">{{ tab.urn }}</code></span>
@@ -82,9 +82,9 @@
   <table class="fw-table" id="adc-obj-table">
     <thead>
       <tr>
-        <th>Name</th>
+        <th>{{ _('Name') }}</th>
         {% for col in columns %}<th>{{ col.replace('_',' ').replace('-',' ')|title }}</th>{% endfor %}
-        <th style="width:130px;">Actions</th>
+        <th style="width:130px;">{{ _('Actions') }}</th>
       </tr>
     </thead>
     <tbody>
@@ -105,9 +105,9 @@
           {% endfor %}
           <td>
             <a href="{{ url_for('adc.object_detail', logical=tab.logical, mkey=r.mkey, back=request.full_path) }}"
-               class="btn btn-sm btn-outline-secondary" title="View / edit (raw JSON)"><i class="bi bi-pencil"></i></a>
+               class="btn btn-sm btn-outline-secondary" title="{{ _('View / edit (raw JSON)') }}"><i class="bi bi-pencil"></i></a>
             {% if current_user.can('config_write') %}
-            <button type="button" class="btn btn-sm btn-outline-danger" title="Delete"
+            <button type="button" class="btn btn-sm btn-outline-danger" title="{{ _('Delete') }}"
                     data-js="adc-delete" data-mkey="{{ r.mkey }}"><i class="bi bi-trash"></i></button>
             {% endif %}
           </td>

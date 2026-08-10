@@ -34,20 +34,20 @@
   <div class="d-flex gap-2">
     <a class="btn btn-sm btn-outline-secondary"
        href="{{ url_for('monitor_reports.as_text', rid=report.id) }}">
-      <i class="bi bi-file-text me-1"></i>Text</a>
+      <i class="bi bi-file-text me-1"></i>{{ _('Text') }}</a>
     <a class="btn btn-sm btn-outline-secondary"
        href="{{ url_for('monitor_reports.as_csv', rid=report.id) }}">
       <i class="bi bi-filetype-csv me-1"></i>CSV</a>
     <a class="btn btn-sm btn-outline-secondary"
        href="{{ url_for('monitor_reports.index') }}">
-      <i class="bi bi-arrow-left me-1"></i>All reports</a>
+      <i class="bi bi-arrow-left me-1"></i>{{ _('All reports') }}</a>
   </div>
 </div>
 
 {% if b.no_data %}
 <div class="fw-card p-3 mb-3">
   <b class="an-nodata"><i class="bi bi-exclamation-triangle me-1"></i>
-    Nothing was measured in this window.</b>
+    {{ _('Nothing was measured in this window.') }}</b>
   <p class="text-muted small mb-0 mt-1">
     No samples were recorded for any probe between
     {{ b['from']|replace('T',' ') }} and {{ b['to']|replace('T',' ') }}. That is a
@@ -59,36 +59,36 @@
 
 <div class="an-rep-grid mb-3">
   <div class="an-kpi">
-    <div class="an-kpi-label">Health</div>
+    <div class="an-kpi-label">{{ _('Health') }}</div>
     <div class="an-kpi-value {{ 'an-nodata' if t.healthy_pct is none }}">
       {% if t.healthy_pct is none %}no data{% else %}{{ '%.1f'|format(t.healthy_pct) }} %{% endif %}
     </div>
     <div class="an-kpi-note">{{ t.measured_probes }} of {{ t.probes }} probe(s) measured</div>
   </div>
   <div class="an-kpi">
-    <div class="an-kpi-label">Worst status</div>
+    <div class="an-kpi-label">{{ _('Worst status') }}</div>
     <div class="an-kpi-value">{{ t.worst }}</div>
     <div class="an-kpi-note">across {{ t.devices }} device(s)</div>
   </div>
   <div class="an-kpi">
-    <div class="an-kpi-label">Samples</div>
+    <div class="an-kpi-label">{{ _('Samples') }}</div>
     <div class="an-kpi-value">{{ '{:,}'.format(t.samples) }}</div>
     <div class="an-kpi-note">{{ t.probes }} probe(s) in scope</div>
   </div>
   <div class="an-kpi">
-    <div class="an-kpi-label">Incidents</div>
+    <div class="an-kpi-label">{{ _('Incidents') }}</div>
     <div class="an-kpi-value">{{ t.incidents }}</div>
     <div class="an-kpi-note">{{ t.breaches }} threshold breach(es)</div>
   </div>
   <div class="an-kpi">
-    <div class="an-kpi-label">Drift events</div>
+    <div class="an-kpi-label">{{ _('Drift events') }}</div>
     <div class="an-kpi-value">{{ t.changes }}</div>
-    <div class="an-kpi-note">daemon restarts, interface changes</div>
+    <div class="an-kpi-note">{{ _('daemon restarts, interface changes') }}</div>
   </div>
   <div class="an-kpi">
-    <div class="an-kpi-label">Silent probes</div>
+    <div class="an-kpi-label">{{ _('Silent probes') }}</div>
     <div class="an-kpi-value {{ 'an-nodata' if t.silent }}">{{ t.silent }}</div>
-    <div class="an-kpi-note">reported nothing in the window</div>
+    <div class="an-kpi-note">{{ _('reported nothing in the window') }}</div>
   </div>
 </div>
 
@@ -99,7 +99,7 @@
       <div class="an-card-title">{{ d.device }}</div>
       <div class="an-card-sub">
         {% if d.healthy_pct is none %}
-          <span class="an-nodata">no data</span>
+          <span class="an-nodata">{{ _('no data') }}</span>
         {% else %}{{ '%.1f'|format(d.healthy_pct) }} % healthy{% endif %}
         · {{ d.changes }} drift · {{ d.breaches }} breach(es)
       </div>
@@ -114,19 +114,19 @@
       <table class="an-table mb-0">
         <thead>
           <tr>
-            <th>Probe</th><th>Metric</th>
-            <th class="an-num">Min</th><th class="an-num">Avg</th>
-            <th class="an-num">p95</th><th class="an-num">Peak</th>
-            <th class="an-num">vs prev</th>
-            <th class="an-num">Health</th><th class="an-num">Samples</th>
-            <th>Source</th>
+            <th>{{ _('Probe') }}</th><th>{{ _('Metric') }}</th>
+            <th class="an-num">{{ _('Min') }}</th><th class="an-num">{{ _('Avg') }}</th>
+            <th class="an-num">{{ _('p95') }}</th><th class="an-num">{{ _('Peak') }}</th>
+            <th class="an-num">{{ _('vs prev') }}</th>
+            <th class="an-num">{{ _('Health') }}</th><th class="an-num">{{ _('Samples') }}</th>
+            <th>{{ _('Source') }}</th>
           </tr>
         </thead>
         <tbody>
         {% for r in d.probes %}
           <tr>
             <td>{{ r.name }}{% if not r.enabled %}
-              <span class="text-muted" style="font-size:.7rem">(paused)</span>{% endif %}</td>
+              <span class="text-muted" style="font-size:.7rem">{{ _('(paused)') }}</span>{% endif %}</td>
             <td class="text-muted" style="font-size:.74rem">
               {{ r.metric or r.kind_label }}{% if r.unit %} ({{ r.unit }}){% endif %}</td>
             <td class="an-num">{{ '%g'|format(r.min) if r.min is not none else '—' }}</td>
@@ -137,7 +137,7 @@
               {% if r.delta_avg_pct is none %}—
               {% else %}{{ '%+.1f'|format(r.delta_avg_pct) }} %{% endif %}</td>
             <td class="an-num">
-              {% if r.healthy_pct is none %}<span class="an-nodata">no data</span>
+              {% if r.healthy_pct is none %}<span class="an-nodata">{{ _('no data') }}</span>
               {% else %}{{ '%.1f'|format(r.healthy_pct) }} %{% endif %}</td>
             <td class="an-num">{{ r.samples }}</td>
             <td class="text-muted" style="font-size:.72rem">{{ r.source }}</td>
@@ -153,15 +153,13 @@
 {% if b.silent %}
 <div class="fw-card p-3 mb-3">
   <h3 class="an-nodata mb-2" style="font-size:.9rem">
-    <i class="bi bi-slash-circle me-1"></i>Probes that reported nothing</h3>
+    <i class="bi bi-slash-circle me-1"></i>{{ _('Probes that reported nothing') }}</h3>
   <p class="text-muted small">
-    Named explicitly rather than simply omitted from the averages above: a
-    report whose figures quietly skip them looks complete while covering less
-    than it claims.</p>
+    {{ _('Named explicitly rather than simply omitted from the averages above: a report whose figures quietly skip them looks complete while covering less than it claims.') }}</p>
   <ul class="small mb-0">
     {% for s in b.silent %}
       <li>{{ s.device or '—' }} · <b>{{ s.probe }}</b> [{{ s.kind }}]
-        {% if not s.enabled %}<span class="text-muted">— paused</span>{% endif %}</li>
+        {% if not s.enabled %}<span class="text-muted">{{ _('— paused') }}</span>{% endif %}</li>
     {% endfor %}
   </ul>
 </div>
@@ -173,7 +171,7 @@
     Incidents ({{ b.incidents|length }})</div></div>
   <div class="an-table-wrap" style="max-height:420px">
     <table class="an-table an-inc-list mb-0">
-      <thead><tr><th>When (UTC)</th><th>Status</th><th>Device</th><th>Probe</th><th>Metric</th></tr></thead>
+      <thead><tr><th>{{ _('When (UTC)') }}</th><th>{{ _('Status') }}</th><th>{{ _('Device') }}</th><th>{{ _('Probe') }}</th><th>{{ _('Metric') }}</th></tr></thead>
       <tbody>
       {% for i in b.incidents %}
         <tr>

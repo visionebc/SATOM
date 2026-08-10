@@ -15,7 +15,7 @@
 <div class="row g-3">
   <div class="col-md-3">
     <div class="card shadow-sm">
-      <div class="card-header fw-card-header">Presets</div>
+      <div class="card-header fw-card-header">{{ _('Presets') }}</div>
       <div class="list-group list-group-flush">
         {% for label, cmd in presets.items() %}
         <button class="list-group-item list-group-item-action small console-preset" data-cmd="{{ cmd }}">{{ label }}</button>
@@ -27,8 +27,8 @@
     <div class="input-group mb-2">
       <span class="input-group-text">$</span>
       <input id="console-cmd" type="text" class="form-control" autocomplete="off" spellcheck="false"
-             placeholder="get system status" value="get system status">
-      <button id="console-run" class="btn fw-btn-primary">Run</button>
+             placeholder="{{ _('get system status') }}" value="get system status">
+      <button id="console-run" class="btn fw-btn-primary">{{ _('Run') }}</button>
     </div>
     <pre id="console-out" class="fw-console mb-0">Output will appear here…</pre>
   </div>

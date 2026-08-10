@@ -4,61 +4,58 @@
    view. Gated by the caller on current_user.can('ai_configure'). #}
 <div id="ai-settings-root">
   <div class="fw-card">
-    <div class="fw-card-header"><h2 class="fw-card-title">AI Advisor</h2></div>
+    <div class="fw-card-header"><h2 class="fw-card-title">{{ _('AI Advisor') }}</h2></div>
     <div class="fw-card-body">
-      <p class="text-secondary" style="font-size:13px">The advisor never writes to SATOM or an appliance directly —
-        see <a href="{{ docs_url() }}/docs/ai-advisor.html" target="_blank" rel="noopener">docs/ai-advisor.md</a>.
-        Local Ollama traffic never leaves the LAN. Every message sent to an external provider is logged
-        (<a href="{{ url_for('audit.index') }}">Audit log</a>, action <code>advisor.send</code>), redacted of
+      <p class="text-secondary" style="font-size:13px">{{ _('The advisor never writes to SATOM or an appliance directly — see') }} <a href="{{ docs_url() }}/docs/ai-advisor.html" target="_blank" rel="noopener">{{ _('docs/ai-advisor.md') }}</a>{{ _('. Local Ollama traffic never leaves the LAN. Every message sent to an external provider is logged (') }}<a href="{{ url_for('audit.index') }}">{{ _('Audit log') }}</a>, action <code>advisor.send</code>), redacted of
         known internal identifiers first, and requires "Allow external providers" below in addition to the
         provider itself being configured.</p>
       <div class="d-flex flex-wrap gap-4 mb-2">
         <div class="form-check form-switch">
           <input class="form-check-input" type="checkbox" id="ai-flag-enabled" data-flag="enabled">
-          <label class="form-check-label" for="ai-flag-enabled">Enable AI Advisor</label>
+          <label class="form-check-label" for="ai-flag-enabled">{{ _('Enable AI Advisor') }}</label>
         </div>
         <div class="form-check form-switch">
           <input class="form-check-input" type="checkbox" id="ai-flag-tools" data-flag="tools">
-          <label class="form-check-label" for="ai-flag-tools">Allow read-only tool calls (mode C)</label>
+          <label class="form-check-label" for="ai-flag-tools">{{ _('Allow read-only tool calls (mode C)') }}</label>
         </div>
         <div class="form-check form-switch">
           <input class="form-check-input" type="checkbox" id="ai-flag-external" data-flag="external">
-          <label class="form-check-label" for="ai-flag-external">Allow external providers</label>
+          <label class="form-check-label" for="ai-flag-external">{{ _('Allow external providers') }}</label>
         </div>
       </div>
     </div>
   </div>
 
   <div class="fw-card">
-    <div class="fw-card-header"><h2 class="fw-card-title">Providers</h2></div>
+    <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Providers') }}</h2></div>
     <div class="fw-card-body">
       <div id="ai-provider-list" class="mb-3"></div>
-      <button type="button" class="btn btn-fw-outline btn-sm" id="ai-provider-new"><i class="bi bi-plus-lg me-1"></i>Add provider</button>
+      <button type="button" class="btn btn-fw-outline btn-sm" id="ai-provider-new"><i class="bi bi-plus-lg me-1"></i>{{ _('Add provider') }}</button>
     </div>
   </div>
 
   <div class="fw-card" id="ai-provider-form-card" style="display:none">
-    <div class="fw-card-header"><h2 class="fw-card-title">Provider</h2></div>
+    <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Provider') }}</h2></div>
     <div class="fw-card-body">
       <input type="hidden" id="ai-p-editing" value="">
       <div class="row g-2">
-        <div class="col-md-4"><label class="form-label">Key (slug, unique)</label><input class="form-control" id="ai-p-key"></div>
-        <div class="col-md-4"><label class="form-label">Label</label><input class="form-control" id="ai-p-label"></div>
-        <div class="col-md-4"><label class="form-label">Kind</label>
+        <div class="col-md-4"><label class="form-label">{{ _('Key (slug, unique)') }}</label><input class="form-control" id="ai-p-key"></div>
+        <div class="col-md-4"><label class="form-label">{{ _('Label') }}</label><input class="form-control" id="ai-p-label"></div>
+        <div class="col-md-4"><label class="form-label">{{ _('Kind') }}</label>
           <select class="form-select" id="ai-p-kind">
-            <option value="ollama">Ollama (local, no API key)</option>
-            <option value="openai">OpenAI-compatible (ChatGPT / Azure OpenAI / LiteLLM / vLLM…)</option>
-            <option value="anthropic">Anthropic (Claude Messages API)</option>
+            <option value="ollama">{{ _('Ollama (local, no API key)') }}</option>
+            <option value="openai">{{ _('OpenAI-compatible (ChatGPT / Azure OpenAI / LiteLLM / vLLM…)') }}</option>
+            <option value="anthropic">{{ _('Anthropic (Claude Messages API)') }}</option>
           </select>
         </div>
-        <div class="col-md-6"><label class="form-label">Base URL</label><input class="form-control" id="ai-p-url" placeholder="http://192.0.2.34:11434 or https://api.openai.com/v1"></div>
-        <div class="col-md-3"><label class="form-label">Model</label><input class="form-control" id="ai-p-model" placeholder="qwen2.5-coder:32b"></div>
-        <div class="col-md-3"><label class="form-label">API key <span class="text-secondary">(blank = keep / not needed for Ollama)</span></label><input type="password" class="form-control" id="ai-p-key-secret"></div>
+        <div class="col-md-6"><label class="form-label">{{ _('Base URL') }}</label><input class="form-control" id="ai-p-url" placeholder="{{ _('http://192.0.2.34:11434 or https://api.openai.com/v1') }}"></div>
+        <div class="col-md-3"><label class="form-label">{{ _('Model') }}</label><input class="form-control" id="ai-p-model" placeholder="{{ _('qwen2.5-coder:32b') }}"></div>
+        <div class="col-md-3"><label class="form-label">{{ _('API key') }} <span class="text-secondary">{{ _('(blank = keep / not needed for Ollama)') }}</span></label><input type="password" class="form-control" id="ai-p-key-secret"></div>
       </div>
       <div class="d-flex gap-2 mt-3">
-        <button type="button" class="btn btn-fw-primary" id="ai-p-save">Save</button>
-        <button type="button" class="btn btn-fw-outline" id="ai-p-test">Test connection</button>
-        <button type="button" class="btn btn-fw-outline" id="ai-p-cancel">Cancel</button>
+        <button type="button" class="btn btn-fw-primary" id="ai-p-save">{{ _('Save') }}</button>
+        <button type="button" class="btn btn-fw-outline" id="ai-p-test">{{ _('Test connection') }}</button>
+        <button type="button" class="btn btn-fw-outline" id="ai-p-cancel">{{ _('Cancel') }}</button>
       </div>
       <div id="ai-p-result" class="mt-2" style="font-size:12.5px"></div>
     </div>

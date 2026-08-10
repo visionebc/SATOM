@@ -7,12 +7,12 @@
 <ul class="nav nav-tabs mb-3">
   <li class="nav-item">
     <a class="nav-link {{ 'active' if api_tab in ['explorer', 'registry'] }}" href="{{ url_for('api_explorer.index') }}">
-      <i class="bi bi-code-square me-1"></i>API-Registry Explorer
+      <i class="bi bi-code-square me-1"></i>{{ _('API-Registry Explorer') }}
     </a>
   </li>
   <li class="nav-item">
     <a class="nav-link {{ 'active' if api_tab == 'structure' }}" href="{{ url_for('structure.index') }}">
-      <i class="bi bi-diagram-3 me-1"></i>Structure
+      <i class="bi bi-diagram-3 me-1"></i>{{ _('Structure') }}
     </a>
   </li>
 </ul>

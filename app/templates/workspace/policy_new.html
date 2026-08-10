@@ -2,23 +2,23 @@
 {% block title %}New Server Policy{% endblock %}
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a><span class="separator">/</span>
-  <a href="{{ url_for('workspace.index') }}">Server Policy</a><span class="separator">/</span>
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <a href="{{ url_for('workspace.index') }}">{{ _('Server Policy') }}</a><span class="separator">/</span>
   <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}">{{ appliance.name }}</a>
-  <span class="separator">/</span><span>New</span>
+  <span class="separator">/</span><span>{{ _('New') }}</span>
 </div>
 {% endblock %}
 {% from "workspace/_fields.html" import fld %}
 {% block content %}
-<div class="fw-page-header"><h1 class="fw-h1"><i class="bi bi-plus-square me-2 text-accent"></i>New Server Policy <span class="mono text-muted">{{ appliance.name }}</span></h1></div>
+<div class="fw-page-header"><h1 class="fw-h1"><i class="bi bi-plus-square me-2 text-accent"></i>{{ _('New Server Policy') }} <span class="mono text-muted">{{ appliance.name }}</span></h1></div>
 
-<div class="fw-card mb-3"><div class="fw-card-header"><span class="fw-card-title">Identity</span></div>
+<div class="fw-card mb-3"><div class="fw-card-header"><span class="fw-card-title">{{ _('Identity') }}</span></div>
   <div class="fw-card-body"><div class="fw-fld-grid" style="grid-template-columns:minmax(280px,460px) minmax(280px,460px);">
-    <div class="fw-fld"><label class="fw-fld-label">Policy name <span class="fw-key">name</span></label>
-      <input type="text" class="form-control form-control-sm" id="policyName" placeholder="e.g. pol-myapp" required></div>
-    <div class="fw-fld"><label class="fw-fld-label">AppID <span class="text-muted">(billing &amp; token scope)</span></label>
+    <div class="fw-fld"><label class="fw-fld-label">{{ _('Policy name') }} <span class="fw-key">{{ _('name') }}</span></label>
+      <input type="text" class="form-control form-control-sm" id="policyName" placeholder="{{ _('e.g. pol-myapp') }}" required></div>
+    <div class="fw-fld"><label class="fw-fld-label">{{ _('AppID') }} <span class="text-muted">(billing &amp; token scope)</span></label>
       <select class="form-select form-select-sm" id="appIdSel">
-        <option value="">— none —</option>
+        <option value="">{{ _('— none —') }}</option>
         {% for a in appid_catalog %}
         <option value="{{ a.id }}">{{ a.app_id }}{% if a.customer %} — {{ a.customer }}{% endif %}</option>
         {% endfor %}
@@ -30,33 +30,33 @@
 <div class="fw-card mb-3" id="vsScope"><div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>Virtual Server &amp; VIP</span></div>
   <div class="fw-card-body">
     <div class="fw-fld-grid" style="grid-template-columns:minmax(280px,460px);">
-      <div class="fw-fld"><label class="fw-fld-label">Virtual Server name <span class="fw-key">name</span></label>
-        <input type="text" class="form-control form-control-sm" id="vserverName" placeholder="e.g. vs-myapp"></div>
+      <div class="fw-fld"><label class="fw-fld-label">{{ _('Virtual Server name') }} <span class="fw-key">{{ _('name') }}</span></label>
+        <input type="text" class="form-control form-control-sm" id="vserverName" placeholder="{{ _('e.g. vs-myapp') }}"></div>
     </div>
     <div id="vipRows" class="mt-2"></div>
-    <button type="button" class="btn btn-sm btn-fw-outline mt-2" data-js="add-vip">＋ Add VIP</button>
+    <button type="button" class="btn btn-sm btn-fw-outline mt-2" data-js="add-vip">{{ _('＋ Add VIP') }}</button>
   </div>
 </div>
 
 {# ── Server Pool + members ── #}
-<div class="fw-card mb-3"><div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>Server Pool</span></div>
+<div class="fw-card mb-3"><div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('Server Pool') }}</span></div>
   <div class="fw-card-body" id="poolScope">
     <div class="fw-fld-grid" style="grid-template-columns:minmax(280px,460px);">
-      <div class="fw-fld"><label class="fw-fld-label">Server Pool name <span class="fw-key">name</span></label>
-        <input type="text" class="form-control form-control-sm" id="poolName" placeholder="e.g. pool-myapp"></div>
+      <div class="fw-fld"><label class="fw-fld-label">{{ _('Server Pool name') }} <span class="fw-key">{{ _('name') }}</span></label>
+        <input type="text" class="form-control form-control-sm" id="poolName" placeholder="{{ _('e.g. pool-myapp') }}"></div>
     </div>
     {% for g in pool_groups %}<div class="fw-group"><div class="fw-group-title">{{ g.title }}</div>
       <div class="fw-fld-grid">{% for f in g.fields %}{{ fld(f) }}{% endfor %}</div></div>{% endfor %}
-    <div class="fw-group"><div class="fw-group-title">Pool members</div>
-      <table class="table table-sm fw-table"><thead><tr><th>Type</th><th>IP / Domain</th><th>Port</th><th>Weight</th><th>SSL</th><th>Status</th><th></th></tr></thead>
+    <div class="fw-group"><div class="fw-group-title">{{ _('Pool members') }}</div>
+      <table class="table table-sm fw-table"><thead><tr><th>{{ _('Type') }}</th><th>{{ _('IP / Domain') }}</th><th>{{ _('Port') }}</th><th>{{ _('Weight') }}</th><th>SSL</th><th>{{ _('Status') }}</th><th></th></tr></thead>
         <tbody id="psRows"></tbody></table>
-      <button type="button" class="btn btn-sm btn-fw-outline" data-js="add-ps">＋ Add member</button>
+      <button type="button" class="btn btn-sm btn-fw-outline" data-js="add-ps">{{ _('＋ Add member') }}</button>
     </div>
   </div>
 </div>
 
 {# ── Policy fields ── #}
-<div class="fw-card mb-3"><div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-shield-lock me-2 text-accent"></i>Policy settings</span></div>
+<div class="fw-card mb-3"><div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-shield-lock me-2 text-accent"></i>{{ _('Policy settings') }}</span></div>
   <div class="fw-card-body" id="policyScope">
     {% for g in policy_groups %}<details class="fw-group" {{ 'open' if g.title in ['Network Configuration','HTTPS/SSL','Security'] }}>
       <summary class="fw-group-title">{{ g.title }} <span class="text-muted">({{ g.fields|length }})</span></summary>
@@ -65,8 +65,8 @@
 </div>
 
 <div class="fw-savebar mb-4" style="justify-content:flex-end;gap:10px;">
-  <button type="button" class="btn btn-fw-outline" data-js="preview-btn"><i class="bi bi-eye me-1"></i>Preview (dry-run)</button>
-  <button type="button" class="btn btn-fw-primary" id="applyBtn" disabled><i class="bi bi-check2-circle me-1"></i>Create on device</button>
+  <button type="button" class="btn btn-fw-outline" data-js="preview-btn"><i class="bi bi-eye me-1"></i>{{ _('Preview (dry-run)') }}</button>
+  <button type="button" class="btn btn-fw-primary" id="applyBtn" disabled><i class="bi bi-check2-circle me-1"></i>{{ _('Create on device') }}</button>
 </div>
 <div id="result"></div>
 {% endblock %}

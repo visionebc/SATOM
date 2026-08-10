@@ -14,9 +14,8 @@
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 {% if data_src == 'cache' %}
 <div class="alert alert-info py-2 small">
-  <i class="bi bi-database me-1"></i>Showing locally cached data
-  <span class="fw-bold">({{ freshness or 'DB' }})</span> — the device did not answer the
-  live read (offline or license-locked). Fields stay editable; Save still writes to the device.
+  <i class="bi bi-database me-1"></i>{{ _('Showing locally cached data') }}
+  <span class="fw-bold">({{ freshness or 'DB' }})</span> {{ _('— the device did not answer the live read (offline or license-locked). Fields stay editable; Save still writes to the device.') }}
 </div>
 {% endif %}
 
@@ -25,25 +24,25 @@
 <div class="alert alert-secondary py-2 small mb-3 fw-help">
   <div><i class="bi bi-info-circle me-1"></i>{{ help_info.what }}</div>
   {% if help_info.backend_reaction %}
-    <div class="mt-1"><strong>Device behavior:</strong> {{ help_info.backend_reaction }}</div>
+    <div class="mt-1"><strong>{{ _('Device behavior:') }}</strong> {{ help_info.backend_reaction }}</div>
   {% endif %}
   {% if help_info.gotchas %}
     <ul class="mb-0 mt-1">{% for gtx in help_info.gotchas %}<li>{{ gtx }}</li>{% endfor %}</ul>
   {% endif %}
-  {% if help_info.url %}<a class="small" href="{{ help_info.url }}" target="_blank" rel="noopener">FortiWeb admin guide ↗</a>{% endif %}
+  {% if help_info.url %}<a class="small" href="{{ help_info.url }}" target="_blank" rel="noopener">{{ _('FortiWeb admin guide ↗') }}</a>{% endif %}
 </div>
 {% endif %}
 
 {# ── object scalar fields ─────────────────────────────────────────────── #}
 <div class="card mb-3">
-  <div class="card-header"><strong>Settings</strong></div>
+  <div class="card-header"><strong>{{ _('Settings') }}</strong></div>
   <div class="card-body">
     <div class="fw-scope" data-collection="{{ collection }}" data-mkey="{{ mkey }}">
       {% if create %}
         <div class="mb-3">
-          <label class="form-label small fw-bold">Name <span class="text-danger">*</span></label>
-          <input type="text" class="form-control" id="fw-new-name" placeholder="object name" autocomplete="off">
-          <div class="form-text">The object's unique name (mkey). Sub-tables (members, rules…) are added after it's created.</div>
+          <label class="form-label small fw-bold">{{ _('Name') }} <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" id="fw-new-name" placeholder="{{ _('object name') }}" autocomplete="off">
+          <div class="form-text">{{ _('The object\'s unique name (mkey). Sub-tables (members, rules…) are added after it\'s created.') }}</div>
         </div>
       {% endif %}
       {% for sec in obj_groups %}
@@ -52,7 +51,7 @@
           <div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, true) }}{% endfor %}</div>
         </details>
       {% else %}
-        {% if not create %}<p class="text-muted mb-0">This object exposes no editable scalar fields.</p>{% endif %}
+        {% if not create %}<p class="text-muted mb-0">{{ _('This object exposes no editable scalar fields.') }}</p>{% endif %}
       {% endfor %}
       <div class="mt-2">
         {% if create %}
@@ -82,13 +81,13 @@
         <summary class="fw-group-head">{{ row.label or ('row ' ~ row.sub_id) }}</summary>
         {% for sec in row.groups %}<div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, true) }}{% endfor %}</div>{% endfor %}
         <div class="mt-2">
-          <button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-save-row">Save row</button>
-          <button type="button" class="btn btn-sm btn-fw-danger" data-js="objedit-delete-row">Delete</button>
+          <button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-save-row">{{ _('Save row') }}</button>
+          <button type="button" class="btn btn-sm btn-fw-danger" data-js="objedit-delete-row">{{ _('Delete') }}</button>
         </div>
         <div class="fw-result"></div>
       </details>
     {% else %}
-      <p class="text-muted">No rows yet.</p>
+      <p class="text-muted">{{ _('No rows yet.') }}</p>
     {% endfor %}
 
     <details class="fw-row-scope fw-row-new mt-2 border rounded p-2 border-primary-subtle"
@@ -96,11 +95,9 @@
       <summary class="fw-group-head text-primary">＋ Add {{ st.label }} row</summary>
       {% if st.blank_groups %}
         {% for sec in st.blank_groups %}<div class="fw-fld-grid">{% for f in sec.fields %}{{ fld(f, true) }}{% endfor %}</div>{% endfor %}
-        <div class="mt-2"><button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-create-row">Create row</button></div>
+        <div class="mt-2"><button type="button" class="btn btn-sm btn-fw-primary" data-js="objedit-create-row">{{ _('Create row') }}</button></div>
       {% else %}
-        <p class="text-muted small mb-0 mt-2">No field template is known for this
-        sub-table yet (no curated form and nothing cached). Run a rediscovery /
-        deep capture of a device that already has rows here, then reopen.</p>
+        <p class="text-muted small mb-0 mt-2">{{ _('No field template is known for this sub-table yet (no curated form and nothing cached). Run a rediscovery / deep capture of a device that already has rows here, then reopen.') }}</p>
       {% endif %}
       <div class="fw-result"></div>
     </details>

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="{{ csrf_token() }}">
-  <title>Sign In — SATOM</title>
+  <title>{{ _('Sign In — SATOM') }}</title>
 
   {# Vendored, not a CDN: this product ships offline installers for isolated
      management networks, where a sign-in page that needs public internet to
@@ -176,8 +176,8 @@
 
     <!-- Header -->
     <div class="login-header">
-      <img class="login-logo" src="{{ theme_logo_url or url_for('static', filename='img/satom-mark.png') }}" alt="SATOM">
-      <p class="login-brand-text">SATOM</p>
+      <img class="login-logo" src="{{ theme_logo_url or url_for('static', filename='img/satom-mark.png') }}" alt="{{ _('SATOM') }}">
+      <p class="login-brand-text">{{ _('SATOM') }}</p>
       <p class="login-subtitle">System Automation &amp; Task Orchestration Manager</p>
     </div>
 
@@ -207,7 +207,7 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
         <div class="mb-3">
-          <label for="username" class="form-label">Username</label>
+          <label for="username" class="form-label">{{ _('Username') }}</label>
           <div class="input-group">
             <span class="input-group-text"><i class="bi bi-person"></i></span>
             <input
@@ -215,7 +215,7 @@
               class="form-control"
               id="username"
               name="username"
-              placeholder="Enter username"
+              placeholder="{{ _('Enter username') }}"
               value="{{ request.form.get('username', '') if request else '' }}"
               autocomplete="username"
               autofocus
@@ -224,7 +224,7 @@
         </div>
 
         <div class="mb-4">
-          <label for="password" class="form-label">Password</label>
+          <label for="password" class="form-label">{{ _('Password') }}</label>
           <div class="input-group">
             <span class="input-group-text"><i class="bi bi-lock"></i></span>
             <input
@@ -232,7 +232,7 @@
               class="form-control"
               id="password"
               name="password"
-              placeholder="Enter password"
+              placeholder="{{ _('Enter password') }}"
               autocomplete="current-password"
               required>
             <button type="button" class="password-toggle" id="pw-toggle" tabindex="-1">
@@ -245,14 +245,14 @@
           <div class="form-check">
             <input class="form-check-input" type="checkbox" id="remember" name="remember">
             <label class="form-check-label" for="remember" style="font-size:13px;">
-              Remember me
+              {{ _('Remember me') }}
             </label>
           </div>
-          <a href="{{ url_for('auth.forgot_password') }}" style="font-size:13px; color:var(--fw-accent); text-decoration:none;">Forgot password?</a>
+          <a href="{{ url_for('auth.forgot_password') }}" style="font-size:13px; color:var(--fw-accent); text-decoration:none;">{{ _('Forgot password?') }}</a>
         </div>
 
         <button type="submit" class="btn btn-login">
-          <i class="bi bi-box-arrow-in-right me-2"></i>Sign In
+          <i class="bi bi-box-arrow-in-right me-2"></i>{{ _('Sign In') }}
         </button>
       </form>
     </div>
@@ -263,11 +263,11 @@
       <p style="margin-top:6px; display:flex; gap:16px; justify-content:center; flex-wrap:wrap;">
         <a href="{{ docs_url() }}" target="_blank" rel="noopener noreferrer"
            style="font-size:12.5px; color:var(--fw-accent); text-decoration:none;">
-          <i class="bi bi-book me-1"></i>Documentation
+          <i class="bi bi-book me-1"></i>{{ _('Documentation') }}
         </a>
         <a href="{{ docs_url('api') }}" target="_blank" rel="noopener noreferrer"
            style="font-size:12.5px; color:var(--fw-accent); text-decoration:none;">
-          <i class="bi bi-code-slash me-1"></i>API documentation
+          <i class="bi bi-code-slash me-1"></i>{{ _('API documentation') }}
         </a>
       </p>
     </div>

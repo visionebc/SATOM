@@ -10,12 +10,11 @@
 
 <div class="fw-page-header d-flex align-items-center justify-content-between mb-3">
   <div>
-    <h1 class="fw-page-title mb-0"><i class="bi bi-speedometer2 me-2 text-accent"></i>Capacity Limits</h1>
+    <h1 class="fw-page-title mb-0"><i class="bi bi-speedometer2 me-2 text-accent"></i>{{ _('Capacity Limits') }}</h1>
     <p class="text-muted small mb-0">
-      Per model × firmware: <b>Hard max</b> = Fortinet's ceiling (datasheet / Appendix B).
-      <b>Operational cap</b> = your safety buffer, as an absolute <b>number</b> or a
-      <b>percent</b> of the hard max. Automations check the effective cap (the lower one)
-      before creating objects; the Monitoring page alerts when usage approaches it.
+      {{ _('Per model × firmware:') }} <b>{{ _('Hard max') }}</b> {{ _('= Fortinet\'s ceiling (datasheet / Appendix B).') }}
+      <b>{{ _('Operational cap') }}</b> {{ _('= your safety buffer, as an absolute') }} <b>{{ _('number') }}</b> {{ _('or a') }}
+      <b>{{ _('percent') }}</b> {{ _('of the hard max. Automations check the effective cap (the lower one) before creating objects; the Monitoring page alerts when usage approaches it.') }}
     </p>
   </div>
 </div>
@@ -39,22 +38,22 @@
     <form method="post" action="{{ url_for('capacity.add_model') }}" class="row g-2 align-items-end">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="col-auto">
-        <label class="form-label text-muted small mb-1">Model / SKU (e.g. FortiWeb-VM02, FWB-600F)</label>
-        <input name="model" class="form-control form-control-sm" placeholder="FortiWeb-VM04">
+        <label class="form-label text-muted small mb-1">{{ _('Model / SKU (e.g. FortiWeb-VM02, FWB-600F)') }}</label>
+        <input name="model" class="form-control form-control-sm" placeholder="{{ _('FortiWeb-VM04') }}">
       </div>
       <div class="col-auto">
-        <label class="form-label text-muted small mb-1">Firmware major</label>
+        <label class="form-label text-muted small mb-1">{{ _('Firmware major') }}</label>
         <input name="firmware_major" class="form-control form-control-sm" placeholder="7.6" style="max-width:90px;">
       </div>
       <div class="col-auto">
-        <button class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Add model</button>
+        <button class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>{{ _('Add model') }}</button>
       </div>
     </form>
   </div>
 </div>
 
 {% if not groups %}
-<div class="text-muted">No capacity catalogs yet — add a model above (the fleet's models are suggested automatically).</div>
+<div class="text-muted">{{ _('No capacity catalogs yet — add a model above (the fleet\'s models are suggested automatically).') }}</div>
 {% endif %}
 
 {% for (product, fw, model), rows in groups.items() %}
@@ -75,8 +74,8 @@
       <table class="table table-sm align-middle cap-tbl">
         <thead>
           <tr class="text-muted small">
-            <th>Object type</th><th>In use (fleet max)</th><th>Hard max (Fortinet)</th>
-            <th>Cap mode</th><th>Cap value</th><th>Effective cap</th><th class="text-muted">Updated</th>
+            <th>{{ _('Object type') }}</th><th>{{ _('In use (fleet max)') }}</th><th>{{ _('Hard max (Fortinet)') }}</th>
+            <th>{{ _('Cap mode') }}</th><th>{{ _('Cap value') }}</th><th>{{ _('Effective cap') }}</th><th class="text-muted">{{ _('Updated') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -92,8 +91,8 @@
             </td>
             <td>
               <select name="mode_{{ r.id }}" class="form-select form-select-sm">
-                <option value="none" {{ 'selected' if r.operational_cap is none and r.cap_percent is none }}>no cap</option>
-                <option value="number" {{ 'selected' if r.operational_cap is not none }}>number</option>
+                <option value="none" {{ 'selected' if r.operational_cap is none and r.cap_percent is none }}>{{ _('no cap') }}</option>
+                <option value="number" {{ 'selected' if r.operational_cap is not none }}>{{ _('number') }}</option>
                 <option value="percent" {{ 'selected' if r.cap_percent is not none }}>% of max</option>
               </select>
             </td>

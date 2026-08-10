@@ -6,6 +6,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
+from flask_babel import Babel
 
 
 def real_client_ip() -> str:
@@ -41,3 +42,7 @@ migrate: Migrate = Migrate()
 login_manager: LoginManager = LoginManager()
 csrf: CSRFProtect = CSRFProtect()
 limiter: Limiter = Limiter(key_func=real_client_ip)
+# Locale selector is wired in the factory (app/__init__.py), not here:
+# it has to read the signed-in user's stored preference, and this module
+# must stay importable without the ORM.
+babel: Babel = Babel()

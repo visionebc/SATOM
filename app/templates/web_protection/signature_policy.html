@@ -4,11 +4,11 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <a href="{{ url_for('web_protection.overview', id=appliance.id) }}">Web Protection</a>
+  <a href="{{ url_for('web_protection.overview', id=appliance.id) }}">{{ _('Web Protection') }}</a>
   <span class="separator">/</span>
-  <a href="{{ url_for('web_protection.menu_page', id=appliance.id, item_key='signatures') }}">Known Attacks / Signatures</a>
+  <a href="{{ url_for('web_protection.menu_page', id=appliance.id, item_key='signatures') }}">{{ _('Known Attacks / Signatures') }}</a>
   <span class="separator">/</span>
   <span>{{ set_name }}</span>
 </div>
@@ -21,43 +21,42 @@
       <div>
         <h1 class="fw-page-title"><i class="bi bi-fingerprint me-2 text-accent"></i>{{ set_name }}</h1>
         <p class="text-muted mb-0" style="font-size:13px;">
-          Signature Policy on <strong>{{ appliance.name }}</strong>
+          {{ _('Signature Policy on') }} <strong>{{ appliance.name }}</strong>
           {% if sig_obj and sig_obj.get('can_view') == 1 %}
-            <span class="fw-badge fw-badge-secondary ms-1" title="FortiWeb predefined signature policy — read-only; clone it to customize">Predefined</span>
+            <span class="fw-badge fw-badge-secondary ms-1" title="{{ _('FortiWeb predefined signature policy — read-only; clone it to customize') }}">{{ _('Predefined') }}</span>
           {% endif %}
           · state source:
-          {% if state_source == 'db' %}<span class="fw-badge fw-badge-success">DB cache</span>
-          {% elif state_source == 'live' %}<span class="fw-badge fw-badge-primary">live device</span>
-          {% else %}<span class="fw-badge fw-badge-warning" title="Neither the cache nor the device returned the sub-lists">unavailable</span>{% endif %}
+          {% if state_source == 'db' %}<span class="fw-badge fw-badge-success">{{ _('DB cache') }}</span>
+          {% elif state_source == 'live' %}<span class="fw-badge fw-badge-primary">{{ _('live device') }}</span>
+          {% else %}<span class="fw-badge fw-badge-warning" title="{{ _('Neither the cache nor the device returned the sub-lists') }}">{{ _('unavailable') }}</span>{% endif %}
         </p>
       </div>
       <div class="d-flex gap-2">
         <a href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection='waf/signature', mkey=set_name, title='Signature Policy') }}"
-           class="btn btn-secondary btn-sm"><i class="bi bi-pencil me-1"></i>Full editor</a>
+           class="btn btn-secondary btn-sm"><i class="bi bi-pencil me-1"></i>{{ _('Full editor') }}</a>
         <a href="{{ url_for('web_protection.menu_page', id=appliance.id, item_key='signatures') }}"
-           class="btn btn-secondary btn-sm"><i class="bi bi-chevron-left me-1"></i>Back</a>
+           class="btn btn-secondary btn-sm"><i class="bi bi-chevron-left me-1"></i>{{ _('Back') }}</a>
       </div>
     </div>
 
     {% if not catalog_ready %}
     <div class="fw-alert fw-alert-warning d-flex align-items-center gap-2 mb-3">
       <i class="bi bi-exclamation-triangle-fill"></i>
-      <div>No signature database cached — signature names/descriptions and the search need it.
-        Sync it once in <a href="{{ url_for('signatures.index') }}" class="alert-link">Settings → Signatures</a>.</div>
+      <div>{{ _('No signature database cached — signature names/descriptions and the search need it. Sync it once in') }} <a href="{{ url_for('signatures.index') }}" class="alert-link">{{ _('Settings → Signatures') }}</a>.</div>
     </div>
     {% endif %}
 
     {# ── Signature Category — the per-main-class rows, like FortiWeb's policy page ── #}
     <div class="fw-card mb-3">
       <div class="fw-card-header">
-        <span class="fw-card-title"><i class="bi bi-collection me-2 text-accent"></i>Signature Category</span>
+        <span class="fw-card-title"><i class="bi bi-collection me-2 text-accent"></i>{{ _('Signature Category') }}</span>
       </div>
       <div class="fw-card-body p-0">
         <table class="fw-table mb-0">
           <thead><tr>
-            <th>Signature Category</th><th>Status</th>
-            <th title="False Positive Mitigation — extra SQL syntax validation (SQL Injection categories only)">False Positive Mitigation</th>
-            <th>Action</th><th>Block Period</th><th>Severity</th><th>Trigger Policy</th><th style="width:70px;"></th>
+            <th>{{ _('Signature Category') }}</th><th>{{ _('Status') }}</th>
+            <th title="{{ _('False Positive Mitigation — extra SQL syntax validation (SQL Injection categories only)') }}">{{ _('False Positive Mitigation') }}</th>
+            <th>{{ _('Action') }}</th><th>{{ _('Block Period') }}</th><th>{{ _('Severity') }}</th><th>{{ _('Trigger Policy') }}</th><th style="width:70px;"></th>
           </tr></thead>
           <tbody>
             {% set mc_labels = value_labels.get('main_class_id', {}) %}
@@ -66,17 +65,17 @@
               {% for c in state.classes %}
               <tr>
                 <td class="fw-semibold">{{ mc_labels.get(c.get('main_class_id')|string, c.get('main_class_id')) }}</td>
-                <td>{% if c.get('status') == 'enable' %}<span class="fw-badge fw-badge-success">Enabled</span>
-                    {% else %}<span class="fw-badge fw-badge-secondary">Disabled</span>{% endif %}</td>
-                <td>{% if c.get('fpm-status') == 'enable' %}<span class="fw-badge fw-badge-success">Enabled</span>
-                    {% elif c.get('fpm-status') == 'disable' %}<span class="fw-badge fw-badge-secondary">Disabled</span>
+                <td>{% if c.get('status') == 'enable' %}<span class="fw-badge fw-badge-success">{{ _('Enabled') }}</span>
+                    {% else %}<span class="fw-badge fw-badge-secondary">{{ _('Disabled') }}</span>{% endif %}</td>
+                <td>{% if c.get('fpm-status') == 'enable' %}<span class="fw-badge fw-badge-success">{{ _('Enabled') }}</span>
+                    {% elif c.get('fpm-status') == 'disable' %}<span class="fw-badge fw-badge-secondary">{{ _('Disabled') }}</span>
                     {% else %}<span class="text-muted">—</span>{% endif %}</td>
                 <td>{{ act_labels.get(c.get('action'), c.get('action') or '—') }}</td>
                 <td>{{ c.get('block-period') or '—' }}</td>
                 <td>{{ c.get('severity') or '—' }}</td>
                 <td>{{ c.get('trigger') or '—' }}</td>
                 <td>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" title="Edit category settings"
+                  <button type="button" class="btn btn-sm btn-outline-secondary" title="{{ _('Edit category settings') }}"
                           data-js="edit-class" data-row="{{ c.get('id', c.get('_id','')) }}"
                           data-mc="{{ c.get('main_class_id') }}" data-status="{{ c.get('status','') }}"
                           data-fpm="{{ c.get('fpm-status','') }}"
@@ -99,29 +98,29 @@
     {# ── Signature Details — searchable list + per-signature actions, like FortiWeb ── #}
     <div class="fw-card">
       <div class="fw-card-header d-flex align-items-center justify-content-between">
-        <span class="fw-card-title"><i class="bi bi-list-ul me-2 text-accent"></i>Signature Details</span>
+        <span class="fw-card-title"><i class="bi bi-list-ul me-2 text-accent"></i>{{ _('Signature Details') }}</span>
         <span class="text-muted" style="font-size:12px;">{{ catalog_count }} signatures in the catalog</span>
       </div>
       <div class="fw-card-body">
         <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
           <select id="sig-main" class="form-select fw-form-control" style="width:auto; font-size:13px;">
-            <option value="">All classes</option>
+            <option value="">{{ _('All classes') }}</option>
             {% for mid, m in classes.items() %}
             <option value="{{ mid }}">{{ m.name }}</option>
             {% endfor %}
           </select>
           <select id="sig-sub" class="form-select fw-form-control" style="width:auto; font-size:13px;">
-            <option value="">All sub-classes</option>
+            <option value="">{{ _('All sub-classes') }}</option>
           </select>
           <select id="sig-flt" class="form-select fw-form-control" style="width:auto; font-size:13px;">
-            <option value="">All signatures</option>
-            <option value="disabled">Disabled only</option>
-            <option value="alert">Alert Only</option>
-            <option value="exception">With exceptions</option>
+            <option value="">{{ _('All signatures') }}</option>
+            <option value="disabled">{{ _('Disabled only') }}</option>
+            <option value="alert">{{ _('Alert Only') }}</option>
+            <option value="exception">{{ _('With exceptions') }}</option>
           </select>
           <div class="fw-search-box">
             <i class="bi bi-search search-icon"></i>
-            <input type="text" id="sig-q" placeholder="Search ID or description…">
+            <input type="text" id="sig-q" placeholder="{{ _('Search ID or description…') }}">
           </div>
           <span id="sig-count" class="text-muted ms-auto" style="font-size:12px;"></span>
         </div>
@@ -129,12 +128,12 @@
         <div class="fw-table-wrapper">
           <table class="fw-table" id="sig-table">
             <thead><tr>
-              <th style="width:110px;">Signature ID</th><th>Description</th>
-              <th style="width:180px;">Sub Class</th><th style="width:110px;">Status</th>
-              <th style="width:100px;">Exceptions</th><th style="width:170px;">Actions</th>
+              <th style="width:110px;">{{ _('Signature ID') }}</th><th>{{ _('Description') }}</th>
+              <th style="width:180px;">{{ _('Sub Class') }}</th><th style="width:110px;">{{ _('Status') }}</th>
+              <th style="width:100px;">{{ _('Exceptions') }}</th><th style="width:170px;">{{ _('Actions') }}</th>
             </tr></thead>
             <tbody id="sig-tbody">
-              <tr><td colspan="6" class="text-center text-muted py-3">Loading…</td></tr>
+              <tr><td colspan="6" class="text-center text-muted py-3">{{ _('Loading…') }}</td></tr>
             </tbody>
           </table>
         </div>
@@ -153,41 +152,41 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-collection me-2"></i><span id="cls-title">Signature Category</span></h5>
+        <h5 class="modal-title"><i class="bi bi-collection me-2"></i><span id="cls-title">{{ _('Signature Category') }}</span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <div class="mb-2"><label class="fw-form-label">Status</label>
+        <div class="mb-2"><label class="fw-form-label">{{ _('Status') }}</label>
           <select id="cls-status" class="form-select fw-form-control">
-            <option value="enable">Enabled</option><option value="disable">Disabled</option>
+            <option value="enable">{{ _('Enabled') }}</option><option value="disable">{{ _('Disabled') }}</option>
           </select></div>
         <div class="mb-2"><label class="fw-form-label"
-             title="Extra SQL syntax validation before a signature match fires (SQL Injection categories only)">False Positive Mitigation</label>
+             title="{{ _('Extra SQL syntax validation before a signature match fires (SQL Injection categories only)') }}">{{ _('False Positive Mitigation') }}</label>
           <select id="cls-fpm" class="form-select fw-form-control">
-            <option value="">(not applicable)</option>
-            <option value="enable">Enabled</option><option value="disable">Disabled</option>
+            <option value="">{{ _('(not applicable)') }}</option>
+            <option value="enable">{{ _('Enabled') }}</option><option value="disable">{{ _('Disabled') }}</option>
           </select></div>
-        <div class="mb-2"><label class="fw-form-label">Action</label>
+        <div class="mb-2"><label class="fw-form-label">{{ _('Action') }}</label>
           <select id="cls-action" class="form-select fw-form-control">
             {% for a in class_spec.get('enums', {}).get('action', []) %}
             <option value="{{ a }}">{{ value_labels.get('action', {}).get(a, a) }}</option>
             {% endfor %}
           </select></div>
-        <div class="mb-2"><label class="fw-form-label">Severity</label>
+        <div class="mb-2"><label class="fw-form-label">{{ _('Severity') }}</label>
           <select id="cls-severity" class="form-select fw-form-control">
             {% for s in class_spec.get('enums', {}).get('severity', ['Informative','Low','Medium','High']) %}
             <option value="{{ s }}">{{ s }}</option>
             {% endfor %}
           </select></div>
-        <div class="mb-2"><label class="fw-form-label">Block Period (seconds)</label>
+        <div class="mb-2"><label class="fw-form-label">{{ _('Block Period (seconds)') }}</label>
           <input type="number" id="cls-block" class="form-control fw-form-control" min="1" max="3600"></div>
-        <div class="mb-2"><label class="fw-form-label">Trigger Policy</label>
-          <input type="text" id="cls-trigger" class="form-control fw-form-control" placeholder="(none)"></div>
+        <div class="mb-2"><label class="fw-form-label">{{ _('Trigger Policy') }}</label>
+          <input type="text" id="cls-trigger" class="form-control fw-form-control" placeholder="{{ _('(none)') }}"></div>
         <div id="cls-status-msg"></div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-fw-primary btn-sm" id="cls-save">Save to device</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+        <button type="button" class="btn btn-fw-primary btn-sm" id="cls-save">{{ _('Save to device') }}</button>
       </div>
     </div>
   </div>
@@ -198,66 +197,66 @@
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-fingerprint me-2"></i>Signature <span id="sd-id"></span></h5>
+        <h5 class="modal-title"><i class="bi bi-fingerprint me-2"></i>{{ _('Signature') }} <span id="sd-id"></span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <ul class="nav nav-tabs mb-3">
-          <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#sd-tab-details" type="button">Signature Details</button></li>
-          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sd-tab-exc" type="button">Exception</button></li>
+          <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#sd-tab-details" type="button">{{ _('Signature Details') }}</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#sd-tab-exc" type="button">{{ _('Exception') }}</button></li>
         </ul>
         <div class="tab-content">
           <div class="tab-pane fade show active" id="sd-tab-details">
             <table class="fw-table">
               <tbody>
-                <tr><td class="text-muted" style="width:30%;">Signature ID</td><td class="mono" id="sd-d-id"></td></tr>
-                <tr><td class="text-muted">Class</td><td id="sd-d-class"></td></tr>
-                <tr><td class="text-muted">Sub Class</td><td id="sd-d-sub"></td></tr>
-                <tr><td class="text-muted">Description</td><td id="sd-d-desc" style="font-size:12.5px;"></td></tr>
-                <tr><td class="text-muted">Status in this policy</td><td id="sd-d-status"></td></tr>
+                <tr><td class="text-muted" style="width:30%;">{{ _('Signature ID') }}</td><td class="mono" id="sd-d-id"></td></tr>
+                <tr><td class="text-muted">{{ _('Class') }}</td><td id="sd-d-class"></td></tr>
+                <tr><td class="text-muted">{{ _('Sub Class') }}</td><td id="sd-d-sub"></td></tr>
+                <tr><td class="text-muted">{{ _('Description') }}</td><td id="sd-d-desc" style="font-size:12.5px;"></td></tr>
+                <tr><td class="text-muted">{{ _('Status in this policy') }}</td><td id="sd-d-status"></td></tr>
               </tbody>
             </table>
           </div>
           <div class="tab-pane fade" id="sd-tab-exc">
             <div class="d-flex align-items-center justify-content-between mb-2">
               <span class="text-muted" style="font-size:12.5px;">
-                Exception entries exempt this signature when the request element matches (max 128 per signature).
+                {{ _('Exception entries exempt this signature when the request element matches (max 128 per signature).') }}
               </span>
-              <button type="button" class="btn btn-fw-primary btn-sm" id="exc-new-btn"><i class="bi bi-plus-lg me-1"></i>Create New</button>
+              <button type="button" class="btn btn-fw-primary btn-sm" id="exc-new-btn"><i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}</button>
             </div>
             <table class="fw-table" id="exc-table">
-              <thead><tr><th>#</th><th>Element Type</th><th>Operation</th><th>Value</th><th>Concatenate</th><th style="width:60px;"></th></tr></thead>
-              <tbody id="exc-tbody"><tr><td colspan="6" class="text-center text-muted py-2">Loading…</td></tr></tbody>
+              <thead><tr><th>#</th><th>{{ _('Element Type') }}</th><th>{{ _('Operation') }}</th><th>{{ _('Value') }}</th><th>{{ _('Concatenate') }}</th><th style="width:60px;"></th></tr></thead>
+              <tbody id="exc-tbody"><tr><td colspan="6" class="text-center text-muted py-2">{{ _('Loading…') }}</td></tr></tbody>
             </table>
 
             <div id="exc-form" class="fw-card mt-2" style="display:none;">
-              <div class="fw-card-header"><span class="fw-card-title">New exception entry</span></div>
+              <div class="fw-card-header"><span class="fw-card-title">{{ _('New exception entry') }}</span></div>
               <div class="fw-card-body">
                 <div class="row g-2">
-                  <div class="col-md-6"><label class="fw-form-label">Element Type</label>
+                  <div class="col-md-6"><label class="fw-form-label">{{ _('Element Type') }}</label>
                     <select id="exc-target" class="form-select fw-form-control"></select></div>
-                  <div class="col-md-6"><label class="fw-form-label">Operation</label>
+                  <div class="col-md-6"><label class="fw-form-label">{{ _('Operation') }}</label>
                     <select id="exc-op" class="form-select fw-form-control"></select></div>
-                  <div class="col-md-6" data-exc-field="http-method"><label class="fw-form-label">HTTP Method</label>
+                  <div class="col-md-6" data-exc-field="http-method"><label class="fw-form-label">{{ _('HTTP Method') }}</label>
                     <input type="text" id="exc-method" class="form-control fw-form-control" placeholder="GET"></div>
-                  <div class="col-md-6" data-exc-field="ip"><label class="fw-form-label">Client IP</label>
-                    <input type="text" id="exc-ip" class="form-control fw-form-control" placeholder="192.0.2.1 or range"></div>
-                  <div class="col-md-6" data-exc-field="name"><label class="fw-form-label">Name</label>
+                  <div class="col-md-6" data-exc-field="ip"><label class="fw-form-label">{{ _('Client IP') }}</label>
+                    <input type="text" id="exc-ip" class="form-control fw-form-control" placeholder="{{ _('192.0.2.1 or range') }}"></div>
+                  <div class="col-md-6" data-exc-field="name"><label class="fw-form-label">{{ _('Name') }}</label>
                     <input type="text" id="exc-name" class="form-control fw-form-control"></div>
-                  <div class="col-md-6" data-exc-field="value-check"><label class="fw-form-label">Check Value of Specified Element</label>
+                  <div class="col-md-6" data-exc-field="value-check"><label class="fw-form-label">{{ _('Check Value of Specified Element') }}</label>
                     <select id="exc-vcheck" class="form-select fw-form-control">
-                      <option value="disable">Disabled</option><option value="enable">Enabled</option>
+                      <option value="disable">{{ _('Disabled') }}</option><option value="enable">{{ _('Enabled') }}</option>
                     </select></div>
-                  <div class="col-md-6" data-exc-field="value"><label class="fw-form-label">Value</label>
+                  <div class="col-md-6" data-exc-field="value"><label class="fw-form-label">{{ _('Value') }}</label>
                     <input type="text" id="exc-value" class="form-control fw-form-control"></div>
-                  <div class="col-md-6"><label class="fw-form-label">Concatenate</label>
+                  <div class="col-md-6"><label class="fw-form-label">{{ _('Concatenate') }}</label>
                     <select id="exc-concat" class="form-select fw-form-control">
                       <option value="AND">AND</option><option value="OR">OR</option>
                     </select></div>
                 </div>
                 <div class="d-flex gap-2 mt-3">
-                  <button type="button" class="btn btn-fw-primary btn-sm" id="exc-save"><i class="bi bi-check-lg me-1"></i>Save to device</button>
-                  <button type="button" class="btn btn-secondary btn-sm" id="exc-cancel">Cancel</button>
+                  <button type="button" class="btn btn-fw-primary btn-sm" id="exc-save"><i class="bi bi-check-lg me-1"></i>{{ _('Save to device') }}</button>
+                  <button type="button" class="btn btn-secondary btn-sm" id="exc-cancel">{{ _('Cancel') }}</button>
                 </div>
               </div>
             </div>

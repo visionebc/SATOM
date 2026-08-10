@@ -3,34 +3,32 @@
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-stars me-2 text-accent"></i>AI Advisor</h1>
-    <p class="fw-page-sub">A read-only chat assistant for WAF false-positive triage, Lua drafting, and searching device
-      configuration reports. It never changes SATOM or an appliance directly — a proposed change becomes a draft you
-      review and apply yourself. <a href="{{ docs_url() }}/docs/ai-advisor.html" target="_blank" rel="noopener">How this works</a>.</p>
+    <h1 class="fw-page-title"><i class="bi bi-stars me-2 text-accent"></i>{{ _('AI Advisor') }}</h1>
+    <p class="fw-page-sub">{{ _('A read-only chat assistant for WAF false-positive triage, Lua drafting, and searching device configuration reports. It never changes SATOM or an appliance directly — a proposed change becomes a draft you review and apply yourself.') }} <a href="{{ docs_url() }}/docs/ai-advisor.html" target="_blank" rel="noopener">{{ _('How this works') }}</a>.</p>
   </div>
   <div class="d-flex gap-2">
     {% if current_user.can('advisor.configure') %}
-    <a class="btn btn-fw-outline" href="{{ url_for('settings.index') }}#tab-ai"><i class="bi bi-gear me-1"></i>Configure</a>
+    <a class="btn btn-fw-outline" href="{{ url_for('settings.index') }}#tab-ai"><i class="bi bi-gear me-1"></i>{{ _('Configure') }}</a>
     {% endif %}
   </div>
 </div>
 
 {% if not enabled %}
 <div class="fw-card"><div class="fw-card-body">
-  <span class="fw-badge fw-badge-warning">Disabled</span>
-  AI Advisor is turned off. {% if current_user.can('advisor.configure') %}<a href="{{ url_for('settings.index') }}#tab-ai">Enable it in Settings</a>{% else %}Ask an administrator to enable it in Settings &rarr; AI Advisor.{% endif %}
+  <span class="fw-badge fw-badge-warning">{{ _('Disabled') }}</span>
+  AI Advisor is turned off. {% if current_user.can('advisor.configure') %}<a href="{{ url_for('settings.index') }}#tab-ai">{{ _('Enable it in Settings') }}</a>{% else %}Ask an administrator to enable it in Settings &rarr; AI Advisor.{% endif %}
 </div></div>
 {% elif not providers %}
 <div class="fw-card"><div class="fw-card-body">
-  <span class="fw-badge fw-badge-warning">No provider</span>
-  No AI provider is configured yet. {% if current_user.can('advisor.configure') %}<a href="{{ url_for('settings.index') }}#tab-ai">Add one in Settings</a>{% endif %}
+  <span class="fw-badge fw-badge-warning">{{ _('No provider') }}</span>
+  No AI provider is configured yet. {% if current_user.can('advisor.configure') %}<a href="{{ url_for('settings.index') }}#tab-ai">{{ _('Add one in Settings') }}</a>{% endif %}
 </div></div>
 {% endif %}
 
 <div class="fw-card" id="adv-root" data-cid="{{ active.id if active else '' }}">
   <div class="fw-card-body" style="display:grid; grid-template-columns:260px 1fr; gap:16px; min-height:520px;">
     <div style="border-right:1px solid var(--fw-border); padding-right:14px;">
-      <button type="button" class="btn btn-fw-primary w-100 mb-2" data-act="new-conv"><i class="bi bi-plus-lg me-1"></i>New conversation</button>
+      <button type="button" class="btn btn-fw-primary w-100 mb-2" data-act="new-conv"><i class="bi bi-plus-lg me-1"></i>{{ _('New conversation') }}</button>
       <div id="adv-conv-list">
         {% for c in conversations %}
         <a class="adv-conv-item {{ 'active' if active and active.id == c.id }}" href="{{ url_for('advisor.open_conversation', cid=c.id) }}" data-cid="{{ c.id }}">
@@ -38,7 +36,7 @@
           <div class="text-secondary" style="font-size:11px">{{ c.updated_at.strftime('%Y-%m-%d %H:%M') if c.updated_at }}</div>
         </a>
         {% else %}
-        <div class="text-secondary" style="font-size:12px">No conversations yet.</div>
+        <div class="text-secondary" style="font-size:12px">{{ _('No conversations yet.') }}</div>
         {% endfor %}
       </div>
     </div>
@@ -49,14 +47,14 @@
         <div id="adv-attach-preview" class="d-flex flex-wrap gap-2 mb-2"></div>
         <div class="d-flex gap-2 align-items-start">
           <div class="dropdown">
-            <button class="btn btn-sm btn-fw-outline dropdown-toggle" type="button" data-bs-toggle="dropdown" title="Attach context">
+            <button class="btn btn-sm btn-fw-outline dropdown-toggle" type="button" data-bs-toggle="dropdown" title="{{ _('Attach context') }}">
               <i class="bi bi-paperclip"></i>
             </button>
             <ul class="dropdown-menu" id="adv-attach-menu"></ul>
           </div>
           <textarea id="adv-input" class="form-control" rows="2" placeholder="Ask about a WAF block, a Lua script, or search the reports…"></textarea>
-          <button type="button" class="btn btn-fw-primary" id="adv-send" data-act="send" style="white-space:nowrap"><i class="bi bi-send me-1"></i>Send</button>
-          <button type="button" class="btn btn-fw-outline d-none" id="adv-stop" data-act="stop" style="white-space:nowrap" title="Stop generating"><i class="bi bi-stop-circle me-1"></i>Stop</button>
+          <button type="button" class="btn btn-fw-primary" id="adv-send" data-act="send" style="white-space:nowrap"><i class="bi bi-send me-1"></i>{{ _('Send') }}</button>
+          <button type="button" class="btn btn-fw-outline d-none" id="adv-stop" data-act="stop" style="white-space:nowrap" title="{{ _('Stop generating') }}"><i class="bi bi-stop-circle me-1"></i>{{ _('Stop') }}</button>
         </div>
         <div class="text-secondary mt-1" style="font-size:11px" id="adv-provider-note"></div>
       </div>

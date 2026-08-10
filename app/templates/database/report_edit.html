@@ -4,12 +4,12 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-clipboard-data me-2 text-accent"></i>{{ 'Edit report' if report else 'New report' }}</h1>
-    <p class="text-muted mb-0" style="font-size:13px;">Compose a dashboard from read-only SELECT queries — tables, charts and stat cards. Exportable to PDF.</p>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('Compose a dashboard from read-only SELECT queries — tables, charts and stat cards. Exportable to PDF.') }}</p>
   </div>
   <div class="ms-auto d-flex gap-2">
-    <a href="{{ url_for('database.index') }}#tab-reports" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Back</a>
-    {% if report %}<a href="{{ url_for('database.report_view', report_id=report.id) }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-speedometer2 me-1"></i>Open dashboard</a>{% endif %}
-    <button id="rpt-save" class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>Save report</button>
+    <a href="{{ url_for('database.index') }}#tab-reports" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>{{ _('Back') }}</a>
+    {% if report %}<a href="{{ url_for('database.report_view', report_id=report.id) }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-speedometer2 me-1"></i>{{ _('Open dashboard') }}</a>{% endif %}
+    <button id="rpt-save" class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Save report') }}</button>
   </div>
 </div>
 
@@ -18,12 +18,12 @@
 <div class="card mb-3"><div class="card-body">
   <div class="row g-2">
     <div class="col-md-4">
-      <label class="form-label small text-muted">Report name</label>
-      <input id="rpt-name" class="form-control form-control-sm" maxlength="200" placeholder="e.g. Fleet policy coverage">
+      <label class="form-label small text-muted">{{ _('Report name') }}</label>
+      <input id="rpt-name" class="form-control form-control-sm" maxlength="200" placeholder="{{ _('e.g. Fleet policy coverage') }}">
     </div>
     <div class="col-md-8">
-      <label class="form-label small text-muted">Description (shown on the dashboard and the PDF)</label>
-      <input id="rpt-desc" class="form-control form-control-sm" maxlength="2000" placeholder="optional">
+      <label class="form-label small text-muted">{{ _('Description (shown on the dashboard and the PDF)') }}</label>
+      <input id="rpt-desc" class="form-control form-control-sm" maxlength="2000" placeholder="{{ _('optional') }}">
     </div>
   </div>
   <p class="small text-muted mt-2 mb-0"><i class="bi bi-shield-lock me-1"></i>
@@ -35,40 +35,40 @@
 <div id="rpt-widgets"></div>
 
 <div class="d-flex gap-2 mb-4">
-  <button id="rpt-add" class="btn btn-outline-secondary btn-sm"><i class="bi bi-plus-lg me-1"></i>Add widget</button>
+  <button id="rpt-add" class="btn btn-outline-secondary btn-sm"><i class="bi bi-plus-lg me-1"></i>{{ _('Add widget') }}</button>
 </div>
 
 <template id="widget-tpl">
   <div class="card mb-3 rpt-widget"><div class="card-body">
     <div class="d-flex gap-2 align-items-center mb-2">
       <span class="badge bg-dark border w-idx">1</span>
-      <input class="form-control form-control-sm w-title" style="max-width:340px" maxlength="120" placeholder="Widget title">
+      <input class="form-control form-control-sm w-title" style="max-width:340px" maxlength="120" placeholder="{{ _('Widget title') }}">
       <select class="form-select form-select-sm w-viz" style="max-width:140px">
-        <option value="table">Table</option>
-        <option value="bar">Bar chart</option>
-        <option value="line">Line chart</option>
-        <option value="pie">Pie chart</option>
-        <option value="stat">Stat card</option>
+        <option value="table">{{ _('Table') }}</option>
+        <option value="bar">{{ _('Bar chart') }}</option>
+        <option value="line">{{ _('Line chart') }}</option>
+        <option value="pie">{{ _('Pie chart') }}</option>
+        <option value="stat">{{ _('Stat card') }}</option>
       </select>
       <select class="form-select form-select-sm w-width" style="max-width:130px">
-        <option value="half">Half width</option>
-        <option value="full">Full width</option>
+        <option value="half">{{ _('Half width') }}</option>
+        <option value="full">{{ _('Full width') }}</option>
       </select>
       <div class="ms-auto btn-group btn-group-sm">
-        <button type="button" class="btn btn-outline-secondary w-up" title="Move up"><i class="bi bi-arrow-up"></i></button>
-        <button type="button" class="btn btn-outline-secondary w-down" title="Move down"><i class="bi bi-arrow-down"></i></button>
-        <button type="button" class="btn btn-outline-danger w-del" title="Remove"><i class="bi bi-trash"></i></button>
+        <button type="button" class="btn btn-outline-secondary w-up" title="{{ _('Move up') }}"><i class="bi bi-arrow-up"></i></button>
+        <button type="button" class="btn btn-outline-secondary w-down" title="{{ _('Move down') }}"><i class="bi bi-arrow-down"></i></button>
+        <button type="button" class="btn btn-outline-danger w-del" title="{{ _('Remove') }}"><i class="bi bi-trash"></i></button>
       </div>
     </div>
     <textarea class="form-control font-monospace w-sql mb-2" rows="3" placeholder="SELECT status, COUNT(*) AS n FROM device_server_policies GROUP BY status"></textarea>
     <div class="d-flex gap-2 align-items-center flex-wrap">
-      <button type="button" class="btn btn-outline-secondary btn-sm w-preview"><i class="bi bi-play-fill me-1"></i>Preview</button>
-      <button type="button" class="btn btn-fw-primary btn-sm w-builder"><i class="bi bi-magic me-1"></i>Generate report</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm w-preview"><i class="bi bi-play-fill me-1"></i>{{ _('Preview') }}</button>
+      <button type="button" class="btn btn-fw-primary btn-sm w-builder"><i class="bi bi-magic me-1"></i>{{ _('Generate report') }}</button>
       <span class="small text-muted w-axes-wrap">
-        Labels (X) <input class="form-control form-control-sm d-inline-block w-x" style="width:130px" placeholder="auto">
-        Values (Y) <input class="form-control form-control-sm d-inline-block w-y" style="width:130px" placeholder="auto">
+        {{ _('Labels (X)') }} <input class="form-control form-control-sm d-inline-block w-x" style="width:130px" placeholder="{{ _('auto') }}">
+        {{ _('Values (Y)') }} <input class="form-control form-control-sm d-inline-block w-y" style="width:130px" placeholder="{{ _('auto') }}">
       </span>
-      <span class="small text-muted">Row limit <input type="number" class="form-control form-control-sm d-inline-block w-limit" style="width:90px" min="1" max="500" value="100"></span>
+      <span class="small text-muted">{{ _('Row limit') }} <input type="number" class="form-control form-control-sm d-inline-block w-limit" style="width:90px" min="1" max="500" value="100"></span>
       <span class="small text-muted w-meta ms-auto"></span>
     </div>
     <div class="w-err alert alert-danger py-1 px-2 small mt-2 mb-0 d-none"></div>
@@ -82,27 +82,27 @@
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="rb-modal-title"><i class="bi bi-magic me-2"></i>Query builder</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <h5 class="modal-title" id="rb-modal-title"><i class="bi bi-magic me-2"></i>{{ _('Query builder') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
       </div>
       <div class="modal-body">
         <div id="rb-errors" class="alert alert-danger py-2 small d-none"></div>
         <div class="rb-step" data-step="0">
-          <h6 class="mb-2">1 · Base table</h6>
+          <h6 class="mb-2">{{ _('1 · Base table') }}</h6>
           <select id="rb-base" class="form-select form-select-sm"></select>
           <p id="rb-base-desc" class="small text-muted mt-2 mb-0"></p>
         </div>
         <div class="rb-step d-none" data-step="1">
-          <h6 class="mb-2">2 · Related tables</h6>
-          <p class="small text-muted">Add tables joined by foreign keys (up to 2 hops).</p>
+          <h6 class="mb-2">{{ _('2 · Related tables') }}</h6>
+          <p class="small text-muted">{{ _('Add tables joined by foreign keys (up to 2 hops).') }}</p>
           <div id="rb-related"></div>
         </div>
         <div class="rb-step d-none" data-step="2">
           <h6 class="mb-2">3 · Columns &amp; filters</h6>
           <div id="rb-columns" class="mb-3"></div>
           <div class="d-flex align-items-center mb-2">
-            <strong class="small">Filters</strong>
-            <button type="button" id="rb-add-filter" class="btn btn-outline-secondary btn-sm ms-2"><i class="bi bi-plus-lg me-1"></i>Add filter</button>
+            <strong class="small">{{ _('Filters') }}</strong>
+            <button type="button" id="rb-add-filter" class="btn btn-outline-secondary btn-sm ms-2"><i class="bi bi-plus-lg me-1"></i>{{ _('Add filter') }}</button>
           </div>
           <div id="rb-filters"></div>
         </div>
@@ -111,18 +111,18 @@
           <div id="rb-group" class="mb-3"></div>
           <div class="row g-2 align-items-end">
             <div class="col-md-5">
-              <label class="form-label small text-muted">Order by</label>
+              <label class="form-label small text-muted">{{ _('Order by') }}</label>
               <select id="rb-order-col" class="form-select form-select-sm"></select>
             </div>
             <div class="col-md-3">
-              <label class="form-label small text-muted">Direction</label>
+              <label class="form-label small text-muted">{{ _('Direction') }}</label>
               <select id="rb-order-dir" class="form-select form-select-sm">
-                <option value="asc">Ascending</option>
-                <option value="desc">Descending</option>
+                <option value="asc">{{ _('Ascending') }}</option>
+                <option value="desc">{{ _('Descending') }}</option>
               </select>
             </div>
             <div class="col-md-4">
-              <label class="form-label small text-muted">Row limit</label>
+              <label class="form-label small text-muted">{{ _('Row limit') }}</label>
               <input id="rb-limit" type="number" class="form-control form-control-sm" min="1" max="500" value="100">
             </div>
           </div>
@@ -130,9 +130,9 @@
       </div>
       <div class="modal-footer">
         <span id="rb-stepinfo" class="small text-muted me-auto"></span>
-        <button type="button" id="rb-back" class="btn btn-outline-secondary btn-sm">Back</button>
-        <button type="button" id="rb-next" class="btn btn-outline-secondary btn-sm">Next</button>
-        <button type="button" id="rb-generate" class="btn btn-fw-primary btn-sm d-none"><i class="bi bi-magic me-1"></i>Generate SQL</button>
+        <button type="button" id="rb-back" class="btn btn-outline-secondary btn-sm">{{ _('Back') }}</button>
+        <button type="button" id="rb-next" class="btn btn-outline-secondary btn-sm">{{ _('Next') }}</button>
+        <button type="button" id="rb-generate" class="btn btn-fw-primary btn-sm d-none"><i class="bi bi-magic me-1"></i>{{ _('Generate SQL') }}</button>
       </div>
     </div>
   </div>

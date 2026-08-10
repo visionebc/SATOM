@@ -2,9 +2,9 @@
 {% block title %}Exceptions — {{ appliance.name }}{% endblock %}
 
 {% block breadcrumb %}
-<nav aria-label="breadcrumb" class="mb-3">
+<nav aria-label="{{ _('breadcrumb') }}" class="mb-3">
   <ol class="breadcrumb">
-    <li class="breadcrumb-item"><a href="{{ url_for('exceptions.index') }}">Exceptions</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('exceptions.index') }}">{{ _('Exceptions') }}</a></li>
     <li class="breadcrumb-item active">{{ appliance.name }}</li>
   </ol>
 </nav>
@@ -13,28 +13,25 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h4 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Exceptions &amp; Signature Carve-outs — {{ appliance.name }}</h4>
-  <button class="btn btn-sm btn-outline-primary" data-js="open-detect"><i class="bi bi-search me-1"></i>Detect on device</button>
+  <button class="btn btn-sm btn-outline-primary" data-js="open-detect"><i class="bi bi-search me-1"></i>{{ _('Detect on device') }}</button>
 </div>
-<p class="text-muted">Desired-state carve-outs authored in the manager and bound to a Server Policy.
-  FortiWeb can't record which policy a shared-profile carve-out is for — this does.
-  <strong>Authoring only</strong>; pushing to the device is a separate step.</p>
+<p class="text-muted">{{ _('Desired-state carve-outs authored in the manager and bound to a Server Policy. FortiWeb can\'t record which policy a shared-profile carve-out is for — this does.') }}
+  <strong>{{ _('Authoring only') }}</strong>{{ _('; pushing to the device is a separate step.') }}</p>
 
 {% if stale_count %}
 <div class="alert alert-warning py-2">
   <i class="bi bi-exclamation-octagon me-1"></i>
-  <strong>{{ stale_count }} carve-out(s) are stale</strong> — their Server Policy was
-  re-bound to another Web Protection Profile after they were authored. Edit each one to
-  re-point it at the new profile (saving clears the flag), or delete it.
+  <strong>{{ stale_count }} carve-out(s) are stale</strong> {{ _('— their Server Policy was re-bound to another Web Protection Profile after they were authored. Edit each one to re-point it at the new profile (saving clears the flag), or delete it.') }}
 </div>
 {% endif %}
 
 {# ── existing carve-outs ───────────────────────────────────────────────── #}
 <div class="card mb-4">
-  <div class="card-header"><strong>Authored carve-outs</strong> <span class="text-muted">({{ items|length }})</span></div>
+  <div class="card-header"><strong>{{ _('Authored carve-outs') }}</strong> <span class="text-muted">({{ items|length }})</span></div>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover mb-0">
-        <thead><tr><th>Category</th><th>Type</th><th>WPP</th><th>Server Policies</th><th>Reason</th><th></th></tr></thead>
+        <thead><tr><th>{{ _('Category') }}</th><th>{{ _('Type') }}</th><th>WPP</th><th>{{ _('Server Policies') }}</th><th>{{ _('Reason') }}</th><th></th></tr></thead>
         <tbody>
           {% for it in items %}
           <tr data-exc-id="{{ it.id }}" data-type="{{ it.exc_type }}" data-wpp="{{ it.wpp_mkey }}"
@@ -42,19 +39,19 @@
               data-policies="{{ it.policy_names|join(',') }}"
               data-payload='{{ it.payload_dict|tojson }}'>
             <td><span class="badge bg-{{ 'info' if it.category == cat_exception else 'warning' }}">{{ it.category }}</span>
-              {% if it.stale %}<span class="badge bg-danger ms-1" title="{{ it.stale_reason }}">STALE</span>{% endif %}</td>
+              {% if it.stale %}<span class="badge bg-danger ms-1" title="{{ it.stale_reason }}">{{ _('STALE') }}</span>{% endif %}</td>
             <td>{{ it.exc_type }}</td>
-            <td>{{ it.wpp_mkey or '—' }}{% if it.wpp_mkey in managed_wpps %} <span title="Template-managed profile — carve-outs on it are blocked">🔒</span>{% endif %}</td>
-            <td>{% for p in it.policy_names %}<span class="badge bg-secondary me-1">{{ p }}</span>{% else %}<span class="text-muted">unbound</span>{% endfor %}</td>
+            <td>{{ it.wpp_mkey or '—' }}{% if it.wpp_mkey in managed_wpps %} <span title="{{ _('Template-managed profile — carve-outs on it are blocked') }}">🔒</span>{% endif %}</td>
+            <td>{% for p in it.policy_names %}<span class="badge bg-secondary me-1">{{ p }}</span>{% else %}<span class="text-muted">{{ _('unbound') }}</span>{% endfor %}</td>
             <td class="small text-muted">{{ it.reason or '' }}</td>
             <td class="text-nowrap">
-              <button class="btn btn-sm btn-outline-secondary" data-js="exc-edit">Edit</button>
-              <button class="btn btn-sm btn-outline-primary" data-js="exc-inject" title="Push to device">Inject</button>
-              <button class="btn btn-sm btn-outline-danger" data-js="exc-delete">Delete</button>
+              <button class="btn btn-sm btn-outline-secondary" data-js="exc-edit">{{ _('Edit') }}</button>
+              <button class="btn btn-sm btn-outline-primary" data-js="exc-inject" title="{{ _('Push to device') }}">{{ _('Inject') }}</button>
+              <button class="btn btn-sm btn-outline-danger" data-js="exc-delete">{{ _('Delete') }}</button>
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="6" class="text-center text-muted p-4">No carve-outs authored yet.</td></tr>
+          <tr><td colspan="6" class="text-center text-muted p-4">{{ _('No carve-outs authored yet.') }}</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -65,16 +62,16 @@
 {# ── author / edit ─────────────────────────────────────────────────────── #}
 <div class="card mb-4">
   <div class="card-header d-flex justify-content-between align-items-center">
-    <strong id="form-title">New carve-out</strong>
-    <button class="btn btn-sm btn-outline-secondary" data-js="reset-form">Reset</button>
+    <strong id="form-title">{{ _('New carve-out') }}</strong>
+    <button class="btn btn-sm btn-outline-secondary" data-js="reset-form">{{ _('Reset') }}</button>
   </div>
   <div class="card-body">
     <input type="hidden" id="exc-id">
     <div class="row g-3">
       <div class="col-md-4">
-        <label class="form-label">Type</label>
+        <label class="form-label">{{ _('Type') }}</label>
         <select id="exc-type" class="form-select form-select-sm">
-          <option value="">— choose —</option>
+          <option value="">{{ _('— choose —') }}</option>
           <optgroup label="WAF Exceptions">
             {% for t in exception_types %}<option value="{{ t.key }}">{{ t.group }} · {{ t.label }}</option>{% endfor %}
           </optgroup>
@@ -84,19 +81,17 @@
         </select>
       </div>
       <div class="col-md-4">
-        <label class="form-label">Web Protection Profile</label>
+        <label class="form-label">{{ _('Web Protection Profile') }}</label>
         <select id="exc-wpp" class="form-select form-select-sm">
-          <option value="">— none —</option>
+          <option value="">{{ _('— none —') }}</option>
           {% for w in wpps %}<option value="{{ w }}"{% if w in managed_wpps %} data-managed="1"{% endif %}>{{ w }}{% if w in managed_wpps %} 🔒 template{% endif %}</option>{% endfor %}
         </select>
         <div class="form-text text-warning d-none" id="wpp-managed-warn">
-          🔒 Template-managed profile — templates stay clean. On save you'll be offered a
-          per-policy clone (named from the <a href="/naming">Naming</a> pattern) that the
-          Server Policy is re-bound to.
+          {{ _('🔒 Template-managed profile — templates stay clean. On save you\'ll be offered a per-policy clone (named from the') }} <a href="/naming">{{ _('Naming') }}</a> {{ _('pattern) that the Server Policy is re-bound to.') }}
         </div>
       </div>
       <div class="col-md-4">
-        <label class="form-label">Name (optional)</label>
+        <label class="form-label">{{ _('Name (optional)') }}</label>
         <input id="exc-name" class="form-control form-control-sm">
       </div>
     </div>
@@ -111,20 +106,20 @@
 
     <div class="row g-3 mt-1">
       <div class="col-md-6">
-        <label class="form-label">Bind to Server Policies</label>
+        <label class="form-label">{{ _('Bind to Server Policies') }}</label>
         <select id="exc-policies" class="form-select form-select-sm" multiple size="5">
           {% for p in policies %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
         </select>
-        <div class="form-text">Hold Ctrl/Cmd to select several.</div>
+        <div class="form-text">{{ _('Hold Ctrl/Cmd to select several.') }}</div>
       </div>
       <div class="col-md-6">
-        <label class="form-label">Reason</label>
+        <label class="form-label">{{ _('Reason') }}</label>
         <textarea id="exc-reason" class="form-control form-control-sm" rows="3"></textarea>
       </div>
     </div>
 
     <div class="mt-3">
-      <button class="btn btn-sm btn-fw-primary" data-js="save-exc"><i class="bi bi-check2-circle me-1"></i>Save carve-out</button>
+      <button class="btn btn-sm btn-fw-primary" data-js="save-exc"><i class="bi bi-check2-circle me-1"></i>{{ _('Save carve-out') }}</button>
       <span id="exc-msg" class="ms-2 small"></span>
     </div>
   </div>
@@ -133,25 +128,20 @@
 {# ── guided clone+rebind (template-managed WPP) ────────────────────────── #}
 <div class="card mb-4 d-none border-warning-subtle" id="clone-panel">
   <div class="card-header d-flex justify-content-between align-items-center">
-    <strong>🔒 Template-managed profile — guided clone</strong>
-    <button class="btn btn-sm btn-outline-secondary" data-js="clone-cancel">Cancel</button>
+    <strong>{{ _('🔒 Template-managed profile — guided clone') }}</strong>
+    <button class="btn btn-sm btn-outline-secondary" data-js="clone-cancel">{{ _('Cancel') }}</button>
   </div>
   <div class="card-body">
     <p class="small mb-2">
-      <strong id="clone-src"></strong> is governed by an approved template and stays clean
-      (no exceptions). The manager will <strong>deep-clone</strong> it for
-      <strong id="clone-policy"></strong>, <strong>re-bind that Server Policy</strong> to the
-      clone, and save your carve-out on the clone. The copy is <strong>deep</strong>:
-      every sub-policy the new profile may own is recreated under this policy's own
-      name, because a profile that shares its sub-policies shares every carve-out
-      written into them.
+      <strong id="clone-src"></strong> {{ _('is governed by an approved template and stays clean (no exceptions). The manager will') }} <strong>{{ _('deep-clone') }}</strong> {{ _('it for') }}
+      <strong id="clone-policy"></strong>, <strong>{{ _('re-bind that Server Policy') }}</strong> {{ _('to the clone, and save your carve-out on the clone. The copy is') }} <strong>{{ _('deep') }}</strong>{{ _(': every sub-policy the new profile may own is recreated under this policy\'s own name, because a profile that shares its sub-policies shares every carve-out written into them.') }}
       <a id="clone-view-src" href="#" target="_blank" rel="noopener" class="ms-1">
-        <i class="bi bi-search"></i> View the profile's contents</a>
-      <span class="text-muted">(what the clone will carry)</span>
+        <i class="bi bi-search"></i> {{ _('View the profile\'s contents') }}</a>
+      <span class="text-muted">{{ _('(what the clone will carry)') }}</span>
     </p>
     <div class="row g-2 align-items-end">
       <div class="col-md-5">
-        <label class="form-label small">Clone name <span class="text-muted">(pattern: Naming → Exception WPP)</span></label>
+        <label class="form-label small">{{ _('Clone name') }} <span class="text-muted">{{ _('(pattern: Naming → Exception WPP)') }}</span></label>
         <input id="clone-newname" class="form-control form-control-sm">
       </div>
       <div class="col-md-7">
@@ -161,7 +151,7 @@
     <div id="clone-plan" class="mt-3 small d-none"></div>
     <div class="mt-2">
       <button class="btn btn-sm btn-fw-primary" data-js="clone-rebind">
-        <i class="bi bi-diagram-3 me-1"></i>Preview the clone</button>
+        <i class="bi bi-diagram-3 me-1"></i>{{ _('Preview the clone') }}</button>
       <span id="clone-msg" class="ms-2 small text-danger"></span>
     </div>
   </div>
@@ -169,18 +159,18 @@
 
 {# ── purge (clean migration) ───────────────────────────────────────────── #}
 <div class="card border-danger-subtle">
-  <div class="card-header text-danger"><strong>Purge (clean migration)</strong></div>
+  <div class="card-header text-danger"><strong>{{ _('Purge (clean migration)') }}</strong></div>
   <div class="card-body">
-    <p class="text-muted small mb-2">Remove every carve-out bound to a Server Policy (e.g. before migrating it to another box).</p>
+    <p class="text-muted small mb-2">{{ _('Remove every carve-out bound to a Server Policy (e.g. before migrating it to another box).') }}</p>
     <div class="d-flex gap-2 align-items-end">
       <div>
-        <label class="form-label">Server Policy</label>
+        <label class="form-label">{{ _('Server Policy') }}</label>
         <select id="purge-policy" class="form-select form-select-sm">
-          <option value="">— choose —</option>
+          <option value="">{{ _('— choose —') }}</option>
           {% for p in policies %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
         </select>
       </div>
-      <button class="btn btn-sm btn-outline-danger" data-js="purge-run">Purge</button>
+      <button class="btn btn-sm btn-outline-danger" data-js="purge-run">{{ _('Purge') }}</button>
     </div>
   </div>
 </div>
@@ -188,27 +178,27 @@
 {# ── inject to device ── #}
 <div class="card mb-4 d-none border-primary-subtle" id="inject-panel">
   <div class="card-header d-flex justify-content-between align-items-center text-primary">
-    <strong>⬆ Inject to device</strong>
-    <button class="btn btn-sm btn-outline-secondary" data-js="close-inject">Close</button>
+    <strong>{{ _('⬆ Inject to device') }}</strong>
+    <button class="btn btn-sm btn-outline-secondary" data-js="close-inject">{{ _('Close') }}</button>
   </div>
   <div class="card-body">
     <p class="small text-muted mb-2" id="inject-summary"></p>
     <div class="row g-3 align-items-end">
       <div class="col-md-6">
-        <label class="form-label">Target object on device</label>
-        <select id="inject-target" class="form-select form-select-sm"><option value="">— loading… —</option></select>
+        <label class="form-label">{{ _('Target object on device') }}</label>
+        <select id="inject-target" class="form-select form-select-sm"><option value="">{{ _('— loading… —') }}</option></select>
         <div class="form-text" id="inject-target-help"></div>
       </div>
       <div class="col-md-6">
         <div class="form-check" id="inject-create-wrap">
           <input class="form-check-input" type="checkbox" id="inject-create">
-          <label class="form-check-label small" for="inject-create">Create the target object if it doesn't exist</label>
+          <label class="form-check-label small" for="inject-create">{{ _('Create the target object if it doesn\'t exist') }}</label>
         </div>
       </div>
     </div>
     <div class="mt-3">
-      <button class="btn btn-sm btn-outline-primary" data-js="inject-dry-run">Dry-run preview</button>
-      <button class="btn btn-sm btn-fw-primary" data-js="inject-push"><i class="bi bi-upload me-1"></i>Push to device</button>
+      <button class="btn btn-sm btn-outline-primary" data-js="inject-dry-run">{{ _('Dry-run preview') }}</button>
+      <button class="btn btn-sm btn-fw-primary" data-js="inject-push"><i class="bi bi-upload me-1"></i>{{ _('Push to device') }}</button>
     </div>
     <pre class="mt-3 p-2 bg-light small d-none" id="inject-out" style="white-space:pre-wrap;"></pre>
   </div>
@@ -217,12 +207,12 @@
 {# ── detect on device ── #}
 <div class="card mb-4 d-none border-primary-subtle" id="detect-panel">
   <div class="card-header d-flex justify-content-between align-items-center text-primary">
-    <strong>🔎 Detect signature carve-outs on device</strong>
-    <button class="btn btn-sm btn-outline-secondary" data-js="close-detect">Close</button>
+    <strong>{{ _('🔎 Detect signature carve-outs on device') }}</strong>
+    <button class="btn btn-sm btn-outline-secondary" data-js="close-detect">{{ _('Close') }}</button>
   </div>
   <div class="card-body">
-    <p class="small text-muted">Reads per-signature exceptions live off the box (server policy → WPP → signature set → filter list) and imports the ones you select, bound to their policy.</p>
-    <button class="btn btn-sm btn-outline-primary" data-js="detect-run"><i class="bi bi-search me-1"></i>Run detect</button>
+    <p class="small text-muted">{{ _('Reads per-signature exceptions live off the box (server policy → WPP → signature set → filter list) and imports the ones you select, bound to their policy.') }}</p>
+    <button class="btn btn-sm btn-outline-primary" data-js="detect-run"><i class="bi bi-search me-1"></i>{{ _('Run detect') }}</button>
     <span id="detect-msg" class="ms-2 small text-muted"></span>
     <div id="detect-results" class="mt-3"></div>
   </div>

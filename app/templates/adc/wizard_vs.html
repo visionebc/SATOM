@@ -3,79 +3,76 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="{{ url_for('adc.index') }}">FortiADC</a>
+  <a href="{{ url_for('adc.index') }}">{{ _('FortiADC') }}</a>
   <span class="separator">/</span>
-  <a href="{{ back }}">Virtual Server</a>
+  <a href="{{ back }}">{{ _('Virtual Server') }}</a>
   <span class="separator">/</span>
-  <span>New (guided)</span>
+  <span>{{ _('New (guided)') }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-magic me-2 text-accent"></i>New Virtual Server (guided)</h1>
+    <h1 class="fw-page-title"><i class="bi bi-magic me-2 text-accent"></i>{{ _('New Virtual Server (guided)') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      Builds the whole load-balancing chain on <strong>{{ appliance.name }}</strong>
-      in one step.</p>
+      {{ _('Builds the whole load-balancing chain on') }} <strong>{{ appliance.name }}</strong>
+      {{ _('in one step.') }}</p>
   </div>
-  <a class="btn btn-outline-light btn-sm" href="{{ back }}"><i class="bi bi-arrow-left me-1"></i>Back</a>
+  <a class="btn btn-outline-light btn-sm" href="{{ back }}"><i class="bi bi-arrow-left me-1"></i>{{ _('Back') }}</a>
 </div>
 
 <div class="fw-alert fw-alert-info d-flex align-items-start gap-2 mb-3">
   <i class="bi bi-info-circle-fill mt-1"></i>
-  <div>A FortiADC virtual server needs a <strong>load-balance pool</strong>, and that pool
-    needs at least one <strong>real server</strong> member. This wizard creates them in the
-    right order — <em>real servers → pool → members → virtual server</em> — so you never hit the
+  <div>{{ _('A FortiADC virtual server needs a') }} <strong>{{ _('load-balance pool') }}</strong>{{ _(', and that pool needs at least one') }} <strong>{{ _('real server') }}</strong> {{ _('member. This wizard creates them in the right order —') }} <em>{{ _('real servers → pool → members → virtual server') }}</em> — so you never hit the
     bare <code>errcode -56</code>. Preview shows the exact REST calls; nothing touches the device
-    until you click <strong>Create all</strong>. If a step fails mid-chain, the objects already
-    created are rolled back automatically.</div>
+    until you click <strong>{{ _('Create all') }}</strong>{{ _('. If a step fails mid-chain, the objects already created are rolled back automatically.') }}</div>
 </div>
 
 <div class="row g-3">
   <div class="col-lg-7">
     <div class="fw-card p-3">
-      <h6 class="fw-semibold mb-3">Virtual server</h6>
+      <h6 class="fw-semibold mb-3">{{ _('Virtual server') }}</h6>
       <div class="row g-2">
         <div class="col-md-6">
-          <label class="form-label fw-label">Name</label>
-          <input class="form-control form-control-sm" id="w-vs-name" placeholder="vs-web-prod">
+          <label class="form-label fw-label">{{ _('Name') }}</label>
+          <input class="form-control form-control-sm" id="w-vs-name" placeholder="{{ _('vs-web-prod') }}">
         </div>
         <div class="col-md-6">
-          <label class="form-label fw-label">Pool name (new)</label>
-          <input class="form-control form-control-sm" id="w-pool-name" placeholder="pool-web-prod">
+          <label class="form-label fw-label">{{ _('Pool name (new)') }}</label>
+          <input class="form-control form-control-sm" id="w-pool-name" placeholder="{{ _('pool-web-prod') }}">
         </div>
         <div class="col-md-6">
-          <label class="form-label fw-label">IP address (VIP)</label>
+          <label class="form-label fw-label">{{ _('IP address (VIP)') }}</label>
           <input class="form-control form-control-sm" id="w-address" placeholder="192.0.2.210">
         </div>
         <div class="col-md-3">
-          <label class="form-label fw-label">Port</label>
+          <label class="form-label fw-label">{{ _('Port') }}</label>
           <input class="form-control form-control-sm" id="w-port" value="80">
         </div>
         <div class="col-md-3">
-          <label class="form-label fw-label">Status</label>
+          <label class="form-label fw-label">{{ _('Status') }}</label>
           <select class="form-select form-select-sm" id="w-status">
-            <option value="enable" selected>enable</option>
-            <option value="disable">disable</option>
+            <option value="enable" selected>{{ _('enable') }}</option>
+            <option value="disable">{{ _('disable') }}</option>
           </select>
         </div>
         <div class="col-md-4">
-          <label class="form-label fw-label">Interface</label>
+          <label class="form-label fw-label">{{ _('Interface') }}</label>
           <input class="form-control form-control-sm" id="w-interface" list="dl-interfaces" value="port1">
           <datalist id="dl-interfaces">
             {% for o in options.interfaces %}<option value="{{ o }}">{% endfor %}
           </datalist>
         </div>
         <div class="col-md-4">
-          <label class="form-label fw-label">Profile</label>
+          <label class="form-label fw-label">{{ _('Profile') }}</label>
           <input class="form-control form-control-sm" id="w-profile" list="dl-profiles" value="LB_PROF_TCP">
           <datalist id="dl-profiles">
             {% for o in options.profiles %}<option value="{{ o }}">{% endfor %}
           </datalist>
         </div>
         <div class="col-md-4">
-          <label class="form-label fw-label">LB method</label>
+          <label class="form-label fw-label">{{ _('LB method') }}</label>
           <input class="form-control form-control-sm" id="w-method" list="dl-methods" value="LB_METHOD_ROUND_ROBIN">
           <datalist id="dl-methods">
             {% for o in options.methods %}<option value="{{ o }}">{% endfor %}
@@ -86,28 +83,28 @@
 
     <div class="fw-card p-3 mt-3">
       <div class="d-flex align-items-center justify-content-between mb-2">
-        <h6 class="fw-semibold mb-0">Real servers (back-ends)</h6>
+        <h6 class="fw-semibold mb-0">{{ _('Real servers (back-ends)') }}</h6>
         <button type="button" class="btn btn-outline-light btn-sm" id="w-add-rs">
-          <i class="bi bi-plus-lg me-1"></i>Add server</button>
+          <i class="bi bi-plus-lg me-1"></i>{{ _('Add server') }}</button>
       </div>
       <table class="fw-table" id="w-rs-table">
-        <thead><tr><th>Name</th><th>IP address</th><th style="width:90px;">Port</th>
-          <th style="width:90px;">Weight</th><th style="width:40px;"></th></tr></thead>
+        <thead><tr><th>{{ _('Name') }}</th><th>{{ _('IP address') }}</th><th style="width:90px;">{{ _('Port') }}</th>
+          <th style="width:90px;">{{ _('Weight') }}</th><th style="width:40px;"></th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
 
     <div class="d-flex gap-2 mt-3">
       <button type="button" class="btn btn-outline-light" id="w-preview">
-        <i class="bi bi-eye me-1"></i>Preview plan</button>
+        <i class="bi bi-eye me-1"></i>{{ _('Preview plan') }}</button>
       <button type="button" class="btn btn-fw-primary" id="w-create">
-        <i class="bi bi-magic me-1"></i>Create all</button>
+        <i class="bi bi-magic me-1"></i>{{ _('Create all') }}</button>
     </div>
   </div>
 
   <div class="col-lg-5">
     <div class="fw-card p-3" id="w-out-card" style="display:none;">
-      <h6 class="fw-semibold mb-2" id="w-out-title">Plan</h6>
+      <h6 class="fw-semibold mb-2" id="w-out-title">{{ _('Plan') }}</h6>
       <div id="w-out"></div>
     </div>
   </div>

@@ -4,7 +4,7 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="/">Home</a>
+  <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
   <span>DNS &amp; LB Lookup</span>
 </div>
@@ -26,41 +26,41 @@
   <!-- Query panel -->
   <div class="col-lg-3">
     <div class="fw-card">
-      <div class="fw-card-header"><i class="bi bi-search me-1"></i>Lookup</div>
+      <div class="fw-card-header"><i class="bi bi-search me-1"></i>{{ _('Lookup') }}</div>
       <div class="fw-card-body">
         <form method="POST" id="dnsForm">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <label class="fw-form-label">Hostnames / IPs — one per line
+          <label class="fw-form-label">{{ _('Hostnames / IPs — one per line') }}
             <span class="text-muted">(optionally «name TYPE», e.g. <code>app.example.net CNAME</code>)</span></label>
           <textarea name="entries" rows="8" class="form-control fw-form-control font-monospace"
                     style="font-size:12px;"
                     placeholder="apps.example.net&#10;*.example.net&#10;192.0.2.41">{{ entries_raw }}</textarea>
           <hr class="my-3" style="opacity:.15;">
-          <label class="fw-form-label">Options</label>
+          <label class="fw-form-label">{{ _('Options') }}</label>
           <div class="form-check"><input class="form-check-input" type="checkbox" name="lb" id="optLb" {{ 'checked' if opts.lb }}>
-            <label class="form-check-label" for="optLb" style="font-size:13px;">Show LB matches</label></div>
+            <label class="form-check-label" for="optLb" style="font-size:13px;">{{ _('Show LB matches') }}</label></div>
           <div class="form-check"><input class="form-check-input" type="checkbox" name="quick" id="optQuick" {{ 'checked' if opts.quick }}>
-            <label class="form-check-label" for="optQuick" style="font-size:13px;">Quick LB (gateway only)</label></div>
+            <label class="form-check-label" for="optQuick" style="font-size:13px;">{{ _('Quick LB (gateway only)') }}</label></div>
           <div class="form-check"><input class="form-check-input" type="checkbox" name="exact" id="optExact" {{ 'checked' if opts.exact }}>
-            <label class="form-check-label" for="optExact" style="font-size:13px;">Exact match</label></div>
+            <label class="form-check-label" for="optExact" style="font-size:13px;">{{ _('Exact match') }}</label></div>
           <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="ttl" id="optTtl" {{ 'checked' if opts.ttl }}>
-            <label class="form-check-label" for="optTtl" style="font-size:13px;">Show TTL</label></div>
+            <label class="form-check-label" for="optTtl" style="font-size:13px;">{{ _('Show TTL') }}</label></div>
           <div class="d-flex gap-2">
-            <a class="btn btn-outline-secondary btn-sm flex-fill" href="{{ url_for('dns_tool.index') }}">Reset</a>
-            <button type="submit" class="btn btn-primary btn-sm flex-fill"><i class="bi bi-search me-1"></i>Search</button>
+            <a class="btn btn-outline-secondary btn-sm flex-fill" href="{{ url_for('dns_tool.index') }}">{{ _('Reset') }}</a>
+            <button type="submit" class="btn btn-primary btn-sm flex-fill"><i class="bi bi-search me-1"></i>{{ _('Search') }}</button>
           </div>
         </form>
         <hr class="my-3" style="opacity:.15;">
         <div style="font-size:12px;" class="text-muted">
-          <div class="mb-1 fw-semibold" style="font-size:11px; letter-spacing:.05em; text-transform:uppercase;">DNS servers</div>
+          <div class="mb-1 fw-semibold" style="font-size:11px; letter-spacing:.05em; text-transform:uppercase;">{{ _('DNS servers') }}</div>
           {% for s in servers %}
           <div><i class="bi bi-hdd-network me-1"></i>{{ s.name }} <span class="opacity-50">— {{ s.server }}</span></div>
           {% else %}
-          <div class="text-warning">No DNS servers configured.</div>
+          <div class="text-warning">{{ _('No DNS servers configured.') }}</div>
           {% endfor %}
           {% if current_user.can('user_manage') %}
           <a href="{{ url_for('settings.index') }}" class="d-inline-block mt-2" style="font-size:12px;">
-            <i class="bi bi-gear me-1"></i>Manage in Settings → DNS Lookup</a>
+            <i class="bi bi-gear me-1"></i>{{ _('Manage in Settings → DNS Lookup') }}</a>
           {% endif %}
         </div>
       </div>
@@ -71,16 +71,16 @@
   <div class="col-lg-9">
     <div class="fw-card">
       <div class="fw-card-header d-flex align-items-center justify-content-between">
-        <span><i class="bi bi-table me-1"></i>Results</span>
+        <span><i class="bi bi-table me-1"></i>{{ _('Results') }}</span>
         <span class="d-flex gap-2">
           {% if can_manage_records and dns_provider != 'none' %}
           <button type="button" class="btn btn-sm btn-primary" id="dnsRecBtnHeader"
                   data-entry="{{ results[0].resolved if results else '' }}">
-            <i class="bi bi-plus-lg me-1"></i>DNS Records</button>
+            <i class="bi bi-plus-lg me-1"></i>{{ _('DNS Records') }}</button>
           {% endif %}
           {% if results %}
-          <button type="button" class="btn btn-sm btn-outline-warning" id="copyDnsBtn">Copy DNS</button>
-          <button type="button" class="btn btn-sm btn-outline-success" id="copyLbBtn">Copy LB</button>
+          <button type="button" class="btn btn-sm btn-outline-warning" id="copyDnsBtn">{{ _('Copy DNS') }}</button>
+          <button type="button" class="btn btn-sm btn-outline-success" id="copyLbBtn">{{ _('Copy LB') }}</button>
           {% endif %}
         </span>
       </div>
@@ -90,19 +90,19 @@
         {% endif %}
         {% if not searched %}
         <div class="text-center text-muted py-5" style="font-size:13px;">
-          Enter values on the left and press <strong>Search</strong>.
+          {{ _('Enter values on the left and press') }} <strong>{{ _('Search') }}</strong>.
         </div>
         {% elif not results %}
-        <div class="text-center text-muted py-5" style="font-size:13px;">No valid entries.</div>
+        <div class="text-center text-muted py-5" style="font-size:13px;">{{ _('No valid entries.') }}</div>
         {% else %}
         <div class="table-responsive">
           <table class="table fw-table align-middle mb-0" style="font-size:12px;">
             <thead>
               <tr>
-                <th>Entry</th>
+                <th>{{ _('Entry') }}</th>
                 {% for s in servers %}<th>{{ s.name }}</th>{% endfor %}
-                {% if opts.quick %}<th>Quick LB</th>{% endif %}
-                {% if opts.lb %}<th>LB matches</th>{% endif %}
+                {% if opts.quick %}<th>{{ _('Quick LB') }}</th>{% endif %}
+                {% if opts.lb %}<th>{{ _('LB matches') }}</th>{% endif %}
               </tr>
             </thead>
             <tbody>
@@ -156,7 +156,7 @@
                         {% if pol_url %}
                         <a href="{{ pol_url }}" target="_blank" rel="noopener"
                            class="btn btn-sm btn-outline-primary py-0 px-2 ms-2 flex-shrink-0" style="font-size:10px;">
-                          Open policy <i class="bi bi-box-arrow-up-right"></i></a>
+                          {{ _('Open policy') }} <i class="bi bi-box-arrow-up-right"></i></a>
                         {% endif %}
                       </div>
                       <div style="display:grid; grid-template-columns:130px 1fr; gap:1px 8px; font-size:11px;">
@@ -199,14 +199,14 @@
                           <span style="width:7px; height:7px; border-radius:50%; background:{{ bcol }}; flex-shrink:0;"></span>
                           {{ b.ip }}{% if b.port %}:{{ b.port }}{% endif %}</span>
                         {% else %}
-                        <span class="text-muted fst-italic">no backends in cache</span>
+                        <span class="text-muted fst-italic">{{ _('no backends in cache') }}</span>
                         {% endfor %}
                       </div>
                     </div>
                     {% endfor %}
                   </details>
                   {% else %}
-                  <span class="text-muted fst-italic" style="font-size:11px;">No matches</span>
+                  <span class="text-muted fst-italic" style="font-size:11px;">{{ _('No matches') }}</span>
                   {% endif %}
                 </td>
                 {% endif %}
@@ -217,7 +217,7 @@
         </div>
         {% if not_found %}
         <div class="alert alert-warning m-3" style="font-size:12px;">
-          <strong>Not found in any source:</strong> {{ not_found|join(', ') }}
+          <strong>{{ _('Not found in any source:') }}</strong> {{ not_found|join(', ') }}
         </div>
         {% endif %}
         {% endif %}
@@ -254,28 +254,28 @@
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i>DNS Records
+        <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i>{{ _('DNS Records') }}
           <span class="badge text-bg-primary ms-2" id="dnsRecProviderBadge"></span></h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
       </div>
       <div class="modal-body">
         <div class="alert alert-secondary py-2" id="dnsRecNotes" style="font-size:12.5px;"></div>
         <div class="row g-2 align-items-end mb-3">
           <div class="col">
-            <label class="fw-form-label">Name (FQDN)</label>
+            <label class="fw-form-label">{{ _('Name (FQDN)') }}</label>
             <input type="text" id="dnsRecName" class="form-control fw-form-control form-control-sm font-monospace">
           </div>
           <div class="col-auto dnsRec-zone" style="display:none;">
-            <label class="fw-form-label">Zone</label>
+            <label class="fw-form-label">{{ _('Zone') }}</label>
             <input type="text" id="dnsRecZone" class="form-control fw-form-control form-control-sm font-monospace" style="width:170px;">
           </div>
           <div class="col-auto dnsRec-view" style="display:none;">
-            <label class="fw-form-label">View</label>
+            <label class="fw-form-label">{{ _('View') }}</label>
             <input type="text" id="dnsRecView" class="form-control fw-form-control form-control-sm font-monospace" style="width:130px;">
           </div>
           <div class="col-auto">
             <button type="button" class="btn btn-sm btn-outline-primary" id="dnsRecLoadBtn">
-              <i class="bi bi-search me-1"></i>Load</button>
+              <i class="bi bi-search me-1"></i>{{ _('Load') }}</button>
           </div>
         </div>
 
@@ -283,25 +283,25 @@
 
         <div class="table-responsive">
           <table class="table fw-table table-sm align-middle mb-0" style="font-size:12px;">
-            <thead><tr><th>Type</th><th>Name</th><th>Value</th><th>TTL</th><th class="text-end dnsRec-actions-col">Actions</th></tr></thead>
+            <thead><tr><th>{{ _('Type') }}</th><th>{{ _('Name') }}</th><th>{{ _('Value') }}</th><th>TTL</th><th class="text-end dnsRec-actions-col">{{ _('Actions') }}</th></tr></thead>
             <tbody id="dnsRecRows">
-              <tr><td colspan="5" class="text-muted text-center py-3">Press <strong>Load</strong> to list records.</td></tr>
+              <tr><td colspan="5" class="text-muted text-center py-3">{{ _('Press') }} <strong>{{ _('Load') }}</strong> {{ _('to list records.') }}</td></tr>
             </tbody>
           </table>
         </div>
 
         <div id="dnsRecEditor" class="mt-3 p-3 rounded" style="background:rgba(59,130,246,.06); border-left:3px solid #3b82f6; display:none;">
-          <div class="fw-semibold mb-2" style="font-size:12px; color:#3b82f6;" id="dnsRecEditorTitle">ADD RECORD</div>
+          <div class="fw-semibold mb-2" style="font-size:12px; color:#3b82f6;" id="dnsRecEditorTitle">{{ _('ADD RECORD') }}</div>
           <input type="hidden" id="dnsRecId">
           <div class="row g-2">
             <div class="col-auto">
-              <label class="fw-form-label">Type</label>
+              <label class="fw-form-label">{{ _('Type') }}</label>
               <select id="dnsRecType" class="form-select fw-form-control form-select-sm" style="width:110px;"></select>
             </div>
             <div class="col">
-              <label class="fw-form-label">Value</label>
+              <label class="fw-form-label">{{ _('Value') }}</label>
               <input type="text" id="dnsRecValue" class="form-control fw-form-control form-control-sm font-monospace"
-                     placeholder="e.g. 192.0.2.41  ·  MX: '10 mail.host'">
+                     placeholder="{{ _('e.g. 192.0.2.41 · MX: \'10 mail.host\'') }}">
             </div>
             <div class="col-auto">
               <label class="fw-form-label">TTL</label>
@@ -309,8 +309,8 @@
             </div>
           </div>
           <div class="d-flex gap-2 mt-2">
-            <button type="button" class="btn btn-sm btn-primary" id="dnsRecSaveBtn"><i class="bi bi-check-lg me-1"></i>Save record</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="dnsRecClearBtn">New</button>
+            <button type="button" class="btn btn-sm btn-primary" id="dnsRecSaveBtn"><i class="bi bi-check-lg me-1"></i>{{ _('Save record') }}</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="dnsRecClearBtn">{{ _('New') }}</button>
           </div>
         </div>
       </div>

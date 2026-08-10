@@ -2,9 +2,9 @@
 {% block title %}{{ section }} — Registry{% endblock %}
 
 {% block breadcrumb %}
-<nav aria-label="breadcrumb" class="mb-3">
+<nav aria-label="{{ _('breadcrumb') }}" class="mb-3">
   <ol class="breadcrumb">
-    <li class="breadcrumb-item"><a href="{{ url_for('registry.index') }}">Registry</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('registry.index') }}">{{ _('Registry') }}</a></li>
     <li class="breadcrumb-item active">{{ section }}</li>
   </ol>
 </nav>
@@ -17,9 +17,9 @@
     <table class="table table-hover mb-0">
       <thead>
         <tr>
-          <th>Name</th>
-          <th>Path</th>
-          <th>Methods</th>
+          <th>{{ _('Name') }}</th>
+          <th>{{ _('Path') }}</th>
+          <th>{{ _('Methods') }}</th>
         </tr>
       </thead>
       <tbody>

@@ -8,8 +8,8 @@
 <form method="post" action="{{ url_for('appliances.edit_save', id=appliance.id) }}" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="row g-3">
-    <div class="col-md-6"><label class="form-label">Name</label><input type="text" name="name" class="form-control" value="{{ appliance.name }}" required></div>
-    <div class="col-md-6"><label class="form-label">Kind</label>
+    <div class="col-md-6"><label class="form-label">{{ _('Name') }}</label><input type="text" name="name" class="form-control" value="{{ appliance.name }}" required></div>
+    <div class="col-md-6"><label class="form-label">{{ _('Kind') }}</label>
       <select name="kind" class="form-select">
         {% set offered = (kind_options or [])|map(attribute=0)|list %}
         {% for key, label in (kind_options or []) %}
@@ -22,52 +22,52 @@
         {% endif %}
       </select>
     </div>
-    <div class="col-md-8"><label class="form-label">Host</label><input type="text" name="host" class="form-control" value="{{ appliance.host }}" required></div>
-    <div class="col-md-4"><label class="form-label">Port</label><input type="number" name="port" class="form-control" value="{{ appliance.port }}"></div>
-    <div class="col-md-6"><label class="form-label">Username</label><input type="text" name="username" class="form-control" value="{{ appliance.username }}" required></div>
-    <div class="col-md-6"><label class="form-label">New Password (leave blank to keep)</label><input type="password" name="password" class="form-control"></div>
+    <div class="col-md-8"><label class="form-label">{{ _('Host') }}</label><input type="text" name="host" class="form-control" value="{{ appliance.host }}" required></div>
+    <div class="col-md-4"><label class="form-label">{{ _('Port') }}</label><input type="number" name="port" class="form-control" value="{{ appliance.port }}"></div>
+    <div class="col-md-6"><label class="form-label">{{ _('Username') }}</label><input type="text" name="username" class="form-control" value="{{ appliance.username }}" required></div>
+    <div class="col-md-6"><label class="form-label">{{ _('New Password (leave blank to keep)') }}</label><input type="password" name="password" class="form-control"></div>
     <div class="col-md-3"><label class="form-label">VDOM</label><input type="text" name="vdom" class="form-control" value="{{ appliance.vdom or '' }}"></div>
-    <div class="col-md-3"><label class="form-label">Zone</label><select name="zone" class="form-select"><option value="">(none)</option>{% if appliance.zone and appliance.zone not in classification.zones %}<option value="{{ appliance.zone }}" selected>{{ appliance.zone }} (unregistered)</option>{% endif %}{% for v in (classification.zones if classification else []) %}<option value="{{ v }}"{% if appliance.zone == v %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
-    <div class="col-md-3"><label class="form-label">Line</label><select name="line" class="form-select"><option value="">(none)</option>{% if appliance.line and appliance.line not in classification.lines %}<option value="{{ appliance.line }}" selected>{{ appliance.line }} (unregistered)</option>{% endif %}{% for v in (classification.lines if classification else []) %}<option value="{{ v }}"{% if appliance.line == v %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
-    <div class="col-md-3"><label class="form-label">Department</label><select name="department" class="form-select"><option value="">(none)</option>{% if appliance.department and appliance.department not in classification.departments %}<option value="{{ appliance.department }}" selected>{{ appliance.department }} (unregistered)</option>{% endif %}{% for v in (classification.departments if classification else []) %}<option value="{{ v }}"{% if appliance.department == v %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+    <div class="col-md-3"><label class="form-label">{{ _('Zone') }}</label><select name="zone" class="form-select"><option value="">{{ _('(none)') }}</option>{% if appliance.zone and appliance.zone not in classification.zones %}<option value="{{ appliance.zone }}" selected>{{ appliance.zone }} (unregistered)</option>{% endif %}{% for v in (classification.zones if classification else []) %}<option value="{{ v }}"{% if appliance.zone == v %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+    <div class="col-md-3"><label class="form-label">{{ _('Line') }}</label><select name="line" class="form-select"><option value="">{{ _('(none)') }}</option>{% if appliance.line and appliance.line not in classification.lines %}<option value="{{ appliance.line }}" selected>{{ appliance.line }} (unregistered)</option>{% endif %}{% for v in (classification.lines if classification else []) %}<option value="{{ v }}"{% if appliance.line == v %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+    <div class="col-md-3"><label class="form-label">{{ _('Department') }}</label><select name="department" class="form-select"><option value="">{{ _('(none)') }}</option>{% if appliance.department and appliance.department not in classification.departments %}<option value="{{ appliance.department }}" selected>{{ appliance.department }} (unregistered)</option>{% endif %}{% for v in (classification.departments if classification else []) %}<option value="{{ v }}"{% if appliance.department == v %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
     <div class="col-12"><div class="form-check"><input type="checkbox" name="verify_ssl" class="form-check-input" id="verify_ssl" {{ 'checked' if appliance.verify_ssl }}>
-      <label class="form-check-label" for="verify_ssl">Verify SSL Certificate</label></div></div>
+      <label class="form-check-label" for="verify_ssl">{{ _('Verify SSL Certificate') }}</label></div></div>
     {% if current_user.can('appliances.view_maintenance') %}
     <div class="col-12"><input type="hidden" name="maintenance_present" value="1">
       <div class="form-check"><input type="checkbox" name="maintenance" class="form-check-input" id="edit_maintenance" {{ 'checked' if appliance.maintenance }}>
-      <label class="form-check-label" for="edit_maintenance"><i class="bi bi-tools me-1"></i>Maintenance mode <span class="text-muted">(hidden from operators)</span></label></div></div>
+      <label class="form-check-label" for="edit_maintenance"><i class="bi bi-tools me-1"></i>{{ _('Maintenance mode') }} <span class="text-muted">{{ _('(hidden from operators)') }}</span></label></div></div>
     {% endif %}
     {% if not appliance.is_cluster_member %}
-    <div class="col-12"><hr class="my-1"><h6 class="text-uppercase text-muted mb-0" style="font-size:12px;letter-spacing:.5px;">High Availability</h6></div>
+    <div class="col-12"><hr class="my-1"><h6 class="text-uppercase text-muted mb-0" style="font-size:12px;letter-spacing:.5px;">{{ _('High Availability') }}</h6></div>
     <div class="col-12"><div class="form-check"><input type="checkbox" name="is_cluster" class="form-check-input" id="edit_is_cluster" {{ 'checked' if appliance.is_cluster }}>
-      <label class="form-check-label" for="edit_is_cluster">This is an HA cluster (node 0)</label></div>
-      <div class="form-text">Manage member nodes from the cluster detail page.</div></div>
-    <div class="col-md-6 ha-fields-edit d-none"><label class="form-label">HA mode</label>
+      <label class="form-check-label" for="edit_is_cluster">{{ _('This is an HA cluster (node 0)') }}</label></div>
+      <div class="form-text">{{ _('Manage member nodes from the cluster detail page.') }}</div></div>
+    <div class="col-md-6 ha-fields-edit d-none"><label class="form-label">{{ _('HA mode') }}</label>
       <select class="form-select" name="ha_mode" id="edit_ha_mode">
-        <option value="per_node" {{ 'selected' if (appliance.ha_mode or 'per_node')=='per_node' }}>Per-node IP (detect live primary)</option>
-        <option value="vip" {{ 'selected' if appliance.ha_mode=='vip' }}>Shared VIP</option>
+        <option value="per_node" {{ 'selected' if (appliance.ha_mode or 'per_node')=='per_node' }}>{{ _('Per-node IP (detect live primary)') }}</option>
+        <option value="vip" {{ 'selected' if appliance.ha_mode=='vip' }}>{{ _('Shared VIP') }}</option>
       </select></div>
-    <div class="col-md-6 ha-fields-edit ha-vip-edit d-none"><label class="form-label">Shared VIP address</label>
+    <div class="col-md-6 ha-fields-edit ha-vip-edit d-none"><label class="form-label">{{ _('Shared VIP address') }}</label>
       <input type="text" class="form-control" name="ha_vip" value="{{ appliance.ha_vip or '' }}" placeholder="192.0.2.50"></div>
     {% endif %}
 
     <!-- ===== Physical / Inventory ===== -->
-    <div class="col-12"><hr class="my-1"><h6 class="text-uppercase text-muted mb-0" style="font-size:12px;letter-spacing:.5px;">Physical / Inventory</h6>
-      {% if appliance.kind == 'fortiweb' %}<div class="form-text mt-1"><i class="bi bi-magic me-1"></i>Run a <strong>Rediscovery</strong> to auto-fill interfaces (name/type/IP), model and HW/VM. Only <em>Connected to</em>, notes and the datasheet are entered by hand &mdash; discovery never overwrites them.</div>{% endif %}</div>
-    <div class="col-md-4"><label class="form-label">Type</label>
+    <div class="col-12"><hr class="my-1"><h6 class="text-uppercase text-muted mb-0" style="font-size:12px;letter-spacing:.5px;">{{ _('Physical / Inventory') }}</h6>
+      {% if appliance.kind == 'fortiweb' %}<div class="form-text mt-1"><i class="bi bi-magic me-1"></i>{{ _('Run a') }} <strong>{{ _('Rediscovery') }}</strong> {{ _('to auto-fill interfaces (name/type/IP), model and HW/VM. Only') }} <em>{{ _('Connected to') }}</em>, notes and the datasheet are entered by hand &mdash; discovery never overwrites them.</div>{% endif %}</div>
+    <div class="col-md-4"><label class="form-label">{{ _('Type') }}</label>
       <select name="hw_type" class="form-select">
-        <option value="unknown" {{ 'selected' if (appliance.hw_type or 'unknown')=='unknown' }}>Unknown</option>
-        <option value="hardware" {{ 'selected' if appliance.hw_type=='hardware' }}>Hardware</option>
-        <option value="vm" {{ 'selected' if appliance.hw_type=='vm' }}>Virtual Machine</option>
+        <option value="unknown" {{ 'selected' if (appliance.hw_type or 'unknown')=='unknown' }}>{{ _('Unknown') }}</option>
+        <option value="hardware" {{ 'selected' if appliance.hw_type=='hardware' }}>{{ _('Hardware') }}</option>
+        <option value="vm" {{ 'selected' if appliance.hw_type=='vm' }}>{{ _('Virtual Machine') }}</option>
       </select>
     </div>
-    <div class="col-md-8"><label class="form-label">Model</label>
-      <input type="text" name="model" class="form-control" value="{{ appliance.model or '' }}" placeholder="e.g. FortiWeb 600F"></div>
-    <div class="col-12"><label class="form-label">Datasheet (PDF)</label>
+    <div class="col-md-8"><label class="form-label">{{ _('Model') }}</label>
+      <input type="text" name="model" class="form-control" value="{{ appliance.model or '' }}" placeholder="{{ _('e.g. FortiWeb 600F') }}"></div>
+    <div class="col-12"><label class="form-label">{{ _('Datasheet (PDF)') }}</label>
       {% if appliance.datasheet_filename %}
       <div class="mb-2 d-flex align-items-center gap-3 flex-wrap">
         <a href="{{ url_for('appliances.datasheet', id=appliance.id) }}" target="_blank" class="btn btn-sm fw-btn-secondary"><i class="bi bi-file-earmark-pdf me-1"></i>{{ appliance.datasheet_filename }}</a>
-        <div class="form-check mb-0"><input type="checkbox" name="datasheet_remove" id="datasheet_remove" class="form-check-input"><label class="form-check-label" for="datasheet_remove">Remove current</label></div>
+        <div class="form-check mb-0"><input type="checkbox" name="datasheet_remove" id="datasheet_remove" class="form-check-input"><label class="form-check-label" for="datasheet_remove">{{ _('Remove current') }}</label></div>
       </div>
       {% endif %}
       <input type="file" name="datasheet" accept="application/pdf,.pdf" class="form-control">
@@ -77,41 +77,41 @@
     <!-- ===== Interfaces / Connections ===== -->
     <div class="col-12"><hr class="my-1">
       <div class="d-flex justify-content-between align-items-center">
-        <h6 class="text-uppercase text-muted mb-0" style="font-size:12px;letter-spacing:.5px;">Interfaces / Connections</h6>
-        <button type="button" class="btn btn-sm fw-btn-secondary" id="addIfBtn"><i class="bi bi-plus-lg me-1"></i>Add interface</button>
+        <h6 class="text-uppercase text-muted mb-0" style="font-size:12px;letter-spacing:.5px;">{{ _('Interfaces / Connections') }}</h6>
+        <button type="button" class="btn btn-sm fw-btn-secondary" id="addIfBtn"><i class="bi bi-plus-lg me-1"></i>{{ _('Add interface') }}</button>
       </div>
     </div>
     <div class="col-12">
       <div class="table-responsive">
         <table class="table table-sm align-middle mb-1" id="ifTable">
           <thead><tr>
-            <th style="min-width:110px;">Interface</th>
-            <th style="min-width:120px;">Type</th>
-            <th style="min-width:200px;">Connected to</th>
+            <th style="min-width:110px;">{{ _('Interface') }}</th>
+            <th style="min-width:120px;">{{ _('Type') }}</th>
+            <th style="min-width:200px;">{{ _('Connected to') }}</th>
             <th style="min-width:120px;">IP</th>
-            <th>Notes</th>
+            <th>{{ _('Notes') }}</th>
             <th style="width:38px;"></th>
           </tr></thead>
           <tbody id="ifBody">
             {% for i in appliance.interfaces %}
             <tr>
-              <td><input type="text" name="if_name" class="form-control form-control-sm" value="{{ i.name }}" placeholder="port1"></td>
-              <td><input type="text" name="if_type" class="form-control form-control-sm" value="{{ i.if_type or '' }}" placeholder="10G SFP+"></td>
-              <td><input type="text" name="if_connected" class="form-control form-control-sm" value="{{ i.connected_to or '' }}" placeholder="Core-SW-A / Gi1/0/24"></td>
+              <td><input type="text" name="if_name" class="form-control form-control-sm" value="{{ i.name }}" placeholder="{{ _('port1') }}"></td>
+              <td><input type="text" name="if_type" class="form-control form-control-sm" value="{{ i.if_type or '' }}" placeholder="{{ _('10G SFP+') }}"></td>
+              <td><input type="text" name="if_connected" class="form-control form-control-sm" value="{{ i.connected_to or '' }}" placeholder="{{ _('Core-SW-A / Gi1/0/24') }}"></td>
               <td><input type="text" name="if_ip" class="form-control form-control-sm" value="{{ i.ip_address or '' }}" placeholder="192.0.2.1"></td>
               <td><input type="text" name="if_notes" class="form-control form-control-sm" value="{{ i.notes or '' }}"></td>
-              <td><button type="button" class="btn btn-sm btn-outline-danger if-del" title="Remove row"><i class="bi bi-trash"></i></button></td>
+              <td><button type="button" class="btn btn-sm btn-outline-danger if-del" title="{{ _('Remove row') }}"><i class="bi bi-trash"></i></button></td>
             </tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
-      <div class="form-text">Rows with an empty interface name are ignored. Saving replaces all interfaces for this appliance.</div>
+      <div class="form-text">{{ _('Rows with an empty interface name are ignored. Saving replaces all interfaces for this appliance.') }}</div>
     </div>
 
     <div class="col-12 d-flex gap-2">
-      <button type="submit" class="btn fw-btn-primary">Save Changes</button>
-      <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn btn-outline-secondary">Cancel</a>
+      <button type="submit" class="btn fw-btn-primary">{{ _('Save Changes') }}</button>
+      <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn btn-outline-secondary">{{ _('Cancel') }}</a>
     </div>
   </div>
 </form>

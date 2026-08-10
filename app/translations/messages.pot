@@ -1,0 +1,11133 @@
+# Translations template for PROJECT.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-08-10 12:11+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+msgid "\". Try a broader query or check the spelling."
+msgstr ""
+
+msgid "(Active Directory)"
+msgstr ""
+
+msgid "(JSON — the fields to push)"
+msgstr ""
+
+msgid "(Jinja / HTML)"
+msgstr ""
+
+msgid "(LDAP service acct)"
+msgstr ""
+
+msgid "(LDAP, optional)"
+msgstr ""
+
+msgid "(Proxmox, optional)"
+msgstr ""
+
+msgid "(UTC)"
+msgstr ""
+
+msgid "(all sections)"
+msgstr ""
+
+msgid "(all status)"
+msgstr ""
+
+msgid "(any scope)"
+msgstr ""
+
+msgid "(any)"
+msgstr ""
+
+msgid "(binaries on the backup server, pullable into the console)."
+msgstr ""
+
+msgid "(blank = keep / not needed for Ollama)"
+msgstr ""
+
+msgid "(file sync). Full architecture on the"
+msgstr ""
+
+msgid "(fires only on the primary)"
+msgstr ""
+
+msgid "(git → self-update queue),"
+msgstr ""
+
+msgid "(health probes),"
+msgstr ""
+
+msgid "(hidden from operators)"
+msgstr ""
+
+msgid "(ignored on GET)"
+msgstr ""
+
+msgid "(in the registry, not on a menu page)"
+msgstr ""
+
+msgid "(label key, optional)"
+msgstr ""
+
+msgid "(network zones),"
+msgstr ""
+
+msgid "(none = all in this ADOM)"
+msgstr ""
+
+msgid "(none)"
+msgstr ""
+
+msgid "(not applicable)"
+msgstr ""
+
+msgid "(off-rack)"
+msgstr ""
+
+msgid "(only for ZeroSSL / Google / private CAs)"
+msgstr ""
+
+msgid "(optional)"
+msgstr ""
+
+msgid "(optional, embedded in URL)"
+msgstr ""
+
+msgid "(optional, for user import)"
+msgstr ""
+
+msgid "(or"
+msgstr ""
+
+msgid "(or DHCP)"
+msgstr ""
+
+msgid "(pattern: Naming → Exception WPP)"
+msgstr ""
+
+msgid "(paused)"
+msgstr ""
+
+msgid "(pg_dump bundles),"
+msgstr ""
+
+msgid "(read-only)"
+msgstr ""
+
+msgid "(really write)"
+msgstr ""
+
+msgid "(registered FortiAuthenticator)"
+msgstr ""
+
+msgid "(remembered after the first run)"
+msgstr ""
+
+msgid "(service lines / environments) and"
+msgstr ""
+
+msgid ""
+"(sha256-verified) and feed the per-appliance Upgrade / Downgrade actions "
+"— the console-driven firmware restore."
+msgstr ""
+
+msgid "(shown on the axis)"
+msgstr ""
+
+msgid "(slow)"
+msgstr ""
+
+msgid "(this ADOM only)"
+msgstr ""
+
+#, python-brace-format
+msgid "(uid={username})"
+msgstr ""
+
+msgid "(unchanged)"
+msgstr ""
+
+msgid ""
+"(versioned local SoT store + device-pushed backups on the external backup"
+" server) and"
+msgstr ""
+
+msgid "(what the clone will carry)"
+msgstr ""
+
+msgid "(what — all unchecked = no restriction)"
+msgstr ""
+
+msgid "(what — leave all unchecked for no restriction)"
+msgstr ""
+
+msgid "(where — empty = no restriction)"
+msgstr ""
+
+msgid "(where — leave empty for no restriction)"
+msgstr ""
+
+msgid "(without token)"
+msgstr ""
+
+msgid ") for use in appliance upgrades."
+msgstr ""
+
+msgid ") schedule."
+msgstr ""
+
+msgid ""
+") to read its config inline — text sections are extracted from the pushed"
+" archive on the fly; encrypted blobs inside it are listed but not "
+"viewable or searchable."
+msgstr ""
+
+msgid ""
+"). The privileged runner checks out that commit, reinstalls deps, runs "
+"migrations and"
+msgstr ""
+
+msgid "+DNS Records"
+msgstr ""
+
+msgid ", WAF-coverage gaps, certificate expiry and more. Open"
+msgstr ""
+
+msgid ", a message that points at the device instead of at the gap."
+msgstr ""
+
+msgid ", and that pool needs at least one"
+msgstr ""
+
+msgid ""
+", and the Monitoring pages print which is which so a grade is never "
+"unexplained."
+msgstr ""
+
+msgid ""
+", because a permanent remote-root path on your hypervisor is your "
+"decision, not a side effect of a capability probe. The Test button "
+"reports which transport a target will actually use, and only claims the "
+"shell after running a command on it."
+msgstr ""
+
+msgid ", interrupting every service it fronts. A"
+msgstr ""
+
+msgid ", left disabled by default)."
+msgstr ""
+
+msgid ", licence headroom and the FortiToken pools on"
+msgstr ""
+
+msgid ", never deleted."
+msgstr ""
+
+msgid ""
+", so they run less often and only against the top-N policies by live "
+"connection rate. The device total is always collected."
+msgstr ""
+
+msgid ", verify with"
+msgstr ""
+
+msgid ", where every request is explicit, dry-run by default and audited."
+msgstr ""
+
+msgid ", which is lost coverage, not health."
+msgstr ""
+
+msgid ""
+", with the model that wrote them. Reviewing one records who accepted it; "
+"it does not turn it into text a person wrote. Text you typed by hand in "
+"another language is never overwritten by a re-run."
+msgstr ""
+
+msgid "- not assigned -"
+msgstr ""
+
+msgid ". 0 disables a threshold level."
+msgstr ""
+
+msgid ". A"
+msgstr ""
+
+msgid ". A cert still bound anywhere is never touched."
+msgstr ""
+
+msgid ". Backup codes remaining:"
+msgstr ""
+
+msgid ""
+". Each appliance is assigned one value per catalog on its Edit page. One "
+"entry per line."
+msgstr ""
+
+msgid ""
+". Email uses the transport configured above — set it to external SMTP if "
+"the local relay can't reach your inbox."
+msgstr ""
+
+msgid ""
+". Everything is configured here — nothing about the CA, the client or the"
+" DNS provider is hardcoded. The signing/revoke commands are"
+msgstr ""
+
+msgid ""
+". If a step fails mid-chain, the objects already created are rolled back "
+"automatically."
+msgstr ""
+
+msgid ""
+". Import your company Root CA and any Intermediate here and an appliance "
+"signed by it can run with"
+msgstr ""
+
+msgid ". It is filled in"
+msgstr ""
+
+msgid ""
+". Local Ollama traffic never leaves the LAN. Every message sent to an "
+"external provider is logged ("
+msgstr ""
+
+msgid ". Only AppIDs of the token's ADOM resolve."
+msgstr ""
+
+msgid ""
+". Only administrators can set it, it is audited, and every secret is "
+"redacted from the logs — but treat it as remote code execution and prefer"
+" the generated form."
+msgstr ""
+
+msgid ""
+". Paid licence or vCenter unlocks it; otherwise SATOM falls back to the "
+"host shell (below)."
+msgstr ""
+
+msgid ""
+". Proxmox does; a standalone ESXi does not, at any licence tier. That "
+"single fact is what the modes are about."
+msgstr ""
+
+msgid ". Re-run a sync to pick up new firmware or new signatures."
+msgstr ""
+
+msgid ""
+". The machine-building modes are therefore not offered below — rather "
+"than shown as buttons that would fail partway through."
+msgstr ""
+
+msgid ". The path for physical appliances and for anything built outside SATOM."
+msgstr ""
+
+msgid ""
+". The write is canary-gated: the first device runs alone and, if it "
+"fails, the rest are skipped. Secrets in sensitive items are applied live "
+"but are never stored in the profile."
+msgstr ""
+
+msgid ". This holds the issuers it"
+msgstr ""
+
+msgid ""
+". You complete the first-boot dialog on the hypervisor console and press "
+"Resume."
+msgstr ""
+
+msgid ".csv"
+msgstr ""
+
+msgid ".md"
+msgstr ""
+
+msgid ".out"
+msgstr ""
+
+msgid "/api/load_balance_pool"
+msgstr ""
+
+msgid "/api/load_balance_virtual_server or a logical name"
+msgstr ""
+
+msgid "/api/v1/resource/"
+msgstr ""
+
+msgid "/api/v2.0/cmdb/... or a registry key"
+msgstr ""
+
+msgid "/api/v2.0/cmdb/server-policy/policy"
+msgstr ""
+
+msgid "/dvmdb/device"
+msgstr ""
+
+msgid "/dvmdb/device or a logical name"
+msgstr ""
+
+msgid "/opt/satom/data/acme"
+msgstr ""
+
+msgid "/opt/satom/deploy/acme-hooks/satom-lego-run.sh"
+msgstr ""
+
+msgid "/var/www/acme"
+msgstr ""
+
+msgid "0 = from image"
+msgstr ""
+
+msgid "1 h"
+msgstr ""
+
+msgid "1 · Base table"
+msgstr ""
+
+msgid "1. Scan the QR (or enter this secret manually):"
+msgstr ""
+
+msgid "1. This node (primary)"
+msgstr ""
+
+msgid "10 most recent"
+msgstr ""
+
+msgid "192.0.2.0/24 or 1.2.3.4"
+msgstr ""
+
+msgid "192.0.2.1 or range"
+msgstr ""
+
+msgid "10G SFP+"
+msgstr ""
+
+msgid "192.168.1.1 or hostname"
+msgstr ""
+
+msgid "2 · Related tables"
+msgstr ""
+
+msgid "2. Enter the 6-digit code to confirm:"
+msgstr ""
+
+msgid "2. Standby / backup server"
+msgstr ""
+
+msgid "24 h"
+msgstr ""
+
+msgid "3. Versioned SoT store (local + off-box)"
+msgstr ""
+
+msgid "30 days"
+msgstr ""
+
+msgid "4. External backup server (backup-server)"
+msgstr ""
+
+msgid "7 days"
+msgstr ""
+
+msgid ""
+": database migrations are not reversed, and the backup taken below is the"
+" way back."
+msgstr ""
+
+msgid ""
+": every HA behavior above is off and updates apply directly to this node."
+" The toggle governs the manager's behavior only — it does not build or "
+"tear down Postgres streaming replication (if configured, replication "
+"keeps running harmlessly underneath). Stored in the replicated settings: "
+"set it once on the primary and both nodes follow."
+msgstr ""
+
+msgid ""
+": every sub-policy the new profile may own is recreated under this "
+"policy's own name, because a profile that shares its sub-policies shares "
+"every carve-out written into them."
+msgstr ""
+
+msgid ": they demand opposite actions."
+msgstr ""
+
+msgid ":443 is the public web face"
+msgstr ""
+
+msgid "; already-known users are left untouched. Save the settings first."
+msgstr ""
+
+msgid "; an admin approves it in"
+msgstr ""
+
+msgid "; an administrator must approve it before it can be applied to the fleet."
+msgstr ""
+
+msgid "; published views appear under"
+msgstr ""
+
+msgid "; pushing to the device is a separate step."
+msgstr ""
+
+msgid "; the other languages are translated from it."
+msgstr ""
+
+msgid "; types you add here are"
+msgstr ""
+
+msgid "= Fortinet's ceiling (datasheet / Appendix B)."
+msgstr ""
+
+msgid "= the object's"
+msgstr ""
+
+msgid "= your safety buffer, as an absolute"
+msgstr ""
+
+msgid "=create,"
+msgstr ""
+
+msgid "=delete — every write goes through snapshot + audit + dry-run."
+msgstr ""
+
+msgid "=update,"
+msgstr ""
+
+msgid "? unverifiable"
+msgstr ""
+
+msgid "A FortiADC virtual server needs a"
+msgstr ""
+
+msgid "A custom command runs"
+msgstr ""
+
+msgid ""
+"A database backup is taken first; the service restarts; a failed health "
+"check rolls the node back automatically."
+msgstr ""
+
+msgid "A deliberate"
+msgstr ""
+
+msgid ""
+"A directory user is created on first sign-in with this profile; an admin "
+"can elevate them later under Users."
+msgstr ""
+
+msgid "A dozen ready-made views — fleet KPIs, a full server-policy table,"
+msgstr ""
+
+msgid "A factory Fortinet appliance boots into a first-boot dialog:"
+msgstr ""
+
+msgid ""
+"A fourth list of names enforced nothing the three above did not, and went"
+" stale on every import: an approved, enabled user still took a blanket "
+"403 that showed up only in the log. The"
+msgstr ""
+
+msgid "A link is sent only if a recovery email is on file (local accounts)."
+msgstr ""
+
+msgid "A live downgrade"
+msgstr ""
+
+msgid "A live restore"
+msgstr ""
+
+msgid "A live upgrade"
+msgstr ""
+
+msgid "A mutating method shows the exact request and sends nothing until"
+msgstr ""
+
+msgid ""
+"A page load never contacts an appliance — every row is read from the "
+"stored samples. Probing runs as a background job ("
+msgstr ""
+
+msgid "A probe fires only when its own interval has elapsed"
+msgstr ""
+
+msgid ""
+"A profile that exists protects nothing. These counts are the number of "
+"virtual servers that"
+msgstr ""
+
+msgid ""
+"A read-only chat assistant for WAF false-positive triage, Lua drafting, "
+"and searching device configuration reports. It never changes SATOM or an "
+"appliance directly — a proposed change becomes a draft you review and "
+"apply yourself."
+msgstr ""
+
+msgid ""
+"A read-only pre-flight before a firmware upgrade: take a config backup, "
+"capture the SSH health battery, check maintenance permission, and HTTP-"
+"validate every published service. Nothing is changed."
+msgstr ""
+
+msgid ""
+"A rule keeps working when probes are recreated or a new appliance is "
+"registered; an explicit list does not."
+msgstr ""
+
+msgid ""
+"A scheduled action that keeps failing escalates at this many consecutive "
+"scheduled runs."
+msgstr ""
+
+msgid ""
+"A token pinned to AppIDs may run only backend/policy/cert actions whose "
+"target server policy is bound to one of these AppIDs — and no fleet-wide "
+"action at all. Assign policies under"
+msgstr ""
+
+msgid "ACME / Let's Encrypt — account"
+msgstr ""
+
+msgid "ACME — commands (advanced)"
+msgstr ""
+
+msgid "ACME — domain validation"
+msgstr ""
+
+msgid "AD domain"
+msgstr ""
+
+msgid "ADCS connection (Linux enrolment client)"
+msgstr ""
+
+msgid "ADD RECORD"
+msgstr ""
+
+msgid ""
+"ADOM — built by super-admins in the Plugin Studio, rendered in a hard "
+"sandbox."
+msgstr ""
+
+msgid "ADOM."
+msgstr ""
+
+msgid ""
+"ADOM. Rendered in a hard sandbox — read-only data, isolated iframe, a "
+"broken plugin never touches the server."
+msgstr ""
+
+msgid "ADOMs"
+msgstr ""
+
+msgid "ADOMs / Products"
+msgstr ""
+
+msgid "AI Advisor"
+msgstr ""
+
+msgid "API Browse"
+msgstr ""
+
+msgid "API Call"
+msgstr ""
+
+msgid "API Console"
+msgstr ""
+
+msgid "API Menu"
+msgstr ""
+
+msgid "API Path / URN"
+msgstr ""
+
+msgid "API Target"
+msgstr ""
+
+msgid "API Tokens"
+msgstr ""
+
+msgid "API console"
+msgstr ""
+
+msgid "API documentation"
+msgstr ""
+
+msgid "API key"
+msgstr ""
+
+msgid "API token"
+msgstr ""
+
+msgid "API token id"
+msgstr ""
+
+msgid "API token secret"
+msgstr ""
+
+msgid "API version"
+msgstr ""
+
+msgid "API-Registry Explorer"
+msgstr ""
+
+msgid "API: OVF only"
+msgstr ""
+
+msgid "AUTO — reconciler drives"
+msgstr ""
+
+msgid "Aborted."
+msgstr ""
+
+msgid "About Exceptions"
+msgstr ""
+
+msgid ""
+"Absolute path as served by the appliance (CLI tree flattened with "
+"underscores)."
+msgstr ""
+
+msgid "Absolute path as served by the appliance."
+msgstr ""
+
+msgid "Accepted: .conf .txt .cfg .zip .gz — encrypted backups are rejected."
+msgstr ""
+
+msgid "Access Control"
+msgstr ""
+
+msgid "Access denied"
+msgstr ""
+
+msgid "Account Recovery"
+msgstr ""
+
+msgid "Acme CA (intermediate)"
+msgstr ""
+
+msgid "Acme CA (root)"
+msgstr ""
+
+msgid "Action"
+msgstr ""
+
+msgid "Actions"
+msgstr ""
+
+msgid "Actions by Type"
+msgstr ""
+
+msgid ""
+"Actions/Changes = activity that day · Server "
+"Policy/Backend/WPP/Certificate = how many exist (daily snapshot)"
+msgstr ""
+
+msgid "Active"
+msgstr ""
+
+msgid "Active Directory"
+msgstr ""
+
+msgid "Active Sessions"
+msgstr ""
+
+msgid "Active Users"
+msgstr ""
+
+msgid "Active administrative domain"
+msgstr ""
+
+msgid "Active only"
+msgstr ""
+
+msgid "Active protocol"
+msgstr ""
+
+msgid "Active:"
+msgstr ""
+
+msgid "Activity Timeline"
+msgstr ""
+
+msgid "Activity over time"
+msgstr ""
+
+msgid "Add"
+msgstr ""
+
+msgid "Add AppID"
+msgstr ""
+
+msgid "Add Appliance"
+msgstr ""
+
+msgid "Add IP"
+msgstr ""
+
+msgid "Add User"
+msgstr ""
+
+msgid "Add a FortiWeb appliance to start managing backups."
+msgstr ""
+
+msgid "Add a FortiWeb appliance to sync the signature database."
+msgstr ""
+
+msgid "Add a catalog endpoint"
+msgstr ""
+
+msgid "Add a change type"
+msgstr ""
+
+msgid "Add a firmware image"
+msgstr ""
+
+msgid "Add a hypervisor"
+msgstr ""
+
+msgid "Add a new ADOM"
+msgstr ""
+
+msgid ""
+"Add a second factor with an authenticator app (Google Authenticator, "
+"Authy, FreeOTP…)."
+msgstr ""
+
+msgid "Add appliances and assign Zone / Line / Department in"
+msgstr ""
+
+msgid "Add certificate authorities"
+msgstr ""
+
+msgid "Add devices in Appliances to see the fleet here."
+msgstr ""
+
+msgid "Add element"
+msgstr ""
+
+msgid "Add extra field"
+msgstr ""
+
+msgid "Add filter"
+msgstr ""
+
+msgid "Add group"
+msgstr ""
+
+msgid "Add input"
+msgstr ""
+
+msgid "Add interface"
+msgstr ""
+
+msgid "Add link"
+msgstr ""
+
+msgid "Add member"
+msgstr ""
+
+msgid "Add model"
+msgstr ""
+
+msgid "Add node"
+msgstr ""
+
+msgid "Add one in Settings"
+msgstr ""
+
+msgid "Add or edit a DNS provider"
+msgstr ""
+
+msgid "Add or re-point an endpoint"
+msgstr ""
+
+msgid "Add panel"
+msgstr ""
+
+msgid "Add probe"
+msgstr ""
+
+msgid "Add provider"
+msgstr ""
+
+msgid "Add rule"
+msgstr ""
+
+msgid "Add segment"
+msgstr ""
+
+msgid "Add server"
+msgstr ""
+
+msgid "Add tables joined by foreign keys (up to 2 hops)."
+msgstr ""
+
+msgid "Add the first user to grant access to SATOM."
+msgstr ""
+
+msgid "Add widget"
+msgstr ""
+
+msgid "Add your first FortiWeb appliance to get started."
+msgstr ""
+
+msgid "Address"
+msgstr ""
+
+msgid "Admin"
+msgstr ""
+
+msgid "Admin only."
+msgstr ""
+
+msgid "Admin password to set"
+msgstr ""
+
+msgid "Admin user"
+msgstr ""
+
+msgid "Administration"
+msgstr ""
+
+msgid "Administrative capability"
+msgstr ""
+
+msgid "Administrator"
+msgstr ""
+
+msgid "Admins"
+msgstr ""
+
+msgid "Advanced params (JSON, optional)"
+msgstr ""
+
+msgid "Advantages"
+msgstr ""
+
+msgid "Affected devices"
+msgstr ""
+
+msgid "Affected services"
+msgstr ""
+
+msgid "Affected services captured with this run"
+msgstr ""
+
+msgid "Age"
+msgstr ""
+
+msgid "Alert"
+msgstr ""
+
+msgid "Alert Only"
+msgstr ""
+
+msgid "Alert recipient(s)"
+msgstr ""
+
+msgid "Alert thresholds"
+msgstr ""
+
+msgid ""
+"Alert when a local commit has not reached the remote for this long "
+"(silent push failure)."
+msgstr ""
+
+msgid "All"
+msgstr ""
+
+msgid "All Actions"
+msgstr ""
+
+msgid "All Appliances"
+msgstr ""
+
+msgid "All Endpoints"
+msgstr ""
+
+msgid "All Kinds"
+msgstr ""
+
+msgid "All Roles"
+msgstr ""
+
+msgid "All Status"
+msgstr ""
+
+msgid "All Types"
+msgstr ""
+
+msgid "All WAF rules apply globally with no exceptions."
+msgstr ""
+
+msgid "All appliances"
+msgstr ""
+
+msgid "All classes"
+msgstr ""
+
+msgid "All departments"
+msgstr ""
+
+msgid "All discovered (slow)"
+msgstr ""
+
+msgid "All lines"
+msgstr ""
+
+msgid "All reports"
+msgstr ""
+
+msgid "All scripts"
+msgstr ""
+
+msgid "All sections"
+msgstr ""
+
+msgid "All server policies"
+msgstr ""
+
+msgid "All signatures"
+msgstr ""
+
+msgid "All states"
+msgstr ""
+
+msgid "All sub-classes"
+msgstr ""
+
+msgid "All user actions are recorded for compliance and accountability"
+msgstr ""
+
+msgid "All views"
+msgstr ""
+
+msgid "All zones"
+msgstr ""
+
+msgid "Allow external providers"
+msgstr ""
+
+msgid "Allow read-only tool calls (mode C)"
+msgstr ""
+
+msgid "Allowed Requests"
+msgstr ""
+
+msgid "Also apply on the peer node(s)"
+msgstr ""
+
+msgid "Also push to the external backup server (separate failure domain)"
+msgstr ""
+
+msgid "Also remove from the device (refused if still bound to a policy)"
+msgstr ""
+
+msgid ""
+"Also walk every WPP + Server Policy dependency graph (sub-tables, rule-"
+"lists, disabled signatures, exceptions) and cache it for the Analysis "
+"page. Slower — reads more from the box."
+msgstr ""
+
+msgid ""
+"An enabled action whose due time passed this long ago is reported: a "
+"scheduler that stops firing produces no failed runs at all."
+msgstr ""
+
+msgid ""
+"An ordered list of provisioning elements — each maps a configuration "
+"object (any section) to a JSON payload. Add / reorder / remove elements, "
+"then save as a versioned profile and apply to one device or the fleet "
+"(dry-run → canary). Secret fields (passwords, shared secrets) are "
+"stripped on save and re-entered at apply time."
+msgstr ""
+
+msgid ""
+"An unexpected error occurred while processing your request. The problem "
+"has been logged."
+msgstr ""
+
+msgid "Analysis"
+msgstr ""
+
+msgid "Analysis / FortiView"
+msgstr ""
+
+msgid "Analysis — delivery"
+msgstr ""
+
+msgid "Analysis — identity"
+msgstr ""
+
+msgid "Analytics"
+msgstr ""
+
+msgid "Analytics quota"
+msgstr ""
+
+msgid "Analytics used"
+msgstr ""
+
+msgid "Answers on"
+msgstr ""
+
+msgid "Anthropic (Claude Messages API)"
+msgstr ""
+
+msgid "Any"
+msgstr ""
+
+msgid "Any (universal)"
+msgstr ""
+
+msgid "Any / hardware"
+msgstr ""
+
+msgid "Any certificate"
+msgstr ""
+
+msgid "App / code"
+msgstr ""
+
+msgid "App ID"
+msgstr ""
+
+msgid "App ID coverage"
+msgstr ""
+
+msgid "App ID pattern (regex, from Server Policy comment)"
+msgstr ""
+
+msgid "App IDs"
+msgstr ""
+
+msgid "App probes"
+msgstr ""
+
+msgid "App-pushed DB bundle"
+msgstr ""
+
+msgid "AppID"
+msgstr ""
+
+msgid "AppID *"
+msgstr ""
+
+msgid "AppID column *"
+msgstr ""
+
+msgid "AppID scope"
+msgstr ""
+
+msgid "AppIDs"
+msgstr ""
+
+msgid "Appearance"
+msgstr ""
+
+msgid "Appliance"
+msgstr ""
+
+msgid "Appliance Actions"
+msgstr ""
+
+msgid "Appliance Activity"
+msgstr ""
+
+msgid "Appliance certificates — failed lifecycle events"
+msgstr ""
+
+msgid "Appliance pages"
+msgstr ""
+
+msgid "Appliance-pushed config"
+msgstr ""
+
+msgid "Appliances"
+msgstr ""
+
+msgid "Appliances Touched"
+msgstr ""
+
+msgid "Application"
+msgstr ""
+
+msgid "Application Delivery Controller"
+msgstr ""
+
+msgid "Application IDs"
+msgstr ""
+
+msgid "Application Name"
+msgstr ""
+
+msgid "Application code"
+msgstr ""
+
+msgid "Application code to an older version"
+msgstr ""
+
+msgid "Application configuration and security settings"
+msgstr ""
+
+msgid "Apply"
+msgstr ""
+
+msgid "Apply completed. Review the per-device results below."
+msgstr ""
+
+msgid "Apply for real"
+msgstr ""
+
+msgid "Apply now"
+msgstr ""
+
+msgid "Apply package to this node"
+msgstr ""
+
+msgid "Apply to device"
+msgstr ""
+
+msgid "Apply to devices"
+msgstr ""
+
+msgid "Approval"
+msgstr ""
+
+msgid "Approval history (who approved / rejected)"
+msgstr ""
+
+msgid "Approval history —"
+msgstr ""
+
+msgid ""
+"Approval-gated maintenance windows for risky changes (firmware upgrades)."
+" An approved, scheduled CR binds a one-shot action that only fires inside"
+" its window."
+msgstr ""
+
+msgid "Approve"
+msgstr ""
+
+msgid "Approve (make fleet-deployable)"
+msgstr ""
+
+msgid "Approved"
+msgstr ""
+
+msgid "Approved by"
+msgstr ""
+
+msgid "Approved templates"
+msgstr ""
+
+msgid ""
+"Approved templates, grouped by section. These are assembled into "
+"baselines in"
+msgstr ""
+
+msgid "Architecture"
+msgstr ""
+
+msgid "Archive quota"
+msgstr ""
+
+msgid "Archive used"
+msgstr ""
+
+msgid "Ascending"
+msgstr ""
+
+msgid "Assign"
+msgstr ""
+
+msgid "Assign a profile to"
+msgstr ""
+
+msgid "Assign policies"
+msgstr ""
+
+msgid "Assigned templates"
+msgstr ""
+
+msgid "Assigned to combos"
+msgstr ""
+
+msgid "At"
+msgstr ""
+
+msgid "At boot"
+msgstr ""
+
+msgid "At least 8 characters"
+msgstr ""
+
+msgid "Attach context"
+msgstr ""
+
+msgid "Attach the appliance disk"
+msgstr ""
+
+msgid "Attached"
+msgstr ""
+
+msgid "Attack Events"
+msgstr ""
+
+msgid "Attack ID"
+msgstr ""
+
+msgid "Attack Types"
+msgstr ""
+
+msgid "Attacks"
+msgstr ""
+
+msgid "Audit Entry"
+msgstr ""
+
+msgid "Audit Log"
+msgstr ""
+
+msgid "Audit by action"
+msgstr ""
+
+msgid "Audit entries will appear here as users interact with the system."
+msgstr ""
+
+msgid "Audit log"
+msgstr ""
+
+msgid "Auth"
+msgstr ""
+
+msgid "Authentication"
+msgstr ""
+
+msgid "Authentication Source"
+msgstr ""
+
+msgid "Authentication code"
+msgstr ""
+
+msgid "Authentication posture"
+msgstr ""
+
+msgid "Author"
+msgstr ""
+
+msgid "Author a"
+msgstr ""
+
+msgid "Authored carve-outs"
+msgstr ""
+
+msgid "Authored in"
+msgstr ""
+
+msgid "Authoring only"
+msgstr ""
+
+msgid "Authorize"
+msgstr ""
+
+msgid "Authorize the selected device(s) — exec /dvm/cmd/add/dev-list"
+msgstr ""
+
+msgid "Auto"
+msgstr ""
+
+msgid "Auto (REST → SSH)"
+msgstr ""
+
+msgid "Auto (SSH dump)"
+msgstr ""
+
+msgid "Auto refresh"
+msgstr ""
+
+msgid "Auto — reconciler deploys (standby first, then primary)"
+msgstr ""
+
+msgid "Auto-apply"
+msgstr ""
+
+msgid "Auto-refresh in"
+msgstr ""
+
+msgid "Auto-refreshing every 3s"
+msgstr ""
+
+msgid ""
+"Automate fleet maintenance — backups, signature syncs and gated changes —"
+" on a schedule. Jobs are fired by the scheduler sidecar, never by the web"
+" workers."
+msgstr ""
+
+msgid "Automation"
+msgstr ""
+
+msgid "Automation fail streak → critical"
+msgstr ""
+
+msgid "Automation overdue (hours)"
+msgstr ""
+
+msgid "Availability"
+msgstr ""
+
+msgid "Available datasets"
+msgstr ""
+
+msgid "Available to assign"
+msgstr ""
+
+msgid "Available tokens:"
+msgstr ""
+
+msgid "Available update"
+msgstr ""
+
+msgid "Avg"
+msgstr ""
+
+msgid "Back"
+msgstr ""
+
+msgid "Back to Database"
+msgstr ""
+
+msgid "Back to Draft"
+msgstr ""
+
+msgid "Back to Policies"
+msgstr ""
+
+msgid "Back to Templates"
+msgstr ""
+
+msgid "Back to baselines"
+msgstr ""
+
+msgid "Back to dashboard"
+msgstr ""
+
+msgid "Back to profiles"
+msgstr ""
+
+msgid "Back to sign in"
+msgstr ""
+
+msgid "Back to the Global ADOM"
+msgstr ""
+
+msgid "Back to the stylesheet default"
+msgstr ""
+
+msgid "Back-end pool bound to this routing rule"
+msgstr ""
+
+msgid "Back-end ports"
+msgstr ""
+
+msgid "Back-end servers"
+msgstr ""
+
+msgid "Back-ends"
+msgstr ""
+
+msgid "Back-ends — pools, members and real servers"
+msgstr ""
+
+msgid "Backend"
+msgstr ""
+
+msgid "Backend pool…"
+msgstr ""
+
+msgid ""
+"Backend server IP and VIP filters read the deep capture cache. Run a deep"
+" capture (Analysis) to populate them."
+msgstr ""
+
+msgid "Backend server IP…"
+msgstr ""
+
+msgid ""
+"Background jobs, bug-report updates and other alerts raised for your "
+"account."
+msgstr ""
+
+msgid "Backup"
+msgstr ""
+
+msgid "Backup Name"
+msgstr ""
+
+msgid "Backup coverage — everything, at a glance"
+msgstr ""
+
+msgid "Backup file"
+msgstr ""
+
+msgid "Backup password (only if the backup is encrypted)"
+msgstr ""
+
+msgid "Backup server"
+msgstr ""
+
+msgid "Backup server access (SFTP)"
+msgstr ""
+
+msgid "Backup stale (hours)"
+msgstr ""
+
+msgid "Backup vault"
+msgstr ""
+
+msgid "Backups"
+msgstr ""
+
+msgid "Bar"
+msgstr ""
+
+msgid "Bar chart"
+msgstr ""
+
+msgid "Bare"
+msgstr ""
+
+msgid "Base DN"
+msgstr ""
+
+msgid "Base FortiWeb"
+msgstr ""
+
+msgid "Base URL"
+msgstr ""
+
+msgid "Baselines"
+msgstr ""
+
+msgid "Basic structure ready"
+msgstr ""
+
+msgid "Bearer token"
+msgstr ""
+
+msgid "Before / after validation for every firmware"
+msgstr ""
+
+msgid "Bind DN"
+msgstr ""
+
+msgid "Bind password"
+msgstr ""
+
+msgid "Bind to Server Policies"
+msgstr ""
+
+msgid "Bindings"
+msgstr ""
+
+msgid "Block Period"
+msgstr ""
+
+msgid "Block Period (seconds)"
+msgstr ""
+
+msgid "Blocked"
+msgstr ""
+
+msgid "Blocked Requests"
+msgstr ""
+
+msgid "Body"
+msgstr ""
+
+msgid "Body (JSON)"
+msgstr ""
+
+msgid "Boot Partition"
+msgstr ""
+
+msgid ""
+"Boot this appliance from its alternate firmware partition (rollback / "
+"downgrade — real in-app push + reboot)"
+msgstr ""
+
+msgid "Bootstrap 5.3 + Custom FortiWeb 7.6 Theme"
+msgstr ""
+
+msgid "Bot Mitigation"
+msgstr ""
+
+msgid ""
+"Both slots are read in a single pass — one dedupe check, one bundle "
+"rebuild. Re-importing a certificate already held updates it in place."
+msgstr ""
+
+msgid "Both times are read in"
+msgstr ""
+
+msgid "Bound / Total"
+msgstr ""
+
+msgid "Bound action"
+msgstr ""
+
+msgid "Branch"
+msgstr ""
+
+msgid "Brand logo"
+msgstr ""
+
+msgid "Branding — Top-bar Banner"
+msgstr ""
+
+msgid "Browse"
+msgstr ""
+
+msgid "Browse Server Policies"
+msgstr ""
+
+msgid "Browse Virtual Servers"
+msgstr ""
+
+msgid "Browse examples"
+msgstr ""
+
+msgid "Browse objects"
+msgstr ""
+
+msgid "Bug ID"
+msgstr ""
+
+msgid "Bug Reports"
+msgstr ""
+
+msgid "Bug report notifications"
+msgstr ""
+
+msgid "Build"
+msgstr ""
+
+msgid "Build a report (no SQL needed)"
+msgstr ""
+
+msgid ""
+"Build an appliance machine from nothing: create the virtual machine, give"
+" it an address and a DNS name, bring it up, register it, and hand it to "
+"System Provisioning for its configuration. Scoped to the"
+msgstr ""
+
+msgid "Build and store"
+msgstr ""
+
+msgid "Build any FortiWeb REST call and schedule it."
+msgstr ""
+
+msgid "Builds and boots the machine, then"
+msgstr ""
+
+msgid ""
+"Builds and boots; the appliance takes a lease, SATOM finds it at that "
+"address and carries on."
+msgstr ""
+
+msgid "Builds the whole load-balancing chain on"
+msgstr ""
+
+msgid "Built in — duplicate it to edit"
+msgstr ""
+
+msgid "Built in — reword only"
+msgstr ""
+
+msgid "Built-in template"
+msgstr ""
+
+msgid ""
+"Built-in themes are the recovery path if a palette turns the console "
+"unreadable."
+msgstr ""
+
+msgid "Bulk"
+msgstr ""
+
+msgid "Bundle"
+msgstr ""
+
+msgid "Bundles to keep on each node"
+msgstr ""
+
+msgid "By"
+msgstr ""
+
+msgid "By admin status"
+msgstr ""
+
+msgid "By category"
+msgstr ""
+
+msgid "By department"
+msgstr ""
+
+msgid "By deployment mode"
+msgstr ""
+
+msgid "By device"
+msgstr ""
+
+msgid "By kind"
+msgstr ""
+
+msgid "By line"
+msgstr ""
+
+msgid "By platform"
+msgstr ""
+
+msgid "By status"
+msgstr ""
+
+msgid "By type"
+msgstr ""
+
+msgid "By zone"
+msgstr ""
+
+msgid ""
+"CA-signed certificate lifecycle for FortiWeb — generate a CSR here, sign "
+"it via the configured protocol (ADCS or ACME, Settings → Certificate "
+"Manager), deploy the cert + key to the device, then swap the binding in a"
+" maintenance window. Private keys are stored encrypted; "
+"superseded/expired material is revoked and cleaned per the lifecycle "
+"policy."
+msgstr ""
+
+msgid "CN / hostname"
+msgstr ""
+
+#, python-brace-format
+msgid "CN={cn},O=Corp"
+msgstr ""
+
+msgid "CORP-CA"
+msgstr ""
+
+msgid "CRM_TOKEN"
+msgstr ""
+
+msgid "Cache freshness"
+msgstr ""
+
+msgid "Cached"
+msgstr ""
+
+msgid "Cached database"
+msgstr ""
+
+msgid "Calls:"
+msgstr ""
+
+msgid "Can administer users and profiles"
+msgstr ""
+
+msgid "Canary"
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "Cancel CR"
+msgstr ""
+
+msgid "Cancel and sign out"
+msgstr ""
+
+msgid "Cancel reason (optional)"
+msgstr ""
+
+msgid "Cap mode"
+msgstr ""
+
+msgid "Cap value"
+msgstr ""
+
+msgid "Capabilities"
+msgstr ""
+
+msgid "Capabilities:"
+msgstr ""
+
+msgid "Capability"
+msgstr ""
+
+msgid "Capacity Limits"
+msgstr ""
+
+msgid "Capacity series"
+msgstr ""
+
+msgid "Capture full WPP + policy depth"
+msgstr ""
+
+msgid "Captures"
+msgstr ""
+
+msgid "Carried out by hand"
+msgstr ""
+
+msgid "Carries"
+msgstr ""
+
+msgid "Catalog"
+msgstr ""
+
+msgid "Catalogs"
+msgstr ""
+
+msgid "Catalogs used to classify appliances —"
+msgstr ""
+
+msgid "Catch up"
+msgstr ""
+
+msgid "Categories"
+msgstr ""
+
+msgid "Category"
+msgstr ""
+
+msgid "Ceiling"
+msgstr ""
+
+msgid "Cert Manager — lifecycle sweep"
+msgstr ""
+
+msgid "Cert warn (days)"
+msgstr ""
+
+msgid "Certificate"
+msgstr ""
+
+msgid "Certificate (PEM)"
+msgstr ""
+
+msgid "Certificate Manager"
+msgstr ""
+
+msgid "Certificate class"
+msgstr ""
+
+msgid "Certificate renewals"
+msgstr ""
+
+msgid "Certificates"
+msgstr ""
+
+msgid "Certs"
+msgstr ""
+
+msgid "Chain / intermediates (optional)"
+msgstr ""
+
+msgid "Challenge"
+msgstr ""
+
+msgid "Change"
+msgstr ""
+
+msgid "Change Activity"
+msgstr ""
+
+msgid "Change Appliance"
+msgstr ""
+
+msgid "Change ID"
+msgstr ""
+
+msgid "Change Password"
+msgstr ""
+
+msgid "Change Profile"
+msgstr ""
+
+msgid "Change Request"
+msgstr ""
+
+msgid "Change Requests"
+msgstr ""
+
+msgid "Change Types"
+msgstr ""
+
+msgid "Change automation on the PRIMARY node — this node's database is read-only"
+msgstr ""
+
+msgid "Change document"
+msgstr ""
+
+msgid "Change documents can be produced in"
+msgstr ""
+
+msgid "Change owner (Verantwortlicher)"
+msgstr ""
+
+msgid "Change the mode on the PRIMARY node — this node's database is read-only"
+msgstr ""
+
+msgid "Change ticket"
+msgstr ""
+
+msgid "Change type"
+msgstr ""
+
+msgid "Change types"
+msgstr ""
+
+msgid "Changes"
+msgstr ""
+
+msgid "Changes by action"
+msgstr ""
+
+msgid "Changes by device"
+msgstr ""
+
+msgid "Changes from"
+msgstr ""
+
+msgid "Changes to"
+msgstr ""
+
+msgid "Channel"
+msgstr ""
+
+msgid "Check Value of Specified Element"
+msgstr ""
+
+msgid "Check backup server"
+msgstr ""
+
+msgid "Check for updates"
+msgstr ""
+
+msgid "Check live health"
+msgstr ""
+
+msgid "Check that your copies are not all on one hypervisor."
+msgstr ""
+
+msgid "Checked"
+msgstr ""
+
+msgid "Checking…"
+msgstr ""
+
+msgid "Checks enabled"
+msgstr ""
+
+msgid "Choose a New Password — SATOM"
+msgstr ""
+
+msgid "Choose a new password"
+msgstr ""
+
+msgid "Choose which columns to display"
+msgstr ""
+
+msgid "Cipher list (OpenSSL syntax)"
+msgstr ""
+
+msgid "Class"
+msgstr ""
+
+msgid "Classification"
+msgstr ""
+
+msgid "Classification reference"
+msgstr ""
+
+msgid "Clear"
+msgstr ""
+
+msgid "Clear all"
+msgstr ""
+
+msgid "Clear all filters"
+msgstr ""
+
+msgid "Clear stored HMAC key"
+msgstr ""
+
+msgid "Clear stored password"
+msgstr ""
+
+msgid "Clear stored secret"
+msgstr ""
+
+msgid "Clear the bell — the notifications stay on the Notifications page"
+msgstr ""
+
+msgid "Clear the leftover list"
+msgstr ""
+
+msgid "Click"
+msgstr ""
+
+msgid "Click a filename"
+msgstr ""
+
+msgid ""
+"Click a node to configure it (loads it into the editor below). The arrow "
+"shows the live streaming-replication direction (primary → standby) and "
+"WAL lag; the reconciler drives the staged code rollout along the same "
+"path."
+msgstr ""
+
+msgid "Click a recipe to fill the form, then adjust:"
+msgstr ""
+
+msgid "Click a row to open the full entry"
+msgstr ""
+
+msgid "Click any sparkline"
+msgstr ""
+
+msgid "Click to copy"
+msgstr ""
+
+msgid "Click to copy this entry ID"
+msgstr ""
+
+msgid "Client"
+msgstr ""
+
+msgid "Client IP"
+msgstr ""
+
+msgid ""
+"Client-facing draft — sending is out of scope; use \"Mark notified\" once"
+" delivered."
+msgstr ""
+
+msgid "Clone"
+msgstr ""
+
+msgid "Clone (copies the object and its sub-table rows under a new name)"
+msgstr ""
+
+msgid "Clone (same box)…"
+msgstr ""
+
+msgid "Clone / Migrate"
+msgstr ""
+
+msgid "Clone / Migrate result"
+msgstr ""
+
+msgid "Clone / Migrate — Server Policy copy rules"
+msgstr ""
+
+msgid "Clone Web Protection Profile"
+msgstr ""
+
+msgid "Clone button to get an editable copy."
+msgstr ""
+
+msgid "Clone here"
+msgstr ""
+
+msgid "Clone name"
+msgstr ""
+
+msgid "Clone to another FortiWeb…"
+msgstr ""
+
+msgid "Clone to…"
+msgstr ""
+
+msgid "Close"
+msgstr ""
+
+msgid "Cluster architecture"
+msgstr ""
+
+msgid ""
+"Code is versioned in the app repo (Gitea). Rolling back enqueues the "
+"target commit on the"
+msgstr ""
+
+msgid "Collapse"
+msgstr ""
+
+msgid "Collapse every device"
+msgstr ""
+
+msgid "Collect logs"
+msgstr ""
+
+msgid "Collection"
+msgstr ""
+
+msgid "Collection cadence"
+msgstr ""
+
+msgid "Collector"
+msgstr ""
+
+msgid ""
+"Column ORDER is fixed regardless of what you tick, so two exports of the "
+"same change are comparable. Ticking nothing exports the default five "
+"columns rather than producing an empty file."
+msgstr ""
+
+msgid "Columns"
+msgstr ""
+
+msgid "Combos"
+msgstr ""
+
+msgid "Command source"
+msgstr ""
+
+msgid "Comment"
+msgstr ""
+
+msgid "Commit"
+msgstr ""
+
+msgid "Common paths:"
+msgstr ""
+
+msgid "Common urls:"
+msgstr ""
+
+msgid "Compare"
+msgstr ""
+
+msgid "Compare A → B"
+msgstr ""
+
+msgid "Compare against the devices now"
+msgstr ""
+
+msgid "Compare with previous period"
+msgstr ""
+
+msgid "Compare with prior period"
+msgstr ""
+
+msgid "Completion tokens:"
+msgstr ""
+
+msgid ""
+"Compose a dashboard from read-only SELECT queries — tables, charts and "
+"stat cards. Exportable to PDF."
+msgstr ""
+
+msgid "Compose from approved system-profile templates"
+msgstr ""
+
+msgid "Concatenate"
+msgstr ""
+
+msgid "Concurrent sessions"
+msgstr ""
+
+msgid "Conditions…"
+msgstr ""
+
+msgid "Config Changes"
+msgstr ""
+
+msgid "Config Changes by Operation"
+msgstr ""
+
+msgid "Config SoT"
+msgstr ""
+
+msgid "Config backup"
+msgstr ""
+
+msgid "Config backups path"
+msgstr ""
+
+msgid "Config cache"
+msgstr ""
+
+msgid "Config only"
+msgstr ""
+
+msgid "Configuration"
+msgstr ""
+
+msgid ""
+"Configuration backup vault — shared with the Restore flow and the "
+"upgrade/downgrade runbook."
+msgstr ""
+
+msgid "Configuration file (.conf)"
+msgstr ""
+
+msgid "Configure"
+msgstr ""
+
+msgid "Configure ADCS first"
+msgstr ""
+
+msgid "Configure Repository"
+msgstr ""
+
+msgid "Configure at least one FortiWeb appliance to manage server policies."
+msgstr ""
+
+msgid "Configure the ADCS connection first in"
+msgstr ""
+
+msgid "Confirm New Password"
+msgstr ""
+
+msgid "Confirm Password"
+msgstr ""
+
+msgid "Confirm change to the live device"
+msgstr ""
+
+msgid "Confirm live apply"
+msgstr ""
+
+msgid "Confirm live apply (canary-gated)"
+msgstr ""
+
+msgid "Confirm new password"
+msgstr ""
+
+msgid "Confirm password to disable"
+msgstr ""
+
+msgid ""
+"Confirm performs a real config push (canary device first; the rest only "
+"if the canary succeeds). Preview first."
+msgstr ""
+
+msgid "Confirming below will push the requests shown here to"
+msgstr ""
+
+msgid "Connected Appliances"
+msgstr ""
+
+msgid "Connected to"
+msgstr ""
+
+msgid "Console"
+msgstr ""
+
+msgid "Consumed"
+msgstr ""
+
+msgid "Content Routing"
+msgstr ""
+
+msgid "Cooldown (hours)"
+msgstr ""
+
+msgid ""
+"Copies the issued certificate to the path the pipeline expects. Shipped "
+"with SATOM."
+msgstr ""
+
+msgid "Copy"
+msgstr ""
+
+msgid "Copy DNS"
+msgstr ""
+
+msgid "Copy LB"
+msgstr ""
+
+msgid "Copy List"
+msgstr ""
+
+msgid "Copy URN"
+msgstr ""
+
+msgid "Copy Web Protection Profile"
+msgstr ""
+
+msgid "Copy into an editable theme"
+msgstr ""
+
+msgid "Copy the Web Protection Profile by default on clone / migrate"
+msgstr ""
+
+msgid "Copy the source profile under a"
+msgstr ""
+
+msgid "Core product — can be deactivated but not deleted."
+msgstr ""
+
+msgid "Core-SW-A / Gi1/0/24"
+msgstr ""
+
+msgid "Cost tiers:"
+msgstr ""
+
+msgid "Could not load web protection data from"
+msgstr ""
+
+msgid "Count"
+msgstr ""
+
+msgid "Country"
+msgstr ""
+
+msgid "Coverage"
+msgstr ""
+
+msgid "Create"
+msgstr ""
+
+msgid "Create / power / delete"
+msgstr ""
+
+msgid "Create ADOM"
+msgstr ""
+
+msgid "Create Backup"
+msgstr ""
+
+msgid "Create First Backup"
+msgstr ""
+
+msgid "Create New"
+msgstr ""
+
+msgid "Create User"
+msgstr ""
+
+msgid ""
+"Create a backup to pull the appliance configuration into the vault, or "
+"upload a .conf."
+msgstr ""
+
+msgid ""
+"Create a baseline system profile to preview and push to your appliances "
+"on demand."
+msgstr ""
+
+msgid "Create a new VIP from scratch"
+msgstr ""
+
+msgid "Create a new server pool on the device"
+msgstr ""
+
+msgid ""
+"Create a reusable desired-state profile to push to your appliances on "
+"demand."
+msgstr ""
+
+msgid "Create a token"
+msgstr ""
+
+msgid "Create all"
+msgstr ""
+
+msgid "Create backup"
+msgstr ""
+
+msgid "Create backup now"
+msgstr ""
+
+msgid "Create board"
+msgstr ""
+
+msgid "Create draft"
+msgstr ""
+
+msgid "Create new"
+msgstr ""
+
+msgid "Create object"
+msgstr ""
+
+msgid "Create on device"
+msgstr ""
+
+msgid "Create one, or Refresh to pull live config from the device."
+msgstr ""
+
+msgid "Create repository bundle now"
+msgstr ""
+
+msgid "Create row"
+msgstr ""
+
+msgid "Create run"
+msgstr ""
+
+msgid ""
+"Create the pool now; its real-server members (back-ends) are added in the"
+" editor right after. The new pool is selected back into the routing "
+"policy."
+msgstr ""
+
+msgid ""
+"Create the routing policy with its default server pool. Its Match "
+"Conditions (and per-condition pool / Web Protection Profile) are added in"
+" the editor right after."
+msgstr ""
+
+msgid "Create the target object if it doesn't exist"
+msgstr ""
+
+msgid "Create token"
+msgstr ""
+
+msgid ""
+"Create your first automation — a recurring config backup, a signature "
+"sync, or a one-shot maintenance task."
+msgstr ""
+
+msgid ""
+"Create your first certificate — generate a CSR, sign it at your ADCS, and"
+" deploy it to a FortiWeb."
+msgstr ""
+
+msgid "Created"
+msgstr ""
+
+msgid "Created (UTC)"
+msgstr ""
+
+msgid "Created here (manual bundles, device backups, device sync)"
+msgstr ""
+
+msgid "Creates and powers on the machine. Stops there, by design."
+msgstr ""
+
+msgid ""
+"Credentials are encrypted at rest and are never sent back to the browser."
+" Leave a secret field blank when editing to keep the stored value."
+msgstr ""
+
+msgid ""
+"Credentials are entered per provider below (encrypted at rest, passed to "
+"the client through the environment — never on the command line). The list"
+" is editable: any DNS with an API can be added without touching code."
+msgstr ""
+
+msgid "Critical at"
+msgstr ""
+
+msgid "Critical only"
+msgstr ""
+
+msgid ""
+"Ctrl/Cmd-click to select multiple. Ignored when \"Entire fleet\" is "
+"chosen."
+msgstr ""
+
+msgid "Current Password"
+msgstr ""
+
+msgid "Current firmware:"
+msgstr ""
+
+msgid "Current session"
+msgstr ""
+
+msgid "Current user"
+msgstr ""
+
+msgid "Current:"
+msgstr ""
+
+msgid "Custom"
+msgstr ""
+
+msgid "Custom REST request"
+msgstr ""
+
+msgid "Custom Views"
+msgstr ""
+
+msgid "Custom commands (optional)"
+msgstr ""
+
+msgid "Custom range end"
+msgstr ""
+
+msgid "Custom range start"
+msgstr ""
+
+msgid "Custom views"
+msgstr ""
+
+msgid "Custom — I write the commands"
+msgstr ""
+
+msgid "Customer"
+msgstr ""
+
+msgid "Customer column"
+msgstr ""
+
+msgid "DB cache"
+msgstr ""
+
+msgid "DB replication"
+msgstr ""
+
+msgid "DB: ≤ 24 h · per-device schedule (fw6: ≤ 24 h)"
+msgstr ""
+
+msgid "DELETE"
+msgstr ""
+
+msgid "DNS Lookup"
+msgstr ""
+
+msgid "DNS Lookup — resolver servers"
+msgstr ""
+
+msgid "DNS Records"
+msgstr ""
+
+msgid "DNS Records — IPAM / DDI provider"
+msgstr ""
+
+msgid "DNS provider"
+msgstr ""
+
+msgid "DNS provider credentials (dns-01)"
+msgstr ""
+
+msgid "DNS servers"
+msgstr ""
+
+#, python-brace-format
+msgid "DNS:{cn}"
+msgstr ""
+
+msgid "Daily activity statistics and trend comparison"
+msgstr ""
+
+msgid "Danger"
+msgstr ""
+
+msgid "Dashboard"
+msgstr ""
+
+msgid "Data bundle"
+msgstr ""
+
+msgid "Data from the device cache — “Configure” links open the live editor."
+msgstr ""
+
+msgid "Database"
+msgstr ""
+
+msgid "Database backups — pg_dump bundles (this node)"
+msgstr ""
+
+msgid "Database bundles on this node"
+msgstr ""
+
+msgid "Database — bundles"
+msgstr ""
+
+msgid "Database — live"
+msgstr ""
+
+msgid "Datasets"
+msgstr ""
+
+msgid "Datasheet"
+msgstr ""
+
+msgid "Datasheet (PDF)"
+msgstr ""
+
+msgid "Datastore"
+msgstr ""
+
+msgid "Date"
+msgstr ""
+
+msgid "Date / Time"
+msgstr ""
+
+msgid "Day-by-Day Breakdown"
+msgstr ""
+
+msgid "Days left"
+msgstr ""
+
+msgid "Decides what kind of appliance is registered."
+msgstr ""
+
+msgid ""
+"Declare a limit once and every probe that has not been given its own "
+"value follows it. A probe keeps an explicit value only where somebody set"
+" one; everything else says"
+msgstr ""
+
+msgid "Declared"
+msgstr ""
+
+msgid "Deep clone on this device"
+msgstr ""
+
+msgid "Deep monitors"
+msgstr ""
+
+msgid "Deep-clone this profile on this device"
+msgstr ""
+
+msgid "Default"
+msgstr ""
+
+msgid "Default Appliance Platform"
+msgstr ""
+
+msgid "Default Server Pool"
+msgstr ""
+
+msgid "Default banner"
+msgstr ""
+
+msgid "Default datastore"
+msgstr ""
+
+msgid "Default network"
+msgstr ""
+
+msgid "Default node"
+msgstr ""
+
+msgid "Default platform"
+msgstr ""
+
+msgid "Default port follows the choice if you leave Port blank."
+msgstr ""
+
+msgid "Default profile for new directory users"
+msgstr ""
+
+msgid "Default range"
+msgstr ""
+
+msgid "Default recipient(s)"
+msgstr ""
+
+msgid "Defaults"
+msgstr ""
+
+msgid "Define exactly what each role can do, then assign profiles to users."
+msgstr ""
+
+msgid ""
+"Defines exactly what the user can do. Manage profiles under Admin → "
+"Profiles."
+msgstr ""
+
+msgid "Definition"
+msgstr ""
+
+msgid "Degraded and worse"
+msgstr ""
+
+msgid "Delete"
+msgstr ""
+
+msgid "Delete expired from device after (days)"
+msgstr ""
+
+msgid "Delete provider"
+msgstr ""
+
+msgid "Delete record"
+msgstr ""
+
+msgid "Delete revoked certs from devices (once unbound)"
+msgstr ""
+
+msgid "Delete superseded from device after (days)"
+msgstr ""
+
+msgid "Delete the selected device(s) — exec /dvm/cmd/del/dev-list"
+msgstr ""
+
+msgid "Delete this board"
+msgstr ""
+
+msgid "Deleting here (on the"
+msgstr ""
+
+msgid "Delivery — what this ADC publishes"
+msgstr ""
+
+msgid "Department"
+msgstr ""
+
+msgid "Departments"
+msgstr ""
+
+msgid "Dependency Tree"
+msgstr ""
+
+msgid "Deploy (dry-run)"
+msgstr ""
+
+msgid "Deploy automation"
+msgstr ""
+
+msgid "Deploy for real"
+msgstr ""
+
+msgid "Deploy to the device after signing (upload cert + key over SSH)"
+msgstr ""
+
+msgid "Deploy:"
+msgstr ""
+
+msgid "Deployed"
+msgstr ""
+
+msgid "Deployed on"
+msgstr ""
+
+msgid "Deployment environment (Settings → General → Environment)"
+msgstr ""
+
+msgid "Deployment mode"
+msgstr ""
+
+msgid "Dept"
+msgstr ""
+
+msgid "Depth: not captured"
+msgstr ""
+
+msgid "Descending"
+msgstr ""
+
+msgid "Description"
+msgstr ""
+
+msgid "Description (shown on the dashboard and the PDF)"
+msgstr ""
+
+msgid ""
+"Desired-state carve-outs authored in the manager and bound to a Server "
+"Policy. FortiWeb can't record which policy a shared-profile carve-out is "
+"for — this does."
+msgstr ""
+
+msgid ""
+"Desired-state payload. Validated as JSON on save. Secrets are entered at "
+"apply-time, never stored here."
+msgstr ""
+
+msgid "Destination"
+msgstr ""
+
+msgid "Destination FortiWeb"
+msgstr ""
+
+msgid "Destructive action"
+msgstr ""
+
+msgid "Destructive — handle with care."
+msgstr ""
+
+msgid "Detach member"
+msgstr ""
+
+msgid "Detail"
+msgstr ""
+
+msgid "Detailed (timestamp · level · logger · message)"
+msgstr ""
+
+msgid "Details"
+msgstr ""
+
+msgid "Details / timeline"
+msgstr ""
+
+msgid "Detect on device"
+msgstr ""
+
+msgid "Development"
+msgstr ""
+
+msgid "Device"
+msgstr ""
+
+msgid "Device *"
+msgstr ""
+
+msgid "Device Backups"
+msgstr ""
+
+msgid "Device Classification"
+msgstr ""
+
+msgid "Device HA posture"
+msgstr ""
+
+msgid "Device Provisioning"
+msgstr ""
+
+msgid "Device SoT"
+msgstr ""
+
+msgid "Device action"
+msgstr ""
+
+msgid "Device actions"
+msgstr ""
+
+msgid "Device alert floor"
+msgstr ""
+
+msgid "Device baseline"
+msgstr ""
+
+msgid "Device behavior:"
+msgstr ""
+
+msgid "Device config versions"
+msgstr ""
+
+msgid "Device config versions (SoT store) — compare / rollback"
+msgstr ""
+
+msgid "Device config — source of truth"
+msgstr ""
+
+msgid "Device config — vault"
+msgstr ""
+
+msgid "Device health"
+msgstr ""
+
+msgid ""
+"Device health mails on the same ladder the Monitoring page prints "
+"(harvest, cache age, deep monitors, capacity) plus a live TCP probe."
+msgstr ""
+
+msgid "Device mapping"
+msgstr ""
+
+msgid "Device name"
+msgstr ""
+
+msgid "Device-config vault:"
+msgstr ""
+
+msgid "Devices"
+msgstr ""
+
+msgid "Devices (FortiWeb)"
+msgstr ""
+
+msgid "Devices (ctrl=multi)"
+msgstr ""
+
+msgid "Direct (httpx)"
+msgstr ""
+
+msgid "Direction"
+msgstr ""
+
+msgid "Directory accounts recover their password at the directory."
+msgstr ""
+
+msgid "Directory users get the"
+msgstr ""
+
+msgid "Disable"
+msgstr ""
+
+msgid "Disable 2FA"
+msgstr ""
+
+msgid "Disable catalog endpoint (soft delete)"
+msgstr ""
+
+msgid "Disable endpoint (soft delete)"
+msgstr ""
+
+msgid "Disabled"
+msgstr ""
+
+msgid "Disabled only"
+msgstr ""
+
+msgid "Disabled policy"
+msgstr ""
+
+msgid "Disabled sigs"
+msgstr ""
+
+msgid "Disadvantages"
+msgstr ""
+
+msgid "Discover"
+msgstr ""
+
+msgid "Discover from device"
+msgstr ""
+
+msgid "Discover probes from a device"
+msgstr ""
+
+msgid "Disk (GB)"
+msgstr ""
+
+msgid "Display Hidden Devices"
+msgstr ""
+
+msgid "Displayed in the browser title and top bar"
+msgstr ""
+
+msgid "Do not store secrets here."
+msgstr ""
+
+msgid "DoS Protection"
+msgstr ""
+
+msgid "Docs URL"
+msgstr ""
+
+msgid "Document"
+msgstr ""
+
+msgid "Document language"
+msgstr ""
+
+msgid "Documentation"
+msgstr ""
+
+msgid "Done"
+msgstr ""
+
+msgid "Dots ="
+msgstr ""
+
+msgid "Doughnut"
+msgstr ""
+
+msgid "Download"
+msgstr ""
+
+msgid "Download .md"
+msgstr ""
+
+msgid "Download .xlsx"
+msgstr ""
+
+msgid "Download B"
+msgstr ""
+
+msgid "Download CSV"
+msgstr ""
+
+msgid "Download JSON"
+msgstr ""
+
+msgid "Download PDF"
+msgstr ""
+
+msgid ""
+"Download a signed update package, upload it here, and apply it without "
+"any network access. The package carries the application code and every "
+"pinned Python wheel."
+msgstr ""
+
+msgid "Downtime"
+msgstr ""
+
+msgid "Drift events"
+msgstr ""
+
+msgid "Drift vs. the devices right now:"
+msgstr ""
+
+msgid "Drift window (min)"
+msgstr ""
+
+msgid "Drill-down explorer"
+msgstr ""
+
+msgid "Drive the first-boot dialog"
+msgstr ""
+
+msgid "Drives the"
+msgstr ""
+
+msgid "Dry run"
+msgstr ""
+
+msgid "Dry run (validate only — nothing is sent to the appliance)"
+msgstr ""
+
+msgid "Dry run (validate the image only — nothing is sent)"
+msgstr ""
+
+msgid "Dry run with sample payload"
+msgstr ""
+
+msgid "Dry-run first — nothing is sent to the device until you apply."
+msgstr ""
+
+msgid "Dry-run first — nothing is written until you apply."
+msgstr ""
+
+msgid "Dry-run preview"
+msgstr ""
+
+msgid "Dummy-IP transformation rules (first match wins)"
+msgstr ""
+
+msgid "Duplicate"
+msgstr ""
+
+msgid "Duplicate exceptions"
+msgstr ""
+
+msgid "Duplicate this board"
+msgstr ""
+
+msgid "Duration"
+msgstr ""
+
+msgid "EC (P-256)"
+msgstr ""
+
+msgid "ECDHE+AESGCM:!aNULL"
+msgstr ""
+
+msgid "ESXi host-shell fallback."
+msgstr ""
+
+msgid "Each copy's VIP gets a"
+msgstr ""
+
+msgid "Each rule routes matching requests to a back-end pool. Use"
+msgstr ""
+
+msgid "Each works one time if you lose your authenticator."
+msgstr ""
+
+msgid "Edge rollback"
+msgstr ""
+
+msgid "Edit"
+msgstr ""
+
+msgid "Edit (saves a new version)"
+msgstr ""
+
+msgid "Edit Appliance"
+msgstr ""
+
+msgid "Edit Endpoint"
+msgstr ""
+
+msgid "Edit Template"
+msgstr ""
+
+msgid "Edit User"
+msgstr ""
+
+msgid "Edit catalog endpoint"
+msgstr ""
+
+msgid "Edit catalogs"
+msgstr ""
+
+msgid "Edit category settings"
+msgstr ""
+
+msgid "Edit endpoint"
+msgstr ""
+
+msgid "Edit profile"
+msgstr ""
+
+msgid "Edit profile (FortiWeb-style form, all ~40 sub-policies)"
+msgstr ""
+
+msgid "Edit text"
+msgstr ""
+
+msgid "Edit the selected VIP object"
+msgstr ""
+
+msgid "Edit the selected device (single selection)"
+msgstr ""
+
+msgid "Edit the selected object"
+msgstr ""
+
+msgid "Edit this rule's match conditions and pool"
+msgstr ""
+
+msgid "Edits preview live on this page only; nothing is stored until you save."
+msgstr ""
+
+msgid "Effective"
+msgstr ""
+
+msgid "Effective cap"
+msgstr ""
+
+msgid "Effective role"
+msgstr ""
+
+msgid "EfficientIP SOLIDserver"
+msgstr ""
+
+msgid "Element"
+msgstr ""
+
+msgid "Element Type"
+msgstr ""
+
+msgid "Email (SMTP) Configuration"
+msgstr ""
+
+msgid ""
+"Email is not configured on the server, so reset links cannot be sent. Ask"
+" an administrator to reset your password."
+msgstr ""
+
+msgid "Email this report"
+msgstr ""
+
+msgid "Enable"
+msgstr ""
+
+msgid "Enable AI Advisor"
+msgstr ""
+
+msgid "Enable alert dispatch"
+msgstr ""
+
+msgid "Enable as many as you need. Sign-in walks them"
+msgstr ""
+
+msgid "Enable email sending"
+msgstr ""
+
+msgid "Enable it in Settings"
+msgstr ""
+
+msgid "Enabled"
+msgstr ""
+
+msgid "Encryption"
+msgstr ""
+
+msgid "Encryption in transit"
+msgstr ""
+
+msgid "Endpoint"
+msgstr ""
+
+msgid "Endpoint Name"
+msgstr ""
+
+msgid "Endpoint registry"
+msgstr ""
+
+msgid "Endpoint:"
+msgstr ""
+
+msgid "Endpoints harvested"
+msgstr ""
+
+msgid ""
+"Enforcement (hostssl + client-cert verify-ca) is set at rollout. This "
+"tunes the negotiated floor; it applies on this node's Postgres and "
+"reloads it."
+msgstr ""
+
+msgid "Enter device"
+msgstr ""
+
+msgid "Enter password"
+msgstr ""
+
+msgid "Enter the 6-digit code from your authenticator app"
+msgstr ""
+
+msgid "Enter username"
+msgstr ""
+
+msgid "Enter values on the left and press"
+msgstr ""
+
+msgid "Entire fleet (all appliances)"
+msgstr ""
+
+msgid ""
+"Entitlement headroom, identity inventory and authentication posture "
+"across every FortiAuthenticator in this ADOM. Read entirely from the "
+"local cache and the metrics store — opening this page never contacts an "
+"appliance."
+msgstr ""
+
+msgid "Entitlement — what this unit runs out of"
+msgstr ""
+
+msgid "Entry"
+msgstr ""
+
+msgid "Environment"
+msgstr ""
+
+msgid "Error"
+msgstr ""
+
+msgid "Error reference"
+msgstr ""
+
+msgid "Errors (stderr)"
+msgstr ""
+
+msgid "Event"
+msgstr ""
+
+msgid "Events SATOM emits"
+msgstr ""
+
+msgid "Every"
+msgstr ""
+
+msgid "Every 30 s"
+msgstr ""
+
+msgid "Every 5 min"
+msgstr ""
+
+msgid "Every commit / push; rollback via self-update queue"
+msgstr ""
+
+msgid "Every config GUI section. Sections marked"
+msgstr ""
+
+msgid ""
+"Every finding below is derived from a section the sweep actually "
+"collected. A section that was never harvested produces"
+msgstr ""
+
+msgid ""
+"Every kind here reads the appliance's REST monitor API and never opens an"
+" SSH session, so they keep reporting on a device whose"
+msgstr ""
+
+msgid "Every minute"
+msgstr ""
+
+msgid ""
+"Every mode is preflighted before it changes anything: SATOM asks the "
+"hypervisor what it can actually do and refuses a run it cannot finish, "
+"rather than discovering the limit after an address and a DNS record have "
+"already been committed."
+msgstr ""
+
+msgid "Every object type per device"
+msgstr ""
+
+msgid "Every write goes through"
+msgstr ""
+
+msgid "Everything is generic — pick the issuance"
+msgstr ""
+
+msgid "Everything needed to roll this system back: application"
+msgstr ""
+
+msgid ""
+"Everything: address, DNS, machine, boot, walks the first-boot dialog over"
+" the serial console, registers the appliance, applies the profile."
+msgstr ""
+
+msgid "Exact match"
+msgstr ""
+
+msgid "Exception"
+msgstr ""
+
+msgid "Exception Name"
+msgstr ""
+
+msgid ""
+"Exception entries exempt this signature when the request element matches "
+"(max 128 per signature)."
+msgstr ""
+
+msgid ""
+"Exception rules allow specific URLs, parameters, or IP addresses to "
+"bypass certain WAF signature checks. Use these carefully to reduce false "
+"positives while maintaining security coverage."
+msgstr ""
+
+msgid "Exceptions"
+msgstr ""
+
+msgid "Exceptions (JSON)"
+msgstr ""
+
+msgid "Execute Request"
+msgstr ""
+
+msgid "Execute write API calls"
+msgstr ""
+
+msgid "Existing logs"
+msgstr ""
+
+msgid "Existing tokens"
+msgstr ""
+
+msgid "Exit"
+msgstr ""
+
+msgid "Expand"
+msgstr ""
+
+msgid "Expand all"
+msgstr ""
+
+msgid "Expand every device"
+msgstr ""
+
+msgid "Expect status"
+msgstr ""
+
+msgid "Expired certificates"
+msgstr ""
+
+msgid "Expires"
+msgstr ""
+
+msgid "Expires (days)"
+msgstr ""
+
+msgid "Expires in"
+msgstr ""
+
+msgid "Expiry (days)"
+msgstr ""
+
+msgid ""
+"Expiry is read at day precision: the appliance stamps a timezone "
+"abbreviation that cannot be parsed unambiguously, so the time of day is "
+"discarded."
+msgstr ""
+
+msgid "Explicit — these probes"
+msgstr ""
+
+msgid "Export"
+msgstr ""
+
+msgid "Export CSV"
+msgstr ""
+
+msgid "Export columns"
+msgstr ""
+
+msgid "Export the device list to CSV"
+msgstr ""
+
+msgid "Exporter Function Inventory"
+msgstr ""
+
+msgid "External"
+msgstr ""
+
+msgid "External SMTP server (third-party)"
+msgstr ""
+
+msgid "External backup server"
+msgstr ""
+
+msgid "External change record"
+msgstr ""
+
+msgid "External — an integration must approve it"
+msgstr ""
+
+msgid "Extra SANs (optional)"
+msgstr ""
+
+msgid ""
+"Extra SQL syntax validation before a signature match fires (SQL Injection"
+" categories only)"
+msgstr ""
+
+msgid "Extra columns (kept per AppID)"
+msgstr ""
+
+msgid "FAILED"
+msgstr ""
+
+msgid "FAZ Menu"
+msgstr ""
+
+msgid "Failed objects"
+msgstr ""
+
+msgid "Failed policies"
+msgstr ""
+
+msgid "Failed:"
+msgstr ""
+
+msgid "Failover in progress"
+msgstr ""
+
+msgid "Failover notes"
+msgstr ""
+
+msgid "Fallback dummy IP (no rule matches)"
+msgstr ""
+
+msgid "False Positive Mitigation"
+msgstr ""
+
+msgid ""
+"False Positive Mitigation — extra SQL syntax validation (SQL Injection "
+"categories only)"
+msgstr ""
+
+msgid "Favicon"
+msgstr ""
+
+msgid "Feature"
+msgstr ""
+
+msgid "Fetch MAC addresses"
+msgstr ""
+
+msgid "Fetch from URL (nightly)"
+msgstr ""
+
+msgid "Fetchable (URN) nodes"
+msgstr ""
+
+msgid "Field"
+msgstr ""
+
+msgid "Fields (JSON list of environment variables)"
+msgstr ""
+
+msgid "Fields written"
+msgstr ""
+
+msgid "File"
+msgstr ""
+
+msgid "File sync"
+msgstr ""
+
+msgid "Files"
+msgstr ""
+
+msgid "Filter"
+msgstr ""
+
+msgid "Filter by machine, firmware, operator…"
+msgstr ""
+
+msgid "Filter by name or host…"
+msgstr ""
+
+msgid "Filter by title, type, user, device…"
+msgstr ""
+
+msgid "Filter by type using the \"Object Type\" dropdown"
+msgstr ""
+
+msgid "Filter by type:"
+msgstr ""
+
+msgid "Filter by user"
+msgstr ""
+
+msgid "Filter endpoints…"
+msgstr ""
+
+msgid "Filter objects by name, URN or section…"
+msgstr ""
+
+msgid "Filter sections…"
+msgstr ""
+
+msgid "Filter type"
+msgstr ""
+
+msgid "Filters"
+msgstr ""
+
+msgid "Finding"
+msgstr ""
+
+msgid "Findings"
+msgstr ""
+
+msgid "Finished"
+msgstr ""
+
+msgid "Firecrawl endpoint"
+msgstr ""
+
+msgid "Firecrawl fallback"
+msgstr ""
+
+msgid "Firecrawl key (optional)"
+msgstr ""
+
+msgid "Firmware"
+msgstr ""
+
+msgid "Firmware Reports"
+msgstr ""
+
+msgid "Firmware before"
+msgstr ""
+
+msgid "Firmware file"
+msgstr ""
+
+msgid "Firmware image (auto-detected from repository)"
+msgstr ""
+
+msgid "Firmware image (from repository)"
+msgstr ""
+
+msgid "Firmware major"
+msgstr ""
+
+msgid "Firmware path"
+msgstr ""
+
+msgid "Firmware repository"
+msgstr ""
+
+msgid "Firmware source-of-truth repository"
+msgstr ""
+
+msgid "First row is a header"
+msgstr ""
+
+msgid "Fit"
+msgstr ""
+
+msgid "Fit diagram to view"
+msgstr ""
+
+msgid "Flag"
+msgstr ""
+
+msgid "Fleet"
+msgstr ""
+
+msgid "Fleet Map"
+msgstr ""
+
+msgid "Fleet Objects"
+msgstr ""
+
+msgid "Fleet health"
+msgstr ""
+
+msgid "Fleet inventory"
+msgstr ""
+
+msgid "Fleet objects"
+msgstr ""
+
+msgid "Fleet-wide defaults for the Server Policy"
+msgstr ""
+
+msgid "Follow the board"
+msgstr ""
+
+msgid "For a planned change, schedule the swap via a"
+msgstr ""
+
+msgid ""
+"For the nightly action, point at a URL that serves the catalog (the file "
+"that \"changes every day\"). It reuses the saved column mapping. Create "
+"the scheduled action from Automation → Scheduled Actions ("
+msgstr ""
+
+msgid "Forgot password?"
+msgstr ""
+
+msgid "Format"
+msgstr ""
+
+msgid "FortiADC"
+msgstr ""
+
+msgid "FortiADC API-Registry Explorer"
+msgstr ""
+
+msgid "FortiADC devices"
+msgstr ""
+
+msgid ""
+"FortiADC has no REST configuration-restore endpoint, so the manager can't"
+" apply a backup to the box from here. Use the"
+msgstr ""
+
+msgid ""
+"FortiADC serves one unversioned /api tree — keep \"v1\" unless a future "
+"generation appears."
+msgstr ""
+
+msgid "FortiAnalyzer"
+msgstr ""
+
+msgid "FortiAnalyzer API-Registry Explorer"
+msgstr ""
+
+msgid "FortiAnalyzer devices"
+msgstr ""
+
+msgid "FortiAnalyzer menu visibility"
+msgstr ""
+
+msgid "FortiAuthenticator"
+msgstr ""
+
+msgid "FortiAuthenticator / RADIUS"
+msgstr ""
+
+msgid "FortiAuthenticator API"
+msgstr ""
+
+msgid "FortiAuthenticator devices"
+msgstr ""
+
+msgid "FortiAuthenticator group"
+msgstr ""
+
+msgid "FortiGate"
+msgstr ""
+
+msgid "FortiWeb"
+msgstr ""
+
+msgid "FortiWeb (Hardware / VM)"
+msgstr ""
+
+msgid "FortiWeb 7.6 REST API"
+msgstr ""
+
+msgid "FortiWeb Configuration"
+msgstr ""
+
+msgid "FortiWeb Endpoint Registry"
+msgstr ""
+
+msgid "FortiWeb Sections"
+msgstr ""
+
+msgid "FortiWeb admin guide ↗"
+msgstr ""
+
+msgid "FortiWeb appliance"
+msgstr ""
+
+msgid "FortiWeb object"
+msgstr ""
+
+msgid "FortiWeb predefined profile"
+msgstr ""
+
+msgid "FortiWeb predefined signature policy — read-only; clone it to customize"
+msgstr ""
+
+msgid ""
+"FortiWeb serves v2.0 on every current firmware — change only for a future"
+" API generation."
+msgstr ""
+
+msgid "FortiWeb-Cloud"
+msgstr ""
+
+msgid "FortiWeb-VM04"
+msgstr ""
+
+msgid "Fortinet config archive (zip)"
+msgstr ""
+
+msgid "Free"
+msgstr ""
+
+msgid "Frequency"
+msgstr ""
+
+msgid "From"
+msgstr ""
+
+msgid "From Date"
+msgstr ""
+
+msgid "From address"
+msgstr ""
+
+msgid "From date"
+msgstr ""
+
+msgid "From name"
+msgstr ""
+
+msgid "From the ID"
+msgstr ""
+
+msgid "Front-end"
+msgstr ""
+
+msgid "Full"
+msgstr ""
+
+msgid "Full Screen"
+msgstr ""
+
+msgid "Full editor"
+msgstr ""
+
+msgid "Full screen"
+msgstr ""
+
+msgid "Full width"
+msgstr ""
+
+msgid "Function (exporter)"
+msgstr ""
+
+msgid "GET ignores the body."
+msgstr ""
+
+msgid "GET —"
+msgstr ""
+
+msgid "GUI / admin cert"
+msgstr ""
+
+msgid "Gateway"
+msgstr ""
+
+msgid "General"
+msgstr ""
+
+msgid "General Configuration"
+msgstr ""
+
+msgid "Generate SQL"
+msgstr ""
+
+msgid ""
+"Generate a CSR, sign it at your ADCS, and (optionally) deploy the cert + "
+"key to the device. The new certificate is"
+msgstr ""
+
+msgid "Generate a report now"
+msgstr ""
+
+msgid "Generate combos"
+msgstr ""
+
+msgid "Generate missing combos"
+msgstr ""
+
+msgid "Generate report"
+msgstr ""
+
+msgid "Generate the zone × line × department permutations to get started."
+msgstr ""
+
+msgid "Generated from the fields above (recommended)"
+msgstr ""
+
+msgid "Git"
+msgstr ""
+
+msgid "Git behind max"
+msgstr ""
+
+msgid "Git repository (application code)"
+msgstr ""
+
+msgid "Git unpushed max (hours)"
+msgstr ""
+
+msgid "Gitea app repo + checked out on both nodes"
+msgstr ""
+
+msgid "Global"
+msgstr ""
+
+msgid "Global ADOM"
+msgstr ""
+
+msgid "Global Search"
+msgstr ""
+
+msgid "Global sections"
+msgstr ""
+
+msgid "Grace / retention windows live in Settings → Certificate Manager"
+msgstr ""
+
+msgid "Group / OU DN"
+msgstr ""
+
+msgid "Grouped list (Zone → Line → Department)"
+msgstr ""
+
+msgid "Groups to import"
+msgstr ""
+
+msgid "Guided wizard: create the pool + real servers + virtual server in one step"
+msgstr ""
+
+msgid "HA Cluster — members"
+msgstr ""
+
+msgid "HA mode"
+msgstr ""
+
+msgid "HA nodes"
+msgstr ""
+
+msgid "HA — two-node"
+msgstr ""
+
+msgid "HA — two-node cluster"
+msgstr ""
+
+msgid "HTTP Method"
+msgstr ""
+
+msgid "HTTP Service"
+msgstr ""
+
+msgid "HTTP throughput"
+msgstr ""
+
+msgid "HTTP transactions"
+msgstr ""
+
+msgid "HTTPS"
+msgstr ""
+
+msgid "HTTPS / TLS service"
+msgstr ""
+
+msgid "HTTPS Service"
+msgstr ""
+
+msgid "Half"
+msgstr ""
+
+msgid "Half width"
+msgstr ""
+
+msgid ""
+"Hard cap. In an isolated management network everything external must fail"
+" fast."
+msgstr ""
+
+msgid "Hard max"
+msgstr ""
+
+msgid "Hard max (Fortinet)"
+msgstr ""
+
+msgid "Hardware"
+msgstr ""
+
+msgid "Hardware appliance"
+msgstr ""
+
+msgid "Harvested"
+msgstr ""
+
+msgid "Head"
+msgstr ""
+
+msgid "Health"
+msgstr ""
+
+msgid "Health battery (SSH)"
+msgstr ""
+
+msgid "Health check"
+msgstr ""
+
+msgid "Height (px)"
+msgstr ""
+
+msgid "Hide"
+msgstr ""
+
+msgid "Hide URNs"
+msgstr ""
+
+msgid "Hide default (predefined) profiles"
+msgstr ""
+
+msgid "Hide old versions"
+msgstr ""
+
+msgid ""
+"Hide the FortiWeb predefined (default) profiles, leaving only your custom"
+" profiles. Saved to your preferences."
+msgstr ""
+
+msgid "Hide the selected device(s) from this view"
+msgstr ""
+
+msgid "High"
+msgstr ""
+
+msgid "High Availability"
+msgstr ""
+
+msgid "High action"
+msgstr ""
+
+msgid "Highest mode reachable"
+msgstr ""
+
+msgid "History"
+msgstr ""
+
+msgid "Hold Ctrl/Cmd to select several."
+msgstr ""
+
+msgid "Hold Ctrl/Cmd to select several. The first selected device is the canary."
+msgstr ""
+
+msgid "Home"
+msgstr ""
+
+msgid "Hook"
+msgstr ""
+
+msgid "Host"
+msgstr ""
+
+msgid "Host / IP"
+msgstr ""
+
+msgid "Host / LAN IP"
+msgstr ""
+
+msgid "Host / mgmt IP"
+msgstr ""
+
+msgid "Host shell (ESXi only — needed when the API is read-only)"
+msgstr ""
+
+msgid "Hostname"
+msgstr ""
+
+msgid "Hostname (DNS)"
+msgstr ""
+
+msgid "Hostnames / IPs — one per line"
+msgstr ""
+
+msgid ""
+"Hourly sync (id5) records a version on every config change; nightly "
+"publish 02:45 (id12) pushes new blobs off-box — FortiWeb, FortiADC"
+msgstr ""
+
+msgid "How / cadence"
+msgstr ""
+
+msgid "How application log lines are written"
+msgstr ""
+
+msgid "How far SATOM can take it — pick a mode"
+msgstr ""
+
+msgid "How it gets there"
+msgstr ""
+
+msgid "How often appliance online/offline status is checked"
+msgstr ""
+
+msgid "How this endpoint is referred to when provisioning."
+msgstr ""
+
+msgid "How this works"
+msgstr ""
+
+msgid "How to capture the backup off the appliance"
+msgstr ""
+
+msgid "Hypervisor"
+msgstr ""
+
+msgid "Hypervisors"
+msgstr ""
+
+msgid "Hypervisors — where SATOM builds appliance machines"
+msgstr ""
+
+msgid "I accept the CA's Terms of Service"
+msgstr ""
+
+msgid "I understand this is a"
+msgstr ""
+
+msgid "IP / CIDR"
+msgstr ""
+
+msgid "IP / Domain"
+msgstr ""
+
+msgid "IP Address"
+msgstr ""
+
+msgid "IP Whitelist"
+msgstr ""
+
+msgid "IP address"
+msgstr ""
+
+msgid "IP address (VIP)"
+msgstr ""
+
+msgid "IP starts with (octets)"
+msgstr ""
+
+msgid "IP whitelist"
+msgstr ""
+
+msgid "IPS profiles"
+msgstr ""
+
+msgid "IPs per segment"
+msgstr ""
+
+msgid "Icon"
+msgstr ""
+
+msgid "Identity"
+msgstr ""
+
+msgid "Identity inventory"
+msgstr ""
+
+msgid "Image"
+msgstr ""
+
+msgid "Image type"
+msgstr ""
+
+msgid "Import"
+msgstr ""
+
+msgid "Import (additive)"
+msgstr ""
+
+msgid "Import Backup"
+msgstr ""
+
+msgid "Import a config backup"
+msgstr ""
+
+msgid "Import certificate (PEM)"
+msgstr ""
+
+msgid "Import group"
+msgstr ""
+
+msgid ""
+"Import the directory users into the local user list so you can assign "
+"profiles or block them"
+msgstr ""
+
+msgid "Import theme"
+msgstr ""
+
+msgid "Imported (UTC)"
+msgstr ""
+
+msgid "Imported snapshots"
+msgstr ""
+
+msgid "Importing users needs a second channel."
+msgstr ""
+
+msgid "In a pool?"
+msgstr ""
+
+msgid "In registry"
+msgstr ""
+
+msgid "In registry?"
+msgstr ""
+
+msgid "In the picker"
+msgstr ""
+
+msgid "In use (fleet max)"
+msgstr ""
+
+msgid "Inactivity before the session expires and re-asks for the password"
+msgstr ""
+
+msgid "Incidents"
+msgstr ""
+
+msgid "Incoming log rate — by device"
+msgstr ""
+
+msgid "Infrastructure health"
+msgstr ""
+
+msgid "Infrastructure → Firmware"
+msgstr ""
+
+msgid "Inject"
+msgstr ""
+
+msgid "Inline Protection Profile"
+msgstr ""
+
+msgid "Inputs"
+msgstr ""
+
+msgid "Install"
+msgstr ""
+
+msgid "Install image"
+msgstr ""
+
+msgid "Install media only — upgrade images are a different list."
+msgstr ""
+
+msgid "Installed"
+msgstr ""
+
+msgid "Integration hooks (your Python)"
+msgstr ""
+
+msgid "Integration log"
+msgstr ""
+
+msgid "Integrations"
+msgstr ""
+
+msgid "Interface"
+msgstr ""
+
+msgid "Interfaces"
+msgstr ""
+
+msgid "Interfaces / Connections"
+msgstr ""
+
+msgid "Intermediate CA"
+msgstr ""
+
+msgid "Interval (min)"
+msgstr ""
+
+msgid "Inventory Totals per Day"
+msgstr ""
+
+msgid "Issuance protocol (CA backend)"
+msgstr ""
+
+msgid "Issue from internal CA"
+msgstr ""
+
+msgid "Issued"
+msgstr ""
+
+msgid "Issuer"
+msgstr ""
+
+msgid "Issuer CN"
+msgstr ""
+
+msgid "Issues"
+msgstr ""
+
+msgid "Items"
+msgstr ""
+
+msgid "JSON (structured, one object per line)"
+msgstr ""
+
+msgid "JSON body"
+msgstr ""
+
+msgid "JSON body (POST / PUT)"
+msgstr ""
+
+msgid "JSON-RPC console"
+msgstr ""
+
+msgid "JavaScript"
+msgstr ""
+
+msgid "Job"
+msgstr ""
+
+msgid "Jobs"
+msgstr ""
+
+msgid "KVM / Proxmox (.qcow2)"
+msgstr ""
+
+msgid "Key"
+msgstr ""
+
+msgid "Key (slug, unique)"
+msgstr ""
+
+msgid "Key Filter (mkey)"
+msgstr ""
+
+msgid "Key size"
+msgstr ""
+
+msgid "Key type"
+msgstr ""
+
+msgid "Kind"
+msgstr ""
+
+msgid "Known"
+msgstr ""
+
+msgid "Known Attacks / Signatures"
+msgstr ""
+
+msgid "Known gap:"
+msgstr ""
+
+msgid "LB matches"
+msgstr ""
+
+msgid "LB method"
+msgstr ""
+
+msgid "LDAP (generic)"
+msgstr ""
+
+msgid "LDAPS (SSL)"
+msgstr ""
+
+msgid "LEGEND"
+msgstr ""
+
+msgid "LIVE devices"
+msgstr ""
+
+msgid "Label"
+msgstr ""
+
+msgid "Label (optional)"
+msgstr ""
+
+msgid "Label column"
+msgstr ""
+
+msgid "Labels (X)"
+msgstr ""
+
+msgid "Language"
+msgstr ""
+
+msgid "Last 24 hours"
+msgstr ""
+
+msgid "Last Login"
+msgstr ""
+
+msgid "Last change"
+msgstr ""
+
+msgid "Last confirmed"
+msgstr ""
+
+msgid "Last result"
+msgstr ""
+
+msgid "Last run (UTC)"
+msgstr ""
+
+msgid "Last scanned"
+msgstr ""
+
+msgid "Last status"
+msgstr ""
+
+msgid "Last sweep:"
+msgstr ""
+
+msgid "Last used"
+msgstr ""
+
+msgid "Last value the harvest captured, not a live probe."
+msgstr ""
+
+msgid "Latest Backup"
+msgstr ""
+
+msgid "Latest push (UTC)"
+msgstr ""
+
+msgid "Layer"
+msgstr ""
+
+msgid ""
+"Layered schema layout — parents left, dependents right; crow's-foot = "
+"many side. Drag a table, scroll to zoom, drag the canvas to pan; click a "
+"table to pin its relationships."
+msgstr ""
+
+msgid "Leave a box"
+msgstr ""
+
+msgid "Leave a threshold box"
+msgstr ""
+
+msgid "Leave blank to keep current token"
+msgstr ""
+
+msgid ""
+"Leave empty on a licensed host. SATOM only uses this when the API refuses"
+" writes, and reports which transport it chose."
+msgstr ""
+
+msgid "Leave empty to allow all."
+msgstr ""
+
+msgid "Legend label"
+msgstr ""
+
+msgid "Let's Encrypt"
+msgstr ""
+
+msgid "Libraries"
+msgstr ""
+
+msgid "Licence-dependent"
+msgstr ""
+
+msgid "Lifecycle"
+msgstr ""
+
+msgid "Lifecycle — due for revocation / device cleanup"
+msgstr ""
+
+msgid "Line"
+msgstr ""
+
+msgid "Line chart"
+msgstr ""
+
+msgid "Lines"
+msgstr ""
+
+msgid "Links"
+msgstr ""
+
+msgid "Links shown at the top of every"
+msgstr ""
+
+msgid "List"
+msgstr ""
+
+msgid "List actions"
+msgstr ""
+
+msgid "Listing pushed backups…"
+msgstr ""
+
+msgid "Live bindings"
+msgstr ""
+
+msgid "Live console"
+msgstr ""
+
+msgid ""
+"Live detail unavailable — the cert is not served on a reachable binding, "
+"or the box is unreachable."
+msgstr ""
+
+msgid "Live device browser (menu → objects → editor)"
+msgstr ""
+
+msgid "Live health:"
+msgstr ""
+
+msgid "Live preview"
+msgstr ""
+
+msgid "Live role:"
+msgstr ""
+
+msgid "Live upgrade is blocked."
+msgstr ""
+
+msgid "Live write."
+msgstr ""
+
+msgid "Load"
+msgstr ""
+
+msgid "Loadbalancer"
+msgstr ""
+
+msgid "Loading fleet…"
+msgstr ""
+
+msgid "Loading live data from the FortiAnalyzer…"
+msgstr ""
+
+msgid "Loading..."
+msgstr ""
+
+msgid "Loading…"
+msgstr ""
+
+msgid "Local"
+msgstr ""
+
+msgid ""
+"Local = the box's own MTA on localhost. External = a provider you point "
+"at below."
+msgstr ""
+
+msgid "Local certificates"
+msgstr ""
+
+msgid "Local database"
+msgstr ""
+
+msgid "Local mail server (localhost relay, no auth)"
+msgstr ""
+
+msgid ""
+"Local source of truth (PostgreSQL). Use 'Refresh from device' to pull "
+"live config."
+msgstr ""
+
+msgid "Local source of truth (PostgreSQL). Use Refresh to pull live config."
+msgstr ""
+
+msgid "Location"
+msgstr ""
+
+msgid "Locked"
+msgstr ""
+
+msgid "Log"
+msgstr ""
+
+msgid "Log Collection"
+msgstr ""
+
+msgid "Log Format"
+msgstr ""
+
+msgid "Log Levels"
+msgstr ""
+
+msgid "Log format"
+msgstr ""
+
+msgid "Log levels"
+msgstr ""
+
+msgid "Logical"
+msgstr ""
+
+msgid "Logical name"
+msgstr ""
+
+msgid "Login"
+msgstr ""
+
+msgid "Logo"
+msgstr ""
+
+msgid "Logout"
+msgstr ""
+
+msgid "Logs / sec"
+msgstr ""
+
+msgid "Lookup"
+msgstr ""
+
+msgid "Loopback and admins are always allowed so a typo can't lock you out."
+msgstr ""
+
+msgid "Low"
+msgstr ""
+
+msgid "Low action"
+msgstr ""
+
+msgid "Lowercase, digits and dashes. It is the directory name."
+msgstr ""
+
+msgid "Lua Studio"
+msgstr ""
+
+msgid "Lua code"
+msgstr ""
+
+msgid "MAC via read-only CLI, cached"
+msgstr ""
+
+msgid "MANUAL — observe only"
+msgstr ""
+
+msgid "Machine"
+msgstr ""
+
+msgid "Machine name"
+msgstr ""
+
+msgid "Machine translations are labelled as such"
+msgstr ""
+
+msgid "Mailed"
+msgstr ""
+
+msgid "Maintenance"
+msgstr ""
+
+msgid "Maintenance mode"
+msgstr ""
+
+msgid "Maintenance mode - hidden from operators"
+msgstr ""
+
+msgid "Maintenance notice"
+msgstr ""
+
+msgid "Maintenance permission"
+msgstr ""
+
+msgid "Maintenance-window backend"
+msgstr ""
+
+msgid "Make this the console theme"
+msgstr ""
+
+msgid "Manage / clean up"
+msgstr ""
+
+msgid "Manage FortiWeb appliance connections"
+msgstr ""
+
+msgid "Manage VIP rows…"
+msgstr ""
+
+msgid "Manage application users and roles"
+msgstr ""
+
+msgid "Manage backups"
+msgstr ""
+
+msgid "Manage in Settings → DNS Lookup"
+msgstr ""
+
+msgid "Manage member nodes from the cluster detail page."
+msgstr ""
+
+msgid "Manage members…"
+msgstr ""
+
+msgid "Manage profiles"
+msgstr ""
+
+msgid ""
+"Manage this appliance's configuration-backup vault and restore a saved "
+"config (admin only)"
+msgstr ""
+
+msgid "Management address"
+msgstr ""
+
+msgid "Manual"
+msgstr ""
+
+msgid ""
+"Manual (below); captures CODE commits that cannot reach Gitea. Device-"
+"config history moved to the SoT store"
+msgstr ""
+
+msgid "Manual Git Console"
+msgstr ""
+
+msgid "Manual failover"
+msgstr ""
+
+msgid "Manual refresh"
+msgstr ""
+
+msgid "Manual upload only"
+msgstr ""
+
+msgid "Manual — I apply updates by hand"
+msgstr ""
+
+msgid "Manual — approved here in SATOM"
+msgstr ""
+
+msgid "Map"
+msgstr ""
+
+msgid "Map columns → fields"
+msgstr ""
+
+msgid "Mark notified"
+msgstr ""
+
+msgid "Mark resolved"
+msgstr ""
+
+msgid "Mark reviewed"
+msgstr ""
+
+msgid "Mark tested (lint gate)"
+msgstr ""
+
+msgid "Markdown source"
+msgstr ""
+
+msgid "Match Context"
+msgstr ""
+
+msgid "Matching attack-log entries"
+msgstr ""
+
+msgid "Matching devices"
+msgstr ""
+
+msgid "Matching sections appear here."
+msgstr ""
+
+msgid "Maturity prompt"
+msgstr ""
+
+msgid "Med"
+msgstr ""
+
+msgid "Medium action"
+msgstr ""
+
+msgid "Member name"
+msgstr ""
+
+msgid "Members"
+msgstr ""
+
+msgid "Members…"
+msgstr ""
+
+msgid "Memory (MB)"
+msgstr ""
+
+msgid "Memory usage"
+msgstr ""
+
+msgid "Method"
+msgstr ""
+
+msgid "Methods"
+msgstr ""
+
+msgid "Metric"
+msgstr ""
+
+msgid "Metrics"
+msgstr ""
+
+msgid "Metrics collection"
+msgstr ""
+
+msgid "Metrics store (VictoriaMetrics, this node)"
+msgstr ""
+
+msgid "MetricsQL expression"
+msgstr ""
+
+msgid "Migrate"
+msgstr ""
+
+msgid "Migrate to another FortiWeb…"
+msgstr ""
+
+msgid "Migrate to…"
+msgstr ""
+
+msgid "Min"
+msgstr ""
+
+msgid "Min. 8 characters"
+msgstr ""
+
+msgid "Min/max band"
+msgstr ""
+
+msgid "Minimum TLS protocol"
+msgstr ""
+
+msgid "Missing"
+msgstr ""
+
+msgid "Missing from registry"
+msgstr ""
+
+msgid "Mode"
+msgstr ""
+
+msgid "Model"
+msgstr ""
+
+msgid "Model / SKU (e.g. FortiWeb-VM02, FWB-600F)"
+msgstr ""
+
+msgid "Modules"
+msgstr ""
+
+msgid "Monitoring"
+msgstr ""
+
+msgid "Monitoring reports"
+msgstr ""
+
+msgid "Move down"
+msgstr ""
+
+msgid "Move up"
+msgstr ""
+
+msgid "Multi (SNI)"
+msgstr ""
+
+msgid ""
+"Must PERSIST: a new account per issuance burns the CA's registration rate"
+" limit and loses the ability to revoke what was issued earlier. Included "
+"in the system backups."
+msgstr ""
+
+msgid "Mute this probe (hours)"
+msgstr ""
+
+msgid "My DNS provider"
+msgstr ""
+
+msgid "My Profile"
+msgstr ""
+
+msgid "N/A (no health check)"
+msgstr ""
+
+msgid "NAS identifier"
+msgstr ""
+
+msgid "Name"
+msgstr ""
+
+msgid "Name (FQDN)"
+msgstr ""
+
+msgid "Name (mkey)"
+msgstr ""
+
+msgid "Name (optional)"
+msgstr ""
+
+msgid "Name contains"
+msgstr ""
+
+msgid "Name in the picker"
+msgstr ""
+
+msgid ""
+"Name it, scope it to a zone / line / department, and compose it from "
+"approved templates."
+msgstr ""
+
+msgid "Name or /regex/…"
+msgstr ""
+
+msgid ""
+"Named back-end networks (CIDR + interface + gateway) from which a new "
+"policy builds its server pool. Each segment can be scoped to a "
+"classification value (leave blank for \"any\")."
+msgstr ""
+
+msgid ""
+"Named explicitly rather than simply omitted from the averages above: a "
+"report whose figures quietly skip them looks complete while covering less"
+" than it claims."
+msgstr ""
+
+msgid "Names"
+msgstr ""
+
+msgid "Naming"
+msgstr ""
+
+msgid "Naming Scheme"
+msgstr ""
+
+msgid "Narrow to a specific appliance to speed up results"
+msgstr ""
+
+msgid "Need Attention"
+msgstr ""
+
+msgid "Needs"
+msgstr ""
+
+msgid ""
+"Needs an API serial console. Most moving parts, so the widest surface for"
+" a mid-run failure — which is why rollback exists."
+msgstr ""
+
+msgid "Neither the cache nor the device returned the sub-lists"
+msgstr ""
+
+msgid "NetBox"
+msgstr ""
+
+msgid "NetBox device id"
+msgstr ""
+
+msgid "NetBox window"
+msgstr ""
+
+msgid "Netmask"
+msgstr ""
+
+msgid "Network"
+msgstr ""
+
+msgid "Network Segment"
+msgstr ""
+
+msgid "Network Segments"
+msgstr ""
+
+msgid "Network Zones"
+msgstr ""
+
+msgid "Network calculator"
+msgstr ""
+
+msgid "Network map view"
+msgstr ""
+
+msgid ""
+"Network view of the whole fleet: Internet → published services (VIP:port)"
+" → FortiWeb → server pools → back-end servers. Devices start collapsed — "
+"click one to unfold its topology. Searching switches to a focused view "
+"(zone → device → server policy → backends) so only the matching path is "
+"drawn."
+msgstr ""
+
+msgid "Network-impacting section."
+msgstr ""
+
+msgid "New"
+msgstr ""
+
+msgid "New (blank)"
+msgstr ""
+
+msgid "New (guided)"
+msgstr ""
+
+msgid "New Action"
+msgstr ""
+
+msgid "New Certificate"
+msgstr ""
+
+msgid "New Change Request"
+msgstr ""
+
+msgid "New Content Routing Policy"
+msgstr ""
+
+msgid "New Endpoint"
+msgstr ""
+
+msgid "New FortiWeb script"
+msgstr ""
+
+msgid "New Password"
+msgstr ""
+
+msgid "New Password (leave blank to keep)"
+msgstr ""
+
+msgid "New Profile"
+msgstr ""
+
+msgid "New Server Policy"
+msgstr ""
+
+msgid "New Server Pool"
+msgstr ""
+
+msgid "New Template"
+msgstr ""
+
+msgid "New Virtual Server (guided)"
+msgstr ""
+
+msgid "New board"
+msgstr ""
+
+msgid "New carve-out"
+msgstr ""
+
+msgid "New conversation"
+msgstr ""
+
+msgid "New exception entry"
+msgstr ""
+
+msgid "New hook"
+msgstr ""
+
+msgid "New machine"
+msgstr ""
+
+msgid "New name"
+msgstr ""
+
+msgid "New password"
+msgstr ""
+
+msgid "New policy name"
+msgstr ""
+
+msgid "New pool"
+msgstr ""
+
+msgid "New profile"
+msgstr ""
+
+msgid "New routing policy…"
+msgstr ""
+
+msgid "New tab"
+msgstr ""
+
+msgid "New template"
+msgstr ""
+
+msgid "New theme"
+msgstr ""
+
+msgid "New to reports?"
+msgstr ""
+
+msgid "New token created — copy it now."
+msgstr ""
+
+msgid "New view"
+msgstr ""
+
+msgid "Newest DB bundle off-rack:"
+msgstr ""
+
+msgid "Next"
+msgstr ""
+
+msgid "Next run"
+msgstr ""
+
+msgid "Next-Gen Firewall"
+msgstr ""
+
+msgid "Nightly source"
+msgstr ""
+
+msgid "No"
+msgstr ""
+
+msgid "No AppIDs yet. Add one above or import a catalog."
+msgstr ""
+
+msgid "No DNS servers configured."
+msgstr ""
+
+msgid "No FortiADC appliance is visible in this ADOM."
+msgstr ""
+
+msgid "No FortiADC appliances configured"
+msgstr ""
+
+msgid "No FortiADC appliances registered yet"
+msgstr ""
+
+msgid "No FortiADC selected — object lists are read live from a device."
+msgstr ""
+
+msgid "No FortiADC selected — signature policies are read live from a device."
+msgstr ""
+
+msgid "No FortiAnalyzer appliances configured"
+msgstr ""
+
+msgid "No FortiAnalyzer appliances registered yet"
+msgstr ""
+
+msgid "No FortiAnalyzer selected — sections are read live from a device."
+msgstr ""
+
+msgid "No FortiAuthenticator appliance is registered yet."
+msgstr ""
+
+msgid "No FortiAuthenticator appliance is registered."
+msgstr ""
+
+msgid "No FortiAuthenticator appliance is visible in this ADOM."
+msgstr ""
+
+msgid "No FortiAuthenticator is selected."
+msgstr ""
+
+msgid "No FortiWeb appliances configured"
+msgstr ""
+
+msgid "No REST endpoint on this firmware"
+msgstr ""
+
+msgid "No active ADOM manages this kind"
+msgstr ""
+
+msgid ""
+"No address, no DNS, no registration — none of the rest of SATOM knows the"
+" machine exists until you onboard it."
+msgstr ""
+
+msgid "No analysis page is built for this ADOM yet."
+msgstr ""
+
+msgid "No appliances"
+msgstr ""
+
+msgid ""
+"No appliances are configured, none are reachable, or none has objects of "
+"this type matching the current filters."
+msgstr ""
+
+msgid "No appliances are configured."
+msgstr ""
+
+msgid "No appliances available"
+msgstr ""
+
+msgid "No appliances configured"
+msgstr ""
+
+msgid "No appliances registered yet"
+msgstr ""
+
+msgid "No appliances registered."
+msgstr ""
+
+msgid ""
+"No appliances registered. Add appliances first, or \"Entire fleet\" will "
+"simply target nothing."
+msgstr ""
+
+msgid "No appliances targeted"
+msgstr ""
+
+msgid ""
+"No approved templates match the current scope. Author and approve "
+"profiles in"
+msgstr ""
+
+msgid "No approved templates yet. Create a profile in"
+msgstr ""
+
+msgid ""
+"No approved templates yet. Save a template (e.g. from Web Protection), "
+"then approve it in the"
+msgstr ""
+
+msgid "No attack data available"
+msgstr ""
+
+msgid "No audit entries"
+msgstr ""
+
+msgid "No audit events"
+msgstr ""
+
+msgid "No backups in the vault"
+msgstr ""
+
+msgid "No backups yet."
+msgstr ""
+
+msgid "No canary device (empty fleet — nothing was applied)."
+msgstr ""
+
+msgid ""
+"No capacity catalogs yet — add a model above (the fleet's models are "
+"suggested automatically)."
+msgstr ""
+
+msgid "No carve-outs authored yet."
+msgstr ""
+
+msgid "No certificates found on any FortiWeb"
+msgstr ""
+
+msgid "No change requests yet"
+msgstr ""
+
+msgid "No change types of your own yet."
+msgstr ""
+
+msgid "No combos yet"
+msgstr ""
+
+msgid ""
+"No configuration objects are available from the registry yet. Load the "
+"registry / connect an appliance, then reload this page."
+msgstr ""
+
+msgid "No content routing rules found."
+msgstr ""
+
+msgid "No conversations yet."
+msgstr ""
+
+msgid "No data moves here."
+msgstr ""
+
+msgid "No data returned."
+msgstr ""
+
+msgid "No devices match your filter."
+msgstr ""
+
+msgid "No elements yet — click"
+msgstr ""
+
+msgid "No endpoint bound."
+msgstr ""
+
+msgid "No endpoints in registry"
+msgstr ""
+
+msgid "No endpoints loaded"
+msgstr ""
+
+msgid "No events recorded yet."
+msgstr ""
+
+msgid "No events yet."
+msgstr ""
+
+msgid "No exceptions configured"
+msgstr ""
+
+msgid ""
+"No failed sign / deploy / swap / renew / revoke event on any managed "
+"certificate. These are the certificates SATOM issues for the appliances "
+"(ADCS or ACME), which is a different pipeline from the node's own TLS "
+"certificate above."
+msgstr ""
+
+msgid ""
+"No field template is known for this child table yet — no sibling rows "
+"exist to derive it from. Use the Raw JSON editor below, or create the "
+"first row on a device that already has one."
+msgstr ""
+
+msgid ""
+"No field template is known for this sub-table yet (no curated form and "
+"nothing cached). Run a rediscovery / deep capture of a device that "
+"already has rows here, then reopen."
+msgstr ""
+
+msgid "No findings — every harvested section is clean."
+msgstr ""
+
+msgid "No firmware image in the repository matches this appliance ("
+msgstr ""
+
+msgid "No firmware reports yet"
+msgstr ""
+
+msgid "No firmware uploaded yet"
+msgstr ""
+
+msgid "No git history available."
+msgstr ""
+
+msgid "No hooks yet."
+msgstr ""
+
+msgid ""
+"No human step. Repeatable and auditable end to end; every action lands in"
+" the run log."
+msgstr ""
+
+msgid "No hypervisor is registered"
+msgstr ""
+
+msgid "No image"
+msgstr ""
+
+msgid "No imports yet"
+msgstr ""
+
+msgid "No inline protection profiles found"
+msgstr ""
+
+msgid "No interfaces documented. Use"
+msgstr ""
+
+msgid "No interfaces in the cache for this device."
+msgstr ""
+
+msgid "No logs collected yet"
+msgstr ""
+
+msgid "No managed certificates yet"
+msgstr ""
+
+msgid "No matches"
+msgstr ""
+
+msgid "No member nodes yet. Add the primary and secondary below."
+msgstr ""
+
+msgid "No more scope-compatible approved templates to add. Approve more in"
+msgstr ""
+
+msgid "No object field on any reachable appliance contains that value."
+msgstr ""
+
+msgid "No object types"
+msgstr ""
+
+msgid "No objects found"
+msgstr ""
+
+msgid "No objects match \""
+msgstr ""
+
+msgid "No objects parsed"
+msgstr ""
+
+msgid "No offline protection profiles"
+msgstr ""
+
+msgid "No open reports 🎉"
+msgstr ""
+
+msgid ""
+"No package can be applied until this is fixed. A trust store that is not "
+"root-owned would let a compromised web worker install its own key."
+msgstr ""
+
+msgid ""
+"No peer registered (standalone mode) — off-box copies are the backup-"
+"server pushes only."
+msgstr ""
+
+msgid "No plugins yet in this ADOM. Create your first custom view."
+msgstr ""
+
+msgid "No policies assigned yet."
+msgstr ""
+
+msgid "No pre-flight has ever been recorded for this appliance."
+msgstr ""
+
+msgid "No provider"
+msgstr ""
+
+msgid "No published services recorded"
+msgstr ""
+
+msgid "No rediscovery has been run yet."
+msgstr ""
+
+msgid ""
+"No registered device matches this combo's scope yet — nothing to apply to"
+" until a device is classified into it."
+msgstr ""
+
+msgid "No reports match the current filter."
+msgstr ""
+
+msgid "No reports yet."
+msgstr ""
+
+msgid "No repository bundle yet."
+msgstr ""
+
+msgid "No requests for this device."
+msgstr ""
+
+msgid "No requests yet"
+msgstr ""
+
+msgid "No results found"
+msgstr ""
+
+msgid "No results found."
+msgstr ""
+
+msgid ""
+"No rows = every user the appliance exposes. A group name the appliance "
+"does not have"
+msgstr ""
+
+msgid ""
+"No rows = every user the directory exposes. Blank profile = the default "
+"above."
+msgstr ""
+
+msgid "No rows yet."
+msgstr ""
+
+msgid "No runs recorded."
+msgstr ""
+
+msgid "No runs yet"
+msgstr ""
+
+msgid "No runs yet."
+msgstr ""
+
+msgid "No scheduled actions yet"
+msgstr ""
+
+msgid "No scripts yet in this ADOM."
+msgstr ""
+
+msgid "No sections loaded"
+msgstr ""
+
+msgid "No server policies found"
+msgstr ""
+
+msgid "No server policies found on this appliance."
+msgstr ""
+
+msgid "No server pools found."
+msgstr ""
+
+msgid ""
+"No signature database cached — signature names/descriptions and the "
+"search need it. Sync it once in"
+msgstr ""
+
+msgid "No signature database yet"
+msgstr ""
+
+msgid "No signature policies"
+msgstr ""
+
+msgid "No status returned."
+msgstr ""
+
+msgid "No stored private key"
+msgstr ""
+
+msgid "No system profiles yet"
+msgstr ""
+
+msgid "No templates yet"
+msgstr ""
+
+msgid "No tokens yet."
+msgstr ""
+
+msgid "No traffic data available"
+msgstr ""
+
+msgid "No unsaved changes"
+msgstr ""
+
+msgid "No updates run yet."
+msgstr ""
+
+msgid "No users found"
+msgstr ""
+
+msgid "No valid entries."
+msgstr ""
+
+msgid ""
+"No versions recorded yet — the next device sync (or the button above) "
+"records the first one."
+msgstr ""
+
+msgid ""
+"No versions recorded yet — the next device sync records the first one "
+"automatically."
+msgstr ""
+
+msgid "No virtual IP rows."
+msgstr ""
+
+msgid "No virtual servers found."
+msgstr ""
+
+msgid "Node"
+msgstr ""
+
+msgid ""
+"Node 0 is the logical cluster. Add member nodes (p1/p2) afterwards from "
+"the cluster's detail page."
+msgstr ""
+
+msgid "Node TLS"
+msgstr ""
+
+msgid "Node TLS holds the certificate this node"
+msgstr ""
+
+msgid "Node name (hostname)"
+msgstr ""
+
+msgid ""
+"Node-local — each HA node serves its own hostname's cert (never "
+"replicated). CA-issued certs auto-renew nightly; imported certs alert on "
+"expiry only."
+msgstr ""
+
+msgid "Node-to-node encryption (Postgres replication)"
+msgstr ""
+
+msgid "None"
+msgstr ""
+
+msgid "None (plain, port 25) — insecure"
+msgstr ""
+
+msgid "None selected = every product."
+msgstr ""
+
+msgid "Not configured"
+msgstr ""
+
+msgid "Not configured — set host / credentials in"
+msgstr ""
+
+msgid "Not found"
+msgstr ""
+
+msgid "Not found in any source:"
+msgstr ""
+
+msgid "Not runnable"
+msgstr ""
+
+msgid "Not unattended — a run sits waiting until somebody acts on it."
+msgstr ""
+
+msgid "Note"
+msgstr ""
+
+msgid "Note (optional)"
+msgstr ""
+
+msgid "Note: a partial clone is left"
+msgstr ""
+
+msgid "Notes"
+msgstr ""
+
+msgid "Nothing assigned yet. Pick from the available templates on the right."
+msgstr ""
+
+msgid "Nothing due — the fleet matches the lifecycle policy."
+msgstr ""
+
+msgid "Nothing has run yet."
+msgstr ""
+
+msgid "Nothing is pre-selected. Set a language in your"
+msgstr ""
+
+msgid ""
+"Nothing is pre-selected: the first entry on the list is not a default, "
+"and picking an entry that was already selected would answer the question "
+"without the page ever hearing it. Only change-controlled actions appear "
+"here, and the executor refuses to run any of them outside an approved "
+"window."
+msgstr ""
+
+msgid "Nothing resolved yet."
+msgstr ""
+
+msgid ""
+"Nothing ticked = every port on the device, as one series. Tick a subset "
+"to watch only those. For a series"
+msgstr ""
+
+msgid ""
+"Nothing to report — none of the settings this page reads are present in "
+"the cache yet."
+msgstr ""
+
+msgid ""
+"Nothing was captured when this change was raised — the devices were "
+"unreachable, or they publish no front-end object (FortiAnalyzer and "
+"FortiAuthenticator do not)."
+msgstr ""
+
+msgid "Nothing was measured in this window."
+msgstr ""
+
+msgid "Notifications"
+msgstr ""
+
+msgid "Notify emails (lifecycle events)"
+msgstr ""
+
+msgid "Notify on completion"
+msgstr ""
+
+msgid "Notify status"
+msgstr ""
+
+msgid "ON: a first-time directory sign-in creates the account"
+msgstr ""
+
+msgid "Object"
+msgstr ""
+
+msgid "Object Type"
+msgstr ""
+
+msgid "Object inventory"
+msgstr ""
+
+msgid "Object name / mkey (optional)"
+msgstr ""
+
+msgid "Object type"
+msgstr ""
+
+msgid "Object types"
+msgstr ""
+
+msgid "Object types in this section"
+msgstr ""
+
+msgid "Objects"
+msgstr ""
+
+msgid "Objects by section"
+msgstr ""
+
+msgid ""
+"Objects here (interfaces, routes, HA, admin) can sever management "
+"connectivity or split the cluster. Writes are still allowed but should be"
+" previewed and canaried first."
+msgstr ""
+
+msgid "Offer it in the Change Request form"
+msgstr ""
+
+msgid "Offered for"
+msgstr ""
+
+msgid "Offline"
+msgstr ""
+
+msgid "Offline Protection Profile"
+msgstr ""
+
+msgid "Offline update package"
+msgstr ""
+
+msgid "Ollama (local, no API key)"
+msgstr ""
+
+msgid "On device"
+msgstr ""
+
+msgid "On-demand per-appliance backup; mirrored every 5 min"
+msgstr ""
+
+msgid "On-device certificates"
+msgstr ""
+
+msgid ""
+"One JSON-RPC transport — keep \"jsonrpc\" unless a future generation "
+"appears."
+msgstr ""
+
+msgid "One card per"
+msgstr ""
+
+msgid ""
+"One credential set per provider — switching provider and back never loses"
+" them. Values marked"
+msgstr ""
+
+msgid "One device's JSON to an older version"
+msgstr ""
+
+msgid "One probe per interface"
+msgstr ""
+
+msgid ""
+"One row per (device, collector). Each collector turns ONE device call "
+"into many series in the local metrics store — the interval is yours to "
+"set, per target. Devices in maintenance are skipped automatically."
+msgstr ""
+
+msgid ""
+"One row per FortiAuthenticator group, each with the profile its members "
+"get."
+msgstr ""
+
+msgid "One section per node."
+msgstr ""
+
+msgid ""
+"One source at a time. A green tick for \"the chain\" would hide the one "
+"you are editing being broken."
+msgstr ""
+
+msgid "Online"
+msgstr ""
+
+msgid ""
+"Only approved templates whose scope is compatible with the selected "
+"zone/line/department are shown."
+msgstr ""
+
+msgid "Only packages signed by a key in this node's trust store are accepted"
+msgstr ""
+
+msgid "Only promote when the current primary is confirmed DOWN."
+msgstr ""
+
+msgid ""
+"Only these are injected into its environment. A secret it did not declare"
+" is not there to leak."
+msgstr ""
+
+msgid "Only these source IPs / CIDRs may reach the app."
+msgstr ""
+
+msgid "Only used by"
+msgstr ""
+
+msgid "Open"
+msgstr ""
+
+msgid "Open Certificate Manager"
+msgstr ""
+
+msgid "Open Server Policy"
+msgstr ""
+
+msgid "Open dashboard"
+msgstr ""
+
+msgid "Open details"
+msgstr ""
+
+msgid "Open full detail"
+msgstr ""
+
+msgid "Open full map"
+msgstr ""
+
+msgid "Open in FortiAnalyzer"
+msgstr ""
+
+msgid "Open policy"
+msgstr ""
+
+msgid "Open policy configuration"
+msgstr ""
+
+msgid "Open the FortiWeb-style signature editor (classes, details, exceptions)"
+msgstr ""
+
+msgid "Open the example browser"
+msgstr ""
+
+msgid "Open the pool in the full editor (add / remove back-end members)"
+msgstr ""
+
+msgid "Open the profile's form (fields + sub-policies) in a new tab"
+msgstr ""
+
+msgid "Open the selected object in the editor"
+msgstr ""
+
+msgid "Open the virtual server in the full editor (add / remove VIP rows)"
+msgstr ""
+
+msgid "Open this pool in the full editor (add / remove back-end members)"
+msgstr ""
+
+msgid "OpenAI-compatible (ChatGPT / Azure OpenAI / LiteLLM / vLLM…)"
+msgstr ""
+
+msgid ""
+"Opens a TLS connection and reports which of the three causes applies — "
+"untrusted issuer, hostname mismatch, or an expired certificate. They need"
+" three different fixes, so \"verification failed\" on its own is not an "
+"answer. Nothing is changed by this test."
+msgstr ""
+
+msgid "Operating system"
+msgstr ""
+
+msgid "Operation"
+msgstr ""
+
+msgid "Operational cap"
+msgstr ""
+
+msgid "Operations"
+msgstr ""
+
+msgid "Operator"
+msgstr ""
+
+msgid "Operators"
+msgstr ""
+
+msgid "Optional description"
+msgstr ""
+
+msgid ""
+"Optional exception rules carried with the template (validated as JSON "
+"when present)."
+msgstr ""
+
+msgid "Optional — one, or several concatenated."
+msgstr ""
+
+msgid "Options"
+msgstr ""
+
+msgid "Or enter one of your backup codes."
+msgstr ""
+
+msgid "Order"
+msgstr ""
+
+msgid "Order by"
+msgstr ""
+
+msgid "Order in the picker"
+msgstr ""
+
+msgid "Origin"
+msgstr ""
+
+msgid "Other"
+msgstr ""
+
+msgid "Other endpoints"
+msgstr ""
+
+msgid ""
+"Outbound links to systems SATOM does not own: NetBox for maintenance "
+"windows, and your own Python hooks for everything else (CRM, ticketing, "
+"chat). Every integration here is optional — with all of them off, change "
+"requests and upgrades work exactly as before. Nothing on this page is "
+"contacted while the page renders."
+msgstr ""
+
+msgid "Output (stdout)"
+msgstr ""
+
+msgid "Output / error"
+msgstr ""
+
+msgid "Overridden fields"
+msgstr ""
+
+msgid "Override admin defaults"
+msgstr ""
+
+msgid "Overrides"
+msgstr ""
+
+msgid "Overview"
+msgstr ""
+
+msgid "Owner"
+msgstr ""
+
+msgid "Owner (inherits RBAC)"
+msgstr ""
+
+msgid "Owner:"
+msgstr ""
+
+msgid "PATCH"
+msgstr ""
+
+msgid "PEM text"
+msgstr ""
+
+msgid "PNG/JPG resized · SVG sanitised"
+msgstr ""
+
+msgid "PRIMARY"
+msgstr ""
+
+msgid "Packs the full history, delta-compressed — a few MB and a few seconds."
+msgstr ""
+
+msgid "Page"
+msgstr ""
+
+msgid "Page not found"
+msgstr ""
+
+msgid ""
+"Parse a FortiWeb configuration backup file offline — no appliance is "
+"contacted."
+msgstr ""
+
+msgid "Password"
+msgstr ""
+
+msgid "Password (basic)"
+msgstr ""
+
+msgid "Password-encrypted backup"
+msgstr ""
+
+msgid "Path"
+msgstr ""
+
+msgid "Pattern library"
+msgstr ""
+
+msgid "Paused"
+msgstr ""
+
+msgid "Pausing"
+msgstr ""
+
+msgid "Peak"
+msgstr ""
+
+msgid "Pending"
+msgstr ""
+
+msgid "Per model × firmware:"
+msgstr ""
+
+msgid ""
+"Per server-policy tree (virtual server + VIPs, server pool + back-ends, "
+"health check, web-protection profile), composed live over REST."
+msgstr ""
+
+msgid ""
+"Per virtual-server tree (listener, real server pool + members, profile "
+"chain), composed live over REST."
+msgstr ""
+
+msgid "Per-device SoT:"
+msgstr ""
+
+msgid "Per-device inventory"
+msgstr ""
+
+msgid "Per-node IP (detect live primary before each write)"
+msgstr ""
+
+msgid "Per-node IP (detect live primary)"
+msgstr ""
+
+msgid ""
+"Per-node: the host is the address writes route through when that node is "
+"primary. VIP: the host is the member's own management IP (read-only "
+"telemetry)."
+msgstr ""
+
+msgid "Period"
+msgstr ""
+
+msgid ""
+"Period summaries built from the rollup tables: availability, minimum / "
+"average / peak per metric, threshold breaches, drift events and the "
+"change against the preceding period. Stored so they stay comparable, and "
+"mailable."
+msgstr ""
+
+msgid "Permission Profiles"
+msgstr ""
+
+msgid "Permissions"
+msgstr ""
+
+msgid "Physical / Interfaces"
+msgstr ""
+
+msgid "Physical / Inventory"
+msgstr ""
+
+msgid "Pick"
+msgstr ""
+
+msgid "Pick a base FortiWeb below and sync to read the whole signature catalog."
+msgstr ""
+
+msgid "Pick a current and target version, then Show advisory."
+msgstr ""
+
+msgid "Pick a device"
+msgstr ""
+
+msgid "Pick a device to make it the active context."
+msgstr ""
+
+msgid ""
+"Pick a method, choose an endpoint, and (for writes) give the object name "
+"+ a JSON body."
+msgstr ""
+
+msgid "Pick an automation, choose its targets, and set when it runs."
+msgstr ""
+
+msgid "Pick an object"
+msgstr ""
+
+msgid "Pick an object type from the sidebar"
+msgstr ""
+
+msgid "Pick an object type from the sidebar menu"
+msgstr ""
+
+msgid "Pick one on the FortiADC dashboard"
+msgstr ""
+
+msgid "Pick one on the FortiAnalyzer dashboard"
+msgstr ""
+
+msgid "Pick the backend the"
+msgstr ""
+
+msgid "Pick two versions of the SAME device to see what changed between them."
+msgstr ""
+
+msgid "Pie chart"
+msgstr ""
+
+msgid "Pipeline"
+msgstr ""
+
+msgid "Placeholder (scaffold only)"
+msgstr ""
+
+msgid "Plain text (level — message)"
+msgstr ""
+
+msgid ""
+"Plain text = case-insensitive substring. Wrap in slashes for regex, e.g. "
+"/pol-.*-prod/ or /^vs-/i"
+msgstr ""
+
+msgid "Plan"
+msgstr ""
+
+msgid "Platform"
+msgstr ""
+
+msgid "Platforms"
+msgstr ""
+
+msgid "Plugin Studio"
+msgstr ""
+
+msgid "Plugins"
+msgstr ""
+
+msgid "Policies"
+msgstr ""
+
+msgid "Policies per device"
+msgstr ""
+
+msgid "Policy"
+msgstr ""
+
+msgid "Policy HTTPS service"
+msgstr ""
+
+msgid "Policy Inspector"
+msgstr ""
+
+msgid "Policy Links"
+msgstr ""
+
+msgid "Policy Links — dynamic deep links"
+msgstr ""
+
+msgid "Policy Name"
+msgstr ""
+
+msgid "Policy name"
+msgstr ""
+
+msgid "Policy name, IP address, hostname, pool name…"
+msgstr ""
+
+msgid "Policy names"
+msgstr ""
+
+msgid "Policy service ports (HTTP)"
+msgstr ""
+
+msgid "Policy settings"
+msgstr ""
+
+msgid "Policy: revoke superseded after"
+msgstr ""
+
+msgid "Pool"
+msgstr ""
+
+msgid "Pool members"
+msgstr ""
+
+msgid "Pool name (new)"
+msgstr ""
+
+msgid "Pools"
+msgstr ""
+
+msgid "Pools by protocol"
+msgstr ""
+
+msgid "Pools by type"
+msgstr ""
+
+msgid "Pools per device"
+msgstr ""
+
+msgid "Pools with no health check"
+msgstr ""
+
+msgid "Port"
+msgstr ""
+
+msgid "Ported in the repo"
+msgstr ""
+
+msgid "Ports to watch"
+msgstr ""
+
+msgid "PostgreSQL"
+msgstr ""
+
+msgid "Posture warnings"
+msgstr ""
+
+msgid "Pre-flight checklist"
+msgstr ""
+
+msgid "Pre-restore backup"
+msgstr ""
+
+msgid "Pre-selected from your"
+msgstr ""
+
+msgid "Pre-selected when registering a new appliance"
+msgstr ""
+
+msgid "Predefined"
+msgstr ""
+
+msgid "Predefined (non-deletable)"
+msgstr ""
+
+msgid "Preferred language"
+msgstr ""
+
+msgid "Preflight"
+msgstr ""
+
+msgid "Presets"
+msgstr ""
+
+msgid "Press"
+msgstr ""
+
+msgid "Preview"
+msgstr ""
+
+msgid "Preview (dry-run)"
+msgstr ""
+
+msgid "Preview now (no send)"
+msgstr ""
+
+msgid "Preview plan"
+msgstr ""
+
+msgid "Preview request"
+msgstr ""
+
+msgid "Preview the clone"
+msgstr ""
+
+msgid "Previous"
+msgstr ""
+
+msgid "Primary 248 (read-write) · standby 249 (streaming replica)"
+msgstr ""
+
+msgid "Primary key"
+msgstr ""
+
+msgid "Private key"
+msgstr ""
+
+msgid "Private key (PEM, unencrypted)"
+msgstr ""
+
+msgid "Probe"
+msgstr ""
+
+msgid "Probe now"
+msgstr ""
+
+msgid "Probes"
+msgstr ""
+
+msgid "Probes that reported nothing"
+msgstr ""
+
+msgid "Probing channels (DB TLS · node HTTPS · SoT)…"
+msgstr ""
+
+msgid "Probing nodes, Gitea and backup-server…"
+msgstr ""
+
+msgid "Process"
+msgstr ""
+
+msgid "Product"
+msgstr ""
+
+msgid "Production"
+msgstr ""
+
+msgid "Profile"
+msgstr ""
+
+msgid "Profile kind"
+msgstr ""
+
+msgid "Profile name"
+msgstr ""
+
+msgid "Profile on import"
+msgstr ""
+
+msgid "Profiles"
+msgstr ""
+
+msgid "Progress"
+msgstr ""
+
+msgid "Promote this node to PRIMARY"
+msgstr ""
+
+msgid "Prompt tokens:"
+msgstr ""
+
+msgid "Propagation wait (s)"
+msgstr ""
+
+msgid "Proposed wording"
+msgstr ""
+
+msgid "Protection Profile"
+msgstr ""
+
+msgid "Provenance"
+msgstr ""
+
+msgid "Provider"
+msgstr ""
+
+msgid "Provider docs"
+msgstr ""
+
+msgid "Providers"
+msgstr ""
+
+msgid "Provisioning"
+msgstr ""
+
+msgid "Provisioning elements"
+msgstr ""
+
+msgid "Proxmox VE"
+msgstr ""
+
+msgid "Proxmox only."
+msgstr ""
+
+msgid ""
+"Public roots stay trusted — this bundle adds to them, it does not replace"
+" them."
+msgstr ""
+
+msgid "Publish to git"
+msgstr ""
+
+msgid "Published service (VIP:port)"
+msgstr ""
+
+msgid ""
+"Published services, back-end health, security attachment and TLS posture "
+"across every FortiADC in this ADOM. Read entirely from the configuration "
+"cache — opening this page never contacts an appliance."
+msgstr ""
+
+msgid "Published views for the"
+msgstr ""
+
+msgid "Publishing requires a clean render in"
+msgstr ""
+
+msgid "Pull"
+msgstr ""
+
+msgid "Pull backup from device"
+msgstr ""
+
+msgid "Pull live config from the device"
+msgstr ""
+
+msgid "Pull live config from the device into the cache"
+msgstr ""
+
+msgid "Pull live config from the device into the local source of truth"
+msgstr ""
+
+msgid "Pull now"
+msgstr ""
+
+msgid ""
+"Pull the latest commits from origin (fast-forward only). Restart the "
+"service after a pull to apply Python changes."
+msgstr ""
+
+msgid "Pulled images land in"
+msgstr ""
+
+msgid "Purge"
+msgstr ""
+
+msgid "Purge (clean migration)"
+msgstr ""
+
+msgid "Push to device"
+msgstr ""
+
+msgid "Push to the backup server by default (scheduled runs too)"
+msgstr ""
+
+msgid "Pushed (UTC)"
+msgstr ""
+
+msgid "Python"
+msgstr ""
+
+msgid "Python Console"
+msgstr ""
+
+msgid "Quarter"
+msgstr ""
+
+msgid "Query builder"
+msgstr ""
+
+msgid ""
+"Query the device live (policy status monitor) for the REAL per-backend "
+"health-check state"
+msgstr ""
+
+msgid "Queue rollback"
+msgstr ""
+
+msgid "Quick Actions"
+msgstr ""
+
+msgid "Quick LB"
+msgstr ""
+
+msgid "Quick LB (gateway only)"
+msgstr ""
+
+msgid "Quick search…"
+msgstr ""
+
+msgid "RADIUS host"
+msgstr ""
+
+msgid "RBAC Roles"
+msgstr ""
+
+msgid "REST only (native device backup)"
+msgstr ""
+
+msgid "REST telemetry"
+msgstr ""
+
+msgid "RESTORE"
+msgstr ""
+
+msgid "ROLLBACK"
+msgstr ""
+
+msgid ""
+"Raise a change request to plan a maintenance window and gate a risky "
+"change behind an approval."
+msgstr ""
+
+msgid "Raise change request"
+msgstr ""
+
+msgid "Raise change ticket via integration hooks"
+msgstr ""
+
+msgid "Raised from"
+msgstr ""
+
+msgid "Range override"
+msgstr ""
+
+msgid "Rate"
+msgstr ""
+
+msgid "Rate column"
+msgstr ""
+
+msgid "Raw Configuration"
+msgstr ""
+
+msgid "Raw JSON"
+msgstr ""
+
+msgid "Raw configuration"
+msgstr ""
+
+msgid "Raw retention 396 days at full resolution — no rollup averaging."
+msgstr ""
+
+msgid "Re-read from the device"
+msgstr ""
+
+msgid "Re-run checks"
+msgstr ""
+
+msgid "Re-translate everything (machine rows only)"
+msgstr ""
+
+msgid "Read Only"
+msgstr ""
+
+msgid "Read every FortiWeb's certificate stores and refresh the cache"
+msgstr ""
+
+msgid "Read live from the device over JSON-RPC"
+msgstr ""
+
+msgid "Read live from the device — FortiADC has no local cache yet"
+msgstr ""
+
+msgid "Read live from the device — FortiADC has no signature cache yet"
+msgstr ""
+
+msgid "Read-only"
+msgstr ""
+
+msgid "Read-only (predefined)"
+msgstr ""
+
+msgid "Read-only view. Writes go through the"
+msgstr ""
+
+msgid "Reads docs.fortinet.com — no appliance needed. New versions merge in."
+msgstr ""
+
+msgid ""
+"Reads per-signature exceptions live off the box (server policy → WPP → "
+"signature set → filter list) and imports the ones you select, bound to "
+"their policy."
+msgstr ""
+
+msgid "Real servers"
+msgstr ""
+
+msgid "Real servers (back-ends)"
+msgstr ""
+
+msgid "Reason"
+msgstr ""
+
+msgid "Reason (shown to the author)"
+msgstr ""
+
+msgid "Receive bug reports from users (bell + email)"
+msgstr ""
+
+msgid "Recent Audit Events"
+msgstr ""
+
+msgid "Recent Commits"
+msgstr ""
+
+msgid "Recent config changes"
+msgstr ""
+
+msgid "Recent hook runs"
+msgstr ""
+
+msgid "Recent runs"
+msgstr ""
+
+msgid "Recent updates"
+msgstr ""
+
+msgid "Recently resolved"
+msgstr ""
+
+msgid "Recipient"
+msgstr ""
+
+msgid ""
+"Reconciler has not published a tick yet (the standby's state is probed "
+"live)."
+msgstr ""
+
+msgid "Reconciler last tick:"
+msgstr ""
+
+msgid "Record versions + push off-box now"
+msgstr ""
+
+msgid "Recorded (UTC)"
+msgstr ""
+
+msgid "Recorded pre-flight runs"
+msgstr ""
+
+msgid ""
+"Records the current per-device JSON into the versioned SoT store and "
+"uploads new blobs to the backup server. The hourly harvest records "
+"automatically; unchanged configs cost nothing."
+msgstr ""
+
+msgid "Recovery email"
+msgstr ""
+
+msgid "Recurring reports"
+msgstr ""
+
+msgid "Rediscovery"
+msgstr ""
+
+msgid "References (FK → table.col)"
+msgstr ""
+
+msgid "Refresh"
+msgstr ""
+
+msgid "Refresh Now"
+msgstr ""
+
+msgid "Refresh from device"
+msgstr ""
+
+msgid "Regenerate backup codes"
+msgstr ""
+
+msgid "Regex calculator"
+msgstr ""
+
+msgid "Regex calculator — test this pattern against samples"
+msgstr ""
+
+msgid "Regex cheat sheet"
+msgstr ""
+
+msgid "Register / update the"
+msgstr ""
+
+msgid "Register the FortiADC VM under"
+msgstr ""
+
+msgid "Register the FortiAnalyzer unit under"
+msgstr ""
+
+msgid "Registry"
+msgstr ""
+
+msgid "Registry Cross-Reference"
+msgstr ""
+
+msgid "Reject"
+msgstr ""
+
+msgid "Reject template"
+msgstr ""
+
+msgid "Reject:"
+msgstr ""
+
+msgid "Rejected"
+msgstr ""
+
+msgid "Relational model"
+msgstr ""
+
+msgid "Release Notes"
+msgstr ""
+
+msgid "Release notes / source / GA build"
+msgstr ""
+
+msgid "Reload"
+msgstr ""
+
+msgid "Reload now"
+msgstr ""
+
+msgid "Remaining devices"
+msgstr ""
+
+msgid "Remember me"
+msgstr ""
+
+msgid "Remember this filter for my account"
+msgstr ""
+
+msgid "Remote"
+msgstr ""
+
+msgid "Remote URL"
+msgstr ""
+
+msgid "Remove"
+msgstr ""
+
+msgid "Remove current"
+msgstr ""
+
+msgid "Remove element"
+msgstr ""
+
+msgid ""
+"Remove every carve-out bound to a Server Policy (e.g. before migrating it"
+" to another box)."
+msgstr ""
+
+msgid "Remove from device"
+msgstr ""
+
+msgid "Remove from staging"
+msgstr ""
+
+msgid "Remove row"
+msgstr ""
+
+msgid "Renew before (days)"
+msgstr ""
+
+msgid "Renew now"
+msgstr ""
+
+msgid "Renewal history and failures for every node, with the exact error"
+msgstr ""
+
+msgid "Renewal strategy"
+msgstr ""
+
+msgid "Renewals"
+msgstr ""
+
+msgid "Repeat new password"
+msgstr ""
+
+msgid "Repeat password"
+msgstr ""
+
+msgid "Replace with"
+msgstr ""
+
+msgid ""
+"Replaces the top-bar mark in every ADOM while this theme is active. Leave"
+" empty to keep the per-ADOM marks from"
+msgstr ""
+
+msgid "Replica"
+msgstr ""
+
+msgid "Report"
+msgstr ""
+
+msgid "Report a problem"
+msgstr ""
+
+msgid "Report name"
+msgstr ""
+
+msgid "Reported availability"
+msgstr ""
+
+msgid "Reporter"
+msgstr ""
+
+msgid "Reports"
+msgstr ""
+
+msgid "Repository"
+msgstr ""
+
+msgid "Repository URL"
+msgstr ""
+
+msgid "Request"
+msgstr ""
+
+msgid "Request Body (JSON)"
+msgstr ""
+
+msgid "Request preview"
+msgstr ""
+
+msgid "Requested by"
+msgstr ""
+
+msgid "Requests"
+msgstr ""
+
+msgid "Requests per hour"
+msgstr ""
+
+msgid "Require administrator approval"
+msgstr ""
+
+msgid "Require administrator approval for new directory users"
+msgstr ""
+
+msgid "Required — the client sends this to the CA on registration."
+msgstr ""
+
+msgid "Reset"
+msgstr ""
+
+msgid "Reset Password — SATOM"
+msgstr ""
+
+msgid "Reset your password"
+msgstr ""
+
+msgid "Resolution"
+msgstr ""
+
+msgid "Resolution note (optional)"
+msgstr ""
+
+msgid "Resolved"
+msgstr ""
+
+msgid "Resource"
+msgstr ""
+
+msgid "Response"
+msgstr ""
+
+msgid "Restore"
+msgstr ""
+
+msgid "Restore database"
+msgstr ""
+
+msgid "Restore defaults"
+msgstr ""
+
+msgid "Restore endpoint"
+msgstr ""
+
+msgid "Restore from a stored backup"
+msgstr ""
+
+msgid "Restore now"
+msgstr ""
+
+msgid "Restore proposal"
+msgstr ""
+
+msgid "Result"
+msgstr ""
+
+msgid "Results"
+msgstr ""
+
+msgid "Retention (A/Ar days)"
+msgstr ""
+
+msgid "Return home"
+msgstr ""
+
+msgid ""
+"Reusable desired-state profiles (Web Protection, System, Server Policy, "
+"Structure) — authored once, pushed on demand"
+msgstr ""
+
+msgid "Revert scope to shipped defaults"
+msgstr ""
+
+msgid "Revert to the shipped look"
+msgstr ""
+
+msgid "Revision"
+msgstr ""
+
+msgid "Revoke"
+msgstr ""
+
+msgid "Revoke approval (back to pending)"
+msgstr ""
+
+msgid "Revoke command"
+msgstr ""
+
+msgid "Revoke grace (days after supersede)"
+msgstr ""
+
+msgid "Revoke superseded certs at the CA"
+msgstr ""
+
+msgid "Risk"
+msgstr ""
+
+msgid "Role"
+msgstr ""
+
+msgid "Role unknown — cannot offer promotion."
+msgstr ""
+
+msgid "Role:"
+msgstr ""
+
+msgid "Roll back application code"
+msgstr ""
+
+msgid "Roll back now"
+msgstr ""
+
+msgid "Rollback / restore procedures"
+msgstr ""
+
+msgid "Rollback plan"
+msgstr ""
+
+msgid "Root CA"
+msgstr ""
+
+msgid "Roster source"
+msgstr ""
+
+msgid "Routing Policy"
+msgstr ""
+
+msgid "Row limit"
+msgstr ""
+
+msgid "Rows"
+msgstr ""
+
+msgid ""
+"Rows are derived from the FortiADC endpoint registry, so an endpoint a "
+"firmware adds appears here without a code change."
+msgstr ""
+
+msgid ""
+"Rows are derived from the endpoint registry, so an endpoint added in a "
+"later release appears here without a second edit."
+msgstr ""
+
+msgid ""
+"Rows with an empty interface name are ignored. Saving replaces all "
+"interfaces for this appliance."
+msgstr ""
+
+msgid "Rule — everything matching"
+msgstr ""
+
+msgid "Run"
+msgstr ""
+
+msgid "Run History"
+msgstr ""
+
+msgid "Run Python over the curated fleet datasets — inside a locked-down sandbox."
+msgstr ""
+
+msgid "Run a"
+msgstr ""
+
+msgid ""
+"Run a device sync (or document ports on the appliance) and they will "
+"appear here."
+msgstr ""
+
+msgid "Run at"
+msgstr ""
+
+msgid "Run deep capture"
+msgstr ""
+
+msgid "Run detect"
+msgstr ""
+
+msgid "Run history"
+msgstr ""
+
+msgid "Run in background"
+msgstr ""
+
+msgid "Run log"
+msgstr ""
+
+msgid "Run now"
+msgstr ""
+
+msgid "Run preparation"
+msgstr ""
+
+msgid "Run renewal pass now"
+msgstr ""
+
+msgid "Run sweep now"
+msgstr ""
+
+msgid "Run the same pass the nightly timer runs, on this node, now"
+msgstr ""
+
+msgid "Runnable"
+msgstr ""
+
+msgid "Running"
+msgstr ""
+
+msgid "Running checks…"
+msgstr ""
+
+msgid "Running queries…"
+msgstr ""
+
+msgid "Runs"
+msgstr ""
+
+msgid "Runs against"
+msgstr ""
+
+msgid ""
+"Runs out of process, as an unprivileged user, with a hard timeout. It "
+"receives only the secrets it declares below, and its output is truncated "
+"and redacted before it is stored."
+msgstr ""
+
+msgid "SAN format"
+msgstr ""
+
+msgid "SANs"
+msgstr ""
+
+msgid "SATOM"
+msgstr ""
+
+msgid ""
+"SATOM asked NetBox and it refused or never answered — a device may still "
+"be shown in maintenance there. This is deliberately not the same as “no "
+"window requested”."
+msgstr ""
+
+msgid ""
+"SATOM cannot create virtual machines until a Proxmox or ESXi endpoint is "
+"registered in"
+msgstr ""
+
+msgid "SATOM health"
+msgstr ""
+
+msgid "SATOM will not enable it for you"
+msgstr ""
+
+msgid "SHA-256"
+msgstr ""
+
+msgid "SHA-256 fingerprint"
+msgstr ""
+
+msgid "SMTP host"
+msgstr ""
+
+msgid "SNI member"
+msgstr ""
+
+msgid "SQL console"
+msgstr ""
+
+msgid "SSH only (show full-configuration)"
+msgstr ""
+
+msgid "SSH transport"
+msgstr ""
+
+msgid "SSL / TLS (port 465)"
+msgstr ""
+
+msgid "SSL Verify"
+msgstr ""
+
+msgid "STALE"
+msgstr ""
+
+msgid "STANDALONE"
+msgstr ""
+
+msgid "STANDBY"
+msgstr ""
+
+msgid "STANDBY receiving"
+msgstr ""
+
+msgid "STARTTLS (port 587)"
+msgstr ""
+
+msgid "Safeguard active."
+msgstr ""
+
+msgid "Sample web address"
+msgstr ""
+
+msgid "Samples"
+msgstr ""
+
+msgid "Sandboxed (bubblewrap)."
+msgstr ""
+
+msgid "Sandboxed preview"
+msgstr ""
+
+msgid "Save"
+msgstr ""
+
+msgid "Save Access Control"
+msgstr ""
+
+msgid "Save Banners"
+msgstr ""
+
+msgid "Save Changes"
+msgstr ""
+
+msgid "Save Classification"
+msgstr ""
+
+msgid "Save DNS servers"
+msgstr ""
+
+msgid "Save General Settings"
+msgstr ""
+
+msgid "Save Language"
+msgstr ""
+
+msgid "Save Naming"
+msgstr ""
+
+msgid "Save New Version"
+msgstr ""
+
+msgid "Save Profile"
+msgstr ""
+
+msgid "Save Segments"
+msgstr ""
+
+msgid "Save Settings"
+msgstr ""
+
+msgid "Save Template"
+msgstr ""
+
+msgid "Save alert settings"
+msgstr ""
+
+msgid "Save as a template (admin approval, then fleet deploy)"
+msgstr ""
+
+msgid "Save as template"
+msgstr ""
+
+msgid "Save as template (needs admin approval)"
+msgstr ""
+
+msgid "Save assignments"
+msgstr ""
+
+msgid "Save authentication settings"
+msgstr ""
+
+msgid "Save carve-out"
+msgstr ""
+
+msgid "Save changes"
+msgstr ""
+
+msgid "Save clone/migrate rules"
+msgstr ""
+
+msgid "Save credentials"
+msgstr ""
+
+msgid "Save email settings"
+msgstr ""
+
+msgid "Save hypervisor"
+msgstr ""
+
+msgid "Save mapping"
+msgstr ""
+
+msgid "Save menu visibility"
+msgstr ""
+
+msgid "Save mode"
+msgstr ""
+
+msgid "Save node"
+msgstr ""
+
+msgid "Save overlay"
+msgstr ""
+
+msgid "Save panel"
+msgstr ""
+
+msgid "Save pattern"
+msgstr ""
+
+msgid "Save permissions"
+msgstr ""
+
+msgid "Save policy links"
+msgstr ""
+
+msgid "Save preference"
+msgstr ""
+
+msgid "Save profile"
+msgstr ""
+
+msgid "Save provider"
+msgstr ""
+
+msgid "Save raw JSON to device"
+msgstr ""
+
+msgid "Save record"
+msgstr ""
+
+msgid "Save report"
+msgstr ""
+
+msgid "Save row"
+msgstr ""
+
+msgid "Save source"
+msgstr ""
+
+msgid "Save template"
+msgstr ""
+
+msgid "Save theme"
+msgstr ""
+
+msgid "Save these backup codes now — shown only once."
+msgstr ""
+
+msgid "Save this scope"
+msgstr ""
+
+msgid "Save to device"
+msgstr ""
+
+msgid "Save to my profile"
+msgstr ""
+
+msgid ""
+"Saved reports run over the same read-only query layer as the SQL console "
+"(SELECT-only, sensitive columns masked). Each report renders as a live "
+"dashboard and exports to PDF."
+msgstr ""
+
+msgid ""
+"Saving compiles the source first — a syntax error is refused here, with "
+"its message, rather than discovered at 03:00 inside a maintenance window."
+msgstr ""
+
+msgid "Scaffold ready"
+msgstr ""
+
+msgid "Scan devices"
+msgstr ""
+
+msgid "Scan from Fortinet…"
+msgstr ""
+
+msgid "Scan hardware (SSH)"
+msgstr ""
+
+msgid "Schedule"
+msgstr ""
+
+msgid "Schedule for later"
+msgstr ""
+
+msgid "Schedule upgrade"
+msgstr ""
+
+msgid "Scheduled Action"
+msgstr ""
+
+msgid "Scheduled Actions"
+msgstr ""
+
+msgid "Scope"
+msgstr ""
+
+msgid "Scope:"
+msgstr ""
+
+msgid "Scopes"
+msgstr ""
+
+msgid "Scrape targets"
+msgstr ""
+
+msgid "Script"
+msgstr ""
+
+msgid "Scripting object"
+msgstr ""
+
+msgid "Scripts"
+msgstr ""
+
+msgid "Search"
+msgstr ""
+
+msgid "Search (/)"
+msgstr ""
+
+msgid "Search (user · action · target · detail · error ID)"
+msgstr ""
+
+msgid "Search Attack ID"
+msgstr ""
+
+msgid "Search ID or description…"
+msgstr ""
+
+msgid "Search Query"
+msgstr ""
+
+msgid "Search Tips"
+msgstr ""
+
+msgid ""
+"Search across all appliances for policies, VIPs, pools, and protection "
+"profiles"
+msgstr ""
+
+msgid "Search across appliances..."
+msgstr ""
+
+msgid "Search all fields — e.g. an Error ID like 69881E81"
+msgstr ""
+
+msgid "Search appliances… (Enter = whole fleet)"
+msgstr ""
+
+msgid "Search backups…"
+msgstr ""
+
+msgid "Search bug id / description / workaround …"
+msgstr ""
+
+msgid ""
+"Search device / policy / VIP / WAF / pool / backend ip:port… (shows a "
+"focused result view)"
+msgstr ""
+
+msgid "Search endpoints by name or path…"
+msgstr ""
+
+msgid "Search endpoints..."
+msgstr ""
+
+msgid "Search examples"
+msgstr ""
+
+msgid "Search examples…"
+msgstr ""
+
+msgid "Search exceptions…"
+msgstr ""
+
+msgid "Search name"
+msgstr ""
+
+msgid "Search profiles…"
+msgstr ""
+
+msgid "Search templates…"
+msgstr ""
+
+msgid "Search the prose (what's new / upgrade notes …)"
+msgstr ""
+
+msgid "Search users…"
+msgstr ""
+
+msgid "Search…"
+msgstr ""
+
+msgid "Secondary metric"
+msgstr ""
+
+msgid "Secrets"
+msgstr ""
+
+msgid "Secrets this hook may read (comma separated)"
+msgstr ""
+
+msgid "Section"
+msgstr ""
+
+msgid "Sections"
+msgstr ""
+
+msgid "Security"
+msgstr ""
+
+msgid "Security Status"
+msgstr ""
+
+msgid "Security — defined versus applied"
+msgstr ""
+
+msgid "Segments"
+msgstr ""
+
+msgid "Select a device"
+msgstr ""
+
+msgid "Select a product"
+msgstr ""
+
+msgid "Select all"
+msgstr ""
+
+msgid "Select all (visible)"
+msgstr ""
+
+msgid ""
+"Select an appliance to browse its Server Objects — servers, services, "
+"certificates, SSL ciphers, IP groups and more."
+msgstr ""
+
+msgid "Select an appliance to manage its configuration backups"
+msgstr ""
+
+msgid "Select an appliance to view its server policies"
+msgstr ""
+
+msgid "Select platform…"
+msgstr ""
+
+msgid "Select the product you want to manage"
+msgstr ""
+
+msgid "Selected appliances"
+msgstr ""
+
+msgid "Semi"
+msgstr ""
+
+msgid "Send"
+msgstr ""
+
+msgid "Send a test email"
+msgstr ""
+
+msgid "Send report"
+msgstr ""
+
+msgid "Send reset link"
+msgstr ""
+
+msgid "Send test"
+msgstr ""
+
+msgid ""
+"Sends a one-line test message with the CURRENTLY SAVED settings. Save "
+"first, then test."
+msgstr ""
+
+msgid "Serial"
+msgstr ""
+
+msgid "Series"
+msgstr ""
+
+msgid "Series selection"
+msgstr ""
+
+msgid "Series:"
+msgstr ""
+
+msgid "Served from the local source of truth"
+msgstr ""
+
+msgid ""
+"Served from the local source of truth (PostgreSQL deep capture). Use "
+"'Refresh from device' on the policy list to pull live config."
+msgstr ""
+
+msgid "Server (IP / hostname)"
+msgstr ""
+
+msgid "Server Objects"
+msgstr ""
+
+msgid "Server Policies"
+msgstr ""
+
+msgid "Server Policy"
+msgstr ""
+
+msgid "Server Policy Configuration"
+msgstr ""
+
+msgid "Server Policy name *"
+msgstr ""
+
+msgid "Server Pool"
+msgstr ""
+
+msgid "Server Pool name"
+msgstr ""
+
+msgid "Server Pools"
+msgstr ""
+
+msgid "Server policies"
+msgstr ""
+
+msgid "Server policies WITHOUT an App ID"
+msgstr ""
+
+msgid "Server policy"
+msgstr ""
+
+msgid "Server policy (primary certificate)"
+msgstr ""
+
+msgid "Server pool"
+msgstr ""
+
+msgid "Server pool (load balancing)"
+msgstr ""
+
+msgid "Server requires authentication"
+msgstr ""
+
+msgid "Server type"
+msgstr ""
+
+msgid "Service"
+msgstr ""
+
+msgid "Service Monitor"
+msgstr ""
+
+msgid "Service certificate (nginx :443 / :8443)"
+msgstr ""
+
+msgid "Service validation"
+msgstr ""
+
+msgid "Services"
+msgstr ""
+
+msgid "Services validated"
+msgstr ""
+
+msgid "Session Lock (minutes)"
+msgstr ""
+
+msgid "Session lock"
+msgstr ""
+
+msgid ""
+"Set a scope to restrict this profile to a specific zone, line, or "
+"department. Leave blank to apply to any."
+msgstr ""
+
+msgid "Set new password"
+msgstr ""
+
+msgid "Set up 2FA"
+msgstr ""
+
+msgid "Setting"
+msgstr ""
+
+msgid "Settings"
+msgstr ""
+
+msgid "Settings store"
+msgstr ""
+
+msgid "Settings → Change Password"
+msgstr ""
+
+msgid "Settings → Signatures"
+msgstr ""
+
+msgid "Severity"
+msgstr ""
+
+msgid ""
+"Share this reference with your administrator so they can locate the exact"
+" problem in the logs."
+msgstr ""
+
+msgid "Shared VIP"
+msgstr ""
+
+msgid "Shared VIP (one address that lands on the primary)"
+msgstr ""
+
+msgid "Shared VIP address"
+msgstr ""
+
+msgid "Shared secret"
+msgstr ""
+
+msgid "Shell password"
+msgstr ""
+
+msgid "Shell port"
+msgstr ""
+
+msgid "Shell username"
+msgstr ""
+
+msgid "Shipped with the product; cannot be edited or deleted"
+msgstr ""
+
+msgid "Shipped wording"
+msgstr ""
+
+msgid "Short summary (e.g. 'Save button does nothing')"
+msgstr ""
+
+msgid "Show / hide"
+msgstr ""
+
+msgid "Show LB matches"
+msgstr ""
+
+msgid "Show TTL"
+msgstr ""
+
+msgid "Show URNs"
+msgstr ""
+
+msgid "Show advisory"
+msgstr ""
+
+msgid "Show as list"
+msgstr ""
+
+msgid "Show raw JSON config on policy detail pages"
+msgstr ""
+
+msgid "Showing"
+msgstr ""
+
+msgid "Showing locally cached data"
+msgstr ""
+
+msgid "Sign In"
+msgstr ""
+
+msgid "Sign In — SATOM"
+msgstr ""
+
+msgid "Sign Out"
+msgstr ""
+
+msgid "Sign out"
+msgstr ""
+
+msgid "Sign-in keeps going over RADIUS."
+msgstr ""
+
+msgid "Sign-in sources"
+msgstr ""
+
+msgid "Signature"
+msgstr ""
+
+msgid "Signature Category"
+msgstr ""
+
+msgid "Signature Details"
+msgstr ""
+
+msgid "Signature ID"
+msgstr ""
+
+msgid "Signature Policy on"
+msgstr ""
+
+msgid "Signatures"
+msgstr ""
+
+msgid "Signing command (submit)"
+msgstr ""
+
+msgid "Silent probes"
+msgstr ""
+
+msgid "Single appliance config"
+msgstr ""
+
+msgid "Singleton"
+msgstr ""
+
+msgid "Size"
+msgstr ""
+
+msgid "Skip propagation check"
+msgstr ""
+
+msgid ""
+"Skips machine creation entirely: reserves the address, writes DNS, "
+"registers the appliance and applies the profile against a machine that "
+"already exists."
+msgstr ""
+
+msgid "Slow above (ms)"
+msgstr ""
+
+msgid "Slug"
+msgstr ""
+
+msgid ""
+"Smallest blast radius. Useful when the appliance is configured by another"
+" team or a different tool."
+msgstr ""
+
+msgid "Software Update"
+msgstr ""
+
+msgid "Something went wrong"
+msgstr ""
+
+msgid "Sort"
+msgstr ""
+
+msgid "Source"
+msgstr ""
+
+msgid "Source IP"
+msgstr ""
+
+msgid "Source file"
+msgstr ""
+
+msgid "Source of truth for the maintenance window"
+msgstr ""
+
+msgid "Source profile:"
+msgstr ""
+
+msgid "Source to test"
+msgstr ""
+
+msgid "Source type"
+msgstr ""
+
+msgid "Staged on this node"
+msgstr ""
+
+msgid "Standalone"
+msgstr ""
+
+msgid ""
+"Standalone / tls-alpn only. The CA always connects to 80 (or 443) — use a"
+" redirect if you change it."
+msgstr ""
+
+msgid "Standalone mode"
+msgstr ""
+
+msgid "Standalone — single node"
+msgstr ""
+
+msgid "Start from an example"
+msgstr ""
+
+msgid "Start from an example script"
+msgstr ""
+
+msgid "Start scan"
+msgstr ""
+
+msgid "StartTLS"
+msgstr ""
+
+msgid "Started"
+msgstr ""
+
+msgid "Stat card"
+msgstr ""
+
+msgid "State"
+msgstr ""
+
+msgid "Status"
+msgstr ""
+
+msgid "Status Poll Interval (seconds)"
+msgstr ""
+
+msgid "Status in this policy"
+msgstr ""
+
+msgid "Status poll"
+msgstr ""
+
+msgid "Step"
+msgstr ""
+
+msgid "Stop"
+msgstr ""
+
+msgid "Stop generating"
+msgstr ""
+
+msgid "Stop preview"
+msgstr ""
+
+msgid "Stopped"
+msgstr ""
+
+msgid "Stopping"
+msgstr ""
+
+msgid "Store"
+msgstr ""
+
+msgid "Store in vault"
+msgstr ""
+
+msgid "Store selector — MetricsQL"
+msgstr ""
+
+msgid ""
+"Stored encrypted. Leaving this blank keeps the existing token — it never "
+"clears it."
+msgstr ""
+
+msgid "Stored firmware"
+msgstr ""
+
+msgid ""
+"Stored on every change request that uses it — it does not change "
+"afterwards."
+msgstr ""
+
+msgid "Streaming replication (live from this node's Postgres)"
+msgstr ""
+
+msgid "Structure"
+msgstr ""
+
+msgid "Structure Overlay (admin)"
+msgstr ""
+
+msgid "Structured cabling work"
+msgstr ""
+
+msgid "Studio"
+msgstr ""
+
+msgid "Sub Class"
+msgstr ""
+
+msgid "Sub-categories"
+msgstr ""
+
+msgid "Sub-element type"
+msgstr ""
+
+msgid "Sub-elements captured"
+msgstr ""
+
+msgid "Subject"
+msgstr ""
+
+msgid "Subject CN"
+msgstr ""
+
+msgid "Subject format"
+msgstr ""
+
+msgid "Substring, or /regex/"
+msgstr ""
+
+msgid "Substring, or /regex/ (e.g. /:8080$/)"
+msgstr ""
+
+msgid "Substring, or /regex/ (e.g. /^10\\.0\\./)"
+msgstr ""
+
+msgid "Subtitle"
+msgstr ""
+
+msgid "Success"
+msgstr ""
+
+msgid "Summary"
+msgstr ""
+
+msgid "Super-admin authored HTML/Jinja/JS views, scoped to the"
+msgstr ""
+
+msgid "Swap"
+msgstr ""
+
+msgid "Swap binding (immediate)"
+msgstr ""
+
+msgid "Swap now"
+msgstr ""
+
+msgid "Swap onto this cert"
+msgstr ""
+
+msgid "Switch Product"
+msgstr ""
+
+msgid "Switch device"
+msgstr ""
+
+msgid "Switch product"
+msgstr ""
+
+msgid "Sync"
+msgstr ""
+
+msgid "Sync directory users"
+msgstr ""
+
+msgid "Sync from a base device"
+msgstr ""
+
+msgid "Sync from git"
+msgstr ""
+
+msgid "Sync group / OU DN"
+msgstr ""
+
+msgid "Sync groups / OU DNs"
+msgstr ""
+
+msgid "Sync now"
+msgstr ""
+
+msgid "Synced at"
+msgstr ""
+
+msgid "System"
+msgstr ""
+
+msgid "System Information"
+msgstr ""
+
+msgid "System Provisioning"
+msgstr ""
+
+msgid "TLS exposure"
+msgstr ""
+
+msgid "TLS posture"
+msgstr ""
+
+msgid "TLS trust store — certificate authorities SATOM accepts from devices"
+msgstr ""
+
+msgid "TLS warn (days)"
+msgstr ""
+
+msgid "TLSv1.2"
+msgstr ""
+
+msgid "TLSv1.3"
+msgstr ""
+
+msgid "Table"
+msgstr ""
+
+msgid "Tables"
+msgstr ""
+
+msgid "Tagline"
+msgstr ""
+
+msgid "Tags"
+msgstr ""
+
+msgid "Tags (comma-separated)"
+msgstr ""
+
+msgid "Take a config backup first"
+msgstr ""
+
+msgid "Take the address from IPAM"
+msgstr ""
+
+msgid "Target"
+msgstr ""
+
+msgid "Target FortiWeb"
+msgstr ""
+
+msgid "Target device hostname for this deployment."
+msgstr ""
+
+msgid "Target devices"
+msgstr ""
+
+msgid "Target object on device"
+msgstr ""
+
+msgid "Target:"
+msgstr ""
+
+msgid "Targets"
+msgstr ""
+
+msgid ""
+"Tell the administrators what isn't working. The current page and your "
+"browser are captured automatically."
+msgstr ""
+
+msgid "Template"
+msgstr ""
+
+msgid "Template Library"
+msgstr ""
+
+msgid "Template name"
+msgstr ""
+
+msgid "Template-managed profile — carve-outs on it are blocked"
+msgstr ""
+
+msgid "Template-managed: edit in Administrator → WPP Templates"
+msgstr ""
+
+msgid ""
+"Template-managed: edit in Administrator → WPP Templates (deploys to ALL "
+"devices)"
+msgstr ""
+
+msgid ""
+"Template-managed: read-only here. Edit in Administrator → WPP Templates —"
+" approving a change there deploys it to ALL devices."
+msgstr ""
+
+msgid "Template-managed: read-only here. Edit in Administrator → WPP Templates."
+msgstr ""
+
+msgid "Templates"
+msgstr ""
+
+msgid "Test Connection"
+msgstr ""
+
+msgid "Test TLS"
+msgstr ""
+
+msgid "Test a device against the store"
+msgstr ""
+
+msgid "Test against staging first."
+msgstr ""
+
+msgid "Test connection"
+msgstr ""
+
+msgid "Testing"
+msgstr ""
+
+msgid ""
+"Tests the values CURRENTLY IN THE FORM (no need to save first). Add a "
+"test user + password to fully verify a bind."
+msgstr ""
+
+msgid "Text"
+msgstr ""
+
+msgid "The"
+msgstr ""
+
+msgid ""
+"The ADCS connection and at least one class template are not configured "
+"yet. Open"
+msgstr ""
+
+msgid "The DNS servers the"
+msgstr ""
+
+msgid ""
+"The Find box is the query in this mode — enter any value to find it "
+"across every object on every appliance."
+msgstr ""
+
+msgid "The FortiADC endpoint"
+msgstr ""
+
+msgid ""
+"The FortiADC manager scaffold is in place. Modules (virtual servers, real"
+" servers, load-balancing pools, health checks) will be added here."
+msgstr ""
+
+msgid "The FortiAnalyzer endpoint"
+msgstr ""
+
+msgid "The advisor never writes to SATOM or an appliance directly — see"
+msgstr ""
+
+msgid ""
+"The anti-lockout floor. A local account is checked against its local "
+"password and never falls through to a directory."
+msgstr ""
+
+msgid "The bare MSG ID also works; leading zeros are optional."
+msgstr ""
+
+msgid ""
+"The billing + access-control catalog. Each Server Policy belongs to "
+"exactly one AppID (one customer). Imports are additive — a vanished AppID"
+" is flagged"
+msgstr ""
+
+msgid "The building blocks assignable to combos. Author and approve them in"
+msgstr ""
+
+msgid ""
+"The canary device failed — the remaining devices were skipped. Review the"
+" canary result below, fix the issue, and retry."
+msgstr ""
+
+msgid "The catalog is"
+msgstr ""
+
+msgid ""
+"The catalog of ADOMs (products) is stored in the database — logo, name, "
+"description, whether it's active, and which subsystems it supports. "
+"Deactivating an ADOM removes it from the product selector and "
+"404s/redirects its routes. The"
+msgstr ""
+
+msgid "The certificate below is served by nginx on"
+msgstr ""
+
+msgid "The config contained no recognisable sections."
+msgstr ""
+
+msgid "The copies (per artifact)"
+msgstr ""
+
+msgid "The current, incomplete one"
+msgstr ""
+
+msgid "The device answered successfully with zero objects — this is not an error."
+msgstr ""
+
+msgid "The device refused the status read."
+msgstr ""
+
+msgid "The device returned no data for this policy."
+msgstr ""
+
+msgid "The device-pushed backups on the external server are browsable here:"
+msgstr ""
+
+msgid "The directory group filter"
+msgstr ""
+
+msgid "The endpoint"
+msgstr ""
+
+msgid "The endpoint registry is seeded from endpoints.yaml at first boot."
+msgstr ""
+
+msgid ""
+"The feed is working — these are the newest rows this appliance holds. If "
+"the ID you searched is older than these, it has aged out of the log."
+msgstr ""
+
+msgid "The free licence gates the"
+msgstr ""
+
+msgid ""
+"The full WPP sub-tree + Server-Policy dependency graph captured into the "
+"cache (opt-in deep rediscovery). Every sub-element is queryable here — no"
+" live device calls. Click ⤢ on any chart to expand, change type, top-N, "
+"and export CSV/PNG."
+msgstr ""
+
+msgid ""
+"The key must match the certificate; nginx is config-tested and rolled "
+"back automatically if the new cert is bad."
+msgstr ""
+
+msgid "The last complete one"
+msgstr ""
+
+msgid ""
+"The manager's cluster — node architecture, deployment mode, the HA node "
+"registry, live Postgres streaming replication and the guarded manual "
+"failover. Update the code itself from"
+msgstr ""
+
+msgid ""
+"The object's unique identity. Child tables (members, rules…) are added "
+"after it's created."
+msgstr ""
+
+msgid ""
+"The object's unique name (mkey). Sub-tables (members, rules…) are added "
+"after it's created."
+msgstr ""
+
+msgid "The one before that"
+msgstr ""
+
+msgid "The options in the Change Request form's"
+msgstr ""
+
+msgid "The page you are looking for doesn't exist or has moved."
+msgstr ""
+
+msgid ""
+"The password is stored Fernet-encrypted. Paths are as seen inside the "
+"SFTP session (the server chroots the backup user)."
+msgstr ""
+
+msgid "The pool section has never been harvested for the devices in scope."
+msgstr ""
+
+msgid "The profile"
+msgstr ""
+
+msgid "The profile defines exactly what this user can do."
+msgstr ""
+
+msgid "The published services this window takes offline,"
+msgstr ""
+
+msgid "The registry exposes no config object types for this section."
+msgstr ""
+
+msgid ""
+"The reliable path when device-side backup fails (e.g. FortiWeb returns "
+"-901 with a backup password set)."
+msgstr ""
+
+msgid ""
+"The same FortiGuard signature package is on every box, so any reachable "
+"FortiWeb can serve as the base for the sync. The read is"
+msgstr ""
+
+msgid "The self-signed trust anchor."
+msgstr ""
+
+msgid "The server-policy name is the object key and cannot be changed"
+msgstr ""
+
+msgid "The stable key services resolve by — letters, digits, \"_\", \"-\", \".\"."
+msgstr ""
+
+msgid ""
+"The structure tree deliberately covers only the Server Policy + Web "
+"Protection Profile dependency subgraph — not the whole registry (System, "
+"Network, Monitor, Log objects hang off no policy)."
+msgstr ""
+
+msgid "The upgrade is recorded as a one-shot"
+msgstr ""
+
+msgid ""
+"The virtual-server section has never been harvested for the devices in "
+"scope. This is not “no published services” — it is no data."
+msgstr ""
+
+msgid ""
+"The whole pipeline (generate → sign → deploy → swap → revoke) is "
+"protocol-agnostic: switching to ACME here re-points signing AND "
+"revocation to the ACME client command templates below — no code change. "
+"The per-class cards (key type, subject/SAN format, renew window) apply to"
+" both protocols."
+msgstr ""
+
+msgid "Theme"
+msgstr ""
+
+msgid "Theme editor"
+msgstr ""
+
+msgid "Theme name"
+msgstr ""
+
+msgid "Themes"
+msgstr ""
+
+msgid ""
+"There are no appliances to apply to. Register an appliance, then try "
+"again."
+msgstr ""
+
+msgid ""
+"There is no per-username allowlist here any more. Three gates already "
+"decide this, each in the place that owns the decision:"
+msgstr ""
+
+msgid "They are no longer enforced"
+msgstr ""
+
+msgid "Third"
+msgstr ""
+
+msgid ""
+"This action has not fired. Use \"Run now\" on the list, or wait for its "
+"next scheduled run."
+msgstr ""
+
+msgid "This action is locked to a one-time ("
+msgstr ""
+
+msgid ""
+"This appliance has no server policies configured, or the connection could"
+" not be established."
+msgstr ""
+
+msgid "This appliance holds no attack-log entries at all."
+msgstr ""
+
+msgid ""
+"This change cannot run until the external authority approves it. No "
+"answer is not an approval."
+msgstr ""
+
+msgid "This change type has no automated executor"
+msgstr ""
+
+msgid ""
+"This change type has no automation behind it: the change request is "
+"raised, approved and printed here, and the work is carried out by hand. "
+"It cannot be bound to the scheduler."
+msgstr ""
+
+msgid "This clone report is not available (unknown job or no access)."
+msgstr ""
+
+msgid "This first runs a"
+msgstr ""
+
+msgid "This install still stores"
+msgstr ""
+
+msgid "This installation"
+msgstr ""
+
+msgid ""
+"This installation — HA nodes, database, systemd units, redundancy and "
+"encryption in transit. For the appliances themselves see"
+msgstr ""
+
+msgid "This is a dry-run preview — nothing has been written yet."
+msgstr ""
+
+msgid "This is an HA cluster (node 0)"
+msgstr ""
+
+msgid ""
+"This is the PRIMARY. Update the standby to the new revision first; once "
+"it passes its health check, this button unlocks."
+msgstr ""
+
+msgid "This is the only time the full token is shown. Store it securely."
+msgstr ""
+
+msgid "This job recorded no per-policy detail."
+msgstr ""
+
+msgid "This node"
+msgstr ""
+
+msgid "This node is PRIMARY but"
+msgstr ""
+
+msgid ""
+"This node is the PRIMARY. Failover is initiated from the STANDBY node's "
+"own High Availability page."
+msgstr ""
+
+msgid "This object exposes no editable scalar fields."
+msgstr ""
+
+msgid "This queues a self-update to"
+msgstr ""
+
+msgid "Threat"
+msgstr ""
+
+msgid "Three back"
+msgstr ""
+
+msgid "Threshold lines"
+msgstr ""
+
+msgid "Thresholds"
+msgstr ""
+
+msgid "Time"
+msgstr ""
+
+msgid "Time of day"
+msgstr ""
+
+msgid "Time range"
+msgstr ""
+
+msgid "Timeline"
+msgstr ""
+
+msgid "Timeout"
+msgstr ""
+
+msgid "Timeout (s)"
+msgstr ""
+
+msgid "Timeout (seconds)"
+msgstr ""
+
+msgid "Timestamp"
+msgstr ""
+
+msgid "Timezone"
+msgstr ""
+
+msgid "Title"
+msgstr ""
+
+msgid "To"
+msgstr ""
+
+msgid "To Date"
+msgstr ""
+
+msgid "To change your password, open"
+msgstr ""
+
+msgid "To date"
+msgstr ""
+
+msgid "Toggle showing devices you have hidden"
+msgstr ""
+
+msgid "Toggle sidebar"
+msgstr ""
+
+msgid "Token"
+msgstr ""
+
+msgid "Tools"
+msgstr ""
+
+msgid "Top"
+msgstr ""
+
+msgid "Top 10"
+msgstr ""
+
+msgid "Top Attacked Policies"
+msgstr ""
+
+msgid "Top Traffic Sources"
+msgstr ""
+
+msgid "Top Users"
+msgstr ""
+
+msgid "Top object types"
+msgstr ""
+
+msgid "Topic"
+msgstr ""
+
+msgid "Total"
+msgstr ""
+
+msgid "Total Actions"
+msgstr ""
+
+msgid "Total Appliances"
+msgstr ""
+
+msgid "Total Backups"
+msgstr ""
+
+msgid "Total Policies"
+msgstr ""
+
+msgid "Total Reports"
+msgstr ""
+
+msgid "Total Users"
+msgstr ""
+
+msgid "Total loss of both nodes"
+msgstr ""
+
+msgid "Total objects"
+msgstr ""
+
+msgid "Traffic Trend"
+msgstr ""
+
+msgid "Traffic log"
+msgstr ""
+
+msgid "Traffic log (tlog)"
+msgstr ""
+
+msgid "Traffic path (animated = enabled)"
+msgstr ""
+
+msgid "Translate what I changed into the other languages when I save"
+msgstr ""
+
+msgid "Translate what is missing or stale"
+msgstr ""
+
+msgid "Translations"
+msgstr ""
+
+msgid "Transport security"
+msgstr ""
+
+msgid "Trend"
+msgstr ""
+
+msgid "Trigger"
+msgstr ""
+
+msgid "Trigger Policy"
+msgstr ""
+
+msgid "Triggered by"
+msgstr ""
+
+msgid "Trust store"
+msgstr ""
+
+msgid "Try in API Explorer"
+msgstr ""
+
+msgid "Turn a menu"
+msgstr ""
+
+msgid "Two slots so a complete path goes in at once: the"
+msgstr ""
+
+msgid "Two thirds"
+msgstr ""
+
+msgid "Two-Factor Authentication"
+msgstr ""
+
+msgid "Two-Factor Authentication (TOTP)"
+msgstr ""
+
+msgid "Two-Factor Authentication — SATOM"
+msgstr ""
+
+msgid "Two-factor authentication is"
+msgstr ""
+
+msgid "Type"
+msgstr ""
+
+msgid "Type a term to search"
+msgstr ""
+
+msgid "Type of change"
+msgstr ""
+
+msgid "UI Framework"
+msgstr ""
+
+#, python-brace-format
+msgid "URL (with {tokens})"
+msgstr ""
+
+msgid "URL Pattern"
+msgstr ""
+
+msgid "URN (REST)"
+msgstr ""
+
+msgid "URN / API path"
+msgstr ""
+
+msgid "URN / JSON-RPC url"
+msgstr ""
+
+msgid "URNs not covered by the registry"
+msgstr ""
+
+msgid "Unattended without a serial console. Good on a build VLAN that runs DHCP."
+msgstr ""
+
+msgid "Uncheck for an internal server with a self-signed certificate (insecure)."
+msgstr ""
+
+msgid "Unit"
+msgstr ""
+
+msgid "Unit status"
+msgstr ""
+
+msgid "Unknown"
+msgstr ""
+
+msgid "Unreviewed"
+msgstr ""
+
+msgid "Unused WPP"
+msgstr ""
+
+msgid "Unused WPP (orphans)"
+msgstr ""
+
+msgid "Up to 10 links."
+msgstr ""
+
+msgid "Update"
+msgstr ""
+
+msgid "Update Password"
+msgstr ""
+
+msgid "Update from Gitea"
+msgstr ""
+
+msgid "Update in progress"
+msgstr ""
+
+msgid ""
+"Update the manager's own code and Python dependencies from git — never OS"
+" packages. Rolled out one node at a time: the"
+msgstr ""
+
+msgid "Updated"
+msgstr ""
+
+msgid "Upgrade"
+msgstr ""
+
+msgid "Upgrade / Downgrade"
+msgstr ""
+
+msgid "Upgrade Firmware"
+msgstr ""
+
+msgid "Upgrade Prep"
+msgstr ""
+
+msgid "Upgrade Preparation"
+msgstr ""
+
+msgid "Upgrade advisor"
+msgstr ""
+
+msgid "Upgrades"
+msgstr ""
+
+msgid "Upload"
+msgstr ""
+
+msgid "Upload .conf"
+msgstr ""
+
+msgid ""
+"Upload a CSV / TSV / TXT / PDF. It's normalized to a table so you can map"
+" each column to a field"
+msgstr ""
+
+msgid "Upload a FortiWeb config backup above to create your first snapshot."
+msgstr ""
+
+msgid "Upload a config backup (.conf) from your PC"
+msgstr ""
+
+msgid "Upload an install image"
+msgstr ""
+
+msgid "Uploaded"
+msgstr ""
+
+msgid "Uploaded (UTC)"
+msgstr ""
+
+msgid "Uploaded by"
+msgstr ""
+
+msgid ""
+"Uploaded to the backup server; Pull → Infrastructure → Firmware "
+"(sha256-verified)"
+msgstr ""
+
+msgid "Usable IPs"
+msgstr ""
+
+msgid "Usage (policies per WPP)"
+msgstr ""
+
+msgid "Use Interface IP"
+msgstr ""
+
+msgid ""
+"Use a PUBLIC resolver when your internal DNS shadows the zone (split "
+"horizon)."
+msgstr ""
+
+msgid "Use the destination's existing profile (accepting its differing values)"
+msgstr ""
+
+msgid "Used"
+msgstr ""
+
+msgid ""
+"Used by \"Forgot password\" on the sign-in page to email a reset link. "
+"Requires server email to be configured."
+msgstr ""
+
+msgid "Used for"
+msgstr ""
+
+msgid "Used to display log and audit timestamps"
+msgstr ""
+
+msgid "Used when a notice has no explicit recipient. Comma / newline separated."
+msgstr ""
+
+msgid "Used when revoke-on-supersede is OFF."
+msgstr ""
+
+msgid "Used when the protocol above is"
+msgstr ""
+
+msgid "User"
+msgstr ""
+
+msgid "User Management"
+msgstr ""
+
+msgid "User attribute"
+msgstr ""
+
+msgid "User filter"
+msgstr ""
+
+msgid "Username"
+msgstr ""
+
+msgid "Username (basic)"
+msgstr ""
+
+msgid "Users"
+msgstr ""
+
+msgid "VDOM (optional)"
+msgstr ""
+
+msgid "VIP / IP…"
+msgstr ""
+
+msgid "VIP / backend filters need a deep capture"
+msgstr ""
+
+msgid "VIP IP for the copy"
+msgstr ""
+
+msgid "VM only"
+msgstr ""
+
+msgid "VMware ESXi"
+msgstr ""
+
+msgid "VMware ESXi (.ovf / .ova)"
+msgstr ""
+
+msgid "VServer"
+msgstr ""
+
+msgid "Valid from"
+msgstr ""
+
+msgid "Valid until"
+msgstr ""
+
+msgid "Validate / Accept"
+msgstr ""
+
+msgid "Validate / Restore"
+msgstr ""
+
+msgid "Validate / Roll back"
+msgstr ""
+
+msgid "Value"
+msgstr ""
+
+msgid "Value shown"
+msgstr ""
+
+msgid "Values"
+msgstr ""
+
+msgid "Values (Y)"
+msgstr ""
+
+msgid ""
+"Values come from the administrator (Settings → Clone / Migrate). Tick "
+"\"Override admin defaults\" to change them for this run only."
+msgstr ""
+
+msgid "Ver"
+msgstr ""
+
+msgid "Verdict"
+msgstr ""
+
+msgid "Verify"
+msgstr ""
+
+msgid "Verify SSL Certificate"
+msgstr ""
+
+msgid "Verify SSL certificate"
+msgstr ""
+
+msgid "Verify TLS"
+msgstr ""
+
+msgid "Verify TLS certificate"
+msgstr ""
+
+msgid "Verify certificate"
+msgstr ""
+
+msgid "Version"
+msgstr ""
+
+msgid "Versioned SoT store (local)"
+msgstr ""
+
+msgid "Versions"
+msgstr ""
+
+msgid "Versions (major.minor)"
+msgstr ""
+
+msgid "View"
+msgstr ""
+
+msgid "View / Edit Detail"
+msgstr ""
+
+msgid "View / edit"
+msgstr ""
+
+msgid "View / edit (raw JSON)"
+msgstr ""
+
+msgid "View B"
+msgstr ""
+
+msgid "View Backups"
+msgstr ""
+
+msgid "View PEM"
+msgstr ""
+
+msgid "View Policy"
+msgstr ""
+
+msgid "View exceptions"
+msgstr ""
+
+msgid "View in API Explorer"
+msgstr ""
+
+msgid "View result"
+msgstr ""
+
+msgid "View server policies"
+msgstr ""
+
+msgid "View template content"
+msgstr ""
+
+msgid "View the profile's contents"
+msgstr ""
+
+msgid "Violations"
+msgstr ""
+
+msgid "Virtual IP"
+msgstr ""
+
+msgid "Virtual Machine"
+msgstr ""
+
+msgid "Virtual Machine (KVM/VMware/cloud)"
+msgstr ""
+
+msgid "Virtual Server"
+msgstr ""
+
+msgid "Virtual Server name"
+msgstr ""
+
+msgid "Virtual Servers"
+msgstr ""
+
+msgid "Virtual server"
+msgstr ""
+
+msgid "Virtual server VIP"
+msgstr ""
+
+msgid "Virtual servers"
+msgstr ""
+
+msgid "Virtual servers with no security profile"
+msgstr ""
+
+msgid "Visualisation"
+msgstr ""
+
+msgid "WAF Exceptions"
+msgstr ""
+
+msgid "WAF profile attached"
+msgstr ""
+
+msgid "WAL lag"
+msgstr ""
+
+msgid "WAL streaming replication (continuous)"
+msgstr ""
+
+msgid ""
+"WHEN a superseded certificate is revoked at the CA and WHEN old material "
+"is deleted off the FortiWebs. Enforced by the"
+msgstr ""
+
+msgid "WPP Templates"
+msgstr ""
+
+msgid "WPP feature coverage"
+msgstr ""
+
+msgid "WPP per device"
+msgstr ""
+
+msgid "Wall time:"
+msgstr ""
+
+msgid "Warn at"
+msgstr ""
+
+msgid "Warn if the harvest is older than (hours)"
+msgstr ""
+
+msgid "Warning"
+msgstr ""
+
+msgid "We'll email a reset link to your recovery address"
+msgstr ""
+
+msgid "Web Protection"
+msgstr ""
+
+msgid "Web Protection Profile"
+msgstr ""
+
+msgid "Web Protection Profiles"
+msgstr ""
+
+msgid "Web access"
+msgstr ""
+
+msgid "Web authentication"
+msgstr ""
+
+msgid "WebServer"
+msgstr ""
+
+msgid "Weight"
+msgstr ""
+
+msgid "What"
+msgstr ""
+
+msgid "What a theme can and cannot repaint"
+msgstr ""
+
+msgid "What each backend can and cannot do"
+msgstr ""
+
+msgid "What happened / error"
+msgstr ""
+
+msgid "What it does"
+msgstr ""
+
+msgid "What this profile is for"
+msgstr ""
+
+msgid "What's inside B"
+msgstr ""
+
+msgid "When"
+msgstr ""
+
+msgid "When (UTC)"
+msgstr ""
+
+msgid "When off, the app never attempts to send (notices are only rendered)."
+msgstr ""
+
+msgid "Where"
+msgstr ""
+
+msgid "Where it lives"
+msgstr ""
+
+msgid "Where the sync actually happens"
+msgstr ""
+
+msgid ""
+"Which NetBox device each appliance is. Leave blank to fall back to an "
+"exact"
+msgstr ""
+
+msgid "Which WPP per device (matrix)"
+msgstr ""
+
+msgid "Which one"
+msgstr ""
+
+msgid "Which severities are written to the application log"
+msgstr ""
+
+msgid "Who is emailed when the window closes (completed or failed)."
+msgstr ""
+
+msgid "Who may sign in"
+msgstr ""
+
+msgid "Whole fleet"
+msgstr ""
+
+msgid "Whole instance"
+msgstr ""
+
+msgid "Widget title"
+msgstr ""
+
+msgid "Widgets"
+msgstr ""
+
+msgid "Width"
+msgstr ""
+
+msgid "Window"
+msgstr ""
+
+msgid "Window (hours)"
+msgstr ""
+
+msgid "Window end"
+msgstr ""
+
+msgid "Window start"
+msgstr ""
+
+msgid "With exceptions"
+msgstr ""
+
+msgid "With more than one certificate the role is appended —"
+msgstr ""
+
+msgid ""
+"With no quorum, promoting while the primary is alive creates two "
+"primaries (split-brain). Manual by design."
+msgstr ""
+
+msgid "With none registered, device provisioning is hidden entirely"
+msgstr ""
+
+msgid "Works on"
+msgstr ""
+
+msgid "Workspace"
+msgstr ""
+
+msgid "Worst"
+msgstr ""
+
+msgid "Worst status"
+msgstr ""
+
+msgid "Write methods need the \"Execute write API calls\" permission."
+msgstr ""
+
+msgid "Writes are dry-run by default."
+msgstr ""
+
+msgid "Written in"
+msgstr ""
+
+msgid "Yes"
+msgstr ""
+
+msgid "You"
+msgstr ""
+
+msgid ""
+"You are seeing this instead of another product’s dashboard on purpose. A "
+"page scoped to objects this product does not have renders every panel "
+"empty, and an empty panel reads as “nothing is wrong” rather than "
+"“nothing was measured”."
+msgstr ""
+
+msgid ""
+"You built the machine, so its CPU, memory, disk and network are outside "
+"the run log and outside the audit trail."
+msgstr ""
+
+msgid "You don't have permission to view this page."
+msgstr ""
+
+msgid "You may run"
+msgstr ""
+
+msgid "You'll pick the exact permissions on the next screen."
+msgstr ""
+
+msgid "You're all caught up — no notifications."
+msgstr ""
+
+msgid "You're all caught up."
+msgstr ""
+
+msgid ""
+"Your account authenticates against a directory — manage multi-factor "
+"authentication there."
+msgstr ""
+
+msgid "Your change types — documentary"
+msgstr ""
+
+msgid "Your current password"
+msgstr ""
+
+msgid "Your current session. Use Sign Out to end it securely."
+msgstr ""
+
+msgid ""
+"Your personal top-bar banner per product — saved to your account in the "
+"database, not shared with other users. Each ADOM can use a different "
+"banner."
+msgstr ""
+
+msgid "Your script runs isolated: it"
+msgstr ""
+
+msgid "Your username"
+msgstr ""
+
+msgid "Zone"
+msgstr ""
+
+msgid "Zones"
+msgstr ""
+
+msgid "Zoom in"
+msgstr ""
+
+msgid "Zoom out"
+msgstr ""
+
+msgid ""
+"a licence limit. The only console is graphical (MKS); there is no "
+"scriptable text console."
+msgstr ""
+
+msgid "a session may come from, not who."
+msgstr ""
+
+msgid "above to re-enable them."
+msgstr ""
+
+msgid "act on"
+msgstr ""
+
+msgid "active"
+msgstr ""
+
+msgid "admin"
+msgstr ""
+
+msgid "admin-capable"
+msgstr ""
+
+msgid "all"
+msgstr ""
+
+msgid "all users'"
+msgstr ""
+
+msgid "already in the local firmware store"
+msgstr ""
+
+msgid "always on"
+msgstr ""
+
+msgid "and"
+msgstr ""
+
+msgid "and approve it — then it becomes assignable here."
+msgstr ""
+
+msgid "and click “Browse examples”."
+msgstr ""
+
+msgid "and interrupts every service it fronts, and a downgrade"
+msgstr ""
+
+msgid "and interrupts every service it fronts. Always run"
+msgstr ""
+
+msgid "and it then becomes available to deploy across the fleet."
+msgstr ""
+
+msgid "and its sub-tables as a"
+msgstr ""
+
+msgid "and must be approved before it can be scheduled."
+msgstr ""
+
+msgid ""
+"and names the groups it does have — a partial roster reported as success "
+"is how a typo becomes permanent. A user listed by two groups keeps the "
+"FIRST row's profile."
+msgstr ""
+
+msgid "and refuses entry until an admin enables it under"
+msgstr ""
+
+msgid ""
+"and the first one that accepts the password wins. Order is not cosmetic: "
+"an unreachable source burns its whole timeout before the next is tried, "
+"and every source ahead of the winner counts a wrong password against its "
+"own lockout policy."
+msgstr ""
+
+msgid "and this question is answered for you from then on."
+msgstr ""
+
+msgid "api/v2.0/system/status.systemstatus"
+msgstr ""
+
+#, python-brace-format
+msgid "app\\d{5}"
+msgstr ""
+
+msgid "appid_import"
+msgstr ""
+
+msgid "appliance(s) could not be read and were skipped:"
+msgstr ""
+
+msgid "apply anyway (low contrast)"
+msgstr ""
+
+msgid "apply lag"
+msgstr ""
+
+msgid "approved"
+msgstr ""
+
+msgid ""
+"are encrypted at rest, never sent back to the browser and redacted from "
+"every log line. They reach the ACME client through its"
+msgstr ""
+
+msgid "are one call"
+msgstr ""
+
+msgid "are one call per device (cheap — safe at 3 min for a whole fleet)."
+msgstr ""
+
+msgid "as they were when this change was raised"
+msgstr ""
+
+msgid "auth_local_users"
+msgstr ""
+
+msgid "auto"
+msgstr ""
+
+msgid "auto-detected from the config"
+msgstr ""
+
+msgid ""
+"backend, including a free-licensed ESXi. The manual step is the one a "
+"human is genuinely needed for; everything else is automated."
+msgstr ""
+
+msgid ""
+"badge in the top bar and on the ADOM picker. Replicated — set it on the "
+"primary and both HA nodes agree."
+msgstr ""
+
+msgid "before"
+msgstr ""
+
+msgid "before a live restore. Leave"
+msgstr ""
+
+msgid "believes"
+msgstr ""
+
+msgid "below (never hardcoded)."
+msgstr ""
+
+msgid "blocked"
+msgstr ""
+
+msgid "boot-partition"
+msgstr ""
+
+msgid "bound to any policy — swap it in during a maintenance window."
+msgstr ""
+
+msgid "bound — swap it off before removing"
+msgstr ""
+
+msgid "box / policies / interfaces"
+msgstr ""
+
+msgid "breadcrumb"
+msgstr ""
+
+msgid ""
+"brings the image into Infrastructure → Firmware (sha256-verified) and the"
+" per-appliance"
+msgstr ""
+
+msgid "browse, compare and search this device's pushed backups"
+msgstr ""
+
+msgid "built-in"
+msgstr ""
+
+msgid "bulk"
+msgstr ""
+
+msgid "button. Only"
+msgstr ""
+
+msgid "by name"
+msgstr ""
+
+msgid "cabling_work"
+msgstr ""
+
+msgid "can reset the configuration"
+msgstr ""
+
+msgid "cannot"
+msgstr ""
+
+msgid "capability flags"
+msgstr ""
+
+msgid ""
+"card above → pick the commit → Queue rollback. Goes through the self-"
+"update runner (checkout + pip + migrate + restart). Roll the standby the "
+"same way afterwards. Note: newer DB schema is not auto-downgraded — pair "
+"a code rollback with a database bundle restore when a migration was "
+"involved."
+msgstr ""
+
+msgid "card →"
+msgstr ""
+
+msgid "catalog"
+msgstr ""
+
+msgid "certipy"
+msgstr ""
+
+msgid ""
+"changed fields are merged onto the device object — nothing un-shown is "
+"dropped"
+msgstr ""
+
+msgid ""
+"checked to validate without sending anything, and type the appliance name"
+" to authorise a live restore. Encrypted backups require the backup "
+"password."
+msgstr ""
+
+msgid "checked to validate without sending anything."
+msgstr ""
+
+msgid "checking…"
+msgstr ""
+
+msgid "click a filename"
+msgstr ""
+
+msgid "clone/migrate always rewrites each copy's VIP to a"
+msgstr ""
+
+msgid "closed"
+msgstr ""
+
+msgid "cmdb"
+msgstr ""
+
+msgid "cn=fortiweb-admins,ou=groups,dc=example,dc=com"
+msgstr ""
+
+msgid "cn=svc,dc=example,dc=com"
+msgstr ""
+
+msgid "code"
+msgstr ""
+
+msgid "combo name…"
+msgstr ""
+
+msgid "complete"
+msgstr ""
+
+msgid "configured"
+msgstr ""
+
+msgid "consumed"
+msgstr ""
+
+msgid "content-routing policy name"
+msgstr ""
+
+msgid "core has no maintenance-window object"
+msgstr ""
+
+msgid "corp.local"
+msgstr ""
+
+msgid "create"
+msgstr ""
+
+msgid "crit"
+msgstr ""
+
+msgid "crm-crq"
+msgstr ""
+
+msgid "current"
+msgstr ""
+
+msgid "daemon restarts, interface changes"
+msgstr ""
+
+msgid "danger"
+msgstr ""
+
+msgid "data"
+msgstr ""
+
+msgid "data/sot/ (replicated to the standby; blobs pushed to backup-server)"
+msgstr ""
+
+msgid "database"
+msgstr ""
+
+msgid "dc.example.com"
+msgstr ""
+
+msgid "dc=example,dc=com"
+msgstr ""
+
+msgid "deep"
+msgstr ""
+
+msgid "deep clone"
+msgstr ""
+
+msgid "deep-clone"
+msgstr ""
+
+msgid "delete due"
+msgstr ""
+
+msgid "delete this bundle (replicates to standby)"
+msgstr ""
+
+msgid "delete this bundle (replicates to the standby)"
+msgstr ""
+
+msgid "device"
+msgstr ""
+
+msgid "device CLI output"
+msgstr ""
+
+msgid "device configs"
+msgstr ""
+
+msgid ""
+"dialog prefills the same suggestion but asks the operator. Operators see "
+"these values in the dialog and can override them per run only after "
+"ticking \"Override admin defaults\"."
+msgstr ""
+
+msgid "dialogs. A"
+msgstr ""
+
+msgid "diff truncated"
+msgstr ""
+
+msgid "different"
+msgstr ""
+
+msgid "disable"
+msgstr ""
+
+msgid "disabled"
+msgstr ""
+
+msgid "disabled (pending approval)"
+msgstr ""
+
+msgid "dns-01 — DNS provider (wildcards, no inbound port)"
+msgstr ""
+
+msgid "docs/ai-advisor.md"
+msgstr ""
+
+msgid "documentary"
+msgstr ""
+
+msgid "downgrade"
+msgstr ""
+
+msgid "download"
+msgstr ""
+
+msgid "draft"
+msgstr ""
+
+msgid "dry-run preview"
+msgstr ""
+
+msgid "dummy IP"
+msgstr ""
+
+msgid "dvmdb_device"
+msgstr ""
+
+msgid "e.g. 10"
+msgstr ""
+
+msgid "e.g. 192.0.2.41 · MX: '10 mail.host'"
+msgstr ""
+
+msgid "e.g. 192.0.2.53"
+msgstr ""
+
+msgid "e.g. 240"
+msgstr ""
+
+msgid "e.g. 240.1.10.1"
+msgstr ""
+
+msgid "e.g. 50"
+msgstr ""
+
+msgid "e.g. CHG-0042"
+msgstr ""
+
+msgid "e.g. Disable a maintenance banner"
+msgstr ""
+
+msgid "e.g. Extern"
+msgstr ""
+
+msgid "e.g. FW-Prod-01"
+msgstr ""
+
+msgid "e.g. Fleet policy coverage"
+msgstr ""
+
+msgid "e.g. FortiWeb 600F"
+msgstr ""
+
+msgid "e.g. Nightly config backup"
+msgstr ""
+
+msgid "e.g. Splunk logs"
+msgstr ""
+
+msgid "e.g. WAF Editor"
+msgstr ""
+
+msgid "e.g. WPP-Ecommerce-Strict"
+msgstr ""
+
+msgid "e.g. WPP-Ecommerce-Strict-copy"
+msgstr ""
+
+msgid "e.g. Weekly capacity review"
+msgstr ""
+
+msgid "e.g. baseline-wpp"
+msgstr ""
+
+msgid "e.g. before / after / incident"
+msgstr ""
+
+msgid "e.g. default"
+msgstr ""
+
+msgid "e.g. fortigate"
+msgstr ""
+
+msgid "e.g. fortiweb-baseline"
+msgstr ""
+
+msgid "e.g. fw01.example.com"
+msgstr ""
+
+msgid "e.g. jsmith"
+msgstr ""
+
+msgid "e.g. pol-myapp"
+msgstr ""
+
+msgid "e.g. pool-myapp"
+msgstr ""
+
+msgid "e.g. pre-migration snapshot"
+msgstr ""
+
+msgid "e.g. rewrite-legacy"
+msgstr ""
+
+msgid "e.g. splunk-integration"
+msgstr ""
+
+msgid "e.g. vs-myapp"
+msgstr ""
+
+msgid ""
+"each profile kind, which is the only measure that corresponds to traffic "
+"actually being inspected."
+msgstr ""
+
+msgid "edition makes the vSphere API"
+msgstr ""
+
+msgid "edits a policy's match conditions and pool."
+msgstr ""
+
+msgid "email + in-app bell"
+msgstr ""
+
+msgid "empty"
+msgstr ""
+
+msgid "empty keeps the wording that ships with the product"
+msgstr ""
+
+msgid "enable"
+msgstr ""
+
+msgid "enabled"
+msgstr ""
+
+msgid "enc"
+msgstr ""
+
+msgid "encrypted"
+msgstr ""
+
+msgid "environment"
+msgstr ""
+
+msgid "error"
+msgstr ""
+
+msgid "every"
+msgstr ""
+
+msgid "example.com"
+msgstr ""
+
+msgid "exec"
+msgstr ""
+
+msgid "expired"
+msgstr ""
+
+msgid "expiring"
+msgstr ""
+
+msgid "external approval on record"
+msgstr ""
+
+msgid "fac.example.com"
+msgstr ""
+
+msgid "factory"
+msgstr ""
+
+msgid "fail"
+msgstr ""
+
+msgid "failed"
+msgstr ""
+
+msgid "fails the whole import"
+msgstr ""
+
+msgid "filter…"
+msgstr ""
+
+msgid ""
+"finding rather than a reassuring zero — “nothing collected” and “nothing "
+"wrong” are opposite facts and only one of them is safe to act on."
+msgstr ""
+
+msgid "firmware"
+msgstr ""
+
+msgid "first — images are no longer uploaded from this page."
+msgstr ""
+
+msgid "first, and the"
+msgstr ""
+
+msgid "first."
+msgstr ""
+
+msgid "first. Leave"
+msgstr ""
+
+msgid "backup-server unreachable"
+msgstr ""
+
+msgid "backup-server.example.net"
+msgstr ""
+
+msgid "fmbackup"
+msgstr ""
+
+msgid "for a guided step-by-step wizard, or start from a"
+msgstr ""
+
+msgid "for every engineer."
+msgstr ""
+
+msgid "for nodes with no route to the git remote"
+msgstr ""
+
+msgid "fortiweb11"
+msgstr ""
+
+msgid "fortiweb11.example.com"
+msgstr ""
+
+msgid "free"
+msgstr ""
+
+msgid "from"
+msgstr ""
+
+msgid "frozen"
+msgstr ""
+
+msgid "fw001p1"
+msgstr ""
+
+msgid "fw6 · shop-policy"
+msgstr ""
+
+msgid "fweb_users"
+msgstr ""
+
+msgid "generated"
+msgstr ""
+
+msgid "get system status"
+msgstr ""
+
+msgid "git repo (source)"
+msgstr ""
+
+msgid "git repo from the application code — it versions the firmware"
+msgstr ""
+
+msgid "group"
+msgstr ""
+
+msgid "grouping"
+msgstr ""
+
+msgid "harvested from the device cache"
+msgstr ""
+
+msgid "has sub-tables"
+msgstr ""
+
+msgid "hidden"
+msgstr ""
+
+msgid "hook.py"
+msgstr ""
+
+msgid "how many objects exist, snapshotted daily"
+msgstr ""
+
+msgid "http-01 — web authentication"
+msgstr ""
+
+msgid "http://192.0.2.34:11434 or https://api.openai.com/v1"
+msgstr ""
+
+msgid "http://192.0.2.66:3002"
+msgstr ""
+
+msgid "https://192.0.2.80:443/"
+msgstr ""
+
+msgid "https://acme-v02.api.letsencrypt.org/directory"
+msgstr ""
+
+msgid "https://catalog.example/appids.csv"
+msgstr ""
+
+msgid "https://git.example.net/satom-dev/fortinet-firmware.git"
+msgstr ""
+
+msgid "https://git.example.net/satom-dev/satom.git"
+msgstr ""
+
+msgid "https://netbox.example.com"
+msgstr ""
+
+msgid "https://…"
+msgstr ""
+
+msgid "id-fortiweb08-000000004117"
+msgstr ""
+
+msgid "idle"
+msgstr ""
+
+msgid "image above."
+msgstr ""
+
+msgid "in console"
+msgstr ""
+
+msgid "in one step."
+msgstr ""
+
+msgid "in order"
+msgstr ""
+
+msgid "in sync with remote"
+msgstr ""
+
+msgid "in the left menu — Server, Service, Certificates, SSL Ciphers, IP Group…"
+msgstr ""
+
+msgid "inactive"
+msgstr ""
+
+msgid "info"
+msgstr ""
+
+msgid "inherit default"
+msgstr ""
+
+msgid "inherited"
+msgstr ""
+
+msgid "interface"
+msgstr ""
+
+msgid "intermediate"
+msgstr ""
+
+msgid "into the template library. It lands as"
+msgstr ""
+
+msgid ""
+"inventory below, so printing an approved change twice produces the same "
+"document twice."
+msgstr ""
+
+msgid "is deliberately distinct from"
+msgstr ""
+
+msgid ""
+"is fail-closed: this change cannot run until your change-management "
+"system explicitly approves it. Unreachable, slow and no-answer all count "
+"as"
+msgstr ""
+
+msgid ""
+"is governed by an approved template and stays clean (no exceptions). The "
+"manager will"
+msgstr ""
+
+msgid "is not the same answer: it switches that level off."
+msgstr ""
+
+msgid ""
+"is reached only by a confirmed real push (below); dry-run never changes "
+"status. The fleet is license-locked, so deploy stays dry-run by default."
+msgstr ""
+
+msgid ""
+"is read-only over its API (no PowerDNS record CRUD). The +DNS Records "
+"modal adapts to the provider's capabilities. The secret is stored Fernet-"
+"encrypted and never shown again."
+msgstr ""
+
+msgid "is the trust anchor, the"
+msgstr ""
+
+msgid ""
+"is usually what actually signed your appliances. Fill either, or both — a"
+" chain that stops at an intermediate whose issuer is missing imports "
+"cleanly and then fails every handshake with"
+msgstr ""
+
+msgid "is wrong; this page tells you"
+msgstr ""
+
+msgid "it for"
+msgstr ""
+
+msgid "item"
+msgstr ""
+
+msgid "jobs"
+msgstr ""
+
+msgid "keep"
+msgstr ""
+
+msgid "key of object to update"
+msgstr ""
+
+msgid "keyed"
+msgstr ""
+
+msgid "lab-proxmox"
+msgstr ""
+
+msgid "latest version only"
+msgstr ""
+
+msgid "leave blank for plaintext backups"
+msgstr ""
+
+msgid "lego"
+msgstr ""
+
+msgid "lego (recommended — one static binary, ~150 DNS providers)"
+msgstr ""
+
+msgid "live"
+msgstr ""
+
+msgid "live browser"
+msgstr ""
+
+msgid "live device"
+msgstr ""
+
+msgid "live role:"
+msgstr ""
+
+msgid "load-balance pool"
+msgstr ""
+
+msgid "load_balance_pool"
+msgstr ""
+
+msgid "loading…"
+msgstr ""
+
+msgid "logical_name"
+msgstr ""
+
+msgid "main"
+msgstr ""
+
+msgid "maintenance"
+msgstr ""
+
+msgid "maintenance window instead."
+msgstr ""
+
+msgid "manages DNS records natively;"
+msgstr ""
+
+msgid ""
+"manages the config-backup vault (pull over SSH, upload, download); "
+"applying a config back to the box is done from the FortiADC GUI/CLI."
+msgstr ""
+
+msgid "manifest"
+msgstr ""
+
+msgid "manual"
+msgstr ""
+
+msgid "manual (approved in SATOM)"
+msgstr ""
+
+msgid "mapped"
+msgstr ""
+
+msgid ""
+"match — that works until somebody renames a device on either side, which "
+"is why the fallback is shown rather than assumed."
+msgstr ""
+
+msgid ""
+"means the sweep stored no rows for that endpoint — which is different "
+"from the endpoint being empty."
+msgstr ""
+
+msgid "member. This wizard creates them in the right order —"
+msgstr ""
+
+msgid "missing"
+msgstr ""
+
+msgid "mkey"
+msgstr ""
+
+msgid "mkey (object name, optional)"
+msgstr ""
+
+msgid "mode is therefore unavailable on ESXi at any licence tier."
+msgstr ""
+
+msgid "mode possible."
+msgstr ""
+
+msgid "ms"
+msgstr ""
+
+msgid "my-dns"
+msgstr ""
+
+msgid "name"
+msgstr ""
+
+msgid "name locked"
+msgstr ""
+
+msgid "never"
+msgstr ""
+
+msgid "new name"
+msgstr ""
+
+msgid "new-policy-name"
+msgstr ""
+
+msgid "no"
+msgstr ""
+
+msgid "no automation behind it"
+msgstr ""
+
+msgid "no back-ends in cache"
+msgstr ""
+
+msgid "no backends in cache"
+msgstr ""
+
+msgid "no cap"
+msgstr ""
+
+msgid "no ceiling — no percentage"
+msgstr ""
+
+msgid "no data"
+msgstr ""
+
+msgid "no endpoint"
+msgstr ""
+
+msgid "no failures recorded"
+msgstr ""
+
+msgid "no history"
+msgstr ""
+
+msgid "no hypervisor at all"
+msgstr ""
+
+msgid "no key"
+msgstr ""
+
+msgid "no match"
+msgstr ""
+
+msgid "no page"
+msgstr ""
+
+msgid "no replica is connected"
+msgstr ""
+
+msgid "no snapshot yet"
+msgstr ""
+
+msgid ""
+"node re-checks its own allowlist; only a unit name and an action ever "
+"cross the wire. Start/stop are runtime-only: a unit stopped here comes "
+"back at the next boot, and"
+msgstr ""
+
+msgid "node2 / hypervisor03"
+msgstr ""
+
+msgid "none"
+msgstr ""
+
+msgid "none recorded"
+msgstr ""
+
+msgid "none requested"
+msgstr ""
+
+msgid "noreply@example.com"
+msgstr ""
+
+msgid "not"
+msgstr ""
+
+msgid "not approved"
+msgstr ""
+
+msgid "not configured"
+msgstr ""
+
+msgid "not harvested"
+msgstr ""
+
+msgid "not ported"
+msgstr ""
+
+msgid "not recorded"
+msgstr ""
+
+msgid "nothing cached"
+msgstr ""
+
+msgid "number"
+msgstr ""
+
+msgid "object name"
+msgstr ""
+
+msgid ""
+"of the hard max. Automations check the effective cap (the lower one) "
+"before creating objects; the Monitoring page alerts when usage approaches"
+" it."
+msgstr ""
+
+msgid "of the registry: only the objects that hang off a"
+msgstr ""
+
+msgid "off"
+msgstr ""
+
+msgid "off to hide it and every sub-item under it (cascade); turn an individual"
+msgstr ""
+
+msgid "off-box"
+msgstr ""
+
+msgid "office / vpn"
+msgstr ""
+
+msgid "offline-protection"
+msgstr ""
+
+msgid "ok"
+msgstr ""
+
+msgid "older"
+msgstr ""
+
+msgid "on"
+msgstr ""
+
+msgid ""
+"on the appliance. There is no threshold here on purpose: box memory "
+"belongs to the"
+msgstr ""
+
+msgid ""
+"on the destination for a manual cutover — nothing is auto-rolled-back. "
+"Review the failures above, fix the cause, then re-run the clone (it skips"
+" whatever already exists) or delete the partial from the Server Policy "
+"page."
+msgstr ""
+
+msgid ""
+"on the left to pull (over SSH), store and download backups, then apply "
+"one from the FortiADC GUI ("
+msgstr ""
+
+msgid ""
+"on the scheduled sweep — when off, the scheduled action only REPORTS what"
+" is due (manual sweeps from the Certificate Manager page still apply)."
+msgstr ""
+
+msgid "once"
+msgstr ""
+
+msgid "one probe per interface"
+msgstr ""
+
+msgid "one."
+msgstr ""
+
+msgid "only"
+msgstr ""
+
+msgid "only after the standby passes its health check."
+msgstr ""
+
+msgid "only. Non-GET methods need the"
+msgstr ""
+
+msgid "opaque origin · no cookies · read-only"
+msgstr ""
+
+msgid "open"
+msgstr ""
+
+msgid ""
+"open a device → GUI menu → live object list → deep editor; the rest show "
+"a registry-derived object-type catalog. Each section keeps a template "
+"library."
+msgstr ""
+
+msgid "operator"
+msgstr ""
+
+msgid "operator-documented"
+msgstr ""
+
+msgid "ops@corp.local, secteam@corp.local"
+msgstr ""
+
+msgid "ops@example.com"
+msgstr ""
+
+msgid "ops@example.com, noc@example.com"
+msgstr ""
+
+msgid "optional"
+msgstr ""
+
+msgid "or a"
+msgstr ""
+
+msgid "other (write the commands yourself)"
+msgstr ""
+
+msgid "over the REST API, no extra services needed."
+msgstr ""
+
+msgid "overwrites the running configuration and reboots the appliance"
+msgstr ""
+
+msgid "p95"
+msgstr ""
+
+msgid "page writes to via its"
+msgstr ""
+
+msgid "page."
+msgstr ""
+
+msgid "pattern) that the Server Policy is re-bound to."
+msgstr ""
+
+msgid "pending"
+msgstr ""
+
+msgid "pending approval"
+msgstr ""
+
+msgid "per policy"
+msgstr ""
+
+msgid "per port"
+msgstr ""
+
+msgid "per-user API key"
+msgstr ""
+
+msgid "percent"
+msgstr ""
+
+msgid "permanently"
+msgstr ""
+
+msgid "permission."
+msgstr ""
+
+msgid ""
+"permutation. Open a combo to assign the approved templates it should "
+"carry; a template can live in several combos. Each combo applies to the "
+"devices that match its scope."
+msgstr ""
+
+msgid "phpIPAM"
+msgstr ""
+
+msgid "pick a device first"
+msgstr ""
+
+msgid ""
+"picker, and the text each one proposes and prints. Built-in types come "
+"with the product and can be"
+msgstr ""
+
+msgid "pki@example.com"
+msgstr ""
+
+msgid "pkiserver.corp.local"
+msgstr ""
+
+msgid "pol-..."
+msgstr ""
+
+msgid "pol-shop-main"
+msgstr ""
+
+msgid "policy not on device"
+msgstr ""
+
+msgid ""
+"policy's data. The list is variable — add or remove rows at any time "
+"(blank rows are dropped); all ADOMs share it."
+msgstr ""
+
+msgid "pool-web-prod"
+msgstr ""
+
+msgid "port1"
+msgstr ""
+
+msgid "pre-restore backup is taken automatically"
+msgstr ""
+
+msgid "presents"
+msgstr ""
+
+msgid "preview"
+msgstr ""
+
+msgid "primary"
+msgstr ""
+
+msgid "probe, which is box-wide."
+msgstr ""
+
+msgid "production, datacenter-a"
+msgstr ""
+
+msgid "profile"
+msgstr ""
+
+msgid ""
+"profile on first sign-in and do MFA at the directory. Local accounts can "
+"enable app 2FA in the Security tab."
+msgstr ""
+
+msgid "proposal"
+msgstr ""
+
+msgid "protocol"
+msgstr ""
+
+msgid "pull to this server for console-driven restore/upgrade"
+msgstr ""
+
+msgid "pulls"
+msgstr ""
+
+msgid "pve.example.com"
+msgstr ""
+
+msgid "query console"
+msgstr ""
+
+msgid ""
+"queue — the privileged runner does checkout + pip + migrate + service "
+"restart on this node (sync the standby the same way afterwards)."
+msgstr ""
+
+msgid "queued"
+msgstr ""
+
+msgid "qwen2.5-coder:32b"
+msgstr ""
+
+msgid ""
+"rather than shown as a button that fails — the machine-creation steps "
+"simply are not offered, and the rest of the pipeline (address, DNS, "
+"certificate, configuration profile) still works against a machine you "
+"built by hand."
+msgstr ""
+
+msgid "raw"
+msgstr ""
+
+msgid "raw device export"
+msgstr ""
+
+msgid "re-bind that Server Policy"
+msgstr ""
+
+msgid "read only — never changes the box; the body is ignored."
+msgstr ""
+
+msgid "read-only"
+msgstr ""
+
+msgid "readonly, operator, admin"
+msgstr ""
+
+msgid "real server"
+msgstr ""
+
+msgid "real servers → pool → members → virtual server"
+msgstr ""
+
+msgid "reboots the appliance"
+msgstr ""
+
+msgid "reconciler: AUTO"
+msgstr ""
+
+msgid "reconciler: MANUAL"
+msgstr ""
+
+msgid "reference"
+msgstr ""
+
+msgid "referenced"
+msgstr ""
+
+msgid "registry-derived"
+msgstr ""
+
+msgid "rejected"
+msgstr ""
+
+msgid "reload to list the run you just made"
+msgstr ""
+
+msgid "remote API"
+msgstr ""
+
+msgid "remove current"
+msgstr ""
+
+msgid "remove."
+msgstr ""
+
+msgid "renewed"
+msgstr ""
+
+msgid "replica reachable"
+msgstr ""
+
+msgid "reported nothing in the window"
+msgstr ""
+
+msgid "restarts the service"
+msgstr ""
+
+msgid "reverse-proxy"
+msgstr ""
+
+msgid "revoke due"
+msgstr ""
+
+msgid "revoked"
+msgstr ""
+
+msgid ""
+"revoked or deleted — bindings are re-verified live, fail-closed, before "
+"every destructive step."
+msgstr ""
+
+msgid "reworded"
+msgstr ""
+
+msgid "rides the"
+msgstr ""
+
+msgid "role: unknown"
+msgstr ""
+
+msgid "roles derived from the device's own HA / management config"
+msgstr ""
+
+msgid "root"
+msgstr ""
+
+msgid "root@pam"
+msgstr ""
+
+msgid "root@pam!satom"
+msgstr ""
+
+msgid "row above"
+msgstr ""
+
+msgid "rsync over SSH"
+msgstr ""
+
+msgid "running"
+msgstr ""
+
+msgid "sAMAccountName / uid"
+msgstr ""
+
+msgid "satom"
+msgstr ""
+
+msgid "satom-2"
+msgstr ""
+
+msgid "save interval / top-N"
+msgstr ""
+
+msgid "saved to profile"
+msgstr ""
+
+msgid ""
+"scheduled action and the manual sweep on the Certificate Manager page. A "
+"certificate still bound to any server policy / SNI member / GUI is"
+msgstr ""
+
+msgid "scriptable serial console"
+msgstr ""
+
+msgid "search in B… (e.g. server-policy, 10.0.0.)"
+msgstr ""
+
+msgid "secondary node"
+msgstr ""
+
+msgid "secret"
+msgstr ""
+
+msgid "see more"
+msgstr ""
+
+msgid "selected"
+msgstr ""
+
+msgid "self-update"
+msgstr ""
+
+msgid "sent"
+msgstr ""
+
+msgid "separate"
+msgstr ""
+
+msgid "server pool name"
+msgstr ""
+
+msgid "server-pool"
+msgstr ""
+
+msgid "server_policy"
+msgstr ""
+
+msgid "sha256"
+msgstr ""
+
+msgid ""
+"ships with the product and is kept in step with each release, so it "
+"cannot be edited. Duplicate it to get an editable copy of the same "
+"panels."
+msgstr ""
+
+msgid "shop.example.com"
+msgstr ""
+
+msgid "show all"
+msgstr ""
+
+msgid "shown"
+msgstr ""
+
+msgid "single config"
+msgstr ""
+
+msgid "single-policy"
+msgstr ""
+
+msgid "singleton"
+msgstr ""
+
+msgid "size differs"
+msgstr ""
+
+msgid "skipped"
+msgstr ""
+
+msgid "smtp.example.com"
+msgstr ""
+
+msgid "snapshot + audit + change-history"
+msgstr ""
+
+msgid "something"
+msgstr ""
+
+msgid "stale"
+msgstr ""
+
+msgid "stale — source changed"
+msgstr ""
+
+msgid "standalone"
+msgstr ""
+
+msgid "standalone — the client binds the port itself"
+msgstr ""
+
+msgid "standby"
+msgstr ""
+
+msgid "standby unreachable"
+msgstr ""
+
+msgid "status"
+msgstr ""
+
+msgid "status (green enabled · red disabled · amber maintenance)."
+msgstr ""
+
+msgid ""
+"status badges and a handful of decorative tints still carry literal "
+"colours in the stylesheet, so a full dark theme is not offered yet — a "
+"dark canvas would leave those elements light. Light-canvas palettes are "
+"fully supported."
+msgstr ""
+
+msgid "stays because it answers a different question —"
+msgstr ""
+
+msgid ""
+"still works: point it at a machine you built by hand and SATOM will "
+"reserve the address, create the DNS record, register the appliance and "
+"apply the profile."
+msgstr ""
+
+msgid "stops"
+msgstr ""
+
+msgid "storage from the one holding the disk."
+msgstr ""
+
+msgid "streaming"
+msgstr ""
+
+msgid "subset"
+msgstr ""
+
+msgid "success"
+msgstr ""
+
+msgid "superseded"
+msgstr ""
+
+msgid "svc-enroll"
+msgstr ""
+
+msgid ""
+"switched on, instead of having certificate checking disabled because the "
+"public root store cannot vouch for a private CA."
+msgstr ""
+
+msgid "sync that is app code."
+msgstr ""
+
+msgid "taken from the certificate CN"
+msgstr ""
+
+msgid "template. It is saved"
+msgstr ""
+
+msgid "test password"
+msgstr ""
+
+msgid "test username"
+msgstr ""
+
+msgid "than the running firmware ("
+msgstr ""
+
+msgid "than the running version is pre-selected as the rollback target."
+msgstr ""
+
+msgid "that"
+msgstr ""
+
+msgid "the data channel"
+msgstr ""
+
+msgid "the sweep stored no rows for this endpoint"
+msgstr ""
+
+msgid "they ever sign in. Scope:"
+msgstr ""
+
+msgid "this node"
+msgstr ""
+
+msgid "tlog"
+msgstr ""
+
+msgid "tls-alpn-01 — TLS on :443"
+msgstr ""
+
+msgid "to add them."
+msgstr ""
+
+msgid "to auto-fill interfaces (name/type/IP), model and HW/VM. Only"
+msgstr ""
+
+msgid "to begin."
+msgstr ""
+
+msgid "to bind an existing one."
+msgstr ""
+
+msgid ""
+"to clear the override — the field falls back to the shipped default and "
+"every probe inheriting it follows."
+msgstr ""
+
+msgid "to compare two pushes (e.g. yesterday vs today);"
+msgstr ""
+
+msgid ""
+"to create one (default pool + Web Protection Profile, then its Match "
+"Conditions), or"
+msgstr ""
+
+msgid ""
+"to create them (also use this after adding new zones, lines or "
+"departments)."
+msgstr ""
+
+msgid ""
+"to enter your CA host, name, enrolment account and the per-class signing "
+"command."
+msgstr ""
+
+msgid "to list records."
+msgstr ""
+
+msgid "to query the git remote."
+msgstr ""
+
+msgid "to see the fleet map."
+msgstr ""
+
+msgid "to the clone, and save your carve-out on the clone. The copy is"
+msgstr ""
+
+msgid ""
+"tool queries. The list is variable — add or remove rows at any time "
+"(blank rows are dropped). Every enabled server becomes one column in the "
+"lookup results; all ADOMs share this list."
+msgstr ""
+
+msgid "top"
+msgstr ""
+
+msgid "topk(10, satom_policy_conn_per_sec)"
+msgstr ""
+
+msgid "total now"
+msgstr ""
+
+msgid "traffic / transactions"
+msgstr ""
+
+msgid "traffic keeps flowing to dead members"
+msgstr ""
+
+msgid "traffic-log-enabled policies"
+msgstr ""
+
+msgid "transparent-inspection"
+msgstr ""
+
+msgid "true-transparent-proxy"
+msgstr ""
+
+msgid "tuned"
+msgstr ""
+
+msgid "two"
+msgstr ""
+
+msgid "type"
+msgstr ""
+
+msgid "type name…"
+msgstr ""
+
+msgid "type of change"
+msgstr ""
+
+msgid "type or pick a value"
+msgstr ""
+
+msgid "unable to get issuer certificate"
+msgstr ""
+
+msgid "unavailable"
+msgstr ""
+
+msgid "unbound"
+msgstr ""
+
+msgid "uncapped"
+msgstr ""
+
+msgid "unique across"
+msgstr ""
+
+msgid "unknown"
+msgstr ""
+
+msgid "unmonitored"
+msgstr ""
+
+msgid "unparsed"
+msgstr ""
+
+msgid "unpushed commits captured"
+msgstr ""
+
+msgid "unreachable"
+msgstr ""
+
+msgid "unreferenced"
+msgstr ""
+
+msgid "unreviewed"
+msgstr ""
+
+msgid "unset"
+msgstr ""
+
+msgid "until you enable them ("
+msgstr ""
+
+msgid "up"
+msgstr ""
+
+msgid "upgrade"
+msgstr ""
+
+msgid "use"
+msgstr ""
+
+msgid "use-interface-ip"
+msgstr ""
+
+msgid "v1.0"
+msgstr ""
+
+msgid "vCPU"
+msgstr ""
+
+msgid "vault"
+msgstr ""
+
+msgid "via"
+msgstr ""
+
+msgid "view contents"
+msgstr ""
+
+msgid "vip"
+msgstr ""
+
+msgid "visibly"
+msgstr ""
+
+msgid "visionebc/SATOM"
+msgstr ""
+
+msgid "vs prev"
+msgstr ""
+
+msgid "vs-web-prod"
+msgstr ""
+
+msgid "waiting for external approval"
+msgstr ""
+
+msgid ""
+"walks the whole profile (its ~40 sub-policies and their rules); objects "
+"that already exist on this device are validated and reused, only the "
+"missing ones are created."
+msgstr ""
+
+msgid "warn"
+msgstr ""
+
+msgid "wccp"
+msgstr ""
+
+msgid "webroot — the local web server keeps :80"
+msgstr ""
+
+msgid "what"
+msgstr ""
+
+msgid "where"
+msgstr ""
+
+msgid "where this CA comes from, who owns it"
+msgstr ""
+
+msgid "why (recorded and shown on the row)"
+msgstr ""
+
+msgid "with the privileges of the SATOM service"
+msgstr ""
+
+msgid ""
+"with the validated image. Unattended flashing is gated for safety (an "
+"approved Change Request / explicit operator run); the schedule is created"
+" and visible under Scheduled Actions."
+msgstr ""
+
+msgid "written by hand"
+msgstr ""
+
+msgid "www.example.com, IP:192.0.2.5"
+msgstr ""
+
+msgid "yes"
+msgstr ""
+
+msgid "you@example.com"
+msgstr ""
+
+msgid "zone × line × department"
+msgstr ""
+
+msgid "· ADOM:"
+msgstr ""
+
+msgid "· AppID scope:"
+msgstr ""
+
+msgid "· Capabilities:"
+msgstr ""
+
+msgid "· Scopes:"
+msgstr ""
+
+msgid "· delete expired after"
+msgstr ""
+
+msgid "· delete revoked material:"
+msgstr ""
+
+msgid "· manifest SoT:"
+msgstr ""
+
+msgid "· scheduled auto-apply:"
+msgstr ""
+
+msgid "· your laptop (download)"
+msgstr ""
+
+msgid "Δ Actions"
+msgstr ""
+
+msgid "— Any department —"
+msgstr ""
+
+msgid "— Any line —"
+msgstr ""
+
+msgid "— Any zone —"
+msgstr ""
+
+msgid "— HA nodes · Git · backup server"
+msgstr ""
+
+msgid "— a datastore is a plain filesystem, so both roles always apply."
+msgstr ""
+
+msgid "— a first-time directory user lands"
+msgstr ""
+
+msgid "— a registry name, or a raw /api/v1/… path"
+msgstr ""
+
+msgid ""
+"— a separate series, interval and history for every port. Pick this "
+"instead of the all-ports watch when you want to chart or alert on ports "
+"individually."
+msgstr ""
+
+msgid "— and this is"
+msgstr ""
+
+msgid "— any —"
+msgstr ""
+
+msgid "— cannot be re-minted here"
+msgstr ""
+
+msgid "— choose a vault backup —"
+msgstr ""
+
+msgid "— choose —"
+msgstr ""
+
+msgid "— compare two pushes (A → B), search inside B,"
+msgstr ""
+
+msgid "— decides what they can do once inside ("
+msgstr ""
+
+msgid ""
+"— decides who can authenticate at all (the Authentication Profile on the "
+"FortiAuthenticator, or the sync group on AD/LDAP)."
+msgstr ""
+
+msgid "— eligible to fire on its schedule"
+msgstr ""
+
+msgid "— full object, incl. structured values the form can't edit"
+msgstr ""
+
+msgid "— loading… —"
+msgstr ""
+
+msgid "— no device is touched until you confirm on the next screen."
+msgstr ""
+
+msgid "— none (author only) —"
+msgstr ""
+
+msgid "— none (config only) —"
+msgstr ""
+
+msgid "— none —"
+msgstr ""
+
+msgid "— not bound to anything on this box (safe to remove)"
+msgstr ""
+
+msgid "— not set —"
+msgstr ""
+
+msgid ""
+"— only then is it released on rollback; a typed address is never handed "
+"back to a pool"
+msgstr ""
+
+msgid "— paused"
+msgstr ""
+
+msgid "— per channel: encrypted? · cipher · how"
+msgstr ""
+
+msgid "— pick a bundle above →"
+msgstr ""
+
+msgid "— pick a table —"
+msgstr ""
+
+msgid "— pick one —"
+msgstr ""
+
+msgid "— pick the two versions in"
+msgstr ""
+
+msgid ""
+"— replication monitoring, the staged-update interlock and failover are "
+"disabled. Switch the deployment mode to"
+msgstr ""
+
+msgid "— reversible and logged."
+msgstr ""
+
+msgid "— run a missed fire instead of skipping it"
+msgstr ""
+
+msgid "— select a DNS provider —"
+msgstr ""
+
+msgid "— select a configuration object —"
+msgstr ""
+
+msgid "— select an action —"
+msgstr ""
+
+msgid "— select policy —"
+msgstr ""
+
+msgid "— select —"
+msgstr ""
+
+msgid "— that is the whole point of routing approval through it."
+msgstr ""
+
+msgid ""
+"— that lives in third-party plugins. These backends use core models only,"
+" so they work against any NetBox. Pick the one your NetBox conventions "
+"match."
+msgstr ""
+
+msgid ""
+"— the check is repeated by the privileged runner as root, not just by "
+"this page."
+msgstr ""
+
+msgid ""
+"— the device did not answer the live read (offline or license-locked). "
+"Fields stay editable; Save still writes to the device."
+msgstr ""
+
+msgid "— the free"
+msgstr ""
+
+msgid "— the mapping is saved and reused by later uploads and the nightly action."
+msgstr ""
+
+msgid ""
+"— the matching image is selected automatically below; just validate and "
+"accept."
+msgstr ""
+
+msgid "— the newest image that is"
+msgstr ""
+
+msgid ""
+"— the serial console is exposed over the API, so the factory admin-"
+"password prompt can be walked unattended. This is what makes"
+msgstr ""
+
+msgid "— the standby is not streaming."
+msgstr ""
+
+msgid ""
+"— their Server Policy was re-bound to another Web Protection Profile "
+"after they were authored. Edit each one to re-point it at the new profile"
+" (saving clears the flag), or delete it."
+msgstr ""
+
+msgid ""
+"— they raise and print a change request, but there is no automation "
+"behind them, so the work is performed by hand."
+msgstr ""
+
+msgid "— those users can reach every page their profile allows."
+msgstr ""
+
+msgid "— use interface IP —"
+msgstr ""
+
+msgid ""
+"— use the per-appliance Backups page (vault); device-level restore is "
+"currently dry-run gated pending a live canary round-trip."
+msgstr ""
+
+msgid "…or upload a .conf to restore directly"
+msgstr ""
+
+msgid "…or upload a .pem / .crt / .cer file"
+msgstr ""
+
+msgid "→ 200 on primary, 503 on standby"
+msgstr ""
+
+msgid "→ Target:"
+msgstr ""
+
+msgid "→ saves a new version"
+msgstr ""
+
+msgid "≈ seconds (DB) / ≤ 5 min (files)"
+msgstr ""
+
+msgid "≤ 1 h (or on demand)"
+msgstr ""
+
+msgid "✓ present"
+msgstr ""
+
+msgid "✗ missing"
+msgstr ""
+
+msgid "⬆ Inject to device"
+msgstr ""
+
+msgid "＋ Add VIP"
+msgstr ""
+
+msgid "＋ Add member"
+msgstr ""
+
+msgid "🔎 Detect signature carve-outs on device"
+msgstr ""
+
+msgid "🔒 Template-managed profile — guided clone"
+msgstr ""
+
+msgid ""
+"🔒 Template-managed profile — templates stay clean. On save you'll be "
+"offered a per-policy clone (named from the"
+msgstr ""
+

@@ -27,18 +27,18 @@
 <body>
   <div class="card">
     <div class="glyph">⚠️</div>
-    <h1>Something went wrong</h1>
-    <p>An unexpected error occurred while processing your request. The problem has been logged.</p>
+    <h1>{{ _('Something went wrong') }}</h1>
+    <p>{{ _('An unexpected error occurred while processing your request. The problem has been logged.') }}</p>
     {% if error_id %}
     <div class="ref">
-      <div class="lbl">Error reference</div>
+      <div class="lbl">{{ _('Error reference') }}</div>
       <code id="fw-err-id">{{ error_id }}</code>
       <button type="button" class="copy"
-              data-js="copy-err" data-error-id="{{ error_id }}">Copy</button>
+              data-js="copy-err" data-error-id="{{ error_id }}">{{ _('Copy') }}</button>
     </div>
-    <p class="hint">Share this reference with your administrator so they can locate the exact problem in the logs.</p>
+    <p class="hint">{{ _('Share this reference with your administrator so they can locate the exact problem in the logs.') }}</p>
     {% endif %}
-    <a class="home" href="/">Return home</a>
+    <a class="home" href="/">{{ _('Return home') }}</a>
   </div>
   <script nonce="{{ csp_nonce }}">
   (function () {

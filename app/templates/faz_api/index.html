@@ -4,9 +4,9 @@
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
-  <a href="{{ url_for('faz.index') }}">FortiAnalyzer</a>
+  <a href="{{ url_for('faz.index') }}">{{ _('FortiAnalyzer') }}</a>
   <span class="separator">/</span>
-  <span>API-Registry Explorer</span>
+  <span>{{ _('API-Registry Explorer') }}</span>
 </div>
 {% endblock %}
 
@@ -17,17 +17,17 @@
 <ul class="nav nav-tabs mb-3">
   <li class="nav-item">
     <a class="nav-link active" href="{{ url_for('faz_api.index') }}">
-      <i class="bi bi-code-square me-1"></i>API-Registry Explorer
+      <i class="bi bi-code-square me-1"></i>{{ _('API-Registry Explorer') }}
     </a>
   </li>
 </ul>
 
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-code-square me-2 text-accent"></i>FortiAnalyzer API-Registry Explorer</h1>
+    <h1 class="fw-page-title"><i class="bi bi-code-square me-2 text-accent"></i>{{ _('FortiAnalyzer API-Registry Explorer') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      The FortiAnalyzer endpoint <strong>catalog</strong> ({{ total }} endpoints, stored in the database,
-      seeded from <code>endpoints_fortianalyzer.yaml</code>) and the live <strong>JSON-RPC console</strong> in one
+      {{ _('The FortiAnalyzer endpoint') }} <strong>{{ _('catalog') }}</strong> ({{ total }} endpoints, stored in the database,
+      seeded from <code>endpoints_fortianalyzer.yaml</code>) and the live <strong>{{ _('JSON-RPC console') }}</strong> in one
       place — browse &amp; edit urls on the menu tree, execute them against a real unit on the right.
       When a FAZ upgrade moves an URI, fix it HERE — no code change.
       {% if can_edit %}Catalog changes are audited and survive deploys.{% endif %}
@@ -36,7 +36,7 @@
   <div class="d-flex align-items-center gap-2">
     {% if can_edit %}
     <button class="btn btn-fw-primary btn-sm" data-js="new-endpoint">
-      <i class="bi bi-plus-lg me-1"></i>New Endpoint
+      <i class="bi bi-plus-lg me-1"></i>{{ _('New Endpoint') }}
     </button>
     {% endif %}
   </div>
@@ -59,10 +59,10 @@
   <div class="col-lg-3">
     <div class="fw-card mb-3">
       <div class="fw-card-header">
-        <span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>API Menu</span>
+        <span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('API Menu') }}</span>
         <div class="d-flex align-items-center gap-2">
           {% if can_edit %}
-          <button class="btn btn-sm btn-fw-primary" data-js="new-endpoint" title="Add a catalog endpoint" style="padding:2px 8px;">
+          <button class="btn btn-sm btn-fw-primary" data-js="new-endpoint" title="{{ _('Add a catalog endpoint') }}" style="padding:2px 8px;">
             <i class="bi bi-plus-lg"></i>
           </button>
           {% endif %}
@@ -72,7 +72,7 @@
       <div class="fw-card-body p-0">
         <div class="fw-search-box" style="padding:10px 12px; border-bottom:1px solid #F0F2F5;">
           <i class="bi bi-search search-icon" style="left:22px;"></i>
-          <input type="text" id="apiTreeSearch" placeholder="Filter endpoints…"
+          <input type="text" id="apiTreeSearch" placeholder="{{ _('Filter endpoints…') }}"
                  style="padding-left:34px; font-size:13px;">
         </div>
         <div id="apiTree" style="max-height:640px; overflow-y:auto;">
@@ -103,7 +103,7 @@
                     </button>
                     {% if row %}
                     <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy me-1"
-                            title="Edit catalog endpoint" data-js="edit-endpoint"
+                            title="{{ _('Edit catalog endpoint') }}" data-js="edit-endpoint"
                             data-id="{{ row.id }}" data-name="{{ row.name }}"
                             data-urn="{{ row.urn }}" data-apiver="{{ row.api_version }}"
                             style="padding:2px 7px;">
@@ -113,13 +113,13 @@
                           data-js="disable-endpoint" data-name="{{ row.name }}" class="d-inline me-1">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <button type="submit" class="btn btn-sm btn-fw-outline border-0 api-tree-copy"
-                              title="Disable catalog endpoint (soft delete)" style="padding:2px 7px;">
+                              title="{{ _('Disable catalog endpoint (soft delete)') }}" style="padding:2px 7px;">
                         <i class="bi bi-eye-slash" style="font-size:11px;"></i>
                       </button>
                     </form>
                     {% endif %}
                     <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy me-1"
-                            title="Copy URN" data-urn="{{ urn or '' }}"
+                            title="{{ _('Copy URN') }}" data-urn="{{ urn or '' }}"
                             style="padding:2px 7px;">
                       <i class="bi bi-clipboard" style="font-size:11px;"></i>
                     </button>
@@ -135,7 +135,7 @@
                       aria-expanded="false" aria-controls="apisec-extra"
                       style="font-size:13px; font-weight:600; padding:8px 12px; border:none; background:#FAFBFC;">
                 <span class="text-truncate">
-                  <i class="bi bi-caret-right-fill me-1 api-tree-caret" style="font-size:10px;"></i>Other endpoints
+                  <i class="bi bi-caret-right-fill me-1 api-tree-caret" style="font-size:10px;"></i>{{ _('Other endpoints') }}
                 </span>
                 <span class="fw-badge fw-badge-secondary">{{ extras|length }}</span>
               </button>
@@ -153,7 +153,7 @@
                     </button>
                     {% if row %}
                     <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy me-1"
-                            title="Edit catalog endpoint" data-js="edit-endpoint"
+                            title="{{ _('Edit catalog endpoint') }}" data-js="edit-endpoint"
                             data-id="{{ row.id }}" data-name="{{ row.name }}"
                             data-urn="{{ row.urn }}" data-apiver="{{ row.api_version }}"
                             style="padding:2px 7px;">
@@ -163,13 +163,13 @@
                           data-js="disable-endpoint" data-name="{{ row.name }}" class="d-inline me-1">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <button type="submit" class="btn btn-sm btn-fw-outline border-0 api-tree-copy"
-                              title="Disable catalog endpoint (soft delete)" style="padding:2px 7px;">
+                              title="{{ _('Disable catalog endpoint (soft delete)') }}" style="padding:2px 7px;">
                         <i class="bi bi-eye-slash" style="font-size:11px;"></i>
                       </button>
                     </form>
                     {% endif %}
                     <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy me-1"
-                            title="Copy URN" data-urn="{{ e.urn or '' }}"
+                            title="{{ _('Copy URN') }}" data-urn="{{ e.urn or '' }}"
                             style="padding:2px 7px;">
                       <i class="bi bi-clipboard" style="font-size:11px;"></i>
                     </button>
@@ -185,7 +185,7 @@
     {% if can_edit and disabled_rows %}
     <div class="fw-card mb-3">
       <div class="fw-card-header">
-        <span class="fw-card-title"><i class="bi bi-eye-slash me-2"></i>Disabled</span>
+        <span class="fw-card-title"><i class="bi bi-eye-slash me-2"></i>{{ _('Disabled') }}</span>
         <span class="fw-badge fw-badge-secondary">{{ disabled_rows|length }}</span>
       </div>
       <div class="fw-card-body p-0">
@@ -198,7 +198,7 @@
             </div>
             <form method="post" action="{{ url_for('faz_api.registry_toggle', rid=r.id) }}" class="ms-2">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button class="btn btn-sm btn-outline-success btn-sm-icon" title="Restore endpoint">
+              <button class="btn btn-sm btn-outline-success btn-sm-icon" title="{{ _('Restore endpoint') }}">
                 <i class="bi bi-arrow-counterclockwise"></i>
               </button>
             </form>
@@ -214,19 +214,19 @@
   <div class="col-lg-4">
     <div class="fw-card mb-3">
       <div class="fw-card-header">
-        <span class="fw-card-title"><i class="bi bi-send me-2 text-accent"></i>Request</span>
+        <span class="fw-card-title"><i class="bi bi-send me-2 text-accent"></i>{{ _('Request') }}</span>
       </div>
       <div class="fw-card-body">
         <!-- Appliance selector -->
         <div class="mb-3">
-          <label class="fw-form-label">Appliance <span class="text-danger">*</span></label>
+          <label class="fw-form-label">{{ _('Appliance') }} <span class="text-danger">*</span></label>
           <select id="sel-appliance" class="form-select fw-form-control">
             {% if fleet %}
               {% for a in fleet %}
                 <option value="{{ a.id }}">{{ a.name }} — {{ a.host }}</option>
               {% endfor %}
             {% else %}
-              <option value="">No FortiAnalyzer appliances configured</option>
+              <option value="">{{ _('No FortiAnalyzer appliances configured') }}</option>
             {% endif %}
           </select>
         </div>
@@ -241,7 +241,7 @@
               {% endfor %}
             </select>
             <input type="text" id="inp-path" class="form-control fw-form-control"
-                   placeholder="/dvmdb/device or a logical name">
+                   placeholder="{{ _('/dvmdb/device or a logical name') }}">
           </div>
           {% if not can_write %}
           <div class="text-muted mt-1" style="font-size:11px;">
@@ -250,7 +250,7 @@
           {% endif %}
           <div id="selected-urn" class="text-muted mt-1" style="font-size:11px;"></div>
           <div class="mt-1">
-            <small class="text-muted">Common urls:</small>
+            <small class="text-muted">{{ _('Common urls:') }}</small>
             <div class="d-flex flex-wrap gap-1 mt-1">
               {% for path in [
                 '/sys/status',
@@ -281,7 +281,7 @@
         </div>
 
         <button class="btn btn-fw-primary w-100" id="btn-execute">
-          <i class="bi bi-play-circle me-1"></i>Execute Request
+          <i class="bi bi-play-circle me-1"></i>{{ _('Execute Request') }}
         </button>
       </div>
     </div>
@@ -289,12 +289,12 @@
     <!-- Request History -->
     <div class="fw-card">
       <div class="fw-card-header">
-        <span class="fw-card-title"><i class="bi bi-clock-history me-2"></i>History</span>
-        <button class="btn btn-sm btn-secondary" data-js="clear-history">Clear</button>
+        <span class="fw-card-title"><i class="bi bi-clock-history me-2"></i>{{ _('History') }}</span>
+        <button class="btn btn-sm btn-secondary" data-js="clear-history">{{ _('Clear') }}</button>
       </div>
       <div id="history-list" class="fw-card-body p-0" style="max-height:200px;overflow-y:auto;">
         <div class="text-muted text-center py-3" style="font-size:13px;" id="history-empty">
-          No requests yet
+          {{ _('No requests yet') }}
         </div>
       </div>
     </div>
@@ -304,12 +304,12 @@
   <div class="col-lg-5">
     <div class="fw-card h-100">
       <div class="fw-card-header">
-        <span class="fw-card-title"><i class="bi bi-arrow-down-circle me-2 text-accent"></i>Response</span>
+        <span class="fw-card-title"><i class="bi bi-arrow-down-circle me-2 text-accent"></i>{{ _('Response') }}</span>
         <div class="d-flex align-items-center gap-3">
           <span id="resp-time" class="text-muted" style="font-size:12px;"></span>
           <span id="resp-status" class="fw-badge fw-badge-secondary">—</span>
           <button class="btn btn-sm btn-fw-outline" data-js="copy-response">
-            <i class="bi bi-clipboard me-1"></i>Copy
+            <i class="bi bi-clipboard me-1"></i>{{ _('Copy') }}
           </button>
         </div>
       </div>
@@ -331,32 +331,32 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="id" id="epId" value="">
         <div class="modal-header">
-          <h5 class="modal-title" id="epModalTitle">Edit Endpoint</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <h5 class="modal-title" id="epModalTitle">{{ _('Edit Endpoint') }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
         </div>
         <div class="modal-body">
           <div class="mb-3">
-            <label class="form-label" for="epName">Logical name</label>
+            <label class="form-label" for="epName">{{ _('Logical name') }}</label>
             <input type="text" class="form-control" name="name" id="epName" required
-                   pattern="[A-Za-z0-9_.\-]+" placeholder="dvmdb_device">
-            <div class="form-text">The stable key services resolve by — letters, digits, "_", "-", ".".</div>
+                   pattern="[A-Za-z0-9_.\-]+" placeholder="{{ _('dvmdb_device') }}">
+            <div class="form-text">{{ _('The stable key services resolve by — letters, digits, "_", "-", ".".') }}</div>
           </div>
           <div class="mb-3">
-            <label class="form-label" for="epUrn">URN / JSON-RPC url</label>
+            <label class="form-label" for="epUrn">{{ _('URN / JSON-RPC url') }}</label>
             <input type="text" class="form-control" name="urn" id="epUrn" required
-                   placeholder="/dvmdb/device">
+                   placeholder="{{ _('/dvmdb/device') }}">
             <div class="form-text">The JSON-RPC <code>url</code> param. /logview /eventmgmt /incidentmgmt
               /report /fortiview /fazsys urls get the apiver-3 envelope automatically.</div>
           </div>
           <div class="mb-1">
-            <label class="form-label" for="epApiVer">API version</label>
+            <label class="form-label" for="epApiVer">{{ _('API version') }}</label>
             <input type="text" class="form-control" name="api_version" id="epApiVer" value="jsonrpc">
-            <div class="form-text">One JSON-RPC transport — keep "jsonrpc" unless a future generation appears.</div>
+            <div class="form-text">{{ _('One JSON-RPC transport — keep "jsonrpc" unless a future generation appears.') }}</div>
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-fw-outline btn-sm" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-check-lg me-1"></i>Save</button>
+          <button type="button" class="btn btn-fw-outline btn-sm" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-check-lg me-1"></i>{{ _('Save') }}</button>
         </div>
       </form>
     </div>

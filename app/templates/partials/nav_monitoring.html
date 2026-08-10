@@ -21,32 +21,32 @@
    it sets collection policy, it does not display a measurement.
    ========================================================================= #}
 <div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['monitoring','metrics','analysis','deep_monitor','service_monitor','monitor_analytics','monitor_reports'] }}" data-nav-subgroup="Monitoring">
-  <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-activity fw-nav-icon"></i><span>Monitoring</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-activity fw-nav-icon"></i><span>{{ _('Monitoring') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
 
     <div class="fw-nav-subgroup {{ 'open' if request.blueprint == 'monitoring' }}" data-nav-subgroup="Fleet health">
-      <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-heart-pulse fw-nav-icon"></i><span>Fleet health</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+      <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-heart-pulse fw-nav-icon"></i><span>{{ _('Fleet health') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
       <div class="fw-nav-subgroup-body">
         {% if product.key == 'global' %}
         <a class="fw-nav-item {{ 'active' if request.endpoint == 'monitoring.satom' else '' }}" href="{{ url_for('monitoring.satom', _adom=product.key) }}">
-          <i class="bi bi-hdd-network fw-nav-icon"></i><span>SATOM health</span></a>
+          <i class="bi bi-hdd-network fw-nav-icon"></i><span>{{ _('SATOM health') }}</span></a>
         {% endif %}
         <a class="fw-nav-item {{ 'active' if request.endpoint == 'monitoring.index' else '' }}" href="{{ url_for('monitoring.index', _adom=product.key) }}">
-          <i class="bi bi-hdd-rack fw-nav-icon"></i><span>Device health</span></a>
+          <i class="bi bi-hdd-rack fw-nav-icon"></i><span>{{ _('Device health') }}</span></a>
       </div>
     </div>
 
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics' else '' }}" href="{{ url_for('metrics.index', _adom=product.key) }}">
-      <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>Metrics</span></a>
+      <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>{{ _('Metrics') }}</span></a>
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'analysis' else '' }}" href="{{ url_for('analysis.index', _adom=product.key) }}">
-      <i class="bi bi-graph-up fw-nav-icon"></i><span>Analysis</span></a>
+      <i class="bi bi-graph-up fw-nav-icon"></i><span>{{ _('Analysis') }}</span></a>
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'deep_monitor' else '' }}" href="{{ url_for('deep_monitor.index', _adom=product.key) }}">
-      <i class="bi bi-broadcast-pin fw-nav-icon"></i><span>Deep monitors</span></a>
+      <i class="bi bi-broadcast-pin fw-nav-icon"></i><span>{{ _('Deep monitors') }}</span></a>
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'service_monitor' else '' }}" href="{{ url_for('service_monitor.index', _adom=product.key) }}">
-      <i class="bi bi-speedometer2 fw-nav-icon"></i><span>Service Monitor</span></a>
+      <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Service Monitor') }}</span></a>
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'monitor_analytics' else '' }}" href="{{ url_for('monitor_analytics.index', _adom=product.key) }}">
-      <i class="bi bi-graph-up-arrow fw-nav-icon"></i><span>Analytics</span></a>
+      <i class="bi bi-graph-up-arrow fw-nav-icon"></i><span>{{ _('Analytics') }}</span></a>
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'monitor_reports' else '' }}" href="{{ url_for('monitor_reports.index', _adom=product.key) }}">
-      <i class="bi bi-file-earmark-bar-graph fw-nav-icon"></i><span>Reports</span></a>
+      <i class="bi bi-file-earmark-bar-graph fw-nav-icon"></i><span>{{ _('Reports') }}</span></a>
   </div>
 </div>

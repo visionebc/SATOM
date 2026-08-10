@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Change Types — Administration{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <h4 class="mb-1"><i class="bi bi-ui-checks-grid me-2"></i>Change types</h4>
+  <p class="text-muted mb-0" style="font-size:13px;">
+    The options in the Change Request form's <em>type of change</em> picker, and the text each one
+    proposes and prints. Built-in types come with the product and can be <strong>reworded</strong>;
+    types you add here are <strong>documentary</strong> — they raise and print a change request, but
+    there is no automation behind them, so the work is performed by hand.
+  </p>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><strong><i class="bi bi-box-seam me-1"></i>Built in — reword only</strong></div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle">
+      <thead><tr>
+        <th>Key</th><th>Name in the picker</th><th>Runs against</th>
+        <th>Overridden fields</th><th>Unreviewed</th><th>In the picker</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for t in builtin %}
+        <tr>
+          <td><code>{{ t.key }}</code></td>
+          <td>{{ t.label }}
+            {% if t.label != t.stock_label %}<span class="fw-badge fw-badge-info ms-1">reworded</span>{% endif %}</td>
+          <td class="small text-muted">{{ t.products|join(', ') }}</td>
+          <td>{% if t.overridden %}<strong>{{ t.overridden }}</strong>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td>{% if t.pending %}<span class="fw-badge fw-badge-warning">{{ t.pending }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td>{% if t.enabled %}<span class="fw-badge fw-badge-success">shown</span>
+              {% else %}<span class="fw-badge fw-badge-secondary">hidden</span>{% endif %}</td>
+          <td class="text-end"><a class="btn btn-sm btn-outline-secondary"
+             href="{{ url_for('cr_types.edit', key=t.key, _adom=product.key) }}">Edit text</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><strong><i class="bi bi-plus-square me-1"></i>Your change types — documentary</strong></div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle">
+      <thead><tr>
+        <th>Key</th><th>Name in the picker</th><th>Offered for</th><th>Authored in</th>
+        <th>Fields written</th><th>Unreviewed</th><th>In the picker</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for t in custom %}
+        <tr>
+          <td><code>{{ t.key }}</code></td>
+          <td>{{ t.label }}</td>
+          <td class="small text-muted">{{ t.products|join(', ') if t.products else 'any product' }}</td>
+          <td class="small">{{ t.row.source_lang }}</td>
+          <td>{{ t.overridden }}</td>
+          <td>{% if t.pending %}<span class="fw-badge fw-badge-warning">{{ t.pending }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td>{% if t.enabled %}<span class="fw-badge fw-badge-success">shown</span>
+              {% else %}<span class="fw-badge fw-badge-secondary">hidden</span>{% endif %}</td>
+          <td class="text-end"><a class="btn btn-sm btn-outline-secondary"
+             href="{{ url_for('cr_types.edit', key=t.key, _adom=product.key) }}">Edit</a></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8" class="text-muted small py-3">No change types of your own yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><strong><i class="bi bi-plus-lg me-1"></i>Add a change type</strong></div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('cr_types.create', _adom=product.key) }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Key</label>
+        <input class="form-control form-control-sm" name="key" required
+               placeholder="cabling_work" pattern="[A-Za-z0-9 _-]{2,64}">
+        <div class="form-text" style="font-size:11px;">Stored on every change request that uses it — it does not change afterwards.</div>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small mb-1">Name in the picker</label>
+        <input class="form-control form-control-sm" name="label" required
+               placeholder="Structured cabling work">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">Written in</label>
+        <select class="form-select form-select-sm" name="source_lang">
+          {% for code, name in langs %}<option value="{{ code }}">{{ name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">Offered for</label>
+        <select class="form-select form-select-sm" name="products" multiple size="3">
+          {% for k in kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
+        </select>
+        <div class="form-text" style="font-size:11px;">None selected = every product.</div>
+      </div>
+      <div class="col-md-1 text-end">
+        <button class="btn btn-fw-primary btn-sm w-100">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><strong><i class="bi bi-cash-coin me-1"></i>Translation cost — last {{ usage.days }} days</strong></div>
+  <div class="card-body py-2 small d-flex flex-wrap gap-4">
+    <span>Calls: <strong>{{ usage.calls }}</strong></span>
+    <span>Failed: <strong>{{ usage.failed }}</strong></span>
+    <span>Wall time: <strong>{{ '%.1f'|format(usage.duration_ms / 1000) }} s</strong></span>
+    <span>Prompt tokens: <strong>{{ usage.prompt_tokens if usage.prompt_tokens is not none else 'not reported' }}</strong></span>
+    <span>Completion tokens: <strong>{{ usage.completion_tokens if usage.completion_tokens is not none else 'not reported' }}</strong></span>
+    {% if usage.unreported_token_calls %}
+    <span class="text-muted">{{ usage.unreported_token_calls }} call(s) reported no token counts — recorded as unknown, not as zero.</span>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

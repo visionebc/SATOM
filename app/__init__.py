@@ -294,6 +294,12 @@ def create_app(config_override: object | None = None) -> Flask:
             adc_bps = {'adc', 'adc_api', 'appliances', 'settings', 'audit',
                        'jobs', 'notifications', 'profiles', 'users', 'docs',
                        'database', 'locks',
+                       # Change Types is an Administration page, mirrored
+                       # into every ADOM for the same reason Change Requests
+                       # was: the form it configures is offered in every
+                       # console, so pinning its editor to one ADOM would let
+                       # four consoles use wording they cannot see or correct.
+                       'cr_types',
                        # Firmware is product-scoped by row (2026-08-06): each
                        # ADOM sees and uploads only its own images. It used to
                        # be reachable from FortiAnalyzer only, which is why the
@@ -346,6 +352,12 @@ def create_app(config_override: object | None = None) -> Flask:
                        'notifications', 'profiles', 'users', 'docs',
                        'database', 'locks', 'firmware', 'segments',
                        'device_provision',
+                       # Change Types is an Administration page, mirrored
+                       # into every ADOM for the same reason Change Requests
+                       # was: the form it configures is offered in every
+                       # console, so pinning its editor to one ADOM would let
+                       # four consoles use wording they cannot see or correct.
+                       'cr_types',
                        # Scheduled Actions is mirrored into every ADOM
                        # (2026-08-10). Rows carry ScheduledAction.product
                        # and the catalog is cut to the actions whose
@@ -373,6 +385,12 @@ def create_app(config_override: object | None = None) -> Flask:
                        'notifications', 'profiles', 'users', 'docs',
                        'database', 'locks', 'segments', 'firmware',
                        'device_provision',
+                       # Change Types is an Administration page, mirrored
+                       # into every ADOM for the same reason Change Requests
+                       # was: the form it configures is offered in every
+                       # console, so pinning its editor to one ADOM would let
+                       # four consoles use wording they cannot see or correct.
+                       'cr_types',
                        # Scheduled Actions is mirrored into every ADOM
                        # (2026-08-10). Rows carry ScheduledAction.product
                        # and the catalog is cut to the actions whose
@@ -1386,6 +1404,11 @@ def create_app(config_override: object | None = None) -> Flask:
             # notified" rather than claiming a send that never happened.
             'change_request': [
                 ('notify_to', 'TEXT'),
+                # The change-type wording frozen at approval (2026-08-10).
+                # NULL on every pre-existing row on purpose: those changes were
+                # signed against the only wording that ever existed for them,
+                # so rendering them live is not a drift, it is the truth.
+                ('doc_profile', 'TEXT'),
                 ('final_notified_at', 'TIMESTAMP'),
                 # --- cross-system orchestration (NetBox window + CRQ hooks) ---
                 # approval_mode defaults to 'manual' so a CR that predates the
@@ -1587,6 +1610,7 @@ def create_app(config_override: object | None = None) -> Flask:
             # it cost. Without this import create_all() never makes
             # the tables and the first save 500s.
             from . import models_i18n  # noqa: F401
+            from . import models_cr_types  # noqa: F401
             db.create_all()
             _ensure_columns()
             # After the additive pass: a column that already existed may be
@@ -1707,6 +1731,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.monitor_analytics", "bp"),
         ("app.views.monitor_reports", "bp"),
         ("app.views.metrics_admin", "bp"),
+        ("app.views.cr_types", "bp"),
         ("app.views.capacity", "bp"),
         ("app.views.audit", "bp"),
         ("app.views.registry", "bp"),

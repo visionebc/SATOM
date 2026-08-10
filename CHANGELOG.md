@@ -7,6 +7,30 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **The Automation section is in every ADOM, and each ADOM shows only its own.**
+  Scheduled Actions, Device Provisioning and Change Requests now appear in the
+  Global, FortiWeb, FortiADC, FortiAnalyzer and FortiAuthenticator consoles —
+  and in any ADOM declared from here on. The pages always existed and always
+  answered by URL; four of the five consoles simply had no way to navigate to
+  them, which is not an error anyone sees. The group has ONE author
+  (`partials/nav_automation.html`), so an entry added to it lands in every ADOM
+  in the same commit rather than in whichever branch someone remembered.
+  Reaching them needed the router too: `scheduled_actions` was pinned to the
+  FortiWeb ADOM, so the concrete ADOMs would have bounced off the link and the
+  Global console would have been silently re-pinned — its automation calendar
+  was FortiWeb's, wearing Global's chrome. Scoping is by row instead
+  (`ScheduledAction.product`), and it now covers the **five by-id routes** as
+  well as the list: edit, toggle, delete, run-now and history read the table raw
+  until now, and a page that hides a row and then serves it one URL away is not
+  scoped, it is decorated. The editor follows the same rule — the catalog is cut
+  to the actions whose declared products include this ADOM, and the posted
+  action and target list are re-checked server-side, because the form is a hint
+  and this is the rule. Its device picker was hardcoded to `kind='fortiweb'`,
+  which rendered an **empty** roster in every other ADOM: no error, no message,
+  a form that silently could not target anything. **System Provisioning stays
+  FortiWeb-only on purpose** — it composes FortiWeb `cmdb` objects out of a
+  registry stamped `product='fortiweb'`, so offering it in the FortiAnalyzer
+  ADOM would aim FortiWeb configuration at a box that has none of those objects.
 - **The new change request asks two questions and proposes the rest.**
   `/change-requests/new` now asks, in this order, the **document language**
   (English / Deutsch) and then the **type of change** — and fills in title,

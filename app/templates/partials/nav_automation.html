@@ -1,0 +1,50 @@
+{# ============================================================================
+   AUTOMATION group — ONE definition, EVERY ADOM.  2026-08-10
+
+   Until now this group lived in exactly one branch of base.html: FortiWeb. The
+   Global console, FortiADC, FortiAnalyzer, FortiAuthenticator and every ADOM
+   declared from here on had no Automation entry at all — the pages existed and
+   answered by URL, they were simply unreachable by navigation. Nothing failed;
+   the menu was quietly incomplete, which is exactly how the Monitoring group
+   drifted before it became partials/nav_monitoring.html.
+
+   SCOPING IS NOT DONE HERE. Every page behind these links filters its own rows
+   through the active ADOM (services.product_scope):
+
+     * Scheduled Actions    scope_query(ScheduledAction.product)   — list AND by-id
+     * Device Provisioning  scope_query(ProvisionRun.product)
+     * Change Requests      the devices the CR names (visible_appliances)
+
+   ``_adom=product.key`` pins the ADOM on HARD (non-Turbo) navigations, which
+   carry no X-ADOM header — without it a fresh tab falls back to the session
+   cookie and can land in whichever ADOM another tab selected last.
+
+   SYSTEM PROVISIONING IS FORTIWEB-ONLY, ON PURPOSE. It composes FortiWeb
+   ``cmdb`` objects taken from the endpoint registry, and that registry is
+   stamped ``product='fortiweb'`` (registry/loader.seed_from_yaml). Offering it
+   inside the FortiAnalyzer ADOM would let an operator aim FortiWeb
+   configuration at a FortiAnalyzer, with a picker full of objects the target
+   does not have. A missing menu entry is a nuisance; that one is an outage.
+   ========================================================================= #}
+{% if current_user and current_user.can('config_write') %}
+{% set _auto_bps = ['scheduled_actions','device_provision','provisioning','change_requests'] %}
+<div class="fw-nav-group {{ 'open' if request.blueprint in _auto_bps }}" data-nav-group="Automation">
+  <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-gear-wide-connected fw-nav-section-icon" style="color:#8b5cf6;"></i><span>Automation</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-group-body">
+    {% if current_user.can('user_manage') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'scheduled_actions' else '' }}" href="{{ url_for('scheduled_actions.index', _adom=product.key) }}">
+      <i class="bi bi-clock-history fw-nav-icon"></i><span>Scheduled Actions</span></a>
+    {% endif %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'device_provision' else '' }}" href="{{ url_for('device_provision.index', _adom=product.key) }}">
+      <i class="bi bi-hdd-network fw-nav-icon"></i><span>Device Provisioning</span></a>
+    {% if product.key == 'fortiweb' %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'provisioning' else '' }}" href="{{ url_for('provisioning.index', _adom=product.key) }}">
+      <i class="bi bi-rocket-takeoff fw-nav-icon"></i><span>System Provisioning</span></a>
+    {% endif %}
+    {% if current_user.can('user_manage') %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'change_requests' else '' }}" href="{{ url_for('change_requests.index', _adom=product.key) }}">
+      <i class="bi bi-clipboard2-check fw-nav-icon"></i><span>Change Requests</span></a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

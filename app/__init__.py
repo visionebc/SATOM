@@ -215,7 +215,16 @@ def create_app(config_override: object | None = None) -> Flask:
             'web_protection', 'exceptions', 'attack_search', 'backups', 'logs',
             'import_backup', 'section_config', 'section_catalog',
             'signatures', 'structure',
-            'segments', 'scheduled_actions',
+            'segments',
+            # 'scheduled_actions' left this set on 2026-08-10, for the
+            # reason 'change_requests' left it the day before: pinning
+            # it to the FortiWeb ADOM meant the FortiADC/FAZ/FAC
+            # consoles bounced off the page entirely, and the Global
+            # console was re-pinned to 'fortiweb' by this very branch —
+            # so Global's automation calendar was FortiWeb's, wearing
+            # Global's chrome. Rows are scoped instead
+            # (ScheduledAction.product, list AND by-id), and the action
+            # catalog is filtered by spec.products per ADOM.
             # 'change_requests' left this set on 2026-08-09. Pinning it to the
             # FortiWeb ADOM meant a change window could only ever name a
             # FortiWeb: the FortiADC/FAZ/FAC consoles bounced off the page, and
@@ -290,6 +299,12 @@ def create_app(config_override: object | None = None) -> Flask:
                        # be reachable from FortiAnalyzer only, which is why the
                        # FAZ ADOM could see FortiWeb images.
                        'firmware', 'device_provision',
+                       # Scheduled Actions is mirrored into every ADOM
+                       # (2026-08-10). Rows carry ScheduledAction.product
+                       # and the catalog is cut to the actions whose
+                       # spec.products includes this ADOM, so a console
+                       # can only schedule work it can also see.
+                       'scheduled_actions',
                        # Custom Views: Plugin Studio + Lua Studio are
                        # product-scoped (records stamped per ADOM), so the
                        # ADC ADOM reaches them and sees only its own.
@@ -331,6 +346,12 @@ def create_app(config_override: object | None = None) -> Flask:
                        'notifications', 'profiles', 'users', 'docs',
                        'database', 'locks', 'firmware', 'segments',
                        'device_provision',
+                       # Scheduled Actions is mirrored into every ADOM
+                       # (2026-08-10). Rows carry ScheduledAction.product
+                       # and the catalog is cut to the actions whose
+                       # spec.products includes this ADOM, so a console
+                       # can only schedule work it can also see.
+                       'scheduled_actions',
                        'architecture', 'metrics', 'search', 'analysis',
                        'fleet_objects', 'dns_tool', 'backups',
                        # Mirrored per-ADOM monitoring (2026-07-28) — see the
@@ -352,6 +373,12 @@ def create_app(config_override: object | None = None) -> Flask:
                        'notifications', 'profiles', 'users', 'docs',
                        'database', 'locks', 'segments', 'firmware',
                        'device_provision',
+                       # Scheduled Actions is mirrored into every ADOM
+                       # (2026-08-10). Rows carry ScheduledAction.product
+                       # and the catalog is cut to the actions whose
+                       # spec.products includes this ADOM, so a console
+                       # can only schedule work it can also see.
+                       'scheduled_actions',
                        'architecture', 'metrics', 'search', 'analysis',
                        'fleet_objects', 'dns_tool', 'backups',
                        # Mirrored per-ADOM monitoring (2026-07-28) — scoping is

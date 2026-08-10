@@ -90,6 +90,11 @@
             <option value="{{ key }}" {{ 'selected' if key == preset_action else '' }}>{{ label }}</option>
             {% endfor %}
           </select>
+          <div class="form-text" id="cr-manual-note" hidden
+               style="color:#7A5700;font-weight:600;">
+            This change type has no automation behind it: the change request is raised,
+            approved and printed here, and the work is carried out by hand. It cannot be
+            bound to the scheduler.</div>
           <div class="form-text">Nothing is pre-selected: the first entry on the list is not
             a default, and picking an entry that was already selected would answer the
             question without the page ever hearing it. Only change-controlled actions appear
@@ -271,6 +276,7 @@
   var NONE = {{ devices_none|tojson }};
   var PROMPT = {{ action_prompt|tojson }};
   var DEFAULTS = {{ defaults|tojson }};
+  var EXECUTABLE = {{ action_executable|tojson }};
 
   var form = document.getElementById('cr-form');
   if (!form) { return; }
@@ -338,6 +344,16 @@
       grow(el);
       if (chips[key]) { chips[key].classList.add('is-on'); }
     });
+  }
+
+  // Absence of automation is stated, never implied by a missing button: an
+  // operator who assumes the scheduler will run this and goes home is the
+  // failure mode, and it fails silently at the end of the window.
+  function manualNote() {
+    var note = document.getElementById('cr-manual-note');
+    if (!note) { return; }
+    var key = actionSel ? actionSel.value : '';
+    note.hidden = !(key && EXECUTABLE[key] === false);
   }
 
   function relabelActions() {
@@ -409,6 +425,7 @@
       // over a proposal that describes no change at all.
       actionAnswered = !!actionSel.value;
       paint(false);
+      manualNote();
       reveal();
     });
   }
@@ -446,6 +463,7 @@
   markLang();
   relabelActions();
   paint(false);
+  manualNote();
   reveal();
 })();
 </script>

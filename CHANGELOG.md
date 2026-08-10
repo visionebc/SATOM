@@ -7,6 +7,55 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **The Change Request form's type picker and its text are administrator-owned.**
+  A new page, **Administration → Change Types**, owns the options in the *type
+  of change* picker and every sentence a chosen option contributes: the proposed
+  title, reason and rollback plan, and the eight profile paragraphs the printed
+  document quotes (purpose, justification, impact, downtime, risk, rollback
+  steps, work, validation). Until now both lived in Python source, so adding a
+  category — or fixing a paragraph an auditor objected to — meant a release.
+  Built-in change types can be **reworded**; types you add are **documentary**:
+  the change request is raised, approved and printed, and the work is carried
+  out by hand. Saving fans the changed fields out to the other four languages
+  through the translation service added earlier in this cycle, and every call is
+  billed to `translation_run` with wall time and token counts.
+
+  Four things about this fail silently, so each is a rule with a guard behind
+  it:
+
+  * **An empty box is not an override.** "Leave it blank to keep the product's
+    wording" is a promise about a value nobody typed; writing it through would
+    blank a section of a signed document with nothing raising. Overrides are
+    per FIELD — correcting one paragraph of a built-in type does not cost you
+    the other eleven, and it does not stop the next release's corrections from
+    reaching this install.
+  * **Executability is never stored.** Whether a change type can be *run* is
+    read from the automation registry on every call. A checkbox here would let
+    somebody create a category that looks runnable, bind it to a one-shot
+    scheduled action, and have it resolve to no targets at fire time — inside
+    the window, closing the change as failed hours after anyone could act on
+    it. `schedule_change_request()` refuses a type with no executor, the form
+    says so before you pick it, and the Schedule button is not offered.
+  * **Approval freezes the wording.** The resolved prose is photographed onto
+    the change request when it is approved, per document language, and the
+    document prints the photograph. Without it, correcting a paragraph this
+    morning would rewrite every document already signed, and the reprint would
+    differ from the paper in the file with nothing saying so. Drafts render
+    live, because they were signed against nothing.
+  * **A machine translation stays labelled as one.** Text a model produced
+    carries `origin=machine` and the model's name for good; marking it reviewed
+    records who accepted it, and does not promote it to something a person
+    wrote. Text you typed by hand in another language is never overwritten by a
+    re-run, and editing the source marks the translations **stale** rather than
+    deleting them.
+
+  Hiding a built-in type removes it from the **form only** — the action stays in
+  the product and the executor still knows it, because a menu is not a
+  permission. Deleting a type of your own leaves the change requests already
+  raised with it fully printable. The editor is reachable from the
+  Administration group of **every** ADOM through a single nav partial, and is
+  admitted to each ADOM's routing allowlist, so no console gets a live-looking
+  menu entry that redirects.
 - **The Automation section is in every ADOM, and each ADOM shows only its own.**
   Scheduled Actions, Device Provisioning and Change Requests now appear in the
   Global, FortiWeb, FortiADC, FortiAnalyzer and FortiAuthenticator consoles —

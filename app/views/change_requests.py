@@ -42,13 +42,70 @@ def _cr_specs() -> list:
             if s.needs_targets and (s.danger or s.scope == 'user')]
 
 
+def cr_type_entries(lang: str = "") -> list[dict]:
+    """Every type of change this form may offer, compiled AND administrator-
+    defined, each under the name Administration -> Change Types gives it.
+
+    ``executable`` is DERIVED from the automation registry on every call, never
+    read from a row. A type an administrator invented has no executor; if that
+    fact were storable, somebody could tick it, bind the change to a one-shot
+    action, and have it resolve to nothing at fire time - inside the window,
+    hours after anyone could act on it.
+
+    Answers WITHOUT an application context, returning the compiled catalog
+    alone: "which dangerous actions are change-controlled" is a property of the
+    product, and a caller asking that must not need a database to find out.
+    """
+    from flask import current_app, has_app_context
+    from ..services import cr_types, langs as lang_registry
+
+    code = lang or lang_registry.DEFAULT
+    rows: dict = {}
+    if has_app_context():
+        try:
+            rows = {r.key: r for r in cr_types.all_types()}
+        except Exception:  # noqa: BLE001 - the picker degrades, it does not 500
+            current_app.logger.warning(
+                "change types unavailable; offering the compiled catalog only",
+                exc_info=True)
+            rows = {}
+
+    def _label(key: str, fallback: str) -> str:
+        return (cr_types.label(key, code) if rows else "") or fallback
+
+    out: list[dict] = []
+    for spec in _cr_specs():
+        row = rows.get(spec.key)
+        # Hiding a built-in removes it from the FORM only. The action itself
+        # stays in the product and keeps running: a menu is not a permission.
+        if row is not None and not row.enabled:
+            continue
+        out.append({"key": spec.key, "label": _label(spec.key, spec.label),
+                    "products": list(spec.products),
+                    "single_target": bool(spec.single_target),
+                    "executable": True,
+                    "order": (row.sort_order if row is not None else 100)})
+    if rows:
+        for row in cr_types.options_for(cr_kinds()):
+            out.append({"key": row.key, "label": _label(row.key, row.key),
+                        # No product declared = the change is about work, not
+                        # about a product, so every device this console can see
+                        # is a legitimate target.
+                        "products": row.products_list or list(cr_kinds()),
+                        "single_target": False,
+                        "executable": False,
+                        "order": row.sort_order})
+    out.sort(key=lambda e: (e["order"], e["label"].lower()))
+    return out
+
+
 def cr_actions() -> list[tuple[str, str]]:
     """[(key, label)] for the form's Action dropdown."""
-    return [(s.key, s.label) for s in _cr_specs()]
+    return [(e["key"], e["label"]) for e in cr_type_entries()]
 
 
 def cr_action_keys() -> set[str]:
-    return {s.key for s in _cr_specs()}
+    return {e["key"] for e in cr_type_entries()}
 
 
 def cr_kinds() -> tuple[str, ...]:
@@ -235,14 +292,19 @@ def new():
             return redirect(url_for('change_requests.new'))
 
         action = (request.form.get('action') or '').strip()
-        spec = sa.get_spec(action)
         # An unrecognised action is REJECTED, never coerced. The old fallback
         # silently rewrote a glitched form into 'upgrade' - the most destructive
         # entry on the menu - which is the opposite of what a fallback is for.
-        if spec is None or action not in cr_action_keys():
+        entry = {e['key']: e for e in cr_type_entries()}.get(action)
+        if entry is None:
             flash(f'{action or "(none)"} is not a change-controlled action.',
                   'danger')
             return redirect(url_for('change_requests.new'))
+        # ``spec`` stays None for an administrator-defined type. Everything
+        # below reads the ENTRY, so the device rules are enforced identically
+        # for both kinds; only execution distinguishes them, and that is gated
+        # in services.change_requests.schedule_change_request.
+        spec = sa.get_spec(action)
         risk = (request.form.get('risk') or 'medium').strip()
         if risk not in svc.RISKS:
             risk = 'medium'
@@ -262,15 +324,15 @@ def new():
                   'to you.', 'danger')
             return redirect(url_for('change_requests.new'))
         wrong = [d for d in picked
-                 if (d.kind or 'fortiweb') not in spec.products]
+                 if (d.kind or 'fortiweb') not in entry['products']]
         if wrong:
-            flash(f'{spec.label} does not run against '
+            flash(f'{entry["label"]} does not run against '
                   + ', '.join(sorted({(d.kind or "?") for d in wrong}))
                   + ' (' + ', '.join(d.name for d in wrong) + '). It supports: '
-                  + ', '.join(spec.products) + '.', 'danger')
+                  + ', '.join(entry['products']) + '.', 'danger')
             return redirect(url_for('change_requests.new'))
-        if spec.single_target and len(device_ids) > 1:
-            flash(f'{spec.label} acts on exactly one appliance; '
+        if entry['single_target'] and len(device_ids) > 1:
+            flash(f'{entry["label"]} acts on exactly one appliance; '
                   f'{len(device_ids)} were selected.', 'danger')
             return redirect(url_for('change_requests.new'))
 
@@ -334,13 +396,18 @@ def new():
     # SERVER-side, in both languages, for every action, and handed to the page as
     # data; the page only substitutes the device names. Composing sentences in
     # JavaScript would give the printed document a second author.
-    from ..services import email_service
+    from ..services import cr_types, email_service
     prep_ctx = _prep_draft_context(prep)
     lang_codes = [code for code, _label in cr_document.LANGS]
-    keys = sorted(cr_action_keys())
-    drafts = {key: {code: cr_document.draft_fields(key, code, prep=prep_ctx)
+    entries = cr_type_entries()
+    keys = sorted(e['key'] for e in entries)
+    # Through cr_types, not cr_document: an administrator's wording wins per
+    # FIELD, and falls back to the compiled sentence for every field they left
+    # alone. Reading cr_document here would print the shipped paragraph next to
+    # the corrected one on the same page.
+    drafts = {key: {code: cr_types.draft_fields(key, code, prep=prep_ctx)
                     for code in lang_codes} for key in keys}
-    action_labels = {key: {code: cr_document.action_label(key, code)
+    action_labels = {key: {code: cr_types.label(key, code)
                            for code in lang_codes} for key in keys}
     # Proposed, VISIBLE and editable - not silently applied. An owner the
     # operator never saw is exactly the attribution this field refuses to make.
@@ -350,9 +417,12 @@ def new():
     }
     return render_template('change_requests/form.html',
                            appliances=appliances,
-                           cr_actions=cr_actions(),
-                           action_products={s.key: list(s.products)
-                                            for s in _cr_specs()},
+                           cr_actions=[(e['key'], e['label'])
+                                       for e in entries],
+                           action_products={e['key']: e['products']
+                                            for e in entries},
+                           action_executable={e['key']: e['executable']
+                                              for e in entries},
                            risks=svc.RISKS,
                            prep=prep,
                            preset_action=(request.args.get('action') or '').strip(),
@@ -401,6 +471,11 @@ def detail(id):
         }
     return render_template('change_requests/detail.html',
                            cr=cr,
+                           # Derived, not stored: whether this change has an
+                           # executor is a question for the registry, asked
+                           # now. The Schedule button is hidden when the answer
+                           # is no, and the service refuses it anyway.
+                           executable=sa.get_spec(cr.action) is not None,
                            events=events,
                            devices=devices,
                            notice=svc.maintenance_notice(cr),
@@ -435,9 +510,20 @@ def document(id):
     devices = (Appliance.query.filter(Appliance.id.in_(device_ids)).all()
                if device_ids else [])
     prep = prep_store.get(cr.prep_id)
+    # The wording FROZEN when this change was approved wins over today's. A
+    # change type is editable, so re-reading it here would let a correction
+    # made this morning rewrite a document signed last month - and the reprint
+    # would differ from the paper in the file with nothing saying so. A draft
+    # has no snapshot yet and renders live, which is correct: it has not been
+    # signed against anything.
+    from ..services import cr_types
+    frozen = cr.doc_profile_dict.get(lang)
+    profile = (frozen if isinstance(frozen, dict) and frozen
+               else cr_types.profile_text(cr.action, lang))
     text = cr_document.render(cr, lang=lang, devices=devices,
                               policies=svc.frozen_policies(cr),
-                              prep=(prep.result_dict if prep else None))
+                              prep=(prep.result_dict if prep else None),
+                              profile=profile)
     log_action('change_request.document', target=cr.title, detail=f'lang={lang}')
     if request.args.get('download') == '1':
         return Response(

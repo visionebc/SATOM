@@ -52,7 +52,11 @@
     </form>
     {% endif %}
 
-    {% if cr.status in ['approved', 'scheduled'] %}
+    {% if not executable %}
+    <span class="fw-badge fw-badge-warning" title="This change type has no automated executor">
+      <i class="bi bi-hand-index me-1"></i>Carried out by hand</span>
+    {% endif %}
+    {% if cr.status in ['approved', 'scheduled'] and executable %}
     <form method="POST" action="{{ url_for('change_requests.schedule', id=cr.id) }}" style="display:inline;"
           data-fw-confirm-form="Bind a one-shot scheduled action at the window start for this change request?">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

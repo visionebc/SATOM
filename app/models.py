@@ -1140,9 +1140,27 @@ class ChangeRequest(db.Model):
     # the approver never saw.
     inventory_at = db.Column(db.DateTime, nullable=True)
     prep_id = db.Column(db.Integer, nullable=True)
+    # The change-type PROSE as it read when this change was approved, per
+    # document language. The wording of a change type is editable
+    # (Administration -> Change Types); without this snapshot, correcting a
+    # paragraph today would silently rewrite every document already signed,
+    # and a reprint would differ from the paper in the file with nothing
+    # saying so. NULL on a draft and on every CR that predates the feature:
+    # those render from the live wording, which is the only wording they have
+    # ever had.
+    doc_profile = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    @property
+    def doc_profile_dict(self) -> dict:
+        """``{lang: {field: text}}`` frozen at approval, or ``{}``."""
+        try:
+            v = json.loads(self.doc_profile or "{}")
+            return v if isinstance(v, dict) else {}
+        except (ValueError, TypeError):
+            return {}
 
     @property
     def device_ids_list(self) -> list:

@@ -6735,6 +6735,59 @@ DELETED, because <code>_apply_form</code> rejects an unknown key on the line abo
 under test. That is the assert-by-substring family arriving through the
 <em>fixture</em> instead of the assertion, and it is now pinned by a test asserting the
 fixture keys are real and have exactly the product sets the file claims.</p>
+<h2 id="58-editable-text-is-a-second-author-and-the-first-one-never-notices">§58. Editable text is a second author, and the first one never notices</h2>
+<p>Making prose editable does not add a field — it adds an <strong>author</strong>. The product
+still has its own wording, and from the moment a database row can carry a
+paragraph, every read has to decide which of the two it means. Nothing about
+getting that wrong raises: the page renders, the document prints, the
+signature block is filled in, and the words are simply not the words anyone
+agreed to.</p>
+<p>Four failures, all silent, all guarded in <code>tests/test_cr_types.py</code>:</p>
+<ol>
+<li>
+<p><strong>An empty box that overrides.</strong> The editor's promise is "leave it blank to
+   keep the product's wording". If empties are written through, a section of a
+   signed document goes blank. <code>cr_types.overrides()</code> drops empties BEFORE the
+   overlay, and <code>cr_document.render()</code> refuses falsy injected values as a second
+   line of defence. Guard: fill every field with <code>""</code> and assert the resolved
+   profile still equals the shipped one, field by field.</p>
+</li>
+<li>
+<p><strong>Two field lists that drift apart.</strong> <code>cr_types.FIELDS</code> and
+   <code>cr_document.REQUIRED_PROFILE_KEYS</code> must name the same paragraphs. Rename one
+   side and the override silently stops overriding — forever — while the editor
+   keeps accepting text nothing reads. Guard: set inclusion, asserted directly.</p>
+</li>
+<li>
+<p><strong>A capability that becomes a checkbox.</strong> Executability belongs to the
+   automation registry. Storing it on the row would make it editable, and an
+   administrator ticking it produces a change that binds a scheduled action and
+   resolves to nothing at fire time. Guard: assert the ORM table has no such
+   column, plus <code>pytest.raises(ValueError)</code> on scheduling a documentary type —
+   AND a positive test that a real action still schedules, so the guard cannot
+   be satisfied by closing the feature.</p>
+</li>
+<li>
+<p><strong>Retroactive rewording.</strong> An editable paragraph rewrites history unless the
+   record photographs it. The snapshot is taken at <strong>approval</strong>, per document
+   language, and the document prefers it. Guard: approve, then edit the type,
+   then fetch the document and assert the new words are ABSENT — and a paired
+   test that a <em>draft</em> does show them, so "freeze everything" cannot pass.</p>
+</li>
+</ol>
+<p>Two smaller rules found the same way:</p>
+<ul>
+<li><strong>Fall back to what the administrator wrote, not to what they replaced.</strong> A
+  console asking for German with no German translation yet is served the
+  English the administrator authored. Serving the compiled German paragraph
+  instead would print the old wording and the new wording on the same page,
+  each looking authoritative.</li>
+<li><strong>An unknown placeholder prints as the typo.</strong> <code>{oops}</code> in an operator's
+  sentence must not raise (the form breaks) and must not vanish (the sentence
+  is silently truncated). <code>string.Formatter</code> with a <code>__missing__</code> mapping.</li>
+</ul>
+<p>Recipe: <code>pytest tests/test_cr_types.py</code> (58 guards). Mutation harness
+<code>/tmp/pt_crt/mutate_crt.py</code> on a1 — verdict by <strong>rc</strong>, only <code>rc == 1</code> counts.</p>
     </div>
   </div>
 </section>

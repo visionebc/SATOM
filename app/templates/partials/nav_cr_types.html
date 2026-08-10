@@ -1,0 +1,16 @@
+{# ============================================================================
+   Change Types — Administration entry. ONE definition, every Administrator /
+   Administration block in base.html (2026-08-10).
+
+   It belongs next to Collection for the same reason Collection does: every
+   other Automation entry *runs* something, this one *configures what the
+   Change Request form offers and says*. It is gated on USER_MANAGE, like the
+   Change Requests page it feeds.
+
+   Why a partial and not five inline copies: the admin blocks in base.html have
+   drifted before — two of them are even titled differently — and an entry
+   added to Global and forgotten in the other four is invisible without
+   failing. tests/test_cr_types.py fails if any admin block stops including it.
+   ========================================================================= #}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'cr_types' else '' }}" href="{{ url_for('cr_types.index', _adom=product.key) }}">
+  <i class="bi bi-ui-checks-grid fw-nav-icon"></i><span>Change Types</span></a>

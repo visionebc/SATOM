@@ -1706,7 +1706,7 @@ def _bullets(items) -> list:
 #  Renderer                                                                     #
 # --------------------------------------------------------------------------- #
 def render(cr, *, lang: str = "en", devices=None, policies=None,
-           prep=None) -> str:
+           prep=None, profile=None) -> str:
     """Render the 13-section change-request document as Markdown.
 
     PURE: no DB access, no device call, no Flask request context, no live
@@ -1727,12 +1727,26 @@ def render(cr, *, lang: str = "en", devices=None, policies=None,
         equally frozen; ``[]`` means "explicitly none".
     :param prep: the dict returned by
         :func:`app.services.upgrade.prepare`, or ``None``.
+    :param profile: the change-type prose to print, already resolved by the
+        caller (:func:`app.services.cr_types.profile_text`, or the snapshot
+        frozen on the record at approval). ``None`` means "use the wording
+        compiled into this module". It is a PARAMETER and not a lookup because
+        this module must not read the database: a document that queried at
+        print time would print today's wording under yesterday's signature.
+        Missing keys fall back to the compiled profile, so a partial override
+        can never blank a section.
     """
     lang = normalize_lang(lang)
     t = _T[lang]
     titles = SECTION_TITLES[lang]
     action = str(getattr(cr, "action", "") or "").strip()
-    p = _profile_text(action, lang)
+    p = dict(_profile_text(action, lang))
+    if isinstance(profile, dict):
+        # Overlay, never replace: a caller handing in one corrected paragraph
+        # must not cost the document the other eleven.
+        for _k, _v in profile.items():
+            if _v not in (None, "", (), []):
+                p[_k] = _v
     ph = t["placeholder"]
 
     devices = list(devices) if devices is not None else None

@@ -56,6 +56,15 @@ def approve(cr_id: int, by: str) -> ChangeRequest:
     cr = db.session.get(ChangeRequest, cr_id)
     if cr is None:
         raise ValueError("change request not found")
+    # Freeze the change-type wording AS APPROVED. From here on the document
+    # prints these words, not whatever Administration -> Change Types says
+    # later. Best-effort: an approval is a decision a human made, and a failure
+    # to photocopy the boilerplate must not be able to un-make it.
+    try:
+        from . import cr_types
+        cr.doc_profile = json.dumps(cr_types.snapshot(cr.action))
+    except Exception:  # noqa: BLE001
+        pass
     _transition(cr, "approved", by=by, detail="Change request approved",
                 approved_by=by, approved_at=datetime.utcnow())
     # Tell the integrations the gate is passed. Best-effort by contract: an
@@ -94,6 +103,16 @@ def schedule_change_request(cr_id: int, by: str) -> int:
         raise ValueError("approve the change request before scheduling it")
     if cr.window_start is None:
         raise ValueError("set a maintenance-window start first")
+    # A change type an administrator defined has NO executor. Binding one to a
+    # scheduled action would not fail here - it would fail at fire time, inside
+    # the window, resolving to nothing and closing the change as failed hours
+    # after anybody could act on it. Refuse while somebody is still looking.
+    from . import scheduled_actions as _sa
+    if _sa.get_spec(cr.action) is None:
+        raise ValueError(
+            f"'{cr.action}' is a documentary change type: it has no automated "
+            f"executor. Carry the work out during the window and close this "
+            f"change request by hand.")
 
     params = dict(cr.params_dict)
     params["change_request_id"] = cr.id

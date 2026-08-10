@@ -56,7 +56,8 @@
       <div class="fw-lang-choice">
         {% for code, label in langs %}
         <label class="fw-lang-option">
-          <input type="radio" name="doc_lang" value="{{ code }}" {{ 'checked' if loop.first else '' }}>
+          <input type="radio" name="doc_lang" value="{{ code }}" required
+                 {{ 'checked' if code == lang_preset else '' }}>
           <span class="fw-lang-code">{{ code|upper }}</span>
           <span class="fw-lang-label">{{ label }}</span>
         </label>
@@ -67,6 +68,25 @@
         the text proposed below. The other language can still be produced later from the same
         record &mdash; the choice here is which one you are drafting in.
       </div>
+      {% if lang_preset %}
+      <div class="form-text mt-1">
+        <i class="bi bi-person-check me-1"></i>Pre-selected from your
+        <a href="{{ url_for('auth.profile') }}#language">profile</a> &mdash; changing it here
+        applies to this document only.
+      </div>
+      {% elif lang_pref_unrenderable %}
+      <div class="form-text mt-1" style="color:#7A5700;font-weight:600;">
+        <i class="bi bi-exclamation-triangle me-1"></i>Your profile language
+        ({{ lang_pref_label }}) has no change-document text yet, so it is not offered here.
+        Choose the language this document is written in.
+      </div>
+      {% else %}
+      <div class="form-text mt-1">
+        Nothing is pre-selected. Set a language in your
+        <a href="{{ url_for('auth.profile') }}#language">profile</a> and this question is
+        answered for you from then on.
+      </div>
+      {% endif %}
     </div>
   </div>
 
@@ -302,9 +322,17 @@
   var langAnswered = false, actionAnswered = false;
 
   function lang() {
+    // '' when nothing is checked, which is a REAL state: the radios are
+    // pre-selected only from the operator's profile, so an operator who has
+    // not set one there genuinely has not answered question 1 yet. Returning
+    // a default here would report an answer nobody gave.
     for (var i = 0; i < langs.length; i++) { if (langs[i].checked) { return langs[i].value; } }
-    return 'en';
+    return '';
   }
+
+  // For RENDERING only. Text has to come out in some language; the question
+  // does not have to be answered for that.
+  function langOr() { return lang() || 'en'; }
 
   function deviceNames() {
     var out = [];
@@ -330,7 +358,7 @@
   }
 
   function paint(force) {
-    var code = lang();
+    var code = langOr();
     var action = actionSel ? actionSel.value : '';
     var draft = proposal(code, action);
     if (!draft) { return; }
@@ -358,7 +386,7 @@
 
   function relabelActions() {
     if (!actionSel) { return; }
-    var code = lang();
+    var code = langOr();
     Array.prototype.forEach.call(actionSel.options, function (opt) {
       // The opening entry is a question, not an action: it has no label in the
       // catalogue and would otherwise stay in English inside a German form.
@@ -403,7 +431,10 @@
   }
 
   function answerLang() {
-    langAnswered = true;
+    // Derived here too, for the same reason it is derived on load: this fires
+    // on `click` as well as `change`, and a click that lands on the label but
+    // checks nothing must not report the question as answered.
+    langAnswered = !!lang();
     markLang();
     relabelActions();
     paint(false);
@@ -459,6 +490,11 @@
   // still has to be asked, which is the whole point of asking it first.
   // Read from the control rather than from the template: a browser restoring a
   // previous selection on reload answers question 2 just as the link does.
+  // Both derived from the controls, never assigned a literal. The profile
+  // preference is an answer the operator gave once, in their profile, and a
+  // browser restoring a selection on reload is an answer too. Setting these
+  // true would open step 2 over a language nobody picked.
+  langAnswered = !!lang();
   actionAnswered = !!(actionSel && actionSel.value);
   markLang();
   relabelActions();

@@ -32,6 +32,44 @@
   </div>
 </div>
 
+<!-- LANGUAGE (per-user setting, saved in the DB) -->
+<div class="fw-card mb-3" id="language">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-translate me-2 text-accent"></i>Language</span>
+  </div>
+  <div class="fw-card-body">
+    <p class="text-muted" style="font-size:13px;">
+      Your language, saved to your account in the database &mdash; not a cookie, and not shared
+      with other users. SATOM pre-selects it wherever a language has to be chosen.
+    </p>
+    <form method="POST" action="{{ url_for('auth.save_language') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row g-3 align-items-end">
+        <div class="col-md-6">
+          <label class="fw-form-label" for="pref-lang">Preferred language</label>
+          <select class="form-select" name="lang" id="pref-lang">
+            <option value="" {{ 'selected' if not pref_lang }}>No preference &mdash; ask me each time</option>
+            {% for code, name in lang_options %}
+            <option value="{{ code }}" {{ 'selected' if pref_lang == code }}>{{ name }} ({{ code|upper }}){% if code not in doc_langs %} &mdash; change documents not translated yet{% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>Save Language</button>
+        </div>
+      </div>
+    </form>
+    <div class="form-text mt-2">
+      Change documents can be produced in
+      <strong>{% for c in doc_langs %}{{ c|upper }}{{ ', ' if not loop.last }}{% endfor %}</strong> today.
+      A preference outside that list is still kept &mdash; it is your language, and the rest of the
+      product adopts it as text is translated &mdash; but the change-request form will keep asking
+      which of those you are drafting in rather than picking one on your behalf. A document is
+      signed in the language it is written in, so that question is never answered by a default.
+    </div>
+  </div>
+</div>
+
 <div class="row g-3">
 
   <!-- BRANDING (per-user setting, saved in the DB) -->

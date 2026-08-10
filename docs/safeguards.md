@@ -6854,3 +6854,44 @@ Two smaller rules found the same way:
 
 Recipe: `pytest tests/test_cr_types.py` (58 guards). Mutation harness
 `/tmp/pt_crt/mutate_crt.py` on a1 — verdict by **rc**, only `rc == 1` counts.
+## §59. A preference that cannot be distinguished from its default does not exist
+
+`tests/test_lang_preference.py` (40 guards). The document language moved out of
+the page and into the operator's profile (`user_settings.i18n.lang`).
+
+**The failure has no exit code.** A language question that answers itself
+produces a complete, well-formed, *signed* change document in a language nobody
+chose. Every field is filled, every section renders, nothing logs.
+
+Three rules, each with guards:
+
+1. **"No preference" is stored distinctly from "prefers English."**
+   `user_settings_store.language()` returns `""` for the first and `"en"` for
+   the second. Collapse them and the profile can no longer render which is
+   true, and an operator who deliberately picked English is re-asked forever.
+   `save_language()` **clears** on a blank or unsupported code rather than
+   writing the default — writing `en` would answer the question the user just
+   un-answered.
+2. **Nothing is pre-selected without an answer behind it.** The old
+   `{{ 'checked' if loop.first }}` was a default nobody gave; the radio is now
+   checked only when it equals the stored preference, the group is `required`,
+   and `langAnswered` is **derived** (`!!lang()`) on load *and* in the click
+   handler. `lang()` returns `''` when nothing is checked — a real state — and
+   a separate `langOr()` supplies a language for *rendering*, because text has
+   to come out in something while the question stays open. One function doing
+   both is exactly how "unanswered" became "English".
+3. **A preference the product cannot honour is stated, never downgraded.** The
+   registry declares five languages; `cr_document.LANGS` renders two. A profile
+   set to `fr` is kept, is NOT pre-selected, and the form says why. A property
+   test parametrised over the whole registry asserts that whatever ends up
+   checked is a language a complete document can be produced in.
+
+**Recipe.** `grep -rl 'i18n.lang' app/` must print exactly
+`app/services/user_settings_store.py` — a second literal for the same key is
+how one page reads a preference another page never wrote.
+
+**Traps repaid here.** The seventh `_strip_js_comments` (the comment explaining
+the guard names the literal the guard forbids). And the first mutation run
+found a real survivor: `answerLang()` still assigned `langAnswered = true`
+while the load path derived it — two authors of the same fact, one of which
+cannot be wrong and one of which can.

@@ -7,6 +7,30 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 ## [Unreleased]
 
 ### Added
+- **Your language is a profile preference, and the change document stops
+  guessing it.** **Profile → Language** stores the language you work in against
+  your account in the database — not a cookie, and not shared with other users —
+  and the top-bar user menu shows the current choice next to the entry that
+  changes it. The *Document language* question on **New Change Request** is
+  pre-answered from it.
+
+  Three rules behind this, each guarding something that fails without an error:
+
+  * **"No preference" is not "English."** They are stored distinctly, so the
+    profile can show which one is true and the form knows whether it still has
+    to ask. Collapsing them would make the setting unobservable and would
+    re-ask an operator who deliberately chose English, forever.
+  * **Nothing is pre-selected without an answer behind it.** The first language
+    is no longer checked by position. Without a saved preference the question is
+    genuinely open, the radio group is `required`, and the form says where to
+    set the preference so it stops being asked.
+  * **A preference the product cannot honour is stated, never downgraded.** The
+    registry declares five languages; complete change documents exist in
+    English and German. A profile set to Spanish, French or Italian is kept —
+    it is your language, and the rest of the product adopts it as text is
+    translated — but the change-request form says so on the page and still
+    asks, instead of quietly producing an English document under a signature
+    block.
 - **The Change Request form's type picker and its text are administrator-owned.**
   A new page, **Administration → Change Types**, owns the options in the *type
   of change* picker and every sentence a chosen option contributes: the proposed

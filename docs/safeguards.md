@@ -7537,3 +7537,50 @@ through `translator.translate`, append). Result here: +69 lines per catalogue,
 zero reflow. Also: `git checkout -- app/translations/` **as root** leaves the
 catalogues root-owned and the next `pybabel compile` as `satom` dies with
 `PermissionError` — chown back before compiling.
+
+
+## §70 — `dict.get()` does not call `__missing__`, so it cannot see a translated language
+
+`cr_document._Localized` builds a language that exists only as a catalogue by
+overlaying it onto the authored English, and it does that in `__missing__`.
+`__missing__` is reached by SUBSCRIPTION alone. `dict.get()` never calls it.
+
+`_profile_text` asked with `profile.get(lang)`. For English and German — the two
+languages authored as Python literals — the key is really there, so it answered
+correctly and every test passed. For French, Italian and Spanish it answered
+`None` no matter how complete the catalogue was, and the fallback line asked the
+generic profile the same wrong way, so the action profile came back `{}`.
+
+The reason this survived is the order in which the two failures appear:
+
+* while the language is GATED (catalogue incomplete, or the administrator has
+  not offered it) `normalize_lang` degrades it to English *before* the lookup —
+  nothing raises, the document is simply English, and the operator concludes
+  "French is not translated yet";
+* the day the catalogue completes the gate opens, the degrade stops, and the
+  renderer reaches `p['label']` on an empty dict — `KeyError`, in front of an
+  approver waiting for paper.
+
+So completing a catalogue is what *detonates* it. Any work that finishes a
+language walks into this.
+
+**Rule.** A `_Localized` block is read with `block[lang]`, never `block.get(lang)`.
+`_lang_block` is the single place that does it, and it degrades to the authored
+English rather than to `{}` — an empty profile does not print an empty section,
+it raises on the first key read (`cr_i18n` states the same promise for the
+overlay: *never to a blank*).
+
+**Guard.** `tests/test_cr_doc_profile_overlay.py` (9 tests). The structural one
+asks the **AST**, not the text: a substring scan for `.get(` matches the
+docstrings that explain this rule, so it would pass with the defect present.
+
+**Checking it.** `pytest tests/test_cr_doc_profile_overlay.py -q` → 9 passed.
+Mutation harness `/tmp/mut2.py` on a1: **7 of 8 mutations bite**, measured by
+**rc** (only `rc==1` is a failure). The survivor — dropping the `isinstance`
+belt in `_lang_block` — survives with reason: no realistic block is a non-dict,
+and no test distinguishes it. Two mutations survived the FIRST pass and both
+were real findings, not noise: "degrade to the authored English" was the
+correct behaviour and the code had `{}`, and the generic-fallback branch was
+indistinguishable from dead code until a test built a profile that never went
+through `_localize_all`.
+

@@ -19,16 +19,39 @@ from ..extensions import db
 
 OBJECT_TYPES = ("server_policy", "backend", "wpp", "certificate")
 
+# COUNT THE OBJECTS, NOT THE CACHE ROWS.
+#
+# ``device_objects`` holds a device once per LAYER -- ``config`` from the
+# ordinary harvest and ``deep`` from the deep capture -- and the typed
+# projections inherit that. Counting projection rows therefore counted every
+# policy and every profile TWICE: on 2026-08-11 the Analytics inventory read
+# 12 server policies for a device with 6, and 48 web protection profiles for a
+# device with 24 -- exactly double, on every appliance. ``advisor.py`` already
+# deduplicates by name for the same reason; this module did not, so the page
+# and the assistant disagreed about the same fleet.
+#
+# Deduplicating by NAME rather than filtering to one layer on purpose: a device
+# that has only been deep-captured has no ``config`` layer, and a layer filter
+# would report it as holding nothing at all. Object names are unique per device
+# (they are the appliance's own mkey), so the distinct count IS the object
+# count, and it stays right if a third layer is ever added.
+#
+# ``backend`` and ``certificate`` are left as they are: pserver-list rows exist
+# only in the deep layer, and the certificate count already reads DISTINCT.
 _COUNT_SQL = {
     "server_policy":
-        "select appliance_id, count(*) c from device_server_policies "
-        "group by appliance_id",
+        "select o.appliance_id, count(distinct sp.name) c "
+        "from device_server_policies sp "
+        "join device_objects o on o.id = sp.object_id "
+        "group by o.appliance_id",
     "backend":
         "select appliance_id, count(*) c from device_objects "
         "where subtable = 'pserver-list' group by appliance_id",
     "wpp":
-        "select appliance_id, count(*) c from device_web_protection_profiles "
-        "group by appliance_id",
+        "select o.appliance_id, count(distinct w.name) c "
+        "from device_web_protection_profiles w "
+        "join device_objects o on o.id = w.object_id "
+        "group by o.appliance_id",
     "certificate":
         "select appliance_id, count(distinct mkey) c from device_objects "
         "where lower(logical_name) like '%certificate%' and mkey <> '' "

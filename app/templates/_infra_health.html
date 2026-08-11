@@ -78,7 +78,7 @@
         '<div class="text-muted small mb-2">'+esc(n.host)+' · '+esc(n.desc||'')+'</div>'+
         '<div class="ih-t-crit" style="font-size:.82rem;"><i class="bi bi-exclamation-octagon me-1"></i>unreachable</div>');
     }
-    var cpu=hs.load_pct, mem=hs.mem_pct, dsk=d0?d0.pct:null;
+    var cpu=hs.cpu_pct, mem=hs.mem_pct, dsk=d0?d0.pct:null;
     return card(head+
       '<div class="text-muted small mb-2">'+esc(n.host)+' · '+(hs.cpus||'?')+' CPU · '+gb(hs.mem_total_mb)+' RAM'+
       (hs.uptime_s?' · up '+Math.floor(hs.uptime_s/86400)+'d':'')+'</div>'+

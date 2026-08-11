@@ -456,8 +456,12 @@ _LIM = {"disk_warn_pct": 80, "disk_crit_pct": 92, "mem_warn_pct": 85,
 
 
 def _stats(disk=10.0, mem=10.0, load=10.0):
+    # ``cpu_pct``, not ``load_pct``: the CPU signal grades this container's own
+    # cgroup accounting. ``load_pct`` (the host's load average over the
+    # container's cores) was removed on 2026-08-11 — see safeguards §67 and
+    # tests/test_monitor_truthfulness.py.
     return {"hostname": "n1", "cpus": 4, "load": [0.4, 0.4, 0.4],
-            "load_pct": load, "mem_total_mb": 4096,
+            "load_scope": "host", "cpu_pct": load, "mem_total_mb": 4096,
             "mem_used_mb": int(4096 * mem / 100), "mem_pct": mem,
             "disks": [{"mount": "/", "total_gb": 20.0,
                        "used_gb": 20.0 * disk / 100, "pct": disk}]}
@@ -480,7 +484,7 @@ def test_disk_is_graded_and_the_incident_would_now_fire(pct, expected):
     assert g["status"] == expected
 
 
-def test_memory_and_load_are_graded_too():
+def test_memory_and_cpu_are_graded_too():
     assert hh.grade_stats(_stats(mem=97), _LIM)["signals"]["memory"]["status"] == "crit"
     assert hh.grade_stats(_stats(load=200), _LIM)["signals"]["load"]["status"] == "warn"
     assert hh.grade_stats(_stats(load=500), _LIM)["signals"]["load"]["status"] == "crit"

@@ -6,10 +6,12 @@ so the Monitoring dashboard renders whatever it can.
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import socket
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -62,6 +64,135 @@ def _meminfo() -> dict:
     return out
 
 
+# --- CPU -------------------------------------------------------------------
+# ``os.getloadavg()`` MUST NOT be used to grade this node. lxcfs does not
+# virtualise /proc/loadavg (nor /proc/uptime), so inside an LXC both are the
+# HYPERVISOR's. Dividing the host's load average by the container's core count
+# mixes a host numerator with a container denominator: on 2026-08-11 hypervisor06 sat
+# at load 6.6 -- 27% of its 24 cores, healthy -- and this function reported
+# "220% of 3 cores" on satom-node-2 and "165% of 4 cores" on satom-node-1 in
+# the same second, while every process in both containers was at 0.0% CPU.
+# Two containers cannot share an uptime and a load average to the decimal; that
+# they did is the proof. /proc/meminfo IS virtualised, which is why memory was
+# right and only CPU lied.
+#
+# The cgroup's own CPU accounting is the container's, so that is what we read.
+CPU_SAMPLE_FILE = "satom-cpu-sample.json"
+#: Below this the window is too short to mean anything -- and the caller is
+#: usually the health page, whose own render is the CPU being measured.
+CPU_MIN_WINDOW_S = 2.0
+#: Above this the counter is too stale to trust (suspend, clock jump).
+CPU_MAX_WINDOW_S = 3600.0
+CPU_INLINE_SAMPLE_S = 0.25
+
+
+def _cgroup_cpu_usec() -> int | None:
+    """Cumulative CPU time of THIS cgroup, in microseconds. cgroup v2, then v1."""
+    try:
+        for line in Path("/sys/fs/cgroup/cpu.stat").read_text().splitlines():
+            key, _, val = line.partition(" ")
+            if key == "usage_usec":
+                return int(val)
+    except Exception:
+        pass
+    try:  # cgroup v1 reports nanoseconds
+        return int(Path("/sys/fs/cgroup/cpuacct/cpuacct.usage")
+                   .read_text().strip()) // 1000
+    except Exception:
+        return None
+
+
+def _cpu_sample_path() -> Path:
+    return Path(tempfile.gettempdir()) / CPU_SAMPLE_FILE
+
+
+def _read_cpu_sample() -> dict | None:
+    """Previous (time, counter) sample, or None if it cannot be trusted.
+
+    Stamped with the hostname because ``data/`` is rsynced between the HA pair
+    and a peer's counter would produce a nonsense delta. The file lives in the
+    temp dir precisely so it is NOT replicated, but the stamp costs nothing and
+    the failure it prevents is silent.
+    """
+    try:
+        d = json.loads(_cpu_sample_path().read_text())
+    except Exception:
+        return None
+    if d.get("host") != socket.gethostname():
+        return None
+    return d if isinstance(d.get("t"), (int, float)) and \
+        isinstance(d.get("usec"), int) else None
+
+
+def _write_cpu_sample(t: float, usec: int) -> None:
+    try:
+        _cpu_sample_path().write_text(json.dumps(
+            {"host": socket.gethostname(), "t": t, "usec": usec}))
+    except Exception:
+        pass
+
+
+def cpu_pct() -> float | None:
+    """Percent of THIS container's cores busy. ``None`` when unmeasurable.
+
+    Averaged over the window since the last call -- ~15 min when the alert
+    timer is the caller, which is the smoothing the load average used to give.
+    A sub-second window would make a page render register as a CPU spike, so
+    windows shorter than :data:`CPU_MIN_WINDOW_S` fall back to a brief inline
+    sample and deliberately do NOT advance the stored one.
+    """
+    cpus = os.cpu_count() or 0
+    now, usec = time.time(), _cgroup_cpu_usec()
+    if not cpus or usec is None:
+        return None
+    prev = _read_cpu_sample()
+    if prev:
+        window = now - prev["t"]
+        # usec < prev means the cgroup was recreated (container restart).
+        if CPU_MIN_WINDOW_S <= window <= CPU_MAX_WINDOW_S and usec >= prev["usec"]:
+            _write_cpu_sample(now, usec)
+            return round(100.0 * (usec - prev["usec"]) / (window * 1e6 * cpus), 1)
+        if window < CPU_MIN_WINDOW_S:
+            return _cpu_pct_inline(cpus)
+    _write_cpu_sample(now, usec)
+    return _cpu_pct_inline(cpus)
+
+
+def _cpu_pct_inline(cpus: int) -> float | None:
+    a = _cgroup_cpu_usec()
+    if a is None:
+        return None
+    t0 = time.monotonic()
+    time.sleep(CPU_INLINE_SAMPLE_S)
+    b, elapsed = _cgroup_cpu_usec(), time.monotonic() - t0
+    if b is None or elapsed <= 0:
+        return None
+    return round(100.0 * (b - a) / (elapsed * 1e6 * cpus), 1)
+
+
+def container_uptime_s() -> int | None:
+    """Uptime of THIS container. /proc/uptime alone is the hypervisor's.
+
+    PID 1 of our PID namespace is the container's init, and its start time is
+    expressed in ticks since HOST boot -- the same origin /proc/uptime counts
+    from -- so the subtraction is well defined. On bare metal PID 1 started at
+    boot and the result degrades to the host uptime, which is then correct.
+    """
+    try:
+        host_up = float(Path("/proc/uptime").read_text().split()[0])
+    except Exception:
+        return None
+    try:
+        stat = Path("/proc/1/stat").read_text()
+        # comm (field 2) may contain spaces and parens: index past the LAST ')'
+        tail = stat[stat.rindex(")") + 2:].split()
+        ticks = float(tail[19])            # field 22 = starttime
+        hz = os.sysconf("SC_CLK_TCK") or 100
+        return max(0, int(host_up - ticks / hz))
+    except Exception:
+        return int(host_up)
+
+
 def host_stats() -> dict:
     mem = _meminfo()
     total_mb = int(mem.get("MemTotal", 0) / 1024) or None
@@ -86,21 +217,43 @@ def host_stats() -> dict:
         disks.append({"mount": label, "total_gb": round(du.total / 1e9, 1),
                       "used_gb": round(du.used / 1e9, 1),
                       "pct": round(100 * du.used / du.total, 1)})
-    uptime_s = None
-    try:
-        uptime_s = int(float(Path("/proc/uptime").read_text().split()[0]))
-    except Exception:
-        pass
     return {
         "hostname": socket.gethostname(),
         "cpus": cpus,
+        # The load average is the HYPERVISOR's inside an LXC. Kept because it
+        # is genuinely useful (a busy host slows us down) and labelled so, but
+        # NOT graded -- see the note above cpu_pct(). ``load_pct`` was removed
+        # rather than corrected: leaving the key would let a caller keep
+        # dividing a host numerator by a container denominator.
         "load": [round(v, 2) for v in (load1, load5, load15)] if load1 is not None else None,
-        "load_pct": round(100 * load1 / cpus, 1) if (load1 is not None and cpus) else None,
+        "load_scope": "host" if is_container() else "self",
+        "cpu_pct": cpu_pct(),
         "mem_total_mb": total_mb, "mem_used_mb": used_mb,
         "mem_pct": round(100 * used_mb / total_mb, 1) if (total_mb and used_mb is not None) else None,
         "disks": disks,
-        "uptime_s": uptime_s,
+        "uptime_s": container_uptime_s(),
     }
+
+
+def is_container() -> bool:
+    """True when /proc/loadavg and /proc/uptime describe someone else.
+
+    Each probe is tried INDEPENDENTLY. Chaining them with ``or`` inside one
+    ``try`` looked equivalent and was not: /proc/1/environ is root-only, so as
+    the unprivileged service user the PermissionError skipped the second probe
+    and this returned False on a machine that is plainly an LXC.
+    """
+    try:
+        if Path("/run/systemd/container").exists():
+            return True
+    except Exception:
+        pass
+    try:
+        if Path("/proc/1/environ").read_bytes().find(b"container=") >= 0:
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def service_status(units: tuple[str, ...] = MONITORED_UNITS) -> list[dict]:

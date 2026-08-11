@@ -156,12 +156,22 @@ def test_some_backends_down_is_warn_and_names_them():
     assert "192.0.2.212:80" in detail
 
 
-def test_health_check_disable_counts_as_down():
+def test_health_check_disable_counts_as_unverified_not_down():
+    """``healthCheckStatus: "disable"`` means NO health check is configured for
+    the member — the member's own ``status`` still reads 1 (up). This used to
+    be folded into "backend down" and printed ``crit — ALL backends down`` over
+    servers the appliance reported as up; on fortiweb08 that was 91 alerts and
+    302 consecutive hourly buckets without a single ``ok`` sample. Fail-closed
+    is kept (it leaves ``ok``), but the claim it makes is now true.
+    Full coverage in ``tests/test_monitor_truthfulness.py``."""
     members = dm.parse_pool_members(
         [dict(m, healthCheckStatus="disable") for m in MEMBERS_UP])
-    assert dm.classify_policy_sessions(
+    status, detail = dm.classify_policy_sessions(
         _row(), members, warn_num=0, crit_num=0, warn_ms=0,
-        fingerprint="a", prev_fingerprint="a")[0] == "crit"
+        fingerprint="a", prev_fingerprint="a")
+    assert status == "warn"
+    assert "ALL backends down" not in detail
+    assert "NO health check" in detail
 
 
 def test_slow_app_response_warns():

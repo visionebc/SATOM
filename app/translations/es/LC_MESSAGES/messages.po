@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-08-10 21:28+0000\n"
+"POT-Creation-Date: 2026-08-10 23:52+0000\n"
 "PO-Revision-Date: 2026-08-10 12:11+0000\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: es\n"
@@ -21,6 +21,12 @@ msgstr ""
 #: app/templates/search/index.html:156
 msgid "\". Try a broader query or check the spelling."
 msgstr "\". Intente una consulta más amplia o verifique la ortografía."
+
+#: app/templates/upgrade_flow/progress.html:32
+#: app/templates/upgrade_flow/progress.html:117
+#, python-format
+msgid "%(done)s of %(total)s appliance(s) reported — %(ok)s ok, %(failed)s failed."
+msgstr "%(done)s de %(total)s dispositivo(s) informaron — %(ok)s correctos, %(failed)s fallidos."
 
 #: app/templates/settings/index.html:1000
 msgid "(Active Directory)"
@@ -423,7 +429,7 @@ msgstr ". Esto contiene los emisores"
 msgid ". You complete the first-boot dialog on the hypervisor console and press Resume."
 msgstr "Completas el diálogo de primera carga en la consola del hipervisor y presionas Continuar."
 
-#: app/templates/change_requests/detail.html:286
+#: app/templates/change_requests/detail.html:333
 msgid ".csv"
 msgstr "csv"
 
@@ -1495,9 +1501,11 @@ msgstr "Apariencia"
 #: app/templates/adc_api/index.html:220
 #: app/templates/api_explorer/index.html:169
 #: app/templates/attack_search/index.html:75
+#: app/templates/change_requests/detail.html:235
 #: app/templates/fac_api/index.html:107 app/templates/faz_api/index.html:222
 #: app/templates/integrations/index.html:77 app/templates/search/index.html:39
-#: app/templates/search/index.html:98
+#: app/templates/search/index.html:98 app/templates/upgrade_flow/index.html:45
+#: app/templates/upgrade_flow/progress.html:59
 msgid "Appliance"
 msgstr "Dispositivo"
 
@@ -1539,6 +1547,10 @@ msgstr "Dispositivos"
 #: app/templates/metrics/index.html:83
 msgid "Appliances Touched"
 msgstr "Dispositivos tocados"
+
+#: app/templates/upgrade_flow/index.html:161
+msgid "Appliances per wave"
+msgstr "Dispositivos por ola"
 
 #: app/templates/settings/index.html:294
 msgid "Application"
@@ -1605,7 +1617,7 @@ msgstr "Aplicar al dispositivo"
 msgid "Apply to devices"
 msgstr "Aplicar a dispositivos"
 
-#: app/templates/change_requests/detail.html:303
+#: app/templates/change_requests/detail.html:350
 #: app/templates/change_requests/form.html:189
 msgid "Approval"
 msgstr "Aprobación"
@@ -2058,6 +2070,10 @@ msgstr "Puntos de referencia"
 msgid "Basic structure ready"
 msgstr "Estructura básica lista"
 
+#: app/templates/upgrade_flow/index.html:192
+msgid "Batched rollouts"
+msgstr "Despliegues por lotes"
+
 #: app/templates/appids/index.html:144
 msgid "Bearer token"
 msgstr "Token de portador"
@@ -2124,13 +2140,17 @@ msgstr "Partición de arranque"
 msgid "Boot this appliance from its alternate firmware partition (rollback / downgrade — real in-app push + reboot)"
 msgstr "Inicie el dispositivo desde la partición de firmware alternativo (desplazamiento hacia atrás / degradación - verdadero empuje dentro de la aplicación + reinicio)"
 
-#: app/templates/auth/profile.html:137
+#: app/templates/auth/profile.html:143
 msgid "Bootstrap 5.3 + SATOM theme"
 msgstr "Bootstrap 5.3 + SATOM theme"
 
 #: app/templates/web_protection/overview.html:84
 msgid "Bot Mitigation"
 msgstr "Mitigación de Bots"
+
+#: app/templates/upgrade_flow/index.html:217
+msgid "Both live on the change itself: the consolidated spreadsheet is generated from its frozen inventory (merged across every bound pre-upgrade run), and execution is its one-shot scheduled action, re-gated at fire time against the approved window."
+msgstr "Ambos viven en el cambio mismo: la hoja de cálculo consolidada se genera a partir de su inventario congelado (fusionado a lo largo de cada ejecución previa a la actualización), y la ejecución es su acción programada única, reevaluada en tiempo de disparo contra la ventana aprobada."
 
 #: app/templates/settings/index.html:1912
 msgid "Both slots are read in a single pass — one dedupe check, one bundle rebuild. Re-importing a certificate already held updates it in place."
@@ -2451,6 +2471,11 @@ msgstr ""
 "'\n"
 "Capturar WPP completo + profundidad de política"
 
+#: app/templates/change_requests/detail.html:225
+#, python-format
+msgid "Captured by upgrade preparation #%(id)s."
+msgstr "Capturado por la preparación de actualización #%(id)s."
+
 #: app/templates/section_config/section.html:408
 msgid "Captures"
 msgstr "Capturas"
@@ -2545,6 +2570,7 @@ msgid "Challenge"
 msgstr "Desafío"
 
 #: app/templates/appliances/upgrade_prep.html:86
+#: app/templates/upgrade_flow/index.html:222
 msgid "Change"
 msgstr "Cambio"
 
@@ -2579,7 +2605,8 @@ msgstr "Solicitud de Cambio"
 #: app/templates/change_requests/form.html:9
 #: app/templates/change_requests/index.html:11
 #: app/templates/change_requests/index.html:18
-#: app/templates/partials/nav_automation.html:46
+#: app/templates/partials/nav_automation.html:58
+#: app/templates/upgrade_flow/index.html:15
 msgid "Change Requests"
 msgstr "Solicitudes de Cambio"
 
@@ -2604,11 +2631,15 @@ msgstr "Los documentos de cambio pueden generarse en"
 msgid "Change owner (Verantwortlicher)"
 msgstr "Cambiar propietario (Responsable)"
 
+#: app/templates/upgrade_flow/index.html:99
+msgid "Change request (CRQ)"
+msgstr "Solicitud de cambio (CRQ)"
+
 #: app/templates/high_availability/index.html:171
 msgid "Change the mode on the PRIMARY node — this node's database is read-only"
 msgstr "Cambiar el modo en el nodo PRIMARIO — esta base de datos del nodo es de solo lectura"
 
-#: app/templates/change_requests/detail.html:318
+#: app/templates/change_requests/detail.html:365
 msgid "Change ticket"
 msgstr "Cambiar ticket"
 
@@ -2792,7 +2823,7 @@ msgstr "Cliente"
 msgid "Client IP"
 msgstr "Dirección IP del cliente"
 
-#: app/templates/change_requests/detail.html:394
+#: app/templates/change_requests/detail.html:441
 msgid "Client-facing draft — sending is out of scope; use \"Mark notified\" once delivered."
 msgstr "Borrador para clientes - El envío está fuera de alcance; usar \"Marcado notificado\" una vez entregado."
 
@@ -2908,7 +2939,7 @@ msgstr "Frecuencia de recolección"
 msgid "Collector"
 msgstr "Recolector"
 
-#: app/templates/change_requests/detail.html:278
+#: app/templates/change_requests/detail.html:325
 msgid "Column ORDER is fixed regardless of what you tick, so two exports of the same change are comparable. Ticking nothing exports the default five columns rather than producing an empty file."
 msgstr "El orden de las columnas está fijado independientemente de lo que marque, por lo que dos exportaciones de los mismos cambios son comparables. Marcar nada exporta las cinco columnas predeterminadas en lugar de producir un archivo vacío."
 
@@ -2951,7 +2982,7 @@ msgstr "Comparar"
 msgid "Compare A → B"
 msgstr "Comparar A → B"
 
-#: app/templates/change_requests/detail.html:230
+#: app/templates/change_requests/detail.html:277
 msgid "Compare against the devices now"
 msgstr "Comparar con los dispositivos actuales"
 
@@ -3002,6 +3033,7 @@ msgid "Config SoT"
 msgstr "Configuración SoT"
 
 #: app/templates/appliances/upgrade_prep.html:13
+#: app/templates/upgrade_flow/index.html:37
 msgid "Config backup"
 msgstr "Copia de seguridad de la configuración"
 
@@ -3428,6 +3460,14 @@ msgstr "Cliente"
 #: app/templates/appids/index.html:100
 msgid "Customer column"
 msgstr "Columna de Cliente"
+
+#: app/templates/upgrade_flow/index.html:223
+msgid "Customer impact"
+msgstr "Impacto al cliente"
+
+#: app/templates/upgrade_flow/index.html:214
+msgid "Customer impact and execution"
+msgstr "Impacto al cliente y ejecución"
 
 #: app/templates/web_protection/signature_policy.html:29
 msgid "DB cache"
@@ -3875,7 +3915,7 @@ msgstr "Desarrollo"
 #: app/templates/analysis/index.html:226 app/templates/analysis/index.html:252
 #: app/templates/architecture/index.html:106
 #: app/templates/backups/list.html:156 app/templates/cert_manager/index.html:46
-#: app/templates/change_requests/detail.html:238
+#: app/templates/change_requests/detail.html:285
 #: app/templates/import_backup/index.html:160
 #: app/templates/lua_studio/editor.html:65
 #: app/templates/monitoring/_probe_page.html:304
@@ -3905,7 +3945,7 @@ msgstr "Clasificación de Dispositivos"
 msgid "Device HA posture"
 msgstr "Postura de HA del dispositivo"
 
-#: app/templates/partials/nav_automation.html:39
+#: app/templates/partials/nav_automation.html:51
 #: app/templates/provisioning/device_detail.html:9
 #: app/templates/provisioning/device_index.html:9
 #: app/templates/provisioning/device_index.html:16
@@ -4137,7 +4177,7 @@ msgstr "Descargar"
 msgid "Download .md"
 msgstr "Descargar .md"
 
-#: app/templates/change_requests/detail.html:282
+#: app/templates/change_requests/detail.html:329
 msgid "Download .xlsx"
 msgstr "Descargar .xlsx"
 
@@ -4170,7 +4210,7 @@ msgstr "Tiempo de inactividad"
 msgid "Drift events"
 msgstr "Eventos de deriva"
 
-#: app/templates/change_requests/detail.html:218
+#: app/templates/change_requests/detail.html:265
 msgid "Drift vs. the devices right now:"
 msgstr "Desviación frente a los dispositivos en este momento:"
 
@@ -4265,6 +4305,10 @@ msgstr "Cada copia's VIP obtiene un"
 #: app/templates/workspace/policy_detail.html:179
 msgid "Each rule routes matching requests to a back-end pool. Use"
 msgstr "Cada regla enruta las solicitudes coincidentes a un grupo de backend. Utilice"
+
+#: app/templates/upgrade_flow/index.html:158
+msgid "Each wave is titled “… — wave k/N”."
+msgstr "Cada ola se titula “… — onda k/N”."
 
 #: app/templates/settings/index.html:3385
 msgid "Each works one time if you lose your authenticator."
@@ -4657,6 +4701,16 @@ msgstr "Ejecutar Solicitud"
 msgid "Execute write API calls"
 msgstr "Ejecutar llamadas a la API de escritura"
 
+#: app/templates/upgrade_flow/index.html:223
+#: app/templates/upgrade_flow/progress.html:2
+#: app/templates/upgrade_flow/progress.html:10
+msgid "Execution"
+msgstr "Ejecución"
+
+#: app/templates/upgrade_flow/progress.html:88
+msgid "Execution runs out of process, in the scheduler, and is re-authorized against the approved window at fire time. This button only brings the scheduled fire forward; it does not bypass the window."
+msgstr "La ejecución se realiza fuera del proceso, en el programador, y se vuelve a autorizar contra la ventana aprobada en el momento de disparo. Este botón solo adelanta el disparo programado; no omite la ventana."
+
 #: app/templates/logs/index.html:106
 msgid "Existing logs"
 msgstr "Registros existentes"
@@ -4727,7 +4781,7 @@ msgstr "Exportar"
 msgid "Export CSV"
 msgstr "Exportar CSV"
 
-#: app/templates/change_requests/detail.html:265
+#: app/templates/change_requests/detail.html:312
 msgid "Export columns"
 msgstr "Exportar columnas"
 
@@ -4751,7 +4805,7 @@ msgstr "Servidor SMTP externo (tercera parte)"
 msgid "External backup server"
 msgstr "Servidor de copia de seguridad externa"
 
-#: app/templates/change_requests/detail.html:299
+#: app/templates/change_requests/detail.html:346
 msgid "External change record"
 msgstr "Registro de cambio externo"
 
@@ -4940,8 +4994,8 @@ msgstr "Clave Firecrawl (opcional)"
 #: app/templates/appliances/upgrade_prep.html:27
 #: app/templates/appliances/upgrade_prep.html:86
 #: app/templates/backups/list.html:134 app/templates/base.html:508
-#: app/templates/base.html:871 app/templates/firmware/index.html:9
-#: app/templates/firmware/index.html:17
+#: app/templates/base.html:871 app/templates/change_requests/detail.html:236
+#: app/templates/firmware/index.html:9 app/templates/firmware/index.html:17
 #: app/templates/import_backup/index.html:44
 #: app/templates/import_backup/index.html:161
 #: app/templates/system_backup/index.html:88
@@ -4992,9 +5046,21 @@ msgstr "Repositorio de firmware"
 msgid "Firmware source-of-truth repository"
 msgstr "Repositorio de fuente de verdad del firmware"
 
+#: app/templates/upgrade_flow/index.html:157
+msgid "Firmware upgrade — batched rollout"
+msgstr "Actualización de firmware — despliegue por lotes"
+
+#: app/templates/upgrade_flow/index.html:107
+msgid "Firmware upgrade — maintenance window"
+msgstr "Actualización de firmware — ventana de mantenimiento"
+
 #: app/templates/appids/index.html:88
 msgid "First row is a header"
 msgstr "La primera fila es un encabezado"
+
+#: app/templates/upgrade_flow/index.html:165
+msgid "First window start"
+msgstr "Primer ventana inicio"
 
 #: app/templates/architecture/index.html:45
 msgid "Fit"
@@ -5047,6 +5113,10 @@ msgstr "Siga el tablero"
 #: app/templates/cert_manager/detail.html:108
 msgid "For a planned change, schedule the swap via a"
 msgstr "Para un cambio planeado, programa el intercambio mediante un"
+
+#: app/templates/upgrade_flow/index.html:151
+msgid "For a rollout too large for one window: the appliances are chunked in name order, and each chunk gets a change of its own so the first group can be watched before the next one is approved. Nothing about approval, execution or the customer-impact export changes — a wave is a change request like any other."
+msgstr "Para un lanzamiento demasiado grande para una ventana: los dispositivos se agrupan por orden de nombre y cada grupo recibe su propio cambio, de manera que el primer grupo pueda ser supervisado antes de aprobar el siguiente. Nada sobre aprobación, ejecución o cambios en la exportación del impacto al cliente — una oleada es una solicitud de cambio como cualquier otra."
 
 #: app/templates/appids/index.html:122
 msgid "For the nightly action, point at a URL that serves the catalog (the file that \"changes every day\"). It reuses the saved column mapping. Create the scheduled action from Automation → Scheduled Actions ("
@@ -5253,6 +5323,10 @@ msgstr "GET —"
 msgid "GUI / admin cert"
 msgstr "Certificado GUI / administrador"
 
+#: app/templates/upgrade_flow/index.html:173
+msgid "Gap"
+msgstr "Intervalo"
+
 #: app/templates/analysis/index.html:213
 #: app/templates/provisioning/device_index.html:161
 #: app/templates/segments/index.html:68
@@ -5453,6 +5527,7 @@ msgstr "Salud"
 
 #: app/templates/appliances/upgrade_prep.html:14
 #: app/templates/appliances/upgrade_prep.html:58
+#: app/templates/upgrade_flow/index.html:38
 msgid "Health battery (SSH)"
 msgstr "Batería de salud (SSH)"
 
@@ -5856,7 +5931,7 @@ msgstr "Instalado"
 msgid "Integration hooks (your Python)"
 msgstr "Puntos de integración (su Python)"
 
-#: app/templates/change_requests/detail.html:352
+#: app/templates/change_requests/detail.html:399
 msgid "Integration log"
 msgstr "Registro de integración"
 
@@ -5919,6 +5994,10 @@ msgstr "Emisor CN"
 #: app/templates/partials/release_notes_modal.html:130
 msgid "Issues"
 msgstr "Problemas"
+
+#: app/templates/upgrade_flow/index.html:33
+msgid "It runs against:"
+msgstr "Se ejecuta contra:"
 
 #: app/templates/provisioning/index.html:42
 msgid "Items"
@@ -6105,6 +6184,10 @@ msgstr "Último valor capturado en la cosecha, no es una prueba en vivo."
 #: app/templates/backups/list.html:111
 msgid "Latest Backup"
 msgstr "Última Copia de Seguridad"
+
+#: app/templates/upgrade_flow/index.html:47
+msgid "Latest pre-upgrade"
+msgstr "Última versión previa a la actualización"
 
 #: app/templates/system_backup/index.html:272
 msgid "Latest push (UTC)"
@@ -6442,7 +6525,7 @@ msgstr "Modo de mantenimiento"
 msgid "Maintenance mode - hidden from operators"
 msgstr "Modo de mantenimiento - oculto a los operadores"
 
-#: app/templates/change_requests/detail.html:389
+#: app/templates/change_requests/detail.html:436
 msgid "Maintenance notice"
 msgstr "Notificación de mantenimiento"
 
@@ -6614,6 +6697,11 @@ msgstr "Memoria (MB)"
 msgid "Memory usage"
 msgstr "Uso de memoria"
 
+#: app/templates/change_requests/detail.html:227
+#, python-format
+msgid "Merged across %(count)s bound pre-upgrade runs."
+msgstr "Combinado a través de %(count)s ejecuciones ligadas anteriores a la actualización."
+
 #: app/templates/analysis/adc.html:143 app/templates/fac_api/index.html:115
 #: app/templates/provisioning/apply.html:30
 #: app/templates/registry/index.html:136
@@ -6732,7 +6820,7 @@ msgid "Multi (SNI)"
 msgstr "Múltiple (SNI)"
 
 # revisado a mano
-#: app/templates/auth/profile.html:129
+#: app/templates/auth/profile.html:135
 msgid "Multi-user appliance management console built on Flask + SQLAlchemy. OWASP-hardened with full audit logging, RBAC, and encrypted credential storage."
 msgstr "Consola de gestión multiusuario de appliances construida en Flask + SQLAlchemy. Acondicionada según OWASP con registro de auditoría completo, RBAC y almacenamiento de credenciales cifrado."
 
@@ -6897,7 +6985,7 @@ msgstr "NetBox"
 msgid "NetBox device id"
 msgstr "ID de dispositivo NetBox"
 
-#: app/templates/change_requests/detail.html:326
+#: app/templates/change_requests/detail.html:373
 msgid "NetBox window"
 msgstr "Ventana de NetBox"
 
@@ -7179,6 +7267,10 @@ msgstr "No se han configurado dispositivos FortiWeb"
 msgid "No REST endpoint on this firmware"
 msgstr "No hay punto final REST en esta firma de firmware"
 
+#: app/templates/upgrade_flow/progress.html:84
+msgid "No action is bound yet. Approve and schedule the change first — the bound one-shot action is what this page watches."
+msgstr "Ninguna acción está vinculada aún. Aproba y programa el cambio primero — la acción de un solo uso vinculada es lo que observa esta página."
+
 #: app/templates/global_home/index.html:109
 msgid "No active ADOM manages this kind"
 msgstr "Ningún ADOM activo gestiona este tipo"
@@ -7190,6 +7282,10 @@ msgstr "Sin dirección, sin DNS, sin registro — ninguno de los demás componen
 #: app/templates/analysis/unavailable.html:12
 msgid "No analysis page is built for this ADOM yet."
 msgstr "Aún no se ha construido una página de análisis para este ADOM."
+
+#: app/templates/upgrade_flow/index.html:32
+msgid "No appliance of a type the pre-upgrade supports is visible to you."
+msgstr "Ningún dispositivo del tipo que el pre-actualización soporta es visible para usted."
 
 #: app/templates/search/index.html:200
 msgid "No appliances"
@@ -7333,7 +7429,7 @@ msgstr "No hay puntos finales registrados"
 msgid "No endpoints loaded"
 msgstr "No se han cargado puntos finales"
 
-#: app/templates/change_requests/detail.html:382
+#: app/templates/change_requests/detail.html:429
 msgid "No events recorded yet."
 msgstr "Aún no se han registrado eventos."
 
@@ -7478,11 +7574,15 @@ msgstr "Aún no se han asignado políticas."
 msgid "No pre-flight has ever been recorded for this appliance."
 msgstr "Nunca se ha registrado un preflight para este dispositivo."
 
+#: app/templates/upgrade_flow/progress.html:46
+msgid "No pre-upgrade baseline for:"
+msgstr "No hay línea base previa a la actualización para:"
+
 #: app/templates/advisor/index.html:23
 msgid "No provider"
 msgstr "Sin proveedor"
 
-#: app/templates/change_requests/detail.html:255
+#: app/templates/change_requests/detail.html:302
 msgid "No published services recorded"
 msgstr "No se registraron servicios publicados"
 
@@ -7616,6 +7716,10 @@ msgstr "No hay cambios no guardados"
 msgid "No updates run yet."
 msgstr "Aún no se ha ejecutado ninguna actualización."
 
+#: app/templates/upgrade_flow/index.html:244
+msgid "No upgrade change request has been raised yet."
+msgstr "Aún no se ha elevado ninguna solicitud de cambio para una actualización."
+
 #: app/templates/users/_panel.html:156
 msgid "No users found"
 msgstr "No se encontraron usuarios"
@@ -7705,6 +7809,10 @@ msgstr "No encontrado en ninguna fuente:"
 msgid "Not runnable"
 msgstr "No ejecutable"
 
+#: app/templates/upgrade_flow/progress.html:97
+msgid "Not startable right now:"
+msgstr "No se puede iniciar en este momento:"
+
 #: app/templates/provisioning/device_index.html:67
 msgid "Not unattended — a run sits waiting until somebody acts on it."
 msgstr "No sin supervisión — una ejecución espera hasta que alguien actúe sobre ella."
@@ -7770,7 +7878,7 @@ msgstr "Nada marcado = todos los puertos del dispositivo, como una serie. Marcar
 msgid "Nothing to report — none of the settings this page reads are present in the cache yet."
 msgstr "No hay informes — ninguna de las configuraciones que esta página lee está presente aún en la caché."
 
-#: app/templates/change_requests/detail.html:257
+#: app/templates/change_requests/detail.html:304
 msgid "Nothing was captured when this change was raised — the devices were unreachable, or they publish no front-end object (FortiAnalyzer and FortiAuthenticator do not)."
 msgstr "No se capturó nada cuando se realizó este cambio — los dispositivos eran inaccesibles, o no publican ningún objeto de interfaz frontal (FortiAnalyzer y FortiAuthenticator no lo hacen)."
 
@@ -7895,6 +8003,10 @@ msgstr "Un transporte JSON-RPC — mantener \"jsonrpc\" a menos que aparezca una
 msgid "One card per"
 msgstr "Una tarjeta por"
 
+#: app/templates/upgrade_flow/index.html:100
+msgid "One change for the whole window, citing every pre-upgrade run above."
+msgstr "Un cambio para toda la ventana, citando cada ejecución previa a la actualización mencionada anteriormente."
+
 #: app/templates/settings/index.html:1559
 msgid "One credential set per provider — switching provider and back never loses them. Values marked"
 msgstr "Un conjunto de credenciales por proveedor — cambiar de proveedor y volver nunca las pierde. Valores marcados"
@@ -7902,6 +8014,10 @@ msgstr "Un conjunto de credenciales por proveedor — cambiar de proveedor y vol
 #: app/templates/system_backup/index.html:520
 msgid "One device's JSON to an older version"
 msgstr "Convertir el JSON de un dispositivo a una versión anterior"
+
+#: app/templates/upgrade_flow/index.html:18
+msgid "One maintenance window, four stages: pre-flight every appliance in the window, raise a single change request that cites all of that evidence, export the consolidated customer impact, then execute inside the approved window."
+msgstr "Una ventana de mantenimiento, cuatro etapas: pre-vuelo de cada dispositivo en la ventana, presentar una única solicitud de cambio que cite toda esa evidencia, exportar el impacto consolidado al cliente, luego ejecutar dentro de la ventana aprobada."
 
 #: app/templates/monitoring/_probe_page.html:477
 msgid "One probe per interface"
@@ -7922,6 +8038,10 @@ msgstr "Una sección por nodo."
 #: app/templates/settings/index.html:1138
 msgid "One source at a time. A green tick for \"the chain\" would hide the one you are editing being broken."
 msgstr "Una fuente a la vez. Una marca de verificación verde para \"la cadena\" ocultaría la que está rota mientras editas."
+
+#: app/templates/upgrade_flow/index.html:147
+msgid "One wave = one ordinary change request, with its own window and its own approval."
+msgstr "Una ola = una solicitud de cambio ordinaria, con su propia ventana y su propio aprobamiento."
 
 #: app/templates/appliances/index.html:45
 msgid "Online"
@@ -7967,6 +8087,11 @@ msgstr "Abrir Administrador de Certificados"
 #: app/templates/architecture/index.html:27
 msgid "Open Server Policy"
 msgstr "Política de Servidor Abierto"
+
+#: app/templates/upgrade_flow/progress.html:15
+#: app/templates/upgrade_flow/progress.html:85
+msgid "Open change"
+msgstr "Abrir cambio"
 
 #: app/templates/database/index.html:128
 #: app/templates/database/report_edit.html:11
@@ -8081,6 +8206,10 @@ msgstr "Opciones"
 #: app/templates/auth/two_factor.html:52
 msgid "Or enter one of your backup codes."
 msgstr "O ingresa uno de tus códigos de respaldo."
+
+#: app/templates/upgrade_flow/index.html:146
+msgid "Or split the same selection into waves"
+msgstr "O dividir la misma selección en oleadas"
 
 #: app/templates/settings/index.html:955 app/templates/settings/index.html:2784
 msgid "Order"
@@ -8220,6 +8349,10 @@ msgstr "Pico"
 #: app/templates/jobs/manager.html:40 app/templates/provisioning/index.html:66
 msgid "Pending"
 msgstr "Pendiente"
+
+#: app/templates/upgrade_flow/progress.html:53
+msgid "Per appliance"
+msgstr "Por dispositivo"
 
 #: app/templates/capacity/index.html:15
 msgid "Per model × firmware:"
@@ -8392,7 +8525,7 @@ msgstr "Políticas por dispositivo"
 #: app/templates/analysis/index.html:153 app/templates/analysis/index.html:204
 #: app/templates/appliances/inspector.html:48
 #: app/templates/cert_manager/index.html:120
-#: app/templates/change_requests/detail.html:238
+#: app/templates/change_requests/detail.html:285
 #: app/templates/search/index.html:113
 msgid "Policy"
 msgstr "Política"
@@ -8522,6 +8655,14 @@ msgstr "Seleccionado previamente de tu"
 msgid "Pre-selected when registering a new appliance"
 msgstr "Preestablecido al registrar un nuevo dispositivo"
 
+#: app/templates/change_requests/detail.html:235
+msgid "Pre-upgrade"
+msgstr "Ante la actualización"
+
+#: app/templates/upgrade_flow/index.html:26
+msgid "Pre-upgrade (bulk)"
+msgstr "Pre-actualización (masivo)"
+
 #: app/templates/web_protection/signature_policy.html:26
 msgid "Predefined"
 msgstr "Predefinido"
@@ -8631,6 +8772,7 @@ msgstr "Proceso"
 #: app/templates/firmware/index.html:60 app/templates/firmware/index.html:118
 #: app/templates/global_home/index.html:92 app/templates/naming/index.html:35
 #: app/templates/provisioning/device_index.html:137
+#: app/templates/upgrade_flow/index.html:46
 msgid "Product"
 msgstr "Producto"
 
@@ -8671,6 +8813,10 @@ msgstr "Perfiles"
 #: app/templates/provisioning/device_index.html:224
 msgid "Progress"
 msgstr "Progreso"
+
+#: app/templates/upgrade_flow/progress.html:39
+msgid "Progress is measured in appliances reported, not in elapsed window time."
+msgstr "El progreso se mide en los dispositivos reportados, no en el tiempo transcurrido de la ventana."
 
 #: app/templates/high_availability/index.html:292
 msgid "Promote this node to PRIMARY"
@@ -8850,7 +8996,7 @@ msgstr "Búsqueda rápida..."
 msgid "RADIUS host"
 msgstr "Host de RADIUS"
 
-#: app/templates/auth/profile.html:134
+#: app/templates/auth/profile.html:140
 msgid "RBAC Roles"
 msgstr "Roles de RBAC"
 
@@ -8878,9 +9024,17 @@ msgstr "Solicitar un cambio para planificar una ventana de mantenimiento y restr
 msgid "Raise change request"
 msgstr "Solicitar cambio"
 
-#: app/templates/change_requests/detail.html:343
+#: app/templates/change_requests/detail.html:390
 msgid "Raise change ticket via integration hooks"
 msgstr "Crear una solicitud de cambio mediante ganchos de integración"
+
+#: app/templates/upgrade_flow/index.html:183
+msgid "Raise one change per wave"
+msgstr "Presente un cambio por ola"
+
+#: app/templates/upgrade_flow/index.html:133
+msgid "Raise one change request"
+msgstr "Registrar una solicitud de cambio"
 
 #: app/templates/change_requests/form.html:34
 msgid "Raised from"
@@ -8959,6 +9113,10 @@ msgstr "De solo lectura (definido previamente)"
 msgid "Read-only view. Writes go through the"
 msgstr "Vista de solo lectura. Las escrituras pasan por el"
 
+#: app/templates/upgrade_flow/index.html:27
+msgid "Read-only. Config backup, health battery, maintenance permission, and an HTTP baseline of every published service — persisted as citable evidence."
+msgstr "Sólo lectura. Copia de seguridad de configuración, batería de salud, permiso de mantenimiento y una base límite HTTP de cada servicio publicado — persistida como evidencia citable."
+
 #: app/templates/partials/release_notes_modal.html:117
 msgid "Reads docs.fortinet.com — no appliance needed. New versions merge in."
 msgstr "Lee documentos en docs.fortinet.com — no se requiere dispositivo. Nuevas versiones se fusionan dentro."
@@ -8979,6 +9137,7 @@ msgstr "Servidores reales (retrocesos)"
 #: app/templates/change_requests/form.html:159
 #: app/templates/exceptions/list.html:34 app/templates/exceptions/list.html:116
 #: app/templates/provisioning/index.html:131
+#: app/templates/upgrade_flow/index.html:126
 msgid "Reason"
 msgstr "Razón"
 
@@ -9277,7 +9436,7 @@ msgstr "Reportador"
 msgid "Reports"
 msgstr "Informes"
 
-#: app/templates/auth/profile.html:132 app/templates/settings/index.html:505
+#: app/templates/auth/profile.html:138 app/templates/settings/index.html:505
 msgid "Repository"
 msgstr "Repositorio"
 
@@ -9397,6 +9556,7 @@ msgstr "Restaurar propuesta"
 
 #: app/templates/cert_manager/renewals.html:154
 #: app/templates/self_update/index.html:130
+#: app/templates/upgrade_flow/progress.html:60
 #: app/templates/workspace/clone_report.html:18
 #: app/templates/workspace/clone_report.html:74
 msgid "Result"
@@ -9458,6 +9618,7 @@ msgstr "Revocar certificados caducados en la Autoridad de Certificación (CA)"
 #: app/templates/change_requests/detail.html:101
 #: app/templates/change_requests/form.html:118
 #: app/templates/change_requests/index.html:45
+#: app/templates/upgrade_flow/index.html:118
 msgid "Risk"
 msgstr "Riesgo"
 
@@ -9539,6 +9700,12 @@ msgstr "Regla — todo lo que coincida"
 msgid "Run"
 msgstr "Ejecutar"
 
+#: app/templates/upgrade_flow/progress.html:33
+#: app/templates/upgrade_flow/progress.html:118
+#, python-format
+msgid "Run #%(id)s: %(status)s"
+msgstr "Ejecutar #%(id)s: %(status)s"
+
 #: app/templates/scheduled_actions/history.html:18
 msgid "Run History"
 msgstr "Historial de ejecución"
@@ -9583,6 +9750,10 @@ msgstr "Registro de ejecución"
 msgid "Run now"
 msgstr "Ejecutar ahora"
 
+#: app/templates/upgrade_flow/index.html:85
+msgid "Run pre-upgrade on selected"
+msgstr "Ejecute pre-upgrade en los seleccionados"
+
 #: app/templates/appliances/upgrade_prep.html:17
 msgid "Run preparation"
 msgstr "Ejecutar preparación"
@@ -9625,6 +9796,10 @@ msgstr "Ejecuta"
 msgid "Runs against"
 msgstr "Se ejecuta contra"
 
+#: app/templates/upgrade_flow/index.html:82
+msgid "Runs one appliance at a time, on purpose: each takes a configuration backup, and firing them all at one backup server is how the pre-flight becomes the incident. Up to"
+msgstr "Ejecuta un dispositivo a la vez, de propósito: cada uno realiza una copia de seguridad de la configuración, y dispararlos todos al mismo servidor de respaldo es cómo el pre-flight se convierte en un incidente. Hasta"
+
 #: app/templates/integrations/hook.html:8
 msgid "Runs out of process, as an unprivileged user, with a hard timeout. It receives only the secrets it declares below, and its output is truncated and redacted before it is stored."
 msgstr "Se ejecuta fuera del proceso, como usuario no privilegiado, con un tiempo de espera duro. Recibe únicamente los secretos que declara a continuación, y su salida se trunca y redacta antes de almacenarse."
@@ -9649,7 +9824,7 @@ msgstr "SANs"
 msgid "SATOM"
 msgstr "SATOM"
 
-#: app/templates/change_requests/detail.html:334
+#: app/templates/change_requests/detail.html:381
 msgid "SATOM asked NetBox and it refused or never answered — a device may still be shown in maintenance there. This is deliberately not the same as “no window requested”."
 msgstr "SATOM consultó a NetBox y este se negó o no respondió, lo cual podría hacer que un dispositivo aparezca en mantenimiento allí. Esto no es lo mismo que \"no se solicitó ninguna ventana\"."
 
@@ -10004,7 +10179,7 @@ msgstr "Programar actualización"
 msgid "Scheduled Action"
 msgstr "Acción Programada"
 
-#: app/templates/partials/nav_automation.html:36
+#: app/templates/partials/nav_automation.html:48
 #: app/templates/scheduled_actions/form.html:9
 #: app/templates/scheduled_actions/history.html:9
 #: app/templates/scheduled_actions/index.html:11
@@ -10386,7 +10561,7 @@ msgid "Server type"
 msgstr "Tipo de servidor"
 
 #: app/templates/analysis/index.html:153
-#: app/templates/change_requests/detail.html:238
+#: app/templates/change_requests/detail.html:285
 #: app/templates/settings/index.html:388
 msgid "Service"
 msgstr "Servicio"
@@ -10402,10 +10577,12 @@ msgstr "Certificado de servicio (nginx :443 / :8443)"
 
 #: app/templates/appliances/upgrade_prep.html:15
 #: app/templates/appliances/upgrade_prep.html:52
+#: app/templates/upgrade_flow/index.html:39
 msgid "Service validation"
 msgstr "Validación de servicio"
 
 #: app/templates/appliances/upgrade_prep.html:86
+#: app/templates/change_requests/detail.html:237
 #: app/templates/settings/index.html:364
 msgid "Services"
 msgstr "Servicios"
@@ -10449,7 +10626,7 @@ msgstr "Configuración"
 msgid "Settings store"
 msgstr "Almacén de configuraciones"
 
-#: app/templates/auth/profile.html:140
+#: app/templates/auth/profile.html:146
 msgid "Settings → Change Password"
 msgstr "Configuración → Cambiar contraseña"
 
@@ -10719,6 +10896,10 @@ msgstr "Modo independiente"
 msgid "Standalone — single node"
 msgstr "Autónomo — nodo único"
 
+#: app/templates/upgrade_flow/progress.html:79
+msgid "Start execution"
+msgstr "Iniciar ejecución"
+
 #: app/templates/plugins/list.html:18
 msgid "Start from an example"
 msgstr "Comience con un ejemplo"
@@ -10726,6 +10907,10 @@ msgstr "Comience con un ejemplo"
 #: app/templates/lua_studio/list.html:19
 msgid "Start from an example script"
 msgstr "Comenzar con un ejemplo de script"
+
+#: app/templates/upgrade_flow/progress.html:93
+msgid "Start now"
+msgstr "Comience ahora"
 
 #: app/templates/partials/release_notes_modal.html:111
 msgid "Start scan"
@@ -10751,6 +10936,7 @@ msgstr "Tarjeta de estadísticas"
 #: app/templates/monitoring/analytics.html:357
 #: app/templates/settings/index.html:388
 #: app/templates/system_backup/index.html:17
+#: app/templates/upgrade_flow/progress.html:59
 msgid "State"
 msgstr "Estado"
 
@@ -10761,7 +10947,7 @@ msgstr "Estado"
 #: app/templates/appliances/index.html:102
 #: app/templates/cert_manager/index.html:51
 #: app/templates/cert_manager/index.html:201
-#: app/templates/change_requests/detail.html:238
+#: app/templates/change_requests/detail.html:285
 #: app/templates/exceptions/index.html:105
 #: app/templates/integrations/hook.html:87
 #: app/templates/integrations/index.html:146 app/templates/jobs/manager.html:61
@@ -10778,7 +10964,7 @@ msgstr "Estado"
 #: app/templates/server_objects/overview.html:76
 #: app/templates/settings/index.html:517 app/templates/settings/index.html:1848
 #: app/templates/settings/index.html:2132 app/templates/templates/index.html:66
-#: app/templates/users/_panel.html:76
+#: app/templates/upgrade_flow/index.html:222 app/templates/users/_panel.html:76
 #: app/templates/web_protection/signature_policy.html:57
 #: app/templates/web_protection/signature_policy.html:132
 #: app/templates/web_protection/signature_policy.html:159
@@ -11005,7 +11191,7 @@ msgstr "Sistema"
 msgid "System Information"
 msgstr "Información del Sistema"
 
-#: app/templates/partials/nav_automation.html:42
+#: app/templates/partials/nav_automation.html:54
 #: app/templates/provisioning/apply.html:9
 #: app/templates/provisioning/baseline_detail.html:86
 #: app/templates/provisioning/baseline_form.html:52
@@ -11401,6 +11587,10 @@ msgstr "La sección de servidor virtual nunca ha sido recopilada para los dispos
 msgid "The whole pipeline (generate → sign → deploy → swap → revoke) is protocol-agnostic: switching to ACME here re-points signing AND revocation to the ACME client command templates below — no code change. The per-class cards (key type, subject/SAN format, renew window) apply to both protocols."
 msgstr "La tubería completa (generar → firmar → implementar → cambiar → revocar) es ágena de protocolos: pasar a ACME aquí vuelve a enfocar la firma Y la revocación en los plantillas de comandos del cliente ACME debajo — sin cambios de código. Las tarjetas por clase (tipo de clave, formato de sujeto/SAN, ventana de renovación) se aplican a ambos protocolos."
 
+#: app/templates/upgrade_flow/progress.html:98
+msgid "The window and the approval are the authorization, and the executor re-checks both regardless of what this page offers."
+msgstr "La ventana y la aprobación son la autorización, y el ejecutor vuelve a verificar ambas independientemente de lo que ofrezca esta página."
+
 #: app/templates/settings/index.html:2920
 msgid "Theme"
 msgstr "Tema"
@@ -11424,6 +11614,10 @@ msgstr "No hay dispositivos a los que aplicar. Registre un dispositivo y vuelva 
 #: app/templates/settings/index.html:459
 msgid "There is no per-username allowlist here any more. Three gates already decide this, each in the place that owns the decision:"
 msgstr "Ya no hay una lista de permitir por usuario aquí. Tres puertas deciden esto ya, cada una en el lugar que posee la decisión:"
+
+#: app/templates/upgrade_flow/progress.html:47
+msgid "These appliances are covered by the change but nothing was measured on them beforehand, so there is nothing to compare the result against."
+msgstr "Estos dispositivos están cubiertos por el cambio pero no se midió nada en ellos previamente, por lo que no hay nada con qué comparar el resultado."
 
 #: app/templates/settings/index.html:475
 msgid "They are no longer enforced"
@@ -11449,9 +11643,13 @@ msgstr "Este dispositivo no tiene políticas de servidor configuradas, o la cone
 msgid "This appliance holds no attack-log entries at all."
 msgstr "Este dispositivo no tiene entradas de registro de ataques en absoluto."
 
-#: app/templates/change_requests/detail.html:311
+#: app/templates/change_requests/detail.html:358
 msgid "This change cannot run until the external authority approves it. No answer is not an approval."
 msgstr "Este cambio no puede ejecutarse hasta que la autoridad externa lo apruebe. No responder no es una aprobación."
+
+#: app/templates/upgrade_flow/progress.html:71
+msgid "This change names no appliance."
+msgstr "Este cambio no nombra ningún dispositivo."
 
 #: app/templates/change_requests/detail.html:56
 msgid "This change type has no automated executor"
@@ -11480,6 +11678,10 @@ msgstr "Esta instalación"
 #: app/templates/monitoring/satom.html:27
 msgid "This installation — HA nodes, database, systemd units, redundancy and encryption in transit. For the appliances themselves see"
 msgstr "Esta instalación — nodos HA, base de datos, unidades systemd, redundancia y cifrado en tránsito. Para los dispositivos mismos, ver"
+
+#: app/templates/upgrade_flow/progress.html:82
+msgid "This is a documentary change type: it has no automated executor. Carry the work out during the window and close the change by hand."
+msgstr "Este es un tipo de cambio documental: no tiene ejecutor automático. Realice el trabajo durante la ventana y cierre el cambio manualmente."
 
 #: app/templates/provisioning/apply.html:73
 msgid "This is a dry-run preview — nothing has been written yet."
@@ -11539,6 +11741,10 @@ msgstr "Límites de líneas"
 msgid "Thresholds"
 msgstr "Límites"
 
+#: app/templates/upgrade_flow/index.html:132
+msgid "Tick appliances in stage 1. Only those with a stored pre-upgrade run contribute evidence; an appliance without one is still covered by the change, it simply carries no baseline."
+msgstr "Marque los dispositivos en la etapa 1. Solo aquellos con una ejecución previa a la actualización contribuyen evidencia; un dispositivo sin ella aún está cubierto por el cambio, simplemente no tiene línea de base."
+
 #: app/templates/appliances/detail.html:170
 msgid "Time"
 msgstr "Tiempo"
@@ -11552,7 +11758,7 @@ msgid "Time range"
 msgstr "Rango de tiempo"
 
 #: app/templates/cert_manager/detail.html:133
-#: app/templates/change_requests/detail.html:361
+#: app/templates/change_requests/detail.html:408
 msgid "Timeline"
 msgstr "Cronograma"
 
@@ -11584,6 +11790,8 @@ msgstr "Zona horaria"
 #: app/templates/reports/inbox.html:14 app/templates/reports/inbox.html:48
 #: app/templates/settings/index.html:2780
 #: app/templates/settings/index.html:2856
+#: app/templates/upgrade_flow/index.html:105
+#: app/templates/upgrade_flow/index.html:155
 msgid "Title"
 msgstr "Título"
 
@@ -11595,7 +11803,7 @@ msgstr "A"
 msgid "To Date"
 msgstr "Hasta la fecha"
 
-#: app/templates/auth/profile.html:140
+#: app/templates/auth/profile.html:146
 msgid "To change your password, open"
 msgstr "Para cambiar tu contraseña, abre"
 
@@ -11615,6 +11823,10 @@ msgstr "Alternar barra lateral"
 #: app/templates/settings/index.html:534
 msgid "Token"
 msgstr "Token"
+
+#: app/templates/upgrade_flow/progress.html:60
+msgid "Took"
+msgstr "Tomó"
 
 #: app/templates/base.html:144 app/templates/base.html:149
 msgid "Tools"
@@ -11799,7 +12011,7 @@ msgstr "Escriba un término para buscar"
 msgid "Type of change"
 msgstr "Tipo de cambio"
 
-#: app/templates/auth/profile.html:136
+#: app/templates/auth/profile.html:142
 msgid "UI Framework"
 msgstr "Marco de interfaz de usuario"
 
@@ -11908,6 +12120,13 @@ msgstr "Actualización / Descenso de nivel"
 #: app/templates/appliances/index.html:150
 msgid "Upgrade Firmware"
 msgstr "Actualizar Firmware"
+
+#: app/templates/partials/nav_automation.html:44
+#: app/templates/upgrade_flow/index.html:2
+#: app/templates/upgrade_flow/index.html:13
+#: app/templates/upgrade_flow/progress.html:13
+msgid "Upgrade Flow"
+msgstr "Flujo de Actualización"
 
 #: app/templates/appliances/detail.html:97
 msgid "Upgrade Prep"
@@ -12086,7 +12305,7 @@ msgstr "VMware ESXi"
 msgid "VMware ESXi (.ovf / .ova)"
 msgstr "VMware ESXi (.ovf / .ova)"
 
-#: app/templates/change_requests/detail.html:238
+#: app/templates/change_requests/detail.html:285
 #: app/templates/search/index.html:115
 msgid "VServer"
 msgstr "Servidor Virtual"
@@ -12144,6 +12363,8 @@ msgstr "Ver"
 
 #: app/templates/appliances/flash_reports.html:98
 #: app/templates/appliances/upgrade_prep.html:86
+#: app/templates/change_requests/detail.html:236
+#: app/templates/upgrade_flow/index.html:48
 msgid "Verdict"
 msgstr "Sentencia"
 
@@ -12502,6 +12723,10 @@ msgstr "Toda la flota"
 msgid "Whole instance"
 msgstr "Instancia completa"
 
+#: app/templates/upgrade_flow/index.html:127
+msgid "Why this window exists"
+msgstr "¿Por qué existe esta ventana"
+
 #: app/templates/database/report_edit.html:45
 msgid "Widget title"
 msgstr "Título del widget"
@@ -12516,6 +12741,7 @@ msgstr "Ancho"
 
 #: app/templates/change_requests/detail.html:105
 #: app/templates/change_requests/index.html:46
+#: app/templates/upgrade_flow/index.html:222
 msgid "Window"
 msgstr "Ventana"
 
@@ -12523,13 +12749,23 @@ msgstr "Ventana"
 msgid "Window (hours)"
 msgstr "Ventana (horas)"
 
+#: app/templates/upgrade_flow/index.html:169
+msgid "Window (minutes)"
+msgstr "Ventana (minutos)"
+
 #: app/templates/change_requests/form.html:233
+#: app/templates/upgrade_flow/index.html:114
 msgid "Window end"
 msgstr "Fin de ventana"
 
 #: app/templates/change_requests/form.html:229
+#: app/templates/upgrade_flow/index.html:110
 msgid "Window start"
 msgstr "Inicio de ventana"
+
+#: app/templates/upgrade_flow/index.html:180
+msgid "Windows are consecutive and never overlap: each wave starts after the previous one ends, plus the gap. Leave the start empty to raise the waves now and schedule them later. At most"
+msgstr "Las ventanas son consecutivas y nunca se superponen: cada oleada comienza después de que termina la anterior, más el intervalo de separación. Deje vacío el inicio para elevar las olas ahora y programarlas más tarde. Como máximo"
 
 #: app/templates/web_protection/signature_policy.html:119
 msgid "With exceptions"
@@ -12571,6 +12807,10 @@ msgstr "Los métodos de escritura requieren el permiso para ejecutar llamadas a 
 #: app/templates/fac_api/index.html:149
 msgid "Writes are dry-run by default."
 msgstr "Las escrituras se ejecutan en modo de prueba por defecto."
+
+#: app/templates/upgrade_flow/progress.html:54
+msgid "Written as each device is reached, not assembled at the end."
+msgstr "Escrito a medida que se alcanza cada dispositivo, no ensamblado al final."
 
 #: app/templates/cr_types/edit.html:27 app/templates/cr_types/index.html:86
 msgid "Written in"
@@ -12979,7 +13219,7 @@ msgstr "haga clic en un nombre de archivo"
 msgid "clone/migrate always rewrites each copy's VIP to a"
 msgstr "clonar/migrar reescribe siempre cada copia's VIP a un"
 
-#: app/templates/change_requests/detail.html:329
+#: app/templates/change_requests/detail.html:376
 msgid "closed"
 msgstr "cerrado"
 
@@ -13350,7 +13590,7 @@ msgid "environment"
 msgstr "entorno"
 
 #: app/templates/cert_manager/renewals.html:165
-#: app/templates/change_requests/detail.html:330
+#: app/templates/change_requests/detail.html:377
 #: app/templates/monitoring/collection.html:81
 msgid "error"
 msgstr "error"
@@ -13375,7 +13615,7 @@ msgstr "expirado"
 msgid "expiring"
 msgstr "cadenando"
 
-#: app/templates/change_requests/detail.html:307
+#: app/templates/change_requests/detail.html:354
 msgid "external approval on record"
 msgstr "aprobación externa registrada"
 
@@ -13523,6 +13763,10 @@ msgstr "tiene subtablas"
 #: app/templates/cr_types/index.html:29 app/templates/cr_types/index.html:57
 msgid "hidden"
 msgstr "oculto"
+
+#: app/templates/upgrade_flow/index.html:122
+msgid "high"
+msgstr "alto"
 
 #: app/templates/integrations/hook.html:61
 msgid "hook.py"
@@ -13753,6 +13997,10 @@ msgstr "cargando..."
 msgid "logical_name"
 msgstr "nombre_lógico"
 
+#: app/templates/upgrade_flow/index.html:120
+msgid "low"
+msgstr "bajo"
+
 #: app/templates/settings/index.html:539 app/templates/settings/index.html:619
 msgid "main"
 msgstr "principal"
@@ -13781,7 +14029,7 @@ msgstr "manifiesto"
 msgid "manual"
 msgstr "manual"
 
-#: app/templates/change_requests/detail.html:314
+#: app/templates/change_requests/detail.html:361
 msgid "manual (approved in SATOM)"
 msgstr "manual (aprobado en SATOM)"
 
@@ -13796,6 +14044,10 @@ msgstr "coincidir — que funciona hasta que alguien cambia el nombre de un disp
 #: app/templates/analysis/adc.html:342
 msgid "means the sweep stored no rows for that endpoint — which is different from the endpoint being empty."
 msgstr "significa que el escaneo no almacenó ninguna fila para ese punto final, lo cual es distinto de que el punto final esté vacío."
+
+#: app/templates/upgrade_flow/index.html:121
+msgid "medium"
+msgstr "medio"
 
 #: app/templates/adc/wizard_vs.html:27
 msgid "member. This wizard creates them in the right order —"
@@ -13853,6 +14105,10 @@ msgstr "nombre bloqueado"
 msgid "never"
 msgstr "nunca"
 
+#: app/templates/upgrade_flow/index.html:66
+msgid "never run"
+msgstr "nunca ejecutar"
+
 #: app/templates/workspace/policies.html:304
 msgid "new name"
 msgstr "nuevo nombre"
@@ -13876,6 +14132,10 @@ msgstr "sin backends en caché"
 #: app/templates/dns_lookup/index.html:202
 msgid "no backends in cache"
 msgstr "sin backends en caché"
+
+#: app/templates/change_requests/detail.html:254
+msgid "no baseline"
+msgstr "sin línea base"
 
 #: app/templates/capacity/index.html:94
 msgid "no cap"
@@ -13946,11 +14206,11 @@ msgstr "nodo2 / hypervisor03"
 msgid "none"
 msgstr "ninguno"
 
-#: app/templates/change_requests/detail.html:323
+#: app/templates/change_requests/detail.html:370
 msgid "none recorded"
 msgstr "no se registraron"
 
-#: app/templates/change_requests/detail.html:331
+#: app/templates/change_requests/detail.html:378
 msgid "none requested"
 msgstr "ninguno solicitado"
 
@@ -13970,6 +14230,11 @@ msgstr "no"
 #: app/templates/change_requests/form.html:195
 msgid "not approved"
 msgstr "no aprobado"
+
+#: app/templates/change_requests/detail.html:247
+#: app/templates/upgrade_flow/index.html:71
+msgid "not clean"
+msgstr "no limpio"
 
 #: app/templates/system_backup/index.html:82
 #: app/templates/system_backup/index.html:93
@@ -14102,13 +14367,17 @@ msgstr "solo. Los métodos que no sean GET necesitan el"
 msgid "opaque origin · no cookies · read-only"
 msgstr "origen opaco · sin cookies · solo lectura"
 
-#: app/templates/change_requests/detail.html:328
+#: app/templates/change_requests/detail.html:375
 msgid "open"
 msgstr "abrir"
 
 #: app/templates/section_config/index.html:19
 msgid "open a device → GUI menu → live object list → deep editor; the rest show a registry-derived object-type catalog. Each section keeps a template library."
 msgstr "Abrir un dispositivo → Menú GUI → Lista de objetos en vivo → Editor profundo; el resto muestra un catálogo de tipo objeto derivado del registro. Cada sección mantiene una biblioteca de plantillas."
+
+#: app/templates/upgrade_flow/index.html:237
+msgid "open change"
+msgstr "abrir cambio"
 
 #: app/templates/settings/index.html:980
 msgid "operator"
@@ -14164,6 +14433,11 @@ msgstr "la página escribe en través de su"
 msgid "page."
 msgstr "página."
 
+#: app/templates/change_requests/detail.html:247
+#: app/templates/upgrade_flow/index.html:71
+msgid "passed"
+msgstr "pasado"
+
 #: app/templates/exceptions/list.html:90
 msgid "pattern) that the Server Policy is re-bound to."
 msgstr "(patrón) al que se vuelve a enlazar la Política del Servidor."
@@ -14185,6 +14459,10 @@ msgstr "según la política"
 #: app/templates/monitoring/_probe_page.html:354
 msgid "per port"
 msgstr "por puerto"
+
+#: app/templates/upgrade_flow/index.html:83
+msgid "per sweep."
+msgstr "por barrido."
 
 #: app/templates/fac/index.html:54
 msgid "per-user API key"
@@ -14284,6 +14562,10 @@ msgstr "perfil"
 msgid "profile on first sign-in and do MFA at the directory. Local accounts can enable app 2FA in the Security tab."
 msgstr "Crear un perfil al primer inicio de sesión y realizar autenticación multifactor (MFA) en el directorio. Las cuentas locales pueden habilitar la autenticación de dos factores (2FA) para aplicaciones en la pestaña de seguridad."
 
+#: app/templates/upgrade_flow/index.html:236
+msgid "progress"
+msgstr "progreso"
+
 #: app/templates/change_requests/form.html:147
 msgid "proposal"
 msgstr "propuesta"
@@ -14349,7 +14631,7 @@ msgstr "solo lectura — nunca cambia la caja; el cuerpo es ignorado."
 msgid "read-only"
 msgstr "solo lectura"
 
-#: app/templates/auth/profile.html:135
+#: app/templates/auth/profile.html:141
 msgid "readonly, operator, admin"
 msgstr "solo lectura, operador, administrador"
 
@@ -14741,6 +15023,10 @@ msgstr "La pasarela no almacenó filas para este extremo"
 msgid "they ever sign in. Scope:"
 msgstr "cuando se conectan. Alcance:"
 
+#: app/templates/change_requests/detail.html:255
+msgid "this appliance is covered by the change but carries no pre-upgrade evidence"
+msgstr "este dispositivo está cubierto por el cambio pero no tiene evidencia de pre-actualización"
+
 #: app/templates/cert_manager/renewals.html:70
 #: app/templates/high_availability/index.html:193
 #: app/templates/settings/index.html:383
@@ -14970,7 +15256,7 @@ msgstr "vip"
 msgid "visibly"
 msgstr "visiblemente"
 
-#: app/templates/auth/profile.html:133
+#: app/templates/auth/profile.html:139
 msgid "visionebc/SATOM"
 msgstr "visionebc/SATOM"
 
@@ -14982,7 +15268,7 @@ msgstr "vs anterior"
 msgid "vs-web-prod"
 msgstr "vs-web-prod"
 
-#: app/templates/change_requests/detail.html:310
+#: app/templates/change_requests/detail.html:357
 msgid "waiting for external approval"
 msgstr "esperando aprobación externa"
 
@@ -14994,6 +15280,19 @@ msgstr "recorre todo el perfil (sus ~40 subpolíticas y sus reglas); los objetos
 #: app/templates/analysis/fac.html:148
 msgid "warn"
 msgstr "advertencia"
+
+#: app/templates/upgrade_flow/index.html:200
+#: app/templates/upgrade_flow/progress.html:22
+msgid "wave"
+msgstr "onda"
+
+#: app/templates/upgrade_flow/index.html:196
+msgid "waves"
+msgstr "olas"
+
+#: app/templates/upgrade_flow/index.html:181
+msgid "waves at once."
+msgstr "olas a la vez."
 
 #: app/templates/workspace/policy_detail.html:310
 msgid "wccp"
@@ -15388,6 +15687,9 @@ msgstr "🔒 Perfil gestionado por plantilla — las plantillas se mantienen lim
 #~ msgid "Bootstrap 5.3 + Custom FortiWeb 7.6 Theme"
 #~ msgstr "Bootstrap 5.3 + Tema Personalizado FortiWeb 7.6"
 
+#~ msgid "Captured by upgrade preparation"
+#~ msgstr ""
+
 #~ msgid "FortiWeb (Hardware / VM)"
 #~ msgstr "FortiWeb (Hardware / Máquina Virtual)"
 
@@ -15396,6 +15698,15 @@ msgstr "🔒 Perfil gestionado por plantilla — las plantillas se mantienen lim
 
 #~ msgid "FortiWeb-Cloud"
 #~ msgstr "FortiWeb-Nube"
+
+#~ msgid "Merged across"
+#~ msgstr ""
+
+#~ msgid "appliance(s) reported"
+#~ msgstr ""
+
+#~ msgid "bound pre-upgrade runs."
+#~ msgstr ""
 
 #~ msgid "v1.0"
 #~ msgstr "v1.0,"

@@ -1,0 +1,167 @@
+{% extends 'base.html' %}
+{% block title %}{{ _('Execution') }} — {{ cr.ref or cr.id }}{% endblock %}
+{% block content %}
+{#
+  Light chrome ONLY (see upgrade_flow/index.html). Status colour comes from the
+  .fw-badge-* set, which is calibrated against white; dark-theme pastels land
+  around 1.4:1 here and produce a badge reading "failed" that nobody can read.
+#}
+<div class="fw-page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <h4><i class="bi bi-activity me-2"></i>{{ _('Execution') }} — {{ cr.ref or ('#' ~ cr.id) }}</h4>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('upgrade_flow.index') }}" class="btn fw-btn-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>{{ _('Upgrade Flow') }}</a>
+    <a href="{{ url_for('change_requests.detail', id=cr.id) }}" class="btn fw-btn-secondary btn-sm">
+      <i class="bi bi-clipboard2-check me-1"></i>{{ _('Open change') }}</a>
+  </div>
+</div>
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span><strong>{{ cr.title }}</strong>
+      {% if cr.wave_total %}<span class="fw-badge fw-badge-secondary ms-2">{{ _('wave') }} {{ cr.wave_index }}/{{ cr.wave_total }}</span>{% endif %}
+    </span>
+    <span class="fw-badge fw-badge-{{ 'success' if cr.status == 'completed' else ('warning' if cr.status in ('draft','approved','scheduled','in_progress') else 'secondary') }}">{{ cr.status }}</span>
+  </div>
+  <div class="fw-card-body">
+    <div class="progress mb-2" style="height:1.25rem;">
+      <div id="uf-bar" class="progress-bar" role="progressbar"
+           style="width: {{ state.percent }}%;">{{ state.percent }}%</div>
+    </div>
+    <div class="text-muted small" id="uf-counts">
+      {{ _('%(done)s of %(total)s appliance(s) reported — %(ok)s ok, %(failed)s failed.', done=state.done, total=state.total, ok=state.ok, failed=state.failed) }}
+      {% if state.run_status %}{{ _('Run #%(id)s: %(status)s', id=state.run_id, status=state.run_status) }}{% endif %}
+    </div>
+    <p class="text-muted small mt-2 mb-0">
+      {# The bar counts DEVICES. A window that is half elapsed says nothing
+         about how many boxes are upgraded, and a progress bar driven by the
+         clock would be a guess wearing a measurement's clothes. #}
+      {{ _('Progress is measured in appliances reported, not in elapsed window time.') }}
+    </p>
+  </div>
+</div>
+
+{% if evidence and evidence.missing %}
+<div class="fw-alert fw-alert-warning mb-3">
+  <strong>{{ _('No pre-upgrade baseline for:') }}</strong> {{ evidence.missing|join(', ') }}.
+  {{ _('These appliances are covered by the change but nothing was measured on them beforehand, so there is nothing to compare the result against.') }}
+</div>
+{% endif %}
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <strong>{{ _('Per appliance') }}</strong>
+    <span class="text-muted small">{{ _('Written as each device is reached, not assembled at the end.') }}</span>
+  </div>
+  <div class="fw-card-body p-0">
+    <table class="table fw-table align-middle mb-0">
+      <thead><tr>
+        <th>{{ _('Appliance') }}</th><th>{{ _('State') }}</th>
+        <th>{{ _('Result') }}</th><th>{{ _('Took') }}</th>
+      </tr></thead>
+      <tbody id="uf-rows">
+      {% for t in state.targets %}
+        <tr>
+          <td>{{ t.appliance }} <span class="text-muted small">{{ t.kind }}</span></td>
+          <td><span class="fw-badge fw-badge-{{ {'ok':'success','failed':'danger','running':'warning','interrupted':'danger','not_run':'secondary','pending':'secondary'}[t.status] }}">{{ t.status }}</span></td>
+          <td class="small">{{ t.summary or '—' }}</td>
+          <td class="small is-mono">{{ (t.elapsed_ms ~ ' ms') if t.elapsed_ms is not none else '—' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="text-muted">{{ _('This change names no appliance.') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header"><strong>{{ _('Start execution') }}</strong></div>
+  <div class="fw-card-body">
+    {% if not executable %}
+      <p class="text-muted mb-0">{{ _('This is a documentary change type: it has no automated executor. Carry the work out during the window and close the change by hand.') }}</p>
+    {% elif not cr.scheduled_action_id %}
+      <p class="text-muted">{{ _('No action is bound yet. Approve and schedule the change first — the bound one-shot action is what this page watches.') }}</p>
+      <a class="btn fw-btn-primary" href="{{ url_for('change_requests.detail', id=cr.id) }}">{{ _('Open change') }}</a>
+    {% else %}
+      <p class="text-muted">
+        {{ _('Execution runs out of process, in the scheduler, and is re-authorized against the approved window at fire time. This button only brings the scheduled fire forward; it does not bypass the window.') }}
+      </p>
+      {% if runnable_ok %}
+        <form method="post" action="{{ url_for('upgrade_flow.start_now', cr_id=cr.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn fw-btn-primary" type="submit"><i class="bi bi-play-fill me-1"></i>{{ _('Start now') }}</button>
+        </form>
+      {% else %}
+        <div class="fw-alert fw-alert-info mb-0">
+          {{ _('Not startable right now:') }} <strong>{{ runnable_reason }}</strong>.
+          {{ _('The window and the approval are the authorization, and the executor re-checks both regardless of what this page offers.') }}
+        </div>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<script>
+(function () {
+  // Polls the SAME state the server just rendered (execution_state), so the
+  // page after a refresh and the page after a poll cannot disagree. Stops on
+  // its own once the run is over: a page left open overnight must not keep
+  // asking a question that already has its final answer.
+  var url = "{{ url_for('upgrade_flow.progress_json', cr_id=cr.id) }}";
+  // The polled repaint and the server render must be the SAME sentence. Writing
+  // it a second time in JavaScript gives the line two authors, and only one of
+  // them can read the catalogue — a Spanish page would revert to English on the
+  // first poll. The translated string is handed over as data with {token}
+  // placeholders, so the catalogue stays the single author.
+  var T_COUNTS = {{ _('%(done)s of %(total)s appliance(s) reported — %(ok)s ok, %(failed)s failed.', done='{done}', total='{total}', ok='{ok}', failed='{failed}')|tojson }};
+  var T_RUN = {{ _('Run #%(id)s: %(status)s', id='{id}', status='{status}')|tojson }};
+  var BADGE = {ok:'success', failed:'danger', running:'warning',
+               interrupted:'danger', not_run:'secondary', pending:'secondary'};
+  var timer = null;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  function paint(s) {
+    var bar = document.getElementById('uf-bar');
+    bar.style.width = s.percent + '%';
+    bar.textContent = s.percent + '%';
+    var counts = T_COUNTS
+      .replace('{done}', s.done).replace('{total}', s.total)
+      .replace('{ok}', s.ok).replace('{failed}', s.failed);
+    if (s.run_status) {
+      counts += ' ' + T_RUN.replace('{id}', s.run_id).replace('{status}', s.run_status);
+    }
+    document.getElementById('uf-counts').textContent = counts;
+    var body = document.getElementById('uf-rows');
+    if (!s.targets.length) { return; }
+    body.innerHTML = s.targets.map(function (t) {
+      return '<tr><td>' + esc(t.appliance) + ' <span class="text-muted small">'
+        + esc(t.kind) + '</span></td><td><span class="fw-badge fw-badge-'
+        + (BADGE[t.status] || 'secondary') + '">' + esc(t.status)
+        + '</span></td><td class="small">' + esc(t.summary || '—')
+        + '</td><td class="small is-mono">'
+        + (t.elapsed_ms == null ? '—' : t.elapsed_ms + ' ms') + '</td></tr>';
+    }).join('');
+    if (s.run_status && s.run_status !== 'running' && timer) {
+      window.clearInterval(timer);
+      timer = null;
+    }
+  }
+
+  timer = window.setInterval(function () {
+    fetch(url, {credentials: 'same-origin'})
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (s) { if (s) { paint(s); } })
+      // A poll that fails is left alone on purpose: the last rendered state is
+      // a measurement, and replacing it with an error banner would throw away
+      // the only thing on the page that is still true.
+      .catch(function () {});
+  }, 5000);
+})();
+</script>
+{% endblock %}

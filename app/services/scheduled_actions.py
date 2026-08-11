@@ -1235,7 +1235,7 @@ def execute_and_record(action_row, *, trigger: str = "schedule"):
             # (4) Run per target.
             if not gated:
                 status, summary, log_lines = _run_targets(
-                    action_row, spec, params, trigger=trigger)
+                    action_row, spec, params, trigger=trigger, run=run)
     except Exception as exc:  # noqa: BLE001 - a run must never crash the sidecar
         status = "failed"
         summary = f"{type(exc).__name__}: {exc}"
@@ -1291,8 +1291,51 @@ def execute_and_record(action_row, *, trigger: str = "schedule"):
     return run
 
 
+def _progress_open(run, appliance, seq: int, total: int):
+    """Record that this device is being worked on NOW. Returns the row or None.
+
+    Committed BEFORE the device is touched, which is the whole point: a
+    sixty-appliance upgrade that only writes its log at the end is unobservable
+    for four hours and loses everything if the worker dies mid-window. See
+    :class:`app.models.ScheduledActionTarget`.
+
+    Best-effort by contract. A change already authorized for production must
+    not be aborted because a progress row would not insert — bookkeeping has no
+    veto over the work it is only describing.
+    """
+    if run is None:
+        return None
+    try:
+        from ..models import ScheduledActionTarget
+        row = ScheduledActionTarget(
+            run_id=run.id,
+            appliance_id=getattr(appliance, "id", None),
+            appliance=(getattr(appliance, "name", "") or "(no device)")[:128],
+            seq=seq, total=total, status="running",
+            started_at=datetime.utcnow())
+        db.session.add(row)
+        db.session.commit()
+        return row
+    except Exception:  # noqa: BLE001 - see docstring
+        db.session.rollback()
+        return None
+
+
+def _progress_close(row, ok: bool, summary: str) -> None:
+    """Stamp one device's outcome the moment it returns."""
+    if row is None:
+        return
+    try:
+        row.status = "ok" if ok else "failed"
+        row.summary = (summary or "")[:_SUMMARY_MAX]
+        row.finished_at = datetime.utcnow()
+        db.session.commit()
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
+
+
 def _run_targets(action_row, spec: ActionSpec, params: dict, *,
-                 trigger: str = "schedule"):
+                 trigger: str = "schedule", run=None):
     """Resolve the action's targets and run it against each; aggregate the outcome.
 
     Returns ``(status, summary, log_lines)`` where status is one of
@@ -1301,6 +1344,10 @@ def _run_targets(action_row, spec: ActionSpec, params: dict, *,
     An automatic run skips appliances in maintenance and, if that empties the
     target set, reports **skipped** rather than failed — a parked box is not a
     fault, and grading it as one pins the action permanently red.
+
+    ``run`` is the open history row; when given, per-device progress is
+    persisted as each device starts and finishes rather than accumulated in
+    memory and written once at the end.
     """
     targets = _resolve_targets(action_row, spec, trigger=trigger)
     if spec.needs_targets and not targets:
@@ -1316,10 +1363,13 @@ def _run_targets(action_row, spec: ActionSpec, params: dict, *,
     total = 0
     fails: list[str] = []
     lines: list[str] = []
+    planned = len(targets)
     for appliance in targets:
-        out = run_action(spec, appliance, params, dry_run=False)
         name = getattr(appliance, "name", "(no device)")
         total += 1
+        progress = _progress_open(run, appliance, total, planned)
+        out = run_action(spec, appliance, params, dry_run=False)
+        _progress_close(progress, bool(out.get("ok")), out.get("summary", ""))
         if out.get("ok"):
             ok_n += 1
             lines.append(f"[ok] {name}: {out.get('summary', '')}")

@@ -7083,3 +7083,162 @@ have a service already down before the window — and finding that out is the
 single most valuable thing the pre-flight produces. Same reasoning as
 `prep_store.verdict`, and the same reasoning as §-the-collector rule that a
 failed collector writes `satom_scrape_up 0` rather than staying silent.
+
+---
+
+## §63. A ticket that leaves the product carrying only primary keys
+
+`cr_orchestrator.request_crq` is the one place a change request becomes
+somebody else's ticket. It sent `device_ids` — bare integers, meaningful only
+inside this database — plus a flat list of policy names. Everything the bulk
+pre-upgrade exists to produce (N configuration backups, N health batteries, N
+service baselines, N verdicts) stayed here. A change-management system received
+a request to take down `[17, 18, 19]`, and the only way to find out what that
+was, or whether any of it had been pre-flighted, was to open this console.
+
+Nothing failed. The hook fired, the ticket opened, the fields were populated.
+The request was simply narrower than the change it described — the same shape
+as §62's two implementations and as the About card that claimed `v1.0` for
+eight releases.
+
+**What the payload had to gain, and why each one is not decoration:**
+
+| key | without it |
+|---|---|
+| `cr_ref` | the ticket and the signed document share no identifier |
+| `devices[]` | an approver cannot tell which boxes go down |
+| `evidence[]` | the N baselines never leave the product |
+| `evidence_missing[]` | a receiver counting list lengths cannot tell an un-pre-flighted box from an omitted one |
+| `policy_count` + `policies_truncated` | a capped list reads as the whole outage |
+| `approval_mode` | a system that holds the gate is never told it does, and the window elapses |
+| `crq_ref` | a double-clicked button opens a second ticket for one window |
+
+**The cap is the interesting one.** One appliance carried a few dozen policy
+names; sixty carry tens of thousands, in a payload written to a queue file and
+POSTed to a third party. Capping is correct and capping SILENTLY is the defect
+— so the exact total always travels beside the capped list. Same rule as the
+sweep that refuses naming the number instead of truncating to it.
+
+**Evidence carries the verdict, never the blob.** `UpgradePrep.result` holds a
+probe row per published service. Shipping it would push megabytes of the
+fleet's service topology into a ticket system that never asked for it. What an
+approver needs is: did it pass, when, against which firmware, and does a
+rollback point exist — and the backup is quoted ONLY when it succeeded, because
+naming a failed backup puts a rollback in writing with nothing behind it.
+
+**One author for coverage.** "Which appliances have a baseline" is now asked by
+three readers — the change's own page, the outbound payload, and the operator's
+flash message — and answered once, by `prep_store.coverage`. Two of them
+computing it separately is how the console shows twenty green appliances while
+the ticket says nine are bare, with only one of the two right.
+
+### Verification
+
+Mutations that must bite: send `device_ids` alone; drop `evidence_missing`;
+return every prep instead of the first per appliance; remove the policy cap;
+keep the cap but drop `policy_count`; inline the coverage computation back into
+`_evidence_rows`. The contract guard is two-sided now — every documented key
+must be emitted AND every emitted key must be documented, because a key nobody
+wrote down is a key nobody will read.
+
+---
+
+## §64. A four-hour change that could only say "running"
+
+Per-device outcomes of a multi-target fire lived as text lines built in memory
+and committed ONCE, in `execute_and_record`'s `finally`. For the hourly
+one-box sweeps that was invisible and harmless. For a change request upgrading
+sixty appliances sequentially inside a maintenance window it fails twice:
+
+* **Unobservable.** Which box is being upgraded, how many are done, whether the
+  third failed forty minutes ago — none of it existed anywhere until the last
+  device returned. The honest answer to "how far along is it?" was a shrug, to
+  an operator personally accountable for the window.
+* **Not durable.** Kill the worker at device 50 of 60 and the log had never
+  been written: fifty appliances changed, no record of which. The one moment
+  the log matters most is the one moment it is guaranteed to be missing.
+
+`ScheduledActionTarget` is one row per (run, appliance), INSERTed as `running`
+before the device is touched and UPDATEd the moment it returns, each with its
+own commit. It is written **best-effort by contract**: a progress row that will
+not insert must never abort a change already touching production hardware.
+Bookkeeping does not get a veto over the work it only describes.
+
+**Three distinctions the panel refuses to collapse**, all of which a simpler
+implementation flattens into "failed":
+
+* `pending` — the run has not reached this device yet;
+* `not_run` — the run ENDED and never opened a row for it (a target-resolution
+  bug, not progress);
+* `interrupted` — a row opened and never closed because the worker died. It is
+  **not** graded failed: nobody observed the device, and asserting an outcome
+  nobody measured is how a box that upgraded fine gets rolled back.
+
+**Devices are listed from the CHANGE, not from the run.** A twenty-box window
+that has reached the third must show seventeen pending rows; listing only what
+the run has touched renders 15 % done as complete. And the progress bar counts
+appliances reported, never elapsed window time — a window half over says
+nothing about how many boxes are upgraded.
+
+**"Start now" does not run the upgrade.** It brings the bound one-shot action's
+`next_run` forward and lets the scheduler sidecar do the work out of process.
+Scheduled Actions' own Run-now executes synchronously in the web worker, which
+is right for a one-box sweep and wrong here: sixty appliances outstay any HTTP
+timeout, and a recycled worker kills the change halfway with the browser
+showing a gateway error. The window is not bypassed either — `cr_runnable` is
+re-checked at fire time regardless, and the button refuses first, while
+somebody is still looking at the screen.
+
+---
+
+## §65. A duplicate key in the boot migration is a silent amputation
+
+`create_app._ensure_columns` holds one dict literal mapping table -> columns
+added after that table already existed. Write the same table name twice and
+Python keeps the LAST entry; every column under the earlier copy is never
+added. No exception, no log line, a clean boot, tables created, pages
+rendering — and three columns the model swears exist simply do not.
+
+Caught for real on 2026-08-11: the wave columns were appended under a fresh
+`'change_request'` key while an existing one sat forty lines below. The table
+`scheduled_action_target` (a NEW table, so `create_all` made it) came up fine,
+which made the boot look entirely healthy.
+
+**The guard cannot live in the function.** By the time `adds` is a value the
+duplicates have already collapsed — a runtime assertion over `adds.keys()` can
+never fail, which makes it exactly the kind of check that passes against the
+defect it names. `tests/test_schema_migration_keys.py` parses the SOURCE with
+`ast` instead, and also asserts that the literal is still findable: a guard
+that finds nothing to check passes for the wrong reason.
+
+---
+
+## §66. A wave is an ordinary change, or it is a second implementation
+
+A ninety-appliance rollout is neither one window nor ninety unrelated changes:
+it is an ordered set of waves, each with its own window and its own approval.
+The temptation is a wave-shaped model with its own creation path, its own
+approval and its own execution. That is §62 again, in advance.
+
+So a wave IS a change request. `upgrade_flow.waves` chunks the selection and
+calls `views.change_requests.create_change_request` — the same function the
+ordinary form calls, extracted from that form's POST handler precisely so there
+would be one author of what a legal change is. A guard asserts the route never
+constructs `ChangeRequest(` itself.
+
+**Three columns make the set a thing rather than a naming convention.**
+`wave_group` / `wave_index` / `wave_total`, nullable, meaning "not part of a
+batched rollout" for every change raised before they existed. "Wave 2 of 5"
+living only in the title is prose, and prose cannot answer "did wave 1 land?".
+
+**Windows chain off the previous END, never off the first start.**
+`start + k*(minutes+gap)` gives the same answer only until an operator
+lengthens one window by hand, at which point the arithmetic quietly puts two
+waves on the same upstream at once.
+
+**A refused wave plan creates nothing.** The batch stops on the first failure
+and says which wave it was, because creating waves 1-3 and abandoning 4-6
+leaves a rollout that LOOKS scheduled while a third of the fleet has no window.
+And more waves than `MAX_WAVES` is refused **naming the number**, never
+truncated — a wave that silently disappeared takes its appliances out of every
+window without anybody being told.

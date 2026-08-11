@@ -381,6 +381,41 @@ def preps_for_cr(cr) -> list:
     return out
 
 
+def coverage(cr, devices=None) -> dict:
+    """Which of a change's appliances carry a pre-upgrade run, and which do not.
+
+    Returns ``{'preps', 'by_appliance', 'covered', 'missing'}`` where ``missing``
+    holds appliance NAMES.
+
+    ONE author for this question, because it is asked from three places that
+    must not disagree: the change's own page, the CRQ payload that leaves the
+    product, and the operator's flash message. Two of those computing "has a
+    baseline" separately is how the console shows twenty green appliances while
+    the ticket says nine are bare — and only one of the two is right.
+
+    An appliance is covered by a run BOUND to this change, never by "it has a
+    recent run somewhere": the point of the binding is that this change rests
+    on this evidence.
+    """
+    from ..models import Appliance
+    rows = preps_for_cr(cr)
+    if devices is None:
+        ids = getattr(cr, "device_ids_list", None) or []
+        devices = (Appliance.query.filter(Appliance.id.in_(ids)).all()
+                   if ids else [])
+    by_appliance: dict = {}
+    for prep in rows:
+        # First bound run per appliance wins, matching cr.prep_id's rule: a
+        # re-run after a failed attempt must not silently replace the evidence
+        # a printed document already cites.
+        by_appliance.setdefault(prep.appliance_id, prep)
+    covered = set(by_appliance)
+    missing = sorted((getattr(d, "name", "") or f"#{d.id}")
+                     for d in devices if d.id not in covered)
+    return {"preps": rows, "by_appliance": by_appliance,
+            "covered": sorted(covered), "missing": missing}
+
+
 def latest_for_many(appliance_ids) -> dict:
     """``{appliance_id: newest UpgradePrep}`` in ONE query, not N."""
     ids: list[int] = []
@@ -484,6 +519,6 @@ __all__ = [
     "verdict", "build_inventory", "record", "latest_for", "recent", "get",
     "run_for", "run_bulk",
     "bind_change_request", "bind_many", "preps_for_cr", "latest_for_many",
-    "merged_inventory",
+    "coverage", "merged_inventory",
     "select_fields", "export_matrix", "export_csv", "export_xlsx",
 ]

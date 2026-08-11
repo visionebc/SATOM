@@ -50,6 +50,15 @@ APPROVAL_MODES = ("manual", "external")
 
 _LOG_MAX = 8000
 
+# How many affected-policy NAMES ride in one hook payload. A window over one
+# appliance carried a few dozen; a bulk window over sixty FortiWeb carries tens
+# of thousands, and the payload is written to a queue file and POSTed to
+# somebody else's ticket system. The cap is NOT a silent truncation: the exact
+# total always travels in ``policy_count`` and ``policies_truncated`` says so
+# out loud, because a receiver that reads 500 names and believes that is the
+# whole outage under-states it by an order of magnitude.
+MAX_POLICY_NAMES = 500
+
 
 # --------------------------------------------------------------------------- #
 #  Timeline / log helpers                                                       #
@@ -87,31 +96,71 @@ def request_crq(cr, *, by: str = "operator") -> dict:
     The ticket id is NOT known here: hooks run out-of-process, so the CRM's
     answer arrives later through :func:`record_crq`. Pretending to return an id
     synchronously would mean either blocking the web worker on someone else's
-    CRM or inventing one."""
+    CRM or inventing one.
+
+    **One ticket for the whole window.** A change covering sixty appliances
+    raises ONE CRQ carrying sixty baselines, not sixty tickets — and the
+    payload has to actually carry them. It used to send ``device_ids``: bare
+    integers that mean nothing outside this database, with no names, no
+    products and no pre-flight evidence at all. A change-management system
+    received a request to take down "[17, 18, 19]" and an approver had to come
+    back here to find out what that was. The evidence the whole bulk pre-upgrade
+    exists to produce never left the product."""
     try:
         from . import integration_hooks as hooks
     except ImportError:  # pragma: no cover - integrations not installed
         return {"dispatched": 0, "detail": "integrations unavailable"}
 
+    names = _policy_names(cr)
+    evidence, uncovered = _evidence_rows(cr)
     payload = {
         "cr_id": cr.id,
+        # The human reference printed on the change document. Without it the
+        # ticket and the paper an approver signs share no identifier, and
+        # reconciling them means somebody opening this console.
+        "cr_ref": getattr(cr, "ref", "") or "",
         "title": cr.title,
         "status": cr.status,
         "action": cr.action,
         "risk": cr.risk,
         "reason": cr.reason or "",
         "device_ids": cr.device_ids_list,
-        "policies": _policy_names(cr),
+        "devices": _device_rows(cr),
+        "device_count": len(cr.device_ids_list),
+        "evidence": evidence,
+        # NAMED, never inferred from a short list. "twelve of twenty devices
+        # have a baseline" is only actionable if the other eight are on the
+        # ticket; a receiver counting list lengths cannot tell an appliance
+        # that was never pre-flighted from one this payload simply omitted.
+        "evidence_missing": uncovered,
+        "policies": names[:MAX_POLICY_NAMES],
+        "policy_count": len(names),
+        "policies_truncated": len(names) > MAX_POLICY_NAMES,
+        # Whether THIS ticket system is the gate. A CR in external mode cannot
+        # run until an approval verdict comes back through record_crq's sibling
+        # — and a receiver that was never told it holds the gate will not send
+        # one, leaving the window to elapse with nobody aware they were waited on.
+        "approval_mode": (getattr(cr, "approval_mode", "") or "manual"),
+        # An existing reference means this is a RE-request. Sending it lets a
+        # receiver update its ticket instead of opening a second one for the
+        # same window; without it, a double-clicked button is two CRQs.
+        "crq_ref": getattr(cr, "crq_ref", "") or "",
         "window_start": _iso(cr.window_start),
         "window_end": _iso(cr.window_end),
         "requested_by": cr.requested_by or by,
     }
     results = hooks.dispatch("change.requested", payload, by=by)
-    _log(cr, f"change.requested dispatched to {len(results)} hook(s)")
+    detail = (f"{len(payload['devices'])} device(s), {len(evidence)} with a "
+              f"stored pre-upgrade run"
+              + (f", {len(uncovered)} without" if uncovered else ""))
+    _log(cr, f"change.requested dispatched to {len(results)} hook(s) — {detail}")
     if results:
         _event(cr, "crq_requested", by,
-               f"CRQ requested via {len(results)} integration hook(s)")
+               f"CRQ requested via {len(results)} integration hook(s) — {detail}")
     return {"dispatched": len(results), "detail": "queued",
+            "evidence": len(evidence), "uncovered": uncovered,
+            "policy_count": len(names),
+            "truncated": bool(payload["policies_truncated"]),
             "requests": [r.get("request_id") for r in results]}
 
 
@@ -307,6 +356,74 @@ def announce_approved(cr, *, by: str = "operator") -> int:
                         getattr(cr, "external_approved_by", "") or by),
         "approved_at": _iso(approved_at),
     })
+
+
+def _device_rows(cr) -> list:
+    """The appliances this change takes down, as an external system can read them.
+
+    Ordered by NAME, not by id: a ticket body is read by a human, and row order
+    that follows an internal sequence looks arbitrary to everyone outside this
+    database. ``firmware`` is the version the box is running NOW — the
+    from-version an approver needs to sanity-check the change against.
+    """
+    rows = []
+    for dev in sorted(_devices(cr), key=lambda d: (d.name or "").lower()):
+        rows.append({
+            "appliance_id": dev.id,
+            "appliance": dev.name or "",
+            "kind": getattr(dev, "kind", "") or "",
+            "host": getattr(dev, "host", "") or "",
+            "firmware": getattr(dev, "firmware", "") or "",
+        })
+    return rows
+
+
+def _evidence_rows(cr) -> tuple[list, list]:
+    """``(evidence, uncovered)`` — one pre-flight summary PER APPLIANCE, plus
+    the names of the appliances that have none.
+
+    Reads the bridge table through :func:`prep_store.preps_for_cr`, so a change
+    raised before that table existed still reports the single run it carried
+    rather than reading as evidence-free.
+
+    Only the VERDICT and the facts behind it travel — never the whole stored
+    result. That blob holds a config-backup listing and per-service probe rows
+    for every published service on the box: megabytes per appliance, shipped
+    into a third-party ticket system that never asked for the fleet's service
+    topology. What an approver needs is whether the pre-flight passed, when,
+    against which firmware, and whether a rollback point exists.
+    """
+    try:
+        from . import prep_store
+    except ImportError:  # pragma: no cover
+        return [], []
+    devices = _devices(cr)
+    by_id = {d.id: d for d in devices}
+    # prep_store.coverage is the ONE author of "which appliances have a
+    # baseline". Recomputing it here would let the ticket and the console
+    # disagree about the same change.
+    cov = prep_store.coverage(cr, devices)
+    evidence = []
+    for prep in cov["by_appliance"].values():
+        dev = by_id.get(prep.appliance_id)
+        result = prep.result_dict if isinstance(prep.result_dict, dict) else {}
+        backup = result.get("backup") if isinstance(result.get("backup"), dict) else {}
+        evidence.append({
+            "prep_id": prep.id,
+            "appliance_id": prep.appliance_id,
+            "appliance": (dev.name if dev is not None else "") or "",
+            "ok": bool(prep.ok),
+            "summary": prep.summary or "",
+            "firmware": (prep.firmware or "").strip(),
+            # Quoted ONLY when the backup actually succeeded. Naming a backup
+            # that failed puts a rollback in writing with nothing behind it.
+            "backup": ((backup.get("name") or "").strip()
+                       if backup.get("ok") else ""),
+            "services": len(prep.inventory_list),
+            "at": _iso(prep.created_at),
+        })
+    evidence.sort(key=lambda r: (r["appliance"] or "").lower())
+    return evidence, list(cov["missing"])
 
 
 def _policy_names(cr) -> list:

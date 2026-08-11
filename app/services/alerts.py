@@ -26,6 +26,7 @@ import socket
 from datetime import datetime, timezone
 
 from ..models import AppSetting
+from . import drift_attribution
 from . import email_service
 from . import notifications as notify
 from .product_scope import concrete_products
@@ -50,6 +51,10 @@ K_CHK_HOST = "alerts.check.host"
 K_ACT_STREAK_CRIT = "alerts.action_fail_streak_crit"  # crit at N straight failures
 K_ACT_OVERDUE_H = "alerts.action_overdue_hours"       # enabled action this late to fire
 K_DRIFT_WINDOW_MIN = "alerts.drift_window_min"  # only alert on drift newer than this
+# What to do with a drift SATOM can prove it caused itself: "info"
+# (default -- still reported, downgraded and credited), "warn" (treat it
+# like unexplained drift) or "off" (silent).
+K_DRIFT_ATTRIBUTED = "alerts.drift_attributed"
 K_DEV_MIN = "alerts.device_min_status"    # "warn" (default) or "crit"
 
 DEFAULTS = {
@@ -69,6 +74,7 @@ DEFAULTS = {
     K_ACT_STREAK_CRIT: "3",
     K_ACT_OVERDUE_H: "3",
     K_DRIFT_WINDOW_MIN: "90",
+    K_DRIFT_ATTRIBUTED: "info",
     K_DEV_MIN: "warn",
 }
 
@@ -99,6 +105,20 @@ def _int(key: str, fallback: int) -> int:
         return int(str(_get(key)).strip())
     except (TypeError, ValueError):
         return fallback
+
+
+def _span(att: dict) -> str:
+    """The attribution window as one human phrase.
+
+    Printed in BOTH the attributed and the unattributed message: the
+    operator cannot judge "SATOM recorded no write" without being told
+    what stretch of time was searched.
+    """
+    s, e = att.get("start"), att.get("end")
+    if not s or not e:
+        return "the interval since the previous snapshot"
+    tail = f"{e:%H:%M}" if s.date() == e.date() else f"{e:%Y-%m-%d %H:%M}"
+    return f"{s:%Y-%m-%d %H:%M} to {tail} UTC"
 
 
 def _now() -> datetime:
@@ -142,6 +162,7 @@ def config() -> dict:
         "git_ahead_max_hours": _int(K_GIT_AHEAD_MAX_H, 6),
         "backup_max_hours": _int(K_BACKUP_MAX_H, 48),
         "drift_window_min": _int(K_DRIFT_WINDOW_MIN, 90),
+        "drift_attributed": _get(K_DRIFT_ATTRIBUTED) or "info",
         "action_fail_streak_crit": _int(K_ACT_STREAK_CRIT, 3),
         "action_overdue_hours": _int(K_ACT_OVERDUE_H, 3),
         "device_min_status": _get(K_DEV_MIN) or "warn",
@@ -184,6 +205,12 @@ def save_config(form) -> None:
     AppSetting.set(K_GIT_AHEAD_MAX_H, clamp("git_ahead_max_hours", 1, 8760, 6))
     AppSetting.set(K_BACKUP_MAX_H, clamp("backup_max_hours", 1, 8760, 48))
     AppSetting.set(K_DRIFT_WINDOW_MIN, clamp("drift_window_min", 1, 43200, 90))
+    # A drift SATOM can prove it caused itself. Unknown values fall back to
+    # "info" (reported, downgraded, credited) and NEVER to "off": a typo in
+    # a settings field must not be able to silence an alert.
+    _att = g("drift_attributed")
+    AppSetting.set(K_DRIFT_ATTRIBUTED,
+                   _att if _att in ("info", "warn", "off") else "info")
     AppSetting.set(K_ACT_STREAK_CRIT, clamp("action_fail_streak_crit", 2, 100, 3))
     AppSetting.set(K_ACT_OVERDUE_H, clamp("action_overdue_hours", 1, 8760, 3))
     # Only "warn" and "crit" are dispatchable floors: "ok"/"unknown" would mail
@@ -675,16 +702,41 @@ def _check_drift() -> list[dict]:
         if not new.taken_at or new.taken_at < cutoff:
             continue        # old change -- already seen / not this run's concern
         age_min = int((now - new.taken_at).total_seconds() / 60)
+        # Who changed it. SATOM records its own writes in ``audit_logs``; the
+        # message used to hand that correlation back to the reader ("If nobody
+        # edited it via SATOM...") while holding the rows that answer it.
+        att = drift_attribution.attribute(a, rows[1], new)
+        span = _span(att)
+        head = (f"{a.kind} '{slug}' changed in the source-of-truth "
+                f"({age_min}m ago, content {new.sha256[:8]}, "
+                f"previous {rows[1].sha256[:8]}).")
+        if att["receipts"]:
+            mode = _get(K_DRIFT_ATTRIBUTED).strip().lower()
+            if mode == "off":
+                continue
+            lines = "\n".join("- " + drift_attribution.describe(r)
+                               for r in att["receipts"])
+            findings.append({
+                "key": f"drift.{slug}.{new.sha256[:12]}",
+                "severity": SEV_WARNING if mode == "warn" else SEV_INFO,
+                "title": f"Config change on {slug} — made through SATOM",
+                "product": _product_of(a),
+                "detail": (f"{head} SATOM recorded {len(att['receipts'])} "
+                           f"write(s) to this device in {span}, the interval "
+                           f"the change has to fall in, so this is an expected "
+                           f"change and not device-side drift:\n{lines}\n"
+                           f"If none of those is the change you are looking at, "
+                           f"review the A/B diff on the System Backup page.")})
+            continue
         findings.append({
             "key": f"drift.{slug}.{new.sha256[:12]}", "severity": SEV_WARNING,
             "title": f"Config drift on {slug}",
             "product": _product_of(a),
-            "detail": (f"{a.kind} '{slug}' changed in the source-of-truth "
-                       f"({age_min}m ago, content {new.sha256[:8]}, "
-                       f"previous {rows[1].sha256[:8]}). If nobody edited it via "
-                       f"SATOM, a device-side (CLI/GUI) change has drifted from "
-                       f"the baseline -- review the A/B diff on the System "
-                       f"Backup page.")})
+            "detail": (f"{head} SATOM recorded no write of its own to this "
+                       f"device in {span}, the interval the change has to fall "
+                       f"in, so it came from the device side (CLI/GUI) or from "
+                       f"a tool other than SATOM -- review the A/B diff on the "
+                       f"System Backup page.")})
     return findings
 
 

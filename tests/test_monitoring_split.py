@@ -127,19 +127,37 @@ def test_an_installed_but_dead_unit_is_still_red(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def _admin_group_bodies(text: str) -> list[str]:
-    """Slice base.html into the body of each Administrator/Administration group."""
+    """Slice base.html into the body of each Administrator/Administration group.
+
+    Anchored on ``data-nav-group=``, NOT on the visible label. The label became
+    ``{{ _('Administrator') }}`` when the nav was translated, the old
+    ``<span>Administrat`` anchor stopped matching, and the extractor returned an
+    empty list -- the promise below was never checked again. Only the
+    non-vacuity assert turned that into a visible failure instead of a green
+    test over zero blocks.
+
+    ``data-nav-group`` is the group's structural identity (the nav JS keys its
+    open/closed state off it) and is never a translated string -- guarded by
+    ``test_the_nav_group_identity_is_not_translated``.
+
+    The body ends where its own ``<div>`` closes, counted, so a group can never
+    swallow the one after it.
+    """
     out = []
-    for m in re.finditer(r"<span>Administrat(?:or|ion)</span>", text):
+    for m in re.finditer(r'data-nav-group="Administrat(?:or|ion)"', text):
         tail = text[m.end():]
         start = tail.index('<div class="fw-nav-group-body">')
-        # the group body ends at the next section header or context boundary
-        end = len(tail)
-        for stop in ("fw-nav-section fw-nav-toggle", "fw-nav-context-label",
-                     "{% elif product.key", "{% endif %}\n    </nav>"):
-            i = tail.find(stop, start)
-            if i != -1:
-                end = min(end, i)
-        out.append(tail[start:end])
+        depth, end = 0, None
+        for tok in re.finditer(r"<div\b|</div>", tail[start:]):
+            depth += -1 if tok.group(0) == "</div>" else 1
+            if depth == 0:
+                end = start + tok.start()
+                break
+        assert end is not None, "unbalanced <div> in an Administrator group body"
+        body = tail[start:end]
+        assert "fw-nav-toggle" not in body, \
+            "the extractor ran past the group and swallowed the next one"
+        out.append(body)
     return out
 
 
@@ -157,8 +175,20 @@ def test_every_administrator_group_offers_collection():
     bodies = _admin_group_bodies(BASE_HTML.read_text())
     assert len(bodies) == 5, "expected 5 Administrator groups, got %d" % len(bodies)
     for i, b in enumerate(bodies):
+        assert "fw-nav-item" in b, "Administrator group #%d sliced empty" % i
         assert "partials/nav_collection.html" in b, \
             "Administrator group #%d does not include the Collection partial" % i
+
+
+def test_the_nav_group_identity_is_not_translated():
+    """``data-nav-group`` is the anchor every nav-slicing guard keys on (here and
+    in ``test_automation_adom_nav``), and it is what the sidebar JS persists
+    open/closed state under. Routing it through ``_()`` would translate an
+    identifier: the guards would slice nothing and the operator's expanded
+    groups would collapse on every language change."""
+    for m in re.finditer(r'data-nav-group="([^"]*)"', BASE_HTML.read_text()):
+        assert "_(" not in m.group(1), \
+            "nav group identity must not be translated: %s" % m.group(1)
 
 
 def test_collection_is_defined_once():

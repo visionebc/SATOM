@@ -7242,3 +7242,69 @@ leaves a rollout that LOOKS scheduled while a third of the fleet has no window.
 And more waves than `MAX_WAVES` is refused **naming the number**, never
 truncated — a wave that silently disappeared takes its appliances out of every
 window without anybody being told.
+
+
+## §67 — the monitor may not assert what it has not measured
+
+`tests/test_monitor_truthfulness.py` (31 tests). Four checks were each stating
+something false while every test passed, because in all four cases the code was
+internally consistent and only the CLAIM was wrong. Between them they produced
+about 790 of the ~825 alerts of the week to 2026-08-11, which buried the two
+alerts that were real.
+
+**The shape to recognise.** None of these is a crash, a regression or a
+performance problem. Each is a number or a sentence that means something other
+than what it says, and no unit test can see it, because the unit is behaving
+exactly as written. They are found by asking of every rendered claim: *what
+would have to be true for this sentence to be true, and did we measure it?*
+
+**1. Identity must exclude what the device moves on its own.** `sot_store`
+hashed the appliance's clock. The rule was derived from the data, not guessed:
+enumerating the differing leaf paths across all 206 consecutive version pairs
+in the live store showed 194 differing only in `system_time_manual`. Each
+exclusion is keyed as narrowly as the evidence allows — the clock fields are
+dropped only inside an object carrying `system_dateTime` (so a policy field
+named `hour` is still hashed), and a `*_val` handle only when the sibling name
+it resolves to is present (so a standalone `*_val` is still hashed). `tz`,
+`ntpsync`, `dst` and `syncinterval` live in the same object and are deliberately
+kept: the goal is to stop reporting the clock, not to stop reporting time
+configuration. Verification recipe: re-hash every pair in the store and count
+how many collapse — a rule that collapses nothing is either wrong or dead.
+
+**2. Never mix a host numerator with a container denominator.** `100 *
+os.getloadavg()[0] / os.cpu_count()` inside an LXC divides the hypervisor's
+load by this container's cores. The tell was decisive and cost nothing to
+check: two independent containers reported the **same uptime and the same load
+average to the decimal**. lxcfs virtualises `/proc/meminfo` but not
+`/proc/loadavg` or `/proc/uptime`, which is why memory was right and only CPU
+lied. `load_pct` was **removed** rather than corrected, and the guard is
+derived — it scans every module in `app/` for `getloadavg` on a line that also
+mentions `cpu_count`/`cpus`, rather than allow-listing the file that had the
+bug. A node that reports no `cpu_pct` is graded **unknown**; falling back to
+`load_pct` would restore the bug for precisely the node that still has it.
+
+**3. "Not checked" is not "down", and fail-closed is not a licence to
+misdescribe.** Folding `healthCheckStatus: "disable"` into the down-count was a
+deliberate fail-closed choice with a test fixing it — and the resulting
+sentence, `ALL backends down`, was false about devices reporting those members
+up. The grade was kept non-green (an untested backend is a real gap) and the
+CLAIM was corrected, as a separate governable fact. **When a fail-closed
+default is right but its wording is wrong, change the wording; do not weaken
+the default, and do not keep the wording because a test asserts it.** The old
+test was updated in the same commit as the code it fixed.
+
+**4. A delivery counter counts deliveries.** `dispatched` was `len(fresh)`
+regardless of outcome, so weeks of `454 Relay access denied` read as success —
+and the cooldown was stamped on that fiction, so each finding was counted as
+sent and then silenced for six hours. Three rules follow: count per channel and
+name the ones that failed; only record suppression state for what was actually
+delivered; and make total failure change something an operator already looks at
+(here, a non-zero exit so the timer's unit goes `failed`). A summary line in a
+log nobody reads is not a signal.
+
+**Ninth instance of the assert-by-substring trap.** The guard that forbids
+grading CPU from `getloadavg` matches its own explanatory comment, and the AST
+guard on `alerts-run` first tried to strip comments from `app/__init__.py` and
+truncated a multi-line string literal containing a `#`. Strip comments before
+asserting on source — or, when the question is structural, parse the ORIGINAL
+source and assert on the AST, which carries no comments at all.

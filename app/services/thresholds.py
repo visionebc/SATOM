@@ -225,6 +225,13 @@ FACTS: tuple[Fact, ...] = (
          "The front end answers and nothing is behind it."),
     Fact("backends_partial_down", "Some backends of a server policy are down",
          "warn", ("policy_sessions",)),
+    Fact("backends_unverified",
+         "A pool member has no health check configured",
+         "warn", ("policy_sessions",),
+         "The appliance reports the member UP but is not testing it, so the "
+         "grade is unverified — not down. Kept as a fact because an untested "
+         "backend is a real gap; raise it to crit where every pool is "
+         "required to carry a health check."),
     Fact("policy_disabled", "Server policy is administratively disabled",
          "warn", ("policy_sessions",),
          "Not admitting traffic. Lower this only where disabled policies are "

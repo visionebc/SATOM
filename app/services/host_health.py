@@ -42,7 +42,10 @@ from . import thresholds as th
 
 RANK = {"unknown": 0, "ok": 1, "warn": 2, "crit": 3}
 
-SIGNAL_LABEL = {"disk": "Filesystem", "memory": "Memory", "load": "CPU load"}
+# The ``load`` key is kept as a stable identifier (it is stored in cooldown
+# state and referenced by saved threshold rows); the LABEL says what is
+# actually measured now, which is this container's CPU utilisation.
+SIGNAL_LABEL = {"disk": "Filesystem", "memory": "Memory", "load": "CPU"}
 
 
 def worst_of(statuses) -> str:
@@ -135,22 +138,41 @@ def grade_stats(stats: dict | None, lim: dict | None = None) -> dict:
             if st != "ok" else "%.0f%% used" % mp,
             "pct": mp}
 
-    # --- load ------------------------------------------------------------
-    # Reported as a PERCENTAGE OF CORES, not as a raw load average: "load 6" is
-    # a crisis on 2 cores and idle on 32, so a fleet-wide threshold has to be
-    # normalised or it means something different on every node.
-    lp = stats.get("load_pct")
+    # --- CPU -------------------------------------------------------------
+    # Reported as a PERCENTAGE OF CORES, not as a raw number: "6" is a crisis
+    # on 2 cores and idle on 32, so a fleet-wide threshold has to be normalised
+    # or it means something different on every node.
+    #
+    # The number graded is ``cpu_pct`` -- this container's own cgroup CPU
+    # accounting. It is NOT ``load_pct``, which no longer exists: inside an LXC
+    # the load average comes from the hypervisor (lxcfs does not virtualise
+    # /proc/loadavg), so the old ratio divided a host numerator by a container
+    # denominator and reported "220% of 3 cores" for a container whose every
+    # process was idle. A node that reports no ``cpu_pct`` -- an older peer
+    # across a rolling upgrade -- is graded UNKNOWN and says why; falling back
+    # to ``load_pct`` would restore the bug for exactly the node that still has
+    # it. The host load average is still SHOWN, labelled as the host's, because
+    # a saturated hypervisor is real information about this node's latency.
+    lp = stats.get("cpu_pct")
     st = _grade(lp, lim["load_warn_pct"], lim["load_crit_pct"])
+    load = stats.get("load") or []
+    host_note = ""
+    if load:
+        host_note = "; %s load %s" % (
+            "host" if stats.get("load_scope") == "host" else "node",
+            "/".join("%g" % v for v in load))
     if lp is None:
-        signals["load"] = {"status": "unknown", "text": "no load reading"}
+        signals["load"] = {
+            "status": "unknown",
+            "text": "no CPU reading — this node reports no cgroup CPU "
+                    "accounting (peer running an older build?)" + host_note}
     else:
-        load = stats.get("load") or []
         signals["load"] = {
             "status": st,
-            "text": "%.0f%% of %s core%s (load %s, budget %g%%)" % (
+            "text": "%.0f%% of %s core%s busy (budget %g%%)%s" % (
                 lp, stats.get("cpus"), "s" if (stats.get("cpus") or 0) != 1 else "",
-                "/".join("%g" % v for v in load) or "?", lim["load_warn_pct"])
-            if st != "ok" else "%.0f%% of %s cores" % (lp, stats.get("cpus")),
+                lim["load_warn_pct"], host_note)
+            if st != "ok" else "%.0f%% of %s cores busy" % (lp, stats.get("cpus")),
             "pct": lp}
 
     status = worst_of([s["status"] for s in signals.values()])

@@ -1592,12 +1592,39 @@ def profile_for(action) -> dict:
     return profile
 
 
+def _lang_block(profile, lang: str) -> dict:
+    """One language out of a :class:`_Localized` block, overlay included.
+
+    Subscription, never ``.get()``.  ``dict.get`` does NOT call
+    ``__missing__``, so asking a ``_Localized`` block for a TRANSLATED
+    language with ``.get()`` answers ``None`` no matter how complete the
+    catalogue is -- the overlay that exists to build that language is never
+    reached.  The failure is silent while the language is gated (the block
+    degrades to English) and becomes a ``KeyError`` in front of an approver
+    the moment the catalogue completes, which is exactly the wrong order to
+    learn about it.
+    """
+    try:
+        block = profile[lang]
+    except (KeyError, TypeError):
+        # No catalogue for this language.  Degrade to the AUTHORED English,
+        # never to a blank: an empty profile does not print an empty section,
+        # it raises on the first key the renderer reads.  The gate upstream
+        # means this branch should be unreachable in production — which is
+        # exactly why it must not be the branch that turns a gate bug into a
+        # 500 in front of an approver.
+        try:
+            block = profile[langs.DEFAULT]
+        except (KeyError, TypeError):
+            return {}
+    return block if isinstance(block, dict) else {}
+
+
 def _profile_text(action, lang: str) -> dict:
     """The profile of ``action`` in ``lang``, degrading to the generic one."""
-    profile = profile_for(action)
-    block = profile.get(lang)
-    if not isinstance(block, dict):
-        block = ACTION_PROFILES[GENERIC_ACTION].get(lang, {})
+    block = _lang_block(profile_for(action), lang)
+    if not block:
+        block = _lang_block(ACTION_PROFILES[GENERIC_ACTION], lang)
     return block
 
 

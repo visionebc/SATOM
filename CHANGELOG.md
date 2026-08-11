@@ -71,6 +71,25 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **Change documents are produced in French and Italian.** Both languages were
+  one and two strings short of a complete catalogue (of 292), and a catalogue
+  that is one string short withdraws the whole language — deliberately, because
+  a partial one prints an English paragraph under an approver's signature. The
+  three missing units are translated, so French and Italian now render a
+  complete document and the profile picker stops marking them "change documents
+  not translated yet". Spanish was already complete; it is not offered only
+  because this installation has it switched off in Settings → Languages.
+
+- **A translated action profile came back empty (`KeyError` on render).**
+  `cr_document` builds a non-authored language by overlaying the catalogue in
+  `_Localized.__missing__`, which `dict.get()` never calls — and the profile
+  lookup used `.get()`. The effect depended on the gate and so appeared in the
+  worst possible order: while a language was incomplete the renderer degraded
+  it to English and nothing looked wrong, and the moment its catalogue was
+  completed the document raised instead. The lookup now subscripts, and
+  degrades to the authored English rather than to an empty profile. See
+  `docs/safeguards.md` §70.
+
 - **A navigation guard that had quietly stopped guarding.** The check that every
   Administrator block in the sidebar reaches Collection through the one shared
   partial located those blocks by their rendered label, so translating the nav

@@ -897,6 +897,15 @@
                       <input type="number" name="drift_window_min" class="form-control fw-form-control" min="1" max="43200" value="{{ alerts_config.drift_window_min }}">
                     </div>
                     <div class="col-6">
+                      <label class="fw-form-label">{{ _('Change made through SATOM') }}</label>
+                      <select name="drift_attributed" class="form-select fw-form-control">
+                        <option value="info" {{ 'selected' if alerts_config.drift_attributed not in ('warn', 'off') }}>{{ _('Report it, credited to its author') }}</option>
+                        <option value="warn" {{ 'selected' if alerts_config.drift_attributed == 'warn' }}>{{ _('Report it as drift, credited to its author') }}</option>
+                        <option value="off" {{ 'selected' if alerts_config.drift_attributed == 'off' }}>{{ _('Do not report it') }}</option>
+                      </select>
+                      <div class="form-text">{{ _('When a config change matches a write SATOM recorded in its own audit log, the alert names who made it instead of asking you to remember. Unexplained drift is always reported.') }}</div>
+                    </div>
+                    <div class="col-6">
                       <label class="fw-form-label">{{ _('Automation fail streak → critical') }}</label>
                       <input type="number" name="action_fail_streak_crit" class="form-control fw-form-control" min="2" max="100" value="{{ alerts_config.action_fail_streak_crit }}">
                       <div class="form-text">{{ _('A scheduled action that keeps failing escalates at this many consecutive scheduled runs.') }}</div>

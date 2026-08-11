@@ -7584,3 +7584,93 @@ correct behaviour and the code had `{}`, and the generic-fallback branch was
 indistinguishable from dead code until a test built a profile that never went
 through `_localize_all`.
 
+## §71 — a console that holds the receipt must not ask the operator for it
+
+The drift alert ended, from the day it was written, with *"If nobody edited it
+via SATOM, a device-side (CLI/GUI) change has drifted from the baseline"*.
+
+On 2026-08-11 it fired for `fortiweb08` at 09:15 UTC. The cause was an
+allow-method exception **SATOM itself had written** at 08:37 UTC — from Attack
+Search, by `admin`, from 162.23.30.43 — recorded in `audit_logs` 1253-1256 and
+in `change_history` #309. The product was holding the answer and printing the
+question.
+
+Nothing raised. Nothing was slow. No test failed — the code did exactly what it
+said. Only the *assertion* was weaker than what the process knew, which is the
+same class as §67 and the reason both exist.
+
+**The rule.** Before shipping a sentence that asks the reader to correlate,
+ask whether this process can perform the correlation itself. If it can, the
+sentence is a defect even though every test is green.
+
+### The window is bounded by `last_seen_at`, not by `taken_at`
+
+The content-addressed store is what makes the attribution tight, and using the
+obvious field throws that away. An unchanged device mints **no** row — the
+newest row's `last_seen_at` advances instead. So:
+
+* left edge = `prev.last_seen_at` — the last moment the harvest CONFIRMED the
+  old config still stood;
+* right edge = `new.taken_at`.
+
+Measured on the live store, the difference is not cosmetic:
+
+| device | window on `last_seen_at` | window on `taken_at` |
+|---|---|---|
+| fortiweb08 | 62 min | **8 h 21 min** |
+| fortiweb10 | 62 min | **4 days 3 h** |
+
+A four-day window will find *a* SATOM write for almost any device, and will
+credit the wrong one. `max(taken_at, last_seen_at)` guards a legacy row whose
+`last_seen_at` predates its `taken_at`; widening leftwards there could only
+invent attributions.
+
+Known and documented rather than engineered around: the harvest reads the
+device seconds before it stores the snapshot, so a write landing in that gap is
+inside the window while its effect appears in the NEXT version.
+
+### The two errors are not symmetric — when in doubt, no receipt
+
+Failing to credit a real SATOM write leaves a WARNING that overstates: noisy,
+and the operator finds the write in two clicks. Crediting a device-side change
+to SATOM downgrades a genuine intrusion to an approving nod and buries the one
+alert that mattered. **Every rule requires positive evidence; anything
+unparseable is "no receipt".** Concretely, none of these count as a write:
+
+* a **preview** — `fortiweb_ops._record` logs dry runs under the same action
+  name, and a preview never reached the device;
+* a **refused** write — `errcode -56` changed nothing;
+* a `.failed` twin — `faz.device.authorize.failed` is emitted by the same
+  helper as its success twin and sails straight through a `faz.` prefix match;
+* a **GET** through the FAZ/ADC API consoles, which log *every* verb;
+* an audit row that names this device in its `target` but carries **another**
+  appliance's id — `faz.device.authorize` lists MANAGED devices in its target,
+  so target-text matching would let a FortiAnalyzer action explain a FortiWeb's
+  drift. Id-linked actions match on the id, full stop; the four name-linked
+  actions match the **first token** only.
+
+### `audit_logs.extra` is a Python repr, not JSON
+
+`audit.log_action` stores `str(extra)`. `json.loads` fails on **every row ever
+written** (single quotes, bare `True`), and a reader that swallowed that and
+returned `{}` would make every device look unattributed — this very defect,
+reintroduced one layer down. Read it with `ast.literal_eval`.
+
+`audit_logs` is the source, not `change_history`: the latter is FortiWeb-only
+and has **no error column**, so a write the device refused is indistinguishable
+from one it accepted.
+
+### Verifying
+
+* the setting is `alerts.drift_attributed` = `info` (default) | `warn` | `off`.
+  An unknown value falls back to **`info`, never to `off`** — a typo in a
+  settings field must not be able to mute a check. There is a test.
+* `tests/test_drift_attribution.py` (30 tests) — **24 mutations, 24 bite**,
+  measured by return code (`rc==1` only; `rc==4` is a usage error).
+* An assertion that greps `alerts.py` for the retired sentence would match the
+  comment explaining why it is gone (the eleventh substring-assert trap in this
+  repo). Assert on the **rendered finding**.
+* `test_a_nonsense_window_never_reaches_the_audit_table` asserts the guard does
+  not ISSUE the query. Asserting only that the result is empty proved nothing:
+  `timestamp >= NULL` and a backwards range both return no rows anyway, so that
+  assertion held with the guard deleted.

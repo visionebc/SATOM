@@ -15832,3 +15832,18 @@ msgstr "“Change documents” descrive il catalogo, non questo commutatore: una
 
 msgid "Languages"
 msgstr "Lingue"
+
+msgid "Change made through SATOM"
+msgstr "Modifica apportata tramite SATOM"
+
+msgid "Report it, credited to its author"
+msgstr "Segnalalo, accreditandolo al suo autore"
+
+msgid "Report it as drift, credited to its author"
+msgstr "Segnalalo come deriva, accreditandolo al suo autore"
+
+msgid "Do not report it"
+msgstr "Non lo segnalare"
+
+msgid "When a config change matches a write SATOM recorded in its own audit log, the alert names who made it instead of asking you to remember. Unexplained drift is always reported."
+msgstr "Quando una modifica di configurazione corrisponde a una scrittura SATOM registrata nel proprio registro di controllo, l'allarme indica chi l'ha effettuata invece di chiederti di ricordarlo. Lo sviamento non spiegato viene sempre segnalato."

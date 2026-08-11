@@ -97,6 +97,30 @@ def document_langs() -> tuple:
     Falls back to the authored set if the catalogue cannot be read (no app
     context, table missing): degrading to English+German is a smaller lie than
     claiming five languages the renderer cannot fill.
+
+    Narrowed once more by what the INSTALL offers
+    (:mod:`app.services.lang_policy`): an administrator who withdrew a language
+    withdrew it from every picker, not only from the profile.  The source
+    language is offered unconditionally there, so this can never return empty.
+    """
+    try:
+        from . import lang_policy
+        allowed = set(lang_policy.offered_codes())
+    except Exception:  # noqa: BLE001 — an unreadable gate offers everything
+        allowed = set(langs.codes())
+    return tuple(pair for pair in renderable_langs() if pair[0] in allowed)
+
+
+def renderable_langs() -> tuple:
+    """``((code, endonym), ...)`` for every language a complete document CAN be
+    produced in, before the install's availability gate is applied.
+
+    Split out from :func:`document_langs` for exactly one caller: the admin
+    console, which has to say "documents are not produced in Italian yet"
+    *next to the switch that would enable Italian*.  Asking the gated function
+    there would answer "not renderable" for every language the operator has not
+    switched on yet -- the answer would depend on the setting being described,
+    which is how a page comes to argue with itself.
     """
     try:
         from . import cr_i18n
@@ -2359,6 +2383,7 @@ __all__ = [
     "SECTION_TITLES",
     "normalize_lang",
     "document_langs",
+    "renderable_langs",
     "change_ref",
     "filename",
     "profile_for",

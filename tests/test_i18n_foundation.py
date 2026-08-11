@@ -119,11 +119,29 @@ def test_the_registry_is_the_only_author_of_the_language_list():
         "tuple fixed at import can only describe the languages authored in "
         "Python, so every picker reading it is blind to the translated "
         "catalogue")
-    m = re.search(r"def document_langs\(\).*?\n(.*?)\n\n\ndef ", src, flags=re.S)
-    assert m, "cr_document must still declare document_langs()"
-    assert "langs.codes()" in m.group(1) and "langs.label(" in m.group(1), (
-        "document_langs() must derive order and labels from services.langs, "
-        f"not re-list the languages itself; found: {m.group(1)!r}")
+    # The derivation lives in ``renderable_langs`` and ``document_langs``
+    # narrows it by the install's availability gate. The guard follows the
+    # code rather than the other way round: anchoring on "document_langs
+    # mentions langs.codes()" would fail against a correct split (it did, when
+    # the gate was added) while still passing against a second hardcoded list
+    # in the function next to it -- an anchor that reports the wrong thing in
+    # both directions.
+    def _body(name: str) -> str:
+        m = re.search(r"def %s\(\).*?\n(.*?)\n\n\ndef " % name, src, flags=re.S)
+        assert m, f"cr_document must still declare {name}()"
+        return m.group(1)
+
+    derive = _body("renderable_langs")
+    assert "langs.codes()" in derive and "langs.label(" in derive, (
+        "renderable_langs() must derive order and labels from services.langs, "
+        f"not re-list the languages itself; found: {derive!r}")
+    gate = _body("document_langs")
+    assert "renderable_langs()" in gate, (
+        "document_langs() must narrow renderable_langs(), not re-derive the "
+        f"list: a second derivation is a second author; found: {gate!r}")
+    assert "langs.label(" not in gate, (
+        "document_langs() must not label languages itself -- two labellers is "
+        f"how one of them goes stale; found: {gate!r}")
 
 
 def test_the_document_picker_only_offers_languages_it_can_render():

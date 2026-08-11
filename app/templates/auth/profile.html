@@ -52,7 +52,18 @@
             {% for code, name in lang_options %}
             <option value="{{ code }}" {{ 'selected' if pref_lang == code }}>{{ name }} ({{ code|upper }}){% if code not in doc_langs %} &mdash; change documents not translated yet{% endif %}</option>
             {% endfor %}
+            {# A preference the administrator has since withdrawn. Kept in the
+               list, still selected, so the answer stays visible and pressing
+               Save cannot silently clear it. #}
+            {% if pref_withdrawn %}
+            <option value="{{ pref_lang }}" selected>{{ pref_lang_label }} ({{ pref_lang|upper }}) &mdash; {{ _('no longer offered here') }}</option>
+            {% endif %}
           </select>
+          {% if pref_withdrawn %}
+          <div class="form-text text-warning-emphasis mt-1">
+            {{ _('An administrator withdrew this language from this installation, so pages are shown in another one. Your choice is kept and applies again if it is switched back on.') }}
+          </div>
+          {% endif %}
         </div>
         <div class="col-md-6">
           <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save Language') }}</button>

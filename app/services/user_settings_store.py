@@ -112,3 +112,29 @@ def save_language(user_id: int, code) -> str:
     value = _langs.normalize(code) if _langs.is_supported(code) else ""
     UserSetting.set(user_id, K_LANG, value)
     return value
+
+
+def language_usage() -> dict:
+    """``{code: how many users picked it}`` -- only languages somebody chose.
+
+    The admin console shows this beside each availability switch because
+    withdrawing a language is not a display tweak: it changes the language
+    other people's pages render in. An operator should read "2 users" before
+    clicking, not discover it from a ticket afterwards.
+
+    Blank rows ("no preference") are not counted -- they are not a pick -- and
+    a row naming a language the registry no longer knows is ignored rather than
+    reported under a code nothing can label.
+    """
+    out: dict = {}
+    try:
+        rows = UserSetting.query.filter_by(key=K_LANG).all()
+    except Exception:  # noqa: BLE001 — a count must not break the console
+        return out
+    for row in rows:
+        raw = getattr(row, "value", "")
+        if not _langs.is_supported(raw):
+            continue
+        code = _langs.normalize(raw)
+        out[code] = out.get(code, 0) + 1
+    return out

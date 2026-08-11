@@ -15769,3 +15769,66 @@ msgstr "Ogni onda prende il titolo sopra indicato, seguito da “… — onda k/
 #~ msgid "v1.0"
 #~ msgstr "v1.0"
 
+
+msgid "no longer offered here"
+msgstr "non più offerto qui"
+
+msgid "An administrator withdrew this language from this installation, so pages are shown in another one. Your choice is kept and applies again if it is switched back on."
+msgstr "Un amministratore ha rimosso questo linguaggio da questa installazione, quindi le pagine vengono visualizzate in un altro. La tua scelta è mantenuta e si applica nuovamente se viene riattivato."
+
+msgid "Languages offered to users"
+msgstr "Lingue offerte agli utenti"
+
+msgid "Tick the languages users may choose on this installation. A withdrawn language disappears from the profile picker, from the change-document language question, and from browser language negotiation — pages render in another one instead."
+msgstr "Selezionare le lingue che gli utenti possono scegliere in questa installazione. Una lingua ritirata scompare dal selettore di profili, dalla domanda sulla lingua del documento di modifica e dall'accordo sulle lingue del browser — le pagine vengono invece visualizzate in un'altra."
+
+msgid "Offered"
+msgstr "Offerto"
+
+msgid "Code"
+msgstr "Codice"
+
+msgid "Change documents"
+msgstr "Documenti di modifica"
+
+msgid "Chosen by"
+msgstr "Scelto da"
+
+msgid "source language"
+msgstr "linguaggio sorgente"
+
+msgid "produced"
+msgstr "prodotto"
+
+msgid "not translated yet"
+msgstr "non tradotto ancora"
+
+msgid "user(s)"
+msgstr "utente(i)"
+
+msgid "nobody"
+msgstr "nessuno"
+
+msgid "Save language availability"
+msgstr "Salva disponibilità lingue"
+
+msgid "The stored setting is unreadable and is being ignored — every language is offered. Saving here replaces it."
+msgstr "L'impostazione memorizzata non è leggibile e viene ignorata — ogni lingua è offerta. Salvando qui la si sostituirà."
+
+msgid "Never configured — every language is offered until you save here."
+msgstr "Mai configurato — ogni lingua è offerta fino a quando non salvi qui."
+
+msgid "%(code)s cannot be switched off."
+msgstr "%(code)s non può essere disattivato."
+
+msgid "It is the language every translation derives from, and the one a page falls back to, so an installation without it would have no readable fallback."
+msgstr "È il linguaggio da cui deriva ogni traduzione e su cui una pagina ricade in caso di necessità, quindi un'installazione senza di esso non avrebbe alcun fallback leggibile."
+
+msgid "Withdrawing deletes nothing. Users who had already chosen the language keep their choice — it is simply not honoured while the language is off, and their profile says so — and the translated text stays in place, so switching a language back on restores it complete rather than empty."
+msgstr "Il reperimento non elimina nulla. Gli utenti che hanno già scelto la lingua mantengono la loro scelta — questa scelta semplicemente non è onorata mentre la lingua è disattivata, e il loro profilo lo indica — e il testo tradotto rimane invariato, pertanto attivare nuovamente una lingua ripristina tutto completo invece che vuoto."
+
+msgid "“Change documents” describes the catalogue, not this switch: a language marked as not translated yet can still be offered for the interface, but the change-request form will keep asking which language a document is being drafted in rather than picking that one."
+msgstr "“Change documents” descrive il catalogo, non questo commutatore: una lingua contrassegnata come ancora non tradotta può comunque essere offerta per l'interfaccia, ma il modulo di richiesta di modifica continuerà a chiedere in quale lingua è in corso la stesura del documento piuttosto che scegliere quella."
+
+msgid "Languages"
+msgstr "Lingue"

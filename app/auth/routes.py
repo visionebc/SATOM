@@ -306,13 +306,24 @@ def profile():
             flash('Password updated successfully.', 'success')
             return redirect(url_for('auth.profile'))
 
-    from ..services import cr_document, langs as lang_registry
+    from ..services import cr_document, lang_policy, langs as lang_registry
     is_admin = bool(current_user and current_user.can(Permission.USER_MANAGE))
+    _pref = user_store.language(current_user.id)
     return render_template(
         'auth/profile.html',
         is_admin=is_admin,
-        pref_lang=user_store.language(current_user.id),
-        lang_options=lang_registry.SUPPORTED,
+        pref_lang=_pref,
+        # What this INSTALL offers, not what the product speaks: an
+        # administrator can withdraw a language in Settings, and a picker that
+        # ignored that would keep offering a choice the chrome then refuses to
+        # honour.
+        lang_options=lang_policy.offered(),
+        # A saved preference the install has since withdrawn. Reported instead
+        # of quietly dropped: the option stays in the list, still selected, so
+        # the user sees the answer they gave and learns why the page is not in
+        # it -- and so pressing Save does not silently clear it.
+        pref_withdrawn=bool(_pref and not lang_policy.is_offered(_pref)),
+        pref_lang_label=(lang_registry.label(_pref) if _pref else ''),
         # Which languages a whole change document can actually be produced in.
         # Offered next to the picker rather than left implicit: a preference
         # the product cannot honour yet must SAY so on the page where it is
@@ -338,8 +349,18 @@ def save_language():
     display preference -- or, worse, tempt the next editor to relax the
     password check for everyone.
     """
-    code = user_store.save_language(current_user.id,
-                                    request.form.get('lang'))
+    from ..services import lang_policy
+
+    submitted = (request.form.get('lang') or '').strip()
+    # A language this install does not offer is refused rather than stored.
+    # The picker already omits it, so reaching here means a stale form or a
+    # replayed post -- and storing it would create exactly the state the gate
+    # exists to prevent: a preference the chrome will never honour, with
+    # nothing on the page saying why.
+    if submitted and not lang_policy.is_offered(submitted):
+        flash('That language is not offered on this installation.', 'warning')
+        return redirect(url_for('auth.profile') + '#language')
+    code = user_store.save_language(current_user.id, submitted)
     log_action('profile.language', target=(code or 'none'))
     flash('Language preference saved.' if code else
           'Language preference cleared \u2014 you will be asked each time.',

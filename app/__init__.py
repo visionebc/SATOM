@@ -838,6 +838,23 @@ def create_app(config_override: object | None = None) -> Flask:
         return {"user_lang": ""}
 
     @app.context_processor
+    def _inject_ui_lang():
+        """The language the page is ACTUALLY rendered in.
+
+        Distinct from ``user_lang``, which is what the user asked for: the two
+        differ for an anonymous visitor, for a user with no preference, and for
+        one whose language an administrator has withdrawn. ``<html lang>`` has
+        to carry the rendered one -- a screen reader pronounces the page in the
+        language the attribute claims, so declaring the stored preference (or a
+        hardcoded "en") mispronounces every translated page rather than failing
+        visibly.
+        """
+        try:
+            return {"ui_lang": _ui_locale.resolve()}
+        except Exception:  # noqa: BLE001 - chrome must not break on a locale
+            return {"ui_lang": _langs.DEFAULT}
+
+    @app.context_processor
     def _inject_csp_nonce():
         return {"csp_nonce": getattr(g, "csp_nonce", "")}
 

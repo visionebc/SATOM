@@ -8,6 +8,24 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Settings → Languages: choose which languages this installation offers.**
+  SATOM speaks five; an administrator can now decide which of them users may
+  pick here. A withdrawn language disappears from the profile picker, from the
+  change-document language question **and** from browser language negotiation —
+  so a browser asking for French stops being served French once French is off,
+  which was the half nobody would have noticed missing. The source language
+  (English) cannot be switched off: it is what every translation derives from
+  and what a page falls back to, so an installation without it would have no
+  readable fallback.
+
+  Withdrawing deletes nothing. A user who had already chosen the language keeps
+  their choice — it is simply not honoured while the language is off, and their
+  profile says so in as many words — and the translated text stays in place, so
+  switching a language back on restores it complete rather than empty. The
+  console lists every language, including the withdrawn ones, and shows how
+  many users have picked each one *before* you switch it off, because
+  withdrawing a language changes the language other people's pages render in.
+
 - **A maintenance window is now one staged workflow: Automation → Upgrade
   Flow.** Pre-flight every appliance in the window in one sweep, raise a single
   change request that cites *all* of that evidence, export the consolidated

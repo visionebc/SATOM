@@ -52,7 +52,7 @@
             {% set p = latest.get(d.id) %}
             <tr>
               <td><input class="form-check-input uf-dev" type="checkbox" name="device_ids" value="{{ d.id }}"
-                         data-prep="{{ p.id if p else '' }}"></td>
+                         data-prep="{{ p.id if p else '' }}" data-name="{{ d.name }}"></td>
               <td><a href="{{ url_for('appliances.detail', id=d.id) }}">{{ d.name }}</a>
                   <div class="text-muted small is-mono">{{ d.host }}</div></td>
               <td><span class="fw-badge fw-badge-secondary">{{ d.kind }}</span></td>
@@ -91,9 +91,97 @@
 
 {# ---------------------------------------------------------------- stage 2 #}
 {% if current_user.can('user_manage') %}
+{% if not crdoc.entry %}
+  {# The built-in was switched off in Administration -> Change Types, and
+     create_change_request refuses an action that is not on offer. Saying so
+     HERE, instead of letting the operator fill the form, is the difference
+     between reading it now and reading it after the sweep. #}
+  <div class="fw-card mb-3">
+    <div class="fw-card-header">
+      <span><span class="fw-badge fw-badge-secondary me-2">2</span><strong>{{ _('Change request (CRQ)') }}</strong></span>
+    </div>
+    <div class="fw-card-body">
+      <p class="mb-0 text-muted">
+        {{ _('The change type this flow raises is disabled in Administration → Change Types, so no change can be raised from here. Re-enable it there.') }}
+        <a href="{{ url_for('cr_types.edit', key=cr_action) }}">{{ _('Open change type') }}</a>
+      </p>
+    </div>
+  </div>
+{% else %}
+
+{# ---------------------------------------------------------- shared wording #}
+{% set draft = crdoc.drafts.get(render_lang, {}) %}
+{% set none_label = crdoc.devices_none.get(render_lang, '') %}
+{% set d_title = draft.get('title', '')|replace(crdoc.devices_token, none_label) %}
+{% set d_reason = draft.get('reason', '')|replace(crdoc.devices_token, none_label) %}
+{% set d_rollback = draft.get('rollback', '')|replace(crdoc.devices_token, none_label) %}
+{#
+  ONE set of visible fields for BOTH stage 2 and stage 2b, and not a word of
+  this prose is written in this template: every sentence comes from
+  Administration → Change Types, an administrator's text winning per field and
+  the product's wording standing for every field they left alone. Two boxes for
+  the same title would be two authors of the same document; a hard-coded
+  placeholder here would be a third, and the one nobody can correct.
+#}
+<div class="fw-card mb-3" id="uf-doc">
+  <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span><i class="bi bi-pencil-square me-2"></i><strong>{{ _('Proposed wording') }}</strong>
+      <span class="text-muted small ms-2">{{ crdoc.labels.get(render_lang, '') }}</span></span>
+    <span>
+      <button type="button" class="btn btn-sm fw-btn-secondary" id="uf-restore">
+        <i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Restore proposal') }}</button>
+      <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('cr_types.edit', key=cr_action) }}">
+        <i class="bi bi-sliders me-1"></i>{{ _('Edit this wording') }}</a>
+    </span>
+  </div>
+  <div class="fw-card-body">
+    <p class="text-muted small">
+      {{ _('Filled in from the change type and the appliances you tick above. Editing a field stops it updating — your words are never overwritten. It is a proposal: §1 of the change document attributes this text to you by name.') }}
+    </p>
+    <div class="mb-3">
+      <label class="form-label">{{ _('Document language') }}</label>
+      <div class="d-flex flex-wrap gap-3">
+        {% for code, label in crdoc.langs %}
+        <label class="form-check">
+          <input class="form-check-input uf-lang" type="radio" name="doc_lang" form="uf-cr"
+                 value="{{ code }}" required {{ 'checked' if code == lang_preset else '' }}>
+          <span class="form-check-label"><span class="is-mono">{{ code|upper }}</span> {{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      <div class="form-text">
+        {% if lang_preset %}
+          {{ _('Pre-selected from your') }} <a href="{{ url_for('auth.profile') }}#language">{{ _('profile') }}</a>.
+        {% elif lang_pref_unrenderable %}
+          {{ _('Your profile language (%(lang)s) has no change-document text yet, so it is not offered here.', lang=lang_pref_label) }}
+        {% else %}
+          {{ _('Nothing is pre-selected — the text below is shown in %(lang)s so it can be read, which is not the same as the question being answered.', lang=render_lang|upper) }}
+        {% endif %}
+      </div>
+    </div>
+    <div class="row g-3">
+      <div class="col-12">
+        <label class="form-label">{{ _('Title') }}</label>
+        <input class="form-control" name="title" id="uf-title" form="uf-cr" required
+               maxlength="200" autocomplete="off" data-auto="1" value="{{ d_title }}">
+      </div>
+      <div class="col-12 col-lg-6">
+        <label class="form-label">{{ _('Reason') }}</label>
+        <textarea class="form-control" name="reason" id="uf-reason" form="uf-cr"
+                  rows="3" data-auto="1">{{ d_reason }}</textarea>
+      </div>
+      <div class="col-12 col-lg-6">
+        <label class="form-label">{{ _('Rollback plan') }}</label>
+        <textarea class="form-control" name="rollback" id="uf-rollback" form="uf-cr"
+                  rows="3" data-auto="1">{{ d_rollback }}</textarea>
+      </div>
+    </div>
+  </div>
+</div>
+
 <form method="post" action="{{ url_for('change_requests.new') }}" id="uf-cr">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="action" value="upgrade">
+  <input type="hidden" name="action" value="{{ cr_action }}">
   <div class="fw-card mb-3">
     <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
       <span><span class="fw-badge fw-badge-secondary me-2">2</span><strong>{{ _('Change request (CRQ)') }}</strong></span>
@@ -101,30 +189,21 @@
     </div>
     <div class="fw-card-body">
       <div class="row g-3">
-        <div class="col-12 col-lg-6">
-          <label class="form-label">{{ _('Title') }}</label>
-          <input class="form-control" name="title" required maxlength="200"
-                 placeholder="{{ _('Firmware upgrade — maintenance window') }}">
-        </div>
-        <div class="col-6 col-lg-3">
+        <div class="col-6 col-lg-4">
           <label class="form-label">{{ _('Window start') }}</label>
           <input class="form-control" type="datetime-local" name="window_start">
         </div>
-        <div class="col-6 col-lg-3">
+        <div class="col-6 col-lg-4">
           <label class="form-label">{{ _('Window end') }}</label>
           <input class="form-control" type="datetime-local" name="window_end">
         </div>
-        <div class="col-12 col-lg-3">
+        <div class="col-12 col-lg-4">
           <label class="form-label">{{ _('Risk') }}</label>
           <select class="form-select" name="risk">
             <option value="low">{{ _('low') }}</option>
             <option value="medium" selected>{{ _('medium') }}</option>
             <option value="high">{{ _('high') }}</option>
           </select>
-        </div>
-        <div class="col-12 col-lg-9">
-          <label class="form-label">{{ _('Reason') }}</label>
-          <input class="form-control" name="reason" placeholder="{{ _('Why this window exists') }}">
         </div>
       </div>
       <div id="uf-cr-targets" class="mt-3"></div>
@@ -135,12 +214,18 @@
     </div>
   </div>
 </form>
-{% endif %}
 
 {# ------------------------------------------------------- stage 2b (waves) #}
-{% if current_user.can('user_manage') %}
 <form method="post" action="{{ url_for('upgrade_flow.waves') }}" id="uf-waves">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {# The wording block above belongs to the stage-2 form natively; the waves
+     form carries MIRRORS of it, rendered server-side with the same proposal so
+     the batched path is not silently the un-worded one when scripting is off,
+     and kept in step by the script below when it is. #}
+  <input type="hidden" name="doc_lang" id="uf-w-lang" value="{{ lang_preset or render_lang }}">
+  <input type="hidden" name="title" id="uf-w-title" value="{{ d_title }}">
+  <input type="hidden" name="reason" id="uf-w-reason" value="{{ d_reason }}">
+  <input type="hidden" name="rollback" id="uf-w-rollback" value="{{ d_rollback }}">
   <div class="fw-card mb-3">
     <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
       <span><span class="fw-badge fw-badge-secondary me-2">2b</span><strong>{{ _('Or split the same selection into waves') }}</strong></span>
@@ -151,25 +236,20 @@
         {{ _('For a rollout too large for one window: the appliances are chunked in name order, and each chunk gets a change of its own so the first group can be watched before the next one is approved. Nothing about approval, execution or the customer-impact export changes — a wave is a change request like any other.') }}
       </p>
       <div class="row g-3">
-        <div class="col-12 col-lg-5">
-          <label class="form-label">{{ _('Title') }}</label>
-          <input class="form-control" name="title" maxlength="160"
-                 placeholder="{{ _('Firmware upgrade — batched rollout') }}">
-          <div class="form-text">{{ _('Each wave is titled “… — wave k/N”.') }}</div>
-        </div>
-        <div class="col-6 col-lg-2">
+        <div class="col-6 col-lg-3">
           <label class="form-label">{{ _('Appliances per wave') }}</label>
           <input class="form-control" type="number" name="wave_size" min="1" value="5">
+          <div class="form-text">{{ _('Each wave takes the title above, suffixed “… — wave k/N”.') }}</div>
         </div>
-        <div class="col-6 col-lg-2">
+        <div class="col-6 col-lg-3">
           <label class="form-label">{{ _('First window start') }}</label>
           <input class="form-control" type="datetime-local" name="window_start">
         </div>
-        <div class="col-6 col-lg-2">
+        <div class="col-6 col-lg-3">
           <label class="form-label">{{ _('Window (minutes)') }}</label>
           <input class="form-control" type="number" name="wave_minutes" min="1" value="120">
         </div>
-        <div class="col-6 col-lg-1">
+        <div class="col-6 col-lg-3">
           <label class="form-label">{{ _('Gap') }}</label>
           <input class="form-control" type="number" name="wave_gap" min="0" value="30">
         </div>
@@ -185,7 +265,8 @@
     </div>
   </div>
 </form>
-{% endif %}
+{% endif %}{# crdoc.entry #}
+{% endif %}{# user_manage #}
 
 {% if wave_groups %}
 <div class="fw-card mb-3">
@@ -293,7 +374,91 @@
       note.textContent = picked.length + ' appliance(s) selected, ' + withPrep
         + ' with a stored pre-upgrade run to cite.';
     }
+    paint(false);
   }
+
+  // ---------------------------------------------------------------- wording
+  // Every sentence here was authored SERVER-side, per language, by
+  // Administration -> Change Types; this only chooses which language's version
+  // to show and substitutes the live selection for the device token. Composing
+  // any part of it in JavaScript would give the printed document a second
+  // author — the one an administrator cannot correct.
+  var DRAFTS = {{ crdoc.drafts|tojson }};
+  var TOKEN = {{ crdoc.devices_token|tojson }};
+  var NONE = {{ crdoc.devices_none|tojson }};
+  var RENDER_LANG = {{ render_lang|tojson }};
+
+  var FIELDS = {
+    title: document.getElementById('uf-title'),
+    reason: document.getElementById('uf-reason'),
+    rollback: document.getElementById('uf-rollback')
+  };
+  var MIRROR = {
+    title: document.getElementById('uf-w-title'),
+    reason: document.getElementById('uf-w-reason'),
+    rollback: document.getElementById('uf-w-rollback')
+  };
+  var langRadios = document.querySelectorAll('.uf-lang');
+  var langMirror = document.getElementById('uf-w-lang');
+
+  function chosenLang() {
+    for (var i = 0; i < langRadios.length; i++) {
+      if (langRadios[i].checked) { return langRadios[i].value; }
+    }
+    // '' is a REAL state — the radios are pre-selected only from the
+    // operator's profile. The text still has to render in something, and that
+    // something is what the server rendered, so the page and the hidden mirror
+    // never disagree about which language the operator was reading.
+    return '';
+  }
+
+  function substitute(text, code) {
+    var names = devs.filter(function (c) { return c.checked; })
+                    .map(function (c) { return c.getAttribute('data-name') || c.value; });
+    var shown = names.length ? names.join(', ') : (NONE[code] || '');
+    return String(text || '').split(TOKEN).join(shown);
+  }
+
+  function mirror() {
+    Object.keys(MIRROR).forEach(function (key) {
+      if (MIRROR[key] && FIELDS[key]) { MIRROR[key].value = FIELDS[key].value; }
+    });
+    if (langMirror) { langMirror.value = chosenLang() || RENDER_LANG; }
+  }
+
+  function paint(force) {
+    var code = chosenLang() || RENDER_LANG;
+    var draft = DRAFTS[code];
+    if (!draft) { mirror(); return; }
+    Object.keys(FIELDS).forEach(function (key) {
+      var el = FIELDS[key];
+      if (!el) { return; }
+      if (force) { el.setAttribute('data-auto', '1'); }
+      // An edited field is never overwritten: the operator's words outrank the
+      // proposal, and silently restoring the template over them is how a
+      // change goes out saying something nobody wrote.
+      if (el.getAttribute('data-auto') !== '1') { return; }
+      el.value = substitute(draft[key], code);
+    });
+    mirror();
+  }
+
+  Object.keys(FIELDS).forEach(function (key) {
+    var el = FIELDS[key];
+    if (!el) { return; }
+    el.addEventListener('input', function () {
+      el.setAttribute('data-auto', '0');
+      mirror();
+    });
+  });
+  Array.prototype.forEach.call(langRadios, function (r) {
+    // BOTH events: the profile language is pre-checked, so clicking it fires
+    // no `change` at all and the operator would watch nothing happen.
+    r.addEventListener('change', function () { paint(false); });
+    r.addEventListener('click', function () { paint(false); });
+  });
+  var restore = document.getElementById('uf-restore');
+  if (restore) { restore.addEventListener('click', function () { paint(true); }); }
 
   devs.forEach(function (c) { c.addEventListener('change', sync); });
   if (all) {

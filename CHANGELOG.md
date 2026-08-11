@@ -53,6 +53,25 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **Upgrade Flow wrote its own prose; it now reads Administration → Change
+  Types like every other change form.** Stage 2 offered a title box with an
+  English placeholder compiled into the template, a free-text reason with
+  another, and no rollback field at all — while the single-change form next
+  door proposed all three from the change type, an administrator's wording
+  winning per field. Nothing failed: an administrator renamed the change to
+  whatever their change board actually calls it, the single change followed,
+  and the bulk one — the one covering forty appliances — kept offering the
+  shipped sentence. Both stages (one window, and the batched wave rollout) now
+  share ONE set of proposed fields, in the document language the operator
+  chooses, with the pre-flight run deliberately *not* quoted: the per-device
+  draft names one run by id and this stage rests on N. A change type disabled
+  on that page is now reported here instead of being discovered when the form
+  is submitted, after the sweep. Waves additionally carry the reason, the
+  rollback and the document language they never forwarded before, refuse an
+  untitled plan rather than filing changes called "— wave 1/6", and reserve the
+  wave marker out of the title budget so a long title cannot truncate away the
+  only thing that tells two waves apart.
+
 - **The monitor was raising ~790 alerts a week for conditions that were not
   happening.** Four independent checks each asserted something false; nothing
   crashed, nothing was slow, and no test failed, so the only visible symptom

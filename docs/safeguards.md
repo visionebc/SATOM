@@ -7308,3 +7308,120 @@ guard on `alerts-run` first tried to strip comments from `app/__init__.py` and
 truncated a multi-line string literal containing a `#`. Strip comments before
 asserting on source — or, when the question is structural, parse the ORIGINAL
 source and assert on the AST, which carries no comments at all.
+
+## §68 — a guard anchored on a visible label dies the day the label is translated
+
+`tests/test_monitoring_split.py::test_every_administrator_group_offers_collection`
+promises the same thing it always did: **every** Administrator/Administration
+block in `base.html` reaches the Collection page through the one shared partial,
+so an entry can never be added to Global and forgotten in the four others. What
+broke was not the promise but the way the guard found the blocks:
+
+```python
+re.finditer(r"<span>Administrat(?:or|ion)</span>", text)   # pre-i18n
+```
+
+The nav labels became `{{ _('Administrator') }}`. The extractor stopped matching,
+returned `[]`, and the loop below it iterated over nothing. **A `for` loop over an
+empty list asserts nothing and reports success.** The only reason this surfaced
+at all is the non-vacuity assert (`len(bodies) == 5`) that the same test already
+carried — without it the guard would have gone green over zero blocks and nobody
+would have known the promise was no longer being checked.
+
+Three rules:
+
+1. **Anchor structural guards on structural identity, never on rendered text.**
+   The group already carries `data-nav-group="Administrator"` — the attribute the
+   sidebar JS keys open/closed state off, and the one
+   `tests/test_automation_adom_nav.py` was already using. Rendered text is a
+   product surface: it gets translated, retitled and rewritten, and it *should*
+   be able to change without breaking a guard about layout.
+2. **The identity attribute is now itself guarded.**
+   `test_the_nav_group_identity_is_not_translated` fails if any `data-nav-group`
+   value is routed through `_()`. Translating an identifier would break every
+   nav-slicing guard at once *and* collapse the operator's expanded groups on
+   every language change.
+3. **Every extractor needs a non-vacuity assert**, and it is worth more than it
+   looks: here it was the entire difference between a visible failure and a guard
+   that silently stopped guarding. Bodies are also asserted non-empty
+   (`fw-nav-item in b`), so a slice that matches the marker but captures nothing
+   cannot pass either.
+
+The replacement closes the body by **counting `<div>`/`</div>` from the opening
+tag** instead of scanning for the next section header. The old stop-list ended a
+group at the next `fw-nav-section fw-nav-toggle`, which means a group that lost
+its own closing tags would run on and find the *next* group's Collection include
+— reporting an entry the operator cannot see. The counted version raises instead,
+and the mutation that removes one group's include together with its closing divs
+proves it: `AssertionError: the extractor ran past the group and swallowed the
+next one`.
+
+**Verified:** 8 mutations run, 7 bite (drop the include from one group; translate
+the anchor — against both the slicer and the new identity guard; rename one
+anchor; revert to the label anchor; point the extractor at a group that does not
+exist; and the run-on above). The eighth — deleting a single `</div>` *inside* a
+body — correctly survives: the slice grows by one nesting level but stays inside
+its own group, and the block genuinely does still include the partial. A mutation
+that does not change the truth of the assertion is not supposed to kill it.
+
+## §67. One operation, two authors of its prose
+
+**Guard:** `tests/test_upgrade_flow_wording.py` (12 tests). **14 mutations, 14
+bite** (harness `/root/ufw/mutate.py` on a1; judged by **rc**, and only `rc==1`
+is a failure).
+
+The Upgrade Flow's stage 2 composed its own change-request wording: a title
+placeholder written into `upgrade_flow/index.html`, a reason placeholder beside
+it, and no rollback field at all. The single-change form thirty lines away in
+`change_requests/form.html` proposed all three through `services.cr_types`,
+where an administrator's text wins per field and the product's sentence stands
+for every field they left alone.
+
+Neither form ever failed. The failure is what an administrator's correction
+does: they rename the change on Administration → Change Types, the single
+change picks it up, and the bulk one keeps offering the compiled sentence
+forever. Two documents about the same work, raised from the same console,
+disagreeing — and the one that disagreed covered the whole window.
+
+This is the §62 shape again (two implementations of one operation, differing in
+what they RECORD rather than in what they DO) with the roles reversed: here the
+duplicate is a sentence, not a function, and duplicated prose has no caller
+whose test could notice.
+
+**What the guard fixes in place**
+
+* The template composes no proposal: `test_the_template_composes_no_proposal_of_its_own`
+  bans the three shipped placeholders *after stripping Jinja comments* — the
+  paragraph explaining the rule names the strings it bans, which is the eighth
+  time an assert-by-substring has matched its own comment in this repo.
+* The batched (wave) path is not a narrower carbon copy: reason, rollback and
+  document language are asserted on every change of a rollout, because a field
+  that is simply never posted comes out empty and an empty rollback prints as a
+  change with no rollback plan rather than as a bug.
+* The proposal quotes no single pre-flight run. `cr_types.draft_fields(prep=…)`
+  names one run's id, timestamp and backup; this stage rests on N of them.
+* A change type disabled on the Change Types page is reported on arrival.
+  `create_change_request` rejects an action that is not on offer, so without
+  this the operator learns it after the pre-flight sweep — the expensive half —
+  with the form filled in.
+
+**Traps paid for here**
+
+1. `cr_types.save_texts` walks the WHOLE field list and writes an empty string
+   over anything the payload omits. A test helper that wrote one override per
+   call silently blanked the previous one, and the failure read as "the page
+   ignores the administrator's wording" — the exact defect under test, reported
+   by a broken fixture.
+2. Two sentences split around a Jinja expression are two msgids that no
+   translator can order correctly. Both were folded into single msgids with
+   `%(lang)s` before the catalogues were touched.
+3. The JS payload legitimately carries the raw `{devices}` token — substituting
+   the live selection is its entire job — so a page-wide assertion that the
+   token never appears fails against a correct page. Assert on the FIELDS.
+
+**Recipe.** `venv/bin/python -m pytest tests/test_upgrade_flow_wording.py
+tests/test_upgrade_flow.py tests/test_upgrade_flow_exec.py
+tests/test_i18n_foundation.py tests/test_ui_locale.py tests/test_cr_doc_i18n.py
+tests/test_cr_types.py -q` as `satom`. Live render (EN and ES, one fresh app
+context per request — flask-babel caches the locale on `g`):
+`/tmp/render2.py` pattern in §61.

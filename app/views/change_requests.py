@@ -286,118 +286,144 @@ def _prep_draft_context(prep):
     }
 
 
+def create_change_request(fields: dict):
+    """Create ONE change request from already-parsed fields. ``(cr, error)``.
+
+    THE one implementation of "raise a change", extracted from this
+    blueprint's own POST handler so that the batched (wave) route can create N
+    of them without becoming a second author of these rules. That is not
+    hypothetical tidiness: the defect this whole feature was built to remove
+    was two implementations of "upgrade prep" that differed in what they
+    recorded, and neither ever failed.
+
+    ``fields`` carries plain values — ``device_ids`` and ``prep_ids`` as lists,
+    the windows as datetimes already converted out of the operator's timezone.
+    Parsing a form is the caller's job; deciding what a legal change is, is
+    this function's.
+
+    Returns ``(None, message)`` on refusal. Every message names what was wrong
+    AND that nothing was created, because a batched caller may be several waves
+    in when one fails.
+    """
+    title = (fields.get('title') or '').strip()
+    if not title:
+        return None, 'A title is required.'
+
+    action = (fields.get('action') or '').strip()
+    # An unrecognised action is REJECTED, never coerced. The old fallback
+    # silently rewrote a glitched form into 'upgrade' - the most destructive
+    # entry on the menu - which is the opposite of what a fallback is for.
+    entry = {e['key']: e for e in cr_type_entries()}.get(action)
+    if entry is None:
+        return None, f'{action or "(none)"} is not a change-controlled action.'
+    risk = (fields.get('risk') or 'medium').strip()
+    if risk not in svc.RISKS:
+        risk = 'medium'
+    device_ids = [n for n in ((_to_int(x)) for x in (fields.get('device_ids') or []))
+                  if n is not None]
+
+    # The devices must exist, be visible to this user, and be a product the
+    # chosen action actually runs against. Without this last check the CR
+    # saves happily and the SCHEDULED RUN resolves to zero targets (targets
+    # are filtered by spec.products), reporting 'skipped' - which closes the
+    # change as failed long after anyone could act on it.
+    picked = (visible_appliances().filter(Appliance.id.in_(device_ids)).all()
+              if device_ids else [])
+    if len(picked) != len(set(device_ids)):
+        return None, ('One or more selected devices do not exist or are not '
+                      'visible to you. Nothing was created.')
+    wrong = [d for d in picked if (d.kind or 'fortiweb') not in entry['products']]
+    if wrong:
+        return None, (f'{entry["label"]} does not run against '
+                      + ', '.join(sorted({(d.kind or "?") for d in wrong}))
+                      + ' (' + ', '.join(d.name for d in wrong)
+                      + '). It supports: ' + ', '.join(entry['products']) + '.')
+    if entry['single_target'] and len(device_ids) > 1:
+        return None, (f'{entry["label"]} acts on exactly one appliance; '
+                      f'{len(device_ids)} were selected.')
+
+    from ..services import cr_document, prep_store
+    preps = []
+    seen_preps: set[int] = set()
+    for raw in (fields.get('prep_ids') or []):
+        prep = prep_store.get(raw)
+        # A pre-upgrade run may only be cited by a change that targets ITS
+        # appliance. Without this an operator could attach somebody else's
+        # green pre-flight as the evidence for a change to a different box -
+        # a document that reads correct and certifies the wrong machine.
+        # The check is PER RUN, not "the first one matched": a bulk change
+        # must not inherit permission for twenty devices from one.
+        if prep is None or prep.appliance_id not in device_ids:
+            continue
+        if prep.id in seen_preps:
+            continue
+        seen_preps.add(prep.id)
+        preps.append(prep)
+
+    cr = ChangeRequest(
+        title=title[:200],
+        reason=(fields.get('reason') or '').strip(),
+        status='draft',
+        action=action,
+        device_ids=json.dumps(device_ids),
+        window_start=fields.get('window_start'),
+        window_end=fields.get('window_end'),
+        risk=risk,
+        rollback=(fields.get('rollback') or '').strip(),
+        notify_to=(fields.get('notify_to') or '').strip(),
+        owner=(fields.get('owner') or '').strip()[:64],
+        doc_lang=cr_document.normalize_lang(fields.get('doc_lang')),
+        requested_by=(fields.get('requested_by') or '').strip(),
+        # An unrecognised value falls back to 'manual', NOT to 'external':
+        # a form glitch must not silently bind a change to an approver
+        # nobody configured, which would strand it un-runnable forever.
+        approval_mode=('external'
+                       if (fields.get('approval_mode') or '').strip() == 'external'
+                       else 'manual'),
+    )
+    db.session.add(cr)
+    db.session.commit()
+    cr.ref = _next_ref(cr)
+    _freeze_inventory(cr, device_ids, preps)
+    db.session.commit()
+    if preps:
+        prep_store.bind_many(cr, preps)
+    log_action('change_request.create', target=cr.title,
+               detail=f'{cr.ref} / {action} / risk={risk}'
+                      + (' / preps ' + ', '.join(f'#{p.id}' for p in preps)
+                         if preps else ''))
+    return cr, ''
+
+
 @bp.route('/new', methods=['GET', 'POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def new():
     if request.method == 'POST':
-        title = (request.form.get('title') or '').strip()
-        if not title:
-            flash('A title is required.', 'danger')
+        # 'prep_id' (singular) is still accepted so an existing form post, link
+        # or test keeps working; it is simply the one-element case.
+        prep_ids = (request.form.getlist('prep_ids')
+                    or ([request.form.get('prep_id')]
+                        if request.form.get('prep_id') else []))
+        cr, error = create_change_request({
+            'title': request.form.get('title'),
+            'action': request.form.get('action'),
+            'risk': request.form.get('risk'),
+            'reason': request.form.get('reason'),
+            'device_ids': request.form.getlist('device_ids'),
+            'prep_ids': prep_ids,
+            'window_start': _parse_dt(request.form.get('window_start')),
+            'window_end': _parse_dt(request.form.get('window_end')),
+            'rollback': request.form.get('rollback'),
+            'notify_to': request.form.get('notify_to'),
+            'owner': request.form.get('owner'),
+            'doc_lang': request.form.get('doc_lang'),
+            'approval_mode': request.form.get('approval_mode'),
+            'requested_by': current_user.username,
+        })
+        if cr is None:
+            flash(error, 'danger')
             return redirect(url_for('change_requests.new'))
-
-        action = (request.form.get('action') or '').strip()
-        # An unrecognised action is REJECTED, never coerced. The old fallback
-        # silently rewrote a glitched form into 'upgrade' - the most destructive
-        # entry on the menu - which is the opposite of what a fallback is for.
-        entry = {e['key']: e for e in cr_type_entries()}.get(action)
-        if entry is None:
-            flash(f'{action or "(none)"} is not a change-controlled action.',
-                  'danger')
-            return redirect(url_for('change_requests.new'))
-        # ``spec`` stays None for an administrator-defined type. Everything
-        # below reads the ENTRY, so the device rules are enforced identically
-        # for both kinds; only execution distinguishes them, and that is gated
-        # in services.change_requests.schedule_change_request.
-        spec = sa.get_spec(action)
-        risk = (request.form.get('risk') or 'medium').strip()
-        if risk not in svc.RISKS:
-            risk = 'medium'
-        device_ids = [n for n in
-                      ((_to_int(x)) for x in request.form.getlist('device_ids'))
-                      if n is not None]
-
-        # The devices must exist, be visible to this user, and be a product the
-        # chosen action actually runs against. Without this last check the CR
-        # saves happily and the SCHEDULED RUN resolves to zero targets (targets
-        # are filtered by spec.products), reporting 'skipped' - which closes the
-        # change as failed long after anyone could act on it.
-        picked = (visible_appliances().filter(Appliance.id.in_(device_ids)).all()
-                  if device_ids else [])
-        if len(picked) != len(set(device_ids)):
-            flash('One or more selected devices do not exist or are not visible '
-                  'to you.', 'danger')
-            return redirect(url_for('change_requests.new'))
-        wrong = [d for d in picked
-                 if (d.kind or 'fortiweb') not in entry['products']]
-        if wrong:
-            flash(f'{entry["label"]} does not run against '
-                  + ', '.join(sorted({(d.kind or "?") for d in wrong}))
-                  + ' (' + ', '.join(d.name for d in wrong) + '). It supports: '
-                  + ', '.join(entry['products']) + '.', 'danger')
-            return redirect(url_for('change_requests.new'))
-        if entry['single_target'] and len(device_ids) > 1:
-            flash(f'{entry["label"]} acts on exactly one appliance; '
-                  f'{len(device_ids)} were selected.', 'danger')
-            return redirect(url_for('change_requests.new'))
-
-        from ..services import cr_document, prep_store
-        # N runs, one per appliance the window covers. 'prep_id' (singular) is
-        # still accepted so an existing form post, link or test keeps working;
-        # it is simply the one-element case.
-        wanted_preps = (request.form.getlist('prep_ids')
-                        or ([request.form.get('prep_id')]
-                            if request.form.get('prep_id') else []))
-        preps = []
-        seen_preps: set[int] = set()
-        for raw in wanted_preps:
-            prep = prep_store.get(raw)
-            # A pre-upgrade run may only be cited by a change that targets ITS
-            # appliance. Without this an operator could attach somebody else's
-            # green pre-flight as the evidence for a change to a different box -
-            # a document that reads correct and certifies the wrong machine.
-            # The check is PER RUN, not "the first one matched": a bulk change
-            # must not inherit permission for twenty devices from one.
-            if prep is None or prep.appliance_id not in device_ids:
-                continue
-            if prep.id in seen_preps:
-                continue
-            seen_preps.add(prep.id)
-            preps.append(prep)
-
-        cr = ChangeRequest(
-            title=title[:200],
-            reason=(request.form.get('reason') or '').strip(),
-            status='draft',
-            action=action,
-            device_ids=json.dumps(device_ids),
-            window_start=_parse_dt(request.form.get('window_start')),
-            window_end=_parse_dt(request.form.get('window_end')),
-            risk=risk,
-            rollback=(request.form.get('rollback') or '').strip(),
-            notify_to=(request.form.get('notify_to') or '').strip(),
-            owner=(request.form.get('owner') or '').strip()[:64],
-            doc_lang=cr_document.normalize_lang(request.form.get('doc_lang')),
-            requested_by=current_user.username,
-            # An unrecognised value falls back to 'manual', NOT to 'external':
-            # a form glitch must not silently bind a change to an approver
-            # nobody configured, which would strand it un-runnable forever.
-            approval_mode=('external'
-                           if (request.form.get('approval_mode') or '').strip()
-                           == 'external' else 'manual'),
-        )
-        db.session.add(cr)
-        db.session.commit()
-        cr.ref = _next_ref(cr)
-        _freeze_inventory(cr, device_ids, preps)
-        db.session.commit()
-        if preps:
-            prep_store.bind_many(cr, preps)
-        log_action('change_request.create', target=cr.title,
-                   detail=f'{cr.ref} / {action} / risk={risk}'
-                          + (' / preps '
-                             + ', '.join(f'#{p.id}' for p in preps)
-                             if preps else ''))
         flash(f'Change request {cr.ref} "{cr.title}" created.', 'success')
         return redirect(url_for('change_requests.detail', id=cr.id))
 
@@ -520,6 +546,12 @@ def detail(id):
                            policies=policies,
                            live_drift=live_drift,
                            prep=prep_store.get(cr.prep_id),
+                           # EVERY bound run, plus the appliances that have
+                           # none. "Captured by upgrade preparation #88" is a
+                           # true sentence about a one-device change and a
+                           # false one about a window over twenty: the frozen
+                           # inventory below is merged across all of them.
+                           evidence=prep_store.coverage(cr, devices),
                            langs=cr_document.document_langs(),
                            fields=prep_store.FIELDS,
                            default_fields=prep_store.DEFAULT_FIELDS,
@@ -697,12 +729,36 @@ def request_crq(id):
     ability to hang the console."""
     from ..services import cr_orchestrator as orch
     cr = _cr_in_scope_or_404(id)
+    had_ref = (cr.crq_ref or '').strip()
     result = orch.request_crq(cr, by=current_user.username)
     log_action('change_request.crq_requested', target=cr.title,
-               detail=f"dispatched={result.get('dispatched', 0)}")
+               detail=f"dispatched={result.get('dispatched', 0)} "
+                      f"evidence={result.get('evidence', 0)} "
+                      f"uncovered={len(result.get('uncovered') or [])}")
     if result.get('dispatched'):
         flash(f"Queued {result['dispatched']} integration hook(s). The ticket "
               f"reference appears here once your system answers.", 'success')
+        # What the ticket actually CARRIES, said here rather than left to be
+        # discovered in the receiving system. A bulk change whose evidence
+        # covers eleven of twenty appliances is not a failure — but nobody
+        # should learn which nine were bare from the approver.
+        uncovered = result.get('uncovered') or []
+        if uncovered:
+            flash(f"{result.get('evidence', 0)} pre-upgrade run(s) travelled "
+                  f"with it. No baseline for: " + ', '.join(uncovered) + '.',
+                  'warning')
+        if result.get('truncated'):
+            flash(f"The ticket lists the first {orch.MAX_POLICY_NAMES} of "
+                  f"{result.get('policy_count', 0)} affected services; the full "
+                  f"count travels with it and the whole list is in the "
+                  f"customer-impact export.", 'info')
+        if had_ref:
+            # Re-requesting is legitimate (the window moved, the scope grew),
+            # but it is not a new change. The existing reference rides in the
+            # payload so a receiver can update rather than open a second
+            # ticket — and the operator is told that is what was sent.
+            flash(f"This change already carries {had_ref}; it was sent as a "
+                  f"re-request, not as a new ticket.", 'info')
     else:
         # An enabled-but-unbound integration silently doing nothing is the
         # failure mode this message exists to prevent.

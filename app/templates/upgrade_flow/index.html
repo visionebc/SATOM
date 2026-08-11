@@ -137,6 +137,77 @@
 </form>
 {% endif %}
 
+{# ------------------------------------------------------- stage 2b (waves) #}
+{% if current_user.can('user_manage') %}
+<form method="post" action="{{ url_for('upgrade_flow.waves') }}" id="uf-waves">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="fw-card mb-3">
+    <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <span><span class="fw-badge fw-badge-secondary me-2">2b</span><strong>{{ _('Or split the same selection into waves') }}</strong></span>
+      <span class="text-muted small">{{ _('One wave = one ordinary change request, with its own window and its own approval.') }}</span>
+    </div>
+    <div class="fw-card-body">
+      <p class="text-muted small">
+        {{ _('For a rollout too large for one window: the appliances are chunked in name order, and each chunk gets a change of its own so the first group can be watched before the next one is approved. Nothing about approval, execution or the customer-impact export changes — a wave is a change request like any other.') }}
+      </p>
+      <div class="row g-3">
+        <div class="col-12 col-lg-5">
+          <label class="form-label">{{ _('Title') }}</label>
+          <input class="form-control" name="title" maxlength="160"
+                 placeholder="{{ _('Firmware upgrade — batched rollout') }}">
+          <div class="form-text">{{ _('Each wave is titled “… — wave k/N”.') }}</div>
+        </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label">{{ _('Appliances per wave') }}</label>
+          <input class="form-control" type="number" name="wave_size" min="1" value="5">
+        </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label">{{ _('First window start') }}</label>
+          <input class="form-control" type="datetime-local" name="window_start">
+        </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label">{{ _('Window (minutes)') }}</label>
+          <input class="form-control" type="number" name="wave_minutes" min="1" value="120">
+        </div>
+        <div class="col-6 col-lg-1">
+          <label class="form-label">{{ _('Gap') }}</label>
+          <input class="form-control" type="number" name="wave_gap" min="0" value="30">
+        </div>
+      </div>
+      <div id="uf-waves-targets"></div>
+      <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+        <span class="text-muted small" id="uf-waves-note">
+          {{ _('Windows are consecutive and never overlap: each wave starts after the previous one ends, plus the gap. Leave the start empty to raise the waves now and schedule them later. At most') }}
+          <strong>{{ max_waves }}</strong> {{ _('waves at once.') }}
+        </span>
+        <button type="submit" class="btn fw-btn-secondary"><i class="bi bi-layers me-1"></i>{{ _('Raise one change per wave') }}</button>
+      </div>
+    </div>
+  </div>
+</form>
+{% endif %}
+
+{% if wave_groups %}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><strong>{{ _('Batched rollouts') }}</strong></div>
+  <div class="fw-card-body">
+    {% for g in wave_groups %}
+    <div class="mb-3">
+      <div class="text-muted small is-mono mb-1">{{ g.ref }} — {{ g.waves|length }}/{{ g.total }} {{ _('waves') }}</div>
+      <div class="d-flex flex-wrap gap-2">
+        {% for cr in g.waves %}
+          <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('upgrade_flow.progress', cr_id=cr.id) }}">
+            {{ _('wave') }} {{ cr.wave_index }}/{{ cr.wave_total }}
+            <span class="fw-badge fw-badge-{{ 'success' if cr.status == 'completed' else ('warning' if cr.status in ('draft','approved','scheduled','in_progress') else 'secondary') }} ms-1">{{ cr.status }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {# ------------------------------------------------------------- stages 3+4 #}
 <div class="fw-card">
   <div class="fw-card-header">
@@ -162,7 +233,8 @@
               <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('change_requests.inventory_export', id=cr.id, fmt='xlsx') }}"><i class="bi bi-file-earmark-excel me-1"></i>XLSX</a>
               <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('change_requests.inventory_export', id=cr.id, fmt='csv') }}">CSV</a>
             </td>
-            <td><a class="btn btn-sm fw-btn-secondary" href="{{ url_for('change_requests.detail', id=cr.id) }}">{{ _('open change') }}</a></td>
+            <td><a class="btn btn-sm fw-btn-primary" href="{{ url_for('upgrade_flow.progress', cr_id=cr.id) }}"><i class="bi bi-activity me-1"></i>{{ _('progress') }}</a>
+                <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('change_requests.detail', id=cr.id) }}">{{ _('open change') }}</a></td>
           </tr>
         {% endfor %}
         </tbody>
@@ -186,23 +258,35 @@
   if (!form) { return; }
   var box = document.getElementById('uf-cr-targets');
   var note = document.getElementById('uf-cr-note');
+  var waveBox = document.getElementById('uf-waves-targets');
   var all = document.getElementById('uf-all');
   var devs = Array.prototype.slice.call(document.querySelectorAll('.uf-dev'));
+
+  function hidden(parent, name, value) {
+    var el = document.createElement('input');
+    el.type = 'hidden'; el.name = name; el.value = value;
+    parent.appendChild(el);
+  }
 
   function sync() {
     var picked = devs.filter(function (c) { return c.checked; });
     box.innerHTML = '';
+    if (waveBox) { waveBox.innerHTML = ''; }
     var withPrep = 0;
     picked.forEach(function (c) {
-      var d = document.createElement('input');
-      d.type = 'hidden'; d.name = 'device_ids'; d.value = c.value;
-      box.appendChild(d);
+      hidden(box, 'device_ids', c.value);
       var pid = c.getAttribute('data-prep');
       if (pid) {
         withPrep += 1;
-        var p = document.createElement('input');
-        p.type = 'hidden'; p.name = 'prep_ids'; p.value = pid;
-        box.appendChild(p);
+        hidden(box, 'prep_ids', pid);
+      }
+      // The wave form mirrors the SAME ticks. Evidence travels as dev:prep
+      // pairs because a wave keeps only its own members' runs, and a flat
+      // prep_ids list cannot say which appliance each run belongs to without
+      // the server looking every one of them up again.
+      if (waveBox) {
+        hidden(waveBox, 'device_ids', c.value);
+        if (pid) { hidden(waveBox, 'prep_pairs', c.value + ':' + pid); }
       }
     });
     if (picked.length) {

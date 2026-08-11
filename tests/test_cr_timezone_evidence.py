@@ -417,12 +417,40 @@ def test_the_detail_and_document_routes_read_the_frozen_inventory():
             assert "affected_policies" not in body, name
 
 
-def test_creating_a_change_stamps_a_reference_and_freezes_the_inventory():
+def test_creating_a_change_stamps_a_reference_and_freezes_the_inventory(app):
     """Both are done at CREATION. Deriving the reference at print time would
-    renumber circulating documents the day the id sequence is reseeded."""
-    src = open(os.path.join(REPO, "app", "views", "change_requests.py")).read()
-    assert "cr.ref = _next_ref(cr)" in src
-    assert "_freeze_inventory(cr, device_ids, prep)" in src
+    renumber circulating documents the day the id sequence is reseeded.
+
+    Asserted on the RESULT, not on a call-site string. This guard used to grep
+    for the literal ``_freeze_inventory(cr, device_ids, prep)`` and went red the
+    day that argument was pluralised to carry N runs instead of one — a rename
+    that fixed a real defect and broke nothing. A guard that fails on a rename
+    while passing on a behaviour change is worse than none: it trains people to
+    edit the assertion rather than read it.
+    """
+    from app.extensions import db
+    from app.models import Appliance
+    from app.views.change_requests import create_change_request
+
+    with app.app_context():
+        dev = Appliance(name="freeze-box", host="192.0.2.44", port=443,
+                        kind="fortiweb", username="admin")
+        dev.password = "pw"
+        db.session.add(dev)
+        db.session.commit()
+
+        cr, error = create_change_request({
+            "title": "freeze me", "action": "upgrade",
+            "device_ids": [dev.id], "requested_by": "t",
+        })
+        assert cr is not None, error
+        assert cr.ref and cr.ref.startswith("CR-"), \
+            "the human change reference was not stamped at creation"
+        assert cr.inventory_at is not None, \
+            "the affected-service inventory was not frozen at creation"
+        assert json.loads(cr.policies or "null") is not None, \
+            "the frozen inventory field was never written"
+        db.session.remove()
 
 
 def test_a_prep_from_another_appliance_cannot_be_cited():

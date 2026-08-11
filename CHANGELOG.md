@@ -16,7 +16,58 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   path sixty times and still finished holding a change document whose evidence
   covered one box.
 
+- **Per-appliance execution progress, written as it happens.** A change request
+  now has a live panel showing every appliance it covers and what has happened
+  to it: pending, running, ok, failed — and, distinctly, *interrupted* for a
+  device the run opened and never closed. Progress is measured in appliances
+  reported, never in elapsed window time. "Start now" brings the approved
+  change's one-shot action forward and lets the scheduler execute it out of
+  process; it does not run the upgrade in the web request, and it does not
+  bypass the window (the executor re-checks the approval at fire time
+  regardless).
+
+- **Batched rollouts: split a selection into waves, one change per wave.**
+  Appliances are chunked in name order and each chunk becomes an ordinary
+  change request with its own window, its own approval and its own evidence, so
+  the first group can be watched before the next is approved. Windows are
+  consecutive and never overlap — each wave starts at the previous one's end
+  plus the configured gap. Nothing about approval, execution, the change
+  document or the customer-impact export needed a wave-shaped variant, and
+  giving them one would have re-created the two-implementations defect below.
+
+### Changed
+
+- **The external CRQ now carries the window, not just its primary keys.** The
+  `change.requested` hook sent `device_ids` — bare integers, meaningful only
+  inside SATOM's database — and a flat list of policy names. It now also sends
+  the change reference printed on the document, every appliance resolved by
+  name, product, management host and current firmware, one pre-upgrade summary
+  per appliance that has one (verdict, timestamp, firmware, backup name,
+  affected-service count), and the names of the appliances that have none. The
+  affected-policy list is capped for a fleet-sized window, and the true total
+  travels beside it with an explicit truncation flag — a receiver that reads a
+  capped list and believes it is the whole outage under-states it by an order
+  of magnitude. The payload also states whether the receiving system holds the
+  approval gate, and carries any existing ticket reference so a re-request
+  updates a ticket instead of opening a second one for the same window.
+
 ### Fixed
+
+- **A change request's page claimed its evidence came from one pre-upgrade
+  run.** "Captured by upgrade preparation #88" was true of a single-device
+  change and false of a window over twenty appliances, whose frozen inventory
+  is merged across every bound run. The page now lists each appliance with the
+  run that covers it, and names the ones that carry no baseline instead of
+  leaving them as ordinary rows.
+
+- **A duplicate key in the boot-time column migration silently dropped three
+  columns.** `_ensure_columns` is one dict literal keyed by table name; a table
+  written twice keeps only the last entry and every column under the earlier
+  one is never added — no exception, no log line, a clean boot. A guard now
+  parses the source and fails on a repeated key, because by the time the dict
+  is a value the duplicates have already collapsed and no runtime check can see
+  them.
+
 
 - **The profile's About card drew the ACTIVE ADOM, not the console.** It
   sourced its emblem from `product.mark`, so under Global it showed the globe

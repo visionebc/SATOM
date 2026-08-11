@@ -89,16 +89,57 @@ EVENTS: dict[str, dict[str, Any]] = {
             "action": "str — the action the CR will run, e.g. 'upgrade'",
             "risk": "str — low | medium | high",
             "reason": "str — free text the requester typed",
+            "cr_ref": "str — the human change reference printed on the document "
+                      "(CR-2026-0042); '' until the CR has been saved",
             "device_ids": "list[int] — Appliance ids in scope",
-            "policies": "list[str] — affected server-policy names (may be empty)",
+            "devices": "list[dict] — the SAME appliances resolved: appliance_id, "
+                       "appliance, kind, host, firmware. Ids alone are "
+                       "meaningless outside SATOM",
+            "device_count": "int — appliances the window takes down",
+            "evidence": "list[dict] — ONE pre-upgrade run per appliance that has "
+                        "one: prep_id, appliance_id, appliance, ok, summary, "
+                        "firmware, backup, services, at. Empty when the change "
+                        "cites no pre-flight",
+            "evidence_missing": "list[str] — appliance names in scope with NO "
+                                "stored pre-upgrade run. Named, not implied",
+            "policies": "list[str] — affected server-policy names (may be empty), "
+                        "capped; see policy_count",
+            "policy_count": "int — the TRUE number of affected policies, "
+                            "whether or not the list above was capped",
+            "policies_truncated": "bool — the list above is shorter than "
+                                  "policy_count",
+            "approval_mode": "str — manual | external. 'external' means this "
+                             "system holds the gate and the change cannot run "
+                             "until it answers",
+            "crq_ref": "str — an EXISTING external ticket reference, i.e. this "
+                       "is a re-request; '' the first time",
             "window_start": "str|null — ISO-8601 UTC",
             "window_end": "str|null — ISO-8601 UTC",
             "requested_by": "str — username",
         },
         "example": {
-            "cr_id": 412, "title": "FortiWeb fleet 7.6.2", "status": "draft",
+            "cr_id": 412, "cr_ref": "CR-2026-0412",
+            "title": "FortiWeb fleet 7.6.2", "status": "draft",
             "action": "upgrade", "risk": "high", "reason": "CVE-2026-1234",
-            "device_ids": [3, 7], "policies": ["pol-shop", "pol-api"],
+            "device_ids": [3, 7],
+            "devices": [
+                {"appliance_id": 3, "appliance": "fortiweb01",
+                 "kind": "fortiweb", "host": "192.0.2.3", "firmware": "7.6.1"},
+                {"appliance_id": 7, "appliance": "fortiweb02",
+                 "kind": "fortiweb", "host": "192.0.2.7", "firmware": "7.6.1"},
+            ],
+            "device_count": 2,
+            "evidence": [
+                {"prep_id": 88, "appliance_id": 3, "appliance": "fortiweb01",
+                 "ok": True, "summary": "backup ok, health ok, services 12/12 "
+                                        "reachable",
+                 "firmware": "7.6.1", "backup": "fortiweb01-20260815.conf",
+                 "services": 12, "at": "2026-08-15T18:04:00+00:00"},
+            ],
+            "evidence_missing": ["fortiweb02"],
+            "policies": ["pol-shop", "pol-api"], "policy_count": 2,
+            "policies_truncated": False,
+            "approval_mode": "external", "crq_ref": "",
             "window_start": "2026-08-15T22:00:00Z",
             "window_end": "2026-08-16T02:00:00Z", "requested_by": "alice",
         },

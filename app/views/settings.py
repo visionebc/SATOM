@@ -29,6 +29,7 @@ from ..auth.decorators import require_permission
 from ..extensions import csrf
 from ..models import db, Permission, User, Profile, Appliance
 from ..services import naming, settings_store as store
+from ..services import lang_policy, langs as lang_registry
 from ..services import email_service as email
 from ..services import auth_store
 from ..services import twofa
@@ -77,6 +78,31 @@ def _theme_defaults():
 
 def _is_admin() -> bool:
     return bool(current_user and current_user.can(Permission.USER_MANAGE))
+
+
+def _language_rows() -> list:
+    """One row per language the product speaks, for the Languages tab.
+
+    ``renderable`` is read BEFORE the availability gate on purpose: the column
+    answers "can a change document be produced in this language", which is a
+    fact about the catalogue and must not change just because the operator has
+    not ticked the box yet -- otherwise the page would tell them a language is
+    unusable *because* it is switched off, and switching it on would be the
+    only way to discover the claim was circular.
+    """
+    from ..services import cr_document
+
+    offered = set(lang_policy.offered_codes())
+    renderable = {code for code, _label in cr_document.renderable_langs()}
+    usage = user_store.language_usage()
+    return [{
+        'code': code,
+        'label': lang_registry.label(code),
+        'offered': code in offered,
+        'renderable': code in renderable,
+        'is_source': code == lang_registry.DEFAULT,
+        'users': usage.get(code, 0),
+    } for code in lang_registry.codes()]
 
 
 def _acme_creds_state() -> dict:
@@ -167,6 +193,14 @@ def index():
         sot_firmware_repo=(store.firmware_repo() if _is_admin() else None),
         sot_backup_server=(store.backup_server() if _is_admin() else None),
         system_info=system_info.collect(),
+        # Languages — one row per language the PRODUCT speaks, so a language
+        # the operator switched off is still visible (and switchable back on).
+        # Listing only the offered ones would make withdrawing irreversible
+        # from the page that does the withdrawing.
+        lang_rows=(_language_rows() if _is_admin() else []),
+        lang_configured=(lang_policy.configured() if _is_admin() else False),
+        lang_malformed=(lang_policy.malformed() if _is_admin() else False),
+        lang_source=lang_registry.DEFAULT,
         faz_menu_groups=(faz_menu.menu() if _is_admin() else []),
         faz_menu_hidden=(sorted(faz_menu.hidden_keys()) if _is_admin() else []),
         is_admin=_is_admin(),
@@ -630,6 +664,40 @@ def save_faz_menu():
     except Exception as exc:  # noqa: BLE001
         flash(f'Failed to save FAZ menu visibility: {exc}', 'danger')
     return redirect(url_for('settings.index') + '#tab-fazmenu')
+
+
+@bp.route('/languages', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_languages():
+    """Which languages this installation offers its users.
+
+    The checkbox for the source language is rendered disabled, so it never
+    reaches here -- which is exactly why the rule cannot live in the form:
+    ``lang_policy.save`` puts it back unconditionally, and a post that omitted
+    every language would otherwise leave the install with no readable one.
+
+    Nothing is deleted by a withdrawal: per-user preferences and translation
+    catalogues both survive, so switching a language back on restores it whole.
+    """
+    try:
+        picked = request.form.getlist('offered')
+        stored = lang_policy.save(picked)
+        withdrawn = lang_policy.withdrawn_codes()
+        # Both halves are recorded. "Offered: en, es" does not say what changed
+        # -- and the interesting half of this action is always the one that
+        # stopped being available to other people.
+        log_action('settings.languages',
+                   target=','.join(stored),
+                   extra={'offered': list(stored),
+                          'withdrawn': list(withdrawn)})
+        flash('Language availability saved — %d offered%s.' % (
+            len(stored),
+            (', %d withdrawn' % len(withdrawn)) if withdrawn else ''),
+            'success')
+    except Exception as exc:  # noqa: BLE001
+        flash(f'Failed to save language availability: {exc}', 'danger')
+    return redirect(url_for('settings.index') + '#tab-languages')
 
 
 @bp.route('/cert-manager', methods=['POST'])

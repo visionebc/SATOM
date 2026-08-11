@@ -7425,3 +7425,115 @@ tests/test_i18n_foundation.py tests/test_ui_locale.py tests/test_cr_doc_i18n.py
 tests/test_cr_types.py -q` as `satom`. Live render (EN and ES, one fresh app
 context per request — flask-babel caches the locale on `g`):
 `/tmp/render2.py` pattern in §61.
+
+## §69 — a language gate is only a gate if every surface asks it
+
+**Guard:** `tests/test_lang_availability.py` (30 tests) + the widened
+`tests/test_i18n_foundation.py::test_the_registry_is_the_only_author_of_the_language_list`.
+**22 mutations, 22 bite.**
+
+Settings → Languages lets an administrator choose which of the five languages
+SATOM speaks this installation *offers*. The interesting part is not the
+checkbox. It is that "offered" is asked in four places that have nothing to do
+with each other, and a gate that only reaches the obvious one is worse than no
+gate: the operator now believes French is off.
+
+The four askers, and what each would do wrong on its own:
+
+1. **The profile picker** — the obvious one.
+2. **Browser negotiation** (`ui_locale._from_browser`). `Accept-Language: fr`
+   would have kept rendering French to anyone whose browser asked for it,
+   *including operators who never set a preference*. Narrowing has to happen
+   **before** `best_match`, not after: `best_match` returns the browser's
+   highest-weighted match **from the list it is given**, so filtering the
+   winner afterwards answers "no match" for a browser whose second choice is
+   offered.
+3. **The stored preference** (`ui_locale._saved_preference`). Honoured blindly,
+   a withdrawal changes nothing for exactly the users who already chose the
+   withdrawn language — the population the setting is about.
+4. **The change-document picker** (`cr_document.document_langs`). A withdrawal
+   that stopped at the chrome would leave the language on the form that
+   produces a signed document.
+
+**Three rules live in `services/lang_policy.py`, not in the form**, because a
+form is one caller and a rule with one caller is a rule until somebody adds the
+second:
+
+* **The source language cannot be switched off.** Its checkbox is rendered
+  `disabled`, so it never posts — which means the POST handler receives a set
+  *without* it on **every single save**. `save()` adds it back unconditionally.
+  Without that, the ordinary act of pressing Save would leave the install with
+  no readable language, from a checkbox, with no way back in through the UI.
+* **Withdrawing deletes nothing.** The per-user row stays verbatim and the
+  translation catalogues stay filled, so switching a language back on restores
+  it complete instead of empty. Clearing the row would answer, on the user's
+  behalf, a question they had already answered.
+* **Unset or unreadable means everything.** `get_json` answers "unset" and
+  "unparseable" identically; this gate uses `get_json_checked` so a hand-edited
+  row cannot silently shrink the product to English.
+
+**The circular-claim trap, and why `renderable_langs()` exists.** The console
+prints "change documents: produced / not translated yet" *beside the switch for
+that language*. Computing that column through `document_langs()` — which is now
+gated — would have printed "not translated yet" for every language the operator
+had not ticked yet: an answer that depends on the setting it is describing, and
+switching the language on would be the only way to discover the claim was
+circular. So the derivation moved to `renderable_langs()` (ungated) and
+`document_langs()` narrows it.
+
+**That split broke an existing guard, correctly.**
+`test_the_registry_is_the_only_author_of_the_language_list` anchored on
+"`document_langs`'s body mentions `langs.codes()`". After the split the
+derivation is one function over, so the guard failed against *correct* code
+while still passing against a second hardcoded list in the function next to it
+— wrong in both directions. It now asserts on the pair: `renderable_langs`
+derives, `document_langs` **delegates to it** and does not label languages
+itself. Same lesson as §68: anchor on the structure, not on where the structure
+happened to be yesterday.
+
+**`<html lang>` was hardcoded `"en"`.** Nothing failed, and nothing would have:
+a screen reader simply pronounced every Spanish, German, French and Italian
+page with English phonetics. It now carries `ui_lang` — the language the page
+is **rendered** in, which is deliberately not `user_lang` (what the user
+*asked* for): the two differ for an anonymous visitor, for a user with no
+preference, and for one whose language was just withdrawn.
+
+**The console lists every language, including the withdrawn ones.** A page that
+hid what it switched off would make the switch one-way.
+
+**Eight of the twenty-two mutations survived the first pass, and every one of
+them was informative.** Four were rules with no caller that could tell them
+apart: `offered_codes()` also forces the source language in, but `save()` had
+already done so, so nothing distinguished the reader's copy of the rule — the
+test now writes the row directly, which is what a migration or a restored
+backup does. Two were assertions too loose to fail (`!= what I posted` passes
+by luck when a set iterates in registry order; a fixed-width window round the
+`<input>` cut the tag mid-attribute). One was a genuinely dead branch: a
+malformed row and an unset row both degraded to "offer everything" and *nothing
+could see the difference*, so the branch was unobservable — it now surfaces as
+`lang_policy.malformed()` and the console says the stored setting is being
+ignored, rather than telling an operator "never configured" while they look
+straight at a setting they saved. One mutation was simply badly designed (a
+dead duplicate function harms nothing) and was replaced with the real risk:
+`document_langs` re-deriving the list instead of delegating.
+
+**Recipe.** `venv/bin/python -m pytest tests/test_lang_availability.py
+tests/test_i18n_foundation.py tests/test_ui_locale.py
+tests/test_lang_preference.py tests/test_cr_doc_i18n.py -q` — judged by **rc**,
+and only `rc==1` is a failure (`rc==4` is a usage error). Mutation harness:
+`data/i18n_sweep/mut_lang_gate.py` (22). Render against the live database in
+both languages with a **fresh `app_context` per request** — flask-babel caches
+the negotiated locale on `g`, so one context renders every language in the
+first one — and restore the operator's stored preference afterwards.
+
+**Catalogue trap, new this round.** `pybabel extract` + `pybabel update`
+reflowed all four catalogues by **26 000 lines each**: the checked-in `.po`
+files carry no `#:` location comments and were last written sorted-with-a-tail,
+so a regenerate rewrites everything and buries the change — and drags any
+parallel session's uncommitted catalogue work through a rewrite nobody
+reviewed. New msgids are **appended** by
+`data/i18n_sweep/append_new_msgids.py` (extract to a *temporary* pot, diff the ids, translate
+through `translator.translate`, append). Result here: +69 lines per catalogue,
+zero reflow. Also: `git checkout -- app/translations/` **as root** leaves the
+catalogues root-owned and the next `pybabel compile` as `satom` dies with
+`PermissionError` — chown back before compiling.

@@ -122,6 +122,11 @@
     </button>
   </li>
   <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-languages" type="button">
+      <i class="bi bi-translate me-1"></i>{{ _('Languages') }}
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-fazmenu" type="button">
       <i class="bi bi-list-check me-1"></i>{{ _('FAZ Menu') }}
     </button>
@@ -3300,6 +3305,11 @@
   });
 </script>
   {% endif %}
+
+  <!-- LANGUAGES TAB -->
+  <div class="tab-pane fade" id="tab-languages">
+    {% if is_admin %}{% include 'settings/_languages.html' %}{% endif %}
+  </div>
 
   <!-- FAZ MENU VISIBILITY TAB -->
   <div class="tab-pane fade" id="tab-fazmenu">

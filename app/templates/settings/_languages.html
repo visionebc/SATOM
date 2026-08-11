@@ -1,0 +1,96 @@
+{# Settings -> Languages. Which of the languages the PRODUCT speaks this
+   INSTALL offers its users. Every language is listed, including the withdrawn
+   ones: a page that hid what it switched off would make the switch one-way.
+   The rules live in services/lang_policy.py, not here -- this form only shows
+   them. #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-translate me-2 text-accent"></i>{{ _('Languages offered to users') }}</span>
+  </div>
+  <div class="fw-card-body">
+    <p class="text-muted mb-3">
+      {{ _('Tick the languages users may choose on this installation. A withdrawn language disappears from the profile picker, from the change-document language question, and from browser language negotiation — pages render in another one instead.') }}
+    </p>
+
+    <form method="POST" action="{{ url_for('settings.save_languages') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="table-responsive">
+        <table class="table fw-table align-middle mb-0">
+          <thead>
+            <tr>
+              <th style="width:110px;">{{ _('Offered') }}</th>
+              <th>{{ _('Language') }}</th>
+              <th style="width:90px;">{{ _('Code') }}</th>
+              <th style="width:200px;">{{ _('Change documents') }}</th>
+              <th style="width:170px;">{{ _('Chosen by') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in lang_rows %}
+            {# Structural identity for the guards (and for the operator's
+               inspector): a test that located a row by its translated label
+               would die the day the label is translated -- see safeguards
+               §68. #}
+            <tr data-lang="{{ row.code }}" data-doc="{{ 'produced' if row.renderable else 'missing' }}">
+              <td>
+                {# The source language is rendered ticked and disabled, so it
+                   never posts. lang_policy.save() adds it back regardless --
+                   the rule is enforced there, where a replayed post also
+                   meets it. #}
+                <div class="form-check form-switch mb-0">
+                  <input class="form-check-input" type="checkbox" name="offered"
+                         value="{{ row.code }}" id="lang-{{ row.code }}"
+                         {{ 'checked' if row.offered }} {{ 'disabled' if row.is_source }}>
+                  <label class="form-check-label" for="lang-{{ row.code }}"></label>
+                </div>
+              </td>
+              <td>
+                <strong>{{ row.label }}</strong>
+                {% if row.is_source %}
+                <span class="fw-badge fw-badge-primary ms-2">{{ _('source language') }}</span>
+                {% endif %}
+              </td>
+              <td><code>{{ row.code }}</code></td>
+              <td>
+                {% if row.renderable %}
+                <span class="fw-badge fw-badge-success">{{ _('produced') }}</span>
+                {% else %}
+                <span class="fw-badge fw-badge-warning">{{ _('not translated yet') }}</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if row.users %}
+                <span class="fw-badge fw-badge-info">{{ row.users }}</span>
+                <span class="text-muted small ms-1">{{ _('user(s)') }}</span>
+                {% else %}
+                <span class="text-muted small">{{ _('nobody') }}</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="d-flex align-items-center gap-2 mt-3 pt-3 border-top">
+        <button class="btn btn-fw-primary" type="submit">
+          <i class="bi bi-check2 me-1"></i>{{ _('Save language availability') }}
+        </button>
+        {% if lang_malformed %}
+        <span class="fw-badge fw-badge-danger">{{ _('The stored setting is unreadable and is being ignored — every language is offered. Saving here replaces it.') }}</span>
+        {% elif not lang_configured %}
+        <span class="text-muted small">{{ _('Never configured — every language is offered until you save here.') }}</span>
+        {% endif %}
+      </div>
+    </form>
+
+    <div class="form-text mt-3">
+      <strong>{{ _('%(code)s cannot be switched off.', code=lang_source|upper) }}</strong>
+      {{ _('It is the language every translation derives from, and the one a page falls back to, so an installation without it would have no readable fallback.') }}
+      <br>
+      {{ _('Withdrawing deletes nothing. Users who had already chosen the language keep their choice — it is simply not honoured while the language is off, and their profile says so — and the translated text stays in place, so switching a language back on restores it complete rather than empty.') }}
+      <br>
+      {{ _('“Change documents” describes the catalogue, not this switch: a language marked as not translated yet can still be offered for the interface, but the change-request form will keep asking which language a document is being drafted in rather than picking that one.') }}
+    </div>
+  </div>
+</div>

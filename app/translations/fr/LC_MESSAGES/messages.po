@@ -15682,6 +15682,21 @@ msgstr ""
 "\\n\n"
 "🔒 Profil géré par modèle - Les modèles restent propres. Lors de l'enregistrement, vous serez proposé une clonage par politique (nommé à partir de"
 
+msgid "The change type this flow raises is disabled in Administration → Change Types, so no change can be raised from here. Re-enable it there."
+msgstr "Le type de changement levé par ce flux est désactivé dans Administration → Types de changements, donc aucun changement ne peut être levé à partir d'ici. Réactivez-le là-bas."
+
+msgid "Open change type"
+msgstr "Ouvrir le type de changement"
+
+msgid "Edit this wording"
+msgstr "Modifier ce terme"
+
+msgid "Filled in from the change type and the appliances you tick above. Editing a field stops it updating — your words are never overwritten. It is a proposal: §1 of the change document attributes this text to you by name."
+msgstr "Rempli en fonction du type de modification et des appareils que vous avez cochés ci-dessus. Modifier un champ arrête sa mise à jour — vos mots ne sont jamais écrabouillés. C'est une proposition : §1 du document de modification attribue ce texte à votre nom."
+
+msgid "Each wave takes the title above, suffixed “… — wave k/N”."
+msgstr "Chaque vague prend le titre ci-dessus, suffixé par “… — vague k/N”."
+
 #~ msgid "API Target"
 #~ msgstr "Cible API"
 

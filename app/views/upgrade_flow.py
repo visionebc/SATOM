@@ -57,6 +57,52 @@ MAX_SWEEP = 40
 # appliances out of every window without anybody being told.
 MAX_WAVES = 12
 
+#: The change type this flow raises. Fixed — the page is the *upgrade*
+#: workflow and stage 4 binds the upgrade executor — but every WORD it puts on
+#: the change comes from Administration -> Change Types, never from this
+#: template. A page that hard-codes its own title and reason is a second author
+#: of the same prose: an administrator corrects the wording there, the single
+#: change picks it up, and the bulk one keeps printing the sentence that was
+#: compiled in. Nothing fails; the two documents simply stop agreeing.
+CR_ACTION = 'upgrade'
+
+
+def cr_draft_context() -> dict:
+    """The stage-2 wording, authored by Administration -> Change Types.
+
+    Read through ``services.cr_types`` (not ``cr_document``) for the same
+    reason the single-change form does: an administrator's text wins PER
+    FIELD, and every field they left alone falls back to the sentence shipped
+    with the product. Reading the compiled module here would print the shipped
+    paragraph next to the corrected one, on the same console.
+
+    ``entry`` is ``None`` when the built-in has been disabled on that page. It
+    is surfaced rather than ignored because ``create_change_request`` refuses
+    an action that is not on offer — without it the operator fills the whole
+    form and is told at submit time, after the pre-flight sweep.
+
+    **No pre-flight run is cited.** ``draft_fields(prep=...)`` names one run's
+    id, timestamp and backup, and this stage rests on N of them. Picking one to
+    quote is exactly the defect this flow was built to remove: a document whose
+    evidence sentence describes a single box while the change covers forty.
+    The consolidated coverage is on the change itself.
+    """
+    from ..services import cr_document, cr_types
+    from .change_requests import cr_type_entries
+
+    codes = [code for code, _label in cr_document.document_langs()]
+    entry = {e['key']: e for e in cr_type_entries()}.get(CR_ACTION)
+    return {
+        'entry': entry,
+        'langs': cr_document.document_langs(),
+        'drafts': {code: cr_types.draft_fields(CR_ACTION, code)
+                   for code in codes},
+        'labels': {code: cr_types.label(CR_ACTION, code) for code in codes},
+        'devices_token': cr_document.DEVICES_TOKEN,
+        'devices_none': {code: cr_document.devices_placeholder(code)
+                         for code in codes},
+    }
+
 
 def prep_kinds() -> tuple[str, ...]:
     """Appliance kinds the pre-upgrade actually runs against.
@@ -118,11 +164,37 @@ def index():
         group['waves'].append(cr)
     for group in wave_groups:
         group['waves'].sort(key=lambda c: c.wave_index or 0)
+    # Question "which language is this document written in" is answered from
+    # the operator's PROFILE and from nowhere else, exactly as the single
+    # change form answers it. A pre-checked first radio is not an answer: the
+    # document that comes out of stage 2 is signed in whatever it says.
+    from ..services import langs as lang_registry
+    from ..services import user_settings_store as user_store
+    crdoc = cr_draft_context()
+    codes = [code for code, _label in crdoc["langs"]]
+    pref_lang = user_store.language(getattr(current_user, 'id', 0) or 0)
+    lang_preset = pref_lang if pref_lang in set(codes) else ''
+    # Rendered in a language the document can actually be produced in. Falling
+    # back to a hard-coded 'en' would put a proposal on screen that no entry in
+    # `drafts` corresponds to, and the fields would come out blank.
+    fallback = (lang_registry.DEFAULT if lang_registry.DEFAULT in codes
+                else (codes[0] if codes else lang_registry.DEFAULT))
     return render_template('upgrade_flow/index.html',
                            devices=devices, latest=latest,
                            recent_crs=recent_crs, wave_groups=wave_groups,
                            kinds=prep_kinds(), max_sweep=MAX_SWEEP,
-                           max_waves=MAX_WAVES)
+                           max_waves=MAX_WAVES, crdoc=crdoc,
+                           cr_action=CR_ACTION,
+                           lang_preset=lang_preset,
+                           # The text has to be rendered in SOME language for
+                           # the page to work without scripting; that is not
+                           # the same as the question being answered, and the
+                           # radios still ask it.
+                           render_lang=(lang_preset or fallback),
+                           lang_pref_label=(lang_registry.label(pref_lang)
+                                            if pref_lang else ''),
+                           lang_pref_unrenderable=(bool(pref_lang)
+                                                   and not lang_preset))
 
 
 def split_waves(devices, size: int) -> list[list]:
@@ -246,13 +318,27 @@ def waves():
 
     group_ref = f'W{datetime.utcnow().strftime("%Y%m%d%H%M%S")}-{ids[0]}'
     title = (request.form.get('title') or '').strip()
+    if not title:
+        # Refused rather than allowed through: the suffix alone is non-empty,
+        # so an empty title would sail past create_change_request's own check
+        # and produce a register of changes called "— wave 1/6".
+        flash('The waves need a title. It is proposed from the change type — '
+              'restore it or write your own. Nothing was created.', 'danger')
+        return redirect(url_for('upgrade_flow.index'))
     created = []
     for index, (members, (w_start, w_end)) in enumerate(zip(groups, windows), 1):
+        # The suffix is reserved out of the 200-character budget instead of
+        # being appended and truncated away: "… — wave 3/6" is the only thing
+        # on the change list that tells two waves apart, and it is the part a
+        # blind truncation would cut.
+        suffix = f' — wave {index}/{len(groups)}'
         cr, error = create_change_request({
-            'title': f'{title} — wave {index}/{len(groups)}',
-            'action': 'upgrade',
+            'title': f'{title[:200 - len(suffix)]}{suffix}',
+            'action': CR_ACTION,
             'risk': request.form.get('risk'),
             'reason': request.form.get('reason'),
+            'rollback': request.form.get('rollback'),
+            'doc_lang': request.form.get('doc_lang'),
             'device_ids': [d.id for d in members],
             'prep_ids': [prep_by_dev[d.id] for d in members
                          if prep_by_dev.get(d.id)],

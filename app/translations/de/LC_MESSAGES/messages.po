@@ -15791,3 +15791,18 @@ msgstr "„Change documents“ beschreibt das Katalogsystem, nicht diesen Schalt
 
 msgid "Languages"
 msgstr "Sprachen"
+
+msgid "Change made through SATOM"
+msgstr "Änderung durchgeführt von SATOM"
+
+msgid "Report it, credited to its author"
+msgstr "Berichten Sie es, dem Autor zugeschrieben"
+
+msgid "Report it as drift, credited to its author"
+msgstr "Melden Sie es als Drift, mit Vermerk des Autors"
+
+msgid "Do not report it"
+msgstr "Melden Sie es nicht"
+
+msgid "When a config change matches a write SATOM recorded in its own audit log, the alert names who made it instead of asking you to remember. Unexplained drift is always reported."
+msgstr "Wenn eine Konfigurationsänderung einer mitgeschriebenen SATOM im eigenen Audit-Log entspricht, benennt die Warnung den/die Person anstelle dessen, dass Sie sich daran erinnern müssen. Unglättigte Drift wird immer gemeldet."

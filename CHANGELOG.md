@@ -8,6 +8,25 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Config-drift alerts say who made the change.** When a device's
+  configuration changes, SATOM now checks its own audit log for a write it made
+  to that device inside the interval the change has to fall in, and names the
+  author, the time and the client address instead of ending with "if nobody
+  edited it via SATOM…" — a correlation the product had already performed and
+  thrown away. An unexplained change is still reported exactly as before, and
+  now states the interval that was searched, so "no write recorded" is a fact
+  the reader can weigh rather than a claim they have to trust.
+
+  The interval is bounded by the last harvest that CONFIRMED the old
+  configuration, not by the older snapshot's timestamp: an unchanged device
+  mints no new version, so those two can be days apart, and the wider window
+  would credit the wrong write. Previews, writes the device refused, read-only
+  API-console calls and writes to a neighbouring appliance are all excluded —
+  crediting a device-side change to SATOM would downgrade a real intrusion to
+  an approving nod, so anything short of positive evidence counts as no
+  receipt. New setting under Settings → Alerts: report an attributed change as
+  informational (default), keep it at warning, or do not report it.
+
 - **Settings → Languages: choose which languages this installation offers.**
   SATOM speaks five; an administrator can now decide which of them users may
   pick here. A withdrawn language disappears from the profile picker, from the

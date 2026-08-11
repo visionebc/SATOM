@@ -53,6 +53,15 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **A navigation guard that had quietly stopped guarding.** The check that every
+  Administrator block in the sidebar reaches Collection through the one shared
+  partial located those blocks by their rendered label, so translating the nav
+  left it matching nothing and iterating over an empty list. It now anchors on
+  `data-nav-group`, the group's structural identity, closes each block by
+  counting its own tags (a block that lost its closing tags used to run on and
+  find the *next* block's entry), and a new guard fails if that identity is ever
+  routed through the translation catalog.
+
 - **Upgrade Flow wrote its own prose; it now reads Administration → Change
   Types like every other change form.** Stage 2 offered a title box with an
   English placeholder compiled into the template, a free-text reason with

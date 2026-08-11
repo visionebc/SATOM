@@ -1140,6 +1140,17 @@ def create_app(config_override: object | None = None) -> Flask:
         try:
             res = _al.run(force=force, dry_run=dry_run)
             print('alerts-run:', res)
+            # A run that found something and reached NOBODY exits non-zero, so
+            # the timer's unit goes ``failed`` and the operator sees it in
+            # systemctl and on the Monitoring page. Silent delivery failure is
+            # how "Relay access denied" survived for weeks behind a summary
+            # line that said the alerts had been dispatched.
+            if res.get("fresh") and not res.get("channels"):
+                print('alerts-run: DELIVERED NOTHING —',
+                      '; '.join(res.get('delivery_failed') or ['unknown']))
+                raise SystemExit(1)
+        except SystemExit:
+            raise
         except Exception as exc:  # noqa: BLE001
             print('alerts-run error:', exc)
 

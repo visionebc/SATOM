@@ -20,7 +20,11 @@ Design rules:
 * **Volatile fields are excluded from the identity.** ``generated_at`` and the
   per-sweep ``errors`` list differ every harvest even when the device config
   is byte-identical; hashing them would defeat the dedup entirely and quietly
-  reintroduce the unbounded growth this store exists to stop.
+  reintroduce the unbounded growth this store exists to stop. The same is true
+  of fields NESTED inside ``sections`` -- the appliance's own clock, its
+  internal object handles, and its reverse-reference projections -- which is
+  what :func:`normalise` strips. Stripping happens on the way to the HASH
+  only; the stored blob keeps every field.
 * **Blobs live under ``data/``** so the existing ``satom-ha-datasync`` rsync
   replicates them to the standby and the system-backup bundles include them.
   No new replication mechanism.
@@ -42,6 +46,79 @@ from pathlib import Path
 
 # Snapshot keys that change every sweep without the device config changing.
 VOLATILE_KEYS = ("generated_at", "errors")
+
+# --- Nested volatility -----------------------------------------------------
+# VOLATILE_KEYS is top-level only, and that was not enough: the fields that
+# actually churn live INSIDE ``sections``, so they were hashed and every hourly
+# harvest minted a new version of an unchanged device. Measured against the
+# store on a1 (2026-08-11) over all 206 consecutive version pairs: 194 of them
+# -- 94% -- differed ONLY in the appliance's own wall clock, and those pairs
+# are ~640 of the last week's "config drift" alerts. The dedup this store
+# exists to provide was switched off for FortiADC entirely, and a real drift
+# would have been buried under the noise.
+#
+# Every rule below strips a field the APPLIANCE moves on its own. A field an
+# operator can set is never stripped: ``tz``, ``ntpsync``, ``dst`` and
+# ``syncinterval`` sit in the SAME object as the clock and are deliberately
+# kept -- the goal is to stop reporting the clock, not to stop reporting time
+# configuration.
+#
+# This governs IDENTITY only. ``record()`` still stores the snapshot whole, so
+# history, diff and restore keep seeing exactly what the appliance returned.
+# The rules decide when a version is MINTED, never what it contains.
+
+#: Wall-clock readings. Dropped only inside an object that carries
+#: ``CLOCK_MARKER``, so a configuration field that happens to be named
+#: ``hour``/``month`` elsewhere in the tree keeps being hashed.
+CLOCK_MARKER = "system_dateTime"
+CLOCK_FIELDS = frozenset({
+    "hour", "minute", "second", "mday", "month", "year",
+    "system_date", "system_dateTime",
+})
+
+#: Reverse-reference projections: ``q_ref`` counts the objects pointing at this
+#: one and ``q_ref_string`` lists them, newline separated and in an unstable
+#: order. Sorted, NOT dropped -- a genuine reference change is still a change,
+#: and dropping it would hide the consequence of an object being deleted.
+REF_LIST_KEYS = frozenset({"q_ref_string"})
+
+#: Windows the appliance re-bases forward by itself. FortiWeb cookie security
+#: advances ``allow-time`` with no operator involvement.
+ROLLING_KEYS = frozenset({"allow-time"})
+
+#: Suffix of an internal numeric handle (``signature-rule_val`` next to
+#: ``signature-rule``). The appliance renumbers handles when proxyd restarts --
+#: that alone accounted for 109 differing leaves across a fortiweb08 reboot --
+#: while the sibling NAME the handle resolves to does not move. Stripped only
+#: when that sibling is present, so a standalone ``*_val`` field stays hashed.
+HANDLE_SUFFIX = "_val"
+
+
+def normalise(value):
+    """Strip appliance-side churn so the identity tracks CONFIGURATION.
+
+    Recursive and total: returns a structure of the same shape with the
+    volatile leaves removed or canonicalised. Pure -- no I/O, no ORM -- so the
+    rules can be tested against a literal snapshot.
+    """
+    if isinstance(value, list):
+        return [normalise(v) for v in value]
+    if not isinstance(value, dict):
+        return value
+    has_clock = CLOCK_MARKER in value
+    out = {}
+    for key, val in value.items():
+        if has_clock and key in CLOCK_FIELDS:
+            continue
+        if key.endswith(HANDLE_SUFFIX) and key[:-len(HANDLE_SUFFIX)] in value:
+            continue
+        if key in ROLLING_KEYS:
+            continue
+        if key in REF_LIST_KEYS and isinstance(val, str):
+            out[key] = "\n".join(sorted(p for p in val.split("\n") if p))
+            continue
+        out[key] = normalise(val)
+    return out
 
 DEFAULT_KEEP_VERSIONS = 60
 DEFAULT_KEEP_DAYS = 180
@@ -65,7 +142,7 @@ def _blob_path(sha: str) -> Path:
 def canonical_bytes(snapshot: dict) -> bytes:
     """Deterministic JSON bytes of the snapshot minus volatile fields."""
     body = {k: v for k, v in snapshot.items() if k not in VOLATILE_KEYS}
-    return json.dumps(body, sort_keys=True, default=str,
+    return json.dumps(normalise(body), sort_keys=True, default=str,
                       separators=(",", ":")).encode("utf-8")
 
 

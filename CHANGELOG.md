@@ -53,6 +53,50 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **The monitor was raising ~790 alerts a week for conditions that were not
+  happening.** Four independent checks each asserted something false; nothing
+  crashed, nothing was slow, and no test failed, so the only visible symptom
+  was a mailbox the operator learned to ignore. All four are fixed together
+  because the fifth defect was the noise itself: two genuine drift events of
+  the same week sat underneath ~825 alerts.
+
+  - *Config drift on a device whose config did not change.* The source-of-truth
+    identity hashed fields the appliance moves by itself — its own wall clock,
+    the internal `*_val` handles it renumbers when proxyd restarts, the
+    reverse-reference lists it emits in an unstable order, and the rolling
+    `allow-time` window. Measured across every consecutive version pair in the
+    live store, 194 of 206 differed in **nothing but the clock**, so a FortiADC
+    wrote a fresh ~500 KB version every hour and raised an alert for it. The
+    exclusion applies to the identity only: the stored snapshot keeps every
+    field, so history, diff and restore are unchanged.
+
+  - *"Host degraded — CPU load 220% of 3 cores" on an idle container.* lxcfs
+    does not virtualise `/proc/loadavg` or `/proc/uptime`, so both are the
+    hypervisor's. The manager divided the **host's** load average by the
+    **container's** core count; a hypervisor at 27% of 24 cores rendered as a
+    degraded node, and both HA members alerted in the same second with the same
+    load to the decimal. CPU is now read from this container's own cgroup
+    accounting, averaged over the window since the previous reading, and uptime
+    is derived from our PID 1. The host's load average is still shown, labelled
+    as the host's.
+
+  - *"ALL backends down" over servers the appliance reported as up.*
+    `healthCheckStatus: "disable"` means no health check is **configured** for
+    that pool member, not that the member is down — its own status still reads
+    up. The two were graded as one fact, so a policy without health checks read
+    `crit` forever: 302 consecutive hourly buckets without a single healthy
+    sample. It is now reported as **unverified** at `warn`, with its own
+    governable severity, so an untested backend is still not green but the
+    console no longer states something the device contradicts.
+
+  - *`dispatched: 2` on runs that delivered nothing.* Every alert mail was
+    refused by the relay (`454 4.7.1 Relay access denied`) and the engine
+    counted them as sent, then stamped the cooldown, suppressing the finding
+    for six hours. `dispatched` now counts what actually left on some channel,
+    each failed channel is named, the cooldown is only stamped for what was
+    delivered, and a run that reaches nobody exits non-zero so the timer's unit
+    goes `failed` where systemctl and the Monitoring page both show it.
+
 - **A change request's page claimed its evidence came from one pre-upgrade
   run.** "Captured by upgrade preparation #88" was true of a single-device
   change and false of a window over twenty appliances, whose frozen inventory

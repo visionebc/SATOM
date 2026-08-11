@@ -819,6 +819,7 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
 
     result = {"node": _node(), "evaluated": len(findings),
               "fresh": len(fresh), "dispatched": 0, "email": None,
+              "in_app": 0, "channels": [], "delivery_failed": [],
               "enabled": is_enabled()}
     if not fresh:
         return result
@@ -832,9 +833,16 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
         if admin_ids:
             # product=None means "stamp from the session", which is '' in this
             # worker thread. Device findings carry the device's ADOM instead.
-            notify.push_many(admin_ids, f["title"], kind=kind,
-                             body=f["detail"][:400],
-                             product=f.get("product") or None)
+            try:
+                notify.push_many(admin_ids, f["title"], kind=kind,
+                                 body=f["detail"][:400],
+                                 product=f.get("product") or None)
+                result["in_app"] += 1
+            except Exception as exc:  # noqa: BLE001 — count it, do not sink the run
+                result["delivery_failed"].append("in-app: %s" % exc)
+    if not admin_ids:
+        result["delivery_failed"].append(
+            "in-app: no admin recipients — nobody holds the bell")
 
     if is_enabled():
         to = recipients()
@@ -846,11 +854,33 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
         else:
             result["email"] = {"ok": False, "detail": "no recipients configured"}
 
+    # ``dispatched`` means DELIVERED, on at least one channel. It used to be
+    # set to len(fresh) unconditionally, so a run whose every message the relay
+    # refused ("454 4.7.1 Relay access denied", every run for weeks) still
+    # reported ``dispatched: 2``. A counter that says "sent" when nothing was
+    # sent is worse than no counter: it is the number an operator checks to
+    # decide the channel is healthy.
+    if result["email"] is not None and not (result["email"] or {}).get("ok"):
+        result["delivery_failed"].append(
+            "email: %s" % ((result["email"] or {}).get("detail") or "send failed"))
+    channels = []
+    if result["in_app"]:
+        channels.append("in-app")
+    if (result["email"] or {}).get("ok"):
+        channels.append("email")
+    result["channels"] = channels
+    result["dispatched"] = len(fresh) if channels else 0
+
+    # Cooldown records what was DELIVERED. Stamping it after a run that reached
+    # nobody would swallow the finding for the whole cooldown window — the alert
+    # would exist, be counted, and never arrive. With no channel up we leave the
+    # state untouched so the next run retries.
+    if not channels:
+        return result
     now_iso = _now().isoformat()
     for f in fresh:
         state[f["key"]] = now_iso
     _save_state(state)
-    result["dispatched"] = len(fresh)
     return result
 
 

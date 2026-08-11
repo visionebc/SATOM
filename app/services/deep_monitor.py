@@ -1093,7 +1093,19 @@ def classify_policy_sessions(row: dict, members: list[dict], *,
         if warn_ms and art >= warn_ms:
             status = worst([status, "warn"])
             bits.append(">= %d ms" % warn_ms)
-    down = [m for m in members if not m["up"] or m["health"].lower() == "disable"]
+    # "the appliance says this member is DOWN" and "the appliance is not
+    # CHECKING this member" are different facts and must not share a grade.
+    # ``healthCheckStatus: "disable"`` means no health check is configured for
+    # the member; the member's own ``status`` still reads 1 (up). Folding the
+    # two together made every pool without a health check render as
+    # "crit — ALL backends down" over servers the device reports as up: 91 such
+    # alerts on fortiweb08 alone, and 302 consecutive hourly buckets since
+    # 2026-07-28 with not one ``ok`` sample. A probe that has never been green
+    # teaches the operator to skip the page, which is how a real outage gets
+    # missed. Fail-closed is kept -- an unchecked backend is still a gap and
+    # still leaves ``ok`` -- but it is reported as UNVERIFIED, not as down.
+    down = [m for m in members if not m["up"]]
+    unverified = [m for m in members if m["up"] and m["health"].lower() == "disable"]
     if members:
         bits.append("%d/%d backends up" % (len(members) - len(down), len(members)))
     if down and len(down) == len(members):
@@ -1103,6 +1115,12 @@ def classify_policy_sessions(row: dict, members: list[dict], *,
         status, sfx = apply_fact(status, "backends_partial_down", sev)
         bits.append("down: " + ", ".join("%s:%d" % (m["server"], m["port"])
                                          for m in down[:4]) + sfx)
+    if unverified:
+        status, sfx = apply_fact(status, "backends_unverified", sev)
+        bits.append("%d/%d backends have NO health check — state unverified (%s)%s"
+                    % (len(unverified), len(members),
+                       ", ".join("%s:%d" % (m["server"], m["port"])
+                                 for m in unverified[:4]), sfx))
     n = row["sessions"]
     if crit_num and n >= crit_num:
         status = "crit"

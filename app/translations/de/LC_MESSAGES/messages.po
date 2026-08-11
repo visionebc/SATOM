@@ -15680,6 +15680,21 @@ msgstr "🔒 Vorlagenbasiertes Profil — angeleitetes Klonen"
 msgid "🔒 Template-managed profile — templates stay clean. On save you'll be offered a per-policy clone (named from the"
 msgstr "🔒 Vorlagen-gesteuerter Profil — Vorlagen bleiben sauber. Beim Speichern wird Ihnen ein pro-Richtlinie-Klon angeboten (benannt aus dem"
 
+msgid "The change type this flow raises is disabled in Administration → Change Types, so no change can be raised from here. Re-enable it there."
+msgstr "Der von diesem Workflow ausgelöste Änderungstyp ist in der Verwaltung → Änderungstypen deaktiviert, daher kann hier keine Änderung angefordert werden. Aktivieren Sie ihn dort erneut."
+
+msgid "Open change type"
+msgstr "Änderungstyp öffnen"
+
+msgid "Edit this wording"
+msgstr "Bearbeiten Sie diese Wortierung"
+
+msgid "Filled in from the change type and the appliances you tick above. Editing a field stops it updating — your words are never overwritten. It is a proposal: §1 of the change document attributes this text to you by name."
+msgstr "Aus der Änderungstyp und den von Ihnen oben ausgewählten Geräten ausgefüllt. Ein Feld bearbeiten hält es davon ab, aktualisiert zu werden — Ihre Worte werden niemals überschrieben. Es ist ein Vorschlag: §1 des Änderungsdocuments attribuiert diesen Text Ihnen nach Name."
+
+msgid "Each wave takes the title above, suffixed “… — wave k/N”."
+msgstr "Jede Welle trägt den Titel oben, ergänzt um “… — Welle k/N”."
+
 #~ msgid "API Target"
 #~ msgstr "API-Ziel"
 

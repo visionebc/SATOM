@@ -15678,6 +15678,21 @@ msgstr "🔒 Perfil gestionado por plantilla — clonación guiada"
 msgid "🔒 Template-managed profile — templates stay clean. On save you'll be offered a per-policy clone (named from the"
 msgstr "🔒 Perfil gestionado por plantilla — las plantillas se mantienen limpias. Al guardar, se le ofrecerá un clon por política (denominado desde la"
 
+msgid "The change type this flow raises is disabled in Administration → Change Types, so no change can be raised from here. Re-enable it there."
+msgstr "El tipo de cambio que genera este flujo está deshabilitado en Administración → Tipos de Cambio, por lo que no se puede generar ningún cambio desde aquí. Vuelva a habilitarlo allí."
+
+msgid "Open change type"
+msgstr "Abrir tipo de cambio"
+
+msgid "Edit this wording"
+msgstr "Editar esta redacción"
+
+msgid "Filled in from the change type and the appliances you tick above. Editing a field stops it updating — your words are never overwritten. It is a proposal: §1 of the change document attributes this text to you by name."
+msgstr "Llenado a partir del tipo de cambio y los dispositivos que marque arriba. Editar un campo detiene su actualización — sus palabras nunca se sobrescriben. Es una propuesta: §1 del documento de cambio atribuye este texto a usted por nombre."
+
+msgid "Each wave takes the title above, suffixed “… — wave k/N”."
+msgstr "Cada oleada toma el título anterior, sujeto de “… — oleada k/N”."
+
 #~ msgid "API Target"
 #~ msgstr "Objetivo de la API"
 

@@ -211,8 +211,55 @@
           {{ _('The published services this window takes offline,') }} <strong>{{ _('as they were when this change was raised') }}</strong>. This is deliberately not a live read: the approver
           signed this list, and a document that re-queried the fleet at print time would
           describe a different one.
-          {% if prep %}Captured by upgrade preparation #{{ prep.id }}.{% endif %}
+          {# One run or twenty, the sentence has to match. "Captured by upgrade
+             preparation #88" was true of a single-device change and false of a
+             window over twenty appliances whose inventory is MERGED across
+             every bound run — the same class of quiet untruth as the About
+             card that claimed v1.0 for eight releases. #}
+          {% if evidence and evidence.preps %}
+            {# One msgid per SENTENCE, with the number as a named placeholder.
+               A sentence split around {{ }} cannot be translated into an
+               inflected language — the round that added the five UI languages
+               produced "À propos SATOM" exactly this way. #}
+            {% if evidence.preps|length == 1 %}
+              {{ _('Captured by upgrade preparation #%(id)s.', id=evidence.preps[0].id) }}
+            {% else %}
+              {{ _('Merged across %(count)s bound pre-upgrade runs.', count=evidence.preps|length) }}
+            {% endif %}
+          {% endif %}
         </p>
+        {% if evidence and (evidence.preps or evidence.missing) %}
+        <div class="table-responsive mb-2">
+          <table class="fw-table mb-0" style="font-size:12.5px;">
+            <thead><tr>
+              <th>{{ _('Appliance') }}</th><th>{{ _('Pre-upgrade') }}</th>
+              <th>{{ _('Verdict') }}</th><th>{{ _('Firmware') }}</th>
+              <th>{{ _('Services') }}</th>
+            </tr></thead>
+            <tbody>
+            {% for d in devices %}
+              {% set p = evidence.by_appliance.get(d.id) %}
+              <tr>
+                <td>{{ d.name }}</td>
+                {% if p %}
+                  <td><a href="{{ url_for('appliances.upgrade_prep', id=d.id) }}">#{{ p.id }}</a>
+                      <span class="text-muted">{{ p.created_at|localtime }}</span></td>
+                  <td><span class="fw-badge fw-badge-{{ 'success' if p.ok else 'warning' }}">{{ _('passed') if p.ok else _('not clean') }}</span>
+                      <div class="text-muted">{{ p.summary }}</div></td>
+                  <td class="is-mono">{{ p.firmware or '—' }}</td>
+                  <td>{{ p.inventory_list|length }}</td>
+                {% else %}
+                  {# NAMED, never a blank row. A device silently absent from an
+                     evidence table reads as one that passed. #}
+                  <td colspan="4"><span class="fw-badge fw-badge-secondary">{{ _('no baseline') }}</span>
+                      <span class="text-muted">{{ _('this appliance is covered by the change but carries no pre-upgrade evidence') }}</span></td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
         {% if live_drift is not none %}
         <div class="fw-alert {{ 'fw-alert-warning' if (live_drift.added or live_drift.removed) else 'fw-alert-info' }} mb-2">
           <strong>{{ _('Drift vs. the devices right now:') }}</strong>

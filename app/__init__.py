@@ -1459,8 +1459,24 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('doc_lang', "VARCHAR(8) DEFAULT 'en'"),
                 ('inventory_at', 'TIMESTAMP'),
                 ('prep_id', 'INTEGER'),
+                # --- batched rollouts: one wave = one change (2026-08-11) ---
+                # Nullable with no backfill. A change raised before waves
+                # existed is not "wave 0 of 0" — it is not part of a batched
+                # rollout at all, and a zero would render as a wave that never
+                # ran.
+                ('wave_group', 'VARCHAR(40)'),
+                ('wave_index', 'INTEGER'),
+                ('wave_total', 'INTEGER'),
             ],
         }
+        # NOTE: a repeated key in the literal above is a SILENT loss — Python
+        # keeps the last one and every column under the earlier copy is never
+        # added. No error, no log line; the feature just 500s on a column the
+        # model says exists. Caught for real on 2026-08-11 when the wave columns
+        # were appended under a second 'change_request' key. It cannot be
+        # guarded from here (by the time this line runs the duplicates have
+        # already collapsed), so the guard reads the SOURCE:
+        # tests/test_schema_migration_keys.py.
         insp = inspect(db.engine)
         added: set[tuple[str, str]] = set()
         for table, cols in adds.items():

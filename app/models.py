@@ -1068,6 +1068,73 @@ class ScheduledActionRun(db.Model):
         return f"<ScheduledActionRun a={self.action_id} {self.status}>"
 
 
+class ScheduledActionTarget(db.Model):
+    """One row per (run, appliance) — the per-device progress of a multi-target
+    fire, written AS IT HAPPENS.
+
+    ``ScheduledActionRun.log`` already held the per-device outcome, as text
+    lines built in memory and committed ONCE in the finally block. For the
+    hourly one-box sweeps that was fine. For the thing this product was just
+    taught to do — one change request upgrading sixty appliances, sequentially,
+    inside a four-hour window — it fails twice over:
+
+    * **Nothing is observable while it runs.** The console can only say
+      ``running``. Which box is being upgraded, how many are done, whether the
+      third one failed forty minutes ago: none of it exists anywhere until the
+      last device returns. An operator watching a window they are accountable
+      for has to guess, and the honest answer to "how far along is it?" was a
+      shrug.
+    * **A crash loses the whole record.** Kill the worker at device 50 of 60
+      and the log was never written: fifty appliances were changed and the
+      product has no record of which. The one moment the log matters most is
+      the one moment it is guaranteed to be missing.
+
+    So the row is INSERTed as ``running`` before the device is touched and
+    UPDATEd the moment it returns, each with its own commit. Cheap (one small
+    row per device), durable, and it makes the progress panel a read rather
+    than an inference.
+
+    Written best-effort by contract: a failure to record progress must never
+    abort a change that is already touching production hardware. Bookkeeping
+    does not get a veto over the work.
+    """
+    __tablename__ = "scheduled_action_target"
+    __table_args__ = (
+        db.UniqueConstraint("run_id", "appliance_id", name="uq_run_target"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    run_id = db.Column(
+        db.Integer, db.ForeignKey("scheduled_action_run.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    # Nullable: a no-target action (needs_targets False) fires once against no
+    # appliance, and that fire still deserves a progress row.
+    appliance_id = db.Column(db.Integer, nullable=True, index=True)
+    # Denormalised on purpose. A device deleted after the window still has to
+    # appear by NAME in the record of what was changed that night — resolving
+    # the id later would render the row as a blank.
+    appliance = db.Column(db.String(128), nullable=False, default="")
+    seq = db.Column(db.Integer, nullable=False, default=0)
+    total = db.Column(db.Integer, nullable=False, default=0)
+    status = db.Column(db.String(16), nullable=False, default="running")  # running|ok|failed
+    summary = db.Column(db.Text, nullable=True, default="")
+    started_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    finished_at = db.Column(db.DateTime, nullable=True)
+
+    @property
+    def elapsed_ms(self):
+        """Wall time on this device, or ``None`` while it is still running.
+
+        None, never 0: a device still being upgraded has no duration yet, and
+        printing a zero there is a measurement nobody took."""
+        if self.finished_at is None or self.started_at is None:
+            return None
+        return int((self.finished_at - self.started_at).total_seconds() * 1000)
+
+    def __repr__(self) -> str:
+        return f"<ScheduledActionTarget run={self.run_id} {self.appliance} {self.status}>"
+
+
 # ---------------------------------------------------------------------------
 # ChangeRequest — maintenance-window approval gating risky (upgrade) actions.
 # Approving + scheduling a CR creates a one-shot ScheduledAction bound back via
@@ -1124,6 +1191,18 @@ class ChangeRequest(db.Model):
     mw_ref = db.Column(db.String(512), nullable=True, default="")
     mw_state = db.Column(db.String(16), nullable=False, default="none")
     integration_log = db.Column(db.Text, nullable=True, default="")
+    # --- wave membership (a batched rollout: one wave = one change) ------
+    # A ninety-appliance rollout is not one window, and it is not ninety
+    # unrelated changes either: it is an ordered set of waves, each with its
+    # own window and its own approval, deliberately sequenced so the
+    # non-production boxes go first. These three columns are what make that
+    # set a THING rather than a naming convention — "wave 2 of 5" living only
+    # in the title is prose, and prose cannot answer "did wave 1 land?".
+    # NULL/0 means "not part of a batched rollout", which is what every change
+    # raised before this existed genuinely was.
+    wave_group = db.Column(db.String(40), nullable=True, default="", index=True)
+    wave_index = db.Column(db.Integer, nullable=True)
+    wave_total = db.Column(db.Integer, nullable=True)
     # --- formal change document (CR-YYYY-NNNN, DE/EN) -------------------
     # ``ref`` is the human change id printed on the document and quoted in
     # tickets. It is stamped ONCE at creation and never recomputed: deriving

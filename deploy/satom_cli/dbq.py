@@ -64,6 +64,19 @@ SELECT action_id, status FROM scheduled_action_run
  WHERE trigger = 'schedule' ORDER BY id DESC LIMIT 500
 """
 
+# The device source-of-truth index. Deliberately UNFILTERED: the operator's
+# device name would otherwise have to be interpolated into SQL, and every other
+# query in this file is a constant for exactly that reason. The table is capped
+# by the store's retention policy (versions x days), so reading it whole and
+# filtering in Python costs nothing and cannot be injected.
+SOT_VERSIONS = """
+SELECT id, device, sha256, size_raw, total_objects, section_count,
+       COALESCE(source,''),
+       COALESCE(to_char(taken_at,'YYYY-MM-DD HH24:MI'),''),
+       COALESCE(to_char(last_seen_at,'YYYY-MM-DD HH24:MI'),'')
+  FROM sot_version ORDER BY device, id DESC
+"""
+
 APPLIANCES = """
 SELECT id, name, kind, host, COALESCE(last_status,''),
        COALESCE(maintenance,false),

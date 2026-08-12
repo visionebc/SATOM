@@ -588,7 +588,7 @@ check. <code>tests/test_docs_publication.py</code> fails the suite when this blo
 longer matches the console you are running.</p>
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-<p><em>99 commands in 36 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
+<p><em>102 commands in 37 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
 <h3 id="get"><code>get</code></h3>
 <p>Read state. Every command below works as <strong>any user</strong> — this is the half of the console that has to keep working when everything else does not.</p>
 <table>
@@ -696,6 +696,12 @@ longer matches the console you are running.</p>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td>Sync state, maintenance flag, last contact.</td>
+</tr>
+<tr>
+<td><code>satom get device config [&lt;device&gt; [&lt;section&gt; [&lt;table&gt;]]] [--version &lt;id&gt;]</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td>The device's configuration as SATOM last harvested it — read from the LOCAL store, never from the box.</td>
 </tr>
 <tr>
 <td><code>satom get monitor status</code></td>
@@ -1206,6 +1212,18 @@ longer matches the console you are running.</p>
 <td style="text-align: center;">yes</td>
 <td style="text-align: center;">—</td>
 <td>Collect every diagnostic and journal into one 0600 file.</td>
+</tr>
+<tr>
+<td><code>satom execute device reboot &lt;device&gt; --yes</code></td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: center;">!</td>
+<td>Reboot one appliance via its CR-bound action. DESTRUCTIVE.</td>
+</tr>
+<tr>
+<td><code>satom execute device upgrade &lt;device&gt; --yes</code></td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: center;">!</td>
+<td>Firmware upgrade of one appliance via its CR-bound action.</td>
 </tr>
 <tr>
 <td><code>satom execute maintenance &lt;device&gt; &lt;on\|off&gt;</code></td>

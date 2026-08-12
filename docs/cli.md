@@ -305,7 +305,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*99 commands in 36 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*102 commands in 37 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -329,6 +329,7 @@ Read state. Every command below works as **any user** — this is the half of th
 | `satom get backup list` | — | — | Database bundles you can hand to 'execute restore db'. |
 | `satom get scheduler status` | — | — | What exists, when it last ran, what is overdue. |
 | `satom get device status` | — | — | Sync state, maintenance flag, last contact. |
+| `satom get device config [<device> [<section> [<table>]]] [--version <id>]` | — | — | The device's configuration as SATOM last harvested it — read from the LOCAL store, never from the box. |
 | `satom get monitor status` | — | — | Probe states, and how much coverage is disabled. |
 | `satom get job list` | — | — | The ledger, including ghosts that keep the dock's toast open. |
 | `satom get update history` | — | — | Recent updates and whether the runner ever picked them up. |
@@ -428,6 +429,8 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute scheduler enable <action-id>` | yes | — | Enable one action. |
 | `satom execute scheduler disable <action-id>` | yes | — | Disable one action. |
 | `satom execute support bundle` | yes | — | Collect every diagnostic and journal into one 0600 file. |
+| `satom execute device reboot <device> --yes` | yes | ! | Reboot one appliance via its CR-bound action. DESTRUCTIVE. |
+| `satom execute device upgrade <device> --yes` | yes | ! | Firmware upgrade of one appliance via its CR-bound action. |
 | `satom execute maintenance <device> <on\|off>` | yes | — | Park or un-park an appliance. |
 | `satom execute preflight [<label>]` | yes | — | Capture a health baseline BEFORE a risky change. |
 | `satom execute postflight` | yes | — | Diff the current health against the last preflight. |

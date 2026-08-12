@@ -7,6 +7,7 @@ enforce: **absence of data is never rendered as health.** A missing bundle, an
 empty action table and an unreadable database all read as a problem, because
 each of them silently WAS one in this product's history.
 """
+import gzip
 import json
 import os
 import time
@@ -266,6 +267,190 @@ def device_status(ctx, args):
     r.rows("", table)
     r.note("A parked device is skipped by AUTOMATIC runs and by its alerts; a "
            "manual run still reaches it.")
+    return r
+
+
+# -- device configuration, read from the LOCAL store -----------------------
+# The appliance is frequently the thing that is down, and inside a maintenance
+# window the operator needs its configuration MORE, not less. Every byte here
+# comes from the node's own source-of-truth store (Postgres index + gzip blobs
+# under data/sot/objects), so this command works with the box unreachable, its
+# credentials rotated, or its management plane rebooting. It NEVER calls the
+# device: a read that only works when the device answers is a read the operator
+# cannot use in the moment they reach for it.
+def _sot_dir(ctx):
+    """Where the blobs live. Mirrors services/sot_store.store_dir()."""
+    override = os.environ.get("SATOM_SOT_DIR") or ctx.env.get("SATOM_SOT_DIR", "")
+    return Path(override) if override else (ctx.app_dir / "data" / "sot")
+
+
+def _sot_load(ctx, sha):
+    """(snapshot, err). Never raises — an unreadable blob is 'unknown', not 'empty'."""
+    blob = _sot_dir(ctx) / "objects" / sha[:2] / ("%s.json.gz" % sha)
+    if not blob.exists():
+        return None, ("blob %s.. is indexed but missing from the store — the "
+                      "index row points at nothing (restore of a db.dump "
+                      "without data/sot does exactly this)" % sha[:12])
+    try:
+        with gzip.open(str(blob), "rb") as fh:
+            return json.loads(fh.read().decode("utf-8")), ""
+    except PermissionError:
+        return None, "blob unreadable as %s" % ctx.user
+    except Exception as exc:  # noqa: BLE001
+        return None, "%s: %s" % (type(exc).__name__, exc)
+
+
+def _sot_pick(rows, device, version_id):
+    """(row, err). Newest version of *device*, or the one asked for by id."""
+    if version_id is not None:
+        for row in rows:
+            if str(row[0]) == str(version_id):
+                if device and row[1] != device:
+                    return None, ("version %s belongs to %s, not %s"
+                                  % (version_id, row[1], device))
+                return row, ""
+        return None, "no version with id %s" % version_id
+    mine = [r for r in rows if r[1] == device]
+    if not mine:
+        return None, "no stored configuration for %s" % device
+    return mine[0], ""   # SOT_VERSIONS is ordered id DESC per device
+
+
+def _sot_match(keys, token):
+    """Case-insensitive exact, then unique prefix. Returns (key, err)."""
+    low = token.lower()
+    for k in keys:
+        if k.lower() == low:
+            return k, ""
+    hits = [k for k in keys if k.lower().startswith(low)]
+    if len(hits) == 1:
+        return hits[0], ""
+    if not hits:
+        return None, "no match for %r" % token
+    return None, "%r is ambiguous: %s" % (token, ", ".join(sorted(hits)))
+
+
+def device_config(ctx, args):
+    """Show what SATOM last harvested from a device, without asking the device."""
+    args = list(args)
+    version_id = None
+    if "--version" in args:
+        i = args.index("--version")
+        tail = args[i + 1:i + 2]
+        if not tail or not tail[0].isdigit():
+            r = Result("bad", "--version needs a numeric version id", exit_code=2)
+            r.lines("usage", ["  get device config <device> [<section> [<table>]] "
+                              "[--version <id>]"])
+            return r
+        version_id = int(tail[0])
+        del args[i:i + 2]
+
+    rows, err = dbq.query(ctx, dbq.SOT_VERSIONS)
+    if rows is None:
+        r = Result("warn", "device config — unavailable", exit_code=4)
+        r.rows("", [("reason", err)])
+        return r
+    if not rows:
+        r = Result("info", "the source-of-truth store is empty")
+        r.lines("why", [
+            "Nothing has been harvested yet, or every version aged out.",
+            "A harvest records a version only when the config CHANGED.",
+        ])
+        return r
+
+    # No device: the inventory of what the store actually holds.
+    if not args:
+        seen, table = set(), []
+        for (vid, dev, sha, size_raw, objs, secs, src, taken, last_seen) in (
+                (r + [""] * 9)[:9] for r in rows):
+            if dev in seen:
+                continue
+            seen.add(dev)
+            table.append(("%-16s v%-6s" % (dev, vid),
+                          "%s objects in %s sections  changed=%s  seen=%s  [%s]"
+                          % (objs, secs, taken or "?", last_seen or "?", src)))
+        r = Result("ok", "stored configurations — %d device(s)" % len(seen))
+        r.rows("newest version per device", table)
+        r.note("Drill in with: get device config <device> [<section> [<table>]]")
+        return r
+
+    device = args[0]
+    row, err = _sot_pick(rows, device, version_id)
+    if row is None:
+        r = Result("bad", err, exit_code=1)
+        r.lines("devices in the store", sorted({x[1] for x in rows}) or ["(none)"])
+        return r
+    (vid, dev, sha, size_raw, objs, secs, src, taken, last_seen) = (row + [""] * 9)[:9]
+
+    snap, err = _sot_load(ctx, sha)
+    if snap is None:
+        r = Result("bad", "%s v%s — body unavailable" % (dev, vid), exit_code=4)
+        r.rows("", [("reason", err)])
+        return r
+    sections = snap.get("sections") or {}
+    versions = [x[0] for x in rows if x[1] == dev]
+
+    head = [("version", "%s  (sha %s..)" % (vid, sha[:12])),
+            ("captured", "%s   source=%s" % (taken or "?", src or "?")),
+            ("last seen", "%s   (unchanged since 'captured')" % (last_seen or "?")),
+            ("size", "%s objects in %s sections, %s bytes raw"
+                     % (objs, secs, size_raw))]
+
+    # Level 1: the sections.
+    if len(args) == 1:
+        r = Result("ok", "%s — stored configuration" % dev)
+        r.rows("version", head)
+        r.rows("sections", [(k, "%d tables" % len(v if isinstance(v, dict) else []))
+                            for k, v in sorted(sections.items())])
+        if len(versions) > 1:
+            r.lines("older versions", ["  " + " ".join("v%s" % v for v in versions[:12])])
+            r.note("Read an older one with --version <id>; compare two on the "
+                   "System Backup page (structural diff).")
+        r.note("This is the STORE, not the box. It is what the last harvest saw, "
+               "which is the point — it answers with the device unreachable.")
+        return r
+
+    key, err = _sot_match(sections.keys(), args[1])
+    if key is None:
+        r = Result("bad", err, exit_code=1)
+        r.lines("sections", sorted(sections))
+        return r
+    tables = sections.get(key) or {}
+    if not isinstance(tables, dict):
+        return Result("bad", "section %r is not a table set" % key, exit_code=4)
+
+    # Level 2: the tables in one section.
+    if len(args) == 2:
+        r = Result("ok", "%s — %s (v%s)" % (dev, key, vid))
+        r.rows("tables", [(k, "%d rows" % len(v if isinstance(v, list) else [v]))
+                          for k, v in sorted(tables.items())])
+        r.note("Read one with: get device config %s %s <table>" % (dev, args[1]))
+        return r
+
+    tkey, err = _sot_match(tables.keys(), args[2])
+    if tkey is None:
+        r = Result("bad", err, exit_code=1)
+        r.lines("tables", sorted(tables))
+        return r
+    body = tables.get(tkey)
+    entries = body if isinstance(body, list) else [body]
+
+    # Level 3: the rows. Identity first — an operator scanning for one object
+    # needs its name, not a wall of JSON. The full object is one flag away.
+    r = Result("ok", "%s — %s / %s (v%s) — %d row(s)"
+                     % (dev, key, tkey, vid, len(entries)))
+    listing = []
+    for n, item in enumerate(entries, 1):
+        if isinstance(item, dict):
+            name = item.get("mkey") or item.get("name") or item.get("id") or "(row %d)" % n
+            fields = ", ".join(sorted(k for k in item if not k.startswith("_")))
+            listing.append((str(name), fields[:160] or "(no fields)"))
+        else:
+            listing.append(("(row %d)" % n, json.dumps(item)[:160]))
+    r.rows("", listing or [("(empty)", "the table has no rows")], keys="plain")
+    r.set(device=dev, version=vid, section=key, table=tkey, rows=len(entries))
+    r.note("Values are the harvested ones. To change configuration use the web "
+           "object editor or the v1 API — this verb is 'get'.")
     return r
 
 

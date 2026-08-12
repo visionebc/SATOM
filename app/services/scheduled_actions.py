@@ -243,6 +243,17 @@ ADMIN_ACTIONS: list[ActionSpec] = [
     ActionSpec(
         "upgrade", "Firmware upgrade (FULL - flashes + reboots)", "admin",
         needs_targets=True, danger=True, forced_schedule_kind="once",
+        # The summary below has always CLAIMED this authorization, and
+        # _do_upgrade's docstring says it is "enforced upstream in
+        # execute_and_record". It was not: the unbound refusal in (3a) reads
+        # spec.requires_change_request, and this spec never declared it - so an
+        # upgrade action with no bound CR sailed through the gate. Harmless
+        # only because the executor is still a stub; the day the flash runbook
+        # lands, the missing flag would have been a destructive action running
+        # unapproved while three separate pieces of prose swore it could not.
+        # This is the same shape as upgrade_prep shipping destructive-and-
+        # ungated while the gate watched only 'upgrade'.
+        requires_change_request=True,
         summary="Run the firmware upgrade at a FIXED date/time. DESTRUCTIVE. "
                 "Authorized by an approved Change Request inside its maintenance "
                 "window (change_requests.cr_runnable).",

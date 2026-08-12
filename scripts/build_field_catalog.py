@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from datetime import datetime, timezone
 
 from app.services import field_catalog as fc
 from app.services import provisioning as prov
@@ -124,6 +125,50 @@ def _live_object(appliance, endpoint_urn: str) -> dict:
     return appliance.build_client()._safe_one(endpoint_urn)
 
 
+def why_empty(appliance, endpoint_urn: str) -> str:
+    """Explain an empty harvest. ``_safe_one`` returns {} both for a table the
+    operator has not populated and for a URN the device rejects — opposite
+    situations (one is fine and self-healing, the other is a registry defect that
+    breaks every consumer of the key). Best-effort: never raises, and the caller
+    treats an unknown reason as the benign case."""
+    try:
+        body = appliance.build_client().api_call("GET", endpoint_urn).json()
+    except Exception as exc:  # noqa: BLE001 — diagnosis must not break the harvest
+        return "transport error (%s)" % type(exc).__name__
+    if isinstance(body, dict) and body.get("errcode") not in (None, 0, "0"):
+        return "DEVICE REJECTED THE URN: errcode=%s %r — the registry entry is wrong" % (
+            body.get("errcode"), str(body.get("message"))[:60])
+    rows = body.get("results") if isinstance(body, dict) else body
+    if isinstance(rows, list) and not rows:
+        return "table is empty on this device — nothing to harvest (not a defect)"
+    return "unrecognised envelope: %s" % (list(body)[:6] if isinstance(body, dict) else type(body).__name__)
+
+
+def device_firmware(appliance) -> str:
+    """The firmware the device actually reports (e.g. "7.6.8"), or "" if unknown.
+
+    Best-effort: an unreadable version must not block a harvest, it only means the
+    line cannot be verified (and the caller says so out loud rather than assuming
+    agreement)."""
+    import re as _re
+    try:
+        status = appliance.build_client().status_check()
+    except Exception:  # noqa: BLE001 — an unverifiable line is not a fatal one
+        return ""
+    m = _re.search(r"(\d+\.\d+\.\d+)", str(status))
+    return m.group(1) if m else ""
+
+
+def line_matches_firmware(line: str, firmware: str) -> bool:
+    """Does ``firmware`` belong to catalog ``line``? ("7.6.8" -> "7.6" yes.)
+
+    An unknown firmware matches everything: the harvest degrades to today's
+    behaviour rather than refusing to run against a box it cannot interrogate."""
+    if not firmware or not line:
+        return True
+    return firmware == line or firmware.startswith(line + ".")
+
+
 def _write_if(path: str, payload: dict, force: bool) -> bool:
     if os.path.exists(path) and not force:
         return False
@@ -133,11 +178,15 @@ def _write_if(path: str, payload: dict, force: bool) -> bool:
     return True
 
 
-def build(product: str = "fortiweb", force: bool = False) -> None:
+def build(product: str = "fortiweb", force: bool = False,
+          allow_mismatch: bool = False) -> None:
     from app.models import Appliance
     from app.registry import loader
 
     reg = loader.load_registry()
+    # One instant for the whole run: objects harvested in the same pass
+    # must not disagree about when the pass happened.
+    harvested_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     specs = prov.PROVISION_CATALOG
     default_written: set = set()
     rows = SOURCES.get(product, [])
@@ -150,7 +199,16 @@ def build(product: str = "fortiweb", force: bool = False) -> None:
         if appliance is None:
             print(f"! {appliance_name} not registered — skipping line {line}")
             continue
-        print(f"== line {line} via {appliance_name} ==")
+        firmware = device_firmware(appliance)
+        if not line_matches_firmware(line, firmware):
+            print(f"!! line {line} via {appliance_name}: the device runs {firmware}, "
+                  f"NOT a {line} build — refusing to file {firmware} fields as {line}. "
+                  f"Use --allow-line-mismatch to override.")
+            if not allow_mismatch:
+                continue
+            print(f"   (overridden: harvesting {firmware} data into line {line})")
+        print(f"== line {line} via {appliance_name}"
+              f"{f' [{firmware}]' if firmware else ' [firmware unknown]'} ==")
         for spec in specs:
             urn = reg.get(spec.endpoint or "")
             if not urn:
@@ -162,7 +220,7 @@ def build(product: str = "fortiweb", force: bool = False) -> None:
                 print(f"  - {spec.key}@{line}: live GET failed ({type(exc).__name__}); skip")
                 continue
             if not live:
-                print(f"  - {spec.key}@{line}: empty live object; skip")
+                print(f"  - {spec.key}@{line}: {why_empty(appliance, urn)}; skip")
                 continue
             fields = merge_doc(fields_from_live_object(live), firecrawl_doc(spec.key))
             req = REQUIRED_HINTS.get(spec.key, set())
@@ -173,7 +231,11 @@ def build(product: str = "fortiweb", force: bool = False) -> None:
                 "object": spec.key, "endpoint": spec.endpoint, "label": spec.label,
                 "product": product, "line": line, "singleton": spec.singleton,
                 "readonly": readonly, "fields": fields,
-                "source": f"live:{appliance_name}@{line}", "generated_at": "2026-06-28",
+                "source": f"live:{appliance_name}@{line}", "generated_at": harvested_at,
+                # What the box ACTUALLY runs, so a later reader can tell a
+                # verified line from an asserted one.
+                "device_firmware": firmware,
+                "line_mismatch": not line_matches_firmware(line, firmware),
             }
             wrote = _write_if(os.path.join(fc.SCHEMA_ROOT, product, line, f"{spec.key}.json"),
                               schema, force)
@@ -190,12 +252,16 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--product", default="fortiweb")
     ap.add_argument("--force", action="store_true", help="overwrite existing schema files")
+    ap.add_argument("--allow-line-mismatch", action="store_true",
+                    help="harvest even when the device firmware does not belong "
+                         "to the declared line (recorded in the artefact)")
     args = ap.parse_args()
     from app import create_app
     app = create_app()
     with app.app_context():
         print(f"Building field catalog for product={args.product} (force={args.force}) …")
-        build(args.product, force=args.force)
+        build(args.product, force=args.force,
+              allow_mismatch=args.allow_line_mismatch)
     print("Done.")
 
 

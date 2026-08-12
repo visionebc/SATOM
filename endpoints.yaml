@@ -138,7 +138,6 @@ system_tcpdump:                                 /api/v2.0/cmdb/system/tcpdump
 system_wccp:                                    /api/v2.0/cmdb/system/wccp
 
 # ──── Network ────
-interface:      /api/v2.0/cmdb/system/network.interface
 route:          /api/v2.0/cmdb/router/static
 route_policy:   /api/v2.0/cmdb/router/policy
 dns:            /api/v2.0/cmdb/system/dns

@@ -164,8 +164,9 @@ PROVISION_CATALOG: list[ProvisionSpec] = [
                        "doesn't echo the object. Validate against the device."),
     ProvisionSpec("fortiguard", "FortiGuard (updates)", "system_fortiguard", True),
     # ── Network ──────────────────────────────────────────────────────────
-    ProvisionSpec("interface", "Network interface", "interface", False,
-                  note="collection keyed by interface name (port1, …)"),
+    ProvisionSpec("interface", "Network interface", "interface_2", False,
+                  note="collection keyed by interface name (port1, …). Uses the `interface_2` registry key: the `interface` key's URN "
+                       "(system/network.interface) is rejected by the device with errcode -20001."),
     ProvisionSpec("static_route", "Static route", "route", False),
     # ── SNMP ─────────────────────────────────────────────────────────────
     ProvisionSpec("snmp_sysinfo", "SNMP (sysinfo)", "system_snmp_sysinfo", True),

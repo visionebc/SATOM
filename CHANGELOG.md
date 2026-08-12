@@ -73,6 +73,18 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   giving them one would have re-created the two-implementations defect below.
 
 ### Changed
+
+- **The Admin Console menu keeps one group open.** Opening a group — or
+  selecting a section inside one — now folds every other group. Selecting is
+  the half that is easy to miss: a section can be activated without ever
+  touching a group header (the in-page links, the URL-hash restore, the
+  redirect after a save), so the fold is driven from the routine all of those
+  paths go through rather than from the header handler, and it fires on the
+  entry as well as on the header — Bootstrap stays silent when the clicked
+  section is already the active one, and an accordion that sometimes does not
+  fold reads as a bug. Stores written by the previous multi-open version keep
+  their key and restore the group opened most recently, rewritten to that one
+  alone.
 - **Admin Console: the lateral menu now starts fully collapsed.** Eight groups
   holding twenty-four sections expanded into a wall taller than the viewport, so
   the operator had to close what they never opened. The collapsed state is
